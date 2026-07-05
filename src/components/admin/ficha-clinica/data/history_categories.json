@@ -1,0 +1,101 @@
+[
+  {
+    "id": 1,
+    "categoria_id": "antecedente_personal",
+    "nombre": "Antecedentes Personales",
+    "descripcion": "Enfermedades o condiciones médicas que ha tenido el paciente",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 2,
+    "categoria_id": "antecedente_familiar",
+    "nombre": "Antecedentes Familiares",
+    "descripcion": "Enfermedades hereditarias o familiares relevantes para el tratamiento",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 3,
+    "categoria_id": "alergia",
+    "nombre": "Alergias",
+    "descripcion": "Alergias conocidas del paciente a medicamentos, alimentos o sustancias",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 4,
+    "categoria_id": "habito",
+    "nombre": "Hábitos",
+    "descripcion": "Hábitos que pueden afectar el tratamiento estético",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 5,
+    "categoria_id": "obstetrico",
+    "nombre": "Antecedentes Obstétricos",
+    "descripcion": "Información relacionada con embarazos y condiciones ginecológicas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 6,
+    "categoria_id": "quirurgico",
+    "nombre": "Antecedentes Quirúrgicos",
+    "descripcion": "Cirugías previas relevantes para el tratamiento estético",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 7,
+    "categoria_id": "dispositivo_metalico",
+    "nombre": "Dispositivos Metálicos/Implantes",
+    "descripcion": "Implantes, marcapasos o dispositivos metálicos en el cuerpo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 8,
+    "categoria_id": "medicacion",
+    "nombre": "Historial de Medicamentos",
+    "descripcion": "Medicamentos actuales o recientes que toma el paciente",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 9,
+    "categoria_id": "cuidados_piel",
+    "nombre": "Cuidados Domiciliarios de la Piel",
+    "descripcion": "Productos y tratamientos de cuidado de la piel que usa en casa",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 10,
+    "categoria_id": "rutina_piel",
+    "nombre": "Rutina de Cuidado de la Piel",
+    "descripcion": "Rutina diaria de cuidado facial y corporal del paciente",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 11,
+    "categoria_id": "otros",
+    "nombre": "Otros Antecedentes",
+    "descripcion": "Cualquier otro antecedente relevante no incluido en las categorías anteriores",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  }
+]

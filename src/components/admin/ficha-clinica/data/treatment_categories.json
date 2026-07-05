@@ -1,0 +1,135 @@
+[
+  {
+    "id": 1,
+    "nombre": "procedimientos_clinicos",
+    "descripcion": "Procedimientos clínicos principales",
+    "activo": 1,
+    "creado_en": "2025-09-27 21:15:42"
+  },
+  {
+    "id": 2,
+    "nombre": "Medicina Estética",
+    "descripcion": "Procedimientos de medicina estética y tratamientos inyectables",
+    "activo": 1,
+    "creado_en": "2025-09-27 22:07:46"
+  },
+  {
+    "id": 3,
+    "nombre": "Equipos Médicos",
+    "descripcion": "Categoría para equipos médicos",
+    "activo": 1,
+    "creado_en": "2025-09-27 22:18:16"
+  },
+  {
+    "id": 4,
+    "nombre": "Aplicadores y Accesorios",
+    "descripcion": "Categoría para aplicadores y accesorios",
+    "activo": 1,
+    "creado_en": "2025-09-27 22:18:16"
+  },
+  {
+    "id": 5,
+    "nombre": "Zonas Anatómicas",
+    "descripcion": "Categoría para zonas anatómicas",
+    "activo": 1,
+    "creado_en": "2025-09-27 22:18:16"
+  },
+  {
+    "id": 6,
+    "nombre": "Tratamientos Faciales",
+    "descripcion": "Categoría para tratamientos faciales",
+    "activo": 1,
+    "creado_en": "2025-09-27 22:18:16"
+  },
+  {
+    "id": 7,
+    "nombre": "Tratamientos Corporales",
+    "descripcion": "Categoría para tratamientos corporales",
+    "activo": 1,
+    "creado_en": "2025-09-27 22:18:16"
+  },
+  {
+    "id": 8,
+    "nombre": "Láser Especializado",
+    "descripcion": "Categoría para láser especializado",
+    "activo": 1,
+    "creado_en": "2025-09-27 22:18:16"
+  },
+  {
+    "id": 9,
+    "nombre": "Parámetros Técnicos",
+    "descripcion": "Categoría para parámetros técnicos",
+    "activo": 1,
+    "creado_en": "2025-09-27 22:18:16"
+  },
+  {
+    "id": 10,
+    "nombre": "Otros Tratamientos",
+    "descripcion": "Categoría para otros tratamientos",
+    "activo": 1,
+    "creado_en": "2025-09-27 22:18:16"
+  },
+  {
+    "id": 11,
+    "nombre": "test cat",
+    "descripcion": "",
+    "activo": 1,
+    "creado_en": "2025-09-28 00:19:28"
+  },
+  {
+    "id": 12,
+    "nombre": "HIFU 7D",
+    "descripcion": "",
+    "activo": 1,
+    "creado_en": "2025-09-28 00:22:07"
+  },
+  {
+    "id": 13,
+    "nombre": "HIFU7D",
+    "descripcion": "",
+    "activo": 1,
+    "creado_en": "2025-09-28 00:23:54"
+  },
+  {
+    "id": 14,
+    "nombre": "hifu7d",
+    "descripcion": "",
+    "activo": 1,
+    "creado_en": "2025-09-28 00:32:33"
+  },
+  {
+    "id": 15,
+    "nombre": "HIFU 7D CARTUCHOS",
+    "descripcion": "",
+    "activo": 1,
+    "creado_en": "2025-09-29 01:05:38"
+  },
+  {
+    "id": 16,
+    "nombre": "TestCat_7CXCE",
+    "descripcion": "Categoría de prueba autogen.",
+    "activo": 1,
+    "creado_en": "2025-09-29 01:21:27"
+  },
+  {
+    "id": 17,
+    "nombre": "TestCat_VRUO5",
+    "descripcion": "Categoría de prueba autogen.",
+    "activo": 1,
+    "creado_en": "2025-09-29 01:21:27"
+  },
+  {
+    "id": 18,
+    "nombre": "TestCat_OSV03",
+    "descripcion": "Categoría de prueba autogen.",
+    "activo": 1,
+    "creado_en": "2025-09-29 01:21:27"
+  },
+  {
+    "id": 19,
+    "nombre": "TestCat_UOWXI",
+    "descripcion": "Categoría de prueba autogen.",
+    "activo": 1,
+    "creado_en": "2025-09-29 01:21:27"
+  }
+]

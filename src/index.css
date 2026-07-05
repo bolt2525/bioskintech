@@ -1,0 +1,58 @@
+/**
+ * @file src/index.css
+ * @description Estilos globales del Admin Panel.
+ * Usa TailwindCSS como base. Las clases personalizadas se definen en @layer components.
+ *
+ * Paleta de colores: ver src/constants/theme.ts
+ * Fuentes: Poppins (body), Playfair Display (títulos) — cargadas en index.html
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply font-sans text-gray-800 bg-white;
+  }
+
+  /* Los títulos usan la fuente serif por defecto */
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-serif;
+  }
+}
+
+@layer components {
+  /* Contenedor con padding responsivo */
+  .container-custom {
+    @apply container mx-auto px-4 md:px-8;
+  }
+
+  /* Sombra extra para paneles flotantes */
+  .shadow-3xl {
+    box-shadow: 0 35px 60px -12px rgba(0, 0, 0, 0.25);
+  }
+
+  /* Animación flotante para el botón de notificaciones */
+  .notification-float {
+    animation: float 3s ease-in-out infinite;
+  }
+
+  @keyframes float {
+    0%, 100% { transform: translateY(0px) scale(1); }
+    50%       { transform: translateY(-5px) scale(1.02); }
+  }
+
+  /* Título de sección con línea dorada decorativa */
+  .section-title {
+    @apply text-3xl md:text-4xl font-semibold text-center mb-8 relative;
+  }
+  .section-title::after {
+    content: '';
+    @apply absolute bottom-0 left-1/2 transform -translate-x-1/2 h-1 w-16 bg-[#deb887] rounded-full mt-2;
+  }
+}

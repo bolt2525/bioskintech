@@ -1,0 +1,2495 @@
+﻿[
+  {
+    "id": 1,
+    "categoria": "botox",
+    "elemento": "BOTOXÂ® (Allergan)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 2,
+    "categoria": "botox",
+    "elemento": "BOTOXÂ® Cosmetic",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 3,
+    "categoria": "botox",
+    "elemento": "BOTOXÂ® 50UI",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 4,
+    "categoria": "botox",
+    "elemento": "BOTOXÂ® 100UI",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 5,
+    "categoria": "botox",
+    "elemento": "BOTOXÂ® 200UI",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 6,
+    "categoria": "dysport",
+    "elemento": "DysportÂ® (Ipsen)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 7,
+    "categoria": "dysport",
+    "elemento": "DysportÂ® 125UI",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 8,
+    "categoria": "dysport",
+    "elemento": "DysportÂ® 250UI",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 9,
+    "categoria": "dysport",
+    "elemento": "DysportÂ® 500UI",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 10,
+    "categoria": "xeomin",
+    "elemento": "XeominÂ® (Merz)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 11,
+    "categoria": "xeomin",
+    "elemento": "XeominÂ® 50UI",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 12,
+    "categoria": "xeomin",
+    "elemento": "XeominÂ® 100UI",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 13,
+    "categoria": "xeomin",
+    "elemento": "XeominÂ® 200UI",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 14,
+    "categoria": "otras_marcas",
+    "elemento": "AzzalureÂ® (Galderma)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 15,
+    "categoria": "otras_marcas",
+    "elemento": "NuceivaÂ® (Evolus)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 16,
+    "categoria": "otras_marcas",
+    "elemento": "LetyboÂ® (Hugel)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 17,
+    "categoria": "otras_marcas",
+    "elemento": "NabotaÂ® (Daewoong)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 18,
+    "categoria": "otras_marcas",
+    "elemento": "RelatoxÂ® (Medytox)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 19,
+    "categoria": "otras_marcas",
+    "elemento": "ProsigneÂ® (Lanzhou)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 20,
+    "categoria": "otras_marcas",
+    "elemento": "BTX-AÂ® (Chinese)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 21,
+    "categoria": "allergan",
+    "elemento": "JuvedermÂ® Ultra",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 22,
+    "categoria": "allergan",
+    "elemento": "JuvedermÂ® Ultra Plus",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 23,
+    "categoria": "allergan",
+    "elemento": "JuvedermÂ® Voluma",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 24,
+    "categoria": "allergan",
+    "elemento": "JuvedermÂ® Volift",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 25,
+    "categoria": "allergan",
+    "elemento": "JuvedermÂ® Volbella",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 26,
+    "categoria": "allergan",
+    "elemento": "JuvedermÂ® Hydrate",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 27,
+    "categoria": "allergan",
+    "elemento": "JuvedermÂ® Smile",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 28,
+    "categoria": "galderma",
+    "elemento": "RestylaneÂ® Lyft",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 29,
+    "categoria": "galderma",
+    "elemento": "RestylaneÂ® Refyne",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 30,
+    "categoria": "galderma",
+    "elemento": "RestylaneÂ® Defyne",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 31,
+    "categoria": "galderma",
+    "elemento": "RestylaneÂ® Kysse",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 32,
+    "categoria": "galderma",
+    "elemento": "RestylaneÂ® Fynesse",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 33,
+    "categoria": "galderma",
+    "elemento": "RestylaneÂ® Volyme",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 34,
+    "categoria": "merz",
+    "elemento": "BeloteroÂ® Basic",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 35,
+    "categoria": "merz",
+    "elemento": "BeloteroÂ® Soft",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 36,
+    "categoria": "merz",
+    "elemento": "BeloteroÂ® Intense",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 37,
+    "categoria": "merz",
+    "elemento": "BeloteroÂ® Volume",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 38,
+    "categoria": "merz",
+    "elemento": "BeloteroÂ® Balance",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 39,
+    "categoria": "teoxane",
+    "elemento": "TeosyalÂ® RHA 1",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 40,
+    "categoria": "teoxane",
+    "elemento": "TeosyalÂ® RHA 2",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 41,
+    "categoria": "teoxane",
+    "elemento": "TeosyalÂ® RHA 3",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 42,
+    "categoria": "teoxane",
+    "elemento": "TeosyalÂ® RHA 4",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 43,
+    "categoria": "teoxane",
+    "elemento": "TeosyalÂ® Ultra Deep",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 44,
+    "categoria": "teoxane",
+    "elemento": "TeosyalÂ® Kiss",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 45,
+    "categoria": "teoxane",
+    "elemento": "TeosyalÂ® Global Action",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 46,
+    "categoria": "otras_marcas",
+    "elemento": "StylageÂ® (Vivacy)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 47,
+    "categoria": "otras_marcas",
+    "elemento": "PrincessÂ® Volume",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 48,
+    "categoria": "otras_marcas",
+    "elemento": "PrincessÂ® Filler",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 49,
+    "categoria": "otras_marcas",
+    "elemento": "SayphaÂ® Volume",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 50,
+    "categoria": "otras_marcas",
+    "elemento": "HyacorpÂ® Body",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 51,
+    "categoria": "otras_marcas",
+    "elemento": "RevolaxÂ® Deep",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 52,
+    "categoria": "otras_marcas",
+    "elemento": "NeuramisÂ® Volume",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 53,
+    "categoria": "estimuladores_colageno",
+    "elemento": "SculptraÂ® (PLLA)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 54,
+    "categoria": "estimuladores_colageno",
+    "elemento": "RadiesseÂ® (CaHA)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 55,
+    "categoria": "estimuladores_colageno",
+    "elemento": "EllansÃ©Â® S",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 56,
+    "categoria": "estimuladores_colageno",
+    "elemento": "EllansÃ©Â® M",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 57,
+    "categoria": "estimuladores_colageno",
+    "elemento": "EllansÃ©Â® L",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 58,
+    "categoria": "estimuladores_colageno",
+    "elemento": "EllansÃ©Â® E",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 59,
+    "categoria": "estimuladores_colageno",
+    "elemento": "New-FillÂ® (PLLA)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 60,
+    "categoria": "rellenos_permanentes",
+    "elemento": "Silicona mÃ©dica",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 61,
+    "categoria": "rellenos_permanentes",
+    "elemento": "PMMA (Metacrill)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 62,
+    "categoria": "rellenos_permanentes",
+    "elemento": "AquamidÂ® (Polyacrylamide)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 63,
+    "categoria": "rellenos_permanentes",
+    "elemento": "Bio-AlcamidÂ®",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 64,
+    "categoria": "tecnicas_basicas",
+    "elemento": "TÃ©cnica lineal",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 65,
+    "categoria": "tecnicas_basicas",
+    "elemento": "TÃ©cnica serial puncture",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 66,
+    "categoria": "tecnicas_basicas",
+    "elemento": "TÃ©cnica de abanico",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 67,
+    "categoria": "tecnicas_basicas",
+    "elemento": "TÃ©cnica cruzada",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 68,
+    "categoria": "tecnicas_basicas",
+    "elemento": "TÃ©cnica multicapa",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 69,
+    "categoria": "tecnicas_basicas",
+    "elemento": "TÃ©cnica sandwich",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 70,
+    "categoria": "tecnicas_basicas",
+    "elemento": "TÃ©cnica structural",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 71,
+    "categoria": "tecnicas_avanzadas",
+    "elemento": "TÃ©cnica de pilares",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 72,
+    "categoria": "tecnicas_avanzadas",
+    "elemento": "TÃ©cnica mesh",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 73,
+    "categoria": "tecnicas_avanzadas",
+    "elemento": "TÃ©cnica 3D vectorial",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 74,
+    "categoria": "tecnicas_avanzadas",
+    "elemento": "TÃ©cnica de soporte",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 75,
+    "categoria": "tecnicas_avanzadas",
+    "elemento": "TÃ©cnica liquid facelift",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 76,
+    "categoria": "tecnicas_avanzadas",
+    "elemento": "TÃ©cnica 8-point lift",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 77,
+    "categoria": "tecnicas_avanzadas",
+    "elemento": "TÃ©cnica MD codes",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 78,
+    "categoria": "metodos_inyeccion",
+    "elemento": "Anterograde",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 79,
+    "categoria": "metodos_inyeccion",
+    "elemento": "Retrograde",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 80,
+    "categoria": "metodos_inyeccion",
+    "elemento": "Bidireccional",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 81,
+    "categoria": "metodos_inyeccion",
+    "elemento": "SupraperiÃ³stico",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 82,
+    "categoria": "metodos_inyeccion",
+    "elemento": "SubcutÃ¡neo",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 83,
+    "categoria": "metodos_inyeccion",
+    "elemento": "IntradÃ©rmico",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 84,
+    "categoria": "metodos_inyeccion",
+    "elemento": "Submuscular",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 85,
+    "categoria": "planos_inyeccion",
+    "elemento": "EpidÃ©rmico",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 86,
+    "categoria": "planos_inyeccion",
+    "elemento": "DÃ©rmico superficial",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 87,
+    "categoria": "planos_inyeccion",
+    "elemento": "DÃ©rmico medio",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 88,
+    "categoria": "planos_inyeccion",
+    "elemento": "DÃ©rmico profundo",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 89,
+    "categoria": "planos_inyeccion",
+    "elemento": "SubcutÃ¡neo",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 90,
+    "categoria": "planos_inyeccion",
+    "elemento": "SupraperiÃ³stico",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 91,
+    "categoria": "planos_inyeccion",
+    "elemento": "PreperiÃ³stico",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 92,
+    "categoria": "agujas_rigidas",
+    "elemento": "27G x 13mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 93,
+    "categoria": "agujas_rigidas",
+    "elemento": "30G x 13mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 94,
+    "categoria": "agujas_rigidas",
+    "elemento": "32G x 4mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 95,
+    "categoria": "agujas_rigidas",
+    "elemento": "32G x 6mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 96,
+    "categoria": "agujas_rigidas",
+    "elemento": "25G x 25mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 97,
+    "categoria": "agujas_rigidas",
+    "elemento": "27G x 25mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 98,
+    "categoria": "agujas_rigidas",
+    "elemento": "30G x 25mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 99,
+    "categoria": "microcÃ¡nulas",
+    "elemento": "22G x 40mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 100,
+    "categoria": "microcÃ¡nulas",
+    "elemento": "22G x 50mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 101,
+    "categoria": "microcÃ¡nulas",
+    "elemento": "22G x 70mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 102,
+    "categoria": "microcÃ¡nulas",
+    "elemento": "23G x 25mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 103,
+    "categoria": "microcÃ¡nulas",
+    "elemento": "25G x 25mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 104,
+    "categoria": "microcÃ¡nulas",
+    "elemento": "25G x 38mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 105,
+    "categoria": "microcÃ¡nulas",
+    "elemento": "27G x 25mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 106,
+    "categoria": "agujas_especiales",
+    "elemento": "Aguja TSK",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 107,
+    "categoria": "agujas_especiales",
+    "elemento": "Aguja Soft-Fill",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 108,
+    "categoria": "agujas_especiales",
+    "elemento": "Aguja Ultra-thin",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 109,
+    "categoria": "agujas_especiales",
+    "elemento": "Aguja BD Ultra-Fine",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 110,
+    "categoria": "agujas_especiales",
+    "elemento": "Aguja Terumo Nanopass",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 111,
+    "categoria": "agujas_especiales",
+    "elemento": "Aguja Mesotherapie",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 112,
+    "categoria": "tercio_superior",
+    "elemento": "Glabela",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 113,
+    "categoria": "tercio_superior",
+    "elemento": "Frente",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 114,
+    "categoria": "tercio_superior",
+    "elemento": "Cola de ceja",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 115,
+    "categoria": "tercio_superior",
+    "elemento": "RegiÃ³n temporal",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 116,
+    "categoria": "tercio_superior",
+    "elemento": "Entrecejo",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 117,
+    "categoria": "tercio_superior",
+    "elemento": "LÃ­neas horizontales frente",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 118,
+    "categoria": "tercio_superior",
+    "elemento": "Patas de gallo",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 119,
+    "categoria": "tercio_medio",
+    "elemento": "PÃ³mulos",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 120,
+    "categoria": "tercio_medio",
+    "elemento": "Mejillas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 121,
+    "categoria": "tercio_medio",
+    "elemento": "Surco nasogeniano",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 122,
+    "categoria": "tercio_medio",
+    "elemento": "Ojeras",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 123,
+    "categoria": "tercio_medio",
+    "elemento": "Valle de lÃ¡grimas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 124,
+    "categoria": "tercio_medio",
+    "elemento": "Dorso nasal",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 125,
+    "categoria": "tercio_medio",
+    "elemento": "RegiÃ³n malar",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 126,
+    "categoria": "tercio_inferior",
+    "elemento": "Labios",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 127,
+    "categoria": "tercio_inferior",
+    "elemento": "Comisuras",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 128,
+    "categoria": "tercio_inferior",
+    "elemento": "Surco marioneta",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 129,
+    "categoria": "tercio_inferior",
+    "elemento": "MentÃ³n",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 130,
+    "categoria": "tercio_inferior",
+    "elemento": "LÃ­nea mandibular",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 131,
+    "categoria": "tercio_inferior",
+    "elemento": "Papada",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 132,
+    "categoria": "tercio_inferior",
+    "elemento": "CÃ³digo de barras",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 133,
+    "categoria": "areas_corporales",
+    "elemento": "Manos",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 134,
+    "categoria": "areas_corporales",
+    "elemento": "Escote",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 135,
+    "categoria": "areas_corporales",
+    "elemento": "GlÃºteos",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 136,
+    "categoria": "areas_corporales",
+    "elemento": "Pantorrillas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 137,
+    "categoria": "areas_corporales",
+    "elemento": "Pies",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 138,
+    "categoria": "botox",
+    "elemento": "2.5ml (4UI/0.1ml)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 139,
+    "categoria": "botox",
+    "elemento": "5ml (2UI/0.1ml)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 140,
+    "categoria": "botox",
+    "elemento": "10ml (1UI/0.1ml)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 141,
+    "categoria": "dysport",
+    "elemento": "2.5ml (10UI/0.1ml)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 142,
+    "categoria": "dysport",
+    "elemento": "5ml (5UI/0.1ml)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 143,
+    "categoria": "dysport",
+    "elemento": "10ml (2.5UI/0.1ml)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 144,
+    "categoria": "xeomin",
+    "elemento": "2ml (5UI/0.1ml)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 145,
+    "categoria": "xeomin",
+    "elemento": "4ml (2.5UI/0.1ml)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 146,
+    "categoria": "xeomin",
+    "elemento": "8ml (1.25UI/0.1ml)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 147,
+    "categoria": "complicaciones_tratamiento",
+    "elemento": "Hematoma",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 148,
+    "categoria": "complicaciones_tratamiento",
+    "elemento": "Edema",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 149,
+    "categoria": "complicaciones_tratamiento",
+    "elemento": "Eritema",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 150,
+    "categoria": "complicaciones_tratamiento",
+    "elemento": "AsimetrÃ­a",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 151,
+    "categoria": "complicaciones_tratamiento",
+    "elemento": "SobrecorrecciÃ³n",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 152,
+    "categoria": "complicaciones_tratamiento",
+    "elemento": "SubcorrecciÃ³n",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 153,
+    "categoria": "complicaciones_tratamiento",
+    "elemento": "Granulomas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 154,
+    "categoria": "complicaciones_tratamiento",
+    "elemento": "Necrosis",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 155,
+    "categoria": "complicaciones_tratamiento",
+    "elemento": "EmbolizaciÃ³n vascular",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 156,
+    "categoria": "complicaciones_tratamiento",
+    "elemento": "InfecciÃ³n",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 157,
+    "categoria": "complicaciones_tratamiento",
+    "elemento": "ReacciÃ³n alÃ©rgica",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 158,
+    "categoria": "complicaciones_tratamiento",
+    "elemento": "MigraciÃ³n del producto",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 159,
+    "categoria": "complicaciones_tratamiento",
+    "elemento": "Efecto Tyndall",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 160,
+    "categoria": "complicaciones_tratamiento",
+    "elemento": "Nodulaciones",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 161,
+    "categoria": "cuidados_post_tratamiento",
+    "elemento": "Evitar masajes 24h",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 162,
+    "categoria": "cuidados_post_tratamiento",
+    "elemento": "No acostarse 4h post-toxina",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 163,
+    "categoria": "cuidados_post_tratamiento",
+    "elemento": "Aplicar frÃ­o local",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 164,
+    "categoria": "cuidados_post_tratamiento",
+    "elemento": "Evitar ejercicio 24h",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 165,
+    "categoria": "cuidados_post_tratamiento",
+    "elemento": "No calor/sauna 48h",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 166,
+    "categoria": "cuidados_post_tratamiento",
+    "elemento": "Evitar maquillaje 12h",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 167,
+    "categoria": "cuidados_post_tratamiento",
+    "elemento": "No manipular zona",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 168,
+    "categoria": "cuidados_post_tratamiento",
+    "elemento": "Tomar analgÃ©sicos si necesario",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 169,
+    "categoria": "cuidados_post_tratamiento",
+    "elemento": "Control a las 2 semanas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 170,
+    "categoria": "cuidados_post_tratamiento",
+    "elemento": "RevisiÃ³n a los 15 dÃ­as",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 22102,
+    "categoria": "marca_toxina",
+    "elemento": "10ml (1UI/0.1ml)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.474098"
+  },
+  {
+    "id": 22103,
+    "categoria": "marca_toxina",
+    "elemento": "2.5ml (4UI/0.1ml)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.475134"
+  },
+  {
+    "id": 22104,
+    "categoria": "marca_toxina",
+    "elemento": "5ml (2UI/0.1ml)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.476241"
+  },
+  {
+    "id": 22105,
+    "categoria": "marca_toxina",
+    "elemento": "BOTOXÂ® (Allergan)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.476241"
+  },
+  {
+    "id": 22106,
+    "categoria": "marca_toxina",
+    "elemento": "BOTOXÂ® 100UI",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.476241"
+  },
+  {
+    "id": 22107,
+    "categoria": "marca_toxina",
+    "elemento": "BOTOXÂ® 200UI",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.476241"
+  },
+  {
+    "id": 22108,
+    "categoria": "marca_toxina",
+    "elemento": "BOTOXÂ® 50UI",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.476241"
+  },
+  {
+    "id": 22109,
+    "categoria": "marca_toxina",
+    "elemento": "BOTOXÂ® Cosmetic",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.476241"
+  },
+  {
+    "id": 22110,
+    "categoria": "marca_toxina",
+    "elemento": "10ml (2.5UI/0.1ml)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.476241"
+  },
+  {
+    "id": 22111,
+    "categoria": "marca_toxina",
+    "elemento": "2.5ml (10UI/0.1ml)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.476241"
+  },
+  {
+    "id": 22112,
+    "categoria": "marca_toxina",
+    "elemento": "5ml (5UI/0.1ml)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.476241"
+  },
+  {
+    "id": 22113,
+    "categoria": "marca_toxina",
+    "elemento": "DysportÂ® (Ipsen)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.476241"
+  },
+  {
+    "id": 22114,
+    "categoria": "marca_toxina",
+    "elemento": "DysportÂ® 125UI",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.476241"
+  },
+  {
+    "id": 22115,
+    "categoria": "marca_toxina",
+    "elemento": "DysportÂ® 250UI",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.476241"
+  },
+  {
+    "id": 22116,
+    "categoria": "marca_toxina",
+    "elemento": "DysportÂ® 500UI",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.476241"
+  },
+  {
+    "id": 22117,
+    "categoria": "marca_toxina",
+    "elemento": "2ml (5UI/0.1ml)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.476241"
+  },
+  {
+    "id": 22118,
+    "categoria": "marca_toxina",
+    "elemento": "4ml (2.5UI/0.1ml)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.476241"
+  },
+  {
+    "id": 22119,
+    "categoria": "marca_toxina",
+    "elemento": "8ml (1.25UI/0.1ml)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.476241"
+  },
+  {
+    "id": 22120,
+    "categoria": "marca_toxina",
+    "elemento": "XeominÂ® (Merz)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.476241"
+  },
+  {
+    "id": 22121,
+    "categoria": "marca_toxina",
+    "elemento": "XeominÂ® 100UI",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.476241"
+  },
+  {
+    "id": 22122,
+    "categoria": "marca_toxina",
+    "elemento": "XeominÂ® 200UI",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.476241"
+  },
+  {
+    "id": 22123,
+    "categoria": "marca_toxina",
+    "elemento": "XeominÂ® 50UI",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.476241"
+  },
+  {
+    "id": 22124,
+    "categoria": "marca_toxina",
+    "elemento": "AzzalureÂ® (Galderma)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.476241"
+  },
+  {
+    "id": 22125,
+    "categoria": "marca_toxina",
+    "elemento": "BTX-AÂ® (Chinese)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.476241"
+  },
+  {
+    "id": 22126,
+    "categoria": "marca_toxina",
+    "elemento": "HyacorpÂ® Body",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.476241"
+  },
+  {
+    "id": 22127,
+    "categoria": "marca_toxina",
+    "elemento": "LetyboÂ® (Hugel)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.476241"
+  },
+  {
+    "id": 22128,
+    "categoria": "marca_toxina",
+    "elemento": "NabotaÂ® (Daewoong)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.476241"
+  },
+  {
+    "id": 22129,
+    "categoria": "marca_toxina",
+    "elemento": "NeuramisÂ® Volume",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.476241"
+  },
+  {
+    "id": 22130,
+    "categoria": "marca_toxina",
+    "elemento": "NuceivaÂ® (Evolus)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.476241"
+  },
+  {
+    "id": 22131,
+    "categoria": "marca_toxina",
+    "elemento": "PrincessÂ® Filler",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.476241"
+  },
+  {
+    "id": 22132,
+    "categoria": "marca_toxina",
+    "elemento": "PrincessÂ® Volume",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.476241"
+  },
+  {
+    "id": 22133,
+    "categoria": "marca_toxina",
+    "elemento": "ProsigneÂ® (Lanzhou)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.476241"
+  },
+  {
+    "id": 22134,
+    "categoria": "marca_toxina",
+    "elemento": "RelatoxÂ® (Medytox)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.476241"
+  },
+  {
+    "id": 22135,
+    "categoria": "marca_toxina",
+    "elemento": "RevolaxÂ® Deep",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.476241"
+  },
+  {
+    "id": 22136,
+    "categoria": "marca_toxina",
+    "elemento": "SayphaÂ® Volume",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.476241"
+  },
+  {
+    "id": 22137,
+    "categoria": "marca_toxina",
+    "elemento": "StylageÂ® (Vivacy)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.476241"
+  },
+  {
+    "id": 22138,
+    "categoria": "marca_relleno",
+    "elemento": "JuvedermÂ® Hydrate",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.477329"
+  },
+  {
+    "id": 22139,
+    "categoria": "marca_relleno",
+    "elemento": "JuvedermÂ® Smile",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.477329"
+  },
+  {
+    "id": 22140,
+    "categoria": "marca_relleno",
+    "elemento": "JuvedermÂ® Ultra",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.477329"
+  },
+  {
+    "id": 22141,
+    "categoria": "marca_relleno",
+    "elemento": "JuvedermÂ® Ultra Plus",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.477329"
+  },
+  {
+    "id": 22142,
+    "categoria": "marca_relleno",
+    "elemento": "JuvedermÂ® Volbella",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.477329"
+  },
+  {
+    "id": 22143,
+    "categoria": "marca_relleno",
+    "elemento": "JuvedermÂ® Volift",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.477329"
+  },
+  {
+    "id": 22144,
+    "categoria": "marca_relleno",
+    "elemento": "JuvedermÂ® Voluma",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.477329"
+  },
+  {
+    "id": 22145,
+    "categoria": "marca_relleno",
+    "elemento": "RestylaneÂ® Defyne",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.477329"
+  },
+  {
+    "id": 22146,
+    "categoria": "marca_relleno",
+    "elemento": "RestylaneÂ® Fynesse",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.477329"
+  },
+  {
+    "id": 22147,
+    "categoria": "marca_relleno",
+    "elemento": "RestylaneÂ® Kysse",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.477329"
+  },
+  {
+    "id": 22148,
+    "categoria": "marca_relleno",
+    "elemento": "RestylaneÂ® Lyft",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.477329"
+  },
+  {
+    "id": 22149,
+    "categoria": "marca_relleno",
+    "elemento": "RestylaneÂ® Refyne",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.477329"
+  },
+  {
+    "id": 22150,
+    "categoria": "marca_relleno",
+    "elemento": "RestylaneÂ® Volyme",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.477329"
+  },
+  {
+    "id": 22151,
+    "categoria": "marca_relleno",
+    "elemento": "BeloteroÂ® Balance",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.477329"
+  },
+  {
+    "id": 22152,
+    "categoria": "marca_relleno",
+    "elemento": "BeloteroÂ® Basic",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.477329"
+  },
+  {
+    "id": 22153,
+    "categoria": "marca_relleno",
+    "elemento": "BeloteroÂ® Intense",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.477329"
+  },
+  {
+    "id": 22154,
+    "categoria": "marca_relleno",
+    "elemento": "BeloteroÂ® Soft",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.477329"
+  },
+  {
+    "id": 22155,
+    "categoria": "marca_relleno",
+    "elemento": "BeloteroÂ® Volume",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.477329"
+  },
+  {
+    "id": 22156,
+    "categoria": "marca_relleno",
+    "elemento": "TeosyalÂ® Global Action",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.477329"
+  },
+  {
+    "id": 22157,
+    "categoria": "marca_relleno",
+    "elemento": "TeosyalÂ® Kiss",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.477329"
+  },
+  {
+    "id": 22158,
+    "categoria": "marca_relleno",
+    "elemento": "TeosyalÂ® RHA 1",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.477329"
+  },
+  {
+    "id": 22159,
+    "categoria": "marca_relleno",
+    "elemento": "TeosyalÂ® RHA 2",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.477329"
+  },
+  {
+    "id": 22160,
+    "categoria": "marca_relleno",
+    "elemento": "TeosyalÂ® RHA 3",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.477329"
+  },
+  {
+    "id": 22161,
+    "categoria": "marca_relleno",
+    "elemento": "TeosyalÂ® RHA 4",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.477329"
+  },
+  {
+    "id": 22162,
+    "categoria": "marca_relleno",
+    "elemento": "TeosyalÂ® Ultra Deep",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.477329"
+  },
+  {
+    "id": 22163,
+    "categoria": "marca_relleno",
+    "elemento": "EllansÃ©Â® E",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.477329"
+  },
+  {
+    "id": 22164,
+    "categoria": "marca_relleno",
+    "elemento": "EllansÃ©Â® L",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.477329"
+  },
+  {
+    "id": 22165,
+    "categoria": "marca_relleno",
+    "elemento": "EllansÃ©Â® M",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.477329"
+  },
+  {
+    "id": 22166,
+    "categoria": "marca_relleno",
+    "elemento": "EllansÃ©Â® S",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.477329"
+  },
+  {
+    "id": 22167,
+    "categoria": "marca_relleno",
+    "elemento": "New-FillÂ® (PLLA)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.477329"
+  },
+  {
+    "id": 22168,
+    "categoria": "marca_relleno",
+    "elemento": "RadiesseÂ® (CaHA)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.477329"
+  },
+  {
+    "id": 22169,
+    "categoria": "marca_relleno",
+    "elemento": "SculptraÂ® (PLLA)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.477329"
+  },
+  {
+    "id": 22170,
+    "categoria": "tecnica_inyectable",
+    "elemento": "TÃ©cnica cruzada",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 22171,
+    "categoria": "tecnica_inyectable",
+    "elemento": "TÃ©cnica de abanico",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 22172,
+    "categoria": "tecnica_inyectable",
+    "elemento": "TÃ©cnica lineal",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 22173,
+    "categoria": "tecnica_inyectable",
+    "elemento": "TÃ©cnica multicapa",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 22174,
+    "categoria": "tecnica_inyectable",
+    "elemento": "TÃ©cnica sandwich",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 22175,
+    "categoria": "tecnica_inyectable",
+    "elemento": "TÃ©cnica serial puncture",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 22176,
+    "categoria": "tecnica_inyectable",
+    "elemento": "TÃ©cnica structural",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 22177,
+    "categoria": "tecnica_inyectable",
+    "elemento": "TÃ©cnica 3D vectorial",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 22178,
+    "categoria": "tecnica_inyectable",
+    "elemento": "TÃ©cnica 8-point lift",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 22179,
+    "categoria": "tecnica_inyectable",
+    "elemento": "TÃ©cnica MD codes",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 22180,
+    "categoria": "tecnica_inyectable",
+    "elemento": "TÃ©cnica de pilares",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 22181,
+    "categoria": "tecnica_inyectable",
+    "elemento": "TÃ©cnica de soporte",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 22182,
+    "categoria": "tecnica_inyectable",
+    "elemento": "TÃ©cnica liquid facelift",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 22183,
+    "categoria": "tecnica_inyectable",
+    "elemento": "TÃ©cnica mesh",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 22184,
+    "categoria": "tecnica_inyectable",
+    "elemento": "Anterograde",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 22185,
+    "categoria": "tecnica_inyectable",
+    "elemento": "Bidireccional",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 22186,
+    "categoria": "tecnica_inyectable",
+    "elemento": "IntradÃ©rmico",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 22187,
+    "categoria": "tecnica_inyectable",
+    "elemento": "Retrograde",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 22188,
+    "categoria": "tecnica_inyectable",
+    "elemento": "SubcutÃ¡neo",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 22189,
+    "categoria": "tecnica_inyectable",
+    "elemento": "Submuscular",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 22190,
+    "categoria": "tecnica_inyectable",
+    "elemento": "SupraperiÃ³stico",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 22191,
+    "categoria": "aguja_inyectable",
+    "elemento": "25G x 25mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.481725"
+  },
+  {
+    "id": 22192,
+    "categoria": "aguja_inyectable",
+    "elemento": "27G x 13mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.481725"
+  },
+  {
+    "id": 22193,
+    "categoria": "aguja_inyectable",
+    "elemento": "27G x 25mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.481725"
+  },
+  {
+    "id": 22194,
+    "categoria": "aguja_inyectable",
+    "elemento": "30G x 13mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.481725"
+  },
+  {
+    "id": 22195,
+    "categoria": "aguja_inyectable",
+    "elemento": "30G x 25mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.481725"
+  },
+  {
+    "id": 22196,
+    "categoria": "aguja_inyectable",
+    "elemento": "32G x 4mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.481725"
+  },
+  {
+    "id": 22197,
+    "categoria": "aguja_inyectable",
+    "elemento": "32G x 6mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.481725"
+  },
+  {
+    "id": 22198,
+    "categoria": "aguja_inyectable",
+    "elemento": "Aguja BD Ultra-Fine",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.481725"
+  },
+  {
+    "id": 22199,
+    "categoria": "aguja_inyectable",
+    "elemento": "Aguja Mesotherapie",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.481725"
+  },
+  {
+    "id": 22200,
+    "categoria": "aguja_inyectable",
+    "elemento": "Aguja Soft-Fill",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.481725"
+  },
+  {
+    "id": 22201,
+    "categoria": "aguja_inyectable",
+    "elemento": "Aguja TSK",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.481725"
+  },
+  {
+    "id": 22202,
+    "categoria": "aguja_inyectable",
+    "elemento": "Aguja Terumo Nanopass",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.481725"
+  },
+  {
+    "id": 22203,
+    "categoria": "aguja_inyectable",
+    "elemento": "Aguja Ultra-thin",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.481725"
+  },
+  {
+    "id": 22204,
+    "categoria": "aguja_inyectable",
+    "elemento": "22G x 40mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.481725"
+  },
+  {
+    "id": 22205,
+    "categoria": "aguja_inyectable",
+    "elemento": "22G x 50mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.481725"
+  },
+  {
+    "id": 22206,
+    "categoria": "aguja_inyectable",
+    "elemento": "22G x 70mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.481725"
+  },
+  {
+    "id": 22207,
+    "categoria": "aguja_inyectable",
+    "elemento": "23G x 25mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.481725"
+  },
+  {
+    "id": 22208,
+    "categoria": "aguja_inyectable",
+    "elemento": "25G x 38mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.481725"
+  }
+]

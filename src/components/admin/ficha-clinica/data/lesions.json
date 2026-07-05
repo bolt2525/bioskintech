@@ -1,0 +1,407 @@
+[
+  {
+    "id": 2860,
+    "categoria_id": 1028,
+    "nombre": "Pápulas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 22:39:51",
+    "diagnosticos_vinculados": "Acné comedogénico;Acné vulgar;Acné papulopustuloso;Acné nódulo-quístico;Acné conglobata"
+  },
+  {
+    "id": 2861,
+    "categoria_id": 1028,
+    "nombre": "Pústulas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 22:39:51",
+    "diagnosticos_vinculados": "Acné comedogénico;Acné vulgar;Acné papulopustuloso;Acné nódulo-quístico;Acné conglobata"
+  },
+  {
+    "id": 2862,
+    "categoria_id": 1028,
+    "nombre": "Comedones abiertos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 22:39:51",
+    "diagnosticos_vinculados": "Acné comedogénico;Acné vulgar;Acné papulopustuloso;Acné nódulo-quístico;Acné conglobata"
+  },
+  {
+    "id": 2863,
+    "categoria_id": 1028,
+    "nombre": "Comedones cerrados",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 22:39:51",
+    "diagnosticos_vinculados": "Acné comedogénico;Acné vulgar;Acné papulopustuloso;Acné nódulo-quístico;Acné conglobata"
+  },
+  {
+    "id": 2864,
+    "categoria_id": 1028,
+    "nombre": "Nódulos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 22:39:51",
+    "diagnosticos_vinculados": "Acné comedogénico;Acné vulgar;Acné papulopustuloso;Acné nódulo-quístico;Acné conglobata"
+  },
+  {
+    "id": 2865,
+    "categoria_id": 1028,
+    "nombre": "Quistes",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 22:39:51",
+    "diagnosticos_vinculados": "Acné comedogénico;Acné vulgar;Acné papulopustuloso;Acné nódulo-quístico;Acné conglobata"
+  },
+  {
+    "id": 2867,
+    "categoria_id": 1029,
+    "nombre": "Máculas eritematosas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 22:39:51",
+    "diagnosticos_vinculados": "Post acné;Agresiones cutáneas"
+  },
+  {
+    "id": 2868,
+    "categoria_id": 1029,
+    "nombre": "Hiperpigmentación post-inflamatoria (HPI)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 22:39:51",
+    "diagnosticos_vinculados": "Post acné;Agresiones cutáneas"
+  },
+  {
+    "id": 3184,
+    "categoria_id": 1145,
+    "nombre": "Pápulas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28",
+    "diagnosticos_vinculados": null
+  },
+  {
+    "id": 3185,
+    "categoria_id": 1145,
+    "nombre": "Pústulas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28",
+    "diagnosticos_vinculados": null
+  },
+  {
+    "id": 3186,
+    "categoria_id": 1145,
+    "nombre": "Comedones abiertos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28",
+    "diagnosticos_vinculados": null
+  },
+  {
+    "id": 3187,
+    "categoria_id": 1145,
+    "nombre": "Comedones cerrados",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28",
+    "diagnosticos_vinculados": null
+  },
+  {
+    "id": 3188,
+    "categoria_id": 1145,
+    "nombre": "Nódulos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28",
+    "diagnosticos_vinculados": null
+  },
+  {
+    "id": 3189,
+    "categoria_id": 1145,
+    "nombre": "Quistes",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28",
+    "diagnosticos_vinculados": null
+  },
+  {
+    "id": 3190,
+    "categoria_id": 1145,
+    "nombre": "Acné",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28",
+    "diagnosticos_vinculados": "Acné comedogénico;Acné vulgar;Acné papulopustuloso;Acné nódulo-quístico;Acné conglobata"
+  },
+  {
+    "id": 3191,
+    "categoria_id": 1146,
+    "nombre": "Máculas eritematosas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28",
+    "diagnosticos_vinculados": null
+  },
+  {
+    "id": 3192,
+    "categoria_id": 1146,
+    "nombre": "Hiperpigmentación post-inflamatoria (HPI)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28",
+    "diagnosticos_vinculados": null
+  },
+  {
+    "id": 3193,
+    "categoria_id": 1147,
+    "nombre": "Telangiectasias",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28",
+    "diagnosticos_vinculados": "Rosácea eritemato-teleangiectásica (Subtipo I);Rosácea papulopustulosa (Subtipo II);Rosácea fimatosa (Subtipo III)"
+  },
+  {
+    "id": 3194,
+    "categoria_id": 1147,
+    "nombre": "Sensibilidad / hipersensibilidad",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28",
+    "diagnosticos_vinculados": "Rosácea eritemato-teleangiectásica (Subtipo I);Rosácea papulopustulosa (Subtipo II);Rosácea fimatosa (Subtipo III)"
+  },
+  {
+    "id": 3195,
+    "categoria_id": 1147,
+    "nombre": "Eritema / flushing",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28",
+    "diagnosticos_vinculados": "Rosácea eritemato-teleangiectásica (Subtipo I);Rosácea papulopustulosa (Subtipo II);Rosácea fimatosa (Subtipo III)"
+  },
+  {
+    "id": 3196,
+    "categoria_id": 1147,
+    "nombre": "Engrosamiento cutáneo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28",
+    "diagnosticos_vinculados": "Rosácea eritemato-teleangiectásica (Subtipo I);Rosácea papulopustulosa (Subtipo II);Rosácea fimatosa (Subtipo III)"
+  },
+  {
+    "id": 3197,
+    "categoria_id": 1147,
+    "nombre": "Pápulas/pústulas sin comedones",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28",
+    "diagnosticos_vinculados": "Rosácea eritemato-teleangiectásica (Subtipo I);Rosácea papulopustulosa (Subtipo II);Rosácea fimatosa (Subtipo III)"
+  },
+  {
+    "id": 3198,
+    "categoria_id": 1148,
+    "nombre": "Cicatrices",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28",
+    "diagnosticos_vinculados": "Cicatriz atrófica;Cicatriz hipertrófica;Queloide;Cicatriz plana"
+  },
+  {
+    "id": 3199,
+    "categoria_id": 1149,
+    "nombre": "Mácula vascular",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28",
+    "diagnosticos_vinculados": "Angioma plano (Nevus flameus);Angioma senil o punto de rubí;Angioma en fresa"
+  },
+  {
+    "id": 3200,
+    "categoria_id": 1149,
+    "nombre": "Pápula vascular",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28",
+    "diagnosticos_vinculados": "Angioma plano (Nevus flameus);Angioma senil o punto de rubí;Angioma en fresa"
+  },
+  {
+    "id": 3201,
+    "categoria_id": 1150,
+    "nombre": "Mácula (mancha)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28",
+    "diagnosticos_vinculados": "Efélides (pecas);Melasma epidérmico;Melasma dérmico;Melasma mixto;Léntigo solar/senil;Nevus melanocítico;Ocronosis exógena"
+  },
+  {
+    "id": 3202,
+    "categoria_id": 1150,
+    "nombre": "Melasma",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28",
+    "diagnosticos_vinculados": "Efélides (pecas);Melasma epidérmico;Melasma dérmico;Melasma mixto;Léntigo solar/senil;Nevus melanocítico;Ocronosis exógena"
+  },
+  {
+    "id": 3203,
+    "categoria_id": 1151,
+    "nombre": "Arrugas finas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28",
+    "diagnosticos_vinculados": "Arrugas estáticas;Arrugas dinámicas/de expresión"
+  },
+  {
+    "id": 3204,
+    "categoria_id": 1151,
+    "nombre": "Arrugas profundas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28",
+    "diagnosticos_vinculados": "Arrugas estáticas;Arrugas dinámicas/de expresión"
+  },
+  {
+    "id": 3205,
+    "categoria_id": 1151,
+    "nombre": "Estrías",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28",
+    "diagnosticos_vinculados": "Arrugas estáticas;Arrugas dinámicas/de expresión"
+  },
+  {
+    "id": 3206,
+    "categoria_id": 1151,
+    "nombre": "Atrofia cutánea",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28",
+    "diagnosticos_vinculados": "Arrugas estáticas;Arrugas dinámicas/de expresión"
+  },
+  {
+    "id": 3207,
+    "categoria_id": 1152,
+    "nombre": "Habón (roncha)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28",
+    "diagnosticos_vinculados": "Urticaria;Dermografismo;Urticaria de contacto;Picaduras de insectos"
+  },
+  {
+    "id": 3208,
+    "categoria_id": 1153,
+    "nombre": "Vesículas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28",
+    "diagnosticos_vinculados": "Herpes simple;Herpes Zóster;Varicela;Dermatitis de contacto;Erisipela;Pénfigo vulgar;Reacciones medicamentosas graves;Lesiones por frío (congelación);Quemaduras de 2° grado"
+  },
+  {
+    "id": 3209,
+    "categoria_id": 1153,
+    "nombre": "Ampollas/flictenas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28",
+    "diagnosticos_vinculados": "Herpes simple;Herpes Zóster;Varicela;Dermatitis de contacto;Erisipela;Pénfigo vulgar;Reacciones medicamentosas graves;Lesiones por frío (congelación);Quemaduras de 2° grado"
+  },
+  {
+    "id": 3210,
+    "categoria_id": 1154,
+    "nombre": "Escama",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28",
+    "diagnosticos_vinculados": "Dermatitis seborreica;Dermatitis atópica;Dermatitis de contacto;Liquen plano;Psoriasis rosada de Gibert;Eritrodermia;Tiña corporis;Pitiriasis versicolor;Ictiosis;Queratosis actínica;Xerosis cutánea"
+  },
+  {
+    "id": 3211,
+    "categoria_id": 1154,
+    "nombre": "Excoriaciones",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28",
+    "diagnosticos_vinculados": "Dermatitis seborreica;Dermatitis atópica;Dermatitis de contacto;Liquen plano;Psoriasis rosada de Gibert;Eritrodermia;Tiña corporis;Pitiriasis versicolor;Ictiosis;Queratosis actínica;Xerosis cutánea"
+  },
+  {
+    "id": 3212,
+    "categoria_id": 1155,
+    "nombre": "Verruga",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28",
+    "diagnosticos_vinculados": "Verruga filiforme;Condilomas (verrugas genitales);VPH"
+  },
+  {
+    "id": 3213,
+    "categoria_id": 1156,
+    "nombre": "Pápula folicular queratósica",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28",
+    "diagnosticos_vinculados": "Queratosis pilaris"
+  },
+  {
+    "id": 3214,
+    "categoria_id": 1156,
+    "nombre": "Eritema",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28",
+    "diagnosticos_vinculados": "Queratosis pilaris"
+  },
+  {
+    "id": 3215,
+    "categoria_id": 1156,
+    "nombre": "Resequedad difusa",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28",
+    "diagnosticos_vinculados": "Queratosis pilaris"
+  },
+  {
+    "id": 3216,
+    "categoria_id": 1157,
+    "nombre": "Onicolisis",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28",
+    "diagnosticos_vinculados": "Onicomicosis"
+  },
+  {
+    "id": 3217,
+    "categoria_id": 1157,
+    "nombre": "Hiperqueratosis ungueal",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28",
+    "diagnosticos_vinculados": "Onicomicosis"
+  },
+  {
+    "id": 3218,
+    "categoria_id": 1157,
+    "nombre": "Engrosamiento ungueal",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28",
+    "diagnosticos_vinculados": "Onicomicosis"
+  },
+  {
+    "id": 3219,
+    "categoria_id": 1157,
+    "nombre": "Desintegración de lámina ungueal",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28",
+    "diagnosticos_vinculados": "Onicomicosis"
+  },
+  {
+    "id": 3365,
+    "categoria_id": 1145,
+    "nombre": "TEST_LESION_191028",
+    "es_maestro": 0,
+    "activo": 1,
+    "creado_en": "2025-09-27 00:10:28",
+    "diagnosticos_vinculados": null
+  }
+]

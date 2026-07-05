@@ -1,0 +1,195 @@
+{
+  "version": "1.0",
+  "model": "male_head",
+  "generatedAt": "2026-05-06T00:15:59.284Z",
+  "hairline": {
+    "topY": 1.9,
+    "bottomY": 0.6,
+    "tercioMedioBottomY": 0.1,
+    "tercioInferiorBottomY": -1,
+    "labelTop": "Hairline / Nacimiento del cabello",
+    "labelBottom": "Límite inferior tercio superior",
+    "labelMedioBottom": "Límite med./inf. (nariz)",
+    "labelInferiorBottom": "Límite inferior",
+    "colorTop": "#ff6b9d",
+    "colorBottom": "#f97316",
+    "colorMedioBottom": "#a78bfa",
+    "colorInferiorBottom": "#34d399"
+  },
+  "markers": [],
+  "referenceLines": [
+    {
+      "id": "line-1778024685723",
+      "type": "vertical",
+      "label": "Línea Media Nasal",
+      "color": "#facc15",
+      "visible": true,
+      "offset": 0
+    },
+    {
+      "id": "line-1778024695059",
+      "type": "vertical",
+      "label": "L. Pupilar Izq.",
+      "color": "#ffffff",
+      "visible": true,
+      "offset": -0.5
+    },
+    {
+      "id": "line-1778024734041",
+      "type": "vertical",
+      "label": "L. Pupilar Der.",
+      "color": "#ffffff",
+      "visible": true,
+      "offset": 0.5
+    },
+    {
+      "id": "line-1778024770443",
+      "type": "vertical",
+      "label": "Canto Interno Izq.",
+      "color": "#a3e635",
+      "visible": true,
+      "offset": -0.25
+    },
+    {
+      "id": "line-1778024817566",
+      "type": "vertical",
+      "label": "Canto Interno Der.",
+      "color": "#a3e635",
+      "visible": true,
+      "offset": 0.25
+    },
+    {
+      "id": "line-1778024877055",
+      "type": "vertical",
+      "label": "Canto Externo Izq.",
+      "color": "#fb923c",
+      "visible": true,
+      "offset": -0.71
+    },
+    {
+      "id": "line-1778024917356",
+      "type": "vertical",
+      "label": "Canto Externo Der.",
+      "color": "#fb923c",
+      "visible": true,
+      "offset": 0.72
+    },
+    {
+      "id": "line-1778024946247",
+      "type": "vertical",
+      "label": "Borde Iris Int. Izq.",
+      "color": "#c4b5fd",
+      "visible": true,
+      "offset": -0.4,
+      "dashed": true
+    },
+    {
+      "id": "line-1778024966112",
+      "type": "vertical",
+      "label": "Borde Iris Int. Der.",
+      "color": "#c4b5fd",
+      "visible": true,
+      "offset": 0.4,
+      "dashed": true
+    },
+    {
+      "id": "line-1778025033498",
+      "type": "horizontal",
+      "label": "1ª Arruga Frontal",
+      "color": "#f87171",
+      "visible": true,
+      "offset": 1.24
+    },
+    {
+      "id": "line-1778025104023",
+      "type": "horizontal",
+      "label": "Última Arruga Frontal",
+      "color": "#f87171",
+      "visible": true,
+      "offset": 1.74
+    },
+    {
+      "id": "line-1778025310815",
+      "type": "horizontal",
+      "label": "Intermedio Arrugas",
+      "color": "#fca5a5",
+      "visible": true,
+      "offset": 1.48
+    },
+    {
+      "id": "line-1778025417311",
+      "type": "two-points",
+      "label": "Diag. C.Int. Izq. → Ceja Der.",
+      "color": "#22d3ee",
+      "visible": true,
+      "offset": 0,
+      "dashed": true,
+      "anchors": [
+        { "x": -0.22643546257723016, "y": 0.7319555367469173, "z": 1.2757396480820513 },
+        { "x": 0.11486931108783585, "y": 1.0234608292279885, "z": 1.593984043881394 }
+      ]
+    },
+    {
+      "id": "line-1778025428583",
+      "type": "two-points",
+      "label": "Diag. C.Int. Der. → Ceja Izq.",
+      "color": "#22d3ee",
+      "visible": true,
+      "offset": 0,
+      "dashed": true,
+      "anchors": [
+        { "x": 0.20596774469169274, "y": 0.7278822181626192, "z": 1.2875006886154756 },
+        { "x": -0.10945870927746292, "y": 1.0172756347289509, "z": 1.5881614671952193 }
+      ]
+    },
+    {
+      "id": "line-1778025446677",
+      "type": "two-points",
+      "label": "Cola Ceja Izq. → Cola Ceja Der.",
+      "color": "#38bdf8",
+      "visible": true,
+      "offset": 0,
+      "dashed": true,
+      "anchors": [
+        { "x": -0.7713958166299704, "y": 1.0185494941963187, "z": 1.315057864481553 },
+        { "x": 0.774641619765616, "y": 1.009189700700242, "z": 1.3090132717409406 }
+      ]
+    }
+  ],
+  "editablePoints": [
+    { "id": "int-line-1778024685723-line-1778025033498", "type": "intersection", "x": -0.0022, "y": 1.2256, "z": 1.6101, "lineIds": ["line-1778024685723", "line-1778025033498"], "name": "Línea Media × 1ª Arruga Frontal" },
+    { "id": "int-line-1778024685723-line-1778025104023", "type": "intersection", "x": -0.0012, "y": 1.7344, "z": 1.3897, "lineIds": ["line-1778024685723", "line-1778025104023"], "name": "Línea Media × Última Arruga Frontal" },
+    { "id": "int-line-1778024685723-line-1778025310815", "type": "intersection", "x": -0.0013, "y": 1.4812, "z": 1.5185, "lineIds": ["line-1778024685723", "line-1778025310815"], "name": "Línea Media × Intermedio Arrugas" },
+    { "id": "int-line-1778024685723-line-1778025417311", "type": "intersection", "x": -0.0065, "y": 0.9111, "z": 1.6066, "lineIds": ["line-1778024685723", "line-1778025417311"], "name": "Línea Media × Diag. Canto Int. Izq." },
+    { "id": "int-line-1778024685723-line-1778025446677", "type": "intersection", "x": -0.0022, "y": 1.073, "z": 1.6224, "lineIds": ["line-1778024685723", "line-1778025446677"], "name": "Línea Media × Cola de Cejas" },
+    { "id": "int-line-1778024695059-line-1778025033498", "type": "intersection", "x": -0.5115, "y": 1.2358, "z": 1.4813, "lineIds": ["line-1778024695059", "line-1778025033498"], "name": "L. Pupilar Izq. × 1ª Arruga Frontal" },
+    { "id": "int-line-1778024695059-line-1778025104023", "type": "intersection", "x": -0.5077, "y": 1.734, "z": 1.2471, "lineIds": ["line-1778024695059", "line-1778025104023"], "name": "L. Pupilar Izq. × Última Arruga Frontal" },
+    { "id": "int-line-1778024695059-line-1778025310815", "type": "intersection", "x": -0.5076, "y": 1.4709, "z": 1.3944, "lineIds": ["line-1778024695059", "line-1778025310815"], "name": "L. Pupilar Izq. × Intermedio Arrugas" },
+    { "id": "int-line-1778024734041-line-1778025033498", "type": "intersection", "x": 0.5077, "y": 1.2438, "z": 1.4821, "lineIds": ["line-1778024734041", "line-1778025033498"], "name": "L. Pupilar Der. × 1ª Arruga Frontal" },
+    { "id": "int-line-1778024734041-line-1778025104023", "type": "intersection", "x": 0.5077, "y": 1.7355, "z": 1.2459, "lineIds": ["line-1778024734041", "line-1778025104023"], "name": "L. Pupilar Der. × Última Arruga Frontal" },
+    { "id": "int-line-1778024734041-line-1778025310815", "type": "intersection", "x": 0.5076, "y": 1.4716, "z": 1.3942, "lineIds": ["line-1778024734041", "line-1778025310815"], "name": "L. Pupilar Der. × Intermedio Arrugas" },
+    { "id": "int-line-1778024770443-line-1778025033498", "type": "intersection", "x": -0.2562, "y": 1.2379, "z": 1.5801, "lineIds": ["line-1778024770443", "line-1778025033498"], "name": "Canto Interno Izq. × 1ª Arruga Frontal" },
+    { "id": "int-line-1778024770443-line-1778025104023", "type": "intersection", "x": -0.2547, "y": 1.7355, "z": 1.3551, "lineIds": ["line-1778024770443", "line-1778025104023"], "name": "Canto Interno Izq. × Última Arruga Frontal" },
+    { "id": "int-line-1778024770443-line-1778025310815", "type": "intersection", "x": -0.2554, "y": 1.4767, "z": 1.4887, "lineIds": ["line-1778024770443", "line-1778025310815"], "name": "Canto Interno Izq. × Intermedio Arrugas" },
+    { "id": "int-line-1778024770443-line-1778025428583", "type": "intersection", "x": -0.254, "y": 1.092, "z": 1.6012, "lineIds": ["line-1778024770443", "line-1778025428583"], "name": "Canto Interno Izq. × Diag. Canto Int. Der." },
+    { "id": "int-line-1778024817566-line-1778025033498", "type": "intersection", "x": 0.2563, "y": 1.2384, "z": 1.58, "lineIds": ["line-1778024817566", "line-1778025033498"], "name": "Canto Interno Der. × 1ª Arruga Frontal" },
+    { "id": "int-line-1778024817566-line-1778025104023", "type": "intersection", "x": 0.2547, "y": 1.7405, "z": 1.3517, "lineIds": ["line-1778024817566", "line-1778025104023"], "name": "Canto Interno Der. × Última Arruga Frontal" },
+    { "id": "int-line-1778024817566-line-1778025417311", "type": "intersection", "x": 0.2554, "y": 1.474, "z": 1.49, "lineIds": ["line-1778024817566", "line-1778025417311"], "name": "Canto Interno Der. × Diag. Canto Int. Izq." },
+    { "id": "int-line-1778024877055-line-1778025033498", "type": "intersection", "x": -0.7257, "y": 1.2335, "z": 1.3093, "lineIds": ["line-1778024877055", "line-1778025033498"], "name": "Canto Externo Izq. × 1ª Arruga Frontal" },
+    { "id": "int-line-1778024877055-line-1778025104023", "type": "intersection", "x": -0.7228, "y": 1.7228, "z": 1.0577, "lineIds": ["line-1778024877055", "line-1778025104023"], "name": "Canto Externo Izq. × Última Arruga Frontal" },
+    { "id": "int-line-1778024877055-line-1778025310815", "type": "intersection", "x": -0.7213, "y": 1.4737, "z": 1.232, "lineIds": ["line-1778024877055", "line-1778025310815"], "name": "Canto Externo Izq. × Intermedio Arrugas" },
+    { "id": "int-line-1778024877055-line-1778025446677", "type": "intersection", "x": -0.7198, "y": 0.9786, "z": 1.3586, "lineIds": ["line-1778024877055", "line-1778025446677"], "name": "Canto Externo Izq. × Cola de Cejas" },
+    { "id": "int-line-1778024917356-line-1778025033498", "type": "intersection", "x": 0.7358, "y": 1.2445, "z": 1.2935, "lineIds": ["line-1778024917356", "line-1778025033498"], "name": "Canto Externo Der. × 1ª Arruga Frontal" },
+    { "id": "int-line-1778024917356-line-1778025104023", "type": "intersection", "x": 0.7328, "y": 1.721, "z": 1.0481, "lineIds": ["line-1778024917356", "line-1778025104023"], "name": "Canto Externo Der. × Última Arruga Frontal" },
+    { "id": "int-line-1778024917356-line-1778025310815", "type": "intersection", "x": 0.7314, "y": 1.4691, "z": 1.2265, "lineIds": ["line-1778024917356", "line-1778025310815"], "name": "Canto Externo Der. × Intermedio Arrugas" },
+    { "id": "int-line-1778024917356-line-1778025446677", "type": "intersection", "x": 0.7298, "y": 0.9585, "z": 1.3478, "lineIds": ["line-1778024917356", "line-1778025446677"], "name": "Canto Externo Der. × Cola de Cejas" },
+    { "id": "int-line-1778024966112-line-1778025446677", "type": "intersection", "x": 0.3979, "y": 1.0157, "z": 1.5207, "lineIds": ["line-1778024966112", "line-1778025446677"], "name": "Borde Iris Int. Der. × Cola de Cejas" },
+    { "id": "int-line-1778025417311-line-1778025446677", "type": "intersection", "x": 0.1021, "y": 1.0129, "z": 1.5913, "lineIds": ["line-1778025417311", "line-1778025446677"], "name": "Diag. C.Int. Izq. × Cola de Cejas" },
+    { "id": "int-line-1778025428583-line-1778025446677", "type": "intersection", "x": -0.1065, "y": 1.0145, "z": 1.5892, "lineIds": ["line-1778025428583", "line-1778025446677"], "name": "Diag. C.Int. Der. × Cola de Cejas" },
+    { "id": "free-1778025953922", "type": "free", "x": 0.3927, "y": 1.1371, "z": 1.5631, "lineIds": [], "name": "Punto libre 1" },
+    { "id": "free-1778026071430", "type": "free", "x": 0.5033, "y": 1.1523, "z": 1.5143, "lineIds": [], "name": "Punto libre 2" },
+    { "id": "free-1778026447614", "type": "free", "x": -0.3832, "y": 1.1333, "z": 1.5673, "lineIds": [], "name": "Punto libre 3" },
+    { "id": "free-1778026453590", "type": "free", "x": -0.5017, "y": 1.1444, "z": 1.5167, "lineIds": [], "name": "Punto libre 4" },
+    { "id": "free-1778026508250", "type": "free", "x": 0.2512, "y": 1.0986, "z": 1.6112, "lineIds": [], "name": "Punto libre 5" }
+  ]
+}

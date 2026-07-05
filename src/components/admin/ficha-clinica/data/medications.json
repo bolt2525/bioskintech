@@ -1,0 +1,3125 @@
+[
+  {
+    "id": 1,
+    "categoria": "analgesicos",
+    "elemento": "Paracetamol 500mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 2,
+    "categoria": "analgesicos",
+    "elemento": "Paracetamol 1g",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 3,
+    "categoria": "analgesicos",
+    "elemento": "Ibuprofeno 400mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 4,
+    "categoria": "analgesicos",
+    "elemento": "Ibuprofeno 600mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 5,
+    "categoria": "analgesicos",
+    "elemento": "Naproxeno 250mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 6,
+    "categoria": "analgesicos",
+    "elemento": "Naproxeno 500mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 7,
+    "categoria": "analgesicos",
+    "elemento": "Diclofenaco 50mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 8,
+    "categoria": "analgesicos",
+    "elemento": "Ketorolaco 10mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 9,
+    "categoria": "analgesicos",
+    "elemento": "Metamizol 500mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 10,
+    "categoria": "analgesicos",
+    "elemento": "Celecoxib 200mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 11,
+    "categoria": "antibioticos",
+    "elemento": "Amoxicilina 500mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 12,
+    "categoria": "antibioticos",
+    "elemento": "Amoxicilina + Clavulánico 875/125mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 13,
+    "categoria": "antibioticos",
+    "elemento": "Cefalexina 500mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 14,
+    "categoria": "antibioticos",
+    "elemento": "Azitromicina 500mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 15,
+    "categoria": "antibioticos",
+    "elemento": "Clindamicina 300mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 16,
+    "categoria": "antibioticos",
+    "elemento": "Doxiciclina 100mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 17,
+    "categoria": "antibioticos",
+    "elemento": "Ciprofloxacino 500mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 18,
+    "categoria": "antibioticos",
+    "elemento": "Eritromicina 500mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 19,
+    "categoria": "antibioticos",
+    "elemento": "Claritromicina 500mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 20,
+    "categoria": "antihistaminicos",
+    "elemento": "Loratadina 10mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 21,
+    "categoria": "antihistaminicos",
+    "elemento": "Cetirizina 10mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 22,
+    "categoria": "antihistaminicos",
+    "elemento": "Desloratadina 5mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 23,
+    "categoria": "antihistaminicos",
+    "elemento": "Levocetirizina 5mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 24,
+    "categoria": "antihistaminicos",
+    "elemento": "Fexofenadina 120mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 25,
+    "categoria": "antihistaminicos",
+    "elemento": "Fexofenadina 180mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 26,
+    "categoria": "antihistaminicos",
+    "elemento": "Hidroxizina 25mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 27,
+    "categoria": "antihistaminicos",
+    "elemento": "Difenhidramina 25mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 28,
+    "categoria": "corticoides_orales",
+    "elemento": "Prednisona 5mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 29,
+    "categoria": "corticoides_orales",
+    "elemento": "Prednisona 20mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 30,
+    "categoria": "corticoides_orales",
+    "elemento": "Prednisolona 5mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 31,
+    "categoria": "corticoides_orales",
+    "elemento": "Metilprednisolona 4mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 32,
+    "categoria": "corticoides_orales",
+    "elemento": "Metilprednisolona 16mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 33,
+    "categoria": "corticoides_orales",
+    "elemento": "Dexametasona 0.5mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 34,
+    "categoria": "corticoides_orales",
+    "elemento": "Dexametasona 4mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 35,
+    "categoria": "corticoides_orales",
+    "elemento": "Betametasona 0.5mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 36,
+    "categoria": "corticoides_topicos",
+    "elemento": "Hidrocortisona 1% crema",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 37,
+    "categoria": "corticoides_topicos",
+    "elemento": "Betametasona 0.05% crema",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 38,
+    "categoria": "corticoides_topicos",
+    "elemento": "Clobetasol 0.05% crema",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 39,
+    "categoria": "corticoides_topicos",
+    "elemento": "Mometasona 0.1% crema",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 40,
+    "categoria": "corticoides_topicos",
+    "elemento": "Triamcinolona 0.1% crema",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 41,
+    "categoria": "corticoides_topicos",
+    "elemento": "Fluticasona 0.05% crema",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 42,
+    "categoria": "antiacne",
+    "elemento": "Isotretinoína 10mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 43,
+    "categoria": "antiacne",
+    "elemento": "Isotretinoína 20mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 44,
+    "categoria": "antiacne",
+    "elemento": "Tretinoína 0.025% gel",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 45,
+    "categoria": "antiacne",
+    "elemento": "Tretinoína 0.05% gel",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 46,
+    "categoria": "antiacne",
+    "elemento": "Adapaleno 0.1% gel",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 47,
+    "categoria": "antiacne",
+    "elemento": "Clindamicina 1% gel",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 48,
+    "categoria": "antiacne",
+    "elemento": "Eritromicina 2% gel",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 49,
+    "categoria": "antiacne",
+    "elemento": "Peróxido de Benzoilo 2.5%",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 50,
+    "categoria": "antiacne",
+    "elemento": "Peróxido de Benzoilo 5%",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 51,
+    "categoria": "antimicroticos",
+    "elemento": "Fluconazol 150mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 52,
+    "categoria": "antimicroticos",
+    "elemento": "Itraconazol 100mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 53,
+    "categoria": "antimicroticos",
+    "elemento": "Ketoconazol 2% crema",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 54,
+    "categoria": "antimicroticos",
+    "elemento": "Clotrimazol 1% crema",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 55,
+    "categoria": "antimicroticos",
+    "elemento": "Miconazol 2% crema",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 56,
+    "categoria": "antimicroticos",
+    "elemento": "Terbinafina 1% crema",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 57,
+    "categoria": "antimicroticos",
+    "elemento": "Ciclopirox 8% laca",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 58,
+    "categoria": "antivirales",
+    "elemento": "Aciclovir 200mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 59,
+    "categoria": "antivirales",
+    "elemento": "Aciclovir 400mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 60,
+    "categoria": "antivirales",
+    "elemento": "Valaciclovir 500mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 61,
+    "categoria": "antivirales",
+    "elemento": "Famciclovir 250mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 62,
+    "categoria": "antivirales",
+    "elemento": "Aciclovir 5% crema",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 63,
+    "categoria": "despigmentantes",
+    "elemento": "Hidroquinona 2%",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 64,
+    "categoria": "despigmentantes",
+    "elemento": "Hidroquinona 4%",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 65,
+    "categoria": "despigmentantes",
+    "elemento": "Tretinoína 0.025%",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 66,
+    "categoria": "despigmentantes",
+    "elemento": "Ácido Kójico 2%",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 67,
+    "categoria": "despigmentantes",
+    "elemento": "Arbutina 2%",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 68,
+    "categoria": "despigmentantes",
+    "elemento": "Vitamina C 15%",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 69,
+    "categoria": "despigmentantes",
+    "elemento": "Niacinamida 5%",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 70,
+    "categoria": "fotoprotectores",
+    "elemento": "SPF 30",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 71,
+    "categoria": "fotoprotectores",
+    "elemento": "SPF 50",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 72,
+    "categoria": "fotoprotectores",
+    "elemento": "SPF 50+",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 73,
+    "categoria": "fotoprotectores",
+    "elemento": "Filtro físico",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 74,
+    "categoria": "fotoprotectores",
+    "elemento": "Filtro químico",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 75,
+    "categoria": "fotoprotectores",
+    "elemento": "Filtro mixto",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 76,
+    "categoria": "fotoprotectores",
+    "elemento": "Con color",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 77,
+    "categoria": "fotoprotectores",
+    "elemento": "Base fluida",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 78,
+    "categoria": "paracetamol",
+    "elemento": "500mg-1g cada 6-8h (máx 4g/día)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 79,
+    "categoria": "ibuprofeno",
+    "elemento": "400-600mg cada 8h (máx 2.4g/día)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 80,
+    "categoria": "naproxeno",
+    "elemento": "250-500mg cada 12h",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 81,
+    "categoria": "diclofenaco",
+    "elemento": "50mg cada 8h",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 82,
+    "categoria": "amoxicilina",
+    "elemento": "500mg cada 8h x 7-10 días",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 83,
+    "categoria": "azitromicina",
+    "elemento": "500mg/día x 3 días",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 84,
+    "categoria": "doxiciclina",
+    "elemento": "100mg cada 12h x 7-14 días",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 85,
+    "categoria": "clindamicina",
+    "elemento": "300mg cada 8h x 7-10 días",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 86,
+    "categoria": "loratadina",
+    "elemento": "10mg/día",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 87,
+    "categoria": "cetirizina",
+    "elemento": "10mg/día",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 88,
+    "categoria": "desloratadina",
+    "elemento": "5mg/día",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 89,
+    "categoria": "levocetirizina",
+    "elemento": "5mg/día",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 90,
+    "categoria": "prednisona",
+    "elemento": "0.5-1mg/kg/día, reducción gradual",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 91,
+    "categoria": "prednisolona",
+    "elemento": "0.5-1mg/kg/día",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 92,
+    "categoria": "metilprednisolona",
+    "elemento": "4-48mg/día según indicación",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 93,
+    "categoria": "vias_administracion",
+    "elemento": "Oral",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 94,
+    "categoria": "vias_administracion",
+    "elemento": "Tópica",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 95,
+    "categoria": "vias_administracion",
+    "elemento": "Intramuscular",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 96,
+    "categoria": "vias_administracion",
+    "elemento": "Intravenosa",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 97,
+    "categoria": "vias_administracion",
+    "elemento": "Subcutánea",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 98,
+    "categoria": "vias_administracion",
+    "elemento": "Intralesional",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 99,
+    "categoria": "vias_administracion",
+    "elemento": "Aplicación local",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 100,
+    "categoria": "vias_administracion",
+    "elemento": "Vía rectal",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 101,
+    "categoria": "vias_administracion",
+    "elemento": "Inhalada",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 102,
+    "categoria": "vias_administracion",
+    "elemento": "Sublingual",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 103,
+    "categoria": "frecuencias_administracion",
+    "elemento": "Una vez al día",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 104,
+    "categoria": "frecuencias_administracion",
+    "elemento": "Dos veces al día",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 105,
+    "categoria": "frecuencias_administracion",
+    "elemento": "Tres veces al día",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 106,
+    "categoria": "frecuencias_administracion",
+    "elemento": "Cada 4 horas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 107,
+    "categoria": "frecuencias_administracion",
+    "elemento": "Cada 6 horas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 108,
+    "categoria": "frecuencias_administracion",
+    "elemento": "Cada 8 horas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 109,
+    "categoria": "frecuencias_administracion",
+    "elemento": "Cada 12 horas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 110,
+    "categoria": "frecuencias_administracion",
+    "elemento": "Cada 24 horas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 111,
+    "categoria": "frecuencias_administracion",
+    "elemento": "Según necesidad",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 112,
+    "categoria": "frecuencias_administracion",
+    "elemento": "Dosis única",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 113,
+    "categoria": "frecuencias_administracion",
+    "elemento": "Dos veces por semana",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 114,
+    "categoria": "frecuencias_administracion",
+    "elemento": "Una vez por semana",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 115,
+    "categoria": "duracion_tratamiento",
+    "elemento": "3 días",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 116,
+    "categoria": "duracion_tratamiento",
+    "elemento": "5 días",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 117,
+    "categoria": "duracion_tratamiento",
+    "elemento": "7 días",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 118,
+    "categoria": "duracion_tratamiento",
+    "elemento": "10 días",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 119,
+    "categoria": "duracion_tratamiento",
+    "elemento": "14 días",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 120,
+    "categoria": "duracion_tratamiento",
+    "elemento": "3 semanas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 121,
+    "categoria": "duracion_tratamiento",
+    "elemento": "4 semanas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 122,
+    "categoria": "duracion_tratamiento",
+    "elemento": "6 semanas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 123,
+    "categoria": "duracion_tratamiento",
+    "elemento": "8 semanas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 124,
+    "categoria": "duracion_tratamiento",
+    "elemento": "3 meses",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 125,
+    "categoria": "duracion_tratamiento",
+    "elemento": "6 meses",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 126,
+    "categoria": "duracion_tratamiento",
+    "elemento": "Tratamiento continuo",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 127,
+    "categoria": "duracion_tratamiento",
+    "elemento": "Hasta mejoría clínica",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 128,
+    "categoria": "post_procedimiento",
+    "elemento": "Profilaxis antibiótica",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 129,
+    "categoria": "post_procedimiento",
+    "elemento": "Control del dolor",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 130,
+    "categoria": "post_procedimiento",
+    "elemento": "Reducir inflamación",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 131,
+    "categoria": "post_procedimiento",
+    "elemento": "Prevenir infección",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 132,
+    "categoria": "post_procedimiento",
+    "elemento": "Acelerar cicatrización",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 133,
+    "categoria": "dermatologia_general",
+    "elemento": "Acné",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 134,
+    "categoria": "dermatologia_general",
+    "elemento": "Rosácea",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 135,
+    "categoria": "dermatologia_general",
+    "elemento": "Dermatitis",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 136,
+    "categoria": "dermatologia_general",
+    "elemento": "Eccema",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 137,
+    "categoria": "dermatologia_general",
+    "elemento": "Psoriasis",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 138,
+    "categoria": "dermatologia_general",
+    "elemento": "Infecciones fúngicas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 139,
+    "categoria": "dermatologia_general",
+    "elemento": "Herpes simple",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 140,
+    "categoria": "dermatologia_general",
+    "elemento": "Melasma",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 141,
+    "categoria": "dermatologia_general",
+    "elemento": "Hiperpigmentación",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 142,
+    "categoria": "medicina_estetica",
+    "elemento": "Pre-tratamiento láser",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 143,
+    "categoria": "medicina_estetica",
+    "elemento": "Post-peeling químico",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 144,
+    "categoria": "medicina_estetica",
+    "elemento": "Post-inyecciones",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 145,
+    "categoria": "medicina_estetica",
+    "elemento": "Mantenimiento resultados",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 146,
+    "categoria": "medicina_estetica",
+    "elemento": "Prevención complicaciones",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 147,
+    "categoria": "contraindicaciones_generales",
+    "elemento": "Alergia conocida",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 148,
+    "categoria": "contraindicaciones_generales",
+    "elemento": "Embarazo",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 149,
+    "categoria": "contraindicaciones_generales",
+    "elemento": "Lactancia",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 150,
+    "categoria": "contraindicaciones_generales",
+    "elemento": "Insuficiencia renal",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 151,
+    "categoria": "contraindicaciones_generales",
+    "elemento": "Insuficiencia hepática",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 152,
+    "categoria": "contraindicaciones_generales",
+    "elemento": "Úlcera péptica activa",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 153,
+    "categoria": "contraindicaciones_generales",
+    "elemento": "Anticoagulación",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 154,
+    "categoria": "contraindicaciones_generales",
+    "elemento": "Edad pediátrica",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 155,
+    "categoria": "contraindicaciones_generales",
+    "elemento": "Interacciones medicamentosas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 156,
+    "categoria": "efectos_secundarios_frecuentes",
+    "elemento": "Molestias gastrointestinales",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 157,
+    "categoria": "efectos_secundarios_frecuentes",
+    "elemento": "Somnolencia",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 158,
+    "categoria": "efectos_secundarios_frecuentes",
+    "elemento": "Sequedad bucal",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 159,
+    "categoria": "efectos_secundarios_frecuentes",
+    "elemento": "Irritación local",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 160,
+    "categoria": "efectos_secundarios_frecuentes",
+    "elemento": "Náuseas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 161,
+    "categoria": "efectos_secundarios_frecuentes",
+    "elemento": "Cefalea",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 162,
+    "categoria": "efectos_secundarios_frecuentes",
+    "elemento": "Mareos",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 163,
+    "categoria": "efectos_secundarios_frecuentes",
+    "elemento": "Reacciones cutáneas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 164,
+    "categoria": "efectos_secundarios_frecuentes",
+    "elemento": "Cambios de apetito",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 165,
+    "categoria": "precauciones_especiales",
+    "elemento": "Tomar con alimentos",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 166,
+    "categoria": "precauciones_especiales",
+    "elemento": "Evitar alcohol",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 167,
+    "categoria": "precauciones_especiales",
+    "elemento": "No exposición solar",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 168,
+    "categoria": "precauciones_especiales",
+    "elemento": "Usar fotoprotección",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 169,
+    "categoria": "precauciones_especiales",
+    "elemento": "Control analítico",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 170,
+    "categoria": "precauciones_especiales",
+    "elemento": "Monitoreo función renal",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 171,
+    "categoria": "precauciones_especiales",
+    "elemento": "Vigilar signos alergia",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 172,
+    "categoria": "precauciones_especiales",
+    "elemento": "No suspender bruscamente",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 173,
+    "categoria": "precauciones_especiales",
+    "elemento": "Reducción gradual dosis",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 174,
+    "categoria": "interacciones_importantes",
+    "elemento": "Anticoagulantes + AINES",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 175,
+    "categoria": "interacciones_importantes",
+    "elemento": "Isotretinoína + Tetraciclinas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 176,
+    "categoria": "interacciones_importantes",
+    "elemento": "Corticoides + Anticoagulantes",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 177,
+    "categoria": "interacciones_importantes",
+    "elemento": "Retinoides + Vitamina A",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 178,
+    "categoria": "interacciones_importantes",
+    "elemento": "Antibióticos + Anticonceptivos",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 179,
+    "categoria": "interacciones_importantes",
+    "elemento": "Antimicóticos + Estatinas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 23271,
+    "categoria": "dosis_medicamento",
+    "elemento": "1 mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.477329"
+  },
+  {
+    "id": 23272,
+    "categoria": "dosis_medicamento",
+    "elemento": "2 mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23273,
+    "categoria": "dosis_medicamento",
+    "elemento": "5 mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23274,
+    "categoria": "dosis_medicamento",
+    "elemento": "10 mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23275,
+    "categoria": "dosis_medicamento",
+    "elemento": "25 mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23276,
+    "categoria": "dosis_medicamento",
+    "elemento": "50 mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23277,
+    "categoria": "dosis_medicamento",
+    "elemento": "100 mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23278,
+    "categoria": "dosis_medicamento",
+    "elemento": "250 mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23279,
+    "categoria": "dosis_medicamento",
+    "elemento": "500 mg",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23280,
+    "categoria": "dosis_medicamento",
+    "elemento": "1 g",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23281,
+    "categoria": "dosis_medicamento",
+    "elemento": "2 g",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23282,
+    "categoria": "dosis_medicamento",
+    "elemento": "5 ml",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23283,
+    "categoria": "dosis_medicamento",
+    "elemento": "10 ml",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23284,
+    "categoria": "dosis_medicamento",
+    "elemento": "15 ml",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23285,
+    "categoria": "dosis_medicamento",
+    "elemento": "20 ml",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23286,
+    "categoria": "dosis_medicamento",
+    "elemento": "1 cucharadita",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23287,
+    "categoria": "dosis_medicamento",
+    "elemento": "1 cucharada",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23288,
+    "categoria": "dosis_medicamento",
+    "elemento": "2 cucharadas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23289,
+    "categoria": "dosis_medicamento",
+    "elemento": "1/2 tableta",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23290,
+    "categoria": "dosis_medicamento",
+    "elemento": "1 tableta",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23291,
+    "categoria": "dosis_medicamento",
+    "elemento": "2 tabletas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23292,
+    "categoria": "dosis_medicamento",
+    "elemento": "1 cápsula",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23293,
+    "categoria": "dosis_medicamento",
+    "elemento": "2 cápsulas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23294,
+    "categoria": "dosis_medicamento",
+    "elemento": "Aplicar capa fina",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23295,
+    "categoria": "dosis_medicamento",
+    "elemento": "Aplicar generosamente",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23296,
+    "categoria": "dosis_medicamento",
+    "elemento": "1-2 gotas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23297,
+    "categoria": "dosis_medicamento",
+    "elemento": "2-3 gotas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23298,
+    "categoria": "dosis_medicamento",
+    "elemento": "1 puff",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23299,
+    "categoria": "dosis_medicamento",
+    "elemento": "2 puffs",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23300,
+    "categoria": "dosis_medicamento",
+    "elemento": "Según necesidad",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23301,
+    "categoria": "presentacion_medicamento",
+    "elemento": "Cápsula de liberación prolongada (TEST)",
+    "descripcion": "Forma farmacéutica de prueba para catálogos maestros",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23302,
+    "categoria": "presentacion_medicamento",
+    "elemento": "Formulación de prueba SYNC-TEST",
+    "descripcion": "Elemento de prueba para verificar sincronización",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23303,
+    "categoria": "presentacion_medicamento",
+    "elemento": "Tableta",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23304,
+    "categoria": "presentacion_medicamento",
+    "elemento": "Cápsula",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23305,
+    "categoria": "presentacion_medicamento",
+    "elemento": "Comprimido",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23306,
+    "categoria": "presentacion_medicamento",
+    "elemento": "Gragea",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23307,
+    "categoria": "presentacion_medicamento",
+    "elemento": "Suspensión oral",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23308,
+    "categoria": "presentacion_medicamento",
+    "elemento": "Jarabe",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23309,
+    "categoria": "presentacion_medicamento",
+    "elemento": "Solución oral",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23310,
+    "categoria": "presentacion_medicamento",
+    "elemento": "Gotas orales",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23311,
+    "categoria": "presentacion_medicamento",
+    "elemento": "Crema",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23312,
+    "categoria": "presentacion_medicamento",
+    "elemento": "Pomada",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23313,
+    "categoria": "presentacion_medicamento",
+    "elemento": "Gel",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23314,
+    "categoria": "presentacion_medicamento",
+    "elemento": "Loción",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23315,
+    "categoria": "presentacion_medicamento",
+    "elemento": "Ungüento",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23316,
+    "categoria": "presentacion_medicamento",
+    "elemento": "Spray",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23317,
+    "categoria": "presentacion_medicamento",
+    "elemento": "Aerosol",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23318,
+    "categoria": "presentacion_medicamento",
+    "elemento": "Parche",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23319,
+    "categoria": "presentacion_medicamento",
+    "elemento": "Supositorio",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23320,
+    "categoria": "presentacion_medicamento",
+    "elemento": "Óvulo",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23321,
+    "categoria": "presentacion_medicamento",
+    "elemento": "Ampolla",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23322,
+    "categoria": "presentacion_medicamento",
+    "elemento": "Vial",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23323,
+    "categoria": "presentacion_medicamento",
+    "elemento": "Solución inyectable",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23324,
+    "categoria": "presentacion_medicamento",
+    "elemento": "Polvo para suspensión",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23325,
+    "categoria": "presentacion_medicamento",
+    "elemento": "Solución oftálmica",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23326,
+    "categoria": "presentacion_medicamento",
+    "elemento": "Pomada oftálmica",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23327,
+    "categoria": "presentacion_medicamento",
+    "elemento": "Solución ótica",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23328,
+    "categoria": "presentacion_medicamento",
+    "elemento": "Spray nasal",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23329,
+    "categoria": "presentacion_medicamento",
+    "elemento": "Gotas nasales",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23330,
+    "categoria": "presentacion_medicamento",
+    "elemento": "Inhalador",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23331,
+    "categoria": "frecuencia_medicamento",
+    "elemento": "Una vez al día",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23332,
+    "categoria": "frecuencia_medicamento",
+    "elemento": "Dos veces al día",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23333,
+    "categoria": "frecuencia_medicamento",
+    "elemento": "Tres veces al día",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23334,
+    "categoria": "frecuencia_medicamento",
+    "elemento": "Cuatro veces al día",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23335,
+    "categoria": "frecuencia_medicamento",
+    "elemento": "Cada 4 horas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23336,
+    "categoria": "frecuencia_medicamento",
+    "elemento": "Cada 6 horas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23337,
+    "categoria": "frecuencia_medicamento",
+    "elemento": "Cada 8 horas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23338,
+    "categoria": "frecuencia_medicamento",
+    "elemento": "Cada 12 horas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23339,
+    "categoria": "frecuencia_medicamento",
+    "elemento": "Cada 24 horas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23340,
+    "categoria": "frecuencia_medicamento",
+    "elemento": "Cada 48 horas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23341,
+    "categoria": "frecuencia_medicamento",
+    "elemento": "Una vez por semana",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23342,
+    "categoria": "frecuencia_medicamento",
+    "elemento": "Dos veces por semana",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23343,
+    "categoria": "frecuencia_medicamento",
+    "elemento": "Según necesidad",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23344,
+    "categoria": "frecuencia_medicamento",
+    "elemento": "En ayunas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23345,
+    "categoria": "frecuencia_medicamento",
+    "elemento": "Con las comidas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23346,
+    "categoria": "frecuencia_medicamento",
+    "elemento": "Después de las comidas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23347,
+    "categoria": "frecuencia_medicamento",
+    "elemento": "Antes de dormir",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23348,
+    "categoria": "frecuencia_medicamento",
+    "elemento": "Al despertar",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23349,
+    "categoria": "frecuencia_medicamento",
+    "elemento": "Cada 30 minutos",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23350,
+    "categoria": "frecuencia_medicamento",
+    "elemento": "Cada hora",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23351,
+    "categoria": "frecuencia_medicamento",
+    "elemento": "Cada 2 horas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23352,
+    "categoria": "via_administracion",
+    "elemento": "Oral",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23353,
+    "categoria": "via_administracion",
+    "elemento": "Sublingual",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23354,
+    "categoria": "via_administracion",
+    "elemento": "Tópica",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23355,
+    "categoria": "via_administracion",
+    "elemento": "Cutánea",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23356,
+    "categoria": "via_administracion",
+    "elemento": "Intramuscular",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23357,
+    "categoria": "via_administracion",
+    "elemento": "Intravenosa",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23358,
+    "categoria": "via_administracion",
+    "elemento": "Subcutánea",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23359,
+    "categoria": "via_administracion",
+    "elemento": "Oftálmica",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23360,
+    "categoria": "via_administracion",
+    "elemento": "Ótica",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23361,
+    "categoria": "via_administracion",
+    "elemento": "Nasal",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23362,
+    "categoria": "via_administracion",
+    "elemento": "Rectal",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23363,
+    "categoria": "via_administracion",
+    "elemento": "Vaginal",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23364,
+    "categoria": "via_administracion",
+    "elemento": "Inhalatoria",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23365,
+    "categoria": "via_administracion",
+    "elemento": "Transdérmica",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23366,
+    "categoria": "via_administracion",
+    "elemento": "Bucal",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23367,
+    "categoria": "via_administracion",
+    "elemento": "Intralesional",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23368,
+    "categoria": "via_administracion",
+    "elemento": "Epidural",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23369,
+    "categoria": "via_administracion",
+    "elemento": "Intratecal",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23370,
+    "categoria": "via_administracion",
+    "elemento": "Intraarticular",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23371,
+    "categoria": "via_administracion",
+    "elemento": "Intradermica",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.478338"
+  },
+  {
+    "id": 23372,
+    "categoria": "turno_medicamento",
+    "elemento": "Mañana",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.482746"
+  },
+  {
+    "id": 23373,
+    "categoria": "turno_medicamento",
+    "elemento": "Tarde",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.482746"
+  },
+  {
+    "id": 23374,
+    "categoria": "turno_medicamento",
+    "elemento": "Noche",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.482746"
+  },
+  {
+    "id": 23375,
+    "categoria": "turno_medicamento",
+    "elemento": "Mañana y tarde",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.482746"
+  },
+  {
+    "id": 23376,
+    "categoria": "turno_medicamento",
+    "elemento": "Mañana y noche",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.482746"
+  },
+  {
+    "id": 23377,
+    "categoria": "turno_medicamento",
+    "elemento": "Tarde y noche",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.482746"
+  },
+  {
+    "id": 23378,
+    "categoria": "turno_medicamento",
+    "elemento": "Mañana, tarde y noche",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.482746"
+  },
+  {
+    "id": 23379,
+    "categoria": "turno_medicamento",
+    "elemento": "Con el desayuno",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.482746"
+  },
+  {
+    "id": 23380,
+    "categoria": "turno_medicamento",
+    "elemento": "Con el almuerzo",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.482746"
+  },
+  {
+    "id": 23381,
+    "categoria": "turno_medicamento",
+    "elemento": "Con la cena",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.482746"
+  },
+  {
+    "id": 23382,
+    "categoria": "turno_medicamento",
+    "elemento": "Entre comidas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.482746"
+  },
+  {
+    "id": 23383,
+    "categoria": "turno_medicamento",
+    "elemento": "En ayunas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.482746"
+  },
+  {
+    "id": 23384,
+    "categoria": "turno_medicamento",
+    "elemento": "Antes de dormir",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.482746"
+  },
+  {
+    "id": 23385,
+    "categoria": "turno_medicamento",
+    "elemento": "Al despertar",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.482746"
+  },
+  {
+    "id": 23386,
+    "categoria": "turno_medicamento",
+    "elemento": "Día",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.482746"
+  },
+  {
+    "id": 23387,
+    "categoria": "turno_medicamento",
+    "elemento": "Todo el día",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28T19:13:20.482746"
+  },
+  {
+    "id": 36992,
+    "categoria": "medicina_estetica",
+    "elemento": "Ácido Hialurónico",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 36993,
+    "categoria": "medicina_estetica",
+    "elemento": "Toxina Botulínica",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 36994,
+    "categoria": "medicina_estetica",
+    "elemento": "Hidroxiapatita de Calcio",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 36995,
+    "categoria": "medicina_estetica",
+    "elemento": "Policaprolactona",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 36996,
+    "categoria": "medicina_estetica",
+    "elemento": "Colágeno",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 36997,
+    "categoria": "medicina_estetica",
+    "elemento": "Plasma Rico en Plaquetas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 36998,
+    "categoria": "antioxidantes",
+    "elemento": "Vitamina C",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 36999,
+    "categoria": "antioxidantes",
+    "elemento": "Vitamina E",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37000,
+    "categoria": "antioxidantes",
+    "elemento": "Resveratrol",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37001,
+    "categoria": "antioxidantes",
+    "elemento": "Glutatión",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37002,
+    "categoria": "antioxidantes",
+    "elemento": "Coenzima Q10",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37003,
+    "categoria": "antioxidantes",
+    "elemento": "Ácido Lipóico",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37004,
+    "categoria": "antioxidantes",
+    "elemento": "Selenio",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37005,
+    "categoria": "acidos_esteticos",
+    "elemento": "Ácido Glicólico",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37006,
+    "categoria": "acidos_esteticos",
+    "elemento": "Ácido Salicílico",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37007,
+    "categoria": "acidos_esteticos",
+    "elemento": "Ácido Kojico",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37008,
+    "categoria": "acidos_esteticos",
+    "elemento": "Ácido Retinoico",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37009,
+    "categoria": "acidos_esteticos",
+    "elemento": "Ácido Láctico",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37010,
+    "categoria": "acidos_esteticos",
+    "elemento": "Ácido Mandélico",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37011,
+    "categoria": "acidos_esteticos",
+    "elemento": "Ácido Azelaico",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37012,
+    "categoria": "acidos_esteticos",
+    "elemento": "Ácido Tricloroacético",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37013,
+    "categoria": "despigmentantes",
+    "elemento": "Hidroquinona",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37014,
+    "categoria": "despigmentantes",
+    "elemento": "Tretinoin",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37015,
+    "categoria": "despigmentantes",
+    "elemento": "Arbutina",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37016,
+    "categoria": "despigmentantes",
+    "elemento": "Niacinamida",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37017,
+    "categoria": "despigmentantes",
+    "elemento": "Kojic Acid",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37018,
+    "categoria": "despigmentantes",
+    "elemento": "Vitamina C",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37019,
+    "categoria": "despigmentantes",
+    "elemento": "Ácido Glicólico",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37020,
+    "categoria": "fotoprotectores",
+    "elemento": "Óxido de Zinc",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37021,
+    "categoria": "fotoprotectores",
+    "elemento": "Dióxido de Titanio",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37022,
+    "categoria": "fotoprotectores",
+    "elemento": "Avobenzona",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37023,
+    "categoria": "fotoprotectores",
+    "elemento": "Octinoxato",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37024,
+    "categoria": "fotoprotectores",
+    "elemento": "Octisalato",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37025,
+    "categoria": "fotoprotectores",
+    "elemento": "Homosalato",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37026,
+    "categoria": "fotoprotectores",
+    "elemento": "Mexoryl",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37027,
+    "categoria": "post_procedimiento",
+    "elemento": "Alantoína",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37028,
+    "categoria": "post_procedimiento",
+    "elemento": "Dexpantenol",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37029,
+    "categoria": "post_procedimiento",
+    "elemento": "Centella Asiática",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37030,
+    "categoria": "post_procedimiento",
+    "elemento": "Caléndula",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37031,
+    "categoria": "post_procedimiento",
+    "elemento": "Aloe Vera",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37032,
+    "categoria": "presentacion_medicamento",
+    "elemento": "Serum",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37033,
+    "categoria": "presentacion_medicamento",
+    "elemento": "Solución",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37034,
+    "categoria": "presentacion_medicamento",
+    "elemento": "Suspensión",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37035,
+    "categoria": "vias_administracion",
+    "elemento": "Inyectable SC",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37036,
+    "categoria": "vias_administracion",
+    "elemento": "Inyectable ID",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37037,
+    "categoria": "vias_administracion",
+    "elemento": "Aplicación facial",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37038,
+    "categoria": "vias_administracion",
+    "elemento": "Masaje",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37039,
+    "categoria": "vias_administracion",
+    "elemento": "Microneedling",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37040,
+    "categoria": "frecuencias_administracion",
+    "elemento": "Solo mañanas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37041,
+    "categoria": "frecuencias_administracion",
+    "elemento": "Solo noches",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  },
+  {
+    "id": 37042,
+    "categoria": "frecuencias_administracion",
+    "elemento": "Semanal",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-11-07 03:18:25"
+  }
+]

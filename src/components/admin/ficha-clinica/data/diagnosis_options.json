@@ -1,0 +1,132 @@
+{
+  "ACNÉ": [
+    "Acné comedogénico",
+    "Acné vulgar",
+    "Acné papulopustuloso",
+    "Acné nódulo-quístico",
+    "Acné conglobata",
+    "AB",
+    "O"
+  ],
+  "POST-ACNÉ": [
+    "Post acné",
+    "Agresiones cutáneas"
+  ],
+  "ROSÁCEA": [
+    "Rosácea eritemato-teleangiectásica (Subtipo I)",
+    "Rosácea papulopustulosa (Subtipo II)",
+    "Rosácea fimatosa (Subtipo III)"
+  ],
+  "CICATRIZ": [
+    "Cicatriz atrófica",
+    "Cicatriz hipertrófica",
+    "Queloide",
+    "Cicatriz plana"
+  ],
+  "ANGIOMA": [
+    "Angioma plano (Nevus flameus)",
+    "Angioma senil o punto de rubí",
+    "Angioma en fresa"
+  ],
+  "MÁCULA": [
+    "Efélides (pecas)",
+    "Melasma epidérmico",
+    "Melasma dérmico",
+    "Melasma mixto",
+    "Léntigo solar/senil",
+    "Nevus melanocítico",
+    "Ocronosis exógena"
+  ],
+  "ARRUGAS": [
+    "Arrugas estáticas",
+    "Arrugas dinámicas/de expresión"
+  ],
+  "HABÓN": [
+    "Urticaria",
+    "Dermografismo",
+    "Urticaria de contacto",
+    "Picaduras de insectos"
+  ],
+  "VESÍCULAS / AMPOLLAS": [
+    "Herpes simple",
+    "Herpes Zóster",
+    "Varicela",
+    "Dermatitis de contacto",
+    "Erisipela",
+    "Pénfigo vulgar",
+    "Reacciones medicamentosas graves",
+    "Lesiones por frío (congelación)",
+    "Quemaduras de 2° grado"
+  ],
+  "ESCAMA": [
+    "Dermatitis seborreica",
+    "Dermatitis atópica",
+    "Dermatitis de contacto",
+    "Liquen plano",
+    "Psoriasis rosada de Gibert",
+    "Eritrodermia",
+    "Tiña corporis",
+    "Pitiriasis versicolor",
+    "Ictiosis",
+    "Queratosis actínica",
+    "Xerosis cutánea"
+  ],
+  "VERRUGAS": [
+    "Verruga filiforme",
+    "Condilomas (verrugas genitales)",
+    "VPH"
+  ],
+  "PÁPULA": [
+    "Queratosis pilaris"
+  ],
+  "ONICOLISIS": [
+    "Onicomicosis"
+  ],
+  "Lesiones": [
+    "Pápulas",
+    "Pústulas",
+    "Comedones abiertos",
+    "Comedones cerrados",
+    "Nódulos",
+    "Quistes",
+    "Máculas eritematosas",
+    "Hiperpigmentación post-inflamatoria (HPI)",
+    "Pápulas",
+    "Pústulas",
+    "Comedones abiertos",
+    "Comedones cerrados",
+    "Nódulos",
+    "Quistes",
+    "Acné",
+    "Máculas eritematosas",
+    "Hiperpigmentación post-inflamatoria (HPI)",
+    "Telangiectasias",
+    "Sensibilidad / hipersensibilidad",
+    "Eritema / flushing",
+    "Engrosamiento cutáneo",
+    "Pápulas/pústulas sin comedones",
+    "Cicatrices",
+    "Mácula vascular",
+    "Pápula vascular",
+    "Mácula (mancha)",
+    "Melasma",
+    "Arrugas finas",
+    "Arrugas profundas",
+    "Estrías",
+    "Atrofia cutánea",
+    "Habón (roncha)",
+    "Vesículas",
+    "Ampollas/flictenas",
+    "Escama",
+    "Excoriaciones",
+    "Verruga",
+    "Pápula folicular queratósica",
+    "Eritema",
+    "Resequedad difusa",
+    "Onicolisis",
+    "Hiperqueratosis ungueal",
+    "Engrosamiento ungueal",
+    "Desintegración de lámina ungueal",
+    "TEST_LESION_191028"
+  ]
+}

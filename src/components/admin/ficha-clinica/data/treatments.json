@@ -1,0 +1,3142 @@
+[
+  {
+    "id": 28337,
+    "categoria": "Medicina Estética",
+    "elemento": "Limpieza facial",
+    "descripcion": "Elemento de procedimiento",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:15:42",
+    "categoria_id": 2
+  },
+  {
+    "id": 28338,
+    "categoria": "Medicina Estética",
+    "elemento": "Peeling",
+    "descripcion": "Elemento de procedimiento",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:15:42",
+    "categoria_id": 2
+  },
+  {
+    "id": 28339,
+    "categoria": "Medicina Estética",
+    "elemento": "HIFU",
+    "descripcion": "Elemento de procedimiento",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:15:42",
+    "categoria_id": 2
+  },
+  {
+    "id": 28340,
+    "categoria": "Medicina Estética",
+    "elemento": "Láser",
+    "descripcion": "Elemento de procedimiento",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:15:42",
+    "categoria_id": 2
+  },
+  {
+    "id": 28341,
+    "categoria": "Medicina Estética",
+    "elemento": "Microneedling",
+    "descripcion": "Elemento de procedimiento",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:15:42",
+    "categoria_id": 2
+  },
+  {
+    "id": 28342,
+    "categoria": "Medicina Estética",
+    "elemento": "Toxina botulínica",
+    "descripcion": "Elemento de procedimiento",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:15:42",
+    "categoria_id": 2
+  },
+  {
+    "id": 28343,
+    "categoria": "Medicina Estética",
+    "elemento": "Rellenos dérmicos",
+    "descripcion": "Elemento de procedimiento",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:15:42",
+    "categoria_id": 2
+  },
+  {
+    "id": 28344,
+    "categoria": "Medicina Estética",
+    "elemento": "Peeling químico",
+    "descripcion": "Elemento de procedimiento",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:15:42",
+    "categoria_id": 2
+  },
+  {
+    "id": 28345,
+    "categoria": "Medicina Estética",
+    "elemento": "Microdermoabrasión",
+    "descripcion": "Elemento de procedimiento",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:15:42",
+    "categoria_id": 2
+  },
+  {
+    "id": 28346,
+    "categoria": "Medicina Estética",
+    "elemento": "Radiofrecuencia",
+    "descripcion": "Elemento de procedimiento",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:15:42",
+    "categoria_id": 2
+  },
+  {
+    "id": 28347,
+    "categoria": "Medicina Estética",
+    "elemento": "Ultrasonido focalizado",
+    "descripcion": "Elemento de procedimiento",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:15:42",
+    "categoria_id": 2
+  },
+  {
+    "id": 28348,
+    "categoria": "Medicina Estética",
+    "elemento": "Luz pulsada intensa",
+    "descripcion": "Elemento de procedimiento",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:15:42",
+    "categoria_id": 2
+  },
+  {
+    "id": 28349,
+    "categoria": "Medicina Estética",
+    "elemento": "Láser fraccionado",
+    "descripcion": "Elemento de procedimiento",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:15:42",
+    "categoria_id": 2
+  },
+  {
+    "id": 28350,
+    "categoria": "Medicina Estética",
+    "elemento": "Mesoterapia",
+    "descripcion": "Elemento de procedimiento",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:15:42",
+    "categoria_id": 2
+  },
+  {
+    "id": 28351,
+    "categoria": "Medicina Estética",
+    "elemento": "Plasma rico en plaquetas",
+    "descripcion": "Elemento de procedimiento",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:15:42",
+    "categoria_id": 2
+  },
+  {
+    "id": 28352,
+    "categoria": "Medicina Estética",
+    "elemento": "Escleroterapia",
+    "descripcion": "Elemento de procedimiento",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:15:42",
+    "categoria_id": 2
+  },
+  {
+    "id": 28353,
+    "categoria": "Medicina Estética",
+    "elemento": "Crioterapia",
+    "descripcion": "Elemento de procedimiento",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:15:42",
+    "categoria_id": 2
+  },
+  {
+    "id": 28354,
+    "categoria": "Medicina Estética",
+    "elemento": "Electrocoagulación",
+    "descripcion": "Elemento de procedimiento",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:15:42",
+    "categoria_id": 2
+  },
+  {
+    "id": 28355,
+    "categoria": "laser_fraccionado",
+    "elemento": "CO2 Fraccionado",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 6
+  },
+  {
+    "id": 28356,
+    "categoria": "laser_fraccionado",
+    "elemento": "Erbium Fraccionado",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 6
+  },
+  {
+    "id": 28357,
+    "categoria": "laser_fraccionado",
+    "elemento": "Thulium Fraccionado",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 6
+  },
+  {
+    "id": 28358,
+    "categoria": "laser_fraccionado",
+    "elemento": "Pixel Fraccionado",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 6
+  },
+  {
+    "id": 28359,
+    "categoria": "laser_fraccionado",
+    "elemento": "SmartXide Fraccionado",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 6
+  },
+  {
+    "id": 28360,
+    "categoria": "laser_fraccionado",
+    "elemento": "UltraPulse Fraccionado",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 6
+  },
+  {
+    "id": 28361,
+    "categoria": "laser_fraccionado",
+    "elemento": "AcuPulse Fraccionado",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 6
+  },
+  {
+    "id": 28362,
+    "categoria": "laser_vascular",
+    "elemento": "Nd:YAG 1064nm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 8
+  },
+  {
+    "id": 28363,
+    "categoria": "laser_vascular",
+    "elemento": "KTP 532nm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 8
+  },
+  {
+    "id": 28364,
+    "categoria": "laser_vascular",
+    "elemento": "PDL Pulsed Dye Laser",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 8
+  },
+  {
+    "id": 28365,
+    "categoria": "laser_vascular",
+    "elemento": "Laser Alejandrita 755nm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 8
+  },
+  {
+    "id": 28366,
+    "categoria": "laser_vascular",
+    "elemento": "IPL Vascular",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 8
+  },
+  {
+    "id": 28367,
+    "categoria": "laser_vascular",
+    "elemento": "Laser Diodo 810nm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 8
+  },
+  {
+    "id": 28368,
+    "categoria": "laser_pigmentacion",
+    "elemento": "Q-Switch Nd:YAG",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 8
+  },
+  {
+    "id": 28369,
+    "categoria": "laser_pigmentacion",
+    "elemento": "Q-Switch Alejandrita",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 8
+  },
+  {
+    "id": 28370,
+    "categoria": "laser_pigmentacion",
+    "elemento": "Q-Switch Ruby",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 8
+  },
+  {
+    "id": 28371,
+    "categoria": "laser_pigmentacion",
+    "elemento": "PicoSure",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 8
+  },
+  {
+    "id": 28372,
+    "categoria": "laser_pigmentacion",
+    "elemento": "PicoWay",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 8
+  },
+  {
+    "id": 28373,
+    "categoria": "laser_pigmentacion",
+    "elemento": "RevLite",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 8
+  },
+  {
+    "id": 28374,
+    "categoria": "laser_pigmentacion",
+    "elemento": "SpectraVRM",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 8
+  },
+  {
+    "id": 28375,
+    "categoria": "depilacion_laser",
+    "elemento": "Diodo 808nm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 7
+  },
+  {
+    "id": 28376,
+    "categoria": "depilacion_laser",
+    "elemento": "Alejandrita 755nm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 7
+  },
+  {
+    "id": 28377,
+    "categoria": "depilacion_laser",
+    "elemento": "Nd:YAG 1064nm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 7
+  },
+  {
+    "id": 28378,
+    "categoria": "depilacion_laser",
+    "elemento": "IPL Depilación",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 7
+  },
+  {
+    "id": 28379,
+    "categoria": "depilacion_laser",
+    "elemento": "Soprano ICE",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 7
+  },
+  {
+    "id": 28380,
+    "categoria": "depilacion_laser",
+    "elemento": "LightSheer",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 7
+  },
+  {
+    "id": 28381,
+    "categoria": "depilacion_laser",
+    "elemento": "GentleLase",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 7
+  },
+  {
+    "id": 28382,
+    "categoria": "radiofrecuencia",
+    "elemento": "RF Monopolar",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28383,
+    "categoria": "radiofrecuencia",
+    "elemento": "RF Bipolar",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28384,
+    "categoria": "radiofrecuencia",
+    "elemento": "RF Fraccionada",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28385,
+    "categoria": "radiofrecuencia",
+    "elemento": "Thermage",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28386,
+    "categoria": "radiofrecuencia",
+    "elemento": "Ultherapy",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28387,
+    "categoria": "radiofrecuencia",
+    "elemento": "Exilis",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28388,
+    "categoria": "radiofrecuencia",
+    "elemento": "VelaShape",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28389,
+    "categoria": "radiofrecuencia",
+    "elemento": "BodyTite",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28390,
+    "categoria": "ultrasonido_focalizado",
+    "elemento": "HIFU Facial",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28391,
+    "categoria": "ultrasonido_focalizado",
+    "elemento": "HIFU Corporal",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28392,
+    "categoria": "ultrasonido_focalizado",
+    "elemento": "Ultherapy",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28393,
+    "categoria": "ultrasonido_focalizado",
+    "elemento": "Doublo",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28394,
+    "categoria": "ultrasonido_focalizado",
+    "elemento": "Ultraformer",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28395,
+    "categoria": "ultrasonido_focalizado",
+    "elemento": "HIFU 4D",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28396,
+    "categoria": "peelings_quimicos",
+    "elemento": "Peeling Superficial",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 6
+  },
+  {
+    "id": 28397,
+    "categoria": "peelings_quimicos",
+    "elemento": "Peeling Medio",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 6
+  },
+  {
+    "id": 28398,
+    "categoria": "peelings_quimicos",
+    "elemento": "Peeling Profundo",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 6
+  },
+  {
+    "id": 28399,
+    "categoria": "peelings_quimicos",
+    "elemento": "TCA 15%",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 6
+  },
+  {
+    "id": 28400,
+    "categoria": "peelings_quimicos",
+    "elemento": "TCA 25%",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 6
+  },
+  {
+    "id": 28401,
+    "categoria": "peelings_quimicos",
+    "elemento": "TCA 35%",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 6
+  },
+  {
+    "id": 28402,
+    "categoria": "peelings_quimicos",
+    "elemento": "Fenol",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 6
+  },
+  {
+    "id": 28403,
+    "categoria": "peelings_quimicos",
+    "elemento": "Ácido Glicólico",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 6
+  },
+  {
+    "id": 28404,
+    "categoria": "peelings_quimicos",
+    "elemento": "Ácido Salicílico",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 6
+  },
+  {
+    "id": 28405,
+    "categoria": "peelings_quimicos",
+    "elemento": "Ácido Mandélico",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 6
+  },
+  {
+    "id": 28406,
+    "categoria": "peelings_quimicos",
+    "elemento": "Ácido Láctico",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 6
+  },
+  {
+    "id": 28407,
+    "categoria": "peelings_quimicos",
+    "elemento": "Ácido Retinoico",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 6
+  },
+  {
+    "id": 28408,
+    "categoria": "peelings_quimicos",
+    "elemento": "Jessner",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 6
+  },
+  {
+    "id": 28409,
+    "categoria": "peelings_quimicos",
+    "elemento": "Yellow Peel",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 6
+  },
+  {
+    "id": 28410,
+    "categoria": "tratamientos_corporales",
+    "elemento": "Criolipólisis",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 7
+  },
+  {
+    "id": 28411,
+    "categoria": "tratamientos_corporales",
+    "elemento": "Carboxiterapia",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 7
+  },
+  {
+    "id": 28412,
+    "categoria": "tratamientos_corporales",
+    "elemento": "Mesoterapia",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 7
+  },
+  {
+    "id": 28413,
+    "categoria": "tratamientos_corporales",
+    "elemento": "Ondas de Choque",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 7
+  },
+  {
+    "id": 28414,
+    "categoria": "tratamientos_corporales",
+    "elemento": "Presoterapia",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 7
+  },
+  {
+    "id": 28415,
+    "categoria": "tratamientos_corporales",
+    "elemento": "Drenaje Linfático",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 7
+  },
+  {
+    "id": 28416,
+    "categoria": "tratamientos_corporales",
+    "elemento": "Cavitación",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 7
+  },
+  {
+    "id": 28417,
+    "categoria": "tratamientos_corporales",
+    "elemento": "Electroestimulación",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 7
+  },
+  {
+    "id": 28418,
+    "categoria": "tratamientos_invasivos",
+    "elemento": "Lifting Facial",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28419,
+    "categoria": "tratamientos_invasivos",
+    "elemento": "Blefaroplastia",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28420,
+    "categoria": "tratamientos_invasivos",
+    "elemento": "Liposucción",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28421,
+    "categoria": "tratamientos_invasivos",
+    "elemento": "Abdominoplastia",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28422,
+    "categoria": "tratamientos_invasivos",
+    "elemento": "Mamoplastia",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28423,
+    "categoria": "tratamientos_invasivos",
+    "elemento": "Rinoplastia",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28424,
+    "categoria": "tratamientos_invasivos",
+    "elemento": "Otoplastia",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28425,
+    "categoria": "equipos_laser",
+    "elemento": "Alma Harmony XL Pro",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 3
+  },
+  {
+    "id": 28426,
+    "categoria": "equipos_laser",
+    "elemento": "Cutera Excel V+",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 3
+  },
+  {
+    "id": 28427,
+    "categoria": "equipos_laser",
+    "elemento": "Cynosure PicoSure",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 3
+  },
+  {
+    "id": 28428,
+    "categoria": "equipos_laser",
+    "elemento": "Fotona 4D",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 3
+  },
+  {
+    "id": 28429,
+    "categoria": "equipos_laser",
+    "elemento": "Syneron Candela GentleMax Pro",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 3
+  },
+  {
+    "id": 28430,
+    "categoria": "equipos_laser",
+    "elemento": "Lumenis UltraPulse",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 3
+  },
+  {
+    "id": 28431,
+    "categoria": "equipos_laser",
+    "elemento": "Sciton BBL",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 3
+  },
+  {
+    "id": 28432,
+    "categoria": "equipos_laser",
+    "elemento": "Candela VBeam",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 3
+  },
+  {
+    "id": 28433,
+    "categoria": "equipos_laser",
+    "elemento": "Lynton Exceed",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 3
+  },
+  {
+    "id": 28434,
+    "categoria": "equipos_laser",
+    "elemento": "Quanta System Q-Plus",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 3
+  },
+  {
+    "id": 28435,
+    "categoria": "equipos_radiofrecuencia",
+    "elemento": "BTL Exilis Ultra",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 3
+  },
+  {
+    "id": 28436,
+    "categoria": "equipos_radiofrecuencia",
+    "elemento": "InMode Morpheus8",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 3
+  },
+  {
+    "id": 28437,
+    "categoria": "equipos_radiofrecuencia",
+    "elemento": "Thermage FLX",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 3
+  },
+  {
+    "id": 28438,
+    "categoria": "equipos_radiofrecuencia",
+    "elemento": "Venus Freeze",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 3
+  },
+  {
+    "id": 28439,
+    "categoria": "equipos_radiofrecuencia",
+    "elemento": "Accent Prime",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 3
+  },
+  {
+    "id": 28440,
+    "categoria": "equipos_radiofrecuencia",
+    "elemento": "Endymed 3Deep",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 3
+  },
+  {
+    "id": 28441,
+    "categoria": "equipos_radiofrecuencia",
+    "elemento": "Pollogen Legend",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 3
+  },
+  {
+    "id": 28442,
+    "categoria": "equipos_ultrasonido",
+    "elemento": "Ultherapy System",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 3
+  },
+  {
+    "id": 28443,
+    "categoria": "equipos_ultrasonido",
+    "elemento": "Doublo HIFU",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 3
+  },
+  {
+    "id": 28444,
+    "categoria": "equipos_ultrasonido",
+    "elemento": "UTIMS A3",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 3
+  },
+  {
+    "id": 28445,
+    "categoria": "equipos_ultrasonido",
+    "elemento": "Ultraformer III",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 3
+  },
+  {
+    "id": 28446,
+    "categoria": "equipos_ultrasonido",
+    "elemento": "Sygmalift",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 3
+  },
+  {
+    "id": 28447,
+    "categoria": "equipos_ultrasonido",
+    "elemento": "ULTRAcel Q+",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 3
+  },
+  {
+    "id": 28448,
+    "categoria": "equipos_corporales",
+    "elemento": "CoolSculpting",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 3
+  },
+  {
+    "id": 28449,
+    "categoria": "equipos_corporales",
+    "elemento": "SculpSure",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 3
+  },
+  {
+    "id": 28450,
+    "categoria": "equipos_corporales",
+    "elemento": "truSculpt iD",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 3
+  },
+  {
+    "id": 28451,
+    "categoria": "equipos_corporales",
+    "elemento": "VelaShape III",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 3
+  },
+  {
+    "id": 28452,
+    "categoria": "equipos_corporales",
+    "elemento": "BodyTite",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 3
+  },
+  {
+    "id": 28453,
+    "categoria": "equipos_corporales",
+    "elemento": "FaceTite",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 3
+  },
+  {
+    "id": 28454,
+    "categoria": "equipos_corporales",
+    "elemento": "Cellfina",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 3
+  },
+  {
+    "id": 28455,
+    "categoria": "equipos_inyeccion",
+    "elemento": "Vital Injector",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 3
+  },
+  {
+    "id": 28456,
+    "categoria": "equipos_inyeccion",
+    "elemento": "U-225 Mesogun",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 3
+  },
+  {
+    "id": 28457,
+    "categoria": "equipos_inyeccion",
+    "elemento": "Dermapen 4",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 3
+  },
+  {
+    "id": 28458,
+    "categoria": "equipos_inyeccion",
+    "elemento": "SkinPen",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 3
+  },
+  {
+    "id": 28459,
+    "categoria": "equipos_inyeccion",
+    "elemento": "Aquagold",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 3
+  },
+  {
+    "id": 28460,
+    "categoria": "equipos_inyeccion",
+    "elemento": "Restylane Injector",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 3
+  },
+  {
+    "id": 28461,
+    "categoria": "tips_laser",
+    "elemento": "Tip 2mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 4
+  },
+  {
+    "id": 28462,
+    "categoria": "tips_laser",
+    "elemento": "Tip 3mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 4
+  },
+  {
+    "id": 28463,
+    "categoria": "tips_laser",
+    "elemento": "Tip 4mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 4
+  },
+  {
+    "id": 28464,
+    "categoria": "tips_laser",
+    "elemento": "Tip 5mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 4
+  },
+  {
+    "id": 28465,
+    "categoria": "tips_laser",
+    "elemento": "Tip 7mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 4
+  },
+  {
+    "id": 28466,
+    "categoria": "tips_laser",
+    "elemento": "Tip 10mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 4
+  },
+  {
+    "id": 28467,
+    "categoria": "tips_laser",
+    "elemento": "Tip 15mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 4
+  },
+  {
+    "id": 28468,
+    "categoria": "tips_laser",
+    "elemento": "Tip Vascular",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 4
+  },
+  {
+    "id": 28469,
+    "categoria": "tips_laser",
+    "elemento": "Tip Pigmentación",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 4
+  },
+  {
+    "id": 28470,
+    "categoria": "tips_laser",
+    "elemento": "Tip Fraccionado",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 4
+  },
+  {
+    "id": 28471,
+    "categoria": "handpieces",
+    "elemento": "Handpiece Facial",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 4
+  },
+  {
+    "id": 28472,
+    "categoria": "handpieces",
+    "elemento": "Handpiece Corporal",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 4
+  },
+  {
+    "id": 28473,
+    "categoria": "handpieces",
+    "elemento": "Handpiece Vascular",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 4
+  },
+  {
+    "id": 28474,
+    "categoria": "handpieces",
+    "elemento": "Handpiece Hair Removal",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 4
+  },
+  {
+    "id": 28475,
+    "categoria": "handpieces",
+    "elemento": "Handpiece Pigmentation",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 4
+  },
+  {
+    "id": 28476,
+    "categoria": "handpieces",
+    "elemento": "Handpiece Carbon",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 4
+  },
+  {
+    "id": 28477,
+    "categoria": "handpieces",
+    "elemento": "Handpiece Genesis",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 4
+  },
+  {
+    "id": 28478,
+    "categoria": "aplicadores_rf",
+    "elemento": "Aplicador Facial",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 4
+  },
+  {
+    "id": 28479,
+    "categoria": "aplicadores_rf",
+    "elemento": "Aplicador Corporal",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 4
+  },
+  {
+    "id": 28480,
+    "categoria": "aplicadores_rf",
+    "elemento": "Aplicador Íntimo",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 4
+  },
+  {
+    "id": 28481,
+    "categoria": "aplicadores_rf",
+    "elemento": "Aplicador Cuello",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 4
+  },
+  {
+    "id": 28482,
+    "categoria": "aplicadores_rf",
+    "elemento": "Aplicador Ojos",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 4
+  },
+  {
+    "id": 28483,
+    "categoria": "aplicadores_rf",
+    "elemento": "MiniFX",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 4
+  },
+  {
+    "id": 28484,
+    "categoria": "aplicadores_rf",
+    "elemento": "BodyFX",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 4
+  },
+  {
+    "id": 28485,
+    "categoria": "transductores_hifu",
+    "elemento": "Transductor 1.5mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 4
+  },
+  {
+    "id": 28486,
+    "categoria": "transductores_hifu",
+    "elemento": "Transductor 3.0mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 4
+  },
+  {
+    "id": 28487,
+    "categoria": "transductores_hifu",
+    "elemento": "Transductor 4.5mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 4
+  },
+  {
+    "id": 28488,
+    "categoria": "transductores_hifu",
+    "elemento": "Transductor 6.0mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 4
+  },
+  {
+    "id": 28489,
+    "categoria": "transductores_hifu",
+    "elemento": "Transductor 9.0mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 4
+  },
+  {
+    "id": 28490,
+    "categoria": "transductores_hifu",
+    "elemento": "Transductor 13mm",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 4
+  },
+  {
+    "id": 28491,
+    "categoria": "facial",
+    "elemento": "Frente",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28492,
+    "categoria": "facial",
+    "elemento": "Entrecejo",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28493,
+    "categoria": "facial",
+    "elemento": "Párpados superiores",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28494,
+    "categoria": "facial",
+    "elemento": "Párpados inferiores",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28495,
+    "categoria": "facial",
+    "elemento": "Mejillas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28496,
+    "categoria": "facial",
+    "elemento": "Pómulos",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28497,
+    "categoria": "facial",
+    "elemento": "Nariz",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28498,
+    "categoria": "facial",
+    "elemento": "Surco nasogeniano",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28499,
+    "categoria": "facial",
+    "elemento": "Labio superior",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28500,
+    "categoria": "facial",
+    "elemento": "Labio inferior",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28501,
+    "categoria": "facial",
+    "elemento": "Comisuras",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28502,
+    "categoria": "facial",
+    "elemento": "Mentón",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28503,
+    "categoria": "facial",
+    "elemento": "Mandíbula",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28504,
+    "categoria": "facial",
+    "elemento": "Cuello",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28505,
+    "categoria": "facial",
+    "elemento": "Escote",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28506,
+    "categoria": "corporal",
+    "elemento": "Brazos",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28507,
+    "categoria": "corporal",
+    "elemento": "Antebrazos",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28508,
+    "categoria": "corporal",
+    "elemento": "Axilas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28509,
+    "categoria": "corporal",
+    "elemento": "Tórax",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28510,
+    "categoria": "corporal",
+    "elemento": "Abdomen",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28511,
+    "categoria": "corporal",
+    "elemento": "Espalda",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28512,
+    "categoria": "corporal",
+    "elemento": "Cintura",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28513,
+    "categoria": "corporal",
+    "elemento": "Caderas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28514,
+    "categoria": "corporal",
+    "elemento": "Glúteos",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28515,
+    "categoria": "corporal",
+    "elemento": "Muslos",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28516,
+    "categoria": "corporal",
+    "elemento": "Rodillas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28517,
+    "categoria": "corporal",
+    "elemento": "Piernas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28518,
+    "categoria": "corporal",
+    "elemento": "Pantorrillas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28519,
+    "categoria": "corporal",
+    "elemento": "Tobillos",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28520,
+    "categoria": "areas_especificas",
+    "elemento": "Zona T",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28521,
+    "categoria": "areas_especificas",
+    "elemento": "Contorno facial",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28522,
+    "categoria": "areas_especificas",
+    "elemento": "Óvalo facial",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28523,
+    "categoria": "areas_especificas",
+    "elemento": "Tercio superior facial",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28524,
+    "categoria": "areas_especificas",
+    "elemento": "Tercio medio facial",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28525,
+    "categoria": "areas_especificas",
+    "elemento": "Tercio inferior facial",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28526,
+    "categoria": "areas_especificas",
+    "elemento": "Región perioral",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28527,
+    "categoria": "areas_especificas",
+    "elemento": "Región periorbital",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28528,
+    "categoria": "areas_especificas",
+    "elemento": "Líneas de expresión",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28529,
+    "categoria": "areas_especificas",
+    "elemento": "Pliegues nasolabiales",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 5
+  },
+  {
+    "id": 28530,
+    "categoria": "depilacion",
+    "elemento": "Bigote",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 7
+  },
+  {
+    "id": 28531,
+    "categoria": "depilacion",
+    "elemento": "Barba completa",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 7
+  },
+  {
+    "id": 28532,
+    "categoria": "depilacion",
+    "elemento": "Patillas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 7
+  },
+  {
+    "id": 28533,
+    "categoria": "depilacion",
+    "elemento": "Cejas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 7
+  },
+  {
+    "id": 28534,
+    "categoria": "depilacion",
+    "elemento": "Axilas completas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 7
+  },
+  {
+    "id": 28535,
+    "categoria": "depilacion",
+    "elemento": "Brazos completos",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 7
+  },
+  {
+    "id": 28536,
+    "categoria": "depilacion",
+    "elemento": "Antebrazos",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 7
+  },
+  {
+    "id": 28537,
+    "categoria": "depilacion",
+    "elemento": "Manos",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 7
+  },
+  {
+    "id": 28538,
+    "categoria": "depilacion",
+    "elemento": "Pecho masculino",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 7
+  },
+  {
+    "id": 28539,
+    "categoria": "depilacion",
+    "elemento": "Abdomen",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 7
+  },
+  {
+    "id": 28540,
+    "categoria": "depilacion",
+    "elemento": "Espalda completa",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 7
+  },
+  {
+    "id": 28541,
+    "categoria": "depilacion",
+    "elemento": "Hombros",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 7
+  },
+  {
+    "id": 28542,
+    "categoria": "depilacion",
+    "elemento": "Bikini simple",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 7
+  },
+  {
+    "id": 28543,
+    "categoria": "depilacion",
+    "elemento": "Bikini brasileño",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 7
+  },
+  {
+    "id": 28544,
+    "categoria": "depilacion",
+    "elemento": "Piernas completas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 7
+  },
+  {
+    "id": 28545,
+    "categoria": "depilacion",
+    "elemento": "Medias piernas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 7
+  },
+  {
+    "id": 28546,
+    "categoria": "depilacion",
+    "elemento": "Muslos",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 7
+  },
+  {
+    "id": 28547,
+    "categoria": "depilacion",
+    "elemento": "Glúteos",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 7
+  },
+  {
+    "id": 28548,
+    "categoria": "sesiones_recomendadas",
+    "elemento": "1 sesión",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 9
+  },
+  {
+    "id": 28549,
+    "categoria": "sesiones_recomendadas",
+    "elemento": "2-3 sesiones",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 9
+  },
+  {
+    "id": 28550,
+    "categoria": "sesiones_recomendadas",
+    "elemento": "3-5 sesiones",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 9
+  },
+  {
+    "id": 28551,
+    "categoria": "sesiones_recomendadas",
+    "elemento": "4-6 sesiones",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 9
+  },
+  {
+    "id": 28552,
+    "categoria": "sesiones_recomendadas",
+    "elemento": "5-8 sesiones",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 9
+  },
+  {
+    "id": 28553,
+    "categoria": "sesiones_recomendadas",
+    "elemento": "6-10 sesiones",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 9
+  },
+  {
+    "id": 28554,
+    "categoria": "sesiones_recomendadas",
+    "elemento": "8-12 sesiones",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 9
+  },
+  {
+    "id": 28555,
+    "categoria": "sesiones_recomendadas",
+    "elemento": "Mantenimiento mensual",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 9
+  },
+  {
+    "id": 28556,
+    "categoria": "sesiones_recomendadas",
+    "elemento": "Mantenimiento trimestral",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 9
+  },
+  {
+    "id": 28557,
+    "categoria": "sesiones_recomendadas",
+    "elemento": "Refuerzo anual",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 9
+  },
+  {
+    "id": 28558,
+    "categoria": "intervalos",
+    "elemento": "1 semana",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 9
+  },
+  {
+    "id": 28559,
+    "categoria": "intervalos",
+    "elemento": "2 semanas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 9
+  },
+  {
+    "id": 28560,
+    "categoria": "intervalos",
+    "elemento": "3 semanas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 9
+  },
+  {
+    "id": 28561,
+    "categoria": "intervalos",
+    "elemento": "4 semanas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 9
+  },
+  {
+    "id": 28562,
+    "categoria": "intervalos",
+    "elemento": "6 semanas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 9
+  },
+  {
+    "id": 28563,
+    "categoria": "intervalos",
+    "elemento": "8 semanas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 9
+  },
+  {
+    "id": 28564,
+    "categoria": "intervalos",
+    "elemento": "3 meses",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 9
+  },
+  {
+    "id": 28565,
+    "categoria": "intervalos",
+    "elemento": "6 meses",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 9
+  },
+  {
+    "id": 28566,
+    "categoria": "intervalos",
+    "elemento": "12 meses",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 9
+  },
+  {
+    "id": 28567,
+    "categoria": "intensidades",
+    "elemento": "Baja intensidad",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 9
+  },
+  {
+    "id": 28568,
+    "categoria": "intensidades",
+    "elemento": "Intensidad moderada",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 9
+  },
+  {
+    "id": 28569,
+    "categoria": "intensidades",
+    "elemento": "Alta intensidad",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 9
+  },
+  {
+    "id": 28570,
+    "categoria": "intensidades",
+    "elemento": "Intensidad máxima",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 9
+  },
+  {
+    "id": 28571,
+    "categoria": "intensidades",
+    "elemento": "Test patch",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 9
+  },
+  {
+    "id": 28572,
+    "categoria": "intensidades",
+    "elemento": "Intensidad progresiva",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 9
+  },
+  {
+    "id": 28573,
+    "categoria": "intensidades",
+    "elemento": "Intensidad conservadora",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 9
+  },
+  {
+    "id": 28574,
+    "categoria": "indicaciones_tratamiento",
+    "elemento": "Rejuvenecimiento facial",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28575,
+    "categoria": "indicaciones_tratamiento",
+    "elemento": "Flacidez cutánea",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28576,
+    "categoria": "indicaciones_tratamiento",
+    "elemento": "Arrugas y líneas de expresión",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28577,
+    "categoria": "indicaciones_tratamiento",
+    "elemento": "Manchas pigmentarias",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28578,
+    "categoria": "indicaciones_tratamiento",
+    "elemento": "Melasma",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28579,
+    "categoria": "indicaciones_tratamiento",
+    "elemento": "Lentigos solares",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28580,
+    "categoria": "indicaciones_tratamiento",
+    "elemento": "Rosácea vascular",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28581,
+    "categoria": "indicaciones_tratamiento",
+    "elemento": "Telangiectasias",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28582,
+    "categoria": "indicaciones_tratamiento",
+    "elemento": "Acné activo",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28583,
+    "categoria": "indicaciones_tratamiento",
+    "elemento": "Cicatrices de acné",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28584,
+    "categoria": "indicaciones_tratamiento",
+    "elemento": "Poros dilatados",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28585,
+    "categoria": "indicaciones_tratamiento",
+    "elemento": "Textura irregular",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28586,
+    "categoria": "indicaciones_tratamiento",
+    "elemento": "Depilación permanente",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28587,
+    "categoria": "indicaciones_tratamiento",
+    "elemento": "Tatuajes",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28588,
+    "categoria": "indicaciones_tratamiento",
+    "elemento": "Estrías",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28589,
+    "categoria": "indicaciones_tratamiento",
+    "elemento": "Celulitis",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28590,
+    "categoria": "indicaciones_tratamiento",
+    "elemento": "Grasa localizada",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28591,
+    "categoria": "indicaciones_tratamiento",
+    "elemento": "Remodelado corporal",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28592,
+    "categoria": "indicaciones_tratamiento",
+    "elemento": "Lifting no invasivo",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28593,
+    "categoria": "contraindicaciones",
+    "elemento": "Embarazo",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28594,
+    "categoria": "contraindicaciones",
+    "elemento": "Lactancia",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28595,
+    "categoria": "contraindicaciones",
+    "elemento": "Fotodermatosis",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28596,
+    "categoria": "contraindicaciones",
+    "elemento": "Medicación fotosensibilizante",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28597,
+    "categoria": "contraindicaciones",
+    "elemento": "Bronceado reciente",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28598,
+    "categoria": "contraindicaciones",
+    "elemento": "Infección activa",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28599,
+    "categoria": "contraindicaciones",
+    "elemento": "Herpes activo",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28600,
+    "categoria": "contraindicaciones",
+    "elemento": "Queloides",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28601,
+    "categoria": "contraindicaciones",
+    "elemento": "Epilepsia",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28602,
+    "categoria": "contraindicaciones",
+    "elemento": "Marcapasos",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28603,
+    "categoria": "contraindicaciones",
+    "elemento": "Implantes metálicos",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28604,
+    "categoria": "contraindicaciones",
+    "elemento": "Cáncer de piel",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28605,
+    "categoria": "contraindicaciones",
+    "elemento": "Trastornos de coagulación",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28606,
+    "categoria": "contraindicaciones",
+    "elemento": "Diabetes descompensada",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 28607,
+    "categoria": "contraindicaciones",
+    "elemento": "Autoinmunes activas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 21:36:19",
+    "categoria_id": 10
+  },
+  {
+    "id": 30126,
+    "categoria": "",
+    "elemento": "lipopapada hifu",
+    "descripcion": "",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28 00:32:45",
+    "categoria_id": null
+  },
+  {
+    "id": 30127,
+    "categoria": "",
+    "elemento": "EQUIPO DE PRUEBA",
+    "descripcion": "Equipo de prueba para nueva categoría",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28 00:38:18",
+    "categoria_id": null
+  },
+  {
+    "id": 31646,
+    "categoria": "",
+    "elemento": "HIFU 7D",
+    "descripcion": "",
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-28 16:20:30",
+    "categoria_id": null
+  },
+  {
+    "id": 31649,
+    "categoria": "",
+    "elemento": "Test Debug HIFU 2024",
+    "descripcion": "Equipo de prueba para debug get_data_by_category_id",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28 16:35:07",
+    "categoria_id": null
+  },
+  {
+    "id": 31905,
+    "categoria": "equipos_ultrasonido",
+    "elemento": "HIFU 7D",
+    "descripcion": "HIFU 7D - Test de descripción actualizada",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-28 16:42:07",
+    "categoria_id": 3
+  },
+  {
+    "id": 33426,
+    "categoria": "",
+    "elemento": "Cartucho HIFU 1.5mm",
+    "descripcion": "",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-29 01:06:03",
+    "categoria_id": 15
+  },
+  {
+    "id": 33427,
+    "categoria": "",
+    "elemento": "Cartucho HIFU 3mm",
+    "descripcion": "",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-29 01:19:06",
+    "categoria_id": 15
+  },
+  {
+    "id": 33428,
+    "categoria": "",
+    "elemento": "Tratamiento_Y3H4D",
+    "descripcion": "Tratamiento de prueba",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-29 01:21:27",
+    "categoria_id": 16
+  },
+  {
+    "id": 33429,
+    "categoria": "",
+    "elemento": "Tratamiento_41940",
+    "descripcion": "Tratamiento de prueba",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-29 01:21:27",
+    "categoria_id": 17
+  },
+  {
+    "id": 33430,
+    "categoria": "",
+    "elemento": "Tratamiento_9O6GE",
+    "descripcion": "Tratamiento de prueba",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-29 01:21:27",
+    "categoria_id": 18
+  },
+  {
+    "id": 33431,
+    "categoria": "",
+    "elemento": "Tratamiento_CY9YU",
+    "descripcion": "Tratamiento de prueba",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-29 01:21:27",
+    "categoria_id": 19
+  },
+  {
+    "id": 33432,
+    "categoria": "",
+    "elemento": "Tratamiento_YF720",
+    "descripcion": "Tratamiento test sección/categoría",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-29 01:21:38",
+    "categoria_id": 2
+  },
+  {
+    "id": 33433,
+    "categoria": "",
+    "elemento": "Tratamiento_KGSXK",
+    "descripcion": "Tratamiento test sección/categoría",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-29 01:21:38",
+    "categoria_id": 3
+  },
+  {
+    "id": 33434,
+    "categoria": "",
+    "elemento": "Tratamiento_TY656",
+    "descripcion": "Tratamiento test sección/categoría",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-29 01:21:38",
+    "categoria_id": 4
+  },
+  {
+    "id": 33435,
+    "categoria": "",
+    "elemento": "Tratamiento_6QJZC",
+    "descripcion": "Tratamiento test sección/categoría",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-29 01:21:38",
+    "categoria_id": 5
+  },
+  {
+    "id": 33436,
+    "categoria": "Medicina Estética",
+    "elemento": "Consulta + Escáner Facial",
+    "descripcion": "Sincronizado desde Web",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2026-01-03 22:17:22",
+    "categoria_id": 2
+  },
+  {
+    "id": 33437,
+    "categoria": "Medicina Estética",
+    "elemento": "Limpieza Facial",
+    "descripcion": "Sincronizado desde Web",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2026-01-03 22:17:22",
+    "categoria_id": 2
+  },
+  {
+    "id": 33438,
+    "categoria": "Medicina Estética",
+    "elemento": "Dermaplaning + limpieza",
+    "descripcion": "Sincronizado desde Web",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2026-01-03 22:17:22",
+    "categoria_id": 2
+  },
+  {
+    "id": 33439,
+    "categoria": "Medicina Estética",
+    "elemento": "Mesoterapia Facial",
+    "descripcion": "Sincronizado desde Web",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2026-01-03 22:17:22",
+    "categoria_id": 2
+  },
+  {
+    "id": 33440,
+    "categoria": "Medicina Estética",
+    "elemento": "Plasma rico en plaquetas (PRP)",
+    "descripcion": "Sincronizado desde Web",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2026-01-03 22:17:22",
+    "categoria_id": 2
+  },
+  {
+    "id": 33441,
+    "categoria": "Medicina Estética",
+    "elemento": "Exosomas (aplicación tópica o mesoterapia)",
+    "descripcion": "Sincronizado desde Web",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2026-01-03 22:17:22",
+    "categoria_id": 2
+  },
+  {
+    "id": 33442,
+    "categoria": "Medicina Estética",
+    "elemento": "Hollywood Peel",
+    "descripcion": "Sincronizado desde Web",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2026-01-03 22:17:22",
+    "categoria_id": 2
+  },
+  {
+    "id": 33443,
+    "categoria": "Medicina Estética",
+    "elemento": "Láser CO₂ Fraccionado (Superficial)",
+    "descripcion": "Sincronizado desde Web",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2026-01-03 22:17:22",
+    "categoria_id": 2
+  },
+  {
+    "id": 33444,
+    "categoria": "Medicina Estética",
+    "elemento": "Láser CO₂ Ablativo (Profundo)",
+    "descripcion": "Sincronizado desde Web",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2026-01-03 22:17:22",
+    "categoria_id": 2
+  },
+  {
+    "id": 33445,
+    "categoria": "Medicina Estética",
+    "elemento": "Tratamiento vascular / lesiones (Nd :YAG )",
+    "descripcion": "Sincronizado desde Web",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2026-01-03 22:17:22",
+    "categoria_id": 2
+  },
+  {
+    "id": 33446,
+    "categoria": "Medicina Estética",
+    "elemento": "IPL (Elight) – Fotofacial / Rejuvenecimiento",
+    "descripcion": "Sincronizado desde Web",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2026-01-03 22:17:22",
+    "categoria_id": 2
+  },
+  {
+    "id": 33447,
+    "categoria": "Medicina Estética",
+    "elemento": "Depilación con IPL (Elight)",
+    "descripcion": "Sincronizado desde Web",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2026-01-03 22:17:22",
+    "categoria_id": 2
+  },
+  {
+    "id": 33448,
+    "categoria": "Medicina Estética",
+    "elemento": "IPL despigmentante",
+    "descripcion": "Sincronizado desde Web",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2026-01-03 22:17:22",
+    "categoria_id": 2
+  },
+  {
+    "id": 33449,
+    "categoria": "Medicina Estética",
+    "elemento": "HIFU Facial Completo (7D)",
+    "descripcion": "Sincronizado desde Web",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2026-01-03 22:17:22",
+    "categoria_id": 2
+  },
+  {
+    "id": 33450,
+    "categoria": "Medicina Estética",
+    "elemento": "HIFU Zona Específica (Papada/Óvalo/Ojos)",
+    "descripcion": "Sincronizado desde Web",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2026-01-03 22:17:22",
+    "categoria_id": 2
+  },
+  {
+    "id": 33451,
+    "categoria": "Medicina Estética",
+    "elemento": "Crio-Radiofrecuencia facial",
+    "descripcion": "Sincronizado desde Web",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2026-01-03 22:17:22",
+    "categoria_id": 2
+  },
+  {
+    "id": 33452,
+    "categoria": "Medicina Estética",
+    "elemento": "Relleno de Labios",
+    "descripcion": "Sincronizado desde Web",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2026-01-03 22:17:22",
+    "categoria_id": 2
+  },
+  {
+    "id": 33453,
+    "categoria": "Medicina Estética",
+    "elemento": "Bioestimuladores de Colágeno",
+    "descripcion": "Sincronizado desde Web",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2026-01-03 22:17:22",
+    "categoria_id": 2
+  },
+  {
+    "id": 33454,
+    "categoria": "Medicina Estética",
+    "elemento": "Protocolo Anti-acné (combinado)",
+    "descripcion": "Sincronizado desde Web",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2026-01-03 22:17:22",
+    "categoria_id": 2
+  },
+  {
+    "id": 33455,
+    "categoria": "Medicina Estética",
+    "elemento": "Tratamiento de cicatrices con láser CO2",
+    "descripcion": "Sincronizado desde Web",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2026-01-03 22:17:22",
+    "categoria_id": 2
+  },
+  {
+    "id": 33456,
+    "categoria": "Medicina Estética",
+    "elemento": "Hidratación Profunda",
+    "descripcion": "Sincronizado desde Web",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2026-01-03 22:17:22",
+    "categoria_id": 2
+  },
+  {
+    "id": 33457,
+    "categoria": "Medicina Estética",
+    "elemento": "Tratamiento Antiaging",
+    "descripcion": "Sincronizado desde Web",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2026-01-03 22:17:22",
+    "categoria_id": 2
+  },
+  {
+    "id": 33458,
+    "categoria": "Medicina Estética",
+    "elemento": "Tratamiento Antimanchas",
+    "descripcion": "Sincronizado desde Web",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2026-01-03 22:17:22",
+    "categoria_id": 2
+  },
+  {
+    "id": 33459,
+    "categoria": "Medicina Estética",
+    "elemento": "Remoción de Tatuajes",
+    "descripcion": "Sincronizado desde Web",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2026-01-03 22:17:22",
+    "categoria_id": 2
+  },
+  {
+    "id": 33460,
+    "categoria": "Medicina Estética",
+    "elemento": "HIFU Corporal (7D)",
+    "descripcion": "Sincronizado desde Web",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2026-01-03 22:17:22",
+    "categoria_id": 2
+  },
+  {
+    "id": 33461,
+    "categoria": "Medicina Estética",
+    "elemento": "Lipopapada sin cirugía (3 sesiones mesoterapia+1 sesion hifu+ 3 sesiones crioradiofrecuencia bipolar)",
+    "descripcion": "Sincronizado desde Web",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2026-01-03 22:17:22",
+    "categoria_id": 2
+  },
+  {
+    "id": 33462,
+    "categoria": "Medicina Estética",
+    "elemento": "Skin Booster (Ácido Hialurónico)",
+    "descripcion": "Sincronizado desde Web",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2026-01-03 22:17:22",
+    "categoria_id": 2
+  },
+  {
+    "id": 33463,
+    "categoria": "Medicina Estética",
+    "elemento": "Skin Booster (Exosomas)",
+    "descripcion": "Sincronizado desde Web",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2026-01-03 22:17:22",
+    "categoria_id": 2
+  }
+]

@@ -1,0 +1,106 @@
+[
+  {
+    "id": 1145,
+    "categoria": "ACNÉ",
+    "descripcion": "Categoría clínica para ACNÉ",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 1146,
+    "categoria": "POST-ACNÉ",
+    "descripcion": "Categoría clínica para POST-ACNÉ",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 1147,
+    "categoria": "ROSÁCEA",
+    "descripcion": "Categoría clínica para ROSÁCEA",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 1148,
+    "categoria": "CICATRIZ",
+    "descripcion": "Categoría clínica para CICATRIZ",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 1149,
+    "categoria": "ANGIOMA",
+    "descripcion": "Categoría clínica para ANGIOMA",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 1150,
+    "categoria": "MÁCULA",
+    "descripcion": "Categoría clínica para MÁCULA",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 1151,
+    "categoria": "ARRUGAS",
+    "descripcion": "Categoría clínica para ARRUGAS",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 1152,
+    "categoria": "HABÓN",
+    "descripcion": "Categoría clínica para HABÓN",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 1153,
+    "categoria": "VESÍCULAS / AMPOLLAS",
+    "descripcion": "Categoría clínica para VESÍCULAS / AMPOLLAS",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 1154,
+    "categoria": "ESCAMA",
+    "descripcion": "Categoría clínica para ESCAMA",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 1155,
+    "categoria": "VERRUGAS",
+    "descripcion": "Categoría clínica para VERRUGAS",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 1156,
+    "categoria": "PÁPULA",
+    "descripcion": "Categoría clínica para PÁPULA",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 1157,
+    "categoria": "ONICOLISIS",
+    "descripcion": "Categoría clínica para ONICOLISIS",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  }
+]

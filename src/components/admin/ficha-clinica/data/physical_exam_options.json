@@ -1,0 +1,102 @@
+{
+  "tipo_piel": [
+    "Sensible",
+    "Seca",
+    "Normal",
+    "Grasa",
+    "Mixta",
+    "Atópica",
+    "Seborreica",
+    "Acneica",
+    "Deshidratada",
+    "Reactiva",
+    "AB"
+  ],
+  "fototipo": [
+    "I - Muy pálida, siempre se quema, nunca se broncea",
+    "II - Pálida, se quema fácil, bronceado mínimo",
+    "III - Morena clara, se quema moderado, bronceado gradual",
+    "IV - Morena, se quema mínimo, bronceado fácil",
+    "V - Morena oscura, rara vez se quema",
+    "VI - Negra, nunca se quema, muy pigmentada"
+  ],
+  "fotoproteccion": [
+    "No usa",
+    "Ocasional",
+    "Regular",
+    "Alta",
+    "Muy alta (SPF 50+)",
+    "Reaplicación frecuente",
+    "Uso diario todo el año"
+  ],
+  "hidratacion": [
+    "Muy baja",
+    "Baja",
+    "Media",
+    "Alta",
+    "Muy alta",
+    "Variable según zona",
+    "Deshidratación superficial",
+    "Xerosis"
+  ],
+  "textura": [
+    "Muy fina",
+    "Fina",
+    "Mediana",
+    "Gruesa",
+    "Muy gruesa",
+    "Irregular",
+    "Rugosa",
+    "Lisa",
+    "Atrófica"
+  ],
+  "poros": [
+    "Cerrados",
+    "Finos",
+    "Medianos",
+    "Dilatados",
+    "Muy dilatados",
+    "Obstruidos",
+    "Zona T dilatados",
+    "Generalizados dilatados"
+  ],
+  "elasticidad": [
+    "Muy baja",
+    "Baja",
+    "Media",
+    "Buena",
+    "Excelente",
+    "Pérdida moderada",
+    "Pérdida severa",
+    "Flacidez incipiente",
+    "Flacidez marcada"
+  ],
+  "pigmentacion": [
+    "Homogénea",
+    "Levemente irregular",
+    "Irregular",
+    "Melasma",
+    "Lentigos solares",
+    "Hiperpigmentación postinflamatoria",
+    "Hipopigmentación",
+    "Vitíligo",
+    "Poiquilodermia"
+  ],
+  "sensibilidad": [
+    "Muy baja",
+    "Baja",
+    "Media",
+    "Alta",
+    "Muy alta",
+    "Reactiva",
+    "Alérgica",
+    "Intolerante",
+    "Variable estacional"
+  ],
+  "clasificacion_glogau": [
+    "I (20-30 años) - Sin arrugas, cambios pigmentarios mínimos",
+    "II (30-40 años) - Arrugas dinámicas, lentigos tempranos",
+    "III (40-60 años) - Arrugas persistentes, telangiectasias",
+    "IV (60+ años) - Arrugas severas, daño actínico extenso"
+  ]
+}

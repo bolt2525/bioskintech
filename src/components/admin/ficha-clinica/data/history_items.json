@@ -1,0 +1,8218 @@
+[
+  {
+    "id": 1,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Diabetes mellitus tipo 1",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 2,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Diabetes mellitus tipo 2",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 3,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Hipertensión arterial",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 4,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Hipotensión arterial",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 5,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Cardiopatía isquémica",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 6,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Arritmias cardíacas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 7,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Insuficiencia cardíaca",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 8,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Asma bronquial",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 9,
+    "categoria_id": "antecedente_personal",
+    "elemento": "EPOC (Enfermedad Pulmonar Obstructiva Crónica)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 10,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Bronquitis crónica",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 11,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Neumonía recurrente",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 12,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Tuberculosis",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 13,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Hipotiroidismo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 14,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Hipertiroidismo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 15,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Síndrome de ovario poliquístico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 16,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Endometriosis",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 17,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Menopausia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 18,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Osteoporosis",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 19,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Artritis reumatoide",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 20,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Lupus eritematoso sistémico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 21,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Fibromialgia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 22,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Psoriasis",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 23,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Dermatitis atópica",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 24,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Vitíligo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 25,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Melasma",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 26,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Acné severo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 27,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Rosácea",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 28,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Queloide",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 29,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Cicatrización hipertrófica",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 30,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Fotosensibilidad",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 31,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Anemia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 32,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Leucemia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 33,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Linfoma",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 34,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Trastornos de coagulación",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 35,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Hemofilia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 36,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Trombocitopenia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 37,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Hepatitis B",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 38,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Hepatitis C",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 39,
+    "categoria_id": "antecedente_personal",
+    "elemento": "VIH/SIDA",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 40,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Herpes simple",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 41,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Herpes zóster",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 42,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Varicela",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 43,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Depresión",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 44,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Ansiedad",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 45,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Trastorno bipolar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 46,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Esquizofrenia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 47,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Trastornos alimentarios",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 48,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Epilepsia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 49,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Migraña",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 50,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Cefalea tensional",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 51,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Accidente cerebrovascular",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 52,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Enfermedad de Parkinson",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 53,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Enfermedad de Alzheimer",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 54,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Esclerosis múltiple",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 55,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Gastritis",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 56,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Úlcera péptica",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 57,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Enfermedad de Crohn",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 58,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Colitis ulcerosa",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 59,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Síndrome de intestino irritable",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 60,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Cálculos renales",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 61,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Insuficiencia renal",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 62,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Infecciones urinarias recurrentes",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 63,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Glaucoma",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 64,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Cataratas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 65,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Miopía",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 66,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Hipermetropía",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 67,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Astigmatismo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 68,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Escoliosis",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 69,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Hernia discal",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 70,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Síndrome del túnel carpiano",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 71,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Obesidad",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 72,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Desnutrición",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 73,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Trastornos del sueño",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 74,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Apnea del sueño",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 75,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Síndrome de fatiga crónica",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 76,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Cáncer de mama",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 77,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Cáncer de piel",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 78,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Cáncer de pulmón",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 79,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Cáncer de próstata",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 80,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Cáncer cervicouterino",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 81,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Cáncer de colon",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 82,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Otros tipos de cáncer",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 83,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Ninguna enfermedad relevante",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 84,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Diabetes mellitus familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 85,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Hipertensión arterial familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 86,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Cardiopatía isquémica familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 87,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Cáncer de mama familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 88,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Cáncer de ovario familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 89,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Cáncer de colon familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 90,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Cáncer de próstata familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 91,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Cáncer de piel familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 92,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Melanoma familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 93,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Otros cánceres familiares",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 94,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Alzheimer familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 95,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Parkinson familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 96,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Huntington familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 97,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Esclerosis múltiple familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 98,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Epilepsia familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 99,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Migraña familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 100,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Trastornos psiquiátricos familiares",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 101,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Depresión familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 102,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Trastorno bipolar familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 103,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Esquizofrenia familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 104,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Asma familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 105,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Alergias familiares",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 106,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Atopia familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 107,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Psoriasis familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 108,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Vitíligo familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 109,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Alopecia familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 110,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Queloide familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 111,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Trastornos de coagulación familiares",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 112,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Hemofilia familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 113,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Anemia familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 114,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Talasemia familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 115,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Drepanocitosis familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 116,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Hipotiroidismo familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 117,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Hipertiroidismo familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 118,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Síndrome de ovario poliquístico familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 119,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Endometriosis familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 120,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Osteoporosis familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 121,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Artritis reumatoide familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 122,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Lupus familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 123,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Fibromialgia familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 124,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Obesidad familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 125,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Trastornos alimentarios familiares",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 126,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Alcoholismo familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 127,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Drogadicción familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 128,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Glaucoma familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 129,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Cataratas familiares",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 130,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Miopía familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 131,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Escoliosis familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 132,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Síndrome de Marfan",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 133,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Fibrosis quística",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 134,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Distrofia muscular",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 135,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Síndrome de Down",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 136,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Autismo familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 137,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "TDAH familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 138,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Malformaciones congénitas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 139,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Muerte súbita familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 140,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Sin antecedentes familiares relevantes",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 141,
+    "categoria_id": "alergia",
+    "elemento": "Penicilina",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 142,
+    "categoria_id": "alergia",
+    "elemento": "Amoxicilina",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 143,
+    "categoria_id": "alergia",
+    "elemento": "Ampicilina",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 144,
+    "categoria_id": "alergia",
+    "elemento": "Cefalexina",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 145,
+    "categoria_id": "alergia",
+    "elemento": "Eritromicina",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 146,
+    "categoria_id": "alergia",
+    "elemento": "Clindamicina",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 147,
+    "categoria_id": "alergia",
+    "elemento": "Sulfonamidas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 148,
+    "categoria_id": "alergia",
+    "elemento": "Tetraciclina",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 149,
+    "categoria_id": "alergia",
+    "elemento": "Quinolonas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 150,
+    "categoria_id": "alergia",
+    "elemento": "Vancomicina",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 151,
+    "categoria_id": "alergia",
+    "elemento": "Aspirina",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 152,
+    "categoria_id": "alergia",
+    "elemento": "Ibuprofeno",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 153,
+    "categoria_id": "alergia",
+    "elemento": "Diclofenaco",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 154,
+    "categoria_id": "alergia",
+    "elemento": "Naproxeno",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 155,
+    "categoria_id": "alergia",
+    "elemento": "Paracetamol",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 156,
+    "categoria_id": "alergia",
+    "elemento": "Tramadol",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 157,
+    "categoria_id": "alergia",
+    "elemento": "Morfina",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 158,
+    "categoria_id": "alergia",
+    "elemento": "Codeína",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 159,
+    "categoria_id": "alergia",
+    "elemento": "Lidocaína",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 160,
+    "categoria_id": "alergia",
+    "elemento": "Procaína",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 161,
+    "categoria_id": "alergia",
+    "elemento": "Benzocaína",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 162,
+    "categoria_id": "alergia",
+    "elemento": "Articaína",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 163,
+    "categoria_id": "alergia",
+    "elemento": "Latex",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 164,
+    "categoria_id": "alergia",
+    "elemento": "Yodo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 165,
+    "categoria_id": "alergia",
+    "elemento": "Alcohol etílico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 166,
+    "categoria_id": "alergia",
+    "elemento": "Mercurio",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 167,
+    "categoria_id": "alergia",
+    "elemento": "Níquel",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 168,
+    "categoria_id": "alergia",
+    "elemento": "Cobalto",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 169,
+    "categoria_id": "alergia",
+    "elemento": "Cromo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 170,
+    "categoria_id": "alergia",
+    "elemento": "Formaldehído",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 171,
+    "categoria_id": "alergia",
+    "elemento": "Parafenilendiamina",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 172,
+    "categoria_id": "alergia",
+    "elemento": "Timerosal",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 173,
+    "categoria_id": "alergia",
+    "elemento": "Lanolina",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 174,
+    "categoria_id": "alergia",
+    "elemento": "Parabenos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 175,
+    "categoria_id": "alergia",
+    "elemento": "Fragancias",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 176,
+    "categoria_id": "alergia",
+    "elemento": "Conservantes cosméticos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 177,
+    "categoria_id": "alergia",
+    "elemento": "Protectores solares químicos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 178,
+    "categoria_id": "alergia",
+    "elemento": "Ácido hialurónico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 179,
+    "categoria_id": "alergia",
+    "elemento": "Colágeno bovino",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 180,
+    "categoria_id": "alergia",
+    "elemento": "Botox (toxina botulínica)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 181,
+    "categoria_id": "alergia",
+    "elemento": "Ácido poliláctico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 182,
+    "categoria_id": "alergia",
+    "elemento": "Hidroxiapatita de calcio",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 183,
+    "categoria_id": "alergia",
+    "elemento": "Silicona",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 184,
+    "categoria_id": "alergia",
+    "elemento": "Leche de vaca",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 185,
+    "categoria_id": "alergia",
+    "elemento": "Huevos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 186,
+    "categoria_id": "alergia",
+    "elemento": "Pescado",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 187,
+    "categoria_id": "alergia",
+    "elemento": "Mariscos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 188,
+    "categoria_id": "alergia",
+    "elemento": "Soja",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 189,
+    "categoria_id": "alergia",
+    "elemento": "Trigo (gluten)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 190,
+    "categoria_id": "alergia",
+    "elemento": "Frutos secos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 191,
+    "categoria_id": "alergia",
+    "elemento": "Cacahuetes",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 192,
+    "categoria_id": "alergia",
+    "elemento": "Semillas de sésamo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 193,
+    "categoria_id": "alergia",
+    "elemento": "Chocolate",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 194,
+    "categoria_id": "alergia",
+    "elemento": "Fresas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 195,
+    "categoria_id": "alergia",
+    "elemento": "Kiwi",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 196,
+    "categoria_id": "alergia",
+    "elemento": "Tomate",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 197,
+    "categoria_id": "alergia",
+    "elemento": "Polen de gramíneas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 198,
+    "categoria_id": "alergia",
+    "elemento": "Polen de árboles",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 199,
+    "categoria_id": "alergia",
+    "elemento": "Polen de malezas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 200,
+    "categoria_id": "alergia",
+    "elemento": "Ácaros del polvo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 201,
+    "categoria_id": "alergia",
+    "elemento": "Caspa de animales",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 202,
+    "categoria_id": "alergia",
+    "elemento": "Hongos ambientales",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 203,
+    "categoria_id": "alergia",
+    "elemento": "Picadura de abejas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 204,
+    "categoria_id": "alergia",
+    "elemento": "Picadura de avispas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 205,
+    "categoria_id": "alergia",
+    "elemento": "Picadura de hormigas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 206,
+    "categoria_id": "alergia",
+    "elemento": "Mordedura de arañas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 207,
+    "categoria_id": "alergia",
+    "elemento": "Sin alergias conocidas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 208,
+    "categoria_id": "habito",
+    "elemento": "Tabaquismo activo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 209,
+    "categoria_id": "habito",
+    "elemento": "Ex-fumador (menos de 1 año)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 210,
+    "categoria_id": "habito",
+    "elemento": "Ex-fumador (más de 1 año)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 211,
+    "categoria_id": "habito",
+    "elemento": "Fumador ocasional",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 212,
+    "categoria_id": "habito",
+    "elemento": "Fumador social",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 213,
+    "categoria_id": "habito",
+    "elemento": "Vapeo/cigarrillos electrónicos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 214,
+    "categoria_id": "habito",
+    "elemento": "Consumo de alcohol ocasional",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 215,
+    "categoria_id": "habito",
+    "elemento": "Consumo de alcohol moderado",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 216,
+    "categoria_id": "habito",
+    "elemento": "Consumo de alcohol excesivo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 217,
+    "categoria_id": "habito",
+    "elemento": "Alcoholismo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 218,
+    "categoria_id": "habito",
+    "elemento": "Ex-alcohólico en recuperación",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 219,
+    "categoria_id": "habito",
+    "elemento": "Consumo de drogas recreativas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 220,
+    "categoria_id": "habito",
+    "elemento": "Marihuana ocasional",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 221,
+    "categoria_id": "habito",
+    "elemento": "Cocaína",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 222,
+    "categoria_id": "habito",
+    "elemento": "Heroína",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 223,
+    "categoria_id": "habito",
+    "elemento": "Ex-drogadicto en recuperación",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 224,
+    "categoria_id": "habito",
+    "elemento": "Ejercicio regular",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 225,
+    "categoria_id": "habito",
+    "elemento": "Ejercicio ocasional",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 226,
+    "categoria_id": "habito",
+    "elemento": "Sedentarismo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 227,
+    "categoria_id": "habito",
+    "elemento": "Deportista profesional",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 228,
+    "categoria_id": "habito",
+    "elemento": "Deportista amateur",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 229,
+    "categoria_id": "habito",
+    "elemento": "Running/jogging",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 230,
+    "categoria_id": "habito",
+    "elemento": "Gimnasio/pesas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 231,
+    "categoria_id": "habito",
+    "elemento": "Yoga/pilates",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 232,
+    "categoria_id": "habito",
+    "elemento": "Natación",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 233,
+    "categoria_id": "habito",
+    "elemento": "Ciclismo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 234,
+    "categoria_id": "habito",
+    "elemento": "Artes marciales",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 235,
+    "categoria_id": "habito",
+    "elemento": "Exposición solar excesiva",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 236,
+    "categoria_id": "habito",
+    "elemento": "Uso regular de protector solar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 237,
+    "categoria_id": "habito",
+    "elemento": "Camas de bronceado",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 238,
+    "categoria_id": "habito",
+    "elemento": "Bronceado artificial",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 239,
+    "categoria_id": "habito",
+    "elemento": "Trabajo nocturno",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 240,
+    "categoria_id": "habito",
+    "elemento": "Estrés laboral alto",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 241,
+    "categoria_id": "habito",
+    "elemento": "Estrés crónico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 242,
+    "categoria_id": "habito",
+    "elemento": "Trastornos del sueño",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 243,
+    "categoria_id": "habito",
+    "elemento": "Insomnio crónico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 244,
+    "categoria_id": "habito",
+    "elemento": "Sueño irregular",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 245,
+    "categoria_id": "habito",
+    "elemento": "Menos de 6 horas de sueño",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 246,
+    "categoria_id": "habito",
+    "elemento": "Más de 9 horas de sueño",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 247,
+    "categoria_id": "habito",
+    "elemento": "Alimentación balanceada",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 248,
+    "categoria_id": "habito",
+    "elemento": "Dieta vegetariana",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 249,
+    "categoria_id": "habito",
+    "elemento": "Dieta vegana",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 250,
+    "categoria_id": "habito",
+    "elemento": "Dieta keto",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 251,
+    "categoria_id": "habito",
+    "elemento": "Ayuno intermitente",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 252,
+    "categoria_id": "habito",
+    "elemento": "Comida rápida frecuente",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 253,
+    "categoria_id": "habito",
+    "elemento": "Consumo excesivo de azúcar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 254,
+    "categoria_id": "habito",
+    "elemento": "Consumo excesivo de cafeína",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 255,
+    "categoria_id": "habito",
+    "elemento": "Consumo de suplementos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 256,
+    "categoria_id": "habito",
+    "elemento": "Automedicación frecuente",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 257,
+    "categoria_id": "habito",
+    "elemento": "Manipulación frecuente del rostro",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 258,
+    "categoria_id": "habito",
+    "elemento": "Rascado compulsivo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 259,
+    "categoria_id": "habito",
+    "elemento": "Tricotilomanía",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 260,
+    "categoria_id": "habito",
+    "elemento": "Onicofagia (morderse las uñas)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 261,
+    "categoria_id": "habito",
+    "elemento": "Bruxismo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 262,
+    "categoria_id": "habito",
+    "elemento": "Usar lentes de contacto",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 263,
+    "categoria_id": "habito",
+    "elemento": "Maquillaje diario",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 264,
+    "categoria_id": "habito",
+    "elemento": "Uso de extensiones de pestañas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 265,
+    "categoria_id": "habito",
+    "elemento": "Depilación frecuente",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 266,
+    "categoria_id": "habito",
+    "elemento": "Piercing facial",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 267,
+    "categoria_id": "habito",
+    "elemento": "Tatuajes",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 268,
+    "categoria_id": "habito",
+    "elemento": "Sin hábitos relevantes",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 269,
+    "categoria_id": "obstetrico",
+    "elemento": "Nulípara (sin embarazos)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 270,
+    "categoria_id": "obstetrico",
+    "elemento": "Primípara (1 embarazo)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 271,
+    "categoria_id": "obstetrico",
+    "elemento": "Multípara (2-4 embarazos)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 272,
+    "categoria_id": "obstetrico",
+    "elemento": "Gran multípara (5+ embarazos)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 273,
+    "categoria_id": "obstetrico",
+    "elemento": "Embarazo actual",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 274,
+    "categoria_id": "obstetrico",
+    "elemento": "Primer trimestre",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 275,
+    "categoria_id": "obstetrico",
+    "elemento": "Segundo trimestre",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 276,
+    "categoria_id": "obstetrico",
+    "elemento": "Tercer trimestre",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 277,
+    "categoria_id": "obstetrico",
+    "elemento": "Embarazo de alto riesgo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 278,
+    "categoria_id": "obstetrico",
+    "elemento": "Diabetes gestacional",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 279,
+    "categoria_id": "obstetrico",
+    "elemento": "Hipertensión gestacional",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 280,
+    "categoria_id": "obstetrico",
+    "elemento": "Preeclampsia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 281,
+    "categoria_id": "obstetrico",
+    "elemento": "Eclampsia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 282,
+    "categoria_id": "obstetrico",
+    "elemento": "Placenta previa",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 283,
+    "categoria_id": "obstetrico",
+    "elemento": "Desprendimiento placentario",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 284,
+    "categoria_id": "obstetrico",
+    "elemento": "Amenaza de aborto",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 285,
+    "categoria_id": "obstetrico",
+    "elemento": "Aborto espontáneo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 286,
+    "categoria_id": "obstetrico",
+    "elemento": "Aborto recurrente",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 287,
+    "categoria_id": "obstetrico",
+    "elemento": "Aborto inducido",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 288,
+    "categoria_id": "obstetrico",
+    "elemento": "Embarazo ectópico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 289,
+    "categoria_id": "obstetrico",
+    "elemento": "Mola hidatiforme",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 290,
+    "categoria_id": "obstetrico",
+    "elemento": "Parto prematuro",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 291,
+    "categoria_id": "obstetrico",
+    "elemento": "Parto a término",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 292,
+    "categoria_id": "obstetrico",
+    "elemento": "Parto post-término",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 293,
+    "categoria_id": "obstetrico",
+    "elemento": "Parto vaginal",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 294,
+    "categoria_id": "obstetrico",
+    "elemento": "Cesárea",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 295,
+    "categoria_id": "obstetrico",
+    "elemento": "Cesárea iterativa",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 296,
+    "categoria_id": "obstetrico",
+    "elemento": "Parto instrumental (fórceps/ventosa)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 297,
+    "categoria_id": "obstetrico",
+    "elemento": "Episiotomía",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 298,
+    "categoria_id": "obstetrico",
+    "elemento": "Desgarro perineal",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 299,
+    "categoria_id": "obstetrico",
+    "elemento": "Hemorragia postparto",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 300,
+    "categoria_id": "obstetrico",
+    "elemento": "Retención placentaria",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 301,
+    "categoria_id": "obstetrico",
+    "elemento": "Infección puerperal",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 302,
+    "categoria_id": "obstetrico",
+    "elemento": "Mastitis",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 303,
+    "categoria_id": "obstetrico",
+    "elemento": "Depresión postparto",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 304,
+    "categoria_id": "obstetrico",
+    "elemento": "Lactancia materna",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 305,
+    "categoria_id": "obstetrico",
+    "elemento": "Lactancia artificial",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 306,
+    "categoria_id": "obstetrico",
+    "elemento": "Lactancia mixta",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 307,
+    "categoria_id": "obstetrico",
+    "elemento": "Problemas de lactancia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 308,
+    "categoria_id": "obstetrico",
+    "elemento": "Muerte fetal",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 309,
+    "categoria_id": "obstetrico",
+    "elemento": "Muerte neonatal",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 310,
+    "categoria_id": "obstetrico",
+    "elemento": "Malformaciones fetales",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 311,
+    "categoria_id": "obstetrico",
+    "elemento": "Síndrome de Down",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 312,
+    "categoria_id": "obstetrico",
+    "elemento": "Defectos del tubo neural",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 313,
+    "categoria_id": "obstetrico",
+    "elemento": "Menarquia precoz (antes de 12 años)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 314,
+    "categoria_id": "obstetrico",
+    "elemento": "Menarquia tardía (después de 15 años)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 315,
+    "categoria_id": "obstetrico",
+    "elemento": "Ciclos regulares",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 316,
+    "categoria_id": "obstetrico",
+    "elemento": "Ciclos irregulares",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 317,
+    "categoria_id": "obstetrico",
+    "elemento": "Amenorrea",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 318,
+    "categoria_id": "obstetrico",
+    "elemento": "Dismenorrea",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 319,
+    "categoria_id": "obstetrico",
+    "elemento": "Síndrome premenstrual",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 320,
+    "categoria_id": "obstetrico",
+    "elemento": "Trastorno disfórico premenstrual",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 321,
+    "categoria_id": "obstetrico",
+    "elemento": "Metrorragia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 322,
+    "categoria_id": "obstetrico",
+    "elemento": "Menorragia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 323,
+    "categoria_id": "obstetrico",
+    "elemento": "Oligomenorrea",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 324,
+    "categoria_id": "obstetrico",
+    "elemento": "Polimenorrea",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 325,
+    "categoria_id": "obstetrico",
+    "elemento": "Menopausia natural",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 326,
+    "categoria_id": "obstetrico",
+    "elemento": "Menopausia quirúrgica",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 327,
+    "categoria_id": "obstetrico",
+    "elemento": "Menopausia precoz",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 328,
+    "categoria_id": "obstetrico",
+    "elemento": "Síndrome climatérico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 329,
+    "categoria_id": "obstetrico",
+    "elemento": "Terapia hormonal sustitutiva",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 330,
+    "categoria_id": "obstetrico",
+    "elemento": "Anticonceptivos orales",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 331,
+    "categoria_id": "obstetrico",
+    "elemento": "DIU (dispositivo intrauterino)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 332,
+    "categoria_id": "obstetrico",
+    "elemento": "Implante anticonceptivo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 333,
+    "categoria_id": "obstetrico",
+    "elemento": "Inyecciones anticonceptivas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 334,
+    "categoria_id": "obstetrico",
+    "elemento": "Ligadura de trompas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 335,
+    "categoria_id": "obstetrico",
+    "elemento": "Vasectomía (pareja)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 336,
+    "categoria_id": "obstetrico",
+    "elemento": "Infertilidad",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 337,
+    "categoria_id": "obstetrico",
+    "elemento": "Tratamientos de fertilidad",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 338,
+    "categoria_id": "obstetrico",
+    "elemento": "Fertilización in vitro",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 339,
+    "categoria_id": "obstetrico",
+    "elemento": "Ovarios poliquísticos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 340,
+    "categoria_id": "obstetrico",
+    "elemento": "Endometriosis",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 341,
+    "categoria_id": "obstetrico",
+    "elemento": "Fibromas uterinos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 342,
+    "categoria_id": "obstetrico",
+    "elemento": "Quistes ováricos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 343,
+    "categoria_id": "obstetrico",
+    "elemento": "Cáncer ginecológico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 344,
+    "categoria_id": "obstetrico",
+    "elemento": "Histerectomía",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 345,
+    "categoria_id": "obstetrico",
+    "elemento": "Ooforectomía",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 346,
+    "categoria_id": "obstetrico",
+    "elemento": "Mastectomía",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 347,
+    "categoria_id": "obstetrico",
+    "elemento": "Cirugía de mama",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 348,
+    "categoria_id": "obstetrico",
+    "elemento": "No aplica (paciente masculino)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 349,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía cardiovascular",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 350,
+    "categoria_id": "quirurgico",
+    "elemento": "Marcapasos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 351,
+    "categoria_id": "quirurgico",
+    "elemento": "Stent coronario",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 352,
+    "categoria_id": "quirurgico",
+    "elemento": "Bypass coronario",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 353,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía valvular",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 354,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía de aorta",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 355,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía pulmonar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 356,
+    "categoria_id": "quirurgico",
+    "elemento": "Lobectomía",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 357,
+    "categoria_id": "quirurgico",
+    "elemento": "Neumonectomía",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 358,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía de tórax",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 359,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía abdominal",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 360,
+    "categoria_id": "quirurgico",
+    "elemento": "Apendicectomía",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 361,
+    "categoria_id": "quirurgico",
+    "elemento": "Colecistectomía",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 362,
+    "categoria_id": "quirurgico",
+    "elemento": "Hernioplastia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 363,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía gástrica",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 364,
+    "categoria_id": "quirurgico",
+    "elemento": "Bypass gástrico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 365,
+    "categoria_id": "quirurgico",
+    "elemento": "Manga gástrica",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 366,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía de colon",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 367,
+    "categoria_id": "quirurgico",
+    "elemento": "Colostomía",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 368,
+    "categoria_id": "quirurgico",
+    "elemento": "Ileostomía",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 369,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía hepática",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 370,
+    "categoria_id": "quirurgico",
+    "elemento": "Trasplante hepático",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 371,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía renal",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 372,
+    "categoria_id": "quirurgico",
+    "elemento": "Nefrectomía",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 373,
+    "categoria_id": "quirurgico",
+    "elemento": "Trasplante renal",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 374,
+    "categoria_id": "quirurgico",
+    "elemento": "Litotricia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 375,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía urológica",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 376,
+    "categoria_id": "quirurgico",
+    "elemento": "Prostatectomía",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 377,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía de vejiga",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 378,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía ginecológica",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 379,
+    "categoria_id": "quirurgico",
+    "elemento": "Histerectomía",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 380,
+    "categoria_id": "quirurgico",
+    "elemento": "Ooforectomía",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 381,
+    "categoria_id": "quirurgico",
+    "elemento": "Cesárea",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 382,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía de mama",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 383,
+    "categoria_id": "quirurgico",
+    "elemento": "Mastectomía",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 384,
+    "categoria_id": "quirurgico",
+    "elemento": "Reconstrucción mamaria",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 385,
+    "categoria_id": "quirurgico",
+    "elemento": "Reducción mamaria",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 386,
+    "categoria_id": "quirurgico",
+    "elemento": "Aumento mamario",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 387,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía de tiroides",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 388,
+    "categoria_id": "quirurgico",
+    "elemento": "Tiroidectomía",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 389,
+    "categoria_id": "quirurgico",
+    "elemento": "Paratiroidectomía",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 390,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía de paratiroides",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 391,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía neurológica",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 392,
+    "categoria_id": "quirurgico",
+    "elemento": "Craneotomía",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 393,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía de columna",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 394,
+    "categoria_id": "quirurgico",
+    "elemento": "Fusión espinal",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 395,
+    "categoria_id": "quirurgico",
+    "elemento": "Discectomía",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 396,
+    "categoria_id": "quirurgico",
+    "elemento": "Laminectomía",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 397,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía de nervios periféricos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 398,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía ortopédica",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 399,
+    "categoria_id": "quirurgico",
+    "elemento": "Fractura de huesos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 400,
+    "categoria_id": "quirurgico",
+    "elemento": "Artroplastia de cadera",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 401,
+    "categoria_id": "quirurgico",
+    "elemento": "Artroplastia de rodilla",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 402,
+    "categoria_id": "quirurgico",
+    "elemento": "Artroscopia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 403,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía de ligamentos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 404,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía de menisco",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 405,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía de hombro",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 406,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía de mano",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 407,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía de pie",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 408,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía oftalmológica",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 409,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía de cataratas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 410,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía de retina",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 411,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía refractiva (LASIK)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 412,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía de glaucoma",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 413,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía de párpados",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 414,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía otorrinolaringológica",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 415,
+    "categoria_id": "quirurgico",
+    "elemento": "Septoplastia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 416,
+    "categoria_id": "quirurgico",
+    "elemento": "Rinoplastia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 417,
+    "categoria_id": "quirurgico",
+    "elemento": "Amigdalectomía",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 418,
+    "categoria_id": "quirurgico",
+    "elemento": "Adenoidectomía",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 419,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía de oído",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 420,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía de senos paranasales",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 421,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía dental/oral",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 422,
+    "categoria_id": "quirurgico",
+    "elemento": "Extracción dental",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 423,
+    "categoria_id": "quirurgico",
+    "elemento": "Implantes dentales",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 424,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía periodontal",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 425,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía maxilofacial",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 426,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía de ATM",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 427,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía plástica facial",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 428,
+    "categoria_id": "quirurgico",
+    "elemento": "Rinoplastia estética",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 429,
+    "categoria_id": "quirurgico",
+    "elemento": "Blefaroplastia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 430,
+    "categoria_id": "quirurgico",
+    "elemento": "Ritidectomía (lifting facial)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 431,
+    "categoria_id": "quirurgico",
+    "elemento": "Otoplastia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 432,
+    "categoria_id": "quirurgico",
+    "elemento": "Mentoplastia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 433,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía de frente",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 434,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía plástica corporal",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 435,
+    "categoria_id": "quirurgico",
+    "elemento": "Abdominoplastia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 436,
+    "categoria_id": "quirurgico",
+    "elemento": "Liposucción",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 437,
+    "categoria_id": "quirurgico",
+    "elemento": "Lifting de brazos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 438,
+    "categoria_id": "quirurgico",
+    "elemento": "Lifting de piernas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 439,
+    "categoria_id": "quirurgico",
+    "elemento": "Aumento de glúteos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 440,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía de contorno corporal",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 441,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía dermatológica",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 442,
+    "categoria_id": "quirurgico",
+    "elemento": "Extirpación de lesiones",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 443,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía de Mohs",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 444,
+    "categoria_id": "quirurgico",
+    "elemento": "Injertos de piel",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 445,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía láser",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 446,
+    "categoria_id": "quirurgico",
+    "elemento": "Criocirugía",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 447,
+    "categoria_id": "quirurgico",
+    "elemento": "Electrocirugía",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 448,
+    "categoria_id": "quirurgico",
+    "elemento": "Trasplante de órganos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 449,
+    "categoria_id": "quirurgico",
+    "elemento": "Trasplante de médula ósea",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 450,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía de emergencia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 451,
+    "categoria_id": "quirurgico",
+    "elemento": "Cirugía por trauma",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 452,
+    "categoria_id": "quirurgico",
+    "elemento": "Múltiples cirugías",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 453,
+    "categoria_id": "quirurgico",
+    "elemento": "Complicaciones quirúrgicas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 454,
+    "categoria_id": "quirurgico",
+    "elemento": "Infección postoperatoria",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 455,
+    "categoria_id": "quirurgico",
+    "elemento": "Queloides postquirúrgicos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 456,
+    "categoria_id": "quirurgico",
+    "elemento": "Cicatrización deficiente",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 457,
+    "categoria_id": "quirurgico",
+    "elemento": "Sin cirugías previas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 458,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Marcapasos cardíaco",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 459,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Desfibrilador automático implantable (DAI)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 460,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Stent coronario",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 461,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Prótesis valvular cardíaca",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 462,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Clip vascular",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 463,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Filtro de vena cava",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 464,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Puerto de acceso vascular",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 465,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Catéter permanente",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 466,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Implante coclear",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 467,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Implante de oído medio",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 468,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Clips de aneurisma cerebral",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 469,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Derivación ventriculoperitoneal",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 470,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Estimulador cerebral profundo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 471,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Estimulador del nervio vago",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 472,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Estimulador medular",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 473,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Bomba de insulina",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 474,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Bomba de dolor intratecal",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 475,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Prótesis de cadera",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 476,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Prótesis de rodilla",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 477,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Prótesis de hombro",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 478,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Prótesis de tobillo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 479,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Placas de titanio en huesos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 480,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Tornillos de titanio",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 481,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Varillas espinales",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 482,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Fusión espinal con metal",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 483,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Alambre de Kirschner",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 484,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Clavos intramedulares",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 485,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Placas de fractura",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 486,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Implantes dentales de titanio",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 487,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Brackets ortodóncicos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 488,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Retenedores metálicos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 489,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Coronas dentales con metal",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 490,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Puentes dentales metálicos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 491,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Amalgamas dentales",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 492,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Implantes mamarios",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 493,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Expansores mamarios",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 494,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Implantes de glúteos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 495,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Implantes de pantorrilla",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 496,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Implantes faciales",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 497,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Malla quirúrgica",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 498,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Suturas metálicas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 499,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Clips quirúrgicos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 500,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Grapas quirúrgicas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 501,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Férulas metálicas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 502,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Prótesis maxilofaciales",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 503,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Implantes oculares",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 504,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Prótesis testiculares",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 505,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Dispositivo intrauterino (DIU) de cobre",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 506,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Dispositivo intrauterino (DIU) Mirena",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 507,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Implante anticonceptivo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 508,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Piercing corporal",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 509,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Piercing facial",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 510,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Piercing en lengua",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 511,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Piercing genital",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 512,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Tatuajes con pigmentos metálicos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 513,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Maquillaje permanente con óxidos metálicos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 514,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Fragmentos de metralla",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 515,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Balas o proyectiles",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 516,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Esquirlas metálicas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 517,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Cuerpos extraños metálicos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 518,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Prótesis externa",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 519,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Audífono",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 520,
+    "categoria_id": "dispositivo_metalico",
+    "elemento": "Sin dispositivos metálicos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 521,
+    "categoria_id": "medicacion",
+    "elemento": "Anticoagulantes orales (warfarina)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 522,
+    "categoria_id": "medicacion",
+    "elemento": "Anticoagulantes nuevos (rivaroxabán, apixabán)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 523,
+    "categoria_id": "medicacion",
+    "elemento": "Aspirina antiagregante",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 524,
+    "categoria_id": "medicacion",
+    "elemento": "Clopidogrel",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 525,
+    "categoria_id": "medicacion",
+    "elemento": "Heparina",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 526,
+    "categoria_id": "medicacion",
+    "elemento": "Antihipertensivos (IECA)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 527,
+    "categoria_id": "medicacion",
+    "elemento": "Antihipertensivos (ARA II)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 528,
+    "categoria_id": "medicacion",
+    "elemento": "Betabloqueadores",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 529,
+    "categoria_id": "medicacion",
+    "elemento": "Calcioantagonistas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 530,
+    "categoria_id": "medicacion",
+    "elemento": "Diuréticos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 531,
+    "categoria_id": "medicacion",
+    "elemento": "Digitalicos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 532,
+    "categoria_id": "medicacion",
+    "elemento": "Antiarrítmicos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 533,
+    "categoria_id": "medicacion",
+    "elemento": "Nitratos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 534,
+    "categoria_id": "medicacion",
+    "elemento": "Estatinas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 535,
+    "categoria_id": "medicacion",
+    "elemento": "Fibratos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 536,
+    "categoria_id": "medicacion",
+    "elemento": "Ezetimibe",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 537,
+    "categoria_id": "medicacion",
+    "elemento": "Insulina rápida",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 538,
+    "categoria_id": "medicacion",
+    "elemento": "Insulina lenta",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 539,
+    "categoria_id": "medicacion",
+    "elemento": "Metformina",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 540,
+    "categoria_id": "medicacion",
+    "elemento": "Sulfonilureas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 541,
+    "categoria_id": "medicacion",
+    "elemento": "Inhibidores DPP-4",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 542,
+    "categoria_id": "medicacion",
+    "elemento": "Agonistas GLP-1",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 543,
+    "categoria_id": "medicacion",
+    "elemento": "Inhibidores SGLT-2",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 544,
+    "categoria_id": "medicacion",
+    "elemento": "Levotiroxina",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 545,
+    "categoria_id": "medicacion",
+    "elemento": "Antitiroideos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 546,
+    "categoria_id": "medicacion",
+    "elemento": "Corticoides orales",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 547,
+    "categoria_id": "medicacion",
+    "elemento": "Corticoides tópicos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 548,
+    "categoria_id": "medicacion",
+    "elemento": "Corticoides inyectables",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 549,
+    "categoria_id": "medicacion",
+    "elemento": "Prednisona",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 550,
+    "categoria_id": "medicacion",
+    "elemento": "Prednisolona",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 551,
+    "categoria_id": "medicacion",
+    "elemento": "Metilprednisolona",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 552,
+    "categoria_id": "medicacion",
+    "elemento": "Dexametasona",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 553,
+    "categoria_id": "medicacion",
+    "elemento": "Hidrocortisona",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 554,
+    "categoria_id": "medicacion",
+    "elemento": "Antihistamínicos H1",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 555,
+    "categoria_id": "medicacion",
+    "elemento": "Antihistamínicos H2",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 556,
+    "categoria_id": "medicacion",
+    "elemento": "Antileucotrienos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 557,
+    "categoria_id": "medicacion",
+    "elemento": "Broncodilatadores",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 558,
+    "categoria_id": "medicacion",
+    "elemento": "Corticoides inhalados",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 559,
+    "categoria_id": "medicacion",
+    "elemento": "Inhibidores de la bomba de protones",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 560,
+    "categoria_id": "medicacion",
+    "elemento": "Antagonistas H2",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 561,
+    "categoria_id": "medicacion",
+    "elemento": "Antiácidos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 562,
+    "categoria_id": "medicacion",
+    "elemento": "Protectores gástricos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 563,
+    "categoria_id": "medicacion",
+    "elemento": "Antibióticos beta-lactámicos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 564,
+    "categoria_id": "medicacion",
+    "elemento": "Macrólidos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 565,
+    "categoria_id": "medicacion",
+    "elemento": "Quinolonas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 566,
+    "categoria_id": "medicacion",
+    "elemento": "Tetraciclinas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 567,
+    "categoria_id": "medicacion",
+    "elemento": "Sulfonamidas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 568,
+    "categoria_id": "medicacion",
+    "elemento": "Antifúngicos sistémicos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 569,
+    "categoria_id": "medicacion",
+    "elemento": "Antivirales",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 570,
+    "categoria_id": "medicacion",
+    "elemento": "Antirretrovirales",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 571,
+    "categoria_id": "medicacion",
+    "elemento": "Antimicóticos tópicos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 572,
+    "categoria_id": "medicacion",
+    "elemento": "Analgésicos no opioides",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 573,
+    "categoria_id": "medicacion",
+    "elemento": "Analgésicos opioides",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 574,
+    "categoria_id": "medicacion",
+    "elemento": "AINEs",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 575,
+    "categoria_id": "medicacion",
+    "elemento": "Paracetamol",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 576,
+    "categoria_id": "medicacion",
+    "elemento": "Ibuprofeno",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 577,
+    "categoria_id": "medicacion",
+    "elemento": "Diclofenaco",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 578,
+    "categoria_id": "medicacion",
+    "elemento": "Naproxeno",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 579,
+    "categoria_id": "medicacion",
+    "elemento": "Celecoxib",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 580,
+    "categoria_id": "medicacion",
+    "elemento": "Tramadol",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 581,
+    "categoria_id": "medicacion",
+    "elemento": "Morfina",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 582,
+    "categoria_id": "medicacion",
+    "elemento": "Fentanilo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 583,
+    "categoria_id": "medicacion",
+    "elemento": "Codeína",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 584,
+    "categoria_id": "medicacion",
+    "elemento": "Anticonvulsivantes",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 585,
+    "categoria_id": "medicacion",
+    "elemento": "Antidepresivos tricíclicos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 586,
+    "categoria_id": "medicacion",
+    "elemento": "Inhibidores selectivos de recaptación de serotonina",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 587,
+    "categoria_id": "medicacion",
+    "elemento": "Inhibidores de recaptación de serotonina-noradrenalina",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 588,
+    "categoria_id": "medicacion",
+    "elemento": "Antipsicóticos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 589,
+    "categoria_id": "medicacion",
+    "elemento": "Benzodiacepinas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 590,
+    "categoria_id": "medicacion",
+    "elemento": "Hipnóticos no benzodiacepínicos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 591,
+    "categoria_id": "medicacion",
+    "elemento": "Estabilizadores del ánimo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 592,
+    "categoria_id": "medicacion",
+    "elemento": "Medicamentos para TDAH",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 593,
+    "categoria_id": "medicacion",
+    "elemento": "Antiparkinsonianos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 594,
+    "categoria_id": "medicacion",
+    "elemento": "Anticolinérgicos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 595,
+    "categoria_id": "medicacion",
+    "elemento": "Relajantes musculares",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 596,
+    "categoria_id": "medicacion",
+    "elemento": "Medicamentos para osteoporosis",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 597,
+    "categoria_id": "medicacion",
+    "elemento": "Calcio y vitamina D",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 598,
+    "categoria_id": "medicacion",
+    "elemento": "Anticonceptivos orales",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 599,
+    "categoria_id": "medicacion",
+    "elemento": "Terapia hormonal sustitutiva",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 600,
+    "categoria_id": "medicacion",
+    "elemento": "Medicamentos para disfunción eréctil",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 601,
+    "categoria_id": "medicacion",
+    "elemento": "Medicamentos para hiperplasia prostática",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 602,
+    "categoria_id": "medicacion",
+    "elemento": "Inmunosupresores",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 603,
+    "categoria_id": "medicacion",
+    "elemento": "Metotrexato",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 604,
+    "categoria_id": "medicacion",
+    "elemento": "Azatioprina",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 605,
+    "categoria_id": "medicacion",
+    "elemento": "Ciclosporina",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 606,
+    "categoria_id": "medicacion",
+    "elemento": "Tacrolimus",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 607,
+    "categoria_id": "medicacion",
+    "elemento": "Medicamentos biológicos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 608,
+    "categoria_id": "medicacion",
+    "elemento": "Quimioterapia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 609,
+    "categoria_id": "medicacion",
+    "elemento": "Radioterapia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 610,
+    "categoria_id": "medicacion",
+    "elemento": "Isotretinoína",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 611,
+    "categoria_id": "medicacion",
+    "elemento": "Retinoides tópicos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 612,
+    "categoria_id": "medicacion",
+    "elemento": "Tretinoína",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 613,
+    "categoria_id": "medicacion",
+    "elemento": "Adapaleno",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 614,
+    "categoria_id": "medicacion",
+    "elemento": "Tazaroteno",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 615,
+    "categoria_id": "medicacion",
+    "elemento": "Ácido salicílico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 616,
+    "categoria_id": "medicacion",
+    "elemento": "Peróxido de benzoílo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 617,
+    "categoria_id": "medicacion",
+    "elemento": "Antibióticos tópicos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 618,
+    "categoria_id": "medicacion",
+    "elemento": "Antifúngicos tópicos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 619,
+    "categoria_id": "medicacion",
+    "elemento": "Antivirales tópicos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 620,
+    "categoria_id": "medicacion",
+    "elemento": "Protectores solares",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 621,
+    "categoria_id": "medicacion",
+    "elemento": "Hidroquinona",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 622,
+    "categoria_id": "medicacion",
+    "elemento": "Kojic acid",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 623,
+    "categoria_id": "medicacion",
+    "elemento": "Ácido glicólico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 624,
+    "categoria_id": "medicacion",
+    "elemento": "Ácido láctico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 625,
+    "categoria_id": "medicacion",
+    "elemento": "Vitamina C tópica",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 626,
+    "categoria_id": "medicacion",
+    "elemento": "Vitamina E tópica",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 627,
+    "categoria_id": "medicacion",
+    "elemento": "Niacinamida",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 628,
+    "categoria_id": "medicacion",
+    "elemento": "Péptidos cosméticos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 629,
+    "categoria_id": "medicacion",
+    "elemento": "Factor de crecimiento",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 630,
+    "categoria_id": "medicacion",
+    "elemento": "Plasma rico en plaquetas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 631,
+    "categoria_id": "medicacion",
+    "elemento": "Ácido hialurónico tópico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 632,
+    "categoria_id": "medicacion",
+    "elemento": "Medicina alternativa",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 633,
+    "categoria_id": "medicacion",
+    "elemento": "Hierbas medicinales",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 634,
+    "categoria_id": "medicacion",
+    "elemento": "Homeopatía",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 635,
+    "categoria_id": "medicacion",
+    "elemento": "Suplementos vitamínicos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 636,
+    "categoria_id": "medicacion",
+    "elemento": "Omega 3",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 637,
+    "categoria_id": "medicacion",
+    "elemento": "Probióticos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 638,
+    "categoria_id": "medicacion",
+    "elemento": "Coenzima Q10",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 639,
+    "categoria_id": "medicacion",
+    "elemento": "Sin medicación actual",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 640,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Sin rutina específica",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 641,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Rutina básica (limpieza y humectación)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 642,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Rutina completa (limpieza, tónico, sérum, humectante, protector solar)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 643,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Limpiador facial suave",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 644,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Limpiador con ácido salicílico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 645,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Limpiador con peróxido de benzoílo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 646,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Limpiador con ácido glicólico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 647,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Limpiador micelar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 648,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Aceite limpiador",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 649,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Jabón común en rostro",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 650,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Tónico astringente",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 651,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Tónico hidratante",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 652,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Tónico con ácidos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 653,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Agua micelar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 654,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Sérum de vitamina C",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 655,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Sérum de ácido hialurónico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 656,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Sérum de niacinamida",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 657,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Sérum con retinol",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 658,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Sérum con péptidos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 659,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Sérum despigmentante",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 660,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Sérum antioxidante",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 661,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Humectante facial básico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 662,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Humectante con SPF",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 663,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Humectante para piel grasa",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 664,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Humectante para piel seca",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 665,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Humectante para piel sensible",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 666,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Humectante con ácido hialurónico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 667,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Protector solar facial SPF 30+",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 668,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Protector solar facial SPF 50+",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 669,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Protector solar físico/mineral",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 670,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Protector solar químico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 671,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Protector solar con color",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 672,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Exfoliante físico (scrub)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 673,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Exfoliante químico (AHA/BHA)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 674,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Ácido glicólico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 675,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Ácido salicílico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 676,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Ácido láctico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 677,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Ácido mandélico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 678,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Retinol de venta libre",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 679,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Tretinoína recetada",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 680,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Adapaleno",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 681,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Peróxido de benzoílo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 682,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Hidroquinona",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 683,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Kojic acid",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 684,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Arbutina",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 685,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Vitamina C (ácido ascórbico)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 686,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Vitamina E",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 687,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Niacinamida (vitamina B3)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 688,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Ácido hialurónico tópico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 689,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Ácido ferúlico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 690,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Resveratrol",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 691,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Péptidos de cobre",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 692,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Factor de crecimiento",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 693,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Mascarillas faciales ocasionales",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 694,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Mascarillas faciales regulares",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 695,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Mascarillas de arcilla",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 696,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Mascarillas hidratantes",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 697,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Mascarillas exfoliantes",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 698,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Mascarillas despigmentantes",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 699,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Mascarillas anti-edad",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 700,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Parches de hidrogel",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 701,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Contorno de ojos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 702,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Crema para ojeras",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 703,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Crema antiarrugas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 704,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Aceites faciales",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 705,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Aceite de rosa mosqueta",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 706,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Aceite de jojoba",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 707,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Aceite de argán",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 708,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Aceite de vitamina E",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 709,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Productos naturales/orgánicos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 710,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Productos farmacéuticos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 711,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Productos de lujo/alta gama",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 712,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Productos económicos/drugstore",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 713,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Cosmética coreana",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 714,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Cosmética francesa",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 715,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Cosmética americana",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 716,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Maquillaje diario",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 717,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Base de maquillaje",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 718,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Corrector",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 719,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Polvo compacto",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 720,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Rubor",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 721,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Máscara de pestañas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 722,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Delineador",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 723,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Sombras de ojos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 724,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Labial",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 725,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Desmaquillante específico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 726,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Toallitas desmaquillantes",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 727,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Agua micelar desmaquillante",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 728,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Dispositivos de limpieza facial",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 729,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Cepillo limpiador facial",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 730,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Esponja de konjac",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 731,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Rodillo de jade",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 732,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Gua sha",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 733,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Derma roller casero",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 734,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Dispositivos LED en casa",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 735,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Vaporizador facial",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 736,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Humidificador ambiental",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 737,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Cambio de fundas de almohada frecuente",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 738,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Fundas de seda",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 739,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Toallas exclusivas para rostro",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 740,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Uso de productos vencidos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 741,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Compartir productos cosméticos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 742,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Automedicación dermatológica",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 743,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Remedios caseros",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 744,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Aplicación incorrecta de productos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 745,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Uso excesivo de productos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 746,
+    "categoria_id": "cuidados_piel",
+    "elemento": "Mezcla inadecuada de ingredientes activos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 747,
+    "categoria_id": "rutina_piel",
+    "elemento": "Sin rutina establecida",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 748,
+    "categoria_id": "rutina_piel",
+    "elemento": "Rutina matutina básica",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 749,
+    "categoria_id": "rutina_piel",
+    "elemento": "Rutina nocturna básica",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 750,
+    "categoria_id": "rutina_piel",
+    "elemento": "Rutina completa mañana y noche",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 751,
+    "categoria_id": "rutina_piel",
+    "elemento": "Rutina de 3 pasos (limpiar, hidratar, proteger)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 752,
+    "categoria_id": "rutina_piel",
+    "elemento": "Rutina de 5 pasos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 753,
+    "categoria_id": "rutina_piel",
+    "elemento": "Rutina de 10 pasos (estilo coreano)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 754,
+    "categoria_id": "rutina_piel",
+    "elemento": "Rutina personalizada por dermatólogo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 755,
+    "categoria_id": "rutina_piel",
+    "elemento": "Limpieza facial 1 vez al día",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 756,
+    "categoria_id": "rutina_piel",
+    "elemento": "Limpieza facial 2 veces al día",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 757,
+    "categoria_id": "rutina_piel",
+    "elemento": "Limpieza facial ocasional",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 758,
+    "categoria_id": "rutina_piel",
+    "elemento": "Doble limpieza (aceite + limpiador)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 759,
+    "categoria_id": "rutina_piel",
+    "elemento": "Solo agua para limpiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 760,
+    "categoria_id": "rutina_piel",
+    "elemento": "Jabón corporal en rostro",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 761,
+    "categoria_id": "rutina_piel",
+    "elemento": "Aplicación de humectante diaria",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 762,
+    "categoria_id": "rutina_piel",
+    "elemento": "Aplicación de humectante ocasional",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 763,
+    "categoria_id": "rutina_piel",
+    "elemento": "Solo humectante en invierno",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 764,
+    "categoria_id": "rutina_piel",
+    "elemento": "Protector solar diario",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 765,
+    "categoria_id": "rutina_piel",
+    "elemento": "Protector solar ocasional",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 766,
+    "categoria_id": "rutina_piel",
+    "elemento": "Protector solar solo en playa",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 767,
+    "categoria_id": "rutina_piel",
+    "elemento": "Sin uso de protector solar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 768,
+    "categoria_id": "rutina_piel",
+    "elemento": "Exfoliación 1-2 veces por semana",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 769,
+    "categoria_id": "rutina_piel",
+    "elemento": "Exfoliación diaria",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 770,
+    "categoria_id": "rutina_piel",
+    "elemento": "Exfoliación ocasional",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 771,
+    "categoria_id": "rutina_piel",
+    "elemento": "Sin exfoliación",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 772,
+    "categoria_id": "rutina_piel",
+    "elemento": "Uso de sérum diario",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 773,
+    "categoria_id": "rutina_piel",
+    "elemento": "Uso de sérum ocasional",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 774,
+    "categoria_id": "rutina_piel",
+    "elemento": "Múltiples sérums",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 775,
+    "categoria_id": "rutina_piel",
+    "elemento": "Aplicación de productos en orden correcto",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 776,
+    "categoria_id": "rutina_piel",
+    "elemento": "Aplicación desordenada de productos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 777,
+    "categoria_id": "rutina_piel",
+    "elemento": "Espera entre aplicaciones",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 778,
+    "categoria_id": "rutina_piel",
+    "elemento": "Aplicación rápida sin esperas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 779,
+    "categoria_id": "rutina_piel",
+    "elemento": "Mascarillas 1-2 veces por semana",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 780,
+    "categoria_id": "rutina_piel",
+    "elemento": "Mascarillas ocasionales",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 781,
+    "categoria_id": "rutina_piel",
+    "elemento": "Mascarillas diarias",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 782,
+    "categoria_id": "rutina_piel",
+    "elemento": "Sin uso de mascarillas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 783,
+    "categoria_id": "rutina_piel",
+    "elemento": "Rutina diferente para cada estación",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 784,
+    "categoria_id": "rutina_piel",
+    "elemento": "Misma rutina todo el año",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 785,
+    "categoria_id": "rutina_piel",
+    "elemento": "Adaptación según estado de la piel",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 786,
+    "categoria_id": "rutina_piel",
+    "elemento": "Rutina rígida sin cambios",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 787,
+    "categoria_id": "rutina_piel",
+    "elemento": "Consulta regular con dermatólogo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 788,
+    "categoria_id": "rutina_piel",
+    "elemento": "Autodiagnóstico y autotratar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 789,
+    "categoria_id": "rutina_piel",
+    "elemento": "Seguimiento de rutina por apps",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 790,
+    "categoria_id": "rutina_piel",
+    "elemento": "Constancia en la rutina",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 791,
+    "categoria_id": "rutina_piel",
+    "elemento": "Rutina irregular",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 792,
+    "categoria_id": "rutina_piel",
+    "elemento": "Abandono frecuente de rutina",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 793,
+    "categoria_id": "rutina_piel",
+    "elemento": "Cambio constante de productos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 794,
+    "categoria_id": "rutina_piel",
+    "elemento": "Fidelidad a marcas específicas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 795,
+    "categoria_id": "rutina_piel",
+    "elemento": "Experimentación con productos nuevos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 796,
+    "categoria_id": "rutina_piel",
+    "elemento": "Introducción gradual de productos nuevos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 797,
+    "categoria_id": "rutina_piel",
+    "elemento": "Uso simultáneo de múltiples productos nuevos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 798,
+    "categoria_id": "rutina_piel",
+    "elemento": "Patch test antes de usar productos nuevos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 799,
+    "categoria_id": "rutina_piel",
+    "elemento": "Sin testing de productos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 800,
+    "categoria_id": "rutina_piel",
+    "elemento": "Lectura de etiquetas e ingredientes",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 801,
+    "categoria_id": "rutina_piel",
+    "elemento": "Compra impulsiva sin investigar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 802,
+    "categoria_id": "rutina_piel",
+    "elemento": "Rutina basada en tipo de piel",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 803,
+    "categoria_id": "rutina_piel",
+    "elemento": "Rutina basada en edad",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 804,
+    "categoria_id": "rutina_piel",
+    "elemento": "Rutina basada en problemas específicos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 805,
+    "categoria_id": "rutina_piel",
+    "elemento": "Rutina genérica sin personalización",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 806,
+    "categoria_id": "rutina_piel",
+    "elemento": "Presupuesto alto para skincare",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 807,
+    "categoria_id": "rutina_piel",
+    "elemento": "Presupuesto moderado para skincare",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 808,
+    "categoria_id": "rutina_piel",
+    "elemento": "Presupuesto bajo para skincare",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 809,
+    "categoria_id": "rutina_piel",
+    "elemento": "Inversión solo en tratamientos profesionales",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 810,
+    "categoria_id": "rutina_piel",
+    "elemento": "Cuidado corporal completo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 811,
+    "categoria_id": "rutina_piel",
+    "elemento": "Cuidado corporal básico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 812,
+    "categoria_id": "rutina_piel",
+    "elemento": "Solo cuidado facial",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 813,
+    "categoria_id": "rutina_piel",
+    "elemento": "Descuido general de la piel",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 814,
+    "categoria_id": "rutina_piel",
+    "elemento": "Hidratación corporal diaria",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 815,
+    "categoria_id": "rutina_piel",
+    "elemento": "Hidratación corporal ocasional",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 816,
+    "categoria_id": "rutina_piel",
+    "elemento": "Exfoliación corporal regular",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 817,
+    "categoria_id": "rutina_piel",
+    "elemento": "Protector solar corporal",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 818,
+    "categoria_id": "rutina_piel",
+    "elemento": "Sin cuidado corporal específico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 819,
+    "categoria_id": "rutina_piel",
+    "elemento": "Atención especial a cuello y escote",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 820,
+    "categoria_id": "rutina_piel",
+    "elemento": "Cuidado específico de manos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 821,
+    "categoria_id": "rutina_piel",
+    "elemento": "Cuidado específico de pies",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 822,
+    "categoria_id": "rutina_piel",
+    "elemento": "Rutina antes de dormir",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 823,
+    "categoria_id": "rutina_piel",
+    "elemento": "Cambio de sábanas frecuente",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 824,
+    "categoria_id": "rutina_piel",
+    "elemento": "Higiene de herramientas de aplicación",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 825,
+    "categoria_id": "rutina_piel",
+    "elemento": "Almacenamiento adecuado de productos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 826,
+    "categoria_id": "rutina_piel",
+    "elemento": "Verificación de fechas de vencimiento",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 827,
+    "categoria_id": "rutina_piel",
+    "elemento": "Uso de productos vencidos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 828,
+    "categoria_id": "rutina_piel",
+    "elemento": "Compartir productos de cuidado",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 829,
+    "categoria_id": "otros",
+    "elemento": "Trastornos de la alimentación",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 830,
+    "categoria_id": "otros",
+    "elemento": "Anorexia nerviosa",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 831,
+    "categoria_id": "otros",
+    "elemento": "Bulimia nerviosa",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 832,
+    "categoria_id": "otros",
+    "elemento": "Trastorno por atracón",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 833,
+    "categoria_id": "otros",
+    "elemento": "Ortorexia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 834,
+    "categoria_id": "otros",
+    "elemento": "Pérdida/ganancia de peso significativa",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 835,
+    "categoria_id": "otros",
+    "elemento": "Fluctuaciones de peso frecuentes",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 836,
+    "categoria_id": "otros",
+    "elemento": "Cirugía bariátrica previa",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 837,
+    "categoria_id": "otros",
+    "elemento": "Uso de suplementos para adelgazar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 838,
+    "categoria_id": "otros",
+    "elemento": "Uso de esteroides anabólicos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 839,
+    "categoria_id": "otros",
+    "elemento": "Trastornos hormonales",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 840,
+    "categoria_id": "otros",
+    "elemento": "Síndrome de Cushing",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 841,
+    "categoria_id": "otros",
+    "elemento": "Enfermedad de Addison",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 842,
+    "categoria_id": "otros",
+    "elemento": "Síndrome de ovario poliquístico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 843,
+    "categoria_id": "otros",
+    "elemento": "Hiperandrogenismo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 844,
+    "categoria_id": "otros",
+    "elemento": "Prolactinoma",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 845,
+    "categoria_id": "otros",
+    "elemento": "Acromegalia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 846,
+    "categoria_id": "otros",
+    "elemento": "Trastornos genéticos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 847,
+    "categoria_id": "otros",
+    "elemento": "Síndrome de Marfan",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 848,
+    "categoria_id": "otros",
+    "elemento": "Síndrome de Ehlers-Danlos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 849,
+    "categoria_id": "otros",
+    "elemento": "Neurofibromatosis",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 850,
+    "categoria_id": "otros",
+    "elemento": "Esclerosis tuberosa",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 851,
+    "categoria_id": "otros",
+    "elemento": "Síndrome de Turner",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 852,
+    "categoria_id": "otros",
+    "elemento": "Síndrome de Klinefelter",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 853,
+    "categoria_id": "otros",
+    "elemento": "Albinismo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 854,
+    "categoria_id": "otros",
+    "elemento": "Xeroderma pigmentoso",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 855,
+    "categoria_id": "otros",
+    "elemento": "Enfermedades raras",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 856,
+    "categoria_id": "otros",
+    "elemento": "Enfermedades huérfanas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 857,
+    "categoria_id": "otros",
+    "elemento": "Trastornos mitocondriales",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 858,
+    "categoria_id": "otros",
+    "elemento": "Enfermedades lisosomales",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 859,
+    "categoria_id": "otros",
+    "elemento": "Enfermedades peroxisomales",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 860,
+    "categoria_id": "otros",
+    "elemento": "Inmunodeficiencias primarias",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 861,
+    "categoria_id": "otros",
+    "elemento": "Enfermedades autoinmunes raras",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 862,
+    "categoria_id": "otros",
+    "elemento": "Vasculitis",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 863,
+    "categoria_id": "otros",
+    "elemento": "Sarcoidosis",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 864,
+    "categoria_id": "otros",
+    "elemento": "Amiloidosis",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 865,
+    "categoria_id": "otros",
+    "elemento": "Porfiria",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 866,
+    "categoria_id": "otros",
+    "elemento": "Hemocromatosis",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 867,
+    "categoria_id": "otros",
+    "elemento": "Enfermedad de Wilson",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 868,
+    "categoria_id": "otros",
+    "elemento": "Deficiencia de alfa-1 antitripsina",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 869,
+    "categoria_id": "otros",
+    "elemento": "Exposición ocupacional",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 870,
+    "categoria_id": "otros",
+    "elemento": "Trabajo con químicos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 871,
+    "categoria_id": "otros",
+    "elemento": "Trabajo con radiación",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 872,
+    "categoria_id": "otros",
+    "elemento": "Trabajo al aire libre",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 873,
+    "categoria_id": "otros",
+    "elemento": "Trabajo en ambientes contaminados",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 874,
+    "categoria_id": "otros",
+    "elemento": "Exposición a metales pesados",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 875,
+    "categoria_id": "otros",
+    "elemento": "Exposición a asbesto",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 876,
+    "categoria_id": "otros",
+    "elemento": "Trabajo nocturno crónico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 877,
+    "categoria_id": "otros",
+    "elemento": "Viajes frecuentes",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 878,
+    "categoria_id": "otros",
+    "elemento": "Jet lag crónico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 879,
+    "categoria_id": "otros",
+    "elemento": "Cambios de zona horaria frecuentes",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 880,
+    "categoria_id": "otros",
+    "elemento": "Residencia en altitud elevada",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 881,
+    "categoria_id": "otros",
+    "elemento": "Residencia en clima extremo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 882,
+    "categoria_id": "otros",
+    "elemento": "Exposición a contaminación ambiental",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 883,
+    "categoria_id": "otros",
+    "elemento": "Vida en ciudad con alta polución",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 884,
+    "categoria_id": "otros",
+    "elemento": "Exposición a humo de segunda mano",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 885,
+    "categoria_id": "otros",
+    "elemento": "Convivencia con fumadores",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 886,
+    "categoria_id": "otros",
+    "elemento": "Mascotas en casa",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 887,
+    "categoria_id": "otros",
+    "elemento": "Alergias a mascotas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 888,
+    "categoria_id": "otros",
+    "elemento": "Ácaros del polvo doméstico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 889,
+    "categoria_id": "otros",
+    "elemento": "Moho en vivienda",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 890,
+    "categoria_id": "otros",
+    "elemento": "Humedad excesiva en casa",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 891,
+    "categoria_id": "otros",
+    "elemento": "Problemas de ventilación",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 892,
+    "categoria_id": "otros",
+    "elemento": "Agua de pozo/no tratada",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 893,
+    "categoria_id": "otros",
+    "elemento": "Uso de productos de limpieza agresivos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 894,
+    "categoria_id": "otros",
+    "elemento": "Contacto frecuente con detergentes",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 895,
+    "categoria_id": "otros",
+    "elemento": "Jardinería frecuente",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 896,
+    "categoria_id": "otros",
+    "elemento": "Deportes de contacto",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 897,
+    "categoria_id": "otros",
+    "elemento": "Artes marciales",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 898,
+    "categoria_id": "otros",
+    "elemento": "Boxeo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 899,
+    "categoria_id": "otros",
+    "elemento": "Rugby",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 900,
+    "categoria_id": "otros",
+    "elemento": "Fútbol americano",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 901,
+    "categoria_id": "otros",
+    "elemento": "Hockey",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 902,
+    "categoria_id": "otros",
+    "elemento": "Deportes extremos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 903,
+    "categoria_id": "otros",
+    "elemento": "Escalada",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 904,
+    "categoria_id": "otros",
+    "elemento": "Paracaidismo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 905,
+    "categoria_id": "otros",
+    "elemento": "Buceo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 906,
+    "categoria_id": "otros",
+    "elemento": "Esquí",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 907,
+    "categoria_id": "otros",
+    "elemento": "Snowboard",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 908,
+    "categoria_id": "otros",
+    "elemento": "Surf",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 909,
+    "categoria_id": "otros",
+    "elemento": "Actividades acuáticas frecuentes",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 910,
+    "categoria_id": "otros",
+    "elemento": "Natación en piscinas cloradas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 911,
+    "categoria_id": "otros",
+    "elemento": "Tratamientos estéticos previos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 912,
+    "categoria_id": "otros",
+    "elemento": "Peelings químicos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 913,
+    "categoria_id": "otros",
+    "elemento": "Microdermoabrasión",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 914,
+    "categoria_id": "otros",
+    "elemento": "Dermoabrasión",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 915,
+    "categoria_id": "otros",
+    "elemento": "Láser ablativo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 916,
+    "categoria_id": "otros",
+    "elemento": "Láser no ablativo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 917,
+    "categoria_id": "otros",
+    "elemento": "IPL (luz pulsada intensa)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 918,
+    "categoria_id": "otros",
+    "elemento": "Radiofrecuencia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 919,
+    "categoria_id": "otros",
+    "elemento": "Ultrasonido focalizado",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 920,
+    "categoria_id": "otros",
+    "elemento": "Criolipólisis",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 921,
+    "categoria_id": "otros",
+    "elemento": "Tratamientos con ácidos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 922,
+    "categoria_id": "otros",
+    "elemento": "Rejuvenecimiento facial",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 923,
+    "categoria_id": "otros",
+    "elemento": "Toxina botulínica previa",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 924,
+    "categoria_id": "otros",
+    "elemento": "Rellenos dérmicos previos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 925,
+    "categoria_id": "otros",
+    "elemento": "Bioestimuladores previos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 926,
+    "categoria_id": "otros",
+    "elemento": "Hilos tensores",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 927,
+    "categoria_id": "otros",
+    "elemento": "Mesoterapia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 928,
+    "categoria_id": "otros",
+    "elemento": "Carboxiterapia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 929,
+    "categoria_id": "otros",
+    "elemento": "Ozonoterapia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 930,
+    "categoria_id": "otros",
+    "elemento": "Plasma rico en plaquetas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 931,
+    "categoria_id": "otros",
+    "elemento": "Células madre",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 932,
+    "categoria_id": "otros",
+    "elemento": "Micropigmentación",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 933,
+    "categoria_id": "otros",
+    "elemento": "Tatuajes cosméticos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 934,
+    "categoria_id": "otros",
+    "elemento": "Delineado permanente",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 935,
+    "categoria_id": "otros",
+    "elemento": "Micropigmentación de cejas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 936,
+    "categoria_id": "otros",
+    "elemento": "Complicaciones estéticas previas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 937,
+    "categoria_id": "otros",
+    "elemento": "Reacciones adversas a tratamientos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 938,
+    "categoria_id": "otros",
+    "elemento": "Necrosis tisular",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 939,
+    "categoria_id": "otros",
+    "elemento": "Granulomas por rellenos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 940,
+    "categoria_id": "otros",
+    "elemento": "Biofilm",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 941,
+    "categoria_id": "otros",
+    "elemento": "Migración de producto",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 942,
+    "categoria_id": "otros",
+    "elemento": "Infecciones post-tratamiento",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 943,
+    "categoria_id": "otros",
+    "elemento": "Cicatrices queloides",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 944,
+    "categoria_id": "otros",
+    "elemento": "Hiperpigmentación post-inflamatoria",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 945,
+    "categoria_id": "otros",
+    "elemento": "Hipopigmentación",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 946,
+    "categoria_id": "otros",
+    "elemento": "Atrofia cutánea",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 947,
+    "categoria_id": "otros",
+    "elemento": "Telangiectasias",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 948,
+    "categoria_id": "otros",
+    "elemento": "Discromías",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 949,
+    "categoria_id": "otros",
+    "elemento": "Asimetrías",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 950,
+    "categoria_id": "otros",
+    "elemento": "Sobrecorrección",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 951,
+    "categoria_id": "otros",
+    "elemento": "Subcorrección",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 952,
+    "categoria_id": "otros",
+    "elemento": "Efectos adversos tardíos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 953,
+    "categoria_id": "otros",
+    "elemento": "Satisfacción con tratamientos previos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 954,
+    "categoria_id": "otros",
+    "elemento": "Insatisfacción con tratamientos previos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 955,
+    "categoria_id": "otros",
+    "elemento": "Expectativas realistas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 956,
+    "categoria_id": "otros",
+    "elemento": "Expectativas irreales",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 957,
+    "categoria_id": "otros",
+    "elemento": "Dismorfofobia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 958,
+    "categoria_id": "otros",
+    "elemento": "Trastorno obsesivo-compulsivo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 959,
+    "categoria_id": "otros",
+    "elemento": "Adicción a cirugías estéticas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 960,
+    "categoria_id": "otros",
+    "elemento": "Presión social/familiar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 961,
+    "categoria_id": "otros",
+    "elemento": "Influencia de redes sociales",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 962,
+    "categoria_id": "otros",
+    "elemento": "Autoestima relacionada con apariencia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 963,
+    "categoria_id": "otros",
+    "elemento": "Historia de bullying",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 964,
+    "categoria_id": "otros",
+    "elemento": "Traumas relacionados con apariencia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 965,
+    "categoria_id": "otros",
+    "elemento": "Apoyo familiar/social",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 966,
+    "categoria_id": "otros",
+    "elemento": "Aislamiento social",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 967,
+    "categoria_id": "otros",
+    "elemento": "Actividad sexual",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 968,
+    "categoria_id": "otros",
+    "elemento": "Disfunción sexual",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 969,
+    "categoria_id": "otros",
+    "elemento": "Orientación sexual",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 970,
+    "categoria_id": "otros",
+    "elemento": "Identidad de género",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 971,
+    "categoria_id": "otros",
+    "elemento": "Transición de género",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 972,
+    "categoria_id": "otros",
+    "elemento": "Terapia hormonal",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 973,
+    "categoria_id": "otros",
+    "elemento": "Uso de preservativos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 974,
+    "categoria_id": "otros",
+    "elemento": "Múltiples parejas sexuales",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 975,
+    "categoria_id": "otros",
+    "elemento": "ITS (infecciones de transmisión sexual)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 976,
+    "categoria_id": "otros",
+    "elemento": "VPH (virus del papiloma humano)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 977,
+    "categoria_id": "otros",
+    "elemento": "Herpes genital",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 978,
+    "categoria_id": "otros",
+    "elemento": "Sífilis",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 979,
+    "categoria_id": "otros",
+    "elemento": "Gonorrea",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 980,
+    "categoria_id": "otros",
+    "elemento": "Clamidia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 981,
+    "categoria_id": "otros",
+    "elemento": "Tricomoniasis",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 982,
+    "categoria_id": "otros",
+    "elemento": "Candidiasis recurrente",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 983,
+    "categoria_id": "otros",
+    "elemento": "Religión/creencias",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 984,
+    "categoria_id": "otros",
+    "elemento": "Restricciones religiosas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 985,
+    "categoria_id": "otros",
+    "elemento": "Ayuno religioso",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 986,
+    "categoria_id": "otros",
+    "elemento": "Vegetarianismo por creencias",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 987,
+    "categoria_id": "otros",
+    "elemento": "Situación socioeconómica",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 988,
+    "categoria_id": "otros",
+    "elemento": "Estrés financiero",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 989,
+    "categoria_id": "otros",
+    "elemento": "Desempleo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 990,
+    "categoria_id": "otros",
+    "elemento": "Cambios laborales frecuentes",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 991,
+    "categoria_id": "otros",
+    "elemento": "Sobrecarga laboral",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 992,
+    "categoria_id": "otros",
+    "elemento": "Turnos rotativos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 993,
+    "categoria_id": "otros",
+    "elemento": "Trabajo desde casa",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 994,
+    "categoria_id": "otros",
+    "elemento": "Sedentarismo laboral",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 995,
+    "categoria_id": "otros",
+    "elemento": "Estrés académico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 996,
+    "categoria_id": "otros",
+    "elemento": "Preparación para eventos especiales",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 997,
+    "categoria_id": "otros",
+    "elemento": "Boda próxima",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 998,
+    "categoria_id": "otros",
+    "elemento": "Graduación",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 999,
+    "categoria_id": "otros",
+    "elemento": "Reunión de ex-alumnos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 1000,
+    "categoria_id": "otros",
+    "elemento": "Entrevistas de trabajo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 1001,
+    "categoria_id": "otros",
+    "elemento": "Apariciones públicas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 1002,
+    "categoria_id": "otros",
+    "elemento": "Fotografías profesionales",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 1003,
+    "categoria_id": "otros",
+    "elemento": "Temporada de playa/vacaciones",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 1004,
+    "categoria_id": "otros",
+    "elemento": "Cambio de estación",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 1005,
+    "categoria_id": "otros",
+    "elemento": "Cumpleaños significativo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 1006,
+    "categoria_id": "otros",
+    "elemento": "Aniversario",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 1007,
+    "categoria_id": "otros",
+    "elemento": "Nuevo trabajo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 1008,
+    "categoria_id": "otros",
+    "elemento": "Nueva relación",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 1009,
+    "categoria_id": "otros",
+    "elemento": "Divorcio/separación",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 1010,
+    "categoria_id": "otros",
+    "elemento": "Duelo/pérdida",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 1011,
+    "categoria_id": "otros",
+    "elemento": "Mudanza",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 1012,
+    "categoria_id": "otros",
+    "elemento": "Estudios universitarios",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 1013,
+    "categoria_id": "otros",
+    "elemento": "Jubilación",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 1014,
+    "categoria_id": "otros",
+    "elemento": "Nido vacío",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 1015,
+    "categoria_id": "otros",
+    "elemento": "Crisis de mediana edad",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 1016,
+    "categoria_id": "otros",
+    "elemento": "Menopausia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 1017,
+    "categoria_id": "otros",
+    "elemento": "Andropausia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 1018,
+    "categoria_id": "otros",
+    "elemento": "Otros datos relevantes",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 21:50:40"
+  },
+  {
+    "id": 1019,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Test Antecedente Actualizado 1758828528",
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-25 19:28:48"
+  },
+  {
+    "id": 1020,
+    "categoria_id": "alergia",
+    "elemento": "Test alergia #1 - Updated",
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-25 19:29:41"
+  },
+  {
+    "id": 1021,
+    "categoria_id": "antecedente_familiar",
+    "elemento": "Test antecedente_familiar #2 - Updated",
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-25 19:29:41"
+  },
+  {
+    "id": 1022,
+    "categoria_id": "obstetrico",
+    "elemento": "Test obstetrico #3 - Updated",
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-25 19:29:41"
+  },
+  {
+    "id": 1023,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Test antecedente_personal #4 - Updated",
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-25 19:29:41"
+  },
+  {
+    "id": 1024,
+    "categoria_id": "quirurgico",
+    "elemento": "Test quirurgico #5 - Updated",
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-25 19:29:41"
+  },
+  {
+    "id": 1025,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Test Correcto",
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-25 19:34:22"
+  },
+  {
+    "id": 1026,
+    "categoria_id": "antecedente_personal",
+    "elemento": "Test Error Descripcion",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 19:35:35"
+  },
+  {
+    "id": 1029,
+    "categoria_id": "antecedente_personal",
+    "elemento": "AB TEST",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-27 19:44:27"
+  }
+]

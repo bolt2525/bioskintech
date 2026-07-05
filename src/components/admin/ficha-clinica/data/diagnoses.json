@@ -1,0 +1,515 @@
+[
+  {
+    "id": 4867,
+    "categoria_id": 1145,
+    "tipo": "definitivo",
+    "nombre": "Acné comedogénico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4868,
+    "categoria_id": 1145,
+    "tipo": "definitivo",
+    "nombre": "Acné vulgar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4869,
+    "categoria_id": 1145,
+    "tipo": "definitivo",
+    "nombre": "Acné papulopustuloso",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4870,
+    "categoria_id": 1145,
+    "tipo": "definitivo",
+    "nombre": "Acné nódulo-quístico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4871,
+    "categoria_id": 1145,
+    "tipo": "definitivo",
+    "nombre": "Acné conglobata",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4872,
+    "categoria_id": 1146,
+    "tipo": "definitivo",
+    "nombre": "Post acné",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4873,
+    "categoria_id": 1146,
+    "tipo": "definitivo",
+    "nombre": "Agresiones cutáneas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4874,
+    "categoria_id": 1147,
+    "tipo": "definitivo",
+    "nombre": "Rosácea eritemato-teleangiectásica (Subtipo I)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4875,
+    "categoria_id": 1147,
+    "tipo": "definitivo",
+    "nombre": "Rosácea papulopustulosa (Subtipo II)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4876,
+    "categoria_id": 1147,
+    "tipo": "definitivo",
+    "nombre": "Rosácea fimatosa (Subtipo III)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4877,
+    "categoria_id": 1148,
+    "tipo": "definitivo",
+    "nombre": "Cicatriz atrófica",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4878,
+    "categoria_id": 1148,
+    "tipo": "definitivo",
+    "nombre": "Cicatriz hipertrófica",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4879,
+    "categoria_id": 1148,
+    "tipo": "definitivo",
+    "nombre": "Queloide",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4880,
+    "categoria_id": 1148,
+    "tipo": "definitivo",
+    "nombre": "Cicatriz plana",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4881,
+    "categoria_id": 1149,
+    "tipo": "definitivo",
+    "nombre": "Angioma plano (Nevus flameus)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4882,
+    "categoria_id": 1149,
+    "tipo": "definitivo",
+    "nombre": "Angioma senil o punto de rubí",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4883,
+    "categoria_id": 1149,
+    "tipo": "definitivo",
+    "nombre": "Angioma en fresa",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4884,
+    "categoria_id": 1150,
+    "tipo": "definitivo",
+    "nombre": "Efélides (pecas)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4885,
+    "categoria_id": 1150,
+    "tipo": "definitivo",
+    "nombre": "Melasma epidérmico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4886,
+    "categoria_id": 1150,
+    "tipo": "definitivo",
+    "nombre": "Melasma dérmico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4887,
+    "categoria_id": 1150,
+    "tipo": "definitivo",
+    "nombre": "Melasma mixto",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4888,
+    "categoria_id": 1150,
+    "tipo": "definitivo",
+    "nombre": "Léntigo solar/senil",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4889,
+    "categoria_id": 1150,
+    "tipo": "definitivo",
+    "nombre": "Nevus melanocítico",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4890,
+    "categoria_id": 1150,
+    "tipo": "definitivo",
+    "nombre": "Ocronosis exógena",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4891,
+    "categoria_id": 1151,
+    "tipo": "definitivo",
+    "nombre": "Arrugas estáticas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4892,
+    "categoria_id": 1151,
+    "tipo": "definitivo",
+    "nombre": "Arrugas dinámicas/de expresión",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4893,
+    "categoria_id": 1152,
+    "tipo": "definitivo",
+    "nombre": "Urticaria",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4894,
+    "categoria_id": 1152,
+    "tipo": "definitivo",
+    "nombre": "Dermografismo",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4895,
+    "categoria_id": 1152,
+    "tipo": "definitivo",
+    "nombre": "Urticaria de contacto",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4896,
+    "categoria_id": 1152,
+    "tipo": "definitivo",
+    "nombre": "Picaduras de insectos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4897,
+    "categoria_id": 1153,
+    "tipo": "definitivo",
+    "nombre": "Herpes simple",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4898,
+    "categoria_id": 1153,
+    "tipo": "definitivo",
+    "nombre": "Herpes Zóster",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4899,
+    "categoria_id": 1153,
+    "tipo": "definitivo",
+    "nombre": "Varicela",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4900,
+    "categoria_id": 1153,
+    "tipo": "definitivo",
+    "nombre": "Dermatitis de contacto",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4901,
+    "categoria_id": 1153,
+    "tipo": "definitivo",
+    "nombre": "Erisipela",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4902,
+    "categoria_id": 1153,
+    "tipo": "definitivo",
+    "nombre": "Pénfigo vulgar",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4903,
+    "categoria_id": 1153,
+    "tipo": "definitivo",
+    "nombre": "Reacciones medicamentosas graves",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4904,
+    "categoria_id": 1153,
+    "tipo": "definitivo",
+    "nombre": "Lesiones por frío (congelación)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4905,
+    "categoria_id": 1153,
+    "tipo": "definitivo",
+    "nombre": "Quemaduras de 2° grado",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4906,
+    "categoria_id": 1154,
+    "tipo": "definitivo",
+    "nombre": "Dermatitis seborreica",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4907,
+    "categoria_id": 1154,
+    "tipo": "definitivo",
+    "nombre": "Dermatitis atópica",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4908,
+    "categoria_id": 1154,
+    "tipo": "definitivo",
+    "nombre": "Dermatitis de contacto",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4909,
+    "categoria_id": 1154,
+    "tipo": "definitivo",
+    "nombre": "Liquen plano",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4910,
+    "categoria_id": 1154,
+    "tipo": "definitivo",
+    "nombre": "Psoriasis rosada de Gibert",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4911,
+    "categoria_id": 1154,
+    "tipo": "definitivo",
+    "nombre": "Eritrodermia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4912,
+    "categoria_id": 1154,
+    "tipo": "definitivo",
+    "nombre": "Tiña corporis",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4913,
+    "categoria_id": 1154,
+    "tipo": "definitivo",
+    "nombre": "Pitiriasis versicolor",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4914,
+    "categoria_id": 1154,
+    "tipo": "definitivo",
+    "nombre": "Ictiosis",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4915,
+    "categoria_id": 1154,
+    "tipo": "definitivo",
+    "nombre": "Queratosis actínica",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4916,
+    "categoria_id": 1154,
+    "tipo": "definitivo",
+    "nombre": "Xerosis cutánea",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4917,
+    "categoria_id": 1155,
+    "tipo": "definitivo",
+    "nombre": "Verruga filiforme",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4918,
+    "categoria_id": 1155,
+    "tipo": "definitivo",
+    "nombre": "Condilomas (verrugas genitales)",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4919,
+    "categoria_id": 1155,
+    "tipo": "definitivo",
+    "nombre": "VPH",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4920,
+    "categoria_id": 1156,
+    "tipo": "definitivo",
+    "nombre": "Queratosis pilaris",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4921,
+    "categoria_id": 1157,
+    "tipo": "definitivo",
+    "nombre": "Onicomicosis",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:50:28"
+  },
+  {
+    "id": 4922,
+    "categoria_id": 1145,
+    "tipo": "definitivo",
+    "nombre": "AB",
+    "es_maestro": 0,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:55:47"
+  },
+  {
+    "id": 4923,
+    "categoria_id": 1145,
+    "tipo": "definitivo",
+    "nombre": "O",
+    "es_maestro": 0,
+    "activo": 1,
+    "creado_en": "2025-09-25 23:55:47"
+  }
+]

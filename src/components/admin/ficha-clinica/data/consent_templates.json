@@ -1,0 +1,3161 @@
+[
+  {
+    "id": 1,
+    "categoria": "consentimientos_basicos",
+    "elemento": "Consentimiento Informado General",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 2,
+    "categoria": "consentimientos_basicos",
+    "elemento": "Autorización de Tratamiento",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 3,
+    "categoria": "consentimientos_basicos",
+    "elemento": "Consentimiento Estético",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 4,
+    "categoria": "consentimientos_basicos",
+    "elemento": "Autorización Quirúrgica",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 5,
+    "categoria": "consentimientos_basicos",
+    "elemento": "Consentimiento para Menores",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 6,
+    "categoria": "consentimientos_basicos",
+    "elemento": "Revocación de Consentimiento",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 7,
+    "categoria": "consentimientos_laser",
+    "elemento": "Consentimiento Láser CO2",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 8,
+    "categoria": "consentimientos_laser",
+    "elemento": "Consentimiento Láser Fraccionado",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 9,
+    "categoria": "consentimientos_laser",
+    "elemento": "Consentimiento IPL",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 10,
+    "categoria": "consentimientos_laser",
+    "elemento": "Consentimiento Láser Vascular",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 11,
+    "categoria": "consentimientos_laser",
+    "elemento": "Consentimiento Depilación Láser",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 12,
+    "categoria": "consentimientos_laser",
+    "elemento": "Consentimiento Q-Switch",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 13,
+    "categoria": "consentimientos_laser",
+    "elemento": "Consentimiento Láser Pigmentación",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 14,
+    "categoria": "consentimientos_inyectables",
+    "elemento": "Consentimiento Toxina Botulínica",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 15,
+    "categoria": "consentimientos_inyectables",
+    "elemento": "Consentimiento Rellenos Dérmicos",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 16,
+    "categoria": "consentimientos_inyectables",
+    "elemento": "Consentimiento Ácido Hialurónico",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 17,
+    "categoria": "consentimientos_inyectables",
+    "elemento": "Consentimiento Mesoterapia",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 18,
+    "categoria": "consentimientos_inyectables",
+    "elemento": "Consentimiento Bioestimuladores",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 19,
+    "categoria": "consentimientos_inyectables",
+    "elemento": "Consentimiento Hilos Tensores",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 20,
+    "categoria": "consentimientos_peeling",
+    "elemento": "Consentimiento Peeling Superficial",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 21,
+    "categoria": "consentimientos_peeling",
+    "elemento": "Consentimiento Peeling Medio",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 22,
+    "categoria": "consentimientos_peeling",
+    "elemento": "Consentimiento Peeling Profundo",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 23,
+    "categoria": "consentimientos_peeling",
+    "elemento": "Consentimiento TCA",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 24,
+    "categoria": "consentimientos_peeling",
+    "elemento": "Consentimiento Fenol",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 25,
+    "categoria": "consentimientos_corporales",
+    "elemento": "Consentimiento Criolipólisis",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 26,
+    "categoria": "consentimientos_corporales",
+    "elemento": "Consentimiento Radiofrecuencia",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 27,
+    "categoria": "consentimientos_corporales",
+    "elemento": "Consentimiento Ultrasonido",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 28,
+    "categoria": "consentimientos_corporales",
+    "elemento": "Consentimiento Carboxiterapia",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 29,
+    "categoria": "consentimientos_corporales",
+    "elemento": "Consentimiento Ondas de Choque",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 30,
+    "categoria": "consentimientos_quirurgicos",
+    "elemento": "Consentimiento Cirugía Facial",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 31,
+    "categoria": "consentimientos_quirurgicos",
+    "elemento": "Consentimiento Blefaroplastia",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 32,
+    "categoria": "consentimientos_quirurgicos",
+    "elemento": "Consentimiento Lifting",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 33,
+    "categoria": "consentimientos_quirurgicos",
+    "elemento": "Consentimiento Rinoplastia",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 34,
+    "categoria": "consentimientos_quirurgicos",
+    "elemento": "Consentimiento Liposucción",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 35,
+    "categoria": "consentimientos_quirurgicos",
+    "elemento": "Consentimiento Mamoplastia",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 36,
+    "categoria": "zonas_anatomicas",
+    "elemento": "Rostro completo",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 37,
+    "categoria": "zonas_anatomicas",
+    "elemento": "Frente",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 38,
+    "categoria": "zonas_anatomicas",
+    "elemento": "Entrecejo",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 39,
+    "categoria": "zonas_anatomicas",
+    "elemento": "Párpados superiores",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 40,
+    "categoria": "zonas_anatomicas",
+    "elemento": "Párpados inferiores",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 41,
+    "categoria": "zonas_anatomicas",
+    "elemento": "Mejillas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 42,
+    "categoria": "zonas_anatomicas",
+    "elemento": "Pómulos",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 43,
+    "categoria": "zonas_anatomicas",
+    "elemento": "Nariz",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 44,
+    "categoria": "zonas_anatomicas",
+    "elemento": "Labios",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 45,
+    "categoria": "zonas_anatomicas",
+    "elemento": "Mentón",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 46,
+    "categoria": "zonas_anatomicas",
+    "elemento": "Mandíbula",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 47,
+    "categoria": "zonas_anatomicas",
+    "elemento": "Cuello",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 48,
+    "categoria": "zonas_anatomicas",
+    "elemento": "Escote",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 49,
+    "categoria": "zonas_anatomicas",
+    "elemento": "Brazos",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 50,
+    "categoria": "zonas_anatomicas",
+    "elemento": "Antebrazos",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 51,
+    "categoria": "zonas_anatomicas",
+    "elemento": "Axilas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 52,
+    "categoria": "zonas_anatomicas",
+    "elemento": "Tórax",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 53,
+    "categoria": "zonas_anatomicas",
+    "elemento": "Abdomen",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 54,
+    "categoria": "zonas_anatomicas",
+    "elemento": "Espalda",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 55,
+    "categoria": "zonas_anatomicas",
+    "elemento": "Cintura",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 56,
+    "categoria": "zonas_anatomicas",
+    "elemento": "Caderas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 57,
+    "categoria": "zonas_anatomicas",
+    "elemento": "Glúteos",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 58,
+    "categoria": "zonas_anatomicas",
+    "elemento": "Muslos",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 59,
+    "categoria": "zonas_anatomicas",
+    "elemento": "Rodillas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 60,
+    "categoria": "zonas_anatomicas",
+    "elemento": "Piernas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 61,
+    "categoria": "zonas_anatomicas",
+    "elemento": "Pantorrillas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 62,
+    "categoria": "zonas_anatomicas",
+    "elemento": "Pies",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 63,
+    "categoria": "zonas_anatomicas",
+    "elemento": "Manos",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 64,
+    "categoria": "zonas_anatomicas",
+    "elemento": "Región genital",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 65,
+    "categoria": "zonas_anatomicas",
+    "elemento": "Bikini",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 66,
+    "categoria": "zonas_anatomicas",
+    "elemento": "Zona perianal",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 67,
+    "categoria": "zonas_anatomicas",
+    "elemento": "Rejuvenecimiento íntimo",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 68,
+    "categoria": "tipos_procedimientos",
+    "elemento": "Rejuvenecimiento con CO2 Fraccionado",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 69,
+    "categoria": "tipos_procedimientos",
+    "elemento": "Depilación Láser Diodo",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 70,
+    "categoria": "tipos_procedimientos",
+    "elemento": "Tratamiento Vascular IPL",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 71,
+    "categoria": "tipos_procedimientos",
+    "elemento": "Eliminación Pigmentación Q-Switch",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 72,
+    "categoria": "tipos_procedimientos",
+    "elemento": "Resurfacing Láser Erbium",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 73,
+    "categoria": "tipos_procedimientos",
+    "elemento": "Fotorrejuvenecimiento IPL",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 74,
+    "categoria": "tipos_procedimientos",
+    "elemento": "Eliminación Tatuajes",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 75,
+    "categoria": "tipos_procedimientos",
+    "elemento": "Aplicación Toxina Botulínica",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 76,
+    "categoria": "tipos_procedimientos",
+    "elemento": "Relleno Ácido Hialurónico",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 77,
+    "categoria": "tipos_procedimientos",
+    "elemento": "Bioestimulación PLLA",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 78,
+    "categoria": "tipos_procedimientos",
+    "elemento": "Mesoterapia Facial",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 79,
+    "categoria": "tipos_procedimientos",
+    "elemento": "Mesoterapia Corporal",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 80,
+    "categoria": "tipos_procedimientos",
+    "elemento": "Hilos PDO",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 81,
+    "categoria": "tipos_procedimientos",
+    "elemento": "Plasma Rico Plaquetas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 82,
+    "categoria": "tipos_procedimientos",
+    "elemento": "Radiofrecuencia Facial",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 83,
+    "categoria": "tipos_procedimientos",
+    "elemento": "Radiofrecuencia Corporal",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 84,
+    "categoria": "tipos_procedimientos",
+    "elemento": "HIFU Ultrasonido",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 85,
+    "categoria": "tipos_procedimientos",
+    "elemento": "Criolipólisis",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 86,
+    "categoria": "tipos_procedimientos",
+    "elemento": "Cavitación",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 87,
+    "categoria": "tipos_procedimientos",
+    "elemento": "Carboxiterapia",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 88,
+    "categoria": "tipos_procedimientos",
+    "elemento": "Ondas de Choque",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 89,
+    "categoria": "tipos_procedimientos",
+    "elemento": "Peeling Ácido Glicólico",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 90,
+    "categoria": "tipos_procedimientos",
+    "elemento": "Peeling TCA 15%",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 91,
+    "categoria": "tipos_procedimientos",
+    "elemento": "Peeling TCA 25%",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 92,
+    "categoria": "tipos_procedimientos",
+    "elemento": "Peeling Jessner",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 93,
+    "categoria": "tipos_procedimientos",
+    "elemento": "Peeling Fenol",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 94,
+    "categoria": "tipos_procedimientos",
+    "elemento": "Microdermoabrasión",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 95,
+    "categoria": "riesgos_complicaciones",
+    "elemento": "Dolor o molestias",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 96,
+    "categoria": "riesgos_complicaciones",
+    "elemento": "Hinchazón",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 97,
+    "categoria": "riesgos_complicaciones",
+    "elemento": "Hematomas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 98,
+    "categoria": "riesgos_complicaciones",
+    "elemento": "Eritema",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 99,
+    "categoria": "riesgos_complicaciones",
+    "elemento": "Infección",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 100,
+    "categoria": "riesgos_complicaciones",
+    "elemento": "Cicatrización anormal",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 101,
+    "categoria": "riesgos_complicaciones",
+    "elemento": "Reacción alérgica",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 102,
+    "categoria": "riesgos_complicaciones",
+    "elemento": "Resultados no esperados",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 103,
+    "categoria": "riesgos_complicaciones",
+    "elemento": "Asimetría",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 104,
+    "categoria": "riesgos_complicaciones",
+    "elemento": "Necesidad retoque",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 105,
+    "categoria": "riesgos_complicaciones",
+    "elemento": "Hiperpigmentación",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 106,
+    "categoria": "riesgos_complicaciones",
+    "elemento": "Hipopigmentación",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 107,
+    "categoria": "riesgos_complicaciones",
+    "elemento": "Quemaduras",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 108,
+    "categoria": "riesgos_complicaciones",
+    "elemento": "Ampollas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 109,
+    "categoria": "riesgos_complicaciones",
+    "elemento": "Costras",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 110,
+    "categoria": "riesgos_complicaciones",
+    "elemento": "Cambios textura",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 111,
+    "categoria": "riesgos_complicaciones",
+    "elemento": "Líneas demarcación",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 112,
+    "categoria": "riesgos_complicaciones",
+    "elemento": "Granulomas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 113,
+    "categoria": "riesgos_complicaciones",
+    "elemento": "Migración producto",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 114,
+    "categoria": "riesgos_complicaciones",
+    "elemento": "Sobrecorrección",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 115,
+    "categoria": "riesgos_complicaciones",
+    "elemento": "Subcorrección",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 116,
+    "categoria": "riesgos_complicaciones",
+    "elemento": "Necrosis vascular",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 117,
+    "categoria": "riesgos_complicaciones",
+    "elemento": "Embolización",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 118,
+    "categoria": "riesgos_complicaciones",
+    "elemento": "Efecto Tyndall",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 119,
+    "categoria": "riesgos_complicaciones",
+    "elemento": "Nodulaciones",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 120,
+    "categoria": "riesgos_complicaciones",
+    "elemento": "Sangrado",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 121,
+    "categoria": "riesgos_complicaciones",
+    "elemento": "Infección profunda",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 122,
+    "categoria": "riesgos_complicaciones",
+    "elemento": "Dehiscencia sutura",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 123,
+    "categoria": "riesgos_complicaciones",
+    "elemento": "Necrosis",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 124,
+    "categoria": "riesgos_complicaciones",
+    "elemento": "Lesión nerviosa",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 125,
+    "categoria": "riesgos_complicaciones",
+    "elemento": "Anestesia",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 126,
+    "categoria": "riesgos_complicaciones",
+    "elemento": "Tromboembolismo",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 127,
+    "categoria": "contraindicaciones",
+    "elemento": "Embarazo",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 128,
+    "categoria": "contraindicaciones",
+    "elemento": "Lactancia",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 129,
+    "categoria": "contraindicaciones",
+    "elemento": "Cáncer piel activo",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 130,
+    "categoria": "contraindicaciones",
+    "elemento": "Infección activa zona",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 131,
+    "categoria": "contraindicaciones",
+    "elemento": "Herpes activo",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 132,
+    "categoria": "contraindicaciones",
+    "elemento": "Queloides activos",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 133,
+    "categoria": "contraindicaciones",
+    "elemento": "Trastornos coagulación severos",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 134,
+    "categoria": "contraindicaciones",
+    "elemento": "Marcapasos (RF/láser)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 135,
+    "categoria": "contraindicaciones",
+    "elemento": "Bronceado reciente",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 136,
+    "categoria": "contraindicaciones",
+    "elemento": "Medicación fotosensibilizante",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 137,
+    "categoria": "contraindicaciones",
+    "elemento": "Autoinmunes activas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 138,
+    "categoria": "contraindicaciones",
+    "elemento": "Diabetes descompensada",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 139,
+    "categoria": "contraindicaciones",
+    "elemento": "Expectativas irreales",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 140,
+    "categoria": "contraindicaciones",
+    "elemento": "Dismorfofobia",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 141,
+    "categoria": "contraindicaciones",
+    "elemento": "Historia queloides",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 142,
+    "categoria": "contraindicaciones",
+    "elemento": "Fotodermatosis",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 143,
+    "categoria": "cuidados_previos",
+    "elemento": "Evitar sol 2 semanas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 144,
+    "categoria": "cuidados_previos",
+    "elemento": "Suspender autobronceadores",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 145,
+    "categoria": "cuidados_previos",
+    "elemento": "No depilar zona 1 semana",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 146,
+    "categoria": "cuidados_previos",
+    "elemento": "Suspender retinoides",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 147,
+    "categoria": "cuidados_previos",
+    "elemento": "Profilaxis antiviral si indicado",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 148,
+    "categoria": "cuidados_previos",
+    "elemento": "Hidratación adecuada",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 149,
+    "categoria": "cuidados_previos",
+    "elemento": "Limpiar zona tratamiento",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 150,
+    "categoria": "cuidados_previos",
+    "elemento": "Retirar maquillaje",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 151,
+    "categoria": "cuidados_previos",
+    "elemento": "Informar medicación actual",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 152,
+    "categoria": "cuidados_posteriores",
+    "elemento": "Aplicar frío local",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 153,
+    "categoria": "cuidados_posteriores",
+    "elemento": "Fotoprotección estricta",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 154,
+    "categoria": "cuidados_posteriores",
+    "elemento": "Hidratación zona",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 155,
+    "categoria": "cuidados_posteriores",
+    "elemento": "Evitar calor/sauna",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 156,
+    "categoria": "cuidados_posteriores",
+    "elemento": "No manipular zona",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 157,
+    "categoria": "cuidados_posteriores",
+    "elemento": "Usar productos indicados",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 158,
+    "categoria": "cuidados_posteriores",
+    "elemento": "Evitar ejercicio intenso",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 159,
+    "categoria": "cuidados_posteriores",
+    "elemento": "No piscina/mar",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 160,
+    "categoria": "cuidados_posteriores",
+    "elemento": "Control médico programado",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 161,
+    "categoria": "cuidados_posteriores",
+    "elemento": "Contactar ante complicaciones",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 162,
+    "categoria": "contraindicaciones",
+    "elemento": "Eritema: 1-7 días",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 163,
+    "categoria": "contraindicaciones",
+    "elemento": "Hinchazón: 2-5 días",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 164,
+    "categoria": "contraindicaciones",
+    "elemento": "Descamación: 3-10 días",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 165,
+    "categoria": "contraindicaciones",
+    "elemento": "Costras: 5-14 días",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 166,
+    "categoria": "objetivos_procedimientos",
+    "elemento": "Toxina: 3-6 meses",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 167,
+    "categoria": "objetivos_procedimientos",
+    "elemento": "Rellenos: 6-18 meses",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 168,
+    "categoria": "objetivos_procedimientos",
+    "elemento": "Láser pigmentación: Permanente",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 169,
+    "categoria": "objetivos_procedimientos",
+    "elemento": "Peeling: 6-12 meses",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 170,
+    "categoria": "objetivos_procedimientos",
+    "elemento": "RF: 1-2 años",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 171,
+    "categoria": "revision_controles",
+    "elemento": "Control 24-48 horas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 172,
+    "categoria": "revision_controles",
+    "elemento": "Control 1 semana",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 173,
+    "categoria": "revision_controles",
+    "elemento": "Control 2 semanas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 174,
+    "categoria": "revision_controles",
+    "elemento": "Control 1 mes",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 175,
+    "categoria": "revision_controles",
+    "elemento": "Control 3 meses",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 176,
+    "categoria": "revision_controles",
+    "elemento": "Control 6 meses",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 177,
+    "categoria": "revision_controles",
+    "elemento": "Urgencia si complicaciones",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 178,
+    "categoria": "revision_controles",
+    "elemento": "Disponibilidad 24h",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 179,
+    "categoria": "contenido_personalizable",
+    "elemento": "Historia clínica completa",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 180,
+    "categoria": "contenido_personalizable",
+    "elemento": "Fotografías pre-tratamiento",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 181,
+    "categoria": "contenido_personalizable",
+    "elemento": "Consentimiento firmado",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 182,
+    "categoria": "contenido_personalizable",
+    "elemento": "Información por escrito",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 183,
+    "categoria": "contenido_personalizable",
+    "elemento": "Presupuesto detallado",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 184,
+    "categoria": "contenido_personalizable",
+    "elemento": "Plan tratamiento",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 185,
+    "categoria": "contenido_personalizable",
+    "elemento": "Instrucciones post-cuidado",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 186,
+    "categoria": "contenido_personalizable",
+    "elemento": "Contacto emergencias",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-22 22:27:24"
+  },
+  {
+    "id": 5395,
+    "categoria": "plantillas_consentimiento",
+    "elemento": "Test Toxina Botulínica - Facial",
+    "descripcion": "{\n  \"tipo\": \"IPL Fotorrejuvenecimiento\",\n  \"zona\": \"Facial\",\n  \"objetivos\": \"Mejorar arrugas y líneas de expresión\",\n  \"descripcion\": \"Aplicación de toxina botulínica en zona facial\",\n  \"inc_riesgos\": true,\n  \"riesgos\": \"Posibles hematomas, asimetría temporal\",\n  \"inc_beneficios\": true,\n  \"beneficios\": \"Reducción de arrugas dinámicas\",\n  \"inc_alternativas\": true,\n  \"alternativas\": \"Tratamientos tópicos, láser\",\n  \"cuidados_pre\": \"No tomar anticoagulantes\",\n  \"cuidados_post\": \"Evitar ejercicio por 24h\",\n  \"contraindicaciones\": \"Embarazo, lactancia\",\n  \"version\": \"1.0\",\n  \"creado_desde\": \"ficha_clinica\"\n}",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-23 18:50:12"
+  },
+  {
+    "id": 5396,
+    "categoria": "plantillas_consentimiento",
+    "elemento": "Test Criolipólisis - Corporal 1758653614",
+    "descripcion": "{\n  \"tipo\": \"IPL Fotorrejuvenecimiento\",\n  \"zona\": \"Corporal\",\n  \"objetivos\": \"Reducir grasa localizada\",\n  \"descripcion\": \"Procedimiento de criolipólisis para reducción de grasa\",\n  \"inc_riesgos\": true,\n  \"riesgos\": \"Posible enrojecimiento, entumecimiento temporal\",\n  \"inc_beneficios\": true,\n  \"beneficios\": \"Reducción de tejido adiposo localizado\",\n  \"inc_alternativas\": true,\n  \"alternativas\": \"Dieta, ejercicio, liposucción\",\n  \"cuidados_pre\": \"Mantener peso estable\",\n  \"cuidados_post\": \"Masaje en zona tratada\",\n  \"contraindicaciones\": \"Embarazo, hernia, crioglobulinemia\",\n  \"version\": \"1.0\",\n  \"creado_desde\": \"ficha_clinica\"\n}",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-23 18:53:34"
+  },
+  {
+    "id": 5583,
+    "categoria": "plantillas_consentimiento",
+    "elemento": "IPL FACIAL",
+    "descripcion": "{\n  \"tipo\": \"IPL\",\n  \"zona\": \"Facial\",\n  \"objetivos\": \"Mejorar arrugas y líneas de expresión\",\n  \"descripcion\": \"Aplicación de toxina botulínica en zona facial\",\n  \"inc_riesgos\": true,\n  \"riesgos\": \"Posibles hematomas, asimetría temporal\",\n  \"inc_beneficios\": true,\n  \"beneficios\": \"Reducción de arrugas dinámicas\",\n  \"inc_alternativas\": true,\n  \"alternativas\": \"Tratamientos tópicos, láser\",\n  \"cuidados_pre\": \"No tomar anticoagulantes\",\n  \"cuidados_post\": \"Evitar ejercicio por 24h\",\n  \"contraindicaciones\": \"Embarazo, lactancia\",\n  \"version\": \"1.0\",\n  \"creado_desde\": \"ficha_clinica\"\n}",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-23 18:58:34"
+  },
+  {
+    "id": 5584,
+    "categoria": "plantillas_consentimiento",
+    "elemento": "Depilación Láser Diodo - Ejemplo 1758654307",
+    "descripcion": "{\n  \"tipo\": \"Depilación Láser Diodo\",\n  \"zona\": \"Piernas\",\n  \"objetivos\": \"Eliminación permanente del vello no deseado\",\n  \"descripcion\": \"Tratamiento de depilación con tecnología láser diodo 808nm\",\n  \"inc_riesgos\": true,\n  \"riesgos\": \"Eritema temporal, hiperpigmentación, foliculitis\",\n  \"inc_beneficios\": true,\n  \"beneficios\": \"Reducción permanente del crecimiento del vello\",\n  \"inc_alternativas\": true,\n  \"alternativas\": \"Depilación tradicional, IPL, electrólisis\",\n  \"cuidados_pre\": \"No depilar zona 4 semanas, evitar sol\",\n  \"cuidados_post\": \"Fotoprotección, hidratación, evitar calor\",\n  \"contraindicaciones\": \"Embarazo, fototipos altos, medicación fotosensibilizante\",\n  \"version\": \"2.0\",\n  \"creado_desde\": \"sistema_mejorado\"\n}",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-23 19:05:07"
+  },
+  {
+    "id": 10235,
+    "categoria": "beneficios_resultados",
+    "elemento": "Mejora estética visible",
+    "descripcion": "Resultados visibles de mejora en la apariencia",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 17:30:36"
+  },
+  {
+    "id": 10236,
+    "categoria": "beneficios_resultados",
+    "elemento": "Piel más lisa y uniforme",
+    "descripcion": "Suavidad y uniformidad en la textura cutánea",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 17:30:36"
+  },
+  {
+    "id": 10237,
+    "categoria": "beneficios_resultados",
+    "elemento": "Reducción de arrugas",
+    "descripcion": "Disminución visible de líneas de expresión",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 17:30:36"
+  },
+  {
+    "id": 10238,
+    "categoria": "beneficios_resultados",
+    "elemento": "Aspecto rejuvenecido",
+    "descripcion": "Apariencia más joven y fresca",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 17:30:36"
+  },
+  {
+    "id": 10239,
+    "categoria": "beneficios_resultados",
+    "elemento": "Mayor firmeza cutánea",
+    "descripcion": "Incremento en la elasticidad de la piel",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 17:30:36"
+  },
+  {
+    "id": 10240,
+    "categoria": "alternativas_tratamiento",
+    "elemento": "Tratamientos tópicos",
+    "descripcion": "Uso de cremas y productos dermatológicos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 17:30:36"
+  },
+  {
+    "id": 10241,
+    "categoria": "alternativas_tratamiento",
+    "elemento": "Cuidados domiciliarios",
+    "descripcion": "Rutina de cuidado en casa",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 17:30:36"
+  },
+  {
+    "id": 10242,
+    "categoria": "alternativas_tratamiento",
+    "elemento": "Otros procedimientos láser",
+    "descripcion": "Tecnologías láser alternativas",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 17:30:36"
+  },
+  {
+    "id": 10243,
+    "categoria": "alternativas_tratamiento",
+    "elemento": "Procedimientos no invasivos",
+    "descripcion": "Tratamientos sin cirugía",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 17:30:36"
+  },
+  {
+    "id": 10244,
+    "categoria": "alternativas_tratamiento",
+    "elemento": "Opciones farmacológicas",
+    "descripcion": "Tratamientos con medicamentos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 17:30:36"
+  },
+  {
+    "id": 10245,
+    "categoria": "descripciones_tecnicas",
+    "elemento": "Procedimiento ambulatorio",
+    "descripcion": "Se realiza en consulta sin hospitalización",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 17:30:36"
+  },
+  {
+    "id": 10246,
+    "categoria": "descripciones_tecnicas",
+    "elemento": "Técnica mínimamente invasiva",
+    "descripcion": "Procedimiento con mínima agresión tisular",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 17:30:36"
+  },
+  {
+    "id": 10247,
+    "categoria": "descripciones_tecnicas",
+    "elemento": "Aplicación precisa",
+    "descripcion": "Uso de tecnología de precisión",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 17:30:36"
+  },
+  {
+    "id": 10248,
+    "categoria": "descripciones_tecnicas",
+    "elemento": "Protocolo estandarizado",
+    "descripcion": "Seguimiento de protocolos establecidos",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 17:30:36"
+  },
+  {
+    "id": 10249,
+    "categoria": "descripciones_tecnicas",
+    "elemento": "Evaluación previa obligatoria",
+    "descripcion": "Análisis completo antes del tratamiento",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 17:30:36"
+  },
+  {
+    "id": 10285,
+    "categoria": "facial",
+    "elemento": "Rostro completo",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10286,
+    "categoria": "facial",
+    "elemento": "Frente",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10287,
+    "categoria": "facial",
+    "elemento": "Entrecejo",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10288,
+    "categoria": "facial",
+    "elemento": "Párpados superiores",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10289,
+    "categoria": "facial",
+    "elemento": "Párpados inferiores",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10290,
+    "categoria": "facial",
+    "elemento": "Mejillas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10291,
+    "categoria": "facial",
+    "elemento": "Pómulos",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10292,
+    "categoria": "facial",
+    "elemento": "Nariz",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10293,
+    "categoria": "facial",
+    "elemento": "Labios",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10294,
+    "categoria": "facial",
+    "elemento": "Mentón",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10295,
+    "categoria": "facial",
+    "elemento": "Mandíbula",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10296,
+    "categoria": "facial",
+    "elemento": "Cuello",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10297,
+    "categoria": "facial",
+    "elemento": "Escote",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10298,
+    "categoria": "corporal",
+    "elemento": "Brazos",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10299,
+    "categoria": "corporal",
+    "elemento": "Antebrazos",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10300,
+    "categoria": "corporal",
+    "elemento": "Axilas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10301,
+    "categoria": "corporal",
+    "elemento": "Tórax",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10302,
+    "categoria": "corporal",
+    "elemento": "Abdomen",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10303,
+    "categoria": "corporal",
+    "elemento": "Espalda",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10304,
+    "categoria": "corporal",
+    "elemento": "Cintura",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10305,
+    "categoria": "corporal",
+    "elemento": "Caderas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10306,
+    "categoria": "corporal",
+    "elemento": "Glúteos",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10307,
+    "categoria": "corporal",
+    "elemento": "Muslos",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10308,
+    "categoria": "corporal",
+    "elemento": "Rodillas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10309,
+    "categoria": "corporal",
+    "elemento": "Piernas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10310,
+    "categoria": "corporal",
+    "elemento": "Pantorrillas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10311,
+    "categoria": "corporal",
+    "elemento": "Pies",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10312,
+    "categoria": "corporal",
+    "elemento": "Manos",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10313,
+    "categoria": "intimas",
+    "elemento": "Región genital",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10314,
+    "categoria": "intimas",
+    "elemento": "Bikini",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10315,
+    "categoria": "intimas",
+    "elemento": "Zona perianal",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10316,
+    "categoria": "intimas",
+    "elemento": "Rejuvenecimiento íntimo",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10317,
+    "categoria": "laser_tratamientos",
+    "elemento": "Rejuvenecimiento con CO2 Fraccionado",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10318,
+    "categoria": "laser_tratamientos",
+    "elemento": "Depilación Láser Diodo",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10319,
+    "categoria": "laser_tratamientos",
+    "elemento": "Tratamiento Vascular IPL",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10320,
+    "categoria": "laser_tratamientos",
+    "elemento": "Eliminación Pigmentación Q-Switch",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10321,
+    "categoria": "laser_tratamientos",
+    "elemento": "Resurfacing Láser Erbium",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10322,
+    "categoria": "laser_tratamientos",
+    "elemento": "Fotorrejuvenecimiento IPL",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10323,
+    "categoria": "laser_tratamientos",
+    "elemento": "Eliminación Tatuajes",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10324,
+    "categoria": "inyectables_procedimientos",
+    "elemento": "Aplicación Toxina Botulínica",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10325,
+    "categoria": "inyectables_procedimientos",
+    "elemento": "Relleno Ácido Hialurónico",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10326,
+    "categoria": "inyectables_procedimientos",
+    "elemento": "Bioestimulación PLLA",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10327,
+    "categoria": "inyectables_procedimientos",
+    "elemento": "Mesoterapia Facial",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10328,
+    "categoria": "inyectables_procedimientos",
+    "elemento": "Mesoterapia Corporal",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10329,
+    "categoria": "inyectables_procedimientos",
+    "elemento": "Hilos PDO",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10330,
+    "categoria": "inyectables_procedimientos",
+    "elemento": "Plasma Rico Plaquetas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10331,
+    "categoria": "energia_procedimientos",
+    "elemento": "Radiofrecuencia Facial",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10332,
+    "categoria": "energia_procedimientos",
+    "elemento": "Radiofrecuencia Corporal",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10333,
+    "categoria": "energia_procedimientos",
+    "elemento": "HIFU Ultrasonido",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10334,
+    "categoria": "energia_procedimientos",
+    "elemento": "Criolipólisis",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10335,
+    "categoria": "energia_procedimientos",
+    "elemento": "Cavitación",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10336,
+    "categoria": "energia_procedimientos",
+    "elemento": "Carboxiterapia",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10337,
+    "categoria": "energia_procedimientos",
+    "elemento": "Ondas de Choque",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10338,
+    "categoria": "peeling_procedimientos",
+    "elemento": "Peeling Ácido Glicólico",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10339,
+    "categoria": "peeling_procedimientos",
+    "elemento": "Peeling TCA 15%",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10340,
+    "categoria": "peeling_procedimientos",
+    "elemento": "Peeling TCA 25%",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10341,
+    "categoria": "peeling_procedimientos",
+    "elemento": "Peeling Jessner",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10342,
+    "categoria": "peeling_procedimientos",
+    "elemento": "Peeling Fenol",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10343,
+    "categoria": "peeling_procedimientos",
+    "elemento": "Microdermoabrasión",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10344,
+    "categoria": "riesgos_generales",
+    "elemento": "Dolor o molestias",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10345,
+    "categoria": "riesgos_generales",
+    "elemento": "Hinchazón",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10346,
+    "categoria": "riesgos_generales",
+    "elemento": "Hematomas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10347,
+    "categoria": "riesgos_generales",
+    "elemento": "Eritema",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10348,
+    "categoria": "riesgos_generales",
+    "elemento": "Infección",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10349,
+    "categoria": "riesgos_generales",
+    "elemento": "Cicatrización anormal",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10350,
+    "categoria": "riesgos_generales",
+    "elemento": "Reacción alérgica",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10351,
+    "categoria": "riesgos_generales",
+    "elemento": "Resultados no esperados",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10352,
+    "categoria": "riesgos_generales",
+    "elemento": "Asimetría",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10353,
+    "categoria": "riesgos_generales",
+    "elemento": "Necesidad retoque",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10354,
+    "categoria": "riesgos_laser",
+    "elemento": "Hiperpigmentación",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10355,
+    "categoria": "riesgos_laser",
+    "elemento": "Hipopigmentación",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10356,
+    "categoria": "riesgos_laser",
+    "elemento": "Quemaduras",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10357,
+    "categoria": "riesgos_laser",
+    "elemento": "Ampollas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10358,
+    "categoria": "riesgos_laser",
+    "elemento": "Costras",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10359,
+    "categoria": "riesgos_laser",
+    "elemento": "Cambios textura",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10360,
+    "categoria": "riesgos_laser",
+    "elemento": "Líneas demarcación",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10361,
+    "categoria": "riesgos_inyectables",
+    "elemento": "Granulomas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10362,
+    "categoria": "riesgos_inyectables",
+    "elemento": "Migración producto",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10363,
+    "categoria": "riesgos_inyectables",
+    "elemento": "Sobrecorrección",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10364,
+    "categoria": "riesgos_inyectables",
+    "elemento": "Subcorrección",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10365,
+    "categoria": "riesgos_inyectables",
+    "elemento": "Necrosis vascular",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10366,
+    "categoria": "riesgos_inyectables",
+    "elemento": "Embolización",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10367,
+    "categoria": "riesgos_inyectables",
+    "elemento": "Efecto Tyndall",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10368,
+    "categoria": "riesgos_inyectables",
+    "elemento": "Nodulaciones",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10369,
+    "categoria": "riesgos_quirurgicos",
+    "elemento": "Sangrado",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10370,
+    "categoria": "riesgos_quirurgicos",
+    "elemento": "Infección profunda",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10371,
+    "categoria": "riesgos_quirurgicos",
+    "elemento": "Dehiscencia sutura",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10372,
+    "categoria": "riesgos_quirurgicos",
+    "elemento": "Necrosis",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10373,
+    "categoria": "riesgos_quirurgicos",
+    "elemento": "Lesión nerviosa",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10374,
+    "categoria": "riesgos_quirurgicos",
+    "elemento": "Anestesia",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10375,
+    "categoria": "riesgos_quirurgicos",
+    "elemento": "Tromboembolismo",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10376,
+    "categoria": "absolutas",
+    "elemento": "Embarazo",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10377,
+    "categoria": "absolutas",
+    "elemento": "Lactancia",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10378,
+    "categoria": "absolutas",
+    "elemento": "Cáncer piel activo",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10379,
+    "categoria": "absolutas",
+    "elemento": "Infección activa zona",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10380,
+    "categoria": "absolutas",
+    "elemento": "Herpes activo",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10381,
+    "categoria": "absolutas",
+    "elemento": "Queloides activos",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10382,
+    "categoria": "absolutas",
+    "elemento": "Trastornos coagulación severos",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10383,
+    "categoria": "absolutas",
+    "elemento": "Marcapasos (RF/láser)",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10384,
+    "categoria": "relativas",
+    "elemento": "Bronceado reciente",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10385,
+    "categoria": "relativas",
+    "elemento": "Medicación fotosensibilizante",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10386,
+    "categoria": "relativas",
+    "elemento": "Autoinmunes activas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10387,
+    "categoria": "relativas",
+    "elemento": "Diabetes descompensada",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10388,
+    "categoria": "relativas",
+    "elemento": "Expectativas irreales",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10389,
+    "categoria": "relativas",
+    "elemento": "Dismorfofobia",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10390,
+    "categoria": "relativas",
+    "elemento": "Historia queloides",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10391,
+    "categoria": "relativas",
+    "elemento": "Fotodermatosis",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10392,
+    "categoria": "cuidados_pre_tratamiento",
+    "elemento": "Evitar sol 2 semanas",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10393,
+    "categoria": "cuidados_pre_tratamiento",
+    "elemento": "Suspender autobronceadores",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10394,
+    "categoria": "cuidados_pre_tratamiento",
+    "elemento": "No depilar zona 1 semana",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10395,
+    "categoria": "cuidados_pre_tratamiento",
+    "elemento": "Suspender retinoides",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10396,
+    "categoria": "cuidados_pre_tratamiento",
+    "elemento": "Profilaxis antiviral si indicado",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10397,
+    "categoria": "cuidados_pre_tratamiento",
+    "elemento": "Hidratación adecuada",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10398,
+    "categoria": "cuidados_pre_tratamiento",
+    "elemento": "Limpiar zona tratamiento",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10399,
+    "categoria": "cuidados_pre_tratamiento",
+    "elemento": "Retirar maquillaje",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10400,
+    "categoria": "cuidados_pre_tratamiento",
+    "elemento": "Informar medicación actual",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10401,
+    "categoria": "cuidados_post_tratamiento",
+    "elemento": "Aplicar frío local",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10402,
+    "categoria": "cuidados_post_tratamiento",
+    "elemento": "Fotoprotección estricta",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10403,
+    "categoria": "cuidados_post_tratamiento",
+    "elemento": "Hidratación zona",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10404,
+    "categoria": "cuidados_post_tratamiento",
+    "elemento": "Evitar calor/sauna",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10405,
+    "categoria": "cuidados_post_tratamiento",
+    "elemento": "No manipular zona",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10406,
+    "categoria": "cuidados_post_tratamiento",
+    "elemento": "Usar productos indicados",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10407,
+    "categoria": "cuidados_post_tratamiento",
+    "elemento": "Evitar ejercicio intenso",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10408,
+    "categoria": "cuidados_post_tratamiento",
+    "elemento": "No piscina/mar",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10409,
+    "categoria": "cuidados_post_tratamiento",
+    "elemento": "Control médico programado",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10410,
+    "categoria": "cuidados_post_tratamiento",
+    "elemento": "Contactar ante complicaciones",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10411,
+    "categoria": "temporales",
+    "elemento": "Eritema: 1-7 días",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10412,
+    "categoria": "temporales",
+    "elemento": "Hinchazón: 2-5 días",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10413,
+    "categoria": "temporales",
+    "elemento": "Descamación: 3-10 días",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10414,
+    "categoria": "temporales",
+    "elemento": "Costras: 5-14 días",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10415,
+    "categoria": "resultados",
+    "elemento": "Toxina: 3-6 meses",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10416,
+    "categoria": "resultados",
+    "elemento": "Rellenos: 6-18 meses",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10417,
+    "categoria": "resultados",
+    "elemento": "Láser pigmentación: Permanente",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10418,
+    "categoria": "resultados",
+    "elemento": "Peeling: 6-12 meses",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10419,
+    "categoria": "resultados",
+    "elemento": "RF: 1-2 años",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10428,
+    "categoria": "documentacion_requerida",
+    "elemento": "Historia clínica completa",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10429,
+    "categoria": "documentacion_requerida",
+    "elemento": "Fotografías pre-tratamiento",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10430,
+    "categoria": "documentacion_requerida",
+    "elemento": "Consentimiento firmado",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10431,
+    "categoria": "documentacion_requerida",
+    "elemento": "Información por escrito",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10432,
+    "categoria": "documentacion_requerida",
+    "elemento": "Presupuesto detallado",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10433,
+    "categoria": "documentacion_requerida",
+    "elemento": "Plan tratamiento",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10434,
+    "categoria": "documentacion_requerida",
+    "elemento": "Instrucciones post-cuidado",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10435,
+    "categoria": "documentacion_requerida",
+    "elemento": "Contacto emergencias",
+    "descripcion": null,
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:18:25"
+  },
+  {
+    "id": 10436,
+    "categoria": "zonas_anatomicas",
+    "elemento": "Elemento Test Fix - Actualizado",
+    "descripcion": "Descripción actualizada",
+    "es_maestro": 1,
+    "activo": 1,
+    "creado_en": "2025-09-25 18:28:58"
+  },
+  {
+    "id": 10437,
+    "categoria": "tipos_procedimientos",
+    "elemento": "Elemento Test Fix",
+    "descripcion": "Descripción de prueba para verificar el fix",
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-25 18:29:40"
+  },
+  {
+    "id": 10438,
+    "categoria": "zonas_anatomicas",
+    "elemento": "Test Fix Actualizado 1758825018",
+    "descripcion": "Descripción actualizada",
+    "es_maestro": 1,
+    "activo": 0,
+    "creado_en": "2025-09-25 18:30:18"
+  }
+]
