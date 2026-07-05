@@ -227,7 +227,7 @@ const MarkEditModal = ({
           <div className="space-y-2">
             <label className="block text-sm font-bold text-gray-700">Severidad / Grado</label>
             <Select 
-              value={editedMark.severity}
+              value={editedMark.severity ?? ''}
               onChange={val => setEditedMark({...editedMark, severity: val as any})}
               options={[
                 { value: "leve", label: "Leve" },

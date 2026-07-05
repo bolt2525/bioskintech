@@ -1,0 +1,279 @@
+[
+  {
+    "name": "ANALIZADOR FACIAL INTELIGENTE CON PANTALLA DE 21 pulgadas",
+    "shortDescription": "Sistema profesional para diagnóstico facial con IA, 8 espectros de análisis, reportes automáticos y luz combinada WOOD+POSITIVE POLARIZATION + NEGATIVE POLARIZATION +RGB+UV+PL.",
+    "description": "El Analizador Facial Inteligente con pantalla de 21 pulgadas es un equipo avanzado para diagnóstico profesional de piel. Incorpora inteligencia artificial y sensores de espectro múltiple (WOOD'S LIGTH, RGB, UV, PL), permitiendo identificar 12 tipos de problemas cutáneos en segundos. \nIdeal para clínicas y consultorios que buscan precisión, velocidad y valor añadido en sus consultas estéticas.",
+    "details": [
+      "Pantalla táctil de 21 pulgadas Full HD.",
+      "8 tecnologías de imágenes espectrales: luz blanca RGB, polarización positiva, polarización negativa, UV365, luz azul claro de madera 405, luz roja, piel clara marrón.",
+      "Análisis completo de 12 indicadores de piel mediante Luz combinada WOOD + RGB + UV + PL para evaluación profunda de capas superficiales y subdérmicas.",
+      "40 filtros de fuente de luz LED: 40 filtros están distribuidos alrededor de la cámara para proteger la piel de los efectos secundarios de la luz.",
+      "Inteligencia Artificial: Tecnología de reconocimiento facial AI: reconocimiento facial de inteligencia artificial, generación de modelos tridimensionales de rostro, detección automatizada y medición precisa.",
+      "Se adopta un algoritmo para identificar con precisión el espacio O, el espacio T y el espacio U, lo que hace que los datos sean más precisos y rápidos.",
+      "Emisión de reportes digitales inmediatos para el paciente y recomendaciones automáticas de tratamiento.",
+      "Software multilenguaje y actualizable vía WiFi.",
+      "Cámara de alta resolución."
+    ],
+    "specifications": {
+      "Resolución de pantalla": "FHD (touch)",
+      "Pixeles": "36 millones de píxeles de alta definición: imagen más clara, reconocimiento más preciso, análisis más preciso.",
+      "Modos de análisis": "8 modos, detección de 12 condiciones. ANALISIS SUPERFICIAL: nivel de hidratacion, sebo, poros, arrugas, manchas, puntos negros, tono de piel. ANALISIS PROFUNDO: sensibilidad PL, punto uv, pigmento, acne uv, fibra de colageno",
+      "Iluminación": "Wood's ligth (LAMPARA DE WOOD), RGB (luz blanca), UV (365 nm), PL (polarizada cruzada)",
+      "Fuente de alimentación": "110V AC, 50/60 Hz",
+      "Conectividad": "WiFi, USB",
+      "Dimensiones": "pantalla 32 × 60 cm : modulo analizador 36.5 x 44.5 x 50.8 cm",
+      "Peso": "8.5 kg"
+    },
+    "indications": [
+      "Diagnóstico integral para cualquier tipo y fototipo de piel.",
+      "Ideal para valoraciones en clínicas dermatológicas, centros de estética y consultorios médicos.",
+      "Útil para seguimiento de evolución de tratamientos faciales (antes y después).",
+      "",
+      "INCLUYE GARANTIA DE 6 MESES"
+    ],
+    "price": "$1,500",
+    "pricing": {
+      "current": 1500,
+      "previous": 1765,
+      "currency": "USD",
+      "taxNote": "+ IVA",
+      "discount": {
+        "active": true,
+        "percentage": 15,
+        "savings": 265
+      }
+    },
+    "stock": {
+      "available": true,
+      "quantity": 2,
+      "location": "Bodega BIOSKIN",
+      "deliveryTime": "Inmediato"
+    },
+    "images": [
+      "/images/productos/dispositivos/analizador/analizador1.jpg",
+      "/images/productos/dispositivos/analizador/analizador2.jpg",
+      "/images/productos/dispositivos/analizador/analizador3.jpg"
+    ],
+    "category": "equipment",
+    "promotion": {
+      "name": "Oferta Especial",
+      "description": "Descuento del 15%",
+      "validFrom": "2025-11-30",
+      "validUntil": "2025-12-31",
+      "promoPrice": 1500,
+      "discountPercentage": 15,
+      "savings": 265,
+      "active": true
+    }
+  },
+  {
+    "name": "Láser CO₂ Fraccionado",
+    "shortDescription": "Sistema de rejuvenecimiento y resurfacing con láser fraccionado de CO₂ de 10.600 nm. Ofrece escaneo gráfico de alta velocidad, múltiples modos de emisión y aplicaciones faciales, corporales y ginecológicas.",
+    "description": "El láser fraccionado CO₂ MSLCF10 es un equipo de última generación para tratamientos estéticos y ginecológicos no invasivos. Combina super pulso, escaneo de precisión y salida láser continua, permitiendo procedimientos personalizados para rejuvenecimiento facial, eliminación de arrugas, tratamiento de cicatrices, estrías, manchas y tensado vaginal. Incluye brazo articulado de 6 ejes, pantalla táctil, escáner gráfico y modos avanzados de operación. No requiere anestesia general y tiene un tiempo de recuperación mínimo.",
+    "details": [
+      "Láser de CO₂ con longitud de onda de 10.600 nm.",
+      "Modo fraccionado, pulso simple, intermitente y super pulso.",
+      "Cabezal fraccional con formas de escaneo: cuadrado, círculo, triángulo, línea, hexágono.",
+      "Escaneo aleatorio, secuencial y en división media (MidSplit).",
+      "Sistema de brazo articulado con 6 juntas y balance de peso.",
+      "Pantalla táctil para configuración de energía, ancho de pulso, espaciado de puntos y forma de escaneo.",
+      "Sistema de refrigeración por agua con cambio de agua cada 60 días.",
+      "Aplicación 360° para tratamientos íntimos con sonda giratoria por secciones.",
+      "Uso ginecológico para tensado, aumento de lubricación, rejuvenecimiento y restauración del pH vaginal.",
+      "Tratamientos sin dolor, sin necesidad de anestesia general y sin tiempo de inactividad prolongado."
+    ],
+    "specifications": {
+      "Longitud de onda": "10.600 nm",
+      "Potencia de salida": "1-60W",
+      "Tamaño del punto": "0.02-0.05 mm²",
+      "Sistema de escaneo": "Aleatorio, Secuencial, MidSplit",
+      "Formas de escaneo": "Cuadrado, círculo, triángulo, hexágono, línea",
+      "Área de escaneo": "0.1x0.1 mm hasta 20x20 mm",
+      "Modos de emisión": "Continuo, pulso único, intermitente, super pulso",
+      "Sistema de refrigeración": "Circulación de agua",
+      "Sistema de guiado": "Brazo articulado de 6 ejes",
+      "Peso": "31 kg",
+      "Dimensiones": "93 x 52 x 36 cm",
+      "Alimentación": "220V/110V",
+      "Rayo de apuntado": "Láser semiconductor rojo (650 nm)"
+    },
+    "indications": [
+      "Rejuvenecimiento facial: textura, firmeza, poros, luminosidad.",
+      "Eliminación de arrugas profundas y líneas finas.",
+      "Cicatrices: quirúrgicas, de acné, quemaduras, etc.",
+      "Reducción de estrías y flacidez en zonas corporales.",
+      "Lesiones pigmentarias: pecas, manchas solares, melasma.",
+      "Hiperplasia capilar y rosácea.",
+      "Rejuvenecimiento vaginal: tensado, lubricación, restauración de flora y pH.",
+      "Mejoría de sensibilidad íntima y estética genital femenina."
+    ],
+    "price": "$3,650",
+    "pricing": {
+      "current": 3650,
+      "previous": 4056,
+      "currency": "USD",
+      "taxNote": "+ IVA",
+      "discount": {
+        "active": true,
+        "percentage": 10,
+        "savings": 406
+      }
+    },
+    "stock": {
+      "available": true,
+      "quantity": 2,
+      "location": "Bodega BIOSKIN",
+      "deliveryTime": "Inmediato"
+    },
+    "images": [
+      "/images/productos/dispositivos/laserco2/laser1.jpg",
+      "/images/productos/dispositivos/laserco2/laser2.jpg",
+      "/images/productos/dispositivos/laserco2/laser3.jpg"
+    ],
+    "category": "equipment",
+    "promotion": {
+      "name": "Oferta Especial",
+      "description": "Descuento del 10%",
+      "validFrom": "2025-11-30",
+      "validUntil": "2025-12-31",
+      "promoPrice": 3650,
+      "discountPercentage": 10,
+      "savings": 406,
+      "active": true
+    }
+  },
+  {
+    "name": "HIFU 7D con Doble manija",
+    "shortDescription": "Tecnología MMFU de ultrasonido focalizado macro y micro para lifting facial, reafirmación muscular y remodelado corporal sin cirugía.",
+    "description": "El HIFU 7D es un equipo de ultrasonido focalizado de alta intensidad que actúa en múltiples capas de la piel y tejido subcutáneo, desde la epidermis hasta la fascia muscular (SMAS). Su avanzada tecnología MMFU combina efectos mecánicos, térmicos y de cavitación para estimular colágeno, tensar la piel y eliminar grasa localizada de forma segura y eficaz.\nEs ideal para clínicas estéticas que buscan ofrecer resultados visibles en lifting facial, rejuvenecimiento y contorno corporal sin procedimientos invasivos.",
+    "details": [
+      "Sistema MMFU: ultrasonido focalizado macro y micro de alta precisión.",
+      "Incluye doble maneral y múltiples cartuchos (7 cartuchos) con profundidades: 1.5 mm, 2.0 mm, 3.0 mm, 4.5 mm, 6.0 mm, 9.0 mm y 13.0 mm.",
+      "Tecnología patentada para tratamiento exclusivo de zonas delicadas como el contorno de ojos (sonda 2.0 mm).",
+      "Estimulación de colágeno y elastina mediante efecto térmico entre 65-75°C.",
+      "Resultados progresivos y naturales en lifting facial, reafirmación, mejora de arrugas y flacidez.",
+      "Aplicación corporal para reducción de grasa localizada en abdomen, brazos, muslos y más.",
+      "Modo de disparo continuo o individual con ajuste fino de energía y distancia entre puntos.",
+      "Pantalla táctil con interfaz intuitiva y ajustes personalizables por zona y paciente."
+    ],
+    "specifications": {
+      "Energía de salida": "0.1~3J (ajustable en incrementos de 0.1J)",
+      "Frecuencia": "5.5 MHz (zona ocular), 2.0 MHz (zona corporal)",
+      "Distancia entre puntos": "1~2 mm",
+      "Longitud del disparo": "5.0~25 mm",
+      "Profundidades disponibles": "1.5mm, 2.0mm, 3.0mm, 4.5mm, 6.0mm, 9.0mm, 13.0mm",
+      "Modos de operación": "Single / Repeat",
+      "Voltaje": "100–240V, 50/60 Hz",
+      "Certificaciones": "KFDA (Corea), CE (Europa)"
+    },
+    "indications": [
+      "Lifting facial no invasivo.",
+      "Reducción de arrugas profundas y líneas de expresión.",
+      "Reafirmación del contorno facial y cuello.",
+      "Mejora de la textura y elasticidad cutánea.",
+      "Reducción de papada sin cirugía.",
+      "Modelado corporal en abdomen, brazos, muslos, flancos y más.",
+      "Tratamiento seguro y efectivo para pieles maduras y con flacidez.",
+      "Compatible con protocolos post-infiltración (espera recomendada de 30 días)."
+    ],
+    "price": "$1,600",
+    "pricing": {
+      "current": 1600,
+      "previous": 1882,
+      "currency": "USD",
+      "taxNote": "+ IVA",
+      "discount": {
+        "active": true,
+        "percentage": 15,
+        "savings": 282
+      }
+    },
+    "stock": {
+      "available": true,
+      "quantity": 2,
+      "location": "Bodega BIOSKIN",
+      "deliveryTime": "Inmediato"
+    },
+    "images": [
+      "/images/productos/dispositivos/hifu/hifu1.jpg",
+      "/images/productos/dispositivos/hifu/hifu2.jpg",
+      "/images/productos/dispositivos/hifu/hifu3.jpg",
+      "/images/productos/dispositivos/hifu/hifu4.jpg",
+      "/images/productos/dispositivos/hifu/hifu5.jpg"
+    ],
+    "category": "equipment",
+    "promotion": {
+      "name": "Oferta Especial",
+      "description": "Descuento del 15%",
+      "validFrom": "2025-11-30",
+      "validUntil": "2025-12-31",
+      "promoPrice": 1600,
+      "discountPercentage": 15,
+      "savings": 282,
+      "active": true
+    }
+  },
+  {
+    "name": "3 en 1 IPL + LASER YAG + RADIOFRECUENCIA",
+    "shortDescription": "Plataforma estética profesional: depilación IPL, remoción de tatuajes ND YAG, rejuvenecimiento con radiofrecuencia.",
+    "description": "Equipo multifuncional que integra tecnología IPL (luz pulsada intensa), láser ND YAG y radiofrecuencia bipolar. Permite realizar depilación definitiva, tratamiento de lesiones pigmentadas, rejuvenecimiento cutáneo y remoción profesional de tatuajes de múltiples colores. \nIdeal para clínicas que buscan máxima versatilidad, potencia y retorno de inversión.",
+    "details": [
+      "Módulo IPL: depilación permanente, tratamiento de manchas, rosácea y acné.",
+      "Módulo ND YAG: eliminación de tatuajes multicolor, micropigmentaciones (cejas, labios, ojos), lesiones pigmentadas profundas.",
+      "Radiofrecuencia bipolar: lifting facial no invasivo, reducción de arrugas y flacidez.",
+      "Pantalla táctil a color, protocolos precargados y calibración automática.",
+      "Sistema de enfriamiento por zafiro y contacto, máxima seguridad para el paciente.",
+      "Hasta 300,000 disparos garantizados por lámpara IPL."
+    ],
+    "specifications": {
+      "Potencia IPL": "2000 W",
+      "Longitud de onda IPL": "610-1200 nm",
+      "Potencia Láser ND YAG": "500 W",
+      "Longitud de onda YAG": "1064/532 nm",
+      "Radiofrecuencia": "Bipolar, 1-5 MHz ajustable",
+      "Pantalla": "10.4 pulgadas táctil",
+      "Sistemas de enfriamiento": "Agua + Semiconductor + Aire",
+      "Dimensiones": "50 x 45 x 38 cm",
+      "Peso": "26 kg"
+    },
+    "indications": [
+      "Depilación permanente en todos los fototipos (I-VI).",
+      "Eliminación de tatuajes y pigmentos resistentes.",
+      "Rejuvenecimiento facial, reducción de líneas finas y flacidez.",
+      "Reducción de lesiones vasculares y pigmentadas."
+    ],
+    "price": "$2,900",
+    "pricing": {
+      "current": 2900,
+      "previous": 3222,
+      "currency": "USD",
+      "taxNote": "+ IVA",
+      "discount": {
+        "active": true,
+        "percentage": 10,
+        "savings": 322
+      }
+    },
+    "stock": {
+      "available": true,
+      "quantity": 2,
+      "location": "Bodega BIOSKIN",
+      "deliveryTime": "Inmediato"
+    },
+    "images": [
+      "/images/productos/dispositivos/multifuncional/multifuncional1.jpg",
+      "/images/productos/dispositivos/multifuncional/multifuncional2.jpg"
+    ],
+    "category": "equipment",
+    "promotion": {
+      "name": "Oferta Especial",
+      "description": "Descuento del 10%",
+      "validFrom": "2025-11-30",
+      "validUntil": "2025-12-31",
+      "promoPrice": 2900,
+      "discountPercentage": 10,
+      "savings": 322,
+      "active": true
+    }
+  }
+]

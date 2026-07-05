@@ -58,7 +58,7 @@ export const deductibilityLogic = (description: string, user: string) => {
   const lowerDesc = description.toLowerCase();
   
   // 1. Check Deductible Keywords
-  const isDeductible = rules.deductible_keywords.some(k => lowerDesc.includes(k));
+  const isDeductible = rules.deductible_keywords.some((k: string) => lowerDesc.includes(k));
   if (isDeductible) return { 
     status: 'deductible', 
     text: '✅ Deducible Negocio', 
@@ -66,7 +66,7 @@ export const deductibilityLogic = (description: string, user: string) => {
   };
 
   // 2. Check Personal Keywords
-  const isPersonal = rules.personal_keywords.some(k => lowerDesc.includes(k));
+  const isPersonal = rules.personal_keywords.some((k: string) => lowerDesc.includes(k));
   if (isPersonal) return { 
     status: 'personal', 
     text: '👤 Gasto Personal', 

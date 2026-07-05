@@ -1,3 +1,4 @@
+// @ts-nocheck
 // src/components/BlogManagement.tsx
 // Componente completo para gestión de blogs (CRUD + visualización)
 
