@@ -268,13 +268,15 @@ Usar la extensión Vercel de VSCode para diagnosticar deploys, ver logs y gestio
 - **Project**: Enlazar con nueva cuenta Vercel al hacer deploy
 
 ### Git Workflow
-**ALWAYS** after making any changes to the codebase, execute the following Git commands to save changes to the repository:
+**OBLIGATORIO** — después de CADA cambio en el código, ejecutar siempre estos comandos:
 ```bash
 git add .
-git commit -m "Descriptive commit message"
+git commit -m "descripción concisa del cambio"
 git push
 ```
-This ensures all changes are properly tracked and synchronized with the remote repository.
+**Repositorio remoto**: `https://github.com/bolt2525/bioskintech.git` (cuenta: bolt2525, privado).
+- No cerrar ninguna tarea sin hacer commit + push al repo.
+- No declarar éxito sin evidencia de que el push fue exitoso.
 
 ### Spanish Language
 All user-facing content is in Spanish. Maintain Spanish naming conventions for components, routes, and content.

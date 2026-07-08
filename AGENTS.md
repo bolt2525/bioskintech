@@ -47,7 +47,9 @@ Usa el agente más especializado posible según el tipo de tarea:
 
 ## Git Workflow (Obligatorio)
 - Después de CADA cambio en el código, ejecutar siempre: `git add .`, `git commit -m "..."`, `git push`.
+- **Repositorio**: `https://github.com/bolt2525/bioskintech.git` (cuenta bolt2525, privado).
 - No cerrar una tarea con cambios en archivos sin commit/push.
+- No declarar éxito sin evidencia de push exitoso.
 
 ## Project Conventions
 - **Base de datos**: ÚNICAMENTE Neon PostgreSQL. No SQLite, no otros archivos `.db`.
