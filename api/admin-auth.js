@@ -145,7 +145,7 @@ async function initMultiTenantSchema() {
 
   // Índices de rendimiento
   await sql`CREATE INDEX IF NOT EXISTS idx_clinic_users_username ON clinic_users(username) WHERE is_active = true`;
-  await sql`CREATE INDEX IF NOT EXISTS idx_patients_clinic ON patients(clinic_id)`;
+  try { await sql`CREATE INDEX IF NOT EXISTS idx_patients_clinic ON patients(clinic_id)`; } catch { /* patients aún no existe */ }
   await sql`CREATE INDEX IF NOT EXISTS idx_session_token ON admin_sessions(session_token) WHERE is_active = true`;
 }
 
