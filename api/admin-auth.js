@@ -282,9 +282,9 @@ async function loginUser(username, password, ip, ua) {
 
   // Fallback pre-migración (solo variables de entorno)
   if (count === 0) {
-    const validU = (process.env.ADMIN_USERNAME || 'admin').trim();
-    const validP = (process.env.ADMIN_PASSWORD || '').trim();
-    if (!validP || username !== validU || password !== validP) {
+    const validU = (process.env.ADMIN_USERNAME || process.env.MASTER_ADMIN_USERNAME || 'admin').trim();
+    const validP = (process.env.ADMIN_PASSWORD || process.env.MASTER_ADMIN_PASSWORD || '').trim();
+    if (!validP || username.trim() !== validU || password.trim() !== validP) {
       return { success: false, error: 'Credenciales inválidas' };
     }
     await ensureSessionsTable();
@@ -634,8 +634,9 @@ export default async function handler(req, res) {
   try {
     // ── Inicialización del esquema (protegida por secret) ──────────────────
     if (action === 'initMultiTenant') {
-      const secret = req.headers['x-setup-secret'] || req.query.secret;
-      if (!process.env.ADMIN_SETUP_SECRET || secret !== process.env.ADMIN_SETUP_SECRET)
+      const secret = (req.headers['x-setup-secret'] || req.query.secret || '').trim();
+      const expected = (process.env.ADMIN_SETUP_SECRET || '').trim();
+      if (!expected || secret !== expected)
         return res.status(403).json({ error: 'Unauthorized — requiere x-setup-secret válido' });
       await initMultiTenantSchema();
       const { bioskinId } = await seedData();
