@@ -55,7 +55,7 @@ function FeatureToggle({
       type="button"
       onClick={() => !disabled && onChange(!checked)}
       className={`relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors duration-200 focus:outline-none ${
-        checked ? 'bg-indigo-600' : 'bg-gray-300'
+        checked ? 'bg-[#deb887]' : 'bg-gray-200'
       } ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
     >
       <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-200 mt-0.5 ${checked ? 'translate-x-4' : 'translate-x-0.5'}`} />
@@ -68,7 +68,7 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden">
-        <div className="h-0.5 bg-gradient-to-r from-indigo-400 to-purple-500" />
+        <div className="h-0.5 bg-gradient-to-r from-[#deb887] to-[#c5a075]" />
         <div className="p-5 border-b flex justify-between items-center">
           <h3 className="font-bold text-gray-900">{title}</h3>
           <button onClick={onClose} className="text-gray-300 hover:text-gray-500"><X className="w-5 h-5" /></button>
@@ -325,32 +325,32 @@ export default function AdminMasterDashboard() {
     <div className="min-h-screen bg-gray-50">
 
       {/* ── Header Master Admin ──────────────────────────────────────────── */}
-      <div className="bg-gradient-to-r from-indigo-600 to-purple-700 text-white shadow-lg">
+      <div className="bg-gradient-to-br from-[#0d0d0d] via-[#1a1209] to-[#0d0d0d] text-white shadow-xl border-b border-[#deb887]/20">
         <div className="container-custom py-5">
           <div className="flex items-center justify-between flex-wrap gap-4">
 
             {/* Título */}
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
-                <Shield className="w-5 h-5" />
+              <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#deb887] to-[#c5a075] flex items-center justify-center shadow-lg shadow-[#deb887]/20">
+                <Shield className="w-5 h-5 text-white" />
               </div>
               <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-xl font-bold">Master Admin Panel</h1>
-                  <span className="bg-[#deb887] text-white px-2 py-0.5 rounded-lg text-xs font-bold tracking-wide">BIOSKIN</span>
+                <div className="flex items-center gap-3">
+                  <h1 className="text-xl font-bold tracking-tight text-white">BIOSKINTECH</h1>
+                  <span className="bg-[#deb887]/20 text-[#deb887] border border-[#deb887]/30 px-2.5 py-0.5 rounded-full text-[10px] font-semibold tracking-widest uppercase">Master</span>
                 </div>
-                <p className="text-white/70 text-sm">Control total del sistema · {user?.username}</p>
+                <p className="text-white/50 text-xs tracking-wide">Soluciones de Bioingeniería Estética · <span className="text-[#deb887]/70">{user?.username}</span></p>
               </div>
             </div>
 
             {/* Acciones del header */}
             <div className="flex items-center gap-2">
-              <button onClick={loadAll} className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors" title="Recargar datos">
-                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              <button onClick={loadAll} className="p-2 rounded-lg bg-white/5 hover:bg-[#deb887]/10 border border-white/10 hover:border-[#deb887]/30 transition-all" title="Recargar datos">
+                <RefreshCw className={`w-4 h-4 text-white/60 hover:text-[#deb887] transition-colors ${loading ? 'animate-spin' : ''}`} />
               </button>
               <button
                 onClick={() => { logout(); navigate('/admin/login'); }}
-                className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg transition-colors text-sm"
+                className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-red-500/10 border border-white/10 hover:border-red-400/30 rounded-lg transition-all text-sm text-white/60 hover:text-red-400"
               >
                 <LogOut className="w-4 h-4" /> Salir
               </button>
@@ -365,30 +365,34 @@ export default function AdminMasterDashboard() {
               { label: 'Pacientes', value: clinics.reduce((s, c) => s + (c.patient_count || 0), 0),   icon: ClipboardList, color: 'bg-pink-500' },
               { label: 'Activos',   value: allUsers.filter(u => u.is_active).length,                  icon: Activity,      color: 'bg-emerald-500' },
             ].map(s => (
-              <div key={s.label} className="bg-white/10 rounded-xl p-3 flex items-center gap-3">
+              <div key={s.label} className="bg-white/5 border border-white/10 hover:border-[#deb887]/30 rounded-xl p-3 flex items-center gap-3 transition-all">
                 <div className={`w-9 h-9 ${s.color} rounded-lg flex items-center justify-center flex-shrink-0`}>
                   <s.icon className="w-4 h-4 text-white" />
                 </div>
                 <div>
-                  <div className="text-xl font-bold">{s.value}</div>
-                  <div className="text-white/70 text-xs">{s.label}</div>
+                  <div className="text-xl font-bold text-white">{s.value}</div>
+                  <div className="text-white/40 text-xs tracking-wide">{s.label}</div>
                 </div>
               </div>
             ))}
           </div>
 
           {/* Tabs de navegación */}
-          <div className="flex gap-1 mt-5 bg-white/10 rounded-xl p-1 w-fit">
+          <div className="flex gap-1 mt-5 bg-white/5 border border-white/10 rounded-xl p-1 w-fit">
             {([
               ['clinics', '🏥 Clínicas'],
               ['users',   '👥 Usuarios'],
-              ['modules', '📦 Módulos'],
-              ['system',  '⚙️ Sistema'],
+              ['modules', '✦ Módulos'],
+              ['system',  '⚙ Sistema'],
             ] as [TabKey, string][]).map(([key, label]) => (
               <button
                 key={key}
                 onClick={() => setTab(key)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${tab === key ? 'bg-white text-indigo-700 shadow' : 'text-white/80 hover:text-white'}`}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  tab === key
+                    ? 'bg-gradient-to-r from-[#deb887] to-[#c5a075] text-white shadow-md shadow-[#deb887]/20'
+                    : 'text-white/50 hover:text-white/80'
+                }`}
               >
                 {label}
               </button>
@@ -412,7 +416,7 @@ export default function AdminMasterDashboard() {
           <div>
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-lg font-bold text-gray-900">Clínicas registradas</h2>
-              <button onClick={openCreateClinic} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium transition-colors">
+              <button onClick={openCreateClinic} className="flex items-center gap-2 px-4 py-2 text-white rounded-xl text-sm font-medium transition-all shadow-md hover:shadow-lg hover:-translate-y-0.5" style={{background:'linear-gradient(135deg,#deb887,#c5a075)'}}>
                 <Plus className="w-4 h-4" /> Nueva Clínica
               </button>
             </div>
@@ -429,7 +433,7 @@ export default function AdminMasterDashboard() {
                       {/* Encabezado de la clínica */}
                       <div className="flex items-start justify-between mb-3">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center text-white font-bold text-sm">
+                          <div className="w-10 h-10 bg-gradient-to-br from-[#deb887] to-[#c5a075] rounded-xl flex items-center justify-center text-white font-bold text-sm shadow-md shadow-[#deb887]/20">
                             {clinic.name.charAt(0)}
                           </div>
                           <div>
@@ -465,11 +469,11 @@ export default function AdminMasterDashboard() {
 
                       {/* Acciones de la clínica */}
                       <div className="flex gap-2 mt-4 pt-4 border-t">
-                        <button onClick={() => openEditClinic(clinic)} className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors">
+                        <button onClick={() => openEditClinic(clinic)} className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-[#c5a075] bg-[#deb887]/8 hover:bg-[#deb887]/15 border border-[#deb887]/20 rounded-lg transition-colors">
                           <Edit className="w-3.5 h-3.5" /> Editar
                         </button>
-                        <button onClick={() => { setUserClinicFilter(String(clinic.id)); setTab('users'); }} className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-lg transition-colors">
-                          <Users className="w-3.5 h-3.5" /> Ver Usuarios
+                        <button onClick={() => { setUserClinicFilter(String(clinic.id)); setTab('users'); }} className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg transition-colors">
+                          <Users className="w-3.5 h-3.5" /> Usuarios
                         </button>
                         <button onClick={() => { setSelectedModuleClinic(clinic.id); setTab('modules'); }} className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-[#c5a075] bg-[#deb887]/10 hover:bg-[#deb887]/20 rounded-lg transition-colors">
                           <Sparkles className="w-3.5 h-3.5" /> Módulos
@@ -552,7 +556,7 @@ export default function AdminMasterDashboard() {
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex gap-1">
-                            <button onClick={() => openEditUser(u)} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded" title="Editar">
+                            <button onClick={() => openEditUser(u)} className="p-1.5 text-[#c5a075] hover:bg-[#deb887]/10 rounded" title="Editar">
                               <Edit className="w-3.5 h-3.5" />
                             </button>
                             <button onClick={() => { setPwdForm({ password: '', password2: '' }); setPwdModal({ open: true, userId: u.id }); }} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded" title="Cambiar contraseña">
@@ -673,7 +677,7 @@ export default function AdminMasterDashboard() {
                           <span
                             key={f}
                             title={FEATURE_META[f]?.label}
-                            className={`w-2 h-2 rounded-full ${(featMap[c.id] || {})[f] !== false ? 'bg-indigo-500' : 'bg-gray-200'}`}
+                            className={`w-2 h-2 rounded-full ${(featMap[c.id] || {})[f] !== false ? 'bg-[#deb887]' : 'bg-gray-200'}`}
                           />
                         ))}
                       </div>
@@ -728,7 +732,7 @@ export default function AdminMasterDashboard() {
                   value={(userForm as Record<string, string>)[f.key]}
                   onChange={e => setUserForm(p => ({ ...p, [f.key]: e.target.value }))}
                   disabled={f.disabled}
-                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 focus:outline-none disabled:bg-gray-50"
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] focus:outline-none disabled:bg-gray-50 transition-shadow"
                 />
               </div>
             ))}
@@ -736,7 +740,7 @@ export default function AdminMasterDashboard() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Rol *</label>
-                <select value={userForm.role} onChange={e => setUserForm(p => ({ ...p, role: e.target.value }))} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 focus:outline-none">
+                <select value={userForm.role} onChange={e => setUserForm(p => ({ ...p, role: e.target.value }))} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] focus:outline-none">
                   <option value="master_admin">Master Admin</option>
                   <option value="clinic_admin">Admin Clínica</option>
                   <option value="clinic_user">Usuario</option>
@@ -744,7 +748,7 @@ export default function AdminMasterDashboard() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Acceso</label>
-                <select value={userForm.access_scope} onChange={e => setUserForm(p => ({ ...p, access_scope: e.target.value }))} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 focus:outline-none">
+                <select value={userForm.access_scope} onChange={e => setUserForm(p => ({ ...p, access_scope: e.target.value }))} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] focus:outline-none">
                   <option value="all">Todos los pacientes</option>
                   <option value="own">Solo propios</option>
                 </select>
@@ -754,7 +758,7 @@ export default function AdminMasterDashboard() {
             {userForm.role !== 'master_admin' && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Clínica</label>
-                <select value={userForm.clinic_id} onChange={e => setUserForm(p => ({ ...p, clinic_id: e.target.value }))} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 focus:outline-none">
+                <select value={userForm.clinic_id} onChange={e => setUserForm(p => ({ ...p, clinic_id: e.target.value }))} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] focus:outline-none">
                   <option value="">Sin clínica</option>
                   {clinics.map(c => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
                 </select>
@@ -766,18 +770,18 @@ export default function AdminMasterDashboard() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Contraseña *</label>
-                  <input type="password" value={userForm.password} onChange={e => setUserForm(p => ({ ...p, password: e.target.value }))} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 focus:outline-none" />
+                  <input type="password" value={userForm.password} onChange={e => setUserForm(p => ({ ...p, password: e.target.value }))} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] focus:outline-none" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Confirmar *</label>
-                  <input type="password" value={userForm.password2} onChange={e => setUserForm(p => ({ ...p, password2: e.target.value }))} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 focus:outline-none" />
+                  <input type="password" value={userForm.password2} onChange={e => setUserForm(p => ({ ...p, password2: e.target.value }))} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] focus:outline-none" />
                 </div>
               </div>
             )}
 
             <div className="flex justify-end gap-3 pt-2">
               <button onClick={() => setUserModal({ open: false })} className="px-4 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cancelar</button>
-              <button onClick={saveUser} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700">Guardar</button>
+              <button onClick={saveUser} className="px-4 py-2 text-white rounded-lg text-sm font-medium transition-all hover:-translate-y-0.5 shadow-md" style={{background:'linear-gradient(135deg,#deb887,#c5a075)'}}>Guardar</button>
             </div>
           </div>
         </Modal>
@@ -789,11 +793,11 @@ export default function AdminMasterDashboard() {
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Nueva contraseña</label>
-              <input type="password" value={pwdForm.password} onChange={e => setPwdForm(p => ({ ...p, password: e.target.value }))} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 focus:outline-none" />
+                <input type="password" value={pwdForm.password} onChange={e => setPwdForm(p => ({ ...p, password: e.target.value }))} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] focus:outline-none" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Confirmar contraseña</label>
-              <input type="password" value={pwdForm.password2} onChange={e => setPwdForm(p => ({ ...p, password2: e.target.value }))} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 focus:outline-none" />
+              <input type="password" value={pwdForm.password2} onChange={e => setPwdForm(p => ({ ...p, password2: e.target.value }))} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] focus:outline-none" />
             </div>
             <div className="flex justify-end gap-3 pt-2">
               <button onClick={() => setPwdModal({ open: false })} className="px-4 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cancelar</button>
