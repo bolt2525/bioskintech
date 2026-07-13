@@ -547,10 +547,9 @@ async function listClinics() {
   return (await sql`
     SELECT c.*,
            COUNT(DISTINCT cu.id) FILTER (WHERE cu.is_active = true)::int AS user_count,
-           COUNT(DISTINCT p.id)::int AS patient_count
+           0::int AS patient_count
     FROM clinics c
     LEFT JOIN clinic_users cu ON cu.clinic_id = c.id
-    LEFT JOIN patients      p ON p.clinic_id  = c.id
     GROUP BY c.id ORDER BY c.name
   `).rows;
 }
