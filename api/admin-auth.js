@@ -205,8 +205,8 @@ async function seedData() {
     }
   }
 
-  // Migrar pacientes sin clínica → bioskin
-  await sql`UPDATE patients SET clinic_id = ${bioskinId} WHERE clinic_id IS NULL`;
+  // Migrar pacientes sin clínica → bioskin (tabla puede no existir en install fresco)
+  try { await sql`UPDATE patients SET clinic_id = ${bioskinId} WHERE clinic_id IS NULL`; } catch { /* patients aún no existe */ }
 
   await seedFeatures(bioskinId);
   return { bioskinId };
