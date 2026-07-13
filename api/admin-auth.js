@@ -556,18 +556,26 @@ async function listClinics() {
 }
 
 async function createClinic(body) {
-  const { name, slug, email, phone, address } = body;
-  if (!name?.trim() || !slug?.trim()) return { error: 'name y slug son requeridos' };
+  const { name, email, phone, address } = body;
+  if (!name?.trim()) return { error: 'El nombre de la clínica es requerido' };
+  // Auto-genera slug desde el nombre si no se proporciona
+  const slug = (body.slug?.trim() || name.trim())
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\w\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '-');
   try {
     const r = await sql`
       INSERT INTO clinics (name, slug, email, phone, address)
-      VALUES (${name.trim()}, ${slug.trim().toLowerCase()}, ${email || null}, ${phone || null}, ${address || null})
+      VALUES (${name.trim()}, ${slug}, ${email || null}, ${phone || null}, ${address || null})
       RETURNING *
     `;
     return { success: true, clinic: r.rows[0] };
   } catch (e) {
     if (e.message?.includes('unique') || e.message?.includes('duplicate'))
-      return { error: 'Ya existe una clínica con ese slug' };
+      return { error: 'Ya existe una clínica con ese nombre o identificador' };
     throw e;
   }
 }

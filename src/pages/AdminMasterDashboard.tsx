@@ -25,6 +25,7 @@ import {
 // Constantes centralizadas — no duplicar aquí
 import { ALL_FEATURES, FEATURE_META, MODULE_LIST } from '../constants/features';
 import { ROLE_LABELS, ROLE_COLORS } from '../constants/theme';
+import { slugify } from '../utils/slugify';
 
 // Tipos centralizados
 import type { Clinic, ClinicUser, FeatureRow } from '../types';
@@ -150,7 +151,7 @@ export default function AdminMasterDashboard() {
 
   // ── Formularios ──────────────────────────────────────────────────────────
   const [userForm, setUserForm]     = useState({ username: '', full_name: '', email: '', role: 'clinic_user', access_scope: 'own', clinic_id: '', password: '', password2: '' });
-  const [clinicForm, setClinicForm] = useState({ name: '', slug: '', email: '', phone: '', address: '' });
+  const [clinicForm, setClinicForm] = useState({ name: '', email: '', phone: '', address: '' });
   const [pwdForm, setPwdForm]       = useState({ password: '', password2: '' });
 
   // ── Filtros de usuarios ──────────────────────────────────────────────────
@@ -280,16 +281,17 @@ export default function AdminMasterDashboard() {
   // ─── CRUD Clínicas ────────────────────────────────────────────────────────
 
   const openCreateClinic = () => {
-    setClinicForm({ name: '', slug: '', email: '', phone: '', address: '' });
+    setClinicForm({ name: '', email: '', phone: '', address: '' });
     setClinicModal({ open: true });
   };
 
   const openEditClinic = (c: Clinic) => {
-    setClinicForm({ name: c.name, slug: c.slug, email: c.email || '', phone: c.phone || '', address: c.address || '' });
+    setClinicForm({ name: c.name, email: c.email || '', phone: c.phone || '', address: c.address || '' });
     setClinicModal({ open: true, clinicId: c.id });
   };
 
   const saveClinic = async () => {
+    if (!clinicForm.name.trim()) return flash('El nombre es requerido', 'err');
     const action = clinicModal.clinicId ? 'updateClinic' : 'createClinic';
     const body   = { ...clinicForm, id: clinicModal.clinicId };
     const res    = await fetch(`/api/admin-auth?action=${action}`, { method: 'POST', headers: authHeader(), body: JSON.stringify(body) });
@@ -297,6 +299,12 @@ export default function AdminMasterDashboard() {
     if (data.error) return flash(data.error, 'err');
     flash(clinicModal.clinicId ? 'Clínica actualizada' : 'Clínica creada');
     setClinicModal({ open: false });
+    // Si es nueva clínica, abrir modal de usuario pre-asignado a ella
+    if (!clinicModal.clinicId && data.clinic) {
+      await loadAll();
+      setUserForm({ username: '', full_name: '', email: '', role: 'clinic_admin', access_scope: 'all', clinic_id: String(data.clinic.id), password: '', password2: '' });
+      setUserModal({ open: true });
+    }
     loadAll();
   };
 
@@ -799,26 +807,51 @@ export default function AdminMasterDashboard() {
       {clinicModal.open && (
         <Modal title={clinicModal.clinicId ? 'Editar Clínica' : 'Nueva Clínica'} onClose={() => setClinicModal({ open: false })}>
           <div className="space-y-4">
+            {/* Nombre — el slug se genera automáticamente */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Nombre de la Clínica *</label>
+              <input
+                type="text"
+                placeholder="Ej: Clínica Abellán"
+                value={clinicForm.name}
+                onChange={e => setClinicForm(p => ({ ...p, name: e.target.value }))}
+                className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-amber-300 focus:outline-none"
+              />
+              {clinicForm.name && (
+                <p className="mt-1 text-xs text-gray-400">
+                  Identificador: <span className="font-mono text-amber-700">@{slugify(clinicForm.name)}</span>
+                </p>
+              )}
+            </div>
             {[
-              { label: 'Nombre *',     key: 'name' },
-              { label: 'Slug (URL) *', key: 'slug' },
-              { label: 'Email',        key: 'email' },
-              { label: 'Teléfono',     key: 'phone' },
-              { label: 'Dirección',    key: 'address' },
+              { label: 'Email de contacto', key: 'email',   type: 'email' },
+              { label: 'Teléfono',          key: 'phone',   type: 'tel' },
+              { label: 'Dirección',         key: 'address', type: 'text' },
             ].map(f => (
               <div key={f.key}>
                 <label className="block text-sm font-medium text-gray-700 mb-1">{f.label}</label>
                 <input
-                  type="text"
+                  type={f.type}
                   value={(clinicForm as Record<string, string>)[f.key]}
                   onChange={e => setClinicForm(p => ({ ...p, [f.key]: e.target.value }))}
-                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 focus:outline-none"
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-amber-300 focus:outline-none"
                 />
               </div>
             ))}
+            {!clinicModal.clinicId && (
+              <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
+                ℹ️ Al guardar, podrás crear el primer usuario administrador de esta clínica.
+              </div>
+            )}
             <div className="flex justify-end gap-3 pt-2">
               <button onClick={() => setClinicModal({ open: false })} className="px-4 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cancelar</button>
-              <button onClick={saveClinic} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700">Guardar</button>
+              <button
+                onClick={saveClinic}
+                className="px-4 py-2 text-white rounded-lg text-sm font-medium"
+                style={{ background: '#deb887' }}
+              >
+                {clinicModal.clinicId ? 'Actualizar' : 'Crear Clínica'}
+              </button>
             </div>
           </div>
         </Modal>
