@@ -222,10 +222,13 @@ export default function AdminMasterDashboard() {
       else if (uData.users)      setAllUsers(uData.users);
 
       if (fData.data) setFeatData(fData.data);
+    } catch (e) {
+      console.error('loadAll error:', e);
     } finally {
       setLoading(false);
     }
-    loadOauthStatus();
+    // OAuth status en paralelo — no bloquea ni afecta si falla
+    loadOauthStatus().catch(() => {});
   }, []);
 
   useEffect(() => {
