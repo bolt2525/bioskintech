@@ -152,15 +152,20 @@ export default async function handler(req, res) {
       return Number.isFinite(parsed) ? parsed : null;
     };
 
+    // Auto-inicializar el schema clínico en el primer uso del contenedor
+    if (!dbInitialized) {
+      try {
+        await initClinicalDatabase();
+        dbInitialized = true;
+      } catch (e) {
+        console.error('⚠️ Clinical DB init warning:', e.message);
+      }
+    }
+
     switch (action) {
       case 'init':
-      case 'initClinical': {
-        if (!dbInitialized) {
-          await initClinicalDatabase();
-          dbInitialized = true;
-        }
+      case 'initClinical':
         return res.status(200).json({ success: true, message: 'Clinical database initialized' });
-      }
 
       // ==========================================
       // INVENTORY MODULE ACTIONS
