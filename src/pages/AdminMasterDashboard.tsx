@@ -19,7 +19,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   LogOut, Building2, Users, Shield, RefreshCw, ChevronDown, ChevronUp,
   Plus, Edit, Trash2, Eye, EyeOff, Key, X, Check, AlertCircle,
-  Activity, ClipboardList, ChevronRight, Sparkles, Lock,
+  Activity, ClipboardList, ChevronRight, Sparkles, Lock, Mail, Unlink,
 } from 'lucide-react';
 
 // Constantes centralizadas — no duplicar aquí
@@ -155,6 +155,39 @@ export default function AdminMasterDashboard() {
   const [pwdForm, setPwdForm]       = useState({ password: '', password2: '' });
   const [showPwd, setShowPwd]       = useState<Record<string, boolean>>({});
 
+  // ── OAuth Google por clínica ──────────────────────────────────────────────
+  const [oauthStatus, setOauthStatus] = useState<Record<number, { email: string; connected_at: string }>>({});
+
+  const loadOauthStatus = async () => {
+    try {
+      const res  = await fetch('/api/admin-auth?action=oauthStatus', { headers: authHeader() });
+      const data = await res.json();
+      if (data.data) {
+        const map: Record<number, { email: string; connected_at: string }> = {};
+        data.data.forEach((r: { clinic_id: number; email: string; connected_at: string }) => { map[r.clinic_id] = r; });
+        setOauthStatus(map);
+      }
+    } catch { /* silencioso */ }
+  };
+
+  const handleOauthConnect = async (clinicId: number) => {
+    const res  = await fetch('/api/admin-auth?action=oauthStart', { method: 'POST', headers: authHeader(), body: JSON.stringify({ clinicId }) });
+    const data = await res.json();
+    if (data.error) { flash(data.error, 'err'); return; }
+    // Si GOOGLE_CLIENT_ID no está configurado el backend retorna 503
+    window.open(data.url, '_blank', 'width=500,height=600');
+    flash('Completa la autorización en la ventana de Google', 'ok');
+    // Polling ligero para detectar cuando se complete
+    setTimeout(() => loadOauthStatus(), 10000);
+  };
+
+  const handleOauthRevoke = async (clinicId: number) => {
+    if (!confirm('¿Desconectar la cuenta de Google de esta clínica?')) return;
+    await fetch('/api/admin-auth?action=oauthRevoke', { method: 'POST', headers: authHeader(), body: JSON.stringify({ clinicId }) });
+    flash('Cuenta desconectada');
+    loadOauthStatus();
+  };
+
   // ── Filtros de usuarios ──────────────────────────────────────────────────
   const [userSearch, setUserSearch]           = useState('');
   const [userClinicFilter, setUserClinicFilter] = useState('');
@@ -192,6 +225,7 @@ export default function AdminMasterDashboard() {
     } finally {
       setLoading(false);
     }
+    loadOauthStatus();
   }, []);
 
   useEffect(() => {
@@ -517,6 +551,30 @@ export default function AdminMasterDashboard() {
                         featMap={featMap[clinic.id] || {}}
                         onToggle={handleToggleFeature}
                       />
+
+                      {/* Conexión Google OAuth */}
+                      <div className="mt-3 pt-3 border-t border-gray-50">
+                        {oauthStatus[clinic.id] ? (
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5 text-xs text-emerald-600">
+                              <Mail className="w-3.5 h-3.5" />
+                              <span className="truncate max-w-[160px]" title={oauthStatus[clinic.id].email}>
+                                {oauthStatus[clinic.id].email}
+                              </span>
+                            </div>
+                            <button onClick={() => handleOauthRevoke(clinic.id)} className="flex items-center gap-1 text-xs text-red-400 hover:text-red-600 transition-colors">
+                              <Unlink className="w-3 h-3" /> Desconectar
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => handleOauthConnect(clinic.id)}
+                            className="w-full flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium text-gray-500 border border-dashed border-gray-200 rounded-lg hover:border-[#deb887]/50 hover:text-[#c5a075] transition-colors"
+                          >
+                            <Mail className="w-3.5 h-3.5" /> Conectar Gmail / Calendar
+                          </button>
+                        )}
+                      </div>
 
                       {/* Acciones de la clínica */}
                       <div className="flex gap-2 mt-4 pt-4 border-t">

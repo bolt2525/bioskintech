@@ -1,5 +1,31 @@
 import { google } from 'googleapis';
 import sendEmailHandler from './sendEmail.js';
+import { sql } from '@vercel/postgres';
+
+// ── Helper: obtener OAuth2 client con tokens de clínica ──────────────────────
+async function getClinicOAuth2Client(clinicId) {
+  const clientId     = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  if (!clientId || !clientSecret) return null;
+
+  const redirectUri = `${process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://bioskintech.vercel.app'}/api/calendar`;
+  const oAuth2      = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
+
+  try {
+    const r = await sql`SELECT access_token, refresh_token, token_expiry FROM clinic_oauth_tokens WHERE clinic_id = ${clinicId}`;
+    if (!r.rows.length) return null;
+    const { access_token, refresh_token, token_expiry } = r.rows[0];
+    oAuth2.setCredentials({ access_token, refresh_token, expiry_date: token_expiry ? new Date(token_expiry).getTime() : null });
+    // Auto-refresh si el token expiró
+    oAuth2.on('tokens', async (tokens) => {
+      await sql`
+        UPDATE clinic_oauth_tokens SET access_token = ${tokens.access_token}, token_expiry = ${tokens.expiry_date ? new Date(tokens.expiry_date) : null}, updated_at = NOW()
+        WHERE clinic_id = ${clinicId}
+      `;
+    });
+    return oAuth2;
+  } catch { return null; }
+}
 
 // Función consolidada para todas las operaciones de calendario
 export default async function handler(req, res) {
@@ -18,9 +44,44 @@ export default async function handler(req, res) {
   }
 
   const { method } = req;
-  const { action } = req.body || req.query;
+  const { action, code, state } = { ...req.query, ...(req.body || {}) };
   
   console.log(`🔍 Método extraído: ${method}, Acción extraída: ${action}`);
+
+  // ── Callback OAuth de Google ────────────────────────────────────────────
+  if (code && state && !action) {
+    try {
+      const { clinicId } = JSON.parse(Buffer.from(state, 'base64url').toString());
+      const clientId     = process.env.GOOGLE_CLIENT_ID;
+      const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+      const redirectUri  = `${process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://bioskintech.vercel.app'}/api/calendar`;
+      const oAuth2       = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
+      const { tokens }   = await oAuth2.getToken(code);
+      oAuth2.setCredentials(tokens);
+
+      // Obtener email de la cuenta conectada
+      const oauth2Api = google.oauth2({ version: 'v2', auth: oAuth2 });
+      const userInfo  = await oauth2Api.userinfo.get();
+      const email     = userInfo.data.email;
+
+      await sql`
+        INSERT INTO clinic_oauth_tokens (clinic_id, access_token, refresh_token, token_expiry, email)
+        VALUES (${clinicId}, ${tokens.access_token}, ${tokens.refresh_token}, ${tokens.expiry_date ? new Date(tokens.expiry_date) : null}, ${email})
+        ON CONFLICT (clinic_id) DO UPDATE SET
+          access_token = ${tokens.access_token},
+          refresh_token = COALESCE(${tokens.refresh_token}, clinic_oauth_tokens.refresh_token),
+          token_expiry = ${tokens.expiry_date ? new Date(tokens.expiry_date) : null},
+          email = ${email},
+          updated_at = NOW()
+      `;
+
+      // Redirigir al master dashboard con mensaje de éxito
+      return res.redirect(302, '/#/admin/master?oauth=success&clinic=' + clinicId);
+    } catch (e) {
+      console.error('❌ OAuth callback error:', e.message);
+      return res.redirect(302, '/#/admin/master?oauth=error&msg=' + encodeURIComponent(e.message));
+    }
+  }
 
   // Validar que se proporcione una acción
   if (!action) {

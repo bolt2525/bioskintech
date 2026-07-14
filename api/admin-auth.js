@@ -133,6 +133,20 @@ async function initMultiTenantSchema() {
     )
   `;
 
+  // Tokens OAuth de Google por clínica (Calendar + Gmail)
+  await sql`
+    CREATE TABLE IF NOT EXISTS clinic_oauth_tokens (
+      id            SERIAL PRIMARY KEY,
+      clinic_id     INTEGER NOT NULL REFERENCES clinics(id) ON DELETE CASCADE UNIQUE,
+      access_token  TEXT,
+      refresh_token TEXT NOT NULL,
+      token_expiry  TIMESTAMP,
+      email         VARCHAR(255),
+      connected_at  TIMESTAMP DEFAULT NOW(),
+      updated_at    TIMESTAMP DEFAULT NOW()
+    )
+  `;
+
   // Columnas extras en caso de migración de tabla preexistente
   for (const col of [
     "ALTER TABLE admin_sessions ADD COLUMN IF NOT EXISTS clinic_user_id INTEGER",
@@ -783,6 +797,35 @@ export default async function handler(req, res) {
       const clinics = await sql`SELECT id FROM clinics`;
       for (const c of clinics.rows) await seedFeatures(c.id);
       return res.status(200).json({ success: true, message: `Features inicializados para ${clinics.rows.length} clínica(s)` });
+    }
+
+    // ── OAuth Google por clínica ───────────────────────────────────────────
+    if (action === 'oauthStart') {
+      if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master_admin' });
+      const { clinicId } = req.body || {};
+      if (!clinicId) return res.status(400).json({ error: 'clinicId requerido' });
+      const clientId = process.env.GOOGLE_CLIENT_ID;
+      if (!clientId) return res.status(503).json({ error: 'GOOGLE_CLIENT_ID no configurado' });
+      const redirectUri = `${process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://bioskintech.vercel.app'}/api/calendar`;
+      // state = base64(clinicId:secret_nonce) — anti-CSRF mínimo
+      const state = Buffer.from(JSON.stringify({ clinicId, ts: Date.now() })).toString('base64url');
+      const scope  = encodeURIComponent('https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/gmail.send email profile');
+      const url    = `https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scope}&access_type=offline&prompt=consent&state=${state}`;
+      return res.status(200).json({ success: true, url });
+    }
+
+    if (action === 'oauthStatus') {
+      if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master_admin' });
+      const rows = await sql`SELECT clinic_id, email, connected_at, updated_at FROM clinic_oauth_tokens`;
+      return res.status(200).json({ success: true, data: rows.rows });
+    }
+
+    if (action === 'oauthRevoke') {
+      if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master_admin' });
+      const { clinicId } = req.body || {};
+      if (!clinicId) return res.status(400).json({ error: 'clinicId requerido' });
+      await sql`DELETE FROM clinic_oauth_tokens WHERE clinic_id = ${clinicId}`;
+      return res.status(200).json({ success: true, message: 'Conexión OAuth revocada' });
     }
 
     return res.status(400).json({ success: false, error: 'Acción no válida' });
