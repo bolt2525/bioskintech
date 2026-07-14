@@ -19,7 +19,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   LogOut, Building2, Users, Shield, RefreshCw, ChevronDown, ChevronUp,
   Plus, Edit, Trash2, Eye, EyeOff, Key, X, Check, AlertCircle,
-  Activity, ClipboardList, ChevronRight, Sparkles,
+  Activity, ClipboardList, ChevronRight, Sparkles, Lock,
 } from 'lucide-react';
 
 // Constantes centralizadas — no duplicar aquí
@@ -153,6 +153,7 @@ export default function AdminMasterDashboard() {
   const [userForm, setUserForm]     = useState({ username: '', full_name: '', email: '', role: 'clinic_user', access_scope: 'own', clinic_id: '', password: '', password2: '' });
   const [clinicForm, setClinicForm] = useState({ name: '', email: '', phone: '', address: '' });
   const [pwdForm, setPwdForm]       = useState({ password: '', password2: '' });
+  const [showPwd, setShowPwd]       = useState<Record<string, boolean>>({});
 
   // ── Filtros de usuarios ──────────────────────────────────────────────────
   const [userSearch, setUserSearch]           = useState('');
@@ -774,7 +775,12 @@ export default function AdminMasterDashboard() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Confirmar *</label>
-                  <input type="password" value={userForm.password2} onChange={e => setUserForm(p => ({ ...p, password2: e.target.value }))} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] focus:outline-none" />
+                  <div className="relative">
+                    <input type={showPwd.pwd2 ? 'text' : 'password'} value={userForm.password2} onChange={e => setUserForm(p => ({ ...p, password2: e.target.value }))} className="w-full pl-3 pr-9 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] focus:outline-none" />
+                    <button type="button" onClick={() => setShowPwd(p => ({...p, pwd2: !p.pwd2}))} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500">
+                      {showPwd.pwd2 ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
                 </div>
               </div>
             )}

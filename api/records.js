@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { initClinicalDatabase } from '../lib/neon-clinical-db.js';
 const { Pool, types } = pg;
 
 // ── Solución real para bug de fechas -1 día ──────────────────────────────────
@@ -153,7 +154,13 @@ export default async function handler(req, res) {
 
     switch (action) {
       case 'init':
-        return res.status(200).json({ message: 'Database initialized (skipped)' });
+      case 'initClinical': {
+        if (!dbInitialized) {
+          await initClinicalDatabase();
+          dbInitialized = true;
+        }
+        return res.status(200).json({ success: true, message: 'Clinical database initialized' });
+      }
 
       // ==========================================
       // INVENTORY MODULE ACTIONS
