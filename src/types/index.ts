@@ -31,8 +31,10 @@ export interface AuthUser {
   id?: number;
   username: string;
   full_name?: string;
+  email?: string;
   role: UserRole;
   clinic_id: number | null;
+  clinic_name?: string;
   access_scope: AccessScope;
 }
 

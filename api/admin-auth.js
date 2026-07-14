@@ -360,9 +360,11 @@ async function verifySession(token) {
   if (!token) return { valid: false, error: 'Token no proporcionado' };
   try {
     const r = await sql`
-      SELECT s.username, s.expires_at, s.role, s.clinic_id, s.access_scope, s.clinic_user_id
+      SELECT s.username, s.expires_at, s.role, s.clinic_id, s.access_scope, s.clinic_user_id,
+             cu.full_name, cu.email, c.name as clinic_name
       FROM admin_sessions s
       LEFT JOIN clinic_users cu ON cu.id = s.clinic_user_id
+      LEFT JOIN clinics c ON c.id = s.clinic_id
       WHERE s.session_token  = ${token}
         AND s.is_active       = true
         AND s.expires_at      > NOW()
@@ -373,9 +375,9 @@ async function verifySession(token) {
     return {
       valid: true,
       user: {
-        id: s.clinic_user_id, username: s.username,
-        role: s.role || 'clinic_admin', clinic_id: s.clinic_id,
-        access_scope: s.access_scope || 'all',
+        id: s.clinic_user_id, username: s.username, full_name: s.full_name,
+        email: s.email, role: s.role || 'clinic_admin', clinic_id: s.clinic_id,
+        clinic_name: s.clinic_name, access_scope: s.access_scope || 'all',
       },
       expiresAt: s.expires_at,
     };
@@ -712,6 +714,29 @@ export default async function handler(req, res) {
       if (!requireRole(user, 'master_admin', 'clinic_admin')) return res.status(403).json({ error: 'Sin permiso' });
       const result = await resetPassword(user, req.body || {});
       return res.status(result.error ? 400 : 200).json(result);
+    }
+
+    // Cambio de contraseña propio (cualquier usuario autenticado)
+    if (action === 'changePassword') {
+      const { currentPassword, newPassword } = req.body || {};
+      if (!currentPassword || !newPassword) return res.status(400).json({ error: 'Campos requeridos' });
+      if (newPassword.length < 6) return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+      const u = await sql`SELECT password_hash, salt, hash_algo FROM clinic_users WHERE id = ${user.id}`;
+      if (!u.rows.length) return res.status(404).json({ error: 'Usuario no encontrado' });
+      const row = u.rows[0];
+      if (!verifyPassword(currentPassword, row.password_hash, row.salt, row.hash_algo))
+        return res.status(401).json({ error: 'Contraseña actual incorrecta' });
+      const { hash, salt } = hashPassword(newPassword);
+      await sql`UPDATE clinic_users SET password_hash = ${hash}, salt = ${salt}, hash_algo = 'pbkdf2' WHERE id = ${user.id}`;
+      return res.status(200).json({ success: true, message: 'Contraseña actualizada' });
+    }
+
+    // Verificar disponibilidad de username
+    if (action === 'checkUsername') {
+      const { username } = req.query;
+      if (!username) return res.status(400).json({ error: 'username requerido' });
+      const r = await sql`SELECT id FROM clinic_users WHERE username = ${username.toLowerCase().trim()}`;
+      return res.status(200).json({ available: r.rows.length === 0, taken: r.rows.length > 0 });
     }
     if (action === 'deleteUser') {
       if (!requireRole(user, 'master_admin', 'clinic_admin')) return res.status(403).json({ error: 'Sin permiso' });

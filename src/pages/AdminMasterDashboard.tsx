@@ -229,7 +229,57 @@ export default function AdminMasterDashboard() {
 
   // ─── CRUD Usuarios ────────────────────────────────────────────────────────
 
+  // ─── Generación de username desde nombre completo ─────────────────────
+  const [usernameSuggestion, setUsernameSuggestion] = useState('');
+  const [usernameStatus, setUsernameStatus]         = useState<'idle'|'checking'|'ok'|'taken'>('idle');
+
+  /** Genera username estilo dcreamers de "Daniela Creamer Segarra" */
+  const generateUsername = (fullName: string): string => {
+    const parts = fullName.trim().toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .split(/\s+/).filter(Boolean);
+    if (!parts.length) return '';
+    if (parts.length === 1) return parts[0].substring(0, 12);
+    const first   = parts[0][0];               // inicial primer nombre
+    const surname = parts[1];                   // primer apellido
+    const second  = parts.length >= 3 ? parts[2][0] : parts[parts.length - 1][0]; // inicial segundo apellido
+    return `${first}${surname}${second}`.replace(/[^a-z0-9]/g, '');
+  };
+
+  const checkUsername = async (username: string): Promise<{ taken: boolean }> => {
+    if (!username) return { taken: false };
+    const res = await fetch(`/api/admin-auth?action=checkUsername&username=${encodeURIComponent(username)}`, { headers: authHeader() });
+    const data = await res.json();
+    return { taken: data.taken ?? false };
+  };
+
+  const handleFullNameChange = async (fullName: string) => {
+    setUserForm(p => ({ ...p, full_name: fullName }));
+    if (userModal.userId) return; // solo en creación
+    const suggested = generateUsername(fullName);
+    if (!suggested) { setUsernameSuggestion(''); setUsernameStatus('idle'); return; }
+    setUsernameSuggestion(suggested);
+    setUsernameStatus('checking');
+    const { taken } = await checkUsername(suggested);
+    if (!taken) {
+      setUsernameStatus('ok');
+      setUserForm(p => ({ ...p, full_name: fullName, username: suggested }));
+    } else {
+      // Buscar variante libre: suggested2, suggested3...
+      let variant = suggested;
+      for (let i = 2; i <= 9; i++) {
+        const candidate = `${suggested}${i}`;
+        const r = await checkUsername(candidate);
+        if (!r.taken) { variant = candidate; break; }
+      }
+      setUsernameStatus('taken');
+      setUsernameSuggestion(`${suggested} ya existe → sugerido: ${variant}`);
+      setUserForm(p => ({ ...p, full_name: fullName, username: variant }));
+    }
+  };
+
   const openCreateUser = () => {
+    setUsernameSuggestion(''); setUsernameStatus('idle');
     setUserForm({ username: '', full_name: '', email: '', role: 'clinic_user', access_scope: 'own', clinic_id: String(clinics[0]?.id || ''), password: '', password2: '' });
     setUserModal({ open: true });
   };
@@ -721,22 +771,46 @@ export default function AdminMasterDashboard() {
       {userModal.open && (
         <Modal title={userModal.userId ? 'Editar Usuario' : 'Nuevo Usuario'} onClose={() => setUserModal({ open: false })}>
           <div className="space-y-4">
-            {[
-              { label: 'Usuario *',       key: 'username',   type: 'text',  disabled: !!userModal.userId },
-              { label: 'Nombre completo', key: 'full_name',  type: 'text',  disabled: false },
-              { label: 'Email',           key: 'email',      type: 'email', disabled: false },
-            ].map(f => (
-              <div key={f.key}>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{f.label}</label>
-                <input
-                  type={f.type}
-                  value={(userForm as Record<string, string>)[f.key]}
-                  onChange={e => setUserForm(p => ({ ...p, [f.key]: e.target.value }))}
-                  disabled={f.disabled}
-                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] focus:outline-none disabled:bg-gray-50 transition-shadow"
-                />
-              </div>
-            ))}
+
+            {/* Nombre completo — genera username automáticamente */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Nombre completo *</label>
+              <input
+                type="text"
+                placeholder="Ej: Daniela Creamer Segarra"
+                value={userForm.full_name}
+                onChange={e => handleFullNameChange(e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] focus:outline-none"
+              />
+            </div>
+
+            {/* Usuario — auto-generado, editable */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Usuario *
+                {usernameStatus === 'checking' && <span className="ml-2 text-xs text-gray-400">Verificando...</span>}
+                {usernameStatus === 'ok'       && <span className="ml-2 text-xs text-emerald-600">✓ Disponible</span>}
+                {usernameStatus === 'taken'    && <span className="ml-2 text-xs text-amber-600">⚠ Duplicado detectado</span>}
+              </label>
+              <input
+                type="text"
+                value={userForm.username}
+                onChange={e => setUserForm(p => ({ ...p, username: e.target.value }))}
+                disabled={!!userModal.userId}
+                placeholder="Se genera desde el nombre"
+                className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] focus:outline-none disabled:bg-gray-50 font-mono"
+              />
+              {usernameSuggestion && usernameStatus === 'taken' && (
+                <p className="mt-1 text-xs text-amber-600">{usernameSuggestion}</p>
+              )}
+            </div>
+
+            {/* Email */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+              <input type="email" value={userForm.email} onChange={e => setUserForm(p => ({ ...p, email: e.target.value }))}
+                className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] focus:outline-none" />
+            </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>

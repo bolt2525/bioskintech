@@ -16,7 +16,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
   LogOut, Calendar, Bell, X, AlertCircle, ChevronRight, Sparkles,
-  CheckCircle2, Activity, Database, Users, Shield,
+  CheckCircle2, Activity, Database, Users, Shield, Settings, Lock, Eye, EyeOff,
 } from 'lucide-react';
 import { useEffect, useState, useRef } from 'react';
 
@@ -73,6 +73,13 @@ export default function AdminDashboard() {
   const [calStatus, setCalStatus]             = useState<LoadingStatus>('idle');
   const [emailStatus, setEmailStatus]         = useState<LoadingStatus>('idle');
   const healthLogsEndRef                      = useRef<HTMLDivElement>(null);
+
+  // Estado modal de perfil/contraseña
+  const [showProfile, setShowProfile]   = useState(false);
+  const [pwdForm, setPwdForm]           = useState({ current: '', next: '', confirm: '' });
+  const [pwdMsg, setPwdMsg]             = useState<{ text: string; ok: boolean } | null>(null);
+  const [showPwds, setShowPwds]         = useState({ current: false, next: false });
+  const [savingPwd, setSavingPwd]       = useState(false);
 
   // Auto-scroll en los logs de salud
   useEffect(() => {
@@ -182,6 +189,25 @@ export default function AdminDashboard() {
     }
   };
 
+  // ─── Cambio de contraseña propia ─────────────────────────────────────
+  const handleChangePassword = async () => {
+    if (pwdForm.next !== pwdForm.confirm) { setPwdMsg({ text: 'Las contraseñas no coinciden', ok: false }); return; }
+    if (pwdForm.next.length < 6) { setPwdMsg({ text: 'Mínimo 6 caracteres', ok: false }); return; }
+    setSavingPwd(true);
+    try {
+      const res  = await fetch('/api/admin-auth?action=changePassword', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('adminSessionToken')}` },
+        body:   JSON.stringify({ currentPassword: pwdForm.current, newPassword: pwdForm.next }),
+      });
+      const data = await res.json();
+      setPwdMsg({ text: data.error || data.message || 'OK', ok: !!data.success });
+      if (data.success) setPwdForm({ current: '', next: '', confirm: '' });
+    } finally {
+      setSavingPwd(false);
+    }
+  };
+
   // ─── Guard ────────────────────────────────────────────────────────────
   if (!isAuthenticated || !user || user.role === 'master_admin') return null;
 
@@ -196,7 +222,7 @@ export default function AdminDashboard() {
         <div className="container-custom py-3.5">
           <div className="flex items-center justify-between gap-3 flex-wrap">
 
-            {/* Logo + nombre de usuario */}
+            {/* Logo + nombre de clínica */}
             <div className="flex items-center gap-3">
               <div className="w-2 h-9 bg-[#deb887] rounded-full" />
               <div>
@@ -204,7 +230,7 @@ export default function AdminDashboard() {
                   className="text-xl font-bold text-gray-900 leading-tight"
                   style={{ fontFamily: 'Playfair Display, serif' }}
                 >
-                  BIOSKIN
+                  {user.clinic_name || 'BIOSKIN'}
                 </h1>
                 <p className="text-xs text-gray-400 leading-tight">
                   {ROLE_BADGE[user.role] || 'Usuario'} · {user.full_name || user.username}
@@ -295,11 +321,20 @@ export default function AdminDashboard() {
               {user.role === 'clinic_admin' && (
                 <button
                   onClick={() => navigate('/admin/users')}
-                  className="flex items-center gap-1.5 px-3 py-2 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-xl transition-colors text-sm font-medium"
+                  className="flex items-center gap-1.5 px-3 py-2 text-[#c5a075] bg-[#deb887]/10 hover:bg-[#deb887]/20 rounded-xl transition-colors text-sm font-medium"
                 >
                   <Users className="w-4 h-4" /> Usuarios
                 </button>
               )}
+
+              {/* Perfil / Contraseña */}
+              <button
+                onClick={() => { setPwdForm({ current: '', next: '', confirm: '' }); setPwdMsg(null); setShowProfile(true); }}
+                className="p-2 text-gray-400 hover:text-[#deb887] hover:bg-[#deb887]/10 rounded-xl transition-colors"
+                title="Mi perfil"
+              >
+                <Settings className="w-5 h-5" />
+              </button>
 
               {/* Cerrar sesión */}
               <button
@@ -500,6 +535,68 @@ export default function AdminDashboard() {
                   <div ref={healthLogsEndRef} />
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Mi Perfil / Cambiar Contraseña ─────────────────────── */}
+      {showProfile && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+            <div className="h-0.5 bg-gradient-to-r from-[#deb887] to-[#c5a075]" />
+            <div className="px-5 py-4 border-b flex justify-between items-center">
+              <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                <Settings className="w-4 h-4 text-[#deb887]" /> Mi Perfil
+              </h3>
+              <button onClick={() => setShowProfile(false)} className="text-gray-300 hover:text-gray-500"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="p-5 space-y-5">
+              {/* Info del usuario */}
+              <div className="bg-[#deb887]/8 border border-[#deb887]/20 rounded-xl p-4 space-y-1">
+                <p className="font-semibold text-gray-900">{user.full_name || user.username}</p>
+                <p className="text-sm text-gray-400">@{user.username} · {ROLE_BADGE[user.role] || user.role}</p>
+                {user.clinic_name && <p className="text-sm text-[#c5a075]">{user.clinic_name}</p>}
+              </div>
+
+              {/* Cambio de contraseña */}
+              <div>
+                <p className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-1.5"><Lock className="w-3.5 h-3.5" /> Cambiar contraseña</p>
+                <div className="space-y-3">
+                  {[
+                    { key: 'current', label: 'Contraseña actual', showKey: 'current' },
+                    { key: 'next',    label: 'Nueva contraseña',  showKey: 'next' },
+                    { key: 'confirm', label: 'Confirmar nueva',   showKey: 'next' },
+                  ].map(f => (
+                    <div key={f.key} className="relative">
+                      <input
+                        type={showPwds[f.showKey as keyof typeof showPwds] ? 'text' : 'password'}
+                        placeholder={f.label}
+                        value={pwdForm[f.key as keyof typeof pwdForm]}
+                        onChange={e => setPwdForm(p => ({ ...p, [f.key]: e.target.value }))}
+                        className="w-full pl-3 pr-9 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none"
+                      />
+                      {(f.showKey === 'current' || f.key === 'next') && (
+                        <button type="button" onClick={() => setShowPwds(p => ({ ...p, [f.showKey]: !p[f.showKey as keyof typeof showPwds] }))}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500">
+                          {showPwds[f.showKey as keyof typeof showPwds] ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                {pwdMsg && (
+                  <p className={`mt-2 text-sm ${pwdMsg.ok ? 'text-emerald-600' : 'text-red-500'}`}>{pwdMsg.text}</p>
+                )}
+                <button
+                  onClick={handleChangePassword}
+                  disabled={savingPwd}
+                  className="mt-3 w-full py-2 rounded-lg text-white text-sm font-medium transition-all disabled:opacity-50"
+                  style={{ background: 'linear-gradient(135deg,#deb887,#c5a075)' }}
+                >
+                  {savingPwd ? 'Guardando...' : 'Actualizar contraseña'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
