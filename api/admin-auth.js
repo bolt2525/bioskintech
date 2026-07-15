@@ -810,7 +810,9 @@ export default async function handler(req, res) {
       const redirectUri = `${process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://bioskintech.vercel.app'}/api/calendar`;
       // state = base64(clinicId:secret_nonce) — anti-CSRF mínimo
       const state = Buffer.from(JSON.stringify({ clinicId, ts: Date.now() })).toString('base64url');
-      const scope  = encodeURIComponent('https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/gmail.send email profile');
+      // Solo calendar por ahora — gmail.send se maneja con service account existente
+      // ponytail: gmail.send requiere verificación Google → upgrade cuando se verifique la app
+      const scope  = encodeURIComponent('https://www.googleapis.com/auth/calendar openid email profile');
       const url    = `https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scope}&access_type=offline&prompt=consent&state=${state}`;
       return res.status(200).json({ success: true, url });
     }
