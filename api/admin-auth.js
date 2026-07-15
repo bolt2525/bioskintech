@@ -807,7 +807,7 @@ export default async function handler(req, res) {
       if (!clinicId) return res.status(400).json({ error: 'clinicId requerido' });
       const clientId = process.env.GOOGLE_CLIENT_ID;
       if (!clientId) return res.status(503).json({ error: 'GOOGLE_CLIENT_ID no configurado' });
-      const redirectUri = `${process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://bioskintech.vercel.app'}/api/calendar`;
+      const redirectUri = `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app'}/api/calendar`;
       // state = base64(clinicId:secret_nonce) — anti-CSRF mínimo
       const state = Buffer.from(JSON.stringify({ clinicId, ts: Date.now() })).toString('base64url');
       // Calendar + Gmail por clinica — usuarios verán pantalla "app no verificada", clic en "Avanzado → continuar" es suficiente
