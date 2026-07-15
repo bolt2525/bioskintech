@@ -396,17 +396,18 @@ async function verifySession(token) {
       expiresAt: s.expires_at,
     };
   } catch {
-    // Fallback para tablas pre-migración
+    // Fallback para tablas pre-migración — incluye role para no romper permisos
     try {
       const r = await sql`
-        SELECT username, expires_at FROM admin_sessions
+        SELECT username, expires_at, role, clinic_id, access_scope FROM admin_sessions
         WHERE session_token = ${token} AND is_active = true AND expires_at > NOW()
       `;
       if (!r.rows.length) return { valid: false, error: 'Sesión inválida o expirada' };
+      const s = r.rows[0];
       return {
         valid: true,
-        user: { username: r.rows[0].username, role: 'clinic_admin', clinic_id: null, access_scope: 'all' },
-        expiresAt: r.rows[0].expires_at,
+        user: { username: s.username, role: s.role || 'clinic_admin', clinic_id: s.clinic_id, access_scope: s.access_scope || 'all' },
+        expiresAt: s.expires_at,
       };
     } catch {
       return { valid: false, error: 'Error al verificar sesión' };
