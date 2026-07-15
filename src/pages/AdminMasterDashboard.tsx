@@ -19,7 +19,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   LogOut, Building2, Users, Shield, RefreshCw, ChevronDown, ChevronUp,
   Plus, Edit, Trash2, Eye, EyeOff, Key, X, Check, AlertCircle,
-  Activity, ClipboardList, ChevronRight, Sparkles, Lock, Mail, Unlink,
+  Activity, ClipboardList, ChevronRight, Sparkles, Lock, Mail, Unlink, Copy, ExternalLink,
 } from 'lucide-react';
 
 // Constantes centralizadas — no duplicar aquí
@@ -157,6 +157,7 @@ export default function AdminMasterDashboard() {
 
   // ── OAuth Google por clínica ──────────────────────────────────────────────
   const [oauthStatus, setOauthStatus] = useState<Record<number, { email: string; connected_at: string }>>({});
+  const [oauthLinks, setOauthLinks]   = useState<Record<number, string>>({});
 
   const loadOauthStatus = async () => {
     try {
@@ -174,11 +175,18 @@ export default function AdminMasterDashboard() {
     const res  = await fetch('/api/admin-auth?action=oauthStart', { method: 'POST', headers: authHeader(), body: JSON.stringify({ clinicId }) });
     const data = await res.json();
     if (data.error) { flash(data.error, 'err'); return; }
-    // Si GOOGLE_CLIENT_ID no está configurado el backend retorna 503
+    setOauthLinks(prev => ({ ...prev, [clinicId]: data.url }));
     window.open(data.url, '_blank', 'width=500,height=600');
     flash('Completa la autorización en la ventana de Google', 'ok');
-    // Polling ligero para detectar cuando se complete
     setTimeout(() => loadOauthStatus(), 10000);
+  };
+
+  const copyOauthLink = async (clinicId: number) => {
+    const res  = await fetch('/api/admin-auth?action=oauthStart', { method: 'POST', headers: authHeader(), body: JSON.stringify({ clinicId }) });
+    const data = await res.json();
+    if (data.error) { flash(data.error, 'err'); return; }
+    await navigator.clipboard.writeText(data.url);
+    flash('Enlace copiado — envíalo al admin de la clínica para que lo abra desde su Gmail', 'ok');
   };
 
   const handleOauthRevoke = async (clinicId: number) => {
@@ -570,12 +578,24 @@ export default function AdminMasterDashboard() {
                             </button>
                           </div>
                         ) : (
-                          <button
-                            onClick={() => handleOauthConnect(clinic.id)}
-                            className="w-full flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium text-gray-500 border border-dashed border-gray-200 rounded-lg hover:border-[#deb887]/50 hover:text-[#c5a075] transition-colors"
-                          >
-                            <Mail className="w-3.5 h-3.5" /> Conectar Gmail / Calendar
-                          </button>
+                          <div className="space-y-1.5">
+                            <div className="flex gap-1.5">
+                              <button
+                                onClick={() => handleOauthConnect(clinic.id)}
+                                className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium text-gray-500 border border-dashed border-gray-200 rounded-lg hover:border-[#deb887]/50 hover:text-[#c5a075] transition-colors"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5" /> Conectar aquí
+                              </button>
+                              <button
+                                onClick={() => copyOauthLink(clinic.id)}
+                                title="Copiar enlace y enviarlo al admin de la clínica"
+                                className="px-3 flex items-center justify-center border border-dashed border-gray-200 rounded-lg hover:border-[#deb887]/50 hover:text-[#c5a075] text-gray-400 transition-colors"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                            <p className="text-[10px] text-gray-400 text-center leading-tight">O copia el enlace <Copy className="w-2.5 h-2.5 inline" /> y envíalo al admin de la clínica para que lo abra desde su Gmail</p>
+                          </div>
                         )}
                       </div>
 
