@@ -808,12 +808,18 @@ export default async function handler(req, res) {
       const clientId = (process.env.GOOGLE_CLIENT_ID || '').trim();
       if (!clientId) return res.status(503).json({ error: 'GOOGLE_CLIENT_ID no configurado' });
       const redirectUri = `https://${(process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app').trim()}/api/calendar`;
-      // state = base64(clinicId:secret_nonce) — anti-CSRF mínimo
       const state = Buffer.from(JSON.stringify({ clinicId, ts: Date.now() })).toString('base64url');
-      // Calendar + Gmail por clinica — usuarios verán pantalla "app no verificada", clic en "Avanzado → continuar" es suficiente
-      // ponytail: verificación Google se hace cuando se fije el dominio definitivo
-      const scope  = encodeURIComponent('https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/gmail.send openid email profile');
-      const url    = `https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scope}&access_type=offline&prompt=consent&state=${state}`;
+      // URLSearchParams codifica correctamente sin double-encoding
+      const params = new URLSearchParams({
+        response_type: 'code',
+        client_id:     clientId,
+        redirect_uri:  redirectUri,
+        scope:         'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/gmail.send openid email profile',
+        access_type:   'offline',
+        prompt:        'consent',
+        state,
+      });
+      const url = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
       return res.status(200).json({ success: true, url });
     }
 

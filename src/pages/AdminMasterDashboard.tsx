@@ -158,6 +158,7 @@ export default function AdminMasterDashboard() {
   // ── OAuth Google por clínica ──────────────────────────────────────────────
   const [oauthStatus, setOauthStatus] = useState<Record<number, { email: string; connected_at: string }>>({});
   const [oauthLinks, setOauthLinks]   = useState<Record<number, string>>({});
+  const [oauthLinkModal, setOauthLinkModal] = useState<{ open: boolean; url: string; clinicName: string } | null>(null);
 
   const loadOauthStatus = async () => {
     try {
@@ -181,12 +182,12 @@ export default function AdminMasterDashboard() {
     setTimeout(() => loadOauthStatus(), 10000);
   };
 
-  const copyOauthLink = async (clinicId: number) => {
+  const copyOauthLink = async (clinicId: number, clinicName: string) => {
     const res  = await fetch('/api/admin-auth?action=oauthStart', { method: 'POST', headers: authHeader(), body: JSON.stringify({ clinicId }) });
     const data = await res.json();
     if (data.error) { flash(data.error, 'err'); return; }
-    await navigator.clipboard.writeText(data.url);
-    flash('Enlace copiado — envíalo al admin de la clínica para que lo abra desde su Gmail', 'ok');
+    // Mostrar modal con el enlace — clipboard async falla en móvil por pérdida del user gesture
+    setOauthLinkModal({ open: true, url: data.url, clinicName });
   };
 
   const handleOauthRevoke = async (clinicId: number) => {
@@ -587,7 +588,7 @@ export default function AdminMasterDashboard() {
                                 <ExternalLink className="w-3.5 h-3.5" /> Conectar aquí
                               </button>
                               <button
-                                onClick={() => copyOauthLink(clinic.id)}
+                                onClick={() => copyOauthLink(clinic.id, clinic.name)}
                                 title="Copiar enlace y enviarlo al admin de la clínica"
                                 className="px-3 flex items-center justify-center border border-dashed border-gray-200 rounded-lg hover:border-[#deb887]/50 hover:text-[#c5a075] text-gray-400 transition-colors"
                               >
@@ -966,6 +967,58 @@ export default function AdminMasterDashboard() {
             </div>
           </div>
         </Modal>
+      )}
+
+      {/* ── Modal: Enlace OAuth (para enviar al admin de clinica) ──────── */}
+      {oauthLinkModal?.open && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden">
+            <div className="h-0.5 bg-gradient-to-r from-[#deb887] to-[#c5a075]" />
+            <div className="p-5 border-b flex justify-between items-center">
+              <h3 className="font-semibold text-gray-900 flex items-center gap-2 text-sm">
+                <Mail className="w-4 h-4 text-[#deb887]" /> Enlace de conexión — {oauthLinkModal.clinicName}
+              </h3>
+              <button onClick={() => setOauthLinkModal(null)} className="text-gray-300 hover:text-gray-500"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-sm text-gray-600">Envía este enlace al administrador de la clínica. Debe abrirlo desde el navegador donde está logueado con el Gmail de la clínica.</p>
+              <div className="relative">
+                <textarea
+                  readOnly
+                  value={oauthLinkModal.url}
+                  rows={4}
+                  onClick={e => (e.target as HTMLTextAreaElement).select()}
+                  className="w-full px-3 py-2 border rounded-lg text-xs font-mono bg-gray-50 text-gray-700 focus:outline-none resize-none"
+                />
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(oauthLinkModal.url);
+                      flash('Enlace copiado al portapapeles', 'ok');
+                    } catch {
+                      flash('Selecciona el texto y cópialo manualmente (Ctrl+C)', 'err');
+                    }
+                  }}
+                  className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-white text-sm font-medium"
+                  style={{ background: 'linear-gradient(135deg,#deb887,#c5a075)' }}
+                >
+                  <Copy className="w-4 h-4" /> Copiar enlace
+                </button>
+                <a
+                  href={`https://wa.me/?text=${encodeURIComponent('Hola, usa este enlace para conectar tu Gmail con el sistema BIOSKINTECH:\n' + oauthLinkModal.url)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 px-4 py-2 bg-green-500 text-white rounded-lg text-sm font-medium hover:bg-green-600"
+                >
+                  WhatsApp
+                </a>
+              </div>
+              <p className="text-xs text-gray-400">⚠️ Este enlace expira en pocos minutos. Si vence, genera uno nuevo.</p>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ── Modal: Clínica ────────────────────────────────────────────── */}
