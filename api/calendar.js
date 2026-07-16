@@ -4,11 +4,11 @@ import { sql } from '@vercel/postgres';
 
 // ── Helper: obtener OAuth2 client con tokens de clínica ──────────────────────
 async function getClinicOAuth2Client(clinicId) {
-  const clientId     = process.env.GOOGLE_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  const clientId     = (process.env.GOOGLE_CLIENT_ID     || '').trim();
+  const clientSecret = (process.env.GOOGLE_CLIENT_SECRET || '').trim();
   if (!clientId || !clientSecret) return null;
 
-  const redirectUri = `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app'}/api/calendar`;
+  const redirectUri = `https://${(process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app').trim()}/api/calendar`;
   const oAuth2      = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
 
   try {
@@ -52,8 +52,8 @@ export default async function handler(req, res) {
   if (code && state && !action) {
     try {
       const { clinicId } = JSON.parse(Buffer.from(state, 'base64url').toString());
-      const clientId     = process.env.GOOGLE_CLIENT_ID;
-      const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+      const clientId     = (process.env.GOOGLE_CLIENT_ID     || '').trim();
+      const clientSecret = (process.env.GOOGLE_CLIENT_SECRET || '').trim();
       const redirectUri  = `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app'}/api/calendar`;
       const oAuth2       = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
       const { tokens }   = await oAuth2.getToken(code);
