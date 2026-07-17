@@ -14,6 +14,7 @@
 
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useAdminNav } from '../hooks/useAdminNav';
 import {
   LogOut, Calendar, Bell, X, AlertCircle, ChevronRight, Sparkles,
   CheckCircle2, Activity, Database, Users, Shield, Settings, Lock, Eye, EyeOff,
@@ -56,6 +57,7 @@ function urgency(a: UpcomingAppointment) {
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const { isAuthenticated, user, hasFeature, logout, checkAuth } = useAuth();
+  const { nav } = useAdminNav();
 
   // Estado de notificaciones de citas
   const [showNotifications, setShowNotifications]       = useState(false);
@@ -380,7 +382,7 @@ export default function AdminDashboard() {
             return (
               <button
                 key={`${item.feat}-${idx}`}
-                onClick={() => navigate(item.path)}
+                onClick={() => nav(item.path.replace(/^\/admin\//, ''))}
                 className="group bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-[#deb887]/40 hover:-translate-y-0.5 transition-all duration-200 text-left p-5 flex flex-col"
               >
                 <div className={`w-11 h-11 rounded-xl ${item.bgColor} flex items-center justify-center mb-4`}>

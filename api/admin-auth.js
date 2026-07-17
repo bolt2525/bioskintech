@@ -387,7 +387,7 @@ async function verifySession(token) {
   try {
     const r = await sql`
       SELECT s.username, s.expires_at, s.role, s.clinic_id, s.access_scope, s.clinic_user_id,
-             cu.full_name, cu.email, c.name as clinic_name
+             cu.full_name, cu.email, c.name as clinic_name, c.slug as clinic_slug
       FROM admin_sessions s
       LEFT JOIN clinic_users cu ON cu.id = s.clinic_user_id
       LEFT JOIN clinics c ON c.id = s.clinic_id
@@ -403,7 +403,7 @@ async function verifySession(token) {
       user: {
         id: s.clinic_user_id, username: s.username, full_name: s.full_name,
         email: s.email, role: s.role || 'clinic_admin', clinic_id: s.clinic_id,
-        clinic_name: s.clinic_name, access_scope: s.access_scope || 'all',
+        clinic_name: s.clinic_name, clinic_slug: s.clinic_slug, access_scope: s.access_scope || 'all',
       },
       expiresAt: s.expires_at,
     };

@@ -50,7 +50,15 @@ export default function AdminLogin() {
     try {
       const result = await login(username, password);
       if (result.ok) {
-        navigate('/admin');
+        // Redirigir a URL con slug de clínica si está disponible
+        const u = result.user;
+        if (u?.role === 'master_admin') {
+          navigate('/admin/master');
+        } else if (u?.clinic_slug && u?.username) {
+          navigate(`/admin/${u.clinic_slug}/${u.username}`);
+        } else {
+          navigate('/admin');
+        }
       } else {
         setError(result.error || 'Usuario o contraseña incorrectos');
       }

@@ -3,34 +3,15 @@
  * @description Enrutador principal del Admin Panel BIOSKIN.
  *
  * Usa HashRouter (#) requerido para Vercel SPA sin SSR.
- * Todas las rutas son de administración — no hay páginas públicas en este proyecto.
  *
- * Estructura de rutas:
- *   /                              → redirige a /admin/login
- *   /admin/login                   → página de login
- *   /admin/master                  → dashboard del master_admin
- *   /admin                         → dashboard de la clínica
- *   /admin/calendar                → gestión de agenda
- *   /admin/block-schedule          → bloqueo de horarios
- *   /admin/appointment             → agendar cita manual
- *   /admin/diagnosis               → diagnóstico IA
- *   /admin/protocols               → protocolos clínicos
- *   /admin/chat-assistant          → asistente IA
- *   /admin/inventory               → inventario
- *   /admin/finance                 → finanzas
- *   /admin/clinical-3d             → visualización 3D
- *   /admin/clinical-records        → listado de pacientes
- *   /admin/clinical-records/new    → nuevo paciente
- *   /admin/clinical-records/edit/:patientId → editar paciente
- *   /admin/ficha-clinica/paciente/:patientId → detalle de paciente
- *   /admin/ficha-clinica/expediente/:recordId → expediente clínico
- *   /admin/technical               → servicio técnico
- *   /admin/technical/new           → nuevo documento técnico
- *   /admin/technical/edit/:id      → editar documento técnico
- *   /admin/technical/view/:id      → ver documento técnico
- *   /consent-signing/:token        → firma remota de consentimientos
- *   /medical-finance               → gestión médica externa
- *   /blog-admin                    → administración del blog
+ * Patrones de ruta:
+ *   /admin/login                          → login
+ *   /admin/master                         → master_admin dashboard
+ *   /admin/:clinicSlug/:username          → dashboard de clínica
+ *   /admin/:clinicSlug/:username/{módulo} → módulos con contexto de clínica
+ *
+ * Las rutas antiguas (/admin/clinical-records etc.) se mantienen como alias
+ * para compatibilidad con sesiones existentes.
  */
 
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
@@ -98,45 +79,64 @@ function App() {
 
             {/* ── Dashboards ─────────────────────────────────────────── */}
             <Route path="/admin/master" element={<AdminMasterDashboard />} />
-            <Route path="/admin"        element={<AdminDashboard />} />
 
-            {/* ── Agenda / Citas ──────────────────────────────────────── */}
+            {/* ── Rutas con contexto: /admin/:clinicSlug/:username ─────── */}
+            {/* Dashboard de clínica */}
+            <Route path="/admin/:clinicSlug/:username" element={<AdminDashboard />} />
+
+            {/* Agenda */}
+            <Route path="/admin/:clinicSlug/:username/calendar"       element={<AdminCalendarManager />} />
+            <Route path="/admin/:clinicSlug/:username/block-schedule" element={<AdminBlockSchedule />} />
+            <Route path="/admin/:clinicSlug/:username/appointment"    element={<AdminAppointment />} />
+
+            {/* Fichas Clínicas */}
+            <Route path="/admin/:clinicSlug/:username/clinical-records"              element={<PatientList />} />
+            <Route path="/admin/:clinicSlug/:username/clinical-records/new"          element={<NewPatientForm />} />
+            <Route path="/admin/:clinicSlug/:username/clinical-records/edit/:patientId" element={<NewPatientForm />} />
+            <Route path="/admin/:clinicSlug/:username/ficha-clinica/paciente/:patientId"  element={<PatientDetail />} />
+            <Route path="/admin/:clinicSlug/:username/ficha-clinica/expediente/:recordId" element={<ClinicalRecordManager />} />
+
+            {/* IA */}
+            <Route path="/admin/:clinicSlug/:username/diagnosis"      element={<AdminDiagnosis />} />
+            <Route path="/admin/:clinicSlug/:username/protocols"      element={<AdminProtocols />} />
+            <Route path="/admin/:clinicSlug/:username/chat-assistant" element={<AdminChatAssistant />} />
+
+            {/* Gestión */}
+            <Route path="/admin/:clinicSlug/:username/inventory" element={<AdminInventory />} />
+            <Route path="/admin/:clinicSlug/:username/finance"   element={<AdminFinance />} />
+            <Route path="/admin/:clinicSlug/:username/clinical-3d" element={<Clinical3D />} />
+
+            {/* Técnico */}
+            <Route path="/admin/:clinicSlug/:username/technical"          element={<TechnicalDashboard />} />
+            <Route path="/admin/:clinicSlug/:username/technical/new"      element={<TechnicalDocumentForm />} />
+            <Route path="/admin/:clinicSlug/:username/technical/edit/:id" element={<TechnicalDocumentForm />} />
+            <Route path="/admin/:clinicSlug/:username/technical/view/:id" element={<TechnicalDocumentView />} />
+
+            {/* ── Alias legacy: /admin (sin prefijo) ─────────────────── */}
+            <Route path="/admin"                element={<AdminDashboard />} />
             <Route path="/admin/calendar"       element={<AdminCalendarManager />} />
             <Route path="/admin/block-schedule" element={<AdminBlockSchedule />} />
             <Route path="/admin/appointment"    element={<AdminAppointment />} />
-
-            {/* ── Fichas Clínicas ─────────────────────────────────────── */}
             <Route path="/admin/clinical-records"              element={<PatientList />} />
             <Route path="/admin/clinical-records/new"          element={<NewPatientForm />} />
             <Route path="/admin/clinical-records/edit/:patientId" element={<NewPatientForm />} />
             <Route path="/admin/ficha-clinica/paciente/:patientId"  element={<PatientDetail />} />
             <Route path="/admin/ficha-clinica/expediente/:recordId" element={<ClinicalRecordManager />} />
-
-            {/* ── Módulos de IA ───────────────────────────────────────── */}
             <Route path="/admin/diagnosis"      element={<AdminDiagnosis />} />
             <Route path="/admin/protocols"      element={<AdminProtocols />} />
             <Route path="/admin/chat-assistant" element={<AdminChatAssistant />} />
-
-            {/* ── Gestión ─────────────────────────────────────────────── */}
             <Route path="/admin/inventory" element={<AdminInventory />} />
             <Route path="/admin/finance"   element={<AdminFinance />} />
-
-            {/* ── Visualización 3D ────────────────────────────────────── */}
             <Route path="/admin/clinical-3d" element={<Clinical3D />} />
-
-            {/* ── Servicio Técnico ────────────────────────────────────── */}
             <Route path="/admin/technical"          element={<TechnicalDashboard />} />
             <Route path="/admin/technical/new"      element={<TechnicalDocumentForm />} />
             <Route path="/admin/technical/edit/:id" element={<TechnicalDocumentForm />} />
             <Route path="/admin/technical/view/:id" element={<TechnicalDocumentView />} />
 
             {/* ── Páginas externas ────────────────────────────────────── */}
-            {/* Firma remota de consentimientos (acceso público por token) */}
             <Route path="/consent-signing/:token" element={<ConsentSigning />} />
-            {/* Gestión médica externa (acceso especial, sin roles admin) */}
-            <Route path="/medical-finance" element={<ExternalMedicalFinance />} />
-            {/* Blog Admin */}
-            <Route path="/blog-admin" element={<BlogAdminPage />} />
+            <Route path="/medical-finance"        element={<ExternalMedicalFinance />} />
+            <Route path="/blog-admin"             element={<BlogAdminPage />} />
 
             {/* Cualquier ruta desconocida → login */}
             <Route path="*" element={<Navigate to="/admin/login" replace />} />

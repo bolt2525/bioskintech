@@ -29,7 +29,7 @@ interface AuthContextType {
   user: AuthUser | null;
   /** Lista de feature-keys habilitadas para la clínica del usuario */
   features: string[];
-  login: (username: string, password: string) => Promise<{ ok: boolean; error?: string }>;
+  login: (username: string, password: string) => Promise<{ ok: boolean; error?: string; user?: import('../types').AuthUser }>;
   logout: () => void;
   checkAuth: () => Promise<boolean>;
   /** Devuelve true si el usuario tiene acceso a la feature dada */
@@ -123,7 +123,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (
     username: string,
     password: string,
-  ): Promise<{ ok: boolean; error?: string }> => {
+  ): Promise<{ ok: boolean; error?: string; user?: AuthUser }> => {
     try {
       const res  = await fetch('/api/admin-auth?action=login', {
         method:  'POST',
@@ -135,7 +135,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (data.success && data.user) {
         persistAuth(data.sessionToken, data.user, data.expiresAt, data.features || []);
         applySession(data.user, data.features || []);
-        return { ok: true };
+        return { ok: true, user: data.user };
       }
       return { ok: false, error: data.error || 'Credenciales inválidas' };
     } catch {

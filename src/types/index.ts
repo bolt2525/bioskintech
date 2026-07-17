@@ -35,6 +35,7 @@ export interface AuthUser {
   role: UserRole;
   clinic_id: number | null;
   clinic_name?: string;
+  clinic_slug?: string;
   access_scope: AccessScope;
 }
 
