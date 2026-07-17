@@ -3,6 +3,33 @@ import nodemailer from 'nodemailer';
 import { google } from 'googleapis';
 import { sql } from '@vercel/postgres';
 
+/** Obtiene un OAuth2 client con los tokens guardados para la clínica. Retorna null si no hay tokens. */
+async function getClinicOAuth2Client(clinicId) {
+  if (!clinicId) return null;
+  const clientId     = (process.env.GOOGLE_CLIENT_ID     || '').trim();
+  const clientSecret = (process.env.GOOGLE_CLIENT_SECRET || '').trim();
+  if (!clientId || !clientSecret) return null;
+  const appUrl = `https://${(process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app').trim()}`;
+  try {
+    const r = await sql`SELECT access_token, refresh_token, token_expiry, email FROM clinic_oauth_tokens WHERE clinic_id = ${clinicId}`;
+    if (!r.rows.length) return null;
+    const { access_token, refresh_token, token_expiry, email: connectedEmail } = r.rows[0];
+    const oAuth2 = new google.auth.OAuth2(clientId, clientSecret, `${appUrl}/api/calendar`);
+    oAuth2.setCredentials({
+      access_token,
+      refresh_token,
+      expiry_date: token_expiry ? new Date(token_expiry).getTime() : null,
+    });
+    // Auto-refresh y guardar nuevo token
+    oAuth2.on('tokens', async (tokens) => {
+      await sql`UPDATE clinic_oauth_tokens SET access_token = ${tokens.access_token},
+        token_expiry = ${tokens.expiry_date ? new Date(tokens.expiry_date) : null}, updated_at = NOW()
+        WHERE clinic_id = ${clinicId}`;
+    });
+    return { client: oAuth2, email: connectedEmail };
+  } catch { return null; }
+}
+
 /** Carga settings de una clínica. Devuelve defaults si no hay data o falla. */
 async function getClinicConfig(clinicId) {
   const defaults = {
@@ -418,118 +445,124 @@ export default async function handler(req, res) {
   let emailSuccess = false;
   let errorDetails = [];
 
-  // --- 1. INTENTO DE CREAR EVENTO EN GOOGLE CALENDAR (PRIORIDAD) ---
+  // --- 1. CREAR EVENTO EN GOOGLE CALENDAR ---
+  // Intenta OAuth de la clínica primero; fallback a service account si existe
   try {
     if (start && end) {
-      if (!process.env.GOOGLE_CREDENTIALS_BASE64) {
-          throw new Error('Credenciales de Google no configuradas');
+      const clinicOAuth = await getClinicOAuth2Client(req.body?.clinicId);
+      let auth, calendarId;
+
+      if (clinicOAuth) {
+        // ✅ Usa OAuth de la clínica conectada
+        auth       = clinicOAuth.client;
+        calendarId = 'primary'; // El calendario principal de la cuenta OAuth conectada
+        console.log('📅 Usando OAuth de clínica para Calendar:', clinicOAuth.email);
+      } else if (process.env.GOOGLE_CREDENTIALS_BASE64) {
+        // Fallback: service account legacy
+        const creds = JSON.parse(Buffer.from(process.env.GOOGLE_CREDENTIALS_BASE64, 'base64').toString('utf8'));
+        auth = new google.auth.JWT(creds.client_email, undefined, creds.private_key,
+          ['https://www.googleapis.com/auth/calendar']);
+        calendarId = creds.calendar_id;
+        console.log('📅 Usando service account para Calendar');
+      } else {
+        throw new Error('No hay credenciales de Google configuradas. Conecta la cuenta Gmail de la clínica desde el Master Admin.');
       }
 
-      const decoded = Buffer.from(process.env.GOOGLE_CREDENTIALS_BASE64, 'base64').toString('utf8');
-      const credentials = JSON.parse(decoded);
-
-      const auth = new google.auth.JWT(
-        credentials.client_email,
-        undefined,
-        credentials.private_key,
-        ['https://www.googleapis.com/auth/calendar']
-      );
-
       const calendar = google.calendar({ version: 'v3', auth });
-
       await calendar.events.insert({
-        calendarId: credentials.calendar_id,
+        calendarId,
         requestBody: {
-          summary: `Cita: ${paciente} - ${email}`,
+          summary:     `Cita: ${paciente} - ${email}`,
           description: message,
-          start: { dateTime: start, timeZone: "America/Guayaquil" },
-          end: { dateTime: end, timeZone: "America/Guayaquil" }
-        }
+          start: { dateTime: start, timeZone: 'America/Guayaquil' },
+          end:   { dateTime: end,   timeZone: 'America/Guayaquil' },
+        },
       });
-      console.log("✅ Evento creado exitosamente en Google Calendar");
+      console.log('✅ Evento creado en Google Calendar');
       calendarSuccess = true;
-    } else {
-      console.log("⚠️ No se encontró fecha u hora válida en el body para Calendar.");
     }
   } catch (calErr) {
-      console.error('❌ Error creando evento en Calendar:', calErr);
-      errorDetails.push(`Calendar: ${calErr.message}`);
+    console.error('❌ Error en Calendar:', calErr.message);
+    errorDetails.push(`Calendar: ${calErr.message}`);
   }
 
-  // --- Nodemailer setup ---
-  const transporter = nodemailer.createTransport({
-    host: process.env.EMAIL_HOST,
-    port: parseInt(process.env.EMAIL_PORT),
-    secure: false, // true for 465, false for other ports
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
-    },
-    tls: {
-      rejectUnauthorized: false // Bypass self-signed certs (importante para entornos locales/dev)
-    }
-  });
-
-  // --- 2. INTENTO DE ENVÍO DE CORREOS ---
+  // --- 2. ENVÍO DE CORREOS: Gmail API OAuth (si hay token) o SMTP fallback ---
   try {
-    // --- ENVÍA CORREO AL STAFF BIOSKIN CON BOTÓN WHATSAPP ---
-    await transporter.sendMail({
-      from: `Formulario BIOSKIN <${process.env.EMAIL_USER}>`,
-      to: buildStaffRecipients(),
-      subject: `🗓️ [Staff] Nueva cita web - ${paciente}${fecha ? ` (${fecha}${hora ? ` ${hora}` : ''})` : ''}`,
-      html: `
-        <h2 style="color:#ba9256;margin-bottom:4px;">Nueva cita registrada desde la web</h2>
-        <p>Hola equipo BIOSKIN, se ha recibido una nueva solicitud de cita.</p>
-        <table style="width:100%;border-collapse:collapse;margin-bottom:14px;">
-          <tr><td style="padding:8px 0;border-bottom:1px solid #eee;"><b>Paciente:</b></td><td style="padding:8px 0;border-bottom:1px solid #eee;">${escapeHtml(paciente)}</td></tr>
-          <tr><td style="padding:8px 0;border-bottom:1px solid #eee;"><b>Email:</b></td><td style="padding:8px 0;border-bottom:1px solid #eee;">${escapeHtml(email)}</td></tr>
-          <tr><td style="padding:8px 0;border-bottom:1px solid #eee;"><b>Teléfono:</b></td><td style="padding:8px 0;border-bottom:1px solid #eee;">${escapeHtml(phoneClean || "No registrado")}</td></tr>
-          <tr><td style="padding:8px 0;border-bottom:1px solid #eee;"><b>Servicio:</b></td><td style="padding:8px 0;border-bottom:1px solid #eee;">${escapeHtml(tratamiento)}</td></tr>
-          <tr><td style="padding:8px 0;border-bottom:1px solid #eee;"><b>Fecha:</b></td><td style="padding:8px 0;border-bottom:1px solid #eee;">${escapeHtml(fecha || 'No especificada')}</td></tr>
-          <tr><td style="padding:8px 0;"><b>Hora:</b></td><td style="padding:8px 0;">${escapeHtml(hora || 'No especificada')}</td></tr>
-        </table>
-        <pre style="font-family:inherit;white-space:pre-wrap;background:#f5f5f5;padding:10px;border-radius:8px;">${escapeHtml(message)}</pre>
-        ${
-          whatsappLink
-            ? `<a href="${whatsappLink}" 
-                  style="display:inline-block;background:#25D366;color:#fff;padding:10px 22px;border-radius:8px;font-weight:bold;text-decoration:none;margin-top:16px;"
-                  target="_blank">
-                Contactar por WhatsApp
-              </a>`
-            : ""
-        }
-        <p style="margin-top:18px;color:#7a5a30;"><b>Siguiente paso:</b> confirmar disponibilidad y gestionar la cita en Google Calendar.</p>
-        <p style="font-size:12px;color:#888;margin-top:14px;">Este mensaje es automático. No respondas a este correo.</p>
-      `,
-    });
+    const clinicOAuth = await getClinicOAuth2Client(req.body?.clinicId);
 
-    // --- ENVÍA CORREO AL PACIENTE (sin botón WhatsApp) ---
-    await transporter.sendMail({
-      from: `BIO SKIN Salud y Estética <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: "¡Hemos recibido tu cita en BIOSKIN!",
-      html: `
-        <div style="font-family:Segoe UI,Arial,sans-serif;">
-          <h2 style="color:#ba9256;margin-bottom:4px;">¡Tu cita está en proceso!</h2>
-          <p>Hola <b>${paciente}</b>,<br>
-          Gracias por confiar en <b>BIO SKIN Salud y Estética</b>. Hemos recibido tu solicitud y la estamos procesando.</p>
-          <h4 style="margin-top:18px;">Resumen de tu solicitud:</h4>
-          <pre style="font-family:inherit;white-space:pre-wrap;background:#f5f5f5;padding:10px;border-radius:8px;">${message}</pre>
-          <p style="margin-top:18px;">
-            En breve nos contactaremos para confirmarte la hora exacta y resolver cualquier duda.<br>
-            <b>Si tienes alguna consulta, puedes responder a este email o escribirnos por WhatsApp.</b>
-          </p>
-          <p style="margin-top:30px;font-size:15px;">— El equipo de <b>BIOSKIN</b> Cuenca</p>
-          <img src="https://saludbioskin.vercel.app/images/logo_bioskin.png" style="height:36px;margin-top:18px;" alt="BIOSKIN logo"/>
-        </div>
-      `,
-    });
+    const staffEmailHtml = `
+      <h2 style="color:#ba9256;margin-bottom:4px;">Nueva cita registrada</h2>
+      <p>Hola ${clinic.from_name}, se ha recibido una nueva solicitud de cita.</p>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:14px;">
+        <tr><td style="padding:8px 0;border-bottom:1px solid #eee;"><b>Paciente:</b></td><td>${escapeHtml(paciente)}</td></tr>
+        <tr><td style="padding:8px 0;border-bottom:1px solid #eee;"><b>Email:</b></td><td>${escapeHtml(email)}</td></tr>
+        <tr><td style="padding:8px 0;border-bottom:1px solid #eee;"><b>Teléfono:</b></td><td>${escapeHtml(phoneClean || 'No registrado')}</td></tr>
+        <tr><td style="padding:8px 0;border-bottom:1px solid #eee;"><b>Servicio:</b></td><td>${escapeHtml(tratamiento)}</td></tr>
+        <tr><td style="padding:8px 0;border-bottom:1px solid #eee;"><b>Fecha:</b></td><td>${escapeHtml(fecha || 'No especificada')}</td></tr>
+        <tr><td style="padding:8px 0;"><b>Hora:</b></td><td>${escapeHtml(hora || 'No especificada')}</td></tr>
+      </table>
+      ${whatsappLink ? `<a href="${whatsappLink}" style="display:inline-block;background:#25D366;color:#fff;padding:10px 22px;border-radius:8px;font-weight:bold;text-decoration:none;" target="_blank">WhatsApp</a>` : ''}
+    `;
 
-    emailSuccess = true;
-    console.log("✅ Correos enviados exitosamente");
+    const patientEmailHtml = `
+      <div style="font-family:Segoe UI,Arial,sans-serif;">
+        <h2 style="color:#ba9256;">¡Tu cita está en proceso!</h2>
+        <p>Hola <b>${escapeHtml(paciente)}</b>,<br>Gracias por confiar en <b>${escapeHtml(clinic.name)}</b>. Hemos recibido tu solicitud.</p>
+        <pre style="background:#f5f5f5;padding:10px;border-radius:8px;font-family:inherit;white-space:pre-wrap;">${escapeHtml(message)}</pre>
+        <p style="margin-top:18px;">En breve te confirmaremos la cita. <b>¿Dudas? Responde este email.</b></p>
+        <p style="margin-top:24px;font-size:15px;">— ${escapeHtml(clinic.signature)}</p>
+      </div>
+    `;
+
+    const staffTo = clinic.staff_email || process.env.EMAIL_TO || '';
+
+    if (clinicOAuth) {
+      // ✅ Gmail API con OAuth de la clínica
+      console.log('📧 Enviando vía Gmail API OAuth:', clinicOAuth.email);
+      const gmail = google.gmail({ version: 'v1', auth: clinicOAuth.client });
+      const fromAddr = `${clinic.from_name} <${clinicOAuth.email}>`;
+
+      const makeRaw = (to, subject, html, from) => {
+        const msg = [
+          `From: ${from}`,
+          `To: ${to}`,
+          `Subject: =?UTF-8?B?${Buffer.from(subject).toString('base64')}?=`,
+          'MIME-Version: 1.0',
+          'Content-Type: text/html; charset=UTF-8',
+          '',
+          html,
+        ].join('\r\n');
+        return Buffer.from(msg).toString('base64url');
+      };
+
+      if (staffTo) {
+        await gmail.users.messages.send({ userId: 'me', requestBody: {
+          raw: makeRaw(staffTo, `🗓️ Nueva cita - ${paciente}${fecha ? ` (${fecha})` : ''}`, staffEmailHtml, fromAddr)
+        }});
+      }
+      await gmail.users.messages.send({ userId: 'me', requestBody: {
+        raw: makeRaw(email, `¡Hemos recibido tu cita en ${clinic.name}!`, patientEmailHtml, fromAddr)
+      }});
+      emailSuccess = true;
+      console.log('✅ Correos enviados vía Gmail API');
+
+    } else if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+      // Fallback: SMTP legacy
+      console.log('📧 Enviando vía SMTP');
+      const transporter = nodemailer.createTransport({
+        host: process.env.EMAIL_HOST, port: parseInt(process.env.EMAIL_PORT || '587'),
+        secure: false, auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+        tls: { rejectUnauthorized: false }
+      });
+      if (staffTo) await transporter.sendMail({ from: process.env.EMAIL_USER, to: staffTo, subject: `🗓️ Nueva cita - ${paciente}`, html: staffEmailHtml });
+      await transporter.sendMail({ from: process.env.EMAIL_USER, to: email, subject: `¡Hemos recibido tu cita en ${clinic.name}!`, html: patientEmailHtml });
+      emailSuccess = true;
+    } else {
+      throw new Error('No hay cuenta Gmail conectada ni SMTP configurado. Ve a Master Admin → Ajustes de Clínica → Conectar Gmail.');
+    }
 
   } catch (emailErr) {
-    console.error('❌ Error enviando correos:', emailErr);
+    console.error('❌ Error enviando correos:', emailErr.message);
     errorDetails.push(`Email: ${emailErr.message}`);
   }
 

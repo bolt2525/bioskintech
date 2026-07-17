@@ -204,6 +204,8 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
         body: JSON.stringify({
           name: formData.name,
           email: formData.email,
+          clinicId: user?.clinic_id,
+          sessionToken: localStorage.getItem('adminSessionToken'),
           message:
             'Teléfono: ' + formData.phone + '\n' +
             'Email: ' + formData.email + '\n' +
