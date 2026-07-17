@@ -91,6 +91,7 @@ export default async function handler(req, res) {
   // ── Helper: obtener cliente de calendario ──────────────────────────────
   // Intenta OAuth de clínica primero; fallback a service account
   const clinicId = req.body?.clinicId || req.query?.clinicId || null;
+  console.log(`📅 Calendar action="${action}" clinicId=${clinicId} method=${method}`);
 
   async function getCalendarClient() {
     // 1. OAuth de la clínica
