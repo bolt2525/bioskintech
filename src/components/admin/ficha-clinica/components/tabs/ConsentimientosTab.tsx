@@ -8,8 +8,9 @@ import {
 import { QRCodeSVG } from 'qrcode.react';
 import SignatureCanvas from 'react-signature-canvas';
 import { Tooltip } from '../../../../ui/Tooltip';
+import { useClinicSettings } from '../../../../../hooks/useClinicSettings';
 
-// Load templates
+// Load templates — maneja gracefully si la carpeta no existe
 const templatesGlob = import.meta.glob('/src/data/consent-templates/*.json', { eager: true });
 const templates = Object.values(templatesGlob).map((mod: any) => mod.default || mod);
 
@@ -68,6 +69,7 @@ interface Props {
 const API_URL = '/api/records';
 
 export default function ConsentimientosTab({ patientId, recordId, patient }: Props) {
+  const { settings: clinic } = useClinicSettings();
   const [consents, setConsents] = useState<ConsentForm[]>([]);
   const [view, setView] = useState<'list' | 'form' | 'preview'>('list');
   const [loading, setLoading] = useState(false);

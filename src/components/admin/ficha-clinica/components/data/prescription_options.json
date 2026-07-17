@@ -1,0 +1,32 @@
+{
+  "medications": [
+    "Vitamina C (Ácido Ascórbico)", "Retinol", "Retinaldehído", "Tretinoína",
+    "Ácido Hialurónico", "Niacinamida", "Péptidos", "Factor de Crecimiento",
+    "Ácido Azelaico", "Ácido Kójico", "Hidroquinona", "Alfa-Arbutina",
+    "Ácido Salicílico", "Ácido Glicólico", "Ácido Láctico", "AHA/BHA",
+    "Ceramidas", "Escualano", "Centella Asiática", "Resveratrol",
+    "SPF 50+ Protector Solar", "Protector Solar Mineral",
+    "Crema Hidratante", "Sérum Despigmentante", "Sérum Anti-edad",
+    "Gel Limpiador", "Agua Micelar", "Tónico", "Contorno de Ojos",
+    "Bálsamo Cicatrizante", "Crema Post-procedimiento",
+    "Toxina Botulínica (Botox)", "Ácido Hialurónico Inyectable",
+    "Vitamina K", "Vitamina E (Tocoferol)", "Zinc",
+    "Azeloglicina", "Madecassósido", "Pantenol (B5)"
+  ],
+  "presentaciones": [
+    "Crema", "Sérum", "Gel", "Loción", "Espuma", "Aceite", "Ampolla",
+    "Cápsula", "Comprimido", "Solución", "Spray", "Parche", "Mascarilla"
+  ],
+  "vias": [
+    "Tópica", "Oral", "Intradérmica", "Subcutánea", "Intralesional"
+  ],
+  "frecuencias": [
+    "1 vez al día", "2 veces al día", "Mañana y noche", "Solo mañana",
+    "Solo noche", "En días alternos", "3 veces por semana", "1 vez por semana",
+    "Según tolerancia"
+  ],
+  "duraciones": [
+    "7 días", "15 días", "1 mes", "2 meses", "3 meses",
+    "Uso continuo", "Hasta próxima consulta"
+  ]
+}

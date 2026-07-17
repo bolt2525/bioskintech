@@ -1,8 +1,9 @@
 ﻿import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Trash2, Save, FileText, Copy, Printer, Search, Calendar, Check, AlertCircle, Pill, Pencil } from 'lucide-react';
-import prescriptionOptions from '../../data/prescription_options.json';
+import prescriptionOptions from '../data/prescription_options.json';
 import { Tooltip } from '../../../../ui/Tooltip';
+import { useClinicSettings } from '../../../../../hooks/useClinicSettings';
 
 /** Extrae solo YYYY-MM-DD de un ISO timestamp o string de PG para evitar desfase de zona horaria */
 const toDateOnly = (d: string | null | undefined): string => {
@@ -58,6 +59,7 @@ const EMPTY_ITEM: PrescriptionItem = {
 };
 
 export default function PrescriptionTab({ recordId, patientName, patientAge }: PrescriptionTabProps) {
+  const { settings: clinic } = useClinicSettings();
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
   const [currentPrescription, setCurrentPrescription] = useState<Prescription>({
     fecha: getLocalDate(),
@@ -261,7 +263,13 @@ export default function PrescriptionTab({ recordId, patientName, patientAge }: P
   const handlePrint = () => {
     setMessage({ type: 'success', text: 'Abriendo vista de impresión...' });
     const dateStr = new Date().toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' }).toUpperCase();
-    const logoUrl = `${window.location.origin}/images/logo/logo.png`;
+    // Datos dinámicos de la clínica
+    const logoUrl = clinic.general.logo_url || `${window.location.origin}/images/logo/logo.png`;
+    const clinicName  = clinic.general.name    || 'BIOSKIN';
+    const clinicTagline = clinic.general.tagline || 'Salud y Estética';
+    const clinicCity  = clinic.general.city    || '';
+    const clinicPhone = clinic.general.phone   || '';
+    const clinicAddr  = clinic.general.address || '';
 
     const html = `
       <html lang="es">
@@ -329,23 +337,23 @@ export default function PrescriptionTab({ recordId, patientName, patientAge }: P
                </ol>
 
                <div class="footer">
-                  <div class="footer-item"><span class="icon"></span> 0998653732 / 0969890689</div>
-                  <div class="footer-item"><span class="icon"></span> Av. Ordoñez Lasso y Calle del Culantro, Edificio Torre Victoria, Planta Baja.</div>
+                  <div class="footer-item"><span class="icon"></span> ${clinicPhone}</div>
+                  <div class="footer-item"><span class="icon"></span> ${clinicAddr}</div>
                </div>
             </div>
 
             <!-- Right Column -->
             <div class="column">
                <div class="header">
-                 <img src="${logoUrl}" class="logo" alt="Bio Skin" />
+                 <img src="${logoUrl}" class="logo" alt="${clinicName}" />
                  <div class="doctor-info">
-                   <h2>SALUD Y ESTÉTICA</h2>
-                   <h3>DRA. DANIELA CREAMER</h3>
+                   <h2>${clinicTagline.toUpperCase()}</h2>
+                   <h3>${clinicName.toUpperCase()}</h3>
                  </div>
                </div>
                
                <div class="patient-info">
-                 <p><strong>Cuenca, a ${dateStr}</strong></p>
+                 <p><strong>${clinicCity ? clinicCity + ', a ' : ''}${dateStr}</strong></p>
                  <div class="patient-details">
                     <span><strong>Paciente:</strong> ${patientName.toUpperCase()}</span>
                     <span><strong>EDAD:</strong> ${patientAge || ''} AÑOS</span>
@@ -377,8 +385,8 @@ export default function PrescriptionTab({ recordId, patientName, patientAge }: P
                </div>
                
                <div class="footer">
-                  <div class="footer-item"><span class="icon"></span> 0998653732 / 0969890689</div>
-                  <div class="footer-item"><span class="icon"></span> Av. Ordoñez Lasso y Calle del Culantro, Edificio Torre Victoria, Planta Baja.</div>
+                  <div class="footer-item"><span class="icon"></span> ${clinicPhone}</div>
+                  <div class="footer-item"><span class="icon"></span> ${clinicAddr}</div>
                </div>
             </div>
           </div>

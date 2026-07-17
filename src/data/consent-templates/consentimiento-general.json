@@ -1,0 +1,33 @@
+{
+  "id": "consentimiento-general",
+  "name": "Consentimiento Informado General",
+  "procedure_type": "Procedimiento Estético",
+  "description": "Consentimiento informado para procedimientos de medicina y estética.",
+  "objectives": ["Mejorar la apariencia estética", "Tratar condiciones dermatológicas"],
+  "risks": [
+    "Reacciones alérgicas leves", "Enrojecimiento temporal", "Inflamación transitoria",
+    "Hematomas", "Hiperpigmentación post-inflamatoria", "Infección (raro)"
+  ],
+  "benefits": [
+    "Mejora de la apariencia estética", "Aumento de la autoestima",
+    "Resultados visibles", "Procedimiento mínimamente invasivo"
+  ],
+  "alternatives": [
+    "No realizar el tratamiento", "Tratamientos alternativos disponibles"
+  ],
+  "pre_care": [
+    "No aplicar maquillaje el día del procedimiento",
+    "Informar sobre medicamentos en uso",
+    "Evitar anticoagulantes 7 días antes (si aplica)"
+  ],
+  "post_care": [
+    "Evitar exposición solar directa 48 horas",
+    "Aplicar protector solar diariamente",
+    "No manipular la zona tratada",
+    "Mantener la zona limpia e hidratada"
+  ],
+  "contraindications": [
+    "Embarazo o lactancia", "Alergia a componentes del producto",
+    "Infección activa en la zona", "Enfermedades autoinmunes activas"
+  ]
+}
