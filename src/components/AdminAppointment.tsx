@@ -159,7 +159,8 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
         action: 'getEvents',
-        date: selectedDay 
+        date: selectedDay,
+        clinicId: user?.clinic_id,
       }),
     })
       .then(res => res.json())
@@ -198,7 +199,7 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
       const adminMessage = formData.adminNotes ? 
         `\n--- NOTAS DEL ADMINISTRADOR ---\n${formData.adminNotes}\n--- FIN NOTAS ---\n` : '';
 
-      await fetch('/api/sendEmail', {
+      const res = await fetch('/api/sendEmail', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -219,8 +220,17 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
           end,
         }),
       });
-      setSubmitted(true);
-      setFormData({ name: '', email: '', phone: '', service: '', message: '', adminNotes: '' });
+      const result = await res.json();
+      if (!result.success) {
+        // Error real — mostrar mensaje descriptivo
+        const errMsg = result.errors?.join(' | ') || result.message || 'Error al agendar';
+        setError(errMsg.includes('Gmail') || errMsg.includes('Google')
+          ? '⚠️ No hay cuenta Gmail conectada para esta clínica. Pide al Master Admin que conecte Gmail desde los Ajustes de la clínica.'
+          : errMsg);
+      } else {
+        setSubmitted(true);
+        setFormData({ name: '', email: '', phone: '', service: '', message: '', adminNotes: '' });
+      }
     } catch (e) {
       setError('Error al enviar');
     }

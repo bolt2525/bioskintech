@@ -85,119 +85,68 @@ export default async function handler(req, res) {
 
   // Validar que se proporcione una acción
   if (!action) {
-    console.log('❌ No se proporcionó acción');
-    return res.status(400).json({
-      success: false,
-      message: 'Acción requerida. Acciones disponibles: getEvents, getDayEvents, getCalendarEvents, blockSchedule, getBlockedSchedules, deleteBlockedSchedule, deleteEvent'
-    });
+    return res.status(400).json({ success: false, message: 'Acción requerida.' });
   }
 
-  // Configurar Google Calendar API (común para todas las operaciones)
-  // Timestamp para force refresh: 2025-01-27 15:30
-  let calendar, credentials;
-  try {
-    console.log(`🔍 API Calendar: Procesando acción "${action}" con método ${method}`);
-    
-    const credentialsBase64 = process.env.GOOGLE_CREDENTIALS_BASE64;
-    if (!credentialsBase64) {
-      console.error('❌ GOOGLE_CREDENTIALS_BASE64 no encontrada');
-      throw new Error('Google credentials not found');
+  // ── Helper: obtener cliente de calendario ──────────────────────────────
+  // Intenta OAuth de clínica primero; fallback a service account
+  const clinicId = req.body?.clinicId || req.query?.clinicId || null;
+
+  async function getCalendarClient() {
+    // 1. OAuth de la clínica
+    const oauthClient = await getClinicOAuth2Client(clinicId);
+    if (oauthClient) {
+      console.log('📅 Calendar vía OAuth:', oauthClient ? 'OK' : 'no tokens');
+      return { calendar: google.calendar({ version: 'v3', auth: oauthClient }), calendarId: 'primary', credentials: null };
     }
-
-    credentials = JSON.parse(
-      Buffer.from(credentialsBase64, 'base64').toString('utf8')
-    );
-
-    // Verificar que las credenciales tienen los campos necesarios
-    if (!credentials.client_email || !credentials.private_key || !credentials.calendar_id) {
-      console.error('❌ Credenciales incompletas:', {
-        hasClientEmail: !!credentials.client_email,
-        hasPrivateKey: !!credentials.private_key,
-        hasCalendarId: !!credentials.calendar_id
-      });
-      throw new Error('Credenciales de Google incompletas');
-    }
-
-    console.log('✅ Credenciales Google cargadas correctamente');
-
-    const auth = new google.auth.GoogleAuth({
-      credentials: {
-        client_email: credentials.client_email,
-        private_key: credentials.private_key,
-      },
-      scopes: ['https://www.googleapis.com/auth/calendar'],
-    });
-
-    calendar = google.calendar({ version: 'v3', auth });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: 'Error de configuración del calendario',
-      error: error.message
-    });
+    // 2. Service account legacy
+    const b64 = process.env.GOOGLE_CREDENTIALS_BASE64;
+    if (!b64) throw new Error('No hay cuenta Gmail conectada para esta clínica. Conecta Gmail desde el Master Admin.');
+    const creds = JSON.parse(Buffer.from(b64, 'base64').toString('utf8'));
+    if (!creds.client_email || !creds.private_key) throw new Error('Credenciales de Google incompletas');
+    const auth = new google.auth.GoogleAuth({ credentials: { client_email: creds.client_email, private_key: creds.private_key }, scopes: ['https://www.googleapis.com/auth/calendar'] });
+    return { calendar: google.calendar({ version: 'v3', auth }), calendarId: creds.calendar_id, credentials: creds };
   }
 
   try {
     switch (action) {
-      // Health check para debugging
       case 'health':
-        return res.status(200).json({
-          success: true,
-          message: 'API Calendar funcionando correctamente',
-          timestamp: new Date().toISOString(),
-          hasCredentials: !!process.env.GOOGLE_CREDENTIALS_BASE64
-        });
+        return res.status(200).json({ success: true, message: 'API Calendar funcionando', hasOAuth: !!(await getClinicOAuth2Client(clinicId)), hasServiceAccount: !!process.env.GOOGLE_CREDENTIALS_BASE64 });
 
-      // Obtener eventos ocupados para validación de horas
-      case 'getEvents':
-        return await getEvents(req, res, calendar, credentials);
-      
-      // Obtener eventos detallados del día
-      case 'getDayEvents':
-        return await getDayEvents(req, res, calendar, credentials);
-      
-      // Obtener todos los eventos del calendario
-      case 'getCalendarEvents':
-        return await getCalendarEvents(req, res, calendar, credentials);
-      
-      // Bloquear horarios
-      case 'blockSchedule':
-        if (method !== 'POST') {
-          return res.status(405).json({ success: false, message: 'Método no permitido' });
-        }
-        return await blockSchedule(req, res, calendar, credentials);
-      
-      // Obtener bloqueos existentes
-      case 'getBlockedSchedules':
-        return await getBlockedSchedules(req, res, calendar, credentials);
-      
-      // Eliminar bloqueos específicos
-      case 'deleteBlockedSchedule':
-        if (method !== 'POST') {
-          return res.status(405).json({ success: false, message: 'Método no permitido' });
-        }
-        return await deleteBlockedSchedule(req, res, calendar, credentials);
-      
-      // Eliminar evento individual
-      case 'deleteEvent':
-        if (method !== 'POST') {
-          return res.status(405).json({ success: false, message: 'Método no permitido' });
-        }
-        return await deleteEvent(req, res, calendar, credentials);
-
+      case 'getEvents': {
+        const { calendar, calendarId, credentials } = await getCalendarClient();
+        return await getEvents(req, res, calendar, { ...credentials, calendar_id: calendarId });
+      }
+      case 'getDayEvents': {
+        const { calendar, calendarId, credentials } = await getCalendarClient();
+        return await getDayEvents(req, res, calendar, { ...credentials, calendar_id: calendarId });
+      }
+      case 'getCalendarEvents': {
+        const { calendar, calendarId, credentials } = await getCalendarClient();
+        return await getCalendarEvents(req, res, calendar, { ...credentials, calendar_id: calendarId });
+      }
+      case 'blockSchedule': {
+        const { calendar, calendarId, credentials } = await getCalendarClient();
+        return await blockSchedule(req, res, calendar, { ...credentials, calendar_id: calendarId });
+      }
+      case 'getBlockedSchedules': {
+        const { calendar, calendarId, credentials } = await getCalendarClient();
+        return await getBlockedSchedules(req, res, calendar, { ...credentials, calendar_id: calendarId });
+      }
+      case 'deleteBlockedSchedule': {
+        const { calendar, calendarId, credentials } = await getCalendarClient();
+        return await deleteBlockedSchedule(req, res, calendar, { ...credentials, calendar_id: calendarId });
+      }
+      case 'deleteEvent': {
+        const { calendar, calendarId, credentials } = await getCalendarClient();
+        return await deleteEvent(req, res, calendar, { ...credentials, calendar_id: calendarId });
+      }
       default:
-        return res.status(400).json({
-          success: false,
-          message: 'Acción no válida. Acciones disponibles: health, getEvents, getDayEvents, getCalendarEvents, blockSchedule, getBlockedSchedules, deleteBlockedSchedule, deleteEvent'
-        });
+        return res.status(400).json({ success: false, message: 'Acción no válida' });
     }
   } catch (error) {
-    console.error('❌ Error en operación de calendario:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Error interno del servidor',
-      error: error.message
-    });
+    console.error('❌ Error en calendario:', error.message);
+    return res.status(500).json({ success: false, message: error.message });
   }
 }
 
