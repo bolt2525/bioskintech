@@ -19,7 +19,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   LogOut, Building2, Users, Shield, RefreshCw, ChevronDown, ChevronUp,
   Plus, Edit, Trash2, Eye, EyeOff, Key, X, Check, AlertCircle,
-  Activity, ClipboardList, ChevronRight, Sparkles, Lock, Mail, Unlink, Copy, ExternalLink,
+  Activity, ClipboardList, ChevronRight, Sparkles, Lock, Mail, Unlink, Copy, ExternalLink, Settings2,
 } from 'lucide-react';
 
 // Constantes centralizadas — no duplicar aquí
@@ -159,6 +159,40 @@ export default function AdminMasterDashboard() {
   const [oauthStatus, setOauthStatus] = useState<Record<number, { email: string; connected_at: string }>>({});
   const [oauthLinks, setOauthLinks]   = useState<Record<number, string>>({});
   const [oauthLinkModal, setOauthLinkModal] = useState<{ open: boolean; url: string; clinicName: string } | null>(null);
+
+  // ── Ajustes por clínica ───────────────────────────────────────────────────
+  type ClinicSettingsData = {
+    general:    { name: string; city: string; tagline: string; logo_url: string; phone: string; address: string; tax_id: string };
+    treatments: string[];
+    email:      { staff_email: string; from_name: string; signature: string; whatsapp_number: string };
+    agenda:     { start_hour: string; end_hour: string; slot_minutes: number; calendar_prefix: string };
+  };
+  const [settingsModal, setSettingsModal] = useState<{ open: boolean; clinicId: number; clinicName: string } | null>(null);
+  const [settingsTab, setSettingsTab]     = useState<'general'|'treatments'|'email'|'agenda'>('general');
+  const [settingsData, setSettingsData]   = useState<ClinicSettingsData | null>(null);
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [newTreatment, setNewTreatment]   = useState('');
+
+  const openClinicSettings = async (clinic: Clinic) => {
+    setSettingsModal({ open: true, clinicId: clinic.id, clinicName: clinic.name });
+    setSettingsTab('general');
+    setSettingsLoading(true);
+    try {
+      const res  = await fetch(`/api/admin-auth?action=getClinicSettings&clinicId=${clinic.id}`, { headers: authHeader() });
+      const data = await res.json();
+      if (data.settings) setSettingsData(data.settings);
+    } finally { setSettingsLoading(false); }
+  };
+
+  const saveSettingsSection = async (section: keyof ClinicSettingsData) => {
+    if (!settingsModal || !settingsData) return;
+    const res  = await fetch('/api/admin-auth?action=saveClinicSettings', {
+      method: 'POST', headers: authHeader(),
+      body:   JSON.stringify({ clinicId: settingsModal.clinicId, section, data: settingsData[section] }),
+    });
+    const data = await res.json();
+    flash(data.error || `${section} guardado`, data.error ? 'err' : 'ok');
+  };
 
   const loadOauthStatus = async () => {
     try {
@@ -608,6 +642,9 @@ export default function AdminMasterDashboard() {
                         <button onClick={() => { setUserClinicFilter(String(clinic.id)); setTab('users'); }} className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg transition-colors">
                           <Users className="w-3.5 h-3.5" /> Usuarios
                         </button>
+                        <button onClick={() => openClinicSettings(clinic)} className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors">
+                          <Settings2 className="w-3.5 h-3.5" /> Ajustes
+                        </button>
                         <button onClick={() => { setSelectedModuleClinic(clinic.id); setTab('modules'); }} className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-[#c5a075] bg-[#deb887]/10 hover:bg-[#deb887]/20 rounded-lg transition-colors">
                           <Sparkles className="w-3.5 h-3.5" /> Módulos
                         </button>
@@ -1016,6 +1053,142 @@ export default function AdminMasterDashboard() {
                 </a>
               </div>
               <p className="text-xs text-gray-400">⚠️ Este enlace expira en pocos minutos. Si vence, genera uno nuevo.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Ajustes de Clínica ─────────────────────────────── */}
+      {settingsModal?.open && settingsData && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="h-0.5 bg-gradient-to-r from-[#deb887] to-[#c5a075]" />
+            <div className="px-5 py-4 border-b flex justify-between items-center">
+              <h3 className="font-bold text-gray-900 flex items-center gap-2">
+                <Settings2 className="w-4 h-4 text-[#deb887]" /> Ajustes — {settingsModal.clinicName}
+              </h3>
+              <button onClick={() => setSettingsModal(null)} className="text-gray-300 hover:text-gray-500"><X className="w-5 h-5" /></button>
+            </div>
+
+            {/* Tabs */}
+            <div className="flex border-b px-5 gap-1 bg-gray-50">
+              {([['general','🏥 General'],['treatments','💉 Tratamientos'],['email','📧 Email'],['agenda','📅 Agenda']] as [typeof settingsTab, string][]).map(([k,l]) => (
+                <button key={k} onClick={() => setSettingsTab(k)}
+                  className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${settingsTab===k ? 'border-[#deb887] text-[#c5a075]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+                  {l}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-5">
+              {settingsLoading ? (
+                <div className="flex items-center justify-center py-16 text-gray-400"><RefreshCw className="w-5 h-5 animate-spin mr-2"/>Cargando...</div>
+              ) : (
+                <>
+                  {/* ── General ── */}
+                  {settingsTab === 'general' && (
+                    <div className="space-y-3">
+                      {([
+                        ['name','Nombre de la clínica','text'],['city','Ciudad','text'],['tagline','Lema / Especialidad','text'],
+                        ['phone','Teléfono','tel'],['address','Dirección','text'],['tax_id','RUC / NIF','text'],['logo_url','URL del Logo','url'],
+                      ] as [keyof typeof settingsData.general, string, string][]).map(([k,label,type]) => (
+                        <div key={k}>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
+                          <input type={type} value={(settingsData.general as Record<string,string>)[k] || ''}
+                            onChange={e => setSettingsData(s => s ? ({...s, general: {...s.general, [k]: e.target.value}}) : s)}
+                            className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* ── Tratamientos ── */}
+                  {settingsTab === 'treatments' && (
+                    <div className="space-y-3">
+                      <p className="text-xs text-gray-400">Lista de tratamientos disponibles para agendar citas. Drag para reordenar.</p>
+                      <div className="space-y-2 max-h-64 overflow-y-auto">
+                        {settingsData.treatments.map((t, i) => (
+                          <div key={i} className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2">
+                            <span className="flex-1 text-sm text-gray-700">{t}</span>
+                            <button onClick={() => setSettingsData(s => s ? ({...s, treatments: s.treatments.filter((_,j)=>j!==i)}) : s)}
+                              className="text-red-400 hover:text-red-600"><X className="w-3.5 h-3.5"/></button>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex gap-2">
+                        <input value={newTreatment} onChange={e => setNewTreatment(e.target.value)}
+                          onKeyDown={e => { if(e.key==='Enter' && newTreatment.trim()) { setSettingsData(s => s ? ({...s, treatments: [...s.treatments, newTreatment.trim()]}) : s); setNewTreatment(''); }}}
+                          placeholder="Agregar tratamiento..." className="flex-1 px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
+                        <button onClick={() => { if(newTreatment.trim()) { setSettingsData(s => s ? ({...s, treatments: [...s.treatments, newTreatment.trim()]}) : s); setNewTreatment(''); }}}
+                          className="px-3 py-2 rounded-lg text-white text-sm" style={{background:'linear-gradient(135deg,#deb887,#c5a075)'}}>
+                          <Plus className="w-4 h-4"/>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── Email ── */}
+                  {settingsTab === 'email' && (
+                    <div className="space-y-3">
+                      {([
+                        ['staff_email','Email del staff (recibe notificaciones)','email'],
+                        ['from_name','Nombre remitente (ej: BIOSKIN Cuenca)','text'],
+                        ['signature','Firma de correos','text'],
+                        ['whatsapp_number','Número WhatsApp (ej: 593987654321)','tel'],
+                      ] as [keyof typeof settingsData.email, string, string][]).map(([k,label,type]) => (
+                        <div key={k}>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
+                          <input type={type} value={(settingsData.email as Record<string,string>)[k] || ''}
+                            onChange={e => setSettingsData(s => s ? ({...s, email: {...s.email, [k]: e.target.value}}) : s)}
+                            className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* ── Agenda ── */}
+                  {settingsTab === 'agenda' && (
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Hora inicio</label>
+                          <input type="time" value={settingsData.agenda.start_hour}
+                            onChange={e => setSettingsData(s => s ? ({...s, agenda: {...s.agenda, start_hour: e.target.value}}) : s)}
+                            className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Hora fin</label>
+                          <input type="time" value={settingsData.agenda.end_hour}
+                            onChange={e => setSettingsData(s => s ? ({...s, agenda: {...s.agenda, end_hour: e.target.value}}) : s)}
+                            className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Duración de cita (minutos)</label>
+                        <select value={settingsData.agenda.slot_minutes}
+                          onChange={e => setSettingsData(s => s ? ({...s, agenda: {...s.agenda, slot_minutes: parseInt(e.target.value)}}) : s)}
+                          className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none">
+                          {[30,45,60,90,120].map(m => <option key={m} value={m}>{m} minutos</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Prefijo de bloqueos en Google Calendar</label>
+                        <input value={settingsData.agenda.calendar_prefix}
+                          onChange={e => setSettingsData(s => s ? ({...s, agenda: {...s.agenda, calendar_prefix: e.target.value}}) : s)}
+                          className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
+                        <p className="text-xs text-gray-400 mt-1">Los bloqueos se crean como "{settingsData.agenda.calendar_prefix} - BLOQUEO" en Google Calendar</p>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            <div className="px-5 py-4 border-t flex justify-end gap-3 bg-gray-50">
+              <button onClick={() => setSettingsModal(null)} className="px-4 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-100">Cancelar</button>
+              <button onClick={() => saveSettingsSection(settingsTab)} className="px-5 py-2 rounded-lg text-white text-sm font-medium" style={{background:'linear-gradient(135deg,#deb887,#c5a075)'}}>
+                Guardar {settingsTab}
+              </button>
             </div>
           </div>
         </div>

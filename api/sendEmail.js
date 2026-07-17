@@ -1,6 +1,37 @@
 
 import nodemailer from 'nodemailer';
 import { google } from 'googleapis';
+import { sql } from '@vercel/postgres';
+
+/** Carga settings de una clínica. Devuelve defaults si no hay data o falla. */
+async function getClinicConfig(clinicId) {
+  const defaults = {
+    name: 'BIOSKIN', city: 'Cuenca', tagline: 'Salud y Estética',
+    logo_url: 'https://bioskintech.vercel.app/favicon.ico',
+    staff_email: process.env.EMAIL_TO || '',
+    from_name: 'BIOSKIN Cuenca', signature: 'El equipo de BIOSKIN',
+    whatsapp_number: ''
+  };
+  if (!clinicId) return defaults;
+  try {
+    const r = await sql`SELECT general, email FROM clinic_settings WHERE clinic_id = ${clinicId}`;
+    if (!r.rows.length) return defaults;
+    const g = r.rows[0].general || {};
+    const e = r.rows[0].email   || {};
+    return {
+      name:         g.name       || defaults.name,
+      city:         g.city       || defaults.city,
+      tagline:      g.tagline    || defaults.tagline,
+      logo_url:     g.logo_url   || defaults.logo_url,
+      staff_email:  e.staff_email || defaults.staff_email,
+      from_name:    e.from_name  || `${g.name || defaults.name} ${g.city || defaults.city}`.trim(),
+      signature:    e.signature  || `El equipo de ${g.name || defaults.name}`,
+      whatsapp_number: e.whatsapp_number || defaults.whatsapp_number,
+    };
+  } catch {
+    return defaults;
+  }
+}
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -367,14 +398,17 @@ export default async function handler(req, res) {
   const fecha = (message.match(/Fecha:\s*([^\n]+)/)?.[1] || "");
   const hora = (message.match(/Hora:\s*([^\n]+)/)?.[1] || "");
 
-  // --- Mensaje cordial para WhatsApp ---
+  // Cargar config de la clínica (usa clinicId del body si existe, o defaults)
+  const clinic = await getClinicConfig(req.body?.clinicId || null);
+
+  // --- Mensaje cordial para WhatsApp (dinamizado por clínica) ---
   const whatsappMessage =
-    `Hola ${paciente}, ¡gracias por agendar tu cita en BIOSKIN! 🧴✨\n` +
-    `Hemos recibido tu solicitud para el servicio “${tratamiento}”.\n` +
-    (fecha && hora ? `Tu cita está programada para el ${fecha} a las ${hora} en nuestro consultorio Bioskin Cuenca.\n` : "") +
+    `Hola ${paciente}, ¡gracias por agendar tu cita en ${clinic.name}! 🧴✨\n` +
+    `Hemos recibido tu solicitud para el servicio "${tratamiento}".\n` +
+    (fecha && hora ? `Tu cita está programada para el ${fecha} a las ${hora} en ${clinic.city ? clinic.name + ' ' + clinic.city : 'nuestro consultorio'}.\n` : "") +
     `Si tienes alguna consulta, no dudes en responder este mensaje.\n` +
     `¡Nos vemos pronto!\n\n` +
-    `— El equipo de BIOSKIN Salud y Estética`;
+    `— ${clinic.signature}`;
 
   const whatsappLink = phoneClean
     ? `https://wa.me/593${phoneClean}?text=${encodeURIComponent(whatsappMessage)}`

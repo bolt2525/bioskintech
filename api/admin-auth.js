@@ -147,6 +147,18 @@ async function initMultiTenantSchema() {
     )
   `;
 
+  // Configuración personalizable por clínica (JSONB para evitar migraciones futuras)
+  await sql`
+    CREATE TABLE IF NOT EXISTS clinic_settings (
+      clinic_id  INTEGER PRIMARY KEY REFERENCES clinics(id) ON DELETE CASCADE,
+      general    JSONB NOT NULL DEFAULT '{}',
+      treatments JSONB NOT NULL DEFAULT '[]',
+      email      JSONB NOT NULL DEFAULT '{}',
+      agenda     JSONB NOT NULL DEFAULT '{}',
+      updated_at TIMESTAMP DEFAULT NOW()
+    )
+  `;
+
   // Columnas extras en caso de migración de tabla preexistente
   for (const col of [
     "ALTER TABLE admin_sessions ADD COLUMN IF NOT EXISTS clinic_user_id INTEGER",
@@ -835,6 +847,62 @@ export default async function handler(req, res) {
       if (!clinicId) return res.status(400).json({ error: 'clinicId requerido' });
       await sql`DELETE FROM clinic_oauth_tokens WHERE clinic_id = ${clinicId}`;
       return res.status(200).json({ success: true, message: 'Conexión OAuth revocada' });
+    }
+
+    // ── Configuración por clínica ─────────────────────────────────────────
+    const DEFAULT_TREATMENTS = [
+      'Consulta + Escáner Facial','Botox / Toxina Botulínica','Relleno de Labios',
+      'Relleno de Ojeras','Relleno de Pómulos','Limpieza Facial Profunda',
+      'Peeling Químico','Mesoterapia Facial','Láser CO2 Fraccionado',
+      'Radiofrecuencia','Hidratación Profunda','Depilación Láser',
+      'Tratamiento Anti-Acné','Carboxiterapia','Otro'
+    ];
+
+    if (action === 'getClinicSettings') {
+      const clinicId = req.query.clinicId || req.body?.clinicId;
+      if (!clinicId) return res.status(400).json({ error: 'clinicId requerido' });
+      // master_admin puede ver cualquier clínica; clinic_admin solo la suya
+      if (user.role !== 'master_admin' && parseInt(clinicId) !== user.clinic_id)
+        return res.status(403).json({ error: 'Sin permiso' });
+
+      const r = await sql`SELECT * FROM clinic_settings WHERE clinic_id = ${clinicId}`;
+      if (!r.rows.length) {
+        // Crear con defaults si no existe
+        const clinicR = await sql`SELECT name, email, phone, address FROM clinics WHERE id = ${clinicId}`;
+        const clinic  = clinicR.rows[0] || {};
+        const defaults = {
+          general:    { name: clinic.name || '', city: '', tagline: '', logo_url: '', phone: clinic.phone || '', address: clinic.address || '', tax_id: '' },
+          treatments: DEFAULT_TREATMENTS,
+          email:      { staff_email: clinic.email || '', from_name: clinic.name || '', signature: `El equipo de ${clinic.name || 'la clínica'}`, whatsapp_number: '' },
+          agenda:     { start_hour: '08:00', end_hour: '19:00', slot_minutes: 60, calendar_prefix: clinic.name || 'CLINICA' }
+        };
+        await sql`INSERT INTO clinic_settings (clinic_id, general, treatments, email, agenda) VALUES (${clinicId}, ${JSON.stringify(defaults.general)}, ${JSON.stringify(defaults.treatments)}, ${JSON.stringify(defaults.email)}, ${JSON.stringify(defaults.agenda)})`;
+        return res.status(200).json({ success: true, settings: defaults });
+      }
+      const s = r.rows[0];
+      return res.status(200).json({ success: true, settings: { general: s.general, treatments: s.treatments, email: s.email, agenda: s.agenda } });
+    }
+
+    if (action === 'saveClinicSettings') {
+      const { clinicId, section, data } = req.body || {};
+      if (!clinicId || !section || !data) return res.status(400).json({ error: 'clinicId, section y data son requeridos' });
+      if (!['general','treatments','email','agenda'].includes(section))
+        return res.status(400).json({ error: 'section inválida' });
+      if (user.role !== 'master_admin' && parseInt(clinicId) !== user.clinic_id)
+        return res.status(403).json({ error: 'Sin permiso' });
+
+      const dataStr = JSON.stringify(data);
+      // Upsert seguro — columna determinada por whitelist, no por input directo
+      if (section === 'general')
+        await sql`INSERT INTO clinic_settings (clinic_id, general, updated_at) VALUES (${clinicId}, ${dataStr}::jsonb, NOW()) ON CONFLICT (clinic_id) DO UPDATE SET general = ${dataStr}::jsonb, updated_at = NOW()`;
+      else if (section === 'treatments')
+        await sql`INSERT INTO clinic_settings (clinic_id, treatments, updated_at) VALUES (${clinicId}, ${dataStr}::jsonb, NOW()) ON CONFLICT (clinic_id) DO UPDATE SET treatments = ${dataStr}::jsonb, updated_at = NOW()`;
+      else if (section === 'email')
+        await sql`INSERT INTO clinic_settings (clinic_id, email, updated_at) VALUES (${clinicId}, ${dataStr}::jsonb, NOW()) ON CONFLICT (clinic_id) DO UPDATE SET email = ${dataStr}::jsonb, updated_at = NOW()`;
+      else if (section === 'agenda')
+        await sql`INSERT INTO clinic_settings (clinic_id, agenda, updated_at) VALUES (${clinicId}, ${dataStr}::jsonb, NOW()) ON CONFLICT (clinic_id) DO UPDATE SET agenda = ${dataStr}::jsonb, updated_at = NOW()`;
+
+      return res.status(200).json({ success: true, message: `${section} guardado` });
     }
 
     return res.status(400).json({ success: false, error: 'Acción no válida' });

@@ -4,6 +4,7 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Clock, User, Phone, Mail, MessageSquare, Save, ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react';
 import { services } from '../data/services';
+import { useAuth } from '../context/AuthContext';
 
 // Helpers para español
 const daysOfWeek = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
@@ -101,8 +102,19 @@ interface AdminAppointmentProps {
 }
 
 const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
-  // Estado para navegación de fechas
-  const [currentDate, setCurrentDate] = useState(new Date());
+  const { user } = useAuth();
+
+  // Tratamientos desde configuración de clínica (fallback al catálogo global)
+  const [clinicTreatments, setClinicTreatments] = useState<string[]>([]);
+  useEffect(() => {
+    if (!user?.clinic_id) return;
+    fetch(`/api/admin-auth?action=getClinicSettings&clinicId=${user.clinic_id}`, {
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('adminSessionToken')}` }
+    })
+      .then(r => r.json())
+      .then(d => { if (d.settings?.treatments?.length) setClinicTreatments(d.settings.treatments); })
+      .catch(() => {}); // fallback silencioso al catálogo global
+  }, [user?.clinic_id]);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   
@@ -456,10 +468,8 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
                 >
                   <option value="">Selecciona un servicio</option>
                   <option value="OTRO">OTRO</option>
-                  {services.map(service => (
-                    <option key={service.id} value={service.title}>
-                      {service.title}
-                    </option>
+                  {(clinicTreatments.length > 0 ? clinicTreatments : services.map(s => s.title)).map(t => (
+                    <option key={t} value={t}>{t}</option>
                   ))}
                 </select>
 
