@@ -13,19 +13,23 @@
     "Vitamina K", "Vitamina E (Tocoferol)", "Zinc",
     "Azeloglicina", "Madecassósido", "Pantenol (B5)"
   ],
-  "presentaciones": [
+  "presentations": [
     "Crema", "Sérum", "Gel", "Loción", "Espuma", "Aceite", "Ampolla",
     "Cápsula", "Comprimido", "Solución", "Spray", "Parche", "Mascarilla"
   ],
-  "vias": [
-    "Tópica", "Oral", "Intradérmica", "Subcutánea", "Intralesional"
+  "doses": [
+    "1 gota", "2 gotas", "Cantidad necesaria (c/n)", "Pea size (tamaño guisante)",
+    "Dosis mínima efectiva", "Según tolerancia", "1 aplicación", "2 aplicaciones"
   ],
-  "frecuencias": [
+  "frequencies": [
     "1 vez al día", "2 veces al día", "Mañana y noche", "Solo mañana",
     "Solo noche", "En días alternos", "3 veces por semana", "1 vez por semana",
     "Según tolerancia"
   ],
-  "duraciones": [
+  "routes": [
+    "Tópica", "Oral", "Intradérmica", "Subcutánea", "Intralesional"
+  ],
+  "durations": [
     "7 días", "15 días", "1 mes", "2 meses", "3 meses",
     "Uso continuo", "Hasta próxima consulta"
   ]

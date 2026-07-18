@@ -71,10 +71,11 @@ export default function NewPatientForm() {
     try {
       const action = isEditing ? 'updatePatient' : 'createPatient';
       const body = isEditing ? { id: patientId, ...formData } : formData;
+      const token = localStorage.getItem('adminSessionToken') || '';
 
       const response = await fetch(`/api/records?action=${action}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify(body),
       });
 

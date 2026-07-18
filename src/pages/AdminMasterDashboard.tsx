@@ -1090,7 +1090,38 @@ export default function AdminMasterDashboard() {
                     <div className="space-y-3">
                       {([
                         ['name','Nombre de la clínica','text'],['city','Ciudad','text'],['tagline','Lema / Especialidad','text'],
-                        ['phone','Teléfono','tel'],['address','Dirección','text'],['tax_id','RUC / NIF','text'],['logo_url','URL del Logo','url'],
+                        ['phone','Teléfono','tel'],['address','Dirección','text'],['tax_id','RUC / NIF','text'],
+                      ] as [keyof typeof settingsData.general, string, string][]).map(([k,label,type]) => (
+                        <div key={k}>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
+                          <input type={type} value={(settingsData.general as Record<string,string>)[k] || ''}
+                            onChange={e => setSettingsData(s => s ? ({...s, general: {...s.general, [k]: e.target.value}}) : s)}
+                            className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
+                        </div>
+                      ))}
+                      {/* Logo upload */}
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Logo de la clínica</label>
+                        <div className="space-y-2">
+                          <input type="url" placeholder="https://... (URL de imagen)" value={settingsData.general.logo_url || ''}
+                            onChange={e => setSettingsData(s => s ? ({...s, general: {...s.general, logo_url: e.target.value}}) : s)}
+                            className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-gray-400">O sube una imagen:</span>
+                            <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="text-xs"
+                              onChange={e => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+                                if (file.size > 500 * 1024) { flash('Imagen demasiado grande (máx 500KB)', 'err'); return; }
+                                const reader = new FileReader();
+                                reader.onload = ev => setSettingsData(s => s ? ({...s, general: {...s.general, logo_url: ev.target?.result as string}}) : s);
+                                reader.readAsDataURL(file);
+                              }} />
+                          </div>
+                          {settingsData.general.logo_url && (
+                            <img src={settingsData.general.logo_url} alt="Logo preview" className="h-12 object-contain rounded border border-gray-100" onError={e => (e.currentTarget.style.display='none')} />
+                          )}
+                        </div>
                       ] as [keyof typeof settingsData.general, string, string][]).map(([k,label,type]) => (
                         <div key={k}>
                           <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>

@@ -709,10 +709,11 @@ export default async function handler(req, res) {
       case 'updatePatient': {
         const { id: pid, ...updates } = body;
         // Whitelist de campos permitidos (previene SQL injection por nombres de columna)
-        const ALLOWED_PATIENT_FIELDS = ['first_name', 'last_name', 'rut', 'email', 'phone', 'birth_date', 'gender', 'address', 'occupation'];
-        const safe = Object.fromEntries(Object.entries(updates).filter(([k]) => ALLOWED_PATIENT_FIELDS.includes(k)));
-        // Clinic scope check
         const suUpd = await getSessionUser(pool, req);
+        const ALLOWED_PATIENT_FIELDS = ['first_name', 'last_name', 'rut', 'email', 'phone', 'birth_date', 'gender', 'address', 'occupation'];
+        // master_admin puede reasignar clinic_id (para corregir pacientes huérfanos)
+        if (suUpd?.role === 'master_admin') ALLOWED_PATIENT_FIELDS.push('clinic_id');
+        const safe = Object.fromEntries(Object.entries(updates).filter(([k]) => ALLOWED_PATIENT_FIELDS.includes(k)));
         if (suUpd?.clinic_id != null) {
           const chk = await pool.query('SELECT clinic_id FROM patients WHERE id = $1', [pid]);
           if (chk.rows.length && chk.rows[0].clinic_id != null && chk.rows[0].clinic_id !== suUpd.clinic_id && suUpd.role !== 'master_admin') {
