@@ -1122,14 +1122,7 @@ export default function AdminMasterDashboard() {
                             <img src={settingsData.general.logo_url} alt="Logo preview" className="h-12 object-contain rounded border border-gray-100" onError={e => (e.currentTarget.style.display='none')} />
                           )}
                         </div>
-                      ] as [keyof typeof settingsData.general, string, string][]).map(([k,label,type]) => (
-                        <div key={k}>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
-                          <input type={type} value={(settingsData.general as Record<string,string>)[k] || ''}
-                            onChange={e => setSettingsData(s => s ? ({...s, general: {...s.general, [k]: e.target.value}}) : s)}
-                            className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
-                        </div>
-                      ))}
+                      </div>
                     </div>
                   )}
 
