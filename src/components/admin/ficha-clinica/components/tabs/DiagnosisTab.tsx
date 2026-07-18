@@ -1,4 +1,4 @@
-Ôªøimport React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Save, AlertCircle, Plus, Trash2, Copy, Printer, Sparkles, Check, X, Info, Edit2 } from 'lucide-react';
 import diagnosisOptions from '../../data/diagnosis_options.json';
@@ -95,27 +95,27 @@ export default function DiagnosisTab({ recordId, diagnoses, physicalExams = [], 
   const handleDuplicate = () => {
     const { id, date, ...rest } = currentDiagnosis;
     setCurrentDiagnosis({ ...rest, record_id: recordId });
-    setMessage({ type: 'success', text: 'Diagn√≥stico duplicado. Guarde para crear uno nuevo.' });
+    setMessage({ type: 'success', text: 'DiagnÛstico duplicado. Guarde para crear uno nuevo.' });
   };
 
   const handleDelete = async () => {
-    if (!currentDiagnosis.id || !confirm('¬øEliminar este diagn√≥stico?')) return;
+    if (!currentDiagnosis.id || !confirm('øEliminar este diagnÛstico?')) return;
     setDeleting(true);
     try {
-      const response = await fetch(`/api/records?action=deleteDiagnosis&id=${currentDiagnosis.id}`, {
+      const response = await recordsFetch(`/api/records?action=deleteDiagnosis&id=${currentDiagnosis.id}`, {
         method: 'DELETE'
       });
 
       if (response.ok) {
         onSave();
         handleNew();
-        setMessage({ type: 'success', text: 'Diagn√≥stico eliminado correctamente' });
+        setMessage({ type: 'success', text: 'DiagnÛstico eliminado correctamente' });
       } else {
         throw new Error('Error al eliminar');
       }
     } catch (error) {
       console.error('Error deleting diagnosis:', error);
-      setMessage({ type: 'error', text: 'Error al eliminar el diagn√≥stico' });
+      setMessage({ type: 'error', text: 'Error al eliminar el diagnÛstico' });
     } finally {
       setDeleting(false);
     }
@@ -123,7 +123,7 @@ export default function DiagnosisTab({ recordId, diagnoses, physicalExams = [], 
 
   const handleOpenAIModal = async () => {
     if (!physicalExams || physicalExams.length === 0) {
-      setMessage({ type: 'error', text: 'No hay examen f√≠sico registrado. Complete el examen f√≠sico primero.' });
+      setMessage({ type: 'error', text: 'No hay examen fÌsico registrado. Complete el examen fÌsico primero.' });
       return;
     }
 
@@ -132,7 +132,7 @@ export default function DiagnosisTab({ recordId, diagnoses, physicalExams = [], 
     setShowContextModal(true);
 
     try {
-      const response = await fetch('/api/records?action=getDiagnosisContext', {
+      const response = await recordsFetch('/api/records?action=getDiagnosisContext', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -149,7 +149,7 @@ export default function DiagnosisTab({ recordId, diagnoses, physicalExams = [], 
       }
     } catch (error) {
       console.error('Error fetching context:', error);
-      setContextText('Error de conexi√≥n. Puede escribir el contexto manualmente.');
+      setContextText('Error de conexiÛn. Puede escribir el contexto manualmente.');
     } finally {
       setLoadingContext(false);
     }
@@ -163,7 +163,7 @@ export default function DiagnosisTab({ recordId, diagnoses, physicalExams = [], 
     const examToUse = physicalExams.find(e => e.id === Number(selectedExamId)) || physicalExams[0];
 
     try {
-      const response = await fetch('/api/records?action=generateDiagnosisAI', {
+      const response = await recordsFetch('/api/records?action=generateDiagnosisAI', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -175,7 +175,7 @@ export default function DiagnosisTab({ recordId, diagnoses, physicalExams = [], 
 
       if (!response.ok) {
         const errData = await response.json();
-        throw new Error(errData.error || 'Error al generar diagn√≥stico con IA');
+        throw new Error(errData.error || 'Error al generar diagnÛstico con IA');
       }
 
       const data = await response.json();
@@ -204,12 +204,12 @@ export default function DiagnosisTab({ recordId, diagnoses, physicalExams = [], 
         notes: data.notes || prev.notes
       }));
       
-      setMessage({ type: 'success', text: 'Diagn√≥stico generado por IA correctamente' });
-      setAiWarning('IMPORTANTE: Este diagn√≥stico ha sido generado por Inteligencia Artificial. Se requiere revisi√≥n y validaci√≥n por parte de un profesional m√©dico antes de guardar.');
+      setMessage({ type: 'success', text: 'DiagnÛstico generado por IA correctamente' });
+      setAiWarning('IMPORTANTE: Este diagnÛstico ha sido generado por Inteligencia Artificial. Se requiere revisiÛn y validaciÛn por parte de un profesional mÈdico antes de guardar.');
 
     } catch (error: any) {
       console.error('AI Generation error:', error);
-      setMessage({ type: 'error', text: error.message || 'Error al generar diagn√≥stico con IA' });
+      setMessage({ type: 'error', text: error.message || 'Error al generar diagnÛstico con IA' });
     } finally {
       setGeneratingAI(false);
     }
@@ -220,7 +220,7 @@ export default function DiagnosisTab({ recordId, diagnoses, physicalExams = [], 
   };
 
   const handleSubmit = async () => {
-    if (aiWarning && !confirm('¬øHa revisado y validado el diagn√≥stico generado por IA?')) {
+    if (aiWarning && !confirm('øHa revisado y validado el diagnÛstico generado por IA?')) {
       return;
     }
 
@@ -229,33 +229,33 @@ export default function DiagnosisTab({ recordId, diagnoses, physicalExams = [], 
     setAiWarning(null);
 
     try {
-      const response = await fetch('/api/records?action=saveDiagnosis', {
+      const response = await recordsFetch('/api/records?action=saveDiagnosis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(currentDiagnosis),
       });
 
       if (response.ok) {
-        setMessage({ type: 'success', text: 'Diagn√≥stico guardado correctamente' });
+        setMessage({ type: 'success', text: 'DiagnÛstico guardado correctamente' });
         onSave();
       } else {
         const errData = await response.json();
         throw new Error(errData.error || 'Error al guardar');
       }
     } catch (error: any) {
-      setMessage({ type: 'error', text: error.message || 'Error al guardar el diagn√≥stico' });
+      setMessage({ type: 'error', text: error.message || 'Error al guardar el diagnÛstico' });
     } finally {
       setSaving(false);
     }
   };
 
   const handlePrint = () => {
-    setMessage({ type: 'success', text: 'Abriendo vista de impresi√≥n...' });
+    setMessage({ type: 'success', text: 'Abriendo vista de impresiÛn...' });
     const html = `
       <html lang="es">
         <head>
           <meta charset="UTF-8">
-          <title>Diagn√≥stico - ${patientName}</title>
+          <title>DiagnÛstico - ${patientName}</title>
           <style>
             body { font-family: Arial, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; }
             .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #000; padding-bottom: 10px; }
@@ -272,7 +272,7 @@ export default function DiagnosisTab({ recordId, diagnoses, physicalExams = [], 
         <body>
           <div class="header">
             <h1>BIOSKIN</h1>
-            <p>Dermatolog√≠a y Medicina Est√©tica</p>
+            <p>DermatologÌa y Medicina EstÈtica</p>
           </div>
           
           <div class="info">
@@ -281,8 +281,8 @@ export default function DiagnosisTab({ recordId, diagnoses, physicalExams = [], 
           </div>
 
           <div class="section">
-            <h3>Detalle del Diagn√≥stico</h3>
-            <div class="field"><span class="label">Diagn√≥stico:</span> ${currentDiagnosis.diagnosis_text}</div>
+            <h3>Detalle del DiagnÛstico</h3>
+            <div class="field"><span class="label">DiagnÛstico:</span> ${currentDiagnosis.diagnosis_text}</div>
             <div class="field"><span class="label">CIE-10:</span> ${currentDiagnosis.cie10_code}</div>
             <div class="field"><span class="label">Tipo:</span> ${currentDiagnosis.type}</div>
             <div class="field"><span class="label">Severidad:</span> ${currentDiagnosis.severity}</div>
@@ -321,7 +321,7 @@ export default function DiagnosisTab({ recordId, diagnoses, physicalExams = [], 
       <div className="w-full md:w-72 border-r-0 md:border-r border-b md:border-b-0 border-gray-100 pr-0 md:pr-6 pb-4 md:pb-0 flex flex-col gap-4 shrink-0">
         <div className="font-bold text-gray-800 flex items-center gap-2">
           <div className="w-1 h-5 bg-[#deb887] rounded-full" />
-          Historial de Diagn√≥sticos
+          Historial de DiagnÛsticos
         </div>
         <div className="flex-1 overflow-y-auto space-y-3 max-h-[200px] md:max-h-none pr-2 custom-scrollbar">
           {diagnoses.map((diag, index) => (
@@ -350,12 +350,12 @@ export default function DiagnosisTab({ recordId, diagnoses, physicalExams = [], 
             className="w-full py-3 mt-2 border-2 border-dashed border-gray-200 rounded-xl text-gray-500 hover:border-[#deb887] hover:text-[#deb887] transition-colors font-medium flex items-center justify-center gap-2 bg-gray-50/50 hover:bg-[#deb887]/5"
           >
             <Plus className="w-4 h-4" />
-            Nuevo Diagn√≥stico
+            Nuevo DiagnÛstico
           </motion.button>
           {diagnoses.length === 0 && (
             <div className="text-gray-400 text-sm text-center py-8 flex flex-col items-center gap-2">
               <AlertCircle className="w-8 h-8 opacity-20" />
-              No hay diagn√≥sticos registrados
+              No hay diagnÛsticos registrados
             </div>
           )}
         </div>
@@ -419,14 +419,14 @@ export default function DiagnosisTab({ recordId, diagnoses, physicalExams = [], 
                 className="p-2 border border-gray-200 rounded-lg text-sm max-w-[180px] focus:ring-2 focus:ring-[#deb887] outline-none bg-gray-50/50 hover:bg-white transition-colors"
                 value={selectedExamId}
                 onChange={(e) => setSelectedExamId(Number(e.target.value))}
-                title="Seleccionar Examen F√≠sico base"
+                title="Seleccionar Examen FÌsico base"
             >
                 {physicalExams.map((exam, idx) => (
                     <option key={exam.id || idx} value={exam.id}>
                         {exam.created_at ? new Date(exam.created_at).toLocaleDateString() : 'Examen'}
                     </option>
                 ))}
-                {physicalExams.length === 0 && <option value="">Sin ex√°menes</option>}
+                {physicalExams.length === 0 && <option value="">Sin ex·menes</option>}
             </select>
 
             <motion.button 
@@ -437,7 +437,7 @@ export default function DiagnosisTab({ recordId, diagnoses, physicalExams = [], 
               className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#deb887] to-[#d4a76a] text-white rounded-lg hover:shadow-md transition-all disabled:opacity-50 shadow-lg shadow-[#deb887]/20"
             >
               <Sparkles className="w-4 h-4" />
-              <span className="text-sm font-medium hidden sm:inline">{generatingAI ? 'Generando...' : 'Diagn√≥stico IA'}</span>
+              <span className="text-sm font-medium hidden sm:inline">{generatingAI ? 'Generando...' : 'DiagnÛstico IA'}</span>
             </motion.button>
           </div>
           <div className={`text-sm font-medium px-3 py-1 rounded-full flex items-center gap-2 ${
@@ -480,7 +480,7 @@ export default function DiagnosisTab({ recordId, diagnoses, physicalExams = [], 
                 <AlertCircle className="w-4 h-4" />
               </div>
               <div>
-                <p className="font-bold text-sm mb-1">Atenci√≥n</p>
+                <p className="font-bold text-sm mb-1">AtenciÛn</p>
                 <p className="text-sm opacity-90 leading-relaxed">{aiWarning}</p>
               </div>
             </motion.div>
@@ -489,7 +489,7 @@ export default function DiagnosisTab({ recordId, diagnoses, physicalExams = [], 
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
           <div className="space-y-2">
-            <label className="block text-sm font-bold text-gray-700">Diagn√≥stico</label>
+            <label className="block text-sm font-bold text-gray-700">DiagnÛstico</label>
             <input
               type="text"
               required
@@ -497,7 +497,7 @@ export default function DiagnosisTab({ recordId, diagnoses, physicalExams = [], 
               className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
               value={currentDiagnosis.diagnosis_text}
               onChange={e => setCurrentDiagnosis({...currentDiagnosis, diagnosis_text: e.target.value})}
-              placeholder="Ej: Acn√© Vulgar"
+              placeholder="Ej: AcnÈ Vulgar"
             />
             <datalist id="diagnoses-list">
               {Object.values(diagnosisOptions).flat().map((d: string, i: number) => (
@@ -550,7 +550,7 @@ export default function DiagnosisTab({ recordId, diagnoses, physicalExams = [], 
               className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#deb887] outline-none resize-none transition-all bg-gray-50/50 focus:bg-white"
               value={currentDiagnosis.notes}
               onChange={e => setCurrentDiagnosis({...currentDiagnosis, notes: e.target.value})}
-              placeholder="Detalles adicionales del diagn√≥stico..."
+              placeholder="Detalles adicionales del diagnÛstico..."
             />
           </div>
         </div>
@@ -571,7 +571,7 @@ export default function DiagnosisTab({ recordId, diagnoses, physicalExams = [], 
                   <div className="p-2 bg-[#deb887]/10 rounded-lg">
                     <Sparkles className="w-5 h-5" />
                   </div>
-                  <h3 className="text-lg font-bold text-gray-800">Contexto para Diagn√≥stico IA</h3>
+                  <h3 className="text-lg font-bold text-gray-800">Contexto para DiagnÛstico IA</h3>
                 </div>
                 <button onClick={() => setShowContextModal(false)} className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 p-2 rounded-lg transition-colors">
                   <X className="w-5 h-5" />
@@ -581,7 +581,7 @@ export default function DiagnosisTab({ recordId, diagnoses, physicalExams = [], 
               <div className="p-6 overflow-y-auto flex-1 space-y-6 custom-scrollbar">
                 <div className="bg-blue-50 p-4 rounded-xl text-sm text-blue-800 border border-blue-100 flex gap-3">
                   <Info className="w-5 h-5 flex-shrink-0" />
-                  <p>Revise y modifique la informaci√≥n que se enviar√° a la IA. Puede a√±adir instrucciones espec√≠ficas o corregir datos.</p>
+                  <p>Revise y modifique la informaciÛn que se enviar· a la IA. Puede aÒadir instrucciones especÌficas o corregir datos.</p>
                 </div>
 
                 {loadingContext ? (
@@ -591,7 +591,7 @@ export default function DiagnosisTab({ recordId, diagnoses, physicalExams = [], 
                 ) : (
                   <>
                     <div className="space-y-2">
-                      <label className="block text-sm font-bold text-gray-700">Contexto del Paciente y Examen F√≠sico</label>
+                      <label className="block text-sm font-bold text-gray-700">Contexto del Paciente y Examen FÌsico</label>
                       <textarea
                         value={contextText}
                         onChange={(e) => setContextText(e.target.value)}
@@ -600,13 +600,13 @@ export default function DiagnosisTab({ recordId, diagnoses, physicalExams = [], 
                     </div>
 
                     <div className="space-y-3">
-                      <label className="block text-sm font-bold text-gray-700">Opciones R√°pidas (A√±adir al contexto)</label>
+                      <label className="block text-sm font-bold text-gray-700">Opciones R·pidas (AÒadir al contexto)</label>
                       <div className="flex flex-wrap gap-2">
                         {[
-                          "Considerar antecedentes de acn√©",
+                          "Considerar antecedentes de acnÈ",
                           "Enfocarse en lesiones pigmentadas",
-                          "Descartar patolog√≠a maligna",
-                          "Sugerir diagn√≥stico diferencial",
+                          "Descartar patologÌa maligna",
+                          "Sugerir diagnÛstico diferencial",
                           "Considerar fototipo alto"
                         ].map((option) => (
                           <motion.button
@@ -642,7 +642,7 @@ export default function DiagnosisTab({ recordId, diagnoses, physicalExams = [], 
                   className="flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-[#deb887] to-[#d4a76a] text-white rounded-lg hover:shadow-lg hover:shadow-[#deb887]/20 transition-all disabled:opacity-50 font-medium"
                 >
                   <Sparkles className="w-4 h-4" />
-                  Generar Diagn√≥stico
+                  Generar DiagnÛstico
                 </motion.button>
               </div>
             </motion.div>

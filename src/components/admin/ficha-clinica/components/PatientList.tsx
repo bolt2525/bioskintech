@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Search, Plus, FileText, User, Calendar, Edit2, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import AdminLayout from '../../../layout/AdminLayout';
+import recordsFetch from '../../../../utils/recordsFetch';
 
 interface Patient {
   id: number;
@@ -27,7 +28,7 @@ export default function PatientList() {
   const fetchPatients = async () => {
     try {
       setError(null);
-      const response = await fetch('/api/records?action=listPatients');
+      const response = await recordsFetch('/api/records?action=listPatients');
       
       const contentType = response.headers.get("content-type");
       if (contentType && contentType.indexOf("application/json") === -1) {
@@ -54,7 +55,7 @@ export default function PatientList() {
     if (!confirm('¿Está seguro de eliminar este paciente? Esta acción no se puede deshacer.')) return;
 
     try {
-      const response = await fetch(`/api/records?action=deletePatient&id=${id}`, {
+      const response = await recordsFetch(`/api/records?action=deletePatient&id=${id}`, {
         method: 'DELETE'
       });
 

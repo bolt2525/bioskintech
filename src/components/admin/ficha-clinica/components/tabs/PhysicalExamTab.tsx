@@ -1,4 +1,4 @@
-Ôªøimport React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Save, AlertCircle, Plus, Trash2, Copy, Printer, Info, Edit2, Check, User, FileText, Eye, EyeOff } from 'lucide-react';
 import { CLINICAL_FIELDS, LESION_CATALOG, PARAMETER_TOOLTIPS } from '../../../../../data/clinical-catalogs';
@@ -11,24 +11,24 @@ import { Tooltip } from '../../../../ui/Tooltip';
 import { Select } from '../../../../ui/Select';
 import trazadoData from '../../data/trazado-referencia-superior.json';
 
-// ‚îÄ‚îÄ Constantes para el visor 3D facial ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ‚îÄ
+// -- Constantes para el visor 3D facial ----------------------------------------
 const _trazado = trazadoData as any;
 const TERCIO_BOUNDARIES = _trazado.hairline as {
   topY: number; bottomY: number;
   tercioMedioBottomY: number; tercioInferiorBottomY: number;
 };
-// L√≠mite lateral: l√≠neas verticales desplazadas hacia afuera (zona sien/temporal)
+// LÌmite lateral: lÌneas verticales desplazadas hacia afuera (zona sien/temporal)
 const COLA_CEJA_X_LEFT  = -1.0;
 const COLA_CEJA_X_RIGHT =  1.0;
-const COLA_CEJA_X       =  1.0; // umbral de detecci√≥n lateral
-// L√≠neas verticales imaginarias en cola de ceja: de frente-hairline hasta ment√≥n
+const COLA_CEJA_X       =  1.0; // umbral de detecciÛn lateral
+// LÌneas verticales imaginarias en cola de ceja: de frente-hairline hasta mentÛn
 const FACE_Y_MAX = 2.2;
 const FACE_Y_MIN = -2.5;
 const COLA_CEJA_VERTICALS: ReferenceLine[] = [
   {
     id: 'ceja-vert-izq',
     type: 'vertical',
-    label: 'L√≠mite lateral Izq.',
+    label: 'LÌmite lateral Izq.',
     color: '#38bdf8',
     visible: true,
     dashed: true,
@@ -40,7 +40,7 @@ const COLA_CEJA_VERTICALS: ReferenceLine[] = [
   {
     id: 'ceja-vert-der',
     type: 'vertical',
-    label: 'L√≠mite lateral Der.',
+    label: 'LÌmite lateral Der.',
     color: '#38bdf8',
     visible: true,
     dashed: true,
@@ -55,59 +55,59 @@ const FACE_REFERENCE_LINES: ReferenceLine[] = [
   ...COLA_CEJA_VERTICALS,
 ];
 
-// ‚îÄ‚îÄ Zonas sugeridas por tercio (anat√≥micamente correctas, piel del rostro) ‚îÄ‚îÄ‚îÄ‚îÄ
-// Tercio superior: frente ‚Äî desde cejas hasta nacimiento del cabello
+// -- Zonas sugeridas por tercio (anatÛmicamente correctas, piel del rostro) ----
+// Tercio superior: frente ó desde cejas hasta nacimiento del cabello
 const ZONES_SUPERIOR = [
   'Frente central',
   'Frente lateral',
   'Glabela',
   'Entrecejo',
-  'Regi√≥n superciliar (cejas)',
+  'RegiÛn superciliar (cejas)',
   'Cola de ceja',
-  'L√≠neas de expresi√≥n frontal',
-  'Regi√≥n temporal superior',
+  'LÌneas de expresiÛn frontal',
+  'RegiÛn temporal superior',
 ];
-// Tercio medio: zona ocular, nasal y malar ‚Äî desde base del ojo hasta base de nariz
+// Tercio medio: zona ocular, nasal y malar ó desde base del ojo hasta base de nariz
 const ZONES_MEDIO = [
-  'P√°rpado superior',
-  'P√°rpado inferior',
+  'P·rpado superior',
+  'P·rpado inferior',
   'Surco palpebral inferior (ojeras)',
-  'Valle de l√°grimas',
-  'Regi√≥n infraorbitaria',
+  'Valle de l·grimas',
+  'RegiÛn infraorbitaria',
   'Patas de gallo',
   'Dorso nasal',
   'Punta nasal',
   'Alas nasales',
-  'P√≥mulo / regi√≥n malar',
+  'PÛmulo / regiÛn malar',
   'Mejilla',
   'Surco nasogeniano',
-  'Regi√≥n cigom√°tica',
+  'RegiÛn cigom·tica',
 ];
-// Tercio inferior: perioral, ment√≥n y mand√≠bula ‚Äî desde base de nariz hasta l√≠mite inferior
+// Tercio inferior: perioral, mentÛn y mandÌbula ó desde base de nariz hasta lÌmite inferior
 const ZONES_INFERIOR = [
   'Labio superior',
   'Labio inferior',
   'Filtrum (surco subnasal)',
   'Comisuras labiales',
-  'Surco perioral (c√≥digo de barras)',
+  'Surco perioral (cÛdigo de barras)',
   'Surco marioneta',
-  'Ment√≥n',
-  'Regi√≥n mentoniana',
-  '√Årea submentoniana / papada',
-  'L√≠nea mandibular',
+  'MentÛn',
+  'RegiÛn mentoniana',
+  '¡rea submentoniana / papada',
+  'LÌnea mandibular',
 ];
 const ZONES_LATERAL = [
   'Sien',
-  'Regi√≥n preauricular',
+  'RegiÛn preauricular',
   'Oreja',
-  'Regi√≥n retroauricular',
+  'RegiÛn retroauricular',
   'Nuca',
   'Cabeza',
 ];
 const ZONES_CUELLO = [
-  'Mand√≠bula',
-  '√Ångulo mandibular',
-  '√Årea submentoniana',
+  'MandÌbula',
+  '¡ngulo mandibular',
+  '¡rea submentoniana',
   'Cuello anterior',
   'Cuello lateral',
 ];
@@ -201,7 +201,7 @@ const MarkEditModal = ({
       >
         <h3 className="text-xl font-bold mb-4 text-gray-800 flex items-center gap-2 border-b border-gray-100 pb-4">
           <div className="w-1.5 h-6 bg-[#deb887] rounded-full" />
-          Detalles de la Lesi√≥n
+          Detalles de la LesiÛn
           {tercio && (
             <span className="ml-auto text-xs font-semibold px-2.5 py-1 rounded-full bg-[#deb887]/15 text-[#b8956a] border border-[#deb887]/30">
               {tercio}
@@ -211,7 +211,7 @@ const MarkEditModal = ({
         
         <div className="space-y-4">
           <div className="space-y-2">
-            <label className="block text-sm font-bold text-gray-700">Tipo de Lesi√≥n</label>
+            <label className="block text-sm font-bold text-gray-700">Tipo de LesiÛn</label>
             <input 
               list="lesion-options-modal"
               value={editedMark.category}
@@ -240,7 +240,7 @@ const MarkEditModal = ({
           </div>
 
           <div className="space-y-2">
-            <label className="block text-sm font-bold text-gray-700">Distribuci√≥n</label>
+            <label className="block text-sm font-bold text-gray-700">DistribuciÛn</label>
             <div className="flex gap-4 p-3 bg-gray-50 rounded-xl border border-gray-100">
               <label className="flex items-center gap-2 cursor-pointer group">
                 <input 
@@ -268,7 +268,7 @@ const MarkEditModal = ({
           </div>
 
           <div className="space-y-2">
-            <label className="block text-sm font-bold text-gray-700">Zona / Ubicaci√≥n</label>
+            <label className="block text-sm font-bold text-gray-700">Zona / UbicaciÛn</label>
             {suggestedZones && suggestedZones.length > 0 && (
               <div className="flex flex-wrap gap-1.5 mb-2">
                 {suggestedZones.map(z => (
@@ -297,7 +297,7 @@ const MarkEditModal = ({
             />
             <p className="text-xs text-gray-500 flex items-center gap-1">
               <Info size={12} />
-              {suggestedZones ? 'Seleccione una zona sugerida o escr√≠bala.' : 'Puede ajustar el nombre de la zona manualmente.'}
+              {suggestedZones ? 'Seleccione una zona sugerida o escrÌbala.' : 'Puede ajustar el nombre de la zona manualmente.'}
             </p>
           </div>
         </div>
@@ -406,23 +406,23 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
   };
 
   const handleDelete = async () => {
-    if (!currentExam.id || !confirm('¬øEliminar este examen f√≠sico?')) return;
+    if (!currentExam.id || !confirm('øEliminar este examen fÌsico?')) return;
     setDeleting(true);
     try {
-      const response = await fetch(`/api/records?action=deletePhysicalExam&id=${currentExam.id}`, {
+      const response = await recordsFetch(`/api/records?action=deletePhysicalExam&id=${currentExam.id}`, {
         method: 'DELETE'
       });
 
       if (response.ok) {
         onSave();
         handleNew();
-        setMessage({ type: 'success', text: 'Examen f√≠sico eliminado correctamente' });
+        setMessage({ type: 'success', text: 'Examen fÌsico eliminado correctamente' });
       } else {
         throw new Error('Error al eliminar');
       }
     } catch (error) {
       console.error('Error deleting exam:', error);
-      setMessage({ type: 'error', text: 'Error al eliminar el examen f√≠sico' });
+      setMessage({ type: 'error', text: 'Error al eliminar el examen fÌsico' });
     } finally {
       setDeleting(false);
     }
@@ -437,7 +437,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
       let warningMsg = 'Advertencia:\n';
       if (hasEmptyFields) warningMsg += '- Hay campos obligatorios sin seleccionar (Tipo de piel, Fototipo, Glogau).\n';
       if (hasNoMarks) warningMsg += '- No se han registrado lesiones en el mapa facial ni corporal.\n';
-      warningMsg += '\n¬øDesea guardar de todos modos?';
+      warningMsg += '\nøDesea guardar de todos modos?';
 
       if (!confirm(warningMsg)) return;
     }
@@ -452,28 +452,28 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
     };
 
     try {
-      const response = await fetch('/api/records?action=savePhysicalExam', {
+      const response = await recordsFetch('/api/records?action=savePhysicalExam', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(examToSave),
       });
 
       if (response.ok) {
-        setMessage({ type: 'success', text: 'Examen f√≠sico guardado correctamente' });
+        setMessage({ type: 'success', text: 'Examen fÌsico guardado correctamente' });
         onSave();
       } else {
         const errData = await response.json();
         throw new Error(errData.error || 'Error al guardar');
       }
     } catch (error: any) {
-      setMessage({ type: 'error', text: error.message || 'Error al guardar el examen f√≠sico' });
+      setMessage({ type: 'error', text: error.message || 'Error al guardar el examen fÌsico' });
     } finally {
       setSaving(false);
     }
   };
 
   const handlePrint = () => {
-    setMessage({ type: 'success', text: 'Imprimiendo p√°gina actual...' });
+    setMessage({ type: 'success', text: 'Imprimiendo p·gina actual...' });
     window.print();
   };
 
@@ -484,10 +484,10 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
     setIsModalOpen(true);
   };
 
-  // 3D model click ‚Üí identify tercio ‚Üí open modal with suggestions
+  // 3D model click ? identify tercio ? open modal with suggestions
   const handle3DMarkerPlaced = (marker3D: Marker3D) => {
     if (!selectedCategory) {
-      alert('Por favor seleccione una lesi√≥n/categor√≠a primero');
+      alert('Por favor seleccione una lesiÛn/categorÌa primero');
       return;
     }
     const region = getFacialRegion(marker3D.position);
@@ -585,7 +585,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
       <div className="w-full md:w-72 border-r-0 md:border-r border-b md:border-b-0 border-gray-100 pr-0 md:pr-6 pb-4 md:pb-0 flex flex-col gap-4 shrink-0">
         <div className="font-bold text-gray-800 flex items-center gap-2">
           <div className="w-1 h-5 bg-[#deb887] rounded-full" />
-          Historial de Ex√°menes
+          Historial de Ex·menes
         </div>
         <div className="flex-1 overflow-y-auto space-y-3 max-h-[200px] md:max-h-none pr-2 custom-scrollbar">
           {physicalExams.map((exam, index) => (
@@ -725,14 +725,14 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
             </div>
 
             <div className="mb-6 space-y-2">
-              <label className="block text-sm font-bold text-gray-700">Seleccionar Lesi√≥n para Marcar:</label>
+              <label className="block text-sm font-bold text-gray-700">Seleccionar LesiÛn para Marcar:</label>
               <div className="relative">
                 <input 
                   list="lesion-options-main"
                   className="w-full p-3 pl-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#deb887] outline-none transition-all shadow-sm bg-white"
                   value={selectedCategory}
                   onChange={(e) => setSelectedCategory(e.target.value)}
-                  placeholder="Seleccione o escriba una lesi√≥n..."
+                  placeholder="Seleccione o escriba una lesiÛn..."
                 />
                 <datalist id="lesion-options-main">
                   {LESION_CATALOG.map(l => (
@@ -743,7 +743,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
               {activeTab === 'facial' && !selectedCategory && (
                 <p className="text-xs text-amber-600 flex items-center gap-1 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-100">
                   <Info size={11} />
-                  Seleccione una lesi√≥n antes de marcar en el modelo 3D
+                  Seleccione una lesiÛn antes de marcar en el modelo 3D
                 </p>
               )}
             </div>
@@ -754,10 +754,10 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
                   <button
                     onClick={() => setShowReferenceLines(v => !v)}
                     className="absolute top-2 right-2 z-10 flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg bg-gray-900/65 text-white hover:bg-gray-900/90 transition-colors border border-white/15 backdrop-blur-sm select-none"
-                    title={showReferenceLines ? 'Ocultar l√≠neas de referencia' : 'Mostrar l√≠neas de referencia'}
+                    title={showReferenceLines ? 'Ocultar lÌneas de referencia' : 'Mostrar lÌneas de referencia'}
                   >
                     {showReferenceLines ? <EyeOff size={12} /> : <Eye size={12} />}
-                    {showReferenceLines ? 'Ocultar l√≠neas' : 'Mostrar l√≠neas'}
+                    {showReferenceLines ? 'Ocultar lÌneas' : 'Mostrar lÌneas'}
                   </button>
                   <Clinical3DViewer
                     markers={face3DMarkers}
@@ -792,8 +792,8 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
                 <div className="mb-3 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 text-xs text-amber-700">
                   <Info size={13} className="mt-0.5 shrink-0" />
                   <span>
-                    <strong>{legacyFaceMarks.length}</strong> marcaci√≥n{legacyFaceMarks.length > 1 ? 'es' : ''} anterior{legacyFaceMarks.length > 1 ? 'es' : ''} (formato 2D) preservada{legacyFaceMarks.length > 1 ? 's' : ''}.
-                    No se visualizan en el modelo 3D pero sus datos est√°n intactos.
+                    <strong>{legacyFaceMarks.length}</strong> marcaciÛn{legacyFaceMarks.length > 1 ? 'es' : ''} anterior{legacyFaceMarks.length > 1 ? 'es' : ''} (formato 2D) preservada{legacyFaceMarks.length > 1 ? 's' : ''}.
+                    No se visualizan en el modelo 3D pero sus datos est·n intactos.
                   </span>
                 </div>
               )}
@@ -861,7 +861,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
           <div className="w-full md:w-[350px] flex flex-col gap-4 overflow-y-auto pr-2 shrink-0 custom-scrollbar">
             <h3 className="font-bold text-gray-800 border-b border-gray-100 pb-3 flex items-center gap-2 sticky top-0 bg-white z-10">
               <div className="w-1 h-5 bg-[#deb887] rounded-full" />
-              Par√°metros Cl√≠nicos
+              Par·metros ClÌnicos
             </h3>
             
             {Object.entries(CLINICAL_FIELDS).map(([key, field]) => (

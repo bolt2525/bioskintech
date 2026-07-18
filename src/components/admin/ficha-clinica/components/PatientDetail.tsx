@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Plus, FileText, Calendar, Clock, ArrowRight, Edit2, Trash2 } from 'lucide-react';
 import AdminLayout from '../../../layout/AdminLayout';
+import recordsFetch from '../../../../utils/recordsFetch';
 
 interface Patient {
   id: number;
@@ -40,13 +41,13 @@ export default function PatientDetail() {
     try {
       setLoading(true);
       // Fetch patient
-      const patientRes = await fetch(`/api/records?action=getPatient&id=${patientId}`);
+      const patientRes = await recordsFetch(`/api/records?action=getPatient&id=${patientId}`);
       if (patientRes.ok) {
         setPatient(await patientRes.json());
       }
 
       // Fetch records
-      const recordsRes = await fetch(`/api/records?action=listRecords&patient_id=${patientId}`);
+      const recordsRes = await recordsFetch(`/api/records?action=listRecords&patient_id=${patientId}`);
       if (recordsRes.ok) {
         setRecords(await recordsRes.json());
       }
@@ -63,7 +64,7 @@ export default function PatientDetail() {
     }
 
     try {
-      const response = await fetch(`/api/records?action=deleteRecord&id=${recordId}`, {
+      const response = await recordsFetch(`/api/records?action=deleteRecord&id=${recordId}`, {
         method: 'DELETE'
       });
 
@@ -82,7 +83,7 @@ export default function PatientDetail() {
     if (!confirm('¿Está seguro de crear un nuevo expediente para este paciente?')) return;
 
     try {
-      const response = await fetch('/api/records?action=createRecord', {
+      const response = await recordsFetch('/api/records?action=createRecord', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ patient_id: patientId }),
@@ -101,7 +102,7 @@ export default function PatientDetail() {
     if (!confirm('¿Está seguro de eliminar este paciente y todo su historial? Esta acción no se puede deshacer.')) return;
 
     try {
-      const response = await fetch(`/api/records?action=deletePatient&id=${patientId}`, {
+      const response = await recordsFetch(`/api/records?action=deletePatient&id=${patientId}`, {
         method: 'DELETE'
       });
 

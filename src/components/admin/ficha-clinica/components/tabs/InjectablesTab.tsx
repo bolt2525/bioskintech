@@ -358,7 +358,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
         areas_treated: derivedAreas.length > 0 ? derivedAreas : null,
       };
 
-      const res = await fetch(`/api/records?action=${action}`, {
+      const res = await recordsFetch(`/api/records?action=${action}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -382,7 +382,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   const handleDelete = async () => {
     if (!current.id || !confirm('¿Eliminar este registro de inyectable?')) return;
     try {
-      const res = await fetch(`/api/records?action=deleteInjectable&id=${current.id}`, { method: 'DELETE' });
+      const res = await recordsFetch(`/api/records?action=deleteInjectable&id=${current.id}`, { method: 'DELETE' });
       if (res.ok) {
         setMessage({ type: 'success', text: 'Inyectable eliminado' });
         onSave();

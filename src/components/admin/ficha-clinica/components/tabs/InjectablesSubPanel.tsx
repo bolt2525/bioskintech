@@ -91,7 +91,7 @@ export default function InjectablesSubPanel({ recordId, treatmentId, onMessage }
     if (!treatmentId) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/records?action=getInjectablesByTreatment&treatment_id=${treatmentId}`);
+      const res = await recordsFetch(`/api/records?action=getInjectablesByTreatment&treatment_id=${treatmentId}`);
       if (res.ok) {
         const data = await res.json();
         setInjectables(data);
@@ -143,7 +143,7 @@ export default function InjectablesSubPanel({ recordId, treatmentId, onMessage }
           : null,
       };
 
-      const res = await fetch(`/api/records?action=${action}`, {
+      const res = await recordsFetch(`/api/records?action=${action}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -167,7 +167,7 @@ export default function InjectablesSubPanel({ recordId, treatmentId, onMessage }
   const handleDelete = async () => {
     if (!current.id || !confirm('¿Eliminar este registro de inyectable?')) return;
     try {
-      const res = await fetch(`/api/records?action=deleteInjectable&id=${current.id}`, { method: 'DELETE' });
+      const res = await recordsFetch(`/api/records?action=deleteInjectable&id=${current.id}`, { method: 'DELETE' });
       if (res.ok) {
         onMessage?.({ type: 'success', text: 'Inyectable eliminado' });
         await loadInjectables();

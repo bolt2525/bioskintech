@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import recordsFetch from '../../../../utils/recordsFetch';
 import { 
   ClipboardList, 
   Activity, 
@@ -75,14 +76,14 @@ export default function ClinicalRecordManager() {
       setError(null);
       
       // Fetch record data first
-      const recordRes = await fetch(`/api/records?action=getRecordData&recordId=${recordId}`);
+      const recordRes = await recordsFetch(`/api/records?action=getRecordData&recordId=${recordId}`);
       if (recordRes.ok) {
         const rData = await recordRes.json();
         setRecordData(rData);
 
         // Fetch patient info using patientId from record
         if (rData.patientId) {
-          const patientRes = await fetch(`/api/records?action=getPatient&id=${rData.patientId}`);
+          const patientRes = await recordsFetch(`/api/records?action=getPatient&id=${rData.patientId}`);
           if (patientRes.ok) {
             const pData = await patientRes.json();
             setPatient(pData);

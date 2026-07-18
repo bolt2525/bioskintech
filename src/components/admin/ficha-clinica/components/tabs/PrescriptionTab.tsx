@@ -1,4 +1,4 @@
-Ôªøimport React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Trash2, Save, FileText, Copy, Printer, Search, Calendar, Check, AlertCircle, Pill, Pencil } from 'lucide-react';
 import prescriptionOptions from '../data/prescription_options.json';
@@ -29,7 +29,7 @@ interface PrescriptionItem {
   duracion: string;
   turno: string;
   indicaciones: string;
-  rutina: 'ma√±ana' | 'noche' | 'ambos' | '';
+  rutina: 'maÒana' | 'noche' | 'ambos' | '';
 }
 
 interface Prescription {
@@ -87,7 +87,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge }: P
 
   const loadPrescriptions = async () => {
     try {
-      const res = await fetch(`/api/records?action=listPrescriptions&record_id=${recordId}`);
+      const res = await recordsFetch(`/api/records?action=listPrescriptions&record_id=${recordId}`);
       const data = await res.json();
       setPrescriptions(data);
     } catch (error) {
@@ -97,7 +97,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge }: P
 
   const loadTemplates = async () => {
     try {
-      const res = await fetch('/api/records?action=getTemplates');
+      const res = await recordsFetch('/api/records?action=getTemplates');
       const data = await res.json();
       setTemplates(data);
     } catch (error) {
@@ -116,7 +116,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge }: P
         items: currentPrescription.items.filter(i => i.medicamento || i.nombre_comercial || i.indicaciones) // Filter empty rows (allow if only indications exist)
       };
 
-      const res = await fetch(`/api/records?action=${action}`, {
+      const res = await recordsFetch(`/api/records?action=${action}`, {
         method: currentPrescription.id ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
@@ -147,7 +147,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge }: P
 
   const handleLoadPrescription = async (id: number) => {
     try {
-      const res = await fetch(`/api/records?action=getPrescription&id=${id}`);
+      const res = await recordsFetch(`/api/records?action=getPrescription&id=${id}`);
       const data = await res.json();
       setCurrentPrescription({ ...data, fecha: toDateOnly(data.fecha) });
       setDateLocked(true);
@@ -178,10 +178,10 @@ export default function PrescriptionTab({ recordId, patientName, patientAge }: P
   };
 
   const handleDelete = async () => {
-    if (!currentPrescription.id || !confirm('¬øEliminar esta receta?')) return;
+    if (!currentPrescription.id || !confirm('øEliminar esta receta?')) return;
     setDeleting(true);
     try {
-      await fetch(`/api/records?action=deletePrescription&id=${currentPrescription.id}`, { method: 'DELETE' });
+      await recordsFetch(`/api/records?action=deletePrescription&id=${currentPrescription.id}`, { method: 'DELETE' });
       await loadPrescriptions();
       handleNew();
       setMessage({ type: 'success', text: 'Receta eliminada correctamente' });
@@ -218,7 +218,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge }: P
     if (!name) return;
 
     try {
-      await fetch('/api/records?action=saveTemplate', {
+      await recordsFetch('/api/records?action=saveTemplate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -235,10 +235,10 @@ export default function PrescriptionTab({ recordId, patientName, patientAge }: P
   };
 
   const handleDeleteTemplate = async () => {
-    if (!selectedTemplate || !confirm('¬øEliminar esta plantilla?')) return;
+    if (!selectedTemplate || !confirm('øEliminar esta plantilla?')) return;
 
     try {
-      await fetch(`/api/records?action=deleteTemplate&id=${selectedTemplate}`, { method: 'DELETE' });
+      await recordsFetch(`/api/records?action=deleteTemplate&id=${selectedTemplate}`, { method: 'DELETE' });
       loadTemplates();
       setSelectedTemplate('');
       setMessage({ type: 'success', text: 'Plantilla eliminada' });
@@ -261,12 +261,12 @@ export default function PrescriptionTab({ recordId, patientName, patientAge }: P
   };
 
   const handlePrint = () => {
-    setMessage({ type: 'success', text: 'Abriendo vista de impresi√≥n...' });
+    setMessage({ type: 'success', text: 'Abriendo vista de impresiÛn...' });
     const dateStr = new Date().toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' }).toUpperCase();
-    // Datos din√°micos de la cl√≠nica
+    // Datos din·micos de la clÌnica
     const logoUrl = clinic.general.logo_url || `${window.location.origin}/images/logo/logo.png`;
     const clinicName  = clinic.general.name    || 'BIOSKIN';
-    const clinicTagline = clinic.general.tagline || 'Salud y Est√©tica';
+    const clinicTagline = clinic.general.tagline || 'Salud y EstÈtica';
     const clinicCity  = clinic.general.city    || '';
     const clinicPhone = clinic.general.phone   || '';
     const clinicAddr  = clinic.general.address || '';
@@ -275,7 +275,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge }: P
       <html lang="es">
         <head>
           <meta charset="UTF-8">
-          <title>Receta M√©dica - ${patientName}</title>
+          <title>Receta MÈdica - ${patientName}</title>
           <style>
             @page { size: A4 portrait; margin: 0; }
             body { font-family: 'Arial', sans-serif; padding: 0; max-width: 100%; margin: 0; box-sizing: border-box; }
@@ -314,7 +314,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge }: P
                <div class="header">
                  <img src="${logoUrl}" class="logo" alt="Bio Skin" />
                  <div class="doctor-info">
-                   <h2>SALUD Y EST√âTICA</h2>
+                   <h2>SALUD Y EST…TICA</h2>
                    <h3>DRA. DANIELA CREAMER</h3>
                  </div>
                </div>
@@ -323,7 +323,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge }: P
                  <p><strong>Cuenca, a ${dateStr}</strong></p>
                  <div class="patient-details">
                     <span><strong>Paciente:</strong> ${patientName.toUpperCase()}</span>
-                    <span><strong>EDAD:</strong> ${patientAge || ''} A√ëOS</span>
+                    <span><strong>EDAD:</strong> ${patientAge || ''} A—OS</span>
                  </div>
                </div>
 
@@ -356,16 +356,16 @@ export default function PrescriptionTab({ recordId, patientName, patientAge }: P
                  <p><strong>${clinicCity ? clinicCity + ', a ' : ''}${dateStr}</strong></p>
                  <div class="patient-details">
                     <span><strong>Paciente:</strong> ${patientName.toUpperCase()}</span>
-                    <span><strong>EDAD:</strong> ${patientAge || ''} A√ëOS</span>
+                    <span><strong>EDAD:</strong> ${patientAge || ''} A—OS</span>
                  </div>
                </div>
 
                <div class="section-header">INDICACIONES:</div>
                
                <div class="routine-section">
-                 <div class="routine-title">RUTINA DE MA√ëANA</div>
+                 <div class="routine-title">RUTINA DE MA—ANA</div>
                  <ol class="product-list">
-                   ${currentPrescription.items.filter(i => i.rutina === 'ma√±ana' || i.rutina === 'ambos').map(item => `
+                   ${currentPrescription.items.filter(i => i.rutina === 'maÒana' || i.rutina === 'ambos').map(item => `
                      <li>
                        ${item.indicaciones || `Aplicar ${item.nombre_comercial || item.medicamento}`}
                      </li>
@@ -443,11 +443,11 @@ export default function PrescriptionTab({ recordId, patientName, patientAge }: P
                 <Calendar className="w-3.5 h-3.5" />
                 <span>{dateFormatted}</span>
               </div>
-              {/* Diagn√≥stico */}
+              {/* DiagnÛstico */}
               <div className={`font-semibold text-sm leading-tight truncate mb-2 ${
                 isSelected ? 'text-white' : 'text-gray-800'
               }`}>
-                {p.diagnostico || <span className={`italic font-normal ${ isSelected ? 'text-white/60' : 'text-gray-400'}`}>Sin diagn√≥stico</span>}
+                {p.diagnostico || <span className={`italic font-normal ${ isSelected ? 'text-white/60' : 'text-gray-400'}`}>Sin diagnÛstico</span>}
               </div>
               {/* Footer */}
               <div className={`flex items-center justify-between text-xs ${
@@ -636,13 +636,13 @@ export default function PrescriptionTab({ recordId, patientName, patientAge }: P
             </div>
           </div>
           <div className="col-span-1 md:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Diagn√≥stico</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">DiagnÛstico</label>
             <input
               type="text"
               className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
               value={currentPrescription.diagnostico}
               onChange={e => setCurrentPrescription(prev => ({ ...prev, diagnostico: e.target.value }))}
-              placeholder="Diagn√≥stico o indicaciones generales..."
+              placeholder="DiagnÛstico o indicaciones generales..."
             />
           </div>
         </div>
@@ -698,7 +698,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge }: P
 
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-gray-500 uppercase">Presentaci√≥n</label>
+                  <label className="text-xs font-medium text-gray-500 uppercase">PresentaciÛn</label>
                   <input
                     list={`pres-${idx}`}
                     className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all hover:bg-gray-50 focus:bg-white"
@@ -737,7 +737,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge }: P
                   </datalist>
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-gray-500 uppercase">V√≠a</label>
+                  <label className="text-xs font-medium text-gray-500 uppercase">VÌa</label>
                   <input
                     list={`route-${idx}`}
                     className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all hover:bg-gray-50 focus:bg-white"
@@ -753,13 +753,13 @@ export default function PrescriptionTab({ recordId, patientName, patientAge }: P
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-gray-500 uppercase">Duraci√≥n</label>
+                  <label className="text-xs font-medium text-gray-500 uppercase">DuraciÛn</label>
                   <input
                     list={`dur-${idx}`}
                     className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all hover:bg-gray-50 focus:bg-white"
                     value={item.duracion}
                     onChange={e => updateItem(idx, 'duracion', e.target.value)}
-                    placeholder="Ej. 7 d√≠as"
+                    placeholder="Ej. 7 dÌas"
                   />
                   <datalist id={`dur-${idx}`}>
                     {prescriptionOptions.durations.map((d, i) => <option key={i} value={d} />)}
@@ -773,9 +773,9 @@ export default function PrescriptionTab({ recordId, patientName, patientAge }: P
                     onChange={e => updateItem(idx, 'rutina', e.target.value as any)}
                   >
                     <option value="">Seleccionar...</option>
-                    <option value="ma√±ana">‚òÄÔ∏è Ma√±ana</option>
-                    <option value="noche">üåô Noche</option>
-                    <option value="ambos">üîÑ Ambos</option>
+                    <option value="maÒana">?? MaÒana</option>
+                    <option value="noche">?? Noche</option>
+                    <option value="ambos">?? Ambos</option>
                   </select>
                 </div>
                 <div className="lg:col-span-2 space-y-1.5 flex flex-col">
@@ -793,7 +793,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge }: P
                       e.target.style.height = e.target.scrollHeight + 'px';
                     }}
                     rows={1}
-                    placeholder="Instrucciones espec√≠ficas para el paciente..."
+                    placeholder="Instrucciones especÌficas para el paciente..."
                   />
                 </div>
               </div>

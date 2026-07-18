@@ -32,7 +32,7 @@ export default function NewPatientForm() {
   const loadPatient = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/records?action=getPatient&id=${patientId}`);
+      const res = await recordsFetch(`/api/records?action=getPatient&id=${patientId}`);
       if (res.ok) {
         const data = await res.json();
         // Format date for input
@@ -73,7 +73,7 @@ export default function NewPatientForm() {
       const body = isEditing ? { id: patientId, ...formData } : formData;
       const token = localStorage.getItem('adminSessionToken') || '';
 
-      const response = await fetch(`/api/records?action=${action}`, {
+      const response = await recordsFetch(`/api/records?action=${action}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify(body),
