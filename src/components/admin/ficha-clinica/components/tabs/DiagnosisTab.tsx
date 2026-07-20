@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
 import { Save, AlertCircle, Plus, Trash2, Copy, Printer, Sparkles, Check, X, Info, Edit2 } from 'lucide-react';
 import diagnosisOptions from '../../data/diagnosis_options.json';
