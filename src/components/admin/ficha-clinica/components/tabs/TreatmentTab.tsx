@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Calendar, DollarSign, Clock, Save, Trash2, Copy, Sparkles, X, MessageSquare, Check, AlertCircle, FileText, Pencil } from 'lucide-react';
 import treatmentOptions from '../../data/treatment_options.json';
@@ -174,7 +173,7 @@ export default function TreatmentTab({ recordId, treatments, physicalExams = [],
 
       const formattedSuggestion = `TRATAMIENTO SUGERIDO: ${data.treatment_name}
       
-DESCRIPCIN:
+DESCRIPCIÓN:
 ${data.description}
 
 OBJETIVO:
@@ -247,7 +246,7 @@ ${protocolText}`;
   };
 
   const handleDelete = async () => {
-    if (!currentTreatment.id || !confirm('Eliminar este tratamiento?')) return;
+    if (!currentTreatment.id || !confirm('¿Eliminar este tratamiento?')) return;
     setDeleting(true);
     try {
       const response = await recordsFetch(`/api/records?action=deleteTreatment&id=${currentTreatment.id}`, { 
@@ -474,7 +473,7 @@ ${protocolText}`;
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700">Duracin (min)</label>
+                <label className="block text-sm font-medium text-gray-700">Duración (min)</label>
                 <div className="relative">
                   <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <input
@@ -501,13 +500,13 @@ ${protocolText}`;
           </div>
           
           <div className="space-y-2">
-            <label className="block text-sm font-medium text-gray-700">Notas / Parmetros</label>
+            <label className="block text-sm font-medium text-gray-700">Notas / Parámetros</label>
             <textarea
               rows={5}
               className="w-full p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none resize-none transition-all bg-gray-50/50 focus:bg-white"
               value={currentTreatment.notes}
               onChange={e => setCurrentTreatment({...currentTreatment, notes: e.target.value})}
-              placeholder="Detalles de la sesin, parmetros del equipo..."
+              placeholder="Detalles de la sesión, parámetros del equipo..."
             />
           </div>
 
@@ -529,7 +528,7 @@ ${protocolText}`;
               className="w-full p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none resize-none bg-gray-50/50"
               value={currentTreatment.ai_suggestion || ''}
               onChange={e => setCurrentTreatment({...currentTreatment, ai_suggestion: e.target.value})}
-              placeholder="La sugerencia generada por IA aparecer aqu..."
+              placeholder="La sugerencia generada por IA aparecerá aquí..."
             />
           </div>
         </div>
@@ -566,13 +565,13 @@ ${protocolText}`;
                     <MessageSquare className="w-4 h-4 text-blue-600" />
                   </div>
                   <div>
-                    <p className="font-semibold mb-1">Informacin del Paciente</p>
-                    <p>{patientName} ({patientAge} aos)</p>
+                    <p className="font-semibold mb-1">Información del Paciente</p>
+                    <p>{patientName} ({patientAge} años)</p>
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  <label className="block text-sm font-medium text-gray-700">1. Seleccionar Examen Fsico Base</label>
+                  <label className="block text-sm font-medium text-gray-700">1. Seleccionar Examen Físico Base</label>
                   <select 
                     className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none bg-gray-50/50 focus:bg-white transition-all"
                     value={selectedExamId}
@@ -588,13 +587,13 @@ ${protocolText}`;
                 </div>
 
                 <div className="space-y-2">
-                  <label className="block text-sm font-medium text-gray-700">2. Contexto Clnico (Editable)</label>
+                  <label className="block text-sm font-medium text-gray-700">2. Contexto Clínico (Editable)</label>
                   <textarea
                     rows={4}
                     className="w-full p-3 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-[#deb887] outline-none bg-gray-50/50 focus:bg-white transition-all resize-none"
                     value={editableExamData}
                     onChange={(e) => setEditableExamData(e.target.value)}
-                    placeholder="Datos del examen fsico..."
+                    placeholder="Datos del examen físico..."
                   />
                 </div>
 
@@ -605,7 +604,7 @@ ${protocolText}`;
                     className="w-full p-3 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-[#deb887] outline-none bg-gray-50/50 focus:bg-white transition-all resize-none"
                     value={aiContext}
                     onChange={(e) => setAiContext(e.target.value)}
-                    placeholder="Describe el equipo a usar, objetivo, nmero de sesin, etc..."
+                    placeholder="Describe el equipo a usar, objetivo, número de sesión, etc..."
                   />
                 </div>
               </div>

@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Trash2, Save, FileText, Copy, Printer, Search, Calendar, Check, AlertCircle, Pill, Pencil } from 'lucide-react';
 import prescriptionOptions from '../data/prescription_options.json';
@@ -30,7 +29,7 @@ interface PrescriptionItem {
   duracion: string;
   turno: string;
   indicaciones: string;
-  rutina: 'maana' | 'noche' | 'ambos' | '';
+  rutina: 'mañana' | 'noche' | 'ambos' | '';
 }
 
 interface Prescription {
@@ -179,7 +178,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge }: P
   };
 
   const handleDelete = async () => {
-    if (!currentPrescription.id || !confirm('Eliminar esta receta?')) return;
+    if (!currentPrescription.id || !confirm('¿Eliminar esta receta?')) return;
     setDeleting(true);
     try {
       await recordsFetch(`/api/records?action=deletePrescription&id=${currentPrescription.id}`, { method: 'DELETE' });
@@ -236,7 +235,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge }: P
   };
 
   const handleDeleteTemplate = async () => {
-    if (!selectedTemplate || !confirm('Eliminar esta plantilla?')) return;
+    if (!selectedTemplate || !confirm('¿Eliminar esta plantilla?')) return;
 
     try {
       await recordsFetch(`/api/records?action=deleteTemplate&id=${selectedTemplate}`, { method: 'DELETE' });
@@ -262,12 +261,12 @@ export default function PrescriptionTab({ recordId, patientName, patientAge }: P
   };
 
   const handlePrint = () => {
-    setMessage({ type: 'success', text: 'Abriendo vista de impresin...' });
+    setMessage({ type: 'success', text: 'Abriendo vista de impresión...' });
     const dateStr = new Date().toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' }).toUpperCase();
-    // Datos dinmicos de la clnica
+    // Datos dinámicos de la clínica
     const logoUrl = clinic.general.logo_url || `${window.location.origin}/images/logo/logo.png`;
     const clinicName  = clinic.general.name    || 'BIOSKIN';
-    const clinicTagline = clinic.general.tagline || 'Salud y Esttica';
+    const clinicTagline = clinic.general.tagline || 'Salud y Estética';
     const clinicCity  = clinic.general.city    || '';
     const clinicPhone = clinic.general.phone   || '';
     const clinicAddr  = clinic.general.address || '';
@@ -276,7 +275,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge }: P
       <html lang="es">
         <head>
           <meta charset="UTF-8">
-          <title>Receta Mdica - ${patientName}</title>
+          <title>Receta Médica - ${patientName}</title>
           <style>
             @page { size: A4 portrait; margin: 0; }
             body { font-family: 'Arial', sans-serif; padding: 0; max-width: 100%; margin: 0; box-sizing: border-box; }
@@ -315,7 +314,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge }: P
                <div class="header">
                  <img src="${logoUrl}" class="logo" alt="Bio Skin" />
                  <div class="doctor-info">
-                   <h2>SALUD Y ESTTICA</h2>
+                   <h2>SALUD Y ESTÉTICA</h2>
                    <h3>DRA. DANIELA CREAMER</h3>
                  </div>
                </div>
@@ -324,7 +323,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge }: P
                  <p><strong>Cuenca, a ${dateStr}</strong></p>
                  <div class="patient-details">
                     <span><strong>Paciente:</strong> ${patientName.toUpperCase()}</span>
-                    <span><strong>EDAD:</strong> ${patientAge || ''} AOS</span>
+                    <span><strong>EDAD:</strong> ${patientAge || ''} AÑOS</span>
                  </div>
                </div>
 
@@ -357,16 +356,16 @@ export default function PrescriptionTab({ recordId, patientName, patientAge }: P
                  <p><strong>${clinicCity ? clinicCity + ', a ' : ''}${dateStr}</strong></p>
                  <div class="patient-details">
                     <span><strong>Paciente:</strong> ${patientName.toUpperCase()}</span>
-                    <span><strong>EDAD:</strong> ${patientAge || ''} AOS</span>
+                    <span><strong>EDAD:</strong> ${patientAge || ''} AÑOS</span>
                  </div>
                </div>
 
                <div class="section-header">INDICACIONES:</div>
                
                <div class="routine-section">
-                 <div class="routine-title">RUTINA DE MAANA</div>
+                 <div class="routine-title">RUTINA DE MAÑANA</div>
                  <ol class="product-list">
-                   ${currentPrescription.items.filter(i => i.rutina === 'maana' || i.rutina === 'ambos').map(item => `
+                   ${currentPrescription.items.filter(i => i.rutina === 'mañana' || i.rutina === 'ambos').map(item => `
                      <li>
                        ${item.indicaciones || `Aplicar ${item.nombre_comercial || item.medicamento}`}
                      </li>
@@ -444,11 +443,11 @@ export default function PrescriptionTab({ recordId, patientName, patientAge }: P
                 <Calendar className="w-3.5 h-3.5" />
                 <span>{dateFormatted}</span>
               </div>
-              {/* Diagnstico */}
+              {/* Diagnóstico */}
               <div className={`font-semibold text-sm leading-tight truncate mb-2 ${
                 isSelected ? 'text-white' : 'text-gray-800'
               }`}>
-                {p.diagnostico || <span className={`italic font-normal ${ isSelected ? 'text-white/60' : 'text-gray-400'}`}>Sin diagnstico</span>}
+                {p.diagnostico || <span className={`italic font-normal ${ isSelected ? 'text-white/60' : 'text-gray-400'}`}>Sin diagnóstico</span>}
               </div>
               {/* Footer */}
               <div className={`flex items-center justify-between text-xs ${
@@ -637,13 +636,13 @@ export default function PrescriptionTab({ recordId, patientName, patientAge }: P
             </div>
           </div>
           <div className="col-span-1 md:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Diagnstico</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Diagnóstico</label>
             <input
               type="text"
               className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
               value={currentPrescription.diagnostico}
               onChange={e => setCurrentPrescription(prev => ({ ...prev, diagnostico: e.target.value }))}
-              placeholder="Diagnstico o indicaciones generales..."
+              placeholder="Diagnóstico o indicaciones generales..."
             />
           </div>
         </div>
@@ -699,7 +698,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge }: P
 
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-gray-500 uppercase">Presentacin</label>
+                  <label className="text-xs font-medium text-gray-500 uppercase">Presentación</label>
                   <input
                     list={`pres-${idx}`}
                     className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all hover:bg-gray-50 focus:bg-white"
@@ -738,7 +737,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge }: P
                   </datalist>
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-gray-500 uppercase">Va</label>
+                  <label className="text-xs font-medium text-gray-500 uppercase">Vía</label>
                   <input
                     list={`route-${idx}`}
                     className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all hover:bg-gray-50 focus:bg-white"
@@ -754,13 +753,13 @@ export default function PrescriptionTab({ recordId, patientName, patientAge }: P
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-gray-500 uppercase">Duracin</label>
+                  <label className="text-xs font-medium text-gray-500 uppercase">Duración</label>
                   <input
                     list={`dur-${idx}`}
                     className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all hover:bg-gray-50 focus:bg-white"
                     value={item.duracion}
                     onChange={e => updateItem(idx, 'duracion', e.target.value)}
-                    placeholder="Ej. 7 das"
+                    placeholder="Ej. 7 días"
                   />
                   <datalist id={`dur-${idx}`}>
                     {prescriptionOptions.durations.map((d, i) => <option key={i} value={d} />)}
@@ -774,7 +773,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge }: P
                     onChange={e => updateItem(idx, 'rutina', e.target.value as any)}
                   >
                     <option value="">Seleccionar...</option>
-                    <option value="maana">?? Maana</option>
+                    <option value="mañana">?? Mañana</option>
                     <option value="noche">?? Noche</option>
                     <option value="ambos">?? Ambos</option>
                   </select>
@@ -794,7 +793,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge }: P
                       e.target.style.height = e.target.scrollHeight + 'px';
                     }}
                     rows={1}
-                    placeholder="Instrucciones especficas para el paciente..."
+                    placeholder="Instrucciones específicas para el paciente..."
                   />
                 </div>
               </div>

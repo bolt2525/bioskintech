@@ -34,9 +34,9 @@ export default function AdminProtocols() {
             <div>
               <h1 className='text-2xl font-bold text-gray-900 flex items-center gap-2'>
                 <Zap className='w-8 h-8 text-[#deb887]' />
-                Protocolos Clnicos IA
+                Protocolos Clínicos IA
               </h1>
-              <p className='text-gray-600'>Asistente inteligente especializado en aparatologa mdica esttica</p>
+              <p className='text-gray-600'>Asistente inteligente especializado en aparatología médica estética</p>
             </div>
           </div>
         </div>
