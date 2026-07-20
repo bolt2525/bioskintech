@@ -34,7 +34,7 @@ import type { Clinic, ClinicUser, FeatureRow } from '../types';
 // Tipos locales (solo usados en este archivo)
 // ─────────────────────────────────────────────────────────────────────────────
 
-type TabKey = 'clinics' | 'users' | 'modules' | 'system';
+type TabKey = 'clinics' | 'users' | 'modules' | 'system' | 'templates';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Componentes pequeños reutilizables dentro de este módulo
@@ -119,6 +119,300 @@ function ClinicFeaturesPanel({
               </div>
             );
           })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ConsentTemplatesPanel — Gestión global de plantillas y asignación por clínica
+// ─────────────────────────────────────────────────────────────────────────────
+interface ConsentTemplate {
+  id: number;
+  name: string;
+  procedure_type?: string;
+  zone?: string;
+  sessions?: number;
+  objectives?: string[];
+  description?: string;
+  risks?: string[];
+  benefits?: string[];
+  alternatives?: string[];
+  pre_care?: string[];
+  post_care?: string[];
+  contraindications?: string[];
+  is_active?: boolean;
+}
+
+function ConsentTemplatesPanel({
+  clinics,
+  authHeader,
+  flash,
+}: {
+  clinics: Clinic[];
+  authHeader: () => Record<string, string>;
+  flash: (text: string, type?: 'ok' | 'err') => void;
+}) {
+  const [templates,     setTemplates]     = useState<ConsentTemplate[]>([]);
+  const [loading,       setLoading]       = useState(false);
+  const [editModal,     setEditModal]     = useState<{ open: boolean; tpl?: ConsentTemplate }>({ open: false });
+  const [assignModal,   setAssignModal]   = useState<{ open: boolean; clinicId?: number; clinicName?: string }>({ open: false });
+  const [assigned,      setAssigned]      = useState<number[]>([]);
+  const [assignLoading, setAssignLoading] = useState(false);
+  const [form, setForm] = useState<Partial<ConsentTemplate>>({});
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res  = await fetch('/api/admin-auth?action=listConsentTemplates', { headers: authHeader() });
+      const data = await res.json();
+      if (data.templates) setTemplates(data.templates);
+    } finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const openEdit = (tpl?: ConsentTemplate) => {
+    setForm(tpl ? { ...tpl } : {
+      name: '', procedure_type: '', zone: '', sessions: 1, description: '',
+      objectives: [], risks: [], benefits: [], alternatives: [], pre_care: [], post_care: [], contraindications: [],
+    });
+    setEditModal({ open: true, tpl });
+  };
+
+  const saveTemplate = async () => {
+    if (!form.name?.trim()) { flash('Nombre requerido', 'err'); return; }
+    const res  = await fetch('/api/admin-auth?action=saveConsentTemplate', {
+      method: 'POST', headers: authHeader(),
+      body: JSON.stringify({ ...form, id: editModal.tpl?.id }),
+    });
+    const data = await res.json();
+    if (data.error) { flash(data.error, 'err'); return; }
+    flash(editModal.tpl ? 'Plantilla actualizada' : 'Plantilla creada');
+    setEditModal({ open: false });
+    load();
+  };
+
+  const deleteTemplate = async (id: number) => {
+    if (!confirm('¿Desactivar esta plantilla?')) return;
+    await fetch('/api/admin-auth?action=deleteConsentTemplate', {
+      method: 'POST', headers: authHeader(), body: JSON.stringify({ id }),
+    });
+    flash('Plantilla desactivada');
+    load();
+  };
+
+  const seedTemplates = async () => {
+    if (!confirm('¿Sembrar las plantillas estándar del sistema?')) return;
+    const res  = await fetch('/api/admin-auth?action=seedConsentTemplates', {
+      method: 'POST', headers: authHeader(), body: JSON.stringify({ force: false }),
+    });
+    const data = await res.json();
+    flash(data.message || `${data.inserted} plantillas sembradas`);
+    load();
+  };
+
+  const openAssign = async (clinic: Clinic) => {
+    setAssignModal({ open: true, clinicId: clinic.id, clinicName: clinic.name });
+    setAssignLoading(true);
+    try {
+      const res  = await fetch(`/api/admin-auth?action=getClinicTemplateAssignments&clinicId=${clinic.id}`, { headers: authHeader() });
+      const data = await res.json();
+      setAssigned(data.assigned || []);
+    } finally { setAssignLoading(false); }
+  };
+
+  const toggleAssign = async (templateId: number, assign: boolean) => {
+    setAssigned(prev => assign ? [...prev, templateId] : prev.filter(id => id !== templateId));
+    await fetch('/api/admin-auth?action=assignConsentTemplate', {
+      method: 'POST', headers: authHeader(),
+      body: JSON.stringify({ clinicId: assignModal.clinicId, templateId, assign }),
+    });
+  };
+
+  // Helper para editar arrays en el form
+  const setArrField = (field: keyof ConsentTemplate, value: string) => {
+    setForm(f => ({ ...f, [field]: value.split('\n').map(s => s.trim()).filter(Boolean) }));
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-bold text-gray-900">Plantillas de Consentimiento</h2>
+          <p className="text-sm text-gray-500">Gestiona las plantillas globales y asígnalas a cada clínica.</p>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={seedTemplates}
+            className="flex items-center gap-2 px-4 py-2 bg-amber-50 border border-amber-200 text-amber-700 rounded-lg hover:bg-amber-100 text-sm font-medium transition-colors">
+            Sembrar estándar
+          </button>
+          <button onClick={() => openEdit()}
+            className="flex items-center gap-2 px-4 py-2 text-white rounded-lg text-sm font-medium transition-colors"
+            style={{ background: '#deb887' }}>
+            + Nueva Plantilla
+          </button>
+        </div>
+      </div>
+
+      {/* Tabla de plantillas */}
+      <div className="bg-white rounded-2xl shadow border border-gray-100 overflow-hidden">
+        {loading ? (
+          <div className="flex items-center justify-center py-12 text-gray-400">
+            <RefreshCw className="w-5 h-5 animate-spin mr-2" /> Cargando...
+          </div>
+        ) : templates.length === 0 ? (
+          <div className="py-12 text-center text-gray-400">
+            <p className="mb-3">Sin plantillas todavía.</p>
+            <button onClick={seedTemplates} className="text-sm text-[#deb887] hover:underline">Sembrar plantillas estándar</button>
+          </div>
+        ) : (
+          <table className="w-full">
+            <thead className="bg-gray-50 border-b border-gray-100">
+              <tr>
+                {['Nombre', 'Tipo de procedimiento', 'Zona', 'Acciones'].map(h => (
+                  <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {templates.map(t => (
+                <tr key={t.id} className="hover:bg-gray-50 transition-colors">
+                  <td className="px-4 py-3 text-sm font-medium text-gray-900">{t.name}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{t.procedure_type || '—'}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{t.zone || '—'}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex gap-1">
+                      <button onClick={() => openEdit(t)}
+                        className="px-3 py-1.5 text-xs font-medium bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100">
+                        Editar
+                      </button>
+                      <button onClick={() => deleteTemplate(t.id)}
+                        className="px-3 py-1.5 text-xs font-medium bg-red-50 text-red-700 rounded-lg hover:bg-red-100">
+                        Desactivar
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* Asignación por clínica */}
+      {templates.length > 0 && (
+        <div className="bg-white rounded-2xl shadow border border-gray-100 p-5">
+          <h3 className="font-semibold text-gray-900 mb-4">Asignar plantillas por clínica</h3>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {clinics.map(c => (
+              <button key={c.id} onClick={() => openAssign(c)}
+                className="flex items-center justify-between p-3 border border-gray-200 rounded-xl hover:border-[#deb887] hover:bg-amber-50 transition-all text-left">
+                <span className="text-sm font-medium text-gray-800">{c.name}</span>
+                <span className="text-xs text-gray-400">Configurar →</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Editar/Crear plantilla */}
+      {editModal.open && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="h-0.5 bg-gradient-to-r from-[#deb887] to-[#c5a075]" />
+            <div className="p-5 border-b flex justify-between items-center">
+              <h3 className="font-bold text-gray-900">{editModal.tpl ? 'Editar Plantilla' : 'Nueva Plantilla'}</h3>
+              <button onClick={() => setEditModal({ open: false })} className="text-gray-300 hover:text-gray-500"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-5 overflow-y-auto flex-1 space-y-3">
+              {([
+                ['name',           'Nombre *',              'text'],
+                ['procedure_type', 'Tipo de procedimiento', 'text'],
+                ['zone',           'Zona',                  'text'],
+                ['description',    'Descripción',           'textarea'],
+              ] as [keyof ConsentTemplate, string, string][]).map(([k, label, type]) => (
+                <div key={k}>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
+                  {type === 'textarea' ? (
+                    <textarea rows={3} value={(form[k] as string) || ''}
+                      onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))}
+                      className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none resize-none" />
+                  ) : (
+                    <input type={type} value={(form[k] as string) || ''}
+                      onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))}
+                      className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
+                  )}
+                </div>
+              ))}
+              {([
+                ['objectives',       'Objetivos (una por línea)'],
+                ['risks',            'Riesgos (uno por línea)'],
+                ['benefits',         'Beneficios (uno por línea)'],
+                ['alternatives',     'Alternativas (una por línea)'],
+                ['pre_care',         'Cuidados previos (uno por línea)'],
+                ['post_care',        'Cuidados posteriores (uno por línea)'],
+                ['contraindications','Contraindicaciones (una por línea)'],
+              ] as [keyof ConsentTemplate, string][]).map(([k, label]) => (
+                <div key={k}>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
+                  <textarea rows={3}
+                    value={((form[k] as string[]) || []).join('\n')}
+                    onChange={e => setArrField(k, e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none resize-none font-mono text-xs" />
+                </div>
+              ))}
+            </div>
+            <div className="p-5 border-t flex justify-end gap-3">
+              <button onClick={() => setEditModal({ open: false })}
+                className="px-4 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cancelar</button>
+              <button onClick={saveTemplate}
+                className="px-4 py-2 text-white rounded-lg text-sm font-medium"
+                style={{ background: '#deb887' }}>
+                {editModal.tpl ? 'Actualizar' : 'Crear'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Asignación de plantillas a clínica */}
+      {assignModal.open && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="h-0.5 bg-gradient-to-r from-[#deb887] to-[#c5a075]" />
+            <div className="p-5 border-b flex justify-between items-center">
+              <h3 className="font-bold text-gray-900">Plantillas para {assignModal.clinicName}</h3>
+              <button onClick={() => setAssignModal({ open: false })} className="text-gray-300 hover:text-gray-500"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-5 overflow-y-auto flex-1">
+              {assignLoading ? (
+                <div className="flex justify-center py-8 text-gray-400"><RefreshCw className="w-5 h-5 animate-spin" /></div>
+              ) : (
+                <div className="space-y-2">
+                  {templates.map(t => (
+                    <label key={t.id} className="flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer">
+                      <input type="checkbox"
+                        checked={assigned.includes(t.id)}
+                        onChange={e => toggleAssign(t.id, e.target.checked)}
+                        className="w-4 h-4 rounded accent-[#deb887]" />
+                      <div>
+                        <div className="text-sm font-medium text-gray-900">{t.name}</div>
+                        {t.procedure_type && <div className="text-xs text-gray-500">{t.procedure_type}</div>}
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="p-5 border-t flex justify-end">
+              <button onClick={() => setAssignModal({ open: false })}
+                className="px-4 py-2 text-white rounded-lg text-sm font-medium"
+                style={{ background: '#deb887' }}>Cerrar</button>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -515,7 +809,7 @@ export default function AdminMasterDashboard() {
               ['users',   '👥 Usuarios'],
               ['modules', '✦ Módulos'],
               ['system',  '⚙ Sistema'],
-            ] as [TabKey, string][]).map(([key, label]) => (
+              ['templates', '📄 Plantillas'],            ] as [TabKey, string][]).map(([key, label]) => (
               <button
                 key={key}
                 onClick={() => setTab(key)}
@@ -883,6 +1177,15 @@ export default function AdminMasterDashboard() {
               </div>
             </div>
           </div>
+        )}
+
+        {/* ── Tab: Plantillas de Consentimiento ────────────────────────── */}
+        {tab === 'templates' && (
+          <ConsentTemplatesPanel
+            clinics={clinics}
+            authHeader={authHeader}
+            flash={flash}
+          />
         )}
       </div>
 

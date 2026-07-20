@@ -1,0 +1,555 @@
+[
+  {
+    "id": "consentimiento-general",
+    "name": "Consentimiento Informado General",
+    "procedure_type": "Procedimiento Estético",
+    "description": "Consentimiento informado para procedimientos de medicina y estética.",
+    "objectives": [
+      "Mejorar la apariencia estética",
+      "Tratar condiciones dermatológicas"
+    ],
+    "risks": [
+      "Reacciones alérgicas leves",
+      "Enrojecimiento temporal",
+      "Inflamación transitoria",
+      "Hematomas",
+      "Hiperpigmentación post-inflamatoria",
+      "Infección (raro)"
+    ],
+    "benefits": [
+      "Mejora de la apariencia estética",
+      "Aumento de la autoestima",
+      "Resultados visibles",
+      "Procedimiento mínimamente invasivo"
+    ],
+    "alternatives": [
+      "No realizar el tratamiento",
+      "Tratamientos alternativos disponibles"
+    ],
+    "pre_care": [
+      "No aplicar maquillaje el día del procedimiento",
+      "Informar sobre medicamentos en uso",
+      "Evitar anticoagulantes 7 días antes (si aplica)"
+    ],
+    "post_care": [
+      "Evitar exposición solar directa 48 horas",
+      "Aplicar protector solar diariamente",
+      "No manipular la zona tratada",
+      "Mantener la zona limpia e hidratada"
+    ],
+    "contraindications": [
+      "Embarazo o lactancia",
+      "Alergia a componentes del producto",
+      "Infección activa en la zona",
+      "Enfermedades autoinmunes activas"
+    ]
+  },
+  {
+    "procedure_type": "Tratamiento de Verrugas Cutáneas con Electrocauterio y Láser Nd:YAG",
+    "description": "Se realizará tratamiento de las lesiones verrugosas localizadas en la zona mediante:\n1. Aplicación de anestesia local infiltrada con lidocaína, con el objetivo de disminuir el dolor durante el procedimiento.\n2. Electrocauterio para la destrucción controlada del tejido verrugoso visible.\n3. En sesiones posteriores (2 sesiones programadas) se complementará el tratamiento con láser Nd:YAG, con el fin de tratar posibles restos virales microscópicos y disminuir el riesgo de recurrencia.\nEste tratamiento está dirigido a reducir o eliminar las lesiones, mejorar los síntomas y evitar la propagación local. Sin embargo, como en toda patología viral cutánea, puede existir riesgo de recurrencia aun después del tratamiento.",
+    "objectives": [
+      "Eliminar o reducir el volumen de las lesiones verrugosas.",
+      "Disminuir molestias locales (dolor, sangrado, fricción).",
+      "Reducir el riesgo de autoinoculación o contagio local.",
+      "Mejorar la apariencia estética y funcional de la zona.",
+      "Complementar la destrucción del tejido infectado mediante láser Nd:YAG en sesiones posteriores."
+    ],
+    "risks": [
+      "Dolor leve en el sitio de infiltración (relacionado con anestesia).",
+      "Hematoma o inflamación local (relacionado con anestesia).",
+      "Reacciones alérgicas (poco frecuentes) (relacionado con anestesia).",
+      "Dolor o ardor transitorio.",
+      "Eritema, inflamación o formación de costra.",
+      "Ampollas o pequeñas erosiones.",
+      "Hipopigmentación o hiperpigmentación residual.",
+      "Cicatriz o cambio en la textura de la piel (raro).",
+      "Infección local (poco frecuente).",
+      "Recurrencia parcial o total de la lesión.",
+      "No se garantiza la eliminación definitiva del virus, pudiendo requerirse nuevas sesiones o tratamientos complementarios."
+    ],
+    "benefits": [
+      "Eliminación visible de las lesiones verrugosas.",
+      "Alivio de síntomas como dolor o molestias al roce.",
+      "Mejora estética de la piel afectada.",
+      "Reducción de la carga viral y riesgo de contagio."
+    ],
+    "pre_care": [
+      "Informar sobre antecedentes de alergia a la lidocaína o anestésicos locales.",
+      "Informar sobre problemas de coagulación o toma de anticoagulantes.",
+      "Acudir con la zona a tratar limpia y sin cremas.",
+      "No manipular la lesión antes del procedimiento."
+    ],
+    "post_care": [
+      "Mantener la zona limpia y seca.",
+      "No rascar, frotar ni retirar costras.",
+      "Usar el tratamiento tópico indicado por el médico (si corresponde).",
+      "Evitar piscina, sauna y exposición solar directa durante ______ días.",
+      "No compartir toallas u objetos personales.",
+      "Asistir a controles y sesiones programadas de láser Nd:YAG."
+    ],
+    "name": "Eliminacion Verrugas Combinacion Electrocauterio Laser Ndyag"
+  },
+  {
+    "procedure_type": "HIFU Facial (Ultrasonido Focalizado de Alta Intensidad)",
+    "description": "El HIFU (High-Intensity Focused Ultrasound) es una tecnología avanzada que aplica energía de ultrasonido focalizada a profundidades específicas de la piel (dermis profunda y sistema aponeurótico muscular superficial - SMAS). Esta energía genera puntos de micro-coagulación térmica que estimulan la regeneración natural de colágeno y elastina, produciendo un efecto tensor (lifting) y reafirmante sin necesidad de cirugía ni tiempo de recuperación.",
+    "objectives": [
+      "Tensado de la piel y efecto lifting no quirúrgico.",
+      "Definición del contorno mandibular y óvalo facial.",
+      "Reducción de la flacidez en cuello y papada.",
+      "Elevación de cejas y apertura de la mirada.",
+      "Mejora de la calidad, tono y elasticidad de la piel.",
+      "Suavizado de líneas de expresión y arrugas finas."
+    ],
+    "risks": [
+      "Sensación de calor intenso, pinchazos o molestia profunda durante la aplicación.",
+      "Enrojecimiento (eritema) leve que suele desaparecer en pocas horas.",
+      "Edema (hinchazón) leve a moderado que puede durar unos días.",
+      "Sensibilidad al tacto, hormigueo o adormecimiento temporal en la zona tratada.",
+      "Pequeños hematomas (moretones) ocasionales.",
+      "Rara vez: debilidad muscular transitoria o asimetría temporal (por inflamación nerviosa), quemaduras superficiales."
+    ],
+    "benefits": [
+      "Rejuvenecimiento facial integral sin cirugía ni inyecciones.",
+      "No requiere tiempo de inactividad (downtime), el paciente puede volver a su rutina de inmediato.",
+      "Resultados naturales que mejoran progresivamente hasta los 3-6 meses.",
+      "Estimulación profunda de la producción de colágeno propio."
+    ],
+    "pre_care": [
+      "Acudir con la piel completamente limpia, sin maquillaje, cremas ni protectores solares.",
+      "Informar al profesional sobre implantes metálicos, hilos tensores, rellenos dérmicos o toxina botulínica recientes en la zona.",
+      "No presentar infecciones activas en la piel (herpes, acné severo).",
+      "Evitar el consumo de antiinflamatorios antes del tratamiento si es posible."
+    ],
+    "post_care": [
+      "Puede retomar sus actividades diarias inmediatamente.",
+      "Usar protector solar FPS 50+ diariamente.",
+      "Mantener la piel hidratada.",
+      "La zona puede sentirse sensible al tacto o con sensación de 'agujetas' internas por unos días; es normal.",
+      "Evitar fuentes de calor intenso (sauna, baños muy calientes) y ejercicio extenuante durante 24-48 horas.",
+      "Evitar masajes faciales fuertes en la zona tratada durante las primeras semanas."
+    ],
+    "name": "Hifu Facial"
+  },
+  {
+    "procedure_type": "Tratamiento de Depilación Definitiva con Luz Pulsada Intensa (IPL)",
+    "description": "El procedimiento utiliza tecnología de luz policromática de alta intensidad que es absorbida por la melanina del folículo piloso, transformándose en calor (fototermólisis selectiva). \n1. Se aplica un gel conductor frío sobre la zona a tratar para proteger la epidermis y facilitar la transmisión de la luz.\n2. Se realizan disparos controlados de IPL que debilitan y destruyen progresivamente las células germinativas del vello en fase de crecimiento (anágena).\n3. El tratamiento requiere múltiples sesiones (generalmente entre 6 y 10) espaciadas según el ciclo de crecimiento del vello en cada zona corporal.\nEste método busca la reducción permanente del vello, aunque factores hormonales o fisiológicos pueden influir en la necesidad de sesiones de mantenimiento futuras.",
+    "objectives": [
+      "Lograr la eliminación progresiva y permanente del vello en las zonas tratadas.",
+      "Debilitar el grosor y reducir la densidad del vello restante.",
+      "Tratar y prevenir la aparición de foliculitis (vellos encarnados).",
+      "Mejorar la suavidad y apariencia general de la textura de la piel."
+    ],
+    "risks": [
+      "Sensación de calor, pinchazo o 'latigazo' elástico durante el disparo.",
+      "Eritema (enrojecimiento) y edema perifolicular (pequeñas inflamaciones en el poro) transitorios.",
+      "Quemaduras superficiales o formación de pequeñas ampollas si la piel está recientemente bronceada.",
+      "Cambios pigmentarios: hiperpigmentación o hipopigmentación temporal (especialmente en fototipos oscuros).",
+      "Crecimiento paradójico (aumento del vello en zonas adyacentes), aunque es poco frecuente.",
+      "Leve picazón o prurito tras la sesión.",
+      "Resultados variables según el color del vello (menor eficacia en vello rubio, pelirrojo o canoso)."
+    ],
+    "benefits": [
+      "Reducción duradera del vello corporal y facial.",
+      "Piel más lisa y libre de irritaciones causadas por métodos de depilación tradicionales (cuchilla, cera).",
+      "Procedimiento rápido que permite retomar actividades cotidianas de inmediato.",
+      "Eficacia en áreas extensas de forma cómoda."
+    ],
+    "pre_care": [
+      "No exponerse al sol, solárium o usar autobronceadores al menos 1 semana antes.",
+      "No extraer el vello de raíz (cera, pinzas, depiladoras eléctricas) 3 semanas antes; usar solo rasuradora.",
+      "Rasurar la zona 24 a 48 horas antes de la sesión (según indicación médica).",
+      "Acudir con la zona limpia, sin restos de desodorante, cremas, maquillaje o perfumes.",
+      "Informar sobre el uso de medicamentos fotosensibilizantes (antibióticos, isotretinoína, etc.)."
+    ],
+    "post_care": [
+      "Aplicar gel de aloe vera o crema hidratante calmante recomendada.",
+      "Evitar la exposición solar directa y usar protector solar SPF 50+ en zonas expuestas.",
+      "Evitar duchas con agua muy caliente, saunas, gimnasio o piscinas durante las primeras 24-48 horas.",
+      "No utilizar productos con alcohol, ácidos o exfoliantes en la zona tratada por 5 días.",
+      "No arrancar el vello que pueda aparecer tras la sesión; este caerá por sí solo en los días siguientes.",
+      "Cumplir con el cronograma de sesiones para asegurar la efectividad del tratamiento."
+    ],
+    "name": "Ipl Depilacion Definitiva"
+  },
+  {
+    "procedure_type": "Tratamiento con Luz Pulsada Intensa (IPL) para Rejuvenecimiento Facial",
+    "description": "La Luz Pulsada Intensa (IPL) es una tecnología no invasiva que utiliza pulsos de luz de alta intensidad para mejorar visiblemente la calidad de la piel. La energía lumínica penetra en la dermis sin dañar la capa superficial, estimulando la producción de nuevo colágeno y tratando selectivamente las imperfecciones causadas por el envejecimiento y la exposición solar (fotoenvejecimiento).",
+    "objectives": [
+      "Rejuvenecimiento global de la piel (cara, cuello, escote o manos).",
+      "Unificación del tono y mejora de la textura cutánea.",
+      "Tratamiento de lesiones pigmentarias benignas (manchas solares, léntigos, pecas).",
+      "Tratamiento de lesiones vasculares superficiales (telangiectasias, rojeces difusas, cuperosis).",
+      "Reducción del tamaño de los poros y mejora de la luminosidad.",
+      "Suavizado de líneas de expresión finas mediante estimulación de colágeno."
+    ],
+    "risks": [
+      "Enrojecimiento (eritema) y leve inflamación (edema) que suele desaparecer en 24-48 horas.",
+      "Sensación de calor o ardor leve durante la sesión (similar a un leve chasquido de banda elástica).",
+      "Oscurecimiento temporal de las manchas tratadas, que pueden formar micro-costras y descamarse en 7-10 días.",
+      "Cambios transitorios en la pigmentación (hipopigmentación o hiperpigmentación), especialmente si hubo exposición solar reciente.",
+      "Rara vez: ampollas superficiales o hematomas pequeños."
+    ],
+    "benefits": [
+      "Piel más joven, tersa y luminosa.",
+      "Eliminación o reducción significativa de manchas de la edad y daño solar.",
+      "Disminución de rojeces y capilares visibles.",
+      "Mejora la textura de la piel y reduce el tamaño de los poros.",
+      "Procedimiento rápido con tiempo de recuperación mínimo."
+    ],
+    "pre_care": [
+      "Evitar estrictamente la exposición solar y el bronceado (natural o artificial) al menos 4 semanas antes.",
+      "No utilizar autobronceadores 2 semanas antes del tratamiento.",
+      "Suspender el uso de ácidos (retinoico, glicólico) o exfoliantes fuertes 3-5 días antes.",
+      "Informar sobre la toma de medicamentos, especialmente antibióticos o fotosensibilizantes.",
+      "Acudir a la sesión con la piel limpia, sin maquillaje, cremas ni perfumes."
+    ],
+    "post_care": [
+      "Evitar la exposición solar directa y aplicar protector solar FPS 50+ cada 2-3 horas rigurosamente.",
+      "No rascar, frotar ni arrancar las costras si aparecen; dejar que caigan solas.",
+      "Mantener la piel bien hidratada con cremas reparadoras suaves.",
+      "Evitar baños calientes, saunas y ejercicio intenso durante 48 horas para no aumentar la inflamación.",
+      "No aplicar maquillaje hasta que baje el enrojecimiento (generalmente 24 horas)."
+    ],
+    "name": "Ipl Rejuvenecimiento"
+  },
+  {
+    "procedure_type": "Remoción de Tatuajes con Láser Nd:YAG Q-Switched",
+    "description": "El láser Nd:YAG Q-Switched emite pulsos de energía muy cortos que son absorbidos selectivamente por el pigmento del tatuaje. Esto fragmenta la tinta en micropartículas que son eliminadas posteriormente por el sistema inmunológico del cuerpo.",
+    "objectives": [
+      "Eliminación progresiva del pigmento del tatuaje.",
+      "Aclaramiento del diseño para cobertura (cover-up)."
+    ],
+    "risks": [
+      "Dolor o molestia durante el procedimiento.",
+      "Enrojecimiento, hinchazón y sangrado puntiforme (petequias).",
+      "Formación de ampollas y costras.",
+      "Cambios de textura o pigmentación (hipo/hiperpigmentación).",
+      "Posibilidad de 'tatuaje fantasma' o eliminación incompleta."
+    ],
+    "benefits": [
+      "Método seguro y efectivo para eliminar tinta.",
+      "Menor riesgo de cicatrices comparado con otros métodos."
+    ],
+    "pre_care": [
+      "No exponer la zona al sol.",
+      "Aplicar crema anestésica 1 hora antes (si se indica).",
+      "Zona limpia y rasurada."
+    ],
+    "post_care": [
+      "Aplicar crema antibiótica/reparadora según indicación.",
+      "No exponer al sol, usar bloqueador total.",
+      "No rascar costras ni reventar ampollas.",
+      "Evitar piscinas y saunas hasta cicatrización."
+    ],
+    "name": "Ndyag Tatuajes"
+  },
+  {
+    "procedure_type": "Rejuvenecimiento Facial con Láser de CO2 Fraccionado",
+    "description": "El procedimiento utiliza un haz de luz infrarroja que se fracciona en múltiples puntos microscópicos (píxeles) para vaporizar columnas de tejido térmico, dejando piel sana entre ellas para acelerar la curación. \n1. Aplicación de anestesia tópica de alta potencia o infiltrada para minimizar la molestia.\n2. Emisión de columnas de energía que penetran en la dermis, eliminando capas superficiales dañadas y estimulando la producción de nuevo colágeno y elastina.\n3. El proceso genera una renovación dermo-epidérmica profunda que requiere un tiempo de recuperación (down-time) de aproximadamente 5 a 10 días.\nEste tratamiento es el estándar de oro para el tratamiento de arrugas, cicatrices de acné y laxitud cutánea, aunque los resultados finales se aprecian progresivamente hasta los 3-6 meses post-sesión.",
+    "objectives": [
+      "Reducir arrugas finas, medias y líneas de expresión.",
+      "Mejorar la textura, firmeza y tensión de la piel (efecto lifting biológico).",
+      "Disminuir la apariencia de poros dilatados y cicatrices (especialmente de acné).",
+      "Eliminar manchas solares y homogeneizar el tono cutáneo.",
+      "Estimular la síntesis de colágeno a largo plazo."
+    ],
+    "risks": [
+      "Sensación de calor intenso o quemazón durante y horas después del tratamiento.",
+      "Eritema (enrojecimiento) persistente y edema (inflamación) marcado, especialmente en párpados.",
+      "Formación de microcostras y descamación profunda (parte esperada del proceso).",
+      "Exudación serosa o formación de pequeñas ampollas.",
+      "Riesgo de infección bacteriana o reactivación del virus del herpes simple.",
+      "Hiperpigmentación post-inflamatoria (manchas oscuras), evitable con fotoprotección estricta.",
+      "Hipopigmentación (manchas claras) en pieles muy claras o tras tratamientos agresivos.",
+      "Cicatrización hipertrófica o queloide (extremadamente raro si se siguen los cuidados).",
+      "Prurito (picazón) intenso durante la fase de epitelización."
+    ],
+    "benefits": [
+      "Resultados significativos en una sola sesión en comparación con láseres no ablativos.",
+      "Mejora global y profunda de la calidad de la piel.",
+      "Efecto de rejuvenecimiento natural y duradero.",
+      "Tratamiento altamente personalizable según el grado de envejecimiento del paciente."
+    ],
+    "pre_care": [
+      "Suspensión estricta de retinoides (ácido retinoico, retinol) y ácidos 7 días antes.",
+      "Informar sobre uso de isotretinoína oral en el último año.",
+      "Iniciar profilaxis antiviral (si el médico lo indica) 2 días antes para evitar herpes.",
+      "Evitar la exposición solar y bronceado artificial 4 semanas antes del procedimiento.",
+      "Acudir sin maquillaje y con el rostro perfectamente limpio."
+    ],
+    "post_care": [
+      "Aplicar cremas reepitelizantes y emolientes indicadas varias veces al día para mantener la piel húmeda.",
+      "Lavar el rostro suavemente con agua termal o limpiadores syndet, sin frotar.",
+      "Uso de compresas frías para aliviar la sensación de calor en las primeras 24 horas.",
+      "Prohibición total de exposición solar; uso de protector solar físico (mineral) y medios físicos (sombrero, sombrilla).",
+      "No arrancar, exfoliar ni manipular las microcostras; dejar que caigan solas.",
+      "Evitar ambientes contaminados, ejercicio intenso, saunas y piscinas por 7-10 días.",
+      "Dormir con la cabeza ligeramente elevada para reducir el edema facial."
+    ],
+    "name": "Rejuvenecimiento Facial Laser Co2"
+  },
+  {
+    "procedure_type": "Tratamiento de Rejuvenecimiento Facial con Toxina Botulínica Tipo A (XEOMIN 100UI)",
+    "description": "El procedimiento consiste en la infiltración intramuscular de toxina botulínica tipo A (Xeomin), una proteína pura de alta precisión, mediante agujas extrafinas en puntos estratégicos del rostro. El objetivo es relajar temporalmente los músculos responsables de las arrugas dinámicas (de expresión). El efecto comienza a ser visible entre el 3er y 5to día, alcanzando su máximo resultado a los 15 días. La duración del efecto varía según cada paciente, generalmente entre 3 y 4 meses.",
+    "objectives": [
+      "Atenuar o eliminar arrugas dinámicas en frente, entrecejo y patas de gallo.",
+      "Prevenir la formación de surcos profundos o arrugas estáticas.",
+      "Lograr una apariencia facial más descansada, joven y natural.",
+      "Corregir asimetrías leves en la mímica facial.",
+      "Aprovechar la pureza de Xeomin para minimizar el riesgo de inmunogenicidad (resistencia al producto)."
+    ],
+    "risks": [
+      "Cefalea leve transitoria (dolor de cabeza) tras la aplicación.",
+      "Equimosis (hematomas) o pequeños puntos de sangrado en los sitios de punción.",
+      "Edema (inflamación) local o eritema (enrojecimiento) temporal.",
+      "Ptosis palpebral o ciliar (caída leve de párpado o ceja) por difusión del producto (reversible).",
+      "Asimetría facial temporal que puede requerir retoque.",
+      "Diplopía (visión doble) o lagrimeo excesivo (extremadamente raros).",
+      "Reacciones de hipersensibilidad alérgica (muy infrecuentes).",
+      "Efecto insuficiente o duración menor a la esperada según la respuesta individual del músculo."
+    ],
+    "benefits": [
+      "Resultados naturales sin perder la expresividad facial.",
+      "Procedimiento mínimamente invasivo con reincorporación inmediata a la vida diaria.",
+      "Piel con textura más suave y poros visiblemente reducidos en las zonas tratadas.",
+      "Alta pureza del fármaco (Xeomin), ideal para pacientes que buscan tratamientos recurrentes sin generar tolerancia."
+    ],
+    "pre_care": [
+      "Evitar el consumo de alcohol 48 horas antes del procedimiento.",
+      "Suspender (bajo supervisión médica) antiinflamatorios, aspirina, vitamina E o suplementos de omega-3, 3 días antes para reducir riesgo de hematomas.",
+      "No haber tenido tratamientos con antibióticos previamente.",
+      "No haberse colocado vacunas en los últimos 15 días.",
+      "Informar sobre antecedentes de enfermedades neuromusculares (ej. Miastenia Gravis, Síndrome de Eaton-Lambert).",
+      "Informar sobre reacciones alérgicas a proteínas.",
+      "Informar sobre embarazo o periodo de lactancia (contraindicaciones absolutas).",
+      "Acudir con el rostro limpio, sin maquillaje ni cremas densas."
+    ],
+    "post_care": [
+      "Mantenerse en posición vertical (no acostarse ni agacharse) durante las siguientes 4 horas.",
+      "No masajear, frotar ni presionar las zonas tratadas durante las primeras 24 horas.",
+      "Evitar el ejercicio físico intenso, saunas, baños de vapor o exposición solar directa por 48 horas.",
+      "No aplicar maquillaje en las zonas de punción durante las primeras 6 a 12 horas.",
+      "No realizar tratamientos faciales adicionales (peelings, radiofrecuencia, limpiezas) durante los primeros 15 días.",
+      "En caso de cefalea, solo tomar acetaminofén 500 mg.",
+      "Asistir a la cita de revisión programada (generalmente a los 10-15 días) para evaluar la necesidad de retoque."
+    ],
+    "name": "Rejuvenecimiento Facial Toxina Botulinica Xeomin 100ui"
+  },
+  {
+    "procedure_type": "Tratamiento Facial con Microneedling",
+    "description": "Se realizará un tratamiento de microneedling en la(s) zona(s) indicada(s), utilizando un dispositivo médico con microagujas estériles que producen microperforaciones controladas en las capas superficiales de la piel. Estas microlesiones estimulan el proceso natural de reparación cutánea, favoreciendo la producción de colágeno y elastina, la renovación celular y la mejora progresiva de la textura y calidad de la piel.\n\nSegún la valoración clínica, el procedimiento puede realizarse de forma independiente o complementarse con la aplicación de sueros, factores de crecimiento o activos dermocosméticos, que penetran a través de los microcanales para potenciar los resultados terapéuticos.\n\nEste tratamiento es útil en múltiples indicaciones estéticas y dermatológicas, tales como cicatrices superficiales de acné, poros dilatados, líneas finas, manchas leves, pérdida de firmeza y fotoenvejecimiento. Los resultados son graduales y suelen requerir varias sesiones programadas de acuerdo con la respuesta individual de la piel.",
+    "objectives": [
+      "Estimular la producción de colágeno y elastina.",
+      "Mejorar la textura y apariencia general de la piel.",
+      "Disminuir la apariencia de cicatrices superficiales y líneas finas.",
+      "Atenuar poros dilatados y tonalidad irregular.",
+      "Favorecer la penetración de activos tópicos aplicados durante el procedimiento."
+    ],
+    "risks": [
+      "Enrojecimiento y sensación de ardor transitorio.",
+      "Edema o inflamación leve en la zona tratada.",
+      "Pequeños sangrados puntiformes o aparición de petequias.",
+      "Formación de costras finas o descamación.",
+      "Hipopigmentación o hiperpigmentación postinflamatoria, especialmente en fototipos altos.",
+      "Reacción alérgica o irritativa a los productos tópicos utilizados.",
+      "Infección local (poco frecuente) si no se cumplen los cuidados indicados.",
+      "Cicatriz o queloide (raro, en pacientes predispuestos).",
+      "Reactivación de herpes simple en pacientes con antecedente previo.",
+      "Los resultados pueden variar y no se garantiza un resultado específico, pudiendo requerirse nuevas sesiones."
+    ],
+    "benefits": [
+      "Mejora progresiva de la firmeza y calidad de la piel.",
+      "Atenuación de líneas finas y cicatrices superficiales.",
+      "Mejoría del aspecto de poros dilatados.",
+      "Resultados naturales mediante estimulación propia del colágeno."
+    ],
+    "pre_care": [
+      "Informar antecedentes de alergias, queloides, herpes simple o tratamientos recientes con isotretinoína.",
+      "Evitar el uso de retinoides, peelings químicos o exfoliantes 5 a 7 días antes del procedimiento.",
+      "No acudir con maquillaje o cremas en la zona a tratar.",
+      "Evitar exposición solar intensa y uso de cabinas de bronceado previos al tratamiento.",
+      "Informar si se está embarazada, lactando o en tratamiento anticoagulante."
+    ],
+    "post_care": [
+      "Mantener la piel limpia, hidratada y protegida con fotoprotector de amplio espectro.",
+      "Evitar exposición solar directa, piscina, sauna y gimnasio por 48 a 72 horas.",
+      "No rascar, frotar ni retirar costras o descamación.",
+      "Evitar maquillaje por 24 horas y el uso de retinoides, ácidos o exfoliantes por 5 a 7 días.",
+      "Usar únicamente los productos indicados por el médico tratante.",
+      "Asistir a los controles y sesiones programadas según esquema terapéutico."
+    ],
+    "name": "Tratamiento Facial Microneedling"
+  },
+  {
+    "procedure_type": "Tratamiento de Lesiones Pigmentadas y Manchas Cutáneas con Láser Nd:YAG",
+    "description": "Se realizará tratamiento de las manchas y lesiones pigmentadas localizadas en la zona indicada mediante:\n1. Aplicación de energía lumínica controlada con láser Nd:YAG, dirigida selectivamente al pigmento (melanina) presente en la piel.\n2. El láser fragmenta los depósitos de pigmento, permitiendo que el organismo los elimine de forma progresiva a través de procesos naturales de renovación celular.\n3. Dependiendo del tipo de mancha, fototipo de piel y profundidad del pigmento, pueden requerirse varias sesiones programadas para obtener resultados óptimos.\nEste tratamiento tiene fines estéticos y dermatológicos orientados a mejorar la uniformidad del tono cutáneo y la apariencia de manchas solares, léntigos, hiperpigmentaciones postinflamatorias y otras pigmentaciones benignas. Sin embargo, los resultados pueden variar según la respuesta individual de la piel y algunas manchas pueden requerir tratamientos complementarios.",
+    "objectives": [
+      "Atenuar o eliminar manchas y lesiones pigmentadas benignas.",
+      "Mejorar la uniformidad del tono y apariencia estética de la piel.",
+      "Reducir hiperpigmentaciones producidas por sol, edad o inflamación.",
+      "Disminuir el contraste visual de las lesiones pigmentadas.",
+      "Favorecer una piel con aspecto más luminoso y homogéneo."
+    ],
+    "risks": [
+      "Dolor leve o sensación de ardor durante o después del procedimiento.",
+      "Enrojecimiento, inflamación o calor local transitorio.",
+      "Aparición de costras finas o descamación superficial.",
+      "Ampollas o pequeñas erosiones (poco frecuente).",
+      "Hipopigmentación o hiperpigmentación postinflamatoria, especialmente en fototipos altos o con exposición solar inadecuada.",
+      "Cambios temporales en la textura de la piel.",
+      "Cicatriz (raro, en pacientes predispuestos).",
+      "Infección local (muy poco frecuente).",
+      "Persistencia parcial de la mancha o recurrencia con exposición solar.",
+      "No se garantiza la eliminación definitiva de todas las pigmentaciones, pudiendo requerirse nuevas sesiones o tratamientos complementarios."
+    ],
+    "benefits": [
+      "Mejora visible y progresiva del tono y apariencia de la piel.",
+      "Reducción de manchas y lesiones pigmentadas benignas.",
+      "Resultados selectivos sin afectar de forma general los tejidos cercanos.",
+      "Procedimiento mínimamente invasivo con recuperación habitual en corto tiempo."
+    ],
+    "pre_care": [
+      "Informar antecedentes de manchas recientes, embarazo, uso de isotretinoína, tendencia a queloides o herpes simple.",
+      "Evitar exposición solar directa, bronceado o cámaras de bronceado al menos 2 a 4 semanas antes del tratamiento.",
+      "Suspender el uso de retinoides, exfoliantes o ácidos 3 a 4 días antes del procedimiento (según indicación médica).",
+      "Acudir con la piel limpia, sin maquillaje, cremas o protector solar en la zona a tratar.",
+      "Informar si se encuentra en tratamiento con anticoagulantes u otros fármacos fotosensibilizantes."
+    ],
+    "post_care": [
+      "Aplicar fotoprotección de amplio espectro diariamente y evitar exposición solar directa durante 3 días.",
+      "No rascar, frotar ni retirar costras o descamación que puedan aparecer.",
+      "Mantener la piel hidratada y usar únicamente los productos indicados por el médico.",
+      "Evitar piscina, sauna, gimnasio y agua caliente excesiva por 48 a 72 horas.",
+      "No aplicar maquillaje en la zona tratada durante las primeras 24 horas, salvo indicación médica.",
+      "Asistir a los controles y sesiones programadas para evaluar la evolución del tratamiento."
+    ],
+    "name": "Tratamiento Lesiones Pigmentadas Laser Ndyag"
+  },
+  {
+    "procedure_type": "Tratamiento de Lesiones Pigmentadas (Lunares, Efélides y Nevus) con Láser Nd:YAG",
+    "description": "El procedimiento consiste en la aplicación de luz láser de alta energía (Nd:YAG) que es absorbida selectivamente por el pigmento (melanina) de la lesión sin dañar significativamente el tejido circundante. \n1. Valoración previa de la lesión para descartar signos de malignidad.\n2. Aplicación de anestesia tópica o local infiltrada (según profundidad y extensión de la lesión) para maximizar el confort del paciente.\n3. Disparo del láser Nd:YAG sobre la lesión, lo que genera una fragmentación del pigmento que será eliminado gradualmente por el sistema linfático o mediante la formación de una costra superficial.\nEste tratamiento busca aclarar o eliminar manchas y lesiones benignas, aunque el número de sesiones puede variar según la profundidad del pigmento.",
+    "objectives": [
+      "Eliminar o aclarar significativamente las lesiones pigmentadas (pecas, lunares benignos, nevus).",
+      "Homogeneizar el tono de la piel en la zona tratada.",
+      "Mejorar la apariencia estética mediante tecnología no invasiva o mínimamente invasiva.",
+      "Estimular la renovación celular en el área tratada."
+    ],
+    "risks": [
+      "Molestia o sensación de 'picadura' durante el disparo del láser.",
+      "Eritema (enrojecimiento) e inflamación transitoria en la zona tratada.",
+      "Formación de costras finas o descamación (parte normal del proceso de curación).",
+      "Cambios pigmentarios: Hiperpigmentación post-inflamatoria (mancha oscura) o hipopigmentación (mancha clara), especialmente si hay exposición solar.",
+      "Hematoma o pequeñas petequias (puntos de sangre) temporales.",
+      "Infección local si no se siguen las pautas de higiene (poco frecuente).",
+      "Cicatrización anómala o cambios en la textura cutánea (raro).",
+      "Persistencia de parte del pigmento, requiriendo sesiones adicionales.",
+      "Recurrencia de la lesión con el tiempo debido a factores genéticos o exposición solar."
+    ],
+    "benefits": [
+      "Resultados estéticos notables con mínimo tiempo de recuperación.",
+      "Tratamiento selectivo que preserva la integridad de la piel sana circundante.",
+      "Procedimiento rápido y ambulatorio.",
+      "Mejora la confianza y satisfacción del paciente con su imagen personal."
+    ],
+    "pre_care": [
+      "Evitar la exposición solar intensa o bronceado (solárium) al menos 4 semanas antes.",
+      "No utilizar productos con retinoles, ácidos exfoliantes o sustancias irritantes 5 días antes.",
+      "Informar sobre antecedentes de herpes simple (para posible profilaxis).",
+      "Informar sobre tendencia a cicatrización queloide o uso de medicamentos fotosensibilizantes.",
+      "Acudir con la piel limpia, sin maquillaje, cremas o perfumes en la zona."
+    ],
+    "post_care": [
+      "Aplicar fotoprotección solar estricta (SPF 50+) de forma diaria y recurrente.",
+      "No arrancar ni manipular las costras que se formen; dejar que caigan naturalmente.",
+      "Mantener la zona hidratada con la crema reparadora o ungüento indicado.",
+      "Evitar el ejercicio intenso, saunas, piscinas y ambientes con calor excesivo por 48-72 horas.",
+      "Lavar la zona con jabón neutro y secar a toques, sin frotar.",
+      "Evitar la exposición solar directa durante al menos 30 días tras el tratamiento."
+    ],
+    "name": "Tratamiento Lunares Efelides Nevus Laser Ndyag"
+  },
+  {
+    "procedure_type": "Tratamiento de Melasma (en sus tres variantes) con Láser Nd:YAG",
+    "description": "El procedimiento consiste en la aplicación de tecnología láser Nd:YAG sobre las zonas hiperpigmentadas del rostro o cuerpo. \n1. Se realiza una evaluación clínica para determinar el tipo de melasma y la profundidad del pigmento.\n2. Se aplican pulsos de luz láser que interactúan con la melanina de forma selectiva para fragmentar el pigmento sin dañar la superficie de la piel.\n3. El protocolo (energía, número de pasadas y frecuencia) es establecido por el médico de acuerdo con la respuesta cutánea de cada paciente.\nDebido a que el melasma es una condición crónica y multifactorial influenciada por factores genéticos, hormonales y ambientales, el tratamiento busca el control, la atenuación y la estabilización de las lesiones.",
+    "objectives": [
+      "Aclarar y reducir la extensión de las manchas de melasma.",
+      "Fragmentar el depósito de pigmento tanto en capas superficiales como profundas.",
+      "Unificar el tono de la piel y mejorar la luminosidad cutánea.",
+      "Controlar la actividad de los melanocitos para prevenir la progresión de las lesiones."
+    ],
+    "risks": [
+      "Eritema (enrojecimiento) leve y transitorio tras la sesión.",
+      "Sensación de hormigueo, calor o leve prurito (picazón) durante el tratamiento.",
+      "Hiperpigmentación post-inflamatoria (oscurecimiento temporal) si no se sigue la fotoprotección.",
+      "Hipopigmentación (puntos claros) en casos de sesiones muy seguidas o pieles sensibles.",
+      "Efecto rebote de la mancha debido a estímulos externos (sol, calor, cambios hormonales).",
+      "Necesidad de múltiples sesiones para observar resultados significativos.",
+      "Recurrencia natural de la patología al ser una condición crónica."
+    ],
+    "benefits": [
+      "Tratamiento no ablativo que no requiere tiempo de recuperación ni baja laboral.",
+      "Capacidad de tratar pigmento profundo (dérmico) de difícil manejo con tópicos.",
+      "Mejora la calidad global y la textura de la piel tratada.",
+      "Procedimiento seguro y controlado bajo supervisión profesional."
+    ],
+    "pre_care": [
+      "Informar al especialista sobre cualquier cambio en la medicación habitual o estado hormonal.",
+      "Evitar la exposición solar directa y el uso de cámaras de bronceado antes de la sesión.",
+      "Suspender el uso de ácidos o sustancias irritantes según el tiempo previo indicado en consulta.",
+      "Acudir a la sesión con la piel limpia y libre de cualquier producto cosmético."
+    ],
+    "post_care": [
+      "Uso riguroso de protector solar de amplio espectro según las indicaciones del médico.",
+      "Evitar fuentes de calor intenso (saunas, ejercicio extremo, vapor) por 4 días post tratamiento.",
+      "Aplicar únicamente los productos hidratantes o despigmentantes recomendados en consulta.",
+      "No manipular la zona ni realizar exfoliaciones mecánicas o químicas sin autorización.",
+      "Asistir puntualmente a las sesiones programadas para dar continuidad al protocolo."
+    ],
+    "name": "Tratamiento Melasma Laser Ndyag"
+  },
+  {
+    "procedure_type": "Tratamiento Combinado de Reducción de Papada no Quirúrgico (Enzimas Lipolíticas, HIFU y Crio-radiofrecuencia)",
+    "description": "Se realizará un protocolo integral para la reducción de tejido adiposo y tensado cutáneo en la zona submentoniana (papada) mediante:\n1. Aplicación de Enzimas Lipolíticas (Lipasa) y Hialuronidasa (4 sesiones): Infiltración de sustancias biológicas que degradan los triglicéridos dentro de los adipocitos y mejoran la permeabilidad del tejido para facilitar la eliminación de grasa y reducir la fibrosis.\n2. HIFU Facial (1 sesión): Ultrasonido focalizado de alta intensidad que actúa en las capas profundas de la dermis y el SMAS para generar puntos de coagulación térmica, promoviendo la retracción del tejido y la producción de nuevo colágeno.\n3. Crio-radiofrecuencia (4 sesiones): Aplicación de calor intradérmico controlado combinado con frío superficial para estimular la elastina y compactar la piel, mejorando el contorno mandibular.\nEste tratamiento busca mejorar el perfil facial de forma progresiva y no invasiva.",
+    "objectives": [
+      "Reducir el volumen de grasa localizada en la zona submentoniana.",
+      "Compactar y tensar la piel para evitar la flacidez post-reducción.",
+      "Definir el contorno de la línea mandibular.",
+      "Estimular la producción natural de colágeno y elastina (neocolagénesis).",
+      "Mejora de la apariencia estética general del cuello y tercio inferior del rostro."
+    ],
+    "risks": [
+      "Inflamación o edema moderado en la zona tratada (especialmente con enzimas).",
+      "Equimosis (moratones) o hematomas por la punción.",
+      "Eritema (enrojecimiento) y sensación de calor transitorio.",
+      "Sensibilidad al tacto o dolor leve en la zona mandibular durante los primeros días.",
+      "Parestesia transitoria (hormigueo o adormecimiento temporal).",
+      "Reacciones alérgicas a los componentes de las enzimas (poco frecuentes).",
+      "Nódulos temporales o irregularidades palpables que suelen resolverse espontáneamente.",
+      "Resultados variables según la respuesta metabólica y estilo de vida del paciente."
+    ],
+    "benefits": [
+      "Reducción notable de la papada sin necesidad de cirugía ni tiempo de recuperación prolongado.",
+      "Mejora de la elasticidad y firmeza de la piel.",
+      "Perfilado facial más definido y rejuvenecido.",
+      "Procedimiento ambulatorio con incorporación inmediata a las actividades diarias."
+    ],
+    "pre_care": [
+      "No consumir antiinflamatorios o aspirinas 48 horas antes para minimizar riesgo de hematomas.",
+      "Informar sobre antecedentes de alergias a proteínas de origen bovino o bacteriano.",
+      "Acudir con la piel limpia, sin maquillaje ni cremas en la zona del cuello.",
+      "Estar bien hidratado (el agua facilita el metabolismo de las enzimas).",
+      "Informar sobre la presencia de prótesis dentales metálicas o implantes en la zona (para RF y HIFU)."
+    ],
+    "post_care": [
+      "No realizar actividad física intensa durante las primeras 24-48 horas post-enzimas.",
+      "Evitar la exposición solar directa y usar protector solar en la zona tratada.",
+      "Evitar saunas, turcos o fuentes de calor extremo durante 3 días.",
+      "Realizar masajes suaves de drenaje si el profesional lo indica (a partir del tercer día).",
+      "Mantener una dieta baja en grasas y carbohidratos simples para potenciar el efecto lipolítico.",
+      "Aumentar la ingesta de agua para ayudar a la eliminación de detritos metabólicos.",
+      "Colocarse faja mentonera estrictamente después de cada sesión por 3-4 días",
+      "Asistir puntualmente a todas las sesiones programadas para garantizar la sinergia del tratamiento."
+    ],
+    "name": "Tratamiento Reduccion Papada Combinado"
+  }
+]

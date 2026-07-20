@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Save, AlertCircle, Plus, Trash2, Copy, Printer, Sparkles, Check, X, Info, Edit2 } from 'lucide-react';
 import diagnosisOptions from '../../data/diagnosis_options.json';
 import { Tooltip } from '../../../../ui/Tooltip';
+import { useClinicSettings } from '../../../../../hooks/useClinicSettings';
 
 /** Extrae solo YYYY-MM-DD de un ISO timestamp o string de PG para evitar desfase de zona horaria */
 const toDateOnly = (d: string | null | undefined): string => {
@@ -53,6 +54,7 @@ const EMPTY_DIAGNOSIS: Omit<Diagnosis, 'record_id'> = {
 };
 
 export default function DiagnosisTab({ recordId, diagnoses, physicalExams = [], patientName, onSave }: DiagnosisTabProps) {
+  const { settings: clinic } = useClinicSettings();
   const [currentDiagnosis, setCurrentDiagnosis] = useState<Diagnosis>({ ...EMPTY_DIAGNOSIS, record_id: recordId });
   const [saving, setSaving] = useState(false);
   const [generatingAI, setGeneratingAI] = useState(false);
@@ -272,8 +274,10 @@ export default function DiagnosisTab({ recordId, diagnoses, physicalExams = [], 
         </head>
         <body>
           <div class="header">
-            <h1>BIOSKIN</h1>
-            <p>Dermatología y Medicina Estética</p>
+            <h1>${clinic.general.name || 'BIOSKIN'}</h1>
+            <p>${clinic.general.tagline || 'Dermatología y Medicina Estética'}</p>
+            ${clinic.general.address ? `<p>${clinic.general.address}${clinic.general.city ? ' — ' + clinic.general.city : ''}</p>` : ''}
+            ${clinic.general.phone ? `<p>Tel: ${clinic.general.phone}</p>` : ''}
           </div>
           
           <div class="info">

@@ -159,6 +159,37 @@ async function initMultiTenantSchema() {
     )
   `;
 
+  // Plantillas globales de consentimiento (gestionadas por master_admin)
+  await sql`
+    CREATE TABLE IF NOT EXISTS consent_templates (
+      id                SERIAL PRIMARY KEY,
+      name              VARCHAR(255) NOT NULL,
+      procedure_type    VARCHAR(150),
+      zone              VARCHAR(150),
+      sessions          INTEGER DEFAULT 1,
+      objectives        JSONB DEFAULT '[]',
+      description       TEXT,
+      risks             JSONB DEFAULT '[]',
+      benefits          JSONB DEFAULT '[]',
+      alternatives      JSONB DEFAULT '[]',
+      pre_care          JSONB DEFAULT '[]',
+      post_care         JSONB DEFAULT '[]',
+      contraindications JSONB DEFAULT '[]',
+      is_active         BOOLEAN DEFAULT true,
+      created_at        TIMESTAMP DEFAULT NOW(),
+      updated_at        TIMESTAMP DEFAULT NOW()
+    )
+  `;
+
+  // Asignación de plantillas por clínica
+  await sql`
+    CREATE TABLE IF NOT EXISTS clinic_consent_templates (
+      clinic_id   INTEGER NOT NULL REFERENCES clinics(id) ON DELETE CASCADE,
+      template_id INTEGER NOT NULL REFERENCES consent_templates(id) ON DELETE CASCADE,
+      PRIMARY KEY (clinic_id, template_id)
+    )
+  `;
+
   // Columnas extras en caso de migración de tabla preexistente
   for (const col of [
     "ALTER TABLE admin_sessions ADD COLUMN IF NOT EXISTS clinic_user_id INTEGER",
@@ -903,6 +934,117 @@ export default async function handler(req, res) {
         await sql`INSERT INTO clinic_settings (clinic_id, agenda, updated_at) VALUES (${clinicId}, ${dataStr}::jsonb, NOW()) ON CONFLICT (clinic_id) DO UPDATE SET agenda = ${dataStr}::jsonb, updated_at = NOW()`;
 
       return res.status(200).json({ success: true, message: `${section} guardado` });
+    }
+
+    // ── Gestión de plantillas de consentimiento ─────────────────────────────
+
+    if (action === 'listConsentTemplates') {
+      const result = await sql`SELECT * FROM consent_templates WHERE is_active = true ORDER BY name ASC`;
+      return res.status(200).json({ templates: result.rows });
+    }
+
+    if (action === 'saveConsentTemplate') {
+      if (user.role !== 'master_admin') return res.status(403).json({ error: 'Solo master_admin' });
+      const { id: tid, name, procedure_type, zone, sessions, objectives, description,
+              risks, benefits, alternatives, pre_care, post_care, contraindications } = req.body || {};
+      if (!name?.trim()) return res.status(400).json({ error: 'Nombre requerido' });
+      const obj   = JSON.stringify(objectives   || []);
+      const rsk   = JSON.stringify(risks        || []);
+      const ben   = JSON.stringify(benefits     || []);
+      const alt   = JSON.stringify(alternatives || []);
+      const pre   = JSON.stringify(pre_care     || []);
+      const post  = JSON.stringify(post_care    || []);
+      const contra = JSON.stringify(contraindications || []);
+      if (tid) {
+        await sql`UPDATE consent_templates SET name=${name}, procedure_type=${procedure_type||null},
+          zone=${zone||null}, sessions=${sessions||1}, objectives=${obj}::jsonb,
+          description=${description||null}, risks=${rsk}::jsonb, benefits=${ben}::jsonb,
+          alternatives=${alt}::jsonb, pre_care=${pre}::jsonb, post_care=${post}::jsonb,
+          contraindications=${contra}::jsonb, updated_at=NOW() WHERE id=${tid}`;
+        return res.status(200).json({ success: true });
+      }
+      const ins = await sql`INSERT INTO consent_templates
+        (name, procedure_type, zone, sessions, objectives, description, risks, benefits,
+         alternatives, pre_care, post_care, contraindications)
+        VALUES (${name}, ${procedure_type||null}, ${zone||null}, ${sessions||1}, ${obj}::jsonb,
+          ${description||null}, ${rsk}::jsonb, ${ben}::jsonb, ${alt}::jsonb,
+          ${pre}::jsonb, ${post}::jsonb, ${contra}::jsonb) RETURNING id`;
+      return res.status(200).json({ success: true, id: ins.rows[0].id });
+    }
+
+    if (action === 'deleteConsentTemplate') {
+      if (user.role !== 'master_admin') return res.status(403).json({ error: 'Solo master_admin' });
+      const { id: tid } = req.body || {};
+      if (!tid) return res.status(400).json({ error: 'id requerido' });
+      await sql`UPDATE consent_templates SET is_active = false WHERE id = ${tid}`;
+      return res.status(200).json({ success: true });
+    }
+
+    if (action === 'getClinicConsentTemplates') {
+      const { clinicId } = req.query;
+      if (!clinicId) return res.status(400).json({ error: 'clinicId requerido' });
+      if (user.role !== 'master_admin' && parseInt(clinicId) !== user.clinic_id)
+        return res.status(403).json({ error: 'Sin permiso' });
+      const result = await sql`
+        SELECT ct.* FROM consent_templates ct
+        JOIN clinic_consent_templates cct ON ct.id = cct.template_id
+        WHERE cct.clinic_id = ${clinicId} AND ct.is_active = true
+        ORDER BY ct.name ASC`;
+      return res.status(200).json({ templates: result.rows });
+    }
+
+    if (action === 'getClinicTemplateAssignments') {
+      if (user.role !== 'master_admin') return res.status(403).json({ error: 'Solo master_admin' });
+      const { clinicId } = req.query;
+      if (!clinicId) return res.status(400).json({ error: 'clinicId requerido' });
+      const result = await sql`SELECT template_id FROM clinic_consent_templates WHERE clinic_id = ${clinicId}`;
+      return res.status(200).json({ assigned: result.rows.map(r => r.template_id) });
+    }
+
+    if (action === 'assignConsentTemplate') {
+      if (user.role !== 'master_admin') return res.status(403).json({ error: 'Solo master_admin' });
+      const { clinicId, templateId, assign } = req.body || {};
+      if (!clinicId || !templateId) return res.status(400).json({ error: 'clinicId y templateId requeridos' });
+      if (assign) {
+        await sql`INSERT INTO clinic_consent_templates (clinic_id, template_id)
+          VALUES (${clinicId}, ${templateId}) ON CONFLICT DO NOTHING`;
+      } else {
+        await sql`DELETE FROM clinic_consent_templates WHERE clinic_id = ${clinicId} AND template_id = ${templateId}`;
+      }
+      return res.status(200).json({ success: true });
+    }
+
+    if (action === 'seedConsentTemplates') {
+      if (user.role !== 'master_admin') return res.status(403).json({ error: 'Solo master_admin' });
+      const { force } = req.body || {};
+      const count = await sql`SELECT COUNT(*) FROM consent_templates WHERE is_active = true`;
+      if (parseInt(count.rows[0].count) > 0 && !force) {
+        return res.status(200).json({ message: 'Plantillas ya sembradas', count: count.rows[0].count });
+      }
+      const fs = await import('fs');
+      const path = await import('path');
+      const seedPath = path.default.join(process.cwd(), 'data', 'consent-templates-seed.json');
+      const seeds = JSON.parse(fs.default.readFileSync(seedPath, 'utf8'));
+      let inserted = 0;
+      for (const t of seeds) {
+        const obj   = JSON.stringify(t.objectives   || []);
+        const rsk   = JSON.stringify(t.risks        || []);
+        const ben   = JSON.stringify(t.benefits     || []);
+        const alt   = JSON.stringify(t.alternatives || []);
+        const pre   = JSON.stringify(t.pre_care     || []);
+        const post  = JSON.stringify(t.post_care    || []);
+        const contra = JSON.stringify(t.contraindications || []);
+        const name = t.name || t.procedure_type || 'Plantilla';
+        await sql`INSERT INTO consent_templates
+          (name, procedure_type, zone, sessions, objectives, description, risks, benefits,
+           alternatives, pre_care, post_care, contraindications)
+          VALUES (${name}, ${t.procedure_type||null}, ${t.zone||null}, ${t.sessions||1},
+            ${obj}::jsonb, ${t.description||null}, ${rsk}::jsonb, ${ben}::jsonb,
+            ${alt}::jsonb, ${pre}::jsonb, ${post}::jsonb, ${contra}::jsonb)
+          ON CONFLICT DO NOTHING`;
+        inserted++;
+      }
+      return res.status(200).json({ success: true, inserted });
     }
 
     return res.status(400).json({ success: false, error: 'Acción no válida' });

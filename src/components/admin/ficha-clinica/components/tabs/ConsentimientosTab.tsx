@@ -10,10 +10,11 @@ import { QRCodeSVG } from 'qrcode.react';
 import SignatureCanvas from 'react-signature-canvas';
 import { Tooltip } from '../../../../ui/Tooltip';
 import { useClinicSettings } from '../../../../../hooks/useClinicSettings';
+import { useAuth } from '../../../../../context/AuthContext';
 
-// Load templates que maneja gracefully si la carpeta no existe
-const templatesGlob = import.meta.glob('/src/data/consent-templates/*.json', { eager: true });
-const templates = Object.values(templatesGlob).map((mod: any) => mod.default || mod);
+// Fallback local templates (sólo si la clínica no tiene asignadas desde DB)
+const localTemplatesGlob = import.meta.glob('/src/data/consent-templates/*.json', { eager: true });
+const localTemplates = Object.values(localTemplatesGlob).map((mod: any) => mod.default || mod);
 
 interface ConsentForm {
   id?: number;
@@ -71,7 +72,9 @@ const API_URL = '/api/records';
 
 export default function ConsentimientosTab({ patientId, recordId, patient }: Props) {
   const { settings: clinic } = useClinicSettings();
+  const { user } = useAuth();
   const [consents, setConsents] = useState<ConsentForm[]>([]);
+  const [dbTemplates, setDbTemplates] = useState<any[]>([]);
   const [view, setView] = useState<'list' | 'form' | 'preview'>('list');
   const [loading, setLoading] = useState(false);
   const [currentConsent, setCurrentConsent] = useState<ConsentForm | null>(null);
@@ -85,9 +88,28 @@ export default function ConsentimientosTab({ patientId, recordId, patient }: Pro
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
+  // Combina plantillas de DB (por clínica) con fallback a locales
+  const templates = dbTemplates.length > 0 ? dbTemplates : localTemplates;
   const filteredTemplates = templates.filter((t: any) => 
-    t.procedure_type.toLowerCase().includes(searchTerm.toLowerCase())
+    (t.procedure_type || t.name || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  // Carga plantillas de consentimiento desde la DB para esta clínica
+  const loadDbTemplates = async () => {
+    const clinicId = user?.clinic_id;
+    if (!clinicId) return; // master_admin sin clínica: no carga por defecto
+    try {
+      const res = await recordsFetch(
+        `/api/admin-auth?action=getClinicConsentTemplates&clinicId=${clinicId}`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.templates) && data.templates.length > 0) {
+          setDbTemplates(data.templates);
+        }
+      }
+    } catch { /* silencioso — usa locales como fallback */ }
+  };
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -103,6 +125,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient }: Pro
 
   useEffect(() => {
     loadConsents();
+    loadDbTemplates();
     // Initialize professional signatures table
     recordsFetch('/api/records?action=initProfessionalSignatures').catch(console.error);
   }, [patientId, recordId]);
@@ -192,7 +215,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient }: Pro
     setLoading(true);
     try {
       // First save the cleared signature
-      await fetch(`${API_URL}?action=saveConsent`, {
+      await recordsFetch(`${API_URL}?action=saveConsent`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedConsent)
@@ -264,7 +287,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient }: Pro
     
     try {
       setLoading(true);
-      const res = await fetch(`${API_URL}?action=getConsent&id=${currentConsent.id}`);
+      const res = await recordsFetch(`${API_URL}?action=getConsent&id=${currentConsent.id}`);
       if (res.ok) {
         const data = await res.json();
         setCurrentConsent(data);
@@ -285,7 +308,8 @@ export default function ConsentimientosTab({ patientId, recordId, patient }: Pro
   const loadConsents = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}?action=listConsents&patient_id=${patientId}&record_id=${recordId}`);
+      const res = await recordsFetch(`${API_URL}?action=listConsents&patient_id=${patientId}&record_id=${recordId}`);
+      if (!res.ok) throw new Error('Error al cargar consentimientos');
       const data = await res.json();
       if (Array.isArray(data)) {
         setConsents(data);
@@ -382,7 +406,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient }: Pro
   const handleDelete = async (id: number) => {
     if (!confirm('¿Está seguro de eliminar este consentimiento?')) return;
     try {
-      await fetch(`${API_URL}?action=deleteConsent&id=${id}`, { method: 'POST' });
+      await recordsFetch(`${API_URL}?action=deleteConsent&id=${id}`, { method: 'POST' });
       loadConsents();
       setMessage({ type: 'success', text: 'Consentimiento eliminado' });
     } catch (error) {
@@ -396,20 +420,25 @@ export default function ConsentimientosTab({ patientId, recordId, patient }: Pro
     setLoading(true);
     setMessage(null);
     try {
-      const res = await fetch(`${API_URL}?action=saveConsent`, {
+      const res = await recordsFetch(`${API_URL}?action=saveConsent`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(currentConsent)
       });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Error al guardar');
+      }
       const saved = await res.json();
       if (saved.id) {
-        loadConsents();
+        setCurrentConsent(prev => prev ? { ...prev, id: saved.id } : prev);
+        await loadConsents();
         setView('list');
         setMessage({ type: 'success', text: 'Consentimiento guardado correctamente' });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving consent:', error);
-      setMessage({ type: 'error', text: 'Error al guardar el consentimiento' });
+      setMessage({ type: 'error', text: error.message || 'Error al guardar el consentimiento' });
     } finally {
       setLoading(false);
     }

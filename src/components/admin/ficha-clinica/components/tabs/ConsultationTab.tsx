@@ -3,6 +3,7 @@ import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
 import { Save, AlertCircle, Check, Stethoscope, Copy, Trash2, Printer, Plus } from 'lucide-react';
 import { Tooltip } from '../../../../ui/Tooltip';
+import { useClinicSettings } from '../../../../../hooks/useClinicSettings';
 
 interface ConsultationTabProps {
   recordId: number;
@@ -12,6 +13,7 @@ interface ConsultationTabProps {
 }
 
 export default function ConsultationTab({ recordId, initialData, historyData = [], onSave }: ConsultationTabProps) {
+  const { settings: clinic } = useClinicSettings();
   const [formData, setFormData] = useState({
     reason: '',
     current_illness: '',
@@ -105,6 +107,7 @@ export default function ConsultationTab({ recordId, initialData, historyData = [
           <style>
              body { font-family: Arial, sans-serif; padding: 40px; max-width: 800px; margin: 0 auto; line-height: 1.6; }
              h1 { color: #deb887; border-bottom: 2px solid #eee; padding-bottom: 15px; }
+             .clinic-info { font-size: 12px; color: #666; margin-bottom: 20px; }
              .section { margin-bottom: 30px; }
              .label { font-weight: bold; display: block; margin-bottom: 8px; color: #555; }
              .content { background: #f9f9f9; padding: 15px; border-radius: 8px; border: 1px solid #eee; }
@@ -113,6 +116,12 @@ export default function ConsultationTab({ recordId, initialData, historyData = [
         </head>
         <body>
           <h1>Consulta Médica</h1>
+          <div class="clinic-info">
+            <strong>${clinic.general.name || 'BIOSKIN'}</strong>
+            ${clinic.general.tagline ? ` — ${clinic.general.tagline}` : ''}
+            ${clinic.general.address ? `<br>${clinic.general.address}${clinic.general.city ? ', ' + clinic.general.city : ''}` : ''}
+            ${clinic.general.phone ? `<br>Tel: ${clinic.general.phone}` : ''}
+          </div>
           <div class="section">
             <span class="label">Fecha del Registro:</span>
             <div class="content">
