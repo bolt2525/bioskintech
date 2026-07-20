@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Plus, FileText, User, Calendar, Edit2, Trash2 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import AdminLayout from '../../../layout/AdminLayout';
 import recordsFetch from '../../../../utils/recordsFetch';
 
@@ -20,15 +20,22 @@ export default function PatientList() {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  // clinicId pasado desde el master admin para filtrar por clínica
+  const clinicId = searchParams.get('clinicId');
 
   useEffect(() => {
     fetchPatients();
-  }, []);
+  }, [clinicId]);
 
   const fetchPatients = async () => {
     try {
       setError(null);
-      const response = await recordsFetch('/api/records?action=listPatients');
+      // Pasar clinicId si viene del contexto del master admin
+      const url = clinicId
+        ? `/api/records?action=listPatients&clinicId=${clinicId}`
+        : '/api/records?action=listPatients';
+      const response = await recordsFetch(url);
       
       const contentType = response.headers.get("content-type");
       if (contentType && contentType.indexOf("application/json") === -1) {

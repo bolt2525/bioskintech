@@ -12,6 +12,9 @@
     "api/internal-bot-api.js": {
       "maxDuration": 60,
       "includeFiles": "lib/**"
+    },
+    "api/admin-auth.js": {
+      "includeFiles": "data/**"
     }
   },
   "crons": [

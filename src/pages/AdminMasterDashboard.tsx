@@ -209,7 +209,8 @@ function ConsentTemplatesPanel({
       method: 'POST', headers: authHeader(), body: JSON.stringify({ force: false }),
     });
     const data = await res.json();
-    flash(data.message || `${data.inserted} plantillas sembradas`);
+    if (data.error) { flash(data.error, 'err'); return; }
+    flash(data.message || `${data.inserted ?? 0} plantillas sembradas`);
     load();
   };
 
@@ -462,10 +463,13 @@ export default function AdminMasterDashboard() {
     agenda:     { start_hour: string; end_hour: string; slot_minutes: number; calendar_prefix: string };
   };
   const [settingsModal, setSettingsModal] = useState<{ open: boolean; clinicId: number; clinicName: string } | null>(null);
-  const [settingsTab, setSettingsTab]     = useState<'general'|'treatments'|'email'|'agenda'>('general');
+  const [settingsTab, setSettingsTab]     = useState<'general'|'treatments'|'email'|'agenda'|'modules'>('general');
   const [settingsData, setSettingsData]   = useState<ClinicSettingsData | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [newTreatment, setNewTreatment]   = useState('');
+  // Plantillas de consentimiento en el contexto de ajustes
+  const [settingsTemplates, setSettingsTemplates] = useState<any[]>([]);
+  const [settingsAssigned,  setSettingsAssigned]  = useState<number[]>([]);
 
   const openClinicSettings = async (clinic: Clinic) => {
     setSettingsModal({ open: true, clinicId: clinic.id, clinicName: clinic.name });
@@ -476,6 +480,11 @@ export default function AdminMasterDashboard() {
       const data = await res.json();
       if (data.settings) setSettingsData(data.settings);
     } finally { setSettingsLoading(false); }
+    // Cargar plantillas de consentimiento para el tab Módulos
+    fetch('/api/admin-auth?action=listConsentTemplates', { headers: authHeader() })
+      .then(r => r.json()).then(d => { if (d.templates) setSettingsTemplates(d.templates); }).catch(() => {});
+    fetch(`/api/admin-auth?action=getClinicTemplateAssignments&clinicId=${clinic.id}`, { headers: authHeader() })
+      .then(r => r.json()).then(d => { if (d.assigned) setSettingsAssigned(d.assigned); }).catch(() => {});
   };
 
   const saveSettingsSection = async (section: keyof ClinicSettingsData) => {
@@ -1095,7 +1104,13 @@ export default function AdminMasterDashboard() {
                 return (
                   <button
                     key={`${item.feat}-${idx}`}
-                    onClick={() => navigate(item.path)}
+                    onClick={() => {
+                      // Pasar clinicId como query param para que el módulo filtre por clínica
+                      const path = selectedModuleClinic
+                        ? `${item.path}?clinicId=${selectedModuleClinic}`
+                        : item.path;
+                      navigate(path);
+                    }}
                     className={`group bg-white rounded-2xl border shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 text-left p-5 flex flex-col ${
                       isEnabled ? 'border-gray-100 hover:border-[#deb887]/40' : 'border-gray-100 opacity-40'
                     }`}
@@ -1374,10 +1389,10 @@ export default function AdminMasterDashboard() {
             </div>
 
             {/* Tabs */}
-            <div className="flex border-b px-5 gap-1 bg-gray-50">
-              {([['general','🏥 General'],['treatments','💉 Tratamientos'],['email','📧 Email'],['agenda','📅 Agenda']] as [typeof settingsTab, string][]).map(([k,l]) => (
+            <div className="flex border-b px-5 gap-1 bg-gray-50 overflow-x-auto">
+              {([['general','🏥 General'],['treatments','💉 Tratamientos'],['email','📧 Email'],['agenda','📅 Agenda'],['modules','⚙ Módulos']] as [typeof settingsTab, string][]).map(([k,l]) => (
                 <button key={k} onClick={() => setSettingsTab(k)}
-                  className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${settingsTab===k ? 'border-[#deb887] text-[#c5a075]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+                  className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${settingsTab===k ? 'border-[#deb887] text-[#c5a075]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
                   {l}
                 </button>
               ))}
@@ -1507,15 +1522,97 @@ export default function AdminMasterDashboard() {
                       </div>
                     </div>
                   )}
+
+                  {/* ── Módulos ── */}
+                  {settingsTab === 'modules' && settingsModal && (
+                    <div className="space-y-6">
+                      <p className="text-xs text-gray-400">Configura las opciones de cada módulo habilitado para <strong>{settingsModal.clinicName}</strong>.</p>
+
+                      {/* ── Fichas Clínicas: Plantillas de Consentimiento ── */}
+                      {(featMap[settingsModal.clinicId] || {})['clinical_records'] !== false && (
+                        <div>
+                          <div className="flex items-center gap-2 mb-3">
+                            <span className="text-sm font-semibold text-gray-800">📋 Fichas Clínicas</span>
+                            <span className="text-[10px] bg-[#deb887]/20 text-[#c5a075] px-2 py-0.5 rounded-full font-medium">Plantillas de Consentimiento</span>
+                          </div>
+                          {settingsTemplates.length === 0 ? (
+                            <p className="text-xs text-gray-400 italic">Sin plantillas globales. Ve al tab "Plantillas" para crear o sembrar las estándar.</p>
+                          ) : (
+                            <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                              {settingsTemplates.map(t => (
+                                <label key={t.id} className="flex items-center gap-3 p-2.5 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer">
+                                  <input type="checkbox"
+                                    checked={settingsAssigned.includes(t.id)}
+                                    onChange={async e => {
+                                      const assign = e.target.checked;
+                                      setSettingsAssigned(prev => assign ? [...prev, t.id] : prev.filter(id => id !== t.id));
+                                      await fetch('/api/admin-auth?action=assignConsentTemplate', {
+                                        method: 'POST', headers: authHeader(),
+                                        body: JSON.stringify({ clinicId: settingsModal.clinicId, templateId: t.id, assign }),
+                                      });
+                                    }}
+                                    className="w-4 h-4 rounded accent-[#deb887]" />
+                                  <div className="min-w-0">
+                                    <div className="text-sm font-medium text-gray-900 truncate">{t.name}</div>
+                                    {t.procedure_type && t.procedure_type !== t.name && (
+                                      <div className="text-xs text-gray-400 truncate">{t.procedure_type}</div>
+                                    )}
+                                  </div>
+                                </label>
+                              ))}
+                            </div>
+                          )}
+                          <p className="text-xs text-gray-400 mt-2">
+                            {settingsAssigned.length} de {settingsTemplates.length} plantillas asignadas a esta clínica.
+                          </p>
+                        </div>
+                      )}
+
+                      {/* ── Agenda: Tratamientos ── */}
+                      {(featMap[settingsModal.clinicId] || {})['calendar'] !== false && (
+                        <div>
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="text-sm font-semibold text-gray-800">📅 Agenda</span>
+                            <span className="text-[10px] bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full font-medium">Tratamientos disponibles</span>
+                          </div>
+                          <p className="text-xs text-gray-500">Los tratamientos disponibles para agendar se configuran en el tab <button onClick={() => setSettingsTab('treatments')} className="text-[#deb887] underline font-medium">Tratamientos</button>.</p>
+                        </div>
+                      )}
+
+                      {/* ── Otros módulos ── */}
+                      <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                        <p className="text-xs font-medium text-gray-500 mb-3">Estado de módulos habilitados</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {ALL_FEATURES.map(feat => {
+                            const meta    = FEATURE_META[feat];
+                            const Icon    = meta.icon;
+                            const enabled = (featMap[settingsModal.clinicId] || {})[feat] !== false;
+                            return (
+                              <div key={feat} className={`flex items-center gap-2 p-2 rounded-lg ${enabled ? 'bg-white border border-gray-100' : 'opacity-40'}`}>
+                                <Icon className={`w-3.5 h-3.5 flex-shrink-0 ${meta.color}`} />
+                                <span className="text-xs text-gray-700 truncate">{meta.label}</span>
+                                {enabled
+                                  ? <span className="ml-auto text-[10px] text-emerald-600 font-medium">✓</span>
+                                  : <span className="ml-auto text-[10px] text-gray-300 font-medium">off</span>}
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <p className="text-xs text-gray-400 mt-3">Para habilitar/deshabilitar módulos, usa el tab <button onClick={() => { setSettingsModal(null); setTab('modules'); }} className="text-[#deb887] underline font-medium">Módulos</button> del dashboard.</p>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </div>
 
             <div className="px-5 py-4 border-t flex justify-end gap-3 bg-gray-50">
               <button onClick={() => setSettingsModal(null)} className="px-4 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-100">Cancelar</button>
-              <button onClick={() => saveSettingsSection(settingsTab)} className="px-5 py-2 rounded-lg text-white text-sm font-medium" style={{background:'linear-gradient(135deg,#deb887,#c5a075)'}}>
-                Guardar {settingsTab}
-              </button>
+              {settingsTab !== 'modules' && (
+                <button onClick={() => saveSettingsSection(settingsTab as any)} className="px-5 py-2 rounded-lg text-white text-sm font-medium" style={{background:'linear-gradient(135deg,#deb887,#c5a075)'}}>
+                  Guardar {settingsTab}
+                </button>
+              )}
             </div>
           </div>
         </div>
