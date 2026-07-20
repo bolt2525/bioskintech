@@ -1,5 +1,6 @@
 ﻿import React, { useState, useEffect, useMemo } from 'react';
 import { Package, Plus, CheckCircle, Activity, Calendar, Search, RefreshCw, LayoutGrid, List, Filter } from 'lucide-react';
+import recordsFetch from "../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
 import AdminLayout from '../components/layout/AdminLayout';
 import InventoryProductCard from '../components/admin/inventory/InventoryProductCard';
@@ -46,7 +47,7 @@ export default function AdminInventory() {
   const fetchInventory = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/records?action=inventoryListItems');
+      const res = await recordsFetch('/api/records?action=inventoryListItems');
       if (res.ok) setItems(await res.json());
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
@@ -55,7 +56,7 @@ export default function AdminInventory() {
   const fetchStats = async () => {
     setStatsLoading(true);
     try {
-      const res = await fetch('/api/records?action=inventoryStats');
+      const res = await recordsFetch('/api/records?action=inventoryStats');
       if (res.ok) setStats(await res.json());
     } catch (e) { console.error(e); }
     finally { setStatsLoading(false); }
@@ -76,7 +77,7 @@ export default function AdminInventory() {
 
   const handleCreateItem = async (data: any) => {
     const action = data.id ? 'inventoryUpdateItem' : 'inventoryCreateItem';
-    const res = await fetch(`/api/records?action=${action}`, {
+    const res = await recordsFetch(`/api/records?action=${action}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
@@ -92,7 +93,7 @@ export default function AdminInventory() {
 
   const handleCreateWithStock = async (itemData: any, stockData: any) => {
     // Step 1: create item
-    const itemRes = await fetch('/api/records?action=inventoryCreateItem', {
+    const itemRes = await recordsFetch('/api/records?action=inventoryCreateItem', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(itemData)
@@ -101,7 +102,7 @@ export default function AdminInventory() {
     const newItem = await itemRes.json();
 
     // Step 2: add initial batch
-    const batchRes = await fetch('/api/records?action=inventoryAddBatch', {
+    const batchRes = await recordsFetch('/api/records?action=inventoryAddBatch', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...stockData, item_id: newItem.id, user_id: username })
@@ -113,7 +114,7 @@ export default function AdminInventory() {
 
   const handleDeleteItem = async (item: any) => {
     if (!window.confirm(`¿Eliminar "${item.name}"? Esta acción no se puede deshacer.`)) return;
-    const res = await fetch(`/api/records?action=inventoryDeleteItem&id=${item.id}`, { method: 'DELETE' });
+    const res = await recordsFetch(`/api/records?action=inventoryDeleteItem&id=${item.id}`, { method: 'DELETE' });
     if (!res.ok) { const e = await res.json(); alert(e.error || 'Error al eliminar'); return; }
     setDrawerItem(null);
     setSuccessMessage('Producto eliminado');
@@ -121,7 +122,7 @@ export default function AdminInventory() {
   };
 
   const handleAddStock = async (data: any) => {
-    const res = await fetch('/api/records?action=inventoryAddBatch', {
+    const res = await recordsFetch('/api/records?action=inventoryAddBatch', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...data, user_id: username })
@@ -133,7 +134,7 @@ export default function AdminInventory() {
   };
 
   const handleConsumeStock = async (data: any) => {
-    const res = await fetch('/api/records?action=inventoryConsume', {
+    const res = await recordsFetch('/api/records?action=inventoryConsume', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...data, user_id: username })

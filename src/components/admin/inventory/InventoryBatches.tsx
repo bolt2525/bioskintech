@@ -1,4 +1,5 @@
 import React from 'react';
+import recordsFetch from "../../../utils/recordsFetch";
 import { format, differenceInDays } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Calendar, AlertTriangle, AlertCircle, CheckCircle, Trash2 } from 'lucide-react';
@@ -23,7 +24,7 @@ export default function InventoryBatches() {
 
   const fetchBatches = async () => {
     try {
-      const res = await fetch('/api/records?action=inventoryListBatches');
+      const res = await recordsFetch('/api/records?action=inventoryListBatches');
       if (res.ok) {
         const data = await res.json();
         setBatches(data);
@@ -39,7 +40,7 @@ export default function InventoryBatches() {
     if (!window.confirm(`¿Estás seguro de eliminar el lote "${batchNumber}"? Se eliminará todo el historial de movimientos asociado y esta acción no se puede deshacer.`)) return;
 
     try {
-      const res = await fetch(`/api/records?action=inventoryDeleteBatch&id=${batchId}`, {
+      const res = await recordsFetch(`/api/records?action=inventoryDeleteBatch&id=${batchId}`, {
         method: 'DELETE'
       });
 

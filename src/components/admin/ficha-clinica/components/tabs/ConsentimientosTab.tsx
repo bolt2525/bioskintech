@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   FileText, Plus, Trash2, Edit, Eye, Save, Printer, 
@@ -10,7 +11,7 @@ import SignatureCanvas from 'react-signature-canvas';
 import { Tooltip } from '../../../../ui/Tooltip';
 import { useClinicSettings } from '../../../../../hooks/useClinicSettings';
 
-// Load templates — maneja gracefully si la carpeta no existe
+// Load templates  maneja gracefully si la carpeta no existe
 const templatesGlob = import.meta.glob('/src/data/consent-templates/*.json', { eager: true });
 const templates = Object.values(templatesGlob).map((mod: any) => mod.default || mod);
 
@@ -174,7 +175,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient }: Pro
 
   const handleResetAndGenerate = async () => {
     if (!currentConsent) return;
-    if (!confirm('¿Está seguro de eliminar la firma actual y generar una nueva solicitud? El paciente deberá firmar nuevamente.')) return;
+    if (!confirm('Est seguro de eliminar la firma actual y generar una nueva solicitud? El paciente deber firmar nuevamente.')) return;
 
     // Clear signature locally
     const updatedConsent = {
@@ -269,9 +270,9 @@ export default function ConsentimientosTab({ patientId, recordId, patient }: Pro
         setCurrentConsent(data);
         if (data.signatures?.patient_sig_data) {
           setShowQr(false);
-          setMessage({ type: 'success', text: '¡Firma recibida correctamente!' });
+          setMessage({ type: 'success', text: 'Firma recibida correctamente!' });
         } else {
-          setMessage({ type: 'error', text: 'Aún no se ha recibido la firma' });
+          setMessage({ type: 'error', text: 'An no se ha recibido la firma' });
         }
       }
     } catch (error) {
@@ -379,7 +380,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient }: Pro
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm('¿Está seguro de eliminar este consentimiento?')) return;
+    if (!confirm('Est seguro de eliminar este consentimiento?')) return;
     try {
       await fetch(`${API_URL}?action=deleteConsent&id=${id}`, { method: 'POST' });
       loadConsents();
@@ -431,14 +432,14 @@ export default function ConsentimientosTab({ patientId, recordId, patient }: Pro
   };
 
   const migrateDB = async () => {
-    if (!confirm('¿Actualizar estructura de base de datos? Esto agregará las columnas necesarias para la firma remota.')) return;
+    if (!confirm('Actualizar estructura de base de datos? Esto agregar las columnas necesarias para la firma remota.')) return;
     try {
       const res = await recordsFetch('/api/records?action=migrateConsents');
       if (res.ok) setMessage({ type: 'success', text: 'Base de datos actualizada correctamente' });
       else throw new Error('Error al actualizar');
     } catch (e) {
       console.error(e);
-      setMessage({ type: 'error', text: 'Error de conexión' });
+      setMessage({ type: 'error', text: 'Error de conexin' });
     }
   };
 
@@ -577,8 +578,8 @@ export default function ConsentimientosTab({ patientId, recordId, patient }: Pro
     if (!currentConsent) return null;
 
     const tabs = [
-      { id: 0, label: 'Información Básica', icon: FileText },
-      { id: 1, label: 'Detalles Médicos', icon: AlertTriangle },
+      { id: 0, label: 'Informacin Bsica', icon: FileText },
+      { id: 1, label: 'Detalles Mdicos', icon: AlertTriangle },
       { id: 2, label: 'Autorizaciones', icon: CheckCircle },
       { id: 3, label: 'Firmas', icon: Edit },
     ];
@@ -725,7 +726,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient }: Pro
                         value={currentConsent.procedure_type}
                         onChange={(e) => updateField('procedure_type', e.target.value)}
                         className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] focus:border-transparent outline-none transition-all"
-                        placeholder="Ej: Toxina Botulínica"
+                        placeholder="Ej: Toxina Botulnica"
                       />
                     </div>
                     <div>
@@ -739,7 +740,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient }: Pro
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Número de Sesiones</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Nmero de Sesiones</label>
                       <input
                         type="number"
                         value={currentConsent.sessions}
@@ -751,7 +752,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient }: Pro
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Descripción del Procedimiento</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Descripcin del Procedimiento</label>
                     <textarea
                       value={currentConsent.description}
                       onChange={(e) => updateField('description', e.target.value)}
@@ -762,7 +763,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient }: Pro
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Objetivos (uno por línea)</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Objetivos (uno por lnea)</label>
                     <textarea
                       value={currentConsent.objectives?.join('\n')}
                       onChange={(e) => updateField('objectives', e.target.value.split('\n'))}
@@ -778,7 +779,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient }: Pro
                 <div className="space-y-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Riesgos (uno por línea)</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Riesgos (uno por lnea)</label>
                       <textarea
                         value={currentConsent.risks?.join('\n')}
                         onChange={(e) => updateField('risks', e.target.value.split('\n'))}
@@ -787,7 +788,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient }: Pro
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Beneficios (uno por línea)</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Beneficios (uno por lnea)</label>
                       <textarea
                         value={currentConsent.benefits?.join('\n')}
                         onChange={(e) => updateField('benefits', e.target.value.split('\n'))}
@@ -818,7 +819,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient }: Pro
                   <div className="border-t border-gray-100 pt-6">
                     <h4 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
                       <AlertTriangle className="w-5 h-5 text-amber-500" />
-                      Antecedentes Críticos
+                      Antecedentes Crticos
                     </h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div>
@@ -831,7 +832,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient }: Pro
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Medicación Actual</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Medicacin Actual</label>
                         <input
                           type="text"
                           value={currentConsent.critical_antecedents?.medications}
@@ -877,7 +878,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient }: Pro
                           className="mt-1 w-4 h-4 rounded text-[#deb887] focus:ring-[#deb887] border-gray-300"
                         />
                         <span className="text-sm text-gray-700 group-hover:text-gray-900 transition-colors">
-                          Autorizo el uso de mis imágenes con fines educativos y/o promocionales, entendiendo que se protegerá mi identidad en la medida de lo posible.
+                          Autorizo el uso de mis imgenes con fines educativos y/o promocionales, entendiendo que se proteger mi identidad en la medida de lo posible.
                         </span>
                       </label>
                       <label className="flex items-start gap-3 cursor-pointer group">
@@ -888,7 +889,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient }: Pro
                           className="mt-1 w-4 h-4 rounded text-[#deb887] focus:ring-[#deb887] border-gray-300"
                         />
                         <span className="text-sm text-gray-700 group-hover:text-gray-900 transition-colors">
-                          Autorizo la toma de fotografías y/o videos del procedimiento para registro clínico.
+                          Autorizo la toma de fotografas y/o videos del procedimiento para registro clnico.
                         </span>
                       </label>
                     </div>
@@ -898,12 +899,12 @@ export default function ConsentimientosTab({ patientId, recordId, patient }: Pro
                     <h4 className="font-bold text-gray-900 mb-4">Declaraciones del Paciente</h4>
                     <div className="space-y-3">
                       {[
-                        { key: 'understanding', label: 'He recibido información clara y completa del tratamiento.' },
+                        { key: 'understanding', label: 'He recibido informacin clara y completa del tratamiento.' },
                         { key: 'questions', label: 'He tenido oportunidad de resolver todas mis dudas.' },
-                        { key: 'results', label: 'Entiendo que los resultados pueden variar y no se garantizan resultados específicos.' },
-                        { key: 'authorization', label: 'Autorizo voluntariamente la realización del tratamiento.' },
-                        { key: 'revocation', label: 'Sé que puedo revocar este consentimiento en cualquier momento antes del procedimiento.' },
-                        { key: 'alternatives', label: 'Me han explicado las alternativas de tratamiento, incluyendo la opción de no tratarme.' }
+                        { key: 'results', label: 'Entiendo que los resultados pueden variar y no se garantizan resultados especficos.' },
+                        { key: 'authorization', label: 'Autorizo voluntariamente la realizacin del tratamiento.' },
+                        { key: 'revocation', label: 'S que puedo revocar este consentimiento en cualquier momento antes del procedimiento.' },
+                        { key: 'alternatives', label: 'Me han explicado las alternativas de tratamiento, incluyendo la opcin de no tratarme.' }
                       ].map((item) => (
                         <label key={item.key} className="flex items-center gap-3 cursor-pointer group">
                           <input
@@ -1107,7 +1108,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient }: Pro
                                 backgroundColor="white"
                               />
                               <div className="absolute bottom-4 left-0 right-0 text-center pointer-events-none opacity-30">
-                                <span className="text-lg font-medium text-gray-400">Dibuje su firma aquí</span>
+                                <span className="text-lg font-medium text-gray-400">Dibuje su firma aqu</span>
                               </div>
                             </div>
                           </div>
@@ -1205,7 +1206,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient }: Pro
         `}</style>
         <div className="flex justify-between items-center border-b pb-4 no-print">
           <button onClick={() => setView('form')} className="text-gray-500 hover:text-gray-700 transition-colors font-medium">
-            &larr; Volver a Edición
+            &larr; Volver a Edicin
           </button>
           <button
             onClick={() => window.print()}
@@ -1230,7 +1231,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient }: Pro
                       <div>
                         <h2 className="text-2xl font-bold text-gray-900 tracking-tight">BIOSKIN SALUD Y ESTETICA</h2>
                         <p className="text-base font-bold text-[#deb887] mt-1">DRA. DANIELA CREAMER</p>
-                        <p className="text-sm text-gray-500">Cosmiatría y Dermatocosmiatría Clínica</p>
+                        <p className="text-sm text-gray-500">Cosmiatra y Dermatocosmiatra Clnica</p>
                       </div>
                     </div>
                     <div className="text-right text-sm text-gray-600 space-y-1">
@@ -1241,12 +1242,12 @@ export default function ConsentimientosTab({ patientId, recordId, patient }: Pro
 
           {/* Patient Info */}
           <div className="bg-gray-50 p-6 rounded-xl mb-10 text-sm border border-gray-100">
-            <h3 className="font-bold text-gray-900 mb-4 border-b border-gray-200 pb-2 text-base">INFORMACIÓN DEL PACIENTE</h3>
+            <h3 className="font-bold text-gray-900 mb-4 border-b border-gray-200 pb-2 text-base">INFORMACIN DEL PACIENTE</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-3 gap-x-8">
               <p><strong className="text-gray-700">Nombre:</strong> {patient?.first_name} {patient?.last_name}</p>
-              <p><strong className="text-gray-700">Identificación:</strong> {patient?.rut || 'N/A'}</p>
-              <p><strong className="text-gray-700">Edad:</strong> {patient?.birth_date ? calculateAge(patient.birth_date) : 'N/A'} años</p>
-              <p><strong className="text-gray-700">Teléfono:</strong> {patient?.phone || 'N/A'}</p>
+              <p><strong className="text-gray-700">Identificacin:</strong> {patient?.rut || 'N/A'}</p>
+              <p><strong className="text-gray-700">Edad:</strong> {patient?.birth_date ? calculateAge(patient.birth_date) : 'N/A'} aos</p>
+              <p><strong className="text-gray-700">Telfono:</strong> {patient?.phone || 'N/A'}</p>
             </div>
           </div>
 
@@ -1257,7 +1258,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient }: Pro
 
           <div className="space-y-8 text-gray-800 leading-relaxed">
             <section>
-              <h3 className="font-bold border-b-2 border-[#deb887] mb-3 text-lg text-gray-900">1. DESCRIPCIÓN DEL PROCEDIMIENTO</h3>
+              <h3 className="font-bold border-b-2 border-[#deb887] mb-3 text-lg text-gray-900">1. DESCRIPCIN DEL PROCEDIMIENTO</h3>
               <div className="bg-gray-50 p-4 rounded-lg border border-gray-100">
                 <p className="mb-2"><strong>Zona a tratar:</strong> {currentConsent.zone}</p>
                 <p className="mb-2"><strong>Sesiones estimadas:</strong> {currentConsent.sessions}</p>
@@ -1315,15 +1316,15 @@ export default function ConsentimientosTab({ patientId, recordId, patient }: Pro
             </section>
 
             <section>
-              <h3 className="font-bold border-b-2 border-[#deb887] mb-3 text-lg text-gray-900">5. ANTECEDENTES CRÍTICOS</h3>
+              <h3 className="font-bold border-b-2 border-[#deb887] mb-3 text-lg text-gray-900">5. ANTECEDENTES CRTICOS</h3>
               <div className="bg-gray-50 p-4 rounded-lg border border-gray-100 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                 <div>
                   <p className="mb-1"><strong className="text-gray-700">Alergias:</strong> {currentConsent.critical_antecedents?.allergies || 'Niega'}</p>
-                  <p><strong className="text-gray-700">Medicación:</strong> {currentConsent.critical_antecedents?.medications || 'Niega'}</p>
+                  <p><strong className="text-gray-700">Medicacin:</strong> {currentConsent.critical_antecedents?.medications || 'Niega'}</p>
                 </div>
                 <div>
-                  <p className="mb-1"><strong className="text-gray-700">Embarazo/Lactancia:</strong> {currentConsent.critical_antecedents?.pregnancy ? 'Sí' : 'No'}</p>
-                  <p><strong className="text-gray-700">Herpes Recurrente:</strong> {currentConsent.critical_antecedents?.herpes ? 'Sí' : 'No'}</p>
+                  <p className="mb-1"><strong className="text-gray-700">Embarazo/Lactancia:</strong> {currentConsent.critical_antecedents?.pregnancy ? 'S' : 'No'}</p>
+                  <p><strong className="text-gray-700">Herpes Recurrente:</strong> {currentConsent.critical_antecedents?.herpes ? 'S' : 'No'}</p>
                 </div>
               </div>
             </section>
@@ -1333,7 +1334,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient }: Pro
               <div className="space-y-3 text-sm bg-gray-50 p-6 rounded-lg border border-gray-100">
                 <p className="flex gap-3">
                   <span className="font-bold text-lg leading-none">{currentConsent.declarations?.understanding ? '' : ''}</span>
-                  Declaro haber recibido información clara y completa del tratamiento.
+                  Declaro haber recibido informacin clara y completa del tratamiento.
                 </p>
                 <p className="flex gap-3">
                   <span className="font-bold text-lg leading-none">{currentConsent.declarations?.questions ? '' : ''}</span>
@@ -1341,28 +1342,28 @@ export default function ConsentimientosTab({ patientId, recordId, patient }: Pro
                 </p>
                 <p className="flex gap-3">
                   <span className="font-bold text-lg leading-none">{currentConsent.declarations?.results ? '' : ''}</span>
-                  Entiendo que los resultados pueden variar y no se garantizan resultados específicos.
+                  Entiendo que los resultados pueden variar y no se garantizan resultados especficos.
                 </p>
                 <p className="flex gap-3">
                   <span className="font-bold text-lg leading-none">{currentConsent.declarations?.authorization ? '' : ''}</span>
-                  Autorizo voluntariamente la realización del tratamiento.
+                  Autorizo voluntariamente la realizacin del tratamiento.
                 </p>
                 <p className="flex gap-3">
                   <span className="font-bold text-lg leading-none">{currentConsent.declarations?.revocation ? '' : ''}</span>
-                  Sé que puedo revocar este consentimiento en cualquier momento antes del procedimiento.
+                  S que puedo revocar este consentimiento en cualquier momento antes del procedimiento.
                 </p>
                 <p className="flex gap-3">
                   <span className="font-bold text-lg leading-none">{currentConsent.declarations?.alternatives ? '' : ''}</span>
-                  Me han explicado las alternativas de tratamiento, incluyendo la opción de no tratarme.
+                  Me han explicado las alternativas de tratamiento, incluyendo la opcin de no tratarme.
                 </p>
                 <div className="mt-4 pt-4 border-t border-gray-200">
                   <p className="flex gap-3 mb-2">
                     <span className="font-bold text-lg leading-none">{currentConsent.authorizations?.image_use ? '' : ''}</span>
-                    Autorizo el uso de mis imágenes con fines educativos y/o promocionales.
+                    Autorizo el uso de mis imgenes con fines educativos y/o promocionales.
                   </p>
                   <p className="flex gap-3">
                     <span className="font-bold text-lg leading-none">{currentConsent.authorizations?.photo_video ? '' : ''}</span>
-                    Autorizo la toma de fotografías y/o videos del procedimiento para registro clínico.
+                    Autorizo la toma de fotografas y/o videos del procedimiento para registro clnico.
                   </p>
                 </div>
               </div>
@@ -1399,7 +1400,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient }: Pro
             </div>
             
             <div className="text-center text-xs text-gray-400 mt-12 border-t border-gray-100 pt-4">
-              Documento generado el {new Date().toLocaleDateString()}  BIOSKIN SALUD Y ESTÉTICA
+              Documento generado el {new Date().toLocaleDateString()}  BIOSKIN SALUD Y ESTTICA
             </div>
             </div>
                 </td>

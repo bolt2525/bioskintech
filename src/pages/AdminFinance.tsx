@@ -1,5 +1,6 @@
 
 import { useState, useEffect } from 'react';
+import recordsFetch from "../utils/recordsFetch";
 import { motion } from 'framer-motion';
 import { 
   Calendar, DollarSign, TrendingUp, TrendingDown, 
@@ -104,7 +105,7 @@ const AdminFinance = () => {
         endDate: dateRange.end || ''
       });
       
-      const recordsRes = await fetch(`/api/records?${queryParams.toString()}`);
+      const recordsRes = await recordsFetch(`/api/records?${queryParams.toString()}`);
       const recordsData = await recordsRes.json();
 
       if (Array.isArray(recordsData)) setRecords(recordsData);
@@ -118,7 +119,7 @@ const AdminFinance = () => {
   const handleDelete = async (id: number) => {
     if (!confirm('¿Estás seguro de eliminar este registro?')) return;
     try {
-      await fetch('/api/records', {
+      await recordsFetch('/api/records', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'financeDelete', id })
@@ -186,7 +187,7 @@ const AdminFinance = () => {
     if (!editingId) return;
     try {
       setLoading(true);
-      const res = await fetch('/api/records', {
+      const res = await recordsFetch('/api/records', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 

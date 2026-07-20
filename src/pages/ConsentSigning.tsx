@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import recordsFetch from "../utils/recordsFetch";
 import { useParams, useNavigate } from 'react-router-dom';
 import SignatureCanvas from 'react-signature-canvas';
 import { CheckCircle, AlertTriangle, PenTool, Eraser, Save, X } from 'lucide-react';
@@ -81,7 +82,7 @@ export default function ConsentSigning() {
 
   const fetchSession = async () => {
     try {
-      const res = await fetch(`/api/records?action=getSigningSession&token=${token}`);
+      const res = await recordsFetch(`/api/records?action=getSigningSession&token=${token}`);
       if (!res.ok) throw new Error('Sesión no encontrada o expirada');
       const data = await res.json();
       setSession(data);
@@ -160,7 +161,7 @@ export default function ConsentSigning() {
 
     try {
       setLoading(true);
-      const res = await fetch('/api/records', {
+      const res = await recordsFetch('/api/records', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

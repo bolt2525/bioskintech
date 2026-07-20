@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
 import { Save, AlertCircle, Check, Stethoscope, Copy, Trash2, Printer, Plus } from 'lucide-react';
 import { Tooltip } from '../../../../ui/Tooltip';
@@ -70,11 +71,11 @@ export default function ConsultationTab({ recordId, initialData, historyData = [
   const handleDuplicate = () => {
     // Keep the text but switch to "New" mode so we can save as current
     setSelectedHistoryId(null);
-    setMessage({ type: 'success', text: 'Información duplicada. Guarde para actualizar la consulta actual.' });
+    setMessage({ type: 'success', text: 'Informacin duplicada. Guarde para actualizar la consulta actual.' });
   };
 
   const handleDelete = async () => {
-    if (!selectedHistoryId || !confirm('¿Eliminar este registro del historial?')) return;
+    if (!selectedHistoryId || !confirm('Eliminar este registro del historial?')) return;
 
     try {
         const response = await recordsFetch(`/api/records?action=deleteConsultationHistory&id=${selectedHistoryId}`, {
@@ -95,7 +96,7 @@ export default function ConsultationTab({ recordId, initialData, historyData = [
   };
 
   const handlePrint = () => {
-    setMessage({ type: 'success', text: 'Abriendo vista de impresión...' });
+    setMessage({ type: 'success', text: 'Abriendo vista de impresin...' });
     const html = `
       <html lang="es">
         <head>
@@ -111,7 +112,7 @@ export default function ConsultationTab({ recordId, initialData, historyData = [
           </style>
         </head>
         <body>
-          <h1>Consulta Médica</h1>
+          <h1>Consulta Mdica</h1>
           <div class="section">
             <span class="label">Fecha del Registro:</span>
             <div class="content">
@@ -165,13 +166,13 @@ export default function ConsultationTab({ recordId, initialData, historyData = [
 
       if (!response.ok) throw new Error('Error al guardar');
 
-      setMessage({ type: 'success', text: 'Información guardada y registrada en historial' });
+      setMessage({ type: 'success', text: 'Informacin guardada y registrada en historial' });
       setSelectedHistoryId(null); // Switch to "Current" view which now matches what we saved
       
       if (onSave) onSave(); // Refresh parent to get new history list
     } catch (error) {
       console.error('Error saving consultation:', error);
-      setMessage({ type: 'error', text: 'Error al guardar la información' });
+      setMessage({ type: 'error', text: 'Error al guardar la informacin' });
     } finally {
       setSaving(false);
     }
@@ -294,11 +295,11 @@ export default function ConsultationTab({ recordId, initialData, historyData = [
 
             {selectedHistoryId ? (
                 <span className="text-xs font-medium text-amber-600 bg-amber-50 px-3 py-1 rounded-full border border-amber-100">
-                    Modo Vista Histórica
+                    Modo Vista Histrica
                 </span>
             ) : (
                 <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100">
-                    Modo Edición Actual
+                    Modo Edicin Actual
                 </span>
             )}
         </div>
@@ -352,7 +353,7 @@ export default function ConsultationTab({ recordId, initialData, historyData = [
                         rows={12}
                         value={formData.current_illness}
                         onChange={handleChange}
-                        placeholder="Describa la enfermedad actual, síntomas, evolución..."
+                        placeholder="Describa la enfermedad actual, sntomas, evolucin..."
                         className="w-full p-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#deb887] focus:border-transparent outline-none resize-none transition-all bg-gray-50/30 focus:bg-white text-gray-800 placeholder-gray-400 leading-relaxed"
                     />
                 </div>

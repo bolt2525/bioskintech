@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
 import { Save, AlertCircle, Plus, Check, History } from 'lucide-react';
 import historyOptions from '../../data/history_options.json';
@@ -128,7 +129,7 @@ export default function HistoryTab({ recordId, initialData, onSave }: HistoryTab
     const idToUse = recordId || recordIdRef.current;
 
     if (!idToUse) {
-      setMessage({ type: 'error', text: 'Error: No se encontró el ID del expediente. Intente recargar la página.' });
+      setMessage({ type: 'error', text: 'Error: No se encontr el ID del expediente. Intente recargar la pgina.' });
       return;
     }
 
@@ -163,8 +164,8 @@ export default function HistoryTab({ recordId, initialData, onSave }: HistoryTab
           <History className="w-6 h-6 text-[#deb887]" />
         </div>
         <div>
-          <h3 className="text-lg font-bold text-gray-800">Antecedentes Clínicos</h3>
-          <p className="text-sm text-gray-500">Registre el historial médico y hábitos del paciente</p>
+          <h3 className="text-lg font-bold text-gray-800">Antecedentes Clnicos</h3>
+          <p className="text-sm text-gray-500">Registre el historial mdico y hbitos del paciente</p>
         </div>
       </div>
 
@@ -190,20 +191,20 @@ export default function HistoryTab({ recordId, initialData, onSave }: HistoryTab
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <HistoryField
-          label="Antecedentes Patológicos"
+          label="Antecedentes Patolgicos"
           name="pathological"
           value={formData.pathological}
           onChange={handleChange}
-          placeholder="Enfermedades crónicas, hospitalizaciones previas..."
+          placeholder="Enfermedades crnicas, hospitalizaciones previas..."
           categoryId="antecedente_personal"
         />
 
         <HistoryField
-          label="Hábitos"
+          label="Hbitos"
           name="non_pathological"
           value={formData.non_pathological}
           onChange={handleChange}
-          placeholder="Tabaco, alcohol, actividad física, alimentación..."
+          placeholder="Tabaco, alcohol, actividad fsica, alimentacin..."
           categoryId="habito"
         />
 
@@ -212,16 +213,16 @@ export default function HistoryTab({ recordId, initialData, onSave }: HistoryTab
           name="family_history"
           value={formData.family_history}
           onChange={handleChange}
-          placeholder="Enfermedades hereditarias, antecedentes de cáncer..."
+          placeholder="Enfermedades hereditarias, antecedentes de cncer..."
           categoryId="antecedente_familiar"
         />
 
         <HistoryField
-          label="Antecedentes Quirúrgicos"
+          label="Antecedentes Quirrgicos"
           name="surgical_history"
           value={formData.surgical_history}
           onChange={handleChange}
-          placeholder="Cirugías previas, fechas aproximadas..."
+          placeholder="Cirugas previas, fechas aproximadas..."
           categoryId="quirurgico"
         />
 
@@ -230,7 +231,7 @@ export default function HistoryTab({ recordId, initialData, onSave }: HistoryTab
           name="allergies"
           value={formData.allergies}
           onChange={handleChange}
-          placeholder="Medicamentos, alimentos, látex..."
+          placeholder="Medicamentos, alimentos, ltex..."
           categoryId="alergia"
         />
 
@@ -244,7 +245,7 @@ export default function HistoryTab({ recordId, initialData, onSave }: HistoryTab
         />
 
         <HistoryField
-          label="Antecedentes Estéticos"
+          label="Antecedentes Estticos"
           name="aesthetic_history"
           value={formData.aesthetic_history}
           onChange={handleChange}
@@ -253,7 +254,7 @@ export default function HistoryTab({ recordId, initialData, onSave }: HistoryTab
         />
 
         <HistoryField
-          label="Antecedentes Ginecológicos"
+          label="Antecedentes Ginecolgicos"
           name="gynecological_history"
           value={formData.gynecological_history}
           onChange={handleChange}
@@ -266,7 +267,7 @@ export default function HistoryTab({ recordId, initialData, onSave }: HistoryTab
           name="facial_routine"
           value={formData.facial_routine}
           onChange={handleChange}
-          placeholder="Limpieza, hidratación, protección solar..."
+          placeholder="Limpieza, hidratacin, proteccin solar..."
           categoryId="rutina_cuidado_facial"
         />
       </div>

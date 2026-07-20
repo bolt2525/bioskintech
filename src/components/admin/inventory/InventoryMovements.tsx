@@ -1,5 +1,6 @@
 // @ts-nocheck
 import React from 'react';
+import recordsFetch from "../../../utils/recordsFetch";
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { ArrowUpRight, ArrowDownLeft, Activity, Search, Trash2, Filter, Calendar, RefreshCw, Eraser } from 'lucide-react';
@@ -42,7 +43,7 @@ export default function InventoryMovements() {
       if (startDate) queryParams.append('startDate', startDate);
       if (endDate) queryParams.append('endDate', endDate);
 
-      const res = await fetch(`/api/records?${queryParams.toString()}`);
+      const res = await recordsFetch(`/api/records?${queryParams.toString()}`);
       if (res.ok) {
         const data = await res.json();
         setMovements(data);
@@ -60,7 +61,7 @@ export default function InventoryMovements() {
     }
 
     try {
-      const res = await fetch(`/api/records?action=inventoryDeleteMovement&id=${id}`, {
+      const res = await recordsFetch(`/api/records?action=inventoryDeleteMovement&id=${id}`, {
         method: 'POST'
       });
       if (res.ok) {
@@ -80,7 +81,7 @@ export default function InventoryMovements() {
     if (!window.confirm(`¿Confirmas eliminar todos los movimientos anteriores a ${days} días?`)) return;
 
     try {
-      const res = await fetch('/api/records?action=inventoryClearMovements', {
+      const res = await recordsFetch('/api/records?action=inventoryClearMovements', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ days: Number(days) })

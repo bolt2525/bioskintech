@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
 import { Save, AlertCircle, Plus, Trash2, Copy, Printer, Info, Edit2, Check, User, FileText, Eye, EyeOff } from 'lucide-react';
 import { CLINICAL_FIELDS, LESION_CATALOG, PARAMETER_TOOLTIPS } from '../../../../../data/clinical-catalogs';
@@ -17,18 +18,18 @@ const TERCIO_BOUNDARIES = _trazado.hairline as {
   topY: number; bottomY: number;
   tercioMedioBottomY: number; tercioInferiorBottomY: number;
 };
-// Límite lateral: líneas verticales desplazadas hacia afuera (zona sien/temporal)
+// Lmite lateral: lneas verticales desplazadas hacia afuera (zona sien/temporal)
 const COLA_CEJA_X_LEFT  = -1.0;
 const COLA_CEJA_X_RIGHT =  1.0;
-const COLA_CEJA_X       =  1.0; // umbral de detección lateral
-// Líneas verticales imaginarias en cola de ceja: de frente-hairline hasta mentón
+const COLA_CEJA_X       =  1.0; // umbral de deteccin lateral
+// Lneas verticales imaginarias en cola de ceja: de frente-hairline hasta mentn
 const FACE_Y_MAX = 2.2;
 const FACE_Y_MIN = -2.5;
 const COLA_CEJA_VERTICALS: ReferenceLine[] = [
   {
     id: 'ceja-vert-izq',
     type: 'vertical',
-    label: 'Límite lateral Izq.',
+    label: 'Lmite lateral Izq.',
     color: '#38bdf8',
     visible: true,
     dashed: true,
@@ -40,7 +41,7 @@ const COLA_CEJA_VERTICALS: ReferenceLine[] = [
   {
     id: 'ceja-vert-der',
     type: 'vertical',
-    label: 'Límite lateral Der.',
+    label: 'Lmite lateral Der.',
     color: '#38bdf8',
     visible: true,
     dashed: true,
@@ -55,59 +56,59 @@ const FACE_REFERENCE_LINES: ReferenceLine[] = [
   ...COLA_CEJA_VERTICALS,
 ];
 
-// -- Zonas sugeridas por tercio (anatómicamente correctas, piel del rostro) ----
-// Tercio superior: frente — desde cejas hasta nacimiento del cabello
+// -- Zonas sugeridas por tercio (anatmicamente correctas, piel del rostro) ----
+// Tercio superior: frente  desde cejas hasta nacimiento del cabello
 const ZONES_SUPERIOR = [
   'Frente central',
   'Frente lateral',
   'Glabela',
   'Entrecejo',
-  'Región superciliar (cejas)',
+  'Regin superciliar (cejas)',
   'Cola de ceja',
-  'Líneas de expresión frontal',
-  'Región temporal superior',
+  'Lneas de expresin frontal',
+  'Regin temporal superior',
 ];
-// Tercio medio: zona ocular, nasal y malar — desde base del ojo hasta base de nariz
+// Tercio medio: zona ocular, nasal y malar  desde base del ojo hasta base de nariz
 const ZONES_MEDIO = [
-  'Párpado superior',
-  'Párpado inferior',
+  'Prpado superior',
+  'Prpado inferior',
   'Surco palpebral inferior (ojeras)',
-  'Valle de lágrimas',
-  'Región infraorbitaria',
+  'Valle de lgrimas',
+  'Regin infraorbitaria',
   'Patas de gallo',
   'Dorso nasal',
   'Punta nasal',
   'Alas nasales',
-  'Pómulo / región malar',
+  'Pmulo / regin malar',
   'Mejilla',
   'Surco nasogeniano',
-  'Región cigomática',
+  'Regin cigomtica',
 ];
-// Tercio inferior: perioral, mentón y mandíbula — desde base de nariz hasta límite inferior
+// Tercio inferior: perioral, mentn y mandbula  desde base de nariz hasta lmite inferior
 const ZONES_INFERIOR = [
   'Labio superior',
   'Labio inferior',
   'Filtrum (surco subnasal)',
   'Comisuras labiales',
-  'Surco perioral (código de barras)',
+  'Surco perioral (cdigo de barras)',
   'Surco marioneta',
-  'Mentón',
-  'Región mentoniana',
-  'Área submentoniana / papada',
-  'Línea mandibular',
+  'Mentn',
+  'Regin mentoniana',
+  'rea submentoniana / papada',
+  'Lnea mandibular',
 ];
 const ZONES_LATERAL = [
   'Sien',
-  'Región preauricular',
+  'Regin preauricular',
   'Oreja',
-  'Región retroauricular',
+  'Regin retroauricular',
   'Nuca',
   'Cabeza',
 ];
 const ZONES_CUELLO = [
-  'Mandíbula',
-  'Ángulo mandibular',
-  'Área submentoniana',
+  'Mandbula',
+  'ngulo mandibular',
+  'rea submentoniana',
   'Cuello anterior',
   'Cuello lateral',
 ];
@@ -201,7 +202,7 @@ const MarkEditModal = ({
       >
         <h3 className="text-xl font-bold mb-4 text-gray-800 flex items-center gap-2 border-b border-gray-100 pb-4">
           <div className="w-1.5 h-6 bg-[#deb887] rounded-full" />
-          Detalles de la Lesión
+          Detalles de la Lesin
           {tercio && (
             <span className="ml-auto text-xs font-semibold px-2.5 py-1 rounded-full bg-[#deb887]/15 text-[#b8956a] border border-[#deb887]/30">
               {tercio}
@@ -211,7 +212,7 @@ const MarkEditModal = ({
         
         <div className="space-y-4">
           <div className="space-y-2">
-            <label className="block text-sm font-bold text-gray-700">Tipo de Lesión</label>
+            <label className="block text-sm font-bold text-gray-700">Tipo de Lesin</label>
             <input 
               list="lesion-options-modal"
               value={editedMark.category}
@@ -240,7 +241,7 @@ const MarkEditModal = ({
           </div>
 
           <div className="space-y-2">
-            <label className="block text-sm font-bold text-gray-700">Distribución</label>
+            <label className="block text-sm font-bold text-gray-700">Distribucin</label>
             <div className="flex gap-4 p-3 bg-gray-50 rounded-xl border border-gray-100">
               <label className="flex items-center gap-2 cursor-pointer group">
                 <input 
@@ -268,7 +269,7 @@ const MarkEditModal = ({
           </div>
 
           <div className="space-y-2">
-            <label className="block text-sm font-bold text-gray-700">Zona / Ubicación</label>
+            <label className="block text-sm font-bold text-gray-700">Zona / Ubicacin</label>
             {suggestedZones && suggestedZones.length > 0 && (
               <div className="flex flex-wrap gap-1.5 mb-2">
                 {suggestedZones.map(z => (
@@ -297,7 +298,7 @@ const MarkEditModal = ({
             />
             <p className="text-xs text-gray-500 flex items-center gap-1">
               <Info size={12} />
-              {suggestedZones ? 'Seleccione una zona sugerida o escríbala.' : 'Puede ajustar el nombre de la zona manualmente.'}
+              {suggestedZones ? 'Seleccione una zona sugerida o escrbala.' : 'Puede ajustar el nombre de la zona manualmente.'}
             </p>
           </div>
         </div>
@@ -406,7 +407,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
   };
 
   const handleDelete = async () => {
-    if (!currentExam.id || !confirm('¿Eliminar este examen físico?')) return;
+    if (!currentExam.id || !confirm('Eliminar este examen fsico?')) return;
     setDeleting(true);
     try {
       const response = await recordsFetch(`/api/records?action=deletePhysicalExam&id=${currentExam.id}`, {
@@ -416,13 +417,13 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
       if (response.ok) {
         onSave();
         handleNew();
-        setMessage({ type: 'success', text: 'Examen físico eliminado correctamente' });
+        setMessage({ type: 'success', text: 'Examen fsico eliminado correctamente' });
       } else {
         throw new Error('Error al eliminar');
       }
     } catch (error) {
       console.error('Error deleting exam:', error);
-      setMessage({ type: 'error', text: 'Error al eliminar el examen físico' });
+      setMessage({ type: 'error', text: 'Error al eliminar el examen fsico' });
     } finally {
       setDeleting(false);
     }
@@ -437,7 +438,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
       let warningMsg = 'Advertencia:\n';
       if (hasEmptyFields) warningMsg += '- Hay campos obligatorios sin seleccionar (Tipo de piel, Fototipo, Glogau).\n';
       if (hasNoMarks) warningMsg += '- No se han registrado lesiones en el mapa facial ni corporal.\n';
-      warningMsg += '\n¿Desea guardar de todos modos?';
+      warningMsg += '\nDesea guardar de todos modos?';
 
       if (!confirm(warningMsg)) return;
     }
@@ -459,21 +460,21 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
       });
 
       if (response.ok) {
-        setMessage({ type: 'success', text: 'Examen físico guardado correctamente' });
+        setMessage({ type: 'success', text: 'Examen fsico guardado correctamente' });
         onSave();
       } else {
         const errData = await response.json();
         throw new Error(errData.error || 'Error al guardar');
       }
     } catch (error: any) {
-      setMessage({ type: 'error', text: error.message || 'Error al guardar el examen físico' });
+      setMessage({ type: 'error', text: error.message || 'Error al guardar el examen fsico' });
     } finally {
       setSaving(false);
     }
   };
 
   const handlePrint = () => {
-    setMessage({ type: 'success', text: 'Imprimiendo página actual...' });
+    setMessage({ type: 'success', text: 'Imprimiendo pgina actual...' });
     window.print();
   };
 
@@ -487,7 +488,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
   // 3D model click ? identify tercio ? open modal with suggestions
   const handle3DMarkerPlaced = (marker3D: Marker3D) => {
     if (!selectedCategory) {
-      alert('Por favor seleccione una lesión/categoría primero');
+      alert('Por favor seleccione una lesin/categora primero');
       return;
     }
     const region = getFacialRegion(marker3D.position);
@@ -585,7 +586,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
       <div className="w-full md:w-72 border-r-0 md:border-r border-b md:border-b-0 border-gray-100 pr-0 md:pr-6 pb-4 md:pb-0 flex flex-col gap-4 shrink-0">
         <div className="font-bold text-gray-800 flex items-center gap-2">
           <div className="w-1 h-5 bg-[#deb887] rounded-full" />
-          Historial de Exámenes
+          Historial de Exmenes
         </div>
         <div className="flex-1 overflow-y-auto space-y-3 max-h-[200px] md:max-h-none pr-2 custom-scrollbar">
           {physicalExams.map((exam, index) => (
@@ -725,14 +726,14 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
             </div>
 
             <div className="mb-6 space-y-2">
-              <label className="block text-sm font-bold text-gray-700">Seleccionar Lesión para Marcar:</label>
+              <label className="block text-sm font-bold text-gray-700">Seleccionar Lesin para Marcar:</label>
               <div className="relative">
                 <input 
                   list="lesion-options-main"
                   className="w-full p-3 pl-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#deb887] outline-none transition-all shadow-sm bg-white"
                   value={selectedCategory}
                   onChange={(e) => setSelectedCategory(e.target.value)}
-                  placeholder="Seleccione o escriba una lesión..."
+                  placeholder="Seleccione o escriba una lesin..."
                 />
                 <datalist id="lesion-options-main">
                   {LESION_CATALOG.map(l => (
@@ -743,7 +744,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
               {activeTab === 'facial' && !selectedCategory && (
                 <p className="text-xs text-amber-600 flex items-center gap-1 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-100">
                   <Info size={11} />
-                  Seleccione una lesión antes de marcar en el modelo 3D
+                  Seleccione una lesin antes de marcar en el modelo 3D
                 </p>
               )}
             </div>
@@ -754,10 +755,10 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
                   <button
                     onClick={() => setShowReferenceLines(v => !v)}
                     className="absolute top-2 right-2 z-10 flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg bg-gray-900/65 text-white hover:bg-gray-900/90 transition-colors border border-white/15 backdrop-blur-sm select-none"
-                    title={showReferenceLines ? 'Ocultar líneas de referencia' : 'Mostrar líneas de referencia'}
+                    title={showReferenceLines ? 'Ocultar lneas de referencia' : 'Mostrar lneas de referencia'}
                   >
                     {showReferenceLines ? <EyeOff size={12} /> : <Eye size={12} />}
-                    {showReferenceLines ? 'Ocultar líneas' : 'Mostrar líneas'}
+                    {showReferenceLines ? 'Ocultar lneas' : 'Mostrar lneas'}
                   </button>
                   <Clinical3DViewer
                     markers={face3DMarkers}
@@ -792,8 +793,8 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
                 <div className="mb-3 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 text-xs text-amber-700">
                   <Info size={13} className="mt-0.5 shrink-0" />
                   <span>
-                    <strong>{legacyFaceMarks.length}</strong> marcación{legacyFaceMarks.length > 1 ? 'es' : ''} anterior{legacyFaceMarks.length > 1 ? 'es' : ''} (formato 2D) preservada{legacyFaceMarks.length > 1 ? 's' : ''}.
-                    No se visualizan en el modelo 3D pero sus datos están intactos.
+                    <strong>{legacyFaceMarks.length}</strong> marcacin{legacyFaceMarks.length > 1 ? 'es' : ''} anterior{legacyFaceMarks.length > 1 ? 'es' : ''} (formato 2D) preservada{legacyFaceMarks.length > 1 ? 's' : ''}.
+                    No se visualizan en el modelo 3D pero sus datos estn intactos.
                   </span>
                 </div>
               )}
@@ -861,7 +862,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
           <div className="w-full md:w-[350px] flex flex-col gap-4 overflow-y-auto pr-2 shrink-0 custom-scrollbar">
             <h3 className="font-bold text-gray-800 border-b border-gray-100 pb-3 flex items-center gap-2 sticky top-0 bg-white z-10">
               <div className="w-1 h-5 bg-[#deb887] rounded-full" />
-              Parámetros Clínicos
+              Parmetros Clnicos
             </h3>
             
             {Object.entries(CLINICAL_FIELDS).map(([key, field]) => (
