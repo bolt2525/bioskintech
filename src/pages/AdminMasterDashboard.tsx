@@ -126,6 +126,130 @@ function ClinicFeaturesPanel({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// StaffMemberForm — Formulario inline para agregar miembro de staff
+// ─────────────────────────────────────────────────────────────────────────────
+function StaffMemberForm({
+  allUsers,
+  onAdd,
+}: {
+  allUsers: ClinicUser[];
+  onAdd: (m: { name: string; email: string; clinic_user_id?: number }) => void;
+}) {
+  const [name,  setName]  = useState('');
+  const [email, setEmail] = useState('');
+  const [selId, setSelId] = useState('');
+
+  const handleAdd = () => {
+    const n = name.trim();
+    const e = email.trim();
+    if (!n || !e) return;
+    onAdd({ name: n, email: e, clinic_user_id: selId ? parseInt(selId) : undefined });
+    setName(''); setEmail(''); setSelId('');
+  };
+
+  return (
+    <div className="mt-2 space-y-2 border-t pt-3">
+      <p className="text-xs text-gray-400">Agregar miembro:</p>
+      <select value={selId} onChange={e => {
+        const u = allUsers.find(u => String(u.id) === e.target.value);
+        if (u) { setName(u.full_name || u.username); setEmail(u.email || ''); setSelId(e.target.value); }
+        else setSelId('');
+      }} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none">
+        <option value="">— O ingresar manualmente —</option>
+        {allUsers.map(u => <option key={u.id} value={String(u.id)}>{u.full_name || u.username}</option>)}
+      </select>
+      <div className="grid grid-cols-2 gap-2">
+        <input value={name}  onChange={e => setName(e.target.value)}  placeholder="Nombre" className="px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
+        <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" type="email" className="px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
+      </div>
+      <button onClick={handleAdd} disabled={!name.trim() || !email.trim()}
+        className="w-full py-2 rounded-lg text-white text-xs font-medium disabled:opacity-40"
+        style={{background:'linear-gradient(135deg,#deb887,#c5a075)'}}>
+        Agregar al staff
+      </button>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UserModuleOverridesPanel — Permisos de módulos por usuario
+// ─────────────────────────────────────────────────────────────────────────────
+function UserModuleOverridesPanel({
+  userId,
+  clinicId,
+  authHeader,
+  featMap,
+  flash,
+}: {
+  userId: number;
+  clinicId: number;
+  authHeader: () => Record<string, string>;
+  featMap: Record<number, Record<string, boolean>>;
+  flash: (text: string, type?: 'ok' | 'err') => void;
+}) {
+  const [overrides, setOverrides] = useState<Record<string, boolean>>({});
+  const [open, setOpen] = useState(false);
+
+  const load = async () => {
+    const res  = await fetch(`/api/admin-auth?action=getUserModuleOverrides&userId=${userId}`, { headers: authHeader() });
+    const data = await res.json();
+    const map: Record<string, boolean> = {};
+    (data.overrides || []).forEach((o: { feature: string; enabled: boolean }) => { map[o.feature] = o.enabled; });
+    setOverrides(map);
+  };
+
+  const toggle = async (feat: string, disabled: boolean) => {
+    setOverrides(p => ({ ...p, [feat]: !disabled }));
+    await fetch('/api/admin-auth?action=setUserModuleOverride', {
+      method: 'POST', headers: authHeader(),
+      body: JSON.stringify({ userId, feature: feat, enabled: !disabled }),
+    });
+    flash(disabled ? `Módulo "${feat}" habilitado para este usuario` : `Módulo "${feat}" restringido para este usuario`);
+  };
+
+  // Módulos habilitados para la clínica de este usuario
+  const clinicFeats = Object.entries(featMap[clinicId] || {})
+    .filter(([, enabled]) => enabled !== false)
+    .map(([f]) => f);
+
+  return (
+    <div className="border border-dashed border-gray-200 rounded-xl overflow-hidden mt-1">
+      <button
+        onClick={() => { setOpen(!open); if (!open) load(); }}
+        className="w-full flex items-center justify-between p-3 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
+      >
+        <span className="text-sm font-medium text-gray-700">⚙ Permisos de módulos</span>
+        {open ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+      </button>
+      {open && (
+        <div className="p-3">
+          <p className="text-xs text-gray-400 mb-3">Desactiva módulos específicos para este usuario. Solo aplica sobre los módulos habilitados para su clínica.</p>
+          <div className="grid grid-cols-2 gap-2">
+            {clinicFeats.length === 0 ? (
+              <p className="text-xs text-gray-400 col-span-2">Selecciona una clínica primero.</p>
+            ) : clinicFeats.map(feat => {
+              const meta    = FEATURE_META[feat as FeatureKey];
+              if (!meta) return null;
+              const Icon    = meta.icon;
+              const isDisabled = overrides[feat] === false;
+              return (
+                <label key={feat} className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-all ${isDisabled ? 'border-red-100 bg-red-50' : 'border-gray-100 bg-white hover:bg-gray-50'}`}>
+                  <input type="checkbox" checked={!isDisabled}
+                    onChange={() => toggle(feat, isDisabled)}
+                    className="w-3.5 h-3.5 accent-[#deb887]" />
+                  <Icon className={`w-3.5 h-3.5 ${meta.color}`} />
+                  <span className={`text-xs truncate ${isDisabled ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{meta.label}</span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // ConsentTemplatesPanel — Gestión global de plantillas y asignación por clínica
 // ─────────────────────────────────────────────────────────────────────────────
 interface ConsentTemplate {
@@ -463,10 +587,12 @@ export default function AdminMasterDashboard() {
     agenda:     { start_hour: string; end_hour: string; slot_minutes: number; calendar_prefix: string };
   };
   const [settingsModal, setSettingsModal] = useState<{ open: boolean; clinicId: number; clinicName: string } | null>(null);
-  const [settingsTab, setSettingsTab]     = useState<'general'|'treatments'|'email'|'agenda'|'modules'>('general');
+  const [settingsTab, setSettingsTab]     = useState<'general'|'email'|'agenda'|'modules'>('general');
   const [settingsData, setSettingsData]   = useState<ClinicSettingsData | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [newTreatment, setNewTreatment]   = useState('');
+  // Acordeones abiertos en tab Módulos
+  const [openModuleSection, setOpenModuleSection] = useState<string | null>('clinical_records');
   // Plantillas de consentimiento en el contexto de ajustes
   const [settingsTemplates, setSettingsTemplates] = useState<any[]>([]);
   const [settingsAssigned,  setSettingsAssigned]  = useState<number[]>([]);
@@ -814,11 +940,12 @@ export default function AdminMasterDashboard() {
           {/* Tabs de navegación */}
           <div className="flex gap-1 mt-5 bg-white/5 border border-white/10 rounded-xl p-1 w-fit">
             {([
-              ['clinics', '🏥 Clínicas'],
-              ['users',   '👥 Usuarios'],
-              ['modules', '✦ Módulos'],
-              ['system',  '⚙ Sistema'],
-              ['templates', '📄 Plantillas'],            ] as [TabKey, string][]).map(([key, label]) => (
+              ['clinics',   '🏥 Clínicas'],
+              ['users',     '👥 Usuarios'],
+              ['modules',   '✦ Módulos'],
+              ['templates', '⚙ Config. Global'],
+              ['system',    '🔧 Sistema'],
+            ] as [TabKey, string][]).map(([key, label]) => (
               <button
                 key={key}
                 onClick={() => setTab(key)}
@@ -1194,13 +1321,43 @@ export default function AdminMasterDashboard() {
           </div>
         )}
 
-        {/* ── Tab: Plantillas de Consentimiento ────────────────────────── */}
+        {/* ── Tab: Configuración Global ─────────────────────────────────── */}
         {tab === 'templates' && (
-          <ConsentTemplatesPanel
-            clinics={clinics}
-            authHeader={authHeader}
-            flash={flash}
-          />
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">Configuración Global</h2>
+              <p className="text-sm text-gray-400 mt-1">Seeds y plantillas globales del sistema. Cada clínica selecciona cuáles usa desde sus ajustes.</p>
+            </div>
+
+            {/* ── Sección: Fichas Clínicas ── */}
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
+                <ClipboardList className="w-5 h-5 text-[#deb887]" />
+                <h3 className="font-semibold text-gray-900 text-sm">Fichas Clínicas</h3>
+                <span className="ml-auto text-xs text-gray-400">Plantillas de consentimiento</span>
+              </div>
+              <div className="p-5">
+                <ConsentTemplatesPanel
+                  clinics={clinics}
+                  authHeader={authHeader}
+                  flash={flash}
+                />
+              </div>
+            </div>
+
+            {/* ── Sección: Agenda (placeholder — futuro catálogo global de tratamientos) ── */}
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden opacity-70">
+              <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
+                <Calendar className="w-5 h-5 text-indigo-500" />
+                <h3 className="font-semibold text-gray-900 text-sm">Agenda</h3>
+                <span className="ml-2 text-[10px] bg-gray-100 text-gray-400 px-2 py-0.5 rounded-full">Próximamente</span>
+                <span className="ml-auto text-xs text-gray-400">Catálogo global de tratamientos</span>
+              </div>
+              <div className="p-5">
+                <p className="text-xs text-gray-400">Los tratamientos globales del catálogo aparecerán aquí para que cada clínica seleccione cuáles ofrece. Por ahora se configuran individualmente en Ajustes de cada clínica (⚙ Módulos → Agenda).</p>
+              </div>
+            </div>
+          </div>
         )}
       </div>
 
@@ -1294,6 +1451,17 @@ export default function AdminMasterDashboard() {
                   </div>
                 </div>
               </div>
+            )}
+
+            {/* ── Permisos de módulos (solo en edición) ── */}
+            {userModal.userId && (
+              <UserModuleOverridesPanel
+                userId={userModal.userId}
+                clinicId={parseInt(userForm.clinic_id || '0')}
+                authHeader={authHeader}
+                featMap={featMap}
+                flash={flash}
+              />
             )}
 
             <div className="flex justify-end gap-3 pt-2">
@@ -1390,7 +1558,7 @@ export default function AdminMasterDashboard() {
 
             {/* Tabs */}
             <div className="flex border-b px-5 gap-1 bg-gray-50 overflow-x-auto">
-              {([['general','🏥 General'],['treatments','💉 Tratamientos'],['email','📧 Email'],['agenda','📅 Agenda'],['modules','⚙ Módulos']] as [typeof settingsTab, string][]).map(([k,l]) => (
+              {([['general','🏥 General'],['email','📧 Email'],['agenda','📅 Agenda'],['modules','⚙ Módulos']] as [typeof settingsTab, string][]).map(([k,l]) => (
                 <button key={k} onClick={() => setSettingsTab(k)}
                   className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${settingsTab===k ? 'border-[#deb887] text-[#c5a075]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
                   {l}
@@ -1445,33 +1613,9 @@ export default function AdminMasterDashboard() {
                   )}
 
                   {/* ── Tratamientos ── */}
-                  {settingsTab === 'treatments' && (
-                    <div className="space-y-3">
-                      <p className="text-xs text-gray-400">Lista de tratamientos disponibles para agendar citas. Drag para reordenar.</p>
-                      <div className="space-y-2 max-h-64 overflow-y-auto">
-                        {settingsData.treatments.map((t, i) => (
-                          <div key={i} className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2">
-                            <span className="flex-1 text-sm text-gray-700">{t}</span>
-                            <button onClick={() => setSettingsData(s => s ? ({...s, treatments: s.treatments.filter((_,j)=>j!==i)}) : s)}
-                              className="text-red-400 hover:text-red-600"><X className="w-3.5 h-3.5"/></button>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="flex gap-2">
-                        <input value={newTreatment} onChange={e => setNewTreatment(e.target.value)}
-                          onKeyDown={e => { if(e.key==='Enter' && newTreatment.trim()) { setSettingsData(s => s ? ({...s, treatments: [...s.treatments, newTreatment.trim()]}) : s); setNewTreatment(''); }}}
-                          placeholder="Agregar tratamiento..." className="flex-1 px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
-                        <button onClick={() => { if(newTreatment.trim()) { setSettingsData(s => s ? ({...s, treatments: [...s.treatments, newTreatment.trim()]}) : s); setNewTreatment(''); }}}
-                          className="px-3 py-2 rounded-lg text-white text-sm" style={{background:'linear-gradient(135deg,#deb887,#c5a075)'}}>
-                          <Plus className="w-4 h-4"/>
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
                   {/* ── Email ── */}
                   {settingsTab === 'email' && (
-                    <div className="space-y-3">
+                    <div className="space-y-4">
                       {([
                         ['staff_email','Email del staff (recibe notificaciones)','email'],
                         ['from_name','Nombre remitente (ej: BIOSKIN Cuenca)','text'],
@@ -1485,6 +1629,28 @@ export default function AdminMasterDashboard() {
                             className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
                         </div>
                       ))}
+
+                      {/* ── Staff Members (doctores/personal que reciben notificaciones) ── */}
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-2">👨‍⚕️ Staff / Médicos de la clínica</label>
+                        <p className="text-xs text-gray-400 mb-2">Personas que pueden ser asignadas a citas. También recibirán el email de confirmación.</p>
+                        <div className="space-y-2 max-h-36 overflow-y-auto">
+                          {((settingsData.email as any).staff_members || []).map((m: any, i: number) => (
+                            <div key={i} className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2">
+                              <div className="flex-1 min-w-0">
+                                <span className="text-sm font-medium text-gray-800 truncate">{m.name}</span>
+                                <span className="ml-2 text-xs text-gray-400 truncate">{m.email}</span>
+                              </div>
+                              <button onClick={() => setSettingsData(s => s ? ({...s, email: {...s.email, staff_members: ((s.email as any).staff_members || []).filter((_: any, j: number) => j !== i)} as any}) : s)}
+                                className="text-red-400 hover:text-red-600 shrink-0"><X className="w-3.5 h-3.5"/></button>
+                            </div>
+                          ))}
+                        </div>
+                        <StaffMemberForm
+                          allUsers={allUsers.filter(u => u.clinic_id === settingsModal?.clinicId)}
+                          onAdd={member => setSettingsData(s => s ? ({...s, email: {...s.email, staff_members: [...((s.email as any).staff_members || []), member]} as any}) : s)}
+                        />
+                      </div>
                     </div>
                   )}
 
@@ -1524,82 +1690,126 @@ export default function AdminMasterDashboard() {
                   )}
 
                   {/* ── Módulos ── */}
-                  {settingsTab === 'modules' && settingsModal && (
-                    <div className="space-y-6">
-                      <p className="text-xs text-gray-400">Configura las opciones de cada módulo habilitado para <strong>{settingsModal.clinicName}</strong>.</p>
+                  {settingsTab === 'modules' && settingsModal && settingsData && (
+                    <div className="space-y-2">
+                      <p className="text-xs text-gray-400 mb-3">Configura cada módulo habilitado para <strong>{settingsModal.clinicName}</strong>. Solo se muestran los módulos activos.</p>
 
-                      {/* ── Fichas Clínicas: Plantillas de Consentimiento ── */}
+                      {/* ── ACORDEÓN: Fichas Clínicas ── */}
                       {(featMap[settingsModal.clinicId] || {})['clinical_records'] !== false && (
-                        <div>
-                          <div className="flex items-center gap-2 mb-3">
-                            <span className="text-sm font-semibold text-gray-800">📋 Fichas Clínicas</span>
-                            <span className="text-[10px] bg-[#deb887]/20 text-[#c5a075] px-2 py-0.5 rounded-full font-medium">Plantillas de Consentimiento</span>
-                          </div>
-                          {settingsTemplates.length === 0 ? (
-                            <p className="text-xs text-gray-400 italic">Sin plantillas globales. Ve al tab "Plantillas" para crear o sembrar las estándar.</p>
-                          ) : (
-                            <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                              {settingsTemplates.map(t => (
-                                <label key={t.id} className="flex items-center gap-3 p-2.5 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer">
-                                  <input type="checkbox"
-                                    checked={settingsAssigned.includes(t.id)}
-                                    onChange={async e => {
-                                      const assign = e.target.checked;
-                                      setSettingsAssigned(prev => assign ? [...prev, t.id] : prev.filter(id => id !== t.id));
-                                      await fetch('/api/admin-auth?action=assignConsentTemplate', {
-                                        method: 'POST', headers: authHeader(),
-                                        body: JSON.stringify({ clinicId: settingsModal.clinicId, templateId: t.id, assign }),
-                                      });
-                                    }}
-                                    className="w-4 h-4 rounded accent-[#deb887]" />
-                                  <div className="min-w-0">
-                                    <div className="text-sm font-medium text-gray-900 truncate">{t.name}</div>
-                                    {t.procedure_type && t.procedure_type !== t.name && (
-                                      <div className="text-xs text-gray-400 truncate">{t.procedure_type}</div>
-                                    )}
+                        <div className="border border-gray-200 rounded-xl overflow-hidden">
+                          <button
+                            onClick={() => setOpenModuleSection(p => p === 'clinical_records' ? null : 'clinical_records')}
+                            className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-base">📋</span>
+                              <span className="text-sm font-semibold text-gray-800">Fichas Clínicas</span>
+                            </div>
+                            {openModuleSection === 'clinical_records'
+                              ? <ChevronUp className="w-4 h-4 text-gray-400" />
+                              : <ChevronDown className="w-4 h-4 text-gray-400" />}
+                          </button>
+                          {openModuleSection === 'clinical_records' && (
+                            <div className="p-4 space-y-4 border-t border-gray-100">
+                              <div>
+                                <p className="text-xs font-medium text-gray-500 mb-2">Plantillas de consentimiento asignadas</p>
+                                {settingsTemplates.length === 0 ? (
+                                  <p className="text-xs text-gray-400 italic">Sin plantillas globales. Ve al tab Config. Global para crearlas.</p>
+                                ) : (
+                                  <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
+                                    {settingsTemplates.map(t => (
+                                      <label key={t.id} className="flex items-center gap-3 p-2.5 rounded-lg border border-gray-100 hover:bg-gray-50 cursor-pointer">
+                                        <input type="checkbox"
+                                          checked={settingsAssigned.includes(t.id)}
+                                          onChange={async e => {
+                                            const assign = e.target.checked;
+                                            setSettingsAssigned(prev => assign ? [...prev, t.id] : prev.filter(id => id !== t.id));
+                                            await fetch('/api/admin-auth?action=assignConsentTemplate', {
+                                              method: 'POST', headers: authHeader(),
+                                              body: JSON.stringify({ clinicId: settingsModal.clinicId, templateId: t.id, assign }),
+                                            });
+                                          }}
+                                          className="w-4 h-4 rounded accent-[#deb887]" />
+                                        <div className="min-w-0">
+                                          <div className="text-sm text-gray-900 truncate">{t.name}</div>
+                                          {t.procedure_type && t.procedure_type !== t.name && (
+                                            <div className="text-xs text-gray-400 truncate">{t.procedure_type}</div>
+                                          )}
+                                        </div>
+                                      </label>
+                                    ))}
                                   </div>
-                                </label>
-                              ))}
+                                )}
+                                <p className="text-xs text-gray-400 mt-2">{settingsAssigned.length} de {settingsTemplates.length} plantillas asignadas.</p>
+                              </div>
                             </div>
                           )}
-                          <p className="text-xs text-gray-400 mt-2">
-                            {settingsAssigned.length} de {settingsTemplates.length} plantillas asignadas a esta clínica.
-                          </p>
                         </div>
                       )}
 
-                      {/* ── Agenda: Tratamientos ── */}
+                      {/* ── ACORDEÓN: Agenda — Tratamientos ── */}
                       {(featMap[settingsModal.clinicId] || {})['calendar'] !== false && (
-                        <div>
-                          <div className="flex items-center gap-2 mb-2">
-                            <span className="text-sm font-semibold text-gray-800">📅 Agenda</span>
-                            <span className="text-[10px] bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full font-medium">Tratamientos disponibles</span>
-                          </div>
-                          <p className="text-xs text-gray-500">Los tratamientos disponibles para agendar se configuran en el tab <button onClick={() => setSettingsTab('treatments')} className="text-[#deb887] underline font-medium">Tratamientos</button>.</p>
+                        <div className="border border-gray-200 rounded-xl overflow-hidden">
+                          <button
+                            onClick={() => setOpenModuleSection(p => p === 'agenda' ? null : 'agenda')}
+                            className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-base">📅</span>
+                              <span className="text-sm font-semibold text-gray-800">Agenda</span>
+                            </div>
+                            {openModuleSection === 'agenda'
+                              ? <ChevronUp className="w-4 h-4 text-gray-400" />
+                              : <ChevronDown className="w-4 h-4 text-gray-400" />}
+                          </button>
+                          {openModuleSection === 'agenda' && (
+                            <div className="p-4 space-y-3 border-t border-gray-100">
+                              <p className="text-xs text-gray-500">Tratamientos disponibles para agendar citas en esta clínica.</p>
+                              <div className="space-y-2 max-h-44 overflow-y-auto">
+                                {settingsData.treatments.map((t, i) => (
+                                  <div key={i} className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2">
+                                    <span className="flex-1 text-sm text-gray-700">{t}</span>
+                                    <button onClick={() => setSettingsData(s => s ? ({...s, treatments: s.treatments.filter((_,j)=>j!==i)}) : s)}
+                                      className="text-red-400 hover:text-red-600"><X className="w-3.5 h-3.5"/></button>
+                                  </div>
+                                ))}
+                              </div>
+                              <div className="flex gap-2">
+                                <input value={newTreatment} onChange={e => setNewTreatment(e.target.value)}
+                                  onKeyDown={e => { if(e.key==='Enter' && newTreatment.trim()) { setSettingsData(s => s ? ({...s, treatments: [...s.treatments, newTreatment.trim()]}) : s); setNewTreatment(''); }}}
+                                  placeholder="Agregar tratamiento..." className="flex-1 px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
+                                <button onClick={() => { if(newTreatment.trim()) { setSettingsData(s => s ? ({...s, treatments: [...s.treatments, newTreatment.trim()]}) : s); setNewTreatment(''); }}}
+                                  className="px-3 py-2 rounded-lg text-white text-sm" style={{background:'linear-gradient(135deg,#deb887,#c5a075)'}}>
+                                  <Plus className="w-4 h-4"/>
+                                </button>
+                              </div>
+                              <button onClick={() => saveSettingsSection('treatments' as any)}
+                                className="w-full py-2 rounded-lg text-white text-xs font-medium"
+                                style={{background:'linear-gradient(135deg,#deb887,#c5a075)'}}>
+                                Guardar tratamientos
+                              </button>
+                            </div>
+                          )}
                         </div>
                       )}
 
-                      {/* ── Otros módulos ── */}
-                      <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
-                        <p className="text-xs font-medium text-gray-500 mb-3">Estado de módulos habilitados</p>
-                        <div className="grid grid-cols-2 gap-2">
-                          {ALL_FEATURES.map(feat => {
-                            const meta    = FEATURE_META[feat];
-                            const Icon    = meta.icon;
-                            const enabled = (featMap[settingsModal.clinicId] || {})[feat] !== false;
-                            return (
-                              <div key={feat} className={`flex items-center gap-2 p-2 rounded-lg ${enabled ? 'bg-white border border-gray-100' : 'opacity-40'}`}>
-                                <Icon className={`w-3.5 h-3.5 flex-shrink-0 ${meta.color}`} />
-                                <span className="text-xs text-gray-700 truncate">{meta.label}</span>
-                                {enabled
-                                  ? <span className="ml-auto text-[10px] text-emerald-600 font-medium">✓</span>
-                                  : <span className="ml-auto text-[10px] text-gray-300 font-medium">off</span>}
-                              </div>
-                            );
-                          })}
-                        </div>
-                        <p className="text-xs text-gray-400 mt-3">Para habilitar/deshabilitar módulos, usa el tab <button onClick={() => { setSettingsModal(null); setTab('modules'); }} className="text-[#deb887] underline font-medium">Módulos</button> del dashboard.</p>
-                      </div>
+                      {/* ── Otros módulos habilitados (placeholder) ── */}
+                      {ALL_FEATURES.filter(f =>
+                        f !== 'clinical_records' && f !== 'calendar' && f !== 'block_schedule' && f !== 'appointment' &&
+                        (featMap[settingsModal.clinicId] || {})[f] !== false
+                      ).map(feat => {
+                        const meta = FEATURE_META[feat];
+                        const Icon = meta.icon;
+                        return (
+                          <div key={feat} className="border border-gray-100 rounded-xl overflow-hidden opacity-60">
+                            <div className="w-full flex items-center gap-3 p-4 bg-gray-50">
+                              <Icon className={`w-4 h-4 ${meta.color}`} />
+                              <span className="text-sm font-medium text-gray-600">{meta.label}</span>
+                              <span className="ml-auto text-[10px] text-gray-400">Sin ajustes adicionales</span>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </>

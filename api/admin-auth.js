@@ -190,6 +190,17 @@ async function initMultiTenantSchema() {
     )
   `;
 
+  // Overrides de módulos por usuario (complementa los permisos de clínica)
+  // Si no existe override, el usuario hereda los features de la clínica.
+  await sql`
+    CREATE TABLE IF NOT EXISTS user_module_overrides (
+      clinic_user_id INTEGER NOT NULL REFERENCES clinic_users(id) ON DELETE CASCADE,
+      feature        VARCHAR(50) NOT NULL,
+      enabled        BOOLEAN DEFAULT false,
+      PRIMARY KEY (clinic_user_id, feature)
+    )
+  `;
+
   // Columnas extras en caso de migración de tabla preexistente
   for (const col of [
     "ALTER TABLE admin_sessions ADD COLUMN IF NOT EXISTS clinic_user_id INTEGER",
@@ -731,7 +742,16 @@ export default async function handler(req, res) {
       const token  = (req.headers.authorization || '').replace('Bearer ', '').trim()
                      || req.query.token || req.body?.sessionToken;
       const result = await verifySession(token);
-      if (result.valid) result.features = await getFeatures(result.user.clinic_id);
+      if (result.valid) {
+        result.features = await getFeatures(result.user.clinic_id);
+        // Cargar overrides de módulo del usuario (qué módulos están restringidos individualmente)
+        if (result.user?.id) {
+          try {
+            const ovr = await sql`SELECT feature, enabled FROM user_module_overrides WHERE clinic_user_id = ${result.user.id}`;
+            result.user_module_overrides = ovr.rows; // [{feature, enabled}]
+          } catch { result.user_module_overrides = []; }
+        }
+      }
       return res.status(result.valid ? 200 : 401).json({ success: result.valid, ...result });
     }
 
@@ -1072,6 +1092,33 @@ export default async function handler(req, res) {
         } catch { /* skip on error */ }
       }
       return res.status(200).json({ success: true, inserted, message: `${inserted} plantillas sembradas correctamente` });
+    }
+
+    // ── Gestión de permisos de módulo por usuario ───────────────────────────
+
+    if (action === 'getUserModuleOverrides') {
+      const { userId } = req.query;
+      if (!userId) return res.status(400).json({ error: 'userId requerido' });
+      // Solo master_admin o clinic_admin de la misma clínica puede ver esto
+      if (!requireRole(user, 'master_admin', 'clinic_admin')) return res.status(403).json({ error: 'Sin permiso' });
+      const ovr = await sql`SELECT feature, enabled FROM user_module_overrides WHERE clinic_user_id = ${userId}`;
+      return res.status(200).json({ overrides: ovr.rows });
+    }
+
+    if (action === 'setUserModuleOverride') {
+      if (!requireRole(user, 'master_admin', 'clinic_admin')) return res.status(403).json({ error: 'Sin permiso' });
+      const { userId, feature, enabled } = req.body || {};
+      if (!userId || !feature) return res.status(400).json({ error: 'userId y feature requeridos' });
+      if (enabled) {
+        // enabled: false significa "quitado para este usuario"
+        await sql`INSERT INTO user_module_overrides (clinic_user_id, feature, enabled)
+          VALUES (${userId}, ${feature}, ${enabled}) ON CONFLICT (clinic_user_id, feature)
+          DO UPDATE SET enabled = ${enabled}`;
+      } else {
+        // Si se vuelve a habilitar (sin override), se elimina el override para que herede clínica
+        await sql`DELETE FROM user_module_overrides WHERE clinic_user_id = ${userId} AND feature = ${feature}`;
+      }
+      return res.status(200).json({ success: true });
     }
 
     return res.status(400).json({ success: false, error: 'Acción no válida' });

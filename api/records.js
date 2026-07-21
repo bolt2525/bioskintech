@@ -93,6 +93,29 @@ async function getSessionUser(pool, req) {
   }
 }
 
+/**
+ * Registra un evento de auditoría en patient_audit_log.
+ * Silencioso si falla — la auditoría nunca debe interrumpir la operación principal.
+ */
+async function logAudit(pool, { patientId, recordId, sessionUser, actionType, module, summary, fieldChanges }) {
+  try {
+    await pool.query(
+      `INSERT INTO patient_audit_log (patient_id, record_id, clinic_user_id, user_display_name, action_type, module, summary, field_changes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        patientId || null,
+        recordId  || null,
+        sessionUser?.user_id  || null,
+        sessionUser?.username || 'Sistema',
+        actionType,
+        module,
+        summary,
+        fieldChanges ? JSON.stringify(fieldChanges) : null,
+      ]
+    );
+  } catch { /* silencioso — auditoría no bloquea operaciones */ }
+}
+
 export default async function handler(req, res) {
   console.log(`[Clinical Records API] Request received: ${req.method} ${req.url}`);
 
@@ -121,6 +144,14 @@ export default async function handler(req, res) {
       console.error('❌ Database connection missing');
       return res.status(500).json({ error: 'Database connection not configured. Check NEON_DATABASE_URL.' });
     }
+
+    // Sesión del usuario activo — usado por auditoría y control de acceso
+    // ponytail: lazy, solo se resuelve una vez por request
+    let _sessionUser;
+    const getSessionUserOnce = async () => {
+      if (_sessionUser === undefined) _sessionUser = await getSessionUser(pool, req) || null;
+      return _sessionUser;
+    };
 
     // Test connection on health check
     if (action === 'health') {
@@ -685,7 +716,8 @@ export default async function handler(req, res) {
           }
           // Create an initial clinical record for the patient
           await pool.query('INSERT INTO clinical_records (patient_id, status) VALUES ($1, \'active\')', [newPatient.rows[0].id]);
-          
+          // Audit
+          await logAudit(pool, { patientId: newPatient.rows[0].id, sessionUser: suCreate, actionType: 'create', module: 'patient', summary: `Paciente creado: ${first_name} ${last_name}` });
           return res.status(201).json(newPatient.rows[0]);
         } catch (err) {
           console.error('❌ Error creating patient:', err);
@@ -885,10 +917,9 @@ export default async function handler(req, res) {
             );
           } catch (histErr) {
             console.error('Error saving consultation history:', histErr);
-            // Don't fail the whole request
           }
         }
-        
+        await logAudit(pool, { recordId, sessionUser: await getSessionUserOnce(), actionType: 'tab_save', module: 'consultation', summary: 'Guardó Motivo de Consulta' });
         return res.status(200).json({ success: true });
       }
 
@@ -912,6 +943,7 @@ export default async function handler(req, res) {
            const hParams = hFields.map((_, i) => `$${i + 1}`).join(', ');
            await pool.query(`INSERT INTO medical_history (${hFields.join(', ')}) VALUES (${hParams})`, hValues);
         }
+        await logAudit(pool, { recordId: hid, sessionUser: await getSessionUserOnce(), actionType: 'tab_save', module: 'history', summary: 'Guardó Antecedentes Médicos' });
         return res.status(200).json({ success: true });
 
       case 'savePhysicalExam': {
@@ -954,6 +986,7 @@ export default async function handler(req, res) {
            const dValues = [did, ...Object.values(diagData)];
            const dParams = dFields.map((_, i) => `$${i + 1}`).join(', ');
            const newDiag = await pool.query(`INSERT INTO diagnoses (${dFields.join(', ')}) VALUES (${dParams}) RETURNING *`, dValues);
+           await logAudit(pool, { recordId: did, sessionUser: await getSessionUserOnce(), actionType: 'tab_save', module: 'diagnosis', summary: 'Registró Diagnóstico' });
            return res.status(201).json(newDiag.rows[0]);
         }
 
@@ -968,6 +1001,7 @@ export default async function handler(req, res) {
         const tValues = [tid, ...Object.values(treatData)];
         const tParams = tFields.map((_, i) => `$${i + 1}`).join(', ');
         const newTreat = await pool.query(`INSERT INTO treatments (${tFields.join(', ')}) VALUES (${tParams}) RETURNING *`, tValues);
+        await logAudit(pool, { recordId: tid, sessionUser: await getSessionUserOnce(), actionType: 'create', module: 'treatment', summary: `Agregó tratamiento: ${treatData.name || ''}` });
         return res.status(201).json(newTreat.rows[0]);
 
       case 'updateTreatment':
@@ -1122,6 +1156,7 @@ export default async function handler(req, res) {
           `INSERT INTO injectables (${fields.join(', ')}) VALUES (${params}) RETURNING *`,
           values
         );
+        await logAudit(pool, { recordId: injRecId, sessionUser: await getSessionUserOnce(), actionType: 'create', module: 'injectable', summary: `Registró inyectable: ${cleanData.product_name || ''} (${cleanData.product_type || ''})` });
         return res.status(201).json(newInj.rows[0]);
       }
 
@@ -1194,6 +1229,7 @@ export default async function handler(req, res) {
           'INSERT INTO prescriptions (record_id, date, diagnosis, items) VALUES ($1, $2, $3, $4) RETURNING id',
           [ficha_id, fecha, diagnostico, JSON.stringify(items)]
         );
+        await logAudit(pool, { recordId: ficha_id, sessionUser: await getSessionUserOnce(), actionType: 'create', module: 'prescription', summary: `Creó receta médica` });
         return res.status(200).json({ id: newPresc.rows[0].id, message: 'Receta created' });
 
       case 'updatePrescription':
@@ -1401,6 +1437,20 @@ export default async function handler(req, res) {
         query += ' ORDER BY created_at DESC';
         const consents = await pool.query(query, params);
         return res.status(200).json(consents.rows);
+      }
+
+      case 'listAuditLog': {
+        const { patient_id: auditPid, record_id: auditRid, limit: auditLimit } = req.query;
+        if (!auditPid && !auditRid) return res.status(400).json({ error: 'patient_id o record_id requerido' });
+        const q = auditPid
+          ? `SELECT * FROM patient_audit_log WHERE patient_id = $1 ORDER BY created_at DESC LIMIT $2`
+          : `SELECT l.* FROM patient_audit_log l
+             JOIN clinical_records cr ON cr.id = l.record_id
+             WHERE cr.patient_id = (SELECT patient_id FROM clinical_records WHERE id = $1)
+               OR l.record_id = $1
+             ORDER BY l.created_at DESC LIMIT $2`;
+        const logs = await pool.query(q, [auditPid || auditRid, parseInt(auditLimit || '50')]);
+        return res.status(200).json(logs.rows);
       }
 
       case 'getConsent':

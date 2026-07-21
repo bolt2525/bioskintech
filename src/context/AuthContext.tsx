@@ -24,15 +24,14 @@ import type { AuthUser } from '../types';
 
 interface AuthContextType {
   isAuthenticated: boolean;
-  /** username del usuario actual, o null si no hay sesión */
   username: string | null;
   user: AuthUser | null;
-  /** Lista de feature-keys habilitadas para la clínica del usuario */
   features: string[];
+  /** Overrides de módulos por usuario: [{feature, enabled}]. enabled:false = módulo oculto para este usuario */
+  userModuleOverrides: Array<{ feature: string; enabled: boolean }>;
   login: (username: string, password: string) => Promise<{ ok: boolean; error?: string; user?: import('../types').AuthUser }>;
   logout: () => void;
   checkAuth: () => Promise<boolean>;
-  /** Devuelve true si el usuario tiene acceso a la feature dada */
   hasFeature: (feature: string) => boolean;
 }
 
@@ -74,19 +73,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser]                       = useState<AuthUser | null>(null);
   const [features, setFeatures]               = useState<string[]>([]);
+  const [userModuleOverrides, setUserModuleOverrides] = useState<Array<{ feature: string; enabled: boolean }>>([]);
 
-  /** Aplica datos de sesión al estado React */
-  const applySession = (u: AuthUser, feat: string[]): void => {
+  const applySession = (u: AuthUser, feat: string[], overrides: Array<{ feature: string; enabled: boolean }> = []): void => {
     setIsAuthenticated(true);
     setUser(u);
     setFeatures(feat);
+    setUserModuleOverrides(overrides);
   };
 
-  /** Limpia el estado React de sesión */
   const resetSession = (): void => {
     setIsAuthenticated(false);
     setUser(null);
     setFeatures([]);
+    setUserModuleOverrides([]);
   };
 
   /**
@@ -104,7 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = await res.json();
 
       if (data.success && data.valid && data.user) {
-        applySession(data.user, data.features || []);
+        applySession(data.user, data.features || [], data.user_module_overrides || []);
         return true;
       }
       clearAuth();
@@ -134,7 +134,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (data.success && data.user) {
         persistAuth(data.sessionToken, data.user, data.expiresAt, data.features || []);
-        applySession(data.user, data.features || []);
+        applySession(data.user, data.features || [], data.user_module_overrides || []);
         return { ok: true, user: data.user };
       }
       return { ok: false, error: data.error || 'Credenciales inválidas' };
@@ -171,6 +171,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       username: user?.username ?? null,
       user,
       features,
+      userModuleOverrides,
       login,
       logout,
       checkAuth,

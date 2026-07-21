@@ -23,6 +23,7 @@ export interface ClinicEmailSettings {
   from_name:        string;
   signature:        string;
   whatsapp_number:  string;
+  staff_members?:   Array<{ name: string; email: string; clinic_user_id?: number }>;
 }
 
 export interface ClinicAgendaSettings {

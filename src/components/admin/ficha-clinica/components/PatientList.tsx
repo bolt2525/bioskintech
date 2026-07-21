@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, FileText, User, Calendar, Edit2, Trash2 } from 'lucide-react';
+import { Search, Plus, FileText, User, Calendar, Edit2, Trash2, Clock } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import AdminLayout from '../../../layout/AdminLayout';
 import recordsFetch from '../../../../utils/recordsFetch';
+import PatientAuditModal from './PatientAuditModal';
 
 interface Patient {
   id: number;
@@ -23,6 +24,8 @@ export default function PatientList() {
   const [searchParams] = useSearchParams();
   // clinicId pasado desde el master admin para filtrar por clínica
   const clinicId = searchParams.get('clinicId');
+  // Modal de historial de auditoría
+  const [auditModal, setAuditModal] = useState<{ patientId: number; patientName: string } | null>(null);
 
   useEffect(() => {
     fetchPatients();
@@ -179,6 +182,13 @@ export default function PatientList() {
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
+                          <button
+                            onClick={e => { e.stopPropagation(); setAuditModal({ patientId: patient.id, patientName: `${patient.first_name} ${patient.last_name}` }); }}
+                            className="p-2 text-gray-500 hover:text-[#deb887] hover:bg-[#deb887]/10 rounded-lg transition-colors"
+                            title="Historial de cambios"
+                          >
+                            <Clock className="w-4 h-4" />
+                          </button>
                           <button 
                             onClick={(e) => { e.stopPropagation(); navigate(`/admin/ficha-clinica/paciente/${patient.id}`); }}
                             className="text-[#deb887] hover:text-[#c5a075] font-medium flex items-center gap-1 ml-2"
@@ -196,6 +206,15 @@ export default function PatientList() {
           </div>
         </div>
       </div>
+
+      {/* Modal de historial de auditoría */}
+      {auditModal && (
+        <PatientAuditModal
+          patientId={auditModal.patientId}
+          patientName={auditModal.patientName}
+          onClose={() => setAuditModal(null)}
+        />
+      )}
     </AdminLayout>
   );
 }

@@ -106,13 +106,18 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
 
   // Tratamientos desde configuración de clínica (fallback al catálogo global)
   const [clinicTreatments, setClinicTreatments] = useState<string[]>([]);
+  // Staff/médicos disponibles para asignar a la cita
+  const [staffMembers, setStaffMembers] = useState<Array<{ name: string; email: string }>>([]);
   useEffect(() => {
     if (!user?.clinic_id) return;
     fetch(`/api/admin-auth?action=getClinicSettings&clinicId=${user.clinic_id}`, {
       headers: { 'Authorization': `Bearer ${localStorage.getItem('adminSessionToken')}` }
     })
       .then(r => r.json())
-      .then(d => { if (d.settings?.treatments?.length) setClinicTreatments(d.settings.treatments); })
+      .then(d => {
+        if (d.settings?.treatments?.length) setClinicTreatments(d.settings.treatments);
+        if (d.settings?.email?.staff_members?.length) setStaffMembers(d.settings.email.staff_members);
+      })
       .catch(() => {}); // fallback silencioso al catálogo global
   }, [user?.clinic_id]);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
@@ -130,7 +135,9 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
     phone: '',
     service: '',
     message: '',
-    adminNotes: '', // Campo adicional para administradores
+    adminNotes: '',
+    selected_doctor: '', // nombre del médico/staff seleccionado
+    selected_doctor_email: '', // email del médico/staff seleccionado
   });
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -218,6 +225,10 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
             '\n[AGENDADO POR ADMINISTRADOR]',
           start,
           end,
+          service: formData.service,
+          phone: formData.phone,
+          selected_staff_email: formData.selected_doctor_email || undefined,
+          selected_staff_name:  formData.selected_doctor       || undefined,
         }),
       });
       const result = await res.json();
@@ -229,7 +240,7 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
           : errMsg);
       } else {
         setSubmitted(true);
-        setFormData({ name: '', email: '', phone: '', service: '', message: '', adminNotes: '' });
+        setFormData({ name: '', email: '', phone: '', service: '', message: '', adminNotes: '', selected_doctor: '', selected_doctor_email: '' });
       }
     } catch (e) {
       setError('Error al enviar');
@@ -241,7 +252,7 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
     setStep(1);
     setSelectedDay('');
     setSelectedHour('');
-    setFormData({ name: '', email: '', phone: '', service: '', message: '', adminNotes: '' });
+    setFormData({ name: '', email: '', phone: '', service: '', message: '', adminNotes: '', selected_doctor: '', selected_doctor_email: '' });
     setSubmitted(false);
     setError('');
     setConfirming(false);
@@ -484,6 +495,23 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
                     <option key={t} value={t}>{t}</option>
                   ))}
                 </select>
+
+                {/* Selector de médico/staff (si hay staff configurado en la clínica) */}
+                {staffMembers.length > 0 && (
+                  <select
+                    value={formData.selected_doctor}
+                    onChange={e => {
+                      const m = staffMembers.find(s => s.name === e.target.value);
+                      setFormData(f => ({ ...f, selected_doctor: e.target.value, selected_doctor_email: m?.email || '' }));
+                    }}
+                    className="w-full p-3 rounded border border-gray-200 bg-white focus:border-[#deb887] focus:ring-2 focus:ring-[#deb887] focus:ring-opacity-20"
+                  >
+                    <option value="">Médico / Staff asignado (opcional)</option>
+                    {staffMembers.map(m => (
+                      <option key={m.email} value={m.name}>{m.name}</option>
+                    ))}
+                  </select>
+                )}
 
                 <div className="relative">
                   <MessageSquare className="absolute left-3 top-3 w-5 h-5 text-gray-400" />

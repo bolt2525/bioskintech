@@ -54,6 +54,7 @@ async function getClinicConfig(clinicId) {
       from_name:    e.from_name  || `${g.name || defaults.name} ${g.city || defaults.city}`.trim(),
       signature:    e.signature  || `El equipo de ${g.name || defaults.name}`,
       whatsapp_number: e.whatsapp_number || defaults.whatsapp_number,
+      staff_members: e.staff_members || [],
     };
   } catch {
     return defaults;
@@ -110,8 +111,8 @@ export default async function handler(req, res) {
     end, 
     service, 
     phone,
-    notificationType, // 'appointment', 'chatbot_new_conversation', 'chatbot_reactivation', 'chatbot_appointment'
-    inactivityMinutes, // para reactivaciones
+    notificationType,
+    inactivityMinutes,
     eventTitle,
     eventStart,
     eventEnd,
@@ -126,7 +127,10 @@ export default async function handler(req, res) {
     totalAffected,
     totalRequested,
     errorCount,
-    blockedBy
+    blockedBy,
+    // Staff seleccionado para la cita (también recibirá la notificación)
+    selected_staff_email,
+    selected_staff_name,
   } = req.body;
 
   // ============================================
@@ -514,7 +518,14 @@ export default async function handler(req, res) {
       </div>
     `;
 
+    // Construir lista de destinatarios del staff: email principal + médico seleccionado (si hay)
     const staffTo = clinic.staff_email || process.env.EMAIL_TO || '';
+    const doctorEmailHtml = selected_staff_name
+      ? staffEmailHtml.replace(
+          `Hola ${clinic.from_name}`,
+          `Hola ${escapeHtml(selected_staff_name)} — has sido asignado/a a esta cita`
+        )
+      : staffEmailHtml;
 
     if (clinicOAuth) {
       // ✅ Gmail API con OAuth de la clínica
@@ -540,6 +551,13 @@ export default async function handler(req, res) {
           raw: makeRaw(staffTo, `🗓️ Nueva cita - ${paciente}${fecha ? ` (${fecha})` : ''}`, staffEmailHtml, fromAddr)
         }});
       }
+      // Enviar también al médico/staff seleccionado si es diferente del staff_email general
+      if (selected_staff_email && selected_staff_email !== staffTo) {
+        await gmail.users.messages.send({ userId: 'me', requestBody: {
+          raw: makeRaw(selected_staff_email, `🗓️ [Tu cita] ${paciente}${fecha ? ` — ${fecha}` : ''}`, doctorEmailHtml, fromAddr)
+        }});
+        console.log('📧 Copia enviada al médico seleccionado:', selected_staff_email);
+      }
       await gmail.users.messages.send({ userId: 'me', requestBody: {
         raw: makeRaw(email, `¡Hemos recibido tu cita en ${clinic.name}!`, patientEmailHtml, fromAddr)
       }});
@@ -555,6 +573,9 @@ export default async function handler(req, res) {
         tls: { rejectUnauthorized: false }
       });
       if (staffTo) await transporter.sendMail({ from: process.env.EMAIL_USER, to: staffTo, subject: `🗓️ Nueva cita - ${paciente}`, html: staffEmailHtml });
+      if (selected_staff_email && selected_staff_email !== staffTo) {
+        await transporter.sendMail({ from: process.env.EMAIL_USER, to: selected_staff_email, subject: `🗓️ [Tu cita] ${paciente}`, html: doctorEmailHtml });
+      }
       await transporter.sendMail({ from: process.env.EMAIL_USER, to: email, subject: `¡Hemos recibido tu cita en ${clinic.name}!`, html: patientEmailHtml });
       emailSuccess = true;
     } else {

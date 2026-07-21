@@ -56,7 +56,7 @@ function urgency(a: UpcomingAppointment) {
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
-  const { isAuthenticated, user, hasFeature, logout, checkAuth } = useAuth();
+  const { isAuthenticated, user, hasFeature, logout, checkAuth, userModuleOverrides } = useAuth();
   const { nav } = useAdminNav();
 
   // Estado de notificaciones de citas
@@ -213,8 +213,11 @@ export default function AdminDashboard() {
   // ─── Guard ────────────────────────────────────────────────────────────
   if (!isAuthenticated || !user || user.role === 'master_admin') return null;
 
-  // Filtrar módulos habilitados para este usuario/clínica
-  const tiles = MODULE_LIST.filter(m => hasFeature(m.feat));
+  // Filtrar módulos habilitados para este usuario/clínica + aplicar overrides por usuario
+  const disabledByOverride = new Set(
+    userModuleOverrides.filter(o => !o.enabled).map(o => o.feature)
+  );
+  const tiles = MODULE_LIST.filter(m => hasFeature(m.feat) && !disabledByOverride.has(m.feat));
 
   return (
     <div className="min-h-screen bg-[#fafafa]">

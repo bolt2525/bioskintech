@@ -132,6 +132,8 @@ const EMPTY_INJECTABLE: Injectable = {
 
 export default function InjectablesTab({ recordId, injectables: initialInjectables, patientName, onSave }: InjectablesTabProps) {
   const { settings: clinic } = useClinicSettings();
+  // Sub-tab activo: controla qué tipo de inyectable se muestra en sidebar + formulario
+  const [activeType, setActiveType] = useState<'toxina' | 'relleno'>('toxina');
   const [injectables, setInjectables] = useState<Injectable[]>([]);
   const [current, setCurrent] = useState<Injectable>({ ...EMPTY_INJECTABLE });
   const [dateLocked, setDateLocked] = useState(false);
@@ -398,7 +400,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   };
 
   const handleNew = () => {
-    setCurrent({ ...EMPTY_INJECTABLE, date: getLocalDate() });
+    setCurrent({ ...EMPTY_INJECTABLE, date: getLocalDate(), product_type: activeType });
     setDateLocked(false);
     setMarkers3D([]);
     setInjectionPoints([]);
@@ -1078,6 +1080,22 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   };
 
+  // Filtrar injectables por tipo activo
+  const filteredInjectables = injectables.filter(i => i.product_type === activeType);
+
+  // Resetear formulario al cambiar de sub-tab
+  useEffect(() => {
+    setCurrent({ ...EMPTY_INJECTABLE, date: getLocalDate(), product_type: activeType });
+    setInjectionPoints([]);
+    setMarkers3D([]);
+    setReferenceLines([]);
+    setEditablePoints([]);
+    setUndoStack([]);
+    setIsPendingDuplicate(false);
+  // ponytail: solo re-ejecutar al cambiar de tipo, no al cambiar injectables
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeType]);
+
   const brands = current.product_type === 'toxina' ? toxinaBrands : rellenoBrands;
 
   // ==========================================
@@ -1088,13 +1106,51 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="flex flex-col md:flex-row h-auto md:min-h-[650px] gap-6"
+      className="flex flex-col gap-0"
     >
+      {/* ── Sub-tab Selector: Toxina / Relleno ── */}
+      <div className="flex gap-1 mb-5 bg-gray-100 p-1 rounded-xl w-fit shadow-inner">
+        <button
+          onClick={() => setActiveType('toxina')}
+          className={`flex items-center gap-2 px-5 py-2.5 text-sm font-semibold rounded-lg transition-all duration-200 ${
+            activeType === 'toxina'
+              ? 'bg-white text-[#b8944d] shadow-md ring-1 ring-[#deb887]/40'
+              : 'text-gray-500 hover:text-gray-700 hover:bg-white/50'
+          }`}
+        >
+          <FlaskConical className="w-4 h-4" />
+          Toxina Botulínica
+          <span className={`ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+            activeType === 'toxina' ? 'bg-[#deb887]/20 text-[#b8944d]' : 'bg-gray-200 text-gray-500'
+          }`}>
+            {injectables.filter(i => i.product_type === 'toxina').length}
+          </span>
+        </button>
+        <button
+          onClick={() => setActiveType('relleno')}
+          className={`flex items-center gap-2 px-5 py-2.5 text-sm font-semibold rounded-lg transition-all duration-200 ${
+            activeType === 'relleno'
+              ? 'bg-white text-purple-600 shadow-md ring-1 ring-purple-300/40'
+              : 'text-gray-500 hover:text-gray-700 hover:bg-white/50'
+          }`}
+        >
+          <Droplets className="w-4 h-4" />
+          Relleno (HA)
+          <span className={`ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+            activeType === 'relleno' ? 'bg-purple-100 text-purple-600' : 'bg-gray-200 text-gray-500'
+          }`}>
+            {injectables.filter(i => i.product_type === 'relleno').length}
+          </span>
+        </button>
+      </div>
+
+      {/* ── Layout principal: sidebar + formulario ── */}
+      <div className="flex flex-col md:flex-row h-auto md:min-h-[620px] gap-6">
       {/* ========== SIDEBAR — Historial de Inyectables ========== */}
       <div className="w-full md:w-72 border-r-0 md:border-r border-b md:border-b-0 border-gray-100 pr-0 md:pr-6 pb-4 md:pb-0 flex flex-col gap-4 shrink-0">
         <div className="font-bold text-gray-800 flex items-center gap-2">
-          <div className="w-1 h-5 bg-[#deb887] rounded-full" />
-          Historial de Inyectables
+          <div className="w-1 h-5 rounded-full" style={{ background: activeType === 'toxina' ? '#deb887' : '#a855f7' }} />
+          {activeType === 'toxina' ? 'Historial de Toxina' : 'Historial de Relleno (HA)'}
         </div>
         <div className="flex-1 overflow-y-auto space-y-3 max-h-[200px] md:max-h-none pr-2 custom-scrollbar">
           {/* Pending duplicate card — shown at top while unsaved */}
@@ -1121,13 +1177,13 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
               </div>
             </motion.div>
           )}
-          {injectables.length === 0 && !isPendingDuplicate ? (
+          {filteredInjectables.length === 0 && !isPendingDuplicate ? (
             <div className="text-gray-400 text-sm text-center py-8 flex flex-col items-center gap-2">
               <AlertCircle className="w-8 h-8 opacity-20" />
-              No hay inyectables previos
+              Sin registros de {activeType === 'toxina' ? 'toxina' : 'relleno'}
             </div>
           ) : (
-            injectables.map((inj, index) => {
+            filteredInjectables.map((inj, index) => {
               const isActive = !isPendingDuplicate && current.id === inj.id;
               const isToxina = inj.product_type === 'toxina';
               const dateStr = inj.date ? new Date(toDateOnly(inj.date) + 'T12:00:00').toLocaleDateString('es-EC', { day: '2-digit', month: 'short', year: '2-digit' }) : '';
@@ -1174,15 +1230,19 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
 
         {/* Bottom action in sidebar */}
         <div className="flex flex-col gap-2">
-          <Tooltip content="Nuevo Inyectable">
+          <Tooltip content={`Nuevo registro de ${activeType === 'toxina' ? 'Toxina' : 'Relleno (HA)'}`}>
             <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.97 }}
               onClick={handleNew}
-              className="flex items-center justify-center gap-2 w-full px-3 py-2.5 text-sm font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-xl border border-gray-200 transition-all"
+              className={`flex items-center justify-center gap-2 w-full px-3 py-2.5 text-sm font-medium rounded-xl border transition-all ${
+                activeType === 'toxina'
+                  ? 'text-[#b8944d] bg-[#deb887]/10 hover:bg-[#deb887]/20 border-[#deb887]/30'
+                  : 'text-purple-700 bg-purple-50 hover:bg-purple-100 border-purple-200'
+              }`}
             >
               <Plus className="w-4 h-4" />
-              Nuevo Inyectable
+              {activeType === 'toxina' ? 'Nueva Toxina' : 'Nuevo Relleno (HA)'}
             </motion.button>
           </Tooltip>
           {current.id && (
@@ -1318,40 +1378,22 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
 
         {/* Main Form */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-        {/* Type Toggle - Full Width Header */}
-        <div className="p-4 bg-gradient-to-r from-gray-50 to-gray-50/30 border-b border-gray-100">
-          <div className="flex items-center gap-4">
-            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Tipo de producto</span>
-            <div className="flex bg-gray-100 rounded-xl p-1 shadow-inner">
-              <button
-                onClick={() => setCurrent({ ...current, product_type: 'toxina', brand: '' })}
-                className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-200 ${
-                  current.product_type === 'toxina'
-                    ? 'bg-white text-[#b8944d] shadow-sm ring-1 ring-[#deb887]'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                <FlaskConical className="w-4 h-4" />
-                Toxina Botulínica
-              </button>
-              <button
-                onClick={() => setCurrent({ ...current, product_type: 'relleno', brand: '' })}
-                className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-200 ${
-                  current.product_type === 'relleno'
-                    ? 'bg-white text-[#b8944d] shadow-sm ring-1 ring-[#deb887]'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                <Droplets className="w-4 h-4" />
-                Relleno (HA)
-              </button>
-            </div>
-            {current.id && (
-              <span className="ml-auto text-xs text-gray-400">
-                ID: {current.id}
-              </span>
-            )}
-          </div>
+        {/* Type Header - indica el tipo activo del sub-tab */}
+        <div className={`p-4 border-b flex items-center gap-3 ${
+          activeType === 'toxina'
+            ? 'bg-gradient-to-r from-amber-50 to-amber-50/30 border-amber-100'
+            : 'bg-gradient-to-r from-purple-50 to-purple-50/30 border-purple-100'
+        }`}>
+          {activeType === 'toxina'
+            ? <FlaskConical className="w-5 h-5 text-[#b8944d]" />
+            : <Droplets className="w-5 h-5 text-purple-600" />
+          }
+          <span className={`text-sm font-semibold ${activeType === 'toxina' ? 'text-[#b8944d]' : 'text-purple-700'}`}>
+            {activeType === 'toxina' ? 'Toxina Botulínica' : 'Relleno (HA)'}
+          </span>
+          {current.id && (
+            <span className="ml-auto text-xs text-gray-400">ID: {current.id}</span>
+          )}
         </div>
 
         <div className="p-5 space-y-5">
@@ -2281,6 +2323,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
           </motion.div>
         )}
       </AnimatePresence>
+      </div> {/* end layout principal flex row */}
     </motion.div>
   );
 }
