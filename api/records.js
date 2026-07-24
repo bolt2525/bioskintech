@@ -31,7 +31,8 @@ async function ensureInjectablesSchema(pool) {
       "ALTER TABLE injectables ADD COLUMN IF NOT EXISTS mapping_data JSONB",
       "ALTER TABLE injectables ADD COLUMN IF NOT EXISTS treatment_id INTEGER REFERENCES treatments(id) ON DELETE SET NULL",
       "ALTER TABLE injectables ADD COLUMN IF NOT EXISTS dilution_volume DECIMAL(5, 2)",
-      "ALTER TABLE injectables ADD COLUMN IF NOT EXISTS follow_up_date DATE"
+      "ALTER TABLE injectables ADD COLUMN IF NOT EXISTS follow_up_date DATE",
+      "ALTER TABLE injectables ADD COLUMN IF NOT EXISTS injection_plane VARCHAR(100)"
     ];
     for (const sql of migrations) {
       try { await pool.query(sql); } catch(e) { /* column may already exist */ }
@@ -324,12 +325,6 @@ export default async function handler(req, res) {
 
       case 'inventoryListItems':
         try {
-          // Lazy migration: ensure price columns exist on inventory_items
-          try {
-            await pool.query(`ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS cost_price NUMERIC(12,2)`);
-            await pool.query(`ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS sale_price NUMERIC(12,2)`);
-            await pool.query(`ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS brand VARCHAR(120)`);
-          } catch (_) { /* columns already exist */ }
           const items = await pool.query(`
             SELECT 
               i.*,
@@ -350,11 +345,6 @@ export default async function handler(req, res) {
 
       case 'inventoryStats':
         try {
-          // Ensure preferred_display_unit column exists (lazy migration, safe if already present)
-          try {
-            await pool.query(`ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS preferred_display_unit VARCHAR(20) DEFAULT 'absolute'`);
-          } catch (migErr) { /* column may already exist */ }
-
           const statsResult = await pool.query(`
             SELECT
               COUNT(DISTINCT i.id)::int AS total_items,
@@ -1085,7 +1075,7 @@ export default async function handler(req, res) {
         const allowedFields = [
           'date', 'product_type', 'product_name', 'brand', 'lot_number',
           'expiration_date', 'volume_used', 'units_used', 'areas_treated',
-          'technique', 'needle_type', 'mapping_data', 'notes',
+          'technique', 'injection_plane', 'needle_type', 'mapping_data', 'notes',
           'dilution_volume', 'follow_up_date'
         ];
         const dateFields = ['date', 'expiration_date', 'follow_up_date'];
@@ -1132,7 +1122,7 @@ export default async function handler(req, res) {
         const allowedFields = [
           'date', 'product_type', 'product_name', 'brand', 'lot_number',
           'expiration_date', 'volume_used', 'units_used', 'areas_treated',
-          'technique', 'needle_type', 'mapping_data', 'notes',
+          'technique', 'injection_plane', 'needle_type', 'mapping_data', 'notes',
           'dilution_volume', 'follow_up_date'
         ];
         const cleanData = {};
