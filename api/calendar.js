@@ -1,6 +1,7 @@
 import { google } from 'googleapis';
 import sendEmailHandler from './sendEmail.js';
 import { sql } from '@vercel/postgres';
+import { authenticateRequest } from '../lib/admin-auth.js';
 
 // ── Helper: obtener OAuth2 client con tokens de clínica ──────────────────────
 async function getClinicOAuth2Client(clinicId) {
@@ -90,7 +91,11 @@ export default async function handler(req, res) {
 
   // ── Helper: obtener cliente de calendario ──────────────────────────────
   // Intenta OAuth de clínica primero; fallback a service account
-  const clinicId = req.body?.clinicId || req.query?.clinicId || null;
+  let clinicId = req.body?.clinicId || req.query?.clinicId || null;
+  if (!clinicId) {
+    const sessionUser = await authenticateRequest(req);
+    if (sessionUser?.valid) clinicId = sessionUser.effective_clinic_id ?? sessionUser.clinic_id ?? null;
+  }
   console.log(`📅 Calendar action="${action}" clinicId=${clinicId} method=${method}`);
 
   async function getCalendarClient() {
