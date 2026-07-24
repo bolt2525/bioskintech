@@ -17,13 +17,13 @@ import { useAuth } from '../context/AuthContext';
 import { useAdminNav } from '../hooks/useAdminNav';
 import {
   LogOut, Calendar, Bell, X, AlertCircle, ChevronRight, Sparkles,
-  CheckCircle2, Activity, Database, Users, Shield, Settings, Lock, Eye, EyeOff,
+  Users, Shield, Settings, Lock, Eye, EyeOff,
 } from 'lucide-react';
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 
 // Módulos y tipos de constants centralizados
 import { MODULE_LIST } from '../constants/features';
-import type { UpcomingAppointment, LoadingStatus } from '../types';
+import type { UpcomingAppointment } from '../types';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers de presentación (funciones puras)
@@ -64,29 +64,12 @@ export default function AdminDashboard() {
   const [upcomingAppointments, setUpcomingAppointments] = useState<UpcomingAppointment[]>([]);
   const [loadingNotifications, setLoadingNotifications] = useState(false);
 
-  // Estado de modal de backup
-  const [showBackupModal, setShowBackupModal]     = useState(false);
-  const [backupModules, setBackupModules]         = useState({ patients: true, finance: true, chats: false, inventory: false });
-  const [downloadingBackup, setDownloadingBackup] = useState(false);
-
-  // Estado de modal de salud del sistema
-  const [showHealthModal, setShowHealthModal] = useState(false);
-  const [healthLogs, setHealthLogs]           = useState<string[]>([]);
-  const [calStatus, setCalStatus]             = useState<LoadingStatus>('idle');
-  const [emailStatus, setEmailStatus]         = useState<LoadingStatus>('idle');
-  const healthLogsEndRef                      = useRef<HTMLDivElement>(null);
-
   // Estado modal de perfil/contraseña
   const [showProfile, setShowProfile]   = useState(false);
   const [pwdForm, setPwdForm]           = useState({ current: '', next: '', confirm: '' });
   const [pwdMsg, setPwdMsg]             = useState<{ text: string; ok: boolean } | null>(null);
   const [showPwds, setShowPwds]         = useState({ current: false, next: false });
   const [savingPwd, setSavingPwd]       = useState(false);
-
-  // Auto-scroll en los logs de salud
-  useEffect(() => {
-    healthLogsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [healthLogs]);
 
   // Verificar autenticación al montar
   useEffect(() => {
@@ -142,52 +125,6 @@ export default function AdminDashboard() {
       setUpcomingAppointments(appointments);
     } finally {
       setLoadingNotifications(false);
-    }
-  };
-
-  // ─── Prueba de servicio (Calendar o Email) ─────────────────────────────
-  const runTest = async (type: 'calendar' | 'email') => {
-    const setStatus = type === 'calendar' ? setCalStatus : setEmailStatus;
-    setStatus('loading');
-    setHealthLogs(prev => [...prev, `\n> Iniciando prueba de ${type}...`]);
-    try {
-      const res  = await fetch(`/api/system-status?type=${type}`);
-      const data = await res.json();
-      if (data.logs) setHealthLogs(prev => [...prev, ...data.logs.map((l: string) => `> ${l}`)]);
-      setStatus(data.success ? 'success' : 'error');
-      if (!data.success) setHealthLogs(prev => [...prev, `> ❌ ERROR: ${data.message}`]);
-      else               setHealthLogs(prev => [...prev, '> ✅ PRUEBA EXITOSA']);
-    } catch (e: unknown) {
-      setStatus('error');
-      setHealthLogs(prev => [...prev, `> ❌ Error de comunicación: ${(e as Error).message}`]);
-    }
-  };
-
-  // ─── Descarga de backup ────────────────────────────────────────────────
-  const handleDownloadBackup = async () => {
-    setDownloadingBackup(true);
-    try {
-      const token    = localStorage.getItem('adminSessionToken');
-      const selected = Object.entries(backupModules).filter(([, v]) => v).map(([k]) => k).join(',');
-      if (!selected) { alert('Selecciona al menos un módulo'); return; }
-
-      const res = await fetch(`/api/backup?modules=${selected}`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      if (!res.ok) { const err = await res.json(); throw new Error(err.error); }
-
-      const blob = await res.blob();
-      const url  = URL.createObjectURL(blob);
-      const a    = Object.assign(document.createElement('a'), { href: url, download: 'bioskin-backup.json' });
-      document.body.appendChild(a);
-      a.click();
-      URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-      setShowBackupModal(false);
-    } catch (e: unknown) {
-      alert('❌ Error: ' + (e as Error).message);
-    } finally {
-      setDownloadingBackup(false);
     }
   };
 
@@ -403,147 +340,8 @@ export default function AdminDashboard() {
             );
           })}
 
-          {/* Tile especial: Estado del Sistema */}
-          {hasFeature('backup') && (
-            <button
-              onClick={() => setShowHealthModal(true)}
-              className="group bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-emerald-200 hover:-translate-y-0.5 transition-all duration-200 text-left p-5 flex flex-col"
-            >
-              <div className="w-11 h-11 rounded-xl bg-emerald-50 flex items-center justify-center mb-4">
-                <Activity className="w-5 h-5 text-emerald-500" />
-              </div>
-              <h3 className="font-semibold text-gray-900 text-sm mb-1 group-hover:text-emerald-600 transition-colors">
-                Estado del Sistema
-              </h3>
-              <p className="text-gray-400 text-xs leading-relaxed flex-1">Diagnóstico de API, Calendar y SMTP</p>
-              <div className="flex items-center gap-1 mt-3 text-emerald-500 text-xs font-medium opacity-0 group-hover:opacity-100 transition-opacity">
-                <span>Verificar</span><ChevronRight className="w-3.5 h-3.5" />
-              </div>
-            </button>
-          )}
-
-          {/* Tile especial: Base de Datos / Backup */}
-          {hasFeature('backup') && (
-            <button
-              onClick={() => setShowBackupModal(true)}
-              className="group bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-indigo-200 hover:-translate-y-0.5 transition-all duration-200 text-left p-5 flex flex-col"
-            >
-              <div className="w-11 h-11 rounded-xl bg-indigo-50 flex items-center justify-center mb-4">
-                <Database className="w-5 h-5 text-indigo-500" />
-              </div>
-              <h3 className="font-semibold text-gray-900 text-sm mb-1 group-hover:text-indigo-600 transition-colors">
-                Base de Datos
-              </h3>
-              <p className="text-gray-400 text-xs leading-relaxed flex-1">Descargar respaldo completo de datos</p>
-              <div className="flex items-center gap-1 mt-3 text-indigo-500 text-xs font-medium opacity-0 group-hover:opacity-100 transition-opacity">
-                <span>Descargar</span><ChevronRight className="w-3.5 h-3.5" />
-              </div>
-            </button>
-          )}
         </div>
       </div>
-
-      {/* ── Modal Backup ──────────────────────────────────────────────────── */}
-      {showBackupModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden">
-            <div className="h-0.5 bg-gradient-to-r from-indigo-400 to-indigo-600" />
-            <div className="px-5 py-4 border-b border-gray-50 flex justify-between items-center">
-              <h3 className="font-semibold text-gray-900 flex items-center gap-2 text-sm">
-                <Database className="w-4 h-4 text-indigo-500" /> Gestión de Respaldo
-              </h3>
-              <button onClick={() => setShowBackupModal(false)} className="text-gray-300 hover:text-gray-500">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="p-5 space-y-2">
-              <p className="text-xs text-gray-400 mb-3">Selecciona los módulos a incluir:</p>
-              {([['patients','Fichas Clínicas'],['finance','Finanzas'],['chats','Chats'],['inventory','Inventario']] as const).map(([k, label]) => (
-                <label key={k} className="flex items-center gap-3 p-3 border border-gray-100 rounded-xl hover:bg-gray-50 cursor-pointer transition-colors">
-                  <input
-                    type="checkbox"
-                    checked={(backupModules as Record<string, boolean>)[k]}
-                    onChange={e => setBackupModules(p => ({ ...p, [k]: e.target.checked }))}
-                    className="w-4 h-4 accent-[#deb887]"
-                  />
-                  <span className="text-sm font-medium text-gray-700">{label}</span>
-                </label>
-              ))}
-            </div>
-            <div className="px-5 py-4 border-t border-gray-50 flex justify-end gap-2">
-              <button onClick={() => setShowBackupModal(false)} className="px-4 py-2 text-sm text-gray-500 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">
-                Cancelar
-              </button>
-              <button
-                onClick={handleDownloadBackup}
-                disabled={downloadingBackup}
-                className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 font-medium disabled:opacity-50 transition-colors"
-              >
-                {downloadingBackup ? 'Descargando...' : 'Descargar'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Modal Estado del Sistema ──────────────────────────────────────── */}
-      {showHealthModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
-            <div className="h-0.5 bg-gradient-to-r from-emerald-400 to-teal-500" />
-            <div className="px-5 py-4 border-b border-gray-50 flex justify-between items-center">
-              <h3 className="font-semibold text-gray-900 flex items-center gap-2 text-sm">
-                <Activity className="w-4 h-4 text-emerald-500" /> Estado del Sistema
-              </h3>
-              <button onClick={() => setShowHealthModal(false)} className="text-gray-300 hover:text-gray-500">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="p-5 space-y-2">
-              {(['calendar', 'email'] as const).map(type => {
-                const status = type === 'calendar' ? calStatus : emailStatus;
-                const label  = type === 'calendar' ? 'Google Calendar' : 'Email SMTP';
-                return (
-                  <div key={type} className="flex items-center justify-between p-3 border border-gray-100 rounded-xl">
-                    <div className="flex items-center gap-2">
-                      {status === 'success' && <CheckCircle2 className="w-4 h-4 text-emerald-500" />}
-                      {status === 'error'   && <AlertCircle  className="w-4 h-4 text-red-400" />}
-                      {(status === 'idle' || status === 'loading') && (
-                        <div className={`w-4 h-4 rounded-full border-2 ${status === 'loading' ? 'border-[#deb887] border-t-transparent animate-spin' : 'border-gray-200'}`} />
-                      )}
-                      <span className="font-medium text-gray-800 text-sm">{label}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {status !== 'idle' && (
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                          status === 'success' ? 'bg-emerald-50 text-emerald-600' :
-                          status === 'error'   ? 'bg-red-50 text-red-500' :
-                          'bg-yellow-50 text-yellow-600'
-                        }`}>
-                          {status === 'loading' ? 'Probando...' : status === 'success' ? 'OK' : 'Error'}
-                        </span>
-                      )}
-                      <button
-                        onClick={() => runTest(type)}
-                        className="px-3 py-1 bg-gray-50 hover:bg-gray-100 text-gray-600 rounded-lg text-xs font-medium transition-colors"
-                      >
-                        Probar
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-              {/* Logs de consola del sistema */}
-              {healthLogs.length > 0 && (
-                <div className="bg-gray-950 rounded-xl p-3 font-mono text-xs text-green-400 max-h-40 overflow-y-auto mt-3">
-                  {healthLogs.map((l, i) => <div key={i}>{l}</div>)}
-                  <div ref={healthLogsEndRef} />
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── Modal: Mi Perfil / Cambiar Contraseña ─────────────────────── */}
       {showProfile && (

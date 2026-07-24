@@ -15,7 +15,7 @@ import { getPool } from '../lib/neon-clinical-db.js';
 import { authenticateRequest } from '../lib/admin-auth.js';
 
 export default async function handler(req, res) {
-  const auth = authenticateRequest(req);
+  const auth = await authenticateRequest(req);
   if (!auth.valid) return res.status(401).json({ error: 'No autorizado' });
 
   const { action } = req.query;

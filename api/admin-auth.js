@@ -29,9 +29,9 @@ const LOCK_MS           = 15 * 60 * 1000;       // 15 minutos de bloqueo
 
 // Lista de features reconocidas — debe coincidir con src/constants/features.ts
 const ALL_FEATURES = [
-  'calendar', 'block_schedule', 'appointment', 'diagnosis', 'protocols',
-  'chat_assistant', 'clinical_records', 'finance', 'inventory',
-  'clinical_3d', 'technical', 'backup', 'blog', 'ai_consultation',
+  'calendar', 'block_schedule', 'appointment',
+  'clinical_records', 'finance', 'inventory', 'clinical_3d',
+  'system_status', 'backup', 'ai_consultation',
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
