@@ -33,7 +33,8 @@ export default async function handler(req, res) {
 
   const { action = 'backup', modules } = req.query;
   const isMaster = auth.role === 'master_admin';
-  const clinicId = auth.clinic_id;
+  // effective_clinic_id: puede ser la clínica objetivo cuando master admin usa X-Target-Clinic-Id
+  const clinicId = auth.effective_clinic_id ?? auth.clinic_id;
 
   // clinic_admin sin clinic_id es un error de configuración
   if (!isMaster && !clinicId) {

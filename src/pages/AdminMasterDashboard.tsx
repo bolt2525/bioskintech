@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file src/pages/AdminMasterDashboard.tsx
  * @description Dashboard exclusivo del master_admin.
  *
@@ -19,7 +19,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   LogOut, Building2, Users, Shield, RefreshCw, ChevronDown, ChevronUp,
   Plus, Edit, Trash2, Eye, EyeOff, Key, X, Check, AlertCircle,
-  Activity, ClipboardList, ChevronRight, Sparkles, Lock, Mail, Unlink, Copy, ExternalLink, Settings2,
+  Activity, ClipboardList, ChevronRight, Sparkles, Lock, Mail, Unlink, Copy, ExternalLink, Settings2, LayoutDashboard,
 } from 'lucide-react';
 
 // Constantes centralizadas — no duplicar aquí
@@ -666,7 +666,7 @@ export default function AdminMasterDashboard() {
 
   // ─── Helpers ─────────────────────────────────────────────────────────────
 
-  const token      = () => localStorage.getItem('adminSessionToken') || '';
+  const token      = () => sessionStorage.getItem('adminSessionToken') || '';
   const authHeader = () => ({ 'Authorization': `Bearer ${token()}`, 'Content-Type': 'application/json' });
 
   /** Muestra un toast durante 4 segundos */
@@ -1156,6 +1156,16 @@ export default function AdminMasterDashboard() {
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex gap-1">
+                            {/* Botón "Ver módulos" — solo para usuarios con clínica */}
+                            {u.clinic_slug && u.role !== 'master_admin' && (
+                              <button
+                                onClick={() => navigate(`/admin/master/${u.clinic_slug}/${u.username}`)}
+                                className="p-1.5 text-purple-600 hover:bg-purple-50 rounded"
+                                title={`Ver módulos de ${u.username}`}
+                              >
+                                <LayoutDashboard className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                             <button onClick={() => openEditUser(u)} className="p-1.5 text-[#c5a075] hover:bg-[#deb887]/10 rounded" title="Editar">
                               <Edit className="w-3.5 h-3.5" />
                             </button>

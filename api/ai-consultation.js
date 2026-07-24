@@ -1,14 +1,14 @@
-/**
+﻿/**
  * @file api/ai-consultation.js
- * @description Módulo de Consultas IA — permite al médico realizar consultas
- * contextuales sobre pacientes usando datos de la ficha clínica y Gemini AI.
+ * @description MÃ³dulo de Consultas IA â€” permite al mÃ©dico realizar consultas
+ * contextuales sobre pacientes usando datos de la ficha clÃ­nica y Gemini AI.
  *
  * Acciones disponibles (query param `action`):
- *  - init            → crea tabla ai_consultations si no existe
- *  - getContextIndex → lista ligera de items disponibles por tab para un paciente
- *  - query           → ejecuta consulta IA con contexto seleccionado
- *  - list            → lista historial de consultas guardadas
- *  - delete          → elimina una consulta
+ *  - init            â†’ crea tabla ai_consultations si no existe
+ *  - getContextIndex â†’ lista ligera de items disponibles por tab para un paciente
+ *  - query           â†’ ejecuta consulta IA con contexto seleccionado
+ *  - list            â†’ lista historial de consultas guardadas
+ *  - delete          â†’ elimina una consulta
  */
 
 import { getPool } from '../lib/neon-clinical-db.js';
@@ -18,13 +18,16 @@ export default async function handler(req, res) {
   const auth = await authenticateRequest(req);
   if (!auth.valid) return res.status(401).json({ error: 'No autorizado' });
 
+  // effective_clinic_id: cuando master admin usa X-Target-Clinic-Id
+  const effectiveClinicId = auth.effective_clinic_id ?? auth.clinic_id;
+
   const { action } = req.query;
   const pool = getPool();
 
   try {
     switch (action) {
 
-      // ── Inicializar tabla ───────────────────────────────────────────────
+      // â”€â”€ Inicializar tabla â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       case 'init': {
         await pool.query(`
           CREATE TABLE IF NOT EXISTS ai_consultations (
@@ -44,7 +47,7 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true });
       }
 
-      // ── Índice de contexto disponible para un paciente ─────────────────
+      // â”€â”€ Ãndice de contexto disponible para un paciente â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       case 'getContextIndex': {
         const { patient_id } = req.query;
         if (!patient_id) return res.status(400).json({ error: 'patient_id requerido' });
@@ -92,7 +95,7 @@ export default async function handler(req, res) {
         });
       }
 
-      // ── Consulta IA ─────────────────────────────────────────────────────
+      // â”€â”€ Consulta IA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       case 'query': {
         const body = req.method === 'POST'
           ? await parseBody(req)
@@ -121,13 +124,13 @@ export default async function handler(req, res) {
             ).catch(() => ({ rows: [] }));
             if (rows.rows.length > 0) {
               const h = rows.rows[0];
-              contextBlocks.push(`## ANTECEDENTES MÉDICOS
+              contextBlocks.push(`## ANTECEDENTES MÃ‰DICOS
 Motivo de consulta: ${h.chief_complaint || 'N/A'}
 Medicamentos actuales: ${h.current_medications || 'Ninguno'}
 Alergias: ${h.allergies || 'Sin alergias conocidas'}
 Antecedentes personales: ${h.personal_history || 'N/A'}
 Antecedentes familiares: ${h.family_history || 'N/A'}
-Cirugías previas: ${h.surgical_history || 'N/A'}`);
+CirugÃ­as previas: ${h.surgical_history || 'N/A'}`);
             }
           }
 
@@ -147,9 +150,9 @@ Cirugías previas: ${h.surgical_history || 'N/A'}`);
                     faceStr = '\nLesiones faciales: ' + face.map(f => `${f.category} (${f.distribution || 'General'}) - ${f.severity || 'N/A'}`).join('; ');
                 } catch (_) {}
                 return `- Tipo piel: ${e.skin_type || 'N/A'} | Fototipo: ${e.phototype || 'N/A'} | Glogau: ${e.glogau_scale || 'N/A'}
-  Descripción: ${e.lesions_description || 'Sin descripción'}${faceStr}`;
+  DescripciÃ³n: ${e.lesions_description || 'Sin descripciÃ³n'}${faceStr}`;
               }).join('\n');
-              contextBlocks.push(`## EXAMEN FÍSICO\n${exBlocks}`);
+              contextBlocks.push(`## EXAMEN FÃSICO\n${exBlocks}`);
             }
           }
 
@@ -162,9 +165,9 @@ Cirugías previas: ${h.surgical_history || 'N/A'}`);
             ).catch(() => ({ rows: [] }));
             if (rows.rows.length > 0) {
               const diagText = rows.rows.map(d =>
-                `- [${d.date ? new Date(d.date).toLocaleDateString('es-EC') : 'N/A'}] ${d.diagnosis_text} (${d.type}, ${d.severity}) ${d.cie10_code ? '— CIE10: ' + d.cie10_code : ''}`
+                `- [${d.date ? new Date(d.date).toLocaleDateString('es-EC') : 'N/A'}] ${d.diagnosis_text} (${d.type}, ${d.severity}) ${d.cie10_code ? 'â€” CIE10: ' + d.cie10_code : ''}`
               ).join('\n');
-              contextBlocks.push(`## DIAGNÓSTICOS\n${diagText}`);
+              contextBlocks.push(`## DIAGNÃ“STICOS\n${diagText}`);
             }
           }
 
@@ -201,24 +204,24 @@ Cirugías previas: ${h.surgical_history || 'N/A'}`);
 
         const contextSummary = contextBlocks.length > 0
           ? contextBlocks.join('\n\n')
-          : 'Consulta abierta sin contexto de paciente específico.';
+          : 'Consulta abierta sin contexto de paciente especÃ­fico.';
 
         const patientHeader = patient_name
           ? `Paciente: ${patient_name}`
           : 'Consulta abierta';
 
-        const systemPrompt = `Eres un asistente médico especializado en medicina estética y dermatología. Respondes de forma clara, profesional y basada en evidencia.
+        const systemPrompt = `Eres un asistente mÃ©dico especializado en medicina estÃ©tica y dermatologÃ­a. Respondes de forma clara, profesional y basada en evidencia.
 
-IMPORTANTE: Tus respuestas son de apoyo al criterio médico. Siempre indica que el diagnóstico y tratamiento final es responsabilidad del profesional médico.
+IMPORTANTE: Tus respuestas son de apoyo al criterio mÃ©dico. Siempre indica que el diagnÃ³stico y tratamiento final es responsabilidad del profesional mÃ©dico.
 
 ${patientHeader}
 
 ${contextSummary}
 
 ---
-Pregunta del médico: ${question}
+Pregunta del mÃ©dico: ${question}
 
-Responde de forma clara y estructurada. Si el contexto clínico es suficiente, proporciona una respuesta detallada. Si falta información importante, indícalo. Usa formato con secciones cuando sea apropiado.`;
+Responde de forma clara y estructurada. Si el contexto clÃ­nico es suficiente, proporciona una respuesta detallada. Si falta informaciÃ³n importante, indÃ­calo. Usa formato con secciones cuando sea apropiado.`;
 
         const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`;
         const geminiRes = await fetch(geminiUrl, {
@@ -238,7 +241,7 @@ Responde de forma clara y estructurada. Si el contexto clínico es suficiente, p
         const geminiData = await geminiRes.json();
         const response = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || 'Sin respuesta';
 
-        // Guardar si se solicitó
+        // Guardar si se solicitÃ³
         if (save) {
           await ensureTable(pool);
           await pool.query(
@@ -246,7 +249,7 @@ Responde de forma clara y estructurada. Si el contexto clínico es suficiente, p
              (clinic_id, user_id, patient_id, patient_name, consultation_type, question, context_summary, response, tabs_used)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
             [
-              auth.clinic_id || null,
+              effectiveClinicId || null,
               auth.username || 'unknown',
               patient_id || null,
               patient_name || null,
@@ -262,7 +265,7 @@ Responde de forma clara y estructurada. Si el contexto clínico es suficiente, p
         return res.status(200).json({ response, contextSummary, tabsUsed });
       }
 
-      // ── Historial de consultas ──────────────────────────────────────────
+      // â”€â”€ Historial de consultas â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       case 'list': {
         const { patient_id, limit = 20 } = req.query;
         await ensureTable(pool);
@@ -270,7 +273,7 @@ Responde de forma clara y estructurada. Si el contexto clínico es suficiente, p
                         LEFT(response, 200) AS response_preview, tabs_used, created_at
                  FROM ai_consultations
                  WHERE clinic_id = $1`;
-        const params = [auth.clinic_id || null];
+        const params = [effectiveClinicId || null];
         if (patient_id) {
           q += ` AND patient_id = $2`;
           params.push(patient_id);
@@ -281,7 +284,7 @@ Responde de forma clara y estructurada. Si el contexto clínico es suficiente, p
         return res.status(200).json(result.rows);
       }
 
-      // ── Eliminar consulta ──────────────────────────────────────────────
+      // â”€â”€ Eliminar consulta â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       case 'delete': {
         const { id } = req.query;
         if (!id) return res.status(400).json({ error: 'id requerido' });
@@ -290,7 +293,7 @@ Responde de forma clara y estructurada. Si el contexto clínico es suficiente, p
       }
 
       default:
-        return res.status(400).json({ error: `Acción desconocida: ${action}` });
+        return res.status(400).json({ error: `AcciÃ³n desconocida: ${action}` });
     }
   } catch (err) {
     console.error('[ai-consultation] Error:', err);

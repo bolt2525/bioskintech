@@ -42,14 +42,21 @@ import Clinical3D     from './pages/Clinical3D';
 import AdminSystemStatus from './pages/AdminSystemStatus';
 import AdminBackup       from './pages/AdminBackup';
 
+// ── Master admin viendo módulos de clínica ─────────────────────────────────
+import MasterClinicWrapper from './pages/MasterClinicWrapper';
+
 // ── Páginas externas ───────────────────────────────────────────────────────
 import ExternalMedicalFinance from './pages/ExternalMedicalFinance';
+
+// ── Contextos ──────────────────────────────────────────────────────────────
+import { MasterViewProvider } from './context/MasterViewContext';
 
 function App() {
   return (
     <ErrorBoundary>
       <HashRouter>
         <AuthProvider>
+          <MasterViewProvider>
           <Routes>
             <Route path="/" element={<Navigate to="/admin/login" replace />} />
 
@@ -58,6 +65,25 @@ function App() {
 
             {/* Dashboards */}
             <Route path="/admin/master" element={<AdminMasterDashboard />} />
+
+            {/* Master admin viendo módulos de una clínica específica */}
+            <Route path="/admin/master/:clinicSlug/:username" element={<MasterClinicWrapper />}>
+              <Route index element={<AdminDashboard />} />
+              <Route path="calendar"       element={<AdminCalendarManager />} />
+              <Route path="block-schedule" element={<AdminBlockSchedule />} />
+              <Route path="appointment"    element={<AdminAppointment />} />
+              <Route path="clinical-records"                    element={<PatientList />} />
+              <Route path="clinical-records/new"                element={<NewPatientForm />} />
+              <Route path="clinical-records/edit/:patientId"    element={<NewPatientForm />} />
+              <Route path="ficha-clinica/paciente/:patientId"   element={<PatientDetail />} />
+              <Route path="ficha-clinica/expediente/:recordId"  element={<ClinicalRecordManager />} />
+              <Route path="ai-consultation" element={<AIConsultationModule />} />
+              <Route path="inventory"   element={<AdminInventory />} />
+              <Route path="finance"     element={<AdminFinance />} />
+              <Route path="clinical-3d" element={<Clinical3D />} />
+              <Route path="system-status" element={<AdminSystemStatus />} />
+              <Route path="backup"        element={<AdminBackup />} />
+            </Route>
 
             {/* Rutas con contexto: /admin/:clinicSlug/:username */}
             <Route path="/admin/:clinicSlug/:username" element={<AdminDashboard />} />
@@ -109,6 +135,7 @@ function App() {
 
             <Route path="*" element={<Navigate to="/admin/login" replace />} />
           </Routes>
+          </MasterViewProvider>
         </AuthProvider>
       </HashRouter>
     </ErrorBoundary>

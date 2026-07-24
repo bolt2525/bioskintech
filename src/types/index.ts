@@ -76,6 +76,7 @@ export interface ClinicUser {
   last_login: string;
   clinic_id: number | null;
   clinic_name: string;
+  clinic_slug?: string;  // disponible cuando lo retorna master_admin
 }
 
 /** Feature habilitada/deshabilitada para una clínica */

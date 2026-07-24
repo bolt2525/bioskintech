@@ -2,17 +2,17 @@
  * @file src/context/AuthContext.tsx
  * @description Contexto de autenticación multi-tenant para BIOSKIN Admin.
  *
+ * ALMACENAMIENTO: sessionStorage (tab-aislado).
+ * Cada pestaña del navegador mantiene su propia sesión.
+ * Los datos persisten al refrescar pero NO se comparten entre pestañas,
+ * lo que evita colisiones cuando dos usuarios abren el panel en la misma ventana.
+ *
  * Flujo:
  *  1. Al montar <AuthProvider>, se llama `checkAuth()` que valida el token
- *     almacenado en localStorage contra el endpoint `/api/admin-auth?action=verify`.
- *  2. `login()` persiste el token + usuario en localStorage.
+ *     almacenado en sessionStorage contra `/api/admin-auth?action=verify`.
+ *  2. `login()` persiste el token + usuario en sessionStorage.
  *  3. `logout()` limpia el storage y revoca el token en el servidor.
  *  4. `hasFeature(f)` devuelve true si el master_admin o si la clínica tiene `f` habilitado.
- *
- * Roles:
- *  - master_admin → acceso total, sin clinic_id
- *  - clinic_admin → acceso total a su clínica
- *  - clinic_user  → acceso limitado (access_scope: 'own')
  */
 
 import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
@@ -36,27 +36,27 @@ interface AuthContextType {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Claves de localStorage
-// ─────────────────────────────────────────────────────────────────────────────
+// Claves de sessionStorage (tab-aislado — evita colisión entre pestañas)
+// ───────────────────────────────────────────────────────────────────────────────
 
-const LS_TOKEN  = 'adminSessionToken';
-const LS_USER   = 'adminUser';
-const LS_EXPIRY = 'adminSessionExpiry';
+const SS_TOKEN  = 'adminSessionToken';
+const SS_USER   = 'adminUser';
+const SS_EXPIRY = 'adminSessionExpiry';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers de persistencia
 // ─────────────────────────────────────────────────────────────────────────────
 
 function persistAuth(token: string, user: AuthUser, expiry: string, features: string[]): void {
-  localStorage.setItem(LS_TOKEN,  token);
-  localStorage.setItem(LS_USER,   JSON.stringify({ ...user, features }));
-  localStorage.setItem(LS_EXPIRY, expiry);
+  sessionStorage.setItem(SS_TOKEN,  token);
+  sessionStorage.setItem(SS_USER,   JSON.stringify({ ...user, features }));
+  sessionStorage.setItem(SS_EXPIRY, expiry);
 }
 
 function clearAuth(): void {
-  localStorage.removeItem(LS_TOKEN);
-  localStorage.removeItem(LS_USER);
-  localStorage.removeItem(LS_EXPIRY);
+  sessionStorage.removeItem(SS_TOKEN);
+  sessionStorage.removeItem(SS_USER);
+  sessionStorage.removeItem(SS_EXPIRY);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -95,7 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    */
   const checkAuth = useCallback(async (): Promise<boolean> => {
     try {
-      const token = localStorage.getItem(LS_TOKEN);
+      const token = sessionStorage.getItem(SS_TOKEN);
       if (!token) { resetSession(); return false; }
 
       const res  = await fetch('/api/admin-auth?action=verify', {
@@ -145,7 +145,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   /** Revoca el token en el servidor y limpia la sesión local */
   const logout = (): void => {
-    const token = localStorage.getItem(LS_TOKEN);
+    const token = sessionStorage.getItem(SS_TOKEN);
     if (token) {
       // Fire-and-forget: no bloquea la UI
       fetch('/api/admin-auth?action=logout', {

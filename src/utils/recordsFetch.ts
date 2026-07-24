@@ -1,14 +1,28 @@
 /**
- * Wrapper de fetch para /api/records que incluye automáticamente el token de sesión.
- * Reemplaza todos los fetch('/api/records') en componentes de fichas clínicas.
+ * Wrapper de fetch que incluye el token de sesión automáticamente.
+ * Usa sessionStorage (tab-aislado) para evitar colisión entre pestañas.
  */
-const recordsFetch = (url: string, opts?: RequestInit): Promise<Response> =>
-  fetch(url, {
+
+/** ID de clínica objetivo cuando master_admin está viendo una clínica. */
+let _masterTargetClinicId: number | null = null;
+
+export function setMasterTargetClinicId(id: number | null) {
+  _masterTargetClinicId = id;
+}
+
+const recordsFetch = (url: string, opts?: RequestInit): Promise<Response> => {
+  const extraHeaders: Record<string, string> = {};
+  if (_masterTargetClinicId !== null) {
+    extraHeaders['X-Target-Clinic-Id'] = String(_masterTargetClinicId);
+  }
+  return fetch(url, {
     ...opts,
     headers: {
       ...opts?.headers,
-      Authorization: `Bearer ${localStorage.getItem('adminSessionToken') || ''}`,
+      Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken') || ''}`,
+      ...extraHeaders,
     },
   });
+};
 
 export default recordsFetch;

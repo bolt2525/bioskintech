@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file src/hooks/useClinicSettings.ts
  * @description Hook reutilizable para cargar la configuración de la clínica actual.
  * Usado en PrescriptionTab, ConsentimientosTab y cualquier módulo que necesite
@@ -61,7 +61,7 @@ export function useClinicSettings(): { settings: ClinicSettings; loading: boolea
     if (!clinicId) return;               // master_admin sin clinicId usa defaults
     setLoading(true);
     fetch(`/api/admin-auth?action=getClinicSettings&clinicId=${clinicId}`, {
-      headers: { Authorization: `Bearer ${localStorage.getItem('adminSessionToken') || ''}` },
+      headers: { Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken') || ''}` },
     })
       .then(r => r.json())
       .then(d => { if (d.settings) setSettings({ ...DEFAULTS, ...d.settings }); })

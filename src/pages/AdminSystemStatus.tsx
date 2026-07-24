@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+﻿import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Activity, Database, Mail, Calendar, CheckCircle2, XCircle,
@@ -30,7 +30,7 @@ interface StatusData {
 
 const fetch$ = (url: string) =>
   fetch(url, {
-    headers: { Authorization: `Bearer ${localStorage.getItem('adminSessionToken') || ''}` },
+    headers: { Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken') || ''}` },
   });
 
 // ── Tarjeta de servicio ───────────────────────────────────────────────────────

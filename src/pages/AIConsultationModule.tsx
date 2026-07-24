@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+﻿import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Brain, User, Users, ChevronRight, ChevronDown, ChevronLeft,
@@ -174,7 +174,7 @@ export default function AIConsultationModule() {
     setSelections({ ...EMPTY_SELECTIONS });
     try {
       const res = await recordsFetch(`/api/ai-consultation?action=getContextIndex&patient_id=${patientId}`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('adminSessionToken') || ''}` },
+        headers: { Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken') || ''}` },
       });
       if (res.ok) setContextIndex(await res.json());
     } catch (e) { console.error(e); }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+﻿import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import {
   Database, Download, RefreshCw, Loader2, Users, FileText,
@@ -26,7 +26,7 @@ const authFetch = (url: string, opts?: RequestInit) =>
     ...opts,
     headers: {
       ...opts?.headers,
-      Authorization: `Bearer ${localStorage.getItem('adminSessionToken') || ''}`,
+      Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken') || ''}`,
     },
   });
 

@@ -1,4 +1,4 @@
-// src/components/AdminAppointment.tsx
+﻿// src/components/AdminAppointment.tsx
 // Componente de agendamiento avanzado para administradores
 
 import React, { useState, useEffect } from 'react';
@@ -111,7 +111,7 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
   useEffect(() => {
     if (!user?.clinic_id) return;
     fetch(`/api/admin-auth?action=getClinicSettings&clinicId=${user.clinic_id}`, {
-      headers: { 'Authorization': `Bearer ${localStorage.getItem('adminSessionToken')}` }
+      headers: { 'Authorization': `Bearer ${sessionStorage.getItem('adminSessionToken')}` }
     })
       .then(r => r.json())
       .then(d => {
@@ -213,7 +213,7 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
           name: formData.name,
           email: formData.email,
           clinicId: user?.clinic_id,
-          sessionToken: localStorage.getItem('adminSessionToken'),
+          sessionToken: sessionStorage.getItem('adminSessionToken'),
           message:
             'Teléfono: ' + formData.phone + '\n' +
             'Email: ' + formData.email + '\n' +

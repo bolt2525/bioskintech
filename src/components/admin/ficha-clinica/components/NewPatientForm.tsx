@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import recordsFetch from "../../../../utils/recordsFetch";
 import { useNavigate, useParams } from 'react-router-dom';
 import { Save, ArrowLeft, AlertCircle } from 'lucide-react';
@@ -72,7 +72,7 @@ export default function NewPatientForm() {
     try {
       const action = isEditing ? 'updatePatient' : 'createPatient';
       const body = isEditing ? { id: patientId, ...formData } : formData;
-      const token = localStorage.getItem('adminSessionToken') || '';
+      const token = sessionStorage.getItem('adminSessionToken') || '';
 
       const response = await recordsFetch(`/api/records?action=${action}`, {
         method: 'POST',

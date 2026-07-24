@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file src/pages/AdminDashboard.tsx
  * @description Dashboard principal del panel de administración BIOSKIN.
  *
@@ -14,6 +14,7 @@
 
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useMasterView } from '../context/MasterViewContext';
 import { useAdminNav } from '../hooks/useAdminNav';
 import {
   LogOut, Calendar, Bell, X, AlertCircle, ChevronRight, Sparkles,
@@ -57,7 +58,16 @@ function urgency(a: UpcomingAppointment) {
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const { isAuthenticated, user, hasFeature, logout, checkAuth, userModuleOverrides } = useAuth();
+  const masterView = useMasterView();
   const { nav } = useAdminNav();
+
+  // En modo master-view, usar los datos del usuario clínica objetivo
+  const effectiveUser = masterView.isActive
+    ? { ...user!, clinic_name: masterView.clinicName, full_name: masterView.targetUsername, username: masterView.targetUsername || '', role: 'clinic_user' as const }
+    : user;
+  const effectiveHasFeature = masterView.isActive
+    ? masterView.hasFeatureInContext
+    : hasFeature;
 
   // Estado de notificaciones de citas
   const [showNotifications, setShowNotifications]       = useState(false);
@@ -76,10 +86,12 @@ export default function AdminDashboard() {
     checkAuth().then(ok => { if (!ok) navigate('/admin/login'); });
   }, []);
 
-  // Redirigir master_admin a su propio panel
+  // Redirigir master_admin a su propio panel SOLO si no está en modo master-view
   useEffect(() => {
-    if (user?.role === 'master_admin') navigate('/admin/master', { replace: true });
-  }, [user]);
+    if (user?.role === 'master_admin' && !masterView.isActive) {
+      navigate('/admin/master', { replace: true });
+    }
+  }, [user, masterView.isActive]);
 
   // Cargar citas próximas cuando hay sesión
   useEffect(() => {
@@ -136,7 +148,7 @@ export default function AdminDashboard() {
     try {
       const res  = await fetch('/api/admin-auth?action=changePassword', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('adminSessionToken')}` },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionStorage.getItem('adminSessionToken')}` },
         body:   JSON.stringify({ currentPassword: pwdForm.current, newPassword: pwdForm.next }),
       });
       const data = await res.json();
@@ -148,13 +160,15 @@ export default function AdminDashboard() {
   };
 
   // ─── Guard ────────────────────────────────────────────────────────────
-  if (!isAuthenticated || !user || user.role === 'master_admin') return null;
+  // En modo master-view se permite renderizar aunque el user sea master_admin
+  if (!isAuthenticated || !user) return null;
+  if (user.role === 'master_admin' && !masterView.isActive) return null;
 
   // Filtrar módulos habilitados para este usuario/clínica + aplicar overrides por usuario
   const disabledByOverride = new Set(
     userModuleOverrides.filter(o => !o.enabled).map(o => o.feature)
   );
-  const tiles = MODULE_LIST.filter(m => hasFeature(m.feat) && !disabledByOverride.has(m.feat));
+  const tiles = MODULE_LIST.filter(m => effectiveHasFeature(m.feat) && !disabledByOverride.has(m.feat));
 
   return (
     <div className="min-h-screen bg-[#fafafa]">
@@ -172,10 +186,10 @@ export default function AdminDashboard() {
                   className="text-xl font-bold text-gray-900 leading-tight"
                   style={{ fontFamily: 'Playfair Display, serif' }}
                 >
-                  {user.clinic_name || 'BIOSKIN'}
+                  {effectiveUser?.clinic_name || 'BIOSKIN'}
                 </h1>
                 <p className="text-xs text-gray-400 leading-tight">
-                  {ROLE_BADGE[user.role] || 'Usuario'} · {user.full_name || user.username}
+                  {ROLE_BADGE[effectiveUser?.role || ''] || 'Usuario'} · {effectiveUser?.full_name || effectiveUser?.username}
                 </p>
               </div>
             </div>
@@ -300,7 +314,7 @@ export default function AdminDashboard() {
           </div>
           <div>
             <h2 className="text-lg font-semibold text-gray-900">
-              Bienvenido, {user.full_name?.split(' ')[0] || user.username}
+              Bienvenido, {effectiveUser?.full_name?.split(' ')[0] || effectiveUser?.username}
             </h2>
             <p className="text-sm text-gray-400">Selecciona un módulo para continuar</p>
           </div>
@@ -357,7 +371,7 @@ export default function AdminDashboard() {
             <div className="p-5 space-y-5">
               {/* Info del usuario */}
               <div className="bg-[#deb887]/8 border border-[#deb887]/20 rounded-xl p-4 space-y-1">
-                <p className="font-semibold text-gray-900">{user.full_name || user.username}</p>
+                <p className="font-semibold text-gray-900">{effectiveUser?.full_name || effectiveUser?.username}</p>
                 <p className="text-sm text-gray-400">@{user.username} · {ROLE_BADGE[user.role] || user.role}</p>
                 {user.clinic_name && <p className="text-sm text-[#c5a075]">{user.clinic_name}</p>}
               </div>

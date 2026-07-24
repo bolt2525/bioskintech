@@ -491,7 +491,7 @@ async function listUsers(requestUser, clinicIdFilter) {
     if (clinicIdFilter) {
       return (await sql`
         SELECT cu.id, cu.username, cu.full_name, cu.email, cu.role, cu.access_scope,
-               cu.is_active, cu.last_login, cu.clinic_id, c.name as clinic_name
+               cu.is_active, cu.last_login, cu.clinic_id, c.name as clinic_name, c.slug as clinic_slug
         FROM clinic_users cu LEFT JOIN clinics c ON cu.clinic_id = c.id
         WHERE cu.clinic_id = ${clinicIdFilter}
         ORDER BY cu.role, cu.username
@@ -499,7 +499,7 @@ async function listUsers(requestUser, clinicIdFilter) {
     }
     return (await sql`
       SELECT cu.id, cu.username, cu.full_name, cu.email, cu.role, cu.access_scope,
-             cu.is_active, cu.last_login, cu.clinic_id, c.name as clinic_name
+             cu.is_active, cu.last_login, cu.clinic_id, c.name as clinic_name, c.slug as clinic_slug
       FROM clinic_users cu LEFT JOIN clinics c ON cu.clinic_id = c.id
       ORDER BY c.name NULLS LAST, cu.role, cu.username
     `).rows;

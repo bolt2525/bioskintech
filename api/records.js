@@ -71,7 +71,9 @@ function getPool() {
 }
 
 // Obtiene usuario de sesión para tenant scoping.
-// Retorna {role, clinic_id, user_id, access_scope, username} o null (pre-migración / sin auth).
+// Retorna {role, clinic_id, effective_clinic_id, user_id, access_scope, username} o null.
+// Cuando el usuario es master_admin y envía X-Target-Clinic-Id, effective_clinic_id
+// contiene la clínica destino para que las queries operen en ese contexto.
 async function getSessionUser(pool, req) {
   const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
   if (!token) return null;
@@ -87,9 +89,21 @@ async function getSessionUser(pool, req) {
     `, [token]);
     if (!r.rows.length) return null;
     const s = r.rows[0];
-    return { role: s.role || 'clinic_admin', clinic_id: s.clinic_id, user_id: s.user_id, access_scope: s.access_scope || 'all', username: s.username };
+    const role = s.role || 'clinic_admin';
+
+    // Soporte para master_admin viendo una clínica específica
+    let effective_clinic_id = s.clinic_id;
+    if (role === 'master_admin') {
+      const targetHeader = req.headers['x-target-clinic-id'];
+      if (targetHeader) {
+        const parsed = parseInt(targetHeader, 10);
+        if (!isNaN(parsed) && parsed > 0) effective_clinic_id = parsed;
+      }
+    }
+
+    return { role, clinic_id: s.clinic_id, effective_clinic_id, user_id: s.user_id, access_scope: s.access_scope || 'all', username: s.username };
   } catch (error) {
-    throw error; // errores de validación de sesión fallan cerrado, no abierto
+    throw error;
   }
 }
 
@@ -636,20 +650,32 @@ export default async function handler(req, res) {
         const su = await getSessionUser(pool, req);
         const filterMine = req.query.filterMine === 'true';
         let pq, pp = [];
-        if (!su || su.clinic_id == null) {
-          // Pre-migración o sesión legacy → todos los pacientes (backwards compat)
-          pq = 'SELECT * FROM patients ORDER BY last_name, first_name';
-        } else if (su.role === 'master_admin') {
+        // Para master_admin, usar effective_clinic_id (puede ser la clínica que está viendo)
+        const effectiveClinicId = su?.effective_clinic_id ?? su?.clinic_id;
+        if (!su || effectiveClinicId == null) {
+          // Pre-migración o master sin contexto de clínica → todos
           const cf = req.query.clinicId ? parseInt(req.query.clinicId) : null;
           if (cf) { pq = 'SELECT * FROM patients WHERE clinic_id = $1 ORDER BY last_name, first_name'; pp = [cf]; }
           else { pq = 'SELECT * FROM patients ORDER BY last_name, first_name'; }
         } else if (su.access_scope === 'own' || (su.access_scope === 'all' && filterMine)) {
           pq = 'SELECT * FROM patients WHERE clinic_id = $1 AND (created_by_user_id = $2 OR created_by_user_id IS NULL) ORDER BY last_name, first_name';
-          pp = [su.clinic_id, su.user_id];
+          pp = [effectiveClinicId, su.user_id];
         } else {
           pq = 'SELECT * FROM patients WHERE clinic_id = $1 ORDER BY last_name, first_name';
-          pp = [su.clinic_id];
+          pp = [effectiveClinicId];
         }
+        // Soporte para búsqueda por texto
+        const searchTerm = req.query.search?.trim();
+        if (searchTerm && pp.length > 0) {
+          const idx = pp.length + 1;
+          pq = pq.replace('ORDER BY', `AND (first_name ILIKE $${idx} OR last_name ILIKE $${idx} OR rut ILIKE $${idx}) ORDER BY`);
+          pp.push(`%${searchTerm}%`);
+        } else if (searchTerm) {
+          pq = `SELECT * FROM patients WHERE (first_name ILIKE $1 OR last_name ILIKE $1 OR rut ILIKE $1) ORDER BY last_name, first_name`;
+          pp = [`%${searchTerm}%`];
+        }
+        const limitVal = parseInt(req.query.limit || '500');
+        pq += ` LIMIT ${Math.min(limitVal, 1000)}`;
         const patients = await pool.query(pq, pp);
         return res.status(200).json(patients.rows);
       }
@@ -696,7 +722,8 @@ export default async function handler(req, res) {
 
           // Obtener clinic_id y created_by_user_id desde sesión (post-migración)
           const suCreate = await getSessionUser(pool, req);
-          const patientClinicId = suCreate?.clinic_id ?? null;
+          // Para master admin viendo una clínica, usar effective_clinic_id
+          const patientClinicId = suCreate?.effective_clinic_id ?? suCreate?.clinic_id ?? null;
           const patientCreatedBy = suCreate?.user_id ?? null;
 
           // Usar INSERT con columnas de tenant si están disponibles
