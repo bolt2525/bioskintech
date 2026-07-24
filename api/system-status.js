@@ -1,8 +1,15 @@
 
 import { google } from 'googleapis';
 import nodemailer from 'nodemailer';
+import { requireAuth } from '../lib/admin-auth.js';
 
 export default async function handler(req, res) {
+  const user = await requireAuth(req, res);
+  if (!user) return;
+  if (user.role !== 'master_admin') {
+    return res.status(403).json({ success: false, error: 'Acceso restringido — solo master_admin' });
+  }
+
   const { type } = req.query;
   const logs = [];
 
@@ -95,10 +102,9 @@ export default async function handler(req, res) {
     
     return res.status(500).json({ 
       success: false, 
-      message: error.message, 
+      message: 'Error de conexión — ver logs del servidor para más detalles',
       logs,
-      code: error.code, // Para detectar EAUTH
-      response: error.response // Para detectar respuestas de servidor SMTP
+      code: error.code
     });
   }
 }

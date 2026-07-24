@@ -13,6 +13,7 @@ import {
 import { cleanupService } from '../lib/internal-bot-cleanup.js';
 import { chatbotAI } from '../lib/internal-bot-service.js';
 import { FallbackStorage } from '../lib/fallback-storage.js';
+import { STAFF_NUMBERS } from '../lib/config.js';
 import { 
   classifyTechnical, 
   generateTechnicalReply,
@@ -506,7 +507,6 @@ async function processWhatsAppMessage(body) {
     // =================================================================================
     // 🛡️ STAFF FILTER & INTERNAL ASSISTANT ROUTING
     // =================================================================================
-    const STAFF_NUMBERS = ['593997061321', '593969890689', '593998653732'];
     const normalizedFrom = from.replace(/\D/g, '');
     
     // Check if sender is staff

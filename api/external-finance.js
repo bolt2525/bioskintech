@@ -1,5 +1,6 @@
 
 import { parseMedicalNote } from '../lib/medical-finance-service.js';
+import { requireAuth } from '../lib/admin-auth.js';
 import { 
   saveFinanceRecord, 
   getFinanceRecords, 
@@ -11,11 +12,14 @@ export default async function handler(req, res) {
   // CORS basics
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PATCH, DELETE');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
+
+  const user = await requireAuth(req, res);
+  if (!user) return;
 
   const { action } = req.query;
 

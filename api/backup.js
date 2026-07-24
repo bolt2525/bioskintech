@@ -1,25 +1,16 @@
 
 import { getPool } from '../lib/neon-clinical-db.js';
-import adminAuth from './admin-auth.js';
-
-// Helper to verify session reuse from admin-auth
-const verifyToken = async (req) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) return false;
-    const token = authHeader.split(' ')[1];
-    return !!token; 
-};
+import { requireAuth } from '../lib/admin-auth.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  const user = await requireAuth(req, res);
+  if (!user) return;
+
   try {
-    const isAuthorized = await verifyToken(req);
-    if (!isAuthorized) {
-        return res.status(401).json({ error: 'Unauthorized' });
-    }
 
     const pool = getPool();
     if (!pool) {

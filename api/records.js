@@ -57,7 +57,7 @@ function getPool() {
     poolInstance = new Pool({ 
       connectionString,
       ssl: {
-        rejectUnauthorized: false // Required for Neon/Vercel in some configs
+        rejectUnauthorized: true // Neon PostgreSQL usa certificados válidos
       },
       max: 1, // Limit connections in serverless
       idleTimeoutMillis: 30000,
@@ -88,8 +88,8 @@ async function getSessionUser(pool, req) {
     if (!r.rows.length) return null;
     const s = r.rows[0];
     return { role: s.role || 'clinic_admin', clinic_id: s.clinic_id, user_id: s.user_id, access_scope: s.access_scope || 'all', username: s.username };
-  } catch {
-    return null; // pre-migración: columnas nuevas aún no existen, acceso irrestricto
+  } catch (error) {
+    throw error; // errores de validación de sesión fallan cerrado, no abierto
   }
 }
 

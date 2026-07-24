@@ -569,8 +569,7 @@ export default async function handler(req, res) {
       console.log('📧 Enviando vía SMTP');
       const transporter = nodemailer.createTransport({
         host: process.env.EMAIL_HOST, port: parseInt(process.env.EMAIL_PORT || '587'),
-        secure: false, auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-        tls: { rejectUnauthorized: false }
+        secure: false, auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
       });
       if (staffTo) await transporter.sendMail({ from: process.env.EMAIL_USER, to: staffTo, subject: `🗓️ Nueva cita - ${paciente}`, html: staffEmailHtml });
       if (selected_staff_email && selected_staff_email !== staffTo) {
