@@ -31,7 +31,7 @@ const LOCK_MS           = 15 * 60 * 1000;       // 15 minutos de bloqueo
 const ALL_FEATURES = [
   'calendar', 'block_schedule', 'appointment', 'diagnosis', 'protocols',
   'chat_assistant', 'clinical_records', 'finance', 'inventory',
-  'clinical_3d', 'technical', 'backup', 'blog',
+  'clinical_3d', 'technical', 'backup', 'blog', 'ai_consultation',
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────

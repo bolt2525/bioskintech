@@ -19,7 +19,7 @@
 
 import {
   Calendar, Clock, Ban, Brain, Zap, Bot, ClipboardList,
-  DollarSign, Package, Cuboid, Wrench, Database, Activity,
+  DollarSign, Package, Cuboid, Wrench, Database, Activity, MessageCircle,
 } from 'lucide-react';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -29,7 +29,7 @@ import {
 export const ALL_FEATURES = [
   'calendar', 'block_schedule', 'appointment', 'diagnosis', 'protocols',
   'chat_assistant', 'clinical_records', 'finance', 'inventory',
-  'clinical_3d', 'technical', 'backup', 'blog',
+  'clinical_3d', 'technical', 'backup', 'blog', 'ai_consultation',
 ] as const;
 
 export type FeatureKey = typeof ALL_FEATURES[number];
@@ -49,6 +49,7 @@ export const FEATURE_META: Record<FeatureKey, { label: string; icon: React.Compo
   inventory:        { label: 'Inventario',       icon: Package,       color: 'text-cyan-600'   },
   clinical_3d:      { label: 'Visualización 3D', icon: Cuboid,        color: 'text-violet-500' },
   technical:        { label: 'Serv. Técnico',    icon: Wrench,        color: 'text-slate-600'  },
+  ai_consultation:  { label: 'Consultas IA',     icon: MessageCircle, color: 'text-[#deb887]'  },
   backup:           { label: 'Backup / BD',      icon: Database,      color: 'text-blue-600'   },
   blog:             { label: 'Blog Admin',       icon: Activity,      color: 'text-lime-600'   },
 };
@@ -193,5 +194,14 @@ export const MODULE_LIST: ModuleConfig[] = [
     path: '/blog-admin',
     iconColor: 'text-lime-500',
     bgColor: 'bg-lime-50',
+  },
+  {
+    feat: 'ai_consultation',
+    title: 'Consultas IA',
+    description: 'Consultas médicas asistidas por IA con contexto clínico',
+    icon: MessageCircle,
+    path: '/admin/ai-consultation',
+    iconColor: 'text-[#deb887]',
+    bgColor: 'bg-[#deb887]/10',
   },
 ];

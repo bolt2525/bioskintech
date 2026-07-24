@@ -43,6 +43,7 @@ import ConsentSigning        from './pages/ConsentSigning';
 import AdminDiagnosis    from './pages/AdminDiagnosis';
 import AdminProtocols    from './pages/AdminProtocols';
 import AdminChatAssistant from './pages/AdminChatAssistant';
+import AIConsultationModule from './pages/AIConsultationModule';
 
 // ── Gestión ────────────────────────────────────────────────────────────────
 import AdminInventory from './pages/AdminInventory';
@@ -100,6 +101,7 @@ function App() {
             <Route path="/admin/:clinicSlug/:username/diagnosis"      element={<AdminDiagnosis />} />
             <Route path="/admin/:clinicSlug/:username/protocols"      element={<AdminProtocols />} />
             <Route path="/admin/:clinicSlug/:username/chat-assistant" element={<AdminChatAssistant />} />
+            <Route path="/admin/:clinicSlug/:username/ai-consultation" element={<AIConsultationModule />} />
 
             {/* Gestión */}
             <Route path="/admin/:clinicSlug/:username/inventory" element={<AdminInventory />} />
@@ -125,6 +127,7 @@ function App() {
             <Route path="/admin/diagnosis"      element={<AdminDiagnosis />} />
             <Route path="/admin/protocols"      element={<AdminProtocols />} />
             <Route path="/admin/chat-assistant" element={<AdminChatAssistant />} />
+            <Route path="/admin/ai-consultation" element={<AIConsultationModule />} />
             <Route path="/admin/inventory" element={<AdminInventory />} />
             <Route path="/admin/finance"   element={<AdminFinance />} />
             <Route path="/admin/clinical-3d" element={<Clinical3D />} />

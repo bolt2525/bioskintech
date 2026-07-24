@@ -1,6 +1,5 @@
 {
   "rewrites": [
-    { "source": "/api/whatsapp-chatbot", "destination": "/api/whatsapp-internal" },
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/(.*)", "destination": "/" }
   ],
@@ -18,22 +17,8 @@
     }
   ],
   "functions": {
-    "api/whatsapp-internal.js": {
-      "maxDuration": 60,
-      "includeFiles": "lib/**"
-    },
-    "api/internal-bot-api.js": {
-      "maxDuration": 60,
-      "includeFiles": "lib/**"
-    },
     "api/admin-auth.js": {
       "includeFiles": "data/**"
     }
-  },
-  "crons": [
-    {
-      "path": "/api/internal-bot-api?type=internal-chat&action=daily-agenda",
-      "schedule": "0 12 * * *"
-    }
-  ]
+  }
 }
