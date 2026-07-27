@@ -304,7 +304,8 @@ export default async function handler(req, res) {
 
       case 'inventoryListBatches':
         try {
-          // Returns all active batches, useful for expiry monitoring
+          const su = await getSessionUserOnce();
+          const invClinicId = su?.effective_clinic_id ?? su?.clinic_id ?? null;
           const batches = await pool.query(`
             SELECT 
               b.*, 
@@ -315,6 +316,7 @@ export default async function handler(req, res) {
             FROM inventory_batches b
             JOIN inventory_items i ON b.item_id = i.id
             WHERE b.status = 'active' AND b.quantity_current > 0
+              ${invClinicId ? `AND (i.clinic_id = ${parseInt(invClinicId)} OR i.clinic_id IS NULL)` : ''}
             ORDER BY b.expiration_date ASC
           `);
           return res.status(200).json(batches.rows);
@@ -325,6 +327,9 @@ export default async function handler(req, res) {
 
       case 'inventoryListItems':
         try {
+          const su = await getSessionUserOnce();
+          const invClinicId = su?.effective_clinic_id ?? su?.clinic_id ?? null;
+          const clinicFilter = invClinicId ? `WHERE (i.clinic_id = ${parseInt(invClinicId)} OR i.clinic_id IS NULL)` : '';
           const items = await pool.query(`
             SELECT 
               i.*,
@@ -334,6 +339,7 @@ export default async function handler(req, res) {
               MIN(b.expiration_date) as next_expiry
             FROM inventory_items i
             LEFT JOIN inventory_batches b ON i.id = b.item_id AND b.status = 'active'
+            ${clinicFilter}
             GROUP BY i.id
             ORDER BY i.name ASC
           `);
@@ -345,6 +351,9 @@ export default async function handler(req, res) {
 
       case 'inventoryStats':
         try {
+          const su = await getSessionUserOnce();
+          const invClinicId = su?.effective_clinic_id ?? su?.clinic_id ?? null;
+          const iClause = invClinicId ? `AND (i.clinic_id = ${parseInt(invClinicId)} OR i.clinic_id IS NULL)` : '';
           const statsResult = await pool.query(`
             SELECT
               COUNT(DISTINCT i.id)::int AS total_items,
@@ -357,14 +366,19 @@ export default async function handler(req, res) {
               WHERE status = 'active'
               GROUP BY item_id
             ) stock ON stock.item_id = i.id
+            WHERE 1=1 ${iClause}
           `);
+
+          const bClause = invClinicId
+            ? `JOIN inventory_items ii ON ii.id = b.item_id WHERE (ii.clinic_id = ${parseInt(invClinicId)} OR ii.clinic_id IS NULL) AND b.status = 'active'`
+            : `WHERE b.status = 'active'`;
 
           const batchStats = await pool.query(`
             SELECT
-              COUNT(CASE WHEN expiration_date < CURRENT_DATE AND status = 'active' THEN 1 END)::int AS expired_count,
-              COUNT(CASE WHEN expiration_date >= CURRENT_DATE AND expiration_date <= CURRENT_DATE + INTERVAL '30 days' AND status = 'active' THEN 1 END)::int AS expiring_soon_count
-            FROM inventory_batches
-            WHERE status = 'active'
+              COUNT(CASE WHEN b.expiration_date < CURRENT_DATE THEN 1 END)::int AS expired_count,
+              COUNT(CASE WHEN b.expiration_date >= CURRENT_DATE AND b.expiration_date <= CURRENT_DATE + INTERVAL '30 days' THEN 1 END)::int AS expiring_soon_count
+            FROM inventory_batches b
+            ${bClause}
           `);
 
           const movementsStats = await pool.query(`
@@ -390,6 +404,7 @@ export default async function handler(req, res) {
             JOIN inventory_items i ON b.item_id = i.id
             WHERE b.status = 'active'
               AND (b.expiration_date < CURRENT_DATE OR b.expiration_date <= CURRENT_DATE + INTERVAL '30 days')
+              ${invClinicId ? `AND (i.clinic_id = ${parseInt(invClinicId)} OR i.clinic_id IS NULL)` : ''}
             ORDER BY b.expiration_date ASC
             LIMIT 20
           `);
@@ -447,18 +462,20 @@ export default async function handler(req, res) {
           const cleanDescription = normalizeOptionalText(description);
           const cleanGroupName = normalizeOptionalText(group_name);
           const cleanSanitaryRegistration = normalizeOptionalText(sanitary_registration);
+          const suInv = await getSessionUserOnce();
+          const invClinicId = suInv?.effective_clinic_id ?? suInv?.clinic_id ?? null;
           const newItem = await pool.query(`
-            INSERT INTO inventory_items (sku, name, brand, description, category, group_name, unit_of_measure, min_stock_level, requires_cold_chain, sanitary_registration, cost_price, sale_price)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            INSERT INTO inventory_items (clinic_id, sku, name, brand, description, category, group_name, unit_of_measure, min_stock_level, requires_cold_chain, sanitary_registration, cost_price, sale_price)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             RETURNING *
-          `, [cleanSku, name, cleanBrand, cleanDescription, category, cleanGroupName, unit_of_measure, min_stock_level, requires_cold_chain, cleanSanitaryRegistration,
+          `, [invClinicId, cleanSku, name, cleanBrand, cleanDescription, category, cleanGroupName, unit_of_measure, min_stock_level, requires_cold_chain, cleanSanitaryRegistration,
               normalizeOptionalNumber(cost_price),
               normalizeOptionalNumber(sale_price)]);
           return res.status(201).json(newItem.rows[0]);
         } catch (err) {
           console.error('Error creating inventory item:', err);
-          if (err.code === '23505' && err.constraint === 'inventory_items_sku_key') {
-            return res.status(409).json({ error: 'El SKU ya existe. Usa otro código o deja el campo vacío.' });
+          if (err.code === '23505') {
+            return res.status(409).json({ error: 'El SKU ya existe en esta clínica. Usa otro código o deja el campo vacío.' });
           }
           return res.status(500).json({ error: 'Error al crear producto de inventario.' });
         }
@@ -1512,13 +1529,96 @@ export default async function handler(req, res) {
       // FINANCE MODULE ACTIONS
       // ==========================================
 
+      case 'financeCreate': {
+        const su = await getSessionUserOnce();
+        const { date, invoice_number, entity, description, type, subtotal, tax, total } = body;
+        if (!entity || !type) return res.status(400).json({ error: 'Entidad y tipo son requeridos' });
+        const clinicId   = su?.effective_clinic_id ?? su?.clinic_id ?? null;
+        const regBy      = su?.username ?? 'manual';
+        const sub  = parseFloat(subtotal || 0);
+        const taxV = parseFloat(tax  || 0);
+        const tot  = parseFloat(total || 0) || (sub + taxV);
+        try {
+          const r = await pool.query(
+            `INSERT INTO financial_records (date, invoice_number, entity, description, type, subtotal, tax, total, registered_by, clinic_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+            [date || new Date().toISOString().split('T')[0], invoice_number || null, entity, description || null, type, sub, taxV, tot, regBy, clinicId]
+          );
+          return res.status(201).json(r.rows[0]);
+        } catch (err) {
+          console.error('Error creating finance record:', err);
+          return res.status(500).json({ error: err.message });
+        }
+      }
+
+      case 'financeUsers': {
+        // Devuelve los usuarios de la clínica con su estado de visibilidad de finanzas
+        const su = await getSessionUserOnce();
+        const clinicId = su?.effective_clinic_id ?? su?.clinic_id ?? null;
+        if (!clinicId && su?.role !== 'master_admin') return res.status(403).json({ error: 'Sin contexto de clínica' });
+        try {
+          // Usuarios de la clínica (excluyendo master_admin)
+          let usersQuery = `SELECT id, username, full_name, role FROM clinic_users WHERE role != 'master_admin' AND is_active = true`;
+          const usersParams = [];
+          if (clinicId) { usersQuery += ` AND clinic_id = $1`; usersParams.push(clinicId); }
+          // ponytail: @vercel/postgres no está disponible aquí — usamos pool (neon-clinical-db)
+          // La tabla clinic_users vive en la misma BD (misma NEON_DATABASE_URL)
+          const usersRes = await pool.query(usersQuery, usersParams);
+
+          // Overrides de visibilidad de finanzas por usuario
+          const userIds  = usersRes.rows.map(u => u.id);
+          let overrides: Record<number, boolean> = {};
+          if (userIds.length) {
+            const ovr = await pool.query(
+              `SELECT clinic_user_id, enabled FROM user_module_overrides WHERE feature = 'finanzas_visible' AND clinic_user_id = ANY($1)`,
+              [userIds]
+            );
+            ovr.rows.forEach((r: any) => { overrides[r.clinic_user_id] = r.enabled; });
+          }
+
+          const users = usersRes.rows.map((u: any) => ({
+            id:         u.id,
+            username:   u.username,
+            full_name:  u.full_name || u.username,
+            role:       u.role,
+            // Si no hay override → visible (true). Si hay override con enabled=false → no visible
+            finance_visible: overrides[u.id] !== false,
+          }));
+          return res.status(200).json(users);
+        } catch (err) {
+          console.error('Error fetching finance users:', err);
+          return res.status(500).json({ error: err.message });
+        }
+      }
+
       case 'financeList': {
+        const su = await getSessionUserOnce();
         const { startDate, endDate, registered_by } = req.query;
+        const clinicId = su?.effective_clinic_id ?? su?.clinic_id ?? null;
+
         let query = `SELECT * FROM financial_records WHERE 1=1`;
-        const params = [];
+        const params: any[] = [];
         let paramCount = 1;
 
-        // Filtros opcionales
+        // Filtro por clínica (multi-tenant)
+        if (clinicId) {
+          // Incluye registros que tengan clinic_id = X O que sean nulos (migración)
+          query += ` AND (clinic_id = $${paramCount} OR clinic_id IS NULL)`;
+          params.push(clinicId);
+          paramCount++;
+        }
+
+        // clinic_user solo ve sus propios registros
+        if (su?.role === 'clinic_user') {
+          query += ` AND registered_by = $${paramCount}`;
+          params.push(su.username);
+          paramCount++;
+        } else if (registered_by && registered_by !== 'all' && registered_by !== 'null' && registered_by !== 'undefined') {
+          query += ` AND registered_by = $${paramCount}`;
+          params.push(registered_by);
+          paramCount++;
+        }
+
         if (startDate && startDate !== 'null' && startDate !== 'undefined') {
           query += ` AND date >= $${paramCount}`;
           params.push(startDate);
@@ -1527,11 +1627,6 @@ export default async function handler(req, res) {
         if (endDate && endDate !== 'null' && endDate !== 'undefined') {
           query += ` AND date <= $${paramCount}`;
           params.push(endDate);
-          paramCount++;
-        }
-        if (registered_by && registered_by !== 'all' && registered_by !== 'null') {
-          query += ` AND registered_by = $${paramCount}`;
-          params.push(registered_by);
           paramCount++;
         }
 

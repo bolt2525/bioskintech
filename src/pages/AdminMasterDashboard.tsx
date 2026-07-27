@@ -188,7 +188,7 @@ function UserModuleOverridesPanel({
   flash: (text: string, type?: 'ok' | 'err') => void;
 }) {
   const [overrides, setOverrides] = useState<Record<string, boolean>>({});
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true); // abierto por defecto
 
   const load = async () => {
     const res  = await fetch(`/api/admin-auth?action=getUserModuleOverrides&userId=${userId}`, { headers: authHeader() });
@@ -197,6 +197,9 @@ function UserModuleOverridesPanel({
     (data.overrides || []).forEach((o: { feature: string; enabled: boolean }) => { map[o.feature] = o.enabled; });
     setOverrides(map);
   };
+
+  // Carga automática al montar
+  useEffect(() => { load(); }, [userId]);
 
   const toggle = async (feat: string, disabled: boolean) => {
     setOverrides(p => ({ ...p, [feat]: !disabled }));
@@ -207,41 +210,65 @@ function UserModuleOverridesPanel({
     flash(disabled ? `Módulo "${feat}" habilitado para este usuario` : `Módulo "${feat}" restringido para este usuario`);
   };
 
-  // Módulos habilitados para la clínica de este usuario
-  const clinicFeats = Object.entries(featMap[clinicId] || {})
-    .filter(([, enabled]) => enabled !== false)
-    .map(([f]) => f);
+  const toggleFinanceVisible = async (currentlyVisible: boolean) => {
+    const newVal = !currentlyVisible;
+    setOverrides(p => ({ ...p, finanzas_visible: newVal }));
+    await fetch('/api/admin-auth?action=setUserModuleOverride', {
+      method: 'POST', headers: authHeader(),
+      body: JSON.stringify({ userId, feature: 'finanzas_visible', enabled: newVal }),
+    });
+    flash(newVal ? 'Finanzas visibles al administrador de clínica' : 'Finanzas ocultas al administrador de clínica');
+  };
+
+  // ponytail: ALL_FEATURES como base, no featMap (evita mostrar vacío cuando la clínica no tiene rows en clinic_features)
+  const clinicFeats = ALL_FEATURES.filter(f => (featMap[clinicId] || {})[f] !== false);
+  // finanzas_visible: si no hay override con false → visible (true)
+  const financeVisible = overrides['finanzas_visible'] !== false;
 
   return (
     <div className="border border-dashed border-gray-200 rounded-xl overflow-hidden mt-1">
       <button
-        onClick={() => { setOpen(!open); if (!open) load(); }}
+        onClick={() => setOpen(!open)}
         className="w-full flex items-center justify-between p-3 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
       >
         <span className="text-sm font-medium text-gray-700">⚙ Permisos de módulos</span>
         {open ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
       </button>
       {open && (
-        <div className="p-3">
-          <p className="text-xs text-gray-400 mb-3">Desactiva módulos específicos para este usuario. Solo aplica sobre los módulos habilitados para su clínica.</p>
-          <div className="grid grid-cols-2 gap-2">
-            {clinicFeats.length === 0 ? (
-              <p className="text-xs text-gray-400 col-span-2">Selecciona una clínica primero.</p>
-            ) : clinicFeats.map(feat => {
-              const meta    = FEATURE_META[feat as FeatureKey];
-              if (!meta) return null;
-              const Icon    = meta.icon;
-              const isDisabled = overrides[feat] === false;
-              return (
-                <label key={feat} className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-all ${isDisabled ? 'border-red-100 bg-red-50' : 'border-gray-100 bg-white hover:bg-gray-50'}`}>
-                  <input type="checkbox" checked={!isDisabled}
-                    onChange={() => toggle(feat, isDisabled)}
-                    className="w-3.5 h-3.5 accent-[#deb887]" />
-                  <Icon className={`w-3.5 h-3.5 ${meta.color}`} />
-                  <span className={`text-xs truncate ${isDisabled ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{meta.label}</span>
-                </label>
-              );
-            })}
+        <div className="p-3 space-y-4">
+          {/* Toggle de visibilidad de finanzas para el admin */}
+          <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-semibold text-yellow-800">Finanzas visibles al admin de clínica</p>
+                <p className="text-[10px] text-yellow-600 mt-0.5">Si está desactivado, el admin verá este usuario en gris en el módulo Finanzas</p>
+              </div>
+              <FeatureToggle checked={financeVisible} onChange={() => toggleFinanceVisible(financeVisible)} />
+            </div>
+          </div>
+
+          {/* Módulos habilitados/deshabilitados */}
+          <div>
+            <p className="text-xs text-gray-400 mb-2">Desactiva módulos específicos para este usuario. Solo aplica sobre los módulos habilitados para su clínica.</p>
+            <div className="grid grid-cols-2 gap-2">
+              {clinicFeats.length === 0 ? (
+                <p className="text-xs text-gray-400 col-span-2">No hay módulos configurados para esta clínica.</p>
+              ) : clinicFeats.map(feat => {
+                const meta    = FEATURE_META[feat as FeatureKey];
+                if (!meta) return null;
+                const Icon    = meta.icon;
+                const isDisabled = overrides[feat] === false;
+                return (
+                  <label key={feat} className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-all ${isDisabled ? 'border-red-100 bg-red-50' : 'border-gray-100 bg-white hover:bg-gray-50'}`}>
+                    <input type="checkbox" checked={!isDisabled}
+                      onChange={() => toggle(feat, isDisabled)}
+                      className="w-3.5 h-3.5 accent-[#deb887]" />
+                    <Icon className={`w-3.5 h-3.5 ${meta.color}`} />
+                    <span className={`text-xs truncate ${isDisabled ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{meta.label}</span>
+                  </label>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}

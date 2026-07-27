@@ -1,24 +1,15 @@
 
 import { useState, useEffect } from 'react';
 import recordsFetch from "../utils/recordsFetch";
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Calendar, DollarSign, TrendingUp, TrendingDown, 
-  Trash2, Edit2, Check, X, FileText, PieChart, BarChart2, Search, Filter, Info 
+  Trash2, Edit2, Check, X, FileText, PieChart, BarChart2, Search, Filter, Info, Plus, Lock
 } from 'lucide-react';
 import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer 
 } from 'recharts';
-
-// Lógica de Tax exportada desde data/taxRules
-// Si prefieres mantenerla inline por simplicidad, puedes renombrarla o eliminar esta sección duplicada
-// pero para mantener coherencia con la nueva lógica avanzada en taxRules.ts, usaremos esa.
-import { deductibilityLogic } from '../data/taxRules';
-
-// WRAPPER para usar la lógica importada en el componente
-const getDeductibility = (description: string = '', user: string = '') => {
-  return deductibilityLogic(description, user);
-};
+import { useAuth } from '../hooks/useAuth';
 
 interface FinanceRecord {
   id: number;
@@ -33,10 +24,25 @@ interface FinanceRecord {
   registered_by?: string;
 }
 
+interface FinanceUser {
+  id: number;
+  username: string;
+  full_name: string;
+  role: string;
+  finance_visible: boolean;
+}
+
+const EMPTY_FORM = { date: new Date().toISOString().split('T')[0], invoice_number: '', entity: '', description: '', type: 'ingreso' as const, subtotal: '', tax: '', total: '' };
+
 const AdminFinance = () => {
+  const { user } = useAuth();
   const [records, setRecords] = useState<FinanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'Global' | 'Rafael' | 'Daniela'>('Global');
+  const [activeTab, setActiveTab] = useState<string>('Global');
+  const [financeUsers, setFinanceUsers] = useState<FinanceUser[]>([]);
+  const [showNewForm, setShowNewForm] = useState(false);
+  const [newForm, setNewForm] = useState<typeof EMPTY_FORM>(EMPTY_FORM);
+  const [saving, setSaving] = useState(false);
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
   
   // New Filter & Selection State
@@ -46,6 +52,16 @@ const AdminFinance = () => {
 
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editFormData, setEditFormData] = useState<Partial<FinanceRecord>>({});
+
+  // carga usuarios al montar (solo admin o master)
+  useEffect(() => {
+    if (user?.role === 'clinic_admin' || user?.role === 'master_admin') {
+      recordsFetch('/api/records?action=financeUsers')
+        .then(r => r.json())
+        .then(d => { if (Array.isArray(d)) setFinanceUsers(d); })
+        .catch(() => {});
+    }
+  }, [user?.role]);
 
   useEffect(() => {
     fetchData();
@@ -104,15 +120,36 @@ const AdminFinance = () => {
         startDate: dateRange.start || '',
         endDate: dateRange.end || ''
       });
-      
       const recordsRes = await recordsFetch(`/api/records?${queryParams.toString()}`);
       const recordsData = await recordsRes.json();
-
       if (Array.isArray(recordsData)) setRecords(recordsData);
     } catch (error) {
       console.error('Error fetching finance data:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCreate = async () => {
+    if (!newForm.entity.trim()) return;
+    setSaving(true);
+    try {
+      const sub  = parseFloat(String(newForm.subtotal || 0));
+      const taxV = parseFloat(String(newForm.tax  || 0));
+      const tot  = parseFloat(String(newForm.total || 0)) || (sub + taxV);
+      const res = await recordsFetch('/api/records', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'financeCreate', ...newForm, subtotal: sub, tax: taxV, total: tot })
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setNewForm(EMPTY_FORM);
+      setShowNewForm(false);
+      fetchData();
+    } catch (e: any) {
+      alert('Error al guardar: ' + e.message);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -225,18 +262,36 @@ const AdminFinance = () => {
               <p className="opacity-70">Control inteligente de ingresos y egresos</p>
             </div>
             
-            <div className="flex bg-gray-800/50 p-1 rounded-xl mt-4 md:mt-0 backdrop-blur-sm border border-gray-700">
-              {(['Global', 'Rafael', 'Daniela'] as const).map(tab => (
+            <div className="flex flex-wrap gap-1 bg-gray-800/50 p-1 rounded-xl mt-4 md:mt-0 backdrop-blur-sm border border-gray-700">
+              {/* Tab Global — siempre visible para admin/master */}
+              {(user?.role === 'clinic_admin' || user?.role === 'master_admin') && (
                 <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`px-6 py-2 rounded-lg text-sm font-medium transition-all ${
-                    activeTab === tab 
-                      ? 'bg-yellow-500 text-gray-900 shadow-lg' 
+                  onClick={() => setActiveTab('Global')}
+                  className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${
+                    activeTab === 'Global'
+                      ? 'bg-yellow-500 text-gray-900 shadow-lg'
                       : 'text-gray-400 hover:text-white hover:bg-white/10'
                   }`}
                 >
-                  {tab === 'Global' ? 'Vista Global' : `Dr/Ing. ${tab}`}
+                  Vista Global
+                </button>
+              )}
+              {/* Tabs por usuario (solo admin/master ven todos) */}
+              {(user?.role === 'clinic_admin' || user?.role === 'master_admin') && financeUsers.map(fu => (
+                <button
+                  key={fu.username}
+                  onClick={() => fu.finance_visible ? setActiveTab(fu.username) : undefined}
+                  title={!fu.finance_visible ? 'Finanzas no autorizadas para visualización' : fu.full_name}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${
+                    !fu.finance_visible
+                      ? 'text-gray-600 cursor-not-allowed opacity-50'
+                      : activeTab === fu.username
+                        ? 'bg-yellow-500 text-gray-900 shadow-lg'
+                        : 'text-gray-400 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  {!fu.finance_visible && <Lock size={11} />}
+                  {fu.full_name}
                 </button>
               ))}
             </div>
@@ -245,6 +300,78 @@ const AdminFinance = () => {
       </div>
 
       <div className="container-custom mx-auto -mt-16 px-4">
+
+        {/* ── Botón nuevo registro ── */}
+        <div className="flex justify-end mb-3">
+          <button
+            onClick={() => setShowNewForm(v => !v)}
+            className="flex items-center gap-2 px-4 py-2 bg-yellow-500 hover:bg-yellow-400 text-gray-900 font-semibold rounded-xl shadow-md text-sm transition-all"
+          >
+            <Plus size={16} /> Nuevo Registro
+          </button>
+        </div>
+
+        {/* ── Formulario de nuevo registro ── */}
+        <AnimatePresence>
+          {showNewForm && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              className="bg-white rounded-2xl shadow-lg border border-yellow-200 p-5 mb-6"
+            >
+              <h3 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2"><Plus size={14} className="text-yellow-500" /> Nuevo Ingreso / Egreso</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">Fecha</label>
+                  <input type="date" value={newForm.date} onChange={e => setNewForm(p => ({...p, date: e.target.value}))} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 outline-none" />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">Nº Factura</label>
+                  <input type="text" value={newForm.invoice_number} onChange={e => setNewForm(p => ({...p, invoice_number: e.target.value}))} placeholder="FAC-001" className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 outline-none" />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="text-xs text-gray-500 mb-1 block">Entidad / Cliente *</label>
+                  <input type="text" value={newForm.entity} onChange={e => setNewForm(p => ({...p, entity: e.target.value}))} placeholder="Nombre de empresa o persona" className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 outline-none" />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
+                <div className="md:col-span-2">
+                  <label className="text-xs text-gray-500 mb-1 block">Descripción</label>
+                  <input type="text" value={newForm.description} onChange={e => setNewForm(p => ({...p, description: e.target.value}))} placeholder="Detalle del concepto" className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 outline-none" />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">Tipo</label>
+                  <select value={newForm.type} onChange={e => setNewForm(p => ({...p, type: e.target.value as any}))} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 outline-none">
+                    <option value="ingreso">Ingreso</option>
+                    <option value="egreso">Egreso</option>
+                  </select>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">Subtotal</label>
+                    <input type="number" value={newForm.subtotal} onChange={e => setNewForm(p => ({...p, subtotal: e.target.value}))} step="0.01" className="w-full px-2 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 outline-none text-right" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">IVA</label>
+                    <input type="number" value={newForm.tax} onChange={e => setNewForm(p => ({...p, tax: e.target.value}))} step="0.01" className="w-full px-2 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 outline-none text-right" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">Total</label>
+                    <input type="number" value={newForm.total} onChange={e => setNewForm(p => ({...p, total: e.target.value}))} step="0.01" className="w-full px-2 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 outline-none text-right font-bold" />
+                  </div>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2">
+                <button onClick={() => { setShowNewForm(false); setNewForm(EMPTY_FORM); }} className="px-4 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cancelar</button>
+                <button onClick={handleCreate} disabled={saving || !newForm.entity.trim()} className="px-5 py-2 bg-yellow-500 text-gray-900 font-semibold rounded-lg text-sm disabled:opacity-50 hover:bg-yellow-400 transition-colors">
+                  {saving ? 'Guardando…' : 'Guardar Registro'}
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <div className="bg-white p-4 rounded-xl shadow-lg border border-gray-100 mb-6 flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2 text-gray-500">
             <Calendar size={18} />
@@ -499,22 +626,12 @@ const AdminFinance = () => {
                              <div className="font-semibold text-gray-800 truncate">{record.entity}</div>
                              <div className="text-xs text-gray-400 truncate">{record.description}</div>
                              
-                             {/* AI Tax Advice Tooltip */}
-                             {record.type === 'egreso' && record.registered_by && (
-                                <div className="mt-1 flex items-center gap-1">
-                                  {(() => {
-                                      // Usar entidad y descripción para mejor match
-                                      const text = (record.entity + ' ' + (record.description || '')).toLowerCase();
-                                      const advice = getDeductibility(text, record.registered_by);
-                                      if (!advice) return null;
-                                      
-                                      return (
-                                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border border-transparent ${advice.color}`}>
-                                          {advice.status === 'warning' && <Info size={10} className="mr-1"/>}
-                                          {advice.text}
-                                        </span>
-                                      );
-                                  })()}
+                             {/* Asesoría fiscal SRI — solo si hay descripción */}
+                             {record.type === 'egreso' && record.description && (
+                                <div className="mt-0.5">
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-50 text-gray-400 border border-gray-100">
+                                    <Info size={9} className="mr-1" /> Egreso
+                                  </span>
                                 </div>
                              )}
                           </td>
