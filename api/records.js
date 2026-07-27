@@ -1569,11 +1569,16 @@ export default async function handler(req, res) {
           const userIds  = usersRes.rows.map(u => u.id);
           let overrides = {};
           if (userIds.length) {
-            const ovr = await pool.query(
-              `SELECT clinic_user_id, enabled FROM user_module_overrides WHERE feature = 'finanzas_visible' AND clinic_user_id = ANY($1)`,
-              [userIds]
-            );
-            ovr.rows.forEach(r => { overrides[r.clinic_user_id] = r.enabled; });
+            try {
+              const ovr = await pool.query(
+                `SELECT clinic_user_id, enabled FROM user_module_overrides WHERE feature = 'finanzas_visible' AND clinic_user_id = ANY($1)`,
+                [userIds]
+              );
+              ovr.rows.forEach(r => { overrides[r.clinic_user_id] = r.enabled; });
+            } catch (ovrErr) {
+              // ponytail: si la tabla aun no existe, ignorar — todos visibles por defecto
+              if (ovrErr.code !== '42P01') throw ovrErr;
+            }
           }
 
           const users = usersRes.rows.map(u => ({

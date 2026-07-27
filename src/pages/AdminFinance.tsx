@@ -540,9 +540,6 @@ const AdminFinance = () => {
           </div>
 
           <div className="bg-white p-6 rounded-2xl shadow-md border border-gray-100 relative overflow-hidden">
-            <div className="absolute top-0 right-0 p-4 opacity-10">
-              <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/1/1a/Flag_of_Ecuador.svg/800px-Flag_of_Ecuador.svg.png" className="w-16 grayscale" alt="Ecuador" />
-            </div>
             
             <h3 className="text-lg font-bold text-gray-800 mb-6 flex items-center gap-2">
               <PieChart size={20} className="text-gray-400" /> Reporte Fiscal (SRI)
