@@ -1567,16 +1567,16 @@ export default async function handler(req, res) {
 
           // Overrides de visibilidad de finanzas por usuario
           const userIds  = usersRes.rows.map(u => u.id);
-          let overrides: Record<number, boolean> = {};
+          let overrides = {};
           if (userIds.length) {
             const ovr = await pool.query(
               `SELECT clinic_user_id, enabled FROM user_module_overrides WHERE feature = 'finanzas_visible' AND clinic_user_id = ANY($1)`,
               [userIds]
             );
-            ovr.rows.forEach((r: any) => { overrides[r.clinic_user_id] = r.enabled; });
+            ovr.rows.forEach(r => { overrides[r.clinic_user_id] = r.enabled; });
           }
 
-          const users = usersRes.rows.map((u: any) => ({
+          const users = usersRes.rows.map(u => ({
             id:         u.id,
             username:   u.username,
             full_name:  u.full_name || u.username,
@@ -1597,7 +1597,7 @@ export default async function handler(req, res) {
         const clinicId = su?.effective_clinic_id ?? su?.clinic_id ?? null;
 
         let query = `SELECT * FROM financial_records WHERE 1=1`;
-        const params: any[] = [];
+        const params = [];
         let paramCount = 1;
 
         // Filtro por clínica (multi-tenant)
