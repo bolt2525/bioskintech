@@ -1602,21 +1602,29 @@ export default async function handler(req, res) {
 
         // Filtro por clínica (multi-tenant)
         if (clinicId) {
-          // Incluye registros que tengan clinic_id = X O que sean nulos (migración)
           query += ` AND (clinic_id = $${paramCount} OR clinic_id IS NULL)`;
           params.push(clinicId);
           paramCount++;
         }
 
-        // clinic_user solo ve sus propios registros
+        // clinic_user solo ve sus propios registros (sin excepción)
         if (su?.role === 'clinic_user') {
           query += ` AND registered_by = $${paramCount}`;
           params.push(su.username);
           paramCount++;
         } else if (registered_by && registered_by !== 'all' && registered_by !== 'null' && registered_by !== 'undefined') {
-          query += ` AND registered_by = $${paramCount}`;
-          params.push(registered_by);
-          paramCount++;
+          // Soporta lista separada por comas: "user1,user2,user3"
+          const users = String(registered_by).split(',').map(u => u.trim()).filter(Boolean);
+          if (users.length === 1) {
+            query += ` AND registered_by = $${paramCount}`;
+            params.push(users[0]);
+            paramCount++;
+          } else if (users.length > 1) {
+            // ponytail: unnest con ANY es idiomático en PostgreSQL y previene SQL injection
+            query += ` AND registered_by = ANY($${paramCount}::text[])`;
+            params.push(users);
+            paramCount++;
+          }
         }
 
         if (startDate && startDate !== 'null' && startDate !== 'undefined') {

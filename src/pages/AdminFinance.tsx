@@ -38,14 +38,14 @@ const AdminFinance = () => {
   const { user } = useAuth();
   const [records, setRecords] = useState<FinanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<string>('Global');
+  // Multi-selección de usuarios — Set vacío = Vista Global (todos)
+  const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
   const [financeUsers, setFinanceUsers] = useState<FinanceUser[]>([]);
   const [showNewForm, setShowNewForm] = useState(false);
   const [newForm, setNewForm] = useState<typeof EMPTY_FORM>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
   
-  // New Filter & Selection State
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'ingreso' | 'egreso'>('all');
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -65,7 +65,7 @@ const AdminFinance = () => {
 
   useEffect(() => {
     fetchData();
-  }, [activeTab, dateRange]);
+  }, [selectedUsers, dateRange]);
 
   // Derived State
   const filteredRecords = records.filter(record => {
@@ -113,10 +113,13 @@ const AdminFinance = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const userFilter = activeTab === 'Global' ? 'all' : activeTab;
+      // Set vacío = Global (todos); Set con usuarios = filtrar por esos usuarios
+      const registeredBy = selectedUsers.size === 0
+        ? 'all'
+        : Array.from(selectedUsers).join(',');
       const queryParams = new URLSearchParams({
         action: 'financeList',
-        registered_by: userFilter,
+        registered_by: registeredBy,
         startDate: dateRange.start || '',
         endDate: dateRange.end || ''
       });
@@ -259,42 +262,74 @@ const AdminFinance = () => {
               <h1 className="text-3xl font-serif font-bold mb-2 flex items-center gap-3">
                 <DollarSign className="text-yellow-500" /> Finanzas & Facturas
               </h1>
-              <p className="opacity-70">Control inteligente de ingresos y egresos</p>
+              <p className="opacity-70">
+                {selectedUsers.size === 0
+                  ? 'Vista global de ingresos y egresos'
+                  : selectedUsers.size === 1
+                    ? `Finanzas de: ${financeUsers.find(u => u.username === Array.from(selectedUsers)[0])?.full_name ?? Array.from(selectedUsers)[0]}`
+                    : `${selectedUsers.size} usuarios seleccionados`
+                }
+              </p>
             </div>
             
-            <div className="flex flex-wrap gap-1 bg-gray-800/50 p-1 rounded-xl mt-4 md:mt-0 backdrop-blur-sm border border-gray-700">
-              {/* Tab Global — siempre visible para admin/master */}
-              {(user?.role === 'clinic_admin' || user?.role === 'master_admin') && (
-                <button
-                  onClick={() => setActiveTab('Global')}
-                  className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${
-                    activeTab === 'Global'
-                      ? 'bg-yellow-500 text-gray-900 shadow-lg'
-                      : 'text-gray-400 hover:text-white hover:bg-white/10'
-                  }`}
-                >
-                  Vista Global
-                </button>
-              )}
-              {/* Tabs por usuario (solo admin/master ven todos) */}
-              {(user?.role === 'clinic_admin' || user?.role === 'master_admin') && financeUsers.map(fu => (
-                <button
-                  key={fu.username}
-                  onClick={() => fu.finance_visible ? setActiveTab(fu.username) : undefined}
-                  title={!fu.finance_visible ? 'Finanzas no autorizadas para visualización' : fu.full_name}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${
-                    !fu.finance_visible
-                      ? 'text-gray-600 cursor-not-allowed opacity-50'
-                      : activeTab === fu.username
-                        ? 'bg-yellow-500 text-gray-900 shadow-lg'
-                        : 'text-gray-400 hover:text-white hover:bg-white/10'
-                  }`}
-                >
-                  {!fu.finance_visible && <Lock size={11} />}
-                  {fu.full_name}
-                </button>
-              ))}
-            </div>
+            {/* ── Filtro multi-usuario (solo admin/master) ── */}
+            {(user?.role === 'clinic_admin' || user?.role === 'master_admin') && (
+              <div className="mt-4 md:mt-0 flex flex-col items-start md:items-end gap-2">
+                <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                  {/* Botón "Vista Global" */}
+                  <button
+                    onClick={() => setSelectedUsers(new Set())}
+                    className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-all border ${
+                      selectedUsers.size === 0
+                        ? 'bg-yellow-500 text-gray-900 border-yellow-500 shadow'
+                        : 'text-gray-300 border-gray-600 hover:border-gray-400 hover:text-white'
+                    }`}
+                  >
+                    🌐 Global
+                  </button>
+
+                  {/* Pills por usuario — toggleables */}
+                  {financeUsers.map(fu => {
+                    const isSelected = selectedUsers.has(fu.username);
+                    const isLocked   = !fu.finance_visible;
+                    return (
+                      <button
+                        key={fu.username}
+                        onClick={() => {
+                          if (isLocked) return;
+                          setSelectedUsers(prev => {
+                            const next = new Set(prev);
+                            if (next.has(fu.username)) next.delete(fu.username);
+                            else next.add(fu.username);
+                            return next;
+                          });
+                        }}
+                        title={isLocked ? 'Sin autorización de visualización' : `${isSelected ? 'Quitar' : 'Agregar'} filtro: ${fu.full_name}`}
+                        className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${
+                          isLocked
+                            ? 'opacity-40 cursor-not-allowed text-gray-500 border-gray-700'
+                            : isSelected
+                              ? 'bg-yellow-500 text-gray-900 border-yellow-500 shadow'
+                              : 'text-gray-300 border-gray-600 hover:border-yellow-500/50 hover:text-white'
+                        }`}
+                      >
+                        {isLocked && <Lock size={10} />}
+                        {fu.full_name}
+                        {isSelected && <Check size={10} className="ml-0.5" />}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Indicador de filtro activo */}
+                {selectedUsers.size > 0 && (
+                  <p className="text-[10px] text-yellow-400/70">
+                    Mostrando {selectedUsers.size} usuario{selectedUsers.size > 1 ? 's' : ''} · 
+                    <button onClick={() => setSelectedUsers(new Set())} className="ml-1 underline hover:text-yellow-300">ver todos</button>
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -573,6 +608,10 @@ const AdminFinance = () => {
                   <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Factura</th>
                   <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Entidad / Detalle</th>
                   <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Tipo</th>
+                  {/* Columna "Por" solo cuando se ven varios usuarios o global */}
+                  {(selectedUsers.size !== 1 && (user?.role === 'clinic_admin' || user?.role === 'master_admin')) && (
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Por</th>
+                  )}
                   <th className="px-6 py-4 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">Subtotal</th>
                   <th className="px-6 py-4 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">IVA</th>
                   <th className="px-6 py-4 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">Total</th>
@@ -582,14 +621,14 @@ const AdminFinance = () => {
               <tbody className="divide-y divide-gray-100">
                 {loading ? (
                   <tr>
-                    <td colSpan={9} className="px-6 py-12 text-center text-gray-500">
+                    <td colSpan={10} className="px-6 py-12 text-center text-gray-500">
                       <div className="animate-spin w-6 h-6 border-2 border-yellow-500 border-t-transparent rounded-full mx-auto mb-2"></div>
                       Cargando registros...
                     </td>
                   </tr>
                 ) : filteredRecords.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-6 py-12 text-center text-gray-500">
+                    <td colSpan={10} className="px-6 py-12 text-center text-gray-500">
                       No hay registros para este filtro.
                     </td>
                   </tr>
@@ -642,6 +681,14 @@ const AdminFinance = () => {
                               {record.type === 'ingreso' ? 'Ingreso' : 'Egreso'}
                             </span>
                           </td>
+                          {/* Columna "Por" — solo en vista global o multi-usuario */}
+                          {(selectedUsers.size !== 1 && (user?.role === 'clinic_admin' || user?.role === 'master_admin')) && (
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-mono">
+                                {record.registered_by || '—'}
+                              </span>
+                            </td>
+                          )}
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500">
                             ${parseFloat(String(record.subtotal || 0)).toFixed(2)}
                           </td>
