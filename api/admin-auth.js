@@ -207,6 +207,9 @@ async function initMultiTenantSchema() {
     "ALTER TABLE admin_sessions ADD COLUMN IF NOT EXISTS role VARCHAR(30)",
     "ALTER TABLE admin_sessions ADD COLUMN IF NOT EXISTS clinic_id INTEGER",
     "ALTER TABLE admin_sessions ADD COLUMN IF NOT EXISTS access_scope VARCHAR(20)",
+    "ALTER TABLE clinic_settings ADD COLUMN IF NOT EXISTS finanzas JSONB NOT NULL DEFAULT '{}'",
+    "ALTER TABLE clinic_settings ADD COLUMN IF NOT EXISTS inventario JSONB NOT NULL DEFAULT '{}'",
+    "ALTER TABLE clinic_settings ADD COLUMN IF NOT EXISTS notificaciones JSONB NOT NULL DEFAULT '{}'",
   ]) {
     try { await sql.query(col); } catch { /* ya existe */ }
   }
@@ -299,11 +302,11 @@ async function seedFeatures(clinicId) {
 async function getFeatures(clinicId) {
   if (!clinicId) return ALL_FEATURES;
   try {
-    const r = await sql`
-      SELECT feature FROM clinic_features
-      WHERE clinic_id = ${clinicId} AND enabled = true
-    `;
-    return r.rows.length ? r.rows.map(x => x.feature) : ALL_FEATURES;
+    // ponytail: tomar TODAS las rows y filtrar deshabilitadas → soporta clínicas con registros parciales
+    const r = await sql`SELECT feature, enabled FROM clinic_features WHERE clinic_id = ${clinicId}`;
+    if (!r.rows.length) return ALL_FEATURES; // nunca configurado → todo habilitado
+    const disabled = new Set(r.rows.filter(x => !x.enabled).map(x => x.feature));
+    return ALL_FEATURES.filter(f => !disabled.has(f));
   } catch {
     return ALL_FEATURES; // fallback si la tabla no existe aún
   }
@@ -420,6 +423,10 @@ async function loginUser(username, password, ip, ua) {
       email: u.email, role: u.role, clinic_id: u.clinic_id, access_scope: u.access_scope,
     },
     features: await getFeatures(u.clinic_id),
+    user_module_overrides: await (async () => {
+      try { const o = await sql`SELECT feature, enabled FROM user_module_overrides WHERE clinic_user_id = ${u.id}`; return o.rows; }
+      catch { return []; }
+    })(),
   };
 }
 
@@ -908,6 +915,9 @@ export default async function handler(req, res) {
       'Radiofrecuencia','Hidratación Profunda','Depilación Láser',
       'Tratamiento Anti-Acné','Carboxiterapia','Otro'
     ];
+    const DEFAULT_FINANZAS    = { currency: 'USD', currency_symbol: '$', tax_percent: 12, invoice_prefix: 'INV', payment_methods: ['Efectivo','Transferencia','Tarjeta de crédito','Tarjeta de débito'], invoice_notes: '' };
+    const DEFAULT_INVENTARIO  = { expiry_alert_days: 30, low_stock_alert: true, require_batch: true, categories: ['Toxinas','Rellenos','Skincare','Equipos','Consumibles','Medicamentos','Otros'] };
+    const DEFAULT_NOTIFICACIONES = { appointment_confirmation: true, appointment_reminder: true, low_stock_notification: false, whatsapp_enabled: false, reminder_hours_before: 24 };
 
     if (action === 'getClinicSettings') {
       const clinicId = req.query.clinicId || req.body?.clinicId;
@@ -925,25 +935,38 @@ export default async function handler(req, res) {
           general:    { name: clinic.name || '', city: '', tagline: '', logo_url: '', phone: clinic.phone || '', address: clinic.address || '', tax_id: '' },
           treatments: DEFAULT_TREATMENTS,
           email:      { staff_email: clinic.email || '', from_name: clinic.name || '', signature: `El equipo de ${clinic.name || 'la clínica'}`, whatsapp_number: '' },
-          agenda:     { start_hour: '08:00', end_hour: '19:00', slot_minutes: 60, calendar_prefix: clinic.name || 'CLINICA' }
+          agenda:     { start_hour: '08:00', end_hour: '19:00', slot_minutes: 60, calendar_prefix: clinic.name || 'CLINICA' },
+          finanzas:         DEFAULT_FINANZAS,
+          inventario:       DEFAULT_INVENTARIO,
+          notificaciones:   DEFAULT_NOTIFICACIONES,
         };
-        await sql`INSERT INTO clinic_settings (clinic_id, general, treatments, email, agenda) VALUES (${clinicId}, ${JSON.stringify(defaults.general)}, ${JSON.stringify(defaults.treatments)}, ${JSON.stringify(defaults.email)}, ${JSON.stringify(defaults.agenda)})`;
+        await sql`INSERT INTO clinic_settings (clinic_id, general, treatments, email, agenda)
+          VALUES (${clinicId}, ${JSON.stringify(defaults.general)}, ${JSON.stringify(defaults.treatments)}, ${JSON.stringify(defaults.email)}, ${JSON.stringify(defaults.agenda)})
+          ON CONFLICT (clinic_id) DO NOTHING`;
         return res.status(200).json({ success: true, settings: defaults });
       }
       const s = r.rows[0];
-      return res.status(200).json({ success: true, settings: { general: s.general, treatments: s.treatments, email: s.email, agenda: s.agenda } });
+      return res.status(200).json({ success: true, settings: {
+        general:        s.general,
+        treatments:     s.treatments,
+        email:          s.email,
+        agenda:         s.agenda,
+        finanzas:       s.finanzas       || DEFAULT_FINANZAS,
+        inventario:     s.inventario     || DEFAULT_INVENTARIO,
+        notificaciones: s.notificaciones || DEFAULT_NOTIFICACIONES,
+      } });
     }
 
     if (action === 'saveClinicSettings') {
       const { clinicId, section, data } = req.body || {};
       if (!clinicId || !section || !data) return res.status(400).json({ error: 'clinicId, section y data son requeridos' });
-      if (!['general','treatments','email','agenda'].includes(section))
+      if (!['general','treatments','email','agenda','finanzas','inventario','notificaciones'].includes(section))
         return res.status(400).json({ error: 'section inválida' });
       if (user.role !== 'master_admin' && parseInt(clinicId) !== user.clinic_id)
         return res.status(403).json({ error: 'Sin permiso' });
 
       const dataStr = JSON.stringify(data);
-      // Upsert seguro — columna determinada por whitelist, no por input directo
+      // ponytail: whitelist explícita — no usar eval ni dynamic SQL con el nombre de sección
       if (section === 'general')
         await sql`INSERT INTO clinic_settings (clinic_id, general, updated_at) VALUES (${clinicId}, ${dataStr}::jsonb, NOW()) ON CONFLICT (clinic_id) DO UPDATE SET general = ${dataStr}::jsonb, updated_at = NOW()`;
       else if (section === 'treatments')
@@ -952,6 +975,12 @@ export default async function handler(req, res) {
         await sql`INSERT INTO clinic_settings (clinic_id, email, updated_at) VALUES (${clinicId}, ${dataStr}::jsonb, NOW()) ON CONFLICT (clinic_id) DO UPDATE SET email = ${dataStr}::jsonb, updated_at = NOW()`;
       else if (section === 'agenda')
         await sql`INSERT INTO clinic_settings (clinic_id, agenda, updated_at) VALUES (${clinicId}, ${dataStr}::jsonb, NOW()) ON CONFLICT (clinic_id) DO UPDATE SET agenda = ${dataStr}::jsonb, updated_at = NOW()`;
+      else if (section === 'finanzas')
+        await sql`INSERT INTO clinic_settings (clinic_id, finanzas, updated_at) VALUES (${clinicId}, ${dataStr}::jsonb, NOW()) ON CONFLICT (clinic_id) DO UPDATE SET finanzas = ${dataStr}::jsonb, updated_at = NOW()`;
+      else if (section === 'inventario')
+        await sql`INSERT INTO clinic_settings (clinic_id, inventario, updated_at) VALUES (${clinicId}, ${dataStr}::jsonb, NOW()) ON CONFLICT (clinic_id) DO UPDATE SET inventario = ${dataStr}::jsonb, updated_at = NOW()`;
+      else if (section === 'notificaciones')
+        await sql`INSERT INTO clinic_settings (clinic_id, notificaciones, updated_at) VALUES (${clinicId}, ${dataStr}::jsonb, NOW()) ON CONFLICT (clinic_id) DO UPDATE SET notificaciones = ${dataStr}::jsonb, updated_at = NOW()`;
 
       return res.status(200).json({ success: true, message: `${section} guardado` });
     }

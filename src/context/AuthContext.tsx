@@ -160,10 +160,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   /**
    * El master_admin siempre tiene acceso a todo.
-   * El resto solo si la feature está habilitada para su clínica.
+   * Luego se comprueba si la feature está habilitada a nivel clínica.
+   * Finalmente se aplica el override a nivel usuario (si existe).
    */
-  const hasFeature = (feature: string): boolean =>
-    user?.role === 'master_admin' || features.includes(feature);
+  const hasFeature = (feature: string): boolean => {
+    if (user?.role === 'master_admin') return true;
+    if (!features.includes(feature)) return false; // deshabilitado en clínica
+    const override = userModuleOverrides.find(o => o.feature === feature);
+    return override?.enabled === false ? false : true; // override de usuario
+  };
 
   return (
     <AuthContext.Provider value={{

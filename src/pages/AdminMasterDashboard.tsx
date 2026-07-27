@@ -581,16 +581,22 @@ export default function AdminMasterDashboard() {
 
   // ── Ajustes por clínica ───────────────────────────────────────────────────
   type ClinicSettingsData = {
-    general:    { name: string; city: string; tagline: string; logo_url: string; phone: string; address: string; tax_id: string };
-    treatments: string[];
-    email:      { staff_email: string; from_name: string; signature: string; whatsapp_number: string };
-    agenda:     { start_hour: string; end_hour: string; slot_minutes: number; calendar_prefix: string };
+    general:        { name: string; city: string; tagline: string; logo_url: string; phone: string; address: string; tax_id: string };
+    treatments:     string[];
+    email:          { staff_email: string; from_name: string; signature: string; whatsapp_number: string; staff_members?: Array<{ name: string; email: string }> };
+    agenda:         { start_hour: string; end_hour: string; slot_minutes: number; calendar_prefix: string };
+    finanzas:       { currency: string; currency_symbol: string; tax_percent: number; invoice_prefix: string; payment_methods: string[]; invoice_notes: string };
+    inventario:     { expiry_alert_days: number; low_stock_alert: boolean; require_batch: boolean; categories: string[] };
+    notificaciones: { appointment_confirmation: boolean; appointment_reminder: boolean; low_stock_notification: boolean; whatsapp_enabled: boolean; reminder_hours_before: number };
   };
   const [settingsModal, setSettingsModal] = useState<{ open: boolean; clinicId: number; clinicName: string } | null>(null);
-  const [settingsTab, setSettingsTab]     = useState<'general'|'email'|'agenda'|'modules'>('general');
+  const [settingsTab, setSettingsTab]     = useState<'general'|'email'|'agenda'|'finanzas'|'inventario'|'notificaciones'|'modules'>('general');
   const [settingsData, setSettingsData]   = useState<ClinicSettingsData | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(false);
-  const [newTreatment, setNewTreatment]   = useState('');
+  const [settingsSaving, setSettingsSaving]   = useState(false);
+  const [newTreatment, setNewTreatment]       = useState('');
+  const [newPaymentMethod, setNewPaymentMethod] = useState('');
+  const [newCategory, setNewCategory]           = useState('');
   // Acordeones abiertos en tab Módulos
   const [openModuleSection, setOpenModuleSection] = useState<string | null>('clinical_records');
   // Plantillas de consentimiento en el contexto de ajustes
@@ -615,12 +621,15 @@ export default function AdminMasterDashboard() {
 
   const saveSettingsSection = async (section: keyof ClinicSettingsData) => {
     if (!settingsModal || !settingsData) return;
-    const res  = await fetch('/api/admin-auth?action=saveClinicSettings', {
-      method: 'POST', headers: authHeader(),
-      body:   JSON.stringify({ clinicId: settingsModal.clinicId, section, data: settingsData[section] }),
-    });
-    const data = await res.json();
-    flash(data.error || `${section} guardado`, data.error ? 'err' : 'ok');
+    setSettingsSaving(true);
+    try {
+      const res  = await fetch('/api/admin-auth?action=saveClinicSettings', {
+        method: 'POST', headers: authHeader(),
+        body:   JSON.stringify({ clinicId: settingsModal.clinicId, section, data: settingsData[section] }),
+      });
+      const data = await res.json();
+      flash(data.error || `${section} guardado`, data.error ? 'err' : 'ok');
+    } finally { setSettingsSaving(false); }
   };
 
   const loadOauthStatus = async () => {
@@ -1554,285 +1563,411 @@ export default function AdminMasterDashboard() {
         </div>
       )}
 
-      {/* ── Modal: Ajustes de Clínica ─────────────────────────────── */}
-      {settingsModal?.open && settingsData && (
+      {/* ── Modal: Ajustes de Clínica (Pro) ──────────────────────── */}
+      {settingsModal?.open && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden">
             <div className="h-0.5 bg-gradient-to-r from-[#deb887] to-[#c5a075]" />
-            <div className="px-5 py-4 border-b flex justify-between items-center">
-              <h3 className="font-bold text-gray-900 flex items-center gap-2">
-                <Settings2 className="w-4 h-4 text-[#deb887]" /> Ajustes — {settingsModal.clinicName}
-              </h3>
-              <button onClick={() => setSettingsModal(null)} className="text-gray-300 hover:text-gray-500"><X className="w-5 h-5" /></button>
+            {/* Header */}
+            <div className="px-5 py-3 border-b flex justify-between items-center bg-gray-50">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-[#deb887] to-[#c5a075] flex items-center justify-center text-white font-bold text-xs">
+                  {settingsModal.clinicName.charAt(0)}
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-400 leading-none">Ajustes de clínica</p>
+                  <h3 className="font-bold text-gray-900 text-sm leading-tight">{settingsModal.clinicName}</h3>
+                </div>
+              </div>
+              <button onClick={() => setSettingsModal(null)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
             </div>
 
-            {/* Tabs */}
-            <div className="flex border-b px-5 gap-1 bg-gray-50 overflow-x-auto">
-              {([['general','🏥 General'],['email','📧 Email'],['agenda','📅 Agenda'],['modules','⚙ Módulos']] as [typeof settingsTab, string][]).map(([k,l]) => (
-                <button key={k} onClick={() => setSettingsTab(k)}
-                  className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${settingsTab===k ? 'border-[#deb887] text-[#c5a075]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-                  {l}
-                </button>
-              ))}
-            </div>
+            <div className="flex flex-1 overflow-hidden">
+              {/* ── Sidebar nav ── */}
+              <nav className="w-44 flex-shrink-0 border-r bg-gray-50 p-2 flex flex-col gap-0.5 overflow-y-auto">
+                {([
+                  ['general',        '🏥', 'General'],
+                  ['email',          '📧', 'Email & Staff'],
+                  ['agenda',         '📅', 'Agenda'],
+                  ['finanzas',       '💰', 'Finanzas'],
+                  ['inventario',     '📦', 'Inventario'],
+                  ['notificaciones', '🔔', 'Notificaciones'],
+                  ['modules',        '⚙',  'Módulos'],
+                ] as [typeof settingsTab, string, string][]).map(([key, icon, label]) => (
+                  <button key={key} onClick={() => setSettingsTab(key)}
+                    className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-left transition-colors ${
+                      settingsTab === key
+                        ? 'bg-gradient-to-r from-[#deb887]/20 to-[#c5a075]/10 text-[#99652f] font-semibold border border-[#deb887]/30'
+                        : 'text-gray-600 hover:bg-white hover:text-gray-900'
+                    }`}
+                  >
+                    <span className="text-base w-5 flex-shrink-0 text-center">{icon}</span>
+                    <span className="truncate">{label}</span>
+                  </button>
+                ))}
+              </nav>
 
-            <div className="flex-1 overflow-y-auto p-5">
-              {settingsLoading ? (
-                <div className="flex items-center justify-center py-16 text-gray-400"><RefreshCw className="w-5 h-5 animate-spin mr-2"/>Cargando...</div>
-              ) : (
-                <>
-                  {/* ── General ── */}
-                  {settingsTab === 'general' && (
-                    <div className="space-y-3">
-                      {([
-                        ['name','Nombre de la clínica','text'],['city','Ciudad','text'],['tagline','Lema / Especialidad','text'],
-                        ['phone','Teléfono','tel'],['address','Dirección','text'],['tax_id','RUC / NIF','text'],
-                      ] as [keyof typeof settingsData.general, string, string][]).map(([k,label,type]) => (
-                        <div key={k}>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
-                          <input type={type} value={(settingsData.general as Record<string,string>)[k] || ''}
-                            onChange={e => setSettingsData(s => s ? ({...s, general: {...s.general, [k]: e.target.value}}) : s)}
-                            className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
-                        </div>
-                      ))}
-                      {/* Logo upload */}
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Logo de la clínica</label>
-                        <div className="space-y-2">
-                          <input type="url" placeholder="https://... (URL de imagen)" value={settingsData.general.logo_url || ''}
-                            onChange={e => setSettingsData(s => s ? ({...s, general: {...s.general, logo_url: e.target.value}}) : s)}
-                            className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-gray-400">O sube una imagen:</span>
-                            <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="text-xs"
-                              onChange={e => {
-                                const file = e.target.files?.[0];
-                                if (!file) return;
-                                if (file.size > 500 * 1024) { flash('Imagen demasiado grande (máx 500KB)', 'err'); return; }
-                                const reader = new FileReader();
-                                reader.onload = ev => setSettingsData(s => s ? ({...s, general: {...s.general, logo_url: ev.target?.result as string}}) : s);
-                                reader.readAsDataURL(file);
-                              }} />
+              {/* ── Content ── */}
+              <div className="flex-1 overflow-y-auto flex flex-col">
+                {settingsLoading ? (
+                  <div className="flex items-center justify-center flex-1 text-gray-400">
+                    <RefreshCw className="w-5 h-5 animate-spin mr-2"/>Cargando ajustes…
+                  </div>
+                ) : !settingsData ? (
+                  <div className="flex items-center justify-center flex-1 text-gray-400">Sin datos de ajustes.</div>
+                ) : (
+                  <div className="flex-1 p-5 space-y-4">
+
+                    {/* ── GENERAL ── */}
+                    {settingsTab === 'general' && (<>
+                      <p className="text-xs text-gray-400">Información pública de la clínica usada en recetas, emails y reportes.</p>
+                      <div className="grid grid-cols-2 gap-3">
+                        {([
+                          ['name','Nombre de la clínica','text'],['city','Ciudad','text'],
+                          ['tagline','Lema / Especialidad','text'],['tax_id','RUC / NIF','text'],
+                          ['phone','Teléfono','tel'],['address','Dirección','text'],
+                        ] as [keyof typeof settingsData.general, string, string][]).map(([k,label,type]) => (
+                          <div key={k} className={k === 'address' || k === 'tagline' ? 'col-span-2' : ''}>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
+                            <input type={type} value={(settingsData.general as Record<string,string>)[k] || ''}
+                              onChange={e => setSettingsData(s => s ? ({...s, general:{...s.general,[k]:e.target.value}}) : s)}
+                              className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
+                          </div>
+                        ))}
+                        <div className="col-span-2">
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Logo (URL o base64)</label>
+                          <div className="flex gap-2 items-start">
+                            <input type="url" placeholder="https://…" value={settingsData.general.logo_url || ''}
+                              onChange={e => setSettingsData(s => s ? ({...s,general:{...s.general,logo_url:e.target.value}}) : s)}
+                              className="flex-1 px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
+                            <label className="px-3 py-2 border rounded-lg text-xs cursor-pointer hover:bg-gray-50 whitespace-nowrap">
+                              Subir imagen
+                              <input type="file" accept="image/*" className="hidden" onChange={e => {
+                                const f = e.target.files?.[0]; if(!f) return;
+                                if(f.size > 500*1024){flash('Máx 500KB','err');return;}
+                                const r=new FileReader(); r.onload=ev=>setSettingsData(s=>s?({...s,general:{...s.general,logo_url:ev.target?.result as string}}):s); r.readAsDataURL(f);
+                              }}/>
+                            </label>
                           </div>
                           {settingsData.general.logo_url && (
-                            <img src={settingsData.general.logo_url} alt="Logo preview" className="h-12 object-contain rounded border border-gray-100" onError={e => (e.currentTarget.style.display='none')} />
+                            <img src={settingsData.general.logo_url} alt="Logo" className="h-10 mt-2 object-contain rounded border border-gray-100" onError={e=>(e.currentTarget.style.display='none')}/>
                           )}
                         </div>
                       </div>
-                    </div>
-                  )}
+                    </>)}
 
-                  {/* ── Tratamientos ── */}
-                  {/* ── Email ── */}
-                  {settingsTab === 'email' && (
-                    <div className="space-y-4">
-                      {([
-                        ['staff_email','Email del staff (recibe notificaciones)','email'],
-                        ['from_name','Nombre remitente (ej: BIOSKIN Cuenca)','text'],
-                        ['signature','Firma de correos','text'],
-                        ['whatsapp_number','Número WhatsApp (ej: 593987654321)','tel'],
-                      ] as [keyof typeof settingsData.email, string, string][]).map(([k,label,type]) => (
-                        <div key={k}>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
-                          <input type={type} value={(settingsData.email as Record<string,string>)[k] || ''}
-                            onChange={e => setSettingsData(s => s ? ({...s, email: {...s.email, [k]: e.target.value}}) : s)}
-                            className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
-                        </div>
-                      ))}
-
-                      {/* ── Staff Members (doctores/personal que reciben notificaciones) ── */}
+                    {/* ── EMAIL & STAFF ── */}
+                    {settingsTab === 'email' && (<>
+                      <p className="text-xs text-gray-400">Configuración de emails, WhatsApp y personal de la clínica.</p>
+                      <div className="grid grid-cols-2 gap-3">
+                        {([
+                          ['staff_email','Email del staff (notificaciones)','email'],
+                          ['from_name','Nombre remitente','text'],
+                          ['whatsapp_number','WhatsApp (ej: 593987654321)','tel'],
+                          ['signature','Firma de correos','text'],
+                        ] as [keyof typeof settingsData.email, string, string][]).map(([k,label,type]) => (
+                          <div key={k}>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
+                            <input type={type} value={(settingsData.email as Record<string,string>)[k as string] || ''}
+                              onChange={e => setSettingsData(s => s ? ({...s,email:{...s.email,[k]:e.target.value}}) : s)}
+                              className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
+                          </div>
+                        ))}
+                      </div>
                       <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-2">👨‍⚕️ Staff / Médicos de la clínica</label>
-                        <p className="text-xs text-gray-400 mb-2">Personas que pueden ser asignadas a citas. También recibirán el email de confirmación.</p>
-                        <div className="space-y-2 max-h-36 overflow-y-auto">
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">👨‍⚕️ Staff / Médicos asignables a citas</label>
+                        <div className="space-y-1.5 max-h-36 overflow-y-auto mb-2">
                           {((settingsData.email as any).staff_members || []).map((m: any, i: number) => (
-                            <div key={i} className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2">
-                              <div className="flex-1 min-w-0">
-                                <span className="text-sm font-medium text-gray-800 truncate">{m.name}</span>
-                                <span className="ml-2 text-xs text-gray-400 truncate">{m.email}</span>
-                              </div>
-                              <button onClick={() => setSettingsData(s => s ? ({...s, email: {...s.email, staff_members: ((s.email as any).staff_members || []).filter((_: any, j: number) => j !== i)} as any}) : s)}
-                                className="text-red-400 hover:text-red-600 shrink-0"><X className="w-3.5 h-3.5"/></button>
+                            <div key={i} className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-1.5 border border-gray-100">
+                              <span className="flex-1 text-sm text-gray-800 truncate font-medium">{m.name}</span>
+                              <span className="text-xs text-gray-400 truncate">{m.email}</span>
+                              <button onClick={() => setSettingsData(s => s ? ({...s,email:{...s.email,staff_members:((s.email as any).staff_members||[]).filter((_:any,j:number)=>j!==i)} as any}) : s)}
+                                className="text-red-400 hover:text-red-600 flex-shrink-0"><X className="w-3.5 h-3.5"/></button>
                             </div>
                           ))}
                         </div>
                         <StaffMemberForm
                           allUsers={allUsers.filter(u => u.clinic_id === settingsModal?.clinicId)}
-                          onAdd={member => setSettingsData(s => s ? ({...s, email: {...s.email, staff_members: [...((s.email as any).staff_members || []), member]} as any}) : s)}
+                          onAdd={m => setSettingsData(s => s ? ({...s,email:{...s.email,staff_members:[...((s.email as any).staff_members||[]),m]} as any}) : s)}
                         />
                       </div>
-                    </div>
-                  )}
+                    </>)}
 
-                  {/* ── Agenda ── */}
-                  {settingsTab === 'agenda' && (
-                    <div className="space-y-3">
-                      <div className="grid grid-cols-2 gap-3">
+                    {/* ── AGENDA ── */}
+                    {settingsTab === 'agenda' && (<>
+                      <p className="text-xs text-gray-400">Horarios de atención, duración de citas y lista de tratamientos disponibles.</p>
+                      <div className="grid grid-cols-3 gap-3">
                         <div>
                           <label className="block text-xs font-medium text-gray-600 mb-1">Hora inicio</label>
                           <input type="time" value={settingsData.agenda.start_hour}
-                            onChange={e => setSettingsData(s => s ? ({...s, agenda: {...s.agenda, start_hour: e.target.value}}) : s)}
+                            onChange={e => setSettingsData(s => s?({...s,agenda:{...s.agenda,start_hour:e.target.value}}):s)}
                             className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
                         </div>
                         <div>
                           <label className="block text-xs font-medium text-gray-600 mb-1">Hora fin</label>
                           <input type="time" value={settingsData.agenda.end_hour}
-                            onChange={e => setSettingsData(s => s ? ({...s, agenda: {...s.agenda, end_hour: e.target.value}}) : s)}
+                            onChange={e => setSettingsData(s => s?({...s,agenda:{...s.agenda,end_hour:e.target.value}}):s)}
                             className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Duración de cita</label>
+                          <select value={settingsData.agenda.slot_minutes}
+                            onChange={e => setSettingsData(s => s?({...s,agenda:{...s.agenda,slot_minutes:parseInt(e.target.value)}}):s)}
+                            className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none">
+                            {[30,45,60,90,120].map(m=><option key={m} value={m}>{m} min</option>)}
+                          </select>
+                        </div>
+                        <div className="col-span-3">
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Prefijo en Google Calendar</label>
+                          <input value={settingsData.agenda.calendar_prefix}
+                            onChange={e => setSettingsData(s => s?({...s,agenda:{...s.agenda,calendar_prefix:e.target.value}}):s)}
+                            className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
+                          <p className="text-xs text-gray-400 mt-1">Prefijo para eventos en Google Calendar, p.ej. "{settingsData.agenda.calendar_prefix} - BLOQUEO"</p>
                         </div>
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Duración de cita (minutos)</label>
-                        <select value={settingsData.agenda.slot_minutes}
-                          onChange={e => setSettingsData(s => s ? ({...s, agenda: {...s.agenda, slot_minutes: parseInt(e.target.value)}}) : s)}
-                          className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none">
-                          {[30,45,60,90,120].map(m => <option key={m} value={m}>{m} minutos</option>)}
-                        </select>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">Tratamientos disponibles ({settingsData.treatments.length})</label>
+                        <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto mb-2 p-2 border rounded-lg bg-gray-50">
+                          {settingsData.treatments.map((t,i) => (
+                            <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 bg-white border border-gray-200 rounded-full text-xs text-gray-700">
+                              {t}
+                              <button onClick={() => setSettingsData(s => s?({...s,treatments:s.treatments.filter((_,j)=>j!==i)}):s)}
+                                className="text-gray-400 hover:text-red-500 ml-0.5"><X className="w-2.5 h-2.5"/></button>
+                            </span>
+                          ))}
+                        </div>
+                        <div className="flex gap-2">
+                          <input value={newTreatment} onChange={e=>setNewTreatment(e.target.value)}
+                            onKeyDown={e=>{if(e.key==='Enter'&&newTreatment.trim()){setSettingsData(s=>s?({...s,treatments:[...s.treatments,newTreatment.trim()]}):s);setNewTreatment('');}}}
+                            placeholder="Agregar tratamiento y Enter…" className="flex-1 px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
+                          <button onClick={()=>{if(newTreatment.trim()){setSettingsData(s=>s?({...s,treatments:[...s.treatments,newTreatment.trim()]}):s);setNewTreatment('');}}}
+                            className="px-3 py-2 rounded-lg text-white" style={{background:'linear-gradient(135deg,#deb887,#c5a075)'}}>
+                            <Plus className="w-4 h-4"/>
+                          </button>
+                        </div>
+                      </div>
+                    </>)}
+
+                    {/* ── FINANZAS ── */}
+                    {settingsTab === 'finanzas' && settingsData.finanzas && (<>
+                      <p className="text-xs text-gray-400">Moneda, impuestos y métodos de pago para facturas y reportes financieros.</p>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Moneda (código ISO)</label>
+                          <input value={settingsData.finanzas.currency}
+                            onChange={e=>setSettingsData(s=>s?({...s,finanzas:{...s.finanzas,currency:e.target.value.toUpperCase()}}):s)}
+                            maxLength={3} placeholder="USD"
+                            className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Símbolo</label>
+                          <input value={settingsData.finanzas.currency_symbol}
+                            onChange={e=>setSettingsData(s=>s?({...s,finanzas:{...s.finanzas,currency_symbol:e.target.value}}):s)}
+                            maxLength={3} placeholder="$"
+                            className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">IVA / Impuesto (%)</label>
+                          <input type="number" min={0} max={100} step={0.1} value={settingsData.finanzas.tax_percent}
+                            onChange={e=>setSettingsData(s=>s?({...s,finanzas:{...s.finanzas,tax_percent:parseFloat(e.target.value)||0}}):s)}
+                            className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Prefijo de facturas</label>
+                          <input value={settingsData.finanzas.invoice_prefix}
+                            onChange={e=>setSettingsData(s=>s?({...s,finanzas:{...s.finanzas,invoice_prefix:e.target.value}}):s)}
+                            placeholder="INV"
+                            className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
+                        </div>
+                        <div className="col-span-2">
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Nota en facturas</label>
+                          <textarea rows={2} value={settingsData.finanzas.invoice_notes}
+                            onChange={e=>setSettingsData(s=>s?({...s,finanzas:{...s.finanzas,invoice_notes:e.target.value}}):s)}
+                            placeholder="Ej: Gracias por su preferencia. No se aceptan devoluciones."
+                            className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none resize-none" />
+                        </div>
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Prefijo de bloqueos en Google Calendar</label>
-                        <input value={settingsData.agenda.calendar_prefix}
-                          onChange={e => setSettingsData(s => s ? ({...s, agenda: {...s.agenda, calendar_prefix: e.target.value}}) : s)}
-                          className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
-                        <p className="text-xs text-gray-400 mt-1">Los bloqueos se crean como "{settingsData.agenda.calendar_prefix} - BLOQUEO" en Google Calendar</p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* ── Módulos ── */}
-                  {settingsTab === 'modules' && settingsModal && settingsData && (
-                    <div className="space-y-2">
-                      <p className="text-xs text-gray-400 mb-3">Configura cada módulo habilitado para <strong>{settingsModal.clinicName}</strong>. Solo se muestran los módulos activos.</p>
-
-                      {/* ── ACORDEÓN: Fichas Clínicas ── */}
-                      {(featMap[settingsModal.clinicId] || {})['clinical_records'] !== false && (
-                        <div className="border border-gray-200 rounded-xl overflow-hidden">
-                          <button
-                            onClick={() => setOpenModuleSection(p => p === 'clinical_records' ? null : 'clinical_records')}
-                            className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="text-base">📋</span>
-                              <span className="text-sm font-semibold text-gray-800">Fichas Clínicas</span>
-                            </div>
-                            {openModuleSection === 'clinical_records'
-                              ? <ChevronUp className="w-4 h-4 text-gray-400" />
-                              : <ChevronDown className="w-4 h-4 text-gray-400" />}
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">Métodos de pago aceptados</label>
+                        <div className="flex flex-wrap gap-1.5 mb-2 p-2 border rounded-lg bg-gray-50 min-h-[36px]">
+                          {settingsData.finanzas.payment_methods.map((m,i) => (
+                            <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 bg-white border border-gray-200 rounded-full text-xs text-gray-700">
+                              {m}
+                              <button onClick={()=>setSettingsData(s=>s?({...s,finanzas:{...s.finanzas,payment_methods:s.finanzas.payment_methods.filter((_,j)=>j!==i)}}):s)}
+                                className="text-gray-400 hover:text-red-500"><X className="w-2.5 h-2.5"/></button>
+                            </span>
+                          ))}
+                        </div>
+                        <div className="flex gap-2">
+                          <input value={newPaymentMethod} onChange={e=>setNewPaymentMethod(e.target.value)}
+                            onKeyDown={e=>{if(e.key==='Enter'&&newPaymentMethod.trim()){setSettingsData(s=>s?({...s,finanzas:{...s.finanzas,payment_methods:[...s.finanzas.payment_methods,newPaymentMethod.trim()]}}):s);setNewPaymentMethod('');}}}
+                            placeholder="Agregar método de pago…" className="flex-1 px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
+                          <button onClick={()=>{if(newPaymentMethod.trim()){setSettingsData(s=>s?({...s,finanzas:{...s.finanzas,payment_methods:[...s.finanzas.payment_methods,newPaymentMethod.trim()]}}):s);setNewPaymentMethod('');}}}
+                            className="px-3 py-2 rounded-lg text-white" style={{background:'linear-gradient(135deg,#deb887,#c5a075)'}}>
+                            <Plus className="w-4 h-4"/>
                           </button>
-                          {openModuleSection === 'clinical_records' && (
-                            <div className="p-4 space-y-4 border-t border-gray-100">
-                              <div>
-                                <p className="text-xs font-medium text-gray-500 mb-2">Plantillas de consentimiento asignadas</p>
+                        </div>
+                      </div>
+                    </>)}
+
+                    {/* ── INVENTARIO ── */}
+                    {settingsTab === 'inventario' && settingsData.inventario && (<>
+                      <p className="text-xs text-gray-400">Umbrales de alertas y categorías de productos para el módulo de inventario.</p>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Días de alerta antes de vencimiento</label>
+                          <input type="number" min={1} max={365} value={settingsData.inventario.expiry_alert_days}
+                            onChange={e=>setSettingsData(s=>s?({...s,inventario:{...s.inventario,expiry_alert_days:parseInt(e.target.value)||30}}):s)}
+                            className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
+                          <p className="text-xs text-gray-400 mt-1">Se mostrará alerta cuando queden menos de {settingsData.inventario.expiry_alert_days} días para el vencimiento.</p>
+                        </div>
+                        <div className="space-y-3">
+                          {([
+                            ['low_stock_alert','Alerta de stock bajo'],
+                            ['require_batch','Requerir lote al consumir'],
+                          ] as [keyof typeof settingsData.inventario, string][]).map(([k,label]) => (
+                            <div key={k} className="flex items-center justify-between p-3 border rounded-lg">
+                              <span className="text-sm text-gray-700">{label}</span>
+                              <button type="button" onClick={()=>setSettingsData(s=>s?({...s,inventario:{...s.inventario,[k]:!s.inventario[k as keyof typeof s.inventario]}}):s)}
+                                className={`relative inline-flex h-5 w-9 rounded-full transition-colors ${settingsData.inventario[k as keyof typeof settingsData.inventario] ? 'bg-[#deb887]' : 'bg-gray-200'}`}>
+                                <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform mt-0.5 ${settingsData.inventario[k as keyof typeof settingsData.inventario] ? 'translate-x-4' : 'translate-x-0.5'}`}/>
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">Categorías de productos</label>
+                        <div className="flex flex-wrap gap-1.5 mb-2 p-2 border rounded-lg bg-gray-50 min-h-[36px]">
+                          {settingsData.inventario.categories.map((c,i) => (
+                            <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 bg-white border border-gray-200 rounded-full text-xs text-gray-700">
+                              {c}
+                              <button onClick={()=>setSettingsData(s=>s?({...s,inventario:{...s.inventario,categories:s.inventario.categories.filter((_,j)=>j!==i)}}):s)}
+                                className="text-gray-400 hover:text-red-500"><X className="w-2.5 h-2.5"/></button>
+                            </span>
+                          ))}
+                        </div>
+                        <div className="flex gap-2">
+                          <input value={newCategory} onChange={e=>setNewCategory(e.target.value)}
+                            onKeyDown={e=>{if(e.key==='Enter'&&newCategory.trim()){setSettingsData(s=>s?({...s,inventario:{...s.inventario,categories:[...s.inventario.categories,newCategory.trim()]}}):s);setNewCategory('');}}}
+                            placeholder="Agregar categoría…" className="flex-1 px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
+                          <button onClick={()=>{if(newCategory.trim()){setSettingsData(s=>s?({...s,inventario:{...s.inventario,categories:[...s.inventario.categories,newCategory.trim()]}}):s);setNewCategory('');}}}
+                            className="px-3 py-2 rounded-lg text-white" style={{background:'linear-gradient(135deg,#deb887,#c5a075)'}}>
+                            <Plus className="w-4 h-4"/>
+                          </button>
+                        </div>
+                      </div>
+                    </>)}
+
+                    {/* ── NOTIFICACIONES ── */}
+                    {settingsTab === 'notificaciones' && settingsData.notificaciones && (<>
+                      <p className="text-xs text-gray-400">Qué eventos generan notificaciones y por qué canal.</p>
+                      <div className="space-y-2">
+                        {([
+                          ['appointment_confirmation','📩 Confirmación de cita al cliente','Enviar email cuando se registra una nueva cita'],
+                          ['appointment_reminder',    '⏰ Recordatorio de cita','Enviar aviso horas antes de la cita (requiere staff_email)'],
+                          ['low_stock_notification',  '📦 Alerta de stock bajo','Notificar cuando un producto baje del nivel mínimo'],
+                          ['whatsapp_enabled',        '💬 Notificaciones por WhatsApp','Enviar mensajes WhatsApp además de email'],
+                        ] as [keyof typeof settingsData.notificaciones, string, string][]).map(([k,label,desc]) => (
+                          <div key={k} className="flex items-center justify-between p-3 border rounded-xl hover:border-[#deb887]/30 transition-colors">
+                            <div>
+                              <p className="text-sm font-medium text-gray-800">{label}</p>
+                              <p className="text-xs text-gray-400">{desc}</p>
+                            </div>
+                            <button type="button" onClick={()=>setSettingsData(s=>s?({...s,notificaciones:{...s.notificaciones,[k]:!s.notificaciones[k as keyof typeof s.notificaciones]}}):s)}
+                              className={`relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors ${settingsData.notificaciones[k as keyof typeof settingsData.notificaciones] ? 'bg-[#deb887]' : 'bg-gray-200'}`}>
+                              <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform mt-0.5 ${settingsData.notificaciones[k as keyof typeof settingsData.notificaciones] ? 'translate-x-4' : 'translate-x-0.5'}`}/>
+                            </button>
+                          </div>
+                        ))}
+                        <div className="p-3 border rounded-xl">
+                          <label className="block text-sm font-medium text-gray-800 mb-2">⏱ Horas de anticipación del recordatorio</label>
+                          <div className="flex items-center gap-3">
+                            <input type="range" min={1} max={72} value={settingsData.notificaciones.reminder_hours_before}
+                              onChange={e=>setSettingsData(s=>s?({...s,notificaciones:{...s.notificaciones,reminder_hours_before:parseInt(e.target.value)}}):s)}
+                              className="flex-1 accent-[#deb887]"/>
+                            <span className="text-sm font-bold text-[#99652f] w-16 text-right">{settingsData.notificaciones.reminder_hours_before}h antes</span>
+                          </div>
+                        </div>
+                      </div>
+                    </>)}
+
+                    {/* ── MÓDULOS ── */}
+                    {settingsTab === 'modules' && settingsModal && settingsData && (
+                      <div className="space-y-2">
+                        <p className="text-xs text-gray-400 mb-2">Habilita/deshabilita módulos y configura ajustes específicos. Solo se muestran los módulos activos para esta clínica.</p>
+
+                        {/* Fichas Clínicas */}
+                        {(featMap[settingsModal.clinicId] || {})['clinical_records'] !== false && (
+                          <div className="border border-gray-200 rounded-xl overflow-hidden">
+                            <button onClick={()=>setOpenModuleSection(p=>p==='clinical_records'?null:'clinical_records')}
+                              className="w-full flex items-center justify-between p-3 bg-gray-50 hover:bg-gray-100 text-left">
+                              <span className="text-sm font-semibold text-gray-800">📋 Fichas Clínicas</span>
+                              {openModuleSection==='clinical_records' ? <ChevronUp className="w-4 h-4 text-gray-400"/> : <ChevronDown className="w-4 h-4 text-gray-400"/>}
+                            </button>
+                            {openModuleSection==='clinical_records' && (
+                              <div className="p-4 border-t border-gray-100 space-y-2">
+                                <p className="text-xs font-medium text-gray-500 mb-2">Plantillas de consentimiento asignadas a esta clínica</p>
                                 {settingsTemplates.length === 0 ? (
-                                  <p className="text-xs text-gray-400 italic">Sin plantillas globales. Ve al tab Config. Global para crearlas.</p>
+                                  <p className="text-xs text-gray-400 italic">Sin plantillas globales. Ve a Config. Global → Fichas para crearlas.</p>
                                 ) : (
-                                  <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
+                                  <div className="space-y-1.5 max-h-40 overflow-y-auto">
                                     {settingsTemplates.map(t => (
-                                      <label key={t.id} className="flex items-center gap-3 p-2.5 rounded-lg border border-gray-100 hover:bg-gray-50 cursor-pointer">
-                                        <input type="checkbox"
-                                          checked={settingsAssigned.includes(t.id)}
+                                      <label key={t.id} className="flex items-center gap-3 p-2 rounded-lg border border-gray-100 hover:bg-gray-50 cursor-pointer">
+                                        <input type="checkbox" checked={settingsAssigned.includes(t.id)} className="w-4 h-4 accent-[#deb887]"
                                           onChange={async e => {
                                             const assign = e.target.checked;
-                                            setSettingsAssigned(prev => assign ? [...prev, t.id] : prev.filter(id => id !== t.id));
+                                            setSettingsAssigned(p => assign ? [...p, t.id] : p.filter(id => id !== t.id));
                                             await fetch('/api/admin-auth?action=assignConsentTemplate', {
-                                              method: 'POST', headers: authHeader(),
-                                              body: JSON.stringify({ clinicId: settingsModal.clinicId, templateId: t.id, assign }),
+                                              method:'POST', headers:authHeader(),
+                                              body:JSON.stringify({clinicId:settingsModal.clinicId, templateId:t.id, assign}),
                                             });
-                                          }}
-                                          className="w-4 h-4 rounded accent-[#deb887]" />
+                                          }} />
                                         <div className="min-w-0">
-                                          <div className="text-sm text-gray-900 truncate">{t.name}</div>
-                                          {t.procedure_type && t.procedure_type !== t.name && (
-                                            <div className="text-xs text-gray-400 truncate">{t.procedure_type}</div>
-                                          )}
+                                          <p className="text-sm text-gray-900 truncate">{t.name}</p>
+                                          {t.procedure_type && t.procedure_type !== t.name && <p className="text-xs text-gray-400">{t.procedure_type}</p>}
                                         </div>
                                       </label>
                                     ))}
                                   </div>
                                 )}
-                                <p className="text-xs text-gray-400 mt-2">{settingsAssigned.length} de {settingsTemplates.length} plantillas asignadas.</p>
+                                <p className="text-xs text-gray-400">{settingsAssigned.length} de {settingsTemplates.length} plantillas asignadas.</p>
                               </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* ── ACORDEÓN: Agenda — Tratamientos ── */}
-                      {(featMap[settingsModal.clinicId] || {})['calendar'] !== false && (
-                        <div className="border border-gray-200 rounded-xl overflow-hidden">
-                          <button
-                            onClick={() => setOpenModuleSection(p => p === 'agenda' ? null : 'agenda')}
-                            className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="text-base">📅</span>
-                              <span className="text-sm font-semibold text-gray-800">Agenda</span>
-                            </div>
-                            {openModuleSection === 'agenda'
-                              ? <ChevronUp className="w-4 h-4 text-gray-400" />
-                              : <ChevronDown className="w-4 h-4 text-gray-400" />}
-                          </button>
-                          {openModuleSection === 'agenda' && (
-                            <div className="p-4 space-y-3 border-t border-gray-100">
-                              <p className="text-xs text-gray-500">Tratamientos disponibles para agendar citas en esta clínica.</p>
-                              <div className="space-y-2 max-h-44 overflow-y-auto">
-                                {settingsData.treatments.map((t, i) => (
-                                  <div key={i} className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2">
-                                    <span className="flex-1 text-sm text-gray-700">{t}</span>
-                                    <button onClick={() => setSettingsData(s => s ? ({...s, treatments: s.treatments.filter((_,j)=>j!==i)}) : s)}
-                                      className="text-red-400 hover:text-red-600"><X className="w-3.5 h-3.5"/></button>
-                                  </div>
-                                ))}
-                              </div>
-                              <div className="flex gap-2">
-                                <input value={newTreatment} onChange={e => setNewTreatment(e.target.value)}
-                                  onKeyDown={e => { if(e.key==='Enter' && newTreatment.trim()) { setSettingsData(s => s ? ({...s, treatments: [...s.treatments, newTreatment.trim()]}) : s); setNewTreatment(''); }}}
-                                  placeholder="Agregar tratamiento..." className="flex-1 px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
-                                <button onClick={() => { if(newTreatment.trim()) { setSettingsData(s => s ? ({...s, treatments: [...s.treatments, newTreatment.trim()]}) : s); setNewTreatment(''); }}}
-                                  className="px-3 py-2 rounded-lg text-white text-sm" style={{background:'linear-gradient(135deg,#deb887,#c5a075)'}}>
-                                  <Plus className="w-4 h-4"/>
-                                </button>
-                              </div>
-                              <button onClick={() => saveSettingsSection('treatments' as any)}
-                                className="w-full py-2 rounded-lg text-white text-xs font-medium"
-                                style={{background:'linear-gradient(135deg,#deb887,#c5a075)'}}>
-                                Guardar tratamientos
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* ── Otros módulos habilitados (placeholder) ── */}
-                      {ALL_FEATURES.filter(f =>
-                        f !== 'clinical_records' && f !== 'calendar' && f !== 'block_schedule' && f !== 'appointment' &&
-                        (featMap[settingsModal.clinicId] || {})[f] !== false
-                      ).map(feat => {
-                        const meta = FEATURE_META[feat];
-                        const Icon = meta.icon;
-                        return (
-                          <div key={feat} className="border border-gray-100 rounded-xl overflow-hidden opacity-60">
-                            <div className="w-full flex items-center gap-3 p-4 bg-gray-50">
-                              <Icon className={`w-4 h-4 ${meta.color}`} />
-                              <span className="text-sm font-medium text-gray-600">{meta.label}</span>
-                              <span className="ml-auto text-[10px] text-gray-400">Sin ajustes adicionales</span>
-                            </div>
+                            )}
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
+                        )}
 
-            <div className="px-5 py-4 border-t flex justify-end gap-3 bg-gray-50">
-              <button onClick={() => setSettingsModal(null)} className="px-4 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-100">Cancelar</button>
-              {settingsTab !== 'modules' && (
-                <button onClick={() => saveSettingsSection(settingsTab as any)} className="px-5 py-2 rounded-lg text-white text-sm font-medium" style={{background:'linear-gradient(135deg,#deb887,#c5a075)'}}>
-                  Guardar {settingsTab}
-                </button>
-              )}
+                        {/* Otros módulos */}
+                        {ALL_FEATURES.filter(f => f !== 'clinical_records' && (featMap[settingsModal.clinicId]||{})[f] !== false).map(feat => {
+                          const meta = FEATURE_META[feat]; const Icon = meta.icon;
+                          return (
+                            <div key={feat} className="flex items-center gap-3 p-3 border border-gray-100 rounded-xl bg-gray-50">
+                              <Icon className={`w-4 h-4 ${meta.color}`} />
+                              <span className="text-sm text-gray-700 flex-1">{meta.label}</span>
+                              <span className="text-xs text-emerald-600 font-medium bg-emerald-50 px-2 py-0.5 rounded-full">Activo</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                  </div>
+                )}
+
+                {/* ── Footer save ── */}
+                {settingsData && settingsTab !== 'modules' && (
+                  <div className="px-5 py-3 border-t bg-gray-50 flex justify-end gap-2">
+                    <button onClick={() => setSettingsModal(null)} className="px-4 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-100">Cancelar</button>
+                    <button onClick={() => saveSettingsSection(settingsTab as keyof ClinicSettingsData)}
+                      disabled={settingsSaving}
+                      className="flex items-center gap-2 px-5 py-2 rounded-lg text-white text-sm font-medium disabled:opacity-60"
+                      style={{background:'linear-gradient(135deg,#deb887,#c5a075)'}}>
+                      {settingsSaving && <RefreshCw className="w-3.5 h-3.5 animate-spin"/>}
+                      Guardar cambios
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
