@@ -4,7 +4,7 @@ import recordsFetch from "../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Calendar, DollarSign, TrendingUp, TrendingDown, 
-  Trash2, Edit2, Check, X, FileText, PieChart, BarChart2, Search, Filter, Info, Plus, Lock
+  Trash2, Edit2, Check, X, FileText, PieChart, BarChart2, Search, Filter, Info, Plus
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer 
@@ -274,61 +274,62 @@ const AdminFinance = () => {
               </p>
             </div>
             
-            {/* ── Filtro multi-usuario (solo admin/master) ── */}
-            {(user?.role === 'clinic_admin' || user?.role === 'master_admin') && (
-              <div className="mt-4 md:mt-0 flex flex-col items-start md:items-end gap-2">
-                <div className="flex items-center gap-1.5 flex-wrap justify-end">
-                  {/* Botón "Vista Global" */}
-                  <button
-                    onClick={() => setSelectedUsers(new Set())}
-                    className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-all border ${
-                      selectedUsers.size === 0
-                        ? 'bg-yellow-500 text-gray-900 border-yellow-500 shadow'
-                        : 'text-gray-300 border-gray-600 hover:border-gray-400 hover:text-white'
-                    }`}
-                  >
-                    🌐 Global
-                  </button>
-
-                  {/* Pills por usuario — toggleables */}
-                  {financeUsers.map(fu => {
-                    const isSelected = selectedUsers.has(fu.username);
-                    const isLocked   = !fu.finance_visible;
-                    return (
-                      <button
+            {/* ── Filtro de usuario (solo admin/master) ── */}
+            {(user?.role === 'clinic_admin' || user?.role === 'master_admin') && financeUsers.length > 0 && (
+              <div className="mt-4 md:mt-0 flex flex-col items-end gap-1.5">
+                <select
+                  value={selectedUsers.size === 0 ? '__global__' : (selectedUsers.size === 1 ? Array.from(selectedUsers)[0] : '__multi__')}
+                  onChange={e => {
+                    const val = e.target.value;
+                    if (val === '__global__') { setSelectedUsers(new Set()); return; }
+                    // Selección individual desde el dropdown → Set de 1
+                    setSelectedUsers(new Set([val]));
+                  }}
+                  className="px-4 py-2 bg-gray-800/60 border border-gray-600 text-white rounded-xl text-sm focus:ring-2 focus:ring-yellow-500/50 focus:border-yellow-500 outline-none cursor-pointer backdrop-blur min-w-[180px]"
+                >
+                  <option value="__global__">🌐 Vista Global</option>
+                  <optgroup label="── Usuarios ──">
+                    {financeUsers.map(fu => (
+                      <option
                         key={fu.username}
-                        onClick={() => {
-                          if (isLocked) return;
-                          setSelectedUsers(prev => {
+                        value={fu.username}
+                        disabled={!fu.finance_visible}
+                        className={!fu.finance_visible ? 'text-gray-500' : ''}
+                      >
+                        {!fu.finance_visible ? '🔒 ' : ''}{fu.full_name}
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
+
+                {/* Multi-selección: checkboxes desplegables cuando hay >1 usuario */}
+                {financeUsers.filter(fu => fu.finance_visible).length > 1 && (
+                  <div className="flex flex-wrap gap-1 justify-end max-w-xs">
+                    {financeUsers.filter(fu => fu.finance_visible).map(fu => {
+                      const isOn = selectedUsers.has(fu.username);
+                      return (
+                        <button
+                          key={fu.username}
+                          onClick={() => setSelectedUsers(prev => {
                             const next = new Set(prev);
                             if (next.has(fu.username)) next.delete(fu.username);
                             else next.add(fu.username);
                             return next;
-                          });
-                        }}
-                        title={isLocked ? 'Sin autorización de visualización' : `${isSelected ? 'Quitar' : 'Agregar'} filtro: ${fu.full_name}`}
-                        className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${
-                          isLocked
-                            ? 'opacity-40 cursor-not-allowed text-gray-500 border-gray-700'
-                            : isSelected
-                              ? 'bg-yellow-500 text-gray-900 border-yellow-500 shadow'
-                              : 'text-gray-300 border-gray-600 hover:border-yellow-500/50 hover:text-white'
-                        }`}
-                      >
-                        {isLocked && <Lock size={10} />}
-                        {fu.full_name}
-                        {isSelected && <Check size={10} className="ml-0.5" />}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Indicador de filtro activo */}
-                {selectedUsers.size > 0 && (
-                  <p className="text-[10px] text-yellow-400/70">
-                    Mostrando {selectedUsers.size} usuario{selectedUsers.size > 1 ? 's' : ''} · 
-                    <button onClick={() => setSelectedUsers(new Set())} className="ml-1 underline hover:text-yellow-300">ver todos</button>
-                  </p>
+                          })}
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-medium transition-all border ${
+                            isOn
+                              ? 'bg-yellow-500 text-gray-900 border-yellow-500'
+                              : 'text-gray-400 border-gray-600 hover:border-gray-400'
+                          }`}
+                        >
+                          {isOn ? '✓ ' : ''}{fu.full_name.split(' ')[0]}
+                        </button>
+                      );
+                    })}
+                    {selectedUsers.size > 0 && (
+                      <button onClick={() => setSelectedUsers(new Set())} className="px-2 py-0.5 rounded-full text-[10px] text-gray-500 border border-gray-600 hover:text-white">✕ limpiar</button>
+                    )}
+                  </div>
                 )}
               </div>
             )}

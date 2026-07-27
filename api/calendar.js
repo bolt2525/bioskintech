@@ -30,19 +30,12 @@ async function getClinicOAuth2Client(clinicId) {
 
 // Función consolidada para todas las operaciones de calendario
 export default async function handler(req, res) {
-  console.log(`🚀 API Calendar llamado - Método: ${req.method}, URL: ${req.url}`);
-  console.log(`📋 Body recibido:`, req.body);
-  console.log(`📋 Query recibido:`, req.query);
-  
   // Configurar headers CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
-  if (req.method === 'OPTIONS') {
-    console.log('✅ Respondiendo a OPTIONS request');
-    return res.status(200).end();
-  }
+  if (req.method === 'OPTIONS') return res.status(200).end();
 
   const { method } = req;
   const { action, code, state } = { ...req.query, ...(req.body || {}) };
@@ -96,13 +89,11 @@ export default async function handler(req, res) {
     const sessionUser = await authenticateRequest(req);
     if (sessionUser?.valid) clinicId = sessionUser.effective_clinic_id ?? sessionUser.clinic_id ?? null;
   }
-  console.log(`📅 Calendar action="${action}" clinicId=${clinicId} method=${method}`);
 
   async function getCalendarClient() {
     // 1. OAuth de la clínica
     const oauthClient = await getClinicOAuth2Client(clinicId);
     if (oauthClient) {
-      console.log('📅 Calendar vía OAuth:', oauthClient ? 'OK' : 'no tokens');
       return { calendar: google.calendar({ version: 'v3', auth: oauthClient }), calendarId: 'primary', credentials: null };
     }
     // 2. Service account legacy
@@ -263,8 +254,6 @@ async function getCalendarEvents(req, res, calendar, credentials) {
   const timeMin = startDate.toISOString();
   const timeMax = endDate.toISOString();
 
-  console.log(`🔍 Obteniendo eventos del calendario para ${days} días`);
-
   const response = await calendar.events.list({
     calendarId: credentials.calendar_id,
     timeMin: timeMin,
@@ -275,7 +264,6 @@ async function getCalendarEvents(req, res, calendar, credentials) {
   });
 
   const events = response.data.items || [];
-  console.log(`📋 ${events.length} eventos encontrados en total`);
 
   const formattedEvents = events.map(event => {
     const isBlockEvent = event.summary?.includes('BIOSKIN - BLOQUEO') || event.summary?.includes('BLOQUEO');

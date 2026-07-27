@@ -219,47 +219,35 @@ export default async function handler(req, res) {
 
       case 'inventoryListMovements':
         try {
+          const su = await getSessionUserOnce();
+          if (!su) return res.status(401).json({ error: 'No autenticado' });
           const limit = req.query.limit || 100;
           const { type, startDate, endDate } = req.query;
-          
+          const invClinicId = su?.effective_clinic_id ?? su?.clinic_id ?? null;
+
+          const params = [];
+          let paramCount = 1;
           let query = `
-            SELECT 
-              m.*, 
-              i.name as item_name, 
-              i.sku,
-              b.batch_number,
-              b.expiration_date
+            SELECT m.*, i.name as item_name, i.sku, b.batch_number, b.expiration_date
             FROM inventory_movements m
             JOIN inventory_batches b ON m.batch_id = b.id
             JOIN inventory_items i ON b.item_id = i.id
             WHERE 1=1
           `;
-          
-          const params = [];
-          let paramCount = 1;
-
+          // Filtro tenant via JOIN
+          if (invClinicId) {
+            query += ` AND (i.clinic_id = $${paramCount} OR i.clinic_id IS NULL)`;
+            params.push(invClinicId);
+            paramCount++;
+          }
           if (type && type !== 'all') {
-            if (type === 'IN') {
-              query += ` AND m.quantity_change > 0`;
-            } else if (type === 'OUT') {
-              query += ` AND m.quantity_change < 0`;
-            }
+            if (type === 'IN')  query += ` AND m.quantity_change > 0`;
+            if (type === 'OUT') query += ` AND m.quantity_change < 0`;
           }
-
-          if (startDate) {
-            query += ` AND m.created_at >= $${paramCount}`;
-            params.push(startDate);
-            paramCount++;
-          }
-
-          if (endDate) {
-            query += ` AND m.created_at <= $${paramCount}`;
-            params.push(endDate);
-            paramCount++;
-          }
-
+          if (startDate) { query += ` AND m.created_at >= $${paramCount}`; params.push(startDate); paramCount++; }
+          if (endDate)   { query += ` AND m.created_at <= $${paramCount}`; params.push(endDate);   paramCount++; }
           query += ` ORDER BY m.created_at DESC LIMIT $${paramCount}`;
-          params.push(limit);
+          params.push(Math.min(parseInt(limit) || 100, 500));
 
           const movements = await pool.query(query, params);
           return res.status(200).json(movements.rows);
@@ -270,13 +258,13 @@ export default async function handler(req, res) {
 
       case 'inventoryDeleteMovement':
         try {
-           const { id } = req.query;
-           // This is a soft audit log, usually we don't delete movements to preserve traceability.
-           // However, for admin cleanup it might be useful.
-           // NOTE: Deleting a movement does NOT revert the stock change in this implementation 
-           // to avoid complex inconsistencies. It's just a log cleanup.
-           await pool.query('DELETE FROM inventory_movements WHERE id = $1', [id]);
-           return res.status(200).json({ success: true });
+          const su = await getSessionUserOnce();
+          if (!su) return res.status(401).json({ error: 'No autenticado' });
+          if (!['clinic_admin', 'master_admin'].includes(su.role))
+            return res.status(403).json({ error: 'Sin permiso' });
+          const { id } = req.query;
+          await pool.query('DELETE FROM inventory_movements WHERE id = $1', [id]);
+          return res.status(200).json({ success: true });
         } catch (err) {
           console.error('Error deleting movement:', err);
           return res.status(500).json({ error: err.message });
@@ -284,41 +272,39 @@ export default async function handler(req, res) {
 
       case 'inventoryClearMovements':
         try {
-          // Clear older than X days, or all if no param
-          // For safety, let's just allow clearing by explicit ID array or single ID for now in UI,
-          // but here we can implement a bulk clear.
-          // Let's implement 'clear older than' logic
+          const su = await getSessionUserOnce();
+          if (!su) return res.status(401).json({ error: 'No autenticado' });
+          if (su.role !== 'master_admin') return res.status(403).json({ error: 'Solo master_admin' });
           const { days } = body;
-          if (days) {
-             await pool.query(`DELETE FROM inventory_movements WHERE created_at < NOW() - INTERVAL '${parseInt(days)} days'`);
-          } else {
-             // Dangerous: Clear all
-             // await pool.query('DELETE FROM inventory_movements');
-             return res.status(400).json({ error: 'Days parameter required for bulk cleanup' });
-          }
+          const daysInt = parseInt(days, 10);
+          if (!Number.isFinite(daysInt) || daysInt <= 0)
+            return res.status(400).json({ error: 'days debe ser un entero positivo' });
+          // Usar parámetro — sin interpolación de string (previene inyección con días negativos)
+          await pool.query(`DELETE FROM inventory_movements WHERE created_at < NOW() - ($1 * INTERVAL '1 day')`, [daysInt]);
           return res.status(200).json({ success: true });
         } catch (err) {
-           console.error('Error clearing movements:', err);
-           return res.status(500).json({ error: err.message });
+          console.error('Error clearing movements:', err);
+          return res.status(500).json({ error: err.message });
         }
 
       case 'inventoryListBatches':
         try {
           const su = await getSessionUserOnce();
+          if (!su) return res.status(401).json({ error: 'No autenticado' });
           const invClinicId = su?.effective_clinic_id ?? su?.clinic_id ?? null;
+          const params = [];
+          let whereClause = `b.status = 'active' AND b.quantity_current > 0`;
+          if (invClinicId) {
+            whereClause += ` AND (i.clinic_id = $1 OR i.clinic_id IS NULL)`;
+            params.push(invClinicId);
+          }
           const batches = await pool.query(`
-            SELECT 
-              b.*, 
-              i.name as item_name, 
-              i.sku,
-              i.category,
-              i.unit_of_measure
+            SELECT b.*, i.name as item_name, i.sku, i.category, i.unit_of_measure
             FROM inventory_batches b
             JOIN inventory_items i ON b.item_id = i.id
-            WHERE b.status = 'active' AND b.quantity_current > 0
-              ${invClinicId ? `AND (i.clinic_id = ${parseInt(invClinicId)} OR i.clinic_id IS NULL)` : ''}
+            WHERE ${whereClause}
             ORDER BY b.expiration_date ASC
-          `);
+          `, params);
           return res.status(200).json(batches.rows);
         } catch (err) {
           console.error('Error listing batches:', err);
@@ -328,21 +314,26 @@ export default async function handler(req, res) {
       case 'inventoryListItems':
         try {
           const su = await getSessionUserOnce();
+          if (!su) return res.status(401).json({ error: 'No autenticado' });
           const invClinicId = su?.effective_clinic_id ?? su?.clinic_id ?? null;
-          const clinicFilter = invClinicId ? `WHERE (i.clinic_id = ${parseInt(invClinicId)} OR i.clinic_id IS NULL)` : '';
+          const params = [];
+          let whereClause = '';
+          if (invClinicId) {
+            whereClause = `WHERE (i.clinic_id = $1 OR i.clinic_id IS NULL)`;
+            params.push(invClinicId);
+          }
           const items = await pool.query(`
-            SELECT 
-              i.*,
+            SELECT i.*,
               COALESCE(SUM(b.quantity_current), 0) as total_stock,
               COALESCE(SUM(b.quantity_initial), 0) as total_initial,
               COUNT(b.id) as batch_count,
               MIN(b.expiration_date) as next_expiry
             FROM inventory_items i
             LEFT JOIN inventory_batches b ON i.id = b.item_id AND b.status = 'active'
-            ${clinicFilter}
+            ${whereClause}
             GROUP BY i.id
             ORDER BY i.name ASC
-          `);
+          `, params);
           return res.status(200).json(items.rows);
         } catch (err) {
           console.error('Error listing inventory:', err);
@@ -352,8 +343,15 @@ export default async function handler(req, res) {
       case 'inventoryStats':
         try {
           const su = await getSessionUserOnce();
+          if (!su) return res.status(401).json({ error: 'No autenticado' });
           const invClinicId = su?.effective_clinic_id ?? su?.clinic_id ?? null;
-          const iClause = invClinicId ? `AND (i.clinic_id = ${parseInt(invClinicId)} OR i.clinic_id IS NULL)` : '';
+
+          // Usar parámetros $1 — sin interpolación de string para clinic_id
+          const clinicParam = invClinicId ? [invClinicId] : [];
+          const iWhere = invClinicId ? `AND (i.clinic_id = $1 OR i.clinic_id IS NULL)` : '';
+          const bWhere = invClinicId ? `JOIN inventory_items ii ON ii.id = b.item_id AND (ii.clinic_id = $1 OR ii.clinic_id IS NULL)` : '';
+          const alertWhere = invClinicId ? `AND (i.clinic_id = $1 OR i.clinic_id IS NULL)` : '';
+
           const statsResult = await pool.query(`
             SELECT
               COUNT(DISTINCT i.id)::int AS total_items,
@@ -362,24 +360,19 @@ export default async function handler(req, res) {
             FROM inventory_items i
             LEFT JOIN (
               SELECT item_id, SUM(quantity_current) AS total_stock
-              FROM inventory_batches
-              WHERE status = 'active'
+              FROM inventory_batches WHERE status = 'active'
               GROUP BY item_id
             ) stock ON stock.item_id = i.id
-            WHERE 1=1 ${iClause}
-          `);
-
-          const bClause = invClinicId
-            ? `JOIN inventory_items ii ON ii.id = b.item_id WHERE (ii.clinic_id = ${parseInt(invClinicId)} OR ii.clinic_id IS NULL) AND b.status = 'active'`
-            : `WHERE b.status = 'active'`;
+            WHERE 1=1 ${iWhere}
+          `, clinicParam);
 
           const batchStats = await pool.query(`
             SELECT
               COUNT(CASE WHEN b.expiration_date < CURRENT_DATE THEN 1 END)::int AS expired_count,
               COUNT(CASE WHEN b.expiration_date >= CURRENT_DATE AND b.expiration_date <= CURRENT_DATE + INTERVAL '30 days' THEN 1 END)::int AS expiring_soon_count
-            FROM inventory_batches b
-            ${bClause}
-          `);
+            FROM inventory_batches b ${bWhere}
+            WHERE b.status = 'active'
+          `, clinicParam);
 
           const movementsStats = await pool.query(`
             SELECT COUNT(*)::int AS movements_this_month
@@ -388,26 +381,18 @@ export default async function handler(req, res) {
           `);
 
           const alertBatches = await pool.query(`
-            SELECT 
-              b.id,
-              b.batch_number,
-              b.expiration_date,
-              b.quantity_current,
-              i.name AS item_name,
-              i.sku,
-              i.unit_of_measure,
-              CASE 
-                WHEN b.expiration_date < CURRENT_DATE THEN 'expired'
-                WHEN b.expiration_date <= CURRENT_DATE + INTERVAL '30 days' THEN 'expiring_soon'
+            SELECT b.id, b.batch_number, b.expiration_date, b.quantity_current,
+              i.name AS item_name, i.sku, i.unit_of_measure,
+              CASE WHEN b.expiration_date < CURRENT_DATE THEN 'expired'
+                   WHEN b.expiration_date <= CURRENT_DATE + INTERVAL '30 days' THEN 'expiring_soon'
               END AS alert_type
             FROM inventory_batches b
             JOIN inventory_items i ON b.item_id = i.id
             WHERE b.status = 'active'
               AND (b.expiration_date < CURRENT_DATE OR b.expiration_date <= CURRENT_DATE + INTERVAL '30 days')
-              ${invClinicId ? `AND (i.clinic_id = ${parseInt(invClinicId)} OR i.clinic_id IS NULL)` : ''}
-            ORDER BY b.expiration_date ASC
-            LIMIT 20
-          `);
+              ${alertWhere}
+            ORDER BY b.expiration_date ASC LIMIT 20
+          `, clinicParam);
 
           return res.status(200).json({
             ...statsResult.rows[0],
@@ -482,57 +467,57 @@ export default async function handler(req, res) {
 
       case 'inventoryUpdateItem':
         try {
+          const su = await getSessionUserOnce();
+          if (!su) return res.status(401).json({ error: 'No autenticado' });
           const { id, sku, name, brand, description, category, group_name, unit_of_measure, min_stock_level, requires_cold_chain, sanitary_registration, cost_price, sale_price } = body;
           const cleanSku = normalizeOptionalText(sku);
           const cleanBrand = normalizeOptionalText(brand);
           const cleanDescription = normalizeOptionalText(description);
           const cleanGroupName = normalizeOptionalText(group_name);
           const cleanSanitaryRegistration = normalizeOptionalText(sanitary_registration);
-          const updatedItem = await pool.query(`
-            UPDATE inventory_items 
-            SET sku = $1, name = $2, brand = $3, description = $4, category = $5, group_name = $6, unit_of_measure = $7, min_stock_level = $8, requires_cold_chain = $9, sanitary_registration = $10,
-                cost_price = $11, sale_price = $12
-            WHERE id = $13
-            RETURNING *
-          `, [cleanSku, name, cleanBrand, cleanDescription, category, cleanGroupName, unit_of_measure, min_stock_level, requires_cold_chain, cleanSanitaryRegistration,
-              normalizeOptionalNumber(cost_price),
-              normalizeOptionalNumber(sale_price),
-              id]);
-          
-          if (updatedItem.rows.length === 0) return res.status(404).json({ error: 'Item not found' });
+          const invClinicId = su?.effective_clinic_id ?? su?.clinic_id ?? null;
+          // Verificar que el item pertenece a la clínica del usuario
+          const clinicCheck = invClinicId
+            ? ` AND (clinic_id = $13 OR clinic_id IS NULL)`
+            : '';
+          const params = [cleanSku, name, cleanBrand, cleanDescription, category, cleanGroupName, unit_of_measure, min_stock_level, requires_cold_chain, cleanSanitaryRegistration,
+            normalizeOptionalNumber(cost_price), normalizeOptionalNumber(sale_price), id];
+          if (invClinicId) params.push(invClinicId);
+          const updatedItem = await pool.query(
+            `UPDATE inventory_items SET sku=$1, name=$2, brand=$3, description=$4, category=$5, group_name=$6, unit_of_measure=$7, min_stock_level=$8, requires_cold_chain=$9, sanitary_registration=$10, cost_price=$11, sale_price=$12 WHERE id=$13${clinicCheck} RETURNING *`,
+            params
+          );
+          if (updatedItem.rows.length === 0) return res.status(404).json({ error: 'Item not found or not in your clinic' });
           return res.status(200).json(updatedItem.rows[0]);
         } catch (err) {
           console.error('Error updating inventory item:', err);
-          if (err.code === '23505' && err.constraint === 'inventory_items_sku_key') {
-            return res.status(409).json({ error: 'El SKU ya existe. Usa otro código o deja el campo vacío.' });
-          }
+          if (err.code === '23505') return res.status(409).json({ error: 'El SKU ya existe. Usa otro código o deja el campo vacío.' });
           return res.status(500).json({ error: 'Error al actualizar producto de inventario.' });
         }
 
       case 'inventoryDeleteItem':
         try {
+          const su = await getSessionUserOnce();
+          if (!su) return res.status(401).json({ error: 'No autenticado' });
+          if (!['clinic_admin', 'master_admin'].includes(su.role))
+            return res.status(403).json({ error: 'Solo administradores pueden eliminar productos' });
           const { id } = req.query;
-          
-          // Use a client for transaction to ensure clean cascading delete
+          const invClinicId = su?.effective_clinic_id ?? su?.clinic_id ?? null;
+          // Verificar ownership antes de eliminar
+          if (invClinicId) {
+            const check = await pool.query('SELECT id FROM inventory_items WHERE id = $1 AND (clinic_id = $2 OR clinic_id IS NULL)', [id, invClinicId]);
+            if (check.rows.length === 0) return res.status(403).json({ error: 'Producto no encontrado en tu clínica' });
+          }
           const client = await pool.connect();
           try {
             await client.query('BEGIN');
-
-            // 1. Find associated batches to clean up linked movements properly
             const batchesCheck = await client.query('SELECT id FROM inventory_batches WHERE item_id = $1', [id]);
             const batchIds = batchesCheck.rows.map(b => b.id);
-
             if (batchIds.length > 0) {
-              // 2. Delete linked movements (requires manual deletion as they might not cascade)
               await client.query('DELETE FROM inventory_movements WHERE batch_id = ANY($1)', [batchIds]);
-              
-              // 3. Delete batches (if not set to CASCADE in DB, this ensures it works)
               await client.query('DELETE FROM inventory_batches WHERE item_id = $1', [id]);
             }
-
-            // 4. Finally delete the item
             await client.query('DELETE FROM inventory_items WHERE id = $1', [id]);
-            
             await client.query('COMMIT');
             return res.status(200).json({ success: true });
           } catch (txError) {
@@ -548,11 +533,13 @@ export default async function handler(req, res) {
 
       case 'inventoryDeleteBatch':
         try {
+          const su = await getSessionUserOnce();
+          if (!su) return res.status(401).json({ error: 'No autenticado' });
+          if (!['clinic_admin', 'master_admin'].includes(su.role))
+            return res.status(403).json({ error: 'Solo administradores pueden eliminar lotes' });
           const { id } = req.query;
-          
           await pool.query('DELETE FROM inventory_movements WHERE batch_id = $1', [id]);
           await pool.query('DELETE FROM inventory_batches WHERE id = $1', [id]);
-          
           return res.status(200).json({ success: true });
         } catch (err) {
           console.error('Error deleting batch:', err);
@@ -1655,10 +1642,19 @@ export default async function handler(req, res) {
       }
 
       case 'financeDelete': {
+        const su = await getSessionUserOnce();
+        if (!su) return res.status(401).json({ error: 'No autenticado' });
+        if (!['clinic_admin', 'master_admin'].includes(su.role))
+          return res.status(403).json({ error: 'Solo administradores pueden eliminar registros' });
         const { id } = body;
         if (!id) return res.status(400).json({ error: 'Missing ID' });
         try {
-          await pool.query('DELETE FROM financial_records WHERE id = $1', [id]);
+          const clinicId = su.effective_clinic_id ?? su.clinic_id ?? null;
+          if (su.role === 'master_admin') {
+            await pool.query('DELETE FROM financial_records WHERE id = $1', [id]);
+          } else {
+            await pool.query('DELETE FROM financial_records WHERE id = $1 AND (clinic_id = $2 OR clinic_id IS NULL)', [id, clinicId]);
+          }
           return res.status(200).json({ success: true });
         } catch (err) {
           return res.status(500).json({ error: err.message });
@@ -1702,24 +1698,28 @@ export default async function handler(req, res) {
       }
 
       case 'financeUpdate': {
+        const su = await getSessionUserOnce();
+        if (!su) return res.status(401).json({ error: 'No autenticado' });
+        if (!['clinic_admin', 'master_admin'].includes(su.role))
+          return res.status(403).json({ error: 'Solo administradores pueden editar registros' });
         const { id, date, invoice_number, entity, description, type, subtotal, tax, total } = body;
         if (!id) return res.status(400).json({ error: 'Missing ID' });
+        if (!['ingreso', 'egreso'].includes(type))
+          return res.status(400).json({ error: 'Tipo inválido. Use ingreso o egreso' });
 
         try {
-          await pool.query(`
-            UPDATE financial_records 
-            SET 
-              date = $1, 
-              invoice_number = $2, 
-              entity = $3, 
-              description = $4, 
-              type = $5, 
-              subtotal = $6, 
-              tax = $7, 
-              total = $8
-            WHERE id = $9
-          `, [date, invoice_number, entity, description, type, subtotal, tax, total, id]);
-          
+          const clinicId = su.effective_clinic_id ?? su.clinic_id ?? null;
+          if (su.role === 'master_admin') {
+            await pool.query(
+              `UPDATE financial_records SET date=$1, invoice_number=$2, entity=$3, description=$4, type=$5, subtotal=$6, tax=$7, total=$8 WHERE id=$9`,
+              [date, invoice_number, entity, description, type, subtotal, tax, total, id]
+            );
+          } else {
+            await pool.query(
+              `UPDATE financial_records SET date=$1, invoice_number=$2, entity=$3, description=$4, type=$5, subtotal=$6, tax=$7, total=$8 WHERE id=$9 AND (clinic_id=$10 OR clinic_id IS NULL)`,
+              [date, invoice_number, entity, description, type, subtotal, tax, total, id, clinicId]
+            );
+          }
           return res.status(200).json({ success: true, message: 'Record updated' });
         } catch (err) {
           console.error('Error updating finance record:', err);

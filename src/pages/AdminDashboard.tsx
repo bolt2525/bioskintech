@@ -109,36 +109,29 @@ export default function AdminDashboard() {
     return () => document.removeEventListener('mousedown', handler);
   }, [showNotifications]);
 
-  // ─── Fetch de citas próximas (próximos 15 días) ────────────────────────
+  // ─── Fetch de citas próximas — UNA sola llamada con rango de 15 días ────
   const fetchUpcomingAppointments = async () => {
     setLoadingNotifications(true);
     try {
-      const appointments: UpcomingAppointment[] = [];
+      const res  = await recordsFetch('/api/calendar', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ action: 'getCalendarEvents', days: 15 }),
+      });
+      const data = await res.json();
       const today = new Date();
-
-      for (let i = 0; i <= 15; i++) {
-        const d = new Date(today);
-        d.setDate(today.getDate() + i);
-        try {
-          const res  = await recordsFetch('/api/calendar', {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({ action: 'getEvents', date: d.toISOString().split('T')[0] }),
-          });
-          const data = await res.json();
-          if (data.events) {
-            data.events.forEach((ev: UpcomingAppointment) =>
-              appointments.push({ ...ev, daysUntil: i, isToday: i === 0, isTomorrow: i === 1 }),
-            );
-          }
-        } catch { /* día sin eventos — continuar */ }
-      }
-
-      appointments.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+      today.setHours(0,0,0,0);
+      const appointments: UpcomingAppointment[] = (data.events || [])
+        .filter((ev: any) => ev.eventType !== 'block')
+        .map((ev: any) => {
+          const start = new Date(ev.startDateTime || ev.start?.dateTime || ev.start?.date);
+          const diffDays = Math.floor((start.getTime() - today.getTime()) / 86_400_000);
+          return { ...ev, daysUntil: diffDays, isToday: diffDays === 0, isTomorrow: diffDays === 1 };
+        })
+        .sort((a: any, b: any) => new Date(a.startDateTime).getTime() - new Date(b.startDateTime).getTime());
       setUpcomingAppointments(appointments);
-    } finally {
-      setLoadingNotifications(false);
-    }
+    } catch { /* calendar no configurado — ignorar */ }
+    finally { setLoadingNotifications(false); }
   };
 
   // ─── Cambio de contraseña propia ─────────────────────────────────────
