@@ -62,7 +62,7 @@ const calcFromTotal = (total: number, ivaRate: number): { subtotal: number; tax:
 };
 
 const EMPTY_FORM = { date: new Date().toISOString().split('T')[0], invoice_number: '', entity: '', description: '', type: 'ingreso' as const, subtotal: '', tax: '', total: '' };
-const EMPTY_ITEM = (): FinanceItem => ({ description: '', quantity: 1, unit_price: 0, iva_rate: 15, subtotal: 0, tax: 0, total: 0 });
+const EMPTY_ITEM = (ivaRate = 15): FinanceItem => ({ description: '', quantity: 1, unit_price: 0, iva_rate: ivaRate, subtotal: 0, tax: 0, total: 0 });
 
 // ── Exportar CSV desde los registros actuales ──────────────────────────────
 const exportCSV = (records: FinanceRecord[], filename = 'finanzas') => {
@@ -551,7 +551,7 @@ const AdminFinance = () => {
 
               {/* Toggle desglose */}
               <button type="button"
-                onClick={() => { setShowItems(v => !v); if (!showItems && newItems.length === 0) setNewItems([EMPTY_ITEM()]); }}
+                onClick={() => { setShowItems(v => !v); if (!showItems && newItems.length === 0) setNewItems([EMPTY_ITEM(taxRate)]); }}
                 className="flex items-center gap-1.5 text-xs text-yellow-600 font-medium hover:text-yellow-800 mb-3 transition-colors"
               >
                 <Package size={13} />
@@ -573,7 +573,7 @@ const AdminFinance = () => {
                       onRemove={() => setNewItems(prev => prev.filter((_, i) => i !== idx))}
                     />
                   ))}
-                  <button onClick={() => setNewItems(prev => [...prev, EMPTY_ITEM()])}
+                  <button onClick={() => setNewItems(prev => [...prev, EMPTY_ITEM(taxRate)])}
                     className="mt-2 text-xs text-yellow-600 hover:text-yellow-800 flex items-center gap-1 font-medium">
                     <Plus size={12}/> Agregar línea
                   </button>
@@ -948,7 +948,7 @@ const AdminFinance = () => {
                       />
                     ))}
                   </div>
-                  <button onClick={() => setDesgModal(prev => ({ ...prev, items: [...prev.items, EMPTY_ITEM()] }))}
+                  <button onClick={() => setDesgModal(prev => ({ ...prev, items: [...prev.items, EMPTY_ITEM(taxRate)] }))}
                     className="mt-3 text-xs text-yellow-600 hover:text-yellow-800 flex items-center gap-1 font-medium">
                     <Plus size={12}/> Agregar línea
                   </button>
