@@ -1,10 +1,11 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import recordsFetch from "../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Calendar, DollarSign, TrendingUp, TrendingDown, 
-  Trash2, Edit2, Check, X, FileText, PieChart, BarChart2, Search, Filter, Info, Plus
+  Trash2, Edit2, Check, X, FileText, PieChart, BarChart2, Search, Filter, Info, Plus,
+  Download, ChevronDown, ChevronUp, Package, Calculator
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer 
@@ -32,7 +33,60 @@ interface FinanceUser {
   finance_visible: boolean;
 }
 
+interface FinanceItem {
+  id?: number;
+  description: string;
+  quantity: number;
+  unit_price: number;
+  iva_rate: number;
+  subtotal: number;
+  tax: number;
+  total: number;
+}
+
+// Calcula totales de un item dado sus campos base
+const calcItem = (it: Partial<FinanceItem>, defaultIva = 15): FinanceItem => {
+  const qty     = parseFloat(String(it.quantity  ?? 1));
+  const uprice  = parseFloat(String(it.unit_price ?? 0));
+  const ivaRate = parseFloat(String(it.iva_rate   ?? defaultIva));
+  const subtotal = parseFloat((qty * uprice).toFixed(2));
+  const tax      = parseFloat((subtotal * ivaRate / 100).toFixed(2));
+  return { description: it.description || '', quantity: qty, unit_price: uprice, iva_rate: ivaRate, subtotal, tax, total: parseFloat((subtotal + tax).toFixed(2)) };
+};
+
+// Si el usuario ingresa el TOTAL, calcula subtotal e IVA
+const calcFromTotal = (total: number, ivaRate: number): { subtotal: number; tax: number } => {
+  const subtotal = parseFloat((total / (1 + ivaRate / 100)).toFixed(2));
+  const tax      = parseFloat((total - subtotal).toFixed(2));
+  return { subtotal, tax };
+};
+
 const EMPTY_FORM = { date: new Date().toISOString().split('T')[0], invoice_number: '', entity: '', description: '', type: 'ingreso' as const, subtotal: '', tax: '', total: '' };
+const EMPTY_ITEM = (): FinanceItem => ({ description: '', quantity: 1, unit_price: 0, iva_rate: 15, subtotal: 0, tax: 0, total: 0 });
+
+// ── Exportar CSV desde los registros actuales ──────────────────────────────
+const exportCSV = (records: FinanceRecord[], filename = 'finanzas') => {
+  const headers = ['Fecha', 'N° Factura', 'Entidad', 'Descripción', 'Tipo', 'Subtotal', 'IVA', 'Total', 'Registrado por'];
+  const rows = records.map(r => [
+    String(r.date || '').split('T')[0],
+    r.invoice_number || '',
+    r.entity,
+    r.description || '',
+    r.type,
+    parseFloat(String(r.subtotal || 0)).toFixed(2),
+    parseFloat(String(r.tax || 0)).toFixed(2),
+    parseFloat(String(r.total || 0)).toFixed(2),
+    r.registered_by || ''
+  ]);
+  const csv = [headers, ...rows]
+    .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    .join('\n');
+  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = `${filename}_${new Date().toISOString().split('T')[0]}.csv`;
+  a.click(); URL.revokeObjectURL(url);
+};
 
 const AdminFinance = () => {
   const { user } = useAuth();
@@ -45,6 +99,24 @@ const AdminFinance = () => {
   const [newForm, setNewForm] = useState<typeof EMPTY_FORM>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
+  const [taxRate, setTaxRate] = useState(15); // % IVA desde settings de clínica
+  // Items del formulario nuevo
+  const [newItems, setNewItems] = useState<FinanceItem[]>([]);
+  const [showItems, setShowItems] = useState(false);
+  // Modal de desglose para registros existentes
+  const [desgModal, setDesgModal] = useState<{ open: boolean; record: FinanceRecord | null; items: FinanceItem[]; loading: boolean }>({ open: false, record: null, items: [], loading: false });
+
+  // Cargar tasa IVA de settings de clínica
+  useEffect(() => {
+    const cid = user?.clinic_id;
+    if (!cid) return;
+    fetch(`/api/admin-auth?action=getClinicSettings&clinicId=${cid}`, {
+      headers: { Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken') || ''}` }
+    }).then(r => r.json()).then(d => {
+      const tp = d.settings?.finanzas?.tax_percent;
+      if (tp != null) setTaxRate(parseFloat(tp));
+    }).catch(() => {});
+  }, [user?.clinic_id]);
   
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'ingreso' | 'egreso'>('all');
@@ -137,20 +209,69 @@ const AdminFinance = () => {
     if (!newForm.entity.trim()) return;
     setSaving(true);
     try {
-      const sub  = parseFloat(String(newForm.subtotal || 0));
-      const taxV = parseFloat(String(newForm.tax  || 0));
-      const tot  = parseFloat(String(newForm.total || 0)) || (sub + taxV);
+      // Si hay items, los totales se calculan de ellos
+      let sub  = parseFloat(String(newForm.subtotal || 0));
+      let taxV = parseFloat(String(newForm.tax  || 0));
+      let tot  = parseFloat(String(newForm.total || 0));
+
+      if (showItems && newItems.length > 0) {
+        sub  = parseFloat(newItems.reduce((s, it) => s + it.subtotal, 0).toFixed(2));
+        taxV = parseFloat(newItems.reduce((s, it) => s + it.tax, 0).toFixed(2));
+        tot  = parseFloat(newItems.reduce((s, it) => s + it.total, 0).toFixed(2));
+      } else if (!tot && (sub || taxV)) {
+        tot = parseFloat((sub + taxV).toFixed(2));
+      }
+
       const res = await recordsFetch('/api/records', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'financeCreate', ...newForm, subtotal: sub, tax: taxV, total: tot })
       });
       if (!res.ok) throw new Error(await res.text());
-      setNewForm(EMPTY_FORM);
-      setShowNewForm(false);
+      const created = await res.json();
+
+      // Guardar items si los hay
+      if (showItems && newItems.length > 0 && created.id) {
+        await recordsFetch('/api/records', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'financeItemsSave', record_id: created.id, items: newItems })
+        });
+      }
+
+      setNewForm(EMPTY_FORM); setNewItems([]); setShowItems(false); setShowNewForm(false);
       fetchData();
     } catch (e: any) {
       alert('Error al guardar: ' + e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openDesglose = async (record: FinanceRecord) => {
+    setDesgModal({ open: true, record, items: [], loading: true });
+    try {
+      const res  = await recordsFetch(`/api/records?action=financeItemsGet&record_id=${record.id}`);
+      const data = await res.json();
+      setDesgModal(prev => ({ ...prev, items: Array.isArray(data) ? data : [], loading: false }));
+    } catch {
+      setDesgModal(prev => ({ ...prev, items: [], loading: false }));
+    }
+  };
+
+  const saveDesglose = async () => {
+    if (!desgModal.record) return;
+    setSaving(true);
+    try {
+      await recordsFetch('/api/records', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'financeItemsSave', record_id: desgModal.record.id, items: desgModal.items })
+      });
+      setDesgModal({ open: false, record: null, items: [], loading: false });
+      fetchData();
+    } catch (e: any) {
+      alert('Error al guardar desglose: ' + e.message);
     } finally {
       setSaving(false);
     }
@@ -339,13 +460,20 @@ const AdminFinance = () => {
 
       <div className="container-custom mx-auto -mt-16 px-4">
 
-        {/* ── Botón nuevo registro ── */}
-        <div className="flex justify-end mb-3">
+        {/* ── Barra superior: botones nuevo registro + export ── */}
+        <div className="flex justify-between items-center mb-3">
           <button
             onClick={() => setShowNewForm(v => !v)}
             className="flex items-center gap-2 px-4 py-2 bg-yellow-500 hover:bg-yellow-400 text-gray-900 font-semibold rounded-xl shadow-md text-sm transition-all"
           >
             <Plus size={16} /> Nuevo Registro
+          </button>
+          <button
+            onClick={() => exportCSV(filteredRecords, `finanzas${selectedUsers.size === 1 ? '_'+Array.from(selectedUsers)[0] : ''}`)}
+            disabled={filteredRecords.length === 0}
+            className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-xl text-sm transition-all disabled:opacity-40"
+          >
+            <Download size={15} /> Exportar CSV ({filteredRecords.length})
           </button>
         </div>
 
@@ -358,7 +486,9 @@ const AdminFinance = () => {
               exit={{ opacity: 0, y: -8 }}
               className="bg-white rounded-2xl shadow-lg border border-yellow-200 p-5 mb-6"
             >
-              <h3 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2"><Plus size={14} className="text-yellow-500" /> Nuevo Ingreso / Egreso</h3>
+              <h3 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2"><Plus size={14} className="text-yellow-500" /> Nueva Factura / Registro</h3>
+
+              {/* Campos principales */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
                 <div>
                   <label className="text-xs text-gray-500 mb-1 block">Fecha</label>
@@ -373,35 +503,92 @@ const AdminFinance = () => {
                   <input type="text" value={newForm.entity} onChange={e => setNewForm(p => ({...p, entity: e.target.value}))} placeholder="Nombre de empresa o persona" className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 outline-none" />
                 </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
-                <div className="md:col-span-2">
-                  <label className="text-xs text-gray-500 mb-1 block">Descripción</label>
-                  <input type="text" value={newForm.description} onChange={e => setNewForm(p => ({...p, description: e.target.value}))} placeholder="Detalle del concepto" className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 outline-none" />
-                </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
                 <div>
-                  <label className="text-xs text-gray-500 mb-1 block">Tipo</label>
-                  <select value={newForm.type} onChange={e => setNewForm(p => ({...p, type: e.target.value as any}))} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 outline-none">
-                    <option value="ingreso">Ingreso</option>
-                    <option value="egreso">Egreso</option>
-                  </select>
+                  <label className="text-xs text-gray-500 mb-1 block">Descripción general</label>
+                  <input type="text" value={newForm.description} onChange={e => setNewForm(p => ({...p, description: e.target.value}))} placeholder="Ej: Compra de insumos, Venta de tratamiento..." className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 outline-none" />
                 </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <div>
-                    <label className="text-xs text-gray-500 mb-1 block">Subtotal</label>
-                    <input type="number" value={newForm.subtotal} onChange={e => setNewForm(p => ({...p, subtotal: e.target.value}))} step="0.01" className="w-full px-2 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 outline-none text-right" />
+                <div className="flex gap-3">
+                  <div className="flex-1">
+                    <label className="text-xs text-gray-500 mb-1 block">Tipo</label>
+                    <select value={newForm.type} onChange={e => setNewForm(p => ({...p, type: e.target.value as any}))} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 outline-none">
+                      <option value="ingreso">Ingreso</option>
+                      <option value="egreso">Egreso</option>
+                    </select>
                   </div>
-                  <div>
-                    <label className="text-xs text-gray-500 mb-1 block">IVA</label>
-                    <input type="number" value={newForm.tax} onChange={e => setNewForm(p => ({...p, tax: e.target.value}))} step="0.01" className="w-full px-2 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 outline-none text-right" />
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-500 mb-1 block">Total</label>
-                    <input type="number" value={newForm.total} onChange={e => setNewForm(p => ({...p, total: e.target.value}))} step="0.01" className="w-full px-2 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 outline-none text-right font-bold" />
+                  <div className="flex-1">
+                    <label className="text-xs text-gray-500 mb-1 block">IVA % (clínica: {taxRate}%)</label>
+                    <input type="number" value={taxRate} onChange={e => setTaxRate(parseFloat(e.target.value) || 0)} min={0} max={100} step={0.5} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 outline-none" />
                   </div>
                 </div>
               </div>
+
+              {/* Totales directos cuando NO hay desglose */}
+              {!showItems && (
+                <div className="grid grid-cols-3 gap-3 mb-3">
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">Subtotal</label>
+                    <input type="number" value={newForm.subtotal} onChange={e => {
+                      const sub = parseFloat(e.target.value) || 0;
+                      const tax = parseFloat((sub * taxRate / 100).toFixed(2));
+                      setNewForm(p => ({...p, subtotal: e.target.value, tax: String(tax), total: String(parseFloat((sub+tax).toFixed(2)))}));
+                    }} step="0.01" placeholder="0.00" className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 outline-none text-right" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">IVA</label>
+                    <input type="number" value={newForm.tax} onChange={e => setNewForm(p => ({...p, tax: e.target.value}))} step="0.01" placeholder="0.00" className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 outline-none text-right" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block flex items-center gap-1"><Calculator size={11}/> Total (calcular desde total)</label>
+                    <input type="number" value={newForm.total} onChange={e => {
+                      const tot = parseFloat(e.target.value) || 0;
+                      const { subtotal, tax } = calcFromTotal(tot, taxRate);
+                      setNewForm(p => ({...p, total: e.target.value, subtotal: String(subtotal), tax: String(tax)}));
+                    }} step="0.01" placeholder="0.00" className="w-full px-3 py-2 border border-yellow-300 rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 outline-none text-right font-bold" />
+                  </div>
+                </div>
+              )}
+
+              {/* Toggle desglose */}
+              <button type="button"
+                onClick={() => { setShowItems(v => !v); if (!showItems && newItems.length === 0) setNewItems([EMPTY_ITEM()]); }}
+                className="flex items-center gap-1.5 text-xs text-yellow-600 font-medium hover:text-yellow-800 mb-3 transition-colors"
+              >
+                <Package size={13} />
+                {showItems ? 'Ocultar desglose de ítems' : 'Agregar desglose de ítems (líneas de factura)'}
+                {showItems ? <ChevronUp size={12}/> : <ChevronDown size={12}/>}
+              </button>
+
+              {/* Items desglose */}
+              {showItems && (
+                <div className="border border-yellow-100 rounded-xl p-3 mb-3 bg-yellow-50/30">
+                  <div className="grid grid-cols-12 gap-1 text-[10px] font-semibold text-gray-400 uppercase px-1 mb-1">
+                    <span className="col-span-4">Descripción</span><span className="col-span-1 text-right">Cant.</span>
+                    <span className="col-span-2 text-right">P. Unit.</span><span className="col-span-1 text-right">IVA%</span>
+                    <span className="col-span-2 text-right">Subtotal</span><span className="col-span-1 text-right">Total</span><span className="col-span-1"/>
+                  </div>
+                  {newItems.map((it, idx) => (
+                    <ItemRow key={idx} item={it} taxRate={taxRate}
+                      onChange={updated => setNewItems(prev => prev.map((x, i) => i === idx ? updated : x))}
+                      onRemove={() => setNewItems(prev => prev.filter((_, i) => i !== idx))}
+                    />
+                  ))}
+                  <button onClick={() => setNewItems(prev => [...prev, EMPTY_ITEM()])}
+                    className="mt-2 text-xs text-yellow-600 hover:text-yellow-800 flex items-center gap-1 font-medium">
+                    <Plus size={12}/> Agregar línea
+                  </button>
+                  {newItems.length > 0 && (
+                    <div className="mt-3 pt-2 border-t border-yellow-200 text-right text-xs text-gray-600 space-y-0.5">
+                      <div>Subtotal: <span className="font-mono font-semibold">${newItems.reduce((s,it)=>s+it.subtotal,0).toFixed(2)}</span></div>
+                      <div>IVA ({taxRate}%): <span className="font-mono font-semibold text-yellow-700">${newItems.reduce((s,it)=>s+it.tax,0).toFixed(2)}</span></div>
+                      <div className="text-base font-bold text-gray-800">Total: <span className="font-mono">${newItems.reduce((s,it)=>s+it.total,0).toFixed(2)}</span></div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="flex justify-end gap-2">
-                <button onClick={() => { setShowNewForm(false); setNewForm(EMPTY_FORM); }} className="px-4 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cancelar</button>
+                <button onClick={() => { setShowNewForm(false); setNewForm(EMPTY_FORM); setNewItems([]); setShowItems(false); }} className="px-4 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cancelar</button>
                 <button onClick={handleCreate} disabled={saving || !newForm.entity.trim()} className="px-5 py-2 bg-yellow-500 text-gray-900 font-semibold rounded-lg text-sm disabled:opacity-50 hover:bg-yellow-400 transition-colors">
                   {saving ? 'Guardando…' : 'Guardar Registro'}
                 </button>
@@ -701,6 +888,13 @@ const AdminFinance = () => {
                           <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                             <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                               <button 
+                                onClick={() => openDesglose(record)}
+                                className="p-1 text-gray-400 hover:text-yellow-600 hover:bg-yellow-50 rounded"
+                                title="Desglosar ítems"
+                              >
+                                <Package size={16} />
+                              </button>
+                              <button 
                                 onClick={() => startEdit(record)}
                                 className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded"
                               >
@@ -724,6 +918,59 @@ const AdminFinance = () => {
           </div>
         </div>
       </div>
+      {/* ── Modal: Desglose de ítems ── */}
+      {desgModal.open && desgModal.record && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="h-0.5 bg-gradient-to-r from-yellow-500 to-yellow-300" />
+            <div className="p-5 border-b flex justify-between items-start">
+              <div>
+                <h3 className="font-bold text-gray-900">Desglose de ítems</h3>
+                <p className="text-xs text-gray-400 mt-0.5">{desgModal.record.entity} · {desgModal.record.invoice_number || 'S/N'} · {String(desgModal.record.date).split('T')[0]}</p>
+              </div>
+              <button onClick={() => setDesgModal({ open: false, record: null, items: [], loading: false })} className="text-gray-300 hover:text-gray-500"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-5 overflow-y-auto flex-1">
+              {desgModal.loading ? (
+                <div className="flex justify-center py-8 text-gray-400 animate-spin"><FileText className="w-6 h-6" /></div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-12 gap-1 text-[10px] font-semibold text-gray-400 uppercase px-1 mb-1">
+                    <span className="col-span-4">Descripción</span><span className="col-span-1 text-right">Cant.</span>
+                    <span className="col-span-2 text-right">P. Unit.</span><span className="col-span-1 text-right">IVA%</span>
+                    <span className="col-span-2 text-right">Subtotal</span><span className="col-span-1 text-right">Total</span><span className="col-span-1"/>
+                  </div>
+                  <div className="space-y-1">
+                    {desgModal.items.map((it, idx) => (
+                      <ItemRow key={idx} item={it} taxRate={taxRate}
+                        onChange={updated => setDesgModal(prev => ({ ...prev, items: prev.items.map((x,i) => i===idx ? updated : x) }))}
+                        onRemove={() => setDesgModal(prev => ({ ...prev, items: prev.items.filter((_,i) => i!==idx) }))}
+                      />
+                    ))}
+                  </div>
+                  <button onClick={() => setDesgModal(prev => ({ ...prev, items: [...prev.items, EMPTY_ITEM()] }))}
+                    className="mt-3 text-xs text-yellow-600 hover:text-yellow-800 flex items-center gap-1 font-medium">
+                    <Plus size={12}/> Agregar línea
+                  </button>
+                  {desgModal.items.length > 0 && (
+                    <div className="mt-4 pt-3 border-t text-right text-xs text-gray-600 space-y-0.5">
+                      <div>Subtotal: <span className="font-mono font-semibold">${desgModal.items.reduce((s,it)=>s+(it.subtotal||0),0).toFixed(2)}</span></div>
+                      <div>IVA: <span className="font-mono font-semibold text-yellow-700">${desgModal.items.reduce((s,it)=>s+(it.tax||0),0).toFixed(2)}</span></div>
+                      <div className="text-base font-bold text-gray-800">Total: <span className="font-mono">${desgModal.items.reduce((s,it)=>s+(it.total||0),0).toFixed(2)}</span></div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+            <div className="p-5 border-t flex justify-end gap-3">
+              <button onClick={() => setDesgModal({ open: false, record: null, items: [], loading: false })} className="px-4 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cancelar</button>
+              <button onClick={saveDesglose} disabled={saving} className="px-5 py-2 bg-yellow-500 text-gray-900 font-semibold rounded-lg text-sm disabled:opacity-50 hover:bg-yellow-400">
+                {saving ? 'Guardando…' : 'Guardar desglose'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -791,6 +1038,39 @@ const EditRow = ({ data, onChange, onSave, onCancel }: EditRowProps) => {
         </div>
       </td>
     </>
+  );
+};
+
+// ── Componente ItemRow — fila editable de ítem de factura ────────────────────
+interface ItemRowProps {
+  item: FinanceItem;
+  taxRate: number;
+  onChange: (updated: FinanceItem) => void;
+  onRemove: () => void;
+}
+const ItemRow = ({ item, taxRate, onChange, onRemove }: ItemRowProps) => {
+  const update = (field: keyof FinanceItem, value: string) => {
+    const partial = { ...item, [field]: parseFloat(value) || 0 };
+    // Recalcular siempre desde quantity, unit_price e iva_rate
+    const qty     = field === 'quantity'   ? (parseFloat(value) || 1) : item.quantity;
+    const uprice  = field === 'unit_price' ? (parseFloat(value) || 0) : item.unit_price;
+    const ivaRate = field === 'iva_rate'   ? (parseFloat(value) || 0) : item.iva_rate;
+    const subtotal = parseFloat((qty * uprice).toFixed(2));
+    const tax      = parseFloat((subtotal * ivaRate / 100).toFixed(2));
+    onChange({ ...partial, quantity: qty, unit_price: uprice, iva_rate: ivaRate, subtotal, tax, total: parseFloat((subtotal+tax).toFixed(2)) });
+  };
+  const updateDesc = (desc: string) => onChange({ ...item, description: desc });
+  const cls = "px-2 py-1.5 border rounded-lg text-xs focus:ring-1 focus:ring-yellow-400 outline-none w-full";
+  return (
+    <div className="grid grid-cols-12 gap-1 items-center">
+      <input value={item.description} onChange={e => updateDesc(e.target.value)} placeholder="Descripción del ítem" className={`col-span-4 ${cls}`} />
+      <input type="number" value={item.quantity}   onChange={e => update('quantity', e.target.value)}   step="0.01" min="0" className={`col-span-1 text-right ${cls}`} />
+      <input type="number" value={item.unit_price} onChange={e => update('unit_price', e.target.value)} step="0.01" min="0" className={`col-span-2 text-right ${cls}`} />
+      <input type="number" value={item.iva_rate}   onChange={e => update('iva_rate', e.target.value)}   step="0.5"  min="0" max="100" className={`col-span-1 text-right ${cls}`} />
+      <span className="col-span-2 text-right text-xs font-mono text-gray-500 pr-1">${item.subtotal.toFixed(2)}</span>
+      <span className="col-span-1 text-right text-xs font-mono font-bold text-gray-800 pr-1">${item.total.toFixed(2)}</span>
+      <button onClick={onRemove} className="col-span-1 text-red-300 hover:text-red-500 flex justify-center"><X size={14}/></button>
+    </div>
   );
 };
 

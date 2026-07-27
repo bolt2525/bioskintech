@@ -1583,6 +1583,90 @@ export default async function handler(req, res) {
         }
       }
 
+      case 'financeItemsGet': {
+        const { record_id } = req.query;
+        if (!record_id) return res.status(400).json({ error: 'record_id requerido' });
+        const su = await getSessionUserOnce();
+        if (!su) return res.status(401).json({ error: 'No autenticado' });
+        // Verificar que el record pertenece a la clínica
+        const clinicId = su.effective_clinic_id ?? su.clinic_id ?? null;
+        if (clinicId) {
+          const chk = await pool.query('SELECT id FROM financial_records WHERE id = $1 AND (clinic_id = $2 OR clinic_id IS NULL)', [record_id, clinicId]);
+          if (!chk.rows.length) return res.status(403).json({ error: 'Sin acceso' });
+        }
+        try {
+          const items = await pool.query(
+            'SELECT * FROM financial_items WHERE record_id = $1 ORDER BY sort_order, id ASC',
+            [record_id]
+          );
+          return res.status(200).json(items.rows);
+        } catch (err) {
+          if (err.code === '42P01') return res.status(200).json([]); // tabla no existe aún
+          return res.status(500).json({ error: err.message });
+        }
+      }
+
+      case 'financeItemsSave': {
+        // Guarda/reemplaza los items de una factura y recalcula totales del record
+        const su = await getSessionUserOnce();
+        if (!su) return res.status(401).json({ error: 'No autenticado' });
+        const { record_id, items } = body;
+        if (!record_id) return res.status(400).json({ error: 'record_id requerido' });
+        if (!Array.isArray(items)) return res.status(400).json({ error: 'items debe ser un array' });
+
+        const clinicId = su.effective_clinic_id ?? su.clinic_id ?? null;
+        // Verificar ownership
+        if (clinicId) {
+          const chk = await pool.query('SELECT id FROM financial_records WHERE id = $1 AND (clinic_id = $2 OR clinic_id IS NULL)', [record_id, clinicId]);
+          if (!chk.rows.length) return res.status(403).json({ error: 'Sin acceso' });
+        }
+
+        const client = await pool.connect();
+        try {
+          await client.query('BEGIN');
+          // Borrar items anteriores
+          await client.query('DELETE FROM financial_items WHERE record_id = $1', [record_id]);
+
+          let totalSubtotal = 0, totalTax = 0, totalTotal = 0;
+
+          for (let i = 0; i < items.length; i++) {
+            const it = items[i];
+            const qty      = parseFloat(it.quantity  || 1);
+            const uprice   = parseFloat(it.unit_price || 0);
+            const ivaRate  = parseFloat(it.iva_rate   || 0);
+            const subtotal = parseFloat((qty * uprice).toFixed(2));
+            const tax      = parseFloat((subtotal * ivaRate / 100).toFixed(2));
+            const total    = parseFloat((subtotal + tax).toFixed(2));
+            totalSubtotal += subtotal;
+            totalTax      += tax;
+            totalTotal    += total;
+            await client.query(
+              `INSERT INTO financial_items (record_id, description, quantity, unit_price, iva_rate, subtotal, tax, total, sort_order)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+              [record_id, it.description, qty, uprice, ivaRate,
+               subtotal, tax, total, i]
+            );
+          }
+
+          // Si hay items, actualizar totales del record padre
+          if (items.length > 0) {
+            await client.query(
+              `UPDATE financial_records SET subtotal=$1, tax=$2, total=$3 WHERE id=$4`,
+              [totalSubtotal.toFixed(2), totalTax.toFixed(2), totalTotal.toFixed(2), record_id]
+            );
+          }
+
+          await client.query('COMMIT');
+          return res.status(200).json({ success: true, subtotal: totalSubtotal, tax: totalTax, total: totalTotal });
+        } catch (err) {
+          await client.query('ROLLBACK');
+          console.error('Error saving finance items:', err);
+          return res.status(500).json({ error: err.message });
+        } finally {
+          client.release();
+        }
+      }
+
       case 'financeList': {
         const su = await getSessionUserOnce();
         const { startDate, endDate, registered_by } = req.query;
