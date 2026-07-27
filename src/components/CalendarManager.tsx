@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import recordsFetch from '../utils/recordsFetch';
 import { 
   Calendar,
   Trash2,
@@ -55,6 +56,7 @@ interface CalendarEvent {
 const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(false);
+  const [calendarNotConfigured, setCalendarNotConfigured] = useState(false);
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState<'success' | 'error' | ''>('');
   const [dateRange, setDateRange] = useState(30); // días hacia adelante
@@ -68,7 +70,7 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
     try {
       console.log(`🔍 Cargando eventos del calendario para los próximos ${dateRange} días...`);
       
-      const response = await fetch('/api/calendar', {
+      const response = await recordsFetch('/api/calendar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -79,6 +81,10 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
 
       const data = await response.json();
       
+      if (data.calendarNotConfigured) {
+        setCalendarNotConfigured(true);
+        return;
+      }
       if (data.success) {
         setEvents(data.events || []);
         setMessage(`✅ ${data.events?.length || 0} eventos cargados`);
@@ -112,7 +118,7 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
     setDeletingEvents(prev => new Set(prev).add(event.id));
 
     try {
-      const response = await fetch('/api/calendar', {
+      const response = await recordsFetch('/api/calendar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -229,6 +235,22 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
   useEffect(() => {
     loadCalendarEvents();
   }, [dateRange]);
+
+  if (calendarNotConfigured) {
+    return (
+      <section className="py-16 bg-gray-50 min-h-screen flex items-center justify-center">
+        <div className="max-w-md text-center bg-white rounded-3xl shadow-2xl p-10">
+          <button onClick={onBack} className="flex items-center gap-2 text-[#deb887] hover:text-[#d4a574] font-medium mb-6 mx-auto">
+            <ArrowLeft className="w-5 h-5" />
+            Volver
+          </button>
+          <Calendar className="w-16 h-16 text-amber-400 mx-auto mb-4" />
+          <h3 className="text-xl font-semibold text-gray-800 mb-2">Calendario no conectado</h3>
+          <p className="text-gray-500 text-sm">Esta clínica no tiene una cuenta de Gmail vinculada. Conecta Google Calendar desde el panel del Master Admin para gestionar citas.</p>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="py-16 bg-gray-50 min-h-screen">

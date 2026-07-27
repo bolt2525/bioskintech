@@ -2,6 +2,7 @@
 // Componente para visualizar la agenda desde Google Calendar
 
 import React, { useState, useEffect } from 'react';
+import recordsFetch from '../utils/recordsFetch';
 import { Calendar, Clock, User, Phone, Mail, ArrowLeft, ChevronLeft, ChevronRight, RefreshCw, Grid, List } from 'lucide-react';
 
 // Helpers para español
@@ -28,6 +29,7 @@ const AdminCalendar: React.FC<AdminCalendarProps> = ({ onBack }) => {
   const [loading, setLoading] = useState(false);
   const [loadingMonth, setLoadingMonth] = useState(false);
   const [error, setError] = useState('');
+  const [calendarNotConfigured, setCalendarNotConfigured] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('month');
   const [monthEvents, setMonthEvents] = useState<{[key: string]: CalendarEvent[]}>({});
   
@@ -92,7 +94,7 @@ const AdminCalendar: React.FC<AdminCalendarProps> = ({ onBack }) => {
     
     try {
       console.log(`🔄 Cargando eventos para ${dateString}...`);
-      const response = await fetch('/api/calendar', {
+      const response = await recordsFetch('/api/calendar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -103,6 +105,11 @@ const AdminCalendar: React.FC<AdminCalendarProps> = ({ onBack }) => {
       
       const data = await response.json();
       
+      if (data.calendarNotConfigured) {
+        setCalendarNotConfigured(true);
+        setEvents([]);
+        return;
+      }
       if (data.events && Array.isArray(data.events)) {
         setEvents(data.events);
         console.log(`✅ ${data.events.length} eventos cargados para ${dateString}`);
@@ -140,7 +147,7 @@ const AdminCalendar: React.FC<AdminCalendarProps> = ({ onBack }) => {
         
         // Crear promesa para cada día
         promises.push(
-          fetch('/api/calendar', {
+          recordsFetch('/api/calendar', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
@@ -150,6 +157,7 @@ const AdminCalendar: React.FC<AdminCalendarProps> = ({ onBack }) => {
           })
           .then(response => response.json())
           .then(data => {
+            if (data.calendarNotConfigured) return { calendarNotConfigured: true };
             if (data.events && Array.isArray(data.events) && data.events.length > 0) {
               monthEventsMap[dateString] = data.events;
               return { date: dateString, count: data.events.length };
@@ -165,6 +173,11 @@ const AdminCalendar: React.FC<AdminCalendarProps> = ({ onBack }) => {
       
       // Esperar a que todas las promesas se resuelvan
       const results = await Promise.all(promises);
+      
+      if (results.some((r: any) => r?.calendarNotConfigured)) {
+        setCalendarNotConfigured(true);
+        return;
+      }
       const validResults = results.filter(result => result !== null);
       
       console.log(`✅ Eventos cargados: ${validResults.length} días con citas en ${months[month]} ${year}`);
@@ -312,6 +325,22 @@ const AdminCalendar: React.FC<AdminCalendarProps> = ({ onBack }) => {
     
     return { phone, email, service, notes };
   };
+
+  if (calendarNotConfigured) {
+    return (
+      <div className="max-w-7xl mx-auto bg-white rounded-lg shadow-lg p-6">
+        <button onClick={onBack} className="flex items-center gap-2 text-[#deb887] hover:text-[#d4a574] font-medium mb-6">
+          <ArrowLeft className="w-5 h-5" />
+          Volver al Dashboard
+        </button>
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <Calendar className="w-16 h-16 text-amber-400 mb-4" />
+          <h3 className="text-xl font-semibold text-gray-800 mb-2">Calendario no conectado</h3>
+          <p className="text-gray-500 max-w-sm">Esta clínica no tiene una cuenta de Gmail vinculada todavía. Conecta Google Calendar desde el panel del Master Admin.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto bg-white rounded-lg shadow-lg p-6 relative">

@@ -151,6 +151,10 @@ export default async function handler(req, res) {
         return res.status(400).json({ success: false, message: 'Acción no válida' });
     }
   } catch (error) {
+    // Calendario no configurado → no es un crash, es un estado esperado
+    if (error.message?.includes('No hay cuenta Gmail') || error.message?.includes('Credenciales de Google')) {
+      return res.status(200).json({ success: false, calendarNotConfigured: true, message: error.message });
+    }
     console.error('❌ Error en calendario:', error.message);
     return res.status(500).json({ success: false, message: error.message });
   }

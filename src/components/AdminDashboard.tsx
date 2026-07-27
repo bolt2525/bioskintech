@@ -2,6 +2,7 @@
 // Panel principal de administración con múltiples opciones
 
 import React, { useState, useEffect } from 'react';
+import recordsFetch from '../utils/recordsFetch';
 import { 
   Settings, 
   Users, 
@@ -69,7 +70,7 @@ const AdminDashboard: React.FC = () => {
         const dateString = currentDate.toISOString().split('T')[0];
         
         try {
-          const response = await fetch('/api/calendar', {
+          const response = await recordsFetch('/api/calendar', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 

@@ -3,6 +3,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Calendar, Clock, User, Phone, Mail, MessageSquare, Save, ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react';
+import recordsFetch from '../utils/recordsFetch';
 import { services } from '../data/services';
 import { useAuth } from '../context/AuthContext';
 
@@ -161,7 +162,7 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
       return;
     }
     setLoadingHours(true);
-    fetch('/api/calendar', {
+    recordsFetch('/api/calendar', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 

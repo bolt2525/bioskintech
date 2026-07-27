@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import recordsFetch from '../utils/recordsFetch';
 import { 
   Calendar,
   Clock,
@@ -123,6 +124,7 @@ const AdminBlockSchedule: React.FC<BlockScheduleProps> = ({ onBack }) => {
   const [selectedHours, setSelectedHours] = useState<string[]>([]);
   const [events, setEvents] = useState<EventType[]>([]);
   const [loadingHours, setLoadingHours] = useState(false);
+  const [calendarNotConfigured, setCalendarNotConfigured] = useState(false);
   const [reason, setReason] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -160,7 +162,7 @@ const AdminBlockSchedule: React.FC<BlockScheduleProps> = ({ onBack }) => {
     setLoadingHours(true);
     console.log(`🔍 Cargando eventos ocupados para: ${selectedDay}`);
     
-    fetch('/api/calendar', {
+    recordsFetch('/api/calendar', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'getEvents', date: selectedDay }),
@@ -193,7 +195,7 @@ const AdminBlockSchedule: React.FC<BlockScheduleProps> = ({ onBack }) => {
     try {
       console.log(`🔍 Cargando eventos detallados para: ${date}`);
       
-      const response = await fetch('/api/calendar', {
+      const response = await recordsFetch('/api/calendar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'getDayEvents', date }),
@@ -226,7 +228,7 @@ const AdminBlockSchedule: React.FC<BlockScheduleProps> = ({ onBack }) => {
     if (!confirmDelete) return;
 
     try {
-      const response = await fetch('/api/calendar', {
+      const response = await recordsFetch('/api/calendar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -247,7 +249,7 @@ const AdminBlockSchedule: React.FC<BlockScheduleProps> = ({ onBack }) => {
         loadDayEvents(selectedDay);
         
         // Recargar eventos ocupados para la validación de horas
-        const eventsResponse = await fetch('/api/calendar', {
+        const eventsResponse = await recordsFetch('/api/calendar', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'getEvents', date: selectedDay }),
@@ -287,13 +289,14 @@ const AdminBlockSchedule: React.FC<BlockScheduleProps> = ({ onBack }) => {
   // Cargar bloqueos existentes
   const loadExistingBlocks = async () => {
     try {
-      const response = await fetch('/api/calendar', {
+      const response = await recordsFetch('/api/calendar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'getBlockedSchedules' }),
       });
       const data = await response.json();
       
+      if (data.calendarNotConfigured) { setCalendarNotConfigured(true); return; }
       if (data.success) {
         setExistingBlocks(data.data.blocks || []);
       } else {
@@ -324,7 +327,7 @@ const AdminBlockSchedule: React.FC<BlockScheduleProps> = ({ onBack }) => {
 
     try {
       // Crear bloqueo en Google Calendar
-      const response = await fetch('/api/calendar', {
+      const response = await recordsFetch('/api/calendar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -402,7 +405,7 @@ const AdminBlockSchedule: React.FC<BlockScheduleProps> = ({ onBack }) => {
     try {
       const eventIds = block.events.map(event => event.id);
       
-      const response = await fetch('/api/calendar', {
+      const response = await recordsFetch('/api/calendar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -448,6 +451,22 @@ const AdminBlockSchedule: React.FC<BlockScheduleProps> = ({ onBack }) => {
   useEffect(() => {
     loadExistingBlocks();
   }, []);
+
+  if (calendarNotConfigured) {
+    return (
+      <section className="py-16 bg-gray-50 min-h-screen flex items-center justify-center">
+        <div className="max-w-md text-center bg-white rounded-3xl shadow-2xl p-10">
+          <button onClick={onBack} className="flex items-center gap-2 text-[#deb887] hover:text-[#d4a574] font-medium mb-6 mx-auto">
+            <ArrowLeft className="w-5 h-5" />
+            Volver
+          </button>
+          <CalendarDays className="w-16 h-16 text-amber-400 mx-auto mb-4" />
+          <h3 className="text-xl font-semibold text-gray-800 mb-2">Calendario no conectado</h3>
+          <p className="text-gray-500 text-sm">Esta clínica no tiene una cuenta de Gmail vinculada. Conecta Google Calendar desde el panel del Master Admin para poder bloquear horarios.</p>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <>

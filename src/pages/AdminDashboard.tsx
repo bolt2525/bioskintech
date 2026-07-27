@@ -25,6 +25,7 @@ import { useEffect, useState } from 'react';
 // Módulos y tipos de constants centralizados
 import { MODULE_LIST } from '../constants/features';
 import type { UpcomingAppointment } from '../types';
+import recordsFetch from '../utils/recordsFetch';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers de presentación (funciones puras)
@@ -119,7 +120,7 @@ export default function AdminDashboard() {
         const d = new Date(today);
         d.setDate(today.getDate() + i);
         try {
-          const res  = await fetch('/api/calendar', {
+          const res  = await recordsFetch('/api/calendar', {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
             body:    JSON.stringify({ action: 'getEvents', date: d.toISOString().split('T')[0] }),
