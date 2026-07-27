@@ -263,11 +263,13 @@ const AdminFinance = () => {
                 <DollarSign className="text-yellow-500" /> Finanzas & Facturas
               </h1>
               <p className="opacity-70">
-                {selectedUsers.size === 0
-                  ? 'Vista global de ingresos y egresos'
-                  : selectedUsers.size === 1
-                    ? `Finanzas de: ${financeUsers.find(u => u.username === Array.from(selectedUsers)[0])?.full_name ?? Array.from(selectedUsers)[0]}`
-                    : `${selectedUsers.size} usuarios seleccionados`
+                {user?.role === 'clinic_user'
+                  ? 'Mis registros de ingresos y egresos'
+                  : selectedUsers.size === 0
+                    ? 'Vista global de ingresos y egresos'
+                    : selectedUsers.size === 1
+                      ? `Finanzas de: ${financeUsers.find(u => u.username === Array.from(selectedUsers)[0])?.full_name ?? Array.from(selectedUsers)[0]}`
+                      : `${selectedUsers.size} usuarios seleccionados`
                 }
               </p>
             </div>
