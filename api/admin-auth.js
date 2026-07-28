@@ -915,7 +915,7 @@ export default async function handler(req, res) {
       'Radiofrecuencia','Hidratación Profunda','Depilación Láser',
       'Tratamiento Anti-Acné','Carboxiterapia','Otro'
     ];
-    const DEFAULT_FINANZAS    = { currency: 'USD', currency_symbol: '$', tax_percent: 12, invoice_prefix: 'INV', payment_methods: ['Efectivo','Transferencia','Tarjeta de crédito','Tarjeta de débito'], invoice_notes: '' };
+    const DEFAULT_FINANZAS    = { currency: 'USD', currency_symbol: '$', tax_percent: 15, invoice_prefix: 'INV', payment_methods: ['Efectivo','Transferencia','Tarjeta de crédito','Tarjeta de débito'], invoice_notes: '' };
     const DEFAULT_INVENTARIO  = { expiry_alert_days: 30, low_stock_alert: true, require_batch: true, categories: ['Toxinas','Rellenos','Skincare','Equipos','Consumibles','Medicamentos','Otros'] };
     const DEFAULT_NOTIFICACIONES = { appointment_confirmation: true, appointment_reminder: true, low_stock_notification: false, whatsapp_enabled: false, reminder_hours_before: 24 };
 

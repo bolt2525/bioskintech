@@ -100,6 +100,8 @@ const AdminFinance = () => {
   const [saving, setSaving] = useState(false);
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
   const [taxRate, setTaxRate] = useState(15); // % IVA desde settings de clínica
+  const [clinicTaxRate, setClinicTaxRate] = useState(15); // valor original inmutable del settings
+  const [taxRateEditing, setTaxRateEditing] = useState(false); // campo IVA editable en el form
   // Items del formulario nuevo
   const [newItems, setNewItems] = useState<FinanceItem[]>([]);
   const [showItems, setShowItems] = useState(false);
@@ -114,7 +116,7 @@ const AdminFinance = () => {
       headers: { Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken') || ''}` }
     }).then(r => r.json()).then(d => {
       const tp = d.settings?.finanzas?.tax_percent;
-      if (tp != null) setTaxRate(parseFloat(tp));
+      if (tp != null) { setTaxRate(parseFloat(tp)); setClinicTaxRate(parseFloat(tp)); }
     }).catch(() => {});
   }, [user?.clinic_id]);
   
@@ -517,8 +519,33 @@ const AdminFinance = () => {
                     </select>
                   </div>
                   <div className="flex-1">
-                    <label className="text-xs text-gray-500 mb-1 block">IVA % (clínica: {taxRate}%)</label>
-                    <input type="number" value={taxRate} onChange={e => setTaxRate(parseFloat(e.target.value) || 0)} min={0} max={100} step={0.5} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 outline-none" />
+                    <label className="text-xs text-gray-500 mb-1 block">IVA %</label>
+                    {!taxRateEditing ? (
+                      <div className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 border border-gray-200 rounded-lg cursor-pointer group"
+                        onClick={() => setTaxRateEditing(true)}
+                        title="Click para editar el IVA de este registro">
+                        <span className="text-sm text-gray-400 font-mono flex-1">{taxRate}%</span>
+                        <Edit2 size={12} className="text-gray-300 group-hover:text-yellow-500 transition-colors flex-shrink-0" />
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number" autoFocus
+                          value={taxRate}
+                          onChange={e => setTaxRate(parseFloat(e.target.value) || 0)}
+                          min={0} max={100} step={0.5}
+                          className="w-full px-3 py-2 border border-yellow-400 rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 outline-none font-mono"
+                          onBlur={() => setTaxRateEditing(false)}
+                          onKeyDown={e => e.key === 'Enter' && setTaxRateEditing(false)}
+                        />
+                        <button onClick={() => { setTaxRate(clinicTaxRate); setTaxRateEditing(false); }}
+                          title="Restaurar IVA de la clínica"
+                          className="p-1.5 text-gray-400 hover:text-gray-600 rounded">
+                          <X size={13}/>
+                        </button>
+                      </div>
+                    )}
+                    <p className="text-[10px] text-gray-400 mt-0.5">Por defecto: {clinicTaxRate}% (MasterAdmin)</p>
                   </div>
                 </div>
               </div>
@@ -1049,9 +1076,9 @@ interface ItemRowProps {
   onRemove: () => void;
 }
 const ItemRow = ({ item, taxRate, onChange, onRemove }: ItemRowProps) => {
+  const [ivaEditing, setIvaEditing] = useState(false);
   const update = (field: keyof FinanceItem, value: string) => {
     const partial = { ...item, [field]: parseFloat(value) || 0 };
-    // Recalcular siempre desde quantity, unit_price e iva_rate
     const qty     = field === 'quantity'   ? (parseFloat(value) || 1) : item.quantity;
     const uprice  = field === 'unit_price' ? (parseFloat(value) || 0) : item.unit_price;
     const ivaRate = field === 'iva_rate'   ? (parseFloat(value) || 0) : item.iva_rate;
@@ -1059,14 +1086,29 @@ const ItemRow = ({ item, taxRate, onChange, onRemove }: ItemRowProps) => {
     const tax      = parseFloat((subtotal * ivaRate / 100).toFixed(2));
     onChange({ ...partial, quantity: qty, unit_price: uprice, iva_rate: ivaRate, subtotal, tax, total: parseFloat((subtotal+tax).toFixed(2)) });
   };
-  const updateDesc = (desc: string) => onChange({ ...item, description: desc });
+  const isDefaultIva = item.iva_rate === taxRate;
   const cls = "px-2 py-1.5 border rounded-lg text-xs focus:ring-1 focus:ring-yellow-400 outline-none w-full";
   return (
     <div className="grid grid-cols-12 gap-1 items-center">
-      <input value={item.description} onChange={e => updateDesc(e.target.value)} placeholder="Descripción del ítem" className={`col-span-4 ${cls}`} />
+      <input value={item.description} onChange={e => onChange({ ...item, description: e.target.value })} placeholder="Descripción del ítem" className={`col-span-4 ${cls}`} />
       <input type="number" value={item.quantity}   onChange={e => update('quantity', e.target.value)}   step="0.01" min="0" className={`col-span-1 text-right ${cls}`} />
       <input type="number" value={item.unit_price} onChange={e => update('unit_price', e.target.value)} step="0.01" min="0" className={`col-span-2 text-right ${cls}`} />
-      <input type="number" value={item.iva_rate}   onChange={e => update('iva_rate', e.target.value)}   step="0.5"  min="0" max="100" className={`col-span-1 text-right ${cls}`} />
+      {/* IVA% — gris cuando es el default, editable al click */}
+      {!ivaEditing ? (
+        <div className={`col-span-1 flex items-center justify-between px-2 py-1.5 rounded-lg border cursor-pointer group ${isDefaultIva ? 'bg-gray-50 border-gray-200' : 'bg-yellow-50 border-yellow-300'}`}
+          onClick={() => setIvaEditing(true)} title="Click para editar IVA">
+          <span className={`text-xs font-mono ${isDefaultIva ? 'text-gray-400' : 'text-yellow-700 font-semibold'}`}>{item.iva_rate}%</span>
+          <Edit2 size={9} className="text-gray-300 group-hover:text-yellow-500 flex-shrink-0 ml-0.5" />
+        </div>
+      ) : (
+        <input type="number" autoFocus value={item.iva_rate}
+          onChange={e => update('iva_rate', e.target.value)}
+          onBlur={() => setIvaEditing(false)}
+          onKeyDown={e => { if (e.key === 'Enter') setIvaEditing(false); if (e.key === 'Escape') { update('iva_rate', String(taxRate)); setIvaEditing(false); }}}
+          step="0.5" min="0" max="100"
+          className={`col-span-1 text-right ${cls} border-yellow-400`}
+        />
+      )}
       <span className="col-span-2 text-right text-xs font-mono text-gray-500 pr-1">${item.subtotal.toFixed(2)}</span>
       <span className="col-span-1 text-right text-xs font-mono font-bold text-gray-800 pr-1">${item.total.toFixed(2)}</span>
       <button onClick={onRemove} className="col-span-1 text-red-300 hover:text-red-500 flex justify-center"><X size={14}/></button>
