@@ -4,11 +4,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Droplets, Plus, Save, Trash2, Printer, Copy,
   ChevronDown, ChevronUp, Box, Calendar,
-  FlaskConical, Crosshair, X, Check, Info, Images, Minus, Eye, EyeOff, Pencil, AlertCircle, Undo2
+  FlaskConical, Crosshair, X, Check, Info, Images, Minus, Eye, EyeOff, Pencil, AlertCircle, Undo2,
+  PenLine, Pentagon, Circle, Square, Pipette
 } from 'lucide-react';
 import { Tooltip } from '../../../../ui/Tooltip';
 import injectablesCatalog from '../../data/injectables.json';
-import Clinical3DViewer, { Marker3D, EditablePoint } from '../Clinical3DViewer';
+import Clinical3DViewer, { Marker3D, EditablePoint, FreehandLine, SurfaceShape, DrawingTool } from '../Clinical3DViewer';
 import type { ReferenceLine, LineType, ProjectedPosition } from '../Clinical3DViewer';
 import InjectableCaptureModal, { CaptureImage } from '../InjectableCaptureModal';
 import ReferenceLinePanel from '../ReferenceLinePanel';
@@ -48,6 +49,8 @@ interface InjectionPoint extends Marker3D {
   label: string;
   editablePointId?: string;
   injection_plane?: string;
+  /** Técnica aplicada en este punto específico (HA) */
+  technique_at_point?: string;
 }
 
 interface InjectablesTabProps {
@@ -80,6 +83,15 @@ const TERCIO_ZONES: Record<string, string[]> = {
   medio: zonasMedia,
   inferior: zonasInferior,
 };
+
+// Todas las zonas unificadas para HA (lista plana, buscable)
+const ALL_HA_ZONES = [
+  ...zonasSuperior.map(z => ({ z, area: 'superior' as const })),
+  ...zonasMedia.map(z => ({ z, area: 'medio' as const })),
+  ...zonasInferior.map(z => ({ z, area: 'inferior' as const })),
+];
+
+const HA_PLANES = ['Dérmico superficial', 'Dérmico medio', 'Dérmico profundo', 'Subcutáneo', 'Supraperióstico'];
 
 const TERCIO_COLORS: Record<string, { bg: string; border: string; text: string; badge: string; header: string }> = {
   superior: { bg: 'bg-[#deb887]/10', border: 'border-[#deb887]/40', text: 'text-[#b8944d]', badge: 'bg-[#deb887]/20 text-[#b8944d]', header: 'bg-[#deb887]/15 border-[#deb887]/30' },
@@ -202,6 +214,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   const [unitsModalZone, setUnitsModalZone] = useState('');
   const [unitsModalZoneFilter, setUnitsModalZoneFilter] = useState('');
   const [unitsModalPlane, setUnitsModalPlane] = useState('');
+  const [unitsModalTecnica, setUnitsModalTecnica] = useState(''); // HA: técnica puntual
   const [, setDialogPlane] = useState('');
   // Undo stack: snapshots of {injectionPoints, markers3D, editablePoints} before each mutation
   const [undoStack, setUndoStack] = useState<Array<{
@@ -219,6 +232,18 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   const moveUndoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // True while the form holds an unsaved duplicate (shows pending card in sidebar)
   const [isPendingDuplicate, setIsPendingDuplicate] = useState(false);
+
+  // ── Herramientas de dibujo libre (HA) ────────────────────────────────────
+  const [freehandLines, setFreehandLines] = useState<FreehandLine[]>([]);
+  const [surfaceShapes, setSurfaceShapes] = useState<SurfaceShape[]>([]);
+  const [activeTool, setActiveTool] = useState<DrawingTool>('none');
+  const [brushColor, setBrushColor] = useState('#8b5cf6');
+  const [brushThickness, setBrushThickness] = useState(1.0);
+  // Elemento seleccionado en el visor 3D para editar propiedades
+  const [selectedElement, setSelectedElement] = useState<{
+    id: string;
+    type: 'reference-line' | 'freehand' | 'shape';
+  } | null>(null);
 
   // Keep ref in sync with state to avoid closure issues in the RAF callback
   useEffect(() => { showUnitNumbersRef.current = showUnitNumbers; }, [showUnitNumbers]);
@@ -290,13 +315,20 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
         const rawEditablePoints = Array.isArray((parsed as any)?.editablePoints) ? (parsed as any).editablePoints : [];
         setEditablePoints(rawEditablePoints);
         setRefJsonLoaded(rawEditablePoints.length > 0);
-        if (points.length > 0 || rawLines.length > 0 || rawEditablePoints.length > 0) setShow3D(true);
+        // Restaurar freehand lines y shapes
+        const rawFreehand: FreehandLine[] = Array.isArray(parsed.freehandLines) ? parsed.freehandLines : [];
+        const rawShapes: SurfaceShape[] = Array.isArray(parsed.surfaceShapes) ? parsed.surfaceShapes : [];
+        setFreehandLines(rawFreehand);
+        setSurfaceShapes(rawShapes);
+        if (points.length > 0 || rawLines.length > 0 || rawEditablePoints.length > 0 || rawFreehand.length > 0 || rawShapes.length > 0) setShow3D(true);
       } catch {
         setInjectionPoints([]);
         setMarkers3D([]);
         setReferenceLines([]);
         setEditablePoints([]);
         setRefJsonLoaded(false);
+        setFreehandLines([]);
+        setSurfaceShapes([]);
       }
     } else {
       setInjectionPoints([]);
@@ -304,6 +336,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
       setReferenceLines([]);
       setEditablePoints([]);
       setRefJsonLoaded(false);
+      setFreehandLines([]);
+      setSurfaceShapes([]);
     }
   }, [current.id]);
 
@@ -339,6 +373,61 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   // HANDLERS
   // ==========================================
 
+  // ── HANDLERS: Dibujo libre y formas ─────────────────────────────────────
+
+  const handleFreehandComplete = useCallback((line: FreehandLine) => {
+    setFreehandLines(prev => [...prev, line]);
+  }, []);
+
+  const handleShapeComplete = useCallback((shape: SurfaceShape) => {
+    setSurfaceShapes(prev => [...prev, shape]);
+  }, []);
+
+  const handleElementSelected = useCallback((id: string | null, type: string | null) => {
+    if (!id) { setSelectedElement(null); return; }
+    setSelectedElement({ id, type: type as 'reference-line' | 'freehand' | 'shape' });
+  }, []);
+
+  const handleSelectedColor = (color: string) => {
+    if (!selectedElement) return;
+    if (selectedElement.type === 'reference-line')
+      setReferenceLines(prev => prev.map(l => l.id === selectedElement.id ? { ...l, color } : l));
+    else if (selectedElement.type === 'freehand')
+      setFreehandLines(prev => prev.map(l => l.id === selectedElement.id ? { ...l, color } : l));
+    else
+      setSurfaceShapes(prev => prev.map(s => s.id === selectedElement.id ? { ...s, color } : s));
+  };
+
+  const handleSelectedThickness = (thickness: number) => {
+    if (!selectedElement) return;
+    if (selectedElement.type === 'reference-line')
+      setReferenceLines(prev => prev.map(l => l.id === selectedElement.id ? { ...l, thickness } : l));
+    else if (selectedElement.type === 'freehand')
+      setFreehandLines(prev => prev.map(l => l.id === selectedElement.id ? { ...l, thickness } : l));
+    else
+      setSurfaceShapes(prev => prev.map(s => s.id === selectedElement.id ? { ...s, thickness } : s));
+  };
+
+  const handleDeleteSelected = () => {
+    if (!selectedElement) return;
+    if (selectedElement.type === 'reference-line')
+      setReferenceLines(prev => prev.filter(l => l.id !== selectedElement.id));
+    else if (selectedElement.type === 'freehand')
+      setFreehandLines(prev => prev.filter(l => l.id !== selectedElement.id));
+    else
+      setSurfaceShapes(prev => prev.filter(s => s.id !== selectedElement.id));
+    setSelectedElement(null);
+  };
+
+  // Propiedad del elemento actualmente seleccionado (para el panel flotante)
+  const selectedElementData = selectedElement
+    ? selectedElement.type === 'reference-line'
+      ? referenceLines.find(l => l.id === selectedElement.id)
+      : selectedElement.type === 'freehand'
+        ? freehandLines.find(l => l.id === selectedElement.id)
+        : surfaceShapes.find(s => s.id === selectedElement.id)
+    : null;
+
   const handleSave = async () => {
     if (!current.product_name.trim()) {
       setMessage({ type: 'error', text: 'El nombre del producto es obligatorio' });
@@ -349,10 +438,11 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
       const action = current.id ? 'updateInjectable' : 'addInjectable';
       const derivedAreas = [...new Set(injectionPoints.map(p => p.label).filter(Boolean))];
 
-      // Nuevo formato de mapping_data: incluye referenceLines y editablePoints para persistencia
-      const hasData = injectionPoints.length > 0 || referenceLines.length > 0 || editablePoints.length > 0;
+      // Nuevo formato de mapping_data: incluye referenceLines, editablePoints, freehandLines y surfaceShapes
+      const hasData = injectionPoints.length > 0 || referenceLines.length > 0 || editablePoints.length > 0
+        || freehandLines.length > 0 || surfaceShapes.length > 0;
       const mappingData = hasData
-        ? { injectionPoints, referenceLines, editablePoints }
+        ? { injectionPoints, referenceLines, editablePoints, freehandLines, surfaceShapes }
         : null;
 
       const payload = {
@@ -419,10 +509,15 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     setUnitsModalZone('');
     setUnitsModalZoneFilter('');
     setUnitsModalPlane('');
+    setUnitsModalTecnica('');
     setDialogPlane('');
     setUndoStack([]);
     setShowClearConfirm(false);
     setIsPendingDuplicate(false);
+    setFreehandLines([]);
+    setSurfaceShapes([]);
+    setActiveTool('none');
+    setSelectedElement(null);
   };
 
   // ── pushUndo: snapshot before any point mutation ───────────────────────
@@ -750,8 +845,9 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
         units,
         label: effectiveLabel,
         editablePointId: newEp.id,
-        // Plano solo si el usuario lo seleccionó en Siguiente → paso 4
+        // Plano y técnica si los seleccionó el usuario
         ...(unitsModalPlane ? { injection_plane: unitsModalPlane } : {}),
+        ...(unitsModalTecnica ? { technique_at_point: unitsModalTecnica } : {}),
       };
       setInjectionPoints(prev => [...prev, newPoint]);
       setPendingFreePoint(null);
@@ -768,7 +864,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
       const newPoint: InjectionPoint = {
         id: existing?.id,
         type: 'Puntual' as const,
-        pathologyId: 'botox',
+        pathologyId: activeType === 'relleno' ? 'filler' : 'botox',
         position: { x: pt.x, y: pt.y, z: pt.z },
         rotation: [0, 0, 0],
         normal: { x: 0, y: 0, z: 1 },
@@ -779,6 +875,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
         label: effectiveLabel,
         editablePointId: unitsModal.pointId,
         ...(unitsModalPlane ? { injection_plane: unitsModalPlane } : {}),
+        ...(unitsModalTecnica ? { technique_at_point: unitsModalTecnica } : {}),
       };
 
       if (existingIdx >= 0) {
@@ -795,6 +892,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     setUnitsModalZone('');
     setUnitsModalZoneFilter('');
     setUnitsModalPlane('');
+    setUnitsModalTecnica('');
     setSelectedPointId(null);
   };
 
@@ -1676,8 +1774,151 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
               {/* ── SIN tabs — la vista es siempre de marcación ── */}
 
               <div ref={viewerRef} className="p-4">
-                {/* Toolbar: Trazado de Referencia Superior */}
+                {/* ── Toolbar secundaria: Herramientas de Dibujo HA ─────────────── */}
+                <div className="mb-2 flex flex-wrap items-center gap-1.5 p-2 bg-slate-900/70 rounded-xl border border-slate-700">
+                  <span className="text-[10px] text-slate-500 uppercase tracking-wide font-semibold mr-1">Herramienta:</span>
+                  {/* Punto de inyección */}
+                  <Tooltip content="Punto de inyección (clic en modelo)">
+                    <button
+                      onClick={() => { setActiveTool('none'); setPointMode(prev => prev === 'add' ? 'none' : 'add'); }}
+                      className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-all ${
+                        pointMode === 'add' && activeTool === 'none'
+                          ? 'bg-violet-500/25 text-violet-300 border-violet-500/50'
+                          : 'bg-slate-700/50 text-slate-400 border-slate-600 hover:bg-slate-700'
+                      }`}
+                    >
+                      <Pipette className="w-3 h-3" />
+                      Punto
+                    </button>
+                  </Tooltip>
+
+                  {/* Pincel libre */}
+                  <Tooltip content="Pincel: mantener y arrastrar para trazar una línea sobre la piel">
+                    <button
+                      onClick={() => { setActiveTool(activeTool === 'freehand-brush' ? 'none' : 'freehand-brush'); setPointMode('none'); }}
+                      className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-all ${
+                        activeTool === 'freehand-brush'
+                          ? 'bg-violet-500/25 text-violet-300 border-violet-500/50'
+                          : 'bg-slate-700/50 text-slate-400 border-slate-600 hover:bg-slate-700'
+                      }`}
+                    >
+                      <PenLine className="w-3 h-3" />
+                      Pincel
+                    </button>
+                  </Tooltip>
+
+                  {/* Polilínea */}
+                  <Tooltip content="Polilínea: clic por vértice, doble-clic para finalizar">
+                    <button
+                      onClick={() => { setActiveTool(activeTool === 'freehand-poly' ? 'none' : 'freehand-poly'); setPointMode('none'); }}
+                      className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-all ${
+                        activeTool === 'freehand-poly'
+                          ? 'bg-violet-500/25 text-violet-300 border-violet-500/50'
+                          : 'bg-slate-700/50 text-slate-400 border-slate-600 hover:bg-slate-700'
+                      }`}
+                    >
+                      <Pentagon className="w-3 h-3" />
+                      Polilínea
+                    </button>
+                  </Tooltip>
+
+                  {/* Círculo */}
+                  <Tooltip content="Círculo: clic+arrastrar para definir radio sobre la piel">
+                    <button
+                      onClick={() => { setActiveTool(activeTool === 'shape-circle' ? 'none' : 'shape-circle'); setPointMode('none'); }}
+                      className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-all ${
+                        activeTool === 'shape-circle'
+                          ? 'bg-violet-500/25 text-violet-300 border-violet-500/50'
+                          : 'bg-slate-700/50 text-slate-400 border-slate-600 hover:bg-slate-700'
+                      }`}
+                    >
+                      <Circle className="w-3 h-3" />
+                      Círculo
+                    </button>
+                  </Tooltip>
+
+                  {/* Rectángulo */}
+                  <Tooltip content="Rectángulo: clic+arrastrar para definir tamaño sobre la piel">
+                    <button
+                      onClick={() => { setActiveTool(activeTool === 'shape-rect' ? 'none' : 'shape-rect'); setPointMode('none'); }}
+                      className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-all ${
+                        activeTool === 'shape-rect'
+                          ? 'bg-violet-500/25 text-violet-300 border-violet-500/50'
+                          : 'bg-slate-700/50 text-slate-400 border-slate-600 hover:bg-slate-700'
+                      }`}
+                    >
+                      <Square className="w-3 h-3" />
+                      Rect.
+                    </button>
+                  </Tooltip>
+
+                  <div className="w-px h-5 bg-slate-700 mx-1" />
+
+                  {/* Color del pincel */}
+                  <Tooltip content="Color para nuevas líneas y formas">
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <span className="text-[10px] text-slate-400">Color</span>
+                      <div className="relative">
+                        <div
+                          className="w-5 h-5 rounded border border-slate-500 cursor-pointer"
+                          style={{ backgroundColor: brushColor }}
+                        />
+                        <input
+                          type="color"
+                          className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                          value={brushColor}
+                          onChange={e => setBrushColor(e.target.value)}
+                        />
+                      </div>
+                    </label>
+                  </Tooltip>
+
+                  {/* Grosor del pincel */}
+                  <Tooltip content="Grosor de las líneas y formas">
+                    <label className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-slate-400">Grosor</span>
+                      <input
+                        type="range"
+                        min={0.5}
+                        max={3}
+                        step={0.1}
+                        value={brushThickness}
+                        onChange={e => setBrushThickness(Number(e.target.value))}
+                        className="w-16 accent-violet-400"
+                      />
+                      <span className="text-[10px] text-slate-500 w-5">{brushThickness.toFixed(1)}x</span>
+                    </label>
+                  </Tooltip>
+
+                  {/* Indicador herramienta activa */}
+                  {activeTool !== 'none' && (
+                    <div className="ml-auto flex items-center gap-2">
+                      <span className="text-[10px] text-violet-400 font-semibold animate-pulse">
+                        {activeTool === 'freehand-brush' && '● Dibujando (mantener+arrastrar)'}
+                        {activeTool === 'freehand-poly' && '● Polilínea (clic · doble-clic para finalizar)'}
+                        {activeTool === 'shape-circle' && '● Círculo (clic+arrastrar)'}
+                        {activeTool === 'shape-rect' && '● Rectángulo (clic+arrastrar)'}
+                      </span>
+                      <button
+                        onClick={() => setActiveTool('none')}
+                        className="text-[10px] text-slate-400 hover:text-white border border-slate-600 px-1.5 py-0.5 rounded"
+                      >Cancelar</button>
+                    </div>
+                  )}
+                  {/* Contadores de elementos */}
+                  {(freehandLines.length > 0 || surfaceShapes.length > 0) && activeTool === 'none' && (
+                    <span className="ml-auto text-[10px] text-violet-400">
+                      {freehandLines.length > 0 && `${freehandLines.length} línea(s)`}
+                      {freehandLines.length > 0 && surfaceShapes.length > 0 && ' · '}
+                      {surfaceShapes.length > 0 && `${surfaceShapes.length} forma(s)`}
+                    </span>
+                  )}
+                </div>
+
+                {/* Toolbar: Trazado de Referencia Superior (solo para toxina) */}
                 <div className="mb-3 flex flex-wrap items-center gap-2 p-3 bg-slate-800/60 rounded-xl border border-slate-700">
+                  {/* Botón Cargar Trazado: solo para toxina */}
+                  {activeType === 'toxina' && (
                   <button
                     onClick={handleLoadReferenceJson}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
@@ -1690,6 +1931,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     <Crosshair className="w-3.5 h-3.5" />
                     {refJsonLoaded ? 'Trazado cargado ✓' : 'Cargar Trazado Superior'}
                   </button>
+                  )}
 
                   {refJsonLoaded && (
                     <>
@@ -1840,14 +2082,103 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                         height="420px"
                         editablePoints={editablePoints}
                         showEditablePoints={showEditablePoints}
-                        pointMode={pointMode}
+                        pointMode={activeTool === 'none' ? pointMode : 'none'}
                         onEditablePointMoved={handleEditablePointMoved}
                         onEditablePointDeleted={handleEditablePointDeleted}
                         onEditablePointClicked={handleEditablePointClicked}
                         onProjectedPositions={handleProjectedPositions}
                         tercioBoundaries={showBoundaryLines ? tercioBoundaries : null}
                         selectedPointId={selectedPointId ?? undefined}
+                        freehandLines={freehandLines}
+                        surfaceShapes={surfaceShapes}
+                        activeTool={activeTool}
+                        selectedElementId={selectedElement?.id ?? null}
+                        pendingBrushColor={brushColor}
+                        pendingBrushThickness={brushThickness}
+                        onFreehandLineComplete={handleFreehandComplete}
+                        onShapeComplete={handleShapeComplete}
+                        onElementSelected={handleElementSelected}
                       />
+
+                      {/* ── Panel flotante de propiedades del elemento seleccionado ── */}
+                      {selectedElement && selectedElementData && (
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.95, y: -4 }}
+                          animate={{ opacity: 1, scale: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: 0.95 }}
+                          className="absolute top-2 right-2 z-30 bg-slate-800/95 backdrop-blur-sm border border-slate-600 rounded-xl p-3 shadow-2xl w-52"
+                        >
+                          <div className="flex items-center justify-between mb-2.5">
+                            <span className="text-[11px] font-semibold text-slate-200 uppercase tracking-wide">
+                              {selectedElement.type === 'reference-line' ? 'Línea de ref.' : selectedElement.type === 'freehand' ? 'Línea libre' : 'Forma'}
+                            </span>
+                            <button
+                              onClick={() => setSelectedElement(null)}
+                              className="text-slate-400 hover:text-white"
+                            ><X className="w-3.5 h-3.5" /></button>
+                          </div>
+                          {/* Color */}
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-[10px] text-slate-400">Color</span>
+                            <div className="relative">
+                              <div
+                                className="w-6 h-6 rounded border border-slate-500 cursor-pointer"
+                                style={{ backgroundColor: (selectedElementData as any).color || '#ffffff' }}
+                              />
+                              <input
+                                type="color"
+                                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                                value={(selectedElementData as any).color || '#ffffff'}
+                                onChange={e => handleSelectedColor(e.target.value)}
+                              />
+                            </div>
+                          </div>
+                          {/* Grosor */}
+                          <div className="mb-2">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-[10px] text-slate-400">Grosor</span>
+                              <span className="text-[10px] text-slate-500">{((selectedElementData as any).thickness || 1).toFixed(1)}x</span>
+                            </div>
+                            <input
+                              type="range"
+                              min={0.5}
+                              max={3}
+                              step={0.1}
+                              value={(selectedElementData as any).thickness || 1}
+                              onChange={e => handleSelectedThickness(Number(e.target.value))}
+                              className="w-full accent-violet-400"
+                            />
+                          </div>
+                          {/* Offset solo para reference-lines */}
+                          {selectedElement.type === 'reference-line' && (
+                            <div className="mb-2">
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-[10px] text-slate-400">Offset</span>
+                                <span className="text-[10px] text-slate-500">{((selectedElementData as any).offset || 0).toFixed(2)}</span>
+                              </div>
+                              <input
+                                type="range"
+                                min={-3}
+                                max={3}
+                                step={0.05}
+                                value={(selectedElementData as any).offset || 0}
+                                onChange={e => handleLineOffsetChange(selectedElement.id, Number(e.target.value))}
+                                className="w-full accent-yellow-400"
+                              />
+                            </div>
+                          )}
+                          {/* Nota: reference-lines no se pueden hacer continuas */}
+                          {selectedElement.type === 'reference-line' && (selectedElementData as any).dashed && (
+                            <p className="text-[9px] text-slate-500 italic mb-2">Tipo: entrecortada (fija)</p>
+                          )}
+                          <button
+                            onClick={handleDeleteSelected}
+                            className="w-full text-[11px] text-red-400 hover:text-red-300 border border-red-500/30 hover:border-red-400/50 rounded-lg py-1 transition-colors"
+                          >
+                            Eliminar elemento
+                          </button>
+                        </motion.div>
+                      )}
 
                       {/* Unit numbers overlay */}
                       <div
@@ -2113,15 +2444,15 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
               <div className="flex items-start justify-between mb-3">
                 <div>
                   <h3 className="text-sm font-bold text-gray-800">
-                    {unitsModalStep === 1 ? 'Registrar inyección' :
-                     unitsModalStep === 2 ? 'Seleccionar tercio' :
-                     unitsModalStep === 3 ? 'Seleccionar zona' :
-                     'Plano de inyección'}
+                    {current.product_type === 'relleno'
+                      ? (unitsModalStep === 1 ? 'Zona anatómica' : unitsModalStep === 2 ? 'Técnica y plano' : 'Volumen (ml)')
+                      : (unitsModalStep === 1 ? 'Registrar inyección' : unitsModalStep === 2 ? 'Seleccionar tercio' : unitsModalStep === 3 ? 'Seleccionar zona' : 'Plano de inyección')
+                    }
                   </h3>
                   <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{unitsModal.pointName}</p>
                 </div>
                 <button
-                  onClick={() => { setPendingFreePoint(null); setSelectedPointId(null); setUnitsModal(null); setUnitsModalInput(''); setUnitsModalStep(1); setUnitsModalTercio(''); setUnitsModalZone(''); setUnitsModalPlane(''); setUnitsModalZoneFilter(''); }}
+                  onClick={() => { setPendingFreePoint(null); setSelectedPointId(null); setUnitsModal(null); setUnitsModalInput(''); setUnitsModalStep(1); setUnitsModalTercio(''); setUnitsModalZone(''); setUnitsModalPlane(''); setUnitsModalZoneFilter(''); setUnitsModalTecnica(''); }}
                   className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
                 >
                   <X className="w-4 h-4" />
@@ -2130,13 +2461,121 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
 
               {/* Step progress bar */}
               <div className="flex gap-1 mb-4">
-                {[1, 2, 3, 4].map(s => (
+                {(current.product_type === 'relleno' ? [1, 2, 3] : [1, 2, 3, 4]).map(s => (
                   <div key={s} className={`h-1 flex-1 rounded-full transition-colors ${s <= unitsModalStep ? 'bg-[#deb887]' : 'bg-gray-200'}`} />
                 ))}
               </div>
 
+              {/* ═══════════════════════════════════════════════
+                  FLUJO RELLENO HA (3 pasos)
+              ═══════════════════════════════════════════════ */}
+              {current.product_type === 'relleno' && unitsModalStep === 1 && (
+                <div className="mb-4">
+                  <p className="text-[10px] text-gray-400 mb-2">Selecciona la zona anatómica tratada</p>
+                  <input
+                    type="text"
+                    autoFocus
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-violet-300 outline-none mb-2"
+                    placeholder="Buscar zona..."
+                    value={unitsModalZoneFilter}
+                    onChange={e => setUnitsModalZoneFilter(e.target.value)}
+                  />
+                  <div className="flex flex-wrap gap-1.5 max-h-44 overflow-y-auto">
+                    {ALL_HA_ZONES
+                      .filter(({ z }) => !unitsModalZoneFilter || z.toLowerCase().includes(unitsModalZoneFilter.toLowerCase()))
+                      .map(({ z, area }) => (
+                        <button
+                          key={z}
+                          onClick={() => { setUnitsModalZone(z); setUnitsModalTercio(area); }}
+                          className={`px-2.5 py-1.5 rounded-lg text-[11px] font-medium border transition-all ${
+                            unitsModalZone === z
+                              ? 'bg-violet-100 border-violet-400 text-violet-800 shadow-sm'
+                              : 'bg-white border-gray-200 text-gray-600 hover:border-violet-200 hover:bg-violet-50'
+                          }`}
+                        >
+                          {z}
+                        </button>
+                      ))}
+                    {unitsModalZoneFilter.trim() && !ALL_HA_ZONES.find(({ z }) => z === unitsModalZoneFilter.trim()) && (
+                      <button
+                        onClick={() => { setUnitsModalZone(unitsModalZoneFilter.trim()); }}
+                        className="px-2.5 py-1.5 rounded-lg text-[11px] font-medium border bg-violet-50 border-violet-300 text-violet-700"
+                      >
+                        Usar &quot;{unitsModalZoneFilter.trim()}&quot; →
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {current.product_type === 'relleno' && unitsModalStep === 2 && (
+                <div className="mb-4 space-y-3">
+                  <div>
+                    <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Técnica de inyección</p>
+                    <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+                      {techniques.map(t => (
+                        <button
+                          key={t}
+                          onClick={() => setUnitsModalTecnica(prev => prev === t ? '' : t)}
+                          className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition-all ${
+                            unitsModalTecnica === t
+                              ? 'bg-violet-100 border-violet-400 text-violet-800'
+                              : 'bg-white border-gray-200 text-gray-600 hover:border-violet-200'
+                          }`}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Plano de inyección</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {HA_PLANES.map(p => (
+                        <button
+                          key={p}
+                          onClick={() => setUnitsModalPlane(prev => prev === p ? '' : p)}
+                          className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition-all ${
+                            unitsModalPlane === p
+                              ? 'bg-[#deb887]/20 border-[#deb887] text-[#b8944d]'
+                              : 'bg-white border-gray-200 text-gray-600 hover:border-[#deb887]/50'
+                          }`}
+                        >
+                          {p}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {current.product_type === 'relleno' && unitsModalStep === 3 && (
+                <div className="mb-4">
+                  <div className="flex flex-wrap gap-1 mb-3 p-2 bg-violet-50 rounded-lg">
+                    {unitsModalZone && <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 font-semibold">{unitsModalZone}</span>}
+                    {unitsModalTecnica && <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-semibold">{unitsModalTecnica}</span>}
+                    {unitsModalPlane && <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#deb887]/15 text-[#b8944d] font-semibold">{unitsModalPlane}</span>}
+                  </div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Volumen (ml)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    value={unitsModalInput}
+                    onChange={e => setUnitsModalInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleUnitsModalConfirm(); }}
+                    autoFocus
+                    className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300 text-center font-bold text-lg text-gray-800"
+                    placeholder="0.0"
+                  />
+                </div>
+              )}
+
+              {/* ═══════════════════════════════════════════════
+                  FLUJO TOXINA (4 pasos — sin cambios)
+              ═══════════════════════════════════════════════ */}
               {/* Step 1: Units */}
-              {unitsModalStep === 1 && (
+              {current.product_type === 'toxina' && unitsModalStep === 1 && (
                 <div className="mb-4">
                   {(unitsModalTercio || unitsModalZone || unitsModalPlane) && (
                     <div className="flex flex-wrap gap-1 mb-3 p-2 bg-gray-50 rounded-lg">
@@ -2167,8 +2606,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 </div>
               )}
 
-              {/* Step 2: Tercio */}
-              {unitsModalStep === 2 && (
+              {/* Step 2: Tercio (toxina) */}
+              {current.product_type === 'toxina' && unitsModalStep === 2 && (
                 <div className="mb-4 space-y-2">
                   {(['superior', 'medio', 'inferior'] as const).map(t => (
                     <button
@@ -2188,8 +2627,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 </div>
               )}
 
-              {/* Step 3: Zone */}
-              {unitsModalStep === 3 && unitsModalTercio && (
+              {/* Step 3: Zone (toxina) */}
+              {current.product_type === 'toxina' && unitsModalStep === 3 && unitsModalTercio && (
                 <div className="mb-4">
                   <p className={`text-[10px] font-bold uppercase tracking-wider mb-2 ${TERCIO_COLORS[unitsModalTercio].text}`}>
                     {TERCIO_LABELS[unitsModalTercio]}
@@ -2230,8 +2669,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 </div>
               )}
 
-              {/* Step 4: Injection Plane */}
-              {unitsModalStep === 4 && (
+              {/* Step 4: Injection Plane (toxina) */}
+              {current.product_type === 'toxina' && unitsModalStep === 4 && (
                 <div className="mb-4">
                   <p className="text-xs text-gray-400 mb-2">Selecciona el plano de inyección (opcional).</p>
                   <div className="flex flex-wrap gap-1.5 max-h-44 overflow-y-auto">
@@ -2253,7 +2692,6 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 {/* Fila secundaria: Eliminar + Cancelar (solo paso 1) */}
                 {unitsModalStep === 1 && (
                   <div className="flex gap-2">
-                    {/* Eliminar — solo para puntos ya existentes */}
                     {!unitsModal.isNewPoint && (
                       <button
                         onClick={() => {
@@ -2265,6 +2703,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                           setUnitsModalTercio('');
                           setUnitsModalZone('');
                           setUnitsModalPlane('');
+                          setUnitsModalTecnica('');
                         }}
                         className="px-3 py-2.5 rounded-xl border border-red-200 text-red-500 text-sm font-semibold hover:bg-red-50 transition-colors flex items-center gap-1"
                         title="Eliminar punto"
@@ -2273,7 +2712,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                       </button>
                     )}
                     <button
-                      onClick={() => { setPendingFreePoint(null); setSelectedPointId(null); setUnitsModal(null); setUnitsModalInput(''); setUnitsModalStep(1); setUnitsModalTercio(''); setUnitsModalZone(''); setUnitsModalPlane(''); setUnitsModalZoneFilter(''); }}
+                      onClick={() => { setPendingFreePoint(null); setSelectedPointId(null); setUnitsModal(null); setUnitsModalInput(''); setUnitsModalStep(1); setUnitsModalTercio(''); setUnitsModalZone(''); setUnitsModalPlane(''); setUnitsModalZoneFilter(''); setUnitsModalTecnica(''); }}
                       className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50 transition-colors"
                     >
                       Cancelar
@@ -2281,9 +2720,9 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                   </div>
                 )}
 
-                {/* Fila principal: Volver (pasos 2-4) + Guardar + Siguiente (pasos 1-3) */}
+                {/* Fila principal: Volver + Guardar + Siguiente */}
                 <div className="flex gap-2">
-                  {/* Volver — pasos 2-4 */}
+                  {/* Volver — pasos 2+ */}
                   {unitsModalStep > 1 && (
                     <button
                       onClick={() => setUnitsModalStep(prev => (prev - 1) as 1 | 2 | 3 | 4)}
@@ -2293,18 +2732,40 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     </button>
                   )}
 
-                  {/* Guardar — siempre disponible */}
-                  <button
-                    onClick={handleUnitsModalConfirm}
-                    disabled={!unitsModalInput || Number(unitsModalInput) <= 0}
-                    className="flex-1 px-4 py-2.5 rounded-xl bg-[#deb887] text-white text-sm font-semibold hover:bg-[#c5a075] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
-                  >
-                    <Check className="w-4 h-4" />
-                    Guardar
-                  </button>
+                  {/* Guardar — en el último paso */}
+                  {(
+                    (current.product_type === 'relleno' && unitsModalStep === 3) ||
+                    (current.product_type === 'toxina' && (unitsModalStep === 1 || unitsModalStep === 4))
+                  ) && (
+                    <button
+                      onClick={handleUnitsModalConfirm}
+                      disabled={current.product_type === 'relleno'
+                        ? (!unitsModalInput || Number(unitsModalInput) <= 0)
+                        : (!unitsModalInput || Number(unitsModalInput) <= 0)}
+                      className="flex-1 px-4 py-2.5 rounded-xl bg-[#deb887] text-white text-sm font-semibold hover:bg-[#c5a075] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+                    >
+                      <Check className="w-4 h-4" />
+                      Guardar
+                    </button>
+                  )}
 
-                  {/* Siguiente — pasos 1-3 */}
-                  {unitsModalStep < 4 && (
+                  {/* Siguiente — relleno HA pasos 1 y 2 */}
+                  {current.product_type === 'relleno' && unitsModalStep < 3 && (
+                    <button
+                      onClick={() => {
+                        if (unitsModalStep === 1 && !unitsModalZone) return;
+                        setUnitsModalStep(prev => (prev + 1) as 2 | 3 | 4);
+                        setUnitsModalZoneFilter('');
+                      }}
+                      disabled={unitsModalStep === 1 && !unitsModalZone}
+                      className="flex-1 px-4 py-2.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-semibold hover:bg-gray-200 transition-colors disabled:opacity-40 flex items-center justify-center gap-1"
+                    >
+                      Siguiente →
+                    </button>
+                  )}
+
+                  {/* Siguiente — toxina pasos 1-3 */}
+                  {current.product_type === 'toxina' && unitsModalStep > 1 && unitsModalStep < 4 && (
                     <button
                       onClick={() => {
                         if (unitsModalStep === 2 && !unitsModalTercio) return;
@@ -2315,6 +2776,16 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                       className="flex-1 px-4 py-2.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-semibold hover:bg-gray-200 transition-colors disabled:opacity-40 flex items-center justify-center gap-1"
                     >
                       Siguiente →
+                    </button>
+                  )}
+
+                  {/* Toxina paso 1: botones Guardar + Siguiente (mantiene comportamiento actual) */}
+                  {current.product_type === 'toxina' && unitsModalStep === 1 && (
+                    <button
+                      onClick={() => { setUnitsModalStep(2); setUnitsModalZoneFilter(''); }}
+                      className="flex-1 px-4 py-2.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-semibold hover:bg-gray-200 transition-colors flex items-center justify-center gap-1"
+                    >
+                      + Clasificar →
                     </button>
                   )}
                 </div>

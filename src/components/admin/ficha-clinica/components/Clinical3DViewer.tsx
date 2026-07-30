@@ -65,6 +65,152 @@ export interface ProjectedPosition {
   y: number;
 }
 
+// ==========================================
+// NUEVOS TIPOS: HERRAMIENTAS HA
+// ==========================================
+
+export interface FreehandLine {
+  id: string;
+  /** Puntos 3D que forman la trayectoria (sobre la superficie del modelo) */
+  points: { x: number; y: number; z: number }[];
+  color: string;
+  /** Grosor relativo: 1.0 = radio base 0.003 */
+  thickness: number;
+  label?: string;
+}
+
+export interface SurfaceShape {
+  id: string;
+  shapeType: 'circle' | 'rectangle';
+  center: { x: number; y: number; z: number };
+  normal: { x: number; y: number; z: number };
+  /** Para círculos: radio en unidades del modelo */
+  radius?: number;
+  /** Para rectángulos: ancho y alto en unidades del modelo */
+  width?: number;
+  height?: number;
+  /** Tangente para orientar rectángulos en el plano de la superficie */
+  tangent?: { x: number; y: number; z: number };
+  color: string;
+  opacity: number;
+  thickness: number;
+  label?: string;
+}
+
+export type DrawingTool =
+  | 'none'
+  | 'freehand-brush'   // mantener+arrastrar para pintar
+  | 'freehand-poly'    // clic por vértice, doble-clic para cerrar
+  | 'shape-circle'     // clic+arrastrar para definir radio
+  | 'shape-rect';      // clic+arrastrar para definir tamaño
+
+// ==========================================
+// HELPERS DE MÓDULO (reutilizados en varios useEffects)
+// ==========================================
+
+/** Interpolación lineal de Z sobre concavidades profundas (cuencas oculares). */
+const bridgeZ = (pts: THREE.Vector3[], threshold = 0.30): THREE.Vector3[] => {
+  if (pts.length < 4) return pts;
+  const out = pts.map(p => p.clone());
+  let i = 1;
+  while (i < out.length) {
+    const zEntry = out[i - 1].z;
+    if (zEntry - out[i].z > threshold) {
+      let j = i + 1;
+      while (j < out.length && out[j].z < zEntry - threshold * 0.5) j++;
+      const exitIdx = Math.min(j, out.length - 1);
+      const span = exitIdx - (i - 1);
+      const zExit = out[exitIdx].z;
+      for (let k = i; k < exitIdx; k++) {
+        const t = (k - (i - 1)) / span;
+        out[k].z = zEntry + t * (zExit - zEntry);
+      }
+      i = exitIdx + 1;
+    } else {
+      i++;
+    }
+  }
+  return out;
+};
+
+/**
+ * Crea un tubo 3D (TubeGeometry) o serie de esferas (dashed) que sigue los puntos dados.
+ * Función pura — no usa ningún ref/closure.
+ */
+const buildSurfaceTube = (
+  pts: THREE.Vector3[],
+  color: THREE.Color,
+  opacity = 1.0,
+  radius = 0.003,
+  dashed = false
+): THREE.Group => {
+  const grp = new THREE.Group();
+  grp.renderOrder = 999;
+  if (pts.length < 2) return grp;
+
+  if (dashed) {
+    const SPACING = 0.040;
+    const DOT_R = radius * 1.5;
+    const HALO_R = radius * 3;
+    let acc = 0;
+    for (let i = 1; i < pts.length; i++) {
+      const seg = pts[i].distanceTo(pts[i - 1]);
+      acc += seg;
+      if (acc >= SPACING) {
+        acc = 0;
+        const haloGeo = new THREE.SphereGeometry(HALO_R, 6, 6);
+        const haloMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.35 * opacity, depthTest: false, depthWrite: false });
+        const halo = new THREE.Mesh(haloGeo, haloMat);
+        halo.position.copy(pts[i]);
+        halo.renderOrder = 999;
+        grp.add(halo);
+        const dotGeo = new THREE.SphereGeometry(DOT_R, 6, 6);
+        const dotMat = new THREE.MeshBasicMaterial({ color, depthTest: false, depthWrite: false, transparent: true, opacity });
+        const dot = new THREE.Mesh(dotGeo, dotMat);
+        dot.position.copy(pts[i]);
+        dot.renderOrder = 1000;
+        grp.add(dot);
+      }
+    }
+  } else {
+    const curve = new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.5);
+    const tubeGeo = new THREE.TubeGeometry(curve, Math.max(pts.length * 2, 60), radius, 6, false);
+    const tubeMat = new THREE.MeshBasicMaterial({ color, depthTest: false, depthWrite: false, transparent: true, opacity });
+    const mesh = new THREE.Mesh(tubeGeo, tubeMat);
+    mesh.renderOrder = 999;
+    grp.add(mesh);
+  }
+  return grp;
+};
+
+/**
+ * Barre la superficie del modelo en un eje fijo (X o Y) para obtener puntos de superficie.
+ * Requiere una referencia al mesh y un raycaster ya creado.
+ */
+const sweepAxis = (
+  faceMesh: THREE.Object3D,
+  rc: THREE.Raycaster,
+  axisFixed: 'x' | 'y',
+  fixedValue: number,
+  otherMin: number,
+  otherMax: number,
+  steps = 60
+): THREE.Vector3[] => {
+  const points: THREE.Vector3[] = [];
+  const dir = new THREE.Vector3(0, 0, -1);
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const other = otherMin + t * (otherMax - otherMin);
+    const origin = axisFixed === 'x'
+      ? new THREE.Vector3(fixedValue, other, 50)
+      : new THREE.Vector3(other, fixedValue, 50);
+    rc.set(origin, dir);
+    const hits = rc.intersectObject(faceMesh, true);
+    if (hits.length > 0) points.push(hits[0].point.clone());
+  }
+  return bridgeZ(points, 0.30);
+};
+
 export const getFacialZone = (point: THREE.Vector3, registeredZones: Zone[] = []) => {
   if (registeredZones.length > 0) {
     let closestZone = null;
@@ -111,31 +257,33 @@ interface Clinical3DViewerProps {
   /** Saltar el diálogo interno de confirmación (el padre maneja su propio diálogo) */
   skipConfirmation?: boolean;
   // ── Líneas de referencia ─────────────────────────────────────────────────
-  /** Líneas de referencia a renderizar sobre el modelo */
   referenceLines?: ReferenceLine[];
-  /** Modo de dibujo de línea activo; si es null no se capturan clics para líneas */
   lineDrawingMode?: LineType | null;
-  /** Callback al anclar un punto de superficie (para verticales/horizontales emite 1 punto; para two-points emite 'first' y 'second') */
   onLinePointAnchored?: (point: { x: number; y: number; z: number }, step: 'first' | 'second') => void;
   // ── Puntos editables (trazado de referencia) ──────────────────────────────
-  /** Puntos editables a renderizar (intersecciones y puntos libres de un trazado) */
   editablePoints?: EditablePoint[];
-  /** Mostrar/ocultar los puntos editables */
   showEditablePoints?: boolean;
-  /** Modo de interacción con puntos: 'none'=sólo drag, 'add'=añadir en malla, 'delete'=eliminar al clic */
   pointMode?: 'none' | 'add' | 'delete';
-  /** Callback cuando un punto editable es movido */
   onEditablePointMoved?: (id: string, pos: { x: number; y: number; z: number }) => void;
-  /** Callback cuando un punto editable es eliminado */
   onEditablePointDeleted?: (id: string) => void;
-  /** Callback cuando se hace clic en un punto editable (sin drag) */
   onEditablePointClicked?: (id: string) => void;
-  /** Callback por frame con posiciones 2D proyectadas de cada punto (editable e injection marker) */
   onProjectedPositions?: (positions: ProjectedPosition[]) => void;
-  /** Límites de tercios para renderizar líneas sutiles. Si se pasa, dibuja las 4 líneas divisorias. */
   tercioBoundaries?: { topY: number; bottomY: number; tercioMedioBottomY: number; tercioInferiorBottomY: number } | null;
-  /** ID del punto editable actualmente seleccionado (se resalta visualmente en el modelo 3D) */
   selectedPointId?: string;
+  // ── Herramientas de dibujo libre (HA) ─────────────────────────────────────
+  freehandLines?: FreehandLine[];
+  surfaceShapes?: SurfaceShape[];
+  activeTool?: DrawingTool;
+  /** ID del elemento seleccionado (línea/forma/punto) para resaltarlo */
+  selectedElementId?: string | null;
+  /** Color del pincel activo para nuevas líneas/formas */
+  pendingBrushColor?: string;
+  /** Grosor relativo del pincel activo (1.0 = base) */
+  pendingBrushThickness?: number;
+  onFreehandLineComplete?: (line: FreehandLine) => void;
+  onShapeComplete?: (shape: SurfaceShape) => void;
+  /** Callback al seleccionar una línea/forma existente por clic. id=null → deseleccionar */
+  onElementSelected?: (id: string | null, type: string | null) => void;
 }
 
 // ==========================================
@@ -150,11 +298,9 @@ const ThreeEngine: React.FC<{
   onLoaded: () => void;
   onError: (msg: string) => void;
   readOnly: boolean;
-  // ── Líneas de referencia ──────────────────────────────────────────────
   referenceLines?: ReferenceLine[];
   lineDrawingMode?: LineType | null;
   onLinePointAnchored?: (point: { x: number; y: number; z: number }, step: 'first' | 'second') => void;
-  // ── Puntos editables ──────────────────────────────────────────────────
   editablePoints?: EditablePoint[];
   showEditablePoints?: boolean;
   pointMode?: 'none' | 'add' | 'delete';
@@ -164,7 +310,27 @@ const ThreeEngine: React.FC<{
   onProjectedPositions?: (positions: ProjectedPosition[]) => void;
   tercioBoundaries?: { topY: number; bottomY: number; tercioMedioBottomY: number; tercioInferiorBottomY: number } | null;
   selectedPointId?: string;
-}> = ({ modelSource, markers, zones, onMeshClick, onLoaded, onError, readOnly, referenceLines = [], lineDrawingMode, onLinePointAnchored, editablePoints = [], showEditablePoints = true, pointMode = 'none', onEditablePointMoved, onEditablePointDeleted, onEditablePointClicked, onProjectedPositions, tercioBoundaries = null, selectedPointId }) => {
+  // ── Herramientas de dibujo libre (HA) ──────────────────────────────────
+  freehandLines?: FreehandLine[];
+  surfaceShapes?: SurfaceShape[];
+  activeTool?: DrawingTool;
+  selectedElementId?: string | null;
+  pendingBrushColor?: string;
+  pendingBrushThickness?: number;
+  onFreehandLineComplete?: (line: FreehandLine) => void;
+  onShapeComplete?: (shape: SurfaceShape) => void;
+  onElementSelected?: (id: string | null, type: string | null) => void;
+}> = ({
+  modelSource, markers, zones, onMeshClick, onLoaded, onError, readOnly,
+  referenceLines = [], lineDrawingMode, onLinePointAnchored,
+  editablePoints = [], showEditablePoints = true, pointMode = 'none',
+  onEditablePointMoved, onEditablePointDeleted, onEditablePointClicked,
+  onProjectedPositions, tercioBoundaries = null, selectedPointId,
+  freehandLines = [], surfaceShapes = [],
+  activeTool = 'none', selectedElementId = null,
+  pendingBrushColor = '#8b5cf6', pendingBrushThickness = 1.0,
+  onFreehandLineComplete, onShapeComplete, onElementSelected,
+}) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -175,14 +341,28 @@ const ThreeEngine: React.FC<{
   const linesGroupRef = useRef<THREE.Group | null>(null);
   const boundariesGroupRef = useRef<THREE.Group | null>(null);
   const editablePointsGroupRef = useRef<THREE.Group | null>(null);
+  // Nuevos grupos para herramientas HA
+  const freehandGroupRef = useRef<THREE.Group | null>(null);
+  const shapesGroupRef = useRef<THREE.Group | null>(null);
+  const brushPreviewGroupRef = useRef<THREE.Group | null>(null);
   // Increments each time the model finishes loading so the markers effect re-runs
   const [modelVersion, setModelVersion] = useState(0);
   // Track two-point step inside engine for cursor feedback
   const twoPointStepRef = useRef<0 | 1>(0);
 
-  const callbacks = useRef({ onMeshClick, onLoaded, onError, zones, readOnly, lineDrawingMode, onLinePointAnchored, pointMode, onEditablePointMoved, onEditablePointDeleted, onEditablePointClicked, onProjectedPositions });
+  const callbacks = useRef({
+    onMeshClick, onLoaded, onError, zones, readOnly, lineDrawingMode, onLinePointAnchored,
+    pointMode, onEditablePointMoved, onEditablePointDeleted, onEditablePointClicked, onProjectedPositions,
+    activeTool, selectedElementId, pendingBrushColor, pendingBrushThickness,
+    onFreehandLineComplete, onShapeComplete, onElementSelected,
+  });
   useEffect(() => {
-    callbacks.current = { onMeshClick, onLoaded, onError, zones, readOnly, lineDrawingMode, onLinePointAnchored, pointMode, onEditablePointMoved, onEditablePointDeleted, onEditablePointClicked, onProjectedPositions };
+    callbacks.current = {
+      onMeshClick, onLoaded, onError, zones, readOnly, lineDrawingMode, onLinePointAnchored,
+      pointMode, onEditablePointMoved, onEditablePointDeleted, onEditablePointClicked, onProjectedPositions,
+      activeTool, selectedElementId, pendingBrushColor, pendingBrushThickness,
+      onFreehandLineComplete, onShapeComplete, onElementSelected,
+    };
   });
 
   // 1. Initialize scene once
@@ -208,6 +388,19 @@ const ThreeEngine: React.FC<{
     const editablePointsGroup = new THREE.Group();
     editablePointsGroupRef.current = editablePointsGroup;
     scene.add(editablePointsGroup);
+
+    // Grupos para herramientas de dibujo libre (HA)
+    const freehandGroup = new THREE.Group();
+    freehandGroupRef.current = freehandGroup;
+    scene.add(freehandGroup);
+
+    const shapesGroup = new THREE.Group();
+    shapesGroupRef.current = shapesGroup;
+    scene.add(shapesGroup);
+
+    const brushPreviewGroup = new THREE.Group();
+    brushPreviewGroupRef.current = brushPreviewGroup;
+    scene.add(brushPreviewGroup);
 
     const camera = new THREE.PerspectiveCamera(35, mountRef.current.clientWidth / mountRef.current.clientHeight, 0.1, 1000);
     camera.position.set(0, 0, 12);
@@ -257,6 +450,36 @@ const ThreeEngine: React.FC<{
     let draggedEditableId: string | null = null;
     let draggedEditableGroup: THREE.Group | null = null;
     let dragMoved = false;
+
+    // ── Estado dibujo libre (HA) ───────────────────────────────────────────
+    let brushActive = false;
+    let brushPoints: THREE.Vector3[] = [];
+    let brushLastScreenPos = { x: 0, y: 0 };
+    const BRUSH_SAMPLE_PX = 6; // píxeles mínimos entre muestras
+
+    let polyActive = false;
+    let polyPoints: THREE.Vector3[] = [];
+    let polyLastClickTime = 0;
+    const DOUBLE_CLICK_MS = 350;
+
+    let shapeAnchor: { point: THREE.Vector3; normal: THREE.Vector3; tangent: THREE.Vector3 } | null = null;
+    let shapeCurrentRadius = 0;
+    let shapeCurrentW = 0;
+    let shapeCurrentH = 0;
+
+    const clearBrushPreview = () => {
+      const grp = brushPreviewGroupRef.current;
+      if (!grp) return;
+      while (grp.children.length > 0) {
+        const child = grp.children[0] as any;
+        grp.remove(child);
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) {
+          if (Array.isArray(child.material)) child.material.forEach((m: any) => m.dispose());
+          else child.material.dispose();
+        }
+      }
+    };
 
     // ── Anillo de selección ────────────────────────────────────────────────
     let selectedEditableId: string | null = null;
@@ -311,17 +534,57 @@ const ThreeEngine: React.FC<{
     };
 
     const onPointerDown = (e: MouseEvent) => {
-      // En modo 'add', el clic siempre va al modelo (no interactúa con puntos)
+      startPos = { x: e.clientX, y: e.clientY };
+      const tool = callbacks.current.activeTool;
+
+      // ── Modo freehand brush ────────────────────────────────────────────────
+      if (tool === 'freehand-brush') {
+        if (!faceMeshRef.current || !cameraRef.current) return;
+        const rect = renderer.domElement.getBoundingClientRect();
+        mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(mouse, cameraRef.current);
+        const hits = raycaster.intersectObject(faceMeshRef.current, true);
+        if (hits.length > 0) {
+          brushActive = true;
+          brushPoints = [hits[0].point.clone()];
+          brushLastScreenPos = { x: e.clientX, y: e.clientY };
+          if (controlsRef.current) controlsRef.current.enabled = false;
+        }
+        return;
+      }
+
+      // ── Modo shape (circle / rectangle) ───────────────────────────────────
+      if (tool === 'shape-circle' || tool === 'shape-rect') {
+        if (!faceMeshRef.current || !cameraRef.current) return;
+        const rect = renderer.domElement.getBoundingClientRect();
+        mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(mouse, cameraRef.current);
+        const hits = raycaster.intersectObject(faceMeshRef.current, true);
+        if (hits.length > 0) {
+          const h = hits[0];
+          const normal = h.face ? h.face.normal.clone().transformDirection(h.object.matrixWorld).normalize() : new THREE.Vector3(0, 0, 1);
+          const up = new THREE.Vector3(0, 1, 0);
+          let tangent = new THREE.Vector3().crossVectors(normal, up).normalize();
+          if (tangent.lengthSq() < 0.01) tangent = new THREE.Vector3().crossVectors(normal, new THREE.Vector3(1, 0, 0)).normalize();
+          shapeAnchor = { point: h.point.clone(), normal, tangent };
+          shapeCurrentRadius = 0;
+          shapeCurrentW = 0;
+          shapeCurrentH = 0;
+          if (controlsRef.current) controlsRef.current.enabled = false;
+        }
+        return;
+      }
+
+      // ── En modo 'add', el clic siempre va al modelo (no interactúa con puntos)
       if (callbacks.current.pointMode === 'add') {
         isDragging = false;
-        startPos = { x: e.clientX, y: e.clientY };
         return;
       }
       // En readOnly (p.ej. modal de capturas), no iniciar drag de puntos:
-      // solo permitir orbitar/zoom a través de OrbitControls
       if (callbacks.current.readOnly) {
         isDragging = false;
-        startPos = { x: e.clientX, y: e.clientY };
         return;
       }
       // Detectar hit sobre punto editable
@@ -358,6 +621,101 @@ const ThreeEngine: React.FC<{
     };
 
     const onPointerMove = (e: MouseEvent) => {
+      // ── Modo freehand brush: recopilar puntos de la superficie ─────────────
+      if (brushActive && faceMeshRef.current && cameraRef.current) {
+        const dx = e.clientX - brushLastScreenPos.x;
+        const dy = e.clientY - brushLastScreenPos.y;
+        if (Math.sqrt(dx * dx + dy * dy) >= BRUSH_SAMPLE_PX) {
+          const rect = renderer.domElement.getBoundingClientRect();
+          mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+          mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+          raycaster.setFromCamera(mouse, cameraRef.current);
+          const hits = raycaster.intersectObject(faceMeshRef.current, true);
+          if (hits.length > 0) {
+            brushPoints.push(hits[0].point.clone());
+            brushLastScreenPos = { x: e.clientX, y: e.clientY };
+            // Preview: actualizar tubo del brush
+            clearBrushPreview();
+            if (brushPoints.length >= 2 && brushPreviewGroupRef.current) {
+              const col = new THREE.Color(callbacks.current.pendingBrushColor || '#8b5cf6');
+              const th = (callbacks.current.pendingBrushThickness || 1.0) * 0.003;
+              const preview = buildSurfaceTube(brushPoints, col, 0.6, th, false);
+              brushPreviewGroupRef.current.add(preview);
+            }
+          }
+        }
+        return;
+      }
+
+      // ── Modo shape: preview de círculo o rectángulo ────────────────────────
+      if (shapeAnchor && faceMeshRef.current && cameraRef.current) {
+        const rect = renderer.domElement.getBoundingClientRect();
+        const dx = e.clientX - rect.left - rect.width / 2;
+        const dy = e.clientY - rect.top - rect.height / 2;
+        // Estimar radio en unidades del modelo desde distancia en pantalla
+        const screenDist = Math.sqrt(
+          (e.clientX - (rect.left + rect.width / 2 + shapeAnchor.point.x * 50)) ** 2 +
+          (e.clientY - (rect.top + rect.height / 2 - shapeAnchor.point.y * 50)) ** 2
+        );
+        // Conversión aproximada: la cámara está a ~12 unidades, FOV=35°
+        const camDist = cameraRef.current.position.distanceTo(shapeAnchor.point);
+        const fovRad = (cameraRef.current.fov * Math.PI) / 180;
+        const unitsPerPx = (2 * camDist * Math.tan(fovRad / 2)) / rect.height;
+        const rawDist = Math.sqrt(
+          (e.clientX - startPos.x) ** 2 + (e.clientY - startPos.y) ** 2
+        ) * unitsPerPx;
+        const r = Math.max(0.05, rawDist);
+        shapeCurrentRadius = r;
+        shapeCurrentW = r * 1.6;
+        shapeCurrentH = r;
+
+        // Limpiar preview anterior
+        clearBrushPreview();
+        if (brushPreviewGroupRef.current && r > 0.05) {
+          const col = new THREE.Color(callbacks.current.pendingBrushColor || '#8b5cf6');
+          const th = (callbacks.current.pendingBrushThickness || 1.0) * 0.003;
+          const tool = callbacks.current.activeTool;
+          let previewPts: THREE.Vector3[] = [];
+          const rc = new THREE.Raycaster();
+          const dir = new THREE.Vector3(0, 0, -1);
+          if (tool === 'shape-circle') {
+            const N = 48;
+            const bitangent = new THREE.Vector3().crossVectors(shapeAnchor.normal, shapeAnchor.tangent).normalize();
+            for (let i = 0; i <= N; i++) {
+              const a = (i / N) * Math.PI * 2;
+              const wp = shapeAnchor.point.clone()
+                .addScaledVector(shapeAnchor.tangent, Math.cos(a) * r)
+                .addScaledVector(bitangent, Math.sin(a) * r);
+              const origin = wp.clone().add(shapeAnchor.normal.clone().multiplyScalar(2));
+              rc.set(origin, dir.clone().negate().add(shapeAnchor.normal.clone().negate()));
+              rc.set(origin, new THREE.Vector3(0, 0, -1));
+              const hits2 = rc.intersectObject(faceMeshRef.current!, true);
+              previewPts.push(hits2.length > 0 ? hits2[0].point.clone() : wp);
+            }
+          } else {
+            const bitangent = new THREE.Vector3().crossVectors(shapeAnchor.normal, shapeAnchor.tangent).normalize();
+            const hw = shapeCurrentW / 2, hh = shapeCurrentH / 2;
+            const corners = [
+              [-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh], [-hw, -hh]
+            ];
+            for (const [u, v] of corners) {
+              const wp = shapeAnchor.point.clone()
+                .addScaledVector(shapeAnchor.tangent, u)
+                .addScaledVector(bitangent, v);
+              const origin = wp.clone().addScaledVector(shapeAnchor.normal, 2);
+              rc.set(origin, new THREE.Vector3(0, 0, -1));
+              const hits2 = rc.intersectObject(faceMeshRef.current!, true);
+              previewPts.push(hits2.length > 0 ? hits2[0].point.clone() : wp);
+            }
+          }
+          if (previewPts.length >= 2) {
+            const preview = buildSurfaceTube(previewPts, col, 0.7, th, false);
+            brushPreviewGroupRef.current.add(preview);
+          }
+        }
+        return;
+      }
+
       // Drag de punto editable sobre superficie
       if (draggedEditableGroup && faceMeshRef.current && cameraRef.current) {
         const rect = renderer.domElement.getBoundingClientRect();
@@ -384,7 +742,61 @@ const ThreeEngine: React.FC<{
       }
     };
 
-    const onPointerUp = (_e: MouseEvent) => {
+    const onPointerUp = (e: MouseEvent) => {
+      // ── Finalizar freehand brush ───────────────────────────────────────────
+      if (brushActive) {
+        brushActive = false;
+        clearBrushPreview();
+        if (controlsRef.current) controlsRef.current.enabled = true;
+        if (brushPoints.length >= 2) {
+          const id = `fh-${Date.now()}`;
+          const col = callbacks.current.pendingBrushColor || '#8b5cf6';
+          const th = callbacks.current.pendingBrushThickness || 1.0;
+          callbacks.current.onFreehandLineComplete?.({
+            id,
+            points: brushPoints.map(p => ({ x: p.x, y: p.y, z: p.z })),
+            color: col,
+            thickness: th,
+          });
+        }
+        brushPoints = [];
+        isDragging = true; // evitar que onClick dispare marcación
+        return;
+      }
+
+      // ── Finalizar shape (circle / rectangle) ──────────────────────────────
+      if (shapeAnchor) {
+        const anchor = shapeAnchor;
+        shapeAnchor = null;
+        clearBrushPreview();
+        if (controlsRef.current) controlsRef.current.enabled = true;
+        const tool = callbacks.current.activeTool;
+        const screenDist = Math.sqrt(
+          (e.clientX - startPos.x) ** 2 + (e.clientY - startPos.y) ** 2
+        );
+        if (screenDist >= 8 && (shapeCurrentRadius > 0.05 || shapeCurrentW > 0.05)) {
+          const id = `sh-${Date.now()}`;
+          const col = callbacks.current.pendingBrushColor || '#8b5cf6';
+          const th = callbacks.current.pendingBrushThickness || 1.0;
+          const shape: SurfaceShape = {
+            id,
+            shapeType: tool === 'shape-circle' ? 'circle' : 'rectangle',
+            center: { x: anchor.point.x, y: anchor.point.y, z: anchor.point.z },
+            normal: { x: anchor.normal.x, y: anchor.normal.y, z: anchor.normal.z },
+            tangent: { x: anchor.tangent.x, y: anchor.tangent.y, z: anchor.tangent.z },
+            radius: shapeCurrentRadius,
+            width: shapeCurrentW,
+            height: shapeCurrentH,
+            color: col,
+            opacity: 0.85,
+            thickness: th,
+          };
+          callbacks.current.onShapeComplete?.(shape);
+        }
+        isDragging = true;
+        return;
+      }
+
       if (draggedEditableId && draggedEditableGroup) {
         const relId = draggedEditableId;
         const relGroup = draggedEditableGroup;
@@ -414,61 +826,149 @@ const ThreeEngine: React.FC<{
       const rect = renderer.domElement.getBoundingClientRect();
       mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
       raycaster.setFromCamera(mouse, cameraRef.current);
-      const intersects = raycaster.intersectObject(faceMeshRef.current, true);
 
-      if (intersects.length > 0) {
-        const intersect = intersects[0];
-        const point = intersect.point;
+      const tool = callbacks.current.activeTool;
 
-        // ── Modo línea de referencia ─────────────────────────────────────
-        const lineMode = callbacks.current.lineDrawingMode;
-        if (lineMode) {
-          const anchorPt = { x: point.x, y: point.y, z: point.z };
-          if (lineMode === 'two-points') {
-            const step = twoPointStepRef.current === 0 ? 'first' : 'second';
-            callbacks.current.onLinePointAnchored?.(anchorPt, step);
-            twoPointStepRef.current = twoPointStepRef.current === 0 ? 1 : 0;
-          } else {
-            callbacks.current.onLinePointAnchored?.(anchorPt, 'first');
+      // ── Modo brush/shape: ignorar onClick (ya manejado en pointerUp) ──────
+      if (tool === 'freehand-brush' || tool === 'shape-circle' || tool === 'shape-rect') return;
+
+      // ── Selección de elementos existentes (freehand, shapes, reference lines) ─
+      if (tool === 'none' || tool === 'freehand-poly') {
+        // Raycast contra freehand group
+        const fhMeshes: THREE.Object3D[] = [];
+        freehandGroupRef.current?.children.forEach(g => g.traverse(c => { if ((c as THREE.Mesh).isMesh) fhMeshes.push(c); }));
+        if (fhMeshes.length > 0) {
+          const fhHits = raycaster.intersectObjects(fhMeshes, false);
+          if (fhHits.length > 0) {
+            let obj: THREE.Object3D | null = fhHits[0].object;
+            while (obj && !obj.userData.freehandId) obj = obj.parent;
+            if (obj?.userData.freehandId) {
+              callbacks.current.onElementSelected?.(obj.userData.freehandId, 'freehand');
+              return;
+            }
           }
-          return;
         }
-
-        // ── Modo añadir punto libre ────────────────────────────────────────
-        if (callbacks.current.pointMode === 'add') {
-          const nAdd = intersect.face ? intersect.face.normal.clone().applyMatrix3(new THREE.Matrix3().getNormalMatrix(intersect.object.matrixWorld)).normalize() : new THREE.Vector3(0, 1, 0);
-          const ptAdd = point.clone().addScaledVector(nAdd, 0.03);
-          callbacks.current.onMeshClick({
-            position: { x: ptAdd.x, y: ptAdd.y, z: ptAdd.z },
-            rotation: [0, 0, 0],
-            normal: { x: nAdd.x, y: nAdd.y, z: nAdd.z },
-            zone: '',
-            radius: 0.3,
-            isAddPointMode: true,
-          });
-          return;
+        // Raycast contra shapes group
+        const shMeshes: THREE.Object3D[] = [];
+        shapesGroupRef.current?.children.forEach(g => g.traverse(c => { if ((c as THREE.Mesh).isMesh) shMeshes.push(c); }));
+        if (shMeshes.length > 0) {
+          const shHits = raycaster.intersectObjects(shMeshes, false);
+          if (shHits.length > 0) {
+            let obj: THREE.Object3D | null = shHits[0].object;
+            while (obj && !obj.userData.shapeId) obj = obj.parent;
+            if (obj?.userData.shapeId) {
+              callbacks.current.onElementSelected?.(obj.userData.shapeId, 'shape');
+              return;
+            }
+          }
         }
+        // Raycast contra reference lines
+        const lineMeshes: THREE.Object3D[] = [];
+        linesGroupRef.current?.children.forEach(g => g.traverse(c => { if ((c as THREE.Mesh).isMesh) lineMeshes.push(c); }));
+        if (lineMeshes.length > 0) {
+          const lineHits = raycaster.intersectObjects(lineMeshes, false);
+          if (lineHits.length > 0) {
+            let obj: THREE.Object3D | null = lineHits[0].object;
+            while (obj && !obj.userData.lineId) obj = obj.parent;
+            if (obj?.userData.lineId) {
+              callbacks.current.onElementSelected?.(obj.userData.lineId, 'reference-line');
+              return;
+            }
+          }
+        }
+        // Clic en espacio vacío → deseleccionar (solo en tool=none)
+        if (tool === 'none' && (fhMeshes.length > 0 || shMeshes.length > 0 || lineMeshes.length > 0)) {
+          callbacks.current.onElementSelected?.(null, null);
+        }
+      }
 
-        // ── Modo marcación normal ────────────────────────────────────────
-        if (callbacks.current.readOnly) return;
-        const n = intersect.face ? intersect.face.normal.clone() : new THREE.Vector3(0, 1, 0);
-        const nTransform = new THREE.Matrix3().getNormalMatrix(intersect.object.matrixWorld);
-        n.applyMatrix3(nTransform).normalize();
+      const intersects = raycaster.intersectObject(faceMeshRef.current, true);
+      if (intersects.length === 0) return;
+      const intersect = intersects[0];
+      const point = intersect.point;
 
-        const dummy = new THREE.Object3D();
-        dummy.position.copy(point);
-        dummy.lookAt(point.clone().add(n));
+      // ── Modo polilínea ────────────────────────────────────────────────────
+      if (tool === 'freehand-poly') {
+        const now = Date.now();
+        const isDouble = now - polyLastClickTime < DOUBLE_CLICK_MS && polyPoints.length >= 2;
+        polyLastClickTime = now;
+        if (isDouble) {
+          // Finalizar polilínea
+          const id = `fh-${Date.now()}`;
+          const col = callbacks.current.pendingBrushColor || '#8b5cf6';
+          const th = callbacks.current.pendingBrushThickness || 1.0;
+          if (polyPoints.length >= 2) {
+            callbacks.current.onFreehandLineComplete?.({
+              id,
+              points: polyPoints.map(p => ({ x: p.x, y: p.y, z: p.z })),
+              color: col,
+              thickness: th,
+            });
+          }
+          polyPoints = [];
+          polyActive = false;
+          clearBrushPreview();
+        } else {
+          polyPoints.push(point.clone());
+          polyActive = true;
+          clearBrushPreview();
+          if (polyPoints.length >= 2 && brushPreviewGroupRef.current) {
+            const col = new THREE.Color(callbacks.current.pendingBrushColor || '#8b5cf6');
+            const th = (callbacks.current.pendingBrushThickness || 1.0) * 0.003;
+            const preview = buildSurfaceTube(polyPoints, col, 0.6, th, false);
+            brushPreviewGroupRef.current.add(preview);
+          }
+        }
+        return;
+      }
 
+      // ── Modo línea de referencia ─────────────────────────────────────
+      const lineMode = callbacks.current.lineDrawingMode;
+      if (lineMode) {
+        const anchorPt = { x: point.x, y: point.y, z: point.z };
+        if (lineMode === 'two-points') {
+          const step = twoPointStepRef.current === 0 ? 'first' : 'second';
+          callbacks.current.onLinePointAnchored?.(anchorPt, step);
+          twoPointStepRef.current = twoPointStepRef.current === 0 ? 1 : 0;
+        } else {
+          callbacks.current.onLinePointAnchored?.(anchorPt, 'first');
+        }
+        return;
+      }
+
+      // ── Modo añadir punto libre ────────────────────────────────────────
+      if (callbacks.current.pointMode === 'add') {
+        const nAdd = intersect.face ? intersect.face.normal.clone().applyMatrix3(new THREE.Matrix3().getNormalMatrix(intersect.object.matrixWorld)).normalize() : new THREE.Vector3(0, 1, 0);
+        const ptAdd = point.clone().addScaledVector(nAdd, 0.03);
         callbacks.current.onMeshClick({
-          position: { x: point.x, y: point.y, z: point.z },
-          rotation: [dummy.rotation.x, dummy.rotation.y, dummy.rotation.z],
-          normal: { x: n.x, y: n.y, z: n.z },
+          position: { x: ptAdd.x, y: ptAdd.y, z: ptAdd.z },
+          rotation: [0, 0, 0],
+          normal: { x: nAdd.x, y: nAdd.y, z: nAdd.z },
           zone: '',
           radius: 0.3,
+          isAddPointMode: true,
         });
+        return;
       }
+
+      // ── Modo marcación normal ────────────────────────────────────────
+      if (callbacks.current.readOnly) return;
+      const n = intersect.face ? intersect.face.normal.clone() : new THREE.Vector3(0, 1, 0);
+      const nTransform = new THREE.Matrix3().getNormalMatrix(intersect.object.matrixWorld);
+      n.applyMatrix3(nTransform).normalize();
+
+      const dummy = new THREE.Object3D();
+      dummy.position.copy(point);
+      dummy.lookAt(point.clone().add(n));
+
+      callbacks.current.onMeshClick({
+        position: { x: point.x, y: point.y, z: point.z },
+        rotation: [dummy.rotation.x, dummy.rotation.y, dummy.rotation.z],
+        normal: { x: n.x, y: n.y, z: n.z },
+        zone: '',
+        radius: 0.3,
+      });
     };
 
     renderer.domElement.addEventListener('pointerdown', onPointerDown);
@@ -776,6 +1276,129 @@ const ThreeEngine: React.FC<{
     });
   }, [selectedPointId, editablePoints]);
 
+  // 4e. Renderizar líneas freehand (dibujo libre HA) — continuas, sobre superficie
+  useEffect(() => {
+    const grp = freehandGroupRef.current;
+    if (!grp) return;
+    // Limpiar
+    while (grp.children.length > 0) {
+      const child = grp.children[0] as any;
+      grp.remove(child);
+      child.traverse((m: any) => {
+        if (m.geometry) m.geometry.dispose();
+        if (m.material) {
+          if (Array.isArray(m.material)) m.material.forEach((mt: any) => mt.dispose());
+          else m.material.dispose();
+        }
+      });
+    }
+    freehandLines.forEach(line => {
+      if (line.points.length < 2) return;
+      const pts = line.points.map(p => new THREE.Vector3(p.x, p.y, p.z));
+      const col = new THREE.Color(line.color);
+      const r = (line.thickness || 1.0) * 0.003;
+      const lineGrp = buildSurfaceTube(pts, col, 1.0, r, false);
+      lineGrp.userData.freehandId = line.id;
+      // También propagar el id a todos los meshes hijos (para raycast de selección)
+      lineGrp.traverse(c => { if ((c as THREE.Mesh).isMesh) c.userData.freehandId = line.id; });
+      // Highlight del elemento seleccionado
+      if (selectedElementId === line.id) {
+        lineGrp.traverse((c: any) => {
+          if (c.isMesh && c.material) {
+            c.material = c.material.clone();
+            c.material.color = new THREE.Color(line.color).addScalar(0.3);
+          }
+        });
+      }
+      grp.add(lineGrp);
+    });
+  }, [freehandLines, selectedElementId, modelVersion]);
+
+  // 4f. Renderizar shapes en superficie (círculos y rectángulos)
+  useEffect(() => {
+    const grp = shapesGroupRef.current;
+    const faceMesh = faceMeshRef.current;
+    if (!grp) return;
+    // Limpiar
+    while (grp.children.length > 0) {
+      const child = grp.children[0] as any;
+      grp.remove(child);
+      child.traverse((m: any) => {
+        if (m.geometry) m.geometry.dispose();
+        if (m.material) {
+          if (Array.isArray(m.material)) m.material.forEach((mt: any) => mt.dispose());
+          else m.material.dispose();
+        }
+      });
+    }
+    const rc = new THREE.Raycaster();
+    surfaceShapes.forEach(shape => {
+      const center = new THREE.Vector3(shape.center.x, shape.center.y, shape.center.z);
+      const normal = new THREE.Vector3(shape.normal.x, shape.normal.y, shape.normal.z).normalize();
+      const tangent = shape.tangent
+        ? new THREE.Vector3(shape.tangent.x, shape.tangent.y, shape.tangent.z).normalize()
+        : new THREE.Vector3().crossVectors(normal, new THREE.Vector3(0, 1, 0)).normalize();
+      const bitangent = new THREE.Vector3().crossVectors(normal, tangent).normalize();
+      const col = new THREE.Color(shape.color);
+      const r = (shape.thickness || 1.0) * 0.003;
+
+      let pts: THREE.Vector3[] = [];
+
+      if (shape.shapeType === 'circle') {
+        const radius = shape.radius || 0.3;
+        const N = 64;
+        for (let i = 0; i <= N; i++) {
+          const a = (i / N) * Math.PI * 2;
+          const wp = center.clone()
+            .addScaledVector(tangent, Math.cos(a) * radius)
+            .addScaledVector(bitangent, Math.sin(a) * radius);
+          const origin = wp.clone().addScaledVector(normal, 2);
+          rc.set(origin, new THREE.Vector3(0, 0, -1));
+          if (faceMesh) {
+            const hits = rc.intersectObject(faceMesh, true);
+            pts.push(hits.length > 0 ? hits[0].point.clone() : wp);
+          } else {
+            pts.push(wp);
+          }
+        }
+        pts = bridgeZ(pts, 0.20);
+      } else {
+        // Rectangle
+        const hw = (shape.width || 0.4) / 2;
+        const hh = (shape.height || 0.25) / 2;
+        const corners: [number, number][] = [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh], [-hw, -hh]];
+        for (const [u, v] of corners) {
+          const wp = center.clone()
+            .addScaledVector(tangent, u)
+            .addScaledVector(bitangent, v);
+          const origin = wp.clone().addScaledVector(normal, 2);
+          rc.set(origin, new THREE.Vector3(0, 0, -1));
+          if (faceMesh) {
+            const hits = rc.intersectObject(faceMesh, true);
+            pts.push(hits.length > 0 ? hits[0].point.clone() : wp);
+          } else {
+            pts.push(wp);
+          }
+        }
+      }
+
+      if (pts.length >= 2) {
+        const shapeGrp = buildSurfaceTube(pts, col, shape.opacity || 0.85, r, false);
+        shapeGrp.userData.shapeId = shape.id;
+        shapeGrp.traverse(c => { if ((c as THREE.Mesh).isMesh) c.userData.shapeId = shape.id; });
+        if (selectedElementId === shape.id) {
+          shapeGrp.traverse((c: any) => {
+            if (c.isMesh && c.material) {
+              c.material = c.material.clone();
+              c.material.color = new THREE.Color(shape.color).addScalar(0.25);
+            }
+          });
+        }
+        grp.add(shapeGrp);
+      }
+    });
+  }, [surfaceShapes, selectedElementId, modelVersion]);
+
   // 4. Renderizar líneas de referencia sobre la superficie del modelo
   useEffect(() => {
     const group = linesGroupRef.current;
@@ -796,220 +1419,51 @@ const ThreeEngine: React.FC<{
     // Construir raycaster interno para muestreo de superficie
     const sweepRaycaster = new THREE.Raycaster();
 
-    /**
-     * Valley-bridge: interpolación lineal de Z sobre concavidades profundas.
-     * Portado desde Clinical3D.tsx. Detecta cuando Z cae más de `threshold`
-     * respecto al punto anterior, busca la salida del valle y rellena
-     * el hueco con interpolación lineal. Evita el hundimiento en cuencas oculares.
-     */
-    const bridgeConcavities = (pts: THREE.Vector3[], threshold = 0.30): THREE.Vector3[] => {
-      if (pts.length < 4) return pts;
-      const out = pts.map(p => p.clone());
-      let i = 1;
-      while (i < out.length) {
-        const zEntry = out[i - 1].z;
-        if (zEntry - out[i].z > threshold) {
-          // Buscar salida del valle: Z recupera a menos de threshold/2 por debajo de entrada
-          let j = i + 1;
-          while (j < out.length && out[j].z < zEntry - threshold * 0.5) j++;
-          const exitIdx = Math.min(j, out.length - 1);
-          const zExit  = out[exitIdx].z;
-          const span   = exitIdx - (i - 1);
-          // Interpolar linealmente Z a través de todo el valle
-          for (let k = i; k < exitIdx; k++) {
-            const t = (k - (i - 1)) / span;
-            out[k].z = zEntry + t * (zExit - zEntry);
-          }
-          i = exitIdx + 1;
-        } else {
-          i++;
-        }
-      }
-      return out;
-    };
-
-    /**
-     * Obtiene los puntos de intersección de la malla al barrer en una dirección.
-     * Para líneas horizontales aplica bridgeConcavities para saltar cuencas oculares.
-     */
-    const sweepSurface = (
-      axisFixed: 'x' | 'y',
-      fixedValue: number,
-      otherMin: number,
-      otherMax: number,
-      steps = 60
-    ): THREE.Vector3[] => {
-      const points: THREE.Vector3[] = [];
-      for (let i = 0; i <= steps; i++) {
-        const t = i / steps;
-        const otherVal = otherMin + t * (otherMax - otherMin);
-        const origin = axisFixed === 'x'
-          ? new THREE.Vector3(fixedValue, otherVal, 50)
-          : new THREE.Vector3(otherVal, fixedValue, 50);
-        const dir = new THREE.Vector3(0, 0, -1);
-        sweepRaycaster.set(origin, dir);
-        const hits = sweepRaycaster.intersectObject(faceMesh, true);
-        if (hits.length > 0) {
-          points.push(hits[0].point.clone());
-        }
-      }
-      // Corregir hundimiento en cuencas oculares en ambos ejes (valley-bridge)
-      return bridgeConcavities(points, 0.30);
-    };
-
-    /**
-     * Crea un tubo 3D (Mesh con TubeGeometry) que sigue los puntos de superficie.
-     * Radio fino (0.003) para coincidir con el aspecto de la pestaña Clinical3D.
-     * Si dashed=true, renderiza como puntos esféricos a intervalos regulares.
-     */
-    const makeSurfaceTube = (
-      pts: THREE.Vector3[],
-      color: THREE.Color,
-      opacity = 1.0,
-      radius = 0.003,
-      dashed = false
-    ): THREE.Group => {
-      const group3D = new THREE.Group();
-      group3D.renderOrder = 999;
-
-      if (dashed) {
-        // Modo punteado: esferas pequeñas a intervalos fijos (igual que Clinical3D)
-        const SPACING = 0.040;
-        const DOT_R = radius * 1.5;
-        const HALO_R = radius * 3;
-        let accumulated = 0;
-        for (let i = 1; i < pts.length; i++) {
-          const seg = pts[i].distanceTo(pts[i - 1]);
-          accumulated += seg;
-          if (accumulated >= SPACING) {
-            accumulated = 0;
-            // Esfera halo (ligeramente mayor, semi-transparente)
-            const haloGeo = new THREE.SphereGeometry(HALO_R, 6, 6);
-            const haloMat = new THREE.MeshBasicMaterial({
-              color,
-              transparent: true,
-              opacity: 0.35 * opacity,
-              depthTest: false,
-              depthWrite: false,
-            });
-            const halo = new THREE.Mesh(haloGeo, haloMat);
-            halo.position.copy(pts[i]);
-            halo.renderOrder = 999;
-            group3D.add(halo);
-            // Esfera núcleo
-            const dotGeo = new THREE.SphereGeometry(DOT_R, 6, 6);
-            const dotMat = new THREE.MeshBasicMaterial({
-              color,
-              depthTest: false,
-              depthWrite: false,
-              transparent: true,
-              opacity: opacity,
-            });
-            const dot = new THREE.Mesh(dotGeo, dotMat);
-            dot.position.copy(pts[i]);
-            dot.renderOrder = 1000;
-            group3D.add(dot);
-          }
-        }
-      } else {
-        const curve = new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.5);
-        const tubeGeo = new THREE.TubeGeometry(curve, Math.max(pts.length * 2, 60), radius, 6, false);
-        const tubeMat = new THREE.MeshBasicMaterial({
-          color,
-          depthTest: false,
-          depthWrite: false,
-          transparent: true,
-          opacity: opacity,
-        });
-        const mesh = new THREE.Mesh(tubeGeo, tubeMat);
-        mesh.renderOrder = 999;
-        group3D.add(mesh);
-      }
-
-      return group3D;
-    };
-
-    /**
-     * Sweep vertical limitado entre yMin e yMax (en unidades del modelo).
-     * Equivalente a sweepVerticalLimited de Clinical3D para respetar los límites de hairline.
-     */
-    const sweepVerticalLimited = (
-      fixedX: number,
-      yMin: number,
-      yMax: number,
-      steps = 80
-    ): THREE.Vector3[] => {
+    /** Sweep vertical limitado entre yMin e yMax */
+    const sweepVerticalLimited = (fixedX: number, yMin: number, yMax: number, steps = 80): THREE.Vector3[] => {
       const pts: THREE.Vector3[] = [];
       for (let i = 0; i <= steps; i++) {
         const y = yMin + (i / steps) * (yMax - yMin);
-        const origin = new THREE.Vector3(fixedX, y, 50);
-        sweepRaycaster.set(origin, new THREE.Vector3(0, 0, -1));
+        sweepRaycaster.set(new THREE.Vector3(fixedX, y, 50), new THREE.Vector3(0, 0, -1));
         const hits = sweepRaycaster.intersectObject(faceMesh, true);
         if (hits.length > 0) pts.push(hits[0].point.clone());
       }
-      // Corregir hundimiento en zonas cóncavas (cuencas oculares) al igual que horizontales
-      return bridgeConcavities(pts, 0.30);
-    };
-
-    /**
-     * Sweep diagonal entre dos puntos sobre la superficie del mallado.
-     * Evita que la línea quede "dentro" de la malla al cruzar superficies curvas.
-     */
-    const sweepDiagonal = (
-      a: THREE.Vector3,
-      b: THREE.Vector3,
-      steps = 50
-    ): THREE.Vector3[] => {
-      const points: THREE.Vector3[] = [];
-      for (let i = 0; i <= steps; i++) {
-        const t = i / steps;
-        const x = a.x + t * (b.x - a.x);
-        const y = a.y + t * (b.y - a.y);
-        const origin = new THREE.Vector3(x, y, 50);
-        sweepRaycaster.set(origin, new THREE.Vector3(0, 0, -1));
-        const hits = sweepRaycaster.intersectObject(faceMesh, true);
-        if (hits.length > 0) {
-          points.push(hits[0].point.clone());
-        }
-      }
-      return bridgeConcavities(points, 0.30);
+      return bridgeZ(pts, 0.30);
     };
 
     referenceLines.forEach(line => {
       if (!line.visible) return;
-
       const color = new THREE.Color(line.color);
-
       const isDashed = line.dashed === true;
+      const baseRadius = (line.thickness || 1.0) * 0.003;
+      let pts: THREE.Vector3[] = [];
 
       if (line.type === 'vertical') {
         const xVal = line.anchor.x + line.offset;
-        let pts: THREE.Vector3[];
-        if (line.yMin !== undefined && line.yMax !== undefined) {
-          // Limitar al rango hairline del trazado importado
-          pts = sweepVerticalLimited(xVal, line.yMin, line.yMax, 80);
-        } else {
-          pts = sweepSurface('x', xVal, -12, 8, 60);
-        }
-        if (pts.length < 2) return;
-        group.add(makeSurfaceTube(pts, color, 1.0, 0.003, isDashed));
-
+        pts = (line.yMin !== undefined && line.yMax !== undefined)
+          ? sweepVerticalLimited(xVal, line.yMin, line.yMax, 80)
+          : sweepAxis(faceMesh, sweepRaycaster, 'x', xVal, -12, 8, 60);
       } else if (line.type === 'horizontal') {
         const yVal = line.anchor.y + line.offset;
-        const pts = sweepSurface('y', yVal, -8, 8, 80);
-        if (pts.length < 2) return;
-        group.add(makeSurfaceTube(pts, color, 1.0, 0.003, isDashed));
-
+        pts = sweepAxis(faceMesh, sweepRaycaster, 'y', yVal, -8, 8, 80);
       } else if (line.type === 'two-points' && line.anchors && line.anchors.length === 2) {
         const a = new THREE.Vector3(line.anchors[0].x, line.anchors[0].y, line.anchors[0].z);
         const b = new THREE.Vector3(line.anchors[1].x, line.anchors[1].y, line.anchors[1].z);
-        const pts = sweepDiagonal(a, b, 60);
-        if (pts.length >= 2) {
-          group.add(makeSurfaceTube(pts, color, 1.0, 0.003, isDashed));
+        const steps2 = 60;
+        for (let i = 0; i <= steps2; i++) {
+          const t = i / steps2;
+          sweepRaycaster.set(new THREE.Vector3(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y), 50), new THREE.Vector3(0, 0, -1));
+          const hits = sweepRaycaster.intersectObject(faceMesh, true);
+          if (hits.length > 0) pts.push(hits[0].point.clone());
         }
-
-        // No dibujar esferas en los extremos — solo la línea es visible
+        pts = bridgeZ(pts, 0.30);
       }
+
+      if (pts.length < 2) return;
+      const lineGrp = buildSurfaceTube(pts, color, 1.0, baseRadius, isDashed);
+      lineGrp.userData.lineId = line.id;
+      lineGrp.traverse(c => { if ((c as THREE.Mesh).isMesh) c.userData.lineId = line.id; });
+      group.add(lineGrp);
     });
   }, [referenceLines, modelVersion]);
 
@@ -1151,6 +1605,16 @@ export default function Clinical3DViewer({
   onProjectedPositions,
   tercioBoundaries = null,
   selectedPointId,
+  // Nuevas props HA
+  freehandLines = [],
+  surfaceShapes = [],
+  activeTool = 'none',
+  selectedElementId = null,
+  pendingBrushColor = '#8b5cf6',
+  pendingBrushThickness = 1.0,
+  onFreehandLineComplete,
+  onShapeComplete,
+  onElementSelected,
 }: Clinical3DViewerProps) {
   const [modelSource, setModelSource] = useState<{ type: 'url' | 'buffer'; data: string | ArrayBuffer }>({
     type: 'url',
@@ -1224,6 +1688,15 @@ export default function Clinical3DViewer({
             onProjectedPositions={onProjectedPositions}
             tercioBoundaries={tercioBoundaries}
             selectedPointId={selectedPointId}
+            freehandLines={freehandLines}
+            surfaceShapes={surfaceShapes}
+            activeTool={activeTool}
+            selectedElementId={selectedElementId}
+            pendingBrushColor={pendingBrushColor}
+            pendingBrushThickness={pendingBrushThickness}
+            onFreehandLineComplete={onFreehandLineComplete}
+            onShapeComplete={onShapeComplete}
+            onElementSelected={onElementSelected}
           />
         )}
       </div>

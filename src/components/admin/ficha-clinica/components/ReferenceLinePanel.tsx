@@ -14,6 +14,8 @@ export interface ReferenceLine {
   color: string;
   /** Línea entrecortada (imaginaria) */
   dashed?: boolean;
+  /** Grosor relativo (1.0 = default, radio base 0.003) */
+  thickness?: number;
   /** Punto de superficie donde se ancló la línea (primer clic) */
   anchor: { x: number; y: number; z: number };
   /** Offset de desplazamiento aplicado (eje X para vertical, eje Y para horizontal) */
