@@ -55,12 +55,17 @@ function getPool() {
   }
 
   try {
-    poolInstance = new Pool({ 
-      connectionString,
-      ssl: {
-        rejectUnauthorized: true // Neon PostgreSQL usa certificados válidos
-      },
-      max: 1, // Limit connections in serverless
+    // ponytail: parse via WHATWG URL API para evitar que pg-connection-string
+    // dispare los warnings de SSL/url.parse() al recibir la raw connection string.
+    const u = new URL(connectionString);
+    poolInstance = new Pool({
+      host: u.hostname,
+      port: parseInt(u.port, 10) || 5432,
+      database: u.pathname.slice(1),
+      user: u.username,
+      password: u.password,
+      ssl: { rejectUnauthorized: true },
+      max: 1,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 5000,
     });
