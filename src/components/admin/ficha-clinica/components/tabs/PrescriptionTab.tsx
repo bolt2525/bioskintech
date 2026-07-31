@@ -5,6 +5,7 @@ import { Plus, Trash2, Save, FileText, Copy, Printer, Search, Calendar, Check, A
 import prescriptionOptions from '../data/prescription_options.json';
 import { Tooltip } from '../../../../ui/Tooltip';
 import { useClinicSettings } from '../../../../../hooks/useClinicSettings';
+import { useAuth } from '../../../../../context/AuthContext';
 
 /** Extrae solo YYYY-MM-DD de un ISO timestamp o string de PG para evitar desfase de zona horaria */
 const toDateOnly = (d: string | null | undefined): string => {
@@ -61,6 +62,8 @@ const EMPTY_ITEM: PrescriptionItem = {
 
 export default function PrescriptionTab({ recordId, patientName, patientAge }: PrescriptionTabProps) {
   const { settings: clinic } = useClinicSettings();
+  const { user } = useAuth();
+  const clinicDisplayName = clinic.general.name || user?.clinic_name || 'Clínica';
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
   const [currentPrescription, setCurrentPrescription] = useState<Prescription>({
     fecha: getLocalDate(),
@@ -266,8 +269,8 @@ export default function PrescriptionTab({ recordId, patientName, patientAge }: P
     const dateStr = new Date().toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' }).toUpperCase();
     // Datos dinámicos de la clínica
     const logoUrl = clinic.general.logo_url || `${window.location.origin}/images/logo/logo.png`;
-    const clinicName  = clinic.general.name    || 'BIOSKIN';
-    const clinicTagline = clinic.general.tagline || 'Salud y Estética';
+    const clinicName  = clinicDisplayName;
+    const clinicTagline = clinic.general.tagline || 'Centro de Medicina Estética';
     const clinicCity  = clinic.general.city    || '';
     const clinicPhone = clinic.general.phone   || '';
     const clinicAddr  = clinic.general.address || '';

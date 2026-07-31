@@ -16,6 +16,7 @@ import ReferenceLinePanel from '../ReferenceLinePanel';
 import type { LinePreset } from '../ReferenceLinePanel';
 import trazadoSuperior from '../../data/trazado-referencia-superior.json';
 import { useClinicSettings } from '../../../../../hooks/useClinicSettings';
+import { useAuth } from '../../../../../context/AuthContext';
 
 // ==========================================
 // TYPES
@@ -161,6 +162,9 @@ const EMPTY_INJECTABLE: Injectable = {
 
 export default function InjectablesTab({ recordId, injectables: initialInjectables, patientName, onSave }: InjectablesTabProps) {
   const { settings: clinic } = useClinicSettings();
+  const { user } = useAuth();
+  // Nombre de la clínica: settings > auth token > placeholder
+  const clinicDisplayName = clinic.general.name || user?.clinic_name || 'Clínica';
   // Sub-tab activo: controla qué tipo de inyectable se muestra en sidebar + formulario
   const [activeType, setActiveType] = useState<'toxina' | 'relleno'>('toxina');
   const [injectables, setInjectables] = useState<Injectable[]>([]);
@@ -1257,7 +1261,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
 <body>
   <div class="header">
     <div class="header-left">
-      <h1>${clinic.general.name || 'BIOSKIN'}</h1>
+      <h1>${clinicDisplayName}</h1>
       <p>${clinic.general.tagline || 'Centro de Medicina Estética'}</p>
       ${clinic.general.address ? `<p style="font-size:10px;color:#aaa;">${clinic.general.address}${clinic.general.city ? ', ' + clinic.general.city : ''}</p>` : ''}
     </div>
@@ -1387,7 +1391,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   </div>
 
   <div class="footer">
-    ${clinic.general.name || 'BIOSKIN'} — ${clinic.general.tagline || 'Centro de Medicina Estética'} · Documento generado el ${new Date().toLocaleString('es-EC')}
+    ${clinicDisplayName} — ${clinic.general.tagline || 'Centro de Medicina Estética'} · Documento generado el ${new Date().toLocaleString('es-EC')}
   </div>
   <script>window.onload = () => window.print()</script>
 </body>
@@ -3268,6 +3272,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
         productType={current.product_type}
         referenceLines={referenceLines}
         editablePoints={editablePoints}
+        freehandLines={freehandLines}
+        surfaceShapes={surfaceShapes}
         initialCaptures={capturedImages}
         initialShowLines={showLines}
         initialShowEditablePoints={showEditablePoints}

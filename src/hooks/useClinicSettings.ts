@@ -41,10 +41,10 @@ export interface ClinicSettings {
 }
 
 const DEFAULTS: ClinicSettings = {
-  general:    { name: 'BIOSKIN', city: 'Cuenca', tagline: 'Salud y Estética', logo_url: '', phone: '', address: '', tax_id: '' },
+  general:    { name: '', city: '', tagline: '', logo_url: '', phone: '', address: '', tax_id: '' },
   treatments: [],
-  email:      { staff_email: '', from_name: 'BIOSKIN', signature: 'El equipo de BIOSKIN', whatsapp_number: '' },
-  agenda:     { start_hour: '08:00', end_hour: '19:00', slot_minutes: 60, calendar_prefix: 'BIOSKIN' },
+  email:      { staff_email: '', from_name: '', signature: '', whatsapp_number: '' },
+  agenda:     { start_hour: '08:00', end_hour: '19:00', slot_minutes: 60, calendar_prefix: '' },
 };
 
 /**
@@ -53,7 +53,11 @@ const DEFAULTS: ClinicSettings = {
  */
 export function useClinicSettings(): { settings: ClinicSettings; loading: boolean } {
   const { user } = useAuth();
-  const [settings, setSettings] = useState<ClinicSettings>(DEFAULTS);
+  // Usar clinic_name del token como nombre inicial antes de que la API responda
+  const [settings, setSettings] = useState<ClinicSettings>(() => ({
+    ...DEFAULTS,
+    general: { ...DEFAULTS.general, name: user?.clinic_name || '' },
+  }));
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -64,10 +68,22 @@ export function useClinicSettings(): { settings: ClinicSettings; loading: boolea
       headers: { Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken') || ''}` },
     })
       .then(r => r.json())
-      .then(d => { if (d.settings) setSettings({ ...DEFAULTS, ...d.settings }); })
-      .catch(() => {/* silencioso — usa defaults */})
+      .then(d => {
+        if (d.settings) {
+          setSettings(prev => ({
+            ...DEFAULTS,
+            ...d.settings,
+            general: {
+              ...DEFAULTS.general,
+              name: user?.clinic_name || '',  // fallback al nombre del auth token
+              ...d.settings.general,
+            },
+          }));
+        }
+      })
+      .catch(() => {/* silencioso — usa nombre del auth token */})
       .finally(() => setLoading(false));
-  }, [user?.clinic_id]);
+  }, [user?.clinic_id, user?.clinic_name]);
 
   return { settings, loading };
 }

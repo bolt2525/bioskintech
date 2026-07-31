@@ -4,7 +4,7 @@ import {
   Camera, X, Trash2, Check, Images, ZoomIn, ZoomOut,
   RotateCcw, RotateCw, Info, Eye, EyeOff
 } from 'lucide-react';
-import Clinical3DViewer, { Marker3D, EditablePoint } from './Clinical3DViewer';
+import Clinical3DViewer, { Marker3D, EditablePoint, FreehandLine, SurfaceShape } from './Clinical3DViewer';
 import type { ReferenceLine, ProjectedPosition } from './Clinical3DViewer';
 
 // ==========================================
@@ -33,6 +33,9 @@ interface InjectableCaptureModalProps {
   referenceLines?: ReferenceLine[];
   /** Puntos editables del trazado */
   editablePoints?: EditablePoint[];
+  /** Líneas y formas trazadas a mano (relleno HA) */
+  freehandLines?: FreehandLine[];
+  surfaceShapes?: SurfaceShape[];
   /** Capturas existentes al abrir el modal */
   initialCaptures?: CaptureImage[];
   /** Callback con la lista final de capturas al confirmar */
@@ -58,6 +61,8 @@ export default function InjectableCaptureModal({
   productType,
   referenceLines = [],
   editablePoints = [],
+  freehandLines = [],
+  surfaceShapes = [],
   initialCaptures = [],
   onConfirm,
   initialShowLines = true,
@@ -68,6 +73,7 @@ export default function InjectableCaptureModal({
   const viewerContainerRef = useRef<HTMLDivElement>(null);
   const [captures, setCaptures] = useState<CaptureImage[]>(initialCaptures);
   const [showLines, setShowLines] = useState(initialShowLines);
+  const [showFreehand, setShowFreehand] = useState(true);
   const [showEditablePoints, setShowEditablePoints] = useState(initialShowEditablePoints);
   const [showMarkers, setShowMarkers] = useState(true);
   const [showUnitNumbers, setShowUnitNumbers] = useState(initialShowUnitNumbers);
@@ -217,6 +223,20 @@ export default function InjectableCaptureModal({
                       {showLines ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
                       Líneas
                     </button>
+                    {(freehandLines.length > 0 || surfaceShapes.length > 0) && (
+                      <button
+                        onMouseDown={() => setShowFreehand(v => !v)}
+                        className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium border transition-all ${
+                          showFreehand
+                            ? 'bg-violet-50 border-violet-200 text-violet-700'
+                            : 'bg-gray-100 border-gray-200 text-gray-400'
+                        }`}
+                        title={showFreehand ? 'Ocultar trazos HA' : 'Mostrar trazos HA'}
+                      >
+                        {showFreehand ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                        Trazos
+                      </button>
+                    )}
                     {editablePoints.length > 0 && (
                       <button
                         onMouseDown={() => setShowEditablePoints(v => !v)}
@@ -292,6 +312,8 @@ export default function InjectableCaptureModal({
                     referenceLines={showLines ? referenceLines : []}
                     editablePoints={editablePoints}
                     showEditablePoints={showEditablePoints && editablePoints.length > 0}
+                    freehandLines={showFreehand ? freehandLines : []}
+                    surfaceShapes={showFreehand ? surfaceShapes : []}
                     onProjectedPositions={handleProjectedPositions}
                   />
                   {/* Unit numbers overlay */}
