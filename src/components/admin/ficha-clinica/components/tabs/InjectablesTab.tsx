@@ -271,6 +271,14 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   const [haShapeConfig, setHaShapeConfig] = useState({ fanLines: 5, fanAngle: 25, gridCells: 4, fernBranches: 5 });
   const [haShapeConfigOpen, setHaShapeConfigOpen] = useState(false);
   const [haShapeConfigTool, setHaShapeConfigTool] = useState<'ha-fan' | 'ha-grid' | 'ha-fern'>('ha-fan');
+  /** Tab al que el usuario intenta cambiar; null = ningún switch pendiente */
+  const [pendingTabSwitch, setPendingTabSwitch] = useState<'toxina' | 'relleno' | null>(null);
+  /** Quick Save HA: true mientras se está seleccionando/creando la jeringa */
+  const [unitsModalVialStep, setUnitsModalVialStep] = useState(false);
+  /** Quick Save HA: mini-form inline para registrar una nueva jeringa */
+  const [inlineVialForm, setInlineVialForm] = useState<{ open: boolean; name: string; vol: string }>({ open: false, name: '', vol: '' });
+  /** Paso actual del dibujo de malla (0=inactivo, 1=ancho, 2=largo) */
+  const [gridDrawStep, setGridDrawStep] = useState(0);
 
   // Keep ref in sync with state to avoid closure issues in the RAF callback
   useEffect(() => { showUnitNumbersRef.current = showUnitNumbers; }, [showUnitNumbers]);
@@ -1035,6 +1043,10 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     setUnitsModalPlane('');
     setUnitsModalTecnica('');
     setUnitsModalStep(1);
+    // HA: si hay 0 o >1 viales → mostrar picker de jeringa primero
+    const needVialPicker = activeType === 'relleno' && haVials.length !== 1;
+    setUnitsModalVialStep(needVialPicker);
+    setInlineVialForm({ open: false, name: '', vol: '' });
   };
 
   const handleRemovePoint = (index: number) => {
@@ -1282,7 +1294,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   // Filtrar injectables por tipo activo
   const filteredInjectables = injectables.filter(i => i.product_type === activeType);
 
-  // Resetear formulario al cambiar de sub-tab
+  // Resetear COMPLETAMENTE al cambiar de sub-tab (aislamiento botox vs HA)
   useEffect(() => {
     setCurrent({ ...EMPTY_INJECTABLE, date: getLocalDate(), product_type: activeType });
     setInjectionPoints([]);
@@ -1291,11 +1303,47 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     setEditablePoints([]);
     setUndoStack([]);
     setIsPendingDuplicate(false);
-  // ponytail: solo re-ejecutar al cambiar de tipo, no al cambiar injectables
+    // Limpiar también los estados que faltaban antes (causaban el leak de trazados)
+    setFreehandLines([]);
+    setSurfaceShapes([]);
+    setHaVials([]);
+    setActiveVialId(null);
+    setShow3D(false);
+    setSelectedElement(null);
+    setExpandedPointId(null);
+    setActiveTool('none');
+    setRefJsonLoaded(false);
+    setShowClearConfirm(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeType]);
 
   const brands = current.product_type === 'toxina' ? toxinaBrands : rellenoBrands;
+
+  /** Detecta si hay trabajo en progreso sin guardar en el tab actual */
+  const hasUnsavedWork = () =>
+    current.product_name.trim() !== '' ||
+    injectionPoints.length > 0 ||
+    freehandLines.length > 0 ||
+    surfaceShapes.length > 0;
+
+  /** Cambia de sub-tab; si hay trabajo sin guardar muestra el modal de confirmación */
+  const requestTabSwitch = (target: 'toxina' | 'relleno') => {
+    if (target === activeType) return;
+    if (hasUnsavedWork()) {
+      setPendingTabSwitch(target);
+    } else {
+      setActiveType(target);
+    }
+  };
+
+  const confirmTabSwitch = async (saveFirst: boolean) => {
+    const target = pendingTabSwitch!;
+    setPendingTabSwitch(null);
+    if (saveFirst && current.product_name.trim()) {
+      await handleSave();
+    }
+    setActiveType(target);
+  };
 
   // ==========================================
   // RENDER
@@ -1310,7 +1358,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
       {/* ── Sub-tab Selector: Toxina / Relleno ── */}
       <div className="flex gap-1 mb-5 bg-gray-100 p-1 rounded-xl w-fit shadow-inner">
         <button
-          onClick={() => setActiveType('toxina')}
+          onClick={() => requestTabSwitch('toxina')}
           className={`flex items-center gap-2 px-5 py-2.5 text-sm font-semibold rounded-lg transition-all duration-200 ${
             activeType === 'toxina'
               ? 'bg-white text-[#b8944d] shadow-md ring-1 ring-[#deb887]/40'
@@ -1326,7 +1374,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
           </span>
         </button>
         <button
-          onClick={() => setActiveType('relleno')}
+          onClick={() => requestTabSwitch('relleno')}
           className={`flex items-center gap-2 px-5 py-2.5 text-sm font-semibold rounded-lg transition-all duration-200 ${
             activeType === 'relleno'
               ? 'bg-white text-purple-600 shadow-md ring-1 ring-purple-300/40'
@@ -2308,8 +2356,18 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                         onShapeComplete={handleShapeComplete}
                         onElementSelected={handleElementSelected}
                         onFreehandLineUpdated={handleFreehandLineUpdated}
+                        onGridStepChange={setGridDrawStep}
                         haShapeConfig={haShapeConfig}
                       />
+
+                      {/* ── Hint visual del Grid 3-step ── */}
+                      {activeTool === 'ha-grid' && gridDrawStep >= 0 && (
+                        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-30 bg-slate-800/90 backdrop-blur-sm text-white text-[11px] font-semibold px-4 py-2 rounded-xl shadow-lg border border-slate-600 pointer-events-none">
+                          {gridDrawStep === 0 && '① Haz clic para fijar la primera esquina del mallado'}
+                          {gridDrawStep === 1 && '② Mueve el mouse para definir el ancho — clic para confirmar'}
+                          {gridDrawStep === 2 && '③ Mueve el mouse para definir el largo — clic para finalizar'}
+                        </div>
+                      )}
 
                       {/* ── Panel flotante de propiedades del elemento seleccionado ── */}
                       {selectedElement && selectedElementData && (
@@ -2771,6 +2829,59 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
       </div>
       </div>
 
+      {/* ========== MODAL: CONFIRMAR CAMBIO DE TAB ========== */}
+      <AnimatePresence>
+        {pendingTabSwitch && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
+          >
+            <motion.div
+              initial={{ scale: 0.92, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.92, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6"
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className={`p-2 rounded-xl ${pendingTabSwitch === 'toxina' ? 'bg-amber-100' : 'bg-purple-100'}`}>
+                  {pendingTabSwitch === 'toxina' ? <FlaskConical className="w-5 h-5 text-amber-600" /> : <Droplets className="w-5 h-5 text-purple-600" />}
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-gray-800">¿Cambiar a {pendingTabSwitch === 'toxina' ? 'Toxina Botulínica' : 'Relleno (HA)'}?</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">Tienes trabajo no guardado en este tab</p>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {current.product_name.trim() && (
+                  <button
+                    onClick={() => confirmTabSwitch(true)}
+                    className="w-full flex items-center gap-2 px-4 py-3 rounded-xl bg-[#deb887] text-white font-semibold text-sm hover:bg-[#c5a075] transition-colors"
+                  >
+                    <Save className="w-4 h-4" />
+                    Guardar y cambiar de tab
+                  </button>
+                )}
+                <button
+                  onClick={() => confirmTabSwitch(false)}
+                  className="w-full flex items-center gap-2 px-4 py-3 rounded-xl bg-red-50 text-red-600 font-semibold text-sm hover:bg-red-100 border border-red-200 transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Descartar cambios y cambiar
+                </button>
+                <button
+                  onClick={() => setPendingTabSwitch(null)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50 transition-colors"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ========== MODAL: CONFIGURACIÓN DE FORMAS HA ========== */}
       <AnimatePresence>
         {haShapeConfigOpen && (
@@ -2973,6 +3084,93 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
               ═══════════════════════════════════════════════ */}
               {current.product_type === 'relleno' && (
                 <div className="mb-4 space-y-3">
+                  {/* ── PASO PREVIO: Seleccionar jeringa (cuando hay 0 o >1 viales) ── */}
+                  {unitsModalVialStep ? (
+                    <div className="space-y-3">
+                      <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                        {haVials.length === 0 ? 'Registra una jeringa primero' : 'Selecciona la jeringa a usar'}
+                      </p>
+                      {/* Lista de viales existentes */}
+                      {haVials.map(v => {
+                        const remaining = v.volume_ml - usedMlByVial(v.id);
+                        return (
+                          <button
+                            key={v.id}
+                            onClick={() => { setActiveVialId(v.id); setUnitsModalVialStep(false); }}
+                            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border-2 border-gray-200 hover:border-violet-400 hover:bg-violet-50 transition-all"
+                          >
+                            <div className="w-4 h-4 rounded-full flex-shrink-0" style={{ backgroundColor: v.color }} />
+                            <div className="text-left min-w-0">
+                              <p className="text-sm font-semibold text-gray-800 truncate">{v.product_name || 'Vial'}</p>
+                              <p className="text-[10px] text-gray-400">{remaining.toFixed(1)} / {v.volume_ml} ml disponibles</p>
+                            </div>
+                            <Check className="w-4 h-4 ml-auto text-violet-400 opacity-0 group-hover:opacity-100" />
+                          </button>
+                        );
+                      })}
+                      {/* Botón + Registrar nueva jeringa */}
+                      {!inlineVialForm.open ? (
+                        <button
+                          onClick={() => setInlineVialForm({ open: true, name: current.product_name || '', vol: String(current.volume_used || '') })}
+                          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl border-2 border-dashed border-violet-300 text-violet-600 text-sm font-semibold hover:bg-violet-50 transition-colors"
+                        >
+                          <Plus className="w-4 h-4" />
+                          Registrar nueva jeringa
+                        </button>
+                      ) : (
+                        <div className="p-3 bg-violet-50 border border-violet-200 rounded-xl space-y-2">
+                          <p className="text-[11px] font-semibold text-violet-700 uppercase tracking-wide">Nueva jeringa</p>
+                          <input
+                            type="text"
+                            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-violet-300 outline-none"
+                            placeholder="Nombre del producto"
+                            value={inlineVialForm.name}
+                            onChange={e => setInlineVialForm(f => ({ ...f, name: e.target.value }))}
+                            autoFocus
+                          />
+                          <input
+                            type="number"
+                            step="0.1"
+                            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-violet-300 outline-none"
+                            placeholder="Volumen total (ml)"
+                            value={inlineVialForm.vol}
+                            onChange={e => setInlineVialForm(f => ({ ...f, vol: e.target.value }))}
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => {
+                                if (!inlineVialForm.name.trim() || !Number(inlineVialForm.vol)) return;
+                                const newVial: HaVial = {
+                                  id: `vial-${Date.now()}`,
+                                  product_name: inlineVialForm.name.trim(),
+                                  brand: '',
+                                  lot_number: '',
+                                  expiration_date: '',
+                                  volume_ml: Number(inlineVialForm.vol),
+                                  color: getVialColor(haVials.length),
+                                };
+                                setHaVials(prev => [...prev, newVial]);
+                                setActiveVialId(newVial.id);
+                                setInlineVialForm({ open: false, name: '', vol: '' });
+                                setUnitsModalVialStep(false);
+                              }}
+                              disabled={!inlineVialForm.name.trim() || !Number(inlineVialForm.vol)}
+                              className="flex-1 py-1.5 rounded-lg bg-violet-600 text-white text-xs font-semibold hover:bg-violet-700 disabled:opacity-40 transition-colors"
+                            >
+                              Registrar y seleccionar
+                            </button>
+                            <button
+                              onClick={() => setInlineVialForm({ open: false, name: '', vol: '' })}
+                              className="px-3 py-1.5 rounded-lg border border-gray-200 text-gray-500 text-xs hover:bg-gray-50"
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <>
                   {/* Vial activo + zona auto-detectada */}
                   <div className="flex items-center gap-2 p-2.5 bg-gray-50 rounded-xl">
                     {activeVial ? (
@@ -2982,6 +3180,14 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                         <span className="ml-auto text-[10px] text-gray-400">
                           {(activeVial.volume_ml - usedMlByVial(activeVial.id)).toFixed(1)} ml rest.
                         </span>
+                        {haVials.length > 1 && (
+                          <button
+                            onClick={() => setUnitsModalVialStep(true)}
+                            className="ml-1 text-[10px] text-violet-500 hover:text-violet-700 underline"
+                          >
+                            cambiar
+                          </button>
+                        )}
                       </>
                     ) : (
                       <span className="text-xs text-gray-400 italic">Sin vial activo</span>
@@ -3047,6 +3253,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                       </div>
                     </div>
                   </details>
+                    </>
+                  )}
                 </div>
               )}
 
@@ -3211,8 +3419,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     </button>
                   )}
 
-                  {/* Guardar — relleno HA siempre disponible / toxina en último paso */}
-                  {(current.product_type === 'relleno' ||
+                  {/* Guardar — relleno HA (solo cuando no estamos en el picker de vial) / toxina en último paso */}
+                  {((current.product_type === 'relleno' && !unitsModalVialStep) ||
                     (current.product_type === 'toxina' && (unitsModalStep === 1 || unitsModalStep === 4))
                   ) && (
                     <button

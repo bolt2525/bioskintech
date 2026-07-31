@@ -160,6 +160,8 @@ const buildSurfaceTube = (
     const SPACING = 0.040;
     const DOT_R = radius * 1.5;
     const HALO_R = radius * 3;
+    // Hitbox invisible para cada punto dashed (radio 8× más grande para raycasting)
+    const HIT_R = radius * 8;
     let acc = 0;
     for (let i = 1; i < pts.length; i++) {
       const seg = pts[i].distanceTo(pts[i - 1]);
@@ -178,15 +180,30 @@ const buildSurfaceTube = (
         dot.position.copy(pts[i]);
         dot.renderOrder = 1000;
         grp.add(dot);
+        // Hitbox invisible
+        const hitGeo = new THREE.SphereGeometry(HIT_R, 6, 6);
+        const hitMat = new THREE.MeshBasicMaterial({ visible: false });
+        const hitMesh = new THREE.Mesh(hitGeo, hitMat);
+        hitMesh.position.copy(pts[i]);
+        hitMesh.userData.isHitbox = true;
+        grp.add(hitMesh);
       }
     }
   } else {
     const curve = new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.5);
-    const tubeGeo = new THREE.TubeGeometry(curve, Math.max(pts.length * 2, 60), radius, 6, false);
+    const segments = Math.max(pts.length * 2, 60);
+    // Tubo visual
+    const tubeGeo = new THREE.TubeGeometry(curve, segments, radius, 6, false);
     const tubeMat = new THREE.MeshBasicMaterial({ color, depthTest: false, depthWrite: false, transparent: true, opacity });
     const mesh = new THREE.Mesh(tubeGeo, tubeMat);
     mesh.renderOrder = 999;
     grp.add(mesh);
+    // Tubo hitbox invisible (radio 12× para raycasting confiable sobre tubos finos)
+    const hitGeo = new THREE.TubeGeometry(curve, segments, radius * 12, 6, false);
+    const hitMat = new THREE.MeshBasicMaterial({ visible: false });
+    const hitMesh = new THREE.Mesh(hitGeo, hitMat);
+    hitMesh.userData.isHitbox = true;
+    grp.add(hitMesh);
   }
   return grp;
 };
@@ -294,6 +311,7 @@ interface Clinical3DViewerProps {
   onElementSelected?: (id: string | null, type: string | null) => void;
   /** Callback cuando el usuario mueve un endpoint de una línea freehand (resize) */
   onFreehandLineUpdated?: (id: string, points: { x: number; y: number; z: number }[]) => void;
+  onGridStepChange?: (step: number) => void;
   /** Configuración de formas HA (abanico, malla, helecho) */
   haShapeConfig?: { fanLines: number; fanAngle: number; gridCells: number; fernBranches: number };
 }
@@ -333,6 +351,7 @@ const ThreeEngine: React.FC<{
   onShapeComplete?: (shape: SurfaceShape) => void;
   onElementSelected?: (id: string | null, type: string | null) => void;
   onFreehandLineUpdated?: (id: string, points: { x: number; y: number; z: number }[]) => void;
+  onGridStepChange?: (step: number) => void;
   /** Configuración de formas HA (abanico, malla, helecho) */
   haShapeConfig?: { fanLines: number; fanAngle: number; gridCells: number; fernBranches: number };
 }> = ({
@@ -344,7 +363,7 @@ const ThreeEngine: React.FC<{
   freehandLines = [], surfaceShapes = [],
   activeTool = 'none', selectedElementId = null,
   pendingBrushColor = '#8b5cf6', pendingBrushThickness = 1.0,
-  onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated,
+  onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onGridStepChange,
   haShapeConfig = { fanLines: 5, fanAngle: 25, gridCells: 4, fernBranches: 5 },
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
@@ -372,7 +391,7 @@ const ThreeEngine: React.FC<{
     onMeshClick, onLoaded, onError, zones, readOnly, lineDrawingMode, onLinePointAnchored,
     pointMode, onEditablePointMoved, onEditablePointDeleted, onEditablePointClicked, onProjectedPositions,
     activeTool, selectedElementId, pendingBrushColor, pendingBrushThickness,
-    onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated,
+    onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onGridStepChange,
     haShapeConfig, freehandLines,
   });
   useEffect(() => {
@@ -380,7 +399,7 @@ const ThreeEngine: React.FC<{
       onMeshClick, onLoaded, onError, zones, readOnly, lineDrawingMode, onLinePointAnchored,
       pointMode, onEditablePointMoved, onEditablePointDeleted, onEditablePointClicked, onProjectedPositions,
       activeTool, selectedElementId, pendingBrushColor, pendingBrushThickness,
-      onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated,
+      onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onGridStepChange,
       haShapeConfig, freehandLines,
     };
   });
@@ -497,6 +516,14 @@ const ThreeEngine: React.FC<{
     let shapeCurrentW = 0;
     let shapeCurrentH = 0;
 
+    // ── Grid 3-step state ─────────────────────────────────────────────────
+    let gridStep = 0; // 0=esperando 1er clic, 1=arrastrando ancho, 2=arrastrando largo
+    let gridAnchorA: THREE.Vector3 | null = null;
+    let gridDirMain: THREE.Vector3 | null = null;   // dirección principal (primer click → segundo)
+    let gridDirPerp: THREE.Vector3 | null = null;   // dirección perpendicular (para el ancho)
+    let gridHalfWidth = 0;
+    let gridLen = 0;
+
     const clearBrushPreview = () => {
       const grp = brushPreviewGroupRef.current;
       if (!grp) return;
@@ -563,7 +590,8 @@ const ThreeEngine: React.FC<{
     /** Aumenta opacidad y marca `hoverBase` en los meshes del grupo */
     const applyHover = (lineGrp: THREE.Object3D) => {
       lineGrp.traverse((c: any) => {
-        if (c.isMesh && c.material) {
+        // Nunca afectar los hitbox invisibles
+        if (c.isMesh && c.material && !c.userData.isHitbox) {
           if (c.userData.hoverBase === undefined) c.userData.hoverBase = c.material.opacity ?? 1;
           c.material.opacity = Math.min(1.0, (c.userData.hoverBase) * 1.6 + 0.2);
           c.material.needsUpdate = true;
@@ -574,7 +602,7 @@ const ThreeEngine: React.FC<{
     /** Restaura opacidad original del grupo */
     const restoreHover = (lineGrp: THREE.Object3D) => {
       lineGrp.traverse((c: any) => {
-        if (c.isMesh && c.material && c.userData.hoverBase !== undefined) {
+        if (c.isMesh && c.material && c.userData.hoverBase !== undefined && !c.userData.isHitbox) {
           c.material.opacity = c.userData.hoverBase;
           c.material.needsUpdate = true;
           delete c.userData.hoverBase;
@@ -652,21 +680,28 @@ const ThreeEngine: React.FC<{
         mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
         mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
         raycaster.setFromCamera(mouse, cameraRef.current);
-        const handleHits = raycaster.intersectObjects(handlesGroupRef.current.children, false);
+        // Cada "handle" es ahora un Group (visual + hitbox); colectar todos los meshes
+        const handleMeshes: THREE.Object3D[] = [];
+        handlesGroupRef.current.children.forEach(grpH => grpH.traverse(c => { if ((c as THREE.Mesh).isMesh) handleMeshes.push(c); }));
+        const handleHits = raycaster.intersectObjects(handleMeshes, false);
         if (handleHits.length > 0) {
-          const hit = handleHits[0].object as THREE.Mesh;
-          handleDragRole = hit.userData.handleRole;
-          handleDragLineId = hit.userData.handleLineId;
-          handleBodyStartSurface = null;
-          handleBodyOriginalPoints = null;
-          if (controlsRef.current) controlsRef.current.enabled = false;
-          isDragging = false;
-          return;
+          // Subir al Group del handle para obtener role y lineId
+          let hitGrp: THREE.Object3D | null = handleHits[0].object;
+          while (hitGrp && !hitGrp.userData.handleRole) hitGrp = hitGrp.parent;
+          if (hitGrp?.userData.handleRole) {
+            handleDragRole = hitGrp.userData.handleRole;
+            handleDragLineId = hitGrp.userData.handleLineId;
+            handleBodyStartSurface = null;
+            handleBodyOriginalPoints = null;
+            if (controlsRef.current) controlsRef.current.enabled = false;
+            isDragging = false;
+            return;
+          }
         }
       }
 
       // ── Modo freehand brush ────────────────────────────────────────────────
-      if (tool === 'freehand-brush' || tool === 'straight-line' || tool === 'ha-fan' || tool === 'ha-grid' || tool === 'ha-fern') {
+      if (tool === 'freehand-brush' || tool === 'straight-line' || tool === 'ha-fan' || tool === 'ha-fern') {
         if (!faceMeshRef.current || !cameraRef.current) return;
         const rect = renderer.domElement.getBoundingClientRect();
         mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
@@ -749,6 +784,47 @@ const ThreeEngine: React.FC<{
     };
 
     const onPointerMove = (e: MouseEvent) => {
+      // ── Grid 3-step: preview en tiempo real ───────────────────────────────
+      if (gridStep > 0 && faceMeshRef.current && cameraRef.current) {
+        const rect = renderer.domElement.getBoundingClientRect();
+        mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(mouse, cameraRef.current);
+        const gridHovHits = raycaster.intersectObject(faceMeshRef.current, true);
+        if (gridHovHits.length > 0 && brushPreviewGroupRef.current) {
+          const hoverPt = gridHovHits[0].point.clone();
+          clearBrushPreview();
+          const col = new THREE.Color(callbacks.current.pendingBrushColor || '#8b5cf6');
+          const th = (callbacks.current.pendingBrushThickness || 1.0) * 0.003;
+          if (gridStep === 1 && gridAnchorA) {
+            // Preview: línea de ancho (dirección perpendicular)
+            brushPreviewGroupRef.current.add(buildSurfaceTube(
+              surfaceLine(gridAnchorA, hoverPt, 6), col, 0.45, th, false
+            ));
+          } else if (gridStep === 2 && gridAnchorA && gridDirPerp && gridDirMain) {
+            // Preview: mallado completo con ancho fijado y nuevo largo
+            const cfg = callbacks.current.haShapeConfig || { fanLines: 5, fanAngle: 25, gridCells: 4, fernBranches: 5 };
+            const N = cfg.gridCells;
+            const rawLen = hoverPt.clone().sub(gridAnchorA).dot(gridDirMain);
+            const previewLen = Math.abs(rawLen);
+            if (previewLen > 0.05) {
+              const dirM = gridDirMain.clone().multiplyScalar(rawLen > 0 ? 1 : -1);
+              for (let i = 0; i <= N; i++) {
+                const base = gridAnchorA.clone().addScaledVector(gridDirPerp, ((i / N) - 0.5) * gridHalfWidth * 2);
+                brushPreviewGroupRef.current.add(buildSurfaceTube(surfaceLine(base, base.clone().addScaledVector(dirM, previewLen), 8), col, 0.4, th, false));
+              }
+              for (let j = 0; j <= N; j++) {
+                const base = gridAnchorA.clone().addScaledVector(dirM, (j / N) * previewLen);
+                const p1 = base.clone().addScaledVector(gridDirPerp, -gridHalfWidth);
+                const p2 = base.clone().addScaledVector(gridDirPerp, gridHalfWidth);
+                brushPreviewGroupRef.current.add(buildSurfaceTube(surfaceLine(p1, p2, 8), col, 0.4, th, false));
+              }
+            }
+          }
+        }
+        return;
+      }
+
       // ── Handle drag en línea seleccionada ─────────────────────────────────
       if (handleDragRole && handleDragLineId && faceMeshRef.current && cameraRef.current) {
         const rect = renderer.domElement.getBoundingClientRect();
@@ -764,6 +840,21 @@ const ThreeEngine: React.FC<{
               (h: any) => h.userData.handleRole === handleDragRole && h.userData.handleLineId === handleDragLineId
             );
             if (handle) handle.position.copy(surfPt);
+            // Preview en tiempo real: regenerar la línea entre los dos extremos actuales
+            const startH = handlesGroupRef.current?.children.find((h: any) => h.userData.handleRole === 'start');
+            const endH = handlesGroupRef.current?.children.find((h: any) => h.userData.handleRole === 'end');
+            if (startH && endH) {
+              clearBrushPreview();
+              const line = callbacks.current.freehandLines?.find((l: FreehandLine) => l.id === handleDragLineId);
+              if (line) {
+                const col = new THREE.Color(line.color);
+                const th = (line.thickness || 1.0) * 0.003;
+                const previewPts = surfaceLine(startH.position.clone(), endH.position.clone(), 10);
+                if (brushPreviewGroupRef.current) {
+                  brushPreviewGroupRef.current.add(buildSurfaceTube(previewPts, col, 0.5, th, false));
+                }
+              }
+            }
           } else if (handleDragRole === 'body') {
             // Capturar el punto de inicio del body drag
             if (!handleBodyStartSurface) {
@@ -780,6 +871,17 @@ const ThreeEngine: React.FC<{
                 const orig = handleBodyOriginalPoints![origIdx];
                 h.position.set(orig.x + offset.x, orig.y + offset.y, orig.z + offset.z);
               });
+              // Preview en tiempo real de la línea desplazada
+              clearBrushPreview();
+              const line = callbacks.current.freehandLines?.find((l: FreehandLine) => l.id === handleDragLineId);
+              if (line && brushPreviewGroupRef.current) {
+                const col = new THREE.Color(line.color);
+                const th = (line.thickness || 1.0) * 0.003;
+                const movedPts = handleBodyOriginalPoints.map(p =>
+                  new THREE.Vector3(p.x + offset.x, p.y + offset.y, p.z + offset.z)
+                );
+                brushPreviewGroupRef.current.add(buildSurfaceTube(movedPts, col, 0.5, th, false));
+              }
             }
           }
           isDragging = true;
@@ -984,6 +1086,7 @@ const ThreeEngine: React.FC<{
         handleDragRole = null;
         handleDragLineId = null;
         if (controlsRef.current) controlsRef.current.enabled = true;
+        clearBrushPreview(); // limpiar preview en tiempo real
         isDragging = true;
 
         const line = callbacks.current.freehandLines?.find((l: FreehandLine) => l.id === lineId);
@@ -1198,9 +1301,81 @@ const ThreeEngine: React.FC<{
 
       const tool = callbacks.current.activeTool;
 
-      // ── Modo brush/shape/straight/ha: ignorar onClick (ya manejado en pointerUp) ──
+      // ── Modo brush/shape/straight/ha (excepto ha-grid que usa click): ignorar onClick ──
       if (tool === 'freehand-brush' || tool === 'shape-circle' || tool === 'shape-rect'
-        || tool === 'straight-line' || tool === 'ha-fan' || tool === 'ha-grid' || tool === 'ha-fern') return;
+        || tool === 'straight-line' || tool === 'ha-fan' || tool === 'ha-fern') return;
+
+      // ── ha-grid: flujo 3-step basado en clicks ─────────────────────────────
+      if (tool === 'ha-grid') {
+        if (!faceMeshRef.current || !cameraRef.current) return;
+        const rect2 = renderer.domElement.getBoundingClientRect();
+        mouse.x = ((event.clientX - rect2.left) / rect2.width) * 2 - 1;
+        mouse.y = -((event.clientY - rect2.top) / rect2.height) * 2 + 1;
+        raycaster.setFromCamera(mouse, cameraRef.current);
+        const gridHits = raycaster.intersectObject(faceMeshRef.current, true);
+        if (gridHits.length === 0) return;
+        const clickPt = gridHits[0].point.clone();
+
+        if (gridStep === 0) {
+          // 1er clic: fijar esquina A
+          gridAnchorA = clickPt;
+          gridStep = 1;
+          callbacks.current.onGridStepChange?.(1);
+        } else if (gridStep === 1 && gridAnchorA) {
+          // 2do clic: fijar dirección y ancho
+          const raw = clickPt.clone().sub(gridAnchorA);
+          gridDirPerp = raw.clone().normalize(); // perpendicular al grid (ancho)
+          gridHalfWidth = raw.length() / 2;
+          // La dirección principal es perpendicular al ancho
+          let mainDir = new THREE.Vector3().crossVectors(gridDirPerp, new THREE.Vector3(0, 1, 0)).normalize();
+          if (mainDir.lengthSq() < 0.001) mainDir = new THREE.Vector3().crossVectors(gridDirPerp, new THREE.Vector3(0, 0, 1)).normalize();
+          gridDirMain = mainDir;
+          gridStep = 2;
+          callbacks.current.onGridStepChange?.(2);
+        } else if (gridStep === 2 && gridAnchorA && gridDirMain && gridDirPerp) {
+          // 3er clic: fijar longitud y generar el grid
+          const rawLen = clickPt.clone().sub(gridAnchorA);
+          gridLen = rawLen.dot(gridDirMain);
+          if (Math.abs(gridLen) < 0.05) { gridStep = 0; return; }
+          const lenSign = gridLen > 0 ? 1 : -1;
+          gridLen = Math.abs(gridLen);
+          const ptA = gridAnchorA;
+          const dirM = gridDirMain.clone().multiplyScalar(lenSign);
+
+          const cfg = callbacks.current.haShapeConfig || { fanLines: 5, fanAngle: 25, gridCells: 4, fernBranches: 5 };
+          const N = cfg.gridCells;
+          const col = callbacks.current.pendingBrushColor || '#8b5cf6';
+          const th = callbacks.current.pendingBrushThickness || 1.0;
+          const groupId = `grid-${Date.now()}`;
+
+          // Líneas a lo largo de dirM (N+1 líneas)
+          for (let i = 0; i <= N; i++) {
+            const t = i / N;
+            const base = ptA.clone().addScaledVector(gridDirPerp, (t - 0.5) * gridHalfWidth * 2);
+            const pts = surfaceLine(base, base.clone().addScaledVector(dirM, gridLen), 12);
+            callbacks.current.onFreehandLineComplete?.({ id: `fh-${Date.now()}-h${i}`, points: pts.map(p => ({x:p.x,y:p.y,z:p.z})), color: col, thickness: th, groupId, technique_preset: 'Malla' });
+          }
+          // Líneas a lo largo de gridDirPerp (N+1 líneas)
+          for (let j = 0; j <= N; j++) {
+            const t = j / N;
+            const base = ptA.clone().addScaledVector(dirM, t * gridLen);
+            const p1 = base.clone().addScaledVector(gridDirPerp, -gridHalfWidth);
+            const p2 = base.clone().addScaledVector(gridDirPerp, gridHalfWidth);
+            const pts = surfaceLine(p1, p2, 12);
+            callbacks.current.onFreehandLineComplete?.({ id: `fh-${Date.now()}-v${j}`, points: pts.map(p => ({x:p.x,y:p.y,z:p.z})), color: col, thickness: th, groupId, technique_preset: 'Malla' });
+          }
+          // Reset
+          gridStep = 0;
+          gridAnchorA = null;
+          gridDirMain = null;
+          gridDirPerp = null;
+          gridHalfWidth = 0;
+          gridLen = 0;
+          clearBrushPreview();
+          callbacks.current.onGridStepChange?.(0);
+        }
+        return;
+      }
 
       // ── Selección de elementos existentes (freehand, shapes, reference lines) ─
       if (tool === 'none' || tool === 'freehand-poly') {
@@ -1846,14 +2021,23 @@ const ThreeEngine: React.FC<{
     if (!line || line.points.length < 2) return;
 
     const makeHandle = (color: number, role: 'start' | 'end' | 'body', pt: { x: number; y: number; z: number }) => {
-      const geo = new THREE.SphereGeometry(0.07, 12, 12);
-      const mat = new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.92 });
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.set(pt.x, pt.y, pt.z);
-      mesh.userData.handleRole = role;
-      mesh.userData.handleLineId = line.id;
-      mesh.renderOrder = 1003;
-      return mesh;
+      const grp2 = new THREE.Group();
+      grp2.position.set(pt.x, pt.y, pt.z);
+      grp2.userData.handleRole = role;
+      grp2.userData.handleLineId = line.id;
+      // Esfera visual pequeña (1px aproximado en la escena)
+      const geo = new THREE.SphereGeometry(0.015, 10, 10);
+      const mat = new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.90 });
+      const vis = new THREE.Mesh(geo, mat);
+      vis.renderOrder = 1003;
+      grp2.add(vis);
+      // Esfera hitbox invisible más grande para facilitar el click
+      const hGeo = new THREE.SphereGeometry(0.055, 8, 8);
+      const hMat = new THREE.MeshBasicMaterial({ visible: false });
+      const hit = new THREE.Mesh(hGeo, hMat);
+      hit.userData.isHitbox = true;
+      grp2.add(hit);
+      return grp2;
     };
 
     // Handle inicio (verde)
@@ -2082,6 +2266,7 @@ export default function Clinical3DViewer({
   onShapeComplete,
   onElementSelected,
   onFreehandLineUpdated,
+  onGridStepChange,
   haShapeConfig = { fanLines: 5, fanAngle: 25, gridCells: 4, fernBranches: 5 },
 }: Clinical3DViewerProps) {
   const [modelSource, setModelSource] = useState<{ type: 'url' | 'buffer'; data: string | ArrayBuffer }>({
