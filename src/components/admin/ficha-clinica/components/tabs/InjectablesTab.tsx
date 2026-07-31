@@ -175,6 +175,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
 
   // Capture panel states
   const [captureModalOpen, setCaptureModalOpen] = useState(false);
+  /** Alerta para capturas/impresión: 'capture-save-first' | 'print-no-captures' | null */
+  const [captureAlert, setCaptureAlert] = useState<'capture-save-first' | 'print-no-captures' | null>(null);
   const [capturedImages, setCapturedImages] = useState<CaptureImage[]>([]);
 
   // Dialog states
@@ -568,6 +570,35 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
       setMessage({ type: 'error', text: 'Error al guardar el inyectable' });
     } finally {
       setSaving(false);
+    }
+  };
+
+  /**
+   * Abre el modal de capturas. Si hay trabajo no guardado → pide guardar primero.
+   * Las capturas siempre reflejan el registro que está cargado/seleccionado.
+   */
+  const handleOpenCaptures = () => {
+    // Si hay marcaciones o trazados SIN guardar (registro nuevo sin ID)
+    const hasUnsaved = !current.id && hasUnsavedWork();
+    if (hasUnsaved) {
+      setCaptureAlert('capture-save-first');
+    } else {
+      setCaptureModalOpen(true);
+    }
+  };
+
+  /**
+   * Abre la impresión. Si no hay capturas → avisa y deja elegir.
+   */
+  const handleOpenPrint = () => {
+    if (!current.product_name) {
+      setMessage({ type: 'error', text: 'Seleccione o registre un inyectable primero' });
+      return;
+    }
+    if (capturedImages.length === 0) {
+      setCaptureAlert('print-no-captures');
+    } else {
+      handlePrint();
     }
   };
 
@@ -1044,10 +1075,9 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     setUnitsModalZoneFilter('');
     setUnitsModalPlane('');
     setUnitsModalTecnica('');
-    // ── Quick Save universal: siempre abrir directamente en el paso de volumen ──
-    // Para HA: vial picker cuando sea necesario; para toxina: saltar a paso 1 (UI)
-    const needVialPicker = activeType === 'relleno' && haVials.length !== 1;
-    setUnitsModalVialStep(needVialPicker);
+    // ── Quick Save universal: abrir directamente en el paso de volumen (sin picker de vial) ──
+    // El vial activo ya está seleccionado en el formulario principal
+    setUnitsModalVialStep(false); // Never show vial picker in Quick Save
     setUnitsModalStep(1); // Siempre paso 1 (volumen) para ambos tipos
     setInlineVialForm({ open: false, name: '', vol: '' });
   };
@@ -1601,7 +1631,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={() => setCaptureModalOpen(true)}
+                onClick={handleOpenCaptures}
                 className="relative p-2 hover:bg-gray-100 rounded-lg text-gray-600 border border-gray-200"
               >
                 <Images className="w-5 h-5" />
@@ -1617,7 +1647,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={handlePrint}
+                onClick={handleOpenPrint}
                 className="p-2 hover:bg-gray-100 rounded-lg text-gray-600 border border-gray-200"
               >
                 <Printer className="w-5 h-5" />
@@ -3030,6 +3060,92 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
         )}
       </AnimatePresence>
 
+      {/* ========== MODAL: ALERTA DE CAPTURAS / IMPRESIÓN ========== */}
+      <AnimatePresence>
+        {captureAlert && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
+          >
+            <motion.div
+              initial={{ scale: 0.92, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.92, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6"
+            >
+              {captureAlert === 'capture-save-first' ? (
+                <>
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2 rounded-xl bg-amber-100">
+                      <Images className="w-5 h-5 text-amber-600" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-gray-800">Guardar antes de capturar</h3>
+                      <p className="text-xs text-gray-500 mt-0.5">Hay marcaciones no guardadas. Guarda primero para tomar capturas del registro.</p>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <button
+                      onClick={async () => {
+                        setCaptureAlert(null);
+                        await handleSave();
+                        setCaptureModalOpen(true);
+                      }}
+                      className="w-full flex items-center gap-2 px-4 py-3 rounded-xl bg-[#deb887] text-white font-semibold text-sm hover:bg-[#c5a075] transition-colors"
+                    >
+                      <Save className="w-4 h-4" />
+                      Guardar y abrir capturas
+                    </button>
+                    <button
+                      onClick={() => setCaptureAlert(null)}
+                      className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50 transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2 rounded-xl bg-blue-100">
+                      <Printer className="w-5 h-5 text-blue-600" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-gray-800">Sin capturas del mapeo 3D</h3>
+                      <p className="text-xs text-gray-500 mt-0.5">El informe no incluirá imágenes del mapeo facial.</p>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <button
+                      onClick={() => { setCaptureAlert(null); setCaptureModalOpen(true); }}
+                      className="w-full flex items-center gap-2 px-4 py-3 rounded-xl bg-[#deb887] text-white font-semibold text-sm hover:bg-[#c5a075] transition-colors"
+                    >
+                      <Images className="w-4 h-4" />
+                      Ir a capturar ahora
+                    </button>
+                    <button
+                      onClick={() => { setCaptureAlert(null); handlePrint(); }}
+                      className="w-full flex items-center gap-2 px-4 py-3 rounded-xl bg-gray-100 text-gray-700 font-semibold text-sm hover:bg-gray-200 transition-colors"
+                    >
+                      <Printer className="w-4 h-4" />
+                      Imprimir sin capturas
+                    </button>
+                    <button
+                      onClick={() => setCaptureAlert(null)}
+                      className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-gray-500 text-sm font-medium hover:bg-gray-50 transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ========== CAPTURE MODAL ========== */}
       <InjectableCaptureModal
         isOpen={captureModalOpen}
@@ -3091,119 +3207,20 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
               )}
 
               {/* ═══════════════════════════════════════════════
-                  QUICK SAVE — RELLENO HA (1 paso)
+                  QUICK SAVE — RELLENO HA (solo volumen)
               ═══════════════════════════════════════════════ */}
               {current.product_type === 'relleno' && (
                 <div className="mb-4 space-y-3">
-                  {/* ── PASO PREVIO: Seleccionar jeringa (cuando hay 0 o >1 viales) ── */}
-                  {unitsModalVialStep ? (
-                    <div className="space-y-3">
-                      <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
-                        {haVials.length === 0 ? 'Registra una jeringa primero' : 'Selecciona la jeringa a usar'}
-                      </p>
-                      {/* Lista de viales existentes */}
-                      {haVials.map(v => {
-                        const remaining = v.volume_ml - usedMlByVial(v.id);
-                        return (
-                          <button
-                            key={v.id}
-                            onClick={() => { setActiveVialId(v.id); setUnitsModalVialStep(false); }}
-                            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border-2 border-gray-200 hover:border-violet-400 hover:bg-violet-50 transition-all"
-                          >
-                            <div className="w-4 h-4 rounded-full flex-shrink-0" style={{ backgroundColor: v.color }} />
-                            <div className="text-left min-w-0">
-                              <p className="text-sm font-semibold text-gray-800 truncate">{v.product_name || 'Vial'}</p>
-                              <p className="text-[10px] text-gray-400">{remaining.toFixed(1)} / {v.volume_ml} ml disponibles</p>
-                            </div>
-                            <Check className="w-4 h-4 ml-auto text-violet-400 opacity-0 group-hover:opacity-100" />
-                          </button>
-                        );
-                      })}
-                      {/* Botón + Registrar nueva jeringa */}
-                      {!inlineVialForm.open ? (
-                        <button
-                          onClick={() => setInlineVialForm({ open: true, name: current.product_name || '', vol: String(current.volume_used || '') })}
-                          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl border-2 border-dashed border-violet-300 text-violet-600 text-sm font-semibold hover:bg-violet-50 transition-colors"
-                        >
-                          <Plus className="w-4 h-4" />
-                          Registrar nueva jeringa
-                        </button>
-                      ) : (
-                        <div className="p-3 bg-violet-50 border border-violet-200 rounded-xl space-y-2">
-                          <p className="text-[11px] font-semibold text-violet-700 uppercase tracking-wide">Nueva jeringa</p>
-                          <input
-                            type="text"
-                            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-violet-300 outline-none"
-                            placeholder="Nombre del producto"
-                            value={inlineVialForm.name}
-                            onChange={e => setInlineVialForm(f => ({ ...f, name: e.target.value }))}
-                            autoFocus
-                          />
-                          <input
-                            type="number"
-                            step="0.1"
-                            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-violet-300 outline-none"
-                            placeholder="Volumen total (ml)"
-                            value={inlineVialForm.vol}
-                            onChange={e => setInlineVialForm(f => ({ ...f, vol: e.target.value }))}
-                          />
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => {
-                                if (!inlineVialForm.name.trim() || !Number(inlineVialForm.vol)) return;
-                                const newVial: HaVial = {
-                                  id: `vial-${Date.now()}`,
-                                  product_name: inlineVialForm.name.trim(),
-                                  brand: '',
-                                  lot_number: '',
-                                  expiration_date: '',
-                                  volume_ml: Number(inlineVialForm.vol),
-                                  color: getVialColor(haVials.length),
-                                };
-                                setHaVials(prev => [...prev, newVial]);
-                                setActiveVialId(newVial.id);
-                                setInlineVialForm({ open: false, name: '', vol: '' });
-                                setUnitsModalVialStep(false);
-                              }}
-                              disabled={!inlineVialForm.name.trim() || !Number(inlineVialForm.vol)}
-                              className="flex-1 py-1.5 rounded-lg bg-violet-600 text-white text-xs font-semibold hover:bg-violet-700 disabled:opacity-40 transition-colors"
-                            >
-                              Registrar y seleccionar
-                            </button>
-                            <button
-                              onClick={() => setInlineVialForm({ open: false, name: '', vol: '' })}
-                              className="px-3 py-1.5 rounded-lg border border-gray-200 text-gray-500 text-xs hover:bg-gray-50"
-                            >
-                              Cancelar
-                            </button>
-                          </div>
-                        </div>
-                      )}
+                  {/* Vial activo (informativo) */}
+                  {activeVial && (
+                    <div className="flex items-center gap-2 p-2 bg-gray-50 rounded-xl">
+                      <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: activeVial.color }} />
+                      <span className="text-xs font-semibold text-gray-700 truncate">{activeVial.product_name || 'Vial activo'}</span>
+                      <span className="ml-auto text-[10px] text-gray-400">
+                        {(activeVial.volume_ml - usedMlByVial(activeVial.id)).toFixed(1)} ml rest.
+                      </span>
                     </div>
-                  ) : (
-                    <>
-                  {/* Vial activo + zona auto-detectada */}
-                  <div className="flex items-center gap-2 p-2.5 bg-gray-50 rounded-xl">
-                    {activeVial ? (
-                      <>
-                        <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: activeVial.color }} />
-                        <span className="text-xs font-semibold text-gray-700 truncate">{activeVial.product_name || 'Vial activo'}</span>
-                        <span className="ml-auto text-[10px] text-gray-400">
-                          {(activeVial.volume_ml - usedMlByVial(activeVial.id)).toFixed(1)} ml rest.
-                        </span>
-                        {haVials.length > 1 && (
-                          <button
-                            onClick={() => setUnitsModalVialStep(true)}
-                            className="ml-1 text-[10px] text-violet-500 hover:text-violet-700 underline"
-                          >
-                            cambiar
-                          </button>
-                        )}
-                      </>
-                    ) : (
-                      <span className="text-xs text-gray-400 italic">Sin vial activo</span>
-                    )}
-                  </div>
+                  )}
                   {/* Zona auto-detectada */}
                   {unitsModalZone && (
                     <div className="flex items-center gap-1.5">
@@ -3232,6 +3249,9 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                       className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300 text-center font-bold text-lg text-gray-800"
                       placeholder="0.0"
                     />
+                    <p className="text-[10px] text-gray-400 text-center mt-1">
+                      💡 Haz clic en el punto guardado para clasificar técnica y plano
+                    </p>
                   </div>
                   {/* Detalle opcional (colapsable) */}
                   <details className="group">
@@ -3264,8 +3284,6 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                       </div>
                     </div>
                   </details>
-                    </>
-                  )}
                 </div>
               )}
 
@@ -3434,8 +3452,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     </button>
                   )}
 
-                  {/* Guardar — relleno HA (solo cuando no estamos en el picker de vial) / toxina en último paso */}
-                  {((current.product_type === 'relleno' && !unitsModalVialStep) ||
+                  {/* Guardar — relleno HA siempre disponible / toxina en último paso */}
+                  {(current.product_type === 'relleno' ||
                     (current.product_type === 'toxina' && (unitsModalStep === 1 || unitsModalStep === 4))
                   ) && (
                     <button

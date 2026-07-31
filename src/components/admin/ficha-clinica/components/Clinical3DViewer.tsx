@@ -1660,10 +1660,9 @@ const ThreeEngine: React.FC<{
             }
           }
 
-          // ── Snap / imán: buscar punto cercano sobre la línea iluminada ──────
-          const canSnap = callbacks.current.activeTool === 'none' ||
-            callbacks.current.pointMode === 'add' ||
-            callbacks.current.activeTool === 'freehand-poly';
+          // ── Snap / imán: SOLO cuando el usuario está en modo "añadir punto" ──
+          // Si no hay herramienta activa → el hover es para EDICIÓN, no snap
+          const canSnap = callbacks.current.pointMode === 'add';
           if (canSnap && prevHoveredId && cameraRef.current) {
             // Proyectar hoverMouse al punto 3D en la malla
             const snapRc = new THREE.Raycaster();
