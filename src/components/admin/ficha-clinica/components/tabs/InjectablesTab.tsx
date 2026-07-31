@@ -252,6 +252,12 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   // True while the form holds an unsaved duplicate (shows pending card in sidebar)
   const [isPendingDuplicate, setIsPendingDuplicate] = useState(false);
 
+  /** Punto editable sobre el que está el cursor (sin herramienta activa) */
+  const [hoveredPointId, setHoveredPointId] = useState<string | null>(null);
+  /** Dropdown de formas agrupadas en la toolbar */
+  const [showShapesDropdown, setShowShapesDropdown] = useState(false);
+  const [showHaShapesDropdown, setShowHaShapesDropdown] = useState(false);
+
   // ── Herramientas de dibujo libre (HA) ────────────────────────────────────
   const [freehandLines, setFreehandLines] = useState<FreehandLine[]>([]);
   const [surfaceShapes, setSurfaceShapes] = useState<SurfaceShape[]>([]);
@@ -412,6 +418,11 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     acc[key].push(p);
     return acc;
   }, {} as Record<string, InjectionPoint[]>);
+
+  // Puntos incompletos: tienen volumen pero sin zona clasificada
+  const incompletePointIds = injectionPoints
+    .filter(p => !p.label && p.editablePointId)
+    .map(p => p.editablePointId!);
 
   // ==========================================
   // HANDLERS
@@ -679,6 +690,13 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
         e.preventDefault();
         handleUndo();
       }
+      if (e.key === 'Escape') {
+        setActiveTool('none');
+        setPointMode('none');
+        setActiveLineType(null);
+        setShowShapesDropdown(false);
+        setShowHaShapesDropdown(false);
+      }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
@@ -909,6 +927,10 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     const existing = injectionPoints.find(ip => ip.editablePointId === id);
     const autoTercio = tercioBoundaries ? detectTercioFromY(pt.y) : (existing?.tercio || '');
     setSelectedPointId(id);
+    // Si ya tiene volumen pero no zona → abrir en paso 2 (zona/tercio)
+    const hasVolume = existing && existing.units > 0;
+    const hasZone = existing && !!existing.label;
+    const startStep = (hasVolume && !hasZone) ? 2 : 1;
     setUnitsModal({
       open: true,
       pointId: id,
@@ -917,11 +939,11 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
       isNewPoint: false,
     });
     setUnitsModalInput(String(existing?.units ?? ''));
-    setUnitsModalTercio(autoTercio as 'superior' | 'medio' | 'inferior' | '');
+    setUnitsModalTercio((existing?.tercio || autoTercio) as 'superior' | 'medio' | 'inferior' | '');
     setUnitsModalZone(existing?.label || '');
     setUnitsModalPlane(existing?.injection_plane || '');
     setUnitsModalZoneFilter('');
-    setUnitsModalStep(1);
+    setUnitsModalStep(startStep as 1 | 2 | 3 | 4);
   };
 
   /** Punto editable movido en el visor 3D → actualizar posición */
@@ -953,9 +975,9 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     if (unitsModal.isNewPoint && pendingFreePoint) {
       // ── Punto libre nuevo (free-click o add-mode) ──────────────────────
       pushUndo(injectionPoints, markers3D, editablePoints);
-      const freeCount = injectionPoints.filter(ip => ip.label?.startsWith('punto libre')).length;
       const effectiveTercio = (unitsModalTercio || 'superior') as 'superior' | 'medio' | 'inferior';
-      const effectiveLabel = unitsModalZone || `punto libre ${freeCount + 1}`;
+      // Zona vacía en primer guardado; se completa en segundo paso (clic sobre el punto)
+      const effectiveLabel = unitsModalZone || '';
 
       // Siempre crear EditablePoint para que sea editable y aparezca en el panel
       const newEp: EditablePoint = {
@@ -965,7 +987,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
         y: pendingFreePoint.position.y,
         z: pendingFreePoint.position.z,
         lineIds: [],
-        name: effectiveLabel,
+        name: effectiveLabel || `punto ${injectionPoints.length + 1}`,
       };
       setEditablePoints(prev => [...prev, newEp]);
 
@@ -1053,32 +1075,24 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
       }
     }
 
-    const freeCount = injectionPoints.filter(ip => ip.label?.startsWith('punto libre')).length;
     const autoTercio = tercioBoundaries ? detectTercioFromY(marker.position.y) : '';
-
-    // Auto-detectar zona por tercio para Quick Save
-    const autoZone = autoTercio
-      ? (TERCIO_ZONES[autoTercio]?.[0] ?? `punto libre ${freeCount + 1}`)
-      : `punto libre ${freeCount + 1}`;
 
     setPendingFreePoint(marker);
     setUnitsModal({
       open: true,
       pointId: 'pending-free',
-      pointName: 'Nuevo punto libre',
+      pointName: 'Nuevo punto',
       existingUnits: 0,
       isNewPoint: true,
     });
     setUnitsModalInput('');
     setUnitsModalTercio(autoTercio as 'superior' | 'medio' | 'inferior' | '');
-    setUnitsModalZone(autoZone);
+    setUnitsModalZone(''); // sin zona hasta segundo paso
     setUnitsModalZoneFilter('');
     setUnitsModalPlane('');
     setUnitsModalTecnica('');
-    // ── Quick Save universal: abrir directamente en el paso de volumen (sin picker de vial) ──
-    // El vial activo ya está seleccionado en el formulario principal
-    setUnitsModalVialStep(false); // Never show vial picker in Quick Save
-    setUnitsModalStep(1); // Siempre paso 1 (volumen) para ambos tipos
+    setUnitsModalVialStep(false);
+    setUnitsModalStep(1);
     setInlineVialForm({ open: false, name: '', vol: '' });
   };
 
@@ -2015,10 +2029,11 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 {/* ── Toolbar secundaria: Herramientas de Dibujo HA ─────────────── */}
                 <div className="mb-2 flex flex-wrap items-center gap-1.5 p-2 bg-slate-900/70 rounded-xl border border-slate-700">
                   <span className="text-[10px] text-slate-500 uppercase tracking-wide font-semibold mr-1">Herramienta:</span>
+
                   {/* Punto de inyección */}
                   <Tooltip content="Punto de inyección (clic en modelo)">
                     <button
-                      onClick={() => { setActiveTool('none'); setPointMode(prev => prev === 'add' ? 'none' : 'add'); }}
+                      onClick={() => { setActiveTool('none'); setPointMode(prev => prev === 'add' ? 'none' : 'add'); setShowShapesDropdown(false); setShowHaShapesDropdown(false); }}
                       className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-all ${
                         pointMode === 'add' && activeTool === 'none'
                           ? 'bg-violet-500/25 text-violet-300 border-violet-500/50'
@@ -2033,7 +2048,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                   {/* Pincel libre */}
                   <Tooltip content="Pincel: mantener y arrastrar para trazar una línea sobre la piel">
                     <button
-                      onClick={() => { setActiveTool(activeTool === 'freehand-brush' ? 'none' : 'freehand-brush'); setPointMode('none'); }}
+                      onClick={() => { setActiveTool(activeTool === 'freehand-brush' ? 'none' : 'freehand-brush'); setPointMode('none'); setShowShapesDropdown(false); setShowHaShapesDropdown(false); }}
                       className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-all ${
                         activeTool === 'freehand-brush'
                           ? 'bg-violet-500/25 text-violet-300 border-violet-500/50'
@@ -2048,7 +2063,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                   {/* Polilínea */}
                   <Tooltip content="Polilínea: clic por vértice, doble-clic para finalizar">
                     <button
-                      onClick={() => { setActiveTool(activeTool === 'freehand-poly' ? 'none' : 'freehand-poly'); setPointMode('none'); }}
+                      onClick={() => { setActiveTool(activeTool === 'freehand-poly' ? 'none' : 'freehand-poly'); setPointMode('none'); setShowShapesDropdown(false); setShowHaShapesDropdown(false); }}
                       className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-all ${
                         activeTool === 'freehand-poly'
                           ? 'bg-violet-500/25 text-violet-300 border-violet-500/50'
@@ -2060,43 +2075,45 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     </button>
                   </Tooltip>
 
-                  {/* Círculo */}
-                  <Tooltip content="Círculo: clic+arrastrar para definir radio sobre la piel">
+                  {/* Grupo: Formas (Círculo + Rectángulo) */}
+                  <div className="relative">
                     <button
-                      onClick={() => { setActiveTool(activeTool === 'shape-circle' ? 'none' : 'shape-circle'); setPointMode('none'); }}
+                      onClick={() => { setShowShapesDropdown(v => !v); setShowHaShapesDropdown(false); }}
                       className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-all ${
-                        activeTool === 'shape-circle'
+                        activeTool === 'shape-circle' || activeTool === 'shape-rect'
                           ? 'bg-violet-500/25 text-violet-300 border-violet-500/50'
                           : 'bg-slate-700/50 text-slate-400 border-slate-600 hover:bg-slate-700'
                       }`}
                     >
                       <Circle className="w-3 h-3" />
-                      Círculo
+                      Formas
+                      <ChevronDown className="w-2.5 h-2.5 opacity-60" />
                     </button>
-                  </Tooltip>
+                    {showShapesDropdown && (
+                      <div className="absolute left-0 top-full mt-1 z-50 w-36 bg-slate-800 border border-slate-600 rounded-xl shadow-2xl overflow-hidden">
+                        <button
+                          onClick={() => { setActiveTool(activeTool === 'shape-circle' ? 'none' : 'shape-circle'); setPointMode('none'); setShowShapesDropdown(false); }}
+                          className={`w-full flex items-center gap-2 px-3 py-2 text-[11px] font-semibold hover:bg-slate-700 transition-colors ${activeTool === 'shape-circle' ? 'text-violet-300' : 'text-slate-300'}`}
+                        >
+                          <Circle className="w-3 h-3" /> Círculo
+                        </button>
+                        <button
+                          onClick={() => { setActiveTool(activeTool === 'shape-rect' ? 'none' : 'shape-rect'); setPointMode('none'); setShowShapesDropdown(false); }}
+                          className={`w-full flex items-center gap-2 px-3 py-2 text-[11px] font-semibold hover:bg-slate-700 transition-colors border-t border-slate-700 ${activeTool === 'shape-rect' ? 'text-violet-300' : 'text-slate-300'}`}
+                        >
+                          <Square className="w-3 h-3" /> Rectángulo
+                        </button>
+                      </div>
+                    )}
+                  </div>
 
-                  {/* Rectángulo */}
-                  <Tooltip content="Rectángulo: clic+arrastrar para definir tamaño sobre la piel">
-                    <button
-                      onClick={() => { setActiveTool(activeTool === 'shape-rect' ? 'none' : 'shape-rect'); setPointMode('none'); }}
-                      className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-all ${
-                        activeTool === 'shape-rect'
-                          ? 'bg-violet-500/25 text-violet-300 border-violet-500/50'
-                          : 'bg-slate-700/50 text-slate-400 border-slate-600 hover:bg-slate-700'
-                      }`}
-                    >
-                      <Square className="w-3 h-3" />
-                      Rect.
-                    </button>
-                  </Tooltip>
-
-                  {/* Separador + Herramientas HA (solo para relleno) */}
+                  {/* Herramientas HA (solo para relleno) */}
                   {activeType === 'relleno' && (
                     <>
                       <div className="w-px h-5 bg-slate-600 mx-0.5" />
                       <Tooltip content="Línea recta: arrastrar de A a B sobre la piel">
                         <button
-                          onClick={() => { setActiveTool(activeTool === 'straight-line' ? 'none' : 'straight-line'); setPointMode('none'); }}
+                          onClick={() => { setActiveTool(activeTool === 'straight-line' ? 'none' : 'straight-line'); setPointMode('none'); setShowHaShapesDropdown(false); }}
                           className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-all ${
                             activeTool === 'straight-line' ? 'bg-violet-500/25 text-violet-300 border-violet-500/50' : 'bg-slate-700/50 text-slate-400 border-slate-600 hover:bg-slate-700'
                           }`}
@@ -2105,39 +2122,37 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                           Recta
                         </button>
                       </Tooltip>
-                      <Tooltip content="Abanico: configura líneas radiales y traza sobre la piel">
+                      {/* Grupo Patrones HA */}
+                      <div className="relative">
                         <button
-                          onClick={() => { setHaShapeConfigTool('ha-fan'); setHaShapeConfigOpen(true); setPointMode('none'); }}
+                          onClick={() => { setShowHaShapesDropdown(v => !v); setShowShapesDropdown(false); }}
                           className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-all ${
-                            activeTool === 'ha-fan' ? 'bg-violet-500/25 text-violet-300 border-violet-500/50' : 'bg-slate-700/50 text-slate-400 border-slate-600 hover:bg-slate-700'
+                            activeTool === 'ha-fan' || activeTool === 'ha-grid' || activeTool === 'ha-fern'
+                              ? 'bg-violet-500/25 text-violet-300 border-violet-500/50'
+                              : 'bg-slate-700/50 text-slate-400 border-slate-600 hover:bg-slate-700'
                           }`}
                         >
                           <span className="text-xs">扇</span>
-                          Abanico
+                          Patrones
+                          <ChevronDown className="w-2.5 h-2.5 opacity-60" />
                         </button>
-                      </Tooltip>
-                      <Tooltip content="Malla: configura celdas y traza cuadrícula sobre la piel">
-                        <button
-                          onClick={() => { setHaShapeConfigTool('ha-grid'); setHaShapeConfigOpen(true); setPointMode('none'); }}
-                          className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-all ${
-                            activeTool === 'ha-grid' ? 'bg-violet-500/25 text-violet-300 border-violet-500/50' : 'bg-slate-700/50 text-slate-400 border-slate-600 hover:bg-slate-700'
-                          }`}
-                        >
-                          <span className="text-xs">⊞</span>
-                          Malla
-                        </button>
-                      </Tooltip>
-                      <Tooltip content="Helecho: configura ramificaciones y traza patrón sobre la piel">
-                        <button
-                          onClick={() => { setHaShapeConfigTool('ha-fern'); setHaShapeConfigOpen(true); setPointMode('none'); }}
-                          className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-all ${
-                            activeTool === 'ha-fern' ? 'bg-violet-500/25 text-violet-300 border-violet-500/50' : 'bg-slate-700/50 text-slate-400 border-slate-600 hover:bg-slate-700'
-                          }`}
-                        >
-                          <span className="text-xs">☘</span>
-                          Helecho
-                        </button>
-                      </Tooltip>
+                        {showHaShapesDropdown && (
+                          <div className="absolute left-0 top-full mt-1 z-50 w-36 bg-slate-800 border border-slate-600 rounded-xl shadow-2xl overflow-hidden">
+                            <button onClick={() => { setHaShapeConfigTool('ha-fan'); setHaShapeConfigOpen(true); setPointMode('none'); setShowHaShapesDropdown(false); }}
+                              className={`w-full flex items-center gap-2 px-3 py-2 text-[11px] font-semibold hover:bg-slate-700 transition-colors ${activeTool === 'ha-fan' ? 'text-violet-300' : 'text-slate-300'}`}>
+                              <span className="text-xs">扇</span> Abanico
+                            </button>
+                            <button onClick={() => { setHaShapeConfigTool('ha-grid'); setHaShapeConfigOpen(true); setPointMode('none'); setShowHaShapesDropdown(false); }}
+                              className={`w-full flex items-center gap-2 px-3 py-2 text-[11px] font-semibold hover:bg-slate-700 transition-colors border-t border-slate-700 ${activeTool === 'ha-grid' ? 'text-violet-300' : 'text-slate-300'}`}>
+                              <span className="text-xs">⊞</span> Malla
+                            </button>
+                            <button onClick={() => { setHaShapeConfigTool('ha-fern'); setHaShapeConfigOpen(true); setPointMode('none'); setShowHaShapesDropdown(false); }}
+                              className={`w-full flex items-center gap-2 px-3 py-2 text-[11px] font-semibold hover:bg-slate-700 transition-colors border-t border-slate-700 ${activeTool === 'ha-fern' ? 'text-violet-300' : 'text-slate-300'}`}>
+                              <span className="text-xs">☘</span> Helecho
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </>
                   )}
 
@@ -2148,16 +2163,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     <label className="flex items-center gap-1.5 cursor-pointer">
                       <span className="text-[10px] text-slate-400">Color</span>
                       <div className="relative">
-                        <div
-                          className="w-5 h-5 rounded border border-slate-500 cursor-pointer"
-                          style={{ backgroundColor: brushColor }}
-                        />
-                        <input
-                          type="color"
-                          className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                          value={brushColor}
-                          onChange={e => setBrushColor(e.target.value)}
-                        />
+                        <div className="w-5 h-5 rounded border border-slate-500 cursor-pointer" style={{ backgroundColor: brushColor }} />
+                        <input type="color" className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" value={brushColor} onChange={e => setBrushColor(e.target.value)} />
                       </div>
                     </label>
                   </Tooltip>
@@ -2166,42 +2173,41 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                   <Tooltip content="Grosor de las líneas y formas">
                     <label className="flex items-center gap-1.5">
                       <span className="text-[10px] text-slate-400">Grosor</span>
-                      <input
-                        type="range"
-                        min={0.5}
-                        max={3}
-                        step={0.1}
-                        value={brushThickness}
-                        onChange={e => setBrushThickness(Number(e.target.value))}
-                        className="w-16 accent-violet-400"
-                      />
+                      <input type="range" min={0.5} max={3} step={0.1} value={brushThickness} onChange={e => setBrushThickness(Number(e.target.value))} className="w-16 accent-violet-400" />
                       <span className="text-[10px] text-slate-500 w-5">{brushThickness.toFixed(1)}x</span>
                     </label>
                   </Tooltip>
 
-                  {/* Indicador herramienta activa */}
-                  {activeTool !== 'none' && (
+                  {/* Botón deseleccionar / estado activo */}
+                  {(activeTool !== 'none' || pointMode === 'add') ? (
                     <div className="ml-auto flex items-center gap-2">
                       <span className="text-[10px] text-violet-400 font-semibold animate-pulse">
-                        {activeTool === 'freehand-brush' && '● Pincel (mantener+arrastrar)'}
-                        {activeTool === 'freehand-poly' && '● Polilínea (clic · doble-clic para finalizar)'}
-                        {activeTool === 'straight-line' && '● Recta (arrastrar A→B)'}
-                        {activeTool === 'shape-circle' && '● Círculo (clic+arrastrar)'}
-                        {activeTool === 'shape-rect' && '● Rectángulo (clic+arrastrar)'}
-                        {activeTool === 'ha-fan' && '● Abanico (clic+arrastrar)'}
-                        {activeTool === 'ha-grid' && '● Malla (clic+arrastrar)'}
-                        {activeTool === 'ha-fern' && '● Helecho (arrastrar línea central)'}
+                        {activeTool === 'freehand-brush' && '● Pincel'}
+                        {activeTool === 'freehand-poly' && '● Polilínea'}
+                        {activeTool === 'straight-line' && '● Recta'}
+                        {activeTool === 'shape-circle' && '● Círculo'}
+                        {activeTool === 'shape-rect' && '● Rect.'}
+                        {activeTool === 'ha-fan' && '● Abanico'}
+                        {activeTool === 'ha-grid' && '● Malla'}
+                        {activeTool === 'ha-fern' && '● Helecho'}
+                        {activeTool === 'none' && pointMode === 'add' && '● Añadir punto'}
                       </span>
-                      <button onClick={() => setActiveTool('none')} className="text-[10px] text-slate-400 hover:text-white border border-slate-600 px-1.5 py-0.5 rounded">Cancelar</button>
+                      <button
+                        onClick={() => { setActiveTool('none'); setPointMode('none'); }}
+                        className="flex items-center gap-1 text-[10px] text-white bg-slate-600 hover:bg-slate-500 border border-slate-500 px-2 py-1 rounded-lg transition-colors font-semibold"
+                        title="Deseleccionar herramienta (Escape)"
+                      >
+                        <X className="w-2.5 h-2.5" /> Quitar
+                      </button>
                     </div>
-                  )}
-                  {/* Contadores de elementos */}
-                  {(freehandLines.length > 0 || surfaceShapes.length > 0) && activeTool === 'none' && (
-                    <span className="ml-auto text-[10px] text-violet-400">
-                      {freehandLines.length > 0 && `${freehandLines.length} línea(s)`}
-                      {freehandLines.length > 0 && surfaceShapes.length > 0 && ' · '}
-                      {surfaceShapes.length > 0 && `${surfaceShapes.length} forma(s)`}
-                    </span>
+                  ) : (
+                    (freehandLines.length > 0 || surfaceShapes.length > 0) && (
+                      <span className="ml-auto text-[10px] text-violet-400">
+                        {freehandLines.length > 0 && `${freehandLines.length} línea(s)`}
+                        {freehandLines.length > 0 && surfaceShapes.length > 0 && ' · '}
+                        {surfaceShapes.length > 0 && `${surfaceShapes.length} forma(s)`}
+                      </span>
+                    )
                   )}
                 </div>
 
@@ -2264,7 +2270,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
 
                   {/* Botón + Añadir: siempre disponible para marcar puntos de inyección libres */}
                   <button
-                    onClick={() => setPointMode(prev => prev === 'add' ? 'none' : 'add')}
+                    onClick={() => { setActiveTool('none'); setPointMode(prev => prev === 'add' ? 'none' : 'add'); }}
                     className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
                       pointMode === 'add'
                         ? 'bg-emerald-500/25 text-emerald-300 border-emerald-500/40'
@@ -2275,9 +2281,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     + Añadir
                   </button>
 
-                  {/* Separador + botón para abrir panel de líneas */}
+                  {/* Dropdown visibilidad */}
                   <div className="ml-auto flex items-center gap-2">
-                    {/* Dropdown visibilidad */}
                     {(referenceLines.length > 0 || editablePoints.length > 0 || injectionPoints.some(ip => ip.units > 0)) && (
                       <div className="relative">
                         <button
@@ -2292,44 +2297,31 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                         </button>
                         {showVisibilityDropdown && (
                           <div className="absolute right-0 top-full mt-1 z-50 w-48 bg-slate-800 border border-slate-600 rounded-xl shadow-2xl overflow-hidden">
-                            <button
-                              onMouseDown={() => { setShowLines(v => !v); }}
-                              className="w-full flex items-center justify-between px-3 py-2.5 text-xs text-slate-200 hover:bg-slate-700 transition-colors"
-                            >
+                            <button onMouseDown={() => { setShowLines(v => !v); }}
+                              className="w-full flex items-center justify-between px-3 py-2.5 text-xs text-slate-200 hover:bg-slate-700 transition-colors">
                               <span>Líneas de ref.</span>
                               {showLines ? <Eye className="w-3.5 h-3.5 text-[#deb887]" /> : <EyeOff className="w-3.5 h-3.5 text-slate-500" />}
                             </button>
-                            <button
-                              onMouseDown={() => { setShowBoundaryLines(v => !v); }}
-                              className="w-full flex items-center justify-between px-3 py-2.5 text-xs text-slate-200 hover:bg-slate-700 transition-colors border-t border-slate-700"
-                            >
+                            <button onMouseDown={() => { setShowBoundaryLines(v => !v); }}
+                              className="w-full flex items-center justify-between px-3 py-2.5 text-xs text-slate-200 hover:bg-slate-700 transition-colors border-t border-slate-700">
                               <span>Líneas de tercios</span>
                               {showBoundaryLines ? <Eye className="w-3.5 h-3.5 text-slate-400" /> : <EyeOff className="w-3.5 h-3.5 text-slate-500" />}
                             </button>
-                            <button
-                              onMouseDown={() => { setShowEditablePoints(v => !v); }}
-                              className="w-full flex items-center justify-between px-3 py-2.5 text-xs text-slate-200 hover:bg-slate-700 transition-colors border-t border-slate-700"
-                            >
+                            <button onMouseDown={() => { setShowEditablePoints(v => !v); }}
+                              className="w-full flex items-center justify-between px-3 py-2.5 text-xs text-slate-200 hover:bg-slate-700 transition-colors border-t border-slate-700">
                               <span>Puntos del trazado</span>
                               {showEditablePoints ? <Eye className="w-3.5 h-3.5 text-yellow-400" /> : <EyeOff className="w-3.5 h-3.5 text-slate-500" />}
                             </button>
                             {injectionPoints.some(ip => ip.units > 0) && (
-                              <button
-                                onMouseDown={() => { setShowUnitNumbers(v => !v); }}
-                                className="w-full flex items-center justify-between px-3 py-2.5 text-xs text-slate-200 hover:bg-slate-700 transition-colors border-t border-slate-700"
-                              >
+                              <button onMouseDown={() => { setShowUnitNumbers(v => !v); }}
+                                className="w-full flex items-center justify-between px-3 py-2.5 text-xs text-slate-200 hover:bg-slate-700 transition-colors border-t border-slate-700">
                                 <span>Números de UI</span>
                                 {showUnitNumbers ? <Eye className="w-3.5 h-3.5 text-emerald-400" /> : <EyeOff className="w-3.5 h-3.5 text-slate-500" />}
                               </button>
                             )}
                             <button
-                              onMouseDown={() => {
-                                const newVal = !(showLines && showEditablePoints);
-                                setShowLines(newVal);
-                                setShowEditablePoints(newVal);
-                              }}
-                              className="w-full flex items-center justify-between px-3 py-2.5 text-xs text-slate-200 hover:bg-slate-700 transition-colors border-t border-slate-700"
-                            >
+                              onMouseDown={() => { const newVal = !(showLines && showEditablePoints); setShowLines(newVal); setShowEditablePoints(newVal); }}
+                              className="w-full flex items-center justify-between px-3 py-2.5 text-xs text-slate-200 hover:bg-slate-700 transition-colors border-t border-slate-700">
                               <span className="font-semibold">{showLines && showEditablePoints ? 'Ocultar todo' : 'Mostrar todo'}</span>
                               {showLines && showEditablePoints ? <EyeOff className="w-3.5 h-3.5 text-slate-400" /> : <Eye className="w-3.5 h-3.5 text-emerald-400" />}
                             </button>
@@ -2340,18 +2332,6 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     {referenceLines.length > 0 && (
                       <span className="text-[10px] text-slate-400">{referenceLines.length} línea(s)</span>
                     )}
-                    <button
-                      onClick={() => setShowLinePanel(v => !v)}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
-                        showLinePanel
-                          ? 'bg-[#deb887]/25 text-[#deb887] border-[#deb887]/40'
-                          : 'bg-slate-700/50 text-slate-400 border-slate-600 hover:bg-slate-600'
-                      }`}
-                      title="Gestionar líneas de referencia"
-                    >
-                      <Minus className="w-3.5 h-3.5 rotate-90" />
-                      {showLinePanel ? 'Cerrar líneas' : 'Líneas de ref.'}
-                    </button>
                   </div>
                 </div>
 
@@ -2367,7 +2347,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                         skipConfirmation={true}
                         readOnly={false}
                         referenceLines={showLines ? referenceLines : []}
-                        lineDrawingMode={showLinePanel ? activeLineType : null}
+                        lineDrawingMode={null}
                         onLinePointAnchored={handleLinePointAnchored}
                         height="420px"
                         editablePoints={editablePoints}
@@ -2378,7 +2358,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                         onEditablePointClicked={handleEditablePointClicked}
                         onProjectedPositions={handleProjectedPositions}
                         tercioBoundaries={showBoundaryLines ? tercioBoundaries : null}
-                        selectedPointId={selectedPointId ?? undefined}
+                        selectedPointId={selectedPointId ?? hoveredPointId ?? undefined}
                         freehandLines={freehandLines}
                         surfaceShapes={surfaceShapes}
                         activeTool={activeTool}
@@ -2392,10 +2372,13 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                         onGridStepChange={setGridDrawStep}
                         onSnapPointChange={setSnapPoint}
                         haShapeConfig={haShapeConfig}
+                        incompletePointIds={incompletePointIds}
+                        onEditablePointHovered={setHoveredPointId}
+                        onBackgroundClick={() => { setActiveTool('none'); setPointMode('none'); }}
                       />
 
-                      {/* ── Hint visual: snap activo (imán) ── */}
-                      {snapPoint && (pointMode === 'add' || activeTool === 'none') && (
+                      {/* Hint visual: snap activo (imán) */}
+                      {snapPoint && pointMode === 'add' && (
                         <div className="absolute top-2 left-2 z-30 bg-cyan-700/90 backdrop-blur-sm text-white text-[10px] font-semibold px-2.5 py-1 rounded-lg shadow pointer-events-none flex items-center gap-1.5">
                           <span className="text-yellow-300">◎</span> Snap activo — el punto se colocará sobre la línea
                         </div>
@@ -2536,41 +2519,6 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                         })}
                       </div>
 
-                  {/* Drawer de Líneas de Referencia — overlay sobre el viewer */}
-                  <AnimatePresence>
-                    {showLinePanel && (
-                      <motion.div
-                        initial={{ opacity: 0, x: 20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: 20 }}
-                        transition={{ duration: 0.2, ease: 'easeOut' }}
-                        className="absolute top-0 right-0 h-full w-72 z-20 bg-slate-800/95 backdrop-blur-sm rounded-xl shadow-2xl overflow-y-auto"
-                      >
-                        <div className="flex items-center justify-between px-3 pt-3 pb-2 border-b border-slate-700">
-                          <span className="text-xs font-semibold text-slate-300 uppercase tracking-wide">Líneas de Referencia</span>
-                          <button
-                            onClick={() => { setShowLinePanel(false); handleCancelLine(); }}
-                            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                        <ReferenceLinePanel
-                          lines={referenceLines}
-                          activeType={activeLineType}
-                          pendingTwoPointStep={twoPointStep}
-                          pendingLabel={pendingLineMeta?.label || ''}
-                          onSelectPreset={handleSelectPreset}
-                          onStartManual={handleStartManualLine}
-                          onLabelChange={handleLineLabelChange}
-                          onCancel={handleCancelLine}
-                          onToggleVisibility={handleToggleLineVisibility}
-                          onOffsetChange={handleLineOffsetChange}
-                          onRemove={handleRemoveLine}
-                        />
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
                 </div>{/* /relative */}
 
                 {/* Bottom bar — controles de puntos + deshacer */}
@@ -2685,21 +2633,30 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                                       {vialPts.map(p => {
                                         const globalIdx = injectionPoints.indexOf(p);
                                         const epId = p.editablePointId;
+                                        const isSelected = !!epId && epId === selectedPointId;
                                         const isExpanded = expandedPointId === (epId || String(globalIdx));
                                         const expandKey = epId || String(globalIdx);
                                         return (
                                           <div key={globalIdx} className="border-b border-gray-50 last:border-0">
                                             <div
-                                              className="flex items-center justify-between px-3 py-1.5 text-xs hover:bg-gray-50 cursor-pointer"
-                                              onClick={() => setExpandedPointId(isExpanded ? null : expandKey)}
+                                              className={`flex items-center justify-between px-3 py-1.5 text-xs cursor-pointer transition-colors ${isSelected ? 'bg-violet-50' : 'hover:bg-gray-50'}`}
+                                              onClick={() => {
+                                                if (epId) setSelectedPointId(isSelected ? null : epId);
+                                                setExpandedPointId(isExpanded ? null : expandKey);
+                                              }}
                                             >
                                               <div className="flex items-center gap-2 min-w-0">
-                                                <span className="font-mono text-gray-400 w-4">{globalIdx + 1}</span>
-                                                <span className="font-medium text-gray-700 truncate">{p.label || '—'}</span>
+                                                <span className={`font-mono w-4 flex-shrink-0 ${isSelected ? 'text-violet-600 font-bold' : 'text-gray-400'}`}>{globalIdx + 1}</span>
+                                                <span className={`font-medium truncate ${isSelected ? 'text-violet-700' : 'text-gray-700'}`}>{p.label || '—'}</span>
                                               </div>
                                               <div className="flex items-center gap-1.5 flex-shrink-0">
                                                 <span className="font-semibold text-gray-800">{p.units} ml</span>
                                                 <ChevronDown className={`w-3 h-3 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                                                {epId && (
+                                                  <button onClick={e => { e.stopPropagation(); handleEditablePointClicked(epId); }} className="p-0.5 text-violet-400 hover:text-violet-600 rounded" title="Editar zona/plano">
+                                                    <Pencil className="w-3 h-3" />
+                                                  </button>
+                                                )}
                                                 <button onClick={e => { e.stopPropagation(); handleRemovePoint(globalIdx); }} className="p-0.5 text-red-300 hover:text-red-500 rounded">
                                                   <X className="w-3 h-3" />
                                                 </button>
@@ -3183,8 +3140,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 <div>
                   <h3 className="text-sm font-bold text-gray-800">
                     {current.product_type === 'relleno'
-                      ? (unitsModalStep === 1 ? 'Zona anatómica' : unitsModalStep === 2 ? 'Técnica y plano' : 'Volumen (ml)')
-                      : (unitsModalStep === 1 ? 'Registrar inyección' : unitsModalStep === 2 ? 'Seleccionar tercio' : unitsModalStep === 3 ? 'Seleccionar zona' : 'Plano de inyección')
+                      ? (unitsModalStep === 1 ? 'Volumen (ml)' : unitsModalStep === 2 ? 'Tercio facial' : unitsModalStep === 3 ? 'Zona anatómica' : 'Plano de inyección')
+                      : (unitsModalStep === 1 ? 'Unidades (UI)' : unitsModalStep === 2 ? 'Tercio facial' : unitsModalStep === 3 ? 'Zona anatómica' : 'Plano de inyección')
                     }
                   </h3>
                   <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{unitsModal.pointName}</p>
@@ -3197,14 +3154,12 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 </button>
               </div>
 
-              {/* Step progress bar — solo toxina usa multi-pasos */}
-              {current.product_type === 'toxina' && (
-                <div className="flex gap-1 mb-4">
-                  {[1, 2, 3, 4].map(s => (
-                    <div key={s} className={`h-1 flex-1 rounded-full transition-colors ${s <= unitsModalStep ? 'bg-[#deb887]' : 'bg-gray-200'}`} />
-                  ))}
-                </div>
-              )}
+              {/* Step progress bar — ambos tipos usan multi-pasos */}
+              <div className="flex gap-1 mb-4">
+                {[1, 2, 3, 4].map(s => (
+                  <div key={s} className={`h-1 flex-1 rounded-full transition-colors ${s <= unitsModalStep ? (current.product_type === 'relleno' ? 'bg-violet-400' : 'bg-[#deb887]') : 'bg-gray-200'}`} />
+                ))}
+              </div>
 
               {/* ═══════════════════════════════════════════════
                   QUICK SAVE — RELLENO HA (solo volumen)
@@ -3221,20 +3176,6 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                       </span>
                     </div>
                   )}
-                  {/* Zona auto-detectada */}
-                  {unitsModalZone && (
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] text-gray-400">Zona detectada:</span>
-                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 font-semibold border border-violet-200">
-                        {unitsModalZone}
-                      </span>
-                      {unitsModalTercio && (
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${TERCIO_COLORS[unitsModalTercio]?.badge || 'bg-gray-100'}`}>
-                          {TERCIO_LABELS[unitsModalTercio]}
-                        </span>
-                      )}
-                    </div>
-                  )}
                   {/* ml input */}
                   <div>
                     <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Volumen (ml)</label>
@@ -3249,41 +3190,45 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                       className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300 text-center font-bold text-lg text-gray-800"
                       placeholder="0.0"
                     />
-                    <p className="text-[10px] text-gray-400 text-center mt-1">
-                      💡 Haz clic en el punto guardado para clasificar técnica y plano
-                    </p>
+                    {unitsModal.isNewPoint && (
+                      <p className="text-[10px] text-gray-400 text-center mt-1">
+                        💡 Guarda el volumen y después haz clic sobre el punto para clasificar zona y plano
+                      </p>
+                    )}
                   </div>
-                  {/* Detalle opcional (colapsable) */}
-                  <details className="group">
-                    <summary className="text-[11px] text-violet-600 cursor-pointer hover:text-violet-800 font-medium list-none flex items-center gap-1">
-                      <ChevronDown className="w-3 h-3 group-open:rotate-180 transition-transform" />
-                      + Técnica / Cánula / Plano (opcional)
-                    </summary>
-                    <div className="mt-2 space-y-2 pt-2 border-t border-gray-100">
-                      <div>
-                        <p className="text-[10px] text-gray-400 mb-1">Técnica</p>
-                        <select
-                          className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-violet-200 outline-none"
-                          value={unitsModalTecnica}
-                          onChange={e => setUnitsModalTecnica(e.target.value)}
-                        >
-                          <option value="">— Por definir —</option>
-                          {techniques.map(t => <option key={t} value={t}>{t}</option>)}
-                        </select>
+                  {/* Detalle opcional (colapsable) — solo para edición de puntos ya existentes */}
+                  {!unitsModal.isNewPoint && (
+                    <details className="group">
+                      <summary className="text-[11px] text-violet-600 cursor-pointer hover:text-violet-800 font-medium list-none flex items-center gap-1">
+                        <ChevronDown className="w-3 h-3 group-open:rotate-180 transition-transform" />
+                        + Técnica / Cánula / Plano (opcional)
+                      </summary>
+                      <div className="mt-2 space-y-2 pt-2 border-t border-gray-100">
+                        <div>
+                          <p className="text-[10px] text-gray-400 mb-1">Técnica</p>
+                          <select
+                            className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-violet-200 outline-none"
+                            value={unitsModalTecnica}
+                            onChange={e => setUnitsModalTecnica(e.target.value)}
+                          >
+                            <option value="">— Por definir —</option>
+                            {techniques.map(t => <option key={t} value={t}>{t}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-gray-400 mb-1">Plano</p>
+                          <select
+                            className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-violet-200 outline-none"
+                            value={unitsModalPlane}
+                            onChange={e => setUnitsModalPlane(e.target.value)}
+                          >
+                            <option value="">— Por definir —</option>
+                            {HA_PLANES.map(p => <option key={p} value={p}>{p}</option>)}
+                          </select>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-[10px] text-gray-400 mb-1">Plano</p>
-                        <select
-                          className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-violet-200 outline-none"
-                          value={unitsModalPlane}
-                          onChange={e => setUnitsModalPlane(e.target.value)}
-                        >
-                          <option value="">— Por definir —</option>
-                          {HA_PLANES.map(p => <option key={p} value={p}>{p}</option>)}
-                        </select>
-                      </div>
-                    </div>
-                  </details>
+                    </details>
+                  )}
                 </div>
               )}
 
@@ -3293,14 +3238,6 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
               {/* Step 1: Units — Quick Save */}
               {current.product_type === 'toxina' && unitsModalStep === 1 && (
                 <div className="mb-4">
-                  {/* Zona detectada automáticamente */}
-                  {(unitsModalTercio || unitsModalZone) && (
-                    <div className="flex flex-wrap gap-1 mb-3 p-2 bg-amber-50 rounded-lg">
-                      <span className="text-[10px] text-amber-600 font-medium">Zona detectada:</span>
-                      {unitsModalTercio && <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${TERCIO_COLORS[unitsModalTercio]?.badge || 'bg-gray-100 text-gray-600'}`}>{TERCIO_LABELS[unitsModalTercio]}</span>}
-                      {unitsModalZone && <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-semibold">{unitsModalZone}</span>}
-                    </div>
-                  )}
                   <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
                     Unidades aplicadas (UI)
                   </label>
@@ -3315,10 +3252,12 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#deb887] focus:border-transparent text-center font-bold text-lg text-gray-800"
                     placeholder="0"
                   />
-                  <p className="text-[10px] text-gray-400 text-center mt-1.5">
-                    💡 Guarda rápido y haz clic sobre el punto para clasificar zona y plano
-                  </p>
-                  {unitsModal.existingUnits > 0 && (
+                  {unitsModal.isNewPoint && (
+                    <p className="text-[10px] text-gray-400 text-center mt-1.5">
+                      💡 Guarda rápido y haz clic sobre el punto para clasificar zona
+                    </p>
+                  )}
+                  {!unitsModal.isNewPoint && unitsModal.existingUnits > 0 && (
                     <p className="text-[11px] text-gray-400 text-center mt-1">
                       Anterior: <strong>{unitsModal.existingUnits}</strong> UI
                     </p>
@@ -3326,8 +3265,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 </div>
               )}
 
-              {/* Step 2: Tercio (toxina) */}
-              {current.product_type === 'toxina' && unitsModalStep === 2 && (
+              {/* Step 2: Tercio (ambos tipos) */}
+              {unitsModalStep === 2 && (
                 <div className="mb-4 space-y-2">
                   {(['superior', 'medio', 'inferior'] as const).map(t => (
                     <button
@@ -3347,8 +3286,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 </div>
               )}
 
-              {/* Step 3: Zone (toxina) */}
-              {current.product_type === 'toxina' && unitsModalStep === 3 && unitsModalTercio && (
+              {/* Step 3: Zone (ambos tipos) */}
+              {unitsModalStep === 3 && unitsModalTercio && (
                 <div className="mb-4">
                   <p className={`text-[10px] font-bold uppercase tracking-wider mb-2 ${TERCIO_COLORS[unitsModalTercio].text}`}>
                     {TERCIO_LABELS[unitsModalTercio]}
@@ -3389,8 +3328,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 </div>
               )}
 
-              {/* Step 4: Injection Plane (toxina) */}
-              {current.product_type === 'toxina' && unitsModalStep === 4 && (
+              {/* Step 4: Injection Plane (ambos tipos) */}
+              {unitsModalStep === 4 && (
                 <div className="mb-4">
                   <p className="text-xs text-gray-400 mb-2">Selecciona el plano de inyección (opcional).</p>
                   <div className="flex flex-wrap gap-1.5 max-h-44 overflow-y-auto">
@@ -3442,8 +3381,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
 
                 {/* Fila principal: Volver + Guardar + Siguiente */}
                 <div className="flex gap-2">
-                  {/* Volver — toxina pasos 2+ */}
-                  {current.product_type === 'toxina' && unitsModalStep > 1 && (
+                  {/* Volver — pasos 2+ */}
+                  {unitsModalStep > 1 && (
                     <button
                       onClick={() => setUnitsModalStep(prev => (prev - 1) as 1 | 2 | 3 | 4)}
                       className="px-3 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50 transition-colors"
@@ -3452,10 +3391,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     </button>
                   )}
 
-                  {/* Guardar — relleno HA siempre disponible / toxina en último paso */}
-                  {(current.product_type === 'relleno' ||
-                    (current.product_type === 'toxina' && (unitsModalStep === 1 || unitsModalStep === 4))
-                  ) && (
+                  {/* Guardar — paso 1 (siempre) y paso 4 (final) */}
+                  {(unitsModalStep === 1 || unitsModalStep === 4) && (
                     <button
                       onClick={handleUnitsModalConfirm}
                       disabled={!unitsModalInput || Number(unitsModalInput) <= 0}
@@ -3466,8 +3403,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     </button>
                   )}
 
-                  {/* Siguiente — toxina pasos 2-3 */}
-                  {current.product_type === 'toxina' && unitsModalStep > 1 && unitsModalStep < 4 && (
+                  {/* Siguiente — pasos 2-3 */}
+                  {unitsModalStep > 1 && unitsModalStep < 4 && (
                     <button
                       onClick={() => {
                         if (unitsModalStep === 2 && !unitsModalTercio) return;
@@ -3481,13 +3418,13 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     </button>
                   )}
 
-                  {/* Toxina paso 1: Clasificar luego (opcional — el quick save ya guardó) */}
-                  {current.product_type === 'toxina' && unitsModalStep === 1 && (
+                  {/* Paso 1: botón para ir a clasificar zona (segundo paso) */}
+                  {unitsModalStep === 1 && (
                     <button
                       onClick={() => { setUnitsModalStep(2); setUnitsModalZoneFilter(''); }}
                       className="flex-1 px-4 py-2.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-medium hover:bg-gray-200 transition-colors flex items-center justify-center gap-1 text-xs"
                     >
-                      + Clasificar zona →
+                      + Zona →
                     </button>
                   )}
                 </div>

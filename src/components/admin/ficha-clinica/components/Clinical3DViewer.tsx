@@ -314,6 +314,12 @@ interface Clinical3DViewerProps {
   onGridStepChange?: (step: number) => void;
   /** Configuración de formas HA (abanico, malla, helecho) */
   haShapeConfig?: { fanLines: number; fanAngle: number; gridCells: number; fernBranches: number };
+  /** IDs de puntos sin zona clasificada → se renderizan en celeste hasta completarlos */
+  incompletePointIds?: string[];
+  /** Callback cuando el cursor entra/sale de un punto editable en modo sin herramienta */
+  onEditablePointHovered?: (id: string | null) => void;
+  /** Callback cuando el usuario hace clic en el fondo vacío (sin malla) */
+  onBackgroundClick?: () => void;
 }
 
 // ==========================================
@@ -356,6 +362,9 @@ const ThreeEngine: React.FC<{
   onSnapPointChange?: (pt: { x: number; y: number; z: number } | null) => void;
   /** Configuración de formas HA (abanico, malla, helecho) */
   haShapeConfig?: { fanLines: number; fanAngle: number; gridCells: number; fernBranches: number };
+  incompletePointIds?: string[];
+  onEditablePointHovered?: (id: string | null) => void;
+  onBackgroundClick?: () => void;
 }> = ({
   modelSource, markers, zones, onMeshClick, onLoaded, onError, readOnly,
   referenceLines = [], lineDrawingMode, onLinePointAnchored,
@@ -367,6 +376,9 @@ const ThreeEngine: React.FC<{
   pendingBrushColor = '#8b5cf6', pendingBrushThickness = 1.0,
   onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onGridStepChange, onSnapPointChange,
   haShapeConfig = { fanLines: 5, fanAngle: 25, gridCells: 4, fernBranches: 5 },
+  incompletePointIds = [],
+  onEditablePointHovered,
+  onBackgroundClick,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -396,7 +408,7 @@ const ThreeEngine: React.FC<{
     pointMode, onEditablePointMoved, onEditablePointDeleted, onEditablePointClicked, onProjectedPositions,
     activeTool, selectedElementId, pendingBrushColor, pendingBrushThickness,
     onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onGridStepChange, onSnapPointChange,
-    haShapeConfig, freehandLines,
+    haShapeConfig, freehandLines, incompletePointIds, onEditablePointHovered, onBackgroundClick,
   });
   useEffect(() => {
     callbacks.current = {
@@ -404,7 +416,7 @@ const ThreeEngine: React.FC<{
       pointMode, onEditablePointMoved, onEditablePointDeleted, onEditablePointClicked, onProjectedPositions,
       activeTool, selectedElementId, pendingBrushColor, pendingBrushThickness,
       onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onGridStepChange, onSnapPointChange,
-      haShapeConfig, freehandLines,
+      haShapeConfig, freehandLines, incompletePointIds, onEditablePointHovered, onBackgroundClick,
     };
   });
 
@@ -653,6 +665,7 @@ const ThreeEngine: React.FC<{
     // ── Hover highlight — variables de estado puro (no React) ─────────────
     const hoverMouse = new THREE.Vector2(-999, -999);
     let prevHoveredId: string | null = null;  // ID en vez de ref (evita ref stale)
+    let prevHoveredEpId: string | null = null; // hover sobre puntos editables
     let hoverFrameCount = 0;
 
     /** Aumenta opacidad y marca `hoverBase` en los meshes del grupo */
@@ -1496,7 +1509,10 @@ const ThreeEngine: React.FC<{
       }
 
       const intersects = raycaster.intersectObject(faceMeshRef.current, true);
-      if (intersects.length === 0) return;
+      if (intersects.length === 0) {
+        callbacks.current.onBackgroundClick?.();
+        return;
+      }
       const intersect = intersects[0];
       const point = intersect.point;
 
@@ -1603,6 +1619,13 @@ const ThreeEngine: React.FC<{
     const onHoverMouseLeave = () => {
       hoverMouse.set(-999, -999);
       if (prevHoveredId) { restoreHoverById(prevHoveredId); prevHoveredId = null; }
+      if (prevHoveredEpId) {
+        editablePointsGroupRef.current?.children.forEach((g: THREE.Object3D) => {
+          if (g.userData.editableId === prevHoveredEpId) g.scale.setScalar(selectedEditableId === prevHoveredEpId ? 1.8 : 1.0);
+        });
+        callbacks.current.onEditablePointHovered?.(null);
+        prevHoveredEpId = null;
+      }
       clearSnap();
       if (renderer.domElement) renderer.domElement.style.cursor = 'crosshair';
     };
@@ -1658,6 +1681,54 @@ const ThreeEngine: React.FC<{
             if (renderer.domElement) {
               renderer.domElement.style.cursor = newHoveredId ? 'pointer' : 'crosshair';
             }
+          }
+
+          // ── Hover sobre puntos editables (solo cuando no hay herramienta activa) ──
+          const canHoverEp = callbacks.current.pointMode === 'none' && callbacks.current.activeTool === 'none';
+          if (canHoverEp) {
+            const epMeshes: THREE.Object3D[] = [];
+            const meshToEpGrp = new Map<THREE.Object3D, THREE.Object3D>();
+            editablePointsGroupRef.current?.children.forEach(epGrp => {
+              epGrp.traverse(c => {
+                if ((c as THREE.Mesh).isMesh) { epMeshes.push(c); meshToEpGrp.set(c, epGrp); }
+              });
+            });
+            let newHoveredEpId: string | null = null;
+            if (epMeshes.length > 0) {
+              const epHits = hoverRc.intersectObjects(epMeshes, false);
+              if (epHits.length > 0) {
+                const epGrp = meshToEpGrp.get(epHits[0].object);
+                newHoveredEpId = epGrp?.userData.editableId ?? null;
+              }
+            }
+            if (newHoveredEpId !== prevHoveredEpId) {
+              if (prevHoveredEpId) {
+                editablePointsGroupRef.current?.children.forEach((g: THREE.Object3D) => {
+                  if (g.userData.editableId === prevHoveredEpId)
+                    g.scale.setScalar(selectedEditableId === prevHoveredEpId ? 1.8 : 1.0);
+                });
+              }
+              if (newHoveredEpId) {
+                editablePointsGroupRef.current?.children.forEach((g: THREE.Object3D) => {
+                  if (g.userData.editableId === newHoveredEpId)
+                    g.scale.setScalar(selectedEditableId === newHoveredEpId ? 1.8 : 1.5);
+                });
+              }
+              prevHoveredEpId = newHoveredEpId;
+              callbacks.current.onEditablePointHovered?.(newHoveredEpId);
+              if (!newHoveredId) {
+                if (renderer.domElement)
+                  renderer.domElement.style.cursor = newHoveredEpId ? 'pointer' : 'crosshair';
+              }
+            }
+          } else if (prevHoveredEpId) {
+            // Si se activó una herramienta, limpiar hover de puntos
+            editablePointsGroupRef.current?.children.forEach((g: THREE.Object3D) => {
+              if (g.userData.editableId === prevHoveredEpId)
+                g.scale.setScalar(selectedEditableId === prevHoveredEpId ? 1.8 : 1.0);
+            });
+            callbacks.current.onEditablePointHovered?.(null);
+            prevHoveredEpId = null;
           }
 
           // ── Snap / imán: SOLO cuando el usuario está en modo "añadir punto" ──
@@ -1951,7 +2022,11 @@ const ThreeEngine: React.FC<{
       ptGroup.userData.pointName = pt.name ?? 'Punto libre';
 
       const isIntersection = pt.type === 'intersection';
-      const sphereColor = isIntersection ? new THREE.Color(0x00eeff) : new THREE.Color(0xffdd00);
+      const isIncomplete = incompletePointIds.includes(pt.id);
+      // Incompleto (solo volumen, sin zona) → celeste; normal → cyan/amarillo según tipo
+      const sphereColor = isIncomplete
+        ? new THREE.Color(0x56cffc)
+        : (isIntersection ? new THREE.Color(0x00eeff) : new THREE.Color(0xffdd00));
 
       // Núcleo sólido blanco
       const coreGeo = new THREE.SphereGeometry(0.02, 12, 12);
@@ -1981,7 +2056,7 @@ const ThreeEngine: React.FC<{
 
       group.add(ptGroup);
     });
-  }, [editablePoints, modelVersion]);
+  }, [editablePoints, incompletePointIds, modelVersion]);
 
   // 4c. Visibilidad de puntos editables
   useEffect(() => {
@@ -2387,6 +2462,9 @@ export default function Clinical3DViewer({
   onGridStepChange,
   onSnapPointChange,
   haShapeConfig = { fanLines: 5, fanAngle: 25, gridCells: 4, fernBranches: 5 },
+  incompletePointIds = [],
+  onEditablePointHovered,
+  onBackgroundClick,
 }: Clinical3DViewerProps) {
   const [modelSource, setModelSource] = useState<{ type: 'url' | 'buffer'; data: string | ArrayBuffer }>({
     type: 'url',
@@ -2473,6 +2551,9 @@ export default function Clinical3DViewer({
             onGridStepChange={onGridStepChange}
             onSnapPointChange={onSnapPointChange}
             haShapeConfig={haShapeConfig}
+            incompletePointIds={incompletePointIds}
+            onEditablePointHovered={onEditablePointHovered}
+            onBackgroundClick={onBackgroundClick}
           />
         )}
       </div>
