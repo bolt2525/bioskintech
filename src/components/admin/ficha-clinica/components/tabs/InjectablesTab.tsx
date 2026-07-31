@@ -279,6 +279,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   const [inlineVialForm, setInlineVialForm] = useState<{ open: boolean; name: string; vol: string }>({ open: false, name: '', vol: '' });
   /** Paso actual del dibujo de malla (0=inactivo, 1=ancho, 2=largo) */
   const [gridDrawStep, setGridDrawStep] = useState(0);
+  /** Punto snap activo del imán (null = sin snap) */
+  const [snapPoint, setSnapPoint] = useState<{ x: number; y: number; z: number } | null>(null);
 
   // Keep ref in sync with state to avoid closure issues in the RAF callback
   useEffect(() => { showUnitNumbersRef.current = showUnitNumbers; }, [showUnitNumbers]);
@@ -1042,10 +1044,11 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     setUnitsModalZoneFilter('');
     setUnitsModalPlane('');
     setUnitsModalTecnica('');
-    setUnitsModalStep(1);
-    // HA: si hay 0 o >1 viales → mostrar picker de jeringa primero
+    // ── Quick Save universal: siempre abrir directamente en el paso de volumen ──
+    // Para HA: vial picker cuando sea necesario; para toxina: saltar a paso 1 (UI)
     const needVialPicker = activeType === 'relleno' && haVials.length !== 1;
     setUnitsModalVialStep(needVialPicker);
+    setUnitsModalStep(1); // Siempre paso 1 (volumen) para ambos tipos
     setInlineVialForm({ open: false, name: '', vol: '' });
   };
 
@@ -2357,8 +2360,16 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                         onElementSelected={handleElementSelected}
                         onFreehandLineUpdated={handleFreehandLineUpdated}
                         onGridStepChange={setGridDrawStep}
+                        onSnapPointChange={setSnapPoint}
                         haShapeConfig={haShapeConfig}
                       />
+
+                      {/* ── Hint visual: snap activo (imán) ── */}
+                      {snapPoint && (pointMode === 'add' || activeTool === 'none') && (
+                        <div className="absolute top-2 left-2 z-30 bg-cyan-700/90 backdrop-blur-sm text-white text-[10px] font-semibold px-2.5 py-1 rounded-lg shadow pointer-events-none flex items-center gap-1.5">
+                          <span className="text-yellow-300">◎</span> Snap activo — el punto se colocará sobre la línea
+                        </div>
+                      )}
 
                       {/* ── Hint visual del Grid 3-step ── */}
                       {activeTool === 'ha-grid' && gridDrawStep >= 0 && (
@@ -3259,25 +3270,26 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
               )}
 
               {/* ═══════════════════════════════════════════════
-                  FLUJO TOXINA (4 pasos — sin cambios)
+                  FLUJO TOXINA — Quick Save paso 1 (solo UI)
               ═══════════════════════════════════════════════ */}
-              {/* Step 1: Units */}
+              {/* Step 1: Units — Quick Save */}
               {current.product_type === 'toxina' && unitsModalStep === 1 && (
                 <div className="mb-4">
-                  {(unitsModalTercio || unitsModalZone || unitsModalPlane) && (
-                    <div className="flex flex-wrap gap-1 mb-3 p-2 bg-gray-50 rounded-lg">
+                  {/* Zona detectada automáticamente */}
+                  {(unitsModalTercio || unitsModalZone) && (
+                    <div className="flex flex-wrap gap-1 mb-3 p-2 bg-amber-50 rounded-lg">
+                      <span className="text-[10px] text-amber-600 font-medium">Zona detectada:</span>
                       {unitsModalTercio && <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${TERCIO_COLORS[unitsModalTercio]?.badge || 'bg-gray-100 text-gray-600'}`}>{TERCIO_LABELS[unitsModalTercio]}</span>}
                       {unitsModalZone && <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-semibold">{unitsModalZone}</span>}
-                      {unitsModalPlane && <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#deb887]/15 text-[#b8944d] font-semibold">{unitsModalPlane}</span>}
                     </div>
                   )}
                   <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
-                    {current.product_type === 'toxina' ? 'Unidades (UI)' : 'Volumen (ml)'}
+                    Unidades aplicadas (UI)
                   </label>
                   <input
                     type="number"
                     min="0"
-                    step={current.product_type === 'toxina' ? '1' : '0.1'}
+                    step="1"
                     value={unitsModalInput}
                     onChange={e => setUnitsModalInput(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') handleUnitsModalConfirm(); }}
@@ -3285,9 +3297,12 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#deb887] focus:border-transparent text-center font-bold text-lg text-gray-800"
                     placeholder="0"
                   />
+                  <p className="text-[10px] text-gray-400 text-center mt-1.5">
+                    💡 Guarda rápido y haz clic sobre el punto para clasificar zona y plano
+                  </p>
                   {unitsModal.existingUnits > 0 && (
                     <p className="text-[11px] text-gray-400 text-center mt-1">
-                      Anterior: <strong>{unitsModal.existingUnits}</strong> {current.product_type === 'toxina' ? 'UI' : 'ml'}
+                      Anterior: <strong>{unitsModal.existingUnits}</strong> UI
                     </p>
                   )}
                 </div>
@@ -3433,7 +3448,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     </button>
                   )}
 
-                  {/* Siguiente — toxina pasos 1-3 */}
+                  {/* Siguiente — toxina pasos 2-3 */}
                   {current.product_type === 'toxina' && unitsModalStep > 1 && unitsModalStep < 4 && (
                     <button
                       onClick={() => {
@@ -3448,13 +3463,13 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     </button>
                   )}
 
-                  {/* Toxina paso 1: Guardar + Clasificar */}
+                  {/* Toxina paso 1: Clasificar luego (opcional — el quick save ya guardó) */}
                   {current.product_type === 'toxina' && unitsModalStep === 1 && (
                     <button
                       onClick={() => { setUnitsModalStep(2); setUnitsModalZoneFilter(''); }}
-                      className="flex-1 px-4 py-2.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-semibold hover:bg-gray-200 transition-colors flex items-center justify-center gap-1"
+                      className="flex-1 px-4 py-2.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-medium hover:bg-gray-200 transition-colors flex items-center justify-center gap-1 text-xs"
                     >
-                      + Clasificar →
+                      + Clasificar zona →
                     </button>
                   )}
                 </div>

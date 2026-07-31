@@ -352,6 +352,8 @@ const ThreeEngine: React.FC<{
   onElementSelected?: (id: string | null, type: string | null) => void;
   onFreehandLineUpdated?: (id: string, points: { x: number; y: number; z: number }[]) => void;
   onGridStepChange?: (step: number) => void;
+  /** Callback cuando el cursor snap a un punto en una línea (imán); null = sin snap */
+  onSnapPointChange?: (pt: { x: number; y: number; z: number } | null) => void;
   /** Configuración de formas HA (abanico, malla, helecho) */
   haShapeConfig?: { fanLines: number; fanAngle: number; gridCells: number; fernBranches: number };
 }> = ({
@@ -363,7 +365,7 @@ const ThreeEngine: React.FC<{
   freehandLines = [], surfaceShapes = [],
   activeTool = 'none', selectedElementId = null,
   pendingBrushColor = '#8b5cf6', pendingBrushThickness = 1.0,
-  onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onGridStepChange,
+  onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onGridStepChange, onSnapPointChange,
   haShapeConfig = { fanLines: 5, fanAngle: 25, gridCells: 4, fernBranches: 5 },
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
@@ -382,6 +384,8 @@ const ThreeEngine: React.FC<{
   const brushPreviewGroupRef = useRef<THREE.Group | null>(null);
   // Handles de edición de líneas seleccionadas (resize + move)
   const handlesGroupRef = useRef<THREE.Group | null>(null);
+  // Indicador visual del snap point (imán)
+  const snapIndicatorRef = useRef<THREE.Mesh | null>(null);
   // Increments each time the model finishes loading so the markers effect re-runs
   const [modelVersion, setModelVersion] = useState(0);
   // Track two-point step inside engine for cursor feedback
@@ -391,7 +395,7 @@ const ThreeEngine: React.FC<{
     onMeshClick, onLoaded, onError, zones, readOnly, lineDrawingMode, onLinePointAnchored,
     pointMode, onEditablePointMoved, onEditablePointDeleted, onEditablePointClicked, onProjectedPositions,
     activeTool, selectedElementId, pendingBrushColor, pendingBrushThickness,
-    onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onGridStepChange,
+    onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onGridStepChange, onSnapPointChange,
     haShapeConfig, freehandLines,
   });
   useEffect(() => {
@@ -399,7 +403,7 @@ const ThreeEngine: React.FC<{
       onMeshClick, onLoaded, onError, zones, readOnly, lineDrawingMode, onLinePointAnchored,
       pointMode, onEditablePointMoved, onEditablePointDeleted, onEditablePointClicked, onProjectedPositions,
       activeTool, selectedElementId, pendingBrushColor, pendingBrushThickness,
-      onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onGridStepChange,
+      onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onGridStepChange, onSnapPointChange,
       haShapeConfig, freehandLines,
     };
   });
@@ -444,6 +448,14 @@ const ThreeEngine: React.FC<{
     const handlesGroup = new THREE.Group();
     handlesGroupRef.current = handlesGroup;
     scene.add(handlesGroup);
+
+    // Indicador visual del snap point (estrella/punto pulsante para imán)
+    const snapGeo = new THREE.SphereGeometry(0.025, 10, 10);
+    const snapMat = new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true, opacity: 0 });
+    const snapMesh = new THREE.Mesh(snapGeo, snapMat);
+    snapMesh.renderOrder = 1005;
+    snapIndicatorRef.current = snapMesh;
+    scene.add(snapMesh);
 
     const camera = new THREE.PerspectiveCamera(35, mountRef.current.clientWidth / mountRef.current.clientHeight, 0.1, 1000);
     camera.position.set(0, 0, 12);
@@ -523,6 +535,62 @@ const ThreeEngine: React.FC<{
     let gridDirPerp: THREE.Vector3 | null = null;   // dirección perpendicular (para el ancho)
     let gridHalfWidth = 0;
     let gridLen = 0;
+
+    // ── Estado snap / imán ────────────────────────────────────────────────
+    let currentSnapPt: THREE.Vector3 | null = null; // punto snap activo
+    let snapPtIsVertex = false; // true si es un vértice/intersección
+    let snapFrameCount = 0;
+
+    const clearSnap = () => {
+      if (currentSnapPt) {
+        currentSnapPt = null;
+        snapPtIsVertex = false;
+        if (snapIndicatorRef.current) (snapIndicatorRef.current.material as THREE.MeshBasicMaterial).opacity = 0;
+        callbacks.current.onSnapPointChange?.(null);
+      }
+    };
+
+    /** Encuentra el punto más cercano de un conjunto de segmentos al cursor 3D */
+    const closestPointOnSegments = (
+      pts: { x: number; y: number; z: number }[],
+      query: THREE.Vector3,
+      vertexSnapDist: number,
+      lineDist: number
+    ): { pt: THREE.Vector3; isVertex: boolean } | null => {
+      if (pts.length < 2) return null;
+      let bestPt: THREE.Vector3 | null = null;
+      let bestDist = Infinity;
+      let bestIsVertex = false;
+      const q = query;
+      // Check vertices first (stronger magnet)
+      for (const raw of pts) {
+        const v = new THREE.Vector3(raw.x, raw.y, raw.z);
+        const d = v.distanceTo(q);
+        if (d < vertexSnapDist && d < bestDist) {
+          bestDist = d;
+          bestPt = v.clone();
+          bestIsVertex = true;
+        }
+      }
+      if (bestPt) return { pt: bestPt, isVertex: true };
+      // Check segments
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = new THREE.Vector3(pts[i].x, pts[i].y, pts[i].z);
+        const b = new THREE.Vector3(pts[i + 1].x, pts[i + 1].y, pts[i + 1].z);
+        const ab = b.clone().sub(a);
+        const abLen = ab.length();
+        if (abLen < 0.0001) continue;
+        const t = Math.max(0, Math.min(1, q.clone().sub(a).dot(ab) / (abLen * abLen)));
+        const closest = a.clone().addScaledVector(ab, t);
+        const d = closest.distanceTo(q);
+        if (d < lineDist && d < bestDist) {
+          bestDist = d;
+          bestPt = closest.clone();
+          bestIsVertex = false;
+        }
+      }
+      return bestPt ? { pt: bestPt, isVertex: bestIsVertex } : null;
+    };
 
     const clearBrushPreview = () => {
       const grp = brushPreviewGroupRef.current;
@@ -1481,10 +1549,12 @@ const ThreeEngine: React.FC<{
         return;
       }
 
-      // ── Modo añadir punto libre ────────────────────────────────────────
+      // ── Modo añadir punto libre (con snap/imán si hay punto activo) ──────
       if (callbacks.current.pointMode === 'add') {
+        // Si hay un snap point activo sobre una línea, usar ese punto
+        const usePt = currentSnapPt ? currentSnapPt.clone() : point;
         const nAdd = intersect.face ? intersect.face.normal.clone().applyMatrix3(new THREE.Matrix3().getNormalMatrix(intersect.object.matrixWorld)).normalize() : new THREE.Vector3(0, 1, 0);
-        const ptAdd = point.clone().addScaledVector(nAdd, 0.03);
+        const ptAdd = usePt.clone().addScaledVector(nAdd, 0.03);
         callbacks.current.onMeshClick({
           position: { x: ptAdd.x, y: ptAdd.y, z: ptAdd.z },
           rotation: [0, 0, 0],
@@ -1492,22 +1562,26 @@ const ThreeEngine: React.FC<{
           zone: '',
           radius: 0.3,
           isAddPointMode: true,
+          snappedToLine: currentSnapPt !== null,
+          isVertex: snapPtIsVertex,
         });
         return;
       }
 
-      // ── Modo marcación normal ────────────────────────────────────────
+      // ── Modo marcación normal (snap al hacer clic libre sobre el modelo) ──
       if (callbacks.current.readOnly) return;
+      // Usar snap point si está activo
+      const finalPoint = currentSnapPt ? currentSnapPt.clone() : point;
       const n = intersect.face ? intersect.face.normal.clone() : new THREE.Vector3(0, 1, 0);
       const nTransform = new THREE.Matrix3().getNormalMatrix(intersect.object.matrixWorld);
       n.applyMatrix3(nTransform).normalize();
 
       const dummy = new THREE.Object3D();
-      dummy.position.copy(point);
-      dummy.lookAt(point.clone().add(n));
+      dummy.position.copy(finalPoint);
+      dummy.lookAt(finalPoint.clone().add(n));
 
       callbacks.current.onMeshClick({
-        position: { x: point.x, y: point.y, z: point.z },
+        position: { x: finalPoint.x, y: finalPoint.y, z: finalPoint.z },
         rotation: [dummy.rotation.x, dummy.rotation.y, dummy.rotation.z],
         normal: { x: n.x, y: n.y, z: n.z },
         zone: '',
@@ -1529,6 +1603,7 @@ const ThreeEngine: React.FC<{
     const onHoverMouseLeave = () => {
       hoverMouse.set(-999, -999);
       if (prevHoveredId) { restoreHoverById(prevHoveredId); prevHoveredId = null; }
+      clearSnap();
       if (renderer.domElement) renderer.domElement.style.cursor = 'crosshair';
     };
     renderer.domElement.addEventListener('mousemove', onHoverMouseMove);
@@ -1578,10 +1653,54 @@ const ThreeEngine: React.FC<{
             if (prevHoveredId) restoreHoverById(prevHoveredId);
             if (newHoveredGroup) applyHover(newHoveredGroup);
             prevHoveredId = newHoveredId;
-            // Cambiar cursor para indicar que hay algo seleccionable
+            if (!newHoveredId) clearSnap();
+            // Cambiar cursor
             if (renderer.domElement) {
               renderer.domElement.style.cursor = newHoveredId ? 'pointer' : 'crosshair';
             }
+          }
+
+          // ── Snap / imán: buscar punto cercano sobre la línea iluminada ──────
+          const canSnap = callbacks.current.activeTool === 'none' ||
+            callbacks.current.pointMode === 'add' ||
+            callbacks.current.activeTool === 'freehand-poly';
+          if (canSnap && prevHoveredId && cameraRef.current) {
+            // Proyectar hoverMouse al punto 3D en la malla
+            const snapRc = new THREE.Raycaster();
+            snapRc.setFromCamera(hoverMouse, cameraRef.current);
+            const snapFaceHit = faceMeshRef.current
+              ? snapRc.intersectObject(faceMeshRef.current, true)
+              : [];
+            if (snapFaceHit.length > 0) {
+              const query3D = snapFaceHit[0].point;
+              // Buscar la línea iluminada en freehandLines
+              const snapLine = callbacks.current.freehandLines?.find((l: FreehandLine) =>
+                l.id === prevHoveredId
+              );
+              if (snapLine && snapLine.points.length >= 2) {
+                const VERTEX_DIST = 0.25; // distancia de snap a vértice
+                const LINE_DIST   = 0.18; // distancia de snap a segmento
+                const result = closestPointOnSegments(snapLine.points, query3D, VERTEX_DIST, LINE_DIST);
+                if (result) {
+                  currentSnapPt = result.pt;
+                  snapPtIsVertex = result.isVertex;
+                  if (snapIndicatorRef.current) {
+                    const mat = snapIndicatorRef.current.material as THREE.MeshBasicMaterial;
+                    snapIndicatorRef.current.position.copy(result.pt);
+                    mat.color.setHex(result.isVertex ? 0xffff00 : 0x00ffff);
+                    mat.opacity = result.isVertex ? 0.9 : 0.7;
+                    snapIndicatorRef.current.scale.setScalar(result.isVertex ? 1.4 : 1.0);
+                  }
+                  callbacks.current.onSnapPointChange?.({ x: result.pt.x, y: result.pt.y, z: result.pt.z });
+                } else {
+                  clearSnap();
+                }
+              } else {
+                clearSnap();
+              }
+            }
+          } else if (!canSnap) {
+            clearSnap();
           }
         }
 
@@ -2267,6 +2386,7 @@ export default function Clinical3DViewer({
   onElementSelected,
   onFreehandLineUpdated,
   onGridStepChange,
+  onSnapPointChange,
   haShapeConfig = { fanLines: 5, fanAngle: 25, gridCells: 4, fernBranches: 5 },
 }: Clinical3DViewerProps) {
   const [modelSource, setModelSource] = useState<{ type: 'url' | 'buffer'; data: string | ArrayBuffer }>({
@@ -2351,6 +2471,8 @@ export default function Clinical3DViewer({
             onShapeComplete={onShapeComplete}
             onElementSelected={onElementSelected}
             onFreehandLineUpdated={onFreehandLineUpdated}
+            onGridStepChange={onGridStepChange}
+            onSnapPointChange={onSnapPointChange}
             haShapeConfig={haShapeConfig}
           />
         )}
