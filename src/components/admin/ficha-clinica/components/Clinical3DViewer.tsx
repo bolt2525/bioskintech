@@ -77,6 +77,10 @@ export interface FreehandLine {
   /** Grosor relativo: 1.0 = radio base 0.003 */
   thickness: number;
   label?: string;
+  /** Agrupación de múltiples líneas (ej. Abanico, Malla, Helecho) */
+  groupId?: string;
+  /** Técnica HA pre-rellenada al generar la forma */
+  technique_preset?: string;
 }
 
 export interface SurfaceShape {
@@ -101,8 +105,12 @@ export type DrawingTool =
   | 'none'
   | 'freehand-brush'   // mantener+arrastrar para pintar
   | 'freehand-poly'    // clic por vértice, doble-clic para cerrar
+  | 'straight-line'    // drag A→B: línea recta sobre superficie
   | 'shape-circle'     // clic+arrastrar para definir radio
-  | 'shape-rect';      // clic+arrastrar para definir tamaño
+  | 'shape-rect'       // clic+arrastrar para definir tamaño
+  | 'ha-fan'           // Abanico: clic centro + drag longitud
+  | 'ha-grid'          // Malla: clic esquina1 + drag esquina2
+  | 'ha-fern';         // Helecho: drag línea central
 
 // ==========================================
 // HELPERS DE MÓDULO (reutilizados en varios useEffects)
@@ -538,7 +546,7 @@ const ThreeEngine: React.FC<{
       const tool = callbacks.current.activeTool;
 
       // ── Modo freehand brush ────────────────────────────────────────────────
-      if (tool === 'freehand-brush') {
+      if (tool === 'freehand-brush' || tool === 'straight-line' || tool === 'ha-fan' || tool === 'ha-grid' || tool === 'ha-fern') {
         if (!faceMeshRef.current || !cameraRef.current) return;
         const rect = renderer.domElement.getBoundingClientRect();
         mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
@@ -621,25 +629,36 @@ const ThreeEngine: React.FC<{
     };
 
     const onPointerMove = (e: MouseEvent) => {
-      // ── Modo freehand brush: recopilar puntos de la superficie ─────────────
+      // ── Modo brush / straight-line / HA shapes: recopilar posición ─────────
       if (brushActive && faceMeshRef.current && cameraRef.current) {
-        const dx = e.clientX - brushLastScreenPos.x;
-        const dy = e.clientY - brushLastScreenPos.y;
-        if (Math.sqrt(dx * dx + dy * dy) >= BRUSH_SAMPLE_PX) {
-          const rect = renderer.domElement.getBoundingClientRect();
-          mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-          mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-          raycaster.setFromCamera(mouse, cameraRef.current);
-          const hits = raycaster.intersectObject(faceMeshRef.current, true);
-          if (hits.length > 0) {
-            brushPoints.push(hits[0].point.clone());
-            brushLastScreenPos = { x: e.clientX, y: e.clientY };
-            // Preview: actualizar tubo del brush
+        const tool = callbacks.current.activeTool;
+        const rect = renderer.domElement.getBoundingClientRect();
+        mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(mouse, cameraRef.current);
+        const hits = raycaster.intersectObject(faceMeshRef.current, true);
+        if (hits.length > 0) {
+          const dx = e.clientX - brushLastScreenPos.x;
+          const dy = e.clientY - brushLastScreenPos.y;
+          const moved = Math.sqrt(dx * dx + dy * dy) >= BRUSH_SAMPLE_PX;
+          // Straight-line / HA shapes: siempre actualizar el último punto (punto B)
+          const isSnap = tool === 'straight-line' || tool === 'ha-fan' || tool === 'ha-grid' || tool === 'ha-fern';
+          if (moved || isSnap) {
+            if (isSnap) {
+              // Mantener solo ptA y reemplazar ptB
+              if (brushPoints.length === 1) brushPoints.push(hits[0].point.clone());
+              else brushPoints[brushPoints.length - 1] = hits[0].point.clone();
+            } else {
+              brushPoints.push(hits[0].point.clone());
+              brushLastScreenPos = { x: e.clientX, y: e.clientY };
+            }
+            // Preview: línea entre ptA y ptB (snap) o todos los puntos (brush)
             clearBrushPreview();
-            if (brushPoints.length >= 2 && brushPreviewGroupRef.current) {
+            const previewPts = isSnap ? [brushPoints[0], brushPoints[brushPoints.length - 1]] : brushPoints;
+            if (previewPts.length >= 2 && brushPreviewGroupRef.current) {
               const col = new THREE.Color(callbacks.current.pendingBrushColor || '#8b5cf6');
               const th = (callbacks.current.pendingBrushThickness || 1.0) * 0.003;
-              const preview = buildSurfaceTube(brushPoints, col, 0.6, th, false);
+              const preview = buildSurfaceTube(previewPts, col, 0.6, th, false);
               brushPreviewGroupRef.current.add(preview);
             }
           }
@@ -743,24 +762,130 @@ const ThreeEngine: React.FC<{
     };
 
     const onPointerUp = (e: MouseEvent) => {
-      // ── Finalizar freehand brush ───────────────────────────────────────────
+      // ── Finalizar brush / straight-line / formas HA ───────────────────────
       if (brushActive) {
+        const tool = callbacks.current.activeTool;
         brushActive = false;
         clearBrushPreview();
         if (controlsRef.current) controlsRef.current.enabled = true;
-        if (brushPoints.length >= 2) {
-          const id = `fh-${Date.now()}`;
-          const col = callbacks.current.pendingBrushColor || '#8b5cf6';
-          const th = callbacks.current.pendingBrushThickness || 1.0;
+        const col = callbacks.current.pendingBrushColor || '#8b5cf6';
+        const th = callbacks.current.pendingBrushThickness || 1.0;
+        const ptA = brushPoints[0];
+        const ptB = brushPoints[brushPoints.length - 1];
+
+        // Línea recta (straight-line): solo 2 puntos — inicio y fin
+        if (tool === 'straight-line' && ptA && ptB) {
           callbacks.current.onFreehandLineComplete?.({
-            id,
+            id: `fh-${Date.now()}`,
+            points: [
+              { x: ptA.x, y: ptA.y, z: ptA.z },
+              { x: ptB.x, y: ptB.y, z: ptB.z },
+            ],
+            color: col,
+            thickness: th,
+          });
+        }
+        // Abanico (fan): N líneas divergentes desde ptA hacia ptB + ángulo de apertura
+        else if (tool === 'ha-fan' && ptA && ptB) {
+          const groupId = `fan-${Date.now()}`;
+          const N = 5;
+          const halfAngle = 25; // grados
+          const dir = ptB.clone().sub(ptA);
+          const len = dir.length();
+          if (len > 0.05) {
+            dir.normalize();
+            // Eje perpendicular en el plano XY
+            const perp = new THREE.Vector3(-dir.y, dir.x, 0).normalize();
+            for (let i = 0; i < N; i++) {
+              const t = N === 1 ? 0 : (i / (N - 1) - 0.5) * 2; // -1 a 1
+              const angleDeg = t * halfAngle;
+              const rad = (angleDeg * Math.PI) / 180;
+              const fanDir = dir.clone().addScaledVector(perp, Math.tan(rad)).normalize();
+              const endPt = ptA.clone().addScaledVector(fanDir, len);
+              callbacks.current.onFreehandLineComplete?.({
+                id: `fh-${Date.now()}-${i}`,
+                points: [
+                  { x: ptA.x, y: ptA.y, z: ptA.z },
+                  { x: endPt.x, y: endPt.y, z: endPt.z },
+                ],
+                color: col,
+                thickness: th,
+                groupId,
+                technique_preset: 'Abanico',
+              });
+            }
+          }
+        }
+        // Malla (grid): N líneas horizontales + M verticales en bounding box
+        else if (tool === 'ha-grid' && ptA && ptB) {
+          const groupId = `grid-${Date.now()}`;
+          const N = 4; // líneas en cada dirección
+          const dir = ptB.clone().sub(ptA);
+          const perp = new THREE.Vector3(-dir.y, dir.x, 0).normalize();
+          const len = dir.length();
+          const perpLen = len * 0.6;
+          for (let i = 0; i <= N; i++) {
+            const t = i / N;
+            const base = ptA.clone().addScaledVector(dir, t);
+            const p1 = base.clone().addScaledVector(perp, -perpLen / 2);
+            const p2 = base.clone().addScaledVector(perp, perpLen / 2);
+            callbacks.current.onFreehandLineComplete?.({
+              id: `fh-${Date.now()}-h${i}`,
+              points: [{ x: p1.x, y: p1.y, z: p1.z }, { x: p2.x, y: p2.y, z: p2.z }],
+              color: col, thickness: th, groupId, technique_preset: 'Malla',
+            });
+          }
+          for (let j = 0; j <= N; j++) {
+            const t = j / N;
+            const base = ptA.clone().addScaledVector(perp, (t - 0.5) * perpLen);
+            const p1 = base.clone();
+            const p2 = base.clone().addScaledVector(dir, len);
+            callbacks.current.onFreehandLineComplete?.({
+              id: `fh-${Date.now()}-v${j}`,
+              points: [{ x: p1.x, y: p1.y, z: p1.z }, { x: p2.x, y: p2.y, z: p2.z }],
+              color: col, thickness: th, groupId, technique_preset: 'Malla',
+            });
+          }
+        }
+        // Helecho (fern): línea central + ramificaciones alternadas
+        else if (tool === 'ha-fern' && ptA && ptB) {
+          const groupId = `fern-${Date.now()}`;
+          const dir = ptB.clone().sub(ptA);
+          const len = dir.length();
+          if (len > 0.05) {
+            // Línea central
+            callbacks.current.onFreehandLineComplete?.({
+              id: `fh-${Date.now()}-c`,
+              points: [{ x: ptA.x, y: ptA.y, z: ptA.z }, { x: ptB.x, y: ptB.y, z: ptB.z }],
+              color: col, thickness: th, groupId, technique_preset: 'Helecho',
+            });
+            const N = 5;
+            const perp = new THREE.Vector3(-dir.normalize().y, dir.normalize().x, 0).normalize();
+            for (let i = 1; i <= N; i++) {
+              const t = i / (N + 1);
+              const base = ptA.clone().addScaledVector(dir.clone().normalize(), len * t);
+              const branchLen = len * 0.25 * (1 - t * 0.5);
+              const sign = i % 2 === 0 ? 1 : -1;
+              const tip = base.clone().addScaledVector(perp, sign * branchLen);
+              callbacks.current.onFreehandLineComplete?.({
+                id: `fh-${Date.now()}-b${i}`,
+                points: [{ x: base.x, y: base.y, z: base.z }, { x: tip.x, y: tip.y, z: tip.z }],
+                color: col, thickness: th * 0.7, groupId, technique_preset: 'Helecho',
+              });
+            }
+          }
+        }
+        // Freehand brush normal
+        else if ((tool === 'freehand-brush') && brushPoints.length >= 2) {
+          callbacks.current.onFreehandLineComplete?.({
+            id: `fh-${Date.now()}`,
             points: brushPoints.map(p => ({ x: p.x, y: p.y, z: p.z })),
             color: col,
             thickness: th,
           });
         }
         brushPoints = [];
-        isDragging = true; // evitar que onClick dispare marcación
+        isDragging = true;
         return;
       }
 
@@ -830,8 +955,9 @@ const ThreeEngine: React.FC<{
 
       const tool = callbacks.current.activeTool;
 
-      // ── Modo brush/shape: ignorar onClick (ya manejado en pointerUp) ──────
-      if (tool === 'freehand-brush' || tool === 'shape-circle' || tool === 'shape-rect') return;
+      // ── Modo brush/shape/straight/ha: ignorar onClick (ya manejado en pointerUp) ──
+      if (tool === 'freehand-brush' || tool === 'shape-circle' || tool === 'shape-rect'
+        || tool === 'straight-line' || tool === 'ha-fan' || tool === 'ha-grid' || tool === 'ha-fern') return;
 
       // ── Selección de elementos existentes (freehand, shapes, reference lines) ─
       if (tool === 'none' || tool === 'freehand-poly') {

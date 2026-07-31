@@ -43,14 +43,27 @@ interface Injectable {
   follow_up_date: string;
 }
 
+/** Jeringa / vial de relleno HA dentro de una sesión */
+interface HaVial {
+  id: string;
+  product_name: string;
+  brand: string;
+  lot_number: string;
+  expiration_date: string;
+  volume_ml: number;  // total del vial
+  color: string;
+}
+
 interface InjectionPoint extends Marker3D {
   tercio: 'superior' | 'medio' | 'inferior' | '';
   units: number;
   label: string;
   editablePointId?: string;
   injection_plane?: string;
-  /** Técnica aplicada en este punto específico (HA) */
   technique_at_point?: string;
+  needle_at_point?: string;    // cánula/aguja usada en este punto
+  notes_at_point?: string;     // observación específica del punto
+  vial_id?: string;            // ID del vial HA activo al momento de marcar
 }
 
 interface InjectablesTabProps {
@@ -92,6 +105,10 @@ const ALL_HA_ZONES = [
 ];
 
 const HA_PLANES = ['Dérmico superficial', 'Dérmico medio', 'Dérmico profundo', 'Subcutáneo', 'Supraperióstico'];
+
+/** Paleta fija de colores para diferenciar viales en el visor 3D */
+const VIAL_COLORS = ['#8b5cf6', '#06b6d4', '#f59e0b', '#10b981', '#ef4444'];
+const getVialColor = (index: number) => VIAL_COLORS[index % VIAL_COLORS.length];
 
 const TERCIO_COLORS: Record<string, { bg: string; border: string; text: string; badge: string; header: string }> = {
   superior: { bg: 'bg-[#deb887]/10', border: 'border-[#deb887]/40', text: 'text-[#b8944d]', badge: 'bg-[#deb887]/20 text-[#b8944d]', header: 'bg-[#deb887]/15 border-[#deb887]/30' },
@@ -245,6 +262,12 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     type: 'reference-line' | 'freehand' | 'shape';
   } | null>(null);
 
+  // ── Multi-vial (HA) ────────────────────────────────────────────────────
+  const [haVials, setHaVials] = useState<HaVial[]>([]);
+  const [activeVialId, setActiveVialId] = useState<string | null>(null);
+  // ── Sidebar edición inline de puntos ──────────────────────────────────
+  const [expandedPointId, setExpandedPointId] = useState<string | null>(null);
+
   // Keep ref in sync with state to avoid closure issues in the RAF callback
   useEffect(() => { showUnitNumbersRef.current = showUnitNumbers; }, [showUnitNumbers]);
 
@@ -318,8 +341,11 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
         // Restaurar freehand lines y shapes
         const rawFreehand: FreehandLine[] = Array.isArray(parsed.freehandLines) ? parsed.freehandLines : [];
         const rawShapes: SurfaceShape[] = Array.isArray(parsed.surfaceShapes) ? parsed.surfaceShapes : [];
+        const rawHaVials: HaVial[] = Array.isArray(parsed.haVials) ? parsed.haVials : [];
         setFreehandLines(rawFreehand);
         setSurfaceShapes(rawShapes);
+        setHaVials(rawHaVials);
+        setActiveVialId(rawHaVials.length > 0 ? rawHaVials[0].id : null);
         if (points.length > 0 || rawLines.length > 0 || rawEditablePoints.length > 0 || rawFreehand.length > 0 || rawShapes.length > 0) setShow3D(true);
       } catch {
         setInjectionPoints([]);
@@ -338,6 +364,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
       setRefJsonLoaded(false);
       setFreehandLines([]);
       setSurfaceShapes([]);
+      setHaVials([]);
+      setActiveVialId(null);
     }
   }, [current.id]);
 
@@ -373,10 +401,59 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   // HANDLERS
   // ==========================================
 
+  // ── HANDLERS: Multi-vial (HA) ────────────────────────────────────────────
+
+  const handleAddVial = () => {
+    const idx = haVials.length;
+    const newVial: HaVial = {
+      id: `vial-${Date.now()}`,
+      product_name: current.product_name || '',
+      brand: current.brand || '',
+      lot_number: current.lot_number || '',
+      expiration_date: current.expiration_date || '',
+      volume_ml: Number(current.volume_used) || 0,
+      color: getVialColor(idx),
+    };
+    setHaVials(prev => [...prev, newVial]);
+    setActiveVialId(newVial.id);
+  };
+
+  const handleRemoveVial = (id: string) => {
+    setHaVials(prev => prev.filter(v => v.id !== id));
+    setActiveVialId(prev => (prev === id ? (haVials.find(v => v.id !== id)?.id ?? null) : prev));
+  };
+
+  const activeVial = haVials.find(v => v.id === activeVialId) ?? null;
+
+  /** ml total usados de un vial específico */
+  const usedMlByVial = (vialId: string) =>
+    injectionPoints.filter(p => p.vial_id === vialId).reduce((s, p) => s + p.units, 0);
+
+  // ── HANDLERS: Sidebar edición inline por punto ────────────────────────────
+
+  const handlePointFieldChange = (idx: number, field: keyof InjectionPoint, value: any) => {
+    setInjectionPoints(prev => prev.map((p, i) => i === idx ? { ...p, [field]: value } : p));
+  };
+
+  const handleBulkApply = (sourceIdx: number) => {
+    const src = injectionPoints[sourceIdx];
+    setInjectionPoints(prev => prev.map((p, i) => i === sourceIdx ? p : {
+      ...p,
+      technique_at_point: src.technique_at_point ?? p.technique_at_point,
+      needle_at_point: src.needle_at_point ?? p.needle_at_point,
+      injection_plane: src.injection_plane ?? p.injection_plane,
+    }));
+  };
+
   // ── HANDLERS: Dibujo libre y formas ─────────────────────────────────────
 
   const handleFreehandComplete = useCallback((line: FreehandLine) => {
     setFreehandLines(prev => [...prev, line]);
+    // Si la línea tiene una técnica pre-rellenada (Abanico, Malla, Helecho),
+    // auto-seleccionar esa técnica en el pincel activo para los siguientes puntos
+    if (line.technique_preset) {
+      // ponytail: no hace falta estado adicional, es solo informativo en el visor
+    }
   }, []);
 
   const handleShapeComplete = useCallback((shape: SurfaceShape) => {
@@ -440,9 +517,9 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
 
       // Nuevo formato de mapping_data: incluye referenceLines, editablePoints, freehandLines y surfaceShapes
       const hasData = injectionPoints.length > 0 || referenceLines.length > 0 || editablePoints.length > 0
-        || freehandLines.length > 0 || surfaceShapes.length > 0;
+        || freehandLines.length > 0 || surfaceShapes.length > 0 || haVials.length > 0;
       const mappingData = hasData
-        ? { injectionPoints, referenceLines, editablePoints, freehandLines, surfaceShapes }
+        ? { injectionPoints, referenceLines, editablePoints, freehandLines, surfaceShapes, haVials }
         : null;
 
       const payload = {
@@ -518,6 +595,9 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     setSurfaceShapes([]);
     setActiveTool('none');
     setSelectedElement(null);
+    setHaVials([]);
+    setActiveVialId(null);
+    setExpandedPointId(null);
   };
 
   // ── pushUndo: snapshot before any point mutation ───────────────────────
@@ -845,6 +925,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
         units,
         label: effectiveLabel,
         editablePointId: newEp.id,
+        // Vial activo para relleno HA
+        ...(activeVialId ? { vial_id: activeVialId } : {}),
         // Plano y técnica si los seleccionó el usuario
         ...(unitsModalPlane ? { injection_plane: unitsModalPlane } : {}),
         ...(unitsModalTecnica ? { technique_at_point: unitsModalTecnica } : {}),
@@ -913,12 +995,20 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   const handleMarkerPlaced = (marker: Marker3D) => {
     const isAddMode = (marker as any).isAddPointMode;
     if (!isAddMode && !canMark) {
-      setMessage({ type: 'error', text: `Complete el nombre del producto y las ${unitLabel} antes de marcar puntos` });
-      return;
+      // Para relleno HA con multi-vial: también permitir si hay un vial activo
+      if (!(activeType === 'relleno' && activeVial)) {
+        setMessage({ type: 'error', text: `Complete el nombre del producto y las ${unitLabel} antes de marcar puntos` });
+        return;
+      }
     }
 
     const freeCount = injectionPoints.filter(ip => ip.label?.startsWith('punto libre')).length;
     const autoTercio = tercioBoundaries ? detectTercioFromY(marker.position.y) : '';
+
+    // Auto-detectar zona por tercio para Quick Save
+    const autoZone = autoTercio
+      ? (TERCIO_ZONES[autoTercio]?.[0] ?? `punto libre ${freeCount + 1}`)
+      : `punto libre ${freeCount + 1}`;
 
     setPendingFreePoint(marker);
     setUnitsModal({
@@ -930,9 +1020,10 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     });
     setUnitsModalInput('');
     setUnitsModalTercio(autoTercio as 'superior' | 'medio' | 'inferior' | '');
-    setUnitsModalZone(`punto libre ${freeCount + 1}`);
+    setUnitsModalZone(autoZone);
     setUnitsModalZoneFilter('');
     setUnitsModalPlane('');
+    setUnitsModalTecnica('');
     setUnitsModalStep(1);
   };
 
@@ -1474,6 +1565,60 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
           </div>
         </div>
 
+        {/* ── Multi-vial manager (solo para Relleno HA) ── */}
+        {activeType === 'relleno' && (
+          <div className="bg-white rounded-2xl border border-purple-100 shadow-sm p-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-purple-700 uppercase tracking-wide flex items-center gap-1.5">
+                <Droplets className="w-3.5 h-3.5" />
+                Jeringas / Viales
+              </span>
+              <button
+                onClick={handleAddVial}
+                disabled={!current.product_name.trim() || !Number(current.volume_used)}
+                className="flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-lg bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                title="Añadir vial con el producto y volumen del formulario"
+              >
+                <Plus className="w-3 h-3" />
+                Añadir vial
+              </button>
+            </div>
+            {haVials.length === 0 ? (
+              <p className="text-[11px] text-gray-400 italic">Llena el producto y volumen, luego añade el vial. Puedes añadir varios para una sesión multi-jeringa.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {haVials.map((v, idx) => {
+                  const used = usedMlByVial(v.id);
+                  const remaining = v.volume_ml - used;
+                  const isActive = v.id === activeVialId;
+                  return (
+                    <div
+                      key={v.id}
+                      onClick={() => setActiveVialId(v.id)}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 cursor-pointer transition-all ${
+                        isActive
+                          ? 'border-purple-400 bg-purple-50 shadow-sm'
+                          : 'border-gray-200 bg-white hover:border-purple-200'
+                      }`}
+                    >
+                      <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: v.color }} />
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-semibold text-gray-800 truncate max-w-[100px]">{v.product_name || `Vial ${idx + 1}`}</p>
+                        <p className="text-[10px] text-gray-400">{remaining.toFixed(1)} / {v.volume_ml} ml</p>
+                      </div>
+                      {isActive && <span className="text-[9px] bg-purple-200 text-purple-700 rounded px-1 font-bold">ACTIVO</span>}
+                      <button
+                        onClick={e => { e.stopPropagation(); handleRemoveVial(v.id); }}
+                        className="text-red-300 hover:text-red-500 ml-1"
+                      ><X className="w-3 h-3" /></button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Main Form */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         {/* Type Header - indica el tipo activo del sub-tab */}
@@ -1598,7 +1743,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
             </div>
           </div>
 
-          {/* Row 3: Technique + Needle */}
+          {/* Row 3: Technique + Needle — solo para Toxina */}
+          {current.product_type === 'toxina' && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <label className="block text-sm font-medium text-gray-700">Técnica</label>
@@ -1629,6 +1775,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
               </datalist>
             </div>
           </div>
+          )} {/* fin condicional toxina Row 3 */}
 
           {/* Row 4: Dilución (toxina only) + Fecha de control */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1852,6 +1999,57 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     </button>
                   </Tooltip>
 
+                  {/* Separador + Herramientas HA (solo para relleno) */}
+                  {activeType === 'relleno' && (
+                    <>
+                      <div className="w-px h-5 bg-slate-600 mx-0.5" />
+                      <Tooltip content="Línea recta: arrastrar de A a B sobre la piel">
+                        <button
+                          onClick={() => { setActiveTool(activeTool === 'straight-line' ? 'none' : 'straight-line'); setPointMode('none'); }}
+                          className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-all ${
+                            activeTool === 'straight-line' ? 'bg-violet-500/25 text-violet-300 border-violet-500/50' : 'bg-slate-700/50 text-slate-400 border-slate-600 hover:bg-slate-700'
+                          }`}
+                        >
+                          <Minus className="w-3 h-3" />
+                          Recta
+                        </button>
+                      </Tooltip>
+                      <Tooltip content="Abanico: clic+arrastrar → 5 líneas radiales (técnica Abanico)">
+                        <button
+                          onClick={() => { setActiveTool(activeTool === 'ha-fan' ? 'none' : 'ha-fan'); setPointMode('none'); }}
+                          className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-all ${
+                            activeTool === 'ha-fan' ? 'bg-violet-500/25 text-violet-300 border-violet-500/50' : 'bg-slate-700/50 text-slate-400 border-slate-600 hover:bg-slate-700'
+                          }`}
+                        >
+                          <span className="text-xs">扇</span>
+                          Abanico
+                        </button>
+                      </Tooltip>
+                      <Tooltip content="Malla: clic+arrastrar → cuadrícula (técnica Malla)">
+                        <button
+                          onClick={() => { setActiveTool(activeTool === 'ha-grid' ? 'none' : 'ha-grid'); setPointMode('none'); }}
+                          className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-all ${
+                            activeTool === 'ha-grid' ? 'bg-violet-500/25 text-violet-300 border-violet-500/50' : 'bg-slate-700/50 text-slate-400 border-slate-600 hover:bg-slate-700'
+                          }`}
+                        >
+                          <span className="text-xs">⊞</span>
+                          Malla
+                        </button>
+                      </Tooltip>
+                      <Tooltip content="Helecho: arrastrar → línea central + ramificaciones (técnica Helecho)">
+                        <button
+                          onClick={() => { setActiveTool(activeTool === 'ha-fern' ? 'none' : 'ha-fern'); setPointMode('none'); }}
+                          className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-all ${
+                            activeTool === 'ha-fern' ? 'bg-violet-500/25 text-violet-300 border-violet-500/50' : 'bg-slate-700/50 text-slate-400 border-slate-600 hover:bg-slate-700'
+                          }`}
+                        >
+                          <span className="text-xs">☘</span>
+                          Helecho
+                        </button>
+                      </Tooltip>
+                    </>
+                  )}
+
                   <div className="w-px h-5 bg-slate-700 mx-1" />
 
                   {/* Color del pincel */}
@@ -1894,15 +2092,16 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                   {activeTool !== 'none' && (
                     <div className="ml-auto flex items-center gap-2">
                       <span className="text-[10px] text-violet-400 font-semibold animate-pulse">
-                        {activeTool === 'freehand-brush' && '● Dibujando (mantener+arrastrar)'}
+                        {activeTool === 'freehand-brush' && '● Pincel (mantener+arrastrar)'}
                         {activeTool === 'freehand-poly' && '● Polilínea (clic · doble-clic para finalizar)'}
+                        {activeTool === 'straight-line' && '● Recta (arrastrar A→B)'}
                         {activeTool === 'shape-circle' && '● Círculo (clic+arrastrar)'}
                         {activeTool === 'shape-rect' && '● Rectángulo (clic+arrastrar)'}
+                        {activeTool === 'ha-fan' && '● Abanico (clic+arrastrar)'}
+                        {activeTool === 'ha-grid' && '● Malla (clic+arrastrar)'}
+                        {activeTool === 'ha-fern' && '● Helecho (arrastrar línea central)'}
                       </span>
-                      <button
-                        onClick={() => setActiveTool('none')}
-                        className="text-[10px] text-slate-400 hover:text-white border border-slate-600 px-1.5 py-0.5 rounded"
-                      >Cancelar</button>
+                      <button onClick={() => setActiveTool('none')} className="text-[10px] text-slate-400 hover:text-white border border-slate-600 px-1.5 py-0.5 rounded">Cancelar</button>
                     </div>
                   )}
                   {/* Contadores de elementos */}
@@ -2314,20 +2513,117 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                       <>
                         <div className="flex items-center gap-1.5 mb-2 flex-shrink-0">
                           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Desglose de Puntos</p>
-                          <div className="group relative">
-                            <Info className="w-3.5 h-3.5 text-gray-300 hover:text-[#deb887] cursor-help transition-colors" />
-                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-64 p-2.5 bg-gray-800 text-white text-[11px] rounded-lg shadow-xl z-50 leading-relaxed">
-                              <p className="font-semibold mb-1">Desglose de puntos de inyección</p>
-                              <p>Cada punto de inyección se clasifica por <strong>tercio facial</strong> (superior, medio, inferior).</p>
-                              <p className="mt-1"><strong>Zona:</strong> Área anatómica del punto de inyección.</p>
-                              <p><strong>{unitLabel}:</strong> {current.product_type === 'toxina' ? 'Unidades internacionales' : 'Mililitros'} aplicadas en ese punto.</p>
-                              <p><strong>% Dosis:</strong> Porcentaje que representan las unidades de ese punto respecto al <em>total de unidades aplicadas</em> en todos los puntos.</p>
-                              <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-px border-4 border-transparent border-t-gray-800" />
-                            </div>
-                          </div>
+                          <span className="ml-auto text-[10px] text-gray-400">{injectionPoints.length} punto(s) · {totalUsed} {unitLabel}</span>
                         </div>
                         <div className="overflow-y-scroll h-[400px] pr-1.5 space-y-2 scrollbar-gold">
-                        {(['superior', 'medio', 'inferior'] as const).map(tercio => {
+
+                        {/* ── Agrupación por vial (relleno HA) ── */}
+                        {current.product_type === 'relleno' && haVials.length > 0
+                          ? haVials.map(vial => {
+                              const vialPts = injectionPoints.filter(p => p.vial_id === vial.id);
+                              const vialUsed = vialPts.reduce((s, p) => s + p.units, 0);
+                              return (
+                                <div key={vial.id} className="rounded-xl border border-gray-200 overflow-hidden">
+                                  <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border-b border-gray-100">
+                                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: vial.color }} />
+                                    <span className="text-xs font-bold text-gray-700 truncate">{vial.product_name || 'Vial'}</span>
+                                    <div className="ml-auto flex items-center gap-1.5">
+                                      <span className="text-[10px] font-semibold text-gray-500">{vialUsed.toFixed(1)} / {vial.volume_ml} ml</span>
+                                    </div>
+                                  </div>
+                                  {vialPts.length > 0 ? (
+                                    <div className="divide-y divide-gray-50">
+                                      {vialPts.map(p => {
+                                        const globalIdx = injectionPoints.indexOf(p);
+                                        const epId = p.editablePointId;
+                                        const isExpanded = expandedPointId === (epId || String(globalIdx));
+                                        const expandKey = epId || String(globalIdx);
+                                        return (
+                                          <div key={globalIdx} className="border-b border-gray-50 last:border-0">
+                                            <div
+                                              className="flex items-center justify-between px-3 py-1.5 text-xs hover:bg-gray-50 cursor-pointer"
+                                              onClick={() => setExpandedPointId(isExpanded ? null : expandKey)}
+                                            >
+                                              <div className="flex items-center gap-2 min-w-0">
+                                                <span className="font-mono text-gray-400 w-4">{globalIdx + 1}</span>
+                                                <span className="font-medium text-gray-700 truncate">{p.label || '—'}</span>
+                                              </div>
+                                              <div className="flex items-center gap-1.5 flex-shrink-0">
+                                                <span className="font-semibold text-gray-800">{p.units} ml</span>
+                                                <ChevronDown className={`w-3 h-3 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                                                <button onClick={e => { e.stopPropagation(); handleRemovePoint(globalIdx); }} className="p-0.5 text-red-300 hover:text-red-500 rounded">
+                                                  <X className="w-3 h-3" />
+                                                </button>
+                                              </div>
+                                            </div>
+                                            {/* Inline editor */}
+                                            {isExpanded && (
+                                              <div className="px-3 pb-3 pt-1 bg-violet-50/50 space-y-2 border-t border-violet-100">
+                                                <div className="grid grid-cols-2 gap-1.5">
+                                                  <div>
+                                                    <p className="text-[9px] text-gray-400 mb-0.5">Técnica</p>
+                                                    <select
+                                                      className="w-full text-[11px] border border-gray-200 rounded-lg px-2 py-1 bg-white focus:ring-1 focus:ring-violet-300 outline-none"
+                                                      value={p.technique_at_point || ''}
+                                                      onChange={e => handlePointFieldChange(globalIdx, 'technique_at_point', e.target.value)}
+                                                    >
+                                                      <option value="">Por definir</option>
+                                                      {techniques.map(t => <option key={t} value={t}>{t}</option>)}
+                                                    </select>
+                                                  </div>
+                                                  <div>
+                                                    <p className="text-[9px] text-gray-400 mb-0.5">Cánula/Aguja</p>
+                                                    <select
+                                                      className="w-full text-[11px] border border-gray-200 rounded-lg px-2 py-1 bg-white focus:ring-1 focus:ring-violet-300 outline-none"
+                                                      value={p.needle_at_point || ''}
+                                                      onChange={e => handlePointFieldChange(globalIdx, 'needle_at_point', e.target.value)}
+                                                    >
+                                                      <option value="">Por definir</option>
+                                                      {needles.map(n => <option key={n} value={n}>{n}</option>)}
+                                                    </select>
+                                                  </div>
+                                                </div>
+                                                <div>
+                                                  <p className="text-[9px] text-gray-400 mb-0.5">Plano</p>
+                                                  <select
+                                                    className="w-full text-[11px] border border-gray-200 rounded-lg px-2 py-1 bg-white focus:ring-1 focus:ring-violet-300 outline-none"
+                                                    value={p.injection_plane || ''}
+                                                    onChange={e => handlePointFieldChange(globalIdx, 'injection_plane', e.target.value)}
+                                                  >
+                                                    <option value="">Por definir</option>
+                                                    {HA_PLANES.map(pl => <option key={pl} value={pl}>{pl}</option>)}
+                                                  </select>
+                                                </div>
+                                                <div>
+                                                  <p className="text-[9px] text-gray-400 mb-0.5">Nota</p>
+                                                  <input
+                                                    type="text"
+                                                    className="w-full text-[11px] border border-gray-200 rounded-lg px-2 py-1 bg-white focus:ring-1 focus:ring-violet-300 outline-none"
+                                                    placeholder="Observación..."
+                                                    value={p.notes_at_point || ''}
+                                                    onChange={e => handlePointFieldChange(globalIdx, 'notes_at_point', e.target.value)}
+                                                  />
+                                                </div>
+                                                <button
+                                                  onClick={() => handleBulkApply(globalIdx)}
+                                                  className="w-full text-[10px] py-1 rounded-lg bg-violet-100 text-violet-700 hover:bg-violet-200 font-semibold transition-colors"
+                                                >
+                                                  Aplicar técnica/cánula/plano a todos →
+                                                </button>
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  ) : (
+                                    <p className="text-[10px] text-gray-400 italic px-3 py-2">Sin puntos en este vial</p>
+                                  )}
+                                </div>
+                              );
+                            })
+                          : /* ── Agrupación por tercio (toxina + relleno sin viales) ── */
+                          (['superior', 'medio', 'inferior'] as const).map(tercio => {
                           const pts = pointsByTercio[tercio];
                           if (!pts || pts.length === 0) return null;
                           const colors = TERCIO_COLORS[tercio];
@@ -2345,44 +2641,61 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                                   const globalIndex = injectionPoints.indexOf(p);
                                   const rowEpId = p.editablePointId;
                                   const isSelected = !!rowEpId && rowEpId === selectedPointId;
+                                  const expandKey = rowEpId || String(globalIndex);
+                                  const isExpanded = expandedPointId === expandKey;
                                   return (
-                                    <div
-                                      key={i}
-                                      className={`flex items-center justify-between px-3 py-1.5 text-xs transition-colors cursor-pointer ${
-                                        isSelected ? 'bg-[#deb887]/10 ring-1 ring-inset ring-[#deb887]/40' : 'hover:bg-gray-50'
-                                      }`}
-                                      onClick={() => { if (rowEpId) setSelectedPointId(isSelected ? null : rowEpId); }}
-                                    >
-                                      <div className="flex items-center gap-2 min-w-0">
-                                        <span className={`font-mono w-4 flex-shrink-0 ${isSelected ? 'text-[#b8944d] font-bold' : 'text-gray-400'}`}>{globalIndex + 1}</span>
-                                        <div className="flex flex-col min-w-0">
-                                          <span className={`font-medium truncate ${isSelected ? 'text-[#b8944d]' : 'text-gray-700'}`}>{p.label || '—'}</span>
-                                          {p.injection_plane && (
-                                            <span className="text-[10px] text-[#b8944d]/70 truncate">{p.injection_plane}</span>
+                                    <div key={i} className="border-b border-gray-50 last:border-0">
+                                      <div
+                                        className={`flex items-center justify-between px-3 py-1.5 text-xs transition-colors cursor-pointer ${isSelected ? 'bg-[#deb887]/10' : 'hover:bg-gray-50'}`}
+                                        onClick={() => {
+                                          if (rowEpId) setSelectedPointId(isSelected ? null : rowEpId);
+                                          setExpandedPointId(isExpanded ? null : expandKey);
+                                        }}
+                                      >
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          <span className={`font-mono w-4 flex-shrink-0 ${isSelected ? 'text-[#b8944d] font-bold' : 'text-gray-400'}`}>{globalIndex + 1}</span>
+                                          <div className="flex flex-col min-w-0">
+                                            <span className={`font-medium truncate ${isSelected ? 'text-[#b8944d]' : 'text-gray-700'}`}>{p.label || '—'}</span>
+                                            {p.injection_plane && <span className="text-[10px] text-[#b8944d]/70 truncate">{p.injection_plane}</span>}
+                                          </div>
+                                        </div>
+                                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                                          <span className="font-semibold text-gray-800">{p.units} {unitLabel}</span>
+                                          <span className="text-gray-400 w-9 text-right">{totalUsed > 0 ? Math.round((p.units / totalUsed) * 100) : 0}%</span>
+                                          {rowEpId && (
+                                            <button onClick={e => { e.stopPropagation(); handleEditablePointClicked(rowEpId); }} className="p-0.5 text-[#deb887] hover:text-[#b8944d] rounded" title="Editar">
+                                              <Pencil className="w-3 h-3" />
+                                            </button>
                                           )}
+                                          <button onClick={e => { e.stopPropagation(); handleRemovePoint(globalIndex); }} className="p-0.5 text-red-300 hover:text-red-500 rounded">
+                                            <X className="w-3 h-3" />
+                                          </button>
                                         </div>
                                       </div>
-                                      <div className="flex items-center gap-1.5 flex-shrink-0">
-                                        <span className="font-semibold text-gray-800">{p.units} {unitLabel}</span>
-                                        <span className="text-gray-400 w-9 text-right cursor-help" title={`${totalUsed > 0 ? Math.round((p.units / totalUsed) * 100) : 0}% del total de ${totalUsed} ${unitLabel} aplicadas`}>{totalUsed > 0 ? Math.round((p.units / totalUsed) * 100) : 0}%</span>
-                                        {/* Editar — abre modal si tiene editablePointId */}
-                                        {rowEpId && (
-                                          <button
-                                            onClick={e => { e.stopPropagation(); handleEditablePointClicked(rowEpId); }}
-                                            className="p-0.5 text-[#deb887] hover:text-[#b8944d] hover:bg-[#deb887]/10 rounded transition-colors"
-                                            title="Editar punto"
-                                          >
-                                            <Pencil className="w-3 h-3" />
+                                      {/* Inline editor para toxina también */}
+                                      {isExpanded && (
+                                        <div className="px-3 pb-3 pt-1 bg-amber-50/50 space-y-2 border-t border-amber-100">
+                                          <div className="grid grid-cols-2 gap-1.5">
+                                            <div>
+                                              <p className="text-[9px] text-gray-400 mb-0.5">Técnica</p>
+                                              <select className="w-full text-[11px] border border-gray-200 rounded-lg px-2 py-1 bg-white outline-none" value={p.technique_at_point || ''} onChange={e => handlePointFieldChange(globalIndex, 'technique_at_point', e.target.value)}>
+                                                <option value="">—</option>
+                                                {techniques.map(t => <option key={t} value={t}>{t}</option>)}
+                                              </select>
+                                            </div>
+                                            <div>
+                                              <p className="text-[9px] text-gray-400 mb-0.5">Aguja</p>
+                                              <select className="w-full text-[11px] border border-gray-200 rounded-lg px-2 py-1 bg-white outline-none" value={p.needle_at_point || ''} onChange={e => handlePointFieldChange(globalIndex, 'needle_at_point', e.target.value)}>
+                                                <option value="">—</option>
+                                                {needles.map(n => <option key={n} value={n}>{n}</option>)}
+                                              </select>
+                                            </div>
+                                          </div>
+                                          <button onClick={() => handleBulkApply(globalIndex)} className="w-full text-[10px] py-1 rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200 font-semibold transition-colors">
+                                            Aplicar a todos →
                                           </button>
-                                        )}
-                                        <button
-                                          onClick={e => { e.stopPropagation(); handleRemovePoint(globalIndex); }}
-                                          className="p-0.5 text-red-300 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
-                                          title="Eliminar punto"
-                                        >
-                                          <X className="w-3 h-3" />
-                                        </button>
-                                      </div>
+                                        </div>
+                                      )}
                                     </div>
                                   );
                                 })}
@@ -2459,115 +2772,94 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 </button>
               </div>
 
-              {/* Step progress bar */}
-              <div className="flex gap-1 mb-4">
-                {(current.product_type === 'relleno' ? [1, 2, 3] : [1, 2, 3, 4]).map(s => (
-                  <div key={s} className={`h-1 flex-1 rounded-full transition-colors ${s <= unitsModalStep ? 'bg-[#deb887]' : 'bg-gray-200'}`} />
-                ))}
-              </div>
+              {/* Step progress bar — solo toxina usa multi-pasos */}
+              {current.product_type === 'toxina' && (
+                <div className="flex gap-1 mb-4">
+                  {[1, 2, 3, 4].map(s => (
+                    <div key={s} className={`h-1 flex-1 rounded-full transition-colors ${s <= unitsModalStep ? 'bg-[#deb887]' : 'bg-gray-200'}`} />
+                  ))}
+                </div>
+              )}
 
               {/* ═══════════════════════════════════════════════
-                  FLUJO RELLENO HA (3 pasos)
+                  QUICK SAVE — RELLENO HA (1 paso)
               ═══════════════════════════════════════════════ */}
-              {current.product_type === 'relleno' && unitsModalStep === 1 && (
-                <div className="mb-4">
-                  <p className="text-[10px] text-gray-400 mb-2">Selecciona la zona anatómica tratada</p>
-                  <input
-                    type="text"
-                    autoFocus
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-violet-300 outline-none mb-2"
-                    placeholder="Buscar zona..."
-                    value={unitsModalZoneFilter}
-                    onChange={e => setUnitsModalZoneFilter(e.target.value)}
-                  />
-                  <div className="flex flex-wrap gap-1.5 max-h-44 overflow-y-auto">
-                    {ALL_HA_ZONES
-                      .filter(({ z }) => !unitsModalZoneFilter || z.toLowerCase().includes(unitsModalZoneFilter.toLowerCase()))
-                      .map(({ z, area }) => (
-                        <button
-                          key={z}
-                          onClick={() => { setUnitsModalZone(z); setUnitsModalTercio(area); }}
-                          className={`px-2.5 py-1.5 rounded-lg text-[11px] font-medium border transition-all ${
-                            unitsModalZone === z
-                              ? 'bg-violet-100 border-violet-400 text-violet-800 shadow-sm'
-                              : 'bg-white border-gray-200 text-gray-600 hover:border-violet-200 hover:bg-violet-50'
-                          }`}
-                        >
-                          {z}
-                        </button>
-                      ))}
-                    {unitsModalZoneFilter.trim() && !ALL_HA_ZONES.find(({ z }) => z === unitsModalZoneFilter.trim()) && (
-                      <button
-                        onClick={() => { setUnitsModalZone(unitsModalZoneFilter.trim()); }}
-                        className="px-2.5 py-1.5 rounded-lg text-[11px] font-medium border bg-violet-50 border-violet-300 text-violet-700"
-                      >
-                        Usar &quot;{unitsModalZoneFilter.trim()}&quot; →
-                      </button>
+              {current.product_type === 'relleno' && (
+                <div className="mb-4 space-y-3">
+                  {/* Vial activo + zona auto-detectada */}
+                  <div className="flex items-center gap-2 p-2.5 bg-gray-50 rounded-xl">
+                    {activeVial ? (
+                      <>
+                        <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: activeVial.color }} />
+                        <span className="text-xs font-semibold text-gray-700 truncate">{activeVial.product_name || 'Vial activo'}</span>
+                        <span className="ml-auto text-[10px] text-gray-400">
+                          {(activeVial.volume_ml - usedMlByVial(activeVial.id)).toFixed(1)} ml rest.
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-xs text-gray-400 italic">Sin vial activo</span>
                     )}
                   </div>
-                </div>
-              )}
-
-              {current.product_type === 'relleno' && unitsModalStep === 2 && (
-                <div className="mb-4 space-y-3">
-                  <div>
-                    <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Técnica de inyección</p>
-                    <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
-                      {techniques.map(t => (
-                        <button
-                          key={t}
-                          onClick={() => setUnitsModalTecnica(prev => prev === t ? '' : t)}
-                          className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition-all ${
-                            unitsModalTecnica === t
-                              ? 'bg-violet-100 border-violet-400 text-violet-800'
-                              : 'bg-white border-gray-200 text-gray-600 hover:border-violet-200'
-                          }`}
-                        >
-                          {t}
-                        </button>
-                      ))}
+                  {/* Zona auto-detectada */}
+                  {unitsModalZone && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-gray-400">Zona detectada:</span>
+                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 font-semibold border border-violet-200">
+                        {unitsModalZone}
+                      </span>
+                      {unitsModalTercio && (
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${TERCIO_COLORS[unitsModalTercio]?.badge || 'bg-gray-100'}`}>
+                          {TERCIO_LABELS[unitsModalTercio]}
+                        </span>
+                      )}
                     </div>
-                  </div>
+                  )}
+                  {/* ml input */}
                   <div>
-                    <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Plano de inyección</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {HA_PLANES.map(p => (
-                        <button
-                          key={p}
-                          onClick={() => setUnitsModalPlane(prev => prev === p ? '' : p)}
-                          className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition-all ${
-                            unitsModalPlane === p
-                              ? 'bg-[#deb887]/20 border-[#deb887] text-[#b8944d]'
-                              : 'bg-white border-gray-200 text-gray-600 hover:border-[#deb887]/50'
-                          }`}
+                    <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Volumen (ml)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      autoFocus
+                      value={unitsModalInput}
+                      onChange={e => setUnitsModalInput(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') handleUnitsModalConfirm(); }}
+                      className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300 text-center font-bold text-lg text-gray-800"
+                      placeholder="0.0"
+                    />
+                  </div>
+                  {/* Detalle opcional (colapsable) */}
+                  <details className="group">
+                    <summary className="text-[11px] text-violet-600 cursor-pointer hover:text-violet-800 font-medium list-none flex items-center gap-1">
+                      <ChevronDown className="w-3 h-3 group-open:rotate-180 transition-transform" />
+                      + Técnica / Cánula / Plano (opcional)
+                    </summary>
+                    <div className="mt-2 space-y-2 pt-2 border-t border-gray-100">
+                      <div>
+                        <p className="text-[10px] text-gray-400 mb-1">Técnica</p>
+                        <select
+                          className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-violet-200 outline-none"
+                          value={unitsModalTecnica}
+                          onChange={e => setUnitsModalTecnica(e.target.value)}
                         >
-                          {p}
-                        </button>
-                      ))}
+                          <option value="">— Por definir —</option>
+                          {techniques.map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-gray-400 mb-1">Plano</p>
+                        <select
+                          className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-violet-200 outline-none"
+                          value={unitsModalPlane}
+                          onChange={e => setUnitsModalPlane(e.target.value)}
+                        >
+                          <option value="">— Por definir —</option>
+                          {HA_PLANES.map(p => <option key={p} value={p}>{p}</option>)}
+                        </select>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              )}
-
-              {current.product_type === 'relleno' && unitsModalStep === 3 && (
-                <div className="mb-4">
-                  <div className="flex flex-wrap gap-1 mb-3 p-2 bg-violet-50 rounded-lg">
-                    {unitsModalZone && <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 font-semibold">{unitsModalZone}</span>}
-                    {unitsModalTecnica && <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-semibold">{unitsModalTecnica}</span>}
-                    {unitsModalPlane && <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#deb887]/15 text-[#b8944d] font-semibold">{unitsModalPlane}</span>}
-                  </div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Volumen (ml)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.1"
-                    value={unitsModalInput}
-                    onChange={e => setUnitsModalInput(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') handleUnitsModalConfirm(); }}
-                    autoFocus
-                    className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300 text-center font-bold text-lg text-gray-800"
-                    placeholder="0.0"
-                  />
+                  </details>
                 </div>
               )}
 
@@ -2722,8 +3014,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
 
                 {/* Fila principal: Volver + Guardar + Siguiente */}
                 <div className="flex gap-2">
-                  {/* Volver — pasos 2+ */}
-                  {unitsModalStep > 1 && (
+                  {/* Volver — toxina pasos 2+ */}
+                  {current.product_type === 'toxina' && unitsModalStep > 1 && (
                     <button
                       onClick={() => setUnitsModalStep(prev => (prev - 1) as 1 | 2 | 3 | 4)}
                       className="px-3 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50 transition-colors"
@@ -2732,35 +3024,17 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     </button>
                   )}
 
-                  {/* Guardar — en el último paso */}
-                  {(
-                    (current.product_type === 'relleno' && unitsModalStep === 3) ||
+                  {/* Guardar — relleno HA siempre disponible / toxina en último paso */}
+                  {(current.product_type === 'relleno' ||
                     (current.product_type === 'toxina' && (unitsModalStep === 1 || unitsModalStep === 4))
                   ) && (
                     <button
                       onClick={handleUnitsModalConfirm}
-                      disabled={current.product_type === 'relleno'
-                        ? (!unitsModalInput || Number(unitsModalInput) <= 0)
-                        : (!unitsModalInput || Number(unitsModalInput) <= 0)}
+                      disabled={!unitsModalInput || Number(unitsModalInput) <= 0}
                       className="flex-1 px-4 py-2.5 rounded-xl bg-[#deb887] text-white text-sm font-semibold hover:bg-[#c5a075] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
                     >
                       <Check className="w-4 h-4" />
                       Guardar
-                    </button>
-                  )}
-
-                  {/* Siguiente — relleno HA pasos 1 y 2 */}
-                  {current.product_type === 'relleno' && unitsModalStep < 3 && (
-                    <button
-                      onClick={() => {
-                        if (unitsModalStep === 1 && !unitsModalZone) return;
-                        setUnitsModalStep(prev => (prev + 1) as 2 | 3 | 4);
-                        setUnitsModalZoneFilter('');
-                      }}
-                      disabled={unitsModalStep === 1 && !unitsModalZone}
-                      className="flex-1 px-4 py-2.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-semibold hover:bg-gray-200 transition-colors disabled:opacity-40 flex items-center justify-center gap-1"
-                    >
-                      Siguiente →
                     </button>
                   )}
 
@@ -2779,7 +3053,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     </button>
                   )}
 
-                  {/* Toxina paso 1: botones Guardar + Siguiente (mantiene comportamiento actual) */}
+                  {/* Toxina paso 1: Guardar + Clasificar */}
                   {current.product_type === 'toxina' && unitsModalStep === 1 && (
                     <button
                       onClick={() => { setUnitsModalStep(2); setUnitsModalZoneFilter(''); }}
