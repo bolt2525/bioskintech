@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import AdminLayout from '../../../layout/AdminLayout';
 import recordsFetch from '../../../../utils/recordsFetch';
 import PatientAuditModal from './PatientAuditModal';
+import { useAdminNav } from '../../../../hooks/useAdminNav';
 
 interface Patient {
   id: number;
@@ -21,6 +22,7 @@ export default function PatientList() {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const navigate = useNavigate();
+  const { nav } = useAdminNav();
   const [searchParams] = useSearchParams();
   // clinicId pasado desde el master admin para filtrar por clínica
   const clinicId = searchParams.get('clinicId');
@@ -91,7 +93,7 @@ export default function PatientList() {
         <div className="flex flex-wrap gap-4 justify-between items-center bg-white p-4 rounded-xl shadow-sm">
           <h2 className="text-xl font-bold text-gray-800">Pacientes Registrados</h2>
           <button 
-            onClick={() => navigate('/admin/clinical-records/new')}
+            onClick={() => nav('clinical-records/new')}
             className="bg-[#deb887] text-white px-4 py-2 rounded-lg hover:bg-[#c5a075] transition-colors flex items-center gap-2"
           >
             <Plus className="w-4 h-4" />
@@ -149,7 +151,7 @@ export default function PatientList() {
                   </tr>
                 ) : (
                   filteredPatients.map((patient) => (
-                    <tr key={patient.id} className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => navigate(`/admin/ficha-clinica/paciente/${patient.id}`)}>
+                    <tr key={patient.id} className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => nav(`ficha-clinica/paciente/${patient.id}`)}>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-full bg-[#deb887]/10 flex items-center justify-center text-[#deb887]">
@@ -169,7 +171,7 @@ export default function PatientList() {
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
                           <button 
-                            onClick={(e) => { e.stopPropagation(); navigate(`/admin/clinical-records/edit/${patient.id}`); }}
+                            onClick={(e) => { e.stopPropagation(); nav(`clinical-records/edit/${patient.id}`); }}
                             className="p-2 text-gray-500 hover:text-[#deb887] hover:bg-[#deb887]/10 rounded-lg transition-colors"
                             title="Editar"
                           >
@@ -190,7 +192,7 @@ export default function PatientList() {
                             <Clock className="w-4 h-4" />
                           </button>
                           <button 
-                            onClick={(e) => { e.stopPropagation(); navigate(`/admin/ficha-clinica/paciente/${patient.id}`); }}
+                            onClick={(e) => { e.stopPropagation(); nav(`ficha-clinica/paciente/${patient.id}`); }}
                             className="text-[#deb887] hover:text-[#c5a075] font-medium flex items-center gap-1 ml-2"
                           >
                             <FileText className="w-4 h-4" />

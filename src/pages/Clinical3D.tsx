@@ -11,6 +11,7 @@ import {
   Eye, EyeOff, Upload
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useAdminNav } from '../hooks/useAdminNav';
 import ReferenceLinePanel from '../components/admin/ficha-clinica/components/ReferenceLinePanel';
 import type { ReferenceLine, LineType, LinePreset } from '../components/admin/ficha-clinica/components/ReferenceLinePanel';
 
@@ -2052,6 +2053,7 @@ const ThreeScene = ({ modelSource, markers, zones, onMeshClick, onLoaded, onErro
 
 export default function Clinical3D() {
   const navigate = useNavigate();
+  const { nav } = useAdminNav();
   const [selectedPathology, setSelectedPathology] = useState(PATHOLOGIES[0].id);
   const [markers, setMarkers] = useState<Marker[]>([]);
   const [zones, setZones] = useState<Zone[]>([]);
@@ -2505,7 +2507,7 @@ export default function Clinical3D() {
       {/* Botón Volver */}
       <div className="absolute top-4 left-4 z-50 flex items-center gap-3">
         <button 
-          onClick={() => navigate('/admin')}
+          onClick={() => nav('')}
           className="px-4 py-2 bg-slate-800/80 hover:bg-slate-700 backdrop-blur-md rounded-lg text-white text-sm font-medium border border-slate-700 transition-colors"
         >
           ← Volver al Panel

@@ -2,10 +2,11 @@
  * @file src/App.tsx
  * @description Enrutador principal del Admin Panel BIOSKIN.
  *
- * Usa HashRouter (#) requerido para Vercel SPA sin SSR.
+ * Usa BrowserRouter (rutas limpias sin #).
+ * Vercel sirve siempre index.html para cualquier ruta via rewrite catch-all en vercel.json.
  */
 
-import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 
 // ── Página de error ────────────────────────────────────────────────────────
@@ -54,7 +55,7 @@ import { MasterViewProvider } from './context/MasterViewContext';
 function App() {
   return (
     <ErrorBoundary>
-      <HashRouter>
+      <BrowserRouter>
         <AuthProvider>
           <MasterViewProvider>
           <Routes>
@@ -137,7 +138,7 @@ function App() {
           </Routes>
           </MasterViewProvider>
         </AuthProvider>
-      </HashRouter>
+      </BrowserRouter>
     </ErrorBoundary>
   );
 }

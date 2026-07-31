@@ -70,10 +70,10 @@ export default async function handler(req, res) {
       `;
 
       // Redirigir al master dashboard con mensaje de éxito
-      return res.redirect(302, '/#/admin/master?oauth=success&clinic=' + clinicId);
+      return res.redirect(302, '/admin/master?oauth=success&clinic=' + clinicId);
     } catch (e) {
       console.error('❌ OAuth callback error:', e.message);
-      return res.redirect(302, '/#/admin/master?oauth=error&msg=' + encodeURIComponent(e.message));
+      return res.redirect(302, '/admin/master?oauth=error&msg=' + encodeURIComponent(e.message));
     }
   }
 

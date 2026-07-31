@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import recordsFetch from '../../../../utils/recordsFetch';
+import { useAdminNav } from '../../../../hooks/useAdminNav';
 import { 
   ClipboardList, 
   Activity, 
@@ -58,6 +59,7 @@ const TabButton: React.FC<TabButtonProps> = ({ id, label, icon: Icon, active, on
 export default function ClinicalRecordManager() {
   const { recordId } = useParams();
   const navigate = useNavigate();
+  const { nav } = useAdminNav();
   const [activeTab, setActiveTab] = useState('history');
   const [loading, setLoading] = useState(true);
   const [patient, setPatient] = useState<any>(null);
@@ -145,7 +147,7 @@ export default function ClinicalRecordManager() {
           <h3 className="text-xl font-semibold text-gray-800">Expediente no encontrado</h3>
           {error && <p className="text-red-500 mt-2">{error}</p>}
           <button 
-            onClick={() => navigate('/admin/clinical-records')}
+            onClick={() => nav('clinical-records')}
             className="mt-4 text-[#deb887] hover:underline"
           >
             Volver a la lista
@@ -166,7 +168,7 @@ export default function ClinicalRecordManager() {
         <div className="sticky top-0 z-20 bg-gray-50/95 backdrop-blur pt-2 pb-4">
           <div className="flex items-center justify-between bg-white p-4 rounded-xl shadow-sm border border-gray-100">
             <button 
-              onClick={() => navigate(`/admin/ficha-clinica/paciente/${patient?.id}`)}
+              onClick={() => nav(`ficha-clinica/paciente/${patient?.id}`)}
               className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
             >
               <ArrowLeft className="w-5 h-5" />

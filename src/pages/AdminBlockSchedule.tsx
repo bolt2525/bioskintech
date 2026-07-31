@@ -1,11 +1,13 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useAdminNav } from '../hooks/useAdminNav';
 import AdminBlockScheduleComponent from '../components/AdminBlockSchedule';
 
 export default function AdminBlockSchedule() {
   const navigate = useNavigate();
   const { isAuthenticated, checkAuth } = useAuth();
+  const { nav } = useAdminNav();
 
   useEffect(() => {
     const verifyAuth = async () => {
@@ -17,9 +19,7 @@ export default function AdminBlockSchedule() {
     verifyAuth();
   }, [checkAuth, navigate]);
 
-  const handleBack = () => {
-    navigate('/admin');
-  };
+  const handleBack = () => nav('');
 
   if (!isAuthenticated) {
     return null;

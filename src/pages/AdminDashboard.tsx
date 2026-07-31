@@ -257,7 +257,7 @@ export default function AdminDashboard() {
 
                     <div className="px-4 py-3 bg-gray-50 border-t border-gray-100 text-center">
                       <button
-                        onClick={() => navigate('/admin/calendar')}
+                        onClick={() => nav('calendar')}
                         className="text-sm text-[#deb887] font-medium hover:text-[#c5a075] transition-colors"
                       >
                         Ver calendario completo →
@@ -270,7 +270,7 @@ export default function AdminDashboard() {
               {/* Gestión de usuarios (solo clinic_admin) */}
               {user.role === 'clinic_admin' && (
                 <button
-                  onClick={() => navigate('/admin/users')}
+                  onClick={() => nav('users')}
                   className="flex items-center gap-1.5 px-3 py-2 text-[#c5a075] bg-[#deb887]/10 hover:bg-[#deb887]/20 rounded-xl transition-colors text-sm font-medium"
                 >
                   <Users className="w-4 h-4" /> Usuarios

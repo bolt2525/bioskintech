@@ -3,9 +3,11 @@ import recordsFetch from "../../../../utils/recordsFetch";
 import { useNavigate, useParams } from 'react-router-dom';
 import { Save, ArrowLeft, AlertCircle } from 'lucide-react';
 import AdminLayout from '../../../layout/AdminLayout';
+import { useAdminNav } from '../../../../hooks/useAdminNav';
 
 export default function NewPatientForm() {
   const navigate = useNavigate();
+  const { nav } = useAdminNav();
   const { patientId } = useParams();
   const isEditing = Boolean(patientId);
 
@@ -82,7 +84,7 @@ export default function NewPatientForm() {
 
       if (response.ok) {
         const result = await response.json();
-        navigate(`/admin/ficha-clinica/paciente/${result.id}`);
+        nav(`ficha-clinica/paciente/${result.id}`);
       } else {
         const errorData = await response.json().catch(() => ({ error: 'Error desconocido del servidor' }));
         throw new Error(errorData.error || `Error al ${isEditing ? 'actualizar' : 'crear'} paciente`);

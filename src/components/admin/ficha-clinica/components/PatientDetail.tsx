@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Plus, FileText, Calendar, Clock, ArrowRight, Edit2, Trash2 } from 'lucide-react';
 import AdminLayout from '../../../layout/AdminLayout';
 import recordsFetch from '../../../../utils/recordsFetch';
+import { useAdminNav } from '../../../../hooks/useAdminNav';
 
 interface Patient {
   id: number;
@@ -27,6 +28,7 @@ interface ClinicalRecord {
 export default function PatientDetail() {
   const { patientId } = useParams();
   const navigate = useNavigate();
+  const { nav } = useAdminNav();
   const [patient, setPatient] = useState<Patient | null>(null);
   const [records, setRecords] = useState<ClinicalRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -91,7 +93,7 @@ export default function PatientDetail() {
 
       if (response.ok) {
         const newRecord = await response.json();
-        navigate(`/admin/ficha-clinica/expediente/${newRecord.id}`);
+        nav(`ficha-clinica/expediente/${newRecord.id}`);
       }
     } catch (error) {
       console.error('Error creating record:', error);
@@ -107,7 +109,7 @@ export default function PatientDetail() {
       });
 
       if (response.ok) {
-        navigate('/admin/clinical-records');
+        nav('clinical-records');
       } else {
         alert('Error al eliminar el paciente');
       }
@@ -169,7 +171,7 @@ export default function PatientDetail() {
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 relative">
           <div className="absolute top-6 right-6 flex gap-2">
             <button 
-              onClick={() => navigate(`/admin/clinical-records/edit/${patient.id}`)}
+              onClick={() => nav(`clinical-records/edit/${patient.id}`)}
               className="p-2 text-gray-500 hover:text-[#deb887] hover:bg-[#deb887]/10 rounded-lg transition-colors"
               title="Editar Información"
             >
@@ -277,7 +279,7 @@ export default function PatientDetail() {
                       <Trash2 className="w-4 h-4" />
                     </button>
                     <button 
-                      onClick={() => navigate(`/admin/ficha-clinica/expediente/${record.id}`)}
+                      onClick={() => nav(`ficha-clinica/expediente/${record.id}`)}
                       className="flex items-center gap-2 text-[#deb887] font-medium group-hover:translate-x-1 transition-transform"
                     >
                       Ver Detalles
