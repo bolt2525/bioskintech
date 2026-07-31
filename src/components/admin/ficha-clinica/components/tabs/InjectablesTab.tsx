@@ -453,11 +453,11 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
 
   const handleFreehandComplete = useCallback((line: FreehandLine) => {
     setFreehandLines(prev => [...prev, line]);
-    // Si la línea tiene una técnica pre-rellenada (Abanico, Malla, Helecho),
-    // auto-seleccionar esa técnica en el pincel activo para los siguientes puntos
-    if (line.technique_preset) {
-      // ponytail: no hace falta estado adicional, es solo informativo en el visor
-    }
+  }, []);
+
+  /** Actualiza los puntos de una línea existente (después de resize/move de handles) */
+  const handleFreehandLineUpdated = useCallback((id: string, points: { x: number; y: number; z: number }[]) => {
+    setFreehandLines(prev => prev.map(l => l.id === id ? { ...l, points } : l));
   }, []);
 
   const handleShapeComplete = useCallback((shape: SurfaceShape) => {
@@ -2307,6 +2307,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                         onFreehandLineComplete={handleFreehandComplete}
                         onShapeComplete={handleShapeComplete}
                         onElementSelected={handleElementSelected}
+                        onFreehandLineUpdated={handleFreehandLineUpdated}
                         haShapeConfig={haShapeConfig}
                       />
 
@@ -2380,6 +2381,12 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                           {/* Nota: reference-lines no se pueden hacer continuas */}
                           {selectedElement.type === 'reference-line' && (selectedElementData as any).dashed && (
                             <p className="text-[9px] text-slate-500 italic mb-2">Tipo: entrecortada (fija)</p>
+                          )}
+                          {/* Info de handles para líneas freehand */}
+                          {selectedElement.type === 'freehand' && !(selectedElementData as FreehandLine)?.groupId && (
+                            <p className="text-[9px] text-slate-400 italic mb-2">
+                              🟢 Arrastrar inicio · 🔵 Arrastrar fin · 🟡 Mover línea
+                            </p>
                           )}
                           {/* Opciones de eliminación según tipo */}
                           {selectedElement.type === 'freehand' && (selectedElementData as FreehandLine)?.groupId ? (
@@ -2468,18 +2475,21 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 </div>{/* /relative */}
 
                 {/* Bottom bar — controles de puntos + deshacer */}
-                {(injectionPoints.length > 0 || undoStack.length > 0) && (
+                {(injectionPoints.length > 0 || undoStack.length > 0 || freehandLines.length > 0 || surfaceShapes.length > 0) && (
                   <div className="mt-3 flex items-center justify-between gap-2 px-1">
-                    {/* Estado de puntos */}
+                    {/* Estado de puntos y trazados */}
                     <span className="text-xs text-gray-500 shrink-0">
-                      {injectionPoints.length > 0
-                        ? `${injectionPoints.length} punto(s) · ${totalUsed} ${unitLabel} aplicadas`
-                        : <span className="italic text-gray-400">Puntos limpiados</span>
-                      }
+                      {injectionPoints.length > 0 && `${injectionPoints.length} punto(s)`}
+                      {injectionPoints.length > 0 && (freehandLines.length > 0 || surfaceShapes.length > 0) && ' · '}
+                      {freehandLines.length > 0 && `${freehandLines.length} línea(s)`}
+                      {freehandLines.length > 0 && surfaceShapes.length > 0 && ' · '}
+                      {surfaceShapes.length > 0 && `${surfaceShapes.length} forma(s)`}
+                      {injectionPoints.length === 0 && freehandLines.length === 0 && surfaceShapes.length === 0 && (
+                        <span className="italic text-gray-400">Trazado limpiado</span>
+                      )}
                     </span>
 
                     <div className="flex items-center gap-2">
-                      {/* Botón deshacer — visible cuando hay acciones en el stack */}
                       {undoStack.length > 0 && (
                         <button
                           onClick={handleUndo}
@@ -2491,7 +2501,18 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                         </button>
                       )}
 
-                      {/* Botón limpiar todos con confirmación */}
+                      {/* Limpiar trazado libre HA */}
+                      {(freehandLines.length > 0 || surfaceShapes.length > 0) && (
+                        <button
+                          onClick={() => { setFreehandLines([]); setSurfaceShapes([]); setSelectedElement(null); }}
+                          className="text-xs text-violet-400 hover:text-violet-600 transition-colors"
+                          title="Limpiar líneas y formas trazadas"
+                        >
+                          Limpiar trazado
+                        </button>
+                      )}
+
+                      {/* Botón limpiar puntos de inyección */}
                       {injectionPoints.length > 0 && (
                         !showClearConfirm ? (
                           <button

@@ -292,6 +292,8 @@ interface Clinical3DViewerProps {
   onShapeComplete?: (shape: SurfaceShape) => void;
   /** Callback al seleccionar una línea/forma existente por clic. id=null → deseleccionar */
   onElementSelected?: (id: string | null, type: string | null) => void;
+  /** Callback cuando el usuario mueve un endpoint de una línea freehand (resize) */
+  onFreehandLineUpdated?: (id: string, points: { x: number; y: number; z: number }[]) => void;
   /** Configuración de formas HA (abanico, malla, helecho) */
   haShapeConfig?: { fanLines: number; fanAngle: number; gridCells: number; fernBranches: number };
 }
@@ -330,6 +332,7 @@ const ThreeEngine: React.FC<{
   onFreehandLineComplete?: (line: FreehandLine) => void;
   onShapeComplete?: (shape: SurfaceShape) => void;
   onElementSelected?: (id: string | null, type: string | null) => void;
+  onFreehandLineUpdated?: (id: string, points: { x: number; y: number; z: number }[]) => void;
   /** Configuración de formas HA (abanico, malla, helecho) */
   haShapeConfig?: { fanLines: number; fanAngle: number; gridCells: number; fernBranches: number };
 }> = ({
@@ -341,7 +344,7 @@ const ThreeEngine: React.FC<{
   freehandLines = [], surfaceShapes = [],
   activeTool = 'none', selectedElementId = null,
   pendingBrushColor = '#8b5cf6', pendingBrushThickness = 1.0,
-  onFreehandLineComplete, onShapeComplete, onElementSelected,
+  onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated,
   haShapeConfig = { fanLines: 5, fanAngle: 25, gridCells: 4, fernBranches: 5 },
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
@@ -358,6 +361,8 @@ const ThreeEngine: React.FC<{
   const freehandGroupRef = useRef<THREE.Group | null>(null);
   const shapesGroupRef = useRef<THREE.Group | null>(null);
   const brushPreviewGroupRef = useRef<THREE.Group | null>(null);
+  // Handles de edición de líneas seleccionadas (resize + move)
+  const handlesGroupRef = useRef<THREE.Group | null>(null);
   // Increments each time the model finishes loading so the markers effect re-runs
   const [modelVersion, setModelVersion] = useState(0);
   // Track two-point step inside engine for cursor feedback
@@ -367,16 +372,16 @@ const ThreeEngine: React.FC<{
     onMeshClick, onLoaded, onError, zones, readOnly, lineDrawingMode, onLinePointAnchored,
     pointMode, onEditablePointMoved, onEditablePointDeleted, onEditablePointClicked, onProjectedPositions,
     activeTool, selectedElementId, pendingBrushColor, pendingBrushThickness,
-    onFreehandLineComplete, onShapeComplete, onElementSelected,
-    haShapeConfig,
+    onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated,
+    haShapeConfig, freehandLines,
   });
   useEffect(() => {
     callbacks.current = {
       onMeshClick, onLoaded, onError, zones, readOnly, lineDrawingMode, onLinePointAnchored,
       pointMode, onEditablePointMoved, onEditablePointDeleted, onEditablePointClicked, onProjectedPositions,
       activeTool, selectedElementId, pendingBrushColor, pendingBrushThickness,
-      onFreehandLineComplete, onShapeComplete, onElementSelected,
-      haShapeConfig,
+      onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated,
+      haShapeConfig, freehandLines,
     };
   });
 
@@ -416,6 +421,10 @@ const ThreeEngine: React.FC<{
     const brushPreviewGroup = new THREE.Group();
     brushPreviewGroupRef.current = brushPreviewGroup;
     scene.add(brushPreviewGroup);
+
+    const handlesGroup = new THREE.Group();
+    handlesGroupRef.current = handlesGroup;
+    scene.add(handlesGroup);
 
     const camera = new THREE.PerspectiveCamera(35, mountRef.current.clientWidth / mountRef.current.clientHeight, 0.1, 1000);
     camera.position.set(0, 0, 12);
@@ -466,6 +475,12 @@ const ThreeEngine: React.FC<{
     let draggedEditableGroup: THREE.Group | null = null;
     let dragMoved = false;
 
+    // ── Handle drag (resize/move de líneas seleccionadas) ──────────────────
+    let handleDragRole: 'start' | 'end' | 'body' | null = null;
+    let handleDragLineId: string | null = null;
+    let handleBodyStartSurface: THREE.Vector3 | null = null;
+    let handleBodyOriginalPoints: { x: number; y: number; z: number }[] | null = null;
+
     // ── Estado dibujo libre (HA) ───────────────────────────────────────────
     let brushActive = false;
     let brushPoints: THREE.Vector3[] = [];
@@ -498,19 +513,37 @@ const ThreeEngine: React.FC<{
 
     // ── Proyectar punto 3D sobre la superficie real del modelo ─────────────
     const projectToSurface = (pt: THREE.Vector3): THREE.Vector3 => {
-      if (!faceMeshRef.current || !cameraRef.current) return pt;
+      if (!faceMeshRef.current) return pt;
       const rc = new THREE.Raycaster();
-      // Intento 1: desde la cámara hacia el punto (respeta el ángulo de vista)
-      const cam = cameraRef.current;
-      const dir = pt.clone().sub(cam.position).normalize();
-      rc.set(cam.position, dir);
-      const h1 = rc.intersectObject(faceMeshRef.current, true);
-      if (h1.length > 0) return h1[0].point.clone();
-      // Intento 2: sweep frontal Z → funciona para la vista frontal
-      rc.set(new THREE.Vector3(pt.x, pt.y, 10), new THREE.Vector3(0, 0, -1));
+      const candidates: THREE.Vector3[] = [];
+
+      // Dir 1: desde la cámara hacia el punto
+      if (cameraRef.current) {
+        const dir = pt.clone().sub(cameraRef.current.position).normalize();
+        rc.set(cameraRef.current.position, dir);
+        const h = rc.intersectObject(faceMeshRef.current, true);
+        if (h.length > 0) candidates.push(h[0].point.clone());
+      }
+      // Dir 2: sweep frontal Z→-Z
+      rc.set(new THREE.Vector3(pt.x, pt.y, 12), new THREE.Vector3(0, 0, -1));
       const h2 = rc.intersectObject(faceMeshRef.current, true);
-      if (h2.length > 0) return h2[0].point.clone();
-      return pt; // fallback: punto sin proyectar
+      if (h2.length > 0) candidates.push(h2[0].point.clone());
+      // Dir 3: sweep trasero -Z→Z
+      rc.set(new THREE.Vector3(pt.x, pt.y, -12), new THREE.Vector3(0, 0, 1));
+      const h3 = rc.intersectObject(faceMeshRef.current, true);
+      if (h3.length > 0) candidates.push(h3[0].point.clone());
+      // Dir 4: desde arriba Y→-Y
+      rc.set(new THREE.Vector3(pt.x, 12, pt.z), new THREE.Vector3(0, -1, 0));
+      const h4 = rc.intersectObject(faceMeshRef.current, true);
+      if (h4.length > 0) candidates.push(h4[0].point.clone());
+      // Dir 5: desde abajo -Y→Y
+      rc.set(new THREE.Vector3(pt.x, -12, pt.z), new THREE.Vector3(0, 1, 0));
+      const h5 = rc.intersectObject(faceMeshRef.current, true);
+      if (h5.length > 0) candidates.push(h5[0].point.clone());
+
+      if (candidates.length === 0) return pt;
+      // Devolver el candidato más cercano al punto original
+      return candidates.reduce((best, c) => c.distanceTo(pt) < best.distanceTo(pt) ? c : best);
     };
 
     // Genera N puntos interpolados entre from y to, todos proyectados a la piel
@@ -524,29 +557,38 @@ const ThreeEngine: React.FC<{
 
     // ── Hover highlight — variables de estado puro (no React) ─────────────
     const hoverMouse = new THREE.Vector2(-999, -999);
-    let prevHoveredGroup: THREE.Object3D | null = null;
+    let prevHoveredId: string | null = null;  // ID en vez de ref (evita ref stale)
     let hoverFrameCount = 0;
 
-    const restoreHover = (grp: THREE.Object3D) => {
-      grp.traverse((c: any) => {
-        if (c.isMesh && c.material && c.userData.hoverBase !== undefined) {
-          c.material.opacity = c.userData.hoverBase;
-          c.material.color?.setHex(c.userData.hoverColorBase ?? c.material.color.getHex());
+    /** Aumenta opacidad y marca `hoverBase` en los meshes del grupo */
+    const applyHover = (lineGrp: THREE.Object3D) => {
+      lineGrp.traverse((c: any) => {
+        if (c.isMesh && c.material) {
+          if (c.userData.hoverBase === undefined) c.userData.hoverBase = c.material.opacity ?? 1;
+          c.material.opacity = Math.min(1.0, (c.userData.hoverBase) * 1.6 + 0.2);
           c.material.needsUpdate = true;
-          delete c.userData.hoverBase;
-          delete c.userData.hoverColorBase;
         }
       });
     };
 
-    const applyHover = (grp: THREE.Object3D) => {
-      grp.traverse((c: any) => {
-        if (c.isMesh && c.material) {
-          if (c.userData.hoverBase === undefined) c.userData.hoverBase = c.material.opacity ?? 1;
-          if (c.userData.hoverColorBase === undefined) c.userData.hoverColorBase = c.material.color?.getHex?.() ?? 0xffffff;
-          c.material.opacity = Math.min(1.0, (c.userData.hoverBase ?? 0.8) * 1.5 + 0.15);
+    /** Restaura opacidad original del grupo */
+    const restoreHover = (lineGrp: THREE.Object3D) => {
+      lineGrp.traverse((c: any) => {
+        if (c.isMesh && c.material && c.userData.hoverBase !== undefined) {
+          c.material.opacity = c.userData.hoverBase;
           c.material.needsUpdate = true;
+          delete c.userData.hoverBase;
         }
+      });
+    };
+
+    /** Restaura hover del grupo que tiene el ID dado (busca en la escena viva) */
+    const restoreHoverById = (id: string) => {
+      [freehandGroupRef.current, shapesGroupRef.current, linesGroupRef.current].forEach(ref => {
+        ref?.children.forEach((child: any) => {
+          const cId = child.userData.freehandId || child.userData.shapeId || child.userData.lineId;
+          if (cId === id) restoreHover(child);
+        });
       });
     };
     let selectedEditableId: string | null = null;
@@ -603,6 +645,25 @@ const ThreeEngine: React.FC<{
     const onPointerDown = (e: MouseEvent) => {
       startPos = { x: e.clientX, y: e.clientY };
       const tool = callbacks.current.activeTool;
+
+      // ── Prioridad 0: handle drag (resize/move de línea seleccionada) ───────
+      if (handlesGroupRef.current && handlesGroupRef.current.children.length > 0 && cameraRef.current) {
+        const rect = renderer.domElement.getBoundingClientRect();
+        mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(mouse, cameraRef.current);
+        const handleHits = raycaster.intersectObjects(handlesGroupRef.current.children, false);
+        if (handleHits.length > 0) {
+          const hit = handleHits[0].object as THREE.Mesh;
+          handleDragRole = hit.userData.handleRole;
+          handleDragLineId = hit.userData.handleLineId;
+          handleBodyStartSurface = null;
+          handleBodyOriginalPoints = null;
+          if (controlsRef.current) controlsRef.current.enabled = false;
+          isDragging = false;
+          return;
+        }
+      }
 
       // ── Modo freehand brush ────────────────────────────────────────────────
       if (tool === 'freehand-brush' || tool === 'straight-line' || tool === 'ha-fan' || tool === 'ha-grid' || tool === 'ha-fern') {
@@ -688,6 +749,44 @@ const ThreeEngine: React.FC<{
     };
 
     const onPointerMove = (e: MouseEvent) => {
+      // ── Handle drag en línea seleccionada ─────────────────────────────────
+      if (handleDragRole && handleDragLineId && faceMeshRef.current && cameraRef.current) {
+        const rect = renderer.domElement.getBoundingClientRect();
+        mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(mouse, cameraRef.current);
+        const hits = raycaster.intersectObject(faceMeshRef.current, true);
+        if (hits.length > 0) {
+          const surfPt = hits[0].point;
+          if (handleDragRole === 'start' || handleDragRole === 'end') {
+            // Mover el handle visualmente
+            const handle = handlesGroupRef.current?.children.find(
+              (h: any) => h.userData.handleRole === handleDragRole && h.userData.handleLineId === handleDragLineId
+            );
+            if (handle) handle.position.copy(surfPt);
+          } else if (handleDragRole === 'body') {
+            // Capturar el punto de inicio del body drag
+            if (!handleBodyStartSurface) {
+              handleBodyStartSurface = surfPt.clone();
+              const line = callbacks.current.freehandLines?.find((l: FreehandLine) => l.id === handleDragLineId);
+              handleBodyOriginalPoints = line ? [...line.points] : null;
+            }
+            if (handleBodyOriginalPoints && handleBodyStartSurface) {
+              const offset = surfPt.clone().sub(handleBodyStartSurface);
+              // Mover todos los handles por el offset
+              handlesGroupRef.current?.children.forEach((h: any) => {
+                const role = h.userData.handleRole;
+                const origIdx = role === 'start' ? 0 : role === 'end' ? handleBodyOriginalPoints!.length - 1 : Math.floor(handleBodyOriginalPoints!.length / 2);
+                const orig = handleBodyOriginalPoints![origIdx];
+                h.position.set(orig.x + offset.x, orig.y + offset.y, orig.z + offset.z);
+              });
+            }
+          }
+          isDragging = true;
+        }
+        return;
+      }
+
       // ── Modo brush / straight-line / HA shapes: recopilar posición ─────────
       if (brushActive && faceMeshRef.current && cameraRef.current) {
         const tool = callbacks.current.activeTool;
@@ -740,21 +839,25 @@ const ThreeEngine: React.FC<{
                   brushPreviewGroupRef.current.add(buildSurfaceTube(surfaceLine(ptA, endPt, 10), col, 0.45, th, false));
                 }
               } else if (tool === 'ha-grid') {
-                // Ghost completo de la malla
+                // Ghost completo de la malla — perpendicular correcta en 3D
                 const dir = ptB.clone().sub(ptA);
-                const len = dir.length();
-                const perp = new THREE.Vector3(-dir.y, dir.x, 0).normalize();
-                const perpLen = len * 0.6;
+                const dirNorm = dir.clone().normalize();
+                let perp = new THREE.Vector3().crossVectors(dirNorm, new THREE.Vector3(0, 1, 0)).normalize();
+                if (perp.lengthSq() < 0.001) perp = new THREE.Vector3().crossVectors(dirNorm, new THREE.Vector3(0, 0, 1)).normalize();
+                const lenDir = dir.length();
+                const lenPerp = lenDir * 0.65;
                 const N = cfg.gridCells;
+                // Líneas paralelas a `dir`
                 for (let i = 0; i <= N; i++) {
-                  const base = ptA.clone().addScaledVector(dir, i / N);
-                  const p1 = base.clone().addScaledVector(perp, -perpLen / 2);
-                  const p2 = base.clone().addScaledVector(perp, perpLen / 2);
-                  brushPreviewGroupRef.current.add(buildSurfaceTube(surfaceLine(p1, p2, 8), col, 0.45, th, false));
+                  const base = ptA.clone().addScaledVector(perp, (i / N - 0.5) * lenPerp);
+                  brushPreviewGroupRef.current!.add(buildSurfaceTube(surfaceLine(base, base.clone().addScaledVector(dirNorm, lenDir), 8), col, 0.45, th, false));
                 }
+                // Líneas paralelas a `perp`
                 for (let j = 0; j <= N; j++) {
-                  const base = ptA.clone().addScaledVector(perp, (j / N - 0.5) * perpLen);
-                  brushPreviewGroupRef.current.add(buildSurfaceTube(surfaceLine(base, base.clone().addScaledVector(dir, len), 8), col, 0.45, th, false));
+                  const base = ptA.clone().addScaledVector(dirNorm, (j / N) * lenDir);
+                  const p1 = base.clone().addScaledVector(perp, -lenPerp / 2);
+                  const p2 = base.clone().addScaledVector(perp, lenPerp / 2);
+                  brushPreviewGroupRef.current!.add(buildSurfaceTube(surfaceLine(p1, p2, 8), col, 0.45, th, false));
                 }
               } else if (tool === 'ha-fern') {
                 // Ghost completo del helecho
@@ -874,6 +977,47 @@ const ThreeEngine: React.FC<{
     };
 
     const onPointerUp = (e: MouseEvent) => {
+      // ── Finalizar handle drag ──────────────────────────────────────────────
+      if (handleDragRole && handleDragLineId) {
+        const role = handleDragRole;
+        const lineId = handleDragLineId;
+        handleDragRole = null;
+        handleDragLineId = null;
+        if (controlsRef.current) controlsRef.current.enabled = true;
+        isDragging = true;
+
+        const line = callbacks.current.freehandLines?.find((l: FreehandLine) => l.id === lineId);
+        if (!line) return;
+
+        if (role === 'start' || role === 'end') {
+          const handle = handlesGroupRef.current?.children.find(
+            (h: any) => h.userData.handleRole === role
+          );
+          if (handle) {
+            const newPos = handle.position;
+            const isStart = role === 'start';
+            const otherPt = isStart
+              ? new THREE.Vector3(line.points[line.points.length - 1].x, line.points[line.points.length - 1].y, line.points[line.points.length - 1].z)
+              : new THREE.Vector3(line.points[0].x, line.points[0].y, line.points[0].z);
+            const newPts = isStart
+              ? surfaceLine(newPos.clone(), otherPt)
+              : surfaceLine(otherPt, newPos.clone());
+            callbacks.current.onFreehandLineUpdated?.(lineId, newPts.map(p => ({ x: p.x, y: p.y, z: p.z })));
+          }
+        } else if (role === 'body' && handleBodyOriginalPoints && handleBodyStartSurface) {
+          // Emitir puntos traducidos proyectados
+          const startHandle = handlesGroupRef.current?.children.find((h: any) => h.userData.handleRole === 'start');
+          const endHandle = handlesGroupRef.current?.children.find((h: any) => h.userData.handleRole === 'end');
+          if (startHandle && endHandle) {
+            const newPts = surfaceLine(startHandle.position.clone(), endHandle.position.clone());
+            callbacks.current.onFreehandLineUpdated?.(lineId, newPts.map(p => ({ x: p.x, y: p.y, z: p.z })));
+          }
+          handleBodyStartSurface = null;
+          handleBodyOriginalPoints = null;
+        }
+        return;
+      }
+
       // ── Finalizar brush / straight-line / formas HA ───────────────────────
       if (brushActive) {
         const tool = callbacks.current.activeTool;
@@ -923,29 +1067,25 @@ const ThreeEngine: React.FC<{
           const groupId = `grid-${Date.now()}`;
           const cfg = callbacks.current.haShapeConfig || { fanLines: 5, fanAngle: 25, gridCells: 4, fernBranches: 5 };
           const dir = ptB.clone().sub(ptA);
-          const len = dir.length();
-          const perp = new THREE.Vector3(-dir.y, dir.x, 0).normalize();
-          const perpLen = len * 0.6;
+          const dirNorm = dir.clone().normalize();
+          let perp = new THREE.Vector3().crossVectors(dirNorm, new THREE.Vector3(0, 1, 0)).normalize();
+          if (perp.lengthSq() < 0.001) perp = new THREE.Vector3().crossVectors(dirNorm, new THREE.Vector3(0, 0, 1)).normalize();
+          const lenDir = dir.length();
+          const lenPerp = lenDir * 0.65;
           const N = cfg.gridCells;
+          // Líneas paralelas a dir (corriendo a lo largo)
           for (let i = 0; i <= N; i++) {
-            const base = ptA.clone().addScaledVector(dir, i / N);
-            const p1 = base.clone().addScaledVector(perp, -perpLen / 2);
-            const p2 = base.clone().addScaledVector(perp, perpLen / 2);
-            const pts = surfaceLine(p1, p2);
-            callbacks.current.onFreehandLineComplete?.({
-              id: `fh-${Date.now()}-h${i}`,
-              points: pts.map(p => ({ x: p.x, y: p.y, z: p.z })),
-              color: col, thickness: th, groupId, technique_preset: 'Malla',
-            });
+            const base = ptA.clone().addScaledVector(perp, (i / N - 0.5) * lenPerp);
+            const pts = surfaceLine(base, base.clone().addScaledVector(dirNorm, lenDir), 12);
+            callbacks.current.onFreehandLineComplete?.({ id: `fh-${Date.now()}-h${i}`, points: pts.map(p => ({x:p.x,y:p.y,z:p.z})), color: col, thickness: th, groupId, technique_preset: 'Malla' });
           }
+          // Líneas paralelas a perp (cruzadas)
           for (let j = 0; j <= N; j++) {
-            const base = ptA.clone().addScaledVector(perp, (j / N - 0.5) * perpLen);
-            const pts = surfaceLine(base, base.clone().addScaledVector(dir, len));
-            callbacks.current.onFreehandLineComplete?.({
-              id: `fh-${Date.now()}-v${j}`,
-              points: pts.map(p => ({ x: p.x, y: p.y, z: p.z })),
-              color: col, thickness: th, groupId, technique_preset: 'Malla',
-            });
+            const base = ptA.clone().addScaledVector(dirNorm, (j / N) * lenDir);
+            const p1 = base.clone().addScaledVector(perp, -lenPerp / 2);
+            const p2 = base.clone().addScaledVector(perp, lenPerp / 2);
+            const pts = surfaceLine(p1, p2, 12);
+            callbacks.current.onFreehandLineComplete?.({ id: `fh-${Date.now()}-v${j}`, points: pts.map(p => ({x:p.x,y:p.y,z:p.z})), color: col, thickness: th, groupId, technique_preset: 'Malla' });
           }
         }
         // Helecho (fern): línea central + ramificaciones, todo proyectado
@@ -1213,7 +1353,8 @@ const ThreeEngine: React.FC<{
     };
     const onHoverMouseLeave = () => {
       hoverMouse.set(-999, -999);
-      if (prevHoveredGroup) { restoreHover(prevHoveredGroup); prevHoveredGroup = null; }
+      if (prevHoveredId) { restoreHoverById(prevHoveredId); prevHoveredId = null; }
+      if (renderer.domElement) renderer.domElement.style.cursor = 'crosshair';
     };
     renderer.domElement.addEventListener('mousemove', onHoverMouseMove);
     renderer.domElement.addEventListener('mouseleave', onHoverMouseLeave);
@@ -1229,29 +1370,43 @@ const ThreeEngine: React.FC<{
           const hoverRc = new THREE.Raycaster();
           hoverRc.setFromCamera(hoverMouse, cameraRef.current);
           const hoverMeshes: THREE.Object3D[] = [];
-          freehandGroupRef.current?.children.forEach(g => g.traverse(c => { if ((c as THREE.Mesh).isMesh) hoverMeshes.push(c); }));
-          shapesGroupRef.current?.children.forEach(g => g.traverse(c => { if ((c as THREE.Mesh).isMesh) hoverMeshes.push(c); }));
-          linesGroupRef.current?.children.forEach(g => g.traverse(c => { if ((c as THREE.Mesh).isMesh) hoverMeshes.push(c); }));
+          // Recopilar meshes de los 3 grupos con su parent group
+          const meshToLineGrp = new Map<THREE.Object3D, THREE.Object3D>();
+          const addGroup = (ref: typeof freehandGroupRef) => {
+            ref.current?.children.forEach(lineGrp => {
+              lineGrp.traverse(c => {
+                if ((c as THREE.Mesh).isMesh) {
+                  hoverMeshes.push(c);
+                  meshToLineGrp.set(c, lineGrp);
+                }
+              });
+            });
+          };
+          addGroup(freehandGroupRef);
+          addGroup(shapesGroupRef);
+          addGroup(linesGroupRef);
 
+          let newHoveredId: string | null = null;
           let newHoveredGroup: THREE.Object3D | null = null;
           if (hoverMeshes.length > 0) {
             const hoverHits = hoverRc.intersectObjects(hoverMeshes, false);
             if (hoverHits.length > 0) {
-              let obj: THREE.Object3D | null = hoverHits[0].object;
-              // Subir hasta encontrar el grupo con id de elemento
-              while (obj && !obj.userData.freehandId && !obj.userData.shapeId && !obj.userData.lineId) {
-                obj = obj.parent;
-              }
-              if (obj && (obj.userData.freehandId || obj.userData.shapeId || obj.userData.lineId)) {
-                newHoveredGroup = obj;
+              const lineGrp = meshToLineGrp.get(hoverHits[0].object);
+              if (lineGrp) {
+                newHoveredId = lineGrp.userData.freehandId || lineGrp.userData.shapeId || lineGrp.userData.lineId || null;
+                newHoveredGroup = lineGrp;
               }
             }
           }
 
-          if (newHoveredGroup !== prevHoveredGroup) {
-            if (prevHoveredGroup) restoreHover(prevHoveredGroup);
+          if (newHoveredId !== prevHoveredId) {
+            if (prevHoveredId) restoreHoverById(prevHoveredId);
             if (newHoveredGroup) applyHover(newHoveredGroup);
-            prevHoveredGroup = newHoveredGroup;
+            prevHoveredId = newHoveredId;
+            // Cambiar cursor para indicar que hay algo seleccionable
+            if (renderer.domElement) {
+              renderer.domElement.style.cursor = newHoveredId ? 'pointer' : 'crosshair';
+            }
           }
         }
 
@@ -1675,6 +1830,41 @@ const ThreeEngine: React.FC<{
     });
   }, [surfaceShapes, selectedElementId, modelVersion]);
 
+  // 4g. Handles de edición para la línea freehand seleccionada
+  useEffect(() => {
+    const grp = handlesGroupRef.current;
+    if (!grp) return;
+    // Limpiar handles previos
+    while (grp.children.length > 0) {
+      const c = grp.children[0] as any;
+      grp.remove(c);
+      c.geometry?.dispose();
+      c.material?.dispose();
+    }
+    if (!selectedElementId) return;
+    const line = freehandLines.find(l => l.id === selectedElementId);
+    if (!line || line.points.length < 2) return;
+
+    const makeHandle = (color: number, role: 'start' | 'end' | 'body', pt: { x: number; y: number; z: number }) => {
+      const geo = new THREE.SphereGeometry(0.07, 12, 12);
+      const mat = new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.92 });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(pt.x, pt.y, pt.z);
+      mesh.userData.handleRole = role;
+      mesh.userData.handleLineId = line.id;
+      mesh.renderOrder = 1003;
+      return mesh;
+    };
+
+    // Handle inicio (verde)
+    grp.add(makeHandle(0x22c55e, 'start', line.points[0]));
+    // Handle fin (azul)
+    grp.add(makeHandle(0x3b82f6, 'end', line.points[line.points.length - 1]));
+    // Handle cuerpo — punto medio (naranja, para arrastrar toda la línea)
+    const midIdx = Math.floor(line.points.length / 2);
+    grp.add(makeHandle(0xf59e0b, 'body', line.points[midIdx]));
+  }, [selectedElementId, freehandLines, modelVersion]);
+
   // 4. Renderizar líneas de referencia sobre la superficie del modelo
   useEffect(() => {
     const group = linesGroupRef.current;
@@ -1891,6 +2081,7 @@ export default function Clinical3DViewer({
   onFreehandLineComplete,
   onShapeComplete,
   onElementSelected,
+  onFreehandLineUpdated,
   haShapeConfig = { fanLines: 5, fanAngle: 25, gridCells: 4, fernBranches: 5 },
 }: Clinical3DViewerProps) {
   const [modelSource, setModelSource] = useState<{ type: 'url' | 'buffer'; data: string | ArrayBuffer }>({
@@ -1974,6 +2165,7 @@ export default function Clinical3DViewer({
             onFreehandLineComplete={onFreehandLineComplete}
             onShapeComplete={onShapeComplete}
             onElementSelected={onElementSelected}
+            onFreehandLineUpdated={onFreehandLineUpdated}
             haShapeConfig={haShapeConfig}
           />
         )}
