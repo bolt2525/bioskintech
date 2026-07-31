@@ -2955,7 +2955,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                       onClick={() => setUnitsModalZone(unitsModalZoneFilter.trim())}
                       className="mt-1.5 w-full px-3 py-2 rounded-lg text-xs font-semibold bg-violet-50 border border-violet-200 text-violet-700 hover:bg-violet-100 transition-colors text-left"
                     >
-                      Usar &quot;{unitsModalZoneFilter.trim()}&quot; →
+                      {`Usar "${unitsModalZoneFilter.trim()}" →`}
                     </button>
                   )}
                 </div>
