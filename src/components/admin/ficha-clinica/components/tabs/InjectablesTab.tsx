@@ -267,6 +267,10 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   const [activeVialId, setActiveVialId] = useState<string | null>(null);
   // ── Sidebar edición inline de puntos ──────────────────────────────────
   const [expandedPointId, setExpandedPointId] = useState<string | null>(null);
+  // ── Modal configuración de formas HA ──────────────────────────────────
+  const [haShapeConfig, setHaShapeConfig] = useState({ fanLines: 5, fanAngle: 25, gridCells: 4, fernBranches: 5 });
+  const [haShapeConfigOpen, setHaShapeConfigOpen] = useState(false);
+  const [haShapeConfigTool, setHaShapeConfigTool] = useState<'ha-fan' | 'ha-grid' | 'ha-fern'>('ha-fan');
 
   // Keep ref in sync with state to avoid closure issues in the RAF callback
   useEffect(() => { showUnitNumbersRef.current = showUnitNumbers; }, [showUnitNumbers]);
@@ -493,6 +497,12 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
       setFreehandLines(prev => prev.filter(l => l.id !== selectedElement.id));
     else
       setSurfaceShapes(prev => prev.filter(s => s.id !== selectedElement.id));
+    setSelectedElement(null);
+  };
+
+  /** Eliminar todas las líneas de un mismo grupo (abanico, malla, helecho) */
+  const handleDeleteGroup = (groupId: string) => {
+    setFreehandLines(prev => prev.filter(l => l.groupId !== groupId));
     setSelectedElement(null);
   };
 
@@ -2014,9 +2024,9 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                           Recta
                         </button>
                       </Tooltip>
-                      <Tooltip content="Abanico: clic+arrastrar → 5 líneas radiales (técnica Abanico)">
+                      <Tooltip content="Abanico: configura líneas radiales y traza sobre la piel">
                         <button
-                          onClick={() => { setActiveTool(activeTool === 'ha-fan' ? 'none' : 'ha-fan'); setPointMode('none'); }}
+                          onClick={() => { setHaShapeConfigTool('ha-fan'); setHaShapeConfigOpen(true); setPointMode('none'); }}
                           className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-all ${
                             activeTool === 'ha-fan' ? 'bg-violet-500/25 text-violet-300 border-violet-500/50' : 'bg-slate-700/50 text-slate-400 border-slate-600 hover:bg-slate-700'
                           }`}
@@ -2025,9 +2035,9 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                           Abanico
                         </button>
                       </Tooltip>
-                      <Tooltip content="Malla: clic+arrastrar → cuadrícula (técnica Malla)">
+                      <Tooltip content="Malla: configura celdas y traza cuadrícula sobre la piel">
                         <button
-                          onClick={() => { setActiveTool(activeTool === 'ha-grid' ? 'none' : 'ha-grid'); setPointMode('none'); }}
+                          onClick={() => { setHaShapeConfigTool('ha-grid'); setHaShapeConfigOpen(true); setPointMode('none'); }}
                           className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-all ${
                             activeTool === 'ha-grid' ? 'bg-violet-500/25 text-violet-300 border-violet-500/50' : 'bg-slate-700/50 text-slate-400 border-slate-600 hover:bg-slate-700'
                           }`}
@@ -2036,9 +2046,9 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                           Malla
                         </button>
                       </Tooltip>
-                      <Tooltip content="Helecho: arrastrar → línea central + ramificaciones (técnica Helecho)">
+                      <Tooltip content="Helecho: configura ramificaciones y traza patrón sobre la piel">
                         <button
-                          onClick={() => { setActiveTool(activeTool === 'ha-fern' ? 'none' : 'ha-fern'); setPointMode('none'); }}
+                          onClick={() => { setHaShapeConfigTool('ha-fern'); setHaShapeConfigOpen(true); setPointMode('none'); }}
                           className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-all ${
                             activeTool === 'ha-fern' ? 'bg-violet-500/25 text-violet-300 border-violet-500/50' : 'bg-slate-700/50 text-slate-400 border-slate-600 hover:bg-slate-700'
                           }`}
@@ -2297,6 +2307,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                         onFreehandLineComplete={handleFreehandComplete}
                         onShapeComplete={handleShapeComplete}
                         onElementSelected={handleElementSelected}
+                        haShapeConfig={haShapeConfig}
                       />
 
                       {/* ── Panel flotante de propiedades del elemento seleccionado ── */}
@@ -2370,12 +2381,30 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                           {selectedElement.type === 'reference-line' && (selectedElementData as any).dashed && (
                             <p className="text-[9px] text-slate-500 italic mb-2">Tipo: entrecortada (fija)</p>
                           )}
-                          <button
-                            onClick={handleDeleteSelected}
-                            className="w-full text-[11px] text-red-400 hover:text-red-300 border border-red-500/30 hover:border-red-400/50 rounded-lg py-1 transition-colors"
-                          >
-                            Eliminar elemento
-                          </button>
+                          {/* Opciones de eliminación según tipo */}
+                          {selectedElement.type === 'freehand' && (selectedElementData as FreehandLine)?.groupId ? (
+                            <div className="space-y-1">
+                              <button
+                                onClick={() => handleDeleteGroup((selectedElementData as FreehandLine).groupId!)}
+                                className="w-full text-[11px] text-red-400 hover:text-red-300 border border-red-500/30 hover:border-red-400/50 rounded-lg py-1 transition-colors font-semibold"
+                              >
+                                Eliminar forma completa ({freehandLines.filter(l => l.groupId === (selectedElementData as FreehandLine).groupId).length} líneas)
+                              </button>
+                              <button
+                                onClick={handleDeleteSelected}
+                                className="w-full text-[10px] text-red-400/60 hover:text-red-300/70 border border-red-500/20 rounded-lg py-0.5 transition-colors"
+                              >
+                                Solo esta línea
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={handleDeleteSelected}
+                              className="w-full text-[11px] text-red-400 hover:text-red-300 border border-red-500/30 hover:border-red-400/50 rounded-lg py-1 transition-colors"
+                            >
+                              Eliminar elemento
+                            </button>
+                          )}
                         </motion.div>
                       )}
 
@@ -2720,6 +2749,143 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
         </AnimatePresence>
       </div>
       </div>
+
+      {/* ========== MODAL: CONFIGURACIÓN DE FORMAS HA ========== */}
+      <AnimatePresence>
+        {haShapeConfigOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
+            onClick={() => setHaShapeConfigOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.92, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.92, opacity: 0 }}
+              transition={{ duration: 0.18 }}
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-sm font-bold text-gray-800">
+                    {haShapeConfigTool === 'ha-fan' ? 'Configurar Abanico' : haShapeConfigTool === 'ha-grid' ? 'Configurar Malla' : 'Configurar Helecho'}
+                  </h3>
+                  <p className="text-[11px] text-gray-500 mt-0.5">
+                    {haShapeConfigTool === 'ha-fan' ? 'Líneas radiales divergentes desde un punto de entrada' :
+                     haShapeConfigTool === 'ha-grid' ? 'Cuadrícula de líneas perpendiculares sobre la piel' :
+                     'Línea central con ramificaciones laterales alternadas'}
+                  </p>
+                </div>
+                <button onClick={() => setHaShapeConfigOpen(false)} className="p-1 text-gray-400 hover:text-gray-600 rounded-lg">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Vista previa SVG */}
+              <div className="flex justify-center mb-4">
+                <svg viewBox="0 0 120 120" width="140" height="140" className="border border-gray-200 rounded-xl bg-slate-50">
+                  {haShapeConfigTool === 'ha-fan' && Array.from({ length: haShapeConfig.fanLines }, (_, i) => {
+                    const t = haShapeConfig.fanLines === 1 ? 0 : (i / (haShapeConfig.fanLines - 1) - 0.5) * 2;
+                    const angleDeg = t * haShapeConfig.fanAngle;
+                    const rad = (angleDeg - 90) * Math.PI / 180;
+                    const x2 = 60 + Math.cos(rad) * 48;
+                    const y2 = 100 + Math.sin(rad) * 48;
+                    return <line key={i} x1="60" y1="100" x2={x2} y2={y2} stroke="#8b5cf6" strokeWidth="1.8" strokeLinecap="round" />;
+                  })}
+                  {haShapeConfigTool === 'ha-grid' && (<>
+                    {Array.from({ length: haShapeConfig.gridCells + 1 }, (_, i) => {
+                      const x = 15 + (i / haShapeConfig.gridCells) * 90;
+                      return <line key={`v${i}`} x1={x} y1="15" x2={x} y2="105" stroke="#8b5cf6" strokeWidth="1.5" />;
+                    })}
+                    {Array.from({ length: haShapeConfig.gridCells + 1 }, (_, i) => {
+                      const y = 15 + (i / haShapeConfig.gridCells) * 90;
+                      return <line key={`h${i}`} x1="15" y1={y} x2="105" y2={y} stroke="#8b5cf6" strokeWidth="1.5" />;
+                    })}
+                  </>)}
+                  {haShapeConfigTool === 'ha-fern' && (<>
+                    <line x1="60" y1="105" x2="60" y2="15" stroke="#8b5cf6" strokeWidth="2" strokeLinecap="round" />
+                    {Array.from({ length: haShapeConfig.fernBranches }, (_, i) => {
+                      const t = (i + 1) / (haShapeConfig.fernBranches + 1);
+                      const y = 105 - t * 90;
+                      const sign = i % 2 === 0 ? 1 : -1;
+                      const bLen = 25 * (1 - t * 0.5);
+                      return <line key={i} x1="60" y1={y} x2={60 + sign * bLen} y2={y - 16} stroke="#8b5cf6" strokeWidth="1.3" strokeLinecap="round" />;
+                    })}
+                  </>)}
+                </svg>
+              </div>
+
+              {/* Controles de configuración */}
+              <div className="space-y-3">
+                {haShapeConfigTool === 'ha-fan' && (<>
+                  <div>
+                    <div className="flex justify-between text-[11px] text-gray-600 mb-1">
+                      <span>Número de líneas</span><span className="font-bold">{haShapeConfig.fanLines}</span>
+                    </div>
+                    <input type="range" min={3} max={12} step={1} value={haShapeConfig.fanLines}
+                      onChange={e => setHaShapeConfig(c => ({ ...c, fanLines: Number(e.target.value) }))}
+                      className="w-full accent-violet-500" />
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-[11px] text-gray-600 mb-1">
+                      <span>Ángulo de apertura</span><span className="font-bold">{haShapeConfig.fanAngle}°</span>
+                    </div>
+                    <input type="range" min={10} max={60} step={5} value={haShapeConfig.fanAngle}
+                      onChange={e => setHaShapeConfig(c => ({ ...c, fanAngle: Number(e.target.value) }))}
+                      className="w-full accent-violet-500" />
+                  </div>
+                </>)}
+                {haShapeConfigTool === 'ha-grid' && (
+                  <div>
+                    <div className="flex justify-between text-[11px] text-gray-600 mb-1">
+                      <span>Celdas por lado</span><span className="font-bold">{haShapeConfig.gridCells}</span>
+                    </div>
+                    <input type="range" min={2} max={8} step={1} value={haShapeConfig.gridCells}
+                      onChange={e => setHaShapeConfig(c => ({ ...c, gridCells: Number(e.target.value) }))}
+                      className="w-full accent-violet-500" />
+                    <p className="text-[10px] text-gray-400 mt-1">
+                      Generará {haShapeConfig.gridCells + 1} × {haShapeConfig.gridCells + 1} = {(haShapeConfig.gridCells + 1) * 2} líneas en total
+                    </p>
+                  </div>
+                )}
+                {haShapeConfigTool === 'ha-fern' && (
+                  <div>
+                    <div className="flex justify-between text-[11px] text-gray-600 mb-1">
+                      <span>Número de ramificaciones</span><span className="font-bold">{haShapeConfig.fernBranches}</span>
+                    </div>
+                    <input type="range" min={2} max={10} step={1} value={haShapeConfig.fernBranches}
+                      onChange={e => setHaShapeConfig(c => ({ ...c, fernBranches: Number(e.target.value) }))}
+                      className="w-full accent-violet-500" />
+                  </div>
+                )}
+              </div>
+
+              {/* Instrucción + Botones */}
+              <p className="text-[10px] text-gray-400 mt-3 text-center">
+                {haShapeConfigTool === 'ha-fan' ? 'Clic en la piel → arrastrar para definir longitud y dirección' :
+                 haShapeConfigTool === 'ha-grid' ? 'Clic en esquina → arrastrar para definir la diagonal opuesta' :
+                 'Clic inicio → arrastrar hasta el extremo del eje central'}
+              </p>
+              <div className="flex gap-2 mt-4">
+                <button onClick={() => setHaShapeConfigOpen(false)}
+                  className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-600 font-semibold hover:bg-gray-50">
+                  Cancelar
+                </button>
+                <button
+                  onClick={() => { setHaShapeConfigOpen(false); setActiveTool(haShapeConfigTool); setPointMode('none'); }}
+                  className="flex-1 py-2.5 rounded-xl bg-violet-600 text-white text-sm font-semibold hover:bg-violet-700 flex items-center justify-center gap-1.5"
+                >
+                  <Check className="w-4 h-4" />
+                  Trazar
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ========== CAPTURE MODAL ========== */}
       <InjectableCaptureModal

@@ -292,6 +292,8 @@ interface Clinical3DViewerProps {
   onShapeComplete?: (shape: SurfaceShape) => void;
   /** Callback al seleccionar una línea/forma existente por clic. id=null → deseleccionar */
   onElementSelected?: (id: string | null, type: string | null) => void;
+  /** Configuración de formas HA (abanico, malla, helecho) */
+  haShapeConfig?: { fanLines: number; fanAngle: number; gridCells: number; fernBranches: number };
 }
 
 // ==========================================
@@ -328,6 +330,8 @@ const ThreeEngine: React.FC<{
   onFreehandLineComplete?: (line: FreehandLine) => void;
   onShapeComplete?: (shape: SurfaceShape) => void;
   onElementSelected?: (id: string | null, type: string | null) => void;
+  /** Configuración de formas HA (abanico, malla, helecho) */
+  haShapeConfig?: { fanLines: number; fanAngle: number; gridCells: number; fernBranches: number };
 }> = ({
   modelSource, markers, zones, onMeshClick, onLoaded, onError, readOnly,
   referenceLines = [], lineDrawingMode, onLinePointAnchored,
@@ -338,6 +342,7 @@ const ThreeEngine: React.FC<{
   activeTool = 'none', selectedElementId = null,
   pendingBrushColor = '#8b5cf6', pendingBrushThickness = 1.0,
   onFreehandLineComplete, onShapeComplete, onElementSelected,
+  haShapeConfig = { fanLines: 5, fanAngle: 25, gridCells: 4, fernBranches: 5 },
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -363,6 +368,7 @@ const ThreeEngine: React.FC<{
     pointMode, onEditablePointMoved, onEditablePointDeleted, onEditablePointClicked, onProjectedPositions,
     activeTool, selectedElementId, pendingBrushColor, pendingBrushThickness,
     onFreehandLineComplete, onShapeComplete, onElementSelected,
+    haShapeConfig,
   });
   useEffect(() => {
     callbacks.current = {
@@ -370,6 +376,7 @@ const ThreeEngine: React.FC<{
       pointMode, onEditablePointMoved, onEditablePointDeleted, onEditablePointClicked, onProjectedPositions,
       activeTool, selectedElementId, pendingBrushColor, pendingBrushThickness,
       onFreehandLineComplete, onShapeComplete, onElementSelected,
+      haShapeConfig,
     };
   });
 
@@ -489,7 +496,59 @@ const ThreeEngine: React.FC<{
       }
     };
 
-    // ── Anillo de selección ────────────────────────────────────────────────
+    // ── Proyectar punto 3D sobre la superficie real del modelo ─────────────
+    const projectToSurface = (pt: THREE.Vector3): THREE.Vector3 => {
+      if (!faceMeshRef.current || !cameraRef.current) return pt;
+      const rc = new THREE.Raycaster();
+      // Intento 1: desde la cámara hacia el punto (respeta el ángulo de vista)
+      const cam = cameraRef.current;
+      const dir = pt.clone().sub(cam.position).normalize();
+      rc.set(cam.position, dir);
+      const h1 = rc.intersectObject(faceMeshRef.current, true);
+      if (h1.length > 0) return h1[0].point.clone();
+      // Intento 2: sweep frontal Z → funciona para la vista frontal
+      rc.set(new THREE.Vector3(pt.x, pt.y, 10), new THREE.Vector3(0, 0, -1));
+      const h2 = rc.intersectObject(faceMeshRef.current, true);
+      if (h2.length > 0) return h2[0].point.clone();
+      return pt; // fallback: punto sin proyectar
+    };
+
+    // Genera N puntos interpolados entre from y to, todos proyectados a la piel
+    const surfaceLine = (from: THREE.Vector3, to: THREE.Vector3, steps = 14): THREE.Vector3[] => {
+      const pts: THREE.Vector3[] = [];
+      for (let s = 0; s <= steps; s++) {
+        pts.push(projectToSurface(from.clone().lerp(to, s / steps)));
+      }
+      return bridgeZ(pts, 0.20);
+    };
+
+    // ── Hover highlight — variables de estado puro (no React) ─────────────
+    const hoverMouse = new THREE.Vector2(-999, -999);
+    let prevHoveredGroup: THREE.Object3D | null = null;
+    let hoverFrameCount = 0;
+
+    const restoreHover = (grp: THREE.Object3D) => {
+      grp.traverse((c: any) => {
+        if (c.isMesh && c.material && c.userData.hoverBase !== undefined) {
+          c.material.opacity = c.userData.hoverBase;
+          c.material.color?.setHex(c.userData.hoverColorBase ?? c.material.color.getHex());
+          c.material.needsUpdate = true;
+          delete c.userData.hoverBase;
+          delete c.userData.hoverColorBase;
+        }
+      });
+    };
+
+    const applyHover = (grp: THREE.Object3D) => {
+      grp.traverse((c: any) => {
+        if (c.isMesh && c.material) {
+          if (c.userData.hoverBase === undefined) c.userData.hoverBase = c.material.opacity ?? 1;
+          if (c.userData.hoverColorBase === undefined) c.userData.hoverColorBase = c.material.color?.getHex?.() ?? 0xffffff;
+          c.material.opacity = Math.min(1.0, (c.userData.hoverBase ?? 0.8) * 1.5 + 0.15);
+          c.material.needsUpdate = true;
+        }
+      });
+    };
     let selectedEditableId: string | null = null;
     let selectionRingMesh: THREE.Mesh | null = null;
 
@@ -641,25 +700,78 @@ const ThreeEngine: React.FC<{
           const dx = e.clientX - brushLastScreenPos.x;
           const dy = e.clientY - brushLastScreenPos.y;
           const moved = Math.sqrt(dx * dx + dy * dy) >= BRUSH_SAMPLE_PX;
-          // Straight-line / HA shapes: siempre actualizar el último punto (punto B)
           const isSnap = tool === 'straight-line' || tool === 'ha-fan' || tool === 'ha-grid' || tool === 'ha-fern';
           if (moved || isSnap) {
             if (isSnap) {
-              // Mantener solo ptA y reemplazar ptB
               if (brushPoints.length === 1) brushPoints.push(hits[0].point.clone());
               else brushPoints[brushPoints.length - 1] = hits[0].point.clone();
             } else {
               brushPoints.push(hits[0].point.clone());
               brushLastScreenPos = { x: e.clientX, y: e.clientY };
             }
-            // Preview: línea entre ptA y ptB (snap) o todos los puntos (brush)
+
             clearBrushPreview();
-            const previewPts = isSnap ? [brushPoints[0], brushPoints[brushPoints.length - 1]] : brushPoints;
-            if (previewPts.length >= 2 && brushPreviewGroupRef.current) {
+            const ptA = brushPoints[0];
+            const ptB = brushPoints[brushPoints.length - 1];
+            if (ptA && ptB && brushPreviewGroupRef.current) {
               const col = new THREE.Color(callbacks.current.pendingBrushColor || '#8b5cf6');
               const th = (callbacks.current.pendingBrushThickness || 1.0) * 0.003;
-              const preview = buildSurfaceTube(previewPts, col, 0.6, th, false);
-              brushPreviewGroupRef.current.add(preview);
+              const cfg = callbacks.current.haShapeConfig || { fanLines: 5, fanAngle: 25, gridCells: 4, fernBranches: 5 };
+
+              if (tool === 'freehand-brush') {
+                // Brush: mostrar todos los puntos acumulados
+                if (brushPoints.length >= 2) {
+                  brushPreviewGroupRef.current.add(buildSurfaceTube(brushPoints, col, 0.6, th, false));
+                }
+              } else if (tool === 'straight-line') {
+                // Línea recta proyectada a la superficie
+                brushPreviewGroupRef.current.add(buildSurfaceTube(surfaceLine(ptA, ptB), col, 0.55, th, false));
+              } else if (tool === 'ha-fan') {
+                // Ghost completo del abanico
+                const dir = ptB.clone().sub(ptA).normalize();
+                const len = ptA.distanceTo(ptB);
+                const perp = new THREE.Vector3(-dir.y, dir.x, 0).normalize();
+                const N = cfg.fanLines;
+                for (let i = 0; i < N; i++) {
+                  const t = N === 1 ? 0 : (i / (N - 1) - 0.5) * 2;
+                  const rad = (t * cfg.fanAngle * Math.PI) / 180;
+                  const fanDir = dir.clone().addScaledVector(perp, Math.tan(rad)).normalize();
+                  const endPt = ptA.clone().addScaledVector(fanDir, len);
+                  brushPreviewGroupRef.current.add(buildSurfaceTube(surfaceLine(ptA, endPt, 10), col, 0.45, th, false));
+                }
+              } else if (tool === 'ha-grid') {
+                // Ghost completo de la malla
+                const dir = ptB.clone().sub(ptA);
+                const len = dir.length();
+                const perp = new THREE.Vector3(-dir.y, dir.x, 0).normalize();
+                const perpLen = len * 0.6;
+                const N = cfg.gridCells;
+                for (let i = 0; i <= N; i++) {
+                  const base = ptA.clone().addScaledVector(dir, i / N);
+                  const p1 = base.clone().addScaledVector(perp, -perpLen / 2);
+                  const p2 = base.clone().addScaledVector(perp, perpLen / 2);
+                  brushPreviewGroupRef.current.add(buildSurfaceTube(surfaceLine(p1, p2, 8), col, 0.45, th, false));
+                }
+                for (let j = 0; j <= N; j++) {
+                  const base = ptA.clone().addScaledVector(perp, (j / N - 0.5) * perpLen);
+                  brushPreviewGroupRef.current.add(buildSurfaceTube(surfaceLine(base, base.clone().addScaledVector(dir, len), 8), col, 0.45, th, false));
+                }
+              } else if (tool === 'ha-fern') {
+                // Ghost completo del helecho
+                const dir = ptB.clone().sub(ptA);
+                const len = dir.length();
+                const perp = new THREE.Vector3(-dir.normalize().y, dir.normalize().x, 0).normalize();
+                brushPreviewGroupRef.current.add(buildSurfaceTube(surfaceLine(ptA, ptB, 12), col, 0.5, th, false));
+                const N = cfg.fernBranches;
+                for (let i = 1; i <= N; i++) {
+                  const t = i / (N + 1);
+                  const base = ptA.clone().addScaledVector(dir.clone().normalize(), len * t);
+                  const branchLen = len * 0.25 * (1 - t * 0.5);
+                  const sign = i % 2 === 0 ? 1 : -1;
+                  const tip = base.clone().addScaledVector(perp, sign * branchLen);
+                  brushPreviewGroupRef.current.add(buildSurfaceTube(surfaceLine(base, tip, 7), col, 0.35, th * 0.7, false));
+                }
+              }
             }
           }
         }
@@ -773,110 +885,101 @@ const ThreeEngine: React.FC<{
         const ptA = brushPoints[0];
         const ptB = brushPoints[brushPoints.length - 1];
 
-        // Línea recta (straight-line): solo 2 puntos — inicio y fin
+        // Línea recta (straight-line): proyectada a superficie
         if (tool === 'straight-line' && ptA && ptB) {
+          const pts = surfaceLine(ptA, ptB);
           callbacks.current.onFreehandLineComplete?.({
             id: `fh-${Date.now()}`,
-            points: [
-              { x: ptA.x, y: ptA.y, z: ptA.z },
-              { x: ptB.x, y: ptB.y, z: ptB.z },
-            ],
+            points: pts.map(p => ({ x: p.x, y: p.y, z: p.z })),
             color: col,
             thickness: th,
           });
         }
-        // Abanico (fan): N líneas divergentes desde ptA hacia ptB + ángulo de apertura
+        // Abanico (fan): N líneas proyectadas a superficie
         else if (tool === 'ha-fan' && ptA && ptB) {
           const groupId = `fan-${Date.now()}`;
-          const N = 5;
-          const halfAngle = 25; // grados
-          const dir = ptB.clone().sub(ptA);
-          const len = dir.length();
+          const cfg = callbacks.current.haShapeConfig || { fanLines: 5, fanAngle: 25, gridCells: 4, fernBranches: 5 };
+          const dir = ptB.clone().sub(ptA).normalize();
+          const len = ptA.distanceTo(ptB);
           if (len > 0.05) {
-            dir.normalize();
-            // Eje perpendicular en el plano XY
             const perp = new THREE.Vector3(-dir.y, dir.x, 0).normalize();
+            const N = cfg.fanLines;
             for (let i = 0; i < N; i++) {
-              const t = N === 1 ? 0 : (i / (N - 1) - 0.5) * 2; // -1 a 1
-              const angleDeg = t * halfAngle;
-              const rad = (angleDeg * Math.PI) / 180;
+              const t = N === 1 ? 0 : (i / (N - 1) - 0.5) * 2;
+              const rad = (t * cfg.fanAngle * Math.PI) / 180;
               const fanDir = dir.clone().addScaledVector(perp, Math.tan(rad)).normalize();
               const endPt = ptA.clone().addScaledVector(fanDir, len);
+              const pts = surfaceLine(ptA, endPt);
               callbacks.current.onFreehandLineComplete?.({
                 id: `fh-${Date.now()}-${i}`,
-                points: [
-                  { x: ptA.x, y: ptA.y, z: ptA.z },
-                  { x: endPt.x, y: endPt.y, z: endPt.z },
-                ],
-                color: col,
-                thickness: th,
-                groupId,
-                technique_preset: 'Abanico',
+                points: pts.map(p => ({ x: p.x, y: p.y, z: p.z })),
+                color: col, thickness: th, groupId, technique_preset: 'Abanico',
               });
             }
           }
         }
-        // Malla (grid): N líneas horizontales + M verticales en bounding box
+        // Malla (grid): NxN líneas proyectadas a superficie
         else if (tool === 'ha-grid' && ptA && ptB) {
           const groupId = `grid-${Date.now()}`;
-          const N = 4; // líneas en cada dirección
+          const cfg = callbacks.current.haShapeConfig || { fanLines: 5, fanAngle: 25, gridCells: 4, fernBranches: 5 };
           const dir = ptB.clone().sub(ptA);
-          const perp = new THREE.Vector3(-dir.y, dir.x, 0).normalize();
           const len = dir.length();
+          const perp = new THREE.Vector3(-dir.y, dir.x, 0).normalize();
           const perpLen = len * 0.6;
+          const N = cfg.gridCells;
           for (let i = 0; i <= N; i++) {
-            const t = i / N;
-            const base = ptA.clone().addScaledVector(dir, t);
+            const base = ptA.clone().addScaledVector(dir, i / N);
             const p1 = base.clone().addScaledVector(perp, -perpLen / 2);
             const p2 = base.clone().addScaledVector(perp, perpLen / 2);
+            const pts = surfaceLine(p1, p2);
             callbacks.current.onFreehandLineComplete?.({
               id: `fh-${Date.now()}-h${i}`,
-              points: [{ x: p1.x, y: p1.y, z: p1.z }, { x: p2.x, y: p2.y, z: p2.z }],
+              points: pts.map(p => ({ x: p.x, y: p.y, z: p.z })),
               color: col, thickness: th, groupId, technique_preset: 'Malla',
             });
           }
           for (let j = 0; j <= N; j++) {
-            const t = j / N;
-            const base = ptA.clone().addScaledVector(perp, (t - 0.5) * perpLen);
-            const p1 = base.clone();
-            const p2 = base.clone().addScaledVector(dir, len);
+            const base = ptA.clone().addScaledVector(perp, (j / N - 0.5) * perpLen);
+            const pts = surfaceLine(base, base.clone().addScaledVector(dir, len));
             callbacks.current.onFreehandLineComplete?.({
               id: `fh-${Date.now()}-v${j}`,
-              points: [{ x: p1.x, y: p1.y, z: p1.z }, { x: p2.x, y: p2.y, z: p2.z }],
+              points: pts.map(p => ({ x: p.x, y: p.y, z: p.z })),
               color: col, thickness: th, groupId, technique_preset: 'Malla',
             });
           }
         }
-        // Helecho (fern): línea central + ramificaciones alternadas
+        // Helecho (fern): línea central + ramificaciones, todo proyectado
         else if (tool === 'ha-fern' && ptA && ptB) {
           const groupId = `fern-${Date.now()}`;
+          const cfg = callbacks.current.haShapeConfig || { fanLines: 5, fanAngle: 25, gridCells: 4, fernBranches: 5 };
           const dir = ptB.clone().sub(ptA);
           const len = dir.length();
           if (len > 0.05) {
-            // Línea central
+            const centralPts = surfaceLine(ptA, ptB);
             callbacks.current.onFreehandLineComplete?.({
               id: `fh-${Date.now()}-c`,
-              points: [{ x: ptA.x, y: ptA.y, z: ptA.z }, { x: ptB.x, y: ptB.y, z: ptB.z }],
+              points: centralPts.map(p => ({ x: p.x, y: p.y, z: p.z })),
               color: col, thickness: th, groupId, technique_preset: 'Helecho',
             });
-            const N = 5;
             const perp = new THREE.Vector3(-dir.normalize().y, dir.normalize().x, 0).normalize();
+            const N = cfg.fernBranches;
             for (let i = 1; i <= N; i++) {
               const t = i / (N + 1);
               const base = ptA.clone().addScaledVector(dir.clone().normalize(), len * t);
               const branchLen = len * 0.25 * (1 - t * 0.5);
               const sign = i % 2 === 0 ? 1 : -1;
               const tip = base.clone().addScaledVector(perp, sign * branchLen);
+              const branchPts = surfaceLine(base, tip, 8);
               callbacks.current.onFreehandLineComplete?.({
                 id: `fh-${Date.now()}-b${i}`,
-                points: [{ x: base.x, y: base.y, z: base.z }, { x: tip.x, y: tip.y, z: tip.z }],
+                points: branchPts.map(p => ({ x: p.x, y: p.y, z: p.z })),
                 color: col, thickness: th * 0.7, groupId, technique_preset: 'Helecho',
               });
             }
           }
         }
         // Freehand brush normal
-        else if ((tool === 'freehand-brush') && brushPoints.length >= 2) {
+        else if (tool === 'freehand-brush' && brushPoints.length >= 2) {
           callbacks.current.onFreehandLineComplete?.({
             id: `fh-${Date.now()}`,
             points: brushPoints.map(p => ({ x: p.x, y: p.y, z: p.z })),
@@ -1102,11 +1205,56 @@ const ThreeEngine: React.FC<{
     renderer.domElement.addEventListener('pointerup', onPointerUp);
     renderer.domElement.addEventListener('click', onClick);
 
+    // Hover mouse tracking (sin pointerEvents pesados — solo posición)
+    const onHoverMouseMove = (e: MouseEvent) => {
+      const rect = renderer.domElement.getBoundingClientRect();
+      hoverMouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      hoverMouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    };
+    const onHoverMouseLeave = () => {
+      hoverMouse.set(-999, -999);
+      if (prevHoveredGroup) { restoreHover(prevHoveredGroup); prevHoveredGroup = null; }
+    };
+    renderer.domElement.addEventListener('mousemove', onHoverMouseMove);
+    renderer.domElement.addEventListener('mouseleave', onHoverMouseLeave);
+
     let animationFrameId: number;
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
       if (controlsRef.current) controlsRef.current.update();
       if (rendererRef.current && sceneRef.current && cameraRef.current) {
+        // ── Hover detection cada 2 frames (sin overhead significativo) ─────
+        hoverFrameCount++;
+        if (hoverFrameCount % 2 === 0 && !brushActive && !shapeAnchor) {
+          const hoverRc = new THREE.Raycaster();
+          hoverRc.setFromCamera(hoverMouse, cameraRef.current);
+          const hoverMeshes: THREE.Object3D[] = [];
+          freehandGroupRef.current?.children.forEach(g => g.traverse(c => { if ((c as THREE.Mesh).isMesh) hoverMeshes.push(c); }));
+          shapesGroupRef.current?.children.forEach(g => g.traverse(c => { if ((c as THREE.Mesh).isMesh) hoverMeshes.push(c); }));
+          linesGroupRef.current?.children.forEach(g => g.traverse(c => { if ((c as THREE.Mesh).isMesh) hoverMeshes.push(c); }));
+
+          let newHoveredGroup: THREE.Object3D | null = null;
+          if (hoverMeshes.length > 0) {
+            const hoverHits = hoverRc.intersectObjects(hoverMeshes, false);
+            if (hoverHits.length > 0) {
+              let obj: THREE.Object3D | null = hoverHits[0].object;
+              // Subir hasta encontrar el grupo con id de elemento
+              while (obj && !obj.userData.freehandId && !obj.userData.shapeId && !obj.userData.lineId) {
+                obj = obj.parent;
+              }
+              if (obj && (obj.userData.freehandId || obj.userData.shapeId || obj.userData.lineId)) {
+                newHoveredGroup = obj;
+              }
+            }
+          }
+
+          if (newHoveredGroup !== prevHoveredGroup) {
+            if (prevHoveredGroup) restoreHover(prevHoveredGroup);
+            if (newHoveredGroup) applyHover(newHoveredGroup);
+            prevHoveredGroup = newHoveredGroup;
+          }
+        }
+
         rendererRef.current.render(sceneRef.current, cameraRef.current);
         // Project point positions to 2D for unit-number overlay
         if (callbacks.current.onProjectedPositions) {
@@ -1165,6 +1313,8 @@ const ThreeEngine: React.FC<{
         dom.removeEventListener('pointermove', onPointerMove);
         dom.removeEventListener('pointerup', onPointerUp);
         dom.removeEventListener('click', onClick);
+        dom.removeEventListener('mousemove', onHoverMouseMove);
+        dom.removeEventListener('mouseleave', onHoverMouseLeave);
       }
       cancelAnimationFrame(animationFrameId);
       if (mountRef.current && rendererRef.current) {
@@ -1741,6 +1891,7 @@ export default function Clinical3DViewer({
   onFreehandLineComplete,
   onShapeComplete,
   onElementSelected,
+  haShapeConfig = { fanLines: 5, fanAngle: 25, gridCells: 4, fernBranches: 5 },
 }: Clinical3DViewerProps) {
   const [modelSource, setModelSource] = useState<{ type: 'url' | 'buffer'; data: string | ArrayBuffer }>({
     type: 'url',
@@ -1823,6 +1974,7 @@ export default function Clinical3DViewer({
             onFreehandLineComplete={onFreehandLineComplete}
             onShapeComplete={onShapeComplete}
             onElementSelected={onElementSelected}
+            haShapeConfig={haShapeConfig}
           />
         )}
       </div>
