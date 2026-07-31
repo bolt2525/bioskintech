@@ -228,7 +228,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   } | null>(null);
   const [unitsModalInput, setUnitsModalInput] = useState('');
   // Multi-step states for trazado point modal
-  const [unitsModalStep, setUnitsModalStep] = useState<1 | 2 | 3 | 4>(1);
+  const [unitsModalStep, setUnitsModalStep] = useState<1 | 2 | 3>(1);
   const [unitsModalTercio, setUnitsModalTercio] = useState<'superior' | 'medio' | 'inferior' | ''>('');
   const [unitsModalZone, setUnitsModalZone] = useState('');
   const [unitsModalZoneFilter, setUnitsModalZoneFilter] = useState('');
@@ -257,6 +257,10 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   /** Dropdown de formas agrupadas en la toolbar */
   const [showShapesDropdown, setShowShapesDropdown] = useState(false);
   const [showHaShapesDropdown, setShowHaShapesDropdown] = useState(false);
+  /** Selección masiva de puntos para aplicar técnica/cánula/plano */
+  const [bulkApplyMode, setBulkApplyMode] = useState(false);
+  const [bulkApplySourceIdx, setBulkApplySourceIdx] = useState<number | null>(null);
+  const [bulkApplySelected, setBulkApplySelected] = useState<Set<string>>(new Set());
 
   // ── Herramientas de dibujo libre (HA) ────────────────────────────────────
   const [freehandLines, setFreehandLines] = useState<FreehandLine[]>([]);
@@ -424,6 +428,9 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     .filter(p => !p.label && p.editablePointId)
     .map(p => p.editablePointId!);
 
+  // Puntos seleccionados en modo selección masiva (para iluminar en el visor)
+  const highlightedPointIds = bulkApplyMode ? Array.from(bulkApplySelected) : [];
+
   // ==========================================
   // HANDLERS
   // ==========================================
@@ -470,6 +477,55 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
       needle_at_point: src.needle_at_point ?? p.needle_at_point,
       injection_plane: src.injection_plane ?? p.injection_plane,
     }));
+  };
+
+  const handleEnterBulkApplyMode = (sourceIdx: number) => {
+    setBulkApplySourceIdx(sourceIdx);
+    setBulkApplySelected(new Set());
+    setBulkApplyMode(true);
+    setExpandedPointId(null);
+  };
+
+  const handleToggleBulkPoint = (epId: string) => {
+    setBulkApplySelected(prev => {
+      const next = new Set(prev);
+      if (next.has(epId)) next.delete(epId); else next.add(epId);
+      return next;
+    });
+  };
+
+  /** Selecciona/deselecciona todos los puntos del tercio (o del vial) que tengan editablePointId */
+  const handleToggleBulkGroup = (epIds: string[]) => {
+    const allSelected = epIds.every(id => bulkApplySelected.has(id));
+    setBulkApplySelected(prev => {
+      const next = new Set(prev);
+      if (allSelected) epIds.forEach(id => next.delete(id));
+      else epIds.forEach(id => next.add(id));
+      return next;
+    });
+  };
+
+  const handleApplyBulkSelected = () => {
+    if (bulkApplySourceIdx === null || bulkApplySelected.size === 0) return;
+    const src = injectionPoints[bulkApplySourceIdx];
+    setInjectionPoints(prev => prev.map(p => {
+      if (!p.editablePointId || !bulkApplySelected.has(p.editablePointId)) return p;
+      return {
+        ...p,
+        ...(src.technique_at_point !== undefined ? { technique_at_point: src.technique_at_point } : {}),
+        ...(src.needle_at_point !== undefined ? { needle_at_point: src.needle_at_point } : {}),
+        ...(src.injection_plane !== undefined ? { injection_plane: src.injection_plane } : {}),
+      };
+    }));
+    setBulkApplyMode(false);
+    setBulkApplySourceIdx(null);
+    setBulkApplySelected(new Set());
+  };
+
+  const handleCancelBulkApply = () => {
+    setBulkApplyMode(false);
+    setBulkApplySourceIdx(null);
+    setBulkApplySelected(new Set());
   };
 
   // ── HANDLERS: Dibujo libre y formas ─────────────────────────────────────
@@ -660,6 +716,9 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     setHaVials([]);
     setActiveVialId(null);
     setExpandedPointId(null);
+    setBulkApplyMode(false);
+    setBulkApplySourceIdx(null);
+    setBulkApplySelected(new Set());
   };
 
   // ── pushUndo: snapshot before any point mutation ───────────────────────
@@ -930,7 +989,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     // Si ya tiene volumen pero no zona → abrir en paso 2 (zona/tercio)
     const hasVolume = existing && existing.units > 0;
     const hasZone = existing && !!existing.label;
-    const startStep = (hasVolume && !hasZone) ? 2 : 1;
+    const startStep: 1 | 2 | 3 = (hasVolume && !hasZone) ? 2 : 1;
     setUnitsModal({
       open: true,
       pointId: id,
@@ -1014,17 +1073,13 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
       const existingIdx = injectionPoints.findIndex(ip => ip.editablePointId === unitsModal.pointId);
       const existing = existingIdx >= 0 ? injectionPoints[existingIdx] : null;
       const effectiveTercio = unitsModalTercio || existing?.tercio || 'superior';
-      const effectiveLabel = unitsModalZone || existing?.label || unitsModal.pointName;
+      const effectiveLabel = unitsModalZone || existing?.label || '';
 
+      // Preservar todos los campos del punto existente (evita perder vial_id, needle, etc.)
       const newPoint: InjectionPoint = {
-        id: existing?.id,
-        type: 'Puntual' as const,
-        pathologyId: activeType === 'relleno' ? 'filler' : 'botox',
+        ...(existing || {}),
         position: { x: pt.x, y: pt.y, z: pt.z },
-        rotation: [0, 0, 0],
-        normal: { x: 0, y: 0, z: 1 },
         zone: effectiveLabel,
-        radius: 0.04,
         tercio: effectiveTercio as 'superior' | 'medio' | 'inferior',
         units,
         label: effectiveLabel,
@@ -1097,9 +1152,15 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   };
 
   const handleRemovePoint = (index: number) => {
+    const point = injectionPoints[index];
     pushUndo(injectionPoints, markers3D, editablePoints);
     setInjectionPoints(prev => prev.filter((_, i) => i !== index));
-    setMarkers3D(prev => prev.filter((_, i) => i !== index));
+    if (point?.editablePointId) {
+      // Elimina el punto editable del visor 3D (es el que renderiza la esfera)
+      setEditablePoints(prev => prev.filter(ep => ep.id !== point.editablePointId));
+    } else {
+      setMarkers3D(prev => prev.filter((_, i) => i !== index));
+    }
   };
 
   // ==========================================
@@ -1361,6 +1422,9 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     setActiveTool('none');
     setRefJsonLoaded(false);
     setShowClearConfirm(false);
+    setBulkApplyMode(false);
+    setBulkApplySourceIdx(null);
+    setBulkApplySelected(new Set());
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeType]);
 
@@ -2373,6 +2437,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                         onSnapPointChange={setSnapPoint}
                         haShapeConfig={haShapeConfig}
                         incompletePointIds={incompletePointIds}
+                        highlightedPointIds={highlightedPointIds}
                         onEditablePointHovered={setHoveredPointId}
                         onBackgroundClick={() => { setActiveTool('none'); setPointMode('none'); }}
                       />
@@ -2612,6 +2677,32 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Desglose de Puntos</p>
                           <span className="ml-auto text-[10px] text-gray-400">{injectionPoints.length} punto(s) · {totalUsed} {unitLabel}</span>
                         </div>
+
+                        {/* ── Banner modo selección masiva ── */}
+                        {bulkApplyMode && bulkApplySourceIdx !== null && (() => {
+                          const src = injectionPoints[bulkApplySourceIdx];
+                          return (
+                            <div className="flex-shrink-0 mb-2 p-2.5 bg-orange-50 border border-orange-200 rounded-xl shadow-sm">
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-[11px] font-bold text-orange-700 uppercase tracking-wide">Selección masiva</span>
+                                <button onClick={handleCancelBulkApply} className="text-orange-400 hover:text-orange-600 transition-colors">
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                              <p className="text-[10px] text-orange-600 mb-2 leading-relaxed">
+                                {[src?.technique_at_point, src?.needle_at_point, src?.injection_plane].filter(Boolean).join(' · ') || 'Sin valores definidos'}
+                              </p>
+                              <button
+                                onClick={handleApplyBulkSelected}
+                                disabled={bulkApplySelected.size === 0}
+                                className="w-full py-1.5 rounded-lg bg-orange-500 text-white text-[11px] font-bold hover:bg-orange-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                              >
+                                {bulkApplySelected.size === 0 ? 'Selecciona puntos ↓' : `Aplicar a ${bulkApplySelected.size} punto(s)`}
+                              </button>
+                            </div>
+                          );
+                        })()}
+
                         <div className="overflow-y-scroll h-[400px] pr-1.5 space-y-2 scrollbar-gold">
 
                         {/* ── Agrupación por vial (relleno HA) ── */}
@@ -2619,9 +2710,19 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                           ? haVials.map(vial => {
                               const vialPts = injectionPoints.filter(p => p.vial_id === vial.id);
                               const vialUsed = vialPts.reduce((s, p) => s + p.units, 0);
+                              const vialEpIds = vialPts.map(p => p.editablePointId).filter(Boolean) as string[];
+                              const allVialSelected = vialEpIds.length > 0 && vialEpIds.every(id => bulkApplySelected.has(id));
                               return (
                                 <div key={vial.id} className="rounded-xl border border-gray-200 overflow-hidden">
                                   <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border-b border-gray-100">
+                                    {bulkApplyMode && vialEpIds.length > 0 && (
+                                      <button
+                                        onClick={() => handleToggleBulkGroup(vialEpIds)}
+                                        className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${allVialSelected ? 'bg-orange-500 border-orange-500' : 'border-gray-300 hover:border-orange-400'}`}
+                                      >
+                                        {allVialSelected && <Check className="w-2.5 h-2.5 text-white" />}
+                                      </button>
+                                    )}
                                     <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: vial.color }} />
                                     <span className="text-xs font-bold text-gray-700 truncate">{vial.product_name || 'Vial'}</span>
                                     <div className="ml-auto flex items-center gap-1.5">
@@ -2634,36 +2735,52 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                                         const globalIdx = injectionPoints.indexOf(p);
                                         const epId = p.editablePointId;
                                         const isSelected = !!epId && epId === selectedPointId;
-                                        const isExpanded = expandedPointId === (epId || String(globalIdx));
+                                        const isBulkSelected = !!epId && bulkApplySelected.has(epId);
+                                        const isExpanded = !bulkApplyMode && expandedPointId === (epId || String(globalIdx));
                                         const expandKey = epId || String(globalIdx);
                                         return (
                                           <div key={globalIdx} className="border-b border-gray-50 last:border-0">
                                             <div
-                                              className={`flex items-center justify-between px-3 py-1.5 text-xs cursor-pointer transition-colors ${isSelected ? 'bg-violet-50' : 'hover:bg-gray-50'}`}
+                                              className={`flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer transition-colors ${
+                                                bulkApplyMode
+                                                  ? (isBulkSelected ? 'bg-orange-50' : 'hover:bg-orange-50/50')
+                                                  : (isSelected ? 'bg-violet-50' : 'hover:bg-gray-50')
+                                              }`}
                                               onClick={() => {
-                                                if (epId) setSelectedPointId(isSelected ? null : epId);
-                                                setExpandedPointId(isExpanded ? null : expandKey);
+                                                if (bulkApplyMode) {
+                                                  if (epId) handleToggleBulkPoint(epId);
+                                                } else {
+                                                  if (epId) setSelectedPointId(isSelected ? null : epId);
+                                                  setExpandedPointId(isExpanded ? null : expandKey);
+                                                }
                                               }}
                                             >
-                                              <div className="flex items-center gap-2 min-w-0">
+                                              {bulkApplyMode && epId && (
+                                                <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${isBulkSelected ? 'bg-orange-500 border-orange-500' : 'border-gray-300'}`}>
+                                                  {isBulkSelected && <Check className="w-2.5 h-2.5 text-white" />}
+                                                </div>
+                                              )}
+                                              <div className="flex items-center gap-2 min-w-0 flex-1">
                                                 <span className={`font-mono w-4 flex-shrink-0 ${isSelected ? 'text-violet-600 font-bold' : 'text-gray-400'}`}>{globalIdx + 1}</span>
-                                                <span className={`font-medium truncate ${isSelected ? 'text-violet-700' : 'text-gray-700'}`}>{p.label || '—'}</span>
+                                                <span className={`font-medium truncate ${isBulkSelected ? 'text-orange-700' : isSelected ? 'text-violet-700' : 'text-gray-700'}`}>{p.label || '—'}</span>
                                               </div>
                                               <div className="flex items-center gap-1.5 flex-shrink-0">
                                                 <span className="font-semibold text-gray-800">{p.units} ml</span>
-                                                <ChevronDown className={`w-3 h-3 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
-                                                {epId && (
+                                                {!bulkApplyMode && <ChevronDown className={`w-3 h-3 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />}
+                                                {!bulkApplyMode && epId && (
                                                   <button onClick={e => { e.stopPropagation(); handleEditablePointClicked(epId); }} className="p-0.5 text-violet-400 hover:text-violet-600 rounded" title="Editar zona/plano">
                                                     <Pencil className="w-3 h-3" />
                                                   </button>
                                                 )}
-                                                <button onClick={e => { e.stopPropagation(); handleRemovePoint(globalIdx); }} className="p-0.5 text-red-300 hover:text-red-500 rounded">
-                                                  <X className="w-3 h-3" />
-                                                </button>
+                                                {!bulkApplyMode && (
+                                                  <button onClick={e => { e.stopPropagation(); handleRemovePoint(globalIdx); }} className="p-0.5 text-red-300 hover:text-red-500 rounded">
+                                                    <X className="w-3 h-3" />
+                                                  </button>
+                                                )}
                                               </div>
                                             </div>
                                             {/* Inline editor */}
-                                            {isExpanded && (
+                                            {isExpanded && !bulkApplyMode && (
                                               <div className="px-3 pb-3 pt-1 bg-violet-50/50 space-y-2 border-t border-violet-100">
                                                 <div className="grid grid-cols-2 gap-1.5">
                                                   <div>
@@ -2710,12 +2827,14 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                                                     onChange={e => handlePointFieldChange(globalIdx, 'notes_at_point', e.target.value)}
                                                   />
                                                 </div>
-                                                <button
-                                                  onClick={() => handleBulkApply(globalIdx)}
-                                                  className="w-full text-[10px] py-1 rounded-lg bg-violet-100 text-violet-700 hover:bg-violet-200 font-semibold transition-colors"
-                                                >
-                                                  Aplicar técnica/cánula/plano a todos →
-                                                </button>
+                                                <div className="flex gap-1.5">
+                                                  <button onClick={() => handleBulkApply(globalIdx)} className="flex-1 text-[10px] py-1 rounded-lg bg-violet-100 text-violet-700 hover:bg-violet-200 font-semibold transition-colors">
+                                                    Todos →
+                                                  </button>
+                                                  <button onClick={() => handleEnterBulkApplyMode(globalIdx)} className="flex-1 text-[10px] py-1 rounded-lg bg-orange-100 text-orange-700 hover:bg-orange-200 font-semibold transition-colors">
+                                                    Selección →
+                                                  </button>
+                                                </div>
                                               </div>
                                             )}
                                           </div>
@@ -2734,11 +2853,21 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                           if (!pts || pts.length === 0) return null;
                           const colors = TERCIO_COLORS[tercio];
                           const tercioTotal = pts.reduce((s, p) => s + p.units, 0);
+                          const tercioEpIds = pts.map(p => p.editablePointId).filter(Boolean) as string[];
+                          const allTercioSelected = tercioEpIds.length > 0 && tercioEpIds.every(id => bulkApplySelected.has(id));
                           return (
                             <div key={tercio} className={`rounded-xl border overflow-hidden ${colors.border}`}>
-                              <div className={`flex items-center justify-between px-3 py-2 ${colors.header}`}>
+                              <div className={`flex items-center gap-2 px-3 py-2 ${colors.header}`}>
+                                {bulkApplyMode && tercioEpIds.length > 0 && (
+                                  <button
+                                    onClick={() => handleToggleBulkGroup(tercioEpIds)}
+                                    className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${allTercioSelected ? 'bg-orange-500 border-orange-500' : 'border-gray-400 hover:border-orange-400'}`}
+                                  >
+                                    {allTercioSelected && <Check className="w-2.5 h-2.5 text-white" />}
+                                  </button>
+                                )}
                                 <span className={`text-xs font-bold ${colors.text}`}>{TERCIO_LABELS[tercio]}</span>
-                                <span className={`text-[10px] font-semibold ${colors.text}`}>
+                                <span className={`ml-auto text-[10px] font-semibold ${colors.text}`}>
                                   {pts.length} pto(s) · {tercioTotal} {unitLabel}
                                 </span>
                               </div>
@@ -2747,39 +2876,55 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                                   const globalIndex = injectionPoints.indexOf(p);
                                   const rowEpId = p.editablePointId;
                                   const isSelected = !!rowEpId && rowEpId === selectedPointId;
+                                  const isBulkSelected = !!rowEpId && bulkApplySelected.has(rowEpId);
                                   const expandKey = rowEpId || String(globalIndex);
-                                  const isExpanded = expandedPointId === expandKey;
+                                  const isExpanded = !bulkApplyMode && expandedPointId === expandKey;
                                   return (
                                     <div key={i} className="border-b border-gray-50 last:border-0">
                                       <div
-                                        className={`flex items-center justify-between px-3 py-1.5 text-xs transition-colors cursor-pointer ${isSelected ? 'bg-[#deb887]/10' : 'hover:bg-gray-50'}`}
+                                        className={`flex items-center gap-2 px-3 py-1.5 text-xs transition-colors cursor-pointer ${
+                                          bulkApplyMode
+                                            ? (isBulkSelected ? 'bg-orange-50' : 'hover:bg-orange-50/50')
+                                            : (isSelected ? 'bg-[#deb887]/10' : 'hover:bg-gray-50')
+                                        }`}
                                         onClick={() => {
-                                          if (rowEpId) setSelectedPointId(isSelected ? null : rowEpId);
-                                          setExpandedPointId(isExpanded ? null : expandKey);
+                                          if (bulkApplyMode) {
+                                            if (rowEpId) handleToggleBulkPoint(rowEpId);
+                                          } else {
+                                            if (rowEpId) setSelectedPointId(isSelected ? null : rowEpId);
+                                            setExpandedPointId(isExpanded ? null : expandKey);
+                                          }
                                         }}
                                       >
-                                        <div className="flex items-center gap-2 min-w-0">
-                                          <span className={`font-mono w-4 flex-shrink-0 ${isSelected ? 'text-[#b8944d] font-bold' : 'text-gray-400'}`}>{globalIndex + 1}</span>
+                                        {bulkApplyMode && rowEpId && (
+                                          <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${isBulkSelected ? 'bg-orange-500 border-orange-500' : 'border-gray-300'}`}>
+                                            {isBulkSelected && <Check className="w-2.5 h-2.5 text-white" />}
+                                          </div>
+                                        )}
+                                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                                          <span className={`font-mono w-4 flex-shrink-0 ${isBulkSelected ? 'text-orange-600 font-bold' : isSelected ? 'text-[#b8944d] font-bold' : 'text-gray-400'}`}>{globalIndex + 1}</span>
                                           <div className="flex flex-col min-w-0">
-                                            <span className={`font-medium truncate ${isSelected ? 'text-[#b8944d]' : 'text-gray-700'}`}>{p.label || '—'}</span>
+                                            <span className={`font-medium truncate ${isBulkSelected ? 'text-orange-700' : isSelected ? 'text-[#b8944d]' : 'text-gray-700'}`}>{p.label || '—'}</span>
                                             {p.injection_plane && <span className="text-[10px] text-[#b8944d]/70 truncate">{p.injection_plane}</span>}
                                           </div>
                                         </div>
                                         <div className="flex items-center gap-1.5 flex-shrink-0">
                                           <span className="font-semibold text-gray-800">{p.units} {unitLabel}</span>
-                                          <span className="text-gray-400 w-9 text-right">{totalUsed > 0 ? Math.round((p.units / totalUsed) * 100) : 0}%</span>
-                                          {rowEpId && (
+                                          {!bulkApplyMode && <span className="text-gray-400 w-9 text-right">{totalUsed > 0 ? Math.round((p.units / totalUsed) * 100) : 0}%</span>}
+                                          {!bulkApplyMode && rowEpId && (
                                             <button onClick={e => { e.stopPropagation(); handleEditablePointClicked(rowEpId); }} className="p-0.5 text-[#deb887] hover:text-[#b8944d] rounded" title="Editar">
                                               <Pencil className="w-3 h-3" />
                                             </button>
                                           )}
-                                          <button onClick={e => { e.stopPropagation(); handleRemovePoint(globalIndex); }} className="p-0.5 text-red-300 hover:text-red-500 rounded">
-                                            <X className="w-3 h-3" />
-                                          </button>
+                                          {!bulkApplyMode && (
+                                            <button onClick={e => { e.stopPropagation(); handleRemovePoint(globalIndex); }} className="p-0.5 text-red-300 hover:text-red-500 rounded">
+                                              <X className="w-3 h-3" />
+                                            </button>
+                                          )}
                                         </div>
                                       </div>
-                                      {/* Inline editor para toxina también */}
-                                      {isExpanded && (
+                                      {/* Inline editor */}
+                                      {isExpanded && !bulkApplyMode && (
                                         <div className="px-3 pb-3 pt-1 bg-amber-50/50 space-y-2 border-t border-amber-100">
                                           <div className="grid grid-cols-2 gap-1.5">
                                             <div>
@@ -2797,9 +2942,21 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                                               </select>
                                             </div>
                                           </div>
-                                          <button onClick={() => handleBulkApply(globalIndex)} className="w-full text-[10px] py-1 rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200 font-semibold transition-colors">
-                                            Aplicar a todos →
-                                          </button>
+                                          <div>
+                                            <p className="text-[9px] text-gray-400 mb-0.5">Plano</p>
+                                            <select className="w-full text-[11px] border border-gray-200 rounded-lg px-2 py-1 bg-white outline-none" value={p.injection_plane || ''} onChange={e => handlePointFieldChange(globalIndex, 'injection_plane', e.target.value)}>
+                                              <option value="">—</option>
+                                              {HA_PLANES.map(pl => <option key={pl} value={pl}>{pl}</option>)}
+                                            </select>
+                                          </div>
+                                          <div className="flex gap-1.5">
+                                            <button onClick={() => handleBulkApply(globalIndex)} className="flex-1 text-[10px] py-1 rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200 font-semibold transition-colors">
+                                              Todos →
+                                            </button>
+                                            <button onClick={() => handleEnterBulkApplyMode(globalIndex)} className="flex-1 text-[10px] py-1 rounded-lg bg-orange-100 text-orange-700 hover:bg-orange-200 font-semibold transition-colors">
+                                              Selección →
+                                            </button>
+                                          </div>
                                         </div>
                                       )}
                                     </div>
@@ -3140,8 +3297,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 <div>
                   <h3 className="text-sm font-bold text-gray-800">
                     {current.product_type === 'relleno'
-                      ? (unitsModalStep === 1 ? 'Volumen (ml)' : unitsModalStep === 2 ? 'Tercio facial' : unitsModalStep === 3 ? 'Zona anatómica' : 'Plano de inyección')
-                      : (unitsModalStep === 1 ? 'Unidades (UI)' : unitsModalStep === 2 ? 'Tercio facial' : unitsModalStep === 3 ? 'Zona anatómica' : 'Plano de inyección')
+                      ? (unitsModalStep === 1 ? 'Volumen (ml)' : unitsModalStep === 2 ? 'Tercio facial' : 'Zona anatómica')
+                      : (unitsModalStep === 1 ? 'Unidades (UI)' : unitsModalStep === 2 ? 'Tercio facial' : 'Zona anatómica')
                     }
                   </h3>
                   <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{unitsModal.pointName}</p>
@@ -3154,9 +3311,9 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 </button>
               </div>
 
-              {/* Step progress bar — ambos tipos usan multi-pasos */}
+              {/* Step progress bar — pasos 1→2→3 */}
               <div className="flex gap-1 mb-4">
-                {[1, 2, 3, 4].map(s => (
+                {[1, 2, 3].map(s => (
                   <div key={s} className={`h-1 flex-1 rounded-full transition-colors ${s <= unitsModalStep ? (current.product_type === 'relleno' ? 'bg-violet-400' : 'bg-[#deb887]') : 'bg-gray-200'}`} />
                 ))}
               </div>
@@ -3328,24 +3485,6 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 </div>
               )}
 
-              {/* Step 4: Injection Plane (ambos tipos) */}
-              {unitsModalStep === 4 && (
-                <div className="mb-4">
-                  <p className="text-xs text-gray-400 mb-2">Selecciona el plano de inyección (opcional).</p>
-                  <div className="flex flex-wrap gap-1.5 max-h-44 overflow-y-auto">
-                    {(['superficial', 'medio', 'profundo'] as const).map(p => (
-                      <button
-                        key={p}
-                        onClick={() => setUnitsModalPlane(p)}
-                        className={`px-2.5 py-1.5 rounded-lg text-[11px] font-medium border transition-all ${unitsModalPlane === p ? 'bg-violet-100 border-violet-400 text-violet-700 shadow-sm' : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'}`}
-                      >
-                        {p}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               {/* Action buttons */}
               <div className="flex flex-col gap-2">
                 {/* Fila secundaria: Eliminar + Cancelar (solo paso 1) */}
@@ -3384,15 +3523,15 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                   {/* Volver — pasos 2+ */}
                   {unitsModalStep > 1 && (
                     <button
-                      onClick={() => setUnitsModalStep(prev => (prev - 1) as 1 | 2 | 3 | 4)}
+                      onClick={() => setUnitsModalStep(prev => (prev - 1) as 1 | 2 | 3)}
                       className="px-3 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50 transition-colors"
                     >
                       ←
                     </button>
                   )}
 
-                  {/* Guardar — paso 1 (siempre) y paso 4 (final) */}
-                  {(unitsModalStep === 1 || unitsModalStep === 4) && (
+                  {/* Guardar — paso 1 y paso 3 (final) */}
+                  {(unitsModalStep === 1 || unitsModalStep === 3) && (
                     <button
                       onClick={handleUnitsModalConfirm}
                       disabled={!unitsModalInput || Number(unitsModalInput) <= 0}
@@ -3403,22 +3542,18 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     </button>
                   )}
 
-                  {/* Siguiente — pasos 2-3 */}
-                  {unitsModalStep > 1 && unitsModalStep < 4 && (
+                  {/* Siguiente — solo paso 2 */}
+                  {unitsModalStep === 2 && (
                     <button
-                      onClick={() => {
-                        if (unitsModalStep === 2 && !unitsModalTercio) return;
-                        setUnitsModalStep(prev => (prev + 1) as 2 | 3 | 4);
-                        setUnitsModalZoneFilter('');
-                      }}
-                      disabled={unitsModalStep === 2 && !unitsModalTercio}
+                      onClick={() => { if (!unitsModalTercio) return; setUnitsModalStep(3); setUnitsModalZoneFilter(''); }}
+                      disabled={!unitsModalTercio}
                       className="flex-1 px-4 py-2.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-semibold hover:bg-gray-200 transition-colors disabled:opacity-40 flex items-center justify-center gap-1"
                     >
                       Siguiente →
                     </button>
                   )}
 
-                  {/* Paso 1: botón para ir a clasificar zona (segundo paso) */}
+                  {/* Paso 1: botón para ir a clasificar zona */}
                   {unitsModalStep === 1 && (
                     <button
                       onClick={() => { setUnitsModalStep(2); setUnitsModalZoneFilter(''); }}

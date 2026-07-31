@@ -316,6 +316,8 @@ interface Clinical3DViewerProps {
   haShapeConfig?: { fanLines: number; fanAngle: number; gridCells: number; fernBranches: number };
   /** IDs de puntos sin zona clasificada → se renderizan en celeste hasta completarlos */
   incompletePointIds?: string[];
+  /** IDs de puntos resaltados (seleccion masiva) → escala naranja */
+  highlightedPointIds?: string[];
   /** Callback cuando el cursor entra/sale de un punto editable en modo sin herramienta */
   onEditablePointHovered?: (id: string | null) => void;
   /** Callback cuando el usuario hace clic en el fondo vacío (sin malla) */
@@ -363,6 +365,7 @@ const ThreeEngine: React.FC<{
   /** Configuración de formas HA (abanico, malla, helecho) */
   haShapeConfig?: { fanLines: number; fanAngle: number; gridCells: number; fernBranches: number };
   incompletePointIds?: string[];
+  highlightedPointIds?: string[];
   onEditablePointHovered?: (id: string | null) => void;
   onBackgroundClick?: () => void;
 }> = ({
@@ -377,6 +380,7 @@ const ThreeEngine: React.FC<{
   onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onGridStepChange, onSnapPointChange,
   haShapeConfig = { fanLines: 5, fanAngle: 25, gridCells: 4, fernBranches: 5 },
   incompletePointIds = [],
+  highlightedPointIds = [],
   onEditablePointHovered,
   onBackgroundClick,
 }) => {
@@ -408,7 +412,7 @@ const ThreeEngine: React.FC<{
     pointMode, onEditablePointMoved, onEditablePointDeleted, onEditablePointClicked, onProjectedPositions,
     activeTool, selectedElementId, pendingBrushColor, pendingBrushThickness,
     onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onGridStepChange, onSnapPointChange,
-    haShapeConfig, freehandLines, incompletePointIds, onEditablePointHovered, onBackgroundClick,
+    haShapeConfig, freehandLines, incompletePointIds, highlightedPointIds, onEditablePointHovered, onBackgroundClick,
   });
   useEffect(() => {
     callbacks.current = {
@@ -416,7 +420,7 @@ const ThreeEngine: React.FC<{
       pointMode, onEditablePointMoved, onEditablePointDeleted, onEditablePointClicked, onProjectedPositions,
       activeTool, selectedElementId, pendingBrushColor, pendingBrushThickness,
       onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onGridStepChange, onSnapPointChange,
-      haShapeConfig, freehandLines, incompletePointIds, onEditablePointHovered, onBackgroundClick,
+      haShapeConfig, freehandLines, incompletePointIds, highlightedPointIds, onEditablePointHovered, onBackgroundClick,
     };
   });
 
@@ -1621,7 +1625,10 @@ const ThreeEngine: React.FC<{
       if (prevHoveredId) { restoreHoverById(prevHoveredId); prevHoveredId = null; }
       if (prevHoveredEpId) {
         editablePointsGroupRef.current?.children.forEach((g: THREE.Object3D) => {
-          if (g.userData.editableId === prevHoveredEpId) g.scale.setScalar(selectedEditableId === prevHoveredEpId ? 1.8 : 1.0);
+          if (g.userData.editableId === prevHoveredEpId) {
+            const isHL = callbacks.current.highlightedPointIds?.includes(prevHoveredEpId);
+            g.scale.setScalar(selectedEditableId === prevHoveredEpId ? 1.8 : isHL ? 1.5 : 1.0);
+          }
         });
         callbacks.current.onEditablePointHovered?.(null);
         prevHoveredEpId = null;
@@ -1704,8 +1711,10 @@ const ThreeEngine: React.FC<{
             if (newHoveredEpId !== prevHoveredEpId) {
               if (prevHoveredEpId) {
                 editablePointsGroupRef.current?.children.forEach((g: THREE.Object3D) => {
-                  if (g.userData.editableId === prevHoveredEpId)
-                    g.scale.setScalar(selectedEditableId === prevHoveredEpId ? 1.8 : 1.0);
+                  if (g.userData.editableId === prevHoveredEpId) {
+                    const isHL = callbacks.current.highlightedPointIds?.includes(prevHoveredEpId);
+                    g.scale.setScalar(selectedEditableId === prevHoveredEpId ? 1.8 : isHL ? 1.5 : 1.0);
+                  }
                 });
               }
               if (newHoveredEpId) {
@@ -2052,6 +2061,7 @@ const ThreeEngine: React.FC<{
       });
       const outerMesh = new THREE.Mesh(outerGeo, outerMat);
       outerMesh.renderOrder = 1001;
+      outerMesh.userData.baseEmissive = sphereColor.clone(); // para restaurar tras highlight
       ptGroup.add(outerMesh);
 
       group.add(ptGroup);
@@ -2065,15 +2075,29 @@ const ThreeEngine: React.FC<{
     }
   }, [showEditablePoints]);
 
-  // 4d. Resaltar el punto editable seleccionado (escala mayor + color)
+  // 4d. Resaltar punto seleccionado (escala) y puntos en seleccion masiva (naranja)
   useEffect(() => {
     const group = editablePointsGroupRef.current;
     if (!group) return;
     group.children.forEach(child => {
-      const isSelected = selectedPointId && child.userData.editableId === selectedPointId;
-      child.scale.setScalar(isSelected ? 1.8 : 1.0);
+      const epId = child.userData.editableId;
+      const isSelected = !!selectedPointId && epId === selectedPointId;
+      const isHighlighted = highlightedPointIds.includes(epId);
+      child.scale.setScalar(isSelected ? 1.8 : isHighlighted ? 1.5 : 1.0);
+      child.traverse((c: any) => {
+        if (c.isMesh && c.userData.baseEmissive !== undefined && c.material?.emissive !== undefined) {
+          if (isHighlighted && !isSelected) {
+            c.material.emissive.set(0xff6600);
+            c.material.emissiveIntensity = 1.1;
+          } else {
+            c.material.emissive.copy(c.userData.baseEmissive);
+            c.material.emissiveIntensity = 0.7;
+          }
+          c.material.needsUpdate = true;
+        }
+      });
     });
-  }, [selectedPointId, editablePoints]);
+  }, [selectedPointId, highlightedPointIds, editablePoints]);
 
   // 4e. Renderizar líneas freehand (dibujo libre HA) — continuas, sobre superficie
   useEffect(() => {
@@ -2463,6 +2487,7 @@ export default function Clinical3DViewer({
   onSnapPointChange,
   haShapeConfig = { fanLines: 5, fanAngle: 25, gridCells: 4, fernBranches: 5 },
   incompletePointIds = [],
+  highlightedPointIds = [],
   onEditablePointHovered,
   onBackgroundClick,
 }: Clinical3DViewerProps) {
@@ -2552,6 +2577,7 @@ export default function Clinical3DViewer({
             onSnapPointChange={onSnapPointChange}
             haShapeConfig={haShapeConfig}
             incompletePointIds={incompletePointIds}
+            highlightedPointIds={highlightedPointIds}
             onEditablePointHovered={onEditablePointHovered}
             onBackgroundClick={onBackgroundClick}
           />
