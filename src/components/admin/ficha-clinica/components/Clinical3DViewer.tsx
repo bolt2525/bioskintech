@@ -1445,8 +1445,8 @@ const ThreeEngine: React.FC<{
         return;
       }
 
-      // ── Selección de elementos existentes (freehand, shapes, reference lines) ─
-      if (tool === 'none' || tool === 'freehand-poly') {
+      // ── Selección de elementos existentes — desactivada en modo "añadir punto" ─
+      if ((tool === 'none' || tool === 'freehand-poly') && callbacks.current.pointMode !== 'add') {
         // Raycast contra freehand group
         const fhMeshes: THREE.Object3D[] = [];
         freehandGroupRef.current?.children.forEach(g => g.traverse(c => { if ((c as THREE.Mesh).isMesh) fhMeshes.push(c); }));
