@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Calendar, DollarSign, Clock, Save, Trash2, Copy, Check, AlertCircle, FileText, Pencil } from 'lucide-react';
+import { Plus, Calendar, DollarSign, Clock, Save, Trash2, Copy, Check, AlertCircle, FileText, Pencil, Layers } from 'lucide-react';
 import treatmentOptions from '../../data/treatment_options.json';
 import { Tooltip } from '../../../../ui/Tooltip';
 
@@ -53,6 +53,7 @@ export default function TreatmentTab({ recordId, treatments, patientName, onSave
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [groupByProcedure, setGroupByProcedure] = useState(false);
 
   // Sort treatments by date descending for the history list
   const sortedTreatments = [...treatments].sort((a, b) => 
@@ -155,6 +156,13 @@ export default function TreatmentTab({ recordId, treatments, patientName, onSave
         <div className="font-bold text-gray-800 flex items-center gap-2">
           <div className="w-1 h-5 bg-[#deb887] rounded-full" />
           Historial de Tratamientos
+          <button
+            onClick={() => setGroupByProcedure(g => !g)}
+            title={groupByProcedure ? 'Vista plana' : 'Agrupar por procedimiento'}
+            className={`ml-auto p-1.5 rounded-lg border transition-colors ${groupByProcedure ? 'bg-[#deb887]/20 border-[#deb887]/40 text-[#b8944d]' : 'border-gray-200 text-gray-400 hover:bg-gray-50'}`}
+          >
+            <Layers className="w-4 h-4" />
+          </button>
         </div>
         <div className="flex-1 overflow-y-auto space-y-3 max-h-[200px] md:max-h-none pr-2 custom-scrollbar">
           {sortedTreatments.length === 0 ? (
@@ -162,7 +170,47 @@ export default function TreatmentTab({ recordId, treatments, patientName, onSave
               <AlertCircle className="w-8 h-8 opacity-20" />
               No hay tratamientos previos
             </div>
+          ) : groupByProcedure ? (
+            // ── Vista agrupada por procedimiento ──────────────────────────
+            (() => {
+              const grouped = sortedTreatments.reduce((acc, t) => {
+                const key = t.procedure_name || 'Sin procedimiento';
+                if (!acc[key]) acc[key] = [];
+                acc[key].push(t);
+                return acc;
+              }, {} as Record<string, Treatment[]>);
+              return Object.entries(grouped).map(([proc, treats]) => (
+                <div key={proc} className="space-y-1.5">
+                  <div className="flex items-center justify-between px-2 py-1.5 bg-[#deb887]/10 rounded-lg sticky top-0 z-10">
+                    <span className="text-xs font-bold text-[#b8944d] truncate">{proc}</span>
+                    <span className="text-[10px] font-medium bg-[#deb887]/20 text-[#b8944d] px-1.5 py-0.5 rounded-full shrink-0 ml-1">
+                      {treats.length} ses.
+                    </span>
+                  </div>
+                  {treats.map((t, idx) => (
+                    <motion.div
+                      key={t.id || idx}
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      onClick={() => handleSelect(t)}
+                      className={`p-3 rounded-xl cursor-pointer border transition-all shadow-sm ${
+                        currentTreatment.id === t.id
+                          ? 'bg-[#deb887] text-white border-[#deb887] shadow-md'
+                          : 'bg-white border-gray-100 hover:bg-gray-50 hover:border-[#deb887]/30'
+                      }`}
+                    >
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="font-medium">{new Date(toDateOnly(t.date) + 'T12:00:00').toLocaleDateString('es-EC')}</span>
+                        <FileText className="w-3.5 h-3.5 opacity-60" />
+                      </div>
+                      <div className="text-xs opacity-75 truncate mt-0.5">{t.equipment_used || 'Sin equipo'}</div>
+                    </motion.div>
+                  ))}
+                </div>
+              ));
+            })()
           ) : (
+            // ── Vista plana ──────────────────────────────────────────────
             sortedTreatments.map((t, index) => (
               <motion.div
                 key={t.id || index}

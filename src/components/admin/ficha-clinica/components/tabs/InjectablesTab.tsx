@@ -22,12 +22,27 @@ import { useAuth } from '../../../../../context/AuthContext';
 // TYPES
 // ==========================================
 
+type RellenoSubType = 'relleno_ha' | 'hidratacion' | 'bioestimulador';
+
+const RELLENO_SUBTYPE_LABELS: Record<RellenoSubType, string> = {
+  relleno_ha: 'Relleno HA',
+  hidratacion: 'Hidratación',
+  bioestimulador: 'Bioestimuladores',
+};
+
+const RELLENO_SUBTYPE_COLORS: Record<RellenoSubType, { active: string; hover: string; badge: string; header: string; border: string; text: string }> = {
+  relleno_ha:    { active: 'bg-white text-purple-600 shadow-md ring-1 ring-purple-300/40',  hover: 'text-gray-500 hover:text-gray-700 hover:bg-white/50', badge: 'bg-purple-100 text-purple-600',  header: 'from-purple-50  to-purple-50/30  border-purple-100',  border: 'border-purple-100', text: 'text-purple-700' },
+  hidratacion:   { active: 'bg-white text-sky-600 shadow-md ring-1 ring-sky-300/40',       hover: 'text-gray-500 hover:text-gray-700 hover:bg-white/50', badge: 'bg-sky-100 text-sky-600',       header: 'from-sky-50     to-sky-50/30     border-sky-100',     border: 'border-sky-100',    text: 'text-sky-700'    },
+  bioestimulador:{ active: 'bg-white text-emerald-600 shadow-md ring-1 ring-emerald-300/40',hover: 'text-gray-500 hover:text-gray-700 hover:bg-white/50', badge: 'bg-emerald-100 text-emerald-600',header: 'from-emerald-50 to-emerald-50/30 border-emerald-100', border: 'border-emerald-100', text: 'text-emerald-700'},
+};
+
 interface Injectable {
   id?: number;
   record_id?: number;
   treatment_id?: number;
   date: string;
   product_type: 'toxina' | 'relleno';
+  relleno_subtype?: string;
   product_name: string;
   brand: string;
   lot_number: string;
@@ -86,6 +101,9 @@ const getCatalogItems = (category: string): string[] => {
 
 const toxinaBrands = getCatalogItems('marca_toxina');
 const rellenoBrands = getCatalogItems('marca_relleno');
+const rellenoHaBrands = getCatalogItems('marca_relleno_ha');
+const hidratacionBrands = getCatalogItems('marca_hidratacion');
+const bioestimuladorBrands = getCatalogItems('marca_bioestimulador');
 const techniques = getCatalogItems('tecnica_inyectable');
 const needles = getCatalogItems('aguja_inyectable');
 const zonasSuperior = getCatalogItems('tercio_superior');
@@ -289,6 +307,12 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   const [haShapeConfigTool, setHaShapeConfigTool] = useState<'ha-fan' | 'ha-grid' | 'ha-fern'>('ha-fan');
   /** Tab al que el usuario intenta cambiar; null = ningún switch pendiente */
   const [pendingTabSwitch, setPendingTabSwitch] = useState<'toxina' | 'relleno' | null>(null);
+  /** Sub-tipo activo dentro del tab Relleno */
+  const [rellenoSubType, setRellenoSubType] = useState<RellenoSubType>('relleno_ha');
+  /** Sub-tipo al que el usuario intenta cambiar (con trabajo sin guardar) */
+  const [pendingSubTypeSwitch, setPendingSubTypeSwitch] = useState<RellenoSubType | null>(null);
+  /** Catálogo extra cargado desde la DB (master admin seeds) */
+  const [dbCatalog, setDbCatalog] = useState<{ categoria: string; elemento: string }[]>([]);
   /** Quick Save HA: true mientras se está seleccionando/creando la jeringa */
   const [unitsModalVialStep, setUnitsModalVialStep] = useState(false);
   /** Quick Save HA: mini-form inline para registrar una nueva jeringa */
@@ -300,6 +324,14 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
 
   // Keep ref in sync with state to avoid closure issues in the RAF callback
   useEffect(() => { showUnitNumbersRef.current = showUnitNumbers; }, [showUnitNumbers]);
+
+  // Fetch extra catalog items managed by master admin (non-blocking)
+  useEffect(() => {
+    recordsFetch('/api/records?action=listInjectableCatalog')
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setDbCatalog(Array.isArray(data) ? data : []))
+      .catch(() => {});
+  }, []);
 
   // Projected positions callback — uses direct DOM manipulation for 60fps perf
   const handleProjectedPositions = useCallback((positions: ProjectedPosition[]) => {
@@ -688,8 +720,14 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     }
   };
 
-  const handleNew = () => {
-    setCurrent({ ...EMPTY_INJECTABLE, date: getLocalDate(), product_type: activeType });
+  const handleNew = (subtypeOverride?: RellenoSubType) => {
+    const subtype = subtypeOverride ?? rellenoSubType;
+    setCurrent({
+      ...EMPTY_INJECTABLE,
+      date: getLocalDate(),
+      product_type: activeType,
+      ...(activeType === 'relleno' ? { relleno_subtype: subtype } : {}),
+    });
     setDateLocked(false);
     setMarkers3D([]);
     setInjectionPoints([]);
@@ -1121,6 +1159,10 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     setUndoStack([]);
     setShowClearConfirm(false);
     setIsPendingDuplicate(false);
+    // Sync subtype when loading a relleno record (without triggering a reset)
+    if (inj.product_type === 'relleno') {
+      setRellenoSubType((inj.relleno_subtype as RellenoSubType) || 'relleno_ha');
+    }
   };
 
   // 3D click → abrir modal en paso de UI (unidades)
@@ -1281,7 +1323,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     <div class="grid">
       <div class="field">
         <div class="label">Tipo</div>
-        <div class="value"><span class="type-badge ${current.product_type === 'toxina' ? 'type-toxina' : 'type-relleno'}">${current.product_type === 'toxina' ? 'Toxina Botulínica' : 'Relleno (Ácido Hialurónico)'}</span></div>
+        <div class="value"><span class="type-badge ${current.product_type === 'toxina' ? 'type-toxina' : 'type-relleno'}">${current.product_type === 'toxina' ? 'Toxina Botulínica' : (rellenoSubType === 'hidratacion' ? 'Hidratación' : rellenoSubType === 'bioestimulador' ? 'Bioestimuladores' : 'Relleno (Ácido Hialurónico)')}</span></div>
       </div>
       <div class="field">
         <div class="label">Producto</div>
@@ -1403,11 +1445,16 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   };
 
-  // Filtrar injectables por tipo activo
-  const filteredInjectables = injectables.filter(i => i.product_type === activeType);
+  // Filtrar injectables por tipo activo y sub-tipo (relleno)
+  const filteredInjectables = injectables.filter(i => {
+    if (i.product_type !== activeType) return false;
+    if (activeType === 'relleno') return (i.relleno_subtype || 'relleno_ha') === rellenoSubType;
+    return true;
+  });
 
   // Resetear COMPLETAMENTE al cambiar de sub-tab (aislamiento botox vs HA)
   useEffect(() => {
+    setRellenoSubType('relleno_ha');
     setCurrent({ ...EMPTY_INJECTABLE, date: getLocalDate(), product_type: activeType });
     setInjectionPoints([]);
     setMarkers3D([]);
@@ -1432,7 +1479,15 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeType]);
 
-  const brands = current.product_type === 'toxina' ? toxinaBrands : rellenoBrands;
+  const getDbItems = (cat: string) => dbCatalog.filter(d => d.categoria === cat).map(d => d.elemento);
+
+  const brands = activeType === 'toxina'
+    ? [...new Set([...toxinaBrands, ...getDbItems('marca_toxina')])]
+    : rellenoSubType === 'hidratacion'
+      ? [...new Set([...hidratacionBrands, ...getDbItems('marca_hidratacion')])]
+      : rellenoSubType === 'bioestimulador'
+        ? [...new Set([...bioestimuladorBrands, ...getDbItems('marca_bioestimulador')])]
+        : [...new Set([...rellenoHaBrands, ...getDbItems('marca_relleno_ha')])];
 
   /** Detecta si hay trabajo en progreso sin guardar en el tab actual */
   const hasUnsavedWork = () =>
@@ -1458,6 +1513,25 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
       await handleSave();
     }
     setActiveType(target);
+  };
+
+  /** Cambia de sub-tipo dentro de Relleno; guarda si hay trabajo sin guardar */
+  const requestSubTypeSwitch = (target: RellenoSubType) => {
+    if (target === rellenoSubType) return;
+    if (hasUnsavedWork()) {
+      setPendingSubTypeSwitch(target);
+    } else {
+      setRellenoSubType(target);
+      handleNew(target);
+    }
+  };
+
+  const confirmSubTypeSwitch = async (saveFirst: boolean) => {
+    const target = pendingSubTypeSwitch!;
+    setPendingSubTypeSwitch(null);
+    if (saveFirst && current.product_name.trim()) await handleSave();
+    setRellenoSubType(target);
+    handleNew(target);
   };
 
   // ==========================================
@@ -1497,7 +1571,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
           }`}
         >
           <Droplets className="w-4 h-4" />
-          Relleno (HA)
+          Rellenos
           <span className={`ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
             activeType === 'relleno' ? 'bg-purple-100 text-purple-600' : 'bg-gray-200 text-gray-500'
           }`}>
@@ -1506,13 +1580,41 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
         </button>
       </div>
 
+      {/* ── Sub-tipo selector (solo cuando activo = relleno) ── */}
+      {activeType === 'relleno' && (
+        <div className="flex gap-1 mb-4 bg-purple-50/60 p-1 rounded-xl w-fit shadow-inner border border-purple-100">
+          {(['relleno_ha', 'hidratacion', 'bioestimulador'] as RellenoSubType[]).map(st => {
+            const isActive = rellenoSubType === st;
+            const colors = RELLENO_SUBTYPE_COLORS[st];
+            const count = injectables.filter(i => i.product_type === 'relleno' && (i.relleno_subtype || 'relleno_ha') === st).length;
+            return (
+              <button
+                key={st}
+                onClick={() => requestSubTypeSwitch(st)}
+                className={`flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg transition-all duration-200 ${
+                  isActive ? colors.active : colors.hover
+                }`}
+              >
+                {st === 'relleno_ha' && <Droplets className="w-3.5 h-3.5" />}
+                {st === 'hidratacion' && <Pipette className="w-3.5 h-3.5" />}
+                {st === 'bioestimulador' && <FlaskConical className="w-3.5 h-3.5" />}
+                {RELLENO_SUBTYPE_LABELS[st]}
+                <span className={`ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${isActive ? colors.badge : 'bg-gray-200 text-gray-500'}`}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* ── Layout principal: sidebar + formulario ── */}
       <div className="flex flex-col md:flex-row h-auto md:min-h-[620px] gap-6">
       {/* ========== SIDEBAR — Historial de Inyectables ========== */}
       <div className="w-full md:w-72 border-r-0 md:border-r border-b md:border-b-0 border-gray-100 pr-0 md:pr-6 pb-4 md:pb-0 flex flex-col gap-4 shrink-0">
         <div className="font-bold text-gray-800 flex items-center gap-2">
           <div className="w-1 h-5 rounded-full" style={{ background: activeType === 'toxina' ? '#deb887' : '#a855f7' }} />
-          {activeType === 'toxina' ? 'Historial de Toxina' : 'Historial de Relleno (HA)'}
+          {activeType === 'toxina' ? 'Historial Toxina' : `Historial · ${RELLENO_SUBTYPE_LABELS[rellenoSubType]}`}
         </div>
         <div className="flex-1 overflow-y-auto space-y-3 max-h-[200px] md:max-h-none pr-2 custom-scrollbar">
           {/* Pending duplicate card — shown at top while unsaved */}
@@ -1542,7 +1644,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
           {filteredInjectables.length === 0 && !isPendingDuplicate ? (
             <div className="text-gray-400 text-sm text-center py-8 flex flex-col items-center gap-2">
               <AlertCircle className="w-8 h-8 opacity-20" />
-              Sin registros de {activeType === 'toxina' ? 'toxina' : 'relleno'}
+              Sin registros de {activeType === 'toxina' ? 'toxina' : RELLENO_SUBTYPE_LABELS[rellenoSubType]}
             </div>
           ) : (
             filteredInjectables.map((inj, index) => {
@@ -1592,7 +1694,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
 
         {/* Bottom action in sidebar */}
         <div className="flex flex-col gap-2">
-          <Tooltip content={`Nuevo registro de ${activeType === 'toxina' ? 'Toxina' : 'Relleno (HA)'}`}>
+          <Tooltip content={`Nuevo registro de ${activeType === 'toxina' ? 'Toxina' : RELLENO_SUBTYPE_LABELS[rellenoSubType]}`}>
             <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.97 }}
@@ -1604,7 +1706,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
               }`}
             >
               <Plus className="w-4 h-4" />
-              {activeType === 'toxina' ? 'Nueva Toxina' : 'Nuevo Relleno (HA)'}
+              {activeType === 'toxina' ? 'Nueva Toxina' : RELLENO_SUBTYPE_LABELS[rellenoSubType]}
             </motion.button>
           </Tooltip>
           {current.id && (
@@ -1795,17 +1897,21 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
         {/* Main Form */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         {/* Type Header - indica el tipo activo del sub-tab */}
-        <div className={`p-4 border-b flex items-center gap-3 ${
+        <div className={`p-4 border-b flex items-center gap-3 bg-gradient-to-r ${
           activeType === 'toxina'
-            ? 'bg-gradient-to-r from-amber-50 to-amber-50/30 border-amber-100'
-            : 'bg-gradient-to-r from-purple-50 to-purple-50/30 border-purple-100'
+            ? 'from-amber-50 to-amber-50/30 border-amber-100'
+            : RELLENO_SUBTYPE_COLORS[rellenoSubType].header
         }`}>
           {activeType === 'toxina'
             ? <FlaskConical className="w-5 h-5 text-[#b8944d]" />
-            : <Droplets className="w-5 h-5 text-purple-600" />
+            : rellenoSubType === 'hidratacion'
+              ? <Pipette className="w-5 h-5 text-sky-600" />
+              : rellenoSubType === 'bioestimulador'
+                ? <FlaskConical className="w-5 h-5 text-emerald-600" />
+                : <Droplets className="w-5 h-5 text-purple-600" />
           }
-          <span className={`text-sm font-semibold ${activeType === 'toxina' ? 'text-[#b8944d]' : 'text-purple-700'}`}>
-            {activeType === 'toxina' ? 'Toxina Botulínica' : 'Relleno (HA)'}
+          <span className={`text-sm font-semibold ${activeType === 'toxina' ? 'text-[#b8944d]' : RELLENO_SUBTYPE_COLORS[rellenoSubType].text}`}>
+            {activeType === 'toxina' ? 'Toxina Botulínica' : RELLENO_SUBTYPE_LABELS[rellenoSubType]}
           </span>
           {current.id && (
             <span className="ml-auto text-xs text-gray-400">ID: {current.id}</span>
@@ -3031,6 +3137,59 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 </button>
                 <button
                   onClick={() => setPendingTabSwitch(null)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50 transition-colors"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ========== MODAL: CONFIRMAR CAMBIO DE SUB-TIPO (relleno) ========== */}
+      <AnimatePresence>
+        {pendingSubTypeSwitch && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
+          >
+            <motion.div
+              initial={{ scale: 0.92, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.92, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6"
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className={`p-2 rounded-xl ${RELLENO_SUBTYPE_COLORS[pendingSubTypeSwitch].badge}`}>
+                  {pendingSubTypeSwitch === 'hidratacion' ? <Pipette className="w-5 h-5" /> : pendingSubTypeSwitch === 'bioestimulador' ? <FlaskConical className="w-5 h-5" /> : <Droplets className="w-5 h-5" />}
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-gray-800">¿Cambiar a {RELLENO_SUBTYPE_LABELS[pendingSubTypeSwitch]}?</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">Tienes trabajo no guardado en este subtratamiento</p>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {current.product_name.trim() && (
+                  <button
+                    onClick={() => confirmSubTypeSwitch(true)}
+                    className="w-full flex items-center gap-2 px-4 py-3 rounded-xl bg-[#deb887] text-white font-semibold text-sm hover:bg-[#c5a075] transition-colors"
+                  >
+                    <Save className="w-4 h-4" />
+                    Guardar y cambiar
+                  </button>
+                )}
+                <button
+                  onClick={() => confirmSubTypeSwitch(false)}
+                  className="w-full flex items-center gap-2 px-4 py-3 rounded-xl bg-red-50 text-red-600 font-semibold text-sm hover:bg-red-100 border border-red-200 transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Descartar y cambiar
+                </button>
+                <button
+                  onClick={() => setPendingSubTypeSwitch(null)}
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50 transition-colors"
                 >
                   Cancelar

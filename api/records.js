@@ -33,7 +33,8 @@ async function ensureInjectablesSchema(pool) {
       "ALTER TABLE injectables ADD COLUMN IF NOT EXISTS treatment_id INTEGER REFERENCES treatments(id) ON DELETE SET NULL",
       "ALTER TABLE injectables ADD COLUMN IF NOT EXISTS dilution_volume DECIMAL(5, 2)",
       "ALTER TABLE injectables ADD COLUMN IF NOT EXISTS follow_up_date DATE",
-      "ALTER TABLE injectables ADD COLUMN IF NOT EXISTS injection_plane VARCHAR(100)"
+      "ALTER TABLE injectables ADD COLUMN IF NOT EXISTS injection_plane VARCHAR(100)",
+      "ALTER TABLE injectables ADD COLUMN IF NOT EXISTS relleno_subtype VARCHAR(50)"
     ];
     for (const sql of migrations) {
       try { await pool.query(sql); } catch(e) { /* column may already exist */ }
@@ -1341,7 +1342,7 @@ export default async function handler(req, res) {
           'date', 'product_type', 'product_name', 'brand', 'lot_number',
           'expiration_date', 'volume_used', 'units_used', 'areas_treated',
           'technique', 'injection_plane', 'needle_type', 'mapping_data', 'notes',
-          'dilution_volume', 'follow_up_date'
+          'dilution_volume', 'follow_up_date', 'relleno_subtype'
         ];
         const dateFields = ['date', 'expiration_date', 'follow_up_date'];
         const numericFields = ['volume_used', 'units_used', 'dilution_volume'];
@@ -1388,7 +1389,7 @@ export default async function handler(req, res) {
           'date', 'product_type', 'product_name', 'brand', 'lot_number',
           'expiration_date', 'volume_used', 'units_used', 'areas_treated',
           'technique', 'injection_plane', 'needle_type', 'mapping_data', 'notes',
-          'dilution_volume', 'follow_up_date'
+          'dilution_volume', 'follow_up_date', 'relleno_subtype'
         ];
         const cleanData = {};
         const dateFields = ['date', 'expiration_date', 'follow_up_date'];
@@ -1418,6 +1419,43 @@ export default async function handler(req, res) {
         const { id: delInjId } = req.query;
         if (!delInjId) return res.status(400).json({ error: 'id required' });
         await pool.query('DELETE FROM injectables WHERE id = $1', [delInjId]);
+        return res.status(200).json({ success: true });
+      }
+
+      // ── Catálogo global de inyectables (seeds gestionados por master admin) ──
+
+      case 'listInjectableCatalog': {
+        const cat = await pool.query(
+          'SELECT id, categoria, elemento, descripcion FROM injectable_catalog WHERE activo = 1 ORDER BY categoria, elemento'
+        );
+        return res.status(200).json(cat.rows);
+      }
+
+      case 'saveInjectableSeed': {
+        const sess = await getSessionUserOnce();
+        if (!sess || sess.role !== 'master_admin') return res.status(403).json({ error: 'Forbidden' });
+        const { id: seedId, categoria: seedCat, elemento: seedEl, descripcion: seedDesc } = body;
+        if (!seedCat || !seedEl) return res.status(400).json({ error: 'categoria y elemento requeridos' });
+        if (seedId) {
+          await pool.query(
+            'UPDATE injectable_catalog SET categoria=$2, elemento=$3, descripcion=$4 WHERE id=$1',
+            [seedId, seedCat.trim(), seedEl.trim(), seedDesc || null]
+          );
+          return res.status(200).json({ success: true });
+        }
+        const newSeed = await pool.query(
+          'INSERT INTO injectable_catalog(categoria, elemento, descripcion) VALUES($1,$2,$3) RETURNING id',
+          [seedCat.trim(), seedEl.trim(), seedDesc || null]
+        );
+        return res.status(201).json(newSeed.rows[0]);
+      }
+
+      case 'deleteInjectableSeed': {
+        const sess = await getSessionUserOnce();
+        if (!sess || sess.role !== 'master_admin') return res.status(403).json({ error: 'Forbidden' });
+        const { id: delSeedId } = req.query;
+        if (!delSeedId) return res.status(400).json({ error: 'id required' });
+        await pool.query('UPDATE injectable_catalog SET activo=0 WHERE id=$1', [delSeedId]);
         return res.status(200).json({ success: true });
       }
 

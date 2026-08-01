@@ -28,6 +28,7 @@ import { ROLE_LABELS, ROLE_COLORS } from '../constants/theme';
 import { slugify } from '../utils/slugify';
 
 // Tipos centralizados
+import InjectableSeedsPanel from '../components/admin/InjectableSeedsPanel';
 import type { Clinic, ClinicUser, FeatureRow } from '../types';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1423,6 +1424,21 @@ export default function AdminMasterDashboard() {
                   authHeader={authHeader}
                   flash={flash}
                 />
+              </div>
+            </div>
+
+            {/* ── Sección: Catálogo de Inyectables ── */}
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
+                <Activity className="w-5 h-5 text-purple-500" />
+                <h3 className="font-semibold text-gray-900 text-sm">Inyectables — Catálogo Global</h3>
+                <span className="ml-auto text-xs text-gray-400">Seeds personalizados por marca/técnica</span>
+              </div>
+              <div className="p-5">
+                <p className="text-xs text-gray-400 mb-4">
+                  Agrega productos o marcas que no aparecen en el catálogo base. Estarán disponibles para todas las clínicas en el tab Inyectables de Fichas Clínicas.
+                </p>
+                <InjectableSeedsPanel authHeader={authHeader} />
               </div>
             </div>
 
