@@ -16,6 +16,8 @@ interface Patient {
   email: string;
   phone: string;
   active_record_id?: number;
+  created_by_user_name?: string;
+  created_by_username?: string;
 }
 
 interface ClinicUser {
@@ -40,7 +42,7 @@ export default function PatientList() {
   const { nav } = useAdminNav();
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
-  const { isActive: isMasterView } = useMasterView();
+  const { isActive: isMasterView, targetUserId } = useMasterView();
   // clinicId pasado desde el master admin para filtrar por clínica
   const clinicId = searchParams.get('clinicId');
   // Modal de historial de auditoría
@@ -49,12 +51,24 @@ export default function PatientList() {
   const [assignModal, setAssignModal] = useState<AssignModalState | null>(null);
   const [clinicUsers, setClinicUsers] = useState<ClinicUser[]>([]);
   const [assignLoading, setAssignLoading] = useState(false);
+  // Filtro por profesional (solo vista clínica de admin)
+  const [filterUserId, setFilterUserId] = useState<number | ''>('');
 
   const isAdmin = user?.role === 'clinic_admin' || user?.role === 'master_admin';
 
   useEffect(() => {
     fetchPatients();
-  }, [clinicId]);
+  }, [clinicId, filterUserId]);
+
+  // Cargar usuarios de la clínica para el filtro y el modal de asignación
+  useEffect(() => {
+    if (isAdmin) {
+      recordsFetch('/api/records?action=listClinicUsers')
+        .then(r => r.json())
+        .then(data => Array.isArray(data) ? setClinicUsers(data) : null)
+        .catch(() => null);
+    }
+  }, [isAdmin]);
 
   // Cargar usuarios de la clínica cuando se abre el modal
   useEffect(() => {
@@ -69,10 +83,13 @@ export default function PatientList() {
   const fetchPatients = async () => {
     try {
       setError(null);
-      // Pasar clinicId si viene del contexto del master admin
-      const url = clinicId
+      // viewAsUserId: impersonar al usuario del MasterView (ver exactamente lo que él ve)
+      // filterByUserId: filtrar vista clínica por profesional
+      let url = clinicId
         ? `/api/records?action=listPatients&clinicId=${clinicId}`
         : '/api/records?action=listPatients';
+      if (isMasterView && targetUserId) url += `&viewAsUserId=${targetUserId}`;
+      else if (filterUserId) url += `&filterByUserId=${filterUserId}`;
       const response = await recordsFetch(url);
       
       const contentType = response.headers.get("content-type");
@@ -148,13 +165,31 @@ export default function PatientList() {
       <div className="space-y-6">
         <div className="flex flex-wrap gap-4 justify-between items-center bg-white p-4 rounded-xl shadow-sm">
           <h2 className="text-xl font-bold text-gray-800">Pacientes Registrados</h2>
-          <button 
-            onClick={() => nav('clinical-records/new')}
-            className="bg-[#deb887] text-white px-4 py-2 rounded-lg hover:bg-[#c5a075] transition-colors flex items-center gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            Nuevo Paciente
-          </button>
+          <div className="flex items-center gap-3">
+            {/* Filtro por profesional — solo para admins en vista clínica (no en impersonación MasterView) */}
+            {isAdmin && !isMasterView && clinicUsers.length > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-500">Profesional:</span>
+                <select
+                  value={filterUserId}
+                  onChange={e => setFilterUserId(e.target.value ? Number(e.target.value) : '')}
+                  className="text-sm border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] focus:outline-none"
+                >
+                  <option value="">Todos</option>
+                  {clinicUsers.map(u => (
+                    <option key={u.id} value={u.id}>{u.full_name || u.username}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <button
+              onClick={() => nav('clinical-records/new')}
+              className="bg-[#deb887] text-white px-4 py-2 rounded-lg hover:bg-[#c5a075] transition-colors flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              Nuevo Paciente
+            </button>
+          </div>
         </div>
 
         {/* Search Bar */}
@@ -215,7 +250,15 @@ export default function PatientList() {
                           </div>
                           <div>
                             <div className="font-medium text-gray-900">{patient.first_name} {patient.last_name}</div>
-                            <div className="text-sm text-gray-500">ID: {patient.id}</div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm text-gray-500">ID: {patient.id}</span>
+                              {isAdmin && patient.created_by_user_name && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 text-xs font-medium">
+                                  <User className="w-2.5 h-2.5" />
+                                  {patient.created_by_user_name}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </td>

@@ -659,41 +659,71 @@ export default async function handler(req, res) {
       case 'listPatients': {
         const su = await getSessionUser(pool, req);
         const filterMine = req.query.filterMine === 'true';
+        // viewAsUserId: master_admin navegando AS un usuario específico → ver exactamente lo que ve ese usuario
+        const viewAsUserId  = su?.role === 'master_admin' && req.query.viewAsUserId  ? parseInt(req.query.viewAsUserId,  10) : null;
+        // filterByUserId: admin filtrando la vista clínica por profesional (no impersonación)
+        const filterByUserId = ['master_admin','clinic_admin'].includes(su?.role) && req.query.filterByUserId ? parseInt(req.query.filterByUserId, 10) : null;
+
         let pq, pp = [];
-        // Para master_admin, usar effective_clinic_id (puede ser la clínica que está viendo)
         const effectiveClinicId = su?.effective_clinic_id ?? su?.clinic_id;
+
+        // ponytail: helper para queries con owner JOIN — evita repetición
+        const fromOwner = `FROM patients p LEFT JOIN clinic_users cu ON cu.id = p.created_by_user_id`;
+        const selOwner  = `SELECT p.*, cu.full_name AS created_by_user_name, cu.username AS created_by_username`;
+        // filtro de pacientes propios + asignados
+        const ownFilter = `AND (p.created_by_user_id = $2 OR EXISTS (SELECT 1 FROM patient_assignments pa WHERE pa.patient_id = p.id AND pa.clinic_user_id = $2))`;
+
         if (!su || effectiveClinicId == null) {
-          // Pre-migración o master sin contexto de clínica → todos
+          // Pre-migración o master sin contexto de clínica
           const cf = req.query.clinicId ? parseInt(req.query.clinicId) : null;
-          if (cf) { pq = 'SELECT * FROM patients WHERE clinic_id = $1 ORDER BY last_name, first_name'; pp = [cf]; }
-          else { pq = 'SELECT * FROM patients ORDER BY last_name, first_name'; }
+          if (cf) { pq = `${selOwner} ${fromOwner} WHERE p.clinic_id = $1 ORDER BY p.last_name, p.first_name`; pp = [cf]; }
+          else    { pq = `${selOwner} ${fromOwner} ORDER BY p.last_name, p.first_name`; }
+
+        } else if (viewAsUserId) {
+          // Impersonación: aplicar scope real del usuario destino
+          const vu = await pool.query(
+            'SELECT access_scope FROM clinic_users WHERE id = $1 AND clinic_id = $2 AND is_active = true LIMIT 1',
+            [viewAsUserId, effectiveClinicId]
+          );
+          if (vu.rows.length && vu.rows[0].access_scope === 'own') {
+            pq = `${selOwner} ${fromOwner} WHERE p.clinic_id = $1 ${ownFilter} ORDER BY p.last_name, p.first_name`;
+            pp = [effectiveClinicId, viewAsUserId];
+          } else {
+            pq = `${selOwner} ${fromOwner} WHERE p.clinic_id = $1 ORDER BY p.last_name, p.first_name`;
+            pp = [effectiveClinicId];
+          }
+
+        } else if (filterByUserId) {
+          // Filtro por profesional en vista clínica — validar que el usuario pertenezca a esta clínica
+          const fu = await pool.query('SELECT id FROM clinic_users WHERE id = $1 AND clinic_id = $2 LIMIT 1', [filterByUserId, effectiveClinicId]);
+          if (fu.rows.length) {
+            pq = `${selOwner} ${fromOwner} WHERE p.clinic_id = $1 ${ownFilter} ORDER BY p.last_name, p.first_name`;
+            pp = [effectiveClinicId, filterByUserId];
+          } else {
+            pq = `${selOwner} ${fromOwner} WHERE p.clinic_id = $1 ORDER BY p.last_name, p.first_name`;
+            pp = [effectiveClinicId];
+          }
+
         } else if (su.access_scope === 'own' || (su.access_scope === 'all' && filterMine)) {
-          // Solo pacientes propios + los que el admin haya asignado explícitamente a este usuario
-          pq = `SELECT p.* FROM patients p
-            WHERE p.clinic_id = $1
-              AND (
-                p.created_by_user_id = $2
-                OR EXISTS (
-                  SELECT 1 FROM patient_assignments pa
-                  WHERE pa.patient_id = p.id AND pa.clinic_user_id = $2
-                )
-              )
-            ORDER BY p.last_name, p.first_name`;
+          pq = `${selOwner} ${fromOwner} WHERE p.clinic_id = $1 ${ownFilter} ORDER BY p.last_name, p.first_name`;
           pp = [effectiveClinicId, su.user_id];
+
         } else {
-          pq = 'SELECT * FROM patients WHERE clinic_id = $1 ORDER BY last_name, first_name';
+          pq = `${selOwner} ${fromOwner} WHERE p.clinic_id = $1 ORDER BY p.last_name, p.first_name`;
           pp = [effectiveClinicId];
         }
-        // Soporte para búsqueda por texto
+
+        // Búsqueda por texto — usar alias p. para evitar ambigüedad con el JOIN
         const searchTerm = req.query.search?.trim();
         if (searchTerm && pp.length > 0) {
           const idx = pp.length + 1;
-          pq = pq.replace('ORDER BY', `AND (first_name ILIKE $${idx} OR last_name ILIKE $${idx} OR rut ILIKE $${idx}) ORDER BY`);
+          pq = pq.replace('ORDER BY', `AND (p.first_name ILIKE $${idx} OR p.last_name ILIKE $${idx} OR p.rut ILIKE $${idx}) ORDER BY`);
           pp.push(`%${searchTerm}%`);
         } else if (searchTerm) {
-          pq = `SELECT * FROM patients WHERE (first_name ILIKE $1 OR last_name ILIKE $1 OR rut ILIKE $1) ORDER BY last_name, first_name`;
+          pq = `${selOwner} ${fromOwner} WHERE (p.first_name ILIKE $1 OR p.last_name ILIKE $1 OR p.rut ILIKE $1) ORDER BY p.last_name, p.first_name`;
           pp = [`%${searchTerm}%`];
         }
+
         const limitVal = parseInt(req.query.limit || '500');
         pq += ` LIMIT ${Math.min(limitVal, 1000)}`;
         const patients = await pool.query(pq, pp);
