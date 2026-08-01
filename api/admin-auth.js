@@ -51,12 +51,18 @@ function hashPassword(password, salt) {
 /**
  * Verifica una contraseña contra su hash almacenado.
  * Soporta migración desde el algoritmo SHA-256 legado (sin salt).
+ * Usa timingSafeEqual en ambos paths para prevenir timing attacks.
  */
 function verifyPassword(password, storedHash, salt, algo) {
-  if (algo === 'sha256') {
-    return crypto.createHash('sha256').update(password).digest('hex') === storedHash;
+  try {
+    const computed = algo === 'sha256'
+      ? crypto.createHash('sha256').update(password).digest('hex')
+      : hashPassword(password, salt).hash;
+    // timingSafeEqual requiere buffers de igual longitud; el catch captura hashes corruptos
+    return crypto.timingSafeEqual(Buffer.from(computed, 'hex'), Buffer.from(storedHash, 'hex'));
+  } catch {
+    return false;
   }
-  return hashPassword(password, salt).hash === storedHash;
 }
 
 /** Genera un token de sesión de 32 bytes aleatorios */
@@ -402,6 +408,14 @@ async function loginUser(username, password, ip, ua) {
     return { success: false, error: `Credenciales inválidas. Intentos restantes: ${LOCK_ATTEMPTS - attempts}` };
   }
 
+  // Migrar hash SHA-256 legacy → PBKDF2 en el primer login exitoso
+  if (u.hash_algo === 'sha256') {
+    try {
+      const { hash: newHash, salt: newSalt } = hashPassword(password);
+      await sql`UPDATE clinic_users SET password_hash = ${newHash}, salt = ${newSalt}, hash_algo = 'pbkdf2' WHERE id = ${u.id}`;
+    } catch { /* non-fatal: se reintentará en el siguiente login */ }
+  }
+
   // Éxito: resetear intentos y registrar sesión
   await sql`UPDATE clinic_users SET failed_attempts = 0, locked_until = NULL, last_login = NOW() WHERE id = ${u.id}`;
 
@@ -523,8 +537,8 @@ async function createUser(requestUser, body) {
   const { username, password, full_name, email, role, access_scope, clinic_id } = body;
   if (!username?.trim() || !password?.trim() || !role)
     return { error: 'username, password y role son requeridos' };
-  if (password.length < 6)
-    return { error: 'La contraseña debe tener al menos 6 caracteres' };
+  if (password.length < 8)
+    return { error: 'La contraseña debe tener al menos 8 caracteres' };
   if (requestUser.role === 'clinic_admin' && !['clinic_admin', 'clinic_user'].includes(role))
     return { error: 'Solo puedes crear usuarios de tipo clinic_admin o clinic_user' };
 
@@ -584,7 +598,7 @@ async function updateUser(requestUser, body) {
 async function resetPassword(requestUser, body) {
   const { id, newPassword } = body;
   if (!id || !newPassword) return { error: 'id y newPassword son requeridos' };
-  if (newPassword.length < 6) return { error: 'Mínimo 6 caracteres' };
+  if (newPassword.length < 8) return { error: 'Mínimo 8 caracteres' };
 
   if (requestUser.role === 'clinic_admin') {
     const t = await sql`SELECT clinic_id FROM clinic_users WHERE id = ${id}`;
@@ -600,6 +614,8 @@ async function resetPassword(requestUser, body) {
         failed_attempts = 0, locked_until = NULL
     WHERE id = ${id}
   `;
+  // Invalidar todas las sesiones activas del usuario cuya contraseña fue reseteada
+  await sql`UPDATE admin_sessions SET is_active = false WHERE clinic_user_id = ${id}`;
   return { success: true };
 }
 
@@ -706,11 +722,14 @@ async function ensureSessionsTable() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default async function handler(req, res) {
-  // CORS — en producción, limitar origin al dominio del admin
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // CORS — Bearer tokens no usan cookies, por lo que Allow-Credentials no aplica.
+  // Allow-Credentials: true + wildcard es rechazado por spec CORS (y navegadores).
+  const requestOrigin = req.headers.origin || '';
+  const allowedOrigins = (process.env.ADMIN_CORS_ORIGIN || 'https://bioskintech.vercel.app,http://localhost:5173,http://localhost:4173').split(',').map(s => s.trim());
+  const corsOrigin = allowedOrigins.includes(requestOrigin) ? requestOrigin : allowedOrigins[0];
+  res.setHeader('Access-Control-Allow-Origin', corsOrigin);
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-setup-secret');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-setup-secret, x-target-clinic-id');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
 
@@ -805,7 +824,7 @@ export default async function handler(req, res) {
     if (action === 'changePassword') {
       const { currentPassword, newPassword } = req.body || {};
       if (!currentPassword || !newPassword) return res.status(400).json({ error: 'Campos requeridos' });
-      if (newPassword.length < 6) return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+      if (newPassword.length < 8) return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' });
       const u = await sql`SELECT password_hash, salt, hash_algo FROM clinic_users WHERE id = ${user.id}`;
       if (!u.rows.length) return res.status(404).json({ error: 'Usuario no encontrado' });
       const row = u.rows[0];
@@ -813,6 +832,9 @@ export default async function handler(req, res) {
         return res.status(401).json({ error: 'Contraseña actual incorrecta' });
       const { hash, salt } = hashPassword(newPassword);
       await sql`UPDATE clinic_users SET password_hash = ${hash}, salt = ${salt}, hash_algo = 'pbkdf2' WHERE id = ${user.id}`;
+      // Invalidar todas las sesiones activas del usuario salvo la actual
+      const currentToken = (req.headers.authorization || '').replace('Bearer ', '').trim() || req.body?.sessionToken;
+      await sql`UPDATE admin_sessions SET is_active = false WHERE clinic_user_id = ${user.id} AND session_token != ${currentToken}`;
       return res.status(200).json({ success: true, message: 'Contraseña actualizada' });
     }
 

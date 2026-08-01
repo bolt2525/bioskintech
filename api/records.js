@@ -1,4 +1,5 @@
 import pg from 'pg';
+import crypto from 'crypto';
 import { initClinicalDatabase } from '../lib/neon-clinical-db.js';
 const { Pool, types } = pg;
 
@@ -140,7 +141,9 @@ export default async function handler(req, res) {
   console.log(`[Clinical Records API] Request received: ${req.method} ${req.url}`);
 
   // CORS headers
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  const requestOrigin = req.headers.origin || '';
+  const allowedOrigins = (process.env.ADMIN_CORS_ORIGIN || 'https://bioskintech.vercel.app,http://localhost:5173,http://localhost:4173').split(',').map(s => s.trim());
+  res.setHeader('Access-Control-Allow-Origin', allowedOrigins.includes(requestOrigin) ? requestOrigin : allowedOrigins[0]);
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
@@ -211,6 +214,14 @@ export default async function handler(req, res) {
       } catch (e) {
         console.error('⚠️ Clinical DB init warning:', e.message);
       }
+    }
+
+    // Guard global de autenticación — todas las acciones salvo firma pública requieren sesión válida
+    // ponytail: whitelist mínima pública; cualquier acción nueva debe autenticarse por defecto
+    const PUBLIC_ACTIONS = new Set(['health', 'submitSignature', 'getSigningSession']);
+    if (!PUBLIC_ACTIONS.has(action)) {
+      const guardUser = await getSessionUserOnce();
+      if (!guardUser) return res.status(401).json({ error: 'No autenticado' });
     }
 
     switch (action) {
@@ -657,7 +668,17 @@ export default async function handler(req, res) {
           if (cf) { pq = 'SELECT * FROM patients WHERE clinic_id = $1 ORDER BY last_name, first_name'; pp = [cf]; }
           else { pq = 'SELECT * FROM patients ORDER BY last_name, first_name'; }
         } else if (su.access_scope === 'own' || (su.access_scope === 'all' && filterMine)) {
-          pq = 'SELECT * FROM patients WHERE clinic_id = $1 AND (created_by_user_id = $2 OR created_by_user_id IS NULL) ORDER BY last_name, first_name';
+          // Solo pacientes propios + los que el admin haya asignado explícitamente a este usuario
+          pq = `SELECT p.* FROM patients p
+            WHERE p.clinic_id = $1
+              AND (
+                p.created_by_user_id = $2
+                OR EXISTS (
+                  SELECT 1 FROM patient_assignments pa
+                  WHERE pa.patient_id = p.id AND pa.clinic_user_id = $2
+                )
+              )
+            ORDER BY p.last_name, p.first_name`;
           pp = [effectiveClinicId, su.user_id];
         } else {
           pq = 'SELECT * FROM patients WHERE clinic_id = $1 ORDER BY last_name, first_name';
@@ -687,6 +708,17 @@ export default async function handler(req, res) {
         const su = await getSessionUser(pool, req);
         if (su?.clinic_id != null && patient.rows[0].clinic_id != null && patient.rows[0].clinic_id !== su.clinic_id && su.role !== 'master_admin') {
           return res.status(403).json({ error: 'Acceso no autorizado a este paciente' });
+        }
+        // own-scope: solo permite acceso a pacientes propios o asignados explícitamente
+        if (su?.access_scope === 'own' && su.user_id != null) {
+          const owned = patient.rows[0].created_by_user_id === su.user_id;
+          if (!owned) {
+            const asgn = await pool.query(
+              'SELECT 1 FROM patient_assignments WHERE patient_id = $1 AND clinic_user_id = $2 LIMIT 1',
+              [patient.rows[0].id, su.user_id]
+            );
+            if (!asgn.rows.length) return res.status(403).json({ error: 'Acceso no autorizado a este paciente' });
+          }
         }
         // Also fetch active record ID
         const record = await pool.query('SELECT id FROM clinical_records WHERE patient_id = $1 AND status = \'active\' LIMIT 1', [id]);
@@ -806,6 +838,85 @@ export default async function handler(req, res) {
           console.error('Error deleting patient:', err);
           return res.status(500).json({ error: 'Error al eliminar paciente. Puede tener registros asociados.' });
         }
+      }
+
+      // ─── Listar usuarios de la clínica actual (para UI de asignación) ────
+      case 'listClinicUsers': {
+        const suLU = await getSessionUser(pool, req);
+        if (!suLU) return res.status(401).json({ error: 'No autenticado' });
+        if (!['clinic_admin', 'master_admin'].includes(suLU.role)) return res.status(403).json({ error: 'Sin permisos' });
+        const clinicId = suLU.effective_clinic_id ?? suLU.clinic_id;
+        if (clinicId == null) return res.status(400).json({ error: 'Sin clínica activa' });
+        const usersRes = await pool.query(
+          `SELECT id, username, full_name, role, access_scope
+           FROM clinic_users WHERE clinic_id = $1 AND is_active = true ORDER BY full_name`,
+          [clinicId]
+        );
+        return res.status(200).json(usersRes.rows);
+      }
+
+      // ─── Asignar/copiar paciente a otro usuario de la clínica ─────────────
+      case 'assignPatient': {
+        const suAsgn = await getSessionUser(pool, req);
+        if (!suAsgn) return res.status(401).json({ error: 'No autenticado' });
+        if (!['clinic_admin', 'master_admin'].includes(suAsgn.role)) return res.status(403).json({ error: 'Sin permisos' });
+        const { patient_id: asgnPid, target_user_id } = body;
+        if (!asgnPid || !target_user_id) return res.status(400).json({ error: 'patient_id y target_user_id requeridos' });
+        // Verificar que el paciente pertenece a la clínica del admin
+        const clinicIdAsgn = suAsgn.effective_clinic_id ?? suAsgn.clinic_id;
+        const patChk = await pool.query('SELECT clinic_id FROM patients WHERE id = $1', [asgnPid]);
+        if (!patChk.rows.length || patChk.rows[0].clinic_id !== clinicIdAsgn) {
+          return res.status(403).json({ error: 'Paciente no pertenece a esta clínica' });
+        }
+        // Verificar que el usuario destino pertenece a la misma clínica
+        const userChk = await pool.query('SELECT id FROM clinic_users WHERE id = $1 AND clinic_id = $2 AND is_active = true', [target_user_id, clinicIdAsgn]);
+        if (!userChk.rows.length) return res.status(404).json({ error: 'Usuario destino no encontrado en esta clínica' });
+        await pool.query(
+          `INSERT INTO patient_assignments (patient_id, clinic_user_id, assigned_by)
+           VALUES ($1, $2, $3) ON CONFLICT (patient_id, clinic_user_id) DO NOTHING`,
+          [asgnPid, target_user_id, suAsgn.user_id]
+        );
+        await logAudit(pool, { patientId: asgnPid, sessionUser: suAsgn, actionType: 'assign', module: 'patient', summary: `Paciente asignado al usuario ID ${target_user_id}` });
+        return res.status(200).json({ success: true });
+      }
+
+      // ─── Remover asignación de un paciente a un usuario ──────────────────
+      case 'unassignPatient': {
+        const suUnasgn = await getSessionUser(pool, req);
+        if (!suUnasgn) return res.status(401).json({ error: 'No autenticado' });
+        if (!['clinic_admin', 'master_admin'].includes(suUnasgn.role)) return res.status(403).json({ error: 'Sin permisos' });
+        const { patient_id: unasgnPid, target_user_id: unasgnUid } = body;
+        if (!unasgnPid || !unasgnUid) return res.status(400).json({ error: 'patient_id y target_user_id requeridos' });
+        const clinicIdUnasgn = suUnasgn.effective_clinic_id ?? suUnasgn.clinic_id;
+        const patChkU = await pool.query('SELECT clinic_id FROM patients WHERE id = $1', [unasgnPid]);
+        if (!patChkU.rows.length || patChkU.rows[0].clinic_id !== clinicIdUnasgn) {
+          return res.status(403).json({ error: 'Paciente no pertenece a esta clínica' });
+        }
+        await pool.query('DELETE FROM patient_assignments WHERE patient_id = $1 AND clinic_user_id = $2', [unasgnPid, unasgnUid]);
+        await logAudit(pool, { patientId: unasgnPid, sessionUser: suUnasgn, actionType: 'unassign', module: 'patient', summary: `Asignación removida del usuario ID ${unasgnUid}` });
+        return res.status(200).json({ success: true });
+      }
+
+      // ─── Trasladar paciente: cambia el propietario (created_by_user_id) ──
+      case 'transferPatient': {
+        const suTrn = await getSessionUser(pool, req);
+        if (!suTrn) return res.status(401).json({ error: 'No autenticado' });
+        if (!['clinic_admin', 'master_admin'].includes(suTrn.role)) return res.status(403).json({ error: 'Sin permisos' });
+        const { patient_id: trnPid, target_user_id: trnUid } = body;
+        if (!trnPid || !trnUid) return res.status(400).json({ error: 'patient_id y target_user_id requeridos' });
+        const clinicIdTrn = suTrn.effective_clinic_id ?? suTrn.clinic_id;
+        const patChkT = await pool.query('SELECT clinic_id, created_by_user_id FROM patients WHERE id = $1', [trnPid]);
+        if (!patChkT.rows.length || patChkT.rows[0].clinic_id !== clinicIdTrn) {
+          return res.status(403).json({ error: 'Paciente no pertenece a esta clínica' });
+        }
+        const userChkT = await pool.query('SELECT id FROM clinic_users WHERE id = $1 AND clinic_id = $2 AND is_active = true', [trnUid, clinicIdTrn]);
+        if (!userChkT.rows.length) return res.status(404).json({ error: 'Usuario destino no encontrado en esta clínica' });
+        const prevOwner = patChkT.rows[0].created_by_user_id;
+        await pool.query('UPDATE patients SET created_by_user_id = $1, updated_at = NOW() WHERE id = $2', [trnUid, trnPid]);
+        // Eliminar asignación previa del nuevo propietario si existía (evita duplicado lógico)
+        await pool.query('DELETE FROM patient_assignments WHERE patient_id = $1 AND clinic_user_id = $2', [trnPid, trnUid]);
+        await logAudit(pool, { patientId: trnPid, sessionUser: suTrn, actionType: 'transfer', module: 'patient', summary: `Paciente trasladado de usuario ID ${prevOwner} a ID ${trnUid}` });
+        return res.status(200).json({ success: true });
       }
 
       case 'deleteRecord':
@@ -949,43 +1060,48 @@ export default async function handler(req, res) {
         return res.status(200).json({ success: true });
       }
 
-      case 'saveHistory':
+      case 'saveHistory': {
         const { record_id: hid, ...historyData } = body;
-        
-        // Remove system fields that shouldn't be updated manually
         delete historyData.id;
         delete historyData.created_at;
         delete historyData.updated_at;
+        // Whitelist: solo identificadores SQL válidos (\w+) — previene SQL injection por nombres de columna
+        const safeHistData = Object.fromEntries(Object.entries(historyData).filter(([k]) => /^\w+$/.test(k)));
 
         const existingHistory = await pool.query('SELECT id FROM medical_history WHERE record_id = $1', [hid]);
         if (existingHistory.rows.length > 0) {
-           const hFields = Object.keys(historyData);
-           const hValues = Object.values(historyData);
-           const hSet = hFields.map((f, i) => `${f} = $${i + 2}`).join(', ');
-           await pool.query(`UPDATE medical_history SET ${hSet}, updated_at = NOW() WHERE record_id = $1`, [hid, ...hValues]);
+           const hFields = Object.keys(safeHistData);
+           const hValues = Object.values(safeHistData);
+           if (hFields.length > 0) {
+             const hSet = hFields.map((f, i) => `${f} = $${i + 2}`).join(', ');
+             await pool.query(`UPDATE medical_history SET ${hSet}, updated_at = NOW() WHERE record_id = $1`, [hid, ...hValues]);
+           }
         } else {
-           const hFields = ['record_id', ...Object.keys(historyData)];
-           const hValues = [hid, ...Object.values(historyData)];
+           const hFields = ['record_id', ...Object.keys(safeHistData)];
+           const hValues = [hid, ...Object.values(safeHistData)];
            const hParams = hFields.map((_, i) => `$${i + 1}`).join(', ');
            await pool.query(`INSERT INTO medical_history (${hFields.join(', ')}) VALUES (${hParams})`, hValues);
         }
         await logAudit(pool, { recordId: hid, sessionUser: await getSessionUserOnce(), actionType: 'tab_save', module: 'history', summary: 'Guardó Antecedentes Médicos' });
         return res.status(200).json({ success: true });
+      }
 
       case 'savePhysicalExam': {
         const { id: examId, record_id: pid_exam, created_at, ...examData } = body;
+        // Whitelist: solo identificadores SQL válidos — previene SQL injection por nombres de columna
+        const safeExamData = Object.fromEntries(Object.entries(examData).filter(([k]) => /^\w+$/.test(k)));
         
         if (examId) {
-           const eFields = Object.keys(examData);
-           const eValues = Object.values(examData);
+           const eFields = Object.keys(safeExamData);
+           const eValues = Object.values(safeExamData);
            if (eFields.length > 0) {
              const eSet = eFields.map((f, i) => `${f} = $${i + 2}`).join(', ');
              await pool.query(`UPDATE physical_exams SET ${eSet} WHERE id = $1`, [examId, ...eValues]);
            }
         } else {
            if (!pid_exam) return res.status(400).json({ error: 'Falta el ID del expediente (record_id)' });
-           const eFields = ['record_id', ...Object.keys(examData)];
-           const eValues = [pid_exam, ...Object.values(examData)];
+           const eFields = ['record_id', ...Object.keys(safeExamData)];
+           const eValues = [pid_exam, ...Object.values(safeExamData)];
            const eParams = eFields.map((_, i) => `$${i + 1}`).join(', ');
            await pool.query(`INSERT INTO physical_exams (${eFields.join(', ')}) VALUES (${eParams})`, eValues);
         }
@@ -997,46 +1113,57 @@ export default async function handler(req, res) {
         await pool.query('DELETE FROM physical_exams WHERE id = $1', [delExamId]);
         return res.status(200).json({ success: true });
 
-      case 'saveDiagnosis':
+      case 'saveDiagnosis': {
         const { id: diagId, record_id: did, date: diagDate, ...diagData } = body;
+        // Whitelist: solo identificadores SQL válidos — previene SQL injection por nombres de columna
+        const safeDiagData = Object.fromEntries(Object.entries(diagData).filter(([k]) => /^\w+$/.test(k)));
         if (diagId) {
-           const dFields = Object.keys(diagData);
-           const dValues = Object.values(diagData);
+           const dFields = Object.keys(safeDiagData);
+           const dValues = Object.values(safeDiagData);
            if (dFields.length > 0) {
              const dSet = dFields.map((f, i) => `${f} = $${i + 2}`).join(', ');
              await pool.query(`UPDATE diagnoses SET ${dSet} WHERE id = $1`, [diagId, ...dValues]);
            }
            return res.status(200).json({ success: true });
         } else {
-           const dFields = ['record_id', ...Object.keys(diagData)];
-           const dValues = [did, ...Object.values(diagData)];
+           const dFields = ['record_id', ...Object.keys(safeDiagData)];
+           const dValues = [did, ...Object.values(safeDiagData)];
            const dParams = dFields.map((_, i) => `$${i + 1}`).join(', ');
            const newDiag = await pool.query(`INSERT INTO diagnoses (${dFields.join(', ')}) VALUES (${dParams}) RETURNING *`, dValues);
            await logAudit(pool, { recordId: did, sessionUser: await getSessionUserOnce(), actionType: 'tab_save', module: 'diagnosis', summary: 'Registró Diagnóstico' });
            return res.status(201).json(newDiag.rows[0]);
         }
+      }
 
       case 'deleteDiagnosis':
         const { id: delDiagId } = req.query;
         await pool.query('DELETE FROM diagnoses WHERE id = $1', [delDiagId]);
         return res.status(200).json({ success: true });
 
-      case 'addTreatment':
+      case 'addTreatment': {
         const { record_id: tid, ...treatData } = body;
-        const tFields = ['record_id', ...Object.keys(treatData)];
-        const tValues = [tid, ...Object.values(treatData)];
+        // Whitelist: solo identificadores SQL válidos — previene SQL injection por nombres de columna
+        const safeTreatData = Object.fromEntries(Object.entries(treatData).filter(([k]) => /^\w+$/.test(k)));
+        const tFields = ['record_id', ...Object.keys(safeTreatData)];
+        const tValues = [tid, ...Object.values(safeTreatData)];
         const tParams = tFields.map((_, i) => `$${i + 1}`).join(', ');
         const newTreat = await pool.query(`INSERT INTO treatments (${tFields.join(', ')}) VALUES (${tParams}) RETURNING *`, tValues);
-        await logAudit(pool, { recordId: tid, sessionUser: await getSessionUserOnce(), actionType: 'create', module: 'treatment', summary: `Agregó tratamiento: ${treatData.name || ''}` });
+        await logAudit(pool, { recordId: tid, sessionUser: await getSessionUserOnce(), actionType: 'create', module: 'treatment', summary: `Agregó tratamiento: ${safeTreatData.name || safeTreatData.procedure_name || ''}` });
         return res.status(201).json(newTreat.rows[0]);
+      }
 
-      case 'updateTreatment':
+      case 'updateTreatment': {
         const { id: upTreatId, ...upTreatData } = body;
-        const upTFields = Object.keys(upTreatData);
-        const upTValues = Object.values(upTreatData);
-        const upTSet = upTFields.map((f, i) => `${f} = $${i + 2}`).join(', ');
-        await pool.query(`UPDATE treatments SET ${upTSet} WHERE id = $1`, [upTreatId, ...upTValues]);
+        // Whitelist: solo identificadores SQL válidos — previene SQL injection por nombres de columna
+        const safeUpTreat = Object.fromEntries(Object.entries(upTreatData).filter(([k]) => /^\w+$/.test(k)));
+        const upTFields = Object.keys(safeUpTreat);
+        const upTValues = Object.values(safeUpTreat);
+        if (upTFields.length > 0) {
+          const upTSet = upTFields.map((f, i) => `${f} = $${i + 2}`).join(', ');
+          await pool.query(`UPDATE treatments SET ${upTSet} WHERE id = $1`, [upTreatId, ...upTValues]);
+        }
         return res.status(200).json({ success: true });
+      }
 
       case 'updateSchema':
         try {
@@ -1325,9 +1452,8 @@ export default async function handler(req, res) {
       case 'generateSigningToken': {
         const { id: signId } = body;
         if (!signId) return res.status(400).json({ error: 'Consent ID required' });
-        
-        // Generate a simple random token
-        const token = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+        // ponytail: Math.random() es predecible — usar randomBytes para tokens de firma médica
+        const token = crypto.randomBytes(32).toString('hex');
         
         await pool.query(
           'UPDATE consent_forms SET signing_token = $1, signing_status = $2 WHERE id = $3',
