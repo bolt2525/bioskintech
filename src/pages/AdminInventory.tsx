@@ -300,7 +300,7 @@ export default function AdminInventory() {
             <div className="flex flex-col items-center justify-center py-20 bg-white rounded-2xl border border-gray-100 text-gray-400">
               <Package className="w-12 h-12 mb-3 opacity-30" />
               <p className="font-medium">No se encontraron productos</p>
-              {search && <p className="text-sm mt-1">Prueba con otro tÃ©rmino de bÃºsqueda</p>}
+              {search && <p className="text-sm mt-1">Prueba con otro término de búsqueda</p>}
             </div>
           ) : (
             <motion.div

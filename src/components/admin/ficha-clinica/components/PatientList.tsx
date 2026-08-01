@@ -6,6 +6,7 @@ import recordsFetch from '../../../../utils/recordsFetch';
 import PatientAuditModal from './PatientAuditModal';
 import { useAdminNav } from '../../../../hooks/useAdminNav';
 import { useAuth } from '../../../../hooks/useAuth';
+import { useMasterView } from '../../../../context/MasterViewContext';
 
 interface Patient {
   id: number;
@@ -39,11 +40,12 @@ export default function PatientList() {
   const { nav } = useAdminNav();
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
-  // clinicId pasado desde el master admin para filtrar por clÃ­nica
+  const { isActive: isMasterView, targetUserId } = useMasterView();
+  // clinicId pasado desde el master admin para filtrar por clínica
   const clinicId = searchParams.get('clinicId');
-  // Modal de historial de auditorÃ­a
+  // Modal de historial de auditoría
   const [auditModal, setAuditModal] = useState<{ patientId: number; patientName: string } | null>(null);
-  // Modal de asignaciÃ³n/traslado
+  // Modal de asignación/traslado
   const [assignModal, setAssignModal] = useState<AssignModalState | null>(null);
   const [clinicUsers, setClinicUsers] = useState<ClinicUser[]>([]);
   const [assignLoading, setAssignLoading] = useState(false);
@@ -54,7 +56,7 @@ export default function PatientList() {
     fetchPatients();
   }, [clinicId]);
 
-  // Cargar usuarios de la clÃ­nica cuando se abre el modal
+  // Cargar usuarios de la clínica cuando se abre el modal
   useEffect(() => {
     if (assignModal && clinicUsers.length === 0) {
       recordsFetch('/api/records?action=listClinicUsers')
@@ -67,15 +69,16 @@ export default function PatientList() {
   const fetchPatients = async () => {
     try {
       setError(null);
-      // Pasar clinicId si viene del contexto del master admin
-      const url = clinicId
+      // Pasar clinicId y, si master_admin navega como un usuario, viewAsUserId para respetar su scope
+      let url = clinicId
         ? `/api/records?action=listPatients&clinicId=${clinicId}`
         : '/api/records?action=listPatients';
+      if (isMasterView && targetUserId) url += `&viewAsUserId=${targetUserId}`;
       const response = await recordsFetch(url);
       
       const contentType = response.headers.get("content-type");
       if (contentType && contentType.indexOf("application/json") === -1) {
-        throw new Error("La respuesta de la API no es JSON. Si estÃ¡s en local, usa 'vercel dev'.");
+        throw new Error("La respuesta de la API no es JSON. Si estás en local, usa 'vercel dev'.");
       }
 
       if (response.ok) {
@@ -95,7 +98,7 @@ export default function PatientList() {
 
   const handleDelete = async (id: number, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm('Â¿EstÃ¡ seguro de eliminar este paciente? Esta acciÃ³n no se puede deshacer.')) return;
+    if (!confirm('¿Está seguro de eliminar este paciente? Esta acción no se puede deshacer.')) return;
 
     try {
       const response = await recordsFetch(`/api/records?action=deletePatient&id=${id}`, {
@@ -142,7 +145,7 @@ export default function PatientList() {
   );
 
   return (
-    <AdminLayout title="Fichas ClÃ­nicas" subtitle="GestiÃ³n de pacientes y expedientes mÃ©dicos" backPath="/admin">
+    <AdminLayout title="Fichas Clínicas" subtitle="Gestión de pacientes y expedientes médicos" backPath="/admin">
       <div className="space-y-6">
         <div className="flex flex-wrap gap-4 justify-between items-center bg-white p-4 rounded-xl shadow-sm">
           <h2 className="text-xl font-bold text-gray-800">Pacientes Registrados</h2>
@@ -182,7 +185,7 @@ export default function PatientList() {
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
                   <th className="px-6 py-4 font-semibold text-gray-600">Paciente</th>
-                  <th className="px-6 py-4 font-semibold text-gray-600">IdentificaciÃ³n</th>
+                  <th className="px-6 py-4 font-semibold text-gray-600">Identificación</th>
                   <th className="px-6 py-4 font-semibold text-gray-600">Contacto</th>
                   <th className="px-6 py-4 font-semibold text-gray-600">Acciones</th>
                 </tr>
@@ -281,7 +284,7 @@ export default function PatientList() {
         </div>
       </div>
 
-      {/* Modal de historial de auditorÃ­a */}
+      {/* Modal de historial de auditoría */}
       {auditModal && (
         <PatientAuditModal
           patientId={auditModal.patientId}
@@ -290,7 +293,7 @@ export default function PatientList() {
         />
       )}
 
-      {/* Modal de asignaciÃ³n / traslado */}
+      {/* Modal de asignación / traslado */}
       {assignModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
@@ -310,8 +313,8 @@ export default function PatientList() {
             <div className="p-6">
               <p className="text-sm text-gray-600 mb-4">
                 {assignModal.mode === 'transfer'
-                  ? 'El paciente pasarÃ¡ a ser propiedad del usuario seleccionado. Ya no aparecerÃ¡ en tu lista.'
-                  : 'El usuario seleccionado podrÃ¡ ver y editar este paciente. El propietario original no cambia.'}
+                  ? 'El paciente pasará a ser propiedad del usuario seleccionado. Ya no aparecerá en tu lista.'
+                  : 'El usuario seleccionado podrá ver y editar este paciente. El propietario original no cambia.'}
               </p>
               {clinicUsers.length === 0 ? (
                 <div className="text-center text-gray-500 py-4">Cargando usuarios...</div>
@@ -329,7 +332,7 @@ export default function PatientList() {
                       </div>
                       <div>
                         <div className="font-medium text-gray-900 text-sm">{u.full_name || u.username}</div>
-                        <div className="text-xs text-gray-500">{u.role === 'clinic_admin' ? 'Admin' : 'Usuario'} Â· {u.access_scope === 'all' ? 'Todos los pacientes' : 'Solo propios'}</div>
+                        <div className="text-xs text-gray-500">{u.role === 'clinic_admin' ? 'Admin' : 'Usuario'} · {u.access_scope === 'all' ? 'Todos los pacientes' : 'Solo propios'}</div>
                       </div>
                     </button>
                   ))}
