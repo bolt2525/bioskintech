@@ -40,7 +40,7 @@ export default function PatientList() {
   const { nav } = useAdminNav();
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
-  const { isActive: isMasterView, targetUserId } = useMasterView();
+  const { isActive: isMasterView } = useMasterView();
   // clinicId pasado desde el master admin para filtrar por clínica
   const clinicId = searchParams.get('clinicId');
   // Modal de historial de auditoría
@@ -69,11 +69,10 @@ export default function PatientList() {
   const fetchPatients = async () => {
     try {
       setError(null);
-      // Pasar clinicId y, si master_admin navega como un usuario, viewAsUserId para respetar su scope
-      let url = clinicId
+      // Pasar clinicId si viene del contexto del master admin
+      const url = clinicId
         ? `/api/records?action=listPatients&clinicId=${clinicId}`
         : '/api/records?action=listPatients';
-      if (isMasterView && targetUserId) url += `&viewAsUserId=${targetUserId}`;
       const response = await recordsFetch(url);
       
       const contentType = response.headers.get("content-type");

@@ -667,29 +667,6 @@ export default async function handler(req, res) {
           const cf = req.query.clinicId ? parseInt(req.query.clinicId) : null;
           if (cf) { pq = 'SELECT * FROM patients WHERE clinic_id = $1 ORDER BY last_name, first_name'; pp = [cf]; }
           else { pq = 'SELECT * FROM patients ORDER BY last_name, first_name'; }
-        } else if (su.role === 'master_admin' && req.query.viewAsUserId) {
-          // master_admin navegando en el módulo de un usuario específico — respetar el scope de ese usuario
-          const viewAsId = parseInt(req.query.viewAsUserId, 10);
-          const viewUser = await pool.query(
-            'SELECT id, access_scope FROM clinic_users WHERE id = $1 AND clinic_id = $2 AND is_active = true LIMIT 1',
-            [viewAsId, effectiveClinicId]
-          );
-          if (viewUser.rows.length && viewUser.rows[0].access_scope === 'own') {
-            pq = `SELECT p.* FROM patients p
-              WHERE p.clinic_id = $1
-                AND (
-                  p.created_by_user_id = $2
-                  OR EXISTS (
-                    SELECT 1 FROM patient_assignments pa
-                    WHERE pa.patient_id = p.id AND pa.clinic_user_id = $2
-                  )
-                )
-              ORDER BY p.last_name, p.first_name`;
-            pp = [effectiveClinicId, viewAsId];
-          } else {
-            pq = 'SELECT * FROM patients WHERE clinic_id = $1 ORDER BY last_name, first_name';
-            pp = [effectiveClinicId];
-          }
         } else if (su.access_scope === 'own' || (su.access_scope === 'all' && filterMine)) {
           // Solo pacientes propios + los que el admin haya asignado explícitamente a este usuario
           pq = `SELECT p.* FROM patients p
