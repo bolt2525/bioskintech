@@ -332,22 +332,46 @@ export default async function handler(req, res) {
           const su = await getSessionUserOnce();
           if (!su) return res.status(401).json({ error: 'No autenticado' });
           const invClinicId = su?.effective_clinic_id ?? su?.clinic_id ?? null;
+          const filterByUserId = ['clinic_admin','master_admin'].includes(su?.role) && req.query.filterByUserId
+            ? parseInt(req.query.filterByUserId, 10) : null;
+
           const params = [];
-          let whereClause = '';
+          let pCount = 1;
+          const wheres = [];
+
           if (invClinicId) {
-            whereClause = `WHERE (i.clinic_id = $1 OR i.clinic_id IS NULL)`;
+            wheres.push(`(i.clinic_id = $${pCount} OR i.clinic_id IS NULL)`);
             params.push(invClinicId);
+            pCount++;
           }
+          if (filterByUserId) {
+            // Admin filtrando por profesional → ítems propios + ítems compartidos de la clínica
+            const fu = invClinicId ? await pool.query('SELECT id FROM clinic_users WHERE id = $1 AND clinic_id = $2 LIMIT 1', [filterByUserId, invClinicId]) : { rows: [{}] };
+            if (fu.rows.length) {
+              wheres.push(`(i.created_by_user_id = $${pCount} OR i.created_by_user_id IS NULL)`);
+              params.push(filterByUserId);
+              pCount++;
+            }
+          } else if (su.access_scope === 'own') {
+            // Usuario scope propio: ve sus ítems + ítems compartidos sin propietario
+            wheres.push(`(i.created_by_user_id = $${pCount} OR i.created_by_user_id IS NULL)`);
+            params.push(su.user_id);
+            pCount++;
+          }
+
+          const whereClause = wheres.length ? `WHERE ${wheres.join(' AND ')}` : '';
           const items = await pool.query(`
             SELECT i.*,
+              cu.full_name AS created_by_user_name, cu.username AS created_by_username,
               COALESCE(SUM(b.quantity_current), 0) as total_stock,
               COALESCE(SUM(b.quantity_initial), 0) as total_initial,
               COUNT(b.id) as batch_count,
               MIN(b.expiration_date) as next_expiry
             FROM inventory_items i
             LEFT JOIN inventory_batches b ON i.id = b.item_id AND b.status = 'active'
+            LEFT JOIN clinic_users cu ON cu.id = i.created_by_user_id
             ${whereClause}
-            GROUP BY i.id
+            GROUP BY i.id, cu.full_name, cu.username
             ORDER BY i.name ASC
           `, params);
           return res.status(200).json(items.rows);
@@ -466,12 +490,13 @@ export default async function handler(req, res) {
           const suInv = await getSessionUserOnce();
           const invClinicId = suInv?.effective_clinic_id ?? suInv?.clinic_id ?? null;
           const newItem = await pool.query(`
-            INSERT INTO inventory_items (clinic_id, sku, name, brand, description, category, group_name, unit_of_measure, min_stock_level, requires_cold_chain, sanitary_registration, cost_price, sale_price)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            INSERT INTO inventory_items (clinic_id, sku, name, brand, description, category, group_name, unit_of_measure, min_stock_level, requires_cold_chain, sanitary_registration, cost_price, sale_price, created_by_user_id)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
             RETURNING *
           `, [invClinicId, cleanSku, name, cleanBrand, cleanDescription, category, cleanGroupName, unit_of_measure, min_stock_level, requires_cold_chain, cleanSanitaryRegistration,
               normalizeOptionalNumber(cost_price),
-              normalizeOptionalNumber(sale_price)]);
+              normalizeOptionalNumber(sale_price),
+              suInv?.user_id ?? null]);
           return res.status(201).json(newItem.rows[0]);
         } catch (err) {
           console.error('Error creating inventory item:', err);
@@ -1688,9 +1713,9 @@ export default async function handler(req, res) {
         const tot  = parseFloat(total || 0) || (sub + taxV);
         try {
           const r = await pool.query(
-            `INSERT INTO financial_records (date, invoice_number, entity, description, type, subtotal, tax, total, registered_by, clinic_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
-            [date || new Date().toISOString().split('T')[0], invoice_number || null, entity, description || null, type, sub, taxV, tot, regBy, clinicId]
+            `INSERT INTO financial_records (date, invoice_number, entity, description, type, subtotal, tax, total, registered_by, clinic_id, created_by_user_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+            [date || new Date().toISOString().split('T')[0], invoice_number || null, entity, description || null, type, sub, taxV, tot, regBy, clinicId, su?.user_id ?? null]
           );
           return res.status(201).json(r.rows[0]);
         } catch (err) {
@@ -1844,8 +1869,8 @@ export default async function handler(req, res) {
           paramCount++;
         }
 
-        // clinic_user solo ve sus propios registros (sin excepción)
-        if (su?.role === 'clinic_user') {
+        // Respetar access_scope: 'own' restringe al usuario actual; 'all' permite ver toda la clínica
+        if (su?.access_scope === 'own') {
           query += ` AND registered_by = $${paramCount}`;
           params.push(su.username);
           paramCount++;

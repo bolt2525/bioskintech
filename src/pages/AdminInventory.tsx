@@ -15,7 +15,8 @@ import InventoryOverview from '../components/admin/inventory/InventoryOverview';
 import { useAuth } from '../context/AuthContext';
 
 export default function AdminInventory() {
-  const { username } = useAuth();
+  const { user, username } = useAuth();
+  const isAdmin = user?.role === 'clinic_admin' || user?.role === 'master_admin';
   const [activeTab, setActiveTab] = useState<'inventory' | 'batches' | 'movements'>('inventory');
   const [items, setItems] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
@@ -34,8 +35,21 @@ export default function AdminInventory() {
   const [drawerItem, setDrawerItem] = useState<any>(null);
 
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  // Filtro por profesional (solo admins)
+  const [filterUserId, setFilterUserId] = useState<number | ''>('');
+  const [clinicUsers, setClinicUsers] = useState<{ id: number; username: string; full_name: string }[]>([]);
 
-  useEffect(() => { fetchInventory(); fetchStats(); }, []);
+  useEffect(() => { fetchInventory(); fetchStats(); }, [filterUserId]);
+
+  // Cargar usuarios de la clínica para el filtro (solo admins)
+  useEffect(() => {
+    if (isAdmin) {
+      recordsFetch('/api/records?action=listClinicUsers')
+        .then(r => r.json())
+        .then(d => Array.isArray(d) ? setClinicUsers(d) : null)
+        .catch(() => null);
+    }
+  }, [isAdmin]);
 
   useEffect(() => {
     if (successMessage) {
@@ -47,7 +61,10 @@ export default function AdminInventory() {
   const fetchInventory = async () => {
     setLoading(true);
     try {
-      const res = await recordsFetch('/api/records?action=inventoryListItems');
+      const url = filterUserId
+        ? `/api/records?action=inventoryListItems&filterByUserId=${filterUserId}`
+        : '/api/records?action=inventoryListItems';
+      const res = await recordsFetch(url);
       if (res.ok) setItems(await res.json());
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
@@ -231,7 +248,23 @@ export default function AdminInventory() {
 
           {/* Toolbar */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-            {/* Search */}
+            {/* Filtro por profesional — solo admins */}
+            {isAdmin && clinicUsers.length > 0 && (
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <span className="text-xs text-gray-500">Profesional:</span>
+                <select
+                  value={filterUserId}
+                  onChange={e => setFilterUserId(e.target.value ? Number(e.target.value) : '')}
+                  className="text-sm border border-gray-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none"
+                >
+                  <option value="">Todos</option>
+                  {clinicUsers.map(u => (
+                    <option key={u.id} value={u.id}>{u.full_name || u.username}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {/* Search */}}
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none" />
               <input
@@ -309,16 +342,22 @@ export default function AdminInventory() {
             >
               <AnimatePresence>
                 {filteredItems.map((item, idx) => (
-                  <InventoryProductCard
-                    key={item.id}
-                    item={item}
-                    index={idx}
-                    onSelect={(i) => setDrawerItem(i)}
-                    onAddStock={(i) => { setSelectedItem(i); setShowStockModal(true); }}
-                    onConsume={(i) => { setSelectedItem(i); setShowConsumeModal(true); }}
-                    onEdit={(i) => { setSelectedItem(i); setShowForm(true); }}
-                    onDelete={handleDeleteItem}
-                  />
+                  <div key={item.id} className="relative">
+                    {isAdmin && item.created_by_user_name && (
+                      <div className="absolute top-2 right-2 z-10 px-2 py-0.5 bg-purple-50 text-purple-700 text-xs font-medium rounded-full border border-purple-100">
+                        {item.created_by_user_name}
+                      </div>
+                    )}
+                    <InventoryProductCard
+                      item={item}
+                      index={idx}
+                      onSelect={(i) => setDrawerItem(i)}
+                      onAddStock={(i) => { setSelectedItem(i); setShowStockModal(true); }}
+                      onConsume={(i) => { setSelectedItem(i); setShowConsumeModal(true); }}
+                      onEdit={(i) => { setSelectedItem(i); setShowForm(true); }}
+                      onDelete={handleDeleteItem}
+                    />
+                  </div>
                 ))}
               </AnimatePresence>
             </motion.div>
