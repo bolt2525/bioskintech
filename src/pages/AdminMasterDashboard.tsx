@@ -19,7 +19,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   LogOut, Building2, Users, Shield, RefreshCw, ChevronDown, ChevronUp,
   Plus, Edit, Trash2, Eye, EyeOff, Key, X, Check, AlertCircle,
-  Activity, ClipboardList, ChevronRight, Sparkles, Lock, Mail, Unlink, Copy, ExternalLink, Settings2, LayoutDashboard,
+  Activity, ClipboardList, ChevronRight, Sparkles, Lock, Mail, Unlink, Copy, ExternalLink, Settings2, LayoutDashboard, UserCheck,
 } from 'lucide-react';
 
 // Constantes centralizadas — no duplicar aquí
@@ -617,7 +617,7 @@ export default function AdminMasterDashboard() {
     notificaciones: { appointment_confirmation: boolean; appointment_reminder: boolean; low_stock_notification: boolean; whatsapp_enabled: boolean; reminder_hours_before: number };
   };
   const [settingsModal, setSettingsModal] = useState<{ open: boolean; clinicId: number; clinicName: string } | null>(null);
-  const [settingsTab, setSettingsTab]     = useState<'general'|'email'|'agenda'|'finanzas'|'inventario'|'notificaciones'|'modules'>('general');
+  const [settingsTab, setSettingsTab]     = useState<'general'|'email'|'agenda'|'finanzas'|'inventario'|'notificaciones'|'modules'|'grupos'>('general');
   const [settingsData, setSettingsData]   = useState<ClinicSettingsData | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving]   = useState(false);
@@ -629,6 +629,41 @@ export default function AdminMasterDashboard() {
   // Plantillas de consentimiento en el contexto de ajustes
   const [settingsTemplates, setSettingsTemplates] = useState<any[]>([]);
   const [settingsAssigned,  setSettingsAssigned]  = useState<number[]>([]);
+
+  // Grupos de compartición de inventario/finanzas
+  const [sharingGroups, setSharingGroups] = useState<{ id: number; name: string; description: string; members: { id: number; username: string; full_name: string }[] }[]>([]);
+  const [newGroupName, setNewGroupName] = useState('');
+  const [groupsLoading, setGroupsLoading] = useState(false);
+
+  const loadSharingGroups = async (clinicId: number) => {
+    setGroupsLoading(true);
+    try {
+      const res = await fetch(`/api/records?action=listSharingGroups`, { headers: { ...authHeader(), 'X-Target-Clinic-Id': String(clinicId) } });
+      const data = await res.json();
+      if (Array.isArray(data)) setSharingGroups(data);
+    } catch { setSharingGroups([]); }
+    finally { setGroupsLoading(false); }
+  };
+
+  const handleGroupAction = async (mode: 'create'|'update'|'delete', groupId?: number, name?: string, description?: string) => {
+    if (!settingsModal) return;
+    await fetch('/api/records', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader(), 'X-Target-Clinic-Id': String(settingsModal.clinicId) },
+      body: JSON.stringify({ action: 'manageSharingGroup', mode, group_id: groupId, name, description }),
+    });
+    loadSharingGroups(settingsModal.clinicId);
+  };
+
+  const handleMemberAction = async (mode: 'add'|'remove', groupId: number, userId: number) => {
+    if (!settingsModal) return;
+    await fetch('/api/records', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader(), 'X-Target-Clinic-Id': String(settingsModal.clinicId) },
+      body: JSON.stringify({ action: 'manageSharingMember', mode, group_id: groupId, clinic_user_id: userId }),
+    });
+    loadSharingGroups(settingsModal.clinicId);
+  };
 
   const openClinicSettings = async (clinic: Clinic) => {
     setSettingsModal({ open: true, clinicId: clinic.id, clinicName: clinic.name });
@@ -1620,8 +1655,9 @@ export default function AdminMasterDashboard() {
                   ['inventario',     '📦', 'Inventario'],
                   ['notificaciones', '🔔', 'Notificaciones'],
                   ['modules',        '⚙',  'Módulos'],
+                  ['grupos',         '👥', 'Grupos'],
                 ] as [typeof settingsTab, string, string][]).map(([key, icon, label]) => (
-                  <button key={key} onClick={() => setSettingsTab(key)}
+                  <button key={key} onClick={() => { setSettingsTab(key); if (key === 'grupos' && settingsModal) loadSharingGroups(settingsModal.clinicId); }}
                     className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-left transition-colors ${
                       settingsTab === key
                         ? 'bg-gradient-to-r from-[#deb887]/20 to-[#c5a075]/10 text-[#99652f] font-semibold border border-[#deb887]/30'
@@ -1978,11 +2014,96 @@ export default function AdminMasterDashboard() {
                       </div>
                     )}
 
+                    {/* ── GRUPOS DE COMPARTICIÓN ── */}
+                    {settingsTab === 'grupos' && settingsModal && (() => {
+                      const clinicUserList = allUsers.filter(u => u.clinic_id === settingsModal.clinicId && u.role !== 'master_admin');
+                      return (
+                        <div className="space-y-4">
+                          <p className="text-xs text-gray-400">Los grupos permiten que varios profesionales compartan inventario y registros financieros. Los miembros del mismo grupo ven los datos de sus compañeros cuando tienen <em>scope propio</em>.</p>
+
+                          {/* Crear grupo */}
+                          <div className="flex gap-2">
+                            <input
+                              value={newGroupName}
+                              onChange={e => setNewGroupName(e.target.value)}
+                              placeholder="Nombre del grupo..."
+                              className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none"
+                              onKeyDown={e => { if (e.key === 'Enter' && newGroupName.trim()) { handleGroupAction('create', undefined, newGroupName.trim()); setNewGroupName(''); } }}
+                            />
+                            <button
+                              onClick={() => { if (newGroupName.trim()) { handleGroupAction('create', undefined, newGroupName.trim()); setNewGroupName(''); } }}
+                              className="flex items-center gap-1 px-3 py-2 bg-[#deb887] text-white rounded-lg text-sm hover:bg-[#c5a075] transition-colors"
+                            >
+                              <Plus className="w-4 h-4" /> Crear
+                            </button>
+                          </div>
+
+                          {groupsLoading ? (
+                            <div className="text-center text-gray-400 py-4 text-sm">Cargando grupos...</div>
+                          ) : sharingGroups.length === 0 ? (
+                            <div className="text-center text-gray-400 py-6 text-sm border border-dashed border-gray-200 rounded-xl">
+                              Sin grupos creados. Crea uno para empezar.
+                            </div>
+                          ) : (
+                            <div className="space-y-3">
+                              {sharingGroups.map(group => {
+                                const memberIds = new Set(group.members.map(m => m.id));
+                                const available = clinicUserList.filter(u => !memberIds.has(u.id));
+                                return (
+                                  <div key={group.id} className="border border-gray-200 rounded-xl overflow-hidden">
+                                    <div className="flex items-center justify-between p-3 bg-gray-50">
+                                      <div className="flex items-center gap-2">
+                                        <UserCheck className="w-4 h-4 text-purple-500" />
+                                        <span className="text-sm font-semibold text-gray-800">{group.name}</span>
+                                        <span className="text-xs text-gray-400">{group.members.length} miembro(s)</span>
+                                      </div>
+                                      <button onClick={() => handleGroupAction('delete', group.id)} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Eliminar grupo">
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                    <div className="p-3 space-y-2">
+                                      {/* Miembros actuales */}
+                                      <div className="flex flex-wrap gap-1.5">
+                                        {group.members.length === 0 && <span className="text-xs text-gray-400">Sin miembros</span>}
+                                        {group.members.map(m => (
+                                          <span key={m.id} className="inline-flex items-center gap-1 px-2 py-1 bg-purple-50 text-purple-700 text-xs rounded-full border border-purple-100">
+                                            {m.full_name || m.username}
+                                            <button onClick={() => handleMemberAction('remove', group.id, m.id)} className="hover:text-red-500 ml-0.5">
+                                              <X className="w-3 h-3" />
+                                            </button>
+                                          </span>
+                                        ))}
+                                      </div>
+                                      {/* Agregar miembro */}
+                                      {available.length > 0 && (
+                                        <div className="flex gap-2 pt-1">
+                                          <select
+                                            defaultValue=""
+                                            onChange={e => { if (e.target.value) { handleMemberAction('add', group.id, parseInt(e.target.value)); e.target.value = ''; } }}
+                                            className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 flex-1 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none"
+                                          >
+                                            <option value="">+ Agregar profesional...</option>
+                                            {available.map(u => (
+                                              <option key={u.id} value={u.id}>{u.full_name || u.username}</option>
+                                            ))}
+                                          </select>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+
                   </div>
                 )}
 
                 {/* ── Footer save ── */}
-                {settingsData && settingsTab !== 'modules' && (
+                {settingsData && settingsTab !== 'modules' && settingsTab !== 'grupos' && (
                   <div className="px-5 py-3 border-t bg-gray-50 flex justify-end gap-2">
                     <button onClick={() => setSettingsModal(null)} className="px-4 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-100">Cancelar</button>
                     <button onClick={() => saveSettingsSection(settingsTab as keyof ClinicSettingsData)}

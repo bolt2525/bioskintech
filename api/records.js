@@ -353,8 +353,17 @@ export default async function handler(req, res) {
               pCount++;
             }
           } else if (su.access_scope === 'own') {
-            // Usuario scope propio: ve sus ítems + ítems compartidos sin propietario
-            wheres.push(`(i.created_by_user_id = $${pCount} OR i.created_by_user_id IS NULL)`);
+            // Usuario scope propio: ve sus ítems + ítems de compañeros del mismo grupo + ítems compartidos sin dueño
+            wheres.push(`(
+              i.created_by_user_id = $${pCount}
+              OR i.created_by_user_id IS NULL
+              OR i.created_by_user_id IN (
+                SELECT sgm2.clinic_user_id
+                FROM sharing_group_members sgm1
+                JOIN sharing_group_members sgm2 ON sgm1.group_id = sgm2.group_id
+                WHERE sgm1.clinic_user_id = $${pCount}
+              )
+            )`);
             params.push(su.user_id);
             pCount++;
           }
@@ -908,6 +917,71 @@ export default async function handler(req, res) {
           [clinicId]
         );
         return res.status(200).json(usersRes.rows);
+      }
+
+      // ─── Grupos de compartición (inventario + finanzas) ───────────────────
+      case 'listSharingGroups': {
+        const suSG = await getSessionUser(pool, req);
+        if (!suSG) return res.status(401).json({ error: 'No autenticado' });
+        if (!['clinic_admin', 'master_admin'].includes(suSG.role)) return res.status(403).json({ error: 'Sin permisos' });
+        const sgClinic = suSG.effective_clinic_id ?? suSG.clinic_id;
+        if (!sgClinic) return res.status(400).json({ error: 'Sin clínica activa' });
+        const groups = await pool.query(
+          `SELECT sg.id, sg.name, sg.description,
+             COALESCE(json_agg(json_build_object('id', cu.id, 'username', cu.username, 'full_name', cu.full_name)
+               ORDER BY cu.full_name) FILTER (WHERE cu.id IS NOT NULL), '[]') AS members
+           FROM sharing_groups sg
+           LEFT JOIN sharing_group_members sgm ON sgm.group_id = sg.id
+           LEFT JOIN clinic_users cu ON cu.id = sgm.clinic_user_id
+           WHERE sg.clinic_id = $1
+           GROUP BY sg.id ORDER BY sg.name`,
+          [sgClinic]
+        );
+        return res.status(200).json(groups.rows);
+      }
+
+      case 'manageSharingGroup': {
+        // mode: 'create' | 'update' | 'delete'
+        const suMSG = await getSessionUser(pool, req);
+        if (!suMSG) return res.status(401).json({ error: 'No autenticado' });
+        if (!['clinic_admin', 'master_admin'].includes(suMSG.role)) return res.status(403).json({ error: 'Sin permisos' });
+        const sgClinic = suMSG.effective_clinic_id ?? suMSG.clinic_id;
+        const { mode, group_id, name, description } = body;
+        if (mode === 'create') {
+          if (!name?.trim()) return res.status(400).json({ error: 'Nombre requerido' });
+          const r = await pool.query(
+            'INSERT INTO sharing_groups (clinic_id, name, description) VALUES ($1, $2, $3) RETURNING id, name, description',
+            [sgClinic, name.trim(), description?.trim() || null]
+          );
+          return res.status(201).json(r.rows[0]);
+        }
+        if (mode === 'update') {
+          await pool.query('UPDATE sharing_groups SET name=$1, description=$2 WHERE id=$3 AND clinic_id=$4', [name?.trim(), description?.trim() || null, group_id, sgClinic]);
+          return res.status(200).json({ success: true });
+        }
+        if (mode === 'delete') {
+          await pool.query('DELETE FROM sharing_groups WHERE id=$1 AND clinic_id=$2', [group_id, sgClinic]);
+          return res.status(200).json({ success: true });
+        }
+        return res.status(400).json({ error: 'mode inválido' });
+      }
+
+      case 'manageSharingMember': {
+        // mode: 'add' | 'remove'
+        const suMSM = await getSessionUser(pool, req);
+        if (!suMSM) return res.status(401).json({ error: 'No autenticado' });
+        if (!['clinic_admin', 'master_admin'].includes(suMSM.role)) return res.status(403).json({ error: 'Sin permisos' });
+        const sgClinic = suMSM.effective_clinic_id ?? suMSM.clinic_id;
+        const { mode: mMode, group_id: gId, clinic_user_id: mUid } = body;
+        // Verificar que el grupo pertenece a la clínica
+        const gChk = await pool.query('SELECT id FROM sharing_groups WHERE id=$1 AND clinic_id=$2', [gId, sgClinic]);
+        if (!gChk.rows.length) return res.status(403).json({ error: 'Grupo no encontrado en esta clínica' });
+        if (mMode === 'add') {
+          await pool.query('INSERT INTO sharing_group_members (group_id, clinic_user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING', [gId, mUid]);
+        } else if (mMode === 'remove') {
+          await pool.query('DELETE FROM sharing_group_members WHERE group_id=$1 AND clinic_user_id=$2', [gId, mUid]);
+        }
+        return res.status(200).json({ success: true });
       }
 
       // ─── Asignar/copiar paciente a otro usuario de la clínica ─────────────
@@ -1869,11 +1943,20 @@ export default async function handler(req, res) {
           paramCount++;
         }
 
-        // Respetar access_scope: 'own' restringe al usuario actual; 'all' permite ver toda la clínica
+        // Respetar access_scope: 'own' restringe al usuario actual + grupo; 'all' permite ver toda la clínica
         if (su?.access_scope === 'own') {
-          query += ` AND registered_by = $${paramCount}`;
-          params.push(su.username);
-          paramCount++;
+          query += ` AND (
+            registered_by = $${paramCount}
+            OR registered_by IN (
+              SELECT cu2.username
+              FROM sharing_group_members sgm1
+              JOIN sharing_group_members sgm2 ON sgm1.group_id = sgm2.group_id
+              JOIN clinic_users cu2 ON cu2.id = sgm2.clinic_user_id
+              WHERE sgm1.clinic_user_id = $${paramCount + 1}
+            )
+          )`;
+          params.push(su.username, su.user_id);
+          paramCount += 2;
         } else if (registered_by && registered_by !== 'all' && registered_by !== 'null' && registered_by !== 'undefined') {
           // Soporta lista separada por comas: "user1,user2,user3"
           const users = String(registered_by).split(',').map(u => u.trim()).filter(Boolean);
