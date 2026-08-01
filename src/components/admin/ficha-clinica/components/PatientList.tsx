@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { Search, Plus, FileText, User, Calendar, Edit2, Trash2, Clock, UserPlus, X, ArrowRightLeft, Share2 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import AdminLayout from '../../../layout/AdminLayout';
@@ -39,11 +39,11 @@ export default function PatientList() {
   const { nav } = useAdminNav();
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
-  // clinicId pasado desde el master admin para filtrar por clínica
+  // clinicId pasado desde el master admin para filtrar por clÃ­nica
   const clinicId = searchParams.get('clinicId');
-  // Modal de historial de auditoría
+  // Modal de historial de auditorÃ­a
   const [auditModal, setAuditModal] = useState<{ patientId: number; patientName: string } | null>(null);
-  // Modal de asignación/traslado
+  // Modal de asignaciÃ³n/traslado
   const [assignModal, setAssignModal] = useState<AssignModalState | null>(null);
   const [clinicUsers, setClinicUsers] = useState<ClinicUser[]>([]);
   const [assignLoading, setAssignLoading] = useState(false);
@@ -54,7 +54,7 @@ export default function PatientList() {
     fetchPatients();
   }, [clinicId]);
 
-  // Cargar usuarios de la clínica cuando se abre el modal
+  // Cargar usuarios de la clÃ­nica cuando se abre el modal
   useEffect(() => {
     if (assignModal && clinicUsers.length === 0) {
       recordsFetch('/api/records?action=listClinicUsers')
@@ -75,7 +75,7 @@ export default function PatientList() {
       
       const contentType = response.headers.get("content-type");
       if (contentType && contentType.indexOf("application/json") === -1) {
-        throw new Error("La respuesta de la API no es JSON. Si estás en local, usa 'vercel dev'.");
+        throw new Error("La respuesta de la API no es JSON. Si estÃ¡s en local, usa 'vercel dev'.");
       }
 
       if (response.ok) {
@@ -95,7 +95,7 @@ export default function PatientList() {
 
   const handleDelete = async (id: number, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm('¿Está seguro de eliminar este paciente? Esta acción no se puede deshacer.')) return;
+    if (!confirm('Â¿EstÃ¡ seguro de eliminar este paciente? Esta acciÃ³n no se puede deshacer.')) return;
 
     try {
       const response = await recordsFetch(`/api/records?action=deletePatient&id=${id}`, {
@@ -142,7 +142,7 @@ export default function PatientList() {
   );
 
   return (
-    <AdminLayout title="Fichas Clínicas" subtitle="Gestión de pacientes y expedientes médicos" backPath="/admin">
+    <AdminLayout title="Fichas ClÃ­nicas" subtitle="GestiÃ³n de pacientes y expedientes mÃ©dicos" backPath="/admin">
       <div className="space-y-6">
         <div className="flex flex-wrap gap-4 justify-between items-center bg-white p-4 rounded-xl shadow-sm">
           <h2 className="text-xl font-bold text-gray-800">Pacientes Registrados</h2>
@@ -182,7 +182,7 @@ export default function PatientList() {
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
                   <th className="px-6 py-4 font-semibold text-gray-600">Paciente</th>
-                  <th className="px-6 py-4 font-semibold text-gray-600">Identificación</th>
+                  <th className="px-6 py-4 font-semibold text-gray-600">IdentificaciÃ³n</th>
                   <th className="px-6 py-4 font-semibold text-gray-600">Contacto</th>
                   <th className="px-6 py-4 font-semibold text-gray-600">Acciones</th>
                 </tr>
@@ -281,7 +281,7 @@ export default function PatientList() {
         </div>
       </div>
 
-      {/* Modal de historial de auditoría */}
+      {/* Modal de historial de auditorÃ­a */}
       {auditModal && (
         <PatientAuditModal
           patientId={auditModal.patientId}
@@ -290,7 +290,7 @@ export default function PatientList() {
         />
       )}
 
-      {/* Modal de asignación / traslado */}
+      {/* Modal de asignaciÃ³n / traslado */}
       {assignModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
@@ -310,8 +310,8 @@ export default function PatientList() {
             <div className="p-6">
               <p className="text-sm text-gray-600 mb-4">
                 {assignModal.mode === 'transfer'
-                  ? 'El paciente pasará a ser propiedad del usuario seleccionado. Ya no aparecerá en tu lista.'
-                  : 'El usuario seleccionado podrá ver y editar este paciente. El propietario original no cambia.'}
+                  ? 'El paciente pasarÃ¡ a ser propiedad del usuario seleccionado. Ya no aparecerÃ¡ en tu lista.'
+                  : 'El usuario seleccionado podrÃ¡ ver y editar este paciente. El propietario original no cambia.'}
               </p>
               {clinicUsers.length === 0 ? (
                 <div className="text-center text-gray-500 py-4">Cargando usuarios...</div>
@@ -329,7 +329,7 @@ export default function PatientList() {
                       </div>
                       <div>
                         <div className="font-medium text-gray-900 text-sm">{u.full_name || u.username}</div>
-                        <div className="text-xs text-gray-500">{u.role === 'clinic_admin' ? 'Admin' : 'Usuario'} · {u.access_scope === 'all' ? 'Todos los pacientes' : 'Solo propios'}</div>
+                        <div className="text-xs text-gray-500">{u.role === 'clinic_admin' ? 'Admin' : 'Usuario'} Â· {u.access_scope === 'all' ? 'Todos los pacientes' : 'Solo propios'}</div>
                       </div>
                     </button>
                   ))}
@@ -338,221 +338,6 @@ export default function PatientList() {
             </div>
           </div>
         </div>
-      )}
-    </AdminLayout>
-  );
-}
-
-interface Patient {
-  id: number;
-  first_name: string;
-  last_name: string;
-  rut: string;
-  email: string;
-  phone: string;
-  active_record_id?: number;
-}
-
-export default function PatientList() {
-  const [patients, setPatients] = useState<Patient[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const navigate = useNavigate();
-  const { nav } = useAdminNav();
-  const [searchParams] = useSearchParams();
-  // clinicId pasado desde el master admin para filtrar por clínica
-  const clinicId = searchParams.get('clinicId');
-  // Modal de historial de auditoría
-  const [auditModal, setAuditModal] = useState<{ patientId: number; patientName: string } | null>(null);
-
-  useEffect(() => {
-    fetchPatients();
-  }, [clinicId]);
-
-  const fetchPatients = async () => {
-    try {
-      setError(null);
-      // Pasar clinicId si viene del contexto del master admin
-      const url = clinicId
-        ? `/api/records?action=listPatients&clinicId=${clinicId}`
-        : '/api/records?action=listPatients';
-      const response = await recordsFetch(url);
-      
-      const contentType = response.headers.get("content-type");
-      if (contentType && contentType.indexOf("application/json") === -1) {
-        throw new Error("La respuesta de la API no es JSON. Si estás en local, usa 'vercel dev'.");
-      }
-
-      if (response.ok) {
-        const data = await response.json();
-        setPatients(data);
-      } else {
-        const errText = await response.text();
-        throw new Error(`API Error: ${response.status} - ${errText}`);
-      }
-    } catch (error: any) {
-      console.error('Error fetching patients:', error);
-      setError(error.message || 'Error desconocido al cargar pacientes');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDelete = async (id: number, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!confirm('¿Está seguro de eliminar este paciente? Esta acción no se puede deshacer.')) return;
-
-    try {
-      const response = await recordsFetch(`/api/records?action=deletePatient&id=${id}`, {
-        method: 'DELETE'
-      });
-
-      if (response.ok) {
-        setPatients(prev => prev.filter(p => p.id !== id));
-      } else {
-        alert('Error al eliminar el paciente');
-      }
-    } catch (error) {
-      console.error('Error deleting patient:', error);
-      alert('Error al eliminar el paciente');
-    }
-  };
-
-  const filteredPatients = patients.filter(p => 
-    `${p.first_name} ${p.last_name}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.rut?.includes(searchTerm)
-  );
-
-  return (
-    <AdminLayout title="Fichas Clínicas" subtitle="Gestión de pacientes y expedientes médicos" backPath="/admin">
-      <div className="space-y-6">
-        <div className="flex flex-wrap gap-4 justify-between items-center bg-white p-4 rounded-xl shadow-sm">
-          <h2 className="text-xl font-bold text-gray-800">Pacientes Registrados</h2>
-          <button 
-            onClick={() => nav('clinical-records/new')}
-            className="bg-[#deb887] text-white px-4 py-2 rounded-lg hover:bg-[#c5a075] transition-colors flex items-center gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            Nuevo Paciente
-          </button>
-        </div>
-
-        {/* Search Bar */}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-          <input
-            type="text"
-            placeholder="Buscar por nombre o RUT..."
-            className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#deb887] focus:border-transparent outline-none shadow-sm"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
-
-        {/* Error Message */}
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl">
-            <p className="font-bold">Error cargando pacientes:</p>
-            <p>{error}</p>
-          </div>
-        )}
-
-        {/* Patients Table */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead className="bg-gray-50 border-b border-gray-100">
-                <tr>
-                  <th className="px-6 py-4 font-semibold text-gray-600">Paciente</th>
-                  <th className="px-6 py-4 font-semibold text-gray-600">Identificación</th>
-                  <th className="px-6 py-4 font-semibold text-gray-600">Contacto</th>
-                  <th className="px-6 py-4 font-semibold text-gray-600">Acciones</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {loading ? (
-                  <tr>
-                    <td colSpan={4} className="px-6 py-8 text-center text-gray-500">
-                      <div className="flex justify-center items-center gap-2">
-                        <div className="animate-spin w-5 h-5 border-2 border-[#deb887] border-t-transparent rounded-full"></div>
-                        Cargando pacientes...
-                      </div>
-                    </td>
-                  </tr>
-                ) : filteredPatients.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="px-6 py-8 text-center text-gray-500">
-                      No se encontraron pacientes
-                    </td>
-                  </tr>
-                ) : (
-                  filteredPatients.map((patient) => (
-                    <tr key={patient.id} className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => nav(`ficha-clinica/paciente/${patient.id}`)}>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-[#deb887]/10 flex items-center justify-center text-[#deb887]">
-                            <User className="w-5 h-5" />
-                          </div>
-                          <div>
-                            <div className="font-medium text-gray-900">{patient.first_name} {patient.last_name}</div>
-                            <div className="text-sm text-gray-500">ID: {patient.id}</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-gray-600">{patient.rut || '-'}</td>
-                      <td className="px-6 py-4">
-                        <div className="text-sm text-gray-600">{patient.email}</div>
-                        <div className="text-sm text-gray-500">{patient.phone}</div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); nav(`clinical-records/edit/${patient.id}`); }}
-                            className="p-2 text-gray-500 hover:text-[#deb887] hover:bg-[#deb887]/10 rounded-lg transition-colors"
-                            title="Editar"
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                          <button 
-                            onClick={(e) => handleDelete(patient.id, e)}
-                            className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                            title="Eliminar"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={e => { e.stopPropagation(); setAuditModal({ patientId: patient.id, patientName: `${patient.first_name} ${patient.last_name}` }); }}
-                            className="p-2 text-gray-500 hover:text-[#deb887] hover:bg-[#deb887]/10 rounded-lg transition-colors"
-                            title="Historial de cambios"
-                          >
-                            <Clock className="w-4 h-4" />
-                          </button>
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); nav(`ficha-clinica/paciente/${patient.id}`); }}
-                            className="text-[#deb887] hover:text-[#c5a075] font-medium flex items-center gap-1 ml-2"
-                          >
-                            <FileText className="w-4 h-4" />
-                            Ver Ficha
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      {/* Modal de historial de auditoría */}
-      {auditModal && (
-        <PatientAuditModal
-          patientId={auditModal.patientId}
-          patientName={auditModal.patientName}
-          onClose={() => setAuditModal(null)}
-        />
       )}
     </AdminLayout>
   );
