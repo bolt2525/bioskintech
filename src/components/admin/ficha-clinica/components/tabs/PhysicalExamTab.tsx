@@ -113,6 +113,16 @@ const ZONES_CUELLO = [
   'Cuello lateral',
 ];
 
+// Zonas corporales agrupadas por región (sin detección automática)
+const BODY_ZONE_GROUPS = [
+  { region: 'Cabeza y Cuello', zones: ['Cuero cabelludo', 'Frente / Sien', 'Mejilla', 'Barbilla', 'Cuello anterior', 'Cuello posterior / Nuca'] },
+  { region: 'Tórax Anterior', zones: ['Escote / Décolleté', 'Pecho superior', 'Pecho inferior / Surco intermamario', 'Abdomen superior', 'Abdomen inferior', 'Zona periumbilical', 'Flancos'] },
+  { region: 'Tórax Posterior', zones: ['Espalda superior', 'Región escapular', 'Espalda media', 'Espalda inferior / Lumbar', 'Zona sacra'] },
+  { region: 'Miembro Superior', zones: ['Hombro', 'Brazo anterior', 'Brazo posterior', 'Pliegue del codo', 'Antebrazo', 'Muñeca', 'Dorso de la mano', 'Palma / Dedos'] },
+  { region: 'Glúteos y Cadera', zones: ['Glúteo superior', 'Glúteo inferior / Pliegue subglúteo', 'Cadera / Trocánter mayor', 'Región inguinal'] },
+  { region: 'Miembro Inferior', zones: ['Muslo anterior', 'Muslo posterior', 'Cara interna del muslo', 'Rodilla', 'Pantorrilla', 'Cara posterior de la pierna', 'Tobillo', 'Dorso del pie', 'Planta / Dedos'] },
+];
+
 interface FacialRegion { tercio: string; suggestions: string[] }
 
 function getFacialRegion(pos: { x: number; y: number; z: number }): FacialRegion {
@@ -178,7 +188,7 @@ const EMPTY_EXAM: Omit<PhysicalExam, 'record_id'> = {
 // Modal Component for Editing Marks
 const MarkEditModal = ({
   mark, onSave, onCancel, categories,
-  tercio, suggestedZones,
+  tercio, suggestedZones, zoneGroups,
 }: {
   mark: Mark;
   onSave: (m: Mark) => void;
@@ -186,6 +196,7 @@ const MarkEditModal = ({
   categories: string[];
   tercio?: string;
   suggestedZones?: string[];
+  zoneGroups?: { region: string; zones: string[] }[];
 }) => {
   const [editedMark, setEditedMark] = useState<Mark>({
     ...mark,
@@ -271,7 +282,30 @@ const MarkEditModal = ({
 
           <div className="space-y-2">
             <label className="block text-sm font-bold text-gray-700">Zona / Ubicación</label>
-            {suggestedZones && suggestedZones.length > 0 && (
+            {/* Grouped body zones — rendered when zoneGroups provided */}
+            {zoneGroups && zoneGroups.length > 0 && (
+              <div className="max-h-48 overflow-y-auto space-y-2 bg-gray-50/60 rounded-xl border border-gray-100 p-2">
+                {zoneGroups.map(g => (
+                  <div key={g.region}>
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-1 mb-1">{g.region}</p>
+                    <div className="flex flex-wrap gap-1 mb-1">
+                      {g.zones.map(z => (
+                        <button key={z} type="button"
+                          onClick={() => setEditedMark({ ...editedMark, notes: z })}
+                          className={`text-xs px-2 py-0.5 rounded-full border transition-all ${
+                            editedMark.notes === z
+                              ? 'bg-[#deb887] text-white border-[#deb887]'
+                              : 'bg-white text-gray-600 border-gray-200 hover:border-[#deb887] hover:text-[#b8956a]'
+                          }`}
+                        >{z}</button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* Flat suggested zones — rendered when suggestedZones provided (facial) */}
+            {!zoneGroups && suggestedZones && suggestedZones.length > 0 && (
               <div className="flex flex-wrap gap-1.5 mb-2">
                 {suggestedZones.map(z => (
                   <button
@@ -295,11 +329,11 @@ const MarkEditModal = ({
               onChange={e => setEditedMark({...editedMark, notes: e.target.value})}
               className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#deb887] focus:border-transparent outline-none transition-all bg-gray-50/50 focus:bg-white"
               placeholder="Ej: Mejilla derecha, Frente..."
-              autoFocus={!suggestedZones}
+              autoFocus={!suggestedZones && !zoneGroups}
             />
             <p className="text-xs text-gray-500 flex items-center gap-1">
               <Info size={12} />
-              {suggestedZones ? 'Seleccione una zona sugerida o escríbala.' : 'Puede ajustar el nombre de la zona manualmente.'}
+              {(zoneGroups || suggestedZones) ? 'Seleccione una zona o escríbala.' : 'Puede ajustar el nombre de la zona manualmente.'}
             </p>
           </div>
         </div>
@@ -585,6 +619,8 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
       alert('Por favor seleccione una lesión/categoría primero');
       return;
     }
+    // ponytail: body region passed for grouped zone picker, no auto-detection
+    setPendingRegion({ tercio: 'Corporal', suggestions: [] });
     const newMark: Mark = {
       id: Date.now().toString(),
       x: 0,
@@ -594,7 +630,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
       position3D: marker3D.position,
       normal3D: marker3D.normal,
       rotation3D: marker3D.rotation,
-      tercio: '',  // ponytail: no zone detection for body — future upgrade path
+      tercio: 'Corporal',
       notes: '',
     };
     setEditingMark(newMark);
@@ -617,7 +653,8 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
             onCancel={() => { setIsModalOpen(false); setPendingRegion(null); }}
             categories={LESION_CATALOG}
             tercio={pendingRegion?.tercio}
-            suggestedZones={pendingRegion?.suggestions}
+            suggestedZones={activeTab === 'facial' ? pendingRegion?.suggestions : undefined}
+            zoneGroups={activeTab === 'corporal' ? BODY_ZONE_GROUPS : undefined}
           />
         )}
       </AnimatePresence>
