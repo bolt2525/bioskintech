@@ -86,6 +86,7 @@ interface InjectablesTabProps {
   recordId: number;
   injectables: Injectable[];
   patientName?: string;
+  consultationId?: number;
   onSave: () => void;
 }
 
@@ -178,7 +179,7 @@ const EMPTY_INJECTABLE: Injectable = {
 // COMPONENT
 // ==========================================
 
-export default function InjectablesTab({ recordId, injectables: initialInjectables, patientName, onSave }: InjectablesTabProps) {
+export default function InjectablesTab({ recordId, injectables: initialInjectables, patientName, consultationId, onSave }: InjectablesTabProps) {
   const { settings: clinic } = useClinicSettings();
   const { user } = useAuth();
   // Nombre de la clínica: settings > auth token > placeholder
@@ -653,6 +654,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
         treatment_id: current.treatment_id || null,
         mapping_data: mappingData,
         areas_treated: derivedAreas.length > 0 ? derivedAreas : null,
+        ...(consultationId ? { consultation_id: consultationId } : {}),
       };
 
       const res = await recordsFetch(`/api/records?action=${action}`, {
@@ -1571,7 +1573,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
           }`}
         >
           <Droplets className="w-4 h-4" />
-          Rellenos
+          Rellenos & Bioestimuladores
           <span className={`ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
             activeType === 'relleno' ? 'bg-purple-100 text-purple-600' : 'bg-gray-200 text-gray-500'
           }`}>

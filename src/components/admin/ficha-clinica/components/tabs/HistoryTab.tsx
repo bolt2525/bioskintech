@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
-import { Save, AlertCircle, Plus, Check, History } from 'lucide-react';
+import { Save, AlertCircle, Plus, Check, History, Clock, ChevronDown, ChevronUp } from 'lucide-react';
 import historyOptions from '../../data/history_options.json';
 import { Tooltip } from '../../../../ui/Tooltip';
 
@@ -109,8 +109,27 @@ export default function HistoryTab({ recordId, initialData, onSave }: HistoryTab
   const [formData, setFormData] = useState(initialData || {});
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
-  
+  const [showSnapshots, setShowSnapshots] = useState(false);
+  const [snapshots, setSnapshots] = useState<any[]>([]);
+  const [loadingSnaps, setLoadingSnaps] = useState(false);
+  const [selectedSnap, setSelectedSnap] = useState<any>(null);
+
   const recordIdRef = useRef(recordId);
+
+  const loadSnapshots = async () => {
+    if (!recordId) return;
+    setLoadingSnaps(true);
+    try {
+      const r = await recordsFetch(`/api/records?action=listHistorySnapshots&record_id=${recordId}`);
+      if (r.ok) setSnapshots(await r.json());
+    } catch { /* silent */ } finally { setLoadingSnaps(false); }
+  };
+
+  const handleToggleSnapshots = () => {
+    if (!showSnapshots && snapshots.length === 0) loadSnapshots();
+    setShowSnapshots(p => !p);
+    setSelectedSnap(null);
+  };
 
   useEffect(() => {
     if (recordId) {
@@ -159,15 +178,61 @@ export default function HistoryTab({ recordId, initialData, onSave }: HistoryTab
 
   return (
     <form onSubmit={handleSubmit} className="space-y-8">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="p-2 bg-[#deb887]/10 rounded-lg">
-          <History className="w-6 h-6 text-[#deb887]" />
+      <div className="flex items-center justify-between gap-3 mb-6">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-[#deb887]/10 rounded-lg">
+            <History className="w-6 h-6 text-[#deb887]" />
+          </div>
+          <div>
+            <h3 className="text-lg font-bold text-gray-800">Antecedentes Clínicos</h3>
+            <p className="text-sm text-gray-500">Registre el historial médico y hábitos del paciente</p>
+          </div>
         </div>
-        <div>
-          <h3 className="text-lg font-bold text-gray-800">Antecedentes Clínicos</h3>
-          <p className="text-sm text-gray-500">Registre el historial médico y hábitos del paciente</p>
-        </div>
+        <Tooltip content={showSnapshots ? 'Ocultar historial de versiones' : 'Ver historial de cambios'}>
+          <button type="button" onClick={handleToggleSnapshots}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-500 hover:text-[#b8944d] hover:bg-amber-50 rounded-lg border border-gray-200 hover:border-[#deb887]/40 transition-colors">
+            <Clock className="w-3.5 h-3.5" />
+            Versiones
+            {showSnapshots ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </button>
+        </Tooltip>
       </div>
+
+      {/* Panel de versiones / snapshots */}
+      <AnimatePresence>
+        {showSnapshots && (
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+            className="mb-6 bg-amber-50/50 border border-[#deb887]/30 rounded-xl overflow-hidden">
+            <div className="p-4">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Historial de versiones ({snapshots.length})</p>
+              {loadingSnaps && <p className="text-sm text-gray-400">Cargando...</p>}
+              {!loadingSnaps && snapshots.length === 0 && (
+                <p className="text-sm text-gray-400">Sin versiones guardadas aún. Cada vez que guardas crea una versión.</p>
+              )}
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {snapshots.map((s: any) => (
+                  <button key={s.id} type="button" onClick={() => setSelectedSnap(selectedSnap?.id === s.id ? null : s)}
+                    className={`w-full text-left p-3 rounded-lg border text-xs transition-all ${
+                      selectedSnap?.id === s.id ? 'bg-white border-[#deb887] ring-1 ring-[#deb887]/40' : 'bg-white border-gray-100 hover:border-[#deb887]/30'
+                    }`}>
+                    <div className="flex justify-between items-center">
+                      <span className="font-semibold text-gray-700">{new Date(s.created_at).toLocaleString('es')}</span>
+                      <span className="text-gray-400">{s.changed_by}</span>
+                    </div>
+                    {selectedSnap?.id === s.id && s.snapshot_data && (
+                      <div className="mt-2 space-y-1 text-gray-600">
+                        {Object.entries(s.snapshot_data).map(([k, v]) =>
+                          v ? <div key={k}><span className="font-medium">{k.replace(/_/g, ' ')}: </span>{String(v).slice(0, 100)}</div> : null
+                        )}
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {message && (

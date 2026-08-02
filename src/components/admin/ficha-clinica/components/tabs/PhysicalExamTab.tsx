@@ -155,6 +155,7 @@ interface PhysicalExamTabProps {
   recordId: number;
   physicalExams: PhysicalExam[];
   patientName: string;
+  consultationId?: number;
   onSave: () => void;
 }
 
@@ -326,7 +327,7 @@ const MarkEditModal = ({
   );
 };
 
-export default function PhysicalExamTab({ recordId, physicalExams, patientName, onSave }: PhysicalExamTabProps) {
+export default function PhysicalExamTab({ recordId, physicalExams, patientName, consultationId, onSave }: PhysicalExamTabProps) {
   const [currentExam, setCurrentExam] = useState<PhysicalExam>({ ...EMPTY_EXAM, record_id: recordId });
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -449,7 +450,8 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
     const examToSave = {
       ...currentExam,
       face_map_data: JSON.stringify(faceMarks),
-      body_map_data: JSON.stringify(bodyMarks)
+      body_map_data: JSON.stringify(bodyMarks),
+      ...(consultationId ? { consultation_id: consultationId } : {})
     };
 
     try {
@@ -560,6 +562,41 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
       zone: m.notes || m.tercio || '',
       radius: 0.1,
     }));
+
+  // Body 3D markers (no zone detection)
+  const body3DMarkers: Marker3D[] = bodyMarks
+    .filter(m => m.is3D && m.position3D)
+    .map(m => ({
+      id: m.id,
+      pathologyId: 'lesion',
+      type: (m.distribution === 'zonal' ? 'Zonal' : 'Puntual') as 'Puntual' | 'Zonal',
+      position: m.position3D!,
+      normal: m.normal3D || { x: 0, y: 0, z: 1 },
+      rotation: m.rotation3D || [0, 0, 0],
+      zone: m.notes || '',
+      radius: 0.1,
+    }));
+
+  const handleBody3DMarkerPlaced = (marker3D: Marker3D) => {
+    if (!selectedCategory) {
+      alert('Por favor seleccione una lesión/categoría primero');
+      return;
+    }
+    const newMark: Mark = {
+      id: Date.now().toString(),
+      x: 0,
+      y: 0,
+      category: selectedCategory,
+      is3D: true,
+      position3D: marker3D.position,
+      normal3D: marker3D.normal,
+      rotation3D: marker3D.rotation,
+      tercio: '',  // ponytail: no zone detection for body — future upgrade path
+      notes: '',
+    };
+    setEditingMark(newMark);
+    setIsModalOpen(true);
+  };
 
   const legacyFaceMarks = faceMarks.filter(m => !m.is3D);
 
@@ -771,12 +808,14 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
                   />
                 </div>
               ) : (
-                <div className="p-6 flex flex-col items-center bg-white h-full">
-                  <BodyMapCanvas 
-                    marks={bodyMarks} 
-                    onAddMark={initiateAddMark} 
-                    onRemoveMark={removeBodyMark}
-                    selectedCategory={selectedCategory}
+                <div className="flex flex-col bg-white h-full">
+                  <Clinical3DViewer
+                    markers={body3DMarkers}
+                    selectedPathology="lesion"
+                    modelUrl="/models/clinical/male_body.glb"
+                    skipConfirmation={true}
+                    onMarkerPlaced={handleBody3DMarkerPlaced}
+                    height="420px"
                   />
                 </div>
               )}

@@ -30,6 +30,7 @@ interface DiagnosisTabProps {
   recordId: number;
   diagnoses: Diagnosis[];
   patientName?: string;
+  consultationId?: number;
   onSave: () => void;
 }
 
@@ -41,7 +42,7 @@ const EMPTY_DIAGNOSIS: Omit<Diagnosis, 'record_id'> = {
   notes: ''
 };
 
-export default function DiagnosisTab({ recordId, diagnoses, patientName, onSave }: DiagnosisTabProps) {
+export default function DiagnosisTab({ recordId, diagnoses, patientName, consultationId, onSave }: DiagnosisTabProps) {
   const { settings: clinic } = useClinicSettings();
   const [currentDiagnosis, setCurrentDiagnosis] = useState<Diagnosis>({ ...EMPTY_DIAGNOSIS, record_id: recordId });
   const [saving, setSaving] = useState(false);
@@ -105,7 +106,7 @@ export default function DiagnosisTab({ recordId, diagnoses, patientName, onSave 
       const response = await recordsFetch('/api/records?action=saveDiagnosis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(currentDiagnosis),
+        body: JSON.stringify({ ...currentDiagnosis, ...(consultationId ? { consultation_id: consultationId } : {}) }),
       });
 
       if (response.ok) {

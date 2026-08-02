@@ -66,11 +66,12 @@ interface Props {
   patientId: number;
   recordId: number;
   patient?: any;
+  consultationId?: number;
 }
 
 const API_URL = '/api/records';
 
-export default function ConsentimientosTab({ patientId, recordId, patient }: Props) {
+export default function ConsentimientosTab({ patientId, recordId, patient, consultationId }: Props) {
   const { settings: clinic } = useClinicSettings();
   const { user } = useAuth();
   const [consents, setConsents] = useState<ConsentForm[]>([]);
@@ -423,7 +424,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient }: Pro
       const res = await recordsFetch(`${API_URL}?action=saveConsent`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(currentConsent)
+        body: JSON.stringify({ ...currentConsent, ...(consultationId ? { consultation_id: consultationId } : {}) })
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));

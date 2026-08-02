@@ -216,6 +216,8 @@ async function initMultiTenantSchema() {
     "ALTER TABLE clinic_settings ADD COLUMN IF NOT EXISTS finanzas JSONB NOT NULL DEFAULT '{}'",
     "ALTER TABLE clinic_settings ADD COLUMN IF NOT EXISTS inventario JSONB NOT NULL DEFAULT '{}'",
     "ALTER TABLE clinic_settings ADD COLUMN IF NOT EXISTS notificaciones JSONB NOT NULL DEFAULT '{}'",
+    "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS cedula_profesional VARCHAR(50)",
+    "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS especialidad VARCHAR(100)",
   ]) {
     try { await sql.query(col); } catch { /* ya existe */ }
   }
@@ -382,7 +384,7 @@ async function loginUser(username, password, ip, ua) {
   // Login contra DB
   const r = await sql`
     SELECT id, username, password_hash, salt, hash_algo, role, clinic_id, access_scope,
-           failed_attempts, locked_until, is_active, full_name, email
+           failed_attempts, locked_until, is_active, full_name, email, cedula_profesional, especialidad
     FROM clinic_users WHERE username = ${username}
   `;
   if (!r.rows.length) return { success: false, error: 'Credenciales inválidas' };
@@ -435,6 +437,8 @@ async function loginUser(username, password, ip, ua) {
     user: {
       id: u.id, username: u.username, full_name: u.full_name,
       email: u.email, role: u.role, clinic_id: u.clinic_id, access_scope: u.access_scope,
+      cedula_profesional: u.cedula_profesional || null,
+      especialidad: u.especialidad || null,
     },
     features: await getFeatures(u.clinic_id),
     user_module_overrides: await (async () => {
@@ -512,7 +516,8 @@ async function listUsers(requestUser, clinicIdFilter) {
     if (clinicIdFilter) {
       return (await sql`
         SELECT cu.id, cu.username, cu.full_name, cu.email, cu.role, cu.access_scope,
-               cu.is_active, cu.last_login, cu.clinic_id, c.name as clinic_name, c.slug as clinic_slug
+               cu.is_active, cu.last_login, cu.clinic_id, c.name as clinic_name, c.slug as clinic_slug,
+               cu.cedula_profesional, cu.especialidad
         FROM clinic_users cu LEFT JOIN clinics c ON cu.clinic_id = c.id
         WHERE cu.clinic_id = ${clinicIdFilter}
         ORDER BY cu.role, cu.username
@@ -520,7 +525,8 @@ async function listUsers(requestUser, clinicIdFilter) {
     }
     return (await sql`
       SELECT cu.id, cu.username, cu.full_name, cu.email, cu.role, cu.access_scope,
-             cu.is_active, cu.last_login, cu.clinic_id, c.name as clinic_name, c.slug as clinic_slug
+             cu.is_active, cu.last_login, cu.clinic_id, c.name as clinic_name, c.slug as clinic_slug,
+             cu.cedula_profesional, cu.especialidad
       FROM clinic_users cu LEFT JOIN clinics c ON cu.clinic_id = c.id
       ORDER BY c.name NULLS LAST, cu.role, cu.username
     `).rows;
@@ -565,7 +571,7 @@ async function createUser(requestUser, body) {
 }
 
 async function updateUser(requestUser, body) {
-  const { id, full_name, email, role, access_scope, is_active } = body;
+  const { id, full_name, email, role, access_scope, is_active, cedula_profesional, especialidad } = body;
   if (!id) return { error: 'id requerido' };
 
   if (requestUser.role === 'clinic_admin') {
@@ -578,10 +584,12 @@ async function updateUser(requestUser, body) {
 
   await sql`
     UPDATE clinic_users SET
-      full_name    = COALESCE(${full_name    ?? null}, full_name),
-      email        = COALESCE(${email        ?? null}, email),
-      access_scope = COALESCE(${access_scope ?? null}, access_scope),
-      is_active    = COALESCE(${is_active    ?? null}, is_active)
+      full_name           = COALESCE(${full_name           ?? null}, full_name),
+      email               = COALESCE(${email               ?? null}, email),
+      access_scope        = COALESCE(${access_scope        ?? null}, access_scope),
+      is_active           = COALESCE(${is_active           ?? null}, is_active),
+      cedula_profesional  = COALESCE(${cedula_profesional  ?? null}, cedula_profesional),
+      especialidad        = COALESCE(${especialidad        ?? null}, especialidad)
     WHERE id = ${id}
   `;
   if (requestUser.role === 'master_admin' && role != null) {
@@ -589,7 +597,7 @@ async function updateUser(requestUser, body) {
   }
 
   const updated = await sql`
-    SELECT id, username, full_name, email, role, access_scope, is_active, clinic_id
+    SELECT id, username, full_name, email, role, access_scope, is_active, clinic_id, cedula_profesional, especialidad
     FROM clinic_users WHERE id = ${id}
   `;
   return { success: true, user: updated.rows[0] };

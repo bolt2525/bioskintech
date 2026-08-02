@@ -1129,7 +1129,7 @@ export default async function handler(req, res) {
           safeQuery('SELECT * FROM consent_forms WHERE record_id = $1 ORDER BY id DESC', [targetRecordId]),
           safeQuery('SELECT * FROM injectables WHERE record_id = $1 ORDER BY date DESC', [targetRecordId]),
           safeQuery('SELECT * FROM consultation_info WHERE record_id = $1', [targetRecordId]),
-          safeQuery('SELECT * FROM consultation_history WHERE record_id = $1 ORDER BY created_at DESC', [targetRecordId])
+          safeQuery('SELECT * FROM consultations WHERE record_id = $1 ORDER BY created_at DESC', [targetRecordId])
         ]);
 
         return res.status(200).json({
@@ -1143,16 +1143,71 @@ export default async function handler(req, res) {
           consentForms: consents.rows,
           injectables: injectables.rows,
           consultation: consultation.rows[0] || {},
-          consultationHistory: consultationHistory.rows || []
+          consultations: consultationHistory.rows || []
         });
       }
 
       case 'deleteConsultationHistory': {
         const { id } = req.query;
         if (!id) return res.status(400).json({ error: 'ID required' });
-        
         await pool.query('DELETE FROM consultation_history WHERE id = $1', [id]);
         return res.status(200).json({ success: true });
+      }
+
+      // ── Consultas (hub de sesión) ────────────────────────────────────────
+
+      case 'listConsultations': {
+        const { record_id: lcRid } = req.query;
+        if (!lcRid) return res.status(400).json({ error: 'record_id required' });
+        const lcRes = await pool.query(
+          'SELECT * FROM consultations WHERE record_id = $1 ORDER BY created_at DESC',
+          [lcRid]
+        );
+        return res.status(200).json(lcRes.rows);
+      }
+
+      case 'createConsultation': {
+        const { record_id: ccRid, reason: ccReason, current_illness: ccIllness,
+                enable_injectables: ccInj = false, enable_consents: ccCons = false } = body;
+        if (!ccRid) return res.status(400).json({ error: 'record_id required' });
+        const newCons = await pool.query(
+          `INSERT INTO consultations (record_id, reason, current_illness, enable_injectables, enable_consents)
+           VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+          [ccRid, ccReason, ccIllness, ccInj, ccCons]
+        );
+        await logAudit(pool, { recordId: ccRid, sessionUser: await getSessionUserOnce(), actionType: 'create', module: 'consultation', summary: `Nueva consulta: ${ccReason || ''}` });
+        return res.status(201).json(newCons.rows[0]);
+      }
+
+      case 'updateConsultation': {
+        const { id: ucId, ...ucFields } = body;
+        if (!ucId) return res.status(400).json({ error: 'id required' });
+        const allowed = ['reason', 'current_illness', 'enable_injectables', 'enable_consents'];
+        const safe = Object.fromEntries(Object.entries(ucFields).filter(([k]) => allowed.includes(k)));
+        if (!Object.keys(safe).length) return res.status(400).json({ error: 'No valid fields' });
+        const setClause = Object.keys(safe).map((f, i) => `${f} = $${i + 2}`).join(', ');
+        const ucRow = await pool.query(
+          `UPDATE consultations SET ${setClause}, updated_at = NOW() WHERE id = $1 RETURNING *`,
+          [ucId, ...Object.values(safe)]
+        );
+        return res.status(200).json(ucRow.rows[0] || { success: true });
+      }
+
+      case 'deleteConsultation': {
+        const { id: dcId } = req.query;
+        if (!dcId) return res.status(400).json({ error: 'id required' });
+        await pool.query('DELETE FROM consultations WHERE id = $1', [dcId]);
+        return res.status(200).json({ success: true });
+      }
+
+      case 'listHistorySnapshots': {
+        const { record_id: lhsRid } = req.query;
+        if (!lhsRid) return res.status(400).json({ error: 'record_id required' });
+        const snaps = await pool.query(
+          'SELECT id, changed_by, created_at, snapshot_data FROM medical_history_snapshots WHERE record_id = $1 ORDER BY created_at DESC',
+          [lhsRid]
+        );
+        return res.status(200).json(snaps.rows);
       }
 
       case 'saveConsultation': {
@@ -1213,6 +1268,14 @@ export default async function handler(req, res) {
            await pool.query(`INSERT INTO medical_history (${hFields.join(', ')}) VALUES (${hParams})`, hValues);
         }
         await logAudit(pool, { recordId: hid, sessionUser: await getSessionUserOnce(), actionType: 'tab_save', module: 'history', summary: 'Guardó Antecedentes Médicos' });
+        // Save full snapshot for version history
+        try {
+          const snapUser = (await getSessionUserOnce())?.username || 'unknown';
+          await pool.query(
+            'INSERT INTO medical_history_snapshots (record_id, snapshot_data, changed_by) VALUES ($1, $2, $3)',
+            [hid, JSON.stringify(safeHistData), snapUser]
+          );
+        } catch (snapErr) { console.warn('Snapshot save warning:', snapErr.message); }
         return res.status(200).json({ success: true });
       }
 
@@ -1342,7 +1405,7 @@ export default async function handler(req, res) {
           'date', 'product_type', 'product_name', 'brand', 'lot_number',
           'expiration_date', 'volume_used', 'units_used', 'areas_treated',
           'technique', 'injection_plane', 'needle_type', 'mapping_data', 'notes',
-          'dilution_volume', 'follow_up_date', 'relleno_subtype'
+          'dilution_volume', 'follow_up_date', 'relleno_subtype', 'consultation_id'
         ];
         const dateFields = ['date', 'expiration_date', 'follow_up_date'];
         const numericFields = ['volume_used', 'units_used', 'dilution_volume'];
@@ -1389,7 +1452,7 @@ export default async function handler(req, res) {
           'date', 'product_type', 'product_name', 'brand', 'lot_number',
           'expiration_date', 'volume_used', 'units_used', 'areas_treated',
           'technique', 'injection_plane', 'needle_type', 'mapping_data', 'notes',
-          'dilution_volume', 'follow_up_date', 'relleno_subtype'
+          'dilution_volume', 'follow_up_date', 'relleno_subtype', 'consultation_id'
         ];
         const cleanData = {};
         const dateFields = ['date', 'expiration_date', 'follow_up_date'];
@@ -1481,14 +1544,19 @@ export default async function handler(req, res) {
           items: pData.items || []
         });
 
-      case 'createPrescription':
-        const { ficha_id, fecha, diagnostico, items } = body;
+      case 'createPrescription': {
+        const { ficha_id, fecha, diagnostico, items, consultation_id: prescConsId } = body;
+        const prescFields = ['record_id', 'date', 'diagnosis', 'items'];
+        const prescValues = [ficha_id, fecha, diagnostico, JSON.stringify(items)];
+        if (prescConsId) { prescFields.push('consultation_id'); prescValues.push(prescConsId); }
+        const prescParams = prescFields.map((_, i) => `$${i + 1}`).join(', ');
         const newPresc = await pool.query(
-          'INSERT INTO prescriptions (record_id, date, diagnosis, items) VALUES ($1, $2, $3, $4) RETURNING id',
-          [ficha_id, fecha, diagnostico, JSON.stringify(items)]
+          `INSERT INTO prescriptions (${prescFields.join(', ')}) VALUES (${prescParams}) RETURNING id`,
+          prescValues
         );
         await logAudit(pool, { recordId: ficha_id, sessionUser: await getSessionUserOnce(), actionType: 'create', module: 'prescription', summary: `Creó receta médica` });
         return res.status(200).json({ id: newPresc.rows[0].id, message: 'Receta created' });
+      }
 
       case 'updatePrescription':
         const { id: updPrescId, fecha: updFecha, diagnostico: updDiag, items: updItems } = body;
@@ -1591,20 +1659,17 @@ export default async function handler(req, res) {
         return res.status(200).json({ message: 'Professional signatures table initialized' });
 
       case 'saveProfessionalSignature': {
-        const { name, signature } = body;
-        // Upsert based on name (simple approach for single doctor/admin)
-        // Check if exists
+        const { name, signature, cedula } = body;
         const existing = await pool.query('SELECT id FROM professional_signatures WHERE professional_name = $1', [name]);
-        
         if (existing.rows.length > 0) {
           await pool.query(
-            'UPDATE professional_signatures SET signature_data = $1, updated_at = NOW() WHERE professional_name = $2',
-            [signature, name]
+            'UPDATE professional_signatures SET signature_data = $1, cedula = $2, updated_at = NOW() WHERE professional_name = $3',
+            [signature, cedula || null, name]
           );
         } else {
           await pool.query(
-            'INSERT INTO professional_signatures (professional_name, signature_data) VALUES ($1, $2)',
-            [name, signature]
+            'INSERT INTO professional_signatures (professional_name, signature_data, cedula) VALUES ($1, $2, $3)',
+            [name, signature, cedula || null]
           );
         }
         return res.status(200).json({ success: true });
@@ -1612,8 +1677,21 @@ export default async function handler(req, res) {
 
       case 'getProfessionalSignature': {
         const { name } = req.query;
-        const result = await pool.query('SELECT signature_data FROM professional_signatures WHERE professional_name = $1', [name]);
-        return res.status(200).json({ signature: result.rows[0]?.signature_data || null });
+        const result = await pool.query(
+          'SELECT signature_data, cedula FROM professional_signatures WHERE professional_name = $1',
+          [name]
+        );
+        return res.status(200).json({
+          signature: result.rows[0]?.signature_data || null,
+          cedula: result.rows[0]?.cedula || null
+        });
+      }
+
+      case 'listProfessionalSignatures': {
+        const sigList = await pool.query(
+          'SELECT id, professional_name, cedula, created_at FROM professional_signatures ORDER BY professional_name ASC'
+        );
+        return res.status(200).json(sigList.rows);
       }
 
       case 'generateSigningToken': {

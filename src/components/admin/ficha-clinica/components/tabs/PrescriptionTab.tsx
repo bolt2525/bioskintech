@@ -45,6 +45,7 @@ interface PrescriptionTabProps {
   recordId: number;
   patientName: string;
   patientAge?: number | string;
+  consultationId?: number;
 }
 
 const EMPTY_ITEM: PrescriptionItem = {
@@ -60,7 +61,7 @@ const EMPTY_ITEM: PrescriptionItem = {
   rutina: ''
 };
 
-export default function PrescriptionTab({ recordId, patientName, patientAge }: PrescriptionTabProps) {
+export default function PrescriptionTab({ recordId, patientName, patientAge, consultationId }: PrescriptionTabProps) {
   const { settings: clinic } = useClinicSettings();
   const { user } = useAuth();
   const clinicDisplayName = clinic.general.name || user?.clinic_name || 'Clínica';
@@ -117,7 +118,8 @@ export default function PrescriptionTab({ recordId, patientName, patientAge }: P
       const body = {
         ...currentPrescription,
         ficha_id: recordId,
-        items: currentPrescription.items.filter(i => i.medicamento || i.nombre_comercial || i.indicaciones) // Filter empty rows (allow if only indications exist)
+        ...(consultationId ? { consultation_id: consultationId } : {}),
+        items: currentPrescription.items.filter(i => i.medicamento || i.nombre_comercial || i.indicaciones)
       };
 
       const res = await recordsFetch(`/api/records?action=${action}`, {

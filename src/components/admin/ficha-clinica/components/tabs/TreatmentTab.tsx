@@ -34,6 +34,7 @@ interface TreatmentTabProps {
   recordId: number;
   treatments: Treatment[];
   patientName?: string;
+  consultationId?: number;
   onSave: () => void;
 }
 
@@ -47,7 +48,7 @@ const EMPTY_TREATMENT: Treatment = {
   notes: '',
 };
 
-export default function TreatmentTab({ recordId, treatments, patientName, onSave }: TreatmentTabProps) {
+export default function TreatmentTab({ recordId, treatments, patientName, consultationId, onSave }: TreatmentTabProps) {
   const [currentTreatment, setCurrentTreatment] = useState<Treatment>({ ...EMPTY_TREATMENT });
   const [dateLocked, setDateLocked] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -86,7 +87,8 @@ export default function TreatmentTab({ recordId, treatments, patientName, onSave
       const action = currentTreatment.id ? 'updateTreatment' : 'addTreatment';
       const body = {
         record_id: recordId,
-        ...currentTreatment
+        ...currentTreatment,
+        ...(consultationId ? { consultation_id: consultationId } : {})
       };
 
       const response = await recordsFetch(`/api/records?action=${action}`, {

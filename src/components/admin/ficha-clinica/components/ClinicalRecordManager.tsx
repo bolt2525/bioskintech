@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import recordsFetch from '../../../../utils/recordsFetch';
 import { useAdminNav } from '../../../../hooks/useAdminNav';
@@ -11,10 +11,13 @@ import {
   Pill, 
   FileSignature, 
   ArrowLeft,
-  Save,
   MessageSquare,
-  Droplets
+  Droplets,
+  Printer,
+  Lock
 } from 'lucide-react';
+import ConsultationActivatedModal from './ConsultationActivatedModal';
+import PrintModal from './PrintModal';
 import AdminLayout from '../../../layout/AdminLayout';
 import ConsultationTab from './tabs/ConsultationTab';
 import HistoryTab from './tabs/HistoryTab';
@@ -32,13 +35,15 @@ interface TabButtonProps {
   icon: React.ElementType;
   active: boolean;
   onClick: () => void;
+  disabled?: boolean;
 }
 
-const TabButton: React.FC<TabButtonProps> = ({ id, label, icon: Icon, active, onClick }) => (
+const TabButton: React.FC<TabButtonProps> = ({ id, label, icon: Icon, active, onClick, disabled }) => (  // ponytail: disabled → greyed out until consultation selected
   <button
-    onClick={onClick}
+    onClick={disabled ? undefined : onClick}
+    title={disabled ? 'Selecciona o crea una consulta para habilitar este tab' : undefined}
     className={`relative flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors ${
-      active ? 'text-[#deb887]' : 'text-gray-500 hover:text-gray-700'
+      disabled ? 'text-gray-300 cursor-not-allowed' : active ? 'text-[#deb887]' : 'text-gray-500 hover:text-gray-700'
     }`}
   >
     {active && (
@@ -58,13 +63,24 @@ const TabButton: React.FC<TabButtonProps> = ({ id, label, icon: Icon, active, on
 
 export default function ClinicalRecordManager() {
   const { recordId } = useParams();
-  const navigate = useNavigate();
   const { nav } = useAdminNav();
-  const [activeTab, setActiveTab] = useState('history');
+  const [activeTab, setActiveTab] = useState('consultation');
   const [loading, setLoading] = useState(true);
   const [patient, setPatient] = useState<any>(null);
   const [recordData, setRecordData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Hub de consulta activa
+  const [activeConsultation, setActiveConsultation] = useState<any>(null);
+  const [showActivatedModal, setShowActivatedModal] = useState(false);
+  const [pendingNewConsultation, setPendingNewConsultation] = useState<any>(null);
+  const [showPrintModal, setShowPrintModal] = useState(false);
+
+  // Tabs opcionales habilitados por la consulta activa
+  const enabledOptional = {
+    injectables: activeConsultation?.enable_injectables ?? false,
+    consents: activeConsultation?.enable_consents ?? false,
+  };
 
   useEffect(() => {
     if (recordId) {
@@ -101,6 +117,35 @@ export default function ClinicalRecordManager() {
     } finally {
       if (showLoading) setLoading(false);
     }
+  };
+
+  const handleConsultationActivated = (consultation: any) => {
+    setActiveConsultation(consultation);
+    setPendingNewConsultation(consultation);
+    setShowActivatedModal(true);
+  };
+
+  const handleModalConfirm = async (enableInj: boolean, enableCons: boolean) => {
+    if (!pendingNewConsultation) return;
+    try {
+      const r = await recordsFetch('/api/records', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'updateConsultation',
+          id: pendingNewConsultation.id,
+          enable_injectables: enableInj,
+          enable_consents: enableCons,
+        }),
+      });
+      if (r.ok) {
+        const updated = await r.json();
+        setActiveConsultation(updated);
+        fetchData(false);
+      }
+    } catch (e) { console.error('Error updating consultation tabs:', e); }
+    setShowActivatedModal(false);
+    setPendingNewConsultation(null);
   };
 
   const calculateAge = (birthDate: string) => {
@@ -175,6 +220,19 @@ export default function ClinicalRecordManager() {
               <span>Volver al perfil del paciente</span>
             </button>
             <div className="flex items-center gap-2">
+              {activeConsultation && (
+                <span className="px-2 py-1 bg-amber-50 text-[#b8944d] rounded-full text-xs font-medium border border-[#deb887]/30 max-w-[180px] truncate">
+                  Consulta: {activeConsultation.reason?.slice(0, 40) || new Date(activeConsultation.created_at).toLocaleDateString()}
+                </span>
+              )}
+              <button
+                onClick={() => setShowPrintModal(true)}
+                title="Imprimir ficha clínica"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 hover:text-[#b8944d] hover:bg-amber-50 rounded-lg border border-gray-200 hover:border-[#deb887]/40 transition-colors"
+              >
+                <Printer className="w-4 h-4" />
+                <span className="hidden sm:inline">Imprimir</span>
+              </button>
               <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium flex items-center gap-1">
                 <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
                 Ficha Activa
@@ -186,66 +244,47 @@ export default function ClinicalRecordManager() {
         {/* Tabs Navigation */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-hidden overflow-y-visible min-h-[600px]">
           <div className="flex overflow-x-auto border-b border-gray-100 scrollbar-hide">
-            <TabButton 
-              id="history" 
-              label="Antecedentes" 
-              icon={ClipboardList} 
-              active={activeTab === 'history'} 
-              onClick={() => setActiveTab('history')} 
-            />
-            <TabButton 
-              id="consultation" 
-              label="Consulta" 
-              icon={MessageSquare} 
-              active={activeTab === 'consultation'} 
-              onClick={() => setActiveTab('consultation')} 
-            />
-            <TabButton 
-              id="physical" 
-              label="Examen Físico" 
-              icon={Activity} 
-              active={activeTab === 'physical'} 
-              onClick={() => setActiveTab('physical')} 
-            />
-            <TabButton 
-              id="diagnosis" 
-              label="Diagnóstico" 
-              icon={Stethoscope} 
-              active={activeTab === 'diagnosis'} 
-              onClick={() => setActiveTab('diagnosis')} 
-            />
-            <TabButton 
-              id="treatment" 
-              label="Tratamientos" 
-              icon={Syringe} 
-              active={activeTab === 'treatment'} 
-              onClick={() => setActiveTab('treatment')} 
-            />
-            <TabButton 
-              id="prescription" 
-              label="Recetas" 
-              icon={Pill} 
-              active={activeTab === 'prescription'} 
-              onClick={() => setActiveTab('prescription')} 
-            />
-            <TabButton 
-              id="consent" 
-              label="Consentimientos" 
-              icon={FileSignature} 
-              active={activeTab === 'consent'} 
-              onClick={() => setActiveTab('consent')} 
-            />
-            <TabButton 
-              id="injectables" 
-              label="Inyectables" 
-              icon={Droplets} 
-              active={activeTab === 'injectables'} 
-              onClick={() => setActiveTab('injectables')} 
-            />
+            <TabButton id="history" label="Antecedentes" icon={ClipboardList}
+              active={activeTab === 'history'} onClick={() => setActiveTab('history')} />
+            <TabButton id="consultation" label="Consulta" icon={MessageSquare}
+              active={activeTab === 'consultation'} onClick={() => setActiveTab('consultation')} />
+            <TabButton id="physical" label="Examen Físico" icon={Activity}
+              active={activeTab === 'physical'} onClick={() => setActiveTab('physical')}
+              disabled={!activeConsultation} />
+            <TabButton id="diagnosis" label="Diagnóstico" icon={Stethoscope}
+              active={activeTab === 'diagnosis'} onClick={() => setActiveTab('diagnosis')}
+              disabled={!activeConsultation} />
+            <TabButton id="treatment" label="Tratamientos" icon={Syringe}
+              active={activeTab === 'treatment'} onClick={() => setActiveTab('treatment')}
+              disabled={!activeConsultation} />
+            <TabButton id="prescription" label="Recetas" icon={Pill}
+              active={activeTab === 'prescription'} onClick={() => setActiveTab('prescription')}
+              disabled={!activeConsultation} />
+            {enabledOptional.consents && (
+              <TabButton id="consent" label="Consentimientos" icon={FileSignature}
+                active={activeTab === 'consent'} onClick={() => setActiveTab('consent')}
+                disabled={!activeConsultation} />
+            )}
+            {enabledOptional.injectables && (
+              <TabButton id="injectables" label="Inyectables" icon={Droplets}
+                active={activeTab === 'injectables'} onClick={() => setActiveTab('injectables')}
+                disabled={!activeConsultation} />
+            )}
           </div>
 
           {/* Tab Content */}
           <div className="p-6 bg-gray-50/30">
+            {/* Banner cuando no hay consulta activa */}
+            {!activeConsultation && activeTab !== 'history' && activeTab !== 'consultation' && (
+              <motion.div
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mb-4 flex items-center gap-3 px-4 py-3 bg-amber-50 border border-[#deb887]/40 rounded-xl text-sm text-[#b8944d]"
+              >
+                <Lock className="w-4 h-4 flex-shrink-0" />
+                <span>Selecciona o crea una consulta en el tab <strong>Consulta</strong> para habilitar este tab.</span>
+              </motion.div>
+            )}
             <AnimatePresence mode="wait">
               <motion.div
                 key={activeTab}
@@ -255,63 +294,71 @@ export default function ClinicalRecordManager() {
                 transition={{ duration: 0.2 }}
               >
                 {activeTab === 'history' && (
-                  <HistoryTab 
-                    recordId={recordData?.recordId} 
-                    initialData={recordData?.history} 
+                  <HistoryTab
+                    recordId={recordData?.recordId}
+                    initialData={recordData?.history}
                     onSave={() => fetchData(false)}
                   />
                 )}
                 {activeTab === 'consultation' && (
-                  <ConsultationTab 
-                    recordId={parseInt(recordId!)} 
-                    initialData={recordData.consultation} 
-                    historyData={recordData.consultationHistory}
-                    onSave={() => fetchData(false)} 
+                  <ConsultationTab
+                    recordId={parseInt(recordId!)}
+                    consultations={recordData?.consultations || []}
+                    activeConsultation={activeConsultation}
+                    onSelectConsultation={setActiveConsultation}
+                    onConsultationCreated={handleConsultationActivated}
+                    onSave={() => fetchData(false)}
                   />
                 )}
-                {activeTab === 'physical' && (
-                  <PhysicalExamTab 
-                    recordId={recordData?.recordId} 
+                {activeTab === 'physical' && activeConsultation && (
+                  <PhysicalExamTab
+                    recordId={recordData?.recordId}
                     physicalExams={recordData?.physicalExams || []}
                     patientName={patient ? `${patient.first_name} ${patient.last_name}` : ''}
+                    consultationId={activeConsultation?.id}
                     onSave={() => fetchData(false)}
                   />
                 )}
-                {activeTab === 'diagnosis' && (
-                  <DiagnosisTab 
-                    recordId={recordData?.recordId} 
+                {activeTab === 'diagnosis' && activeConsultation && (
+                  <DiagnosisTab
+                    recordId={recordData?.recordId}
                     diagnoses={recordData?.diagnoses || []}
                     patientName={patient ? `${patient.first_name} ${patient.last_name}` : ''}
+                    consultationId={activeConsultation?.id}
                     onSave={() => fetchData(false)}
                   />
                 )}
-                {activeTab === 'treatment' && (
-                  <TreatmentTab 
-                    recordId={recordData?.recordId} 
+                {activeTab === 'treatment' && activeConsultation && (
+                  <TreatmentTab
+                    recordId={recordData?.recordId}
                     treatments={recordData?.treatments || []}
                     patientName={patient ? `${patient.first_name} ${patient.last_name}` : ''}
+                    consultationId={activeConsultation?.id}
                     onSave={() => fetchData(false)}
                   />
                 )}
-                {activeTab === 'prescription' && (
-                  <PrescriptionTab 
-                    recordId={recordData?.recordId} 
+                {activeTab === 'prescription' && activeConsultation && (
+                  <PrescriptionTab
+                    recordId={recordData?.recordId}
                     patientName={patient ? `${patient.first_name} ${patient.last_name}` : ''}
                     patientAge={patient?.birth_date ? calculateAge(patient.birth_date) : ''}
+                    consultationId={activeConsultation?.id}
                   />
                 )}
-                {activeTab === 'consent' && (
-                  <ConsentimientosTab 
+                {activeTab === 'consent' && activeConsultation && enabledOptional.consents && (
+                  <ConsentimientosTab
                     patientId={patient?.id}
                     recordId={parseInt(recordId!)}
                     patient={patient}
+                    consultationId={activeConsultation?.id}
                   />
                 )}
-                {activeTab === 'injectables' && (
-                  <InjectablesTab 
+                {activeTab === 'injectables' && activeConsultation && enabledOptional.injectables && (
+                  <InjectablesTab
                     recordId={recordData?.recordId}
                     injectables={recordData?.injectables || []}
                     patientName={patient ? `${patient.first_name} ${patient.last_name}` : ''}
+                    consultationId={activeConsultation?.id}
                     onSave={() => fetchData(false)}
                   />
                 )}
@@ -319,6 +366,23 @@ export default function ClinicalRecordManager() {
             </AnimatePresence>
           </div>
         </div>
+        {/* Modal de consulta activada */}
+        {showActivatedModal && pendingNewConsultation && (
+          <ConsultationActivatedModal
+            consultationId={pendingNewConsultation.id}
+            onConfirm={handleModalConfirm}
+            onClose={() => { setShowActivatedModal(false); setPendingNewConsultation(null); }}
+          />
+        )}
+        {showPrintModal && (
+          <PrintModal
+            patient={patient}
+            recordId={parseInt(recordId!)}
+            recordData={recordData}
+            activeConsultation={activeConsultation}
+            onClose={() => setShowPrintModal(false)}
+          />
+        )}
       </div>
     </AdminLayout>
   );
