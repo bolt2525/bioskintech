@@ -1875,9 +1875,11 @@ const ThreeEngine: React.FC<{
       const size = box.getSize(new THREE.Vector3());
       const center = box.getCenter(new THREE.Vector3());
 
-      model.position.x -= center.x;
-      model.position.y -= center.y;
-      model.position.z -= center.z;
+      // ponytail: scale first, then offset — wrong order breaks body model (center at y=90)
+      const maxDim = Math.max(size.x, size.y, size.z);
+      const scaleFactor = 5 / (maxDim || 1);
+      model.scale.setScalar(scaleFactor);
+      model.position.set(-center.x * scaleFactor, -center.y * scaleFactor, -center.z * scaleFactor);
 
       const pivotGroup = new THREE.Group();
       pivotGroup.add(model);
@@ -1898,12 +1900,6 @@ const ThreeEngine: React.FC<{
           });
         }
       });
-
-      const maxDim = Math.max(size.x, size.y, size.z);
-      // targetSize=5 para coincidir exactamente con Clinical3D.tsx y que las
-      // coordenadas del JSON (generadas en ese viewer) sean directamente compatibles.
-      const scaleFactor = 5 / (maxDim || 1);
-      model.scale.setScalar(scaleFactor);
 
       if (controlsRef.current) {
         controlsRef.current.target.set(0, 0, 0);

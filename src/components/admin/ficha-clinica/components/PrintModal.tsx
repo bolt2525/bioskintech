@@ -66,23 +66,21 @@ export default function PrintModal({ patient, recordId, recordData, activeConsul
     setOpts(p => ({ ...p, [key]: !p[key] }));
 
   const handlePrint = () => {
-    // Build HTML for each selected section
     const h = recordData?.history || {};
     const consultation = activeConsultation;
-    const diagnoses = recordData?.diagnoses || [];
-    const treatments = recordData?.treatments || [];
-    const prescriptions = recordData?.prescriptions || [];
+    const diagnoses: any[] = recordData?.diagnoses || [];
+    const treatments: any[] = recordData?.treatments || [];
+    const prescriptions: any[] = recordData?.prescriptions || [];
+    const physicalExams: any[] = recordData?.physicalExams || [];
+    const injectables: any[] = recordData?.injectables || [];
+    const consentForms: any[] = recordData?.consentForms || [];
 
     const formatDate = (d: string) => d ? new Date(d).toLocaleDateString('es') : '';
-
-    const sectionHtml = (title: string, content: string) => `
-      <div class="section">
-        <h2>${title}</h2>
-        <div class="content">${content}</div>
-      </div>`;
-
-    const field = (label: string, val: string) =>
+    const sectionHtml = (title: string, content: string) =>
+      `<div class="section"><h2>${title}</h2><div class="content">${content}</div></div>`;
+    const field = (label: string, val: any) =>
       val ? `<div class="field"><span class="label">${label}:</span> <span>${val}</span></div>` : '';
+    const datePrefix = (d: string) => opts.includeDates && d ? `<span class="date">${formatDate(d)}</span> ` : '';
 
     let sections = '';
 
@@ -101,32 +99,65 @@ export default function PrintModal({ patient, recordId, recordData, activeConsul
     }
 
     if (opts.consulta && consultation) {
-      sections += sectionHtml('Consulta' + (opts.includeDates ? ` — ${formatDate(consultation.created_at)}` : ''),
+      sections += sectionHtml(
+        'Consulta' + (opts.includeDates ? ` — ${formatDate(consultation.created_at)}` : ''),
         [field('Motivo', consultation.reason), field('Historia de la enfermedad actual', consultation.current_illness)].filter(Boolean).join('') || '<em>Sin datos</em>'
       );
     }
 
+    if (opts.examenFisico && physicalExams.length) {
+      const ex = physicalExams[0]; // Most recent exam
+      const params = [
+        field('Tipo de piel', ex.skin_type), field('Fototipo', ex.phototype),
+        field('Escala Glogau', ex.glogau_scale), field('Hidratación', ex.hydration),
+        field('Elasticidad', ex.elasticity), field('Fotoprotección', ex.photoprotection),
+        field('Textura', ex.texture), field('Poros', ex.pores),
+        field('Pigmentación', ex.pigmentation), field('Sensibilidad', ex.sensitivity),
+        field('Descripción de lesiones', ex.lesions_description),
+      ].filter(Boolean).join('');
+
+      // Face marks
+      const parsedFaceMarks = (() => { try { return JSON.parse(ex.face_map_data || '[]') as any[]; } catch { return []; } })();
+      const parsedBodyMarks = (() => { try { return JSON.parse(ex.body_map_data || '[]') as any[]; } catch { return []; } })();
+      const marksHtml = [
+        parsedFaceMarks.length ? `<div class="field"><span class="label">Marcaciones faciales (${parsedFaceMarks.length}):</span> ${parsedFaceMarks.map((m: any) => `${m.category}${m.tercio ? ' — ' + m.tercio : ''}${m.notes ? ': ' + m.notes : ''}`).join(', ')}</div>` : '',
+        parsedBodyMarks.length ? `<div class="field"><span class="label">Marcaciones corporales (${parsedBodyMarks.length}):</span> ${parsedBodyMarks.map((m: any) => `${m.category}${m.notes ? ': ' + m.notes : ''}`).join(', ')}</div>` : '',
+      ].filter(Boolean).join('');
+      sections += sectionHtml('Examen Físico' + (opts.includeDates && ex.created_at ? ` — ${formatDate(ex.created_at)}` : ''), (params + marksHtml) || '<em>Sin datos</em>');
+    }
+
     if (opts.diagnostico && diagnoses.length) {
-      const items = diagnoses.map((d: any) =>
-        `<div class="list-item">${opts.includeDates ? `<span class="date">${formatDate(d.date)}</span> ` : ''}${d.diagnosis_text}${d.cie10_code ? ` [${d.cie10_code}]` : ''}</div>`
-      ).join('');
-      sections += sectionHtml('Diagnósticos', items);
+      sections += sectionHtml('Diagnósticos', diagnoses.map((d: any) =>
+        `<div class="list-item">${datePrefix(d.date)}${d.diagnosis_text}${d.cie10_code ? ` [${d.cie10_code}]` : ''}${d.type ? ` <em>(${d.type})</em>` : ''}</div>`
+      ).join(''));
     }
 
     if (opts.tratamientos && treatments.length) {
-      const items = treatments.map((t: any) =>
-        `<div class="list-item">${opts.includeDates ? `<span class="date">${formatDate(t.date)}</span> ` : ''}${t.procedure_name}${t.area_treated ? ` — ${t.area_treated}` : ''}</div>`
-      ).join('');
-      sections += sectionHtml('Tratamientos', items);
+      sections += sectionHtml('Tratamientos', treatments.map((t: any) =>
+        `<div class="list-item">${datePrefix(t.date)}${t.procedure_name}${t.area_treated ? ` — ${t.area_treated}` : ''}${t.equipment_used ? `, equipo: ${t.equipment_used}` : ''}${t.duration_minutes ? `, ${t.duration_minutes} min` : ''}</div>`
+      ).join(''));
     }
 
     if (opts.recetas && prescriptions.length) {
-      const items = prescriptions.map((p: any) => {
-        const itemsArr = Array.isArray(p.items) ? p.items : (typeof p.items === 'string' ? JSON.parse(p.items) : []);
-        const drugs = itemsArr.map((i: any) => `${i.medicamento || i.nombre_comercial} ${i.dosis || ''}`).filter(Boolean).join(', ');
-        return `<div class="list-item">${opts.includeDates ? `<span class="date">${formatDate(p.date)}</span> ` : ''}${drugs}</div>`;
-      }).join('');
-      sections += sectionHtml('Recetas', items);
+      sections += sectionHtml('Recetas', prescriptions.map((p: any) => {
+        const itemsArr: any[] = Array.isArray(p.items) ? p.items : (typeof p.items === 'string' ? JSON.parse(p.items || '[]') : []);
+        const drugs = itemsArr.map((i: any) => [i.medicamento || i.nombre_comercial, i.dosis, i.frecuencia, i.duracion].filter(Boolean).join(' ')).filter(Boolean).join(' / ');
+        return `<div class="list-item">${datePrefix(p.date)}${drugs || p.diagnosis || '—'}</div>`;
+      }).join(''));
+    }
+
+    if (opts.inyectables && injectables.length) {
+      sections += sectionHtml('Inyectables', injectables.map((inj: any) => {
+        const subtype = inj.relleno_subtype ? ` (${inj.relleno_subtype})` : '';
+        const areas: string[] = Array.isArray(inj.areas_treated) ? inj.areas_treated : (typeof inj.areas_treated === 'string' ? JSON.parse(inj.areas_treated || '[]') : []);
+        return `<div class="list-item">${datePrefix(inj.date)}<strong>${inj.product_type === 'toxina' ? 'Toxina' : 'Relleno' + subtype}</strong>: ${inj.product_name} ${inj.brand ? '(' + inj.brand + ')' : ''}${inj.units_used ? ', ' + inj.units_used + ' U' : ''}${inj.volume_used ? ', ' + inj.volume_used + 'ml' : ''}${areas.length ? ' — ' + areas.join(', ') : ''}</div>`;
+      }).join(''));
+    }
+
+    if (opts.consentimientos && consentForms.length) {
+      sections += sectionHtml('Consentimientos Informados', consentForms.map((c: any) =>
+        `<div class="list-item">${datePrefix(c.created_at || c.signed_at)}${c.procedure_type || c.form_type || 'Consentimiento'} — Estado: ${c.status || '—'}</div>`
+      ).join(''));
     }
 
     const logoHtml = clinic.general.logo_url
@@ -148,26 +179,26 @@ export default function PrintModal({ patient, recordId, recordData, activeConsul
   <title>Ficha Clínica — ${patient?.first_name} ${patient?.last_name}</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Arial', sans-serif; font-size: 11pt; color: #333; padding: 30mm 20mm; max-width: 210mm; }
+    body { font-family: Arial, sans-serif; font-size: 11pt; color: #333; padding: 20mm 18mm; max-width: 210mm; }
     .header { display: flex; align-items: flex-start; justify-content: space-between; border-bottom: 2px solid #deb887; padding-bottom: 12px; margin-bottom: 16px; }
-    .clinic-info h1 { font-size: 16pt; color: #b8944d; font-family: 'Georgia', serif; }
+    .clinic-info h1 { font-size: 15pt; color: #b8944d; font-family: Georgia, serif; }
     .clinic-info p { font-size: 9pt; color: #666; line-height: 1.4; }
     .patient-block { background: #fdf8f0; border: 1px solid #e8d5b0; border-radius: 6px; padding: 10px 14px; margin-bottom: 16px; }
-    .patient-block h2 { font-size: 13pt; color: #333; font-family: 'Georgia', serif; }
+    .patient-block h2 { font-size: 13pt; color: #333; font-family: Georgia, serif; }
     .patient-block p { font-size: 9pt; color: #666; margin-top: 2px; }
-    .section { margin-bottom: 18px; page-break-inside: avoid; }
-    .section h2 { font-size: 10pt; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; color: #b8944d; border-bottom: 1px solid #e8d5b0; padding-bottom: 4px; margin-bottom: 8px; }
+    .section { margin-bottom: 16px; page-break-inside: avoid; }
+    .section h2 { font-size: 9pt; font-weight: bold; text-transform: uppercase; letter-spacing: 0.6px; color: #b8944d; border-bottom: 1px solid #e8d5b0; padding-bottom: 3px; margin-bottom: 6px; }
     .content { font-size: 10pt; line-height: 1.5; }
-    .field { margin-bottom: 5px; }
+    .field { margin-bottom: 4px; }
     .label { font-weight: bold; color: #555; }
-    .list-item { margin-bottom: 5px; padding-left: 12px; }
-    .date { font-size: 9pt; color: #999; }
-    .professional-block { margin-top: 50px; text-align: center; }
+    .list-item { margin-bottom: 4px; padding-left: 10px; }
+    .date { font-size: 9pt; color: #999; margin-right: 4px; }
+    .professional-block { margin-top: 40px; text-align: center; }
     .sig-line { border-top: 1px solid #333; width: 200px; margin: 0 auto 6px; }
     .sig-name { font-weight: bold; font-size: 10pt; }
     .sig-detail { font-size: 9pt; color: #666; }
-    .footer { margin-top: 30px; font-size: 8pt; color: #aaa; text-align: center; border-top: 1px solid #eee; padding-top: 8px; }
-    @media print { body { padding: 0; } }
+    .footer { margin-top: 24px; font-size: 8pt; color: #aaa; text-align: center; border-top: 1px solid #eee; padding-top: 8px; }
+    @media print { body { padding: 8mm; } }
   </style>
 </head>
 <body>

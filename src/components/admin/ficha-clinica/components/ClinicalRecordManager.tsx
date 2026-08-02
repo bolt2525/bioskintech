@@ -221,9 +221,17 @@ export default function ClinicalRecordManager() {
             </button>
             <div className="flex items-center gap-2">
               {activeConsultation && (
-                <span className="px-2 py-1 bg-amber-50 text-[#b8944d] rounded-full text-xs font-medium border border-[#deb887]/30 max-w-[180px] truncate">
-                  Consulta: {activeConsultation.reason?.slice(0, 40) || new Date(activeConsultation.created_at).toLocaleDateString()}
-                </span>
+                <div className="flex flex-col items-end min-w-0 max-w-[260px]">
+                  <span className="text-[10px] text-gray-400 leading-none mb-0.5">
+                    {new Date(activeConsultation.created_at).toLocaleDateString('es', { day: '2-digit', month: 'short', year: 'numeric' })}
+                  </span>
+                  <span
+                    className="px-2.5 py-1 bg-amber-50 text-[#b8944d] rounded-full text-xs font-medium border border-[#deb887]/30 truncate max-w-full"
+                    title={activeConsultation.reason || 'Consulta activa'}
+                  >
+                    {activeConsultation.reason || 'Consulta activa'}
+                  </span>
+                </div>
               )}
               <button
                 onClick={() => setShowPrintModal(true)}

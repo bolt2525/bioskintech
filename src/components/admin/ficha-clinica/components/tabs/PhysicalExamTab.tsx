@@ -361,6 +361,9 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
     }
   }, [message]);
 
+  // Reset selectedCategory when switching between facial and corporal
+  useEffect(() => { setSelectedCategory(''); }, [activeTab]);
+
   const loadExam = (exam: PhysicalExam) => {
     setCurrentExam(exam);
     try {
