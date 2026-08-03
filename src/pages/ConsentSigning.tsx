@@ -86,18 +86,16 @@ export default function ConsentSigning() {
       if (!res.ok) throw new Error('Sesión no encontrada o expirada');
       const data = await res.json();
       setSession(data);
+      const isPending = data.signing_status !== 'signed';
       setDeclarations({
-        ...data.declarations,
-        // Ensure all keys exist
-        understanding: data.declarations?.understanding || false,
-        questions: data.declarations?.questions || false,
-        results: data.declarations?.results || false,
-        authorization: data.declarations?.authorization || false,
-        revocation: data.declarations?.revocation || false,
-        alternatives: data.declarations?.alternatives || false,
-        // Authorizations
-        image_use: data.authorizations?.image_use || false,
-        photo_video: data.authorizations?.photo_video || false
+        understanding: isPending ? false : (data.declarations?.understanding || false),
+        questions: isPending ? false : (data.declarations?.questions || false),
+        results: isPending ? false : (data.declarations?.results || false),
+        authorization: isPending ? false : (data.declarations?.authorization || false),
+        revocation: isPending ? false : (data.declarations?.revocation || false),
+        alternatives: isPending ? false : (data.declarations?.alternatives || false),
+        image_use: isPending ? false : (data.authorizations?.image_use || false),
+        photo_video: isPending ? false : (data.authorizations?.photo_video || false),
       });
       if (data.signing_status === 'signed') {
         setSignatureData(data.signatures?.patient_sig_data || null);
