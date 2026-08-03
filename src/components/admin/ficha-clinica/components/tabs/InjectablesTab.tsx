@@ -251,7 +251,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   } | null>(null);
   const [unitsModalInput, setUnitsModalInput] = useState('');
   // Multi-step states for trazado point modal
-  const [unitsModalStep, setUnitsModalStep] = useState<1 | 2 | 3>(1);
+  const [unitsModalStep, setUnitsModalStep] = useState<1 | 2 | 3 | 4>(1);
   const [unitsModalTercio, setUnitsModalTercio] = useState<'superior' | 'medio' | 'inferior' | ''>('');
   const [unitsModalZone, setUnitsModalZone] = useState('');
   const [unitsModalZoneFilter, setUnitsModalZoneFilter] = useState('');
@@ -1071,9 +1071,17 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     }));
   };
 
-  const handleUnitsModalConfirm = () => {
+  const handleUnitsModalConfirm = (planOverride?: string) => {
     if (!unitsModal) return;
+
+    // Paso 3 + nuevo punto toxina → avanzar a paso 4 (selección de plano)
+    if (unitsModalStep === 3 && unitsModal.isNewPoint && current.product_type === 'toxina') {
+      setUnitsModalStep(4);
+      return;
+    }
+
     const units = Number(unitsModalInput) || 0;
+    const planeToUse = planOverride !== undefined ? planOverride : unitsModalPlane;
 
     if (unitsModal.isNewPoint && pendingFreePoint) {
       // ── Punto libre nuevo (free-click o add-mode) ──────────────────────
@@ -1104,7 +1112,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
         // Vial activo para relleno HA
         ...(activeVialId ? { vial_id: activeVialId } : {}),
         // Plano y técnica si los seleccionó el usuario
-        ...(unitsModalPlane ? { injection_plane: unitsModalPlane } : {}),
+        ...(planeToUse ? { injection_plane: planeToUse } : {}),
         ...(unitsModalTecnica ? { technique_at_point: unitsModalTecnica } : {}),
       };
       setInjectionPoints(prev => [...prev, newPoint]);
@@ -1128,7 +1136,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
         units,
         label: effectiveLabel,
         editablePointId: unitsModal.pointId,
-        ...(unitsModalPlane ? { injection_plane: unitsModalPlane } : {}),
+        ...(planeToUse ? { injection_plane: planeToUse } : {}),
         ...(unitsModalTecnica ? { technique_at_point: unitsModalTecnica } : {}),
       };
 
@@ -1961,7 +1969,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
                 value={current.brand}
                 onChange={e => setCurrent({ ...current, brand: e.target.value })}
-                placeholder={current.product_type === 'toxina' ? 'Ej: BOTOX® 100UI' : 'Ej: Juvederm Ultra'}
+                placeholder={current.product_type === 'toxina' ? 'Ej: BOTOX® 100UI, Dysport®, Xeomin®' : rellenoSubType === 'hidratacion' ? 'Ej: Belotero Hydro, Teosyal PureSense, Juvéderm Hydrate' : rellenoSubType === 'bioestimulador' ? 'Ej: Sculptra, Radiesse, Ellanssé, Bellagen' : 'Ej: Juvederm Ultra, Restylane Lyft, Belotero'}
               />
               <datalist id="inj-tab-brands">
                 {brands.map((b, i) => <option key={i} value={b} />)}
@@ -1974,7 +1982,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
                 value={current.product_name}
                 onChange={e => setCurrent({ ...current, product_name: e.target.value })}
-                placeholder="Nombre comercial"
+                placeholder="Ej: Juvederm Ultra 2 (1ml jeringa)"
               />
             </div>
           </div>
@@ -1988,7 +1996,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
                 value={current.lot_number}
                 onChange={e => setCurrent({ ...current, lot_number: e.target.value })}
-                placeholder="Nro. de lote"
+                placeholder="Ej: 2024A001"
               />
             </div>
             <div className="space-y-1.5">
@@ -2018,7 +2026,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                   className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
                   value={current.volume_used}
                   onChange={e => setCurrent({ ...current, volume_used: e.target.value })}
-                  placeholder="Ej: 1.0"
+                  placeholder="Ej: 1.0 ml"
                 />
               )}
             </div>
@@ -2035,7 +2043,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
                 value={current.technique}
                 onChange={e => setCurrent({ ...current, technique: e.target.value })}
-                placeholder="Técnica de inyección"
+                placeholder="Ej: Microdéposito, Lineal, Abanico"
               />
               <datalist id="inj-tab-techniques">
                 {techniques.map((t, i) => <option key={i} value={t} />)}
@@ -2049,7 +2057,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
                 value={current.needle_type}
                 onChange={e => setCurrent({ ...current, needle_type: e.target.value })}
-                placeholder="Tipo de aguja"
+                placeholder="Ej: 30G 13mm, 32G 4mm"
               />
               <datalist id="inj-tab-needles">
                 {needles.map((n, i) => <option key={i} value={n} />)}
@@ -2074,7 +2082,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     className="flex-1 px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#deb887] outline-none bg-gray-50/50 focus:bg-white transition-all"
                     value={current.dilution_volume}
                     onChange={e => setCurrent({ ...current, dilution_volume: e.target.value })}
-                    placeholder="Ej: 2.5"
+                    placeholder="Ej: 2.5 ml (solución salina 0.9%)"
                   />
                   {Number(current.dilution_volume) > 0 && Number(current.units_used) > 0 && (
                     <span className="text-xs text-[#b8944d] font-semibold shrink-0 bg-[#deb887]/10 px-2.5 py-1.5 rounded-lg border border-[#deb887]/30">
@@ -2106,7 +2114,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
               className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none resize-none transition-all bg-gray-50/50 focus:bg-white"
               value={current.notes}
               onChange={e => setCurrent({ ...current, notes: e.target.value })}
-              placeholder="Notas clínicas, reacciones adversas, seguimiento..."
+              placeholder="Ej: Paciente tolera bien. Sin eritema post-aplicación."
             />
           </div>
         </div>
@@ -3465,7 +3473,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                   <h3 className="text-sm font-bold text-gray-800">
                     {current.product_type === 'relleno'
                       ? (unitsModalStep === 1 ? 'Volumen (ml)' : unitsModalStep === 2 ? 'Tercio facial' : 'Zona anatómica')
-                      : (unitsModalStep === 1 ? 'Unidades (UI)' : unitsModalStep === 2 ? 'Tercio facial' : 'Zona anatómica')
+                      : (unitsModalStep === 1 ? 'Unidades (UI)' : unitsModalStep === 2 ? 'Tercio facial' : unitsModalStep === 3 ? 'Zona anatómica' : 'Plano de inyección (opcional)')
                     }
                   </h3>
                   <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{unitsModal.pointName}</p>
@@ -3478,9 +3486,9 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 </button>
               </div>
 
-              {/* Step progress bar — pasos 1→2→3 */}
+              {/* Step progress bar — 3 pasos (relleno/punto existente) o 4 (toxina nuevo) */}
               <div className="flex gap-1 mb-4">
-                {[1, 2, 3].map(s => (
+                {(unitsModal.isNewPoint && current.product_type === 'toxina' ? [1, 2, 3, 4] : [1, 2, 3]).map(s => (
                   <div key={s} className={`h-1 flex-1 rounded-full transition-colors ${s <= unitsModalStep ? (current.product_type === 'relleno' ? 'bg-violet-400' : 'bg-[#deb887]') : 'bg-gray-200'}`} />
                 ))}
               </div>
@@ -3652,6 +3660,30 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 </div>
               )}
 
+              {/* Step 4: Plano de inyección (solo toxina, nuevo punto) */}
+              {unitsModalStep === 4 && (
+                <div className="mb-4">
+                  <p className="text-xs text-gray-500 mb-3">Selecciona el plano o continúa sin definir.</p>
+                  <div className="flex flex-col gap-2">
+                    {HA_PLANES.map(pl => (
+                      <button
+                        key={pl}
+                        onClick={() => handleUnitsModalConfirm(pl)}
+                        className="w-full px-3 py-2.5 rounded-xl border-2 text-left text-sm font-medium transition-all bg-white border-gray-200 text-gray-700 hover:border-[#deb887] hover:text-[#b8944d]"
+                      >
+                        {pl}
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => handleUnitsModalConfirm('')}
+                      className="w-full px-3 py-2.5 rounded-xl border-2 border-dashed border-gray-300 text-gray-500 text-sm font-medium hover:bg-gray-50 hover:border-gray-400 transition-all"
+                    >
+                      Omitir / Sin definir
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Action buttons */}
               <div className="flex flex-col gap-2">
                 {/* Fila secundaria: Eliminar + Cancelar (solo paso 1) */}
@@ -3690,22 +3722,32 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                   {/* Volver — pasos 2+ */}
                   {unitsModalStep > 1 && (
                     <button
-                      onClick={() => setUnitsModalStep(prev => (prev - 1) as 1 | 2 | 3)}
+                      onClick={() => setUnitsModalStep(prev => (prev - 1) as 1 | 2 | 3 | 4)}
                       className="px-3 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50 transition-colors"
                     >
                       ←
                     </button>
                   )}
 
-                  {/* Guardar — paso 1 y paso 3 (final) */}
-                  {(unitsModalStep === 1 || unitsModalStep === 3) && (
+                  {/* Guardar — paso 1 y paso 3 (punto existente) */}
+                  {(unitsModalStep === 1 || (unitsModalStep === 3 && !unitsModal.isNewPoint)) && (
                     <button
-                      onClick={handleUnitsModalConfirm}
+                      onClick={() => handleUnitsModalConfirm()}
                       disabled={!unitsModalInput || Number(unitsModalInput) <= 0}
                       className="flex-1 px-4 py-2.5 rounded-xl bg-[#deb887] text-white text-sm font-semibold hover:bg-[#c5a075] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
                     >
                       <Check className="w-4 h-4" />
                       Guardar
+                    </button>
+                  )}
+
+                  {/* Plano → — paso 3, nuevo punto toxina (avanza a paso 4) */}
+                  {unitsModalStep === 3 && unitsModal.isNewPoint && current.product_type === 'toxina' && (
+                    <button
+                      onClick={() => handleUnitsModalConfirm()}
+                      className="flex-1 px-4 py-2.5 rounded-xl bg-[#deb887] text-white text-sm font-semibold hover:bg-[#c5a075] transition-colors flex items-center justify-center gap-1.5"
+                    >
+                      Plano →
                     </button>
                   )}
 

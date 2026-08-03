@@ -1071,20 +1071,15 @@ const ThreeEngine: React.FC<{
       // ── Modo shape: preview de círculo o rectángulo ────────────────────────
       if (shapeAnchor && faceMeshRef.current && cameraRef.current) {
         const rect = renderer.domElement.getBoundingClientRect();
-        const dx = e.clientX - rect.left - rect.width / 2;
-        const dy = e.clientY - rect.top - rect.height / 2;
-        // Estimar radio en unidades del modelo desde distancia en pantalla
-        const screenDist = Math.sqrt(
-          (e.clientX - (rect.left + rect.width / 2 + shapeAnchor.point.x * 50)) ** 2 +
-          (e.clientY - (rect.top + rect.height / 2 - shapeAnchor.point.y * 50)) ** 2
-        );
-        // Conversión aproximada: la cámara está a ~12 unidades, FOV=35°
         const camDist = cameraRef.current.position.distanceTo(shapeAnchor.point);
         const fovRad = (cameraRef.current.fov * Math.PI) / 180;
         const unitsPerPx = (2 * camDist * Math.tan(fovRad / 2)) / rect.height;
-        const rawDist = Math.sqrt(
-          (e.clientX - startPos.x) ** 2 + (e.clientY - startPos.y) ** 2
-        ) * unitsPerPx;
+        // ponytail: canvas-relative coords — tolerates canvas translate/scale (framer-motion)
+        const relStartX = startPos.x - rect.left;
+        const relStartY = startPos.y - rect.top;
+        const relCurrX = e.clientX - rect.left;
+        const relCurrY = e.clientY - rect.top;
+        const rawDist = Math.sqrt((relCurrX - relStartX) ** 2 + (relCurrY - relStartY) ** 2) * unitsPerPx;
         const r = Math.max(0.05, rawDist);
         shapeCurrentRadius = r;
         shapeCurrentW = r * 1.6;
