@@ -18,6 +18,7 @@
 
 import { sql } from '@vercel/postgres';
 import crypto from 'crypto';
+import nodemailer from 'nodemailer';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuración de seguridad
@@ -33,6 +34,38 @@ const ALL_FEATURES = [
   'clinical_records', 'finance', 'inventory', 'clinical_3d',
   'system_status', 'backup', 'ai_consultation',
 ];
+
+// Planes de suscripción predefinidos (precio en centavos USD)
+const SUBSCRIPTION_PLANS = {
+  plan_completo: {
+    name: 'Plan Completo',
+    features: ALL_FEATURES,
+    access_scope: 'all',
+    amount_cents: 9900,        // $99.00/mes
+    description: 'Todos los módulos, pacientes ilimitados, IA incluida',
+  },
+  plan_clinica: {
+    name: 'Plan Clínica',
+    features: ['calendar', 'block_schedule', 'appointment', 'clinical_records', 'finance', 'inventory'],
+    access_scope: 'all',
+    amount_cents: 6900,        // $69.00/mes
+    description: 'Módulos principales, todos los pacientes de la clínica',
+  },
+  plan_personal: {
+    name: 'Plan Personal',
+    features: ['clinical_records', 'appointment'],
+    access_scope: 'own',
+    amount_cents: 2900,        // $29.00/mes
+    description: 'Solo tus propios pacientes y citas',
+  },
+  plan_trial: {
+    name: 'Plan Trial 30 días',
+    features: ALL_FEATURES,
+    access_scope: 'all',
+    amount_cents: 0,           // gratis
+    description: 'Acceso completo por 30 días',
+  },
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers de criptografía
@@ -207,6 +240,72 @@ async function initMultiTenantSchema() {
     )
   `;
 
+  // Códigos únicos de registro (generados por master_admin)
+  await sql`
+    CREATE TABLE IF NOT EXISTS registration_codes (
+      id           SERIAL PRIMARY KEY,
+      code         VARCHAR(32) UNIQUE NOT NULL,
+      plan_name    VARCHAR(100) NOT NULL DEFAULT 'Plan Completo',
+      features     JSONB DEFAULT '[]',
+      access_scope VARCHAR(20) DEFAULT 'all',
+      max_patients INTEGER DEFAULT -1,
+      is_active    BOOLEAN DEFAULT TRUE,
+      used_by      INTEGER REFERENCES clinic_users(id),
+      used_at      TIMESTAMP,
+      expires_at   TIMESTAMP,
+      note         TEXT,
+      created_by   INTEGER REFERENCES clinic_users(id),
+      created_at   TIMESTAMP DEFAULT NOW()
+    )
+  `;
+
+  // Suscripciones PayPhone (pagos de registro)
+  await sql`
+    CREATE TABLE IF NOT EXISTS subscriptions (
+      id                      SERIAL PRIMARY KEY,
+      clinic_id               INTEGER REFERENCES clinics(id),
+      plan_name               VARCHAR(100),
+      amount_cents            INTEGER NOT NULL DEFAULT 0,
+      currency                VARCHAR(10) DEFAULT 'USD',
+      status                  VARCHAR(30) DEFAULT 'pending',
+      payphone_transaction_id VARCHAR(100),
+      payphone_client_id      VARCHAR(100),
+      payphone_response       JSONB,
+      registration_code_id    INTEGER REFERENCES registration_codes(id),
+      created_at              TIMESTAMP DEFAULT NOW(),
+      paid_at                 TIMESTAMP,
+      expires_at              TIMESTAMP
+    )
+  `;
+
+  // Links de invitación para agregar usuarios a clínicas existentes
+  await sql`
+    CREATE TABLE IF NOT EXISTS invite_links (
+      id          SERIAL PRIMARY KEY,
+      token       VARCHAR(64) UNIQUE NOT NULL,
+      clinic_id   INTEGER REFERENCES clinics(id) ON DELETE CASCADE,
+      role        VARCHAR(30) DEFAULT 'clinic_user',
+      email       VARCHAR(255),
+      features    JSONB DEFAULT '[]',
+      is_used     BOOLEAN DEFAULT FALSE,
+      used_by     INTEGER REFERENCES clinic_users(id),
+      created_by  INTEGER REFERENCES clinic_users(id),
+      expires_at  TIMESTAMP NOT NULL,
+      created_at  TIMESTAMP DEFAULT NOW()
+    )
+  `;
+
+  // Estados OAuth transitorios (prevención CSRF en Google OAuth)
+  await sql`
+    CREATE TABLE IF NOT EXISTS oauth_states (
+      id         SERIAL PRIMARY KEY,
+      state      VARCHAR(64) UNIQUE NOT NULL,
+      purpose    VARCHAR(20) DEFAULT 'login',
+      expires_at TIMESTAMP NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `;
+
   // Columnas extras en caso de migración de tabla preexistente
   for (const col of [
     "ALTER TABLE admin_sessions ADD COLUMN IF NOT EXISTS clinic_user_id INTEGER",
@@ -218,6 +317,18 @@ async function initMultiTenantSchema() {
     "ALTER TABLE clinic_settings ADD COLUMN IF NOT EXISTS notificaciones JSONB NOT NULL DEFAULT '{}'",
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS cedula_profesional VARCHAR(50)",
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS especialidad VARCHAR(100)",
+    "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS first_name VARCHAR(100)",
+    "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS last_name VARCHAR(100)",
+    "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS gentilicio VARCHAR(50)",
+    "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS profession VARCHAR(100)",
+    "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS google_id VARCHAR(255)",
+    "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS avatar_url TEXT",
+    "ALTER TABLE clinics ADD COLUMN IF NOT EXISTS logo_url TEXT",
+    "ALTER TABLE clinics ADD COLUMN IF NOT EXISTS ruc VARCHAR(20)",
+    "ALTER TABLE clinics ADD COLUMN IF NOT EXISTS city VARCHAR(100)",
+    "ALTER TABLE clinics ADD COLUMN IF NOT EXISTS country VARCHAR(100) DEFAULT 'Ecuador'",
+    "ALTER TABLE clinics ADD COLUMN IF NOT EXISTS website VARCHAR(255)",
+    "ALTER TABLE clinics ADD COLUMN IF NOT EXISTS description TEXT",
   ]) {
     try { await sql.query(col); } catch { /* ya existe */ }
   }
@@ -288,6 +399,22 @@ async function seedData() {
   try { await sql`UPDATE patients SET clinic_id = ${bioskinId} WHERE clinic_id IS NULL`; } catch { /* patients aún no existe */ }
 
   await seedFeatures(bioskinId);
+
+  // Rotar contraseña de master_admin si hay nueva en env var
+  const newMasterPwd = (process.env.MASTER_ADMIN_NEW_PASSWORD || '').trim();
+  if (newMasterPwd && mu) {
+    const { hash, salt } = hashPassword(newMasterPwd);
+    const rotated = await sql`
+      UPDATE clinic_users SET password_hash=${hash}, salt=${salt}, hash_algo='pbkdf2',
+        failed_attempts=0, locked_until=NULL
+      WHERE username=${mu} AND role='master_admin' RETURNING id
+    `;
+    if (rotated.rows.length) {
+      await sql`UPDATE admin_sessions SET is_active=false WHERE username=${mu}`;
+      console.log('✅ Master admin password rotated via MASTER_ADMIN_NEW_PASSWORD — remove env var after login');
+    }
+  }
+
   return { bioskinId };
 }
 
@@ -642,8 +769,398 @@ async function deleteUser(requestUser, userId) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Gestión de clínicas (solo master_admin)
+// Email helper (invitaciones, registro, códigos)
 // ─────────────────────────────────────────────────────────────────────────────
+
+async function sendAuthEmail(to, subject, html) {
+  const user = (process.env.EMAIL_USER || '').trim();
+  const pass = (process.env.EMAIL_PASS || '').trim();
+  if (!user || !pass) { console.warn('⚠️  EMAIL_USER/EMAIL_PASS no configurados — email no enviado'); return; }
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: { user, pass },
+  });
+  await transporter.sendMail({ from: `"BIOSKIN Admin" <${user}>`, to, subject, html });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Google OAuth — login / registro de usuarios
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Genera la URL de Google OAuth para login o registro */
+async function getGoogleAuthUrl(purpose = 'login') {
+  const clientId     = (process.env.GOOGLE_CLIENT_ID     || '').trim();
+  const clientSecret = (process.env.GOOGLE_CLIENT_SECRET || '').trim();
+  if (!clientId || !clientSecret) return { error: 'Google OAuth no configurado' };
+
+  // Estado CSRF: guardamos en DB con TTL de 10 min
+  const state = crypto.randomBytes(24).toString('hex');
+  const exp   = new Date(Date.now() + 10 * 60 * 1000);
+  await sql`INSERT INTO oauth_states (state, purpose, expires_at) VALUES (${state}, ${purpose}, ${exp}) ON CONFLICT (state) DO NOTHING`;
+
+  const appUrl    = (process.env.APP_URL || `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app'}`).trim();
+  const redirectUri = `${appUrl}/api/admin-auth?action=googleCallback`;
+
+  const params = new URLSearchParams({
+    response_type: 'code',
+    client_id:     clientId,
+    redirect_uri:  redirectUri,
+    scope:         'openid email profile',
+    access_type:   'online',
+    state,
+    prompt:        'select_account',
+  });
+  return { url: `https://accounts.google.com/o/oauth2/v2/auth?${params}`, state };
+}
+
+/** Maneja el callback de Google OAuth y crea/busca el usuario */
+async function handleGoogleCallback(code, state, ip, ua) {
+  if (!code || !state) return { success: false, error: 'Parámetros inválidos' };
+
+  // Verificar estado CSRF
+  const stateRow = await sql`SELECT purpose FROM oauth_states WHERE state=${state} AND expires_at > NOW()`;
+  if (!stateRow.rows.length) return { success: false, error: 'Estado OAuth inválido o expirado' };
+  await sql`DELETE FROM oauth_states WHERE state=${state}`;
+  const purpose = stateRow.rows[0].purpose;
+
+  const clientId     = (process.env.GOOGLE_CLIENT_ID     || '').trim();
+  const clientSecret = (process.env.GOOGLE_CLIENT_SECRET || '').trim();
+  const appUrl       = (process.env.APP_URL || `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app'}`).trim();
+  const redirectUri  = `${appUrl}/api/admin-auth?action=googleCallback`;
+
+  // Intercambiar code → tokens
+  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ code, client_id: clientId, client_secret: clientSecret, redirect_uri: redirectUri, grant_type: 'authorization_code' }),
+  });
+  if (!tokenRes.ok) return { success: false, error: 'Error al intercambiar código Google' };
+  const tokens = await tokenRes.json();
+
+  // Obtener info del usuario de Google
+  const infoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+    headers: { Authorization: `Bearer ${tokens.access_token}` },
+  });
+  if (!infoRes.ok) return { success: false, error: 'Error al obtener perfil de Google' };
+  const gUser = await infoRes.json(); // { sub, email, name, given_name, family_name, picture }
+
+  if (!gUser.email) return { success: false, error: 'Google no proporcionó email' };
+
+  // Buscar usuario existente por google_id o email
+  let user = (await sql`SELECT * FROM clinic_users WHERE (google_id=${gUser.sub} OR username=${gUser.email}) AND is_active=true`).rows[0];
+
+  if (!user) {
+    if (purpose === 'login') {
+      return { success: false, error: 'No existe una cuenta con este correo de Google. Regístrate primero.', needsRegister: true, googleData: { email: gUser.email, name: gUser.name, given_name: gUser.given_name, family_name: gUser.family_name, picture: gUser.picture, google_id: gUser.sub } };
+    }
+    // purpose === 'register': devolver datos para completar registro
+    return { success: false, needsClinicSetup: true, googleData: { email: gUser.email, name: gUser.name, given_name: gUser.given_name, family_name: gUser.family_name, picture: gUser.picture, google_id: gUser.sub } };
+  }
+
+  // Vincular google_id si aún no está vinculado
+  if (!user.google_id) {
+    await sql`UPDATE clinic_users SET google_id=${gUser.sub}, avatar_url=${gUser.picture} WHERE id=${user.id}`;
+  }
+
+  // Crear sesión
+  const token = generateToken();
+  const exp   = new Date(Date.now() + SESSION_EXPIRY_MS);
+  await sql`
+    INSERT INTO admin_sessions (session_token, username, expires_at, ip_address, user_agent, clinic_user_id, role, clinic_id, access_scope)
+    VALUES (${token}, ${user.username}, ${exp}, ${ip}, ${ua}, ${user.id}, ${user.role}, ${user.clinic_id}, ${user.access_scope})
+  `;
+  await sql`UPDATE clinic_users SET failed_attempts=0, locked_until=NULL, last_login=NOW() WHERE id=${user.id}`;
+
+  return {
+    success: true, sessionToken: token, expiresAt: exp,
+    user: { id: user.id, username: user.username, full_name: user.full_name, email: user.email, role: user.role, clinic_id: user.clinic_id, access_scope: user.access_scope, gentilicio: user.gentilicio, profession: user.profession, avatar_url: user.avatar_url || gUser.picture },
+    features: await getFeatures(user.clinic_id),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Registro de clínicas (flujo público con código único o pago)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Valida un código de registro y devuelve el plan asociado */
+async function validateRegistrationCode(code) {
+  if (!code?.trim()) return { valid: false, error: 'Código requerido' };
+  const r = await sql`
+    SELECT id, plan_name, features, access_scope, max_patients, expires_at
+    FROM registration_codes
+    WHERE code=${code.trim().toUpperCase()} AND is_active=true AND used_by IS NULL
+  `;
+  if (!r.rows.length) return { valid: false, error: 'Código inválido o ya utilizado' };
+  const c = r.rows[0];
+  if (c.expires_at && new Date(c.expires_at) < new Date()) return { valid: false, error: 'Código expirado' };
+  const planKey = Object.keys(SUBSCRIPTION_PLANS).find(k => SUBSCRIPTION_PLANS[k].name === c.plan_name) || 'plan_completo';
+  return { valid: true, code: r.rows[0], plan: SUBSCRIPTION_PLANS[planKey] };
+}
+
+/**
+ * Registra una nueva clínica y su administrador.
+ * Requiere código de registro válido O subscription_id de pago confirmado.
+ */
+async function registerClinic(body) {
+  const { code, subscription_id, email, password, first_name, last_name, gentilicio, profession,
+          clinic_name, clinic_phone, clinic_address, clinic_city, clinic_country, clinic_ruc, clinic_website } = body;
+
+  if (!email?.trim() || !password?.trim() || !first_name?.trim() || !last_name?.trim())
+    return { error: 'email, password, first_name y last_name son requeridos' };
+  if (password.length < 8)
+    return { error: 'La contraseña debe tener al menos 8 caracteres' };
+  if (!clinic_name?.trim())
+    return { error: 'El nombre de la clínica es requerido' };
+
+  const emailNorm = email.trim().toLowerCase();
+
+  // Verificar email disponible
+  const existing = await sql`SELECT id FROM clinic_users WHERE username=${emailNorm}`;
+  if (existing.rows.length) return { error: 'Ya existe una cuenta con ese correo' };
+
+  let codeRow = null;
+  let planFeatures = ALL_FEATURES;
+  let accessScope   = 'all';
+
+  // Validar vía código único
+  if (code) {
+    const validated = await validateRegistrationCode(code);
+    if (!validated.valid) return { error: validated.error };
+    codeRow = validated.code;
+    planFeatures = codeRow.features?.length ? codeRow.features : ALL_FEATURES;
+    accessScope  = codeRow.access_scope || 'all';
+  } else if (subscription_id) {
+    // Validar vía pago confirmado
+    const sub = await sql`SELECT * FROM subscriptions WHERE id=${subscription_id} AND status='paid'`;
+    if (!sub.rows.length) return { error: 'Pago no confirmado. Completa el pago primero.' };
+    const plan = SUBSCRIPTION_PLANS[sub.rows[0].plan_name] || SUBSCRIPTION_PLANS.plan_completo;
+    planFeatures = plan.features;
+    accessScope  = plan.access_scope;
+  } else {
+    return { error: 'Se requiere un código de registro o un pago confirmado' };
+  }
+
+  // Crear clínica
+  const slug = clinic_name.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-');
+  let clinicId;
+  try {
+    const clinicR = await sql`
+      INSERT INTO clinics (name, slug, email, phone, address, city, country, ruc, website)
+      VALUES (${clinic_name.trim()}, ${slug}, ${emailNorm}, ${clinic_phone||null}, ${clinic_address||null}, ${clinic_city||null}, ${clinic_country||'Ecuador'}, ${clinic_ruc||null}, ${clinic_website||null})
+      RETURNING id
+    `;
+    clinicId = clinicR.rows[0].id;
+  } catch (e) {
+    if (e.message?.includes('unique')) return { error: 'Ya existe una clínica con ese nombre' };
+    throw e;
+  }
+
+  // Crear usuario admin de la clínica
+  const { hash, salt } = hashPassword(password);
+  const fullName = `${first_name.trim()} ${last_name.trim()}`;
+  const userR = await sql`
+    INSERT INTO clinic_users
+      (clinic_id, username, password_hash, salt, hash_algo, full_name, email,
+       first_name, last_name, gentilicio, profession, role, access_scope)
+    VALUES
+      (${clinicId}, ${emailNorm}, ${hash}, ${salt}, 'pbkdf2', ${fullName}, ${emailNorm},
+       ${first_name.trim()}, ${last_name.trim()}, ${gentilicio||null}, ${profession||null}, 'clinic_admin', ${accessScope})
+    RETURNING id
+  `;
+  const userId = userR.rows[0].id;
+
+  // Habilitar features según plan
+  for (const f of planFeatures) {
+    await sql`INSERT INTO clinic_features (clinic_id, feature, enabled) VALUES (${clinicId}, ${f}, true) ON CONFLICT (clinic_id, feature) DO NOTHING`;
+  }
+
+  // Marcar código como usado
+  if (codeRow) {
+    await sql`UPDATE registration_codes SET used_by=${userId}, used_at=NOW(), is_active=false WHERE id=${codeRow.id}`;
+  }
+
+  // Crear sesión
+  const token = generateToken();
+  const exp   = new Date(Date.now() + SESSION_EXPIRY_MS);
+  await sql`
+    INSERT INTO admin_sessions (session_token, username, expires_at, clinic_user_id, role, clinic_id, access_scope)
+    VALUES (${token}, ${emailNorm}, ${exp}, ${userId}, 'clinic_admin', ${clinicId}, ${accessScope})
+  `;
+
+  return {
+    success: true, sessionToken: token, expiresAt: exp,
+    user: { id: userId, username: emailNorm, full_name: fullName, email: emailNorm, role: 'clinic_admin', clinic_id: clinicId, access_scope: accessScope, first_name, last_name, gentilicio, profession },
+    clinic: { id: clinicId, name: clinic_name.trim(), slug },
+    features: planFeatures,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Códigos de registro (generados por master_admin)
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function generateRegistrationCode(requestUser, body) {
+  if (!requireRole(requestUser, 'master_admin')) return { error: 'Solo master_admin' };
+  const { plan_name = 'Plan Completo', expires_days = 30, note } = body || {};
+
+  const plan = Object.values(SUBSCRIPTION_PLANS).find(p => p.name === plan_name) || SUBSCRIPTION_PLANS.plan_completo;
+  const code = crypto.randomBytes(6).toString('hex').toUpperCase(); // 12 chars hex
+  const exp  = expires_days > 0 ? new Date(Date.now() + expires_days * 86400000) : null;
+
+  const r = await sql`
+    INSERT INTO registration_codes (code, plan_name, features, access_scope, is_active, expires_at, note, created_by)
+    VALUES (${code}, ${plan.name}, ${JSON.stringify(plan.features)}, ${plan.access_scope}, true, ${exp}, ${note||null}, ${requestUser.id})
+    RETURNING *
+  `;
+  return { success: true, code: r.rows[0] };
+}
+
+async function listRegistrationCodes(requestUser) {
+  if (!requireRole(requestUser, 'master_admin')) return { error: 'Solo master_admin' };
+  const r = await sql`
+    SELECT rc.*, cu.username as used_by_username, cu.full_name as used_by_name
+    FROM registration_codes rc
+    LEFT JOIN clinic_users cu ON cu.id = rc.used_by
+    ORDER BY rc.created_at DESC
+  `;
+  return r.rows;
+}
+
+async function revokeRegistrationCode(requestUser, id) {
+  if (!requireRole(requestUser, 'master_admin')) return { error: 'Solo master_admin' };
+  if (!id) return { error: 'id requerido' };
+  await sql`UPDATE registration_codes SET is_active=false WHERE id=${id}`;
+  return { success: true };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Links de invitación (para agregar usuarios a clínicas existentes)
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function generateInviteLink(requestUser, body) {
+  if (!requireRole(requestUser, 'master_admin', 'clinic_admin')) return { error: 'Sin permiso' };
+  const { email, role = 'clinic_user', clinic_id, expires_hours = 72 } = body || {};
+
+  const targetClinicId = requestUser.role === 'master_admin' ? (clinic_id ?? requestUser.clinic_id) : requestUser.clinic_id;
+  if (!targetClinicId) return { error: 'clinic_id requerido' };
+
+  const token = crypto.randomBytes(32).toString('hex');
+  const exp   = new Date(Date.now() + expires_hours * 3600000);
+
+  const r = await sql`
+    INSERT INTO invite_links (token, clinic_id, role, email, expires_at, created_by)
+    VALUES (${token}, ${targetClinicId}, ${role}, ${email||null}, ${exp}, ${requestUser.id})
+    RETURNING id, token, role, email, expires_at
+  `;
+
+  const appUrl = (process.env.APP_URL || `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app'}`).trim();
+  const link   = `${appUrl}/admin/register?invite=${token}`;
+
+  // Enviar email si hay dirección
+  if (email) {
+    const clinicRow = await sql`SELECT name FROM clinics WHERE id=${targetClinicId}`;
+    const clinicName = clinicRow.rows[0]?.name || 'BIOSKIN';
+    await sendAuthEmail(email, `Invitación para unirte a ${clinicName}`,
+      `<p>Has sido invitado a unirte a <b>${clinicName}</b> como <b>${role}</b>.</p>
+       <p><a href="${link}">Haz clic aquí para registrarte</a></p>
+       <p>Este enlace expira en ${expires_hours} horas.</p>`
+    );
+  }
+
+  return { success: true, invite: r.rows[0], link };
+}
+
+async function listInviteLinks(requestUser) {
+  if (!requireRole(requestUser, 'master_admin', 'clinic_admin')) return { error: 'Sin permiso' };
+  const clinicFilter = requestUser.role === 'master_admin'
+    ? sql`WHERE il.expires_at > NOW()`
+    : sql`WHERE il.clinic_id=${requestUser.clinic_id}`;
+  const r = await sql`
+    SELECT il.*, cu.username as used_by_username, c.name as clinic_name
+    FROM invite_links il
+    LEFT JOIN clinic_users cu ON cu.id = il.used_by
+    LEFT JOIN clinics c ON c.id = il.clinic_id
+    ${clinicFilter}
+    ORDER BY il.created_at DESC
+  `;
+  return r.rows;
+}
+
+/** Usa un invite link para registrar un nuevo usuario en una clínica existente */
+async function useInviteLink(token, body) {
+  if (!token) return { error: 'Token requerido' };
+  const inv = await sql`SELECT * FROM invite_links WHERE token=${token} AND is_used=false AND expires_at > NOW()`;
+  if (!inv.rows.length) return { error: 'Enlace inválido o expirado' };
+  const invite = inv.rows[0];
+
+  const { email, password, first_name, last_name, gentilicio, profession } = body || {};
+  if (!email?.trim() || !password?.trim() || !first_name?.trim() || !last_name?.trim())
+    return { error: 'email, password, first_name y last_name son requeridos' };
+  if (password.length < 8) return { error: 'La contraseña debe tener al menos 8 caracteres' };
+
+  const emailNorm = email.trim().toLowerCase();
+  if (invite.email && invite.email.toLowerCase() !== emailNorm)
+    return { error: 'Este enlace fue emitido para otro correo electrónico' };
+
+  const existing = await sql`SELECT id FROM clinic_users WHERE username=${emailNorm}`;
+  if (existing.rows.length) return { error: 'Ya existe una cuenta con ese correo' };
+
+  const { hash, salt } = hashPassword(password);
+  const fullName = `${first_name.trim()} ${last_name.trim()}`;
+  const userR = await sql`
+    INSERT INTO clinic_users
+      (clinic_id, username, password_hash, salt, hash_algo, full_name, email, first_name, last_name, gentilicio, profession, role, access_scope)
+    VALUES
+      (${invite.clinic_id}, ${emailNorm}, ${hash}, ${salt}, 'pbkdf2', ${fullName}, ${emailNorm}, ${first_name.trim()}, ${last_name.trim()}, ${gentilicio||null}, ${profession||null}, ${invite.role}, 'own')
+    RETURNING id
+  `;
+  const userId = userR.rows[0].id;
+
+  await sql`UPDATE invite_links SET is_used=true, used_by=${userId} WHERE id=${invite.id}`;
+
+  const token2 = generateToken();
+  const exp    = new Date(Date.now() + SESSION_EXPIRY_MS);
+  await sql`
+    INSERT INTO admin_sessions (session_token, username, expires_at, clinic_user_id, role, clinic_id, access_scope)
+    VALUES (${token2}, ${emailNorm}, ${exp}, ${userId}, ${invite.role}, ${invite.clinic_id}, 'own')
+  `;
+
+  return {
+    success: true, sessionToken: token2, expiresAt: exp,
+    user: { id: userId, username: emailNorm, full_name: fullName, email: emailNorm, role: invite.role, clinic_id: invite.clinic_id, access_scope: 'own', first_name, last_name, gentilicio, profession },
+    features: await getFeatures(invite.clinic_id),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Configuración de clínica post-registro
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function setupClinicDetails(requestUser, body) {
+  if (!requireRole(requestUser, 'master_admin', 'clinic_admin')) return { error: 'Sin permiso' };
+  const { name, email, phone, address, city, country, ruc, website, description, logo_url } = body;
+  const id = requestUser.clinic_id;
+  if (!id && requestUser.role !== 'master_admin') return { error: 'Sin clínica asignada' };
+  const targetId = requestUser.role === 'master_admin' ? (body.clinic_id || id) : id;
+  if (!targetId) return { error: 'clinic_id requerido' };
+
+  await sql`
+    UPDATE clinics SET
+      name        = COALESCE(${name        ?? null}, name),
+      email       = COALESCE(${email       ?? null}, email),
+      phone       = COALESCE(${phone       ?? null}, phone),
+      address     = COALESCE(${address     ?? null}, address),
+      city        = COALESCE(${city        ?? null}, city),
+      country     = COALESCE(${country     ?? null}, country),
+      ruc         = COALESCE(${ruc         ?? null}, ruc),
+      website     = COALESCE(${website     ?? null}, website),
+      description = COALESCE(${description ?? null}, description),
+      logo_url    = COALESCE(${logo_url    ?? null}, logo_url)
+    WHERE id = ${targetId}
+  `;
+  const r = await sql`SELECT * FROM clinics WHERE id = ${targetId}`;
+  return { success: true, clinic: r.rows[0] };
+}
 
 async function listClinics() {
   return (await sql`
@@ -758,6 +1275,81 @@ export default async function handler(req, res) {
     if (action === 'init') {
       await ensureSessionsTable();
       return res.status(200).json({ success: true, message: 'Tabla de sesiones inicializada' });
+    }
+
+    // ── Acciones públicas (no requieren autenticación) ─────────────────────
+
+    // Verificar disponibilidad de email (registro)
+    if (action === 'checkEmail') {
+      const email = (req.query.email || req.body?.email || '').trim().toLowerCase();
+      if (!email) return res.status(400).json({ error: 'email requerido' });
+      const r = await sql`SELECT id FROM clinic_users WHERE username=${email}`;
+      return res.status(200).json({ available: r.rows.length === 0 });
+    }
+
+    // Validar código de registro (paso previo al formulario)
+    if (action === 'validateCode') {
+      const code = (req.query.code || req.body?.code || '').trim();
+      const result = await validateRegistrationCode(code);
+      return res.status(result.valid ? 200 : 400).json(result);
+    }
+
+    // Registro completo de nueva clínica
+    if (action === 'register') {
+      const result = await registerClinic(req.body || {});
+      return res.status(result.error ? 400 : 201).json(result);
+    }
+
+    // Usar invite link para registro en clínica existente
+    if (action === 'useInvite') {
+      const token = req.query.token || req.body?.token;
+      const result = await useInviteLink(token, req.body || {});
+      return res.status(result.error ? 400 : 201).json(result);
+    }
+
+    // Google OAuth — obtener URL de autenticación
+    if (action === 'googleAuthUrl') {
+      const purpose = req.query.purpose || 'login';
+      if (!['login', 'register'].includes(purpose)) return res.status(400).json({ error: 'purpose inválido' });
+      const result = await getGoogleAuthUrl(purpose);
+      return res.status(result.error ? 503 : 200).json(result);
+    }
+
+    // Google OAuth — callback (redirige al SPA con token)
+    if (action === 'googleCallback') {
+      const code  = req.query.code  || '';
+      const state = req.query.state || '';
+      const error = req.query.error || '';
+      const appUrl = (process.env.APP_URL || `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app'}`).trim();
+
+      if (error) return res.redirect(`${appUrl}/admin/login?googleError=${encodeURIComponent(error)}`);
+
+      const ip = (req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || '').split(',')[0].trim();
+      const ua = req.headers['user-agent'] || '';
+      const result = await handleGoogleCallback(code, state, ip, ua);
+
+      if (result.success) {
+        // Redirigir al SPA con token en query param (se lee desde AdminLogin y se guarda)
+        const u = result.user;
+        const dest = u.role === 'master_admin'
+          ? `/admin/master`
+          : u.clinic_id ? `/admin/${u.clinic_slug || ''}` : '/admin';
+        return res.redirect(`${appUrl}${dest}?token=${result.sessionToken}`);
+      }
+      if (result.needsClinicSetup) {
+        // Nuevo usuario Google → redirigir a registro con datos prellenados
+        const gd = encodeURIComponent(JSON.stringify(result.googleData));
+        return res.redirect(`${appUrl}/admin/register?googleData=${gd}`);
+      }
+      if (result.needsRegister) {
+        return res.redirect(`${appUrl}/admin/login?googleError=${encodeURIComponent('No hay cuenta. Regístrate primero.')}`);
+      }
+      return res.redirect(`${appUrl}/admin/login?googleError=${encodeURIComponent(result.error || 'Error al iniciar sesión con Google')}`);
+    }
+
+    // Planes de suscripción disponibles (público)
+    if (action === 'getPlans') {
+      return res.status(200).json({ plans: SUBSCRIPTION_PLANS });
     }
 
     // ── Login ──────────────────────────────────────────────────────────────
@@ -1178,6 +1770,45 @@ export default async function handler(req, res) {
         await sql`DELETE FROM user_module_overrides WHERE clinic_user_id = ${userId} AND feature = ${feature}`;
       }
       return res.status(200).json({ success: true });
+    }
+
+    // ── Registro de clínicas (autenticado — para setupClinic y codes) ──────
+
+    if (action === 'setupClinic') {
+      const result = await setupClinicDetails(user, req.body || {});
+      return res.status(result.error ? 400 : 200).json(result);
+    }
+
+    // ── Códigos de registro (master_admin) ────────────────────────────────
+    if (action === 'generateCode') {
+      const result = await generateRegistrationCode(user, req.body || {});
+      return res.status(result.error ? 403 : 201).json(result);
+    }
+    if (action === 'listCodes') {
+      const result = await listRegistrationCodes(user);
+      return res.status(result?.error ? 403 : 200).json(result);
+    }
+    if (action === 'revokeCode') {
+      const id = req.query.id || req.body?.id;
+      const result = await revokeRegistrationCode(user, id);
+      return res.status(result.error ? 400 : 200).json(result);
+    }
+
+    // ── Links de invitación ───────────────────────────────────────────────
+    if (action === 'generateInvite') {
+      const result = await generateInviteLink(user, req.body || {});
+      return res.status(result.error ? 400 : 201).json(result);
+    }
+    if (action === 'listInvites') {
+      const result = await listInviteLinks(user);
+      return res.status(result?.error ? 403 : 200).json(result);
+    }
+
+    // ── Suscripciones (solo master_admin) ────────────────────────────────
+    if (action === 'listSubscriptions') {
+      if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master_admin' });
+      const r = await sql`SELECT s.*, c.name as clinic_name FROM subscriptions s LEFT JOIN clinics c ON c.id = s.clinic_id ORDER BY s.created_at DESC`;
+      return res.status(200).json(r.rows);
     }
 
     return res.status(400).json({ success: false, error: 'Acción no válida' });

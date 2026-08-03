@@ -13,7 +13,8 @@ import { AuthProvider } from './context/AuthContext';
 import ErrorBoundary from './pages/ErrorBoundary';
 
 // ── Auth ───────────────────────────────────────────────────────────────────
-import AdminLogin from './pages/AdminLogin';
+import AdminLogin    from './pages/AdminLogin';
+import AdminRegister from './pages/AdminRegister';
 
 // ── Dashboards ─────────────────────────────────────────────────────────────
 import AdminDashboard       from './pages/AdminDashboard';
@@ -62,7 +63,8 @@ function App() {
             <Route path="/" element={<Navigate to="/admin/login" replace />} />
 
             {/* Auth */}
-            <Route path="/admin/login" element={<AdminLogin />} />
+            <Route path="/admin/login"    element={<AdminLogin />} />
+            <Route path="/admin/register" element={<AdminRegister />} />
 
             {/* Dashboards */}
             <Route path="/admin/master" element={<AdminMasterDashboard />} />
