@@ -149,16 +149,24 @@ export default function PhotosTab({ recordId, consultationId, patientName }: Pho
           return;
         }
         if (!urlRes.ok) throw new Error('Error obteniendo URL de subida');
-        const { uploadUrl, key, public_url } = await urlRes.json();
+        const { uploadUrl, key, public_url, content_type: uploadContentType } = await urlRes.json();
         setR2Available(true);
 
-        // Step 2: upload to R2
-        const putRes = await fetch(uploadUrl, {
-          method: 'PUT',
-          body: file,
-          headers: { 'Content-Type': file.type },
-        });
-        if (!putRes.ok) throw new Error('Error al subir el archivo');
+        // Step 2: upload directo a R2 (presigned PUT)
+        let putRes: Response;
+        try {
+          putRes = await fetch(uploadUrl, {
+            method: 'PUT',
+            body: file,
+            headers: { 'Content-Type': uploadContentType || file.type || 'application/octet-stream' },
+          });
+        } catch {
+          throw new Error('No se pudo conectar con el almacenamiento. Intenta de nuevo en unos segundos.');
+        }
+        if (!putRes.ok) {
+          const errText = await putRes.text().catch(() => '');
+          throw new Error(`Error al subir (${putRes.status})${errText ? ': ' + errText.slice(0, 120) : ''}`);
+        }
 
         // Step 3: save metadata
         const saveRes = await recordsFetch('/api/records', {

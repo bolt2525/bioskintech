@@ -1,7 +1,7 @@
 import pg from 'pg';
 import crypto from 'crypto';
 import { initClinicalDatabase } from '../lib/neon-clinical-db.js';
-import { S3Client, DeleteObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, DeleteObjectCommand, PutObjectCommand, PutBucketCorsCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 const { Pool, types } = pg;
 
@@ -152,6 +152,33 @@ function getR2Client() {
       secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || '',
     },
   });
+}
+
+// ponytail: wrangler cors solo aplica a r2.dev; el endpoint S3 necesita PutBucketCors propio
+let r2CorsSet = false;
+async function ensureR2Cors(r2) {
+  if (r2CorsSet) return;
+  try {
+    await r2.send(new PutBucketCorsCommand({
+      Bucket: process.env.R2_BUCKET_NAME,
+      CORSConfiguration: {
+        CORSRules: [{
+          AllowedOrigins: [
+            'https://bioskintechapp.com',
+            'https://www.bioskintechapp.com',
+            'https://*.bioskintechapp.com',
+            'http://localhost:5173',
+            'http://localhost:3000',
+          ],
+          AllowedMethods: ['GET', 'PUT', 'DELETE', 'HEAD'],
+          AllowedHeaders: ['*'],
+          ExposeHeaders: ['ETag'],
+          MaxAgeSeconds: 86400,
+        }],
+      },
+    }));
+    r2CorsSet = true;
+  } catch { /* silencioso — CORS previo puede seguir funcionando */ }
 }
 
 export default async function handler(req, res) {
@@ -2234,20 +2261,22 @@ export default async function handler(req, res) {
         const su = await getSessionUserOnce();
         if (!su) return res.status(401).json({ error: 'No autenticado' });
         const { filename, content_type, record_id } = body;
-        if (!filename || !content_type || !record_id)
-          return res.status(400).json({ error: 'filename, content_type y record_id requeridos' });
+        if (!filename || !record_id)
+          return res.status(400).json({ error: 'filename y record_id requeridos' });
         // ponytail: sanitize filename → solo chars seguros para S3 key
         const safe = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
         const clinicId = su.effective_clinic_id ?? su.clinic_id;
         const key = `clinics/${clinicId}/records/${record_id}/${Date.now()}_${safe}`;
         const r2 = getR2Client();
         if (!r2) return res.status(503).json({ error: 'Almacenamiento no configurado' });
+        await ensureR2Cors(r2);
+        const safeContentType = content_type || 'application/octet-stream';
         const signedUrl = await getSignedUrl(
           r2,
-          new PutObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: key, ContentType: content_type }),
+          new PutObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: key, ContentType: safeContentType }),
           { expiresIn: 300 }
         );
-        return res.json({ uploadUrl: signedUrl, key, public_url: `${process.env.R2_PUBLIC_URL}/${key}` });
+        return res.json({ uploadUrl: signedUrl, key, public_url: `${process.env.R2_PUBLIC_URL}/${key}`, content_type: safeContentType });
       }
 
       case 'savePhoto': {
