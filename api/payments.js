@@ -2,17 +2,17 @@
  * @file api/payments.js
  * @description Integración con PayPhone para pagos de suscripciones BIOSKIN.
  *
- * PayPhone API base: https://pay.payphonetodoesposible.com/api
- * Auth: Bearer token (PAYPHONE_APP_TOKEN env var)
- * Montos: en centavos enteros (USD * 100)
+ * Credenciales (env vars):
+ *   PAYPHONE_APP_TOKEN        — App Token (Bearer para todas las llamadas API)
+ *   PAYPHONE_CLIENT_ID        — ID Cliente de la aplicación
+ *   PAYPHONE_SECRET_KEY       — Clave Secreta (verificación de identidad)
+ *   PAYPHONE_ENCODING_PASSWORD — Contraseña de codificación (verificación webhook)
  *
  * Flujo:
  *  1. POST ?action=preparePayment   → crea transacción, devuelve paymentUrl
  *  2. Usuario paga en PayPhone
- *  3. POST ?action=webhook          → PayPhone notifica resultado (se verifica)
+ *  3. POST ?action=webhook          → PayPhone notifica resultado (verificado con firma)
  *  4. POST ?action=confirmStatus    → frontend verifica estado después del pago
- *
- * ponytail: webhook sin firma HMAC → agregar X-Payphone-Signature cuando PayPhone lo soporte.
  */
 
 import { sql } from '@vercel/postgres';
@@ -43,19 +43,40 @@ function setCors(req, res) {
 // PayPhone helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-function getAppToken() {
-  const t = (process.env.PAYPHONE_APP_TOKEN || '').trim();
-  if (!t) throw new Error('PAYPHONE_APP_TOKEN no configurado');
-  return t;
+function getCredentials() {
+  const appToken = (process.env.PAYPHONE_APP_TOKEN || '').trim();
+  if (!appToken || appToken === 'placeholder_configure_later')
+    throw new Error('PAYPHONE_APP_TOKEN no configurado en Vercel');
+  return {
+    appToken,
+    clientId:         (process.env.PAYPHONE_CLIENT_ID         || '').trim(),
+    secretKey:        (process.env.PAYPHONE_SECRET_KEY        || '').trim(),
+    encodingPassword: (process.env.PAYPHONE_ENCODING_PASSWORD || '').trim(),
+  };
+}
+
+/**
+ * Verifica la firma del webhook de PayPhone.
+ * PayPhone firma el payload con la contraseña de codificación (HMAC-SHA256).
+ * ponytail: si PayPhone cambia el mecanismo de firma, actualizar aquí.
+ */
+function verifyWebhookSignature(body, signature, encodingPassword) {
+  if (!encodingPassword || !signature) return true; // sin config → pasar (dev mode)
+  const expected = crypto
+    .createHmac('sha256', encodingPassword)
+    .update(typeof body === 'string' ? body : JSON.stringify(body))
+    .digest('base64');
+  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
 }
 
 /** Llama a la API de PayPhone */
 async function payphoneRequest(path, body) {
+  const { appToken } = getCredentials();
   const res = await fetch(`${PAYPHONE_BASE}${path}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${getAppToken()}`,
+      'Authorization': `Bearer ${appToken}`,
     },
     body: JSON.stringify(body),
   });
@@ -66,8 +87,9 @@ async function payphoneRequest(path, body) {
 
 /** Consulta estado de una transacción */
 async function payphoneGetTransaction(transactionId) {
+  const { appToken } = getCredentials();
   const res = await fetch(`${PAYPHONE_BASE}/button/${transactionId}`, {
-    headers: { 'Authorization': `Bearer ${getAppToken()}` },
+    headers: { 'Authorization': `Bearer ${appToken}` },
   });
   if (!res.ok) throw new Error(`PayPhone status error ${res.status}`);
   return await res.json();
@@ -93,25 +115,27 @@ export default async function handler(req, res) {
       const plan = PLANS[plan_key];
       const clientTxId = `bioskin-${plan_key}-${crypto.randomBytes(8).toString('hex')}`;
       const appUrl = (process.env.APP_URL || `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app'}`).trim();
+      const { clientId } = getCredentials();
 
-      // tax en Ecuador = 15% IVA
+      // IVA Ecuador = 15%
       const amountWithTax    = Math.round(plan.amount_cents * 0.15);
       const amountWithoutTax = plan.amount_cents - amountWithTax;
 
       const payphoneData = await payphoneRequest('/button/Prepare', {
-        amount:            plan.amount_cents,
+        amount:              plan.amount_cents,
         amountWithTax,
         amountWithoutTax,
-        tax:               amountWithTax,
-        service:           0,
-        tip:               0,
-        currency:          'USD',
-        reference:         plan.name,
+        tax:                 amountWithTax,
+        service:             0,
+        tip:                 0,
+        currency:            'USD',
+        reference:           plan.name,
         clientTransactionId: clientTxId,
-        responseUrl:       `${appUrl}/admin/register?payment=confirm`,
-        cancellationUrl:   `${appUrl}/admin/register?payment=cancelled`,
-        notifyUrl:         `${appUrl}/api/payments?action=webhook`,
-        lang:              'es',
+        ...(clientId && { storeId: clientId }),
+        responseUrl:         `${appUrl}/gestionestetica/admin/register?payment=confirm`,
+        cancellationUrl:     `${appUrl}/gestionestetica/admin/register?payment=cancelled`,
+        notifyUrl:           `${appUrl}/api/payments?action=webhook`,
+        lang:                'es',
       });
 
       // Guardar suscripción pendiente
@@ -134,10 +158,16 @@ export default async function handler(req, res) {
 
     // ── Webhook de PayPhone (notificación automática) ─────────────────────
     if (action === 'webhook') {
-      // PayPhone envía el resultado vía POST al notifyUrl
       const { clientTransactionId, transactionStatus, id: transId } = req.body || {};
-
       if (!clientTransactionId) return res.status(400).json({ error: 'clientTransactionId requerido' });
+
+      // Verificar firma del webhook con la contraseña de codificación
+      const signature = req.headers['x-signature'] || req.headers['x-payphone-signature'] || '';
+      const { encodingPassword } = getCredentials();
+      if (signature && encodingPassword && !verifyWebhookSignature(req.body, signature, encodingPassword)) {
+        console.warn('⚠️  Webhook PayPhone: firma inválida — posible solicitud fraudulenta');
+        return res.status(401).json({ error: 'Firma inválida' });
+      }
 
       // Verificar estado real con la API (no confiar solo en el webhook)
       let confirmed = false;
