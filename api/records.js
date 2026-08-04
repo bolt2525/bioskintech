@@ -147,6 +147,7 @@ function getR2Client() {
   return new S3Client({
     region: 'auto',
     endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+    forcePathStyle: true, // R2 requiere path-style; virtual-hosted puede no resolver en DNS
     credentials: {
       accessKeyId: process.env.R2_ACCESS_KEY_ID || '',
       secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || '',
@@ -178,7 +179,9 @@ async function ensureR2Cors(r2) {
       },
     }));
     r2CorsSet = true;
-  } catch { /* silencioso — CORS previo puede seguir funcionando */ }
+  } catch (err) {
+    console.error('[R2 CORS init]', err.message);
+  }
 }
 
 export default async function handler(req, res) {
@@ -2276,6 +2279,7 @@ export default async function handler(req, res) {
           new PutObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: key, ContentType: safeContentType }),
           { expiresIn: 300 }
         );
+        try { console.log('[R2 presigned URL host]', new URL(signedUrl).host); } catch {}
         return res.json({ uploadUrl: signedUrl, key, public_url: `${process.env.R2_PUBLIC_URL}/${key}`, content_type: safeContentType });
       }
 
