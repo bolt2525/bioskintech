@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Camera, Upload, X, ZoomIn, Trash2, Edit3, Download,
+  Camera, Upload, X, Trash2, Edit3, Download,
   SplitSquareHorizontal, CheckCircle, AlertCircle,
-  ChevronLeft, ChevronRight, Save,
+  ChevronLeft, ChevronRight, Save, Tag, FolderOpen, Calendar,
 } from 'lucide-react';
 import recordsFetch from '../../../../../utils/recordsFetch';
 
@@ -11,6 +11,8 @@ interface ClinicalPhoto {
   id: number;
   record_id: number;
   consultation_id?: number;
+  consultation_date?: string;
+  consultation_reason?: string;
   photo_type: 'before' | 'after' | 'diagnostic' | 'progress' | 'general';
   r2_key: string;
   r2_url: string;
@@ -44,6 +46,14 @@ const TYPE_BADGE: Record<ClinicalPhoto['photo_type'], string> = {
   general: 'bg-gray-100 text-gray-600',
 };
 
+const TYPE_DOT: Record<ClinicalPhoto['photo_type'], string> = {
+  before: 'bg-blue-400',
+  after: 'bg-green-400',
+  diagnostic: 'bg-purple-400',
+  progress: 'bg-amber-400',
+  general: 'bg-gray-400',
+};
+
 const FILTER_OPTIONS = [
   { value: 'all', label: 'Todos' },
   { value: 'before', label: 'Antes' },
@@ -72,6 +82,8 @@ export default function PhotosTab({ recordId, consultationId, patientName }: Pho
   const [editingPhoto, setEditingPhoto] = useState<ClinicalPhoto | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [r2Available, setR2Available] = useState<boolean | null>(null);
+  const [typeSelectorId, setTypeSelectorId] = useState<number | null>(null);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   // lightbox nav index
   const [lightboxIndex, setLightboxIndex] = useState<number>(0);
 
@@ -80,9 +92,31 @@ export default function PhotosTab({ recordId, consultationId, patientName }: Pho
   const [sliderPct, setSliderPct] = useState(50);
   const isDraggingSlider = useRef(false);
 
-  const filteredPhotos = filterType === 'all'
-    ? photos
-    : photos.filter(p => p.photo_type === filterType);
+  const filteredPhotos = useMemo(
+    () => filterType === 'all' ? photos : photos.filter(p => p.photo_type === filterType),
+    [photos, filterType],
+  );
+
+  // Agrupar por consulta — clave: consultation_id (null = fotos generales)
+  const consultationGroups = useMemo(() => {
+    const map = new Map<string, { label: string; date?: string; photos: ClinicalPhoto[] }>();
+    for (const p of filteredPhotos) {
+      const key = p.consultation_id ? `c_${p.consultation_id}` : 'general';
+      if (!map.has(key)) {
+        const label = p.consultation_id
+          ? `Consulta ${p.consultation_date ? new Date(p.consultation_date).toLocaleDateString('es-CL') : `#${p.consultation_id}`}`
+          : 'Fotos generales';
+        map.set(key, { label, date: p.consultation_date, photos: [] });
+      }
+      map.get(key)!.photos.push(p);
+    }
+    // consultas recientes primero; generales al final
+    return [...map.entries()].sort(([a], [b]) => {
+      if (a === 'general') return 1;
+      if (b === 'general') return -1;
+      return 0; // ya vienen ordenadas del backend DESC
+    });
+  }, [filteredPhotos]);
 
   useEffect(() => {
     fetchPhotos();
@@ -122,15 +156,27 @@ export default function PhotosTab({ recordId, consultationId, patientName }: Pho
     }
   };
 
-  // ponytail: compress via canvas hasta < 3MB para caber en el JSON body de Vercel (4.5MB límite)
-  const compressImage = (file: File, maxBytes = 3 * 1024 * 1024): Promise<{ base64: string; type: string }> =>
+  // ponytail: solo usar canvas si el archivo supera el límite de Vercel (~3.2MB → 4.25MB base64 < 4.5MB)
+  const compressImage = (file: File, maxBytes = 3.2 * 1024 * 1024): Promise<{ base64: string; type: string }> =>
     new Promise((resolve, reject) => {
+      if (file.size <= maxBytes) {
+        // archivo pequeño: leer directo sin pérdida de calidad
+        const reader = new FileReader();
+        reader.onload = () => {
+          const b64 = (reader.result as string).split(',')[1];
+          resolve({ base64: b64, type: file.type || 'image/jpeg' });
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+        return;
+      }
+      // archivo grande: resize a 2560px máx, calidad 0.92 descendente
       const img = new Image();
       const url = URL.createObjectURL(file);
       img.onload = () => {
         URL.revokeObjectURL(url);
         const canvas = document.createElement('canvas');
-        const MAX_DIM = 1920;
+        const MAX_DIM = 2560;
         let { width, height } = img;
         if (width > MAX_DIM || height > MAX_DIM) {
           if (width > height) { height = Math.round(height * MAX_DIM / width); width = MAX_DIM; }
@@ -138,15 +184,14 @@ export default function PhotosTab({ recordId, consultationId, patientName }: Pho
         }
         canvas.width = width; canvas.height = height;
         canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
-        // reducir calidad hasta caber en límite
-        let quality = 0.85;
+        let quality = 0.92;
         const tryCompress = () => {
           const dataUrl = canvas.toDataURL('image/jpeg', quality);
           const base64 = dataUrl.split(',')[1];
-          if (base64.length * 0.75 < maxBytes || quality <= 0.4) {
+          if (base64.length * 0.75 < maxBytes || quality <= 0.65) {
             resolve({ base64, type: 'image/jpeg' });
           } else {
-            quality -= 0.15;
+            quality -= 0.08;
             tryCompress();
           }
         };
@@ -294,10 +339,31 @@ export default function PhotosTab({ recordId, consultationId, patientName }: Pho
   const handleCompareSelect = (photo: ClinicalPhoto) => {
     if (!compareLeft) { setCompareLeft(photo); return; }
     if (!compareRight && photo.id !== compareLeft.id) { setCompareRight(photo); return; }
-    // reset
     setCompareLeft(photo);
     setCompareRight(null);
   };
+
+  const quickChangeType = async (photo: ClinicalPhoto, newType: ClinicalPhoto['photo_type']) => {
+    if (photo.photo_type === newType) { setTypeSelectorId(null); return; }
+    try {
+      const res = await recordsFetch('/api/records', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'updatePhoto', id: photo.id, photo_type: newType }),
+      });
+      if (res.ok) {
+        setPhotos(prev => prev.map(p => p.id === photo.id ? { ...p, photo_type: newType } : p));
+        setTypeSelectorId(null);
+      }
+    } catch { setTypeSelectorId(null); }
+  };
+
+  const toggleGroup = (key: string) =>
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
 
   return (
     <div className="space-y-4">
@@ -469,7 +535,7 @@ export default function PhotosTab({ recordId, consultationId, patientName }: Pho
         </div>
       )}
 
-      {/* Photo grid */}
+      {/* Photo grid — grouped by consultation */}
       {loading ? (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
           {[1, 2, 3, 4].map(i => (
@@ -477,7 +543,6 @@ export default function PhotosTab({ recordId, consultationId, patientName }: Pho
           ))}
         </div>
       ) : filteredPhotos.length === 0 && !compareMode ? (
-        // Empty state
         <div
           className="flex flex-col items-center justify-center py-16 border-2 border-dashed border-gray-200 rounded-xl text-center"
           onDragOver={e => { e.preventDefault(); setDragOver(true); }}
@@ -501,77 +566,139 @@ export default function PhotosTab({ recordId, consultationId, patientName }: Pho
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-          {filteredPhotos.map(photo => {
-            const isCompareSelected = compareLeft?.id === photo.id || compareRight?.id === photo.id;
+        <div className="space-y-6">
+          {consultationGroups.map(([key, group]) => {
+            const isCollapsed = collapsedGroups.has(key);
+            const isGeneral = key === 'general';
             return (
-              <motion.div
-                key={photo.id}
-                layout
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className={`group relative aspect-square bg-gray-100 rounded-xl overflow-hidden cursor-pointer border-2 transition-all ${
-                  isCompareSelected
-                    ? 'border-[#deb887] ring-2 ring-[#deb887]/40'
-                    : 'border-transparent hover:border-gray-200'
-                }`}
-                onClick={() => compareMode ? handleCompareSelect(photo) : openLightbox(photo)}
-              >
-                <img
-                  src={photo.r2_url}
-                  alt={TYPE_LABELS[photo.photo_type]}
-                  className="w-full h-full object-cover"
-                  loading="lazy"
-                />
-                {/* Type badge */}
-                <span className={`absolute top-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-semibold ${TYPE_BADGE[photo.photo_type]}`}>
-                  {TYPE_LABELS[photo.photo_type]}
-                </span>
-                {/* Compare check */}
-                {compareMode && isCompareSelected && (
-                  <div className="absolute top-2 right-2 w-6 h-6 bg-[#deb887] rounded-full flex items-center justify-center">
-                    <CheckCircle className="w-4 h-4 text-white" />
+              <div key={key}>
+                {/* Group header */}
+                <button
+                  onClick={() => toggleGroup(key)}
+                  className="flex items-center gap-2 w-full mb-3 text-left group"
+                >
+                  {isGeneral
+                    ? <FolderOpen className="w-4 h-4 text-gray-400" />
+                    : <Calendar className="w-4 h-4 text-[#b8944d]" />}
+                  <span className={`text-sm font-semibold ${isGeneral ? 'text-gray-500' : 'text-gray-700'}`}>
+                    {group.label}
+                    {group.photos[0]?.consultation_reason && (
+                      <span className="font-normal text-gray-400 ml-1.5">· {group.photos[0].consultation_reason.slice(0, 60)}</span>
+                    )}
+                  </span>
+                  <span className="text-xs text-gray-400 ml-1">({group.photos.length})</span>
+                  <ChevronRight className={`w-3.5 h-3.5 text-gray-300 ml-auto transition-transform group-hover:text-gray-400 ${isCollapsed ? '' : 'rotate-90'}`} />
+                  <div className="flex-1 h-px bg-gray-100 ml-1" />
+                </button>
+
+                {!isCollapsed && (
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                    {group.photos.map(photo => {
+                      const isCompareSelected = compareLeft?.id === photo.id || compareRight?.id === photo.id;
+                      return (
+                        <motion.div
+                          key={photo.id}
+                          layout
+                          initial={{ opacity: 0, scale: 0.95 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.95 }}
+                          className={`group relative aspect-square bg-gray-100 rounded-xl overflow-hidden cursor-pointer border-2 transition-all ${
+                            isCompareSelected
+                              ? 'border-[#deb887] ring-2 ring-[#deb887]/40'
+                              : 'border-transparent hover:border-gray-200'
+                          }`}
+                          onClick={() => compareMode ? handleCompareSelect(photo) : openLightbox(photo)}
+                        >
+                          <img
+                            src={photo.r2_url}
+                            alt={TYPE_LABELS[photo.photo_type]}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                          />
+                          {/* Type badge */}
+                          <span className={`absolute top-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-semibold ${TYPE_BADGE[photo.photo_type]}`}>
+                            {TYPE_LABELS[photo.photo_type]}
+                          </span>
+                          {/* Compare check */}
+                          {compareMode && isCompareSelected && (
+                            <div className="absolute top-2 right-2 w-6 h-6 bg-[#deb887] rounded-full flex items-center justify-center">
+                              <CheckCircle className="w-4 h-4 text-white" />
+                            </div>
+                          )}
+                          {/* Hover overlay */}
+                          {!compareMode && (
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2">
+                              <div className="flex gap-1 ml-auto">
+                                {/* Quick type selector */}
+                                <div className="relative">
+                                  <button
+                                    onClick={e => { e.stopPropagation(); setTypeSelectorId(typeSelectorId === photo.id ? null : photo.id); }}
+                                    className="p-1.5 bg-white/90 rounded-lg hover:bg-white transition-colors"
+                                    title="Mover a categoría"
+                                  >
+                                    <Tag className="w-3 h-3 text-gray-700" />
+                                  </button>
+                                  {typeSelectorId === photo.id && (
+                                    <div
+                                      className="absolute bottom-full right-0 mb-1 bg-white rounded-xl shadow-xl border border-gray-100 p-1.5 min-w-[130px] z-20"
+                                      onClick={e => e.stopPropagation()}
+                                    >
+                                      {(Object.entries(TYPE_LABELS) as [ClinicalPhoto['photo_type'], string][]).map(([type, label]) => (
+                                        <button
+                                          key={type}
+                                          onClick={() => quickChangeType(photo, type)}
+                                          className={`w-full text-left px-2 py-1.5 text-xs rounded-lg hover:bg-gray-50 flex items-center gap-2 transition-colors ${
+                                            photo.photo_type === type ? 'font-semibold text-[#b8944d]' : 'text-gray-700'
+                                          }`}
+                                        >
+                                          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${TYPE_DOT[type]}`} />
+                                          {label}
+                                          {photo.photo_type === type && <CheckCircle className="w-3 h-3 text-[#b8944d] ml-auto" />}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                                <button
+                                  onClick={e => { e.stopPropagation(); setEditingPhoto(photo); }}
+                                  className="p-1.5 bg-white/90 rounded-lg hover:bg-white transition-colors"
+                                  title="Editar"
+                                >
+                                  <Edit3 className="w-3 h-3 text-gray-700" />
+                                </button>
+                                <a
+                                  href={photo.r2_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={e => e.stopPropagation()}
+                                  download
+                                  className="p-1.5 bg-white/90 rounded-lg hover:bg-white transition-colors"
+                                  title="Descargar"
+                                >
+                                  <Download className="w-3 h-3 text-gray-700" />
+                                </a>
+                                <button
+                                  onClick={e => { e.stopPropagation(); handleDelete(photo); }}
+                                  className="p-1.5 bg-white/90 rounded-lg hover:bg-red-50 transition-colors"
+                                  title="Eliminar"
+                                >
+                                  <Trash2 className="w-3 h-3 text-red-500" />
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                          {/* Session label */}
+                          {photo.session_label && (
+                            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent px-2 py-1">
+                              <p className="text-white text-[10px] truncate">{photo.session_label}</p>
+                            </div>
+                          )}
+                        </motion.div>
+                      );
+                    })}
                   </div>
                 )}
-                {/* Hover overlay */}
-                {!compareMode && (
-                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2">
-                    <div className="flex gap-1 ml-auto">
-                      <button
-                        onClick={e => { e.stopPropagation(); setEditingPhoto(photo); }}
-                        className="p-1.5 bg-white/90 rounded-lg hover:bg-white transition-colors"
-                        title="Editar"
-                      >
-                        <Edit3 className="w-3 h-3 text-gray-700" />
-                      </button>
-                      <a
-                        href={photo.r2_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={e => e.stopPropagation()}
-                        className="p-1.5 bg-white/90 rounded-lg hover:bg-white transition-colors"
-                        title="Descargar"
-                      >
-                        <Download className="w-3 h-3 text-gray-700" />
-                      </a>
-                      <button
-                        onClick={e => { e.stopPropagation(); handleDelete(photo); }}
-                        className="p-1.5 bg-white/90 rounded-lg hover:bg-red-50 transition-colors"
-                        title="Eliminar"
-                      >
-                        <Trash2 className="w-3 h-3 text-red-500" />
-                      </button>
-                    </div>
-                  </div>
-                )}
-                {/* Session label */}
-                {photo.session_label && (
-                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent px-2 py-1">
-                    <p className="text-white text-[10px] truncate">{photo.session_label}</p>
-                  </div>
-                )}
-              </motion.div>
+              </div>
             );
           })}
         </div>

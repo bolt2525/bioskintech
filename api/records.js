@@ -2227,10 +2227,16 @@ export default async function handler(req, res) {
         const { record_id, consultation_id } = req.query;
         if (!record_id) return res.status(400).json({ error: 'record_id requerido' });
         const clinicId = su.effective_clinic_id ?? su.clinic_id;
-        let q = 'SELECT * FROM clinical_photos WHERE record_id=$1 AND clinic_id=$2';
+        let q = `
+          SELECT p.*,
+                 c.created_at AS consultation_date,
+                 c.reason     AS consultation_reason
+          FROM clinical_photos p
+          LEFT JOIN consultations c ON p.consultation_id = c.id
+          WHERE p.record_id=$1 AND p.clinic_id=$2`;
         const params = [record_id, clinicId];
-        if (consultation_id) { q += ' AND consultation_id=$3'; params.push(consultation_id); }
-        q += ' ORDER BY taken_at DESC, created_at DESC';
+        if (consultation_id) { q += ' AND p.consultation_id=$3'; params.push(consultation_id); }
+        q += ' ORDER BY c.created_at DESC NULLS LAST, p.taken_at DESC, p.created_at DESC';
         const { rows } = await pool.query(q, params);
         return res.json(rows);
       }
