@@ -1,7 +1,7 @@
 import pg from 'pg';
 import crypto from 'crypto';
 import { initClinicalDatabase } from '../lib/neon-clinical-db.js';
-import { S3Client, DeleteObjectCommand, PutObjectCommand, PutBucketCorsCommand } from '@aws-sdk/client-s3';
+import { S3Client, DeleteObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 const { Pool, types } = pg;
 
@@ -155,34 +155,9 @@ function getR2Client() {
   });
 }
 
-// ponytail: wrangler cors solo aplica a r2.dev; el endpoint S3 necesita PutBucketCors propio
+// ponytail: wrangler cors aplica al endpoint S3 y r2.dev por igual (confirmado via OPTIONS test)
 let r2CorsSet = false;
-async function ensureR2Cors(r2) {
-  if (r2CorsSet) return;
-  try {
-    await r2.send(new PutBucketCorsCommand({
-      Bucket: process.env.R2_BUCKET_NAME,
-      CORSConfiguration: {
-        CORSRules: [{
-          AllowedOrigins: [
-            'https://bioskintechapp.com',
-            'https://www.bioskintechapp.com',
-            'https://*.bioskintechapp.com',
-            'http://localhost:5173',
-            'http://localhost:3000',
-          ],
-          AllowedMethods: ['GET', 'PUT', 'DELETE', 'HEAD'],
-          AllowedHeaders: ['*'],
-          ExposeHeaders: ['ETag'],
-          MaxAgeSeconds: 86400,
-        }],
-      },
-    }));
-    r2CorsSet = true;
-  } catch (err) {
-    console.error('[R2 CORS init]', err.message);
-  }
-}
+async function ensureR2Cors() { return; } // no-op: CORS ya está set vía wrangler
 
 export default async function handler(req, res) {
   console.log(`[Clinical Records API] Request received: ${req.method} ${req.url}`);
@@ -2272,15 +2247,14 @@ export default async function handler(req, res) {
         const key = `clinics/${clinicId}/records/${record_id}/${Date.now()}_${safe}`;
         const r2 = getR2Client();
         if (!r2) return res.status(503).json({ error: 'Almacenamiento no configurado' });
-        await ensureR2Cors(r2);
-        const safeContentType = content_type || 'application/octet-stream';
+        // ponytail: omitir ContentType del comando firmado — si se incluye, R2 devuelve 400 sin CORS headers ante cualquier mismatch
         const signedUrl = await getSignedUrl(
           r2,
-          new PutObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: key, ContentType: safeContentType }),
+          new PutObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: key }),
           { expiresIn: 300 }
         );
         try { console.log('[R2 presigned URL host]', new URL(signedUrl).host); } catch {}
-        return res.json({ uploadUrl: signedUrl, key, public_url: `${process.env.R2_PUBLIC_URL}/${key}`, content_type: safeContentType });
+        return res.json({ uploadUrl: signedUrl, key, public_url: `${process.env.R2_PUBLIC_URL}/${key}`, content_type: content_type || 'application/octet-stream' });
       }
 
       case 'savePhoto': {
