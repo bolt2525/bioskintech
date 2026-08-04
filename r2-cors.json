@@ -1,0 +1,19 @@
+{
+  "rules": [
+    {
+      "allowed": {
+        "origins": [
+          "https://bioskintechapp.com",
+          "https://www.bioskintechapp.com",
+          "https://*.bioskintechapp.com",
+          "http://localhost:5173",
+          "http://localhost:3000"
+        ],
+        "methods": ["GET", "PUT", "DELETE", "HEAD"],
+        "headers": ["Content-Type", "Content-Length", "x-amz-content-sha256"]
+      },
+      "exposeHeaders": ["ETag"],
+      "maxAgeSeconds": 3600
+    }
+  ]
+}

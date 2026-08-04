@@ -36,16 +36,16 @@ export default function AdminLogin() {
     if (isAuthenticated) navigate('/admin');
   }, [isAuthenticated, navigate]);
 
-  // Manejar token de Google OAuth callback (redirigido desde /api/admin-auth?action=googleCallback)
+  // Manejar token de Google OAuth callback
   useEffect(() => {
     const token = searchParams.get('token');
     const googleError = searchParams.get('googleError');
     if (googleError) { setError(decodeURIComponent(googleError)); return; }
     if (token) {
       localStorage.setItem('bioskin_session_token', token);
-      window.location.replace('/admin');
+      navigate('/admin'); // basename lo convierte a /gestionestetica/admin
     }
-  }, [searchParams]);
+  }, [searchParams, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -39,10 +39,10 @@ const DEFAULT_OPTIONS: PrintOptions = {
 };
 
 const SECTIONS = [
-  { key: 'antecedentes', label: 'Antecedentes Clínicos' },
+  { key: 'antecedentes', label: 'Antecedentes ClÃ­nicos' },
   { key: 'consulta', label: 'Consulta activa' },
-  { key: 'examenFisico', label: 'Examen Físico' },
-  { key: 'diagnostico', label: 'Diagnósticos' },
+  { key: 'examenFisico', label: 'Examen FÃ­sico' },
+  { key: 'diagnostico', label: 'DiagnÃ³sticos' },
   { key: 'tratamientos', label: 'Tratamientos' },
   { key: 'recetas', label: 'Recetas' },
   { key: 'inyectables', label: 'Inyectables' },
@@ -80,7 +80,7 @@ export default function PrintModal({ patient, recordId, recordData, activeConsul
   });
 
   const missingFields: string[] = [];
-  if (!profTemp.cedula) missingFields.push('cédula/matrícula');
+  if (!profTemp.cedula) missingFields.push('cÃ©dula/matrÃ­cula');
   if (!profTemp.especialidad) missingFields.push('especialidad');
 
   const toggle = (key: keyof PrintOptions) => setOpts(p => ({ ...p, [key]: !p[key] }));
@@ -103,12 +103,12 @@ export default function PrintModal({ patient, recordId, recordData, activeConsul
   const getItemLabel = (key: string, item: any, idx: number) => {
     const d = (s: string) => s ? new Date(s).toLocaleDateString('es', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
     switch (key) {
-      case 'examenFisico': return (item.skin_type || 'Examen') + (item.created_at ? ' – ' + d(item.created_at) : '');
-      case 'diagnostico': return (item.diagnosis_text?.slice(0, 45) || 'Diagnóstico') + (item.date ? ' – ' + d(item.date) : '');
-      case 'tratamientos': return (item.procedure_name?.slice(0, 45) || 'Tratamiento') + (item.date ? ' – ' + d(item.date) : '');
-      case 'recetas': return 'Receta' + (item.date ? ' – ' + d(item.date) : '') + (item.diagnosis ? ': ' + item.diagnosis.slice(0, 30) : '');
-      case 'inyectables': return (item.product_type === 'toxina' ? 'Toxina' : 'Relleno') + ' – ' + (item.product_name || '') + (item.date ? ' – ' + d(item.date) : '');
-      case 'consentimientos': return (item.procedure_type || item.form_type || 'Consentimiento') + (item.created_at ? ' – ' + d(item.created_at) : '');
+      case 'examenFisico': return (item.skin_type || 'Examen') + (item.created_at ? ' â€” ' + d(item.created_at) : '');
+      case 'diagnostico': return (item.diagnosis_text?.slice(0, 45) || 'DiagnÃ³stico') + (item.date ? ' â€” ' + d(item.date) : '');
+      case 'tratamientos': return (item.procedure_name?.slice(0, 45) || 'Tratamiento') + (item.date ? ' â€” ' + d(item.date) : '');
+      case 'recetas': return 'Receta' + (item.date ? ' â€” ' + d(item.date) : '') + (item.diagnosis ? ': ' + item.diagnosis.slice(0, 30) : '');
+      case 'inyectables': return (item.product_type === 'toxina' ? 'Toxina' : 'Relleno') + ' â€” ' + (item.product_name || '') + (item.date ? ' â€” ' + d(item.date) : '');
+      case 'consentimientos': return (item.procedure_type || item.form_type || 'Consentimiento') + (item.created_at ? ' â€” ' + d(item.created_at) : '');
       default: return '#' + (idx + 1);
     }
   };
@@ -157,22 +157,22 @@ export default function PrintModal({ patient, recordId, recordData, activeConsul
     let sections = '';
 
     if (opts.antecedentes) {
-      sections += sectionHtml('Antecedentes Clínicos', [
-        field('Antecedentes patológicos', h.pathological),
-        field('Antecedentes no patológicos', h.non_pathological),
+      sections += sectionHtml('Antecedentes ClÃ­nicos', [
+        field('Antecedentes patolÃ³gicos', h.pathological),
+        field('Antecedentes no patolÃ³gicos', h.non_pathological),
         field('Antecedentes familiares', h.family_history),
-        field('Antecedentes quirúrgicos', h.surgical_history),
+        field('Antecedentes quirÃºrgicos', h.surgical_history),
         field('Alergias', h.allergies),
-        field('Medicación actual', h.current_medications),
-        field('Antecedentes estéticos', h.aesthetic_history),
-        field('Antecedentes ginecológicos', h.gynecological_history),
+        field('MedicaciÃ³n actual', h.current_medications),
+        field('Antecedentes estÃ©ticos', h.aesthetic_history),
+        field('Antecedentes ginecolÃ³gicos', h.gynecological_history),
         field('Rutina facial', h.facial_routine),
       ].filter(Boolean).join('') || '<em>Sin datos</em>');
     }
 
     if (opts.consulta && consultation) {
       sections += sectionHtml(
-        'Consulta' + (opts.includeDates ? ` – ${formatDate(consultation.created_at)}` : ''),
+        'Consulta' + (opts.includeDates ? ` â€” ${formatDate(consultation.created_at)}` : ''),
         [field('Motivo', consultation.reason), field('Historia de la enfermedad actual', consultation.current_illness)].filter(Boolean).join('') || '<em>Sin datos</em>'
       );
     }
@@ -181,94 +181,16 @@ export default function PrintModal({ patient, recordId, recordData, activeConsul
       const esc = (s: any) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
       const trow = (cells: string[]) => '<tr>' + cells.map(c => `<td>${c}</td>`).join('') + '</tr>';
       filterItems('examenFisico').forEach((ex: any, i: number, arr: any[]) => {
-        const title = 'Examen Físico' + (arr.length > 1 ? ` #${i+1}` : '') + (opts.includeDates && ex.created_at ? ` – ${formatDate(ex.created_at)}` : '');
-        const paramRows = [['Tipo de piel',ex.skin_type],['Fototipo',ex.phototype],['Escala Glogau',ex.glogau_scale],['Hidratación',ex.hydration],['Elasticidad',ex.elasticity],['Fotoprotección',ex.photoprotection],['Textura',ex.texture],['Poros',ex.poros],['Pigmentación',ex.pigmentation],['Sensibilidad',ex.sensitivity]].filter(([,v])=>v).map(([k,v])=>trow([k+'',esc(v)])).join('');
+        const title = 'Examen FÃ­sico' + (arr.length > 1 ? ` #${i+1}` : '') + (opts.includeDates && ex.created_at ? ` â€” ${formatDate(ex.created_at)}` : '');
+        const paramRows = [['Tipo de piel',ex.skin_type],['Fototipo',ex.phototype],['Escala Glogau',ex.glogau_scale],['HidrataciÃ³n',ex.hydration],['Elasticidad',ex.elasticity],['FotoprotecciÃ³n',ex.photoprotection],['Textura',ex.texture],['Poros',ex.poros],['PigmentaciÃ³n',ex.pigmentation],['Sensibilidad',ex.sensitivity]].filter(([,v])=>v).map(([k,v])=>trow([k+'',esc(v)])).join('');
         const fm: any[] = (() => { try { return JSON.parse(ex.face_map_data || '[]'); } catch { return []; } })();
         const bm: any[] = (() => { try { return JSON.parse(ex.body_map_data || '[]'); } catch { return []; } })();
         const marks = [
-          fm.length ? `<div class="marks-title">Marcaciones faciales (${fm.length}):</div><div class="marks-list">${fm.map((m:any)=>`<span class="mark">${esc(m.category)}${m.tercio?' &bull; '+esc(m.tercio):''}${m.notes?' – '+esc(m.notes):''}</span>`).join('')}</div>` : '',
-          bm.length ? `<div class="marks-title">Marcaciones corporales (${bm.length}):</div><div class="marks-list">${bm.map((m:any)=>`<span class="mark">${esc(m.category)}${m.tercio?' &bull; '+esc(m.tercio):''}${m.notes?' – '+esc(m.notes):''}</span>`).join('')}</div>` : '',
+          fm.length ? `<div class="marks-title">Marcaciones faciales (${fm.length}):</div><div class="marks-list">${fm.map((m:any)=>`<span class="mark">${esc(m.category)}${m.tercio?' &bull; '+esc(m.tercio):''}${m.notes?' â€” '+esc(m.notes):''}</span>`).join('')}</div>` : '',
+          bm.length ? `<div class="marks-title">Marcaciones corporales (${bm.length}):</div><div class="marks-list">${bm.map((m:any)=>`<span class="mark">${esc(m.category)}${m.tercio?' &bull; '+esc(m.tercio):''}${m.notes?' â€” '+esc(m.notes):''}</span>`).join('')}</div>` : '',
         ].filter(Boolean).join('');
-        sections += sectionHtml(title, (paramRows ? `<table class="param-table"><tbody>${paramRows}</tbody></table>` : '') + (ex.lesions_description ? field('Descripción de lesiones', ex.lesions_description) : '') + marks || '<em>Sin datos</em>');
+        sections += sectionHtml(title, (paramRows ? `<table class="param-table"><tbody>${paramRows}</tbody></table>` : '') + (ex.lesions_description ? field('DescripciÃ³n de lesiones', ex.lesions_description) : '') + marks || '<em>Sin datos</em>');
       });
-    }
-
-    if (opts.diagnostico) {
-      filterItems('diagnostico').forEach((diag: any, i: number, arr: any[]) => {
-        const title = 'Diagnóstico' + (arr.length > 1 ? ` #${i+1}` : '') +
-          (opts.includeDates && diag.date ? ` – ${formatDate(diag.date)}` : '');
-        const severityMap: Record<string, string> = {
-          'leve': 'Leve', 'moderado': 'Moderado', 'severo': 'Severo', 'critico': 'Crítico'
-        };
-        const content = [
-          diag.diagnosis_text ? `<p style="font-size:10.5pt;font-weight:bold;color:#333;margin-bottom:6px">${esc(diag.diagnosis_text)}</p>` : '',
-          field('CIE-10', diag.cie10_code),
-          field('Tipo', diag.type),
-          diag.severity ? field('Severidad', severityMap[diag.severity] || diag.severity) : '',
-          field('Notas', diag.notes),
-        ].filter(Boolean).join('');
-        sections += sectionHtml(title, content || '<em>Sin datos</em>');
-      });
-    }
-
-    if (opts.tratamientos) {
-      filterItems('tratamientos').forEach((tr: any, i: number, arr: any[]) => {
-        const title = 'Tratamiento' + (arr.length > 1 ? ` #${i+1}` : '') +
-          (opts.includeDates && tr.date ? ` – ${formatDate(tr.date)}` : '');
-        const content = [
-          field('Procedimiento', tr.procedure_name),
-          field('Área tratada', tr.area_treated),
-          field('Producto/Material', tr.product_used),
-          field('Cantidad', tr.quantity),
-          field('Equipo utilizado', tr.equipment_used),
-          field('Realizado por', tr.performed_by),
-          field('Costo', tr.cost ? `$${tr.cost}` : ''),
-          field('Observaciones', tr.notes),
-        ].filter(Boolean).join('');
-        sections += sectionHtml(title, content || '<em>Sin datos</em>');
-      });
-    }
-
-    if (opts.recetas) {
-      const recetaItems = filterItems('recetas');
-      if (recetaItems.length > 0) {
-        const refContent = `<div style="background:#fef3c7;border:1px solid #d97706;border-radius:6px;padding:8px 12px;">
-          <p style="font-size:9pt;color:#92400e;font-weight:bold;margin-bottom:4px">📋 Documentos adjuntos — Recetario</p>
-          <ul style="margin:0;padding-left:16px;font-size:9pt;color:#78350f">
-            ${recetaItems.map((r: any, i: number) => `<li>Receta ${i+1}${r.date ? ' – ' + formatDate(r.date) : ''}${r.diagnosis ? ': ' + esc(r.diagnosis).slice(0, 40) : ''}</li>`).join('')}
-          </ul>
-          <p style="font-size:8pt;color:#b45309;margin-top:4px;font-style:italic">Imprima el recetario desde el tab correspondiente para el formato oficial.</p>
-        </div>`;
-        sections += sectionHtml('Recetas Médicas', refContent);
-      }
-    }
-
-    if (opts.inyectables) {
-      const injItems = filterItems('inyectables');
-      if (injItems.length > 0) {
-        const refContent = `<div style="background:#ede9fe;border:1px solid #7c3aed;border-radius:6px;padding:8px 12px;">
-          <p style="font-size:9pt;color:#4c1d95;font-weight:bold;margin-bottom:4px">💉 Documentos adjuntos — Registro de Inyectables</p>
-          <ul style="margin:0;padding-left:16px;font-size:9pt;color:#5b21b6">
-            ${injItems.map((inj: any, i: number) => `<li>${inj.product_type === 'toxina' ? 'Toxina Botulínica' : (inj.relleno_subtype === 'relleno_ha' ? 'Relleno HA' : inj.relleno_subtype === 'bioestimulador' ? 'Bioestimulador' : 'Hidratación')} – ${esc(inj.product_name || '')}${inj.date ? ' – ' + formatDate(inj.date) : ''}</li>`).join('')}
-          </ul>
-          <p style="font-size:8pt;color:#6d28d9;margin-top:4px;font-style:italic">Imprima el registro de inyectables desde el tab correspondiente para el detalle completo del mapeo.</p>
-        </div>`;
-        sections += sectionHtml('Registro de Inyectables', refContent);
-      }
-    }
-
-    if (opts.consentimientos) {
-      const consentItems = filterItems('consentimientos');
-      if (consentItems.length > 0) {
-        const refContent = `<div style="background:#ecfdf5;border:1px solid #059669;border-radius:6px;padding:8px 12px;">
-          <p style="font-size:9pt;color:#064e3b;font-weight:bold;margin-bottom:4px">📝 Documentos adjuntos — Consentimientos Informados</p>
-          <ul style="margin:0;padding-left:16px;font-size:9pt;color:#065f46">
-            ${consentItems.map((c: any, i: number) => `<li>${esc(c.procedure_type || c.form_type || 'Consentimiento')}${c.status === 'finalized' ? ' ✓ Firmado' : ' (pendiente)'}${c.created_at ? ' – ' + formatDate(c.created_at) : ''}</li>`).join('')}
-          </ul>
-          <p style="font-size:8pt;color:#047857;margin-top:4px;font-style:italic">Imprima los consentimientos desde el tab correspondiente para el documento completo con firmas.</p>
-        </div>`;
-        sections += sectionHtml('Consentimientos Informados', refContent);
-      }
     }
 
     const logoHtml = clinic.general.logo_url
@@ -279,7 +201,7 @@ export default function PrintModal({ patient, recordId, recordData, activeConsul
       <div class="professional-block">
         <div class="sig-line"></div>
         <div class="sig-name">${profTemp.name}</div>
-        ${profTemp.cedula ? `<div class="sig-detail">Cédula/Matrícula: ${profTemp.cedula}</div>` : ''}
+        ${profTemp.cedula ? `<div class="sig-detail">CÃ©dula/MatrÃ­cula: ${profTemp.cedula}</div>` : ''}
         ${profTemp.especialidad ? `<div class="sig-detail">${profTemp.especialidad}</div>` : ''}
       </div>` : '';
 
@@ -287,7 +209,7 @@ export default function PrintModal({ patient, recordId, recordData, activeConsul
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Ficha Clínica – ${patient?.first_name} ${patient?.last_name}</title>
+  <title>Ficha ClÃ­nica â€” ${patient?.first_name} ${patient?.last_name}</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:Arial,sans-serif;font-size:10pt;color:#333;padding:15mm;max-width:210mm}
@@ -323,7 +245,7 @@ export default function PrintModal({ patient, recordId, recordData, activeConsul
 </head>
 <body>
   <div class="header">
-    <div>${logoHtml}<p class="clinic-h1">${clinic.general.name||'Clínica'}</p>
+    <div>${logoHtml}<p class="clinic-h1">${clinic.general.name||'ClÃ­nica'}</p>
       <p class="clinic-sub">${[clinic.general.address, clinic.general.phone?'Tel: '+clinic.general.phone:''].filter(Boolean).join(' &bull; ')}</p>
     </div>
     <div style="text-align:right;font-size:8.5pt;color:#999"><div>Expediente #${recordId}</div><div>${new Date().toLocaleDateString('es')}</div></div>
@@ -358,7 +280,7 @@ export default function PrintModal({ patient, recordId, recordData, activeConsul
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
           <div className="flex items-center gap-3">
             <Printer className="w-5 h-5 text-[#b8944d]" />
-            <h3 className="text-base font-bold text-gray-800">Imprimir Ficha Clínica</h3>
+            <h3 className="text-base font-bold text-gray-800">Imprimir Ficha ClÃ­nica</h3>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
         </div>
@@ -380,7 +302,7 @@ export default function PrintModal({ patient, recordId, recordData, activeConsul
                   <button type="button" onClick={() => setShowProfForm(p => !p)}
                     className="mt-1.5 flex items-center gap-1 text-xs font-semibold text-amber-700 hover:text-amber-900 underline underline-offset-2">
                     <Settings className="w-3 h-3" />
-                    {showProfForm ? 'Ocultar formulario' : 'Ingresar datos solo para esta impresión'}
+                    {showProfForm ? 'Ocultar formulario' : 'Ingresar datos solo para esta impresiÃ³n'}
                   </button>
                 </div>
               </div>
@@ -390,8 +312,8 @@ export default function PrintModal({ patient, recordId, recordData, activeConsul
                     className="px-4 pb-3 pt-1 border-t border-amber-100 bg-white/60 space-y-2">
                     {[
                       { key: 'name', label: 'Nombre profesional', placeholder: 'Dr. / Dra. Nombre Apellido' },
-                      { key: 'cedula', label: 'Cédula / Matrícula', placeholder: '0987654321' },
-                      { key: 'especialidad', label: 'Especialidad', placeholder: 'Medicina Estética' },
+                      { key: 'cedula', label: 'CÃ©dula / MatrÃ­cula', placeholder: '0987654321' },
+                      { key: 'especialidad', label: 'Especialidad', placeholder: 'Medicina EstÃ©tica' },
                     ].map(f => (
                       <div key={f.key}>
                         <label className="block text-xs font-semibold text-gray-600 mb-0.5">{f.label}</label>

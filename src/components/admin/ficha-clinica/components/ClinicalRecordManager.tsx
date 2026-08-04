@@ -14,8 +14,7 @@ import {
   MessageSquare,
   Droplets,
   Printer,
-  Lock,
-  Camera
+  Lock
 } from 'lucide-react';
 import ConsultationActivatedModal from './ConsultationActivatedModal';
 import PrintModal from './PrintModal';
@@ -28,7 +27,6 @@ import TreatmentTab from './tabs/TreatmentTab';
 import PrescriptionTab from './tabs/PrescriptionTab';
 import ConsentimientosTab from './tabs/ConsentimientosTab';
 import InjectablesTab from './tabs/InjectablesTab';
-import PhotosTab from './tabs/PhotosTab';
 import { Skeleton } from '../../../ui/Skeleton';
 
 interface TabButtonProps {
@@ -280,8 +278,6 @@ export default function ClinicalRecordManager() {
                 active={activeTab === 'injectables'} onClick={() => setActiveTab('injectables')}
                 disabled={!activeConsultation} />
             )}
-            <TabButton id="fotos" label="Fotos" icon={Camera}
-              active={activeTab === 'fotos'} onClick={() => setActiveTab('fotos')} />
           </div>
 
           {/* Tab Content */}
@@ -372,13 +368,6 @@ export default function ClinicalRecordManager() {
                     patientName={patient ? `${patient.first_name} ${patient.last_name}` : ''}
                     consultationId={activeConsultation?.id}
                     onSave={() => fetchData(false)}
-                  />
-                )}
-                {activeTab === 'fotos' && recordData?.recordId && (
-                  <PhotosTab
-                    recordId={recordData.recordId}
-                    consultationId={activeConsultation?.id}
-                    patientName={patient ? `${patient.first_name} ${patient.last_name}` : ''}
                   />
                 )}
               </motion.div>

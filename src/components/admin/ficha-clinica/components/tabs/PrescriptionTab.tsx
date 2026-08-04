@@ -318,10 +318,10 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, con
             <!-- Left Column -->
             <div class="column">
                <div class="header">
-                 <img src="${logoUrl}" class="logo" alt="${clinicName}" />
+                 <img src="${logoUrl}" class="logo" alt="Bio Skin" />
                  <div class="doctor-info">
-                   <h2>${clinicTagline.toUpperCase()}</h2>
-                   <h3>${((user as any)?.full_name || clinicName).toUpperCase()}</h3>
+                   <h2>SALUD Y ESTÉTICA</h2>
+                   <h3>DRA. DANIELA CREAMER</h3>
                  </div>
                </div>
                
@@ -779,9 +779,9 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, con
                     onChange={e => updateItem(idx, 'rutina', e.target.value as any)}
                   >
                     <option value="">Seleccionar...</option>
-                    <option value="mañana">Mañana (AM)</option>
-                    <option value="noche">Noche (PM)</option>
-                    <option value="ambos">Mañana y Noche</option>
+                    <option value="mañana">?? Mañana</option>
+                    <option value="noche">?? Noche</option>
+                    <option value="ambos">?? Ambos</option>
                   </select>
                 </div>
                 <div className="lg:col-span-2 space-y-1.5 flex flex-col">

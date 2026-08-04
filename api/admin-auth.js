@@ -508,11 +508,15 @@ async function loginUser(username, password, ip, ua) {
     };
   }
 
-  // Login contra DB
+  // Login contra DB — join con clinics para obtener slug y name
   const r = await sql`
-    SELECT id, username, password_hash, salt, hash_algo, role, clinic_id, access_scope,
-           failed_attempts, locked_until, is_active, full_name, email, cedula_profesional, especialidad
-    FROM clinic_users WHERE username = ${username}
+    SELECT cu.id, cu.username, cu.password_hash, cu.salt, cu.hash_algo, cu.role, cu.clinic_id, cu.access_scope,
+           cu.failed_attempts, cu.locked_until, cu.is_active, cu.full_name, cu.email,
+           cu.cedula_profesional, cu.especialidad, cu.gentilicio, cu.profession, cu.first_name, cu.last_name,
+           c.slug AS clinic_slug, c.name AS clinic_name
+    FROM clinic_users cu
+    LEFT JOIN clinics c ON c.id = cu.clinic_id
+    WHERE cu.username = ${username}
   `;
   if (!r.rows.length) return { success: false, error: 'Credenciales inválidas' };
 
@@ -564,8 +568,10 @@ async function loginUser(username, password, ip, ua) {
     user: {
       id: u.id, username: u.username, full_name: u.full_name,
       email: u.email, role: u.role, clinic_id: u.clinic_id, access_scope: u.access_scope,
-      cedula_profesional: u.cedula_profesional || null,
-      especialidad: u.especialidad || null,
+      clinic_slug: u.clinic_slug || null, clinic_name: u.clinic_name || null,
+      cedula_profesional: u.cedula_profesional || null, especialidad: u.especialidad || null,
+      gentilicio: u.gentilicio || null, profession: u.profession || null,
+      first_name: u.first_name || null, last_name: u.last_name || null,
     },
     features: await getFeatures(u.clinic_id),
     user_module_overrides: await (async () => {
@@ -1392,6 +1398,64 @@ export default async function handler(req, res) {
     if (action === 'cleanup') {
       const r = await sql`UPDATE admin_sessions SET is_active = false WHERE expires_at < NOW() AND is_active = true`;
       return res.status(200).json({ success: true, count: r.rowCount });
+    }
+
+    // ── Acciones públicas de registro y OAuth ──────────────────────────────
+
+    if (action === 'checkEmail') {
+      const email = (req.query.email || req.body?.email || '').trim().toLowerCase();
+      if (!email) return res.status(400).json({ error: 'email requerido' });
+      const r = await sql`SELECT id FROM clinic_users WHERE username = ${email}`;
+      return res.status(200).json({ available: r.rows.length === 0 });
+    }
+
+    if (action === 'validateCode') {
+      const { code } = req.body || {};
+      return res.status(200).json(await validateRegistrationCode(code));
+    }
+
+    if (action === 'register') {
+      const result = await registerClinic(req.body || {});
+      return res.status(result.error ? 400 : 201).json(result);
+    }
+
+    if (action === 'useInvite') {
+      const { token: invToken, ...userData } = req.body || {};
+      if (!invToken) return res.status(400).json({ error: 'token requerido' });
+      const result = await useInviteLink(invToken, { ...userData });
+      return res.status(result.error ? 400 : 201).json(result);
+    }
+
+    if (action === 'googleAuthUrl') {
+      const purpose = req.query.purpose || 'login';
+      const result = await getGoogleAuthUrl(purpose);
+      return res.status(result.error ? 503 : 200).json(result);
+    }
+
+    if (action === 'googleCallback') {
+      // Google redirige con GET: /api/admin-auth?action=googleCallback&code=...&state=...
+      const code  = req.query.code;
+      const state = req.query.state;
+      const ip    = (req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+      const ua    = req.headers['user-agent'] || '';
+      const appUrl = (process.env.APP_URL || `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app'}`).trim();
+      const base   = `${appUrl}/gestionestetica/admin`;
+
+      const result = await handleGoogleCallback(code, state, ip, ua);
+
+      if (result.success) {
+        return res.redirect(302, `${base}/login?token=${result.sessionToken}`);
+      }
+      if (result.needsClinicSetup || result.needsRegister) {
+        const data = encodeURIComponent(JSON.stringify(result.googleData || {}));
+        return res.redirect(302, `${base}/register?googleData=${data}`);
+      }
+      return res.redirect(302, `${base}/login?googleError=${encodeURIComponent(result.error || 'Error de Google')}`);
+    }
+
+    // ── Planes de suscripción (público) ───────────────────────────────────
+    if (action === 'getPlans') {
+      return res.status(200).json({ plans: SUBSCRIPTION_PLANS });
     }
 
     // ── Acciones autenticadas ──────────────────────────────────────────────

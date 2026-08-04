@@ -1,148 +1,153 @@
 /**
  * @file src/App.tsx
- * @description Enrutador principal del Admin Panel BIOSKIN.
+ * @description Enrutador principal BIOSKIN.
  *
- * Usa BrowserRouter (rutas limpias sin #).
- * Vercel sirve siempre index.html para cualquier ruta via rewrite catch-all en vercel.json.
+ * Estructura de URLs:
+ *   bioskintechapp.com/                    → Landing page global
+ *   bioskintechapp.com/gestionestetica/**  → Panel admin (SPA con basename)
+ *   bioskintechapp.com/admin/**            → Redirige a /gestionestetica/admin/** (legacy)
+ *   bioskintechapp.com/consent-signing/**  → Firma de consentimientos (público)
+ *   bioskintechapp.com/medical-finance     → Gestión médica externa
+ *
+ * Truco: se usa `basename="/gestionestetica"` en BrowserRouter para que todos los
+ * navigate('/admin/...') internos del panel funcionen sin cambio alguno.
  */
 
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
-
-// ── Página de error ────────────────────────────────────────────────────────
+import { MasterViewProvider } from './context/MasterViewContext';
 import ErrorBoundary from './pages/ErrorBoundary';
 
-// ── Auth ───────────────────────────────────────────────────────────────────
-import AdminLogin    from './pages/AdminLogin';
-import AdminRegister from './pages/AdminRegister';
-
-// ── Dashboards ─────────────────────────────────────────────────────────────
-import AdminDashboard       from './pages/AdminDashboard';
+import LandingPage       from './pages/LandingPage';
+import AdminLogin        from './pages/AdminLogin';
+import AdminRegister     from './pages/AdminRegister';
+import AdminDashboard    from './pages/AdminDashboard';
 import AdminMasterDashboard from './pages/AdminMasterDashboard';
-
-// ── Agenda / Citas ─────────────────────────────────────────────────────────
 import AdminCalendarManager from './pages/AdminCalendarManager';
 import AdminBlockSchedule   from './pages/AdminBlockSchedule';
 import AdminAppointment     from './pages/AdminAppointment';
-
-// ── Fichas Clínicas ────────────────────────────────────────────────────────
 import PatientList           from './components/admin/ficha-clinica/components/PatientList';
 import NewPatientForm        from './components/admin/ficha-clinica/components/NewPatientForm';
 import PatientDetail         from './components/admin/ficha-clinica/components/PatientDetail';
 import ClinicalRecordManager from './components/admin/ficha-clinica/components/ClinicalRecordManager';
 import ConsentSigning        from './pages/ConsentSigning';
-
-// ── Módulo IA ──────────────────────────────────────────────────────────────
-import AIConsultationModule from './pages/AIConsultationModule';
-
-// ── Gestión ────────────────────────────────────────────────────────────────
-import AdminInventory from './pages/AdminInventory';
-import AdminFinance   from './pages/AdminFinance';
-import Clinical3D     from './pages/Clinical3D';
-
-// ── Sistema ────────────────────────────────────────────────────────────────
+import AIConsultationModule  from './pages/AIConsultationModule';
+import AdminInventory    from './pages/AdminInventory';
+import AdminFinance      from './pages/AdminFinance';
+import Clinical3D        from './pages/Clinical3D';
 import AdminSystemStatus from './pages/AdminSystemStatus';
 import AdminBackup       from './pages/AdminBackup';
-
-// ── Master admin viendo módulos de clínica ─────────────────────────────────
-import MasterClinicWrapper from './pages/MasterClinicWrapper';
-
-// ── Páginas externas ───────────────────────────────────────────────────────
+import MasterClinicWrapper   from './pages/MasterClinicWrapper';
 import ExternalMedicalFinance from './pages/ExternalMedicalFinance';
 
-// ── Contextos ──────────────────────────────────────────────────────────────
-import { MasterViewProvider } from './context/MasterViewContext';
+// ─────────────────────────────────────────────────────────────────────────────
+// Rutas reutilizadas dentro del panel admin
+// ─────────────────────────────────────────────────────────────────────────────
 
-function App() {
+function AdminRoutes() {
   return (
-    <ErrorBoundary>
-      <BrowserRouter>
-        <AuthProvider>
-          <MasterViewProvider>
-          <Routes>
-            <Route path="/" element={<Navigate to="/admin/login" replace />} />
+    <AuthProvider>
+      <MasterViewProvider>
+        <Routes>
+          <Route path="/" element={<Navigate to="/admin/login" replace />} />
 
-            {/* Auth */}
-            <Route path="/admin/login"    element={<AdminLogin />} />
-            <Route path="/admin/register" element={<AdminRegister />} />
+          <Route path="/admin/login"    element={<AdminLogin />} />
+          <Route path="/admin/register" element={<AdminRegister />} />
+          <Route path="/admin/master"   element={<AdminMasterDashboard />} />
 
-            {/* Dashboards */}
-            <Route path="/admin/master" element={<AdminMasterDashboard />} />
+          <Route path="/admin/master/:clinicSlug/:username" element={<MasterClinicWrapper />}>
+            <Route index element={<AdminDashboard />} />
+            <Route path="calendar"       element={<AdminCalendarManager />} />
+            <Route path="block-schedule" element={<AdminBlockSchedule />} />
+            <Route path="appointment"    element={<AdminAppointment />} />
+            <Route path="clinical-records"                    element={<PatientList />} />
+            <Route path="clinical-records/new"                element={<NewPatientForm />} />
+            <Route path="clinical-records/edit/:patientId"    element={<NewPatientForm />} />
+            <Route path="ficha-clinica/paciente/:patientId"   element={<PatientDetail />} />
+            <Route path="ficha-clinica/expediente/:recordId"  element={<ClinicalRecordManager />} />
+            <Route path="ai-consultation" element={<AIConsultationModule />} />
+            <Route path="inventory"   element={<AdminInventory />} />
+            <Route path="finance"     element={<AdminFinance />} />
+            <Route path="clinical-3d" element={<Clinical3D />} />
+            <Route path="system-status" element={<AdminSystemStatus />} />
+            <Route path="backup"        element={<AdminBackup />} />
+          </Route>
 
-            {/* Master admin viendo módulos de una clínica específica */}
-            <Route path="/admin/master/:clinicSlug/:username" element={<MasterClinicWrapper />}>
-              <Route index element={<AdminDashboard />} />
-              <Route path="calendar"       element={<AdminCalendarManager />} />
-              <Route path="block-schedule" element={<AdminBlockSchedule />} />
-              <Route path="appointment"    element={<AdminAppointment />} />
-              <Route path="clinical-records"                    element={<PatientList />} />
-              <Route path="clinical-records/new"                element={<NewPatientForm />} />
-              <Route path="clinical-records/edit/:patientId"    element={<NewPatientForm />} />
-              <Route path="ficha-clinica/paciente/:patientId"   element={<PatientDetail />} />
-              <Route path="ficha-clinica/expediente/:recordId"  element={<ClinicalRecordManager />} />
-              <Route path="ai-consultation" element={<AIConsultationModule />} />
-              <Route path="inventory"   element={<AdminInventory />} />
-              <Route path="finance"     element={<AdminFinance />} />
-              <Route path="clinical-3d" element={<Clinical3D />} />
-              <Route path="system-status" element={<AdminSystemStatus />} />
-              <Route path="backup"        element={<AdminBackup />} />
-            </Route>
+          {/* Rutas con slug de clínica */}
+          <Route path="/admin/:clinicSlug/:username"                                          element={<AdminDashboard />} />
+          <Route path="/admin/:clinicSlug/:username/calendar"                                 element={<AdminCalendarManager />} />
+          <Route path="/admin/:clinicSlug/:username/block-schedule"                           element={<AdminBlockSchedule />} />
+          <Route path="/admin/:clinicSlug/:username/appointment"                              element={<AdminAppointment />} />
+          <Route path="/admin/:clinicSlug/:username/clinical-records"                         element={<PatientList />} />
+          <Route path="/admin/:clinicSlug/:username/clinical-records/new"                     element={<NewPatientForm />} />
+          <Route path="/admin/:clinicSlug/:username/clinical-records/edit/:patientId"         element={<NewPatientForm />} />
+          <Route path="/admin/:clinicSlug/:username/ficha-clinica/paciente/:patientId"        element={<PatientDetail />} />
+          <Route path="/admin/:clinicSlug/:username/ficha-clinica/expediente/:recordId"       element={<ClinicalRecordManager />} />
+          <Route path="/admin/:clinicSlug/:username/ai-consultation"                          element={<AIConsultationModule />} />
+          <Route path="/admin/:clinicSlug/:username/inventory"                                element={<AdminInventory />} />
+          <Route path="/admin/:clinicSlug/:username/finance"                                  element={<AdminFinance />} />
+          <Route path="/admin/:clinicSlug/:username/clinical-3d"                              element={<Clinical3D />} />
+          <Route path="/admin/:clinicSlug/:username/system-status"                            element={<AdminSystemStatus />} />
+          <Route path="/admin/:clinicSlug/:username/backup"                                   element={<AdminBackup />} />
 
-            {/* Rutas con contexto: /admin/:clinicSlug/:username */}
-            <Route path="/admin/:clinicSlug/:username" element={<AdminDashboard />} />
+          {/* Alias legacy /admin (sin slug) */}
+          <Route path="/admin"                element={<AdminDashboard />} />
+          <Route path="/admin/calendar"       element={<AdminCalendarManager />} />
+          <Route path="/admin/block-schedule" element={<AdminBlockSchedule />} />
+          <Route path="/admin/appointment"    element={<AdminAppointment />} />
+          <Route path="/admin/clinical-records"                    element={<PatientList />} />
+          <Route path="/admin/clinical-records/new"                element={<NewPatientForm />} />
+          <Route path="/admin/clinical-records/edit/:patientId"    element={<NewPatientForm />} />
+          <Route path="/admin/ficha-clinica/paciente/:patientId"   element={<PatientDetail />} />
+          <Route path="/admin/ficha-clinica/expediente/:recordId"  element={<ClinicalRecordManager />} />
+          <Route path="/admin/ai-consultation" element={<AIConsultationModule />} />
+          <Route path="/admin/inventory"   element={<AdminInventory />} />
+          <Route path="/admin/finance"     element={<AdminFinance />} />
+          <Route path="/admin/clinical-3d" element={<Clinical3D />} />
+          <Route path="/admin/system-status" element={<AdminSystemStatus />} />
+          <Route path="/admin/backup"        element={<AdminBackup />} />
 
-            {/* Agenda */}
-            <Route path="/admin/:clinicSlug/:username/calendar"       element={<AdminCalendarManager />} />
-            <Route path="/admin/:clinicSlug/:username/block-schedule" element={<AdminBlockSchedule />} />
-            <Route path="/admin/:clinicSlug/:username/appointment"    element={<AdminAppointment />} />
-
-            {/* Fichas Clínicas */}
-            <Route path="/admin/:clinicSlug/:username/clinical-records"                    element={<PatientList />} />
-            <Route path="/admin/:clinicSlug/:username/clinical-records/new"                element={<NewPatientForm />} />
-            <Route path="/admin/:clinicSlug/:username/clinical-records/edit/:patientId"    element={<NewPatientForm />} />
-            <Route path="/admin/:clinicSlug/:username/ficha-clinica/paciente/:patientId"   element={<PatientDetail />} />
-            <Route path="/admin/:clinicSlug/:username/ficha-clinica/expediente/:recordId"  element={<ClinicalRecordManager />} />
-
-            {/* IA */}
-            <Route path="/admin/:clinicSlug/:username/ai-consultation" element={<AIConsultationModule />} />
-
-            {/* Gestión */}
-            <Route path="/admin/:clinicSlug/:username/inventory"   element={<AdminInventory />} />
-            <Route path="/admin/:clinicSlug/:username/finance"     element={<AdminFinance />} />
-            <Route path="/admin/:clinicSlug/:username/clinical-3d" element={<Clinical3D />} />
-
-            {/* Sistema */}
-            <Route path="/admin/:clinicSlug/:username/system-status" element={<AdminSystemStatus />} />
-            <Route path="/admin/:clinicSlug/:username/backup"        element={<AdminBackup />} />
-
-            {/* Alias legacy: /admin (sin prefijo) */}
-            <Route path="/admin"                element={<AdminDashboard />} />
-            <Route path="/admin/calendar"       element={<AdminCalendarManager />} />
-            <Route path="/admin/block-schedule" element={<AdminBlockSchedule />} />
-            <Route path="/admin/appointment"    element={<AdminAppointment />} />
-            <Route path="/admin/clinical-records"                    element={<PatientList />} />
-            <Route path="/admin/clinical-records/new"                element={<NewPatientForm />} />
-            <Route path="/admin/clinical-records/edit/:patientId"    element={<NewPatientForm />} />
-            <Route path="/admin/ficha-clinica/paciente/:patientId"   element={<PatientDetail />} />
-            <Route path="/admin/ficha-clinica/expediente/:recordId"  element={<ClinicalRecordManager />} />
-            <Route path="/admin/ai-consultation" element={<AIConsultationModule />} />
-            <Route path="/admin/inventory"   element={<AdminInventory />} />
-            <Route path="/admin/finance"     element={<AdminFinance />} />
-            <Route path="/admin/clinical-3d" element={<Clinical3D />} />
-            <Route path="/admin/system-status" element={<AdminSystemStatus />} />
-            <Route path="/admin/backup"        element={<AdminBackup />} />
-
-            {/* Páginas externas */}
-            <Route path="/consent-signing/:token" element={<ConsentSigning />} />
-            <Route path="/medical-finance"         element={<ExternalMedicalFinance />} />
-
-            <Route path="*" element={<Navigate to="/admin/login" replace />} />
-          </Routes>
-          </MasterViewProvider>
-        </AuthProvider>
-      </BrowserRouter>
-    </ErrorBoundary>
+          <Route path="*" element={<Navigate to="/admin/login" replace />} />
+        </Routes>
+      </MasterViewProvider>
+    </AuthProvider>
   );
 }
 
-export default App;
+// ─────────────────────────────────────────────────────────────────────────────
+// App principal
+// ─────────────────────────────────────────────────────────────────────────────
+
+export default function App() {
+  const path = window.location.pathname;
+
+  // Legacy: redirigir /admin/* → /gestionestetica/admin/*
+  if (path.startsWith('/admin')) {
+    window.location.replace('/gestionestetica' + path + window.location.search);
+    return null;
+  }
+
+  // Panel admin → BrowserRouter con basename /gestionestetica
+  // Todos los navigate('/admin/...') internos funcionan sin cambio alguno
+  if (path.startsWith('/gestionestetica')) {
+    return (
+      <ErrorBoundary>
+        <BrowserRouter basename="/gestionestetica">
+          <AdminRoutes />
+        </BrowserRouter>
+      </ErrorBoundary>
+    );
+  }
+
+  // Landing page, consent-signing, medical-finance → sin basename
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/"                        element={<LandingPage />} />
+        <Route path="/consent-signing/:token"  element={<ConsentSigning />} />
+        <Route path="/medical-finance"         element={<ExternalMedicalFinance />} />
+        <Route path="*"                        element={<LandingPage />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}

@@ -83,7 +83,6 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
   const [signingUrl, setSigningUrl] = useState<string | null>(null);
   const [showQr, setShowQr] = useState(false);
   const [isSignatureModalOpen, setIsSignatureModalOpen] = useState(false);
-  const [sigScale, setSigScale] = useState(100);
   const profSigCanvas = useRef<SignatureCanvas>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -235,7 +234,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
       
       if (res.ok) {
         const data = await res.json();
-        const url = `${window.location.origin}${data.url}`;
+        const url = `${window.location.origin}/#${data.url}`;
         setSigningUrl(url);
         setShowQr(true);
         setMessage({ type: 'success', text: 'Nuevo enlace generado' });
@@ -269,7 +268,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
       
       if (res.ok) {
         const data = await res.json();
-        const url = `${window.location.origin}${data.url}`;
+        const url = `${window.location.origin}/#${data.url}`;
         setSigningUrl(url);
         setShowQr(true);
         setMessage({ type: 'success', text: 'Enlace de firma generado' });
@@ -389,7 +388,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
       },
       signatures: {
         patient_name: patient ? `${patient.first_name} ${patient.last_name}` : '',
-        professional_name: (user as any)?.full_name || ''
+        professional_name: 'Dra. Daniela Creamer'
       },
       attachments: []
     });
@@ -971,19 +970,12 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                         <div className="min-h-[200px] border-2 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center bg-white p-6 transition-all hover:border-[#deb887]/50">
                           {currentConsent.signatures?.patient_sig_data ? (
                             <div className="w-full flex flex-col items-center">
-                              <div style={{ transform: `scale(${sigScale/100})`, transformOrigin: 'center top', transition: 'transform 0.2s' }}>
-                                <img 
-                                  src={currentConsent.signatures.patient_sig_data} 
-                                  alt="Firma Paciente" 
-                                  className="max-h-40 object-contain"
-                                />
-                              </div>
-                              <div className="flex items-center gap-2 mt-2">
-                                <span className="text-xs text-gray-400">Tamaño:</span>
-                                <input type="range" min="50" max="200" value={sigScale} onChange={e => setSigScale(Number(e.target.value))} className="w-24 accent-[#deb887]" />
-                                <span className="text-xs text-gray-500">{sigScale}%</span>
-                              </div>
-                              <span className="text-xs text-emerald-600 font-medium flex items-center gap-1 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100 mt-2">
+                              <img 
+                                src={currentConsent.signatures.patient_sig_data} 
+                                alt="Firma Paciente" 
+                                className="max-h-32 object-contain mb-4"
+                              />
+                              <span className="text-xs text-emerald-600 font-medium flex items-center gap-1 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100">
                                 <CheckCircle className="w-3 h-3" /> Firmado digitalmente
                               </span>
                               <button 

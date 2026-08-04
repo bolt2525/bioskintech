@@ -1,8 +1,6 @@
 import pg from 'pg';
 import crypto from 'crypto';
 import { initClinicalDatabase } from '../lib/neon-clinical-db.js';
-import { S3Client, DeleteObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 const { Pool, types } = pg;
 
 // ── Solución real para bug de fechas -1 día ──────────────────────────────────
@@ -139,25 +137,6 @@ async function logAudit(pool, { patientId, recordId, sessionUser, actionType, mo
     );
   } catch { /* silencioso — auditoría no bloquea operaciones */ }
 }
-
-// Cloudflare R2 client — credenciales vía env vars (configurar en Vercel)
-function getR2Client() {
-  const accountId = process.env.R2_ACCOUNT_ID;
-  if (!accountId) return null;
-  return new S3Client({
-    region: 'auto',
-    endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
-    forcePathStyle: true, // R2 requiere path-style; virtual-hosted puede no resolver en DNS
-    credentials: {
-      accessKeyId: process.env.R2_ACCESS_KEY_ID || '',
-      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || '',
-    },
-  });
-}
-
-// ponytail: wrangler cors aplica al endpoint S3 y r2.dev por igual (confirmado via OPTIONS test)
-let r2CorsSet = false;
-async function ensureR2Cors() { return; } // no-op: CORS ya está set vía wrangler
 
 export default async function handler(req, res) {
   console.log(`[Clinical Records API] Request received: ${req.method} ${req.url}`);
@@ -2215,134 +2194,6 @@ export default async function handler(req, res) {
           console.error('Error updating finance record:', err);
           return res.status(500).json({ error: err.message });
         }
-      }
-
-      // ==========================================
-      // PHOTOS MODULE ACTIONS (Cloudflare R2)
-      // ==========================================
-
-      case 'listPhotos': {
-        const su = await getSessionUserOnce();
-        if (!su) return res.status(401).json({ error: 'No autenticado' });
-        const { record_id, consultation_id } = req.query;
-        if (!record_id) return res.status(400).json({ error: 'record_id requerido' });
-        const clinicId = su.effective_clinic_id ?? su.clinic_id;
-        let q = `
-          SELECT p.*,
-                 c.created_at AS consultation_date,
-                 c.reason     AS consultation_reason
-          FROM clinical_photos p
-          LEFT JOIN consultations c ON p.consultation_id = c.id
-          WHERE p.record_id=$1 AND p.clinic_id=$2`;
-        const params = [record_id, clinicId];
-        if (consultation_id) { q += ' AND p.consultation_id=$3'; params.push(consultation_id); }
-        q += ' ORDER BY c.created_at DESC NULLS LAST, p.taken_at DESC, p.created_at DESC';
-        const { rows } = await pool.query(q, params);
-        return res.json(rows);
-      }
-
-      case 'getPhotoUploadUrl': {
-        const su = await getSessionUserOnce();
-        if (!su) return res.status(401).json({ error: 'No autenticado' });
-        const { filename, content_type, record_id } = body;
-        if (!filename || !record_id)
-          return res.status(400).json({ error: 'filename y record_id requeridos' });
-        // ponytail: sanitize filename → solo chars seguros para S3 key
-        const safe = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
-        const clinicId = su.effective_clinic_id ?? su.clinic_id;
-        const key = `clinics/${clinicId}/records/${record_id}/${Date.now()}_${safe}`;
-        const r2 = getR2Client();
-        if (!r2) return res.status(503).json({ error: 'Almacenamiento no configurado' });
-        // ponytail: omitir ContentType del comando firmado — si se incluye, R2 devuelve 400 sin CORS headers ante cualquier mismatch
-        const signedUrl = await getSignedUrl(
-          r2,
-          new PutObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: key }),
-          { expiresIn: 300 }
-        );
-        try { console.log('[R2 presigned URL host]', new URL(signedUrl).host); } catch {}
-        return res.json({ uploadUrl: signedUrl, key, public_url: `${process.env.R2_PUBLIC_URL}/${key}`, content_type: content_type || 'application/octet-stream' });
-      }
-
-      case 'savePhoto': {
-        const su = await getSessionUserOnce();
-        if (!su) return res.status(401).json({ error: 'No autenticado' });
-        const { record_id, consultation_id, r2_key, r2_url, photo_type, face_zone, body_zone, session_label, notes, taken_at } = body;
-        if (!record_id || !r2_key || !r2_url) return res.status(400).json({ error: 'Datos incompletos' });
-        const clinicId = su.effective_clinic_id ?? su.clinic_id;
-        const { rows } = await pool.query(
-          `INSERT INTO clinical_photos (record_id, consultation_id, clinic_id, photo_type, r2_key, r2_url, face_zone, body_zone, session_label, notes, taken_at, created_by)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
-          [record_id, consultation_id || null, clinicId, photo_type || 'general', r2_key, r2_url,
-           face_zone || null, body_zone || null, session_label || null, notes || null, taken_at || null, su.user_id]
-        );
-        return res.json(rows[0]);
-      }
-
-      case 'updatePhoto': {
-        const su = await getSessionUserOnce();
-        if (!su) return res.status(401).json({ error: 'No autenticado' });
-        const { id, photo_type, face_zone, body_zone, session_label, notes } = body;
-        if (!id) return res.status(400).json({ error: 'id requerido' });
-        const clinicId = su.effective_clinic_id ?? su.clinic_id;
-        const { rows } = await pool.query(
-          `UPDATE clinical_photos SET photo_type=$1, face_zone=$2, body_zone=$3, session_label=$4, notes=$5
-           WHERE id=$6 AND clinic_id=$7 RETURNING *`,
-          [photo_type, face_zone || null, body_zone || null, session_label || null, notes || null, id, clinicId]
-        );
-        if (!rows.length) return res.status(404).json({ error: 'No encontrado' });
-        return res.json(rows[0]);
-      }
-
-      case 'deletePhoto': {
-        const su = await getSessionUserOnce();
-        if (!su) return res.status(401).json({ error: 'No autenticado' });
-        const { id } = body;
-        if (!id) return res.status(400).json({ error: 'id requerido' });
-        const clinicId = su.effective_clinic_id ?? su.clinic_id;
-        const { rows } = await pool.query(
-          'SELECT r2_key FROM clinical_photos WHERE id=$1 AND clinic_id=$2',
-          [id, clinicId]
-        );
-        if (!rows.length) return res.status(404).json({ error: 'No encontrado' });
-        const r2 = getR2Client();
-        if (r2) {
-          try {
-            await r2.send(new DeleteObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: rows[0].r2_key }));
-          } catch { /* ponytail: R2 delete falla silenciosamente — DB se limpia igual */ }
-        }
-        await pool.query('DELETE FROM clinical_photos WHERE id=$1 AND clinic_id=$2', [id, clinicId]);
-        return res.json({ ok: true });
-      }
-
-      // ponytail: browser→R2 presigned PUT tiene CORS roto (R2 no envía CORS headers en 4xx)
-      // solución: el browser envía base64 a Vercel, Vercel sube a R2 server-side
-      case 'uploadPhotoProxy': {
-        const su = await getSessionUserOnce();
-        if (!su) return res.status(401).json({ error: 'No autenticado' });
-        const { fileBase64, filename, content_type, record_id, consultation_id, photo_type, session_label } = body;
-        if (!fileBase64 || !filename || !record_id)
-          return res.status(400).json({ error: 'fileBase64, filename y record_id requeridos' });
-        const r2 = getR2Client();
-        if (!r2) return res.status(503).json({ error: 'Almacenamiento no configurado' });
-        const clinicId = su.effective_clinic_id ?? su.clinic_id;
-        const safe = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
-        const key = `clinics/${clinicId}/records/${record_id}/${Date.now()}_${safe}`;
-        const fileBuffer = Buffer.from(fileBase64, 'base64');
-        const safeType = content_type || 'image/jpeg';
-        const r2Url = `${process.env.R2_PUBLIC_URL}/${key}`;
-        await r2.send(new PutObjectCommand({
-          Bucket: process.env.R2_BUCKET_NAME,
-          Key: key,
-          Body: fileBuffer,
-          ContentType: safeType,
-        }));
-        const { rows } = await pool.query(
-          `INSERT INTO clinical_photos (record_id, consultation_id, clinic_id, photo_type, r2_key, r2_url, session_label, created_by)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-          [record_id, consultation_id || null, clinicId, photo_type || 'general', key, r2Url,
-           session_label || new Date().toLocaleDateString('es-CL'), su.user_id]
-        );
-        return res.json(rows[0]);
       }
 
       default:

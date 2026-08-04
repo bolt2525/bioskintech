@@ -251,7 +251,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   } | null>(null);
   const [unitsModalInput, setUnitsModalInput] = useState('');
   // Multi-step states for trazado point modal
-  const [unitsModalStep, setUnitsModalStep] = useState<1 | 2 | 3 | 4>(1);
+  const [unitsModalStep, setUnitsModalStep] = useState<1 | 2 | 3>(1);
   const [unitsModalTercio, setUnitsModalTercio] = useState<'superior' | 'medio' | 'inferior' | ''>('');
   const [unitsModalZone, setUnitsModalZone] = useState('');
   const [unitsModalZoneFilter, setUnitsModalZoneFilter] = useState('');
@@ -1071,17 +1071,9 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     }));
   };
 
-  const handleUnitsModalConfirm = (planOverride?: string) => {
+  const handleUnitsModalConfirm = () => {
     if (!unitsModal) return;
-
-    // Paso 3 + nuevo punto toxina → avanzar a paso 4 (selección de plano)
-    if (unitsModalStep === 3 && unitsModal.isNewPoint && current.product_type === 'toxina') {
-      setUnitsModalStep(4);
-      return;
-    }
-
     const units = Number(unitsModalInput) || 0;
-    const planeToUse = planOverride !== undefined ? planOverride : unitsModalPlane;
 
     if (unitsModal.isNewPoint && pendingFreePoint) {
       // ── Punto libre nuevo (free-click o add-mode) ──────────────────────
@@ -1112,7 +1104,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
         // Vial activo para relleno HA
         ...(activeVialId ? { vial_id: activeVialId } : {}),
         // Plano y técnica si los seleccionó el usuario
-        ...(planeToUse ? { injection_plane: planeToUse } : {}),
+        ...(unitsModalPlane ? { injection_plane: unitsModalPlane } : {}),
         ...(unitsModalTecnica ? { technique_at_point: unitsModalTecnica } : {}),
       };
       setInjectionPoints(prev => [...prev, newPoint]);
@@ -1136,7 +1128,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
         units,
         label: effectiveLabel,
         editablePointId: unitsModal.pointId,
-        ...(planeToUse ? { injection_plane: planeToUse } : {}),
+        ...(unitsModalPlane ? { injection_plane: unitsModalPlane } : {}),
         ...(unitsModalTecnica ? { technique_at_point: unitsModalTecnica } : {}),
       };
 
@@ -1229,189 +1221,39 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
       return;
     }
 
-    const isToxina = current.product_type === 'toxina';
-    const professionalName = user?.full_name || '';
-    const logoUrl = clinic.general.logo_url || '';
-
-    const css = `
-      body { font-family: Arial, sans-serif; font-size: 10pt; color: #333; padding: 15mm; }
-      .header { border-bottom: 2px solid #deb887; padding-bottom: 10px; margin-bottom: 14px; display: flex; align-items: flex-start; gap: 14px; }
-      .clinic-name { font-size: 14pt; color: #b8944d; font-weight: bold; }
-      .clinic-sub { font-size: 9pt; color: #999; margin-top: 2px; }
-      table { width: 100%; border-collapse: collapse; font-size: 9pt; }
-      th { background: #fdf8f0; color: #b8944d; padding: 5px 8px; border: 1px solid #e8d5b0; text-align: left; }
-      td { padding: 4px 8px; border: 1px solid #e8d5b0; }
-      tr:nth-child(even) td { background: #fafaf8; }
-      .section-title { font-size: 11pt; font-weight: bold; color: #b8944d; margin: 14px 0 6px; border-bottom: 1px solid #e8d5b0; padding-bottom: 3px; }
-      .notes-box { background: #fafaf8; border: 1px solid #e8d5b0; border-radius: 4px; padding: 8px; font-size: 9pt; white-space: pre-wrap; margin-top: 4px; }
-      .vial-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: middle; margin-right: 4px; }
-      @media print { body { padding: 8mm; } }
-    `;
-
-    const headerHtml = `
-      <div class="header">
-        ${logoUrl ? `<img src="${logoUrl}" alt="Logo" style="height:56px;object-fit:contain;flex-shrink:0;" />` : ''}
-        <div style="flex:1;">
-          <div class="clinic-name">${clinicDisplayName}</div>
-          ${clinic.general.address ? `<div class="clinic-sub">${clinic.general.address}</div>` : ''}
-          ${clinic.general.phone ? `<div class="clinic-sub">Tel: ${clinic.general.phone}</div>` : ''}
-          ${professionalName ? `<div class="clinic-sub">Profesional: ${professionalName}</div>` : ''}
-        </div>
-        <div style="text-align:right;font-size:9pt;color:#999;">
-          <div>Ficha de Inyectable</div>
-          <div>${new Date().toLocaleDateString('es-EC')}</div>
-        </div>
-      </div>
-      <div style="margin-bottom:12px;font-size:10pt;">
-        <strong>Paciente:</strong> ${patientName || '—'}
-      </div>
-    `;
-
-    let bodyHtml = '';
-
-    if (isToxina) {
-      const dilVol = Number(current.dilution_volume);
-      const totalUI = Number(current.units_used) || 0;
-      const concentration = dilVol > 0 ? (totalUI / dilVol).toFixed(2) + ' UI/ml' : '—';
-
-      bodyHtml += `
-        <div class="section-title">Información General</div>
-        <table>
-          <thead><tr>
-            <th>Fecha</th><th>Producto / Marca</th><th>Lote</th><th>Dilución (ml)</th>
-            <th>Concentración</th><th>Total UI</th><th>Técnica</th><th>Aguja</th><th>Control</th>
-          </tr></thead>
-          <tbody><tr>
-            <td>${current.date ? new Date(current.date + 'T12:00:00').toLocaleDateString('es-EC') : '—'}</td>
-            <td>${current.product_name}${current.brand ? ' / ' + current.brand : ''}</td>
-            <td>${current.lot_number || '—'}</td>
-            <td>${current.dilution_volume || '—'}</td>
-            <td>${concentration}</td>
-            <td>${totalUI} UI</td>
-            <td>${current.technique || '—'}</td>
-            <td>${current.needle_type || '—'}</td>
-            <td>${current.follow_up_date ? new Date(current.follow_up_date + 'T12:00:00').toLocaleDateString('es-EC') : '—'}</td>
-          </tr></tbody>
-        </table>
-      `;
-
-      if (injectionPoints.length > 0) {
-        bodyHtml += `
-          <div class="section-title">Puntos de Inyección</div>
-          <table>
-            <thead><tr>
-              <th>#</th><th>Zona Anatómica</th><th>Tercio</th><th>UI</th>
-              <th>Plano</th><th>Técnica</th><th>Nota</th>
-            </tr></thead>
-            <tbody>
-              ${injectionPoints.map((p, i) => `<tr>
-                <td>${i + 1}</td>
-                <td>${p.label || '—'}</td>
-                <td>${TERCIO_LABELS[p.tercio] || p.tercio || '—'}</td>
-                <td>${p.units}</td>
-                <td>${p.injection_plane || '—'}</td>
-                <td>${p.technique_at_point || current.technique || '—'}</td>
-                <td>${p.notes_at_point || '—'}</td>
-              </tr>`).join('')}
-            </tbody>
-          </table>
-          <div style="margin-top:8px;font-size:9pt;color:#555;">
-            <strong>Total UI aplicadas:</strong> ${totalUsed} UI &nbsp;·&nbsp;
-            <strong>Puntos:</strong> ${injectionPoints.length}
-          </div>
-        `;
-      }
-    } else {
-      const subtypeLabel = RELLENO_SUBTYPE_LABELS[(current.relleno_subtype as RellenoSubType) || rellenoSubType] || 'Relleno';
-
-      bodyHtml += `
-        <div class="section-title">Información General</div>
-        <table>
-          <thead><tr>
-            <th>Fecha</th><th>Subtipo</th><th>Marca / Producto</th><th>Lote</th>
-            <th>Vol. Total (ml)</th><th>Técnica</th><th>Control</th>
-          </tr></thead>
-          <tbody><tr>
-            <td>${current.date ? new Date(current.date + 'T12:00:00').toLocaleDateString('es-EC') : '—'}</td>
-            <td>${subtypeLabel}</td>
-            <td>${current.brand || '—'}${current.product_name ? ' / ' + current.product_name : ''}</td>
-            <td>${current.lot_number || '—'}</td>
-            <td>${totalUsed > 0 ? totalUsed.toFixed(2) : (current.volume_used || '—')} ml</td>
-            <td>${current.technique || '—'}</td>
-            <td>${current.follow_up_date ? new Date(current.follow_up_date + 'T12:00:00').toLocaleDateString('es-EC') : '—'}</td>
-          </tr></tbody>
-        </table>
-      `;
-
-      if (haVials.length > 0) {
-        bodyHtml += `
-          <div class="section-title">Jeringas / Viales</div>
-          <table>
-            <thead><tr>
-              <th>Color</th><th>Producto</th><th>Vol. Total (ml)</th><th>Vol. Usado (ml)</th><th>Sobrante (ml)</th>
-            </tr></thead>
-            <tbody>
-              ${haVials.map(v => {
-                const used = usedMlByVial(v.id);
-                const leftover = Math.max(0, v.volume_ml - used);
-                return `<tr>
-                  <td><span class="vial-dot" style="background:${v.color};border:1px solid rgba(0,0,0,.15);"></span>${v.color}</td>
-                  <td>${v.product_name || '—'}${v.brand ? ' (' + v.brand + ')' : ''}</td>
-                  <td>${v.volume_ml}</td>
-                  <td>${used.toFixed(2)}</td>
-                  <td>${leftover.toFixed(2)}</td>
-                </tr>`;
-              }).join('')}
-            </tbody>
-          </table>
-        `;
-      }
-
-      if (injectionPoints.length > 0) {
-        bodyHtml += `
-          <div class="section-title">Puntos de Inyección</div>
-          <table>
-            <thead><tr>
-              <th>#</th><th>Zona Anatómica</th><th>Vol. (ml)</th><th>Vial</th>
-              <th>Plano</th><th>Técnica</th>
-            </tr></thead>
-            <tbody>
-              ${injectionPoints.map((p, i) => {
-                const vial = haVials.find(v => v.id === p.vial_id);
-                return `<tr>
-                  <td>${i + 1}</td>
-                  <td>${p.label || '—'}</td>
-                  <td>${p.units}</td>
-                  <td>${vial ? `<span class="vial-dot" style="background:${vial.color};border:1px solid rgba(0,0,0,.15);"></span>${vial.product_name || vial.color}` : '—'}</td>
-                  <td>${p.injection_plane || '—'}</td>
-                  <td>${p.technique_at_point || current.technique || '—'}</td>
-                </tr>`;
-              }).join('')}
-            </tbody>
-          </table>
-        `;
-      }
+    // Build tercio breakdown for print
+    const tercioCSS: Record<string, { bg: string; border: string; text: string }> = {
+      superior: { bg: '#e0f7fa', border: '#00bcd4', text: '#006064' },
+      medio: { bg: '#ede7f6', border: '#7c4dff', text: '#4527a0' },
+      inferior: { bg: '#fff8e1', border: '#ffc107', text: '#e65100' },
+    };
+    const tercioNames: Record<string, string> = { superior: 'Tercio Superior', medio: 'Tercio Medio', inferior: 'Tercio Inferior' };
+    let tercioBreakdownHtml = '';
+    for (const t of ['superior', 'medio', 'inferior'] as const) {
+      const pts = pointsByTercio[t];
+      if (!pts || pts.length === 0) continue;
+      const totalT = pts.reduce((s, p) => s + p.units, 0);
+      const css = tercioCSS[t];
+      tercioBreakdownHtml += `<div style="margin-bottom:12px;"><div style="background:${css.bg};border:1px solid ${css.border};border-radius:6px;padding:8px 12px;margin-bottom:4px;"><strong style="color:${css.text};font-size:12px;">${tercioNames[t]}</strong><span style="float:right;font-size:11px;color:${css.text};">${pts.length} punto(s) · ${totalT} ${unitLabel}</span></div><table style="width:100%;border-collapse:collapse;"><thead><tr style="background:#faf6f0;"><th style="font-size:10px;text-transform:uppercase;color:#b8944d;padding:4px 8px;text-align:left;border-bottom:1px solid #e8dcc8;">#</th><th style="font-size:10px;text-transform:uppercase;color:#b8944d;padding:4px 8px;text-align:left;border-bottom:1px solid #e8dcc8;">Zona Anatómica</th><th style="font-size:10px;text-transform:uppercase;color:#b8944d;padding:4px 8px;text-align:left;border-bottom:1px solid #e8dcc8;">Plano</th><th style="font-size:10px;text-transform:uppercase;color:#b8944d;padding:4px 8px;text-align:right;border-bottom:1px solid #e8dcc8;">${unitLabel} Aplicadas</th><th style="font-size:10px;text-transform:uppercase;color:#b8944d;padding:4px 8px;text-align:right;border-bottom:1px solid #e8dcc8;">% Dosis</th></tr></thead><tbody>${pts.map((p, i) => `<tr><td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;">${i + 1}</td><td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;">${p.label || '—'}</td><td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;color:#7c3aed;">${p.injection_plane || '—'}</td><td style="font-size:11px;padding:4px 8px;text-align:right;border-bottom:1px solid #f0f0f0;">${p.units}</td><td style="font-size:11px;padding:4px 8px;text-align:right;border-bottom:1px solid #f0f0f0;">${totalUsed > 0 ? Math.round((p.units / totalUsed) * 100) : 0}%</td></tr>`).join('')}</tbody></table></div>`;
+    }
+    // Legend for percentage
+    if (tercioBreakdownHtml) {
+      tercioBreakdownHtml += `<div style="margin-top:4px;padding:6px 10px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;font-size:10px;color:#6b7280;line-height:1.6;">
+        <strong style="color:#4b5563;">Leyenda:</strong>
+        <strong>% Dosis</strong> = porcentaje de unidades aplicadas en cada punto respecto al total de ${unitLabel} utilizadas (${totalUsed} ${unitLabel}).
+        <strong>Zona Anatómica</strong> = área facial específica donde se realizó la inyección, clasificada por tercio facial.
+      </div>`;
     }
 
-    if (current.notes) {
-      bodyHtml += `
-        <div class="section-title">Observaciones</div>
-        <div class="notes-box">${current.notes}</div>
-      `;
-    }
-
-    if (capturedImages.length > 0) {
-      bodyHtml += `
-        <div class="section-title">Mapeo 3D — Capturas</div>
-        <div style="display:grid;grid-template-columns:repeat(${Math.min(capturedImages.length, 2)},1fr);gap:12px;margin-top:6px;">
-          ${capturedImages.map((cap, idx) => `
-            <div style="border:1px solid #e8d5b0;border-radius:6px;overflow:hidden;">
-              <img src="${cap.dataUrl}" alt="${cap.label || `Vista ${idx + 1}`}" style="width:100%;display:block;" />
-              <div style="padding:4px 8px;font-size:9pt;color:#b8944d;text-align:center;">${cap.label || `Vista ${idx + 1}`}</div>
-            </div>
-          `).join('')}
-        </div>
-      `;
+    // Zone summary
+    const zoneMap = new Map<string, { units: number; count: number }>();
+    injectionPoints.forEach(p => {
+      const existing = zoneMap.get(p.label) || { units: 0, count: 0 };
+      zoneMap.set(p.label, { units: existing.units + p.units, count: existing.count + 1 });
+    });
+    let zoneSummaryHtml = '';
+    if (zoneMap.size > 0) {
+      zoneSummaryHtml = `<div style="margin-top:12px;"><div style="font-size:12px;font-weight:700;color:#b8944d;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;border-bottom:1px solid #f0e6d6;padding-bottom:4px;">Resumen por Zona</div><table style="width:100%;border-collapse:collapse;"><thead><tr style="background:#faf6f0;"><th style="font-size:10px;text-transform:uppercase;color:#b8944d;padding:4px 8px;text-align:left;border-bottom:1px solid #e8dcc8;">Zona</th><th style="font-size:10px;text-transform:uppercase;color:#b8944d;padding:4px 8px;text-align:right;border-bottom:1px solid #e8dcc8;">Puntos</th><th style="font-size:10px;text-transform:uppercase;color:#b8944d;padding:4px 8px;text-align:right;border-bottom:1px solid #e8dcc8;">Total ${unitLabel}</th></tr></thead><tbody>${Array.from(zoneMap.entries()).map(([zone, data]) => `<tr><td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;">${zone}</td><td style="font-size:11px;padding:4px 8px;text-align:right;border-bottom:1px solid #f0f0f0;">${data.count}</td><td style="font-size:11px;padding:4px 8px;text-align:right;border-bottom:1px solid #f0f0f0;">${data.units}</td></tr>`).join('')}</tbody></table></div>`;
     }
 
     setMessage({ type: 'success', text: 'Abriendo vista de impresión...' });
@@ -1419,12 +1261,182 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Ficha de Inyectable — ${clinicDisplayName}</title>
-  <style>${css}</style>
+  <title>Ficha de Inyectable — BIOSKIN</title>
+  <style>
+    @page { margin: 1.5cm; size: A4; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; color: #333; line-height: 1.5; padding: 30px; max-width: 800px; margin: 0 auto; }
+    .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 3px solid #deb887; padding-bottom: 16px; margin-bottom: 24px; }
+    .header-left h1 { font-size: 22px; color: #deb887; font-weight: 700; letter-spacing: 1px; }
+    .header-left p { font-size: 11px; color: #999; margin-top: 2px; }
+    .header-right { text-align: right; font-size: 12px; color: #666; }
+    .patient-bar { background: #faf6f0; border: 1px solid #e8dcc8; border-radius: 8px; padding: 12px 16px; margin-bottom: 20px; display: flex; justify-content: space-between; }
+    .patient-bar span { font-size: 13px; }
+    .patient-bar strong { color: #b8944d; }
+    .section { margin-bottom: 18px; }
+    .section-title { font-size: 13px; font-weight: 700; color: #deb887; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; border-bottom: 1px solid #f0e6d6; padding-bottom: 4px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px 16px; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; }
+    .field { margin-bottom: 6px; }
+    .field .label { font-size: 10px; text-transform: uppercase; color: #999; letter-spacing: 0.3px; }
+    .field .value { font-size: 13px; font-weight: 500; color: #333; padding: 4px 0; }
+    .type-badge { display: inline-block; padding: 3px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+    .type-toxina { background: #e0f2fe; color: #0369a1; }
+    .type-relleno { background: #f3e8ff; color: #7c3aed; }
+    .zones-container { display: flex; flex-wrap: wrap; gap: 4px; }
+    .zone-tag { display: inline-block; padding: 2px 8px; background: #fef3c7; color: #92400e; border-radius: 4px; font-size: 11px; font-weight: 500; }
+    .empty { color: #ccc; font-style: italic; font-size: 12px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+    table th { background: #faf6f0; font-size: 11px; text-transform: uppercase; color: #b8944d; padding: 6px 8px; text-align: left; border-bottom: 2px solid #e8dcc8; }
+    table td { font-size: 12px; padding: 5px 8px; border-bottom: 1px solid #f0f0f0; }
+    .notes-box { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 10px 14px; font-size: 12px; white-space: pre-wrap; min-height: 30px; }
+    .summary-bar { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+    .summary-card { background: #faf6f0; border: 1px solid #e8dcc8; border-radius: 8px; padding: 10px 14px; text-align: center; }
+    .summary-card .sc-label { font-size: 10px; text-transform: uppercase; color: #999; letter-spacing: 0.3px; }
+    .summary-card .sc-value { font-size: 18px; font-weight: 700; color: #333; margin-top: 2px; }
+    .summary-card.danger .sc-value { color: #dc2626; }
+    .mapping-img { max-width: 320px; margin: 8px auto; display: block; border-radius: 8px; border: 1px solid #e5e7eb; }
+    .signature { margin-top: 50px; display: flex; justify-content: space-between; }
+    .signature-block { text-align: center; width: 40%; }
+    .signature-line { border-top: 1px solid #333; margin-top: 50px; padding-top: 6px; font-size: 11px; color: #666; }
+    .footer { margin-top: 30px; text-align: center; font-size: 10px; color: #bbb; border-top: 1px solid #eee; padding-top: 10px; }
+  </style>
 </head>
 <body>
-  ${headerHtml}
-  ${bodyHtml}
+  <div class="header">
+    <div class="header-left">
+      <h1>${clinicDisplayName}</h1>
+      <p>${clinic.general.tagline || 'Centro de Medicina Estética'}</p>
+      ${clinic.general.address ? `<p style="font-size:10px;color:#aaa;">${clinic.general.address}${clinic.general.city ? ', ' + clinic.general.city : ''}</p>` : ''}
+    </div>
+    <div class="header-right">
+      <div>Ficha de Procedimiento Inyectable</div>
+      <div style="font-size:11px; color:#999;">Fecha de impresión: ${new Date().toLocaleDateString('es-EC')}</div>
+    </div>
+  </div>
+
+  <div class="patient-bar">
+    <span><strong>Paciente:</strong> ${patientName || '—'}</span>
+    <span><strong>Fecha del procedimiento:</strong> ${current.date ? new Date(current.date + 'T12:00:00').toLocaleDateString('es-EC') : '—'}</span>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Información del Producto</div>
+    <div class="grid">
+      <div class="field">
+        <div class="label">Tipo</div>
+        <div class="value"><span class="type-badge ${current.product_type === 'toxina' ? 'type-toxina' : 'type-relleno'}">${current.product_type === 'toxina' ? 'Toxina Botulínica' : (rellenoSubType === 'hidratacion' ? 'Hidratación' : rellenoSubType === 'bioestimulador' ? 'Bioestimuladores' : 'Relleno (Ácido Hialurónico)')}</span></div>
+      </div>
+      <div class="field">
+        <div class="label">Producto</div>
+        <div class="value">${current.product_name || '—'}</div>
+      </div>
+      <div class="field">
+        <div class="label">Marca</div>
+        <div class="value">${current.brand || '—'}</div>
+      </div>
+    </div>
+    <div class="grid">
+      <div class="field">
+        <div class="label">Lote</div>
+        <div class="value">${current.lot_number || '—'}</div>
+      </div>
+      <div class="field">
+        <div class="label">Vencimiento</div>
+        <div class="value">${current.expiration_date ? new Date(current.expiration_date + 'T12:00:00').toLocaleDateString('es-EC') : '—'}</div>
+      </div>
+      <div class="field">
+        <div class="label">${current.product_type === 'toxina' ? 'Unidades (UI)' : 'Volumen (ml)'}</div>
+        <div class="value">${current.product_type === 'toxina' ? (current.units_used || '—') : (current.volume_used || '—')}</div>
+      </div>
+    </div>
+    ${current.product_type === 'toxina' && current.dilution_volume ? `<div class="grid-2" style="margin-top:8px;">
+      <div class="field">
+        <div class="label">Dilución — Suero Fisiológico 0.9%</div>
+        <div class="value">${current.dilution_volume} ml</div>
+      </div>
+      <div class="field">
+        <div class="label">Concentración Resultante</div>
+        <div class="value">${(Number(current.units_used) / Number(current.dilution_volume)).toFixed(2)} UI/ml</div>
+      </div>
+    </div>` : ''}
+  </div>
+
+  <div class="section">
+    <div class="section-title">Técnica de Aplicación</div>
+    <div class="grid-2">
+      <div class="field">
+        <div class="label">Técnica</div>
+        <div class="value">${current.technique || '—'}</div>
+      </div>
+      <div class="field">
+        <div class="label">Aguja / Cánula</div>
+        <div class="value">${current.needle_type || '—'}</div>
+      </div>
+    </div>
+  </div>
+
+  ${injectionPoints.length > 0 ? `
+  <div class="section">
+    <div class="section-title">Distribución del Vial</div>
+    <p style="font-size:11px;color:#6b7280;margin-bottom:8px;">Resumen de la distribución del producto inyectado. <strong>Total Vial</strong>: cantidad disponible. <strong>Utilizadas</strong>: suma de unidades aplicadas. <strong>Restantes</strong>: sobrante en el vial. <strong>Puntos</strong>: sitios de inyección.</p>
+    <div class="summary-bar">
+      <div class="summary-card"><div class="sc-label">Total Vial</div><div class="sc-value">${totalVial} ${unitLabel}</div></div>
+      <div class="summary-card"><div class="sc-label">Utilizadas</div><div class="sc-value">${totalUsed} ${unitLabel}</div></div>
+      <div class="summary-card ${remaining < 0 ? 'danger' : ''}"><div class="sc-label">Restantes</div><div class="sc-value">${remaining} ${unitLabel}</div></div>
+      <div class="summary-card"><div class="sc-label">Puntos</div><div class="sc-value">${injectionPoints.length}</div></div>
+    </div>
+  </div>
+  <div class="section">
+    <div class="section-title">Desglose por Tercio Facial</div>
+    <p style="font-size:11px;color:#6b7280;margin-bottom:8px;">Distribución detallada de los puntos de inyección clasificados por tercio facial (superior, medio e inferior). La columna <strong>% Dosis</strong> indica el porcentaje que representa cada punto respecto al total de ${unitLabel} aplicadas.</p>
+    ${tercioBreakdownHtml}
+    ${zoneSummaryHtml}
+  </div>` : ''}
+
+  ${capturedImages.length > 0 ? `
+  <div class="section">
+    <div class="section-title">Mapeo Facial 3D — Vistas Capturadas (${capturedImages.length})</div>
+    <p style="font-size:11px;color:#6b7280;margin-bottom:12px;">Representaciones visuales del mapeo 3D desde distintos ángulos. Cada imagen corresponde a una captura manual realizada durante el registro del procedimiento.</p>
+    <div style="display:grid;grid-template-columns:repeat(${Math.min(capturedImages.length, 2)},1fr);gap:16px;">
+      ${capturedImages.map((cap, idx) => `
+        <div style="border:1px solid #e8dcc8;border-radius:8px;overflow:hidden;background:#faf6f0;">
+          <img src="${cap.dataUrl}" alt="${cap.label || `Vista ${idx + 1}`}" style="width:100%;display:block;" />
+          <div style="padding:6px 10px;font-size:11px;color:#b8944d;font-weight:600;text-align:center;border-top:1px solid #e8dcc8;">
+            ${cap.label ? cap.label : `Vista ${idx + 1}`}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  </div>` : ''}
+
+  ${current.follow_up_date ? `<div class="section">
+    <div class="section-title">Cita de Control</div>
+    <div class="grid-2">
+      <div class="field">
+        <div class="label">Fecha programada de revisión</div>
+        <div class="value" style="font-weight:600;color:#333;">${new Date(current.follow_up_date + 'T12:00:00').toLocaleDateString('es-EC', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div>
+      </div>
+    </div>
+  </div>` : ''}
+
+  <div class="section">
+    <div class="section-title">Observaciones Clínicas</div>
+    <div class="notes-box">${current.notes || 'Sin observaciones'}</div>
+  </div>
+
+  <div class="signature">
+    <div class="signature-block">
+      <div class="signature-line">Firma del Profesional</div>
+    </div>
+    <div class="signature-block">
+      <div class="signature-line">Firma del Paciente</div>
+    </div>
+  </div>
+
+  <div class="footer">
+    ${clinicDisplayName} — ${clinic.general.tagline || 'Centro de Medicina Estética'} · Documento generado el ${new Date().toLocaleString('es-EC')}
+  </div>
   <script>window.onload = () => window.print()</script>
 </body>
 </html>`;
@@ -1434,6 +1446,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     window.open(url, '_blank', 'noopener');
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   };
+
   // Filtrar injectables por tipo activo y sub-tipo (relleno)
   const filteredInjectables = injectables.filter(i => {
     if (i.product_type !== activeType) return false;
@@ -1948,7 +1961,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
                 value={current.brand}
                 onChange={e => setCurrent({ ...current, brand: e.target.value })}
-                placeholder={current.product_type === 'toxina' ? 'Ej: BOTOX® 100UI, Dysport®, Xeomin®' : rellenoSubType === 'hidratacion' ? 'Ej: Belotero Hydro, Teosyal PureSense, Juvéderm Hydrate' : rellenoSubType === 'bioestimulador' ? 'Ej: Sculptra, Radiesse, Ellanssé, Bellagen' : 'Ej: Juvederm Ultra, Restylane Lyft, Belotero'}
+                placeholder={current.product_type === 'toxina' ? 'Ej: BOTOX® 100UI' : 'Ej: Juvederm Ultra'}
               />
               <datalist id="inj-tab-brands">
                 {brands.map((b, i) => <option key={i} value={b} />)}
@@ -1961,7 +1974,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
                 value={current.product_name}
                 onChange={e => setCurrent({ ...current, product_name: e.target.value })}
-                placeholder="Ej: Juvederm Ultra 2 (1ml jeringa)"
+                placeholder="Nombre comercial"
               />
             </div>
           </div>
@@ -1975,7 +1988,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
                 value={current.lot_number}
                 onChange={e => setCurrent({ ...current, lot_number: e.target.value })}
-                placeholder="Ej: 2024A001"
+                placeholder="Nro. de lote"
               />
             </div>
             <div className="space-y-1.5">
@@ -2005,7 +2018,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                   className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
                   value={current.volume_used}
                   onChange={e => setCurrent({ ...current, volume_used: e.target.value })}
-                  placeholder="Ej: 1.0 ml"
+                  placeholder="Ej: 1.0"
                 />
               )}
             </div>
@@ -2022,7 +2035,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
                 value={current.technique}
                 onChange={e => setCurrent({ ...current, technique: e.target.value })}
-                placeholder="Ej: Microdéposito, Lineal, Abanico"
+                placeholder="Técnica de inyección"
               />
               <datalist id="inj-tab-techniques">
                 {techniques.map((t, i) => <option key={i} value={t} />)}
@@ -2036,7 +2049,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
                 value={current.needle_type}
                 onChange={e => setCurrent({ ...current, needle_type: e.target.value })}
-                placeholder="Ej: 30G 13mm, 32G 4mm"
+                placeholder="Tipo de aguja"
               />
               <datalist id="inj-tab-needles">
                 {needles.map((n, i) => <option key={i} value={n} />)}
@@ -2061,7 +2074,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     className="flex-1 px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#deb887] outline-none bg-gray-50/50 focus:bg-white transition-all"
                     value={current.dilution_volume}
                     onChange={e => setCurrent({ ...current, dilution_volume: e.target.value })}
-                    placeholder="Ej: 2.5 ml (solución salina 0.9%)"
+                    placeholder="Ej: 2.5"
                   />
                   {Number(current.dilution_volume) > 0 && Number(current.units_used) > 0 && (
                     <span className="text-xs text-[#b8944d] font-semibold shrink-0 bg-[#deb887]/10 px-2.5 py-1.5 rounded-lg border border-[#deb887]/30">
@@ -2093,7 +2106,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
               className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none resize-none transition-all bg-gray-50/50 focus:bg-white"
               value={current.notes}
               onChange={e => setCurrent({ ...current, notes: e.target.value })}
-              placeholder="Ej: Paciente tolera bien. Sin eritema post-aplicación."
+              placeholder="Notas clínicas, reacciones adversas, seguimiento..."
             />
           </div>
         </div>
@@ -3452,7 +3465,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                   <h3 className="text-sm font-bold text-gray-800">
                     {current.product_type === 'relleno'
                       ? (unitsModalStep === 1 ? 'Volumen (ml)' : unitsModalStep === 2 ? 'Tercio facial' : 'Zona anatómica')
-                      : (unitsModalStep === 1 ? 'Unidades (UI)' : unitsModalStep === 2 ? 'Tercio facial' : unitsModalStep === 3 ? 'Zona anatómica' : 'Plano de inyección (opcional)')
+                      : (unitsModalStep === 1 ? 'Unidades (UI)' : unitsModalStep === 2 ? 'Tercio facial' : 'Zona anatómica')
                     }
                   </h3>
                   <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{unitsModal.pointName}</p>
@@ -3465,9 +3478,9 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 </button>
               </div>
 
-              {/* Step progress bar — 3 pasos (relleno/punto existente) o 4 (toxina nuevo) */}
+              {/* Step progress bar — pasos 1→2→3 */}
               <div className="flex gap-1 mb-4">
-                {(unitsModal.isNewPoint && current.product_type === 'toxina' ? [1, 2, 3, 4] : [1, 2, 3]).map(s => (
+                {[1, 2, 3].map(s => (
                   <div key={s} className={`h-1 flex-1 rounded-full transition-colors ${s <= unitsModalStep ? (current.product_type === 'relleno' ? 'bg-violet-400' : 'bg-[#deb887]') : 'bg-gray-200'}`} />
                 ))}
               </div>
@@ -3639,30 +3652,6 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 </div>
               )}
 
-              {/* Step 4: Plano de inyección (solo toxina, nuevo punto) */}
-              {unitsModalStep === 4 && (
-                <div className="mb-4">
-                  <p className="text-xs text-gray-500 mb-3">Selecciona el plano o continúa sin definir.</p>
-                  <div className="flex flex-col gap-2">
-                    {HA_PLANES.map(pl => (
-                      <button
-                        key={pl}
-                        onClick={() => handleUnitsModalConfirm(pl)}
-                        className="w-full px-3 py-2.5 rounded-xl border-2 text-left text-sm font-medium transition-all bg-white border-gray-200 text-gray-700 hover:border-[#deb887] hover:text-[#b8944d]"
-                      >
-                        {pl}
-                      </button>
-                    ))}
-                    <button
-                      onClick={() => handleUnitsModalConfirm('')}
-                      className="w-full px-3 py-2.5 rounded-xl border-2 border-dashed border-gray-300 text-gray-500 text-sm font-medium hover:bg-gray-50 hover:border-gray-400 transition-all"
-                    >
-                      Omitir / Sin definir
-                    </button>
-                  </div>
-                </div>
-              )}
-
               {/* Action buttons */}
               <div className="flex flex-col gap-2">
                 {/* Fila secundaria: Eliminar + Cancelar (solo paso 1) */}
@@ -3701,32 +3690,22 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                   {/* Volver — pasos 2+ */}
                   {unitsModalStep > 1 && (
                     <button
-                      onClick={() => setUnitsModalStep(prev => (prev - 1) as 1 | 2 | 3 | 4)}
+                      onClick={() => setUnitsModalStep(prev => (prev - 1) as 1 | 2 | 3)}
                       className="px-3 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50 transition-colors"
                     >
                       ←
                     </button>
                   )}
 
-                  {/* Guardar — paso 1 y paso 3 (punto existente) */}
-                  {(unitsModalStep === 1 || (unitsModalStep === 3 && !unitsModal.isNewPoint)) && (
+                  {/* Guardar — paso 1 y paso 3 (final) */}
+                  {(unitsModalStep === 1 || unitsModalStep === 3) && (
                     <button
-                      onClick={() => handleUnitsModalConfirm()}
+                      onClick={handleUnitsModalConfirm}
                       disabled={!unitsModalInput || Number(unitsModalInput) <= 0}
                       className="flex-1 px-4 py-2.5 rounded-xl bg-[#deb887] text-white text-sm font-semibold hover:bg-[#c5a075] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
                     >
                       <Check className="w-4 h-4" />
                       Guardar
-                    </button>
-                  )}
-
-                  {/* Plano → — paso 3, nuevo punto toxina (avanza a paso 4) */}
-                  {unitsModalStep === 3 && unitsModal.isNewPoint && current.product_type === 'toxina' && (
-                    <button
-                      onClick={() => handleUnitsModalConfirm()}
-                      className="flex-1 px-4 py-2.5 rounded-xl bg-[#deb887] text-white text-sm font-semibold hover:bg-[#c5a075] transition-colors flex items-center justify-center gap-1.5"
-                    >
-                      Plano →
                     </button>
                   )}
 
