@@ -122,6 +122,40 @@ export default function PhotosTab({ recordId, consultationId, patientName }: Pho
     }
   };
 
+  // ponytail: compress via canvas hasta < 3MB para caber en el JSON body de Vercel (4.5MB límite)
+  const compressImage = (file: File, maxBytes = 3 * 1024 * 1024): Promise<{ base64: string; type: string }> =>
+    new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const canvas = document.createElement('canvas');
+        const MAX_DIM = 1920;
+        let { width, height } = img;
+        if (width > MAX_DIM || height > MAX_DIM) {
+          if (width > height) { height = Math.round(height * MAX_DIM / width); width = MAX_DIM; }
+          else { width = Math.round(width * MAX_DIM / height); height = MAX_DIM; }
+        }
+        canvas.width = width; canvas.height = height;
+        canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
+        // reducir calidad hasta caber en límite
+        let quality = 0.85;
+        const tryCompress = () => {
+          const dataUrl = canvas.toDataURL('image/jpeg', quality);
+          const base64 = dataUrl.split(',')[1];
+          if (base64.length * 0.75 < maxBytes || quality <= 0.4) {
+            resolve({ base64, type: 'image/jpeg' });
+          } else {
+            quality -= 0.15;
+            tryCompress();
+          }
+        };
+        tryCompress();
+      };
+      img.onerror = reject;
+      img.src = url;
+    });
+
   const handleUpload = useCallback(async (files: File[]) => {
     if (!files.length) return;
     setUploading(true);
@@ -130,66 +164,38 @@ export default function PhotosTab({ recordId, consultationId, patientName }: Pho
       const file = files[i];
       setUploadProgress(`Subiendo ${i + 1} de ${files.length}: ${file.name}`);
       try {
-        // Step 1: get presigned URL
-        const urlRes = await recordsFetch('/api/records', {
+        setUploadProgress(`Procesando ${i + 1} de ${files.length}…`);
+        const { base64, type } = await compressImage(file);
+        setUploadProgress(`Subiendo ${i + 1} de ${files.length}: ${file.name}`);
+        const res = await recordsFetch('/api/records', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            action: 'getPhotoUploadUrl',
+            action: 'uploadPhotoProxy',
+            fileBase64: base64,
             filename: file.name,
-            content_type: file.type,
-            record_id: recordId,
-          }),
-        });
-        if (urlRes.status === 503) {
-          setR2Available(false);
-          setMessage({ type: 'error', text: 'Almacenamiento no configurado — Configure las variables R2 en el panel de administración' });
-          setUploading(false);
-          setUploadProgress('');
-          return;
-        }
-        if (!urlRes.ok) throw new Error('Error obteniendo URL de subida');
-        const { uploadUrl, key, public_url, content_type: uploadContentType } = await urlRes.json();
-        setR2Available(true);
-
-        // Step 2: upload directo a R2 (presigned PUT)
-        let putRes: Response;
-        try {
-          putRes = await fetch(uploadUrl, {
-            method: 'PUT',
-            body: file,
-            headers: { 'Content-Type': uploadContentType || file.type || 'application/octet-stream' },
-          });
-        } catch {
-          throw new Error('No se pudo conectar con el almacenamiento. Intenta de nuevo en unos segundos.');
-        }
-        if (!putRes.ok) {
-          const errText = await putRes.text().catch(() => '');
-          throw new Error(`Error al subir (${putRes.status})${errText ? ': ' + errText.slice(0, 120) : ''}`);
-        }
-
-        // Step 3: save metadata
-        const saveRes = await recordsFetch('/api/records', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'savePhoto',
+            content_type: type,
             record_id: recordId,
             consultation_id: consultationId,
-            r2_key: key,
-            r2_url: public_url,
-            photo_type: 'general',
             session_label: new Date().toLocaleDateString('es-CL'),
           }),
         });
-        if (!saveRes.ok) throw new Error('Error al guardar la foto');
+        if (res.status === 503) {
+          setR2Available(false);
+          setMessage({ type: 'error', text: 'Almacenamiento no configurado — Configure las variables R2 en Vercel' });
+          setUploading(false); setUploadProgress(''); return;
+        }
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || `Error al subir (${res.status})`);
+        }
+        setR2Available(true);
       } catch (err: any) {
         anyFailed = true;
         setMessage({ type: 'error', text: err.message || 'Error al subir foto' });
       }
     }
-    setUploading(false);
-    setUploadProgress('');
+    setUploading(false); setUploadProgress('');
     if (!anyFailed) setMessage({ type: 'success', text: `${files.length} foto(s) subida(s) correctamente` });
     await fetchPhotos();
   }, [recordId, consultationId]);

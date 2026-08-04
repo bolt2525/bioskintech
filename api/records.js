@@ -2308,6 +2308,37 @@ export default async function handler(req, res) {
         return res.json({ ok: true });
       }
 
+      // ponytail: browser→R2 presigned PUT tiene CORS roto (R2 no envía CORS headers en 4xx)
+      // solución: el browser envía base64 a Vercel, Vercel sube a R2 server-side
+      case 'uploadPhotoProxy': {
+        const su = await getSessionUserOnce();
+        if (!su) return res.status(401).json({ error: 'No autenticado' });
+        const { fileBase64, filename, content_type, record_id, consultation_id, photo_type, session_label } = body;
+        if (!fileBase64 || !filename || !record_id)
+          return res.status(400).json({ error: 'fileBase64, filename y record_id requeridos' });
+        const r2 = getR2Client();
+        if (!r2) return res.status(503).json({ error: 'Almacenamiento no configurado' });
+        const clinicId = su.effective_clinic_id ?? su.clinic_id;
+        const safe = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const key = `clinics/${clinicId}/records/${record_id}/${Date.now()}_${safe}`;
+        const fileBuffer = Buffer.from(fileBase64, 'base64');
+        const safeType = content_type || 'image/jpeg';
+        const r2Url = `${process.env.R2_PUBLIC_URL}/${key}`;
+        await r2.send(new PutObjectCommand({
+          Bucket: process.env.R2_BUCKET_NAME,
+          Key: key,
+          Body: fileBuffer,
+          ContentType: safeType,
+        }));
+        const { rows } = await pool.query(
+          `INSERT INTO clinical_photos (record_id, consultation_id, clinic_id, photo_type, r2_key, r2_url, session_label, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+          [record_id, consultation_id || null, clinicId, photo_type || 'general', key, r2Url,
+           session_label || new Date().toLocaleDateString('es-CL'), su.user_id]
+        );
+        return res.json(rows[0]);
+      }
+
       default:
         return res.status(400).json({ error: 'Invalid action' });
     }
