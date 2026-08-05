@@ -10,7 +10,7 @@
  *  1. POST ?action=preparePayment  -> llama /button/Prepare -> devuelve payWithCard URL
  *  2. Frontend redirige al usuario a payWithCard URL (nueva pestana)
  *  3. Usuario paga en el formulario hosted de PayPhone
- *  4. PayPhone redirige a responseUrl#/...register?payment=confirm&id=X&clientTransactionId=Y
+ *  4. PayPhone redirige a responseUrl?payment=confirm&id=X&clientTransactionId=Y
  *  5. POST ?action=confirmPayment  -> llama /button/V2/Confirm -> verifica y registra el pago
  */
 

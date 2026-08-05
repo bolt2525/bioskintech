@@ -129,7 +129,8 @@ export default function AdminRegister() {
 
     // Cargar planes de suscripción
     // ponytail: plan único constante — sin fetch necesario
-  }, [inviteToken, googleParam, paymentParam, subscriptionId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inviteToken, googleParam, paymentParam]);
 
   // ── Validar código ────────────────────────────────────────────────────────
 
