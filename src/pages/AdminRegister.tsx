@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 
 // Contacto de soporte BioskinTech (número en formato internacional sin +)
-const BIOSKIN_SUPPORT_WA = '593992711648';
+const BIOSKIN_SUPPORT_WA = '593984232889';
 const PAYMENT_LINK = 'https://ppls.me/U4vULogX4u2gZ8h1TKtWQ';
 
 const API = '/api/admin-auth';
@@ -79,6 +79,11 @@ export default function AdminRegister() {
   const [clinicCity, setClinicCity]   = useState('');
   const [clinicCountry, setClinicCountry] = useState('Ecuador');
   const [clinicRuc, setClinicRuc]     = useState('');
+  const [clinicWebsite, setClinicWebsite] = useState('');
+  const [cedulaPro, setCedulaPro]     = useState('');
+  const [especialidad, setEspecialidad] = useState('');
+  const [emailTaken, setEmailTaken]   = useState(false);
+  const [emailChecking, setEmailChecking] = useState(false);
 
   // Google data prellenada
   const [googleData, setGoogleData]   = useState<GoogleData | null>(null);
@@ -202,12 +207,25 @@ export default function AdminRegister() {
     finally { setLoading(false); }
   }
 
+  const handleEmailBlur = async (val: string) => {
+    const e = val.trim().toLowerCase();
+    if (!e || !e.includes('@')) return;
+    setEmailChecking(true);
+    try {
+      const r = await fetch(`/api/admin-auth?action=checkEmail&email=${encodeURIComponent(e)}`);
+      const d = await r.json();
+      setEmailTaken(!d.available);
+    } catch { /* ignore */ }
+    finally { setEmailChecking(false); }
+  };
+
   // ── Enviar formulario de registro ─────────────────────────────────────────
 
   async function handleRegisterSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!clinicName.trim()) { setError('El nombre de la clínica es requerido'); return; }
     if (!googleData && password.length < 8) { setError('La contraseña debe tener al menos 8 caracteres'); return; }
+    if (emailTaken) { setError('Este email ya está en uso. Usa otro correo.'); return; }
 
     setLoading(true); setError('');
     try {
@@ -223,6 +241,9 @@ export default function AdminRegister() {
         clinic_city: clinicCity || undefined,
         clinic_country: clinicCountry || 'Ecuador',
         clinic_ruc: clinicRuc || undefined,
+        clinic_website: clinicWebsite || undefined,
+        cedula_profesional: cedulaPro || undefined,
+        especialidad: especialidad || undefined,
       };
 
       // Fuente de autorización: código, pago o invite
@@ -442,9 +463,9 @@ export default function AdminRegister() {
                   </button>
                 </div>
 
-                {/* PayPhone button legacy — oculto visualmente, mantenido por retorno de URL */}
-                <button onClick={handleStartPayment} disabled={loading || !email.trim()} className="hidden">
-                  Pagar con PayPhone (legacy)
+                <button onClick={handleStartPayment} disabled={loading || !email.trim()}
+                  className="w-full py-2.5 border-2 border-blue-400 text-blue-700 rounded-xl text-sm font-semibold hover:bg-blue-50 transition-colors flex items-center justify-center gap-2 opacity-70">
+                  <CreditCard className="w-4 h-4" /> Pago alternativo: PayPhone (integración directa)
                 </button>
 
                 {error && <p className="text-red-600 text-sm bg-red-50 rounded-xl px-4 py-2.5">{error}</p>}
@@ -458,6 +479,74 @@ export default function AdminRegister() {
                   <h2 className="text-lg font-semibold text-gray-900">Datos de registro</h2>
                   {planInfo && <p className="text-xs text-[#deb887] mt-0.5">Plan: <strong>{planInfo.plan_name}</strong></p>}
                   {inviteToken && <p className="text-xs text-green-600 mt-0.5">Registrándote con enlace de invitación</p>}
+                </div>
+
+                {/* ── Datos de la Clínica ── */}
+                <div className="pt-2 border-t border-gray-100">
+                  <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                    <Building2 className="w-4 h-4 text-[#deb887]" /> Datos de la Clínica
+                  </h3>
+                </div>
+
+                {/* Nombre clínica */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Nombre de la clínica *</label>
+                  <div className="relative">
+                    <Building2 className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-300 w-4 h-4" />
+                    <input required type="text" value={clinicName} onChange={e => setClinicName(e.target.value)} placeholder="Mi Clínica Estética" className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
+                  </div>
+                </div>
+
+                {/* RUC */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">RUC / NIT</label>
+                  <input type="text" value={clinicRuc} onChange={e => setClinicRuc(e.target.value)} placeholder="0912345678001" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  {/* Teléfono */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Teléfono</label>
+                    <div className="relative">
+                      <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300 w-4 h-4" />
+                      <input type="tel" value={clinicPhone} onChange={e => setClinicPhone(e.target.value)} placeholder="+593 99..." className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
+                    </div>
+                  </div>
+                  {/* Ciudad */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Ciudad</label>
+                    <div className="relative">
+                      <Globe className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300 w-4 h-4" />
+                      <input type="text" value={clinicCity} onChange={e => setClinicCity(e.target.value)} placeholder="Quito" className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Dirección */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Dirección</label>
+                  <div className="relative">
+                    <MapPin className="absolute left-3.5 top-3 text-gray-300 w-4 h-4" />
+                    <textarea value={clinicAddress} onChange={e => setClinicAddress(e.target.value)} placeholder="Calle, número, sector..." rows={2} className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all resize-none" />
+                  </div>
+                </div>
+
+                {/* Sitio web */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Sitio web</label>
+                  <div className="relative">
+                    <Globe className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-300 w-4 h-4" />
+                    <input type="url" value={clinicWebsite} onChange={e => setClinicWebsite(e.target.value)}
+                      placeholder="https://miclinica.com"
+                      className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
+                  </div>
+                </div>
+
+                {/* ── Datos del Usuario ── */}
+                <div className="pt-2 border-t border-gray-100">
+                  <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                    <User className="w-4 h-4 text-[#deb887]" /> Datos del Usuario
+                  </h3>
                 </div>
 
                 {/* Gentilicio */}
@@ -493,8 +582,24 @@ export default function AdminRegister() {
 
                 {/* Profesión */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Profesión / Especialidad</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Profesión</label>
                   <input type="text" value={profession} onChange={e => setProfession(e.target.value)} placeholder="Médico Estético, Cosmiatra, etc." className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
+                </div>
+
+                {/* Especialidad */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Especialidad</label>
+                  <input type="text" value={especialidad} onChange={e => setEspecialidad(e.target.value)}
+                    placeholder="Medicina Estética, Dermatología..."
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
+                </div>
+
+                {/* Cédula profesional */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Cédula profesional / Matrícula</label>
+                  <input type="text" value={cedulaPro} onChange={e => setCedulaPro(e.target.value)}
+                    placeholder="MP-12345 / 01-0123456"
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
                 </div>
 
                 {/* Email */}
@@ -502,9 +607,15 @@ export default function AdminRegister() {
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Correo electrónico *</label>
                   <div className="relative">
                     <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-300 w-4 h-4" />
-                    <input required type="email" value={email} onChange={e => setEmail(e.target.value)} disabled={!!googleData?.email} placeholder="tu@correo.com" className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all disabled:bg-gray-50 disabled:text-gray-500" />
+                    <input required type="email" value={email}
+                      onChange={e => { setEmail(e.target.value); setEmailTaken(false); }}
+                      onBlur={e => handleEmailBlur(e.target.value)}
+                      disabled={!!googleData?.email} placeholder="tu@correo.com"
+                      className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all disabled:bg-gray-50 disabled:text-gray-500" />
                   </div>
                   <p className="text-xs text-gray-400 mt-1">Este correo será tu usuario de acceso</p>
+                  {emailChecking && <p className="text-xs text-gray-400 mt-1">Verificando disponibilidad...</p>}
+                  {emailTaken && <p className="text-xs text-red-500 mt-1">Este email ya está vinculado a otro usuario. Usa otro correo.</p>}
                 </div>
 
                 {/* Contraseña (solo si no es Google) */}
@@ -520,56 +631,6 @@ export default function AdminRegister() {
                     </div>
                   </div>
                 )}
-
-                {/* Separador datos clínica */}
-                <div className="pt-2 border-t border-gray-100">
-                  <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                    <Building2 className="w-4 h-4 text-[#deb887]" /> Datos de la Clínica
-                  </h3>
-                </div>
-
-                {/* Nombre clínica */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Nombre de la clínica *</label>
-                  <div className="relative">
-                    <Building2 className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-300 w-4 h-4" />
-                    <input required type="text" value={clinicName} onChange={e => setClinicName(e.target.value)} placeholder="Mi Clínica Estética" className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  {/* Teléfono */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Teléfono</label>
-                    <div className="relative">
-                      <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300 w-4 h-4" />
-                      <input type="tel" value={clinicPhone} onChange={e => setClinicPhone(e.target.value)} placeholder="+593 99..." className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
-                    </div>
-                  </div>
-                  {/* Ciudad */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Ciudad</label>
-                    <div className="relative">
-                      <Globe className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300 w-4 h-4" />
-                      <input type="text" value={clinicCity} onChange={e => setClinicCity(e.target.value)} placeholder="Quito" className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Dirección */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Dirección</label>
-                  <div className="relative">
-                    <MapPin className="absolute left-3.5 top-3 text-gray-300 w-4 h-4" />
-                    <textarea value={clinicAddress} onChange={e => setClinicAddress(e.target.value)} placeholder="Calle, número, sector..." rows={2} className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all resize-none" />
-                  </div>
-                </div>
-
-                {/* RUC */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">RUC / NIT</label>
-                  <input type="text" value={clinicRuc} onChange={e => setClinicRuc(e.target.value)} placeholder="0912345678001" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
-                </div>
 
                 {error && <p className="text-red-600 text-sm bg-red-50 rounded-xl px-4 py-2.5">{error}</p>}
 
