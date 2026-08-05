@@ -20,11 +20,18 @@ import crypto from 'crypto';
 
 const PAYPHONE_BASE = 'https://pay.payphonetodoesposible.com/api';
 
-// Planes de suscripción — mismos que admin-auth.js (ponytail: extraer a lib/plans.js si crece)
+// Plan único anual BioskinTech — precio especial de lanzamiento
 const PLANS = {
-  plan_completo: { name: 'Plan Completo BIOSKIN',  amount_cents: 9900, description: 'Todos los módulos, pacientes ilimitados' },
-  plan_clinica:  { name: 'Plan Clínica BIOSKIN',   amount_cents: 6900, description: 'Módulos principales' },
-  plan_personal: { name: 'Plan Personal BIOSKIN',  amount_cents: 2900, description: 'Solo tus pacientes' },
+  plan_lanzamiento: {
+    name:        'Plan Lanzamiento BioskinTech',
+    subtitle:    '\uD83C\uDF89 Precio especial de lanzamiento',
+    amount_cents: 26450,  // $264.50 total
+    base_cents:   23000,  // $230.00 base sin IVA
+    tax_cents:     3450,  // $34.50 IVA 15%
+    description: 'Fichas Clínicas, Agenda Google Calendar, 3D Injectable Mapping, IA Gemini, Inventario, Finanzas, Consentimientos Digitales y Fotos Clínicas.',
+    period:      'anual',
+    features:    ['calendar','block_schedule','appointment','clinical_records','finance','inventory','clinical_3d','system_status','backup','ai_consultation'],
+  },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -108,51 +115,66 @@ export default async function handler(req, res) {
   try {
     // ── Preparar pago (inicio del flujo) ──────────────────────────────────
     if (action === 'preparePayment') {
-      const { plan_key, email } = req.body || {};
-      if (!plan_key || !PLANS[plan_key]) return res.status(400).json({ error: 'plan_key inválido. Opciones: ' + Object.keys(PLANS).join(', ') });
+      const { plan_key = 'plan_lanzamiento', email } = req.body || {};
+      if (!PLANS[plan_key]) return res.status(400).json({ error: `plan_key inválido. Use: ${Object.keys(PLANS).join(', ')}` });
       if (!email?.trim()) return res.status(400).json({ error: 'email requerido' });
 
-      const plan = PLANS[plan_key];
-      const clientTxId = `bioskin-${plan_key}-${crypto.randomBytes(8).toString('hex')}`;
-      const appUrl = (process.env.APP_URL || `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app'}`).trim();
-      const { clientId } = getCredentials();
+      const plan       = PLANS[plan_key];
+      const clientTxId = `BSKT-${Date.now()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+      const appUrl     = (process.env.APP_URL || 'https://www.bioskintech.com').trim();
 
-      // IVA Ecuador = 15%
-      const amountWithTax    = Math.round(plan.amount_cents * 0.15);
-      const amountWithoutTax = plan.amount_cents - amountWithTax;
+      let appToken;
+      try { ({ appToken } = getCredentials()); }
+      catch (e) { return res.status(503).json({ error: e.message }); }
 
-      const payphoneData = await payphoneRequest('/button/Prepare', {
+      const payload = {
         amount:              plan.amount_cents,
-        amountWithTax,
-        amountWithoutTax,
-        tax:                 amountWithTax,
+        amountWithTax:       plan.base_cents,
+        amountWithoutTax:    0,
+        tax:                 plan.tax_cents,
         service:             0,
         tip:                 0,
         currency:            'USD',
         reference:           plan.name,
         clientTransactionId: clientTxId,
-        ...(clientId && { storeId: clientId }),
-        responseUrl:         `${appUrl}/gestionestetica/admin/register?payment=confirm`,
-        cancellationUrl:     `${appUrl}/gestionestetica/admin/register?payment=cancelled`,
-        notifyUrl:           `${appUrl}/api/payments?action=webhook`,
-        lang:                'es',
-      });
+        responseUrl:  `${appUrl}/gestionestetica/admin/register?payment=confirm&txId=${clientTxId}`,
+        cancellationUrl: `${appUrl}/gestionestetica/admin/register?payment=cancelled`,
+      };
 
-      // Guardar suscripción pendiente
+      let payphoneData;
+      try {
+        const ppRes  = await fetch(`${PAYPHONE_BASE}/button/Prepare`, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${appToken}` },
+          body:    JSON.stringify(payload),
+        });
+        const rawText = await ppRes.text();
+        console.log(`[PayPhone Prepare] status=${ppRes.status} body=${rawText.substring(0, 400)}`);
+        payphoneData = JSON.parse(rawText);
+        if (!ppRes.ok) return res.status(400).json({ error: `PayPhone: ${payphoneData?.message || 'error'}`, detail: payphoneData });
+      } catch (e) {
+        console.error('[PayPhone Prepare] error:', e.message);
+        return res.status(502).json({ error: `No se pudo conectar con PayPhone: ${e.message}` });
+      }
+
       const sub = await sql`
-        INSERT INTO subscriptions
-          (plan_name, amount_cents, currency, status, payphone_client_id, payphone_response)
-        VALUES
-          (${plan.name}, ${plan.amount_cents}, 'USD', 'pending', ${clientTxId}, ${JSON.stringify(payphoneData)})
+        INSERT INTO subscriptions (plan_name, amount_cents, currency, status, payphone_client_id, payphone_response)
+        VALUES (${plan.name}, ${plan.amount_cents}, 'USD', 'pending', ${clientTxId}, ${JSON.stringify(payphoneData)})
         RETURNING id
       `;
+
+      const paymentUrl = payphoneData.payWithCard
+        || payphoneData.paymentUrl
+        || payphoneData.url
+        || payphoneData.redirectUrl
+        || null;
 
       return res.status(200).json({
         success: true,
         subscription_id: sub.rows[0].id,
         clientTransactionId: clientTxId,
-        paymentUrl: payphoneData.payWithCard || payphoneData.paymentUrl || payphoneData.url || null,
-        payphoneResponse: payphoneData,
+        paymentUrl,
+        plan: { name: plan.name, subtitle: plan.subtitle, amount_cents: plan.amount_cents, period: plan.period },
       });
     }
 

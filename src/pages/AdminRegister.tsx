@@ -56,8 +56,6 @@ export default function AdminRegister() {
   const [planInfo, setPlanInfo]       = useState<{ plan_name: string } | null>(null);
 
   // Pago
-  const [plans, setPlans]             = useState<Record<string, PlanInfo>>({});
-  const [selectedPlan, setSelectedPlan] = useState('');
   const [subscriptionId, setSubId]    = useState<number | null>(null);
 
   // Formulario usuario
@@ -109,10 +107,7 @@ export default function AdminRegister() {
     }
 
     // Cargar planes de suscripción
-    fetch(`${PAY_API}?action=getPlans`)
-      .then(r => r.json())
-      .then(d => { if (d.plans) setPlans(d.plans); })
-      .catch(() => { /* non-fatal */ });
+    // ponytail: plan único constante — sin fetch necesario
   }, [inviteToken, googleParam, paymentParam, subscriptionId]);
 
   // ── Validar código ────────────────────────────────────────────────────────
@@ -141,23 +136,22 @@ export default function AdminRegister() {
   // ── Iniciar pago PayPhone ─────────────────────────────────────────────────
 
   async function handleStartPayment() {
-    if (!selectedPlan || !email.trim()) { setError('Selecciona un plan e ingresa tu correo'); return; }
+    if (!email.trim()) { setError('Ingresa tu correo electrónico para continuar'); return; }
     setLoading(true); setError('');
     try {
       const r = await fetch(`${PAY_API}?action=preparePayment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan_key: selectedPlan, email: email.trim() }),
+        body: JSON.stringify({ plan_key: 'plan_lanzamiento', email: email.trim() }),
       });
       const d = await r.json();
       if (d.success && d.paymentUrl) {
         setSubId(d.subscription_id);
-        // Redirigir a PayPhone para pagar
         window.location.href = d.paymentUrl;
       } else {
-        setError(d.error || 'Error al procesar el pago');
+        setError(d.error || 'Error al procesar el pago. Verifica tus datos e intenta de nuevo.');
       }
-    } catch { setError('Error al conectar con PayPhone'); }
+    } catch { setError('Error al conectar con PayPhone. Intenta de nuevo.'); }
     finally { setLoading(false); }
   }
 
@@ -345,35 +339,52 @@ export default function AdminRegister() {
                   <ArrowLeft className="w-4 h-4" /> Volver
                 </button>
                 <div>
-                  <h2 className="text-lg font-semibold text-gray-900">Elige tu plan</h2>
-                  <p className="text-gray-400 text-sm mt-0.5">Pago mensual con PayPhone</p>
+                  <h2 className="text-lg font-semibold text-gray-900">Suscripción Anual</h2>
+                  <p className="text-gray-400 text-sm mt-0.5">Pago único anual con PayPhone</p>
                 </div>
 
-                <div className="space-y-2">
-                  {Object.entries(plans).map(([key, plan]) => plan.amount_cents > 0 && (
-                    <label key={key} className={`flex items-center gap-3 p-3.5 border-2 rounded-xl cursor-pointer transition-all ${selectedPlan === key ? 'border-[#deb887] bg-[#fdf8f0]' : 'border-gray-200 hover:border-[#deb887]/40'}`}>
-                      <input type="radio" name="plan" value={key} checked={selectedPlan === key} onChange={() => setSelectedPlan(key)} className="accent-[#deb887]" />
-                      <div className="flex-1">
-                        <p className="text-sm font-semibold text-gray-800">{plan.name}</p>
-                        <p className="text-xs text-gray-400">{plan.description}</p>
-                      </div>
-                      <span className="text-sm font-bold text-[#deb887]">${(plan.amount_cents / 100).toFixed(2)}/mes</span>
-                    </label>
-                  ))}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Correo electrónico</label>
-                  <div className="relative">
-                    <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-300 w-4 h-4" />
-                    <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="tu@correo.com" className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
+                {/* Plan único BioskinTech */}
+                <div className="p-5 rounded-2xl border-2 border-[#deb887] bg-[#fdf8f0]">
+                  <div className="flex justify-between items-start mb-3">
+                    <div>
+                      <p className="font-bold text-gray-900">Plan Lanzamiento BioskinTech</p>
+                      <p className="text-xs text-[#deb887] font-semibold mt-0.5">🎉 Precio especial de lanzamiento</p>
+                    </div>
+                    <div className="text-right flex-shrink-0 ml-3">
+                      <p className="text-2xl font-black text-[#deb887]">$264.50</p>
+                      <p className="text-xs text-gray-400">$230 + IVA 15% / año</p>
+                    </div>
+                  </div>
+                  <p className="text-sm text-gray-600 leading-relaxed mb-3">
+                    Fichas Clínicas, Agenda Google Calendar, 3D Injectable Mapping, IA Gemini, Inventario, Finanzas, Consentimientos Digitales y Fotos Clínicas.
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {['Fichas Clínicas','Agenda Google','3D Mapping','IA Gemini','Inventario','Finanzas','Consentimientos','Fotos'].map(f => (
+                      <span key={f} className="text-xs bg-[#deb887]/20 text-[#c9a876] px-2 py-0.5 rounded-full font-medium">{f}</span>
+                    ))}
                   </div>
                 </div>
 
-                {error && <p className="text-red-600 text-sm bg-red-50 rounded-xl px-4 py-2">{error}</p>}
-                <button onClick={handleStartPayment} disabled={loading || !selectedPlan || !email.trim()} className="w-full py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 transition-colors">
-                  {loading ? 'Procesando...' : 'Pagar con PayPhone'}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Correo electrónico *</label>
+                  <div className="relative">
+                    <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-300 w-4 h-4" />
+                    <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="tu@correo.com"
+                      className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1">Este correo será tu usuario de acceso</p>
+                </div>
+
+                {error && <p className="text-red-600 text-sm bg-red-50 rounded-xl px-4 py-2.5">{error}</p>}
+                <button onClick={handleStartPayment} disabled={loading || !email.trim()}
+                  className="w-full py-3 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2 shadow-md">
+                  {loading ? (
+                    <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Procesando...</>
+                  ) : (
+                    <><CreditCard className="w-4 h-4" /> Pagar $264.50 con PayPhone</>
+                  )}
                 </button>
+                <p className="text-center text-xs text-gray-400">Serás redirigido a PayPhone para completar el pago de forma segura.</p>
               </>
             )}
 

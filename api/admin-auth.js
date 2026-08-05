@@ -306,6 +306,20 @@ async function initMultiTenantSchema() {
     )
   `;
 
+  // OTP de verificación en dos pasos (2FA por email)
+  await sql`
+    CREATE TABLE IF NOT EXISTS login_otp (
+      id         SERIAL PRIMARY KEY,
+      user_id    INTEGER REFERENCES clinic_users(id) ON DELETE CASCADE,
+      email      VARCHAR(255) NOT NULL,
+      otp_token  VARCHAR(64) UNIQUE NOT NULL,
+      code       VARCHAR(6) NOT NULL,
+      expires_at TIMESTAMP NOT NULL,
+      used       BOOLEAN DEFAULT FALSE,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `;
+
   // Columnas extras en caso de migración de tabla preexistente
   for (const col of [
     "ALTER TABLE admin_sessions ADD COLUMN IF NOT EXISTS clinic_user_id INTEGER",
@@ -549,7 +563,7 @@ async function loginUser(username, password, ip, ua) {
     } catch { /* non-fatal: se reintentará en el siguiente login */ }
   }
 
-  // Éxito: resetear intentos y registrar sesión
+  // Éxito: resetear intentos y registrar sesión provisional
   await sql`UPDATE clinic_users SET failed_attempts = 0, locked_until = NULL, last_login = NOW() WHERE id = ${u.id}`;
 
   const token = generateToken();
@@ -560,6 +574,40 @@ async function loginUser(username, password, ip, ua) {
     VALUES
       (${token}, ${username}, ${exp}, ${ip}, ${ua}, ${u.id}, ${u.role}, ${u.clinic_id}, ${u.access_scope})
   `;
+
+  // 2FA: enviar OTP por email si el usuario tiene email configurado
+  if (u.email) {
+    const otpCode  = String(Math.floor(100000 + Math.random() * 900000));
+    const otpToken = generateToken();
+    const otpExp   = new Date(Date.now() + 10 * 60 * 1000);
+    try {
+      await sql`
+        INSERT INTO login_otp (user_id, email, otp_token, code, expires_at)
+        VALUES (${u.id}, ${u.email}, ${otpToken}, ${otpCode}, ${otpExp})
+      `;
+      // Sesión provisional inactivada hasta que se verifique el OTP
+      await sql`UPDATE admin_sessions SET is_active=false WHERE session_token=${token}`;
+      const maskedEmail = u.email.replace(/^(.{2}).*@(.{1}).*(\.\w+)$/, '$1***@$2***$3');
+      await sendAuthEmail(u.email,
+        'Tu código de verificación BioskinTech',
+        `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px">
+          <h2 style="color:#deb887;margin:0 0 8px">BioskinTech</h2>
+          <p style="margin:0 0 16px">Hola <b>${u.full_name || u.username}</b>,</p>
+          <p style="margin:0 0 8px">Tu código de acceso:</p>
+          <div style="font-size:2.8rem;font-weight:900;letter-spacing:10px;color:#deb887;
+                      text-align:center;padding:20px;background:#fdf8f0;border-radius:12px;margin:16px 0">
+            ${otpCode}
+          </div>
+          <p style="color:#999;font-size:13px;margin:0">Expira en <b>10 minutos</b>. Si no intentaste acceder, ignora este email.</p>
+        </div>`
+      );
+      return { success: true, requiresOTP: true, otpToken, maskedEmail };
+    } catch (otpErr) {
+      // ponytail: si el email falla → continuar sin 2FA para no bloquear el acceso
+      console.error('[2FA] Error al enviar OTP:', otpErr.message);
+      await sql`UPDATE admin_sessions SET is_active=true WHERE session_token=${token}`;
+    }
+  }
 
   return {
     success: true,
@@ -928,12 +976,20 @@ async function registerClinic(body) {
   let planFeatures = ALL_FEATURES;
   let accessScope   = 'all';
 
-  // Validar vía código único
+  // Validar vía código único — claim atómico previene race conditions
   if (code) {
-    const validated = await validateRegistrationCode(code);
-    if (!validated.valid) return { error: validated.error };
-    codeRow = validated.code;
-    planFeatures = codeRow.features?.length ? codeRow.features : ALL_FEATURES;
+    const claimed = await sql`
+      UPDATE registration_codes
+      SET used_by = -1
+      WHERE code = ${code.trim().toUpperCase()}
+        AND is_active = true
+        AND used_by IS NULL
+        AND (expires_at IS NULL OR expires_at > NOW())
+      RETURNING id, plan_name, features, access_scope
+    `;
+    if (!claimed.rows.length) return { error: 'Código inválido, ya utilizado o expirado' };
+    codeRow      = claimed.rows[0];
+    planFeatures = Array.isArray(codeRow.features) && codeRow.features.length ? codeRow.features : ALL_FEATURES;
     accessScope  = codeRow.access_scope || 'all';
   } else if (subscription_id) {
     // Validar vía pago confirmado
@@ -1007,7 +1063,7 @@ async function registerClinic(body) {
 
 async function generateRegistrationCode(requestUser, body) {
   if (!requireRole(requestUser, 'master_admin')) return { error: 'Solo master_admin' };
-  const { plan_name = 'Plan Completo', expires_days = 30, note } = body || {};
+  const { plan_name = 'Plan Lanzamiento BioskinTech', expires_days = 30, note } = body || {};
 
   const plan = Object.values(SUBSCRIPTION_PLANS).find(p => p.name === plan_name) || SUBSCRIPTION_PLANS.plan_completo;
   const code = crypto.randomBytes(6).toString('hex').toUpperCase(); // 12 chars hex
@@ -1135,6 +1191,64 @@ async function useInviteLink(token, body) {
     success: true, sessionToken: token2, expiresAt: exp,
     user: { id: userId, username: emailNorm, full_name: fullName, email: emailNorm, role: invite.role, clinic_id: invite.clinic_id, access_scope: 'own', first_name, last_name, gentilicio, profession },
     features: await getFeatures(invite.clinic_id),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Verificación OTP (segundo paso de login 2FA)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Verifica el código OTP enviado por email y crea la sesión definitiva */
+async function verifyOTP(otpToken, code, ip, ua) {
+  if (!otpToken?.trim() || !code?.trim()) return { success: false, error: 'Datos requeridos' };
+  if (!/^\d{6}$/.test(code.trim())) return { success: false, error: 'El código debe tener 6 dígitos' };
+
+  const r = await sql`
+    SELECT lo.id, lo.code, lo.user_id,
+           cu.username, cu.full_name, cu.email, cu.role, cu.clinic_id, cu.access_scope,
+           cu.gentilicio, cu.profession, cu.first_name, cu.last_name,
+           c.slug AS clinic_slug, c.name AS clinic_name
+    FROM login_otp lo
+    JOIN clinic_users cu ON cu.id = lo.user_id
+    LEFT JOIN clinics c ON c.id = cu.clinic_id
+    WHERE lo.otp_token = ${otpToken.trim()}
+      AND lo.used = false
+      AND lo.expires_at > NOW()
+  `;
+  if (!r.rows.length) return { success: false, error: 'Código expirado o inválido. Inicia sesión nuevamente.' };
+  const row = r.rows[0];
+
+  // Comparación timing-safe — previene ataques de temporización
+  const inputBuf    = Buffer.from(code.trim());
+  const expectedBuf = Buffer.from(row.code);
+  if (inputBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(inputBuf, expectedBuf))
+    return { success: false, error: 'Código incorrecto' };
+
+  // UPDATE atómico — previene replay si dos requests llegan simultáneamente
+  const marked = await sql`UPDATE login_otp SET used=true WHERE id=${row.id} AND used=false RETURNING id`;
+  if (!marked.rows.length) return { success: false, error: 'Código ya utilizado' };
+
+  // Crear sesión real
+  const token = generateToken();
+  const exp   = new Date(Date.now() + SESSION_EXPIRY_MS);
+  await sql`
+    INSERT INTO admin_sessions
+      (session_token, username, expires_at, ip_address, user_agent, clinic_user_id, role, clinic_id, access_scope)
+    VALUES
+      (${token}, ${row.username}, ${exp}, ${ip}, ${ua}, ${row.user_id}, ${row.role}, ${row.clinic_id}, ${row.access_scope})
+  `;
+  await sql`UPDATE clinic_users SET failed_attempts=0, locked_until=NULL, last_login=NOW() WHERE id=${row.user_id}`;
+
+  return {
+    success: true, sessionToken: token, expiresAt: exp,
+    user: {
+      id: row.user_id, username: row.username, full_name: row.full_name,
+      email: row.email, role: row.role, clinic_id: row.clinic_id, access_scope: row.access_scope,
+      clinic_slug: row.clinic_slug, clinic_name: row.clinic_name,
+      gentilicio: row.gentilicio, profession: row.profession,
+      first_name: row.first_name, last_name: row.last_name,
+    },
+    features: await getFeatures(row.clinic_id),
   };
 }
 
@@ -1414,6 +1528,13 @@ export default async function handler(req, res) {
       return res.status(200).json(await validateRegistrationCode(code));
     }
 
+    if (action === 'verifyOTP') {
+      const { otpToken, code } = req.body || {};
+      const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+      const ua = req.headers['user-agent'] || '';
+      return res.status(200).json(await verifyOTP(otpToken, code, ip, ua));
+    }
+
     if (action === 'register') {
       const result = await registerClinic(req.body || {});
       return res.status(result.error ? 400 : 201).json(result);
@@ -1652,6 +1773,33 @@ export default async function handler(req, res) {
         return res.status(403).json({ error: 'Sin permiso' });
 
       const dataStr = JSON.stringify(data);
+
+      // Validación de seguridad para logo: magic bytes + tamaño + rechazo de URLs externas
+      if (section === 'general' && data.logo_url) {
+        const logoUrl = data.logo_url;
+        if (logoUrl.startsWith('data:')) {
+          const m = logoUrl.match(/^data:(image\/(jpeg|png|webp));base64,(.+)$/);
+          if (!m) return res.status(400).json({ error: 'Imagen inválida. Solo JPEG, PNG o WebP.' });
+          const imgBuf = Buffer.from(m[3], 'base64');
+          if (imgBuf.length > 2 * 1024 * 1024) return res.status(400).json({ error: 'La imagen supera el límite de 2MB.' });
+          const MAGIC = { 'image/jpeg': [0xFF,0xD8,0xFF], 'image/png': [0x89,0x50,0x4E,0x47], 'image/webp': [0x52,0x49,0x46,0x46] };
+          if (!MAGIC[m[1]].every((b, i) => imgBuf[i] === b))
+            return res.status(400).json({ error: 'Firma de bytes inválida — el archivo no es una imagen real.' });
+          if (m[1] === 'image/webp' && ![0x57,0x45,0x42,0x50].every((b, i) => imgBuf[8 + i] === b))
+            return res.status(400).json({ error: 'Archivo WebP inválido.' });
+          // Rechazo de SVG / HTML embebido disfrazado de imagen
+          if (/<svg|<!doctype|<html/i.test(imgBuf.slice(0, 100).toString('utf8')))
+            return res.status(400).json({ error: 'Tipo de archivo no permitido.' });
+        } else if (logoUrl.startsWith('http')) {
+          // Solo dominios propios — rechaza tracking pixels y contenido externo
+          try {
+            const host = new URL(logoUrl).hostname;
+            if (!['bioskintech.com','www.bioskintech.com','bioskintech.vercel.app'].includes(host))
+              return res.status(400).json({ error: 'Sube la imagen directamente. URLs externas no permitidas.' });
+          } catch { return res.status(400).json({ error: 'URL de logo inválida.' }); }
+        }
+      }
+
       // ponytail: whitelist explícita — no usar eval ni dynamic SQL con el nombre de sección
       if (section === 'general')
         await sql`INSERT INTO clinic_settings (clinic_id, general, updated_at) VALUES (${clinicId}, ${dataStr}::jsonb, NOW()) ON CONFLICT (clinic_id) DO UPDATE SET general = ${dataStr}::jsonb, updated_at = NOW()`;

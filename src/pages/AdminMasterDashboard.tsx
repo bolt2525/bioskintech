@@ -35,7 +35,7 @@ import type { Clinic, ClinicUser, FeatureRow } from '../types';
 // Tipos locales (solo usados en este archivo)
 // ─────────────────────────────────────────────────────────────────────────────
 
-type TabKey = 'clinics' | 'users' | 'modules' | 'system' | 'templates';
+type TabKey = 'clinics' | 'users' | 'modules' | 'system' | 'templates' | 'accesos';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Componentes pequeños reutilizables dentro de este módulo
@@ -573,6 +573,260 @@ function ConsentTemplatesPanel({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// AccessCodesPanel — Códigos de registro único y links de invitación
+// ─────────────────────────────────────────────────────────────────────────────
+
+function AccessCodesPanel({
+  authHeader, flash, clinics,
+}: {
+  authHeader: () => Record<string, string>;
+  flash: (t: string, type?: 'ok' | 'err') => void;
+  clinics: Clinic[];
+}) {
+  const [codes, setCodes]     = useState<any[]>([]);
+  const [invites, setInvites] = useState<any[]>([]);
+  const [codeModal, setCodeModal] = useState(false);
+  const [invModal, setInvModal]   = useState(false);
+  const [codeForm, setCodeForm]   = useState({ plan_name: 'Plan Lanzamiento BioskinTech', expires_days: 30, note: '' });
+  const [invForm, setInvForm]     = useState({ clinic_id: '', email: '', role: 'clinic_user', expires_hours: 72 });
+  const [loading, setLoading]     = useState(false);
+
+  const load = async () => {
+    try {
+      const [c, i] = await Promise.all([
+        fetch('/api/admin-auth?action=listCodes',   { headers: authHeader() }).then(r => r.json()),
+        fetch('/api/admin-auth?action=listInvites', { headers: authHeader() }).then(r => r.json()),
+      ]);
+      setCodes(Array.isArray(c) ? c : []);
+      setInvites(Array.isArray(i) ? i : []);
+    } catch { /* non-fatal */ }
+  };
+  useEffect(() => { load(); }, []);
+
+  const generateCode = async () => {
+    setLoading(true);
+    try {
+      const r = await fetch('/api/admin-auth?action=generateCode', {
+        method: 'POST', headers: authHeader(), body: JSON.stringify(codeForm),
+      });
+      const d = await r.json();
+      if (d.error) { flash(d.error, 'err'); return; }
+      flash(`Código generado: ${d.code?.code}`);
+      setCodeModal(false); load();
+    } finally { setLoading(false); }
+  };
+
+  const revokeCode = async (id: number) => {
+    if (!confirm('¿Revocar este código? No podrá usarse después.')) return;
+    await fetch('/api/admin-auth?action=revokeCode', {
+      method: 'POST', headers: authHeader(), body: JSON.stringify({ id }),
+    });
+    flash('Código revocado'); load();
+  };
+
+  const generateInvite = async () => {
+    if (!invForm.clinic_id) { flash('Selecciona una clínica', 'err'); return; }
+    setLoading(true);
+    try {
+      const r = await fetch('/api/admin-auth?action=generateInvite', {
+        method: 'POST', headers: authHeader(),
+        body: JSON.stringify({ ...invForm, clinic_id: parseInt(invForm.clinic_id) }),
+      });
+      const d = await r.json();
+      if (d.error) { flash(d.error, 'err'); return; }
+      if (d.link) { try { await navigator.clipboard.writeText(d.link); } catch { /* no clipboard access */ } }
+      flash(d.invite?.email ? `Invitación enviada a ${d.invite.email}` : 'Link copiado al portapapeles');
+      setInvModal(false); load();
+    } finally { setLoading(false); }
+  };
+
+  return (
+    <div className="space-y-8">
+      <div>
+        <h2 className="text-xl font-bold text-gray-900">Accesos y Registro</h2>
+        <p className="text-gray-500 text-sm mt-1">Gestiona códigos de registro único y links de invitación para nuevos usuarios.</p>
+      </div>
+
+      {/* Códigos únicos */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+          <div>
+            <h3 className="font-semibold text-gray-900">Códigos de Registro Único</h3>
+            <p className="text-xs text-gray-400 mt-0.5">Un código = una clínica. Solo puede usarse una vez. Claim atómico previene reuso simultáneo.</p>
+          </div>
+          <button onClick={() => setCodeModal(true)}
+            className="flex items-center gap-1.5 px-4 py-2 text-white rounded-lg text-sm font-medium"
+            style={{ background: 'linear-gradient(135deg,#deb887,#c5a075)' }}>
+            <Plus className="w-4 h-4" /> Generar código
+          </button>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50">
+              <tr className="text-xs text-gray-500 uppercase font-semibold">
+                {['Código','Plan','Nota','Vence','Estado','Acción'].map(h => (
+                  <th key={h} className="px-4 py-2.5 text-left">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {codes.length === 0 ? (
+                <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-400">Sin códigos generados todavía</td></tr>
+              ) : codes.map((c: any) => (
+                <tr key={c.id} className={`hover:bg-gray-50 transition-colors ${!c.is_active || c.used_by ? 'opacity-50' : ''}`}>
+                  <td className="px-4 py-3 font-mono font-bold text-[#deb887] tracking-widest">{c.code}</td>
+                  <td className="px-4 py-3 text-sm text-gray-700">{c.plan_name}</td>
+                  <td className="px-4 py-3 text-xs text-gray-400 max-w-xs truncate">{c.note || '—'}</td>
+                  <td className="px-4 py-3 text-xs text-gray-400">{c.expires_at ? new Date(c.expires_at).toLocaleDateString('es-EC') : 'Sin límite'}</td>
+                  <td className="px-4 py-3 text-xs">
+                    {c.used_by && c.used_by !== -1
+                      ? <span className="text-gray-500">Usado · {c.used_by_username || `#${c.used_by}`}</span>
+                      : c.is_active
+                        ? <span className="font-semibold text-green-600">Disponible</span>
+                        : <span className="text-red-400">Revocado</span>
+                    }
+                  </td>
+                  <td className="px-4 py-3">
+                    {c.is_active && !c.used_by && (
+                      <button onClick={() => revokeCode(c.id)} className="text-xs text-red-500 hover:underline">Revocar</button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Links de invitación */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+          <div>
+            <h3 className="font-semibold text-gray-900">Links de Invitación</h3>
+            <p className="text-xs text-gray-400 mt-0.5">Invita usuarios a clínicas existentes. El link es de un solo uso.</p>
+          </div>
+          <button onClick={() => setInvModal(true)}
+            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
+            <Plus className="w-4 h-4" /> Nueva invitación
+          </button>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50">
+              <tr className="text-xs text-gray-500 uppercase font-semibold">
+                {['Email','Clínica','Rol','Vence','Estado'].map(h => (
+                  <th key={h} className="px-4 py-2.5 text-left">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {invites.length === 0 ? (
+                <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-400">Sin invitaciones enviadas todavía</td></tr>
+              ) : invites.map((inv: any) => (
+                <tr key={inv.id} className="hover:bg-gray-50 transition-colors">
+                  <td className="px-4 py-3 text-sm text-gray-700">{inv.email || '—'}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{inv.clinic_name || `#${inv.clinic_id}`}</td>
+                  <td className="px-4 py-3 text-xs capitalize text-gray-500">{(inv.role || '').replace('clinic_', '')}</td>
+                  <td className="px-4 py-3 text-xs text-gray-400">{new Date(inv.expires_at).toLocaleDateString('es-EC')}</td>
+                  <td className="px-4 py-3 text-xs">
+                    {inv.is_used
+                      ? <span className="text-gray-400">Usado · {inv.used_by_username || ''}</span>
+                      : new Date(inv.expires_at) < new Date()
+                        ? <span className="text-red-400">Expirado</span>
+                        : <span className="font-medium text-green-600">Activo</span>
+                    }
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Modal: Generar código */}
+      {codeModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full">
+            <div className="h-0.5 bg-gradient-to-r from-[#deb887] to-[#c5a075] rounded-t-2xl" />
+            <div className="p-6 space-y-4">
+              <h3 className="font-bold text-gray-900">Generar código de registro</h3>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Plan asignado</label>
+                <select value={codeForm.plan_name} onChange={e => setCodeForm(f => ({ ...f, plan_name: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none">
+                  <option value="Plan Lanzamiento BioskinTech">Plan Lanzamiento BioskinTech (completo)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Vence en días (0 = sin límite)</label>
+                <input type="number" min={0} value={codeForm.expires_days}
+                  onChange={e => setCodeForm(f => ({ ...f, expires_days: Math.max(0, parseInt(e.target.value) || 0) }))}
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Nota interna (opcional)</label>
+                <input type="text" value={codeForm.note} onChange={e => setCodeForm(f => ({ ...f, note: e.target.value }))}
+                  placeholder="Ej: Para Clínica Dra. García"
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => setCodeModal(false)} className="flex-1 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cancelar</button>
+                <button onClick={generateCode} disabled={loading}
+                  className="flex-1 py-2 text-white rounded-lg text-sm font-semibold disabled:opacity-50"
+                  style={{ background: 'linear-gradient(135deg,#deb887,#c5a075)' }}>
+                  {loading ? 'Generando...' : 'Generar'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Invitación */}
+      {invModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full">
+            <div className="h-0.5 bg-blue-500 rounded-t-2xl" />
+            <div className="p-6 space-y-4">
+              <h3 className="font-bold text-gray-900">Enviar invitación</h3>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Clínica *</label>
+                <select value={invForm.clinic_id} onChange={e => setInvForm(f => ({ ...f, clinic_id: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-300 focus:border-blue-400 outline-none">
+                  <option value="">Selecciona una clínica...</option>
+                  {clinics.map(c => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Email del invitado (opcional)</label>
+                <input type="email" value={invForm.email} onChange={e => setInvForm(f => ({ ...f, email: e.target.value }))}
+                  placeholder="correo@ejemplo.com"
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-300 focus:border-blue-400 outline-none" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Rol</label>
+                <select value={invForm.role} onChange={e => setInvForm(f => ({ ...f, role: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-300 focus:border-blue-400 outline-none">
+                  <option value="clinic_user">Usuario de clínica</option>
+                  <option value="clinic_admin">Administrador de clínica</option>
+                </select>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => setInvModal(false)} className="flex-1 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cancelar</button>
+                <button onClick={generateInvite} disabled={loading || !invForm.clinic_id}
+                  className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold disabled:opacity-50 hover:bg-blue-700">
+                  {loading ? 'Enviando...' : invForm.email ? 'Enviar por email' : 'Copiar link'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Componente principal
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1017,6 +1271,7 @@ export default function AdminMasterDashboard() {
               ['modules',   '✦ Módulos'],
               ['templates', '⚙ Config. Global'],
               ['system',    '🔧 Sistema'],
+              ['accesos',   '🔑 Accesos'],
             ] as [TabKey, string][]).map(([key, label]) => (
               <button
                 key={key}
@@ -1455,6 +1710,11 @@ export default function AdminMasterDashboard() {
               </div>
             </div>
           </div>
+        )}
+
+        {/* ── Tab: Accesos ─────────────────────────────────────────────── */}
+        {tab === 'accesos' && (
+          <AccessCodesPanel authHeader={authHeader} flash={flash} clinics={clinics} />
         )}
       </div>
 

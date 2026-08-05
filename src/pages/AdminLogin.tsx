@@ -14,7 +14,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Lock, Mail, Sparkles, Eye, EyeOff } from 'lucide-react';
+import { Lock, Mail, Sparkles, Eye, EyeOff, ShieldCheck } from 'lucide-react';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Componente
@@ -30,6 +30,12 @@ export default function AdminLogin() {
   const [showPwd, setShowPwd]   = useState(false);
   const [error, setError]       = useState('');
   const [loading, setLoading]   = useState(false);
+
+  // Estado del segundo paso 2FA
+  const [otpStep, setOtpStep]         = useState(false);
+  const [otpToken, setOtpToken]       = useState('');
+  const [otpCode, setOtpCode]         = useState('');
+  const [maskedEmail, setMaskedEmail] = useState('');
 
   // Redirigir si ya está autenticado
   useEffect(() => {
@@ -62,6 +68,15 @@ export default function AdminLogin() {
     try {
       const result = await login(username, password);
       if (result.ok) {
+        // Si el backend requiere OTP, mostrar el segundo paso
+        const r = result as any;
+        if (r.requiresOTP) {
+          setOtpStep(true);
+          setOtpToken(r.otpToken || '');
+          setMaskedEmail(r.maskedEmail || '');
+          setLoading(false);
+          return;
+        }
         const u = result.user;
         if (u?.role === 'master_admin') {
           navigate('/admin/master');
@@ -88,6 +103,32 @@ export default function AdminLogin() {
       if (d.url) window.location.href = d.url;
       else setError(d.error || 'Error al conectar con Google');
     } catch { setError('Error al iniciar sesión con Google'); }
+    finally { setLoading(false); }
+  };
+
+  const handleVerifyOTP = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (otpCode.length < 6) return;
+    setLoading(true); setError('');
+    try {
+      const r = await fetch('/api/admin-auth?action=verifyOTP', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ otpToken, code: otpCode }),
+      });
+      const d = await r.json();
+      if (d.success) {
+        sessionStorage.setItem('adminSessionToken', d.sessionToken);
+        sessionStorage.setItem('adminUser', JSON.stringify(d.user));
+        sessionStorage.setItem('adminSessionExpiry', String(d.expiresAt));
+        const u = d.user;
+        if (u.role === 'master_admin') navigate('/admin/master');
+        else if (u.clinic_slug) navigate(`/admin/${u.clinic_slug}/${u.username}`);
+        else navigate('/admin');
+      } else {
+        setError(d.error || 'Código incorrecto');
+      }
+    } catch { setError('Error de conexión'); }
     finally { setLoading(false); }
   };
 
@@ -125,6 +166,48 @@ export default function AdminLogin() {
           <div className="h-1 bg-gradient-to-r from-[#deb887] via-[#e8c98a] to-[#deb887]" />
 
           <div className="p-8">
+            {otpStep ? (
+              /* ── Segundo paso: verificación OTP ──────────────────── */
+              <form onSubmit={handleVerifyOTP} className="space-y-5">
+                <div className="text-center">
+                  <ShieldCheck className="w-12 h-12 text-[#deb887] mx-auto mb-3" />
+                  <h2 className="text-lg font-semibold text-gray-900">Verificación en dos pasos</h2>
+                  <p className="text-gray-400 text-sm mt-1">
+                    Enviamos un código de 6 dígitos a <strong>{maskedEmail}</strong>
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Código de verificación</label>
+                  <input
+                    type="text" inputMode="numeric" maxLength={6} autoFocus required
+                    value={otpCode}
+                    onChange={e => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="000000"
+                    className="w-full px-4 py-3 border border-gray-200 rounded-xl text-center text-3xl font-mono tracking-widest text-gray-800 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all"
+                  />
+                </div>
+                {error && (
+                  <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3">
+                    <p className="text-red-600 text-sm">{error}</p>
+                  </div>
+                )}
+                <button type="submit" disabled={loading || otpCode.length < 6}
+                  className="w-full py-2.5 bg-[#deb887] text-white rounded-xl font-semibold text-sm hover:bg-[#c5a075] disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm shadow-[#deb887]/20">
+                  {loading ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                      Verificando...
+                    </span>
+                  ) : 'Confirmar acceso'}
+                </button>
+                <button type="button" onClick={() => { setOtpStep(false); setOtpCode(''); setError(''); }}
+                  className="w-full text-sm text-gray-400 hover:text-gray-600 transition-colors py-1">
+                  ← Volver al inicio de sesión
+                </button>
+              </form>
+            ) : (
+              /* ── Primer paso: usuario + contraseña ───────────────── */
+              <>
             <div className="mb-6">
               <h2 className="text-lg font-semibold text-gray-900">Acceso al Panel</h2>
               <p className="text-gray-400 text-sm mt-0.5">
@@ -218,6 +301,8 @@ export default function AdminLogin() {
               </button>
 
             </form>
+            </>
+            )}
           </div>
         </div>
 

@@ -100,6 +100,17 @@ const newTables = [
     expires_at TIMESTAMP NOT NULL,
     created_at TIMESTAMP DEFAULT NOW()
   )`,
+  // OTP de verificación en dos pasos (2FA)
+  `CREATE TABLE IF NOT EXISTS login_otp (
+    id         SERIAL PRIMARY KEY,
+    user_id    INTEGER REFERENCES clinic_users(id) ON DELETE CASCADE,
+    email      VARCHAR(255) NOT NULL,
+    otp_token  VARCHAR(64) UNIQUE NOT NULL,
+    code       VARCHAR(6) NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    used       BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT NOW()
+  )`,
 ];
 
 async function run() {
