@@ -96,28 +96,24 @@ export default async function handler(req, res) {
       const responseUrl     = `${appUrl}/gestionestetica/admin/register?payment=confirm`;
       const cancellationUrl = `${appUrl}/gestionestetica/admin/register?payment=cancelled`;
 
+      // Payload mínimo per documentación oficial (PHP example) — sin campos opcionales que puedan crashear
       const payload = {
         amount:              plan.amount_cents,
         amountWithTax:       plan.base_cents,
         amountWithoutTax:    0,
         tax:                 plan.tax_cents,
-        service:             0,
-        tip:                 0,
+        clientTransactionId: clientTxId,
         currency:            'USD',
         reference:           'BioskinTech',
-        clientTransactionId: clientTxId,
-        storeId,
         responseUrl,
-        cancellationUrl,
       };
 
       const ppRes = await fetch(`${PAYPHONE_BASE}/button/Prepare`, {
         method:  'POST',
+        // Solo las 2 cabeceras del ejemplo oficial PHP — Origin/Referer no están en los docs
         headers: {
           'Content-Type':  'application/json',
           'Authorization': `Bearer ${token}`,
-          'Origin':  appUrl,
-          'Referer': appUrl,
         },
         body: JSON.stringify(payload),
       });
