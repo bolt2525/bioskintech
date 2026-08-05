@@ -109,21 +109,29 @@ export default async function handler(req, res) {
         responseUrl,
       };
 
+      const authHeader = `Bearer ${token}`;
+
+      console.log('=== PAYPHONE REQUEST ===');
+      console.log(`URL: POST ${PAYPHONE_BASE}/button/Prepare`);
+      console.log(`Headers: Content-Type=application/json | Authorization=Bearer ${token.substring(0,10)}...[${token.length} chars]`);
+      console.log(`Payload: ${JSON.stringify(payload)}`);
+      console.log('=======================');
+
       const ppRes = await fetch(`${PAYPHONE_BASE}/button/Prepare`, {
         method:  'POST',
-        // Solo las 2 cabeceras del ejemplo oficial PHP — Origin/Referer no están en los docs
         headers: {
           'Content-Type':  'application/json',
-          'Authorization': `Bearer ${token}`,
+          'Authorization': authHeader,
         },
         body: JSON.stringify(payload),
       });
 
       const rawText = await ppRes.text();
-      console.log(`[PayPhone Prepare] status=${ppRes.status} clientTxId=${clientTxId}`);
+      console.log(`=== PAYPHONE RESPONSE === status=${ppRes.status}`);
+      console.log(rawText.substring(0, 1000));
+      console.log('========================');
 
       if (!ppRes.ok || rawText.trim().startsWith('<')) {
-        console.error(`[PayPhone Prepare] error ${ppRes.status}: ${rawText.substring(0, 500)}`);
         return res.status(502).json({ error: `PayPhone respondio con error ${ppRes.status}. Intenta de nuevo o contacta soporte.` });
       }
 
