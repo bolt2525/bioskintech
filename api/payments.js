@@ -28,7 +28,7 @@ const PLANS = {
     amount_cents: 26450,  // $264.50 total
     base_cents:   23000,  // $230.00 base sin IVA
     tax_cents:     3450,  // $34.50 IVA 15%
-    description: 'Fichas Clínicas, Agenda Google Calendar, 3D Injectable Mapping, IA Gemini, Inventario, Finanzas, Consentimientos Digitales y Fotos Clínicas.',
+    description: 'Fichas Clínicas, Agenda Google Calendar, 3D Injectable Mapping, Inventario, Finanzas, Consentimientos Digitales y Fotos Clínicas.'
     period:      'anual',
     features:    ['calendar','block_schedule','appointment','clinical_records','finance','inventory','clinical_3d','system_status','backup','ai_consultation'],
   },
@@ -150,8 +150,12 @@ export default async function handler(req, res) {
         });
         const rawText = await ppRes.text();
         console.log(`[PayPhone Prepare] status=${ppRes.status} body=${rawText.substring(0, 400)}`);
+        // ponytail: HTML response = token incorrecto o endpoint cambiado → ver logs de Vercel
+        if (rawText.trim().startsWith('<') || !ppRes.ok) {
+          console.error(`[PayPhone Prepare] status=${ppRes.status}, respuesta no-JSON: ${rawText.substring(0, 300)}`);
+          return res.status(502).json({ error: `PayPhone respondió con HTTP ${ppRes.status} — verifica que PAYPHONE_APP_TOKEN sea el "App Token" (Bearer) correcto en el dashboard de PayPhone` });
+        }
         payphoneData = JSON.parse(rawText);
-        if (!ppRes.ok) return res.status(400).json({ error: `PayPhone: ${payphoneData?.message || 'error'}`, detail: payphoneData });
       } catch (e) {
         console.error('[PayPhone Prepare] error:', e.message);
         return res.status(502).json({ error: `No se pudo conectar con PayPhone: ${e.message}` });

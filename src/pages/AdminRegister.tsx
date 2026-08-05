@@ -356,10 +356,10 @@ export default function AdminRegister() {
                     </div>
                   </div>
                   <p className="text-sm text-gray-600 leading-relaxed mb-3">
-                    Fichas Clínicas, Agenda Google Calendar, 3D Injectable Mapping, IA Gemini, Inventario, Finanzas, Consentimientos Digitales y Fotos Clínicas.
+                    Fichas Clínicas, Agenda Google Calendar, 3D Injectable Mapping, Inventario, Finanzas, Consentimientos Digitales y Fotos Clínicas.
                   </p>
                   <div className="flex flex-wrap gap-1.5">
-                    {['Fichas Clínicas','Agenda Google','3D Mapping','IA Gemini','Inventario','Finanzas','Consentimientos','Fotos'].map(f => (
+                    {['Fichas Clínicas','Agenda Google','3D Mapping','Inventario','Finanzas','Consentimientos','Fotos'].map(f => (
                       <span key={f} className="text-xs bg-[#deb887]/20 text-[#c9a876] px-2 py-0.5 rounded-full font-medium">{f}</span>
                     ))}
                   </div>
