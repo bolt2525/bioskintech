@@ -324,6 +324,41 @@ async function initMultiTenantSchema() {
     )
   `;
 
+  await sql`
+    CREATE TABLE IF NOT EXISTS trusted_devices (
+      id           SERIAL PRIMARY KEY,
+      user_id      INTEGER NOT NULL REFERENCES clinic_users(id) ON DELETE CASCADE,
+      device_token VARCHAR(64) UNIQUE NOT NULL,
+      user_agent   TEXT,
+      ip_address   VARCHAR(100),
+      expires_at   TIMESTAMP NOT NULL,
+      created_at   TIMESTAMP DEFAULT NOW()
+    )
+  `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS password_setup_tokens (
+      id         SERIAL PRIMARY KEY,
+      user_id    INTEGER NOT NULL REFERENCES clinic_users(id) ON DELETE CASCADE,
+      token      VARCHAR(64) UNIQUE NOT NULL,
+      expires_at TIMESTAMP NOT NULL,
+      used       BOOLEAN DEFAULT FALSE,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS clinic_notifications (
+      id         SERIAL PRIMARY KEY,
+      clinic_id  INTEGER NOT NULL REFERENCES clinics(id) ON DELETE CASCADE,
+      type       VARCHAR(30) DEFAULT 'info',
+      message    TEXT NOT NULL,
+      is_read    BOOLEAN DEFAULT FALSE,
+      expires_at TIMESTAMP,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `;
+
   // Columnas extras en caso de migración de tabla preexistente
   for (const col of [
     "ALTER TABLE admin_sessions ADD COLUMN IF NOT EXISTS clinic_user_id INTEGER",
@@ -347,6 +382,9 @@ async function initMultiTenantSchema() {
     "ALTER TABLE clinics ADD COLUMN IF NOT EXISTS country VARCHAR(100) DEFAULT 'Ecuador'",
     "ALTER TABLE clinics ADD COLUMN IF NOT EXISTS website VARCHAR(255)",
     "ALTER TABLE clinics ADD COLUMN IF NOT EXISTS description TEXT",
+    "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS is_demo BOOLEAN DEFAULT FALSE",
+    "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS demo_expires_at TIMESTAMP",
+    "ALTER TABLE login_otp ADD COLUMN IF NOT EXISTS attempts INTEGER DEFAULT 0",
   ]) {
     try { await sql.query(col); } catch { /* ya existe */ }
   }
@@ -496,7 +534,8 @@ async function getAllClinicFeatures() {
  * Autentica un usuario y crea una sesión en base de datos.
  * Implementa rate-limiting (5 intentos → bloqueo 15 min).
  */
-async function loginUser(username, password, ip, ua) {
+async function loginUser(username, password, ip, ua, req) {
+  cleanupExpiredDemos().catch(() => {});
   // Verificar si multi-tenant está inicializado
   let count = 0;
   try {
@@ -531,15 +570,20 @@ async function loginUser(username, password, ip, ua) {
     SELECT cu.id, cu.username, cu.password_hash, cu.salt, cu.hash_algo, cu.role, cu.clinic_id, cu.access_scope,
            cu.failed_attempts, cu.locked_until, cu.is_active, cu.full_name, cu.email,
            cu.cedula_profesional, cu.especialidad, cu.gentilicio, cu.profession, cu.first_name, cu.last_name,
-           c.slug AS clinic_slug, c.name AS clinic_name
+           cu.is_demo, cu.demo_expires_at, c.slug AS clinic_slug, c.name AS clinic_name
     FROM clinic_users cu
     LEFT JOIN clinics c ON c.id = cu.clinic_id
-    WHERE cu.username = ${username}
+    WHERE (cu.username = ${username} OR cu.email = ${username})
   `;
   if (!r.rows.length) return { success: false, error: 'Credenciales inválidas' };
 
   const u = r.rows[0];
   if (!u.is_active) return { success: false, error: 'Cuenta desactivada. Contacta al administrador.' };
+
+  // Block demo users whose time has expired
+  if (u.is_demo && u.demo_expires_at && new Date(u.demo_expires_at) < new Date()) {
+    return { success: false, error: 'La cuenta demo ha expirado.' };
+  }
 
   // Verificar bloqueo por intentos
   if (u.locked_until && new Date(u.locked_until) > new Date()) {
@@ -578,6 +622,30 @@ async function loginUser(username, password, ip, ua) {
     VALUES
       (${token}, ${username}, ${exp}, ${ip}, ${ua}, ${u.id}, ${u.role}, ${u.clinic_id}, ${u.access_scope})
   `;
+
+  // Check if device is already trusted → skip OTP entirely
+  if (u.email) {
+    const deviceToken = req?.body?.device_token || '';
+    const trusted = deviceToken ? await checkTrustedDevice(u.id, deviceToken) : false;
+    if (trusted) {
+      await sql`UPDATE admin_sessions SET is_active=true WHERE session_token=${token}`;
+      return {
+        success: true, sessionToken: token, expiresAt: exp,
+        user: { id: u.id, username: u.username, full_name: u.full_name,
+          email: u.email, role: u.role, clinic_id: u.clinic_id, access_scope: u.access_scope,
+          clinic_slug: u.clinic_slug || null, clinic_name: u.clinic_name || null,
+          gentilicio: u.gentilicio || null, profession: u.profession || null,
+          first_name: u.first_name || null, last_name: u.last_name || null,
+          is_demo: u.is_demo || false, demo_expires_at: u.demo_expires_at || null },
+        features: await getFeatures(u.clinic_id),
+        user_module_overrides: await (async () => {
+          try { const o = await sql`SELECT feature, enabled FROM user_module_overrides WHERE clinic_user_id = ${u.id}`; return o.rows; }
+          catch { return []; }
+        })(),
+        deviceTrusted: true,
+      };
+    }
+  }
 
   // 2FA: enviar OTP por email si el usuario tiene email configurado
   if (u.email) {
@@ -624,6 +692,7 @@ async function loginUser(username, password, ip, ua) {
       cedula_profesional: u.cedula_profesional || null, especialidad: u.especialidad || null,
       gentilicio: u.gentilicio || null, profession: u.profession || null,
       first_name: u.first_name || null, last_name: u.last_name || null,
+      is_demo: u.is_demo || false, demo_expires_at: u.demo_expires_at || null,
     },
     features: await getFeatures(u.clinic_id),
     user_module_overrides: await (async () => {
@@ -639,7 +708,7 @@ async function verifySession(token) {
   try {
     const r = await sql`
       SELECT s.username, s.expires_at, s.role, s.clinic_id, s.access_scope, s.clinic_user_id,
-             cu.full_name, cu.email, c.name as clinic_name, c.slug as clinic_slug,
+             cu.full_name, cu.email, cu.is_demo, cu.demo_expires_at, c.name as clinic_name, c.slug as clinic_slug,
              c.subscription_expires_at
       FROM admin_sessions s
       LEFT JOIN clinic_users cu ON cu.id = s.clinic_user_id
@@ -657,14 +726,25 @@ async function verifySession(token) {
         return { valid: false, error: 'Suscripción vencida. Contacta al administrador para renovarla.', subscriptionExpired: true };
       }
     }
+    // Block demo users whose account has expired
+    if (s.is_demo && s.demo_expires_at && new Date(s.demo_expires_at) < new Date()) {
+      return { valid: false, error: 'Cuenta demo expirada.', demoExpired: true };
+    }
     return {
       valid: true,
       user: {
         id: s.clinic_user_id, username: s.username, full_name: s.full_name,
         email: s.email, role: s.role || 'clinic_admin', clinic_id: s.clinic_id,
         clinic_name: s.clinic_name, clinic_slug: s.clinic_slug, access_scope: s.access_scope || 'all',
+        is_demo: s.is_demo || false,
+        demo_expires_at: s.demo_expires_at || null,
       },
       expiresAt: s.expires_at,
+      subscriptionWarningDays: (() => {
+        if (!s.subscription_expires_at) return null;
+        const days = Math.ceil((new Date(s.subscription_expires_at).getTime() - Date.now()) / 86400000);
+        return days <= 21 ? days : null;
+      })(),
     };
   } catch {
     // Fallback para tablas pre-migración — incluye role para no romper permisos
@@ -684,6 +764,84 @@ async function verifySession(token) {
       return { valid: false, error: 'Error al verificar sesión' };
     }
   }
+}
+
+// ─── Trusted device helpers ────────────────────────────────────────────────
+
+async function checkTrustedDevice(userId, deviceToken) {
+  if (!deviceToken) return false;
+  try {
+    const r = await sql`
+      SELECT id FROM trusted_devices
+      WHERE user_id=${userId} AND device_token=${deviceToken} AND expires_at > NOW()
+    `;
+    return r.rows.length > 0;
+  } catch { return false; }
+}
+
+async function recordTrustedDevice(userId, deviceToken, ip, ua) {
+  const exp = new Date(Date.now() + 30 * 86400000); // 30 days
+  await sql`
+    INSERT INTO trusted_devices (user_id, device_token, ip_address, user_agent, expires_at)
+    VALUES (${userId}, ${deviceToken}, ${ip||null}, ${ua||null}, ${exp})
+    ON CONFLICT (device_token) DO UPDATE SET expires_at=${exp}, ip_address=${ip||null}
+  `;
+}
+
+// ─── Demo account cleanup ──────────────────────────────────────────────────
+
+async function cleanupExpiredDemos() {
+  try {
+    await sql`
+      DELETE FROM clinic_users
+      WHERE is_demo = true AND demo_expires_at IS NOT NULL AND demo_expires_at < NOW()
+    `;
+  } catch { /* non-fatal */ }
+}
+
+// ─── Password setup tokens ─────────────────────────────────────────────────
+
+async function generateSetupTokenFn(userId, email, adminUser) {
+  const token = crypto.randomBytes(32).toString('hex');
+  const exp   = new Date(Date.now() + 48 * 3600000); // 48h
+  await sql`
+    INSERT INTO password_setup_tokens (user_id, token, expires_at)
+    VALUES (${userId}, ${token}, ${exp})
+    ON CONFLICT DO NOTHING
+  `;
+  const appUrl = (process.env.APP_URL || `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app'}`).trim();
+  const setupLink = `${appUrl}/#/admin/setup-password?token=${token}`;
+  await sendAuthEmail(email,
+    'Configura tu contraseña — BioskinTech',
+    `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px">
+      <h2 style="color:#deb887;margin:0 0 8px">BioskinTech</h2>
+      <p style="margin:0 0 16px">Hola, tu cuenta ha sido creada en el panel BioskinTech.</p>
+      <p style="margin:0 0 8px">Haz clic en el siguiente botón para configurar tu contraseña:</p>
+      <div style="text-align:center;margin:20px 0">
+        <a href="${setupLink}" style="background:#deb887;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:700;font-size:15px">
+          Configurar contraseña
+        </a>
+      </div>
+      <p style="color:#999;font-size:12px">Este enlace expira en 48 horas. Si no esperabas este correo, ignóralo.</p>
+    </div>`
+  );
+  return { token, setupLink };
+}
+
+async function claimSetupTokenFn(token, newPassword) {
+  if (!token || !newPassword) return { error: 'token y newPassword son requeridos' };
+  if (newPassword.length < 8) return { error: 'La contraseña debe tener al menos 8 caracteres' };
+  const r = await sql`
+    SELECT t.*, cu.username, cu.email FROM password_setup_tokens t
+    JOIN clinic_users cu ON cu.id = t.user_id
+    WHERE t.token=${token} AND t.used=false AND t.expires_at > NOW()
+  `;
+  if (!r.rows.length) return { error: 'Enlace inválido o expirado' };
+  const row = r.rows[0];
+  const { hash, salt } = hashPassword(newPassword);
+  await sql`UPDATE clinic_users SET password_hash=${hash}, salt=${salt}, hash_algo='pbkdf2' WHERE id=${row.user_id}`;
+  await sql`UPDATE password_setup_tokens SET used=true WHERE id=${row.id}`;
+  return { success: true, username: row.username, email: row.email };
 }
 
 /** Extrae el usuario autenticado del header Authorization */
@@ -732,10 +890,15 @@ async function listUsers(requestUser, clinicIdFilter) {
 }
 
 async function createUser(requestUser, body) {
-  const { username, password, full_name, email, role, access_scope, clinic_id } = body;
-  if (!username?.trim() || !password?.trim() || !role)
-    return { error: 'username, password y role son requeridos' };
-  if (password.length < 8)
+  const { username, password, full_name, first_name, last_name, gentilicio, profession,
+          email, role, access_scope, clinic_id, cedula_profesional, especialidad,
+          is_demo, demo_expires_at, send_setup_link } = body;
+  if (!username?.trim() || !role)
+    return { error: 'username y role son requeridos' };
+
+  const isDemo = !!is_demo;
+  const effectivePassword = isDemo ? crypto.randomBytes(16).toString('hex') : (password || '');
+  if (!isDemo && effectivePassword.length < 8)
     return { error: 'La contraseña debe tener al menos 8 caracteres' };
   if (requestUser.role === 'clinic_admin' && !['clinic_admin', 'clinic_user'].includes(role))
     return { error: 'Solo puedes crear usuarios de tipo clinic_admin o clinic_user' };
@@ -744,17 +907,29 @@ async function createUser(requestUser, body) {
     ? (role === 'master_admin' ? null : (clinic_id ?? null))
     : requestUser.clinic_id;
 
-  const { hash, salt } = hashPassword(password);
+  const { hash, salt } = hashPassword(effectivePassword);
+  const effectiveScope = isDemo ? 'own' : (access_scope || 'own');
+
   try {
     const r = await sql`
       INSERT INTO clinic_users
-        (clinic_id, username, password_hash, salt, hash_algo, full_name, email, role, access_scope)
+        (clinic_id, username, password_hash, salt, hash_algo, full_name, first_name, last_name,
+         gentilicio, profession, email, role, access_scope, cedula_profesional, especialidad,
+         is_demo, demo_expires_at)
       VALUES
         (${targetClinicId}, ${username.trim()}, ${hash}, ${salt}, 'pbkdf2',
-         ${full_name || null}, ${email || null}, ${role}, ${access_scope || 'own'})
-      RETURNING id, username, full_name, email, role, access_scope, clinic_id, is_active
+         ${full_name || null}, ${first_name || null}, ${last_name || null},
+         ${gentilicio || null}, ${profession || null}, ${email || null},
+         ${role}, ${effectiveScope}, ${cedula_profesional || null}, ${especialidad || null},
+         ${isDemo}, ${demo_expires_at || null})
+      RETURNING id, username, full_name, email, role, access_scope, clinic_id, is_active, is_demo, demo_expires_at
     `;
-    return { success: true, user: r.rows[0] };
+    const user = r.rows[0];
+    let setupLinkSent = false;
+    if (email && send_setup_link && !isDemo) {
+      try { await generateSetupTokenFn(user.id, email, requestUser); setupLinkSent = true; } catch { /* non-fatal */ }
+    }
+    return { success: true, user, setupLinkSent };
   } catch (e) {
     if (e.message?.includes('unique') || e.message?.includes('duplicate'))
       return { error: 'El nombre de usuario ya existe' };
@@ -1216,10 +1391,10 @@ async function verifyOTP(otpToken, code, ip, ua) {
   if (!/^\d{6}$/.test(code.trim())) return { success: false, error: 'El código debe tener 6 dígitos' };
 
   const r = await sql`
-    SELECT lo.id, lo.code, lo.user_id,
+    SELECT lo.id, lo.code, lo.attempts, lo.user_id,
            cu.username, cu.full_name, cu.email, cu.role, cu.clinic_id, cu.access_scope,
            cu.gentilicio, cu.profession, cu.first_name, cu.last_name,
-           c.slug AS clinic_slug, c.name AS clinic_name
+           cu.is_demo, cu.demo_expires_at, c.slug AS clinic_slug, c.name AS clinic_name
     FROM login_otp lo
     JOIN clinic_users cu ON cu.id = lo.user_id
     LEFT JOIN clinics c ON c.id = cu.clinic_id
@@ -1229,6 +1404,12 @@ async function verifyOTP(otpToken, code, ip, ua) {
   `;
   if (!r.rows.length) return { success: false, error: 'Código expirado o inválido. Inicia sesión nuevamente.' };
   const row = r.rows[0];
+
+  // Rate limit: max 5 attempts per OTP
+  if ((row.attempts || 0) >= 5) {
+    return { success: false, error: 'Demasiados intentos. Solicita un nuevo código.' };
+  }
+  await sql`UPDATE login_otp SET attempts = COALESCE(attempts, 0) + 1 WHERE id=${row.id}`;
 
   // Comparación timing-safe — previene ataques de temporización
   const inputBuf    = Buffer.from(code.trim());
@@ -1259,6 +1440,7 @@ async function verifyOTP(otpToken, code, ip, ua) {
       clinic_slug: row.clinic_slug, clinic_name: row.clinic_name,
       gentilicio: row.gentilicio, profession: row.profession,
       first_name: row.first_name, last_name: row.last_name,
+      is_demo: row.is_demo || false, demo_expires_at: row.demo_expires_at || null,
     },
     features: await getFeatures(row.clinic_id),
   };
@@ -1419,6 +1601,12 @@ export default async function handler(req, res) {
       return res.status(200).json({ available: r.rows.length === 0 });
     }
 
+    if (action === 'claimSetupToken') {
+      const { token, newPassword } = req.body || {};
+      const result = await claimSetupTokenFn(token, newPassword);
+      return res.status(result.error ? 400 : 200).json(result);
+    }
+
     // Validar código de registro (paso previo al formulario)
     if (action === 'validateCode') {
       const code = (req.query.code || req.body?.code || '').trim();
@@ -1491,7 +1679,7 @@ export default async function handler(req, res) {
         return res.status(400).json({ success: false, error: 'Usuario y contraseña son requeridos' });
       const ip     = (req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || '').split(',')[0].trim();
       const ua     = req.headers['user-agent'] || '';
-      const result = await loginUser(username.trim(), password.trim(), ip, ua);
+      const result = await loginUser(username.trim(), password.trim(), ip, ua, req);
       return res.status(result.success ? 200 : 401).json(result);
     }
 
@@ -2025,6 +2213,61 @@ export default async function handler(req, res) {
       const id = req.query.id || req.body?.id;
       const result = await revokeRegistrationCode(user, id);
       return res.status(result.error ? 400 : 200).json(result);
+    }
+
+    // ── Dispositivos de confianza ──────────────────────────────────────────────
+    if (action === 'trustDevice') {
+      const { device_token } = req.body || {};
+      if (!device_token || device_token.length < 16) return res.status(400).json({ error: 'device_token inválido' });
+      await recordTrustedDevice(user.id, device_token, req.headers['x-forwarded-for'] || req.socket?.remoteAddress, req.headers['user-agent']);
+      return res.status(200).json({ success: true });
+    }
+
+    // ── Setup tokens ──────────────────────────────────────────────────────
+    if (action === 'generateSetupToken') {
+      if (!requireRole(user, 'master_admin', 'clinic_admin')) return res.status(403).json({ error: 'Sin permiso' });
+      const { user_id, email } = req.body || {};
+      if (!user_id || !email) return res.status(400).json({ error: 'user_id y email requeridos' });
+      const result = await generateSetupTokenFn(user_id, email, user);
+      return res.status(200).json({ success: true, ...result });
+    }
+
+    // ── Demo users cleanup ────────────────────────────────────────────────
+    if (action === 'cleanupDemos') {
+      if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master_admin' });
+      await cleanupExpiredDemos();
+      return res.status(200).json({ success: true });
+    }
+
+    // ── Notificaciones de clínica ─────────────────────────────────────────
+    if (action === 'getNotifications') {
+      const clinicId = user.clinic_id;
+      if (!clinicId) return res.status(200).json([]);
+      const r = await sql`
+        SELECT id, type, message, is_read, created_at
+        FROM clinic_notifications
+        WHERE clinic_id=${clinicId} AND is_read=false AND (expires_at IS NULL OR expires_at > NOW())
+        ORDER BY created_at DESC LIMIT 20
+      `;
+      return res.status(200).json(r.rows);
+    }
+
+    if (action === 'markNotificationRead') {
+      const { id } = req.body || {};
+      if (!id) return res.status(400).json({ error: 'id requerido' });
+      await sql`UPDATE clinic_notifications SET is_read=true WHERE id=${id}`;
+      return res.status(200).json({ success: true });
+    }
+
+    if (action === 'sendSubscriptionWarning') {
+      if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master_admin' });
+      const { clinic_id, message } = req.body || {};
+      if (!clinic_id || !message) return res.status(400).json({ error: 'clinic_id y message requeridos' });
+      await sql`
+        INSERT INTO clinic_notifications (clinic_id, type, message, expires_at)
+        VALUES (${clinic_id}, 'subscription_warning', ${message}, ${new Date(Date.now() + 30 * 86400000)})
+      `;
+      return res.status(201).json({ success: true });
     }
 
     // ── Links de invitación ───────────────────────────────────────────────
