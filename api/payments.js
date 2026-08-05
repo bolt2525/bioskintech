@@ -123,9 +123,12 @@ export default async function handler(req, res) {
       const clientTxId = `BSKT-${Date.now()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
       const appUrl     = (process.env.APP_URL || 'https://www.bioskintech.com').trim();
 
-      let appToken;
-      try { ({ appToken } = getCredentials()); }
-      catch (e) { return res.status(503).json({ error: e.message }); }
+      let appToken, storeId;
+      try {
+        ({ appToken } = getCredentials());
+        storeId = (process.env.PAYPHONE_STORE_ID || '').trim();
+        if (!storeId) return res.status(503).json({ error: 'PAYPHONE_STORE_ID no configurado — agrega el "Identificador" de tu dashboard PayPhone en Vercel' });
+      } catch (e) { return res.status(503).json({ error: e.message }); }
 
       const payload = {
         amount:              plan.amount_cents,
@@ -137,6 +140,7 @@ export default async function handler(req, res) {
         currency:            'USD',
         reference:           plan.name,
         clientTransactionId: clientTxId,
+        storeId,
         responseUrl:  `${appUrl}/gestionestetica/admin/register?payment=confirm&txId=${clientTxId}`,
         cancellationUrl: `${appUrl}/gestionestetica/admin/register?payment=cancelled`,
       };
