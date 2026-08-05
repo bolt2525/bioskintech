@@ -51,9 +51,12 @@ function setCors(req, res) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function getCredentials() {
-  const appToken = (process.env.PAYPHONE_APP_TOKEN || '').trim();
+  const raw = (process.env.PAYPHONE_APP_TOKEN || '').trim();
+  // ponytail: algunos usuarios pegan "Bearer xxx" completo → strip automático
+  const appToken = raw.startsWith('Bearer ') ? raw.slice(7).trim() : raw;
   if (!appToken || appToken === 'placeholder_configure_later')
     throw new Error('PAYPHONE_APP_TOKEN no configurado en Vercel');
+  console.log(`[PayPhone] token len=${appToken.length} prefix=${appToken.substring(0,6)}...`);
   return {
     appToken,
     clientId:         (process.env.PAYPHONE_CLIENT_ID         || '').trim(),
@@ -155,10 +158,10 @@ export default async function handler(req, res) {
           body:    JSON.stringify(payload),
         });
         const rawText = await ppRes.text();
-        console.log(`[PayPhone Prepare] status=${ppRes.status} body=${rawText.substring(0, 400)}`);
+        console.log(`[PayPhone Prepare] status=${ppRes.status} body=${rawText.substring(0, 800)}`);
         // ponytail: HTML response = token incorrecto o endpoint cambiado → ver logs de Vercel
         if (rawText.trim().startsWith('<') || !ppRes.ok) {
-          console.error(`[PayPhone Prepare] status=${ppRes.status}, respuesta no-JSON: ${rawText.substring(0, 300)}`);
+          console.error(`[PayPhone Prepare] status=${ppRes.status}, respuesta no-JSON: ${rawText.substring(0, 800)}`);
           return res.status(502).json({ error: `PayPhone respondió con HTTP ${ppRes.status} — verifica que PAYPHONE_APP_TOKEN sea el "App Token" (Bearer) correcto en el dashboard de PayPhone` });
         }
         payphoneData = JSON.parse(rawText);
