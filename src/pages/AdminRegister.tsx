@@ -467,6 +467,21 @@ export default function AdminRegister() {
                   className="w-full py-2.5 border-2 border-blue-400 text-blue-700 rounded-xl text-sm font-semibold hover:bg-blue-50 transition-colors flex items-center justify-center gap-2 opacity-70">
                   <CreditCard className="w-4 h-4" /> Pago alternativo: PayPhone (integración directa)
                 </button>
+                {!email.trim() && (
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-medium text-gray-600">Correo electrónico (requerido para integración directa)</label>
+                    <div className="relative">
+                      <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-300 w-4 h-4" />
+                      <input
+                        type="email"
+                        value={email}
+                        onChange={e => setEmail(e.target.value)}
+                        placeholder="tu@email.com"
+                        className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-blue-300 focus:border-blue-400 outline-none transition-all"
+                      />
+                    </div>
+                  </div>
+                )}
 
                 {error && <p className="text-red-600 text-sm bg-red-50 rounded-xl px-4 py-2.5">{error}</p>}
               </>

@@ -19,7 +19,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   LogOut, Building2, Users, Shield, RefreshCw, ChevronDown, ChevronUp,
   Plus, Edit, Trash2, Eye, EyeOff, Key, X, Check, AlertCircle,
-  Activity, ClipboardList, ChevronRight, Sparkles, Lock, Mail, Unlink, Copy, ExternalLink, Settings2, LayoutDashboard, UserCheck,
+  Activity, ClipboardList, ChevronRight, Sparkles, Lock, Mail, Unlink, Copy, ExternalLink, Settings2, LayoutDashboard, UserCheck, Calendar, Infinity,
 } from 'lucide-react';
 
 // Constantes centralizadas — no duplicar aquí
@@ -864,6 +864,7 @@ export default function AdminMasterDashboard() {
   // ── Suscripción por clínica ────────────────────────────────────────────────
   const [subModal, setSubModal] = useState<{ open: boolean; clinic: Clinic | null }>({ open: false, clinic: null });
   const [subDays, setSubDays]   = useState(365);
+  const [subNoExpiry, setSubNoExpiry] = useState(false);
   const [demoModal, setDemoModal] = useState<{ open: boolean; clinicId: number | null; clinicName: string }>({ open: false, clinicId: null, clinicName: '' });
   const [demoForm, setDemoForm]  = useState({ username: '', value: 1, unit: 'days' as 'hours' | 'days' | 'weeks' });
   const [notifModal, setNotifModal] = useState<{ open: boolean; clinicId: number | null; clinicName: string }>({ open: false, clinicId: null, clinicName: '' });
@@ -1086,10 +1087,17 @@ export default function AdminMasterDashboard() {
     try {
       await fetch('/api/admin-auth?action=updateClinicSubscription', {
         method: 'POST', headers: authHeader(),
-        body: JSON.stringify({ clinic_id: subModal.clinic.id, subscription_days: subDays }),
+        body: JSON.stringify({
+          clinic_id: subModal.clinic.id,
+          subscription_days: subNoExpiry ? 0 : subDays,
+          expires_at: subNoExpiry ? null : undefined,
+        }),
       });
-      flash(`Suscripción de ${subModal.clinic.name} actualizada (${subDays} días desde hoy)`);
+      flash(subNoExpiry
+        ? `Suscripción de ${subModal.clinic.name} establecida sin fecha de vencimiento`
+        : `Suscripción de ${subModal.clinic.name} actualizada (${subDays} días desde hoy)`);
       setSubModal({ open: false, clinic: null });
+      setSubNoExpiry(false);
       loadAll();
     } catch { flash('Error al actualizar suscripción', 'err'); }
   };
@@ -1435,7 +1443,7 @@ export default function AdminMasterDashboard() {
                               </span>
                             </div>
                             <button
-                              onClick={() => { setSubModal({ open: true, clinic }); setSubDays(365); }}
+                              onClick={() => { setSubModal({ open: true, clinic }); setSubDays(365); setSubNoExpiry(false); }}
                               className="text-xs text-[#c5a075] hover:text-[#deb887] font-medium underline"
                             >
                               Renovar
@@ -1816,6 +1824,91 @@ export default function AdminMasterDashboard() {
         {tab === 'accesos' && (
           <AccessCodesPanel authHeader={authHeader} flash={flash} clinics={clinics} />
         )}
+
+        {/* ── Tab: Vencimientos ────────────────────────────────────────── */}
+        {tab === 'vencimientos' && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">Vencimientos</h2>
+              <p className="text-sm text-gray-400 mt-1">Estado de suscripciones de clínicas y cuentas demo activas.</p>
+            </div>
+
+            {/* Suscripciones de clínicas */}
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
+                <Building2 className="w-5 h-5 text-[#deb887]" />
+                <h3 className="font-semibold text-gray-900 text-sm">Suscripciones de Clínicas</h3>
+              </div>
+              <div className="divide-y divide-gray-50">
+                {clinics.map(clinic => {
+                  const exp = clinic.subscription_expires_at ? new Date(clinic.subscription_expires_at) : null;
+                  const daysLeft = exp ? Math.ceil((exp.getTime() - Date.now()) / 86400000) : null;
+                  const isExpired = daysLeft !== null && daysLeft < 0;
+                  const isWarning = daysLeft !== null && daysLeft >= 0 && daysLeft <= 30;
+                  return (
+                    <div key={clinic.id} className="px-5 py-3 flex items-center gap-3">
+                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isExpired ? 'bg-red-500' : isWarning ? 'bg-orange-400' : exp === null ? 'bg-emerald-500' : 'bg-emerald-400'}`} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-800 truncate">{clinic.name}</p>
+                        {exp === null ? (
+                          <p className="text-xs text-emerald-600 flex items-center gap-1"><Infinity className="w-3 h-3" /> Sin vencimiento</p>
+                        ) : isExpired ? (
+                          <p className="text-xs text-red-500 font-medium">Vencida el {exp.toLocaleDateString('es-EC')}</p>
+                        ) : (
+                          <p className={`text-xs ${isWarning ? 'text-orange-500 font-medium' : 'text-gray-400'}`}>
+                            Vence {exp.toLocaleDateString('es-EC')} · {daysLeft}d restantes
+                          </p>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => { setSubModal({ open: true, clinic }); setSubDays(365); setSubNoExpiry(false); }}
+                        className="text-xs px-3 py-1.5 border border-[#deb887]/50 text-[#c5a075] rounded-lg hover:bg-[#fdf8f0] transition-colors flex-shrink-0">
+                        Renovar
+                      </button>
+                    </div>
+                  );
+                })}
+                {clinics.length === 0 && <p className="px-5 py-4 text-sm text-gray-400">No hay clínicas registradas.</p>}
+              </div>
+            </div>
+
+            {/* Usuarios demo */}
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
+                <UserCheck className="w-5 h-5 text-amber-500" />
+                <h3 className="font-semibold text-gray-900 text-sm">Cuentas Demo Activas</h3>
+              </div>
+              {(() => {
+                const demoUsers = allUsers.filter(u => u.is_demo);
+                if (!demoUsers.length) return <p className="px-5 py-4 text-sm text-gray-400">No hay cuentas demo activas.</p>;
+                return (
+                  <div className="divide-y divide-gray-50">
+                    {demoUsers.map(u => {
+                      const exp = u.demo_expires_at ? new Date(u.demo_expires_at) : null;
+                      const daysLeft = exp ? Math.ceil((exp.getTime() - Date.now()) / 86400000) : null;
+                      const isExpired = daysLeft !== null && daysLeft < 0;
+                      return (
+                        <div key={u.id} className="px-5 py-3 flex items-center gap-3">
+                          <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isExpired ? 'bg-red-500' : 'bg-amber-400'}`} />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-800">{u.username}</p>
+                            <p className="text-xs text-gray-400">{u.clinic_name}</p>
+                          </div>
+                          {exp ? (
+                            isExpired
+                              ? <span className="text-xs text-red-500 font-medium">Expirada</span>
+                              : <span className="text-xs text-amber-600">{exp.toLocaleString('es-EC', { dateStyle: 'short', timeStyle: 'short' })} · {daysLeft}d</span>
+                          ) : <span className="text-xs text-gray-400">Sin vencimiento</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        )}
+
       </div>
 
       {/* ── Modal: Crear / Editar Usuario ─────────────────────────────── */}
@@ -2612,27 +2705,41 @@ export default function AdminMasterDashboard() {
             <div className="p-6 space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="font-bold text-gray-900">Suscripción — {subModal.clinic.name}</h3>
-                <button onClick={() => setSubModal({ open: false, clinic: null })} className="text-gray-400 hover:text-gray-600">
+                <button onClick={() => { setSubModal({ open: false, clinic: null }); setSubNoExpiry(false); }} className="text-gray-400 hover:text-gray-600">
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              {subModal.clinic.subscription_expires_at && (
+              {subModal.clinic.subscription_expires_at && !subNoExpiry && (
                 <p className="text-xs text-gray-500">
                   Vence actualmente: <strong>{new Date(subModal.clinic.subscription_expires_at).toLocaleDateString('es-EC')}</strong>
                 </p>
               )}
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Días de suscripción desde hoy</label>
-                <input
-                  type="number" min={1} max={3650} value={subDays}
-                  onChange={e => setSubDays(Math.max(1, parseInt(e.target.value) || 365))}
-                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
-                <p className="text-xs text-gray-400 mt-1">
-                  Nueva fecha: <strong>{new Date(Date.now() + subDays * 86400000).toLocaleDateString('es-EC')}</strong>
+              {/* Sin fecha de vencimiento toggle */}
+              <label className="flex items-center gap-3 cursor-pointer select-none">
+                <input type="checkbox" checked={subNoExpiry} onChange={e => setSubNoExpiry(e.target.checked)} className="w-4 h-4 accent-[#deb887]" />
+                <span className="flex items-center gap-1.5 text-sm font-medium text-gray-700">
+                  <Infinity className="w-4 h-4 text-[#deb887]" /> Sin fecha de vencimiento (acceso de por vida)
+                </span>
+              </label>
+              {!subNoExpiry && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Días de suscripción desde hoy</label>
+                  <input
+                    type="number" min={1} max={3650} value={subDays}
+                    onChange={e => setSubDays(Math.max(1, parseInt(e.target.value) || 365))}
+                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
+                  <p className="text-xs text-gray-400 mt-1">
+                    Nueva fecha: <strong>{new Date(Date.now() + subDays * 86400000).toLocaleDateString('es-EC')}</strong>
+                  </p>
+                </div>
+              )}
+              {subNoExpiry && (
+                <p className="text-xs text-emerald-600 bg-emerald-50 rounded-lg px-3 py-2">
+                  La clínica tendrá acceso permanente sin restricción de fecha.
                 </p>
-              </div>
+              )}
               <div className="flex gap-3 pt-2">
-                <button onClick={() => setSubModal({ open: false, clinic: null })} className="flex-1 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cancelar</button>
+                <button onClick={() => { setSubModal({ open: false, clinic: null }); setSubNoExpiry(false); }} className="flex-1 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cancelar</button>
                 <button onClick={handleUpdateSubscription}
                   className="flex-1 py-2 text-white rounded-lg text-sm font-semibold"
                   style={{ background: 'linear-gradient(135deg,#deb887,#c5a075)' }}>
