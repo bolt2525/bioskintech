@@ -137,9 +137,8 @@ export default async function handler(req, res) {
       const payload = {
         amount:              plan.amount_cents,
         amountWithTax:       plan.base_cents,
-        // ponytail: algunos servidores ASP.NET crashean con amountWithoutTax=0 → enviamos 1 centavo
-        amountWithoutTax:    1,
-        tax:                 plan.tax_cents - 1,
+        amountWithoutTax:    0,
+        tax:                 plan.tax_cents,
         service:             0,
         tip:                 0,
         currency:            'USD',
@@ -166,11 +165,11 @@ export default async function handler(req, res) {
           body:    JSON.stringify(payload),
         });
         const rawText = await ppRes.text();
-        console.log(`[PayPhone Prepare] status=${ppRes.status} body=${rawText.substring(0, 3000)}`);
-        // ponytail: HTML response = token incorrecto o endpoint cambiado → ver logs de Vercel
+        console.log(`[PayPhone Prepare] status=${ppRes.status} body=${rawText.substring(0, 800)}`);
+        // ponytail: HTML response = bug interno PayPhone o cuenta sin activar para Button API
         if (rawText.trim().startsWith('<') || !ppRes.ok) {
-          console.error(`[PayPhone Prepare] status=${ppRes.status}, respuesta no-JSON: ${rawText.substring(0, 3000)}`);
-          return res.status(502).json({ error: `PayPhone respondió con HTTP ${ppRes.status} — verifica que PAYPHONE_APP_TOKEN sea el "App Token" (Bearer) correcto en el dashboard de PayPhone` });
+          console.error(`[PayPhone Prepare] status=${ppRes.status}, payload=${JSON.stringify(payload)}`);
+          return res.status(502).json({ error: `Error al procesar el pago con PayPhone (HTTP ${ppRes.status}). Por favor intenta nuevamente o contáctanos.` });
         }
         payphoneData = JSON.parse(rawText);
       } catch (e) {
