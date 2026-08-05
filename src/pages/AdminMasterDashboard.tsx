@@ -35,7 +35,7 @@ import type { Clinic, ClinicUser, FeatureRow } from '../types';
 // Tipos locales (solo usados en este archivo)
 // ─────────────────────────────────────────────────────────────────────────────
 
-type TabKey = 'clinics' | 'users' | 'modules' | 'system' | 'templates' | 'accesos';
+type TabKey = 'clinics' | 'users' | 'modules' | 'system' | 'templates' | 'accesos' | 'vencimientos';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Componentes pequeños reutilizables dentro de este módulo
@@ -851,7 +851,7 @@ export default function AdminMasterDashboard() {
   const [pwdModal,    setPwdModal]    = useState<{ open: boolean; userId?: number }>({ open: false });
 
   // ── Formularios ──────────────────────────────────────────────────────────
-  const [userForm, setUserForm]     = useState({ username: '', full_name: '', email: '', role: 'clinic_user', access_scope: 'own', clinic_id: '', password: '', password2: '', cedula_profesional: '', especialidad: '' });
+  const [userForm, setUserForm]     = useState({ username: '', full_name: '', email: '', role: 'clinic_user', access_scope: 'own', clinic_id: '', password: '', password2: '', cedula_profesional: '', especialidad: '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
   const [clinicForm, setClinicForm] = useState({ name: '', email: '', phone: '', address: '' });
   const [pwdForm, setPwdForm]       = useState({ password: '', password2: '' });
   const [showPwd, setShowPwd]       = useState<Record<string, boolean>>({});
@@ -864,6 +864,11 @@ export default function AdminMasterDashboard() {
   // ── Suscripción por clínica ────────────────────────────────────────────────
   const [subModal, setSubModal] = useState<{ open: boolean; clinic: Clinic | null }>({ open: false, clinic: null });
   const [subDays, setSubDays]   = useState(365);
+  const [demoModal, setDemoModal] = useState<{ open: boolean; clinicId: number | null; clinicName: string }>({ open: false, clinicId: null, clinicName: '' });
+  const [demoForm, setDemoForm]  = useState({ username: '', value: 1, unit: 'days' as 'hours' | 'days' | 'weeks' });
+  const [notifModal, setNotifModal] = useState<{ open: boolean; clinicId: number | null; clinicName: string }>({ open: false, clinicId: null, clinicName: '' });
+  const [notifMessage, setNotifMessage] = useState('');
+  const [now, setNow] = useState(new Date());
 
   // ── Ajustes por clínica ───────────────────────────────────────────────────
   type ClinicSettingsData = {
@@ -1031,6 +1036,8 @@ export default function AdminMasterDashboard() {
     }
     // OAuth status en paralelo — no bloquea ni afecta si falla
     loadOauthStatus().catch(() => {});
+    // Clean up expired demo users in background
+    fetch('/api/admin-auth?action=cleanupDemos', { method: 'POST', headers: authHeader() }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -1039,6 +1046,11 @@ export default function AdminMasterDashboard() {
       if (user && user.role !== 'master_admin') { navigate('/admin'); return; }
     });
     loadAll();
+  }, []);
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 60000);
+    return () => clearInterval(timer);
   }, []);
 
   // Mapa de features: { clinicId: { feature: enabled } }
@@ -1080,6 +1092,44 @@ export default function AdminMasterDashboard() {
       setSubModal({ open: false, clinic: null });
       loadAll();
     } catch { flash('Error al actualizar suscripción', 'err'); }
+  };
+
+  const createDemoUser = async () => {
+    if (!demoModal.clinicId || !demoForm.username.trim()) return;
+    const multiplier = demoForm.unit === 'hours' ? 3600000 : demoForm.unit === 'weeks' ? 7 * 86400000 : 86400000;
+    const demoExpiresAt = new Date(Date.now() + demoForm.value * multiplier).toISOString();
+    try {
+      const r = await fetch('/api/admin-auth?action=createUser', {
+        method: 'POST', headers: authHeader(),
+        body: JSON.stringify({
+          username: demoForm.username.trim(),
+          role: 'clinic_user',
+          clinic_id: demoModal.clinicId,
+          is_demo: true,
+          demo_expires_at: demoExpiresAt,
+          access_scope: 'own',
+        }),
+      });
+      const d = await r.json();
+      if (d.error) { flash(d.error, 'err'); return; }
+      flash(`Usuario demo "${demoForm.username}" creado (válido ${demoForm.value} ${demoForm.unit})`);
+      setDemoModal({ open: false, clinicId: null, clinicName: '' });
+      setDemoForm({ username: '', value: 1, unit: 'days' });
+      loadAll();
+    } catch { flash('Error al crear usuario demo', 'err'); }
+  };
+
+  const sendNotification = async () => {
+    if (!notifModal.clinicId || !notifMessage.trim()) return;
+    try {
+      await fetch('/api/admin-auth?action=sendSubscriptionWarning', {
+        method: 'POST', headers: authHeader(),
+        body: JSON.stringify({ clinic_id: notifModal.clinicId, message: notifMessage.trim() }),
+      });
+      flash(`Aviso enviado a ${notifModal.clinicName}`);
+      setNotifModal({ open: false, clinicId: null, clinicName: '' });
+      setNotifMessage('');
+    } catch { flash('Error al enviar aviso', 'err'); }
   };
 
   // ─── Generación de username desde nombre completo ─────────────────────
@@ -1133,12 +1183,12 @@ export default function AdminMasterDashboard() {
 
   const openCreateUser = () => {
     setUsernameSuggestion(''); setUsernameStatus('idle');
-    setUserForm({ username: '', full_name: '', email: '', role: 'clinic_user', access_scope: 'own', clinic_id: String(clinics[0]?.id || ''), password: '', password2: '', cedula_profesional: '', especialidad: '' });
+    setUserForm({ username: '', full_name: '', email: '', role: 'clinic_user', access_scope: 'own', clinic_id: String(clinics[0]?.id || ''), password: '', password2: '', cedula_profesional: '', especialidad: '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
     setUserModal({ open: true });
   };
 
   const openEditUser = (u: ClinicUser) => {
-    setUserForm({ username: u.username, full_name: u.full_name || '', email: u.email || '', role: u.role, access_scope: u.access_scope, clinic_id: String(u.clinic_id || ''), password: '', password2: '', cedula_profesional: (u as any).cedula_profesional || '', especialidad: (u as any).especialidad || '' });
+    setUserForm({ username: u.username, full_name: u.full_name || '', email: u.email || '', role: u.role, access_scope: u.access_scope, clinic_id: String(u.clinic_id || ''), password: '', password2: '', cedula_profesional: (u as any).cedula_profesional || '', especialidad: (u as any).especialidad || '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
     setUserModal({ open: true, userId: u.id });
   };
 
@@ -1147,7 +1197,12 @@ export default function AdminMasterDashboard() {
       return flash('Las contraseñas no coinciden', 'err');
 
     const action = userModal.userId ? 'updateUser' : 'createUser';
-    const body   = { ...userForm, id: userModal.userId, clinic_id: userForm.clinic_id ? parseInt(userForm.clinic_id) : null };
+    const body   = {
+      ...userForm,
+      id: userModal.userId,
+      clinic_id: userForm.clinic_id ? parseInt(userForm.clinic_id) : null,
+      demo_expires_at: userForm.is_demo ? new Date(Date.now() + (userForm.demo_value || 1) * (userForm.demo_unit === 'hours' ? 3600000 : userForm.demo_unit === 'weeks' ? 7*86400000 : 86400000)).toISOString() : undefined,
+    };
     const res    = await fetch(`/api/admin-auth?action=${action}`, { method: 'POST', headers: authHeader(), body: JSON.stringify(body) });
     const data   = await res.json();
     if (data.error) return flash(data.error, 'err');
@@ -1289,7 +1344,8 @@ export default function AdminMasterDashboard() {
               ['modules',   '✦ Módulos'],
               ['templates', '⚙ Config. Global'],
               ['system',    '🔧 Sistema'],
-              ['accesos',   '🔑 Accesos'],
+              ['accesos',      '🔑 Accesos'],
+              ['vencimientos', '📅 Vencimientos'],
             ] as [TabKey, string][]).map(([key, label]) => (
               <button
                 key={key}
@@ -1444,6 +1500,10 @@ export default function AdminMasterDashboard() {
                         </button>
                         <button onClick={() => { setSelectedModuleClinic(clinic.id); setTab('modules'); }} className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-[#c5a075] bg-[#deb887]/10 hover:bg-[#deb887]/20 rounded-lg transition-colors">
                           <Sparkles className="w-3.5 h-3.5" /> Módulos
+                        </button>
+                        <button onClick={() => setDemoModal({ open: true, clinicId: clinic.id, clinicName: clinic.name })}
+                          className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition-colors">
+                          ⏱ Demo
                         </button>
                       </div>
                     </div>
@@ -1845,6 +1905,44 @@ export default function AdminMasterDashboard() {
                 </div>
               </div>
             </div>
+
+            {/* Demo user toggle */}
+            <div className="border-t border-gray-100 pt-4">
+              <label className="flex items-center gap-3 cursor-pointer select-none">
+                <div className={`relative w-11 h-6 rounded-full transition-colors ${userForm.is_demo ? 'bg-amber-400' : 'bg-gray-200'}`}
+                  onClick={() => setUserForm(f => ({ ...f, is_demo: !f.is_demo, demo_value: 1, demo_unit: 'days' }))}>
+                  <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${userForm.is_demo ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-700">Cuenta demo temporal</p>
+                  <p className="text-xs text-gray-400">Sin email, sin 2FA, se elimina al vencer</p>
+                </div>
+              </label>
+
+              {userForm.is_demo && (
+                <div className="mt-3 flex gap-2">
+                  <input type="number" min={1} max={999} value={userForm.demo_value || 1}
+                    onChange={e => setUserForm(f => ({ ...f, demo_value: Math.max(1, parseInt(e.target.value)||1) }))}
+                    className="w-24 px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-amber-300 outline-none" />
+                  <select value={userForm.demo_unit || 'days'} onChange={e => setUserForm(f => ({ ...f, demo_unit: e.target.value }))}
+                    className="flex-1 px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-amber-300 outline-none bg-white">
+                    <option value="hours">Horas</option>
+                    <option value="days">Días</option>
+                    <option value="weeks">Semanas</option>
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {/* Send setup link toggle (only if email is set and not demo) */}
+            {!userForm.is_demo && userForm.email && (
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input type="checkbox" checked={userForm.send_setup_link || false}
+                  onChange={e => setUserForm(f => ({ ...f, send_setup_link: e.target.checked }))}
+                  className="w-4 h-4 rounded accent-[#deb887]" />
+                <span className="text-xs text-gray-600">Enviar link de configuración de contraseña al email</span>
+              </label>
+            )}
 
             {/* Contraseña (solo en creación) */}
             {!userModal.userId && (
@@ -2539,6 +2637,78 @@ export default function AdminMasterDashboard() {
                   className="flex-1 py-2 text-white rounded-lg text-sm font-semibold"
                   style={{ background: 'linear-gradient(135deg,#deb887,#c5a075)' }}>
                   Actualizar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Crear usuario demo ─────────────────────────────────── */}
+      {demoModal.open && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full">
+            <div className="h-0.5 bg-gradient-to-r from-amber-400 to-amber-600 rounded-t-2xl" />
+            <div className="p-6 space-y-4">
+              <h3 className="font-bold text-gray-900">Crear usuario demo — {demoModal.clinicName}</h3>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Nombre de usuario *</label>
+                <input type="text" value={demoForm.username}
+                  onChange={e => setDemoForm(f => ({ ...f, username: e.target.value }))}
+                  placeholder="demo_usuario" autoFocus
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-amber-300 outline-none" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Validez</label>
+                <div className="flex gap-2">
+                  <input type="number" min={1} max={999} value={demoForm.value}
+                    onChange={e => setDemoForm(f => ({ ...f, value: Math.max(1, parseInt(e.target.value)||1) }))}
+                    className="w-24 px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-amber-300 outline-none" />
+                  <select value={demoForm.unit} onChange={e => setDemoForm(f => ({ ...f, unit: e.target.value as any }))}
+                    className="flex-1 px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-amber-300 outline-none bg-white">
+                    <option value="hours">Horas</option>
+                    <option value="days">Días</option>
+                    <option value="weeks">Semanas</option>
+                  </select>
+                </div>
+                <p className="text-xs text-gray-400 mt-1">
+                  Vence: <strong>{new Date(Date.now() + demoForm.value * (demoForm.unit === 'hours' ? 3600000 : demoForm.unit === 'weeks' ? 7*86400000 : 86400000)).toLocaleString('es-EC')}</strong>
+                </p>
+              </div>
+              <p className="text-xs text-gray-500 bg-amber-50 rounded-lg p-2">
+                El usuario demo tendrá acceso solo a sus propios datos. Sin email ni recuperación. Se elimina automáticamente al vencer.
+              </p>
+              <div className="flex gap-3 pt-1">
+                <button onClick={() => setDemoModal({ open: false, clinicId: null, clinicName: '' })} className="flex-1 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cancelar</button>
+                <button onClick={createDemoUser} disabled={!demoForm.username.trim()}
+                  className="flex-1 py-2 text-white rounded-lg text-sm font-semibold disabled:opacity-50"
+                  style={{ background: 'linear-gradient(135deg,#f59e0b,#d97706)' }}>
+                  Crear demo
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Notificación de suscripción ───────────────────────────────── */}
+      {notifModal.open && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full">
+            <div className="h-0.5 bg-gradient-to-r from-orange-400 to-orange-600 rounded-t-2xl" />
+            <div className="p-6 space-y-4">
+              <h3 className="font-bold text-gray-900">Enviar aviso — {notifModal.clinicName}</h3>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Mensaje para el cliente</label>
+                <textarea value={notifMessage} onChange={e => setNotifMessage(e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-orange-300 outline-none resize-none" />
+              </div>
+              <div className="flex gap-3 pt-1">
+                <button onClick={() => setNotifModal({ open: false, clinicId: null, clinicName: '' })} className="flex-1 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cancelar</button>
+                <button onClick={sendNotification} disabled={!notifMessage.trim()}
+                  className="flex-1 py-2 bg-orange-500 text-white rounded-lg text-sm font-semibold disabled:opacity-50 hover:bg-orange-600">
+                  Enviar aviso
                 </button>
               </div>
             </div>
