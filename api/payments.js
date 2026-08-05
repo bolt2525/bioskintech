@@ -16,6 +16,7 @@
 
 import { sql } from '@vercel/postgres';
 import crypto from 'crypto';
+import axios from 'axios';
 
 const PAYPHONE_BASE = 'https://pay.payphonetodoesposible.com/api';
 
@@ -113,31 +114,26 @@ export default async function handler(req, res) {
 
       const authHeader = `Bearer ${token}`;
 
-      console.log('=== PAYPHONE REQUEST ===');
+      console.log('=== PAYPHONE REQUEST (axios) ===');
       console.log(`URL: POST ${PAYPHONE_BASE}/button/Prepare`);
       console.log(`Headers: Content-Type=application/json | Authorization=Bearer ${token.substring(0,10)}...[${token.length} chars]`);
       console.log(`Payload: ${JSON.stringify(payload)}`);
-      console.log('=======================');
+      console.log('================================');
 
-      const ppRes = await fetch(`${PAYPHONE_BASE}/button/Prepare`, {
-        method:  'POST',
-        headers: {
-          'Content-Type':  'application/json',
-          'Authorization': authHeader,
-        },
-        body: JSON.stringify(payload),
-      });
-
-      const rawText = await ppRes.text();
-      console.log(`=== PAYPHONE RESPONSE === status=${ppRes.status}`);
-      console.log(rawText.substring(0, 1000));
-      console.log('========================');
-
-      if (!ppRes.ok || rawText.trim().startsWith('<')) {
-        return res.status(502).json({ error: `PayPhone respondio con error ${ppRes.status}. Intenta de nuevo o contacta soporte.` });
+      let ppData;
+      try {
+        const ppRes = await axios.post(`${PAYPHONE_BASE}/button/Prepare`, payload, {
+          headers: { 'Content-Type': 'application/json', 'Authorization': authHeader },
+          timeout: 15000,
+        });
+        console.log(`=== PAYPHONE RESPONSE === status=${ppRes.status} data=${JSON.stringify(ppRes.data)}`);
+        ppData = ppRes.data;
+      } catch (e) {
+        const status = e.response?.status || 0;
+        const body   = typeof e.response?.data === 'string' ? e.response.data.substring(0, 400) : JSON.stringify(e.response?.data || e.message);
+        console.error(`[PayPhone Prepare] error status=${status}: ${body}`);
+        return res.status(502).json({ error: `PayPhone error ${status || e.message}. Intenta de nuevo.` });
       }
-
-      const ppData = JSON.parse(rawText);
       const paymentUrl = ppData.payWithCard || ppData.payWithPayPhone || null;
       if (!paymentUrl) {
         console.error('[PayPhone Prepare] respuesta sin URL:', ppData);
@@ -169,19 +165,17 @@ export default async function handler(req, res) {
       try { token = getToken(); }
       catch (e) { return res.status(503).json({ error: e.message }); }
 
-      const confirmRes = await fetch(`${PAYPHONE_BASE}/button/V2/Confirm`, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body:    JSON.stringify({ id: Number(id), clientTxId: clientTransactionId }),
-      });
-
-      if (!confirmRes.ok) {
-        const errText = await confirmRes.text();
-        console.error(`[PayPhone Confirm] error ${confirmRes.status}: ${errText.substring(0, 300)}`);
+      let txData;
+      try {
+        const confirmRes = await axios.post(`${PAYPHONE_BASE}/button/V2/Confirm`,
+          { id: Number(id), clientTxId: clientTransactionId },
+          { headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, timeout: 15000 }
+        );
+        txData = confirmRes.data;
+      } catch (e) {
+        console.error(`[PayPhone Confirm] error: ${e.response?.status} ${JSON.stringify(e.response?.data || e.message)}`);
         return res.status(502).json({ error: 'Error al verificar el pago con PayPhone' });
       }
-
-      const txData = await confirmRes.json();
       console.log(`[PayPhone Confirm] clientTxId=${clientTransactionId} statusCode=${txData.statusCode}`);
 
       // statusCode 3 = Aprobado | 2 = Cancelado
