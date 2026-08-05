@@ -28,7 +28,7 @@ const PLANS = {
     amount_cents: 26450,  // $264.50 total
     base_cents:   23000,  // $230.00 base sin IVA
     tax_cents:     3450,  // $34.50 IVA 15%
-    description: 'Fichas Clínicas, Agenda Google Calendar, 3D Injectable Mapping, Inventario, Finanzas, Consentimientos Digitales y Fotos Clínicas.'
+    description: 'Fichas Clínicas, Agenda Google Calendar, 3D Injectable Mapping, Inventario, Finanzas, Consentimientos Digitales y Fotos Clínicas.',
     period:      'anual',
     features:    ['calendar','block_schedule','appointment','clinical_records','finance','inventory','clinical_3d','system_status','backup','ai_consultation'],
   },
