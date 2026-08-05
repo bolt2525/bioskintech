@@ -105,6 +105,7 @@ export default async function handler(req, res) {
         clientTransactionId: clientTxId,
         currency:            'USD',
         reference:           'BioskinTech',
+        storeId,
         responseUrl,
       };
 
