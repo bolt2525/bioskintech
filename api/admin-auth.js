@@ -123,6 +123,10 @@ async function initMultiTenantSchema() {
     )
   `;
 
+  // Migraciones idempotentes en clinics
+  await sql`ALTER TABLE clinics ADD COLUMN IF NOT EXISTS subscription_expires_at TIMESTAMP`;
+  await sql`ALTER TABLE clinics ADD COLUMN IF NOT EXISTS subscription_days INTEGER NOT NULL DEFAULT 365`;
+
   // Usuarios por clínica (clinic_id = NULL → master_admin)
   await sql`
     CREATE TABLE IF NOT EXISTS clinic_users (
@@ -635,7 +639,8 @@ async function verifySession(token) {
   try {
     const r = await sql`
       SELECT s.username, s.expires_at, s.role, s.clinic_id, s.access_scope, s.clinic_user_id,
-             cu.full_name, cu.email, c.name as clinic_name, c.slug as clinic_slug
+             cu.full_name, cu.email, c.name as clinic_name, c.slug as clinic_slug,
+             c.subscription_expires_at
       FROM admin_sessions s
       LEFT JOIN clinic_users cu ON cu.id = s.clinic_user_id
       LEFT JOIN clinics c ON c.id = s.clinic_id
@@ -646,6 +651,12 @@ async function verifySession(token) {
     `;
     if (!r.rows.length) return { valid: false, error: 'Sesión inválida o expirada' };
     const s = r.rows[0];
+    // Bloquear acceso si la suscripción de la clínica está vencida (master_admin siempre pasa)
+    if (s.role !== 'master_admin' && s.clinic_id && s.subscription_expires_at) {
+      if (new Date(s.subscription_expires_at) < new Date()) {
+        return { valid: false, error: 'Suscripción vencida. Contacta al administrador para renovarla.', subscriptionExpired: true };
+      }
+    }
     return {
       valid: true,
       user: {
@@ -1004,11 +1015,12 @@ async function registerClinic(body) {
 
   // Crear clínica
   const slug = clinic_name.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-');
+  const subExpires = new Date(Date.now() + 365 * 86400000); // 365 días desde hoy
   let clinicId;
   try {
     const clinicR = await sql`
-      INSERT INTO clinics (name, slug, email, phone, address, city, country, ruc, website)
-      VALUES (${clinic_name.trim()}, ${slug}, ${emailNorm}, ${clinic_phone||null}, ${clinic_address||null}, ${clinic_city||null}, ${clinic_country||'Ecuador'}, ${clinic_ruc||null}, ${clinic_website||null})
+      INSERT INTO clinics (name, slug, email, phone, address, city, country, ruc, website, subscription_expires_at)
+      VALUES (${clinic_name.trim()}, ${slug}, ${emailNorm}, ${clinic_phone||null}, ${clinic_address||null}, ${clinic_city||null}, ${clinic_country||'Ecuador'}, ${clinic_ruc||null}, ${clinic_website||null}, ${subExpires})
       RETURNING id
     `;
     clinicId = clinicR.rows[0].id;
@@ -1651,6 +1663,15 @@ export default async function handler(req, res) {
       if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master_admin' });
       const result = await updateClinic(req.body || {});
       return res.status(result.error ? 400 : 200).json(result);
+    }
+    if (action === 'updateClinicSubscription') {
+      if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master_admin' });
+      const { clinic_id, expires_at, subscription_days } = req.body || {};
+      if (!clinic_id) return res.status(400).json({ error: 'clinic_id requerido' });
+      const newExp = expires_at ? new Date(expires_at) : (subscription_days > 0 ? new Date(Date.now() + subscription_days * 86400000) : null);
+      const days   = subscription_days ?? 365;
+      await sql`UPDATE clinics SET subscription_expires_at=${newExp}, subscription_days=${days} WHERE id=${clinic_id}`;
+      return res.status(200).json({ success: true, subscription_expires_at: newExp });
     }
 
     // Gestión de features

@@ -861,6 +861,10 @@ export default function AdminMasterDashboard() {
   const [oauthLinks, setOauthLinks]   = useState<Record<number, string>>({});
   const [oauthLinkModal, setOauthLinkModal] = useState<{ open: boolean; url: string; clinicName: string } | null>(null);
 
+  // ── Suscripción por clínica ────────────────────────────────────────────────
+  const [subModal, setSubModal] = useState<{ open: boolean; clinic: Clinic | null }>({ open: false, clinic: null });
+  const [subDays, setSubDays]   = useState(365);
+
   // ── Ajustes por clínica ───────────────────────────────────────────────────
   type ClinicSettingsData = {
     general:        { name: string; city: string; tagline: string; logo_url: string; phone: string; address: string; tax_id: string };
@@ -1063,6 +1067,20 @@ export default function AdminMasterDashboard() {
   };
 
   // ─── CRUD Usuarios ────────────────────────────────────────────────────────
+
+  /** Renueva o ajusta la suscripción de una clínica */
+  const handleUpdateSubscription = async () => {
+    if (!subModal.clinic) return;
+    try {
+      await fetch('/api/admin-auth?action=updateClinicSubscription', {
+        method: 'POST', headers: authHeader(),
+        body: JSON.stringify({ clinic_id: subModal.clinic.id, subscription_days: subDays }),
+      });
+      flash(`Suscripción de ${subModal.clinic.name} actualizada (${subDays} días desde hoy)`);
+      setSubModal({ open: false, clinic: null });
+      loadAll();
+    } catch { flash('Error al actualizar suscripción', 'err'); }
+  };
 
   // ─── Generación de username desde nombre completo ─────────────────────
   const [usernameSuggestion, setUsernameSuggestion] = useState('');
@@ -1347,6 +1365,28 @@ export default function AdminMasterDashboard() {
                           </div>
                         ))}
                       </div>
+
+                      {/* Suscripción */}
+                      {(() => {
+                        const exp = clinic.subscription_expires_at ? new Date(clinic.subscription_expires_at) : null;
+                        const expired = exp && exp < new Date();
+                        const daysLeft = exp ? Math.ceil((exp.getTime() - Date.now()) / 86400000) : null;
+                        return (
+                          <div className={`flex items-center justify-between px-3 py-2 rounded-lg mb-3 text-xs ${expired ? 'bg-red-50 border border-red-200' : exp && daysLeft! <= 30 ? 'bg-amber-50 border border-amber-200' : 'bg-green-50 border border-green-100'}`}>
+                            <div>
+                              <span className={`font-semibold ${expired ? 'text-red-600' : exp && daysLeft! <= 30 ? 'text-amber-700' : 'text-green-700'}`}>
+                                {expired ? '⚠ Suscripción vencida' : exp ? `Vence: ${exp.toLocaleDateString('es-EC')} (${daysLeft}d)` : 'Sin fecha de vencimiento'}
+                              </span>
+                            </div>
+                            <button
+                              onClick={() => { setSubModal({ open: true, clinic }); setSubDays(365); }}
+                              className="text-xs text-[#c5a075] hover:text-[#deb887] font-medium underline"
+                            >
+                              Renovar
+                            </button>
+                          </div>
+                        );
+                      })()}
 
                       {/* Panel de features toggleable */}
                       <ClinicFeaturesPanel
@@ -2465,6 +2505,47 @@ export default function AdminMasterDashboard() {
           </div>
         </Modal>
       )}
+
+      {/* ── Modal: Suscripción de clínica ─────────────────────────────── */}
+      {subModal.open && subModal.clinic && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full">
+            <div className="h-0.5 bg-gradient-to-r from-[#deb887] to-[#c5a075] rounded-t-2xl" />
+            <div className="p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-gray-900">Suscripción — {subModal.clinic.name}</h3>
+                <button onClick={() => setSubModal({ open: false, clinic: null })} className="text-gray-400 hover:text-gray-600">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              {subModal.clinic.subscription_expires_at && (
+                <p className="text-xs text-gray-500">
+                  Vence actualmente: <strong>{new Date(subModal.clinic.subscription_expires_at).toLocaleDateString('es-EC')}</strong>
+                </p>
+              )}
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Días de suscripción desde hoy</label>
+                <input
+                  type="number" min={1} max={3650} value={subDays}
+                  onChange={e => setSubDays(Math.max(1, parseInt(e.target.value) || 365))}
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
+                <p className="text-xs text-gray-400 mt-1">
+                  Nueva fecha: <strong>{new Date(Date.now() + subDays * 86400000).toLocaleDateString('es-EC')}</strong>
+                </p>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => setSubModal({ open: false, clinic: null })} className="flex-1 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cancelar</button>
+                <button onClick={handleUpdateSubscription}
+                  className="flex-1 py-2 text-white rounded-lg text-sm font-semibold"
+                  style={{ background: 'linear-gradient(135deg,#deb887,#c5a075)' }}>
+                  Actualizar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+

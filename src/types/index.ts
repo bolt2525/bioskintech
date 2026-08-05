@@ -62,6 +62,8 @@ export interface Clinic {
   is_active: boolean;
   user_count: number;
   patient_count: number;
+  subscription_expires_at?: string | null;
+  subscription_days?: number;
 }
 
 /** Usuario de una clínica */

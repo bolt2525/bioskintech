@@ -14,8 +14,13 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
   Sparkles, Lock, Mail, User, Building2, Phone, MapPin,
-  KeyRound, CreditCard, Eye, EyeOff, CheckCircle2, ArrowLeft, Globe
+  KeyRound, CreditCard, Eye, EyeOff, CheckCircle2, ArrowLeft, Globe,
+  MessageCircle, ExternalLink, X, ShieldCheck
 } from 'lucide-react';
+
+// Contacto de soporte BioskinTech (número en formato internacional sin +)
+const BIOSKIN_SUPPORT_WA = '593992711648';
+const PAYMENT_LINK = 'https://ppls.me/U4vULogX4u2gZ8h1TKtWQ';
 
 const API = '/api/admin-auth';
 const PAY_API = '/api/payments';
@@ -77,6 +82,13 @@ export default function AdminRegister() {
 
   // Google data prellenada
   const [googleData, setGoogleData]   = useState<GoogleData | null>(null);
+
+  // Enlace de pago
+  const [linkOpened, setLinkOpened]   = useState(false);
+
+  // Modal WhatsApp
+  const [waModal, setWaModal]         = useState(false);
+  const [waForm, setWaForm]           = useState({ nombre: '', apellido: '', cedula: '', motivo: 'compra' });
 
   // Invite token desde URL
   const inviteToken  = searchParams.get('invite');
@@ -357,12 +369,12 @@ export default function AdminRegister() {
             {/* ── STEP: payment ────────────────────────────────────────── */}
             {step === 'payment' && (
               <>
-                <button onClick={() => setStep('method')} className="flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600 transition-colors">
+                <button onClick={() => { setStep('method'); setLinkOpened(false); }} className="flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600 transition-colors">
                   <ArrowLeft className="w-4 h-4" /> Volver
                 </button>
                 <div>
                   <h2 className="text-lg font-semibold text-gray-900">Suscripción Anual</h2>
-                  <p className="text-gray-400 text-sm mt-0.5">Pago único anual con PayPhone</p>
+                  <p className="text-gray-400 text-sm mt-0.5">Pago único anual · Plan de Lanzamiento</p>
                 </div>
 
                 {/* Plan único BioskinTech */}
@@ -387,26 +399,55 @@ export default function AdminRegister() {
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Correo electrónico *</label>
-                  <div className="relative">
-                    <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-300 w-4 h-4" />
-                    <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="tu@correo.com"
-                      className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
+                {/* Botón enlace de pago */}
+                {!linkOpened ? (
+                  <button
+                    onClick={() => { window.open(PAYMENT_LINK, '_blank', 'noopener,noreferrer'); setLinkOpened(true); }}
+                    className="w-full py-3 bg-[#deb887] text-white rounded-xl text-sm font-bold hover:bg-[#c9a876] transition-colors flex items-center justify-center gap-2 shadow-md shadow-[#deb887]/30">
+                    <ShieldCheck className="w-4 h-4" /> Pagar con enlace seguro PayPhone
+                    <ExternalLink className="w-3.5 h-3.5 opacity-70" />
+                  </button>
+                ) : (
+                  <div className="rounded-xl border border-green-200 bg-green-50 p-4 space-y-3">
+                    <div className="flex items-start gap-2">
+                      <ShieldCheck className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-sm font-semibold text-green-800">Redirigido a página segura de PayPhone</p>
+                        <p className="text-xs text-green-600 mt-0.5">
+                          El pago se procesa directamente en la plataforma certificada de PayPhone. Una vez completado,
+                          envía tu comprobante para activar tu cuenta.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => window.open(PAYMENT_LINK, '_blank', 'noopener,noreferrer')}
+                      className="w-full py-2 border border-green-300 text-green-700 rounded-lg text-xs font-medium hover:bg-green-100 transition-colors flex items-center justify-center gap-1.5">
+                      <ExternalLink className="w-3.5 h-3.5" /> Volver a abrir enlace de pago
+                    </button>
                   </div>
-                  <p className="text-xs text-gray-400 mt-1">Este correo será tu usuario de acceso</p>
+                )}
+
+                {/* Contactar por WhatsApp */}
+                <div className="border-t border-gray-100 pt-4 space-y-2">
+                  <p className="text-xs text-gray-500 text-center">
+                    {linkOpened
+                      ? '¿Ya hiciste el pago? Envía tu comprobante para validación, o contáctanos si necesitas ayuda.'
+                      : '¿Prefieres consultar antes de pagar?'}
+                  </p>
+                  <button
+                    onClick={() => setWaModal(true)}
+                    className="w-full py-2.5 border-2 border-green-400 text-green-700 rounded-xl text-sm font-semibold hover:bg-green-50 transition-colors flex items-center justify-center gap-2">
+                    <MessageCircle className="w-4 h-4" />
+                    {linkOpened ? 'Enviar comprobante / Contactar soporte' : 'Contactar por WhatsApp'}
+                  </button>
                 </div>
 
-                {error && <p className="text-red-600 text-sm bg-red-50 rounded-xl px-4 py-2.5">{error}</p>}
-                <button onClick={handleStartPayment} disabled={loading || !email.trim()}
-                  className="w-full py-3 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2 shadow-md">
-                  {loading ? (
-                    <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Procesando...</>
-                  ) : (
-                    <><CreditCard className="w-4 h-4" /> Pagar $264.50 con PayPhone</>
-                  )}
+                {/* PayPhone button legacy — oculto visualmente, mantenido por retorno de URL */}
+                <button onClick={handleStartPayment} disabled={loading || !email.trim()} className="hidden">
+                  Pagar con PayPhone (legacy)
                 </button>
-                <p className="text-center text-xs text-gray-400">Serás redirigido a PayPhone para completar el pago de forma segura.</p>
+
+                {error && <p className="text-red-600 text-sm bg-red-50 rounded-xl px-4 py-2.5">{error}</p>}
               </>
             )}
 
@@ -555,6 +596,105 @@ export default function AdminRegister() {
           </div>
         </div>
       </div>
+
+      {/* ── Modal WhatsApp ─────────────────────────────────────────────────── */}
+      {waModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full">
+            <div className="h-1 bg-gradient-to-r from-green-400 to-green-600 rounded-t-2xl" />
+            <div className="p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <MessageCircle className="w-5 h-5 text-green-600" />
+                  <h3 className="font-bold text-gray-900">Contactar por WhatsApp</h3>
+                </div>
+                <button onClick={() => setWaModal(false)} className="text-gray-400 hover:text-gray-600">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <p className="text-xs text-gray-500">
+                {linkOpened
+                  ? 'Completa tus datos y te contactaremos para validar tu pago o resolver tus dudas.'
+                  : 'Déjanos tus datos y un asesor te atenderá directamente por WhatsApp.'}
+              </p>
+
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Nombre *</label>
+                    <input
+                      type="text" value={waForm.nombre}
+                      onChange={e => setWaForm(f => ({ ...f, nombre: e.target.value }))}
+                      placeholder="Ana" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-green-300 focus:border-green-400 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Apellido *</label>
+                    <input
+                      type="text" value={waForm.apellido}
+                      onChange={e => setWaForm(f => ({ ...f, apellido: e.target.value }))}
+                      placeholder="García" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-green-300 focus:border-green-400 outline-none" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Cédula / RUC *</label>
+                  <input
+                    type="text" value={waForm.cedula}
+                    onChange={e => setWaForm(f => ({ ...f, cedula: e.target.value }))}
+                    placeholder="0912345678 / 0912345678001"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-green-300 focus:border-green-400 outline-none" />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Motivo</label>
+                  <select
+                    value={waForm.motivo}
+                    onChange={e => setWaForm(f => ({ ...f, motivo: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-green-300 focus:border-green-400 outline-none bg-white">
+                    <option value="compra">Validar comprobante de pago</option>
+                    <option value="consulta">Consulta sobre el plan</option>
+                    <option value="soporte">Soporte técnico</option>
+                    <option value="otro">Otro</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-1">
+                <button onClick={() => setWaModal(false)} className="flex-1 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50">
+                  Cancelar
+                </button>
+                <button
+                  disabled={!waForm.nombre.trim() || !waForm.apellido.trim() || !waForm.cedula.trim()}
+                  onClick={() => {
+                    const motivoLabel: Record<string, string> = {
+                      compra: 'Validación de comprobante de pago - Suscripción Anual BioskinTech',
+                      consulta: 'Consulta sobre el Plan de Suscripción Anual',
+                      soporte: 'Soporte técnico / consulta directa',
+                      otro: 'Consulta general',
+                    };
+                    const msg = [
+                      `*Hola, me contacto desde el portal BioskinTech.*`,
+                      ``,
+                      `*Nombre:* ${waForm.nombre.trim()} ${waForm.apellido.trim()}`,
+                      `*Cédula/RUC:* ${waForm.cedula.trim()}`,
+                      `*Motivo:* ${motivoLabel[waForm.motivo] || waForm.motivo}`,
+                      ``,
+                      waForm.motivo === 'compra'
+                        ? `Adjunto el comprobante de pago para validación de mi suscripción anual.`
+                        : `Quedo atento/a a su respuesta.`,
+                    ].join('\n');
+                    window.open(`https://wa.me/${BIOSKIN_SUPPORT_WA}?text=${encodeURIComponent(msg)}`, '_blank', 'noopener,noreferrer');
+                    setWaModal(false);
+                  }}
+                  className="flex-1 py-2 bg-green-500 text-white rounded-lg text-sm font-semibold hover:bg-green-600 disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5">
+                  <MessageCircle className="w-4 h-4" /> Abrir WhatsApp
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
