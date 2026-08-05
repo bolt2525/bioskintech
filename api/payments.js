@@ -120,7 +120,8 @@ export default async function handler(req, res) {
       if (!email?.trim()) return res.status(400).json({ error: 'email requerido' });
 
       const plan       = PLANS[plan_key];
-      const clientTxId = `BSKT-${Date.now()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+      // ponytail: PayPhone limita reference ~20 chars y rechaza guiones en clientTransactionId
+      const clientTxId = `BSKT${Date.now()}${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
       const appUrl     = (process.env.APP_URL || 'https://www.bioskintech.com').trim();
 
       let appToken, storeId;
@@ -138,7 +139,7 @@ export default async function handler(req, res) {
         service:             0,
         tip:                 0,
         currency:            'USD',
-        reference:           plan.name,
+        reference:           'BioskinTech',
         clientTransactionId: clientTxId,
         storeId,
         responseUrl:  `${appUrl}/gestionestetica/admin/register?payment=confirm&txId=${clientTxId}`,
@@ -147,6 +148,7 @@ export default async function handler(req, res) {
 
       let payphoneData;
       try {
+        console.log(`[PayPhone Prepare] payload=${JSON.stringify({ ...payload, storeId: storeId ? '***' : 'MISSING' })}`);
         const ppRes  = await fetch(`${PAYPHONE_BASE}/button/Prepare`, {
           method:  'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${appToken}` },
