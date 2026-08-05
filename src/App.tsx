@@ -40,6 +40,7 @@ import AdminSystemStatus from './pages/AdminSystemStatus';
 import AdminBackup       from './pages/AdminBackup';
 import MasterClinicWrapper   from './pages/MasterClinicWrapper';
 import ExternalMedicalFinance from './pages/ExternalMedicalFinance';
+import SkinExplorerPage from './skin-explorer/SkinExplorerPage';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Rutas reutilizadas dentro del panel admin
@@ -74,6 +75,7 @@ function AdminRoutes() {
             <Route path="clinical-3d" element={<Clinical3D />} />
             <Route path="system-status" element={<AdminSystemStatus />} />
             <Route path="backup"        element={<AdminBackup />} />
+            <Route path="skin-explorer" element={<SkinExplorerPage />} />
           </Route>
 
           {/* Rutas con slug de clínica */}
@@ -92,6 +94,7 @@ function AdminRoutes() {
           <Route path="/admin/:clinicSlug/:username/clinical-3d"                              element={<Clinical3D />} />
           <Route path="/admin/:clinicSlug/:username/system-status"                            element={<AdminSystemStatus />} />
           <Route path="/admin/:clinicSlug/:username/backup"                                   element={<AdminBackup />} />
+          <Route path="/admin/:clinicSlug/:username/skin-explorer"                            element={<SkinExplorerPage />} />
 
           {/* Alias legacy /admin (sin slug) */}
           <Route path="/admin"                element={<AdminDashboard />} />
@@ -109,6 +112,7 @@ function AdminRoutes() {
           <Route path="/admin/clinical-3d" element={<Clinical3D />} />
           <Route path="/admin/system-status" element={<AdminSystemStatus />} />
           <Route path="/admin/backup"        element={<AdminBackup />} />
+          <Route path="/admin/skin-explorer" element={<SkinExplorerPage />} />
 
           <Route path="*" element={<Navigate to="/admin/login" replace />} />
         </Routes>

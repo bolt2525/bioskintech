@@ -5,7 +5,7 @@
 
 import {
   Calendar, Clock, Ban, ClipboardList,
-  DollarSign, Package, Cuboid, Database, Activity, MessageCircle, Brain,
+  DollarSign, Package, Cuboid, Database, Activity, MessageCircle, Brain, Microscope,
 } from 'lucide-react';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -14,7 +14,7 @@ import {
 export const ALL_FEATURES = [
   'calendar', 'block_schedule', 'appointment',
   'clinical_records', 'finance', 'inventory', 'clinical_3d',
-  'system_status', 'backup', 'ai_consultation',
+  'system_status', 'backup', 'ai_consultation', 'skin_explorer',
 ] as const;
 
 export type FeatureKey = typeof ALL_FEATURES[number];
@@ -32,8 +32,7 @@ export const FEATURE_META: Record<FeatureKey, { label: string; icon: React.Compo
   clinical_3d:      { label: 'Visualización 3D', icon: Cuboid,        color: 'text-violet-500' },
   ai_consultation:  { label: 'Consultas IA',     icon: Brain,         color: 'text-[#deb887]'  },
   system_status:    { label: 'Estado Sistema',   icon: Activity,      color: 'text-emerald-600' },
-  backup:           { label: 'Base de Datos',    icon: Database,      color: 'text-blue-600'   },
-};
+  backup:           { label: 'Base de Datos',    icon: Database,      color: 'text-blue-600'   },  skin_explorer:    { label: 'DermoAtlas 3D',    icon: Microscope, color: 'text-amber-600'  },};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuración de módulos — tiles del dashboard
@@ -138,5 +137,14 @@ export const MODULE_LIST: ModuleConfig[] = [
     path: '/admin/backup',
     iconColor: 'text-blue-500',
     bgColor: 'bg-blue-50',
+  },
+  {
+    feat: 'skin_explorer',
+    title: 'DermoAtlas 3D',
+    description: 'Explorador interactivo de la piel — anatomía, capas y tratamientos',
+    icon: Microscope,
+    path: '/admin/skin-explorer',
+    iconColor: 'text-amber-600',
+    bgColor: 'bg-amber-50',
   },
 ];

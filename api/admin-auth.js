@@ -32,7 +32,7 @@ const LOCK_MS           = 15 * 60 * 1000;       // 15 minutos de bloqueo
 const ALL_FEATURES = [
   'calendar', 'block_schedule', 'appointment',
   'clinical_records', 'finance', 'inventory', 'clinical_3d',
-  'system_status', 'backup', 'ai_consultation',
+  'system_status', 'backup', 'ai_consultation', 'skin_explorer',
 ];
 
 // Planes de suscripción predefinidos (precio en centavos USD)
