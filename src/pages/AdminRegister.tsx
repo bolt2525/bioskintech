@@ -101,8 +101,11 @@ export default function AdminRegister() {
       } catch { /* ignorar */ }
     }
 
-    // Si viene después de pago PayPhone
-    if (paymentParam === 'confirm' && subscriptionId) {
+    // Si viene después de pago PayPhone (PayPhone agrega ?id=X&clientTransactionId=Y)
+    if (paymentParam === 'confirm') {
+      const ppId     = searchParams.get('id');
+      const ppTxId   = searchParams.get('clientTransactionId');
+      if (ppId && ppTxId) setSubId(parseInt(ppId, 10));
       setStep('form');
     }
 

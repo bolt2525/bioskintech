@@ -145,8 +145,9 @@ export default async function handler(req, res) {
         reference:           'BioskinTech',
         clientTransactionId: clientTxId,
         storeId,
-        responseUrl:  `${appUrl}/gestionestetica/admin/register?payment=confirm&txId=${clientTxId}`,
-        cancellationUrl: `${appUrl}/gestionestetica/admin/register?payment=cancelled`,
+        // ponytail: responseUrl sin params extra — PayPhone append sus propios params (?id=&clientTransactionId=)
+        responseUrl:      `${appUrl}/gestionestetica/admin/register?payment=confirm`,
+        cancellationUrl:  `${appUrl}/gestionestetica/admin/register?payment=cancelled`,
       };
 
       let payphoneData;
@@ -154,7 +155,13 @@ export default async function handler(req, res) {
         console.log(`[PayPhone Prepare] payload=${JSON.stringify({ ...payload, storeId: storeId ? '***' : 'MISSING' })}`);
         const ppRes  = await fetch(`${PAYPHONE_BASE}/button/Prepare`, {
           method:  'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${appToken}` },
+          headers: {
+            'Content-Type':  'application/json',
+            'Authorization': `Bearer ${appToken}`,
+            // ponytail: PayPhone valida origen del dominio registrado — sin Referer crashea con 500
+            'Referer': appUrl,
+            'Origin':  appUrl,
+          },
           body:    JSON.stringify(payload),
         });
         const rawText = await ppRes.text();
