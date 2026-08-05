@@ -96,11 +96,10 @@ export default async function handler(req, res) {
       const responseUrl     = `${appUrl}/gestionestetica/admin/register?payment=confirm`;
       const cancellationUrl = `${appUrl}/gestionestetica/admin/register?payment=cancelled`;
 
-      // Payload mínimo per documentación oficial (PHP example) — sin campos opcionales que puedan crashear
+      // Payload idéntico al ejemplo mínimo de la doc — amountWithoutTax omitido (doc no lo incluye)
       const payload = {
         amount:              plan.amount_cents,
         amountWithTax:       plan.base_cents,
-        amountWithoutTax:    0,
         tax:                 plan.tax_cents,
         clientTransactionId: clientTxId,
         currency:            'USD',
