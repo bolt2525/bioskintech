@@ -101,12 +101,30 @@ export default function AdminRegister() {
       } catch { /* ignorar */ }
     }
 
-    // Si viene después de pago PayPhone (PayPhone agrega ?id=X&clientTransactionId=Y)
+    // Retorno de PayPhone: adjunta ?payment=confirm&id=X&clientTransactionId=Y
     if (paymentParam === 'confirm') {
-      const ppId     = searchParams.get('id');
-      const ppTxId   = searchParams.get('clientTransactionId');
-      if (ppId && ppTxId) setSubId(parseInt(ppId, 10));
-      setStep('form');
+      const ppId    = searchParams.get('id');
+      const ppTxId  = searchParams.get('clientTransactionId');
+      if (ppId && ppTxId) {
+        setLoading(true);
+        fetch(`${PAY_API}?action=confirmPayment`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: ppId, clientTransactionId: ppTxId }),
+        })
+          .then(r => r.json())
+          .then(d => {
+            if (d.success) { setSubId(d.subscription_id); setStep('form'); }
+            else { setError(d.message || 'Pago cancelado o rechazado'); setStep('payment'); }
+          })
+          .catch(() => { setError('Error al verificar el pago'); setStep('payment'); })
+          .finally(() => setLoading(false));
+      } else {
+        setStep('payment');
+      }
+    }
+    if (paymentParam === 'cancelled') {
+      setError('Pago cancelado'); setStep('payment');
     }
 
     // Cargar planes de suscripción
