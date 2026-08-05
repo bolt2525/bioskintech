@@ -19,8 +19,9 @@ import { MasterViewProvider } from './context/MasterViewContext';
 import ErrorBoundary from './pages/ErrorBoundary';
 
 import LandingPage       from './pages/LandingPage';
-import AdminLogin        from './pages/AdminLogin';
-import AdminRegister     from './pages/AdminRegister';
+import AdminLogin          from './pages/AdminLogin';
+import AdminRegister       from './pages/AdminRegister';
+import AdminSetupPassword  from './pages/AdminSetupPassword';
 import AdminDashboard    from './pages/AdminDashboard';
 import AdminMasterDashboard from './pages/AdminMasterDashboard';
 import AdminCalendarManager from './pages/AdminCalendarManager';
@@ -51,8 +52,10 @@ function AdminRoutes() {
         <Routes>
           <Route path="/" element={<Navigate to="/admin/login" replace />} />
 
-          <Route path="/admin/login"    element={<AdminLogin />} />
-          <Route path="/admin/register" element={<AdminRegister />} />
+          <Route path="/admin/login"           element={<AdminLogin />} />
+          <Route path="/admin/register"         element={<AdminRegister />} />
+          <Route path="/admin/setup-password"   element={<AdminSetupPassword />} />
+          <Route path="/admin/recover"          element={<AdminSetupPassword />} />
           <Route path="/admin/master"   element={<AdminMasterDashboard />} />
 
           <Route path="/admin/master/:clinicSlug/:username" element={<MasterClinicWrapper />}>
