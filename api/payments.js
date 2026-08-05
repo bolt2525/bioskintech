@@ -96,16 +96,19 @@ export default async function handler(req, res) {
       const responseUrl     = `${appUrl}/gestionestetica/admin/register?payment=confirm`;
       const cancellationUrl = `${appUrl}/gestionestetica/admin/register?payment=cancelled`;
 
-      // Payload idéntico al ejemplo mínimo de la doc — amountWithoutTax omitido (doc no lo incluye)
+      // Payload con orden y campos idénticos al ejemplo PHP oficial de PayPhone
       const payload = {
-        amount:              plan.amount_cents,
-        amountWithTax:       plan.base_cents,
-        tax:                 plan.tax_cents,
+        amount:              plan.amount_cents,   // 26450
+        amountWithoutTax:    0,
+        amountWithTax:       plan.base_cents,     // 23000
+        tax:                 plan.tax_cents,      // 3450
+        service:             0,
+        tip:                 0,
+        storeId,
         clientTransactionId: clientTxId,
         currency:            'USD',
-        reference:           'BioskinTech',
-        storeId,
         responseUrl,
+        reference:           'BioskinTech',
       };
 
       const authHeader = `Bearer ${token}`;
