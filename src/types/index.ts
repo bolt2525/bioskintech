@@ -37,6 +37,9 @@ export interface AuthUser {
   clinic_name?: string;
   clinic_slug?: string;
   access_scope: AccessScope;
+  is_demo?: boolean;
+  demo_expires_at?: string | null;
+  subscriptionWarningDays?: number | null;
 }
 
 /** Respuesta genérica de éxito/error de la API */

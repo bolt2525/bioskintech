@@ -14,7 +14,7 @@
  *   </AdminLayout>
  */
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, LogOut, User, ChevronRight } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -46,7 +46,23 @@ export default function AdminLayout({
   breadcrumbs,
 }: AdminLayoutProps) {
   const navigate = useNavigate();
-  const { username, logout } = useAuth();
+  const { username, logout, user } = useAuth();
+  const [demoTimeLeft, setDemoTimeLeft] = useState('');
+
+  useEffect(() => {
+    if (!user?.is_demo || !user?.demo_expires_at) return;
+    const update = () => {
+      const ms = new Date(user.demo_expires_at!).getTime() - Date.now();
+      if (ms <= 0) { setDemoTimeLeft('Expirada'); return; }
+      const d = Math.floor(ms / 86400000);
+      const h = Math.floor((ms % 86400000) / 3600000);
+      const m = Math.floor((ms % 3600000) / 60000);
+      setDemoTimeLeft(d > 0 ? `${d}d ${h}h` : h > 0 ? `${h}h ${m}m` : `${m}m`);
+    };
+    update();
+    const timer = setInterval(update, 60000);
+    return () => clearInterval(timer);
+  }, [user?.is_demo, user?.demo_expires_at]);
 
   const handleLogout = () => {
     logout();
@@ -60,6 +76,26 @@ export default function AdminLayout({
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+      {/* Demo banner */}
+      {user?.is_demo && (
+        <div className="bg-amber-500 text-white text-center text-xs py-2 px-4 font-medium sticky top-0 z-[60] flex items-center justify-center gap-2">
+          <span className="inline-flex items-center gap-1">
+            ⏱ <strong>Cuenta Demo</strong> — Tiempo restante: <strong>{demoTimeLeft}</strong>
+          </span>
+          <span className="opacity-75">· Los datos serán eliminados al vencer</span>
+        </div>
+      )}
+
+      {/* Subscription warning banner */}
+      {!user?.is_demo && typeof user?.subscriptionWarningDays === 'number' && user.subscriptionWarningDays <= 21 && (
+        <div className={`text-white text-center text-xs py-2 px-4 font-medium sticky top-0 z-[60] flex items-center justify-center gap-2 ${user.subscriptionWarningDays <= 7 ? 'bg-red-500' : 'bg-orange-500'}`}>
+          <span>
+            ⚠️ Tu suscripción vence en <strong>{user.subscriptionWarningDays} días</strong>
+          </span>
+          <span className="opacity-80">· Contacta al administrador para renovar</span>
+        </div>
+      )}
+
       {/* ── Header fijo ───────────────────────────────────────────────── */}
       <div className="bg-white shadow-lg sticky top-0 z-50">
         <div className="container-custom py-4">

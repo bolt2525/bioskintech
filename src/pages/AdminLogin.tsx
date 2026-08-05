@@ -36,6 +36,7 @@ export default function AdminLogin() {
   const [otpToken, setOtpToken]       = useState('');
   const [otpCode, setOtpCode]         = useState('');
   const [maskedEmail, setMaskedEmail] = useState('');
+  const [trustDevice, setTrustDevice] = useState(false);
 
   // Redirigir si ya está autenticado
   useEffect(() => {
@@ -66,25 +67,16 @@ export default function AdminLogin() {
     }
 
     try {
-      const result = await login(username, password);
+      const result = await login(username, password) as any;
+      if (result.requiresOTP) {
+        setOtpStep(true); setOtpToken(result.otpToken || ''); setMaskedEmail(result.maskedEmail || '');
+        setLoading(false); return;
+      }
       if (result.ok) {
-        // Si el backend requiere OTP, mostrar el segundo paso
-        const r = result as any;
-        if (r.requiresOTP) {
-          setOtpStep(true);
-          setOtpToken(r.otpToken || '');
-          setMaskedEmail(r.maskedEmail || '');
-          setLoading(false);
-          return;
-        }
         const u = result.user;
-        if (u?.role === 'master_admin') {
-          navigate('/admin/master');
-        } else if (u?.clinic_slug && u?.username) {
-          navigate(`/admin/${u.clinic_slug}/${u.username}`);
-        } else {
-          navigate('/admin');
-        }
+        if (u?.role === 'master_admin') navigate('/admin/master');
+        else if (u?.clinic_slug && u?.username) navigate(`/admin/${u.clinic_slug}/${u.username}`);
+        else navigate('/admin');
       } else {
         setError(result.error || 'Usuario o contraseña incorrectos');
       }
@@ -118,8 +110,19 @@ export default function AdminLogin() {
       });
       const d = await r.json();
       if (d.success) {
+        if (trustDevice) {
+          const newDeviceToken = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
+          localStorage.setItem('bioskin_device_token', newDeviceToken);
+          try {
+            await fetch('/api/admin-auth?action=trustDevice', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${d.sessionToken}` },
+              body: JSON.stringify({ device_token: newDeviceToken }),
+            });
+          } catch { /* non-fatal */ }
+        }
         sessionStorage.setItem('adminSessionToken', d.sessionToken);
-        sessionStorage.setItem('adminUser', JSON.stringify(d.user));
+        sessionStorage.setItem('adminUser', JSON.stringify({ ...d.user, subscriptionWarningDays: d.subscriptionWarningDays }));
         sessionStorage.setItem('adminSessionExpiry', String(d.expiresAt));
         const u = d.user;
         if (u.role === 'master_admin') navigate('/admin/master');
@@ -186,6 +189,11 @@ export default function AdminLogin() {
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl text-center text-3xl font-mono tracking-widest text-gray-800 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all"
                   />
                 </div>
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input type="checkbox" checked={trustDevice} onChange={e => setTrustDevice(e.target.checked)}
+                    className="w-4 h-4 rounded accent-[#deb887]" />
+                  <span className="text-xs text-gray-500">No pedir código en este dispositivo por 30 días</span>
+                </label>
                 {error && (
                   <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3">
                     <p className="text-red-600 text-sm">{error}</p>
@@ -204,6 +212,13 @@ export default function AdminLogin() {
                   className="w-full text-sm text-gray-400 hover:text-gray-600 transition-colors py-1">
                   ← Volver al inicio de sesión
                 </button>
+                <p className="text-center text-xs text-gray-400">
+                  ¿No llegó el código?{' '}
+                  <button type="button" onClick={() => navigate('/admin/recover')}
+                    className="text-[#deb887] hover:underline font-medium">
+                    Recuperar acceso
+                  </button>
+                </p>
               </form>
             ) : (
               /* ── Primer paso: usuario + contraseña ───────────────── */

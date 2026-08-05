@@ -29,7 +29,7 @@ interface AuthContextType {
   features: string[];
   /** Overrides de módulos por usuario: [{feature, enabled}]. enabled:false = módulo oculto para este usuario */
   userModuleOverrides: Array<{ feature: string; enabled: boolean }>;
-  login: (username: string, password: string) => Promise<{ ok: boolean; error?: string; user?: import('../types').AuthUser }>;
+  login: (username: string, password: string) => Promise<{ ok: boolean; error?: string; user?: import('../types').AuthUser; requiresOTP?: boolean; otpToken?: string; maskedEmail?: string }>;
   logout: () => void;
   checkAuth: () => Promise<boolean>;
   hasFeature: (feature: string) => boolean;
@@ -105,6 +105,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (data.success && data.valid && data.user) {
         applySession(data.user, data.features || [], data.user_module_overrides || []);
+        if (data.subscriptionWarningDays !== undefined) {
+          setUser(prev => prev ? { ...prev, subscriptionWarningDays: data.subscriptionWarningDays } : null);
+        }
         return true;
       }
       clearAuth();
@@ -123,12 +126,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (
     username: string,
     password: string,
-  ): Promise<{ ok: boolean; error?: string; user?: AuthUser }> => {
+  ): Promise<{ ok: boolean; error?: string; user?: AuthUser; requiresOTP?: boolean; otpToken?: string; maskedEmail?: string }> => {
     try {
       const res  = await fetch('/api/admin-auth?action=login', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ username, password }),
+        body:    JSON.stringify({ username, password, device_token: localStorage.getItem('bioskin_device_token') || '' }),
       });
       const data = await res.json();
 
@@ -136,6 +139,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         persistAuth(data.sessionToken, data.user, data.expiresAt, data.features || []);
         applySession(data.user, data.features || [], data.user_module_overrides || []);
         return { ok: true, user: data.user };
+      }
+      // 2FA required — return structured data for the caller to handle OTP modal
+      if (data.requiresOTP) {
+        return { ok: false, requiresOTP: true, otpToken: data.otpToken, maskedEmail: data.maskedEmail };
       }
       return { ok: false, error: data.error || 'Credenciales inválidas' };
     } catch {
