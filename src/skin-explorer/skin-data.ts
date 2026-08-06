@@ -48,48 +48,35 @@ export type QuizQuestion = {
 // Hotspots 3D — posiciones relativas al modelo skin.glb
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Posiciones exactas del repo de referencia (thebuggeddev/anatomy) — verificadas en skin.glb
 export const SKIN_HOTSPOTS: Hotspot[] = [
   {
     id: 'epidermis',
     label: 'Epidermis',
     detail: 'Capa protectora externa — barrera física y química',
     position: [-0.05, 0.88, 1.4],
-    color: '#f59e0b',
+    color: '#ee7c6a',
   },
   {
     id: 'dermis',
     label: 'Dermis',
     detail: 'Red de colágeno, elastina y ácido hialurónico nativo',
     position: [0.29, 0.05, 1.4],
-    color: '#c99277',
+    color: '#f2a33b',
   },
   {
     id: 'hypodermis',
     label: 'Hipodermis',
     detail: 'Compartimentos grasos — soporte estructural y aislamiento',
     position: [-0.39, -1.15, 1.4],
-    color: '#f97316',
+    color: '#6393d8',
   },
   {
     id: 'follicle',
     label: 'Folículo Piloso',
     detail: 'Ancla cada cabello — diana de PRP y mesoterapia',
     position: [0.89, -0.44, 1.4],
-    color: '#a78bfa',
-  },
-  {
-    id: 'sebaceous',
-    label: 'Glándula Sebácea',
-    detail: 'Produce sebo — relacionada con acné y poros dilatados',
-    position: [0.65, 0.45, 1.2],
-    color: '#34d399',
-  },
-  {
-    id: 'capillary',
-    label: 'Red Capilar',
-    detail: 'Microvasculatura dérmica — rosacea y cuperosis',
-    position: [-0.55, -0.3, 1.3],
-    color: '#f87171',
+    color: '#d89bc4',
   },
 ];
 
@@ -325,7 +312,7 @@ export const HOTSPOT_DETAILS: Record<string, {
   follicle: {
     title: 'Folículo Piloso',
     subtitle: 'Unidad regenerativa',
-    color: '#a78bfa',
+    color: '#d89bc4',
     facts: [
       'Estructura túbuloalveolar que produce el cabello',
       'Contiene células madre en la región del bulge',
@@ -334,31 +321,5 @@ export const HOTSPOT_DETAILS: Record<string, {
       'Presente en todo el cuerpo excepto palmas, plantas y labios',
     ],
     aestheticNote: 'El PRP (plasma rico en plaquetas) y la mesoterapia capilar actúan sobre las células madre del folículo para estimular el crecimiento en alopecia. Las células madre foliculares también se usan en regeneración cutánea.',
-  },
-  sebaceous: {
-    title: 'Glándula Sebácea',
-    subtitle: 'La fábrica de sebo',
-    color: '#34d399',
-    facts: [
-      'Produce sebo: mezcla de lípidos, ceras y proteínas',
-      'Mayor densidad en cara, cuero cabelludo y pecho',
-      'El sebo lubrica y protege la superficie cutánea',
-      'Responde a andrógenos (mayor producción en adolescencia)',
-      'Su obstrucción con Cutibacterium acnes genera acné',
-    ],
-    aestheticNote: 'Los tratamientos como el láser, la luz pulsada intensa y los peelings reducen la actividad sebácea. El ácido azelaico y los retinoides también modulan la queratinización folicular.',
-  },
-  capillary: {
-    title: 'Red Capilar Dérmica',
-    subtitle: 'La microvascularización',
-    color: '#f87171',
-    facts: [
-      'Plexo capilar dérmico superficial y profundo',
-      'Regula la temperatura corporal mediante vasodilatación/constricción',
-      'Nutre la epidermis avascular por difusión',
-      'Las telangiectasias son dilataciones permanentes de estos capilares',
-      'La rosácea implica disfunción neurovascular crónica',
-    ],
-    aestheticNote: 'El láser vascular (Nd:YAG, KTP) y la IPL seleccionan la oxihemoglobina para destruir selectivamente los vasos dilatados en rosácea, eritema y cuperosis, sin dañar el tejido circundante.',
   },
 };

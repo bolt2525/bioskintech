@@ -16,15 +16,15 @@ import type { Hotspot } from './skin-data';
 // Constantes
 // ─────────────────────────────────────────────────────────────────────────────
 
-const FIT_SIZE = 3.8;
+const FIT_SIZE = 2.8;  // ponytail: reducido de 3.8 para modelo menos encuadrado
 const DOT_PIXELS = 34;
 const CAMERA_FOV = 34;
 const SURFACE_LIFT = 0.02;
 const VIEW_LIFT = 0.3;
 const PULSE_SECONDS = 4.5;
-const HOME_CAMERA = { x: 0, y: 0.5, z: 7.5 };
-const HOME_TARGET = { x: 0.15, y: 0.9, z: 0 };
-const PLINTH_Y = -2.5;
+const HOME_CAMERA = { x: 0, y: 1.3, z: 10.0 };
+const HOME_TARGET = { x: 0, y: 0.7, z: 0 };
+const PLINTH_Y = -1.8;
 const PLINTH_TOP = PLINTH_Y + 0.17;
 const TAU = Math.PI * 2;
 
@@ -339,7 +339,7 @@ export class SkinViewerEngine {
     this.scene.environment = this.buildEnvironmentMap();
 
     this.plinth = new THREE.Mesh(
-      new THREE.CylinderGeometry(2.3, 2.48, 0.34, 56),
+      new THREE.CylinderGeometry(1.8, 1.95, 0.28, 56),  // más pequeño acorde al modelo
       new THREE.MeshStandardMaterial({ color: 0xf0e4d0, roughness: 0.85, metalness: 0 }),
     );
     this.plinth.position.y = PLINTH_Y;
@@ -439,37 +439,47 @@ export class SkinViewerEngine {
       child.castShadow = false;
       child.receiveShadow = false;
 
-      const mats = Array.isArray(child.material) ? child.material : [child.material];
-      for (const mat of mats) {
-        mat.transparent = false; mat.opacity = 1;
-        mat.depthWrite = true; mat.depthTest = true;
-        mat.side = THREE.FrontSide;
-        if (mat instanceof THREE.MeshStandardMaterial) {
-          mat.roughness = THREE.MathUtils.clamp(mat.roughness ?? 0.5, 0.3, 0.75);
-          mat.metalness = 0;
-          mat.envMapIntensity = 1.0;
-          mat.emissive.set(0x000000);
-          mat.emissiveIntensity = 0;
-          // KHR_materials_volume crea un MeshPhysicalMaterial con transmission > 0.
-          // Sin render pass de transmisión, el material renderiza blanco — desactivar.
-          if (mat instanceof THREE.MeshPhysicalMaterial) {
-            mat.transmission = 0;
-            mat.thickness = 0;
-            mat.ior = 1.5;
-          }
-          if (mat.map) mat.map.colorSpace = THREE.SRGBColorSpace;
-          if (mat.normalMap) mat.normalScale.multiplyScalar(0.62);
-          for (const map of [mat.map, mat.normalMap, mat.roughnessMap, mat.aoMap]) {
-            if (!map) continue;
-            map.anisotropy = maxAnisotropy;
-            map.generateMipmaps = true;
-            map.minFilter = THREE.LinearMipmapLinearFilter;
-            map.magFilter = THREE.LinearFilter;
-            map.needsUpdate = true;
-          }
+      const origMats = Array.isArray(child.material) ? child.material : [child.material];
+      // Reemplazar MeshPhysicalMaterial (KHR_materials_volume lo crea con transmission)
+      // por MeshStandardMaterial limpio con las texturas del original.
+      const newMats = origMats.map((orig) => {
+        const src = orig instanceof THREE.MeshStandardMaterial ? orig : null;
+        const colorMap = src?.map ?? null;
+        const normalMap = src?.normalMap ?? null;
+        const roughMap = src?.roughnessMap ?? null;
+
+        if (colorMap) {
+          colorMap.colorSpace = THREE.SRGBColorSpace;
+          colorMap.anisotropy = maxAnisotropy;
+          colorMap.generateMipmaps = true;
+          colorMap.minFilter = THREE.LinearMipmapLinearFilter;
+          colorMap.magFilter = THREE.LinearFilter;
+          colorMap.needsUpdate = true;
         }
-        mat.needsUpdate = true;
-      }
+        if (normalMap) {
+          normalMap.anisotropy = maxAnisotropy;
+          normalMap.generateMipmaps = true;
+          normalMap.minFilter = THREE.LinearMipmapLinearFilter;
+          normalMap.needsUpdate = true;
+        }
+
+        const mat = new THREE.MeshStandardMaterial({
+          map: colorMap ?? undefined,
+          normalMap: normalMap ?? undefined,
+          roughnessMap: roughMap ?? undefined,
+          roughness: colorMap ? 0.6 : 0.75,
+          metalness: 0,
+          envMapIntensity: 0.8,
+          transparent: false,
+          depthWrite: true,
+          depthTest: true,
+          side: THREE.FrontSide,
+        });
+        if (normalMap) mat.normalScale.set(0.62, 0.62);
+        orig.dispose();
+        return mat;
+      });
+      child.material = newMats.length === 1 ? newMats[0] : newMats;
     });
 
     let mixer: THREE.AnimationMixer | null = null;
@@ -820,15 +830,17 @@ export class SkinViewerEngine {
 
   reset() {
     this.select(null);
-    // Lerp suave hacia posición inicial
     const start = this.camera.position.clone();
     const target = new THREE.Vector3(HOME_CAMERA.x, HOME_CAMERA.y, HOME_CAMERA.z);
+    const startTarget = this.controls.target.clone();
+    const homeTarget = new THREE.Vector3(HOME_TARGET.x, HOME_TARGET.y, HOME_TARGET.z);
     const startTime = performance.now();
     const lerp = () => {
       if (this.disposed) return;
       const t = Math.min((performance.now() - startTime) / 800, 1);
       const ease = 1 - Math.pow(1 - t, 3);
       this.camera.position.lerpVectors(start, target, ease);
+      this.controls.target.lerpVectors(startTarget, homeTarget, ease);
       this.dirty = true;
       if (t < 1) requestAnimationFrame(lerp);
     };
