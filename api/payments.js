@@ -24,9 +24,9 @@ const PLANS = {
   plan_lanzamiento: {
     name:          'Plan Lanzamiento BioskinTech',
     subtitle:      'Precio especial de lanzamiento',
-    amount_cents:   26450,
-    base_cents:     23000,
-    tax_cents:       3450,
+    amount_cents:   24500,
+    base_cents:     21304,
+    tax_cents:       3196,
     period:         'anual',
     features:       ['calendar','block_schedule','appointment','clinical_records','finance','inventory','clinical_3d','system_status','backup'],
   },
