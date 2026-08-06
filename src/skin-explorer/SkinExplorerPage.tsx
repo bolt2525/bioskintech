@@ -21,6 +21,8 @@ export default function SkinExplorerPage() {
 
   const [selected, setSelected] = useState<Hotspot | null>(null);
   const [autoRotate, setAutoRotate] = useState(true);
+  const [activeTool, setActiveTool] = useState<string | null>(null);
+  const [calloutPos, setCalloutPos] = useState<{ x: number; y: number } | null>(null);
   const [tab, setTab] = useState<Tab>('capas');
   const [selectedLayer, setSelectedLayer] = useState<SkinLayer>(SKIN_LAYERS[0]);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -38,11 +40,27 @@ export default function SkinExplorerPage() {
     if (layer) setSelectedLayer(layer);
   }, [selected]);
 
+  // Callout position — calculado frame a frame
+  useEffect(() => {
+    if (!selected) { setCalloutPos(null); return; }
+    let raf: number;
+    const update = () => {
+      const pos = canvasRef.current?.getHotspotScreenPos(selected.id);
+      setCalloutPos(pos ?? null);
+      raf = requestAnimationFrame(update);
+    };
+    raf = requestAnimationFrame(update);
+    return () => cancelAnimationFrame(raf);
+  }, [selected]);
+
   const handleTool = (tool: string) => {
     if (tool === 'rotate') { setAutoRotate((v) => !v); return; }
-    if (tool === 'zoom-in') canvasRef.current?.zoom(-1);
-    if (tool === 'zoom-out') canvasRef.current?.zoom(1);
-    if (tool === 'reset') { canvasRef.current?.reset(); setSelected(null); }
+    if (tool === 'zoom-in') { canvasRef.current?.zoom(-1); return; }
+    if (tool === 'zoom-out') { canvasRef.current?.zoom(1); return; }
+    if (tool === 'reset') { canvasRef.current?.reset(); setSelected(null); setActiveTool(null); return; }
+    if (tool === 'isolate') { setActiveTool(canvasRef.current?.toggleIsolate() ? tool : null); return; }
+    if (tool === 'section') { setActiveTool(canvasRef.current?.toggleCrossSection() ? tool : null); return; }
+    if (tool === 'layers') { setActiveTool(canvasRef.current?.toggleLayers() ? tool : null); return; }
   };
 
   const startQuiz = () => {
@@ -62,10 +80,13 @@ export default function SkinExplorerPage() {
   };
 
   const tools = [
-    { id: 'rotate', label: autoRotate ? 'Detener' : 'Girar', icon: autoRotate ? RotateCcw : RotateCw },
-    { id: 'zoom-in', label: 'Acercar', icon: ZoomIn },
-    { id: 'zoom-out', label: 'Alejar', icon: ZoomIn },
-    { id: 'reset', label: 'Reiniciar', icon: RotateCcw },
+    { id: 'rotate',   label: autoRotate ? 'Detener' : 'Girar', icon: autoRotate ? RotateCcw : RotateCw },
+    { id: 'zoom-in',  label: 'Acercar',  icon: ZoomIn },
+    { id: 'zoom-out', label: 'Alejar',   icon: ZoomIn },
+    { id: 'isolate',  label: 'Aislar',   icon: CircleDashed },
+    { id: 'section',  label: 'Sección',  icon: ScanLine },
+    { id: 'layers',   label: 'Capas',    icon: Layers3 },
+    { id: 'reset',    label: 'Reiniciar', icon: RotateCcw },
   ] as const;
 
   const hotspotDetail = selected ? HOTSPOT_DETAILS[selected.id] : null;
@@ -358,24 +379,56 @@ export default function SkinExplorerPage() {
             onInteraction={() => setAutoRotate(false)}
           />
 
-          {/* Herramientas desktop */}
+          {/* Herramientas desktop — con estado activo */}
           <div className="hidden md:flex absolute left-4 top-1/2 -translate-y-1/2 flex-col gap-1.5 z-10 rounded-2xl p-1.5 backdrop-blur-lg" style={{ background: 'rgba(253,250,244,0.88)', border: `1px solid ${LINE}`, boxShadow: '0 8px 24px rgba(75,54,40,0.08)' }}>
-            {tools.map(({ id, label, icon: Icon }) => (
-              <button key={id} onClick={() => handleTool(id)} title={label} className="w-11 h-11 rounded-xl flex flex-col items-center justify-center gap-1 transition-all text-[9px] font-semibold text-[#8d847c] hover:bg-[#f7efe4] hover:text-[#5a4e46]">
-                <Icon size={18} strokeWidth={1.6} />
-                <span className="hidden xl:block">{label}</span>
-              </button>
-            ))}
+            {tools.map(({ id, label, icon: Icon }) => {
+              const isActive = activeTool === id || (id === 'rotate' && autoRotate);
+              return (
+                <button key={id} onClick={() => handleTool(id)} title={label}
+                  className={`w-11 h-11 rounded-xl flex flex-col items-center justify-center gap-1 transition-all text-[9px] font-semibold ${
+                    isActive ? 'bg-[#deb887]/15 text-[#b8903a]' : 'text-[#8d847c] hover:bg-[#f7efe4] hover:text-[#5a4e46]'
+                  }`}>
+                  <Icon size={18} strokeWidth={1.6} />
+                  <span className="hidden xl:block">{label}</span>
+                </button>
+              );
+            })}
           </div>
 
           {/* Herramientas mobile (fila horizontal abajo) */}
           <div className="md:hidden absolute bottom-2 left-2 right-2 z-10 flex justify-around rounded-2xl p-1" style={{ background: 'rgba(253,250,244,0.92)', border: `1px solid ${LINE}`, boxShadow: '0 8px 24px rgba(75,54,40,0.1)' }}>
-            {tools.map(({ id, label, icon: Icon }) => (
-              <button key={id} onClick={() => handleTool(id)} title={label} className="w-11 h-11 rounded-xl flex items-center justify-center transition-all text-[#8d847c] hover:bg-[#f7efe4]">
-                <Icon size={18} strokeWidth={1.6} />
-              </button>
-            ))}
+            {tools.map(({ id, label, icon: Icon }) => {
+              const isActive = activeTool === id || (id === 'rotate' && autoRotate);
+              return (
+                <button key={id} onClick={() => handleTool(id)} title={label}
+                  className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all ${
+                    isActive ? 'bg-[#deb887]/15 text-[#b8903a]' : 'text-[#8d847c] hover:bg-[#f7efe4]'
+                  }`}>
+                  <Icon size={18} strokeWidth={1.6} />
+                </button>
+              );
+            })}
           </div>
+
+          {/* Callout hotspot — posicionado sobre el punto en 3D */}
+          {selected && calloutPos && (
+            <div
+              className="absolute z-20 pointer-events-none"
+              style={{ left: calloutPos.x, top: calloutPos.y, transform: 'translate(-50%, -130%)', willChange: 'transform' }}
+            >
+              <div className="rounded-xl px-3 py-2 shadow-xl max-w-[185px] text-xs" style={{ background: 'rgba(255,252,247,0.96)', backdropFilter: 'blur(10px)', border: `1px solid ${LINE}` }}>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: selected.color }} />
+                  <b className="text-[#2f2a27]" style={{ fontFamily: 'Playfair Display, serif' }}>{selected.label}</b>
+                </div>
+                <p className="text-[#8d847c] leading-relaxed">{selected.detail}</p>
+              </div>
+              {/* Flecha hacia abajo */}
+              <div className="flex justify-center mt-0.5">
+                <div className="w-2 h-2 rotate-45" style={{ background: 'rgba(255,252,247,0.96)', borderRight: `1px solid ${LINE}`, borderBottom: `1px solid ${LINE}` }} />
+              </div>
+            </div>
+          )}
 
           {/* Auto-rotate toggle desktop */}
           <div className="hidden md:flex absolute right-5 bottom-5 z-10 items-center gap-2 rounded-xl px-3 py-2 text-[10px] font-medium cursor-pointer select-none" style={{ background: 'rgba(253,252,247,0.88)', border: `1px solid ${LINE}`, boxShadow: '0 4px 12px rgba(65,45,32,0.08)' }} onClick={() => setAutoRotate((v) => !v)}>
