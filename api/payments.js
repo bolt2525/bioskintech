@@ -71,6 +71,8 @@ async function ensureSubscriptionsTable() {
       created_at              TIMESTAMP DEFAULT NOW()
     )
   `;
+  // ponytail: migración idempotente para tablas ya existentes sin la columna
+  await sql`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS email TEXT`;
 }
 
 export default async function handler(req, res) {
