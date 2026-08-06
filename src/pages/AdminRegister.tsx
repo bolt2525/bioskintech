@@ -18,7 +18,7 @@ import {
 
 // Contacto de soporte BioskinTech (número en formato internacional sin +)
 const BIOSKIN_SUPPORT_WA = '593984232889';
-const PAYMENT_LINK = 'https://ppls.me/U4vULogX4u2gZ8h1TKtWQ';
+const PAYMENT_LINK = 'https://ppls.me/T2SiYUPiXTvHeMWnDM5iOQ';
 
 const API = '/api/admin-auth';
 const PAY_API = '/api/payments';
@@ -402,8 +402,8 @@ export default function AdminRegister() {
                       <p className="text-xs text-[#deb887] font-semibold mt-0.5">🎉 Precio especial de lanzamiento</p>
                     </div>
                     <div className="text-right flex-shrink-0 ml-3">
-                      <p className="text-2xl font-black text-[#deb887]">$264.50</p>
-                      <p className="text-xs text-gray-400">$230 + IVA 15% / año</p>
+                      <p className="text-2xl font-black text-[#deb887]">$245</p>
+                      <p className="text-xs text-gray-400">IVA incluido / año</p>
                     </div>
                   </div>
                   <p className="text-sm text-gray-600 leading-relaxed mb-3">
