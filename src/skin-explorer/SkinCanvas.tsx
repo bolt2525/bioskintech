@@ -46,18 +46,17 @@ class SkinRenderer {
 
     this.renderer = new THREE.WebGLRenderer({
       antialias: !lowPower,
-      alpha: true,
       powerPreference: 'high-performance',
       stencil: false,
       depth: true,
     });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, lowPower ? 1.5 : 2));
-    // Configuración EXACTA del repo de referencia (viewer.ts constructor)
-    this.renderer.outputColorSpace     = THREE.SRGBColorSpace;
-    this.renderer.toneMapping          = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure  = 1.02;
-    this.renderer.shadowMap.enabled    = false;
-    this.renderer.localClippingEnabled = true;
+    this.renderer.outputColorSpace    = THREE.SRGBColorSpace;
+    this.renderer.toneMapping         = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.0;
+    this.renderer.shadowMap.enabled   = false;
+    // Fondo sólido — el canvas transparente interfiere con el color management
+    this.scene.background = new THREE.Color(0xf7f0e7);
     container.appendChild(this.renderer.domElement);
 
     this.camera.position.set(CAMERA_POS.x, CAMERA_POS.y, CAMERA_POS.z);
@@ -89,52 +88,19 @@ class SkinRenderer {
   // ── Escena idéntica al repo ────────────────────────────────────────────────
 
   private buildScene() {
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.42));
-    this.scene.add(new THREE.HemisphereLight(0xfff8ee, 0x33252d, 0.72));
+    // Iluminación PBR mínima recomendada para ver colores del GLB
+    this.scene.add(new THREE.AmbientLight(0xffffff, 0.7));
 
-    const key = new THREE.DirectionalLight(0xfff3e7, 3.5);
-    key.position.set(4.8, 6.5, 6.8);
-    this.scene.add(key);
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
+    this.scene.add(hemi);
 
-    const fill = new THREE.DirectionalLight(0xe6ecff, 1.12);
-    fill.position.set(-4.5, 1.2, 5.2);
+    const dir = new THREE.DirectionalLight(0xffffff, 1.2);
+    dir.position.set(5, 8, 6);
+    this.scene.add(dir);
+
+    const fill = new THREE.DirectionalLight(0xffeedd, 0.5);
+    fill.position.set(-4, 2, -4);
     this.scene.add(fill);
-
-    const rim = new THREE.DirectionalLight(0xffb7a5, 1.6);
-    rim.position.set(-4, 3.5, -5.5);
-    this.scene.add(rim);
-
-    const warm = new THREE.PointLight(0xff8d70, 0.72, 11, 2);
-    warm.position.set(-3, -1.4, 3.5);
-    this.scene.add(warm);
-
-    const glow = new THREE.PointLight(0xc99277, 0.5, 8, 2);
-    glow.position.set(2.8, 0.4, 2.8);
-    this.scene.add(glow);
-
-    // Env map PMREM idéntico al repo
-    const w = 16, h = 32;
-    const data = new Uint8Array(w * h * 4);
-    const top = new THREE.Color(0xfff3e4);
-    const bot = new THREE.Color(0x6b4f45);
-    const mix = new THREE.Color();
-    for (let y = 0; y < h; y++) {
-      mix.copy(bot).lerp(top, Math.pow(1 - y / (h - 1), 0.7));
-      for (let x = 0; x < w; x++) {
-        const i = (y * w + x) * 4;
-        data[i]   = Math.round(mix.r * 255);
-        data[i+1] = Math.round(mix.g * 255);
-        data[i+2] = Math.round(mix.b * 255);
-        data[i+3] = 255;
-      }
-    }
-    const src = new THREE.DataTexture(data, w, h);
-    src.mapping    = THREE.EquirectangularReflectionMapping;
-    src.colorSpace = THREE.SRGBColorSpace;
-    src.needsUpdate = true;
-    const pmrem = new THREE.PMREMGenerator(this.renderer);
-    this.scene.environment = pmrem.fromEquirectangular(src).texture;
-    pmrem.dispose(); src.dispose();
 
     // Plinto
     const plinth = new THREE.Mesh(
@@ -175,51 +141,21 @@ class SkinRenderer {
     this.pivot = pivot;
     pivot.updateWorldMatrix(true, true);
 
-    // Material processing EXACTO del repo
-    const maxAniso = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
+    // MUY IMPORTANTE: no reemplazar/sobreescribir el material del GLB.
+    // Solo asegurar colorSpace correcto en el mapa de color y activar update.
     model.traverse((child) => {
       if (!(child instanceof THREE.Mesh)) return;
       child.frustumCulled = false;
+      child.castShadow    = false;
+      child.receiveShadow = false;
 
-      const forEachMat = (fn: (m: THREE.Material) => void) => {
-        (Array.isArray(child.material) ? child.material : [child.material]).forEach(fn);
-      };
-      forEachMat((material) => {
-        material.transparent = false;
-        material.opacity     = 1;
-        material.depthWrite  = true;
-        material.depthTest   = true;
-        material.side        = THREE.FrontSide;
-
-        if (material instanceof THREE.MeshStandardMaterial) {
-          material.roughness       = THREE.MathUtils.clamp(material.roughness ?? 0.5, 0.42, 0.62);
-          material.metalness       = 0;
-          material.envMapIntensity = 0.32;
-          material.emissive.set(0x000000);
-          material.emissiveIntensity = 0;
-
-          if ('clearcoat' in material) {
-            const p = material as THREE.MeshPhysicalMaterial;
-            p.clearcoat          = Math.min(Math.max(p.clearcoat, 0.08), 0.12);
-            p.clearcoatRoughness = 0.62;
-            p.transmission       = 0;
-            p.thickness          = 0;
-          }
-
-          if (material.map)       material.map.colorSpace = THREE.SRGBColorSpace;
-          if (material.normalMap) material.normalScale.multiplyScalar(0.62);
-
-          for (const map of [material.map, material.normalMap, material.roughnessMap,
-                              (material as any).metalnessMap, material.aoMap, material.emissiveMap]) {
-            if (!map) continue;
-            map.anisotropy      = maxAniso;
-            map.generateMipmaps = true;
-            map.minFilter       = THREE.LinearMipmapLinearFilter;
-            map.magFilter       = THREE.LinearFilter;
-            map.needsUpdate     = true;
-          }
+      const mats = Array.isArray(child.material) ? child.material : [child.material];
+      mats.forEach((mat: any) => {
+        if (mat.map) {
+          mat.map.colorSpace = THREE.SRGBColorSpace;
+          mat.map.needsUpdate = true;
         }
-        material.needsUpdate = true;
+        mat.needsUpdate = true;
       });
     });
 
@@ -428,7 +364,7 @@ export const SkinCanvas = forwardRef<SkinCanvasHandle, SkinCanvasProps>(
     }, [autoRotate]);
 
     return (
-      <div className="absolute inset-0" style={{ background: VIEWER_BG }}>
+      <div className="absolute inset-0" style={{ background: '#f7f0e7' }}>
         <div ref={mountRef} className="absolute inset-0" />
 
         {loading && (
