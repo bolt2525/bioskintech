@@ -9,6 +9,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import type { Hotspot } from './skin-data';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -403,7 +404,7 @@ export class SkinViewerEngine {
   async loadSkin(url: string, hotspots: Hotspot[]) {
     this.callbacks.onLoading(true, 0);
 
-    const loader = new GLTFLoader();
+    const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
     let gltf;
     try {
       gltf = await loader.loadAsync(url, (evt) => {
