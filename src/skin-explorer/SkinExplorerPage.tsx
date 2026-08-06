@@ -5,7 +5,7 @@ import {
   Microscope, X, ChevronRight, BookOpen, HelpCircle, CheckCircle, XCircle,
   Sparkles, Info, Beaker, Menu,
 } from 'lucide-react';
-import { SkinViewerEngine } from './SkinViewerEngine';
+import { SkinCanvas, type SkinCanvasHandle } from './SkinCanvas';
 import type { Hotspot } from './skin-data';
 import {
   SKIN_HOTSPOTS, SKIN_LAYERS, SKIN_CONDITIONS, SKIN_QUIZ,
@@ -13,24 +13,14 @@ import {
 } from './skin-data';
 
 type Tab = 'capas' | 'condiciones' | 'quiz';
-type ToolId = 'rotate' | 'zoom-in' | 'zoom-out' | 'isolate' | 'section' | 'layers' | 'reset';
-
-// Fondo crema del visor (igual que el repo de referencia)
-const VIEWER_BG = 'radial-gradient(circle at 55% 45%, rgba(255,255,255,0.92), rgba(255,250,242,0.72) 45%, rgba(246,236,224,0.70)), #f7f0e7';
-// Color de la línea/borde del sistema de referencia
 const LINE = 'rgba(117,91,70,0.18)';
 
 export default function SkinExplorerPage() {
   const navigate = useNavigate();
-  const mountRef = useRef<HTMLDivElement>(null);
-  const engineRef = useRef<SkinViewerEngine | null>(null);
+  const canvasRef = useRef<SkinCanvasHandle>(null);
 
-  const [loading, setLoading] = useState(true);
-  const [progress, setProgress] = useState(0);
-  const [slowLoad, setSlowLoad] = useState(false);
   const [selected, setSelected] = useState<Hotspot | null>(null);
   const [autoRotate, setAutoRotate] = useState(true);
-  const [activeTool, setActiveTool] = useState<ToolId | null>(null);
   const [tab, setTab] = useState<Tab>('capas');
   const [selectedLayer, setSelectedLayer] = useState<SkinLayer>(SKIN_LAYERS[0]);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -41,49 +31,18 @@ export default function SkinExplorerPage() {
   const [quizScore, setQuizScore] = useState(0);
   const [quizFinished, setQuizFinished] = useState(false);
 
-  useEffect(() => {
-    if (!loading) return;
-    const t = window.setTimeout(() => setSlowLoad(true), 900);
-    return () => window.clearTimeout(t);
-  }, [loading]);
-
-  useEffect(() => {
-    if (!mountRef.current) return;
-    const engine = new SkinViewerEngine(mountRef.current, {
-      onLoading: (isLoading, value) => {
-        setLoading(isLoading);
-        setProgress(value);
-        if (isLoading) setSlowLoad(false);
-      },
-      onSelect: setSelected,
-    });
-    engineRef.current = engine;
-    engine.loadSkin('/models/clinical/skin.glb', SKIN_HOTSPOTS).catch(() => setLoading(false));
-    return () => { engineRef.current = null; engine.dispose(); };
-  }, []);
-
-  useEffect(() => { engineRef.current?.setAutoRotate(autoRotate); }, [autoRotate]);
-
-  const calloutCallback = useCallback((node: HTMLDivElement | null) => {
-    engineRef.current?.attachCallout(node);
-  }, []);
-
+  // Sync capa con hotspot seleccionado
   useEffect(() => {
     if (!selected) return;
     const layer = SKIN_LAYERS.find((l) => l.id === selected.id);
     if (layer) setSelectedLayer(layer);
   }, [selected]);
 
-  const handleTool = (tool: ToolId) => {
-    const engine = engineRef.current;
-    if (!engine) return;
+  const handleTool = (tool: string) => {
     if (tool === 'rotate') { setAutoRotate((v) => !v); return; }
-    if (tool === 'zoom-in') { engine.zoom(-1); return; }
-    if (tool === 'zoom-out') { engine.zoom(1); return; }
-    if (tool === 'reset') { engine.reset(); setActiveTool(null); return; }
-    if (tool === 'isolate') { setActiveTool(engine.toggleIsolate() ? tool : null); return; }
-    if (tool === 'section') { setActiveTool(engine.toggleCrossSection() ? tool : null); return; }
-    if (tool === 'layers') { setActiveTool(engine.toggleLayers() ? tool : null); return; }
+    if (tool === 'zoom-in') canvasRef.current?.zoom(-1);
+    if (tool === 'zoom-out') canvasRef.current?.zoom(1);
+    if (tool === 'reset') { canvasRef.current?.reset(); setSelected(null); }
   };
 
   const startQuiz = () => {
@@ -98,24 +57,36 @@ export default function SkinExplorerPage() {
     if (idx === SKIN_QUIZ[quizIndex].correct) setQuizScore((s) => s + 1);
     setTimeout(() => {
       if (quizIndex + 1 >= SKIN_QUIZ.length) { setQuizFinished(true); return; }
-      setQuizIndex((i) => i + 1);
-      setQuizAnswer(null);
+      setQuizIndex((i) => i + 1); setQuizAnswer(null);
     }, 1800);
   };
 
-  const tools: { id: ToolId; label: string; icon: React.ComponentType<{ size?: number; strokeWidth?: number }> }[] = [
+  const tools = [
     { id: 'rotate', label: autoRotate ? 'Detener' : 'Girar', icon: autoRotate ? RotateCcw : RotateCw },
     { id: 'zoom-in', label: 'Acercar', icon: ZoomIn },
     { id: 'zoom-out', label: 'Alejar', icon: ZoomIn },
-    { id: 'isolate', label: 'Aislar', icon: CircleDashed },
-    { id: 'section', label: 'Sección', icon: ScanLine },
-    { id: 'layers', label: 'Capas', icon: Layers3 },
     { id: 'reset', label: 'Reiniciar', icon: RotateCcw },
-  ];
+  ] as const;
 
   const hotspotDetail = selected ? HOTSPOT_DETAILS[selected.id] : null;
 
-  // ── Contenido de los tabs (compartido entre sidebar desktop y drawer mobile) ──
+  // ── Contenido de tabs (reutilizado en desktop y mobile drawer) ──
+
+  const TabsNav = ({ compact = false }: { compact?: boolean }) => (
+    <div className={`flex flex-shrink-0 border-b ${compact ? 'px-2' : ''}`} style={{ borderColor: LINE }}>
+      {(['capas', 'condiciones', 'quiz'] as Tab[]).map((t) => (
+        <button
+          key={t}
+          onClick={() => setTab(t)}
+          className={`flex-1 py-2.5 text-xs font-semibold uppercase tracking-wide transition-colors ${
+            tab === t ? 'text-[#deb887] border-b-2 border-[#deb887]' : 'text-[#8d847c] hover:text-[#5a4e46]'
+          }`}
+        >
+          {t === 'capas' ? 'Capas' : t === 'condiciones' ? 'Cond.' : 'Quiz'}
+        </button>
+      ))}
+    </div>
+  );
 
   const TabContent = () => (
     <>
@@ -127,9 +98,7 @@ export default function SkinExplorerPage() {
               key={layer.id}
               onClick={() => setSelectedLayer(layer)}
               className={`text-left rounded-xl px-3 py-2.5 transition-all border ${
-                selectedLayer.id === layer.id
-                  ? 'bg-[#fdf5ea] border-[#deb887]/40'
-                  : 'border-transparent hover:bg-[#f7efe4]'
+                selectedLayer.id === layer.id ? 'bg-[#fdf5ea] border-[#deb887]/40' : 'border-transparent hover:bg-[#f7efe4]'
               }`}
             >
               <div className="flex items-center gap-2">
@@ -139,7 +108,6 @@ export default function SkinExplorerPage() {
               <p className="text-[#8d847c] text-[11px] mt-0.5 pl-[18px]">{layer.depth}</p>
             </button>
           ))}
-
           <div className="mt-3 rounded-xl p-3 border space-y-3" style={{ backgroundColor: 'rgba(255,251,244,0.8)', borderColor: selectedLayer.color + '40' }}>
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full" style={{ backgroundColor: selectedLayer.color }} />
@@ -162,20 +130,17 @@ export default function SkinExplorerPage() {
               <p className="text-[#8d847c] uppercase tracking-wide text-[9px] mb-1.5">Tratamientos estéticos</p>
               <div className="flex flex-wrap gap-1 mb-2">
                 {selectedLayer.aesthetic.treatments.map((t) => (
-                  <span key={t} className="px-1.5 py-0.5 rounded text-[10px]" style={{ backgroundColor: selectedLayer.color + '25', color: selectedLayer.color }}>
-                    {t}
-                  </span>
+                  <span key={t} className="px-1.5 py-0.5 rounded text-[10px]" style={{ backgroundColor: selectedLayer.color + '25', color: selectedLayer.color }}>{t}</span>
                 ))}
               </div>
               <p className="text-[#6b5e55] leading-relaxed">{selectedLayer.aesthetic.note}</p>
             </div>
           </div>
-
           <div className="mt-2">
             <p className="text-[10px] uppercase tracking-widest text-[#8d847c] font-semibold px-1 mb-1">Puntos activos</p>
             <div className="space-y-0.5">
               {SKIN_HOTSPOTS.map((h) => (
-                <div key={h.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-[#f7efe4] transition-colors">
+                <div key={h.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-[#f7efe4] transition-colors cursor-pointer" onClick={() => setSelected(selected?.id === h.id ? null : h)}>
                   <span className="w-2 h-2 rounded-full" style={{ backgroundColor: h.color }} />
                   <span className="text-[#5a4e46] text-xs">{h.label}</span>
                 </div>
@@ -197,13 +162,10 @@ export default function SkinExplorerPage() {
               </summary>
               <div className="px-3 pb-3 space-y-2 pt-2">
                 <p className="text-[#6b5e55] text-xs leading-relaxed">{cond.brief}</p>
-                <div>
-                  <p className="text-[#8d847c] text-[10px] uppercase tracking-wide mb-1">Tratamientos</p>
-                  <div className="flex flex-wrap gap-1">
-                    {cond.treatments.map((t) => (
-                      <span key={t} className="px-2 py-0.5 rounded-full bg-[#deb887]/15 text-[#b8903a] text-[10px]">{t}</span>
-                    ))}
-                  </div>
+                <div className="flex flex-wrap gap-1">
+                  {cond.treatments.map((t) => (
+                    <span key={t} className="px-2 py-0.5 rounded-full bg-[#deb887]/15 text-[#b8903a] text-[10px]">{t}</span>
+                  ))}
                 </div>
               </div>
             </details>
@@ -212,9 +174,9 @@ export default function SkinExplorerPage() {
       )}
 
       {tab === 'quiz' && (
-        <div className="p-4 flex flex-col">
+        <div className="p-4">
           {!quizActive && !quizFinished && (
-            <div className="flex flex-col items-center justify-center gap-4 py-8">
+            <div className="flex flex-col items-center gap-4 py-8">
               <div className="w-16 h-16 rounded-2xl bg-[#deb887] flex items-center justify-center shadow-lg shadow-[#deb887]/20">
                 <HelpCircle size={28} className="text-white" />
               </div>
@@ -222,9 +184,7 @@ export default function SkinExplorerPage() {
                 <h3 className="text-[#2f2a27] font-semibold mb-1" style={{ fontFamily: 'Playfair Display, serif' }}>Test de la Piel</h3>
                 <p className="text-[#8d847c] text-xs">{SKIN_QUIZ.length} preguntas · Dermatología aplicada</p>
               </div>
-              <button onClick={startQuiz} className="w-full py-2.5 bg-[#deb887] rounded-xl text-white font-semibold text-sm hover:bg-[#c9a96e] transition-colors shadow-sm shadow-[#deb887]/30">
-                Comenzar
-              </button>
+              <button onClick={startQuiz} className="w-full py-2.5 bg-[#deb887] rounded-xl text-white font-semibold text-sm hover:bg-[#c9a96e] transition-colors">Comenzar</button>
             </div>
           )}
           {quizActive && !quizFinished && (
@@ -234,7 +194,7 @@ export default function SkinExplorerPage() {
                 <span className="text-[#deb887] text-xs font-semibold">{quizScore} pts</span>
               </div>
               <div className="w-full rounded-full h-1" style={{ backgroundColor: LINE }}>
-                <div className="h-1 rounded-full bg-[#deb887] transition-all duration-500" style={{ width: `${(quizIndex / SKIN_QUIZ.length) * 100}%` }} />
+                <div className="h-1 rounded-full bg-[#deb887] transition-all" style={{ width: `${(quizIndex / SKIN_QUIZ.length) * 100}%` }} />
               </div>
               <p className="text-[#2f2a27] text-sm font-medium leading-relaxed">{SKIN_QUIZ[quizIndex].question}</p>
               <div className="space-y-2">
@@ -242,7 +202,7 @@ export default function SkinExplorerPage() {
                   const isCorrect = i === SKIN_QUIZ[quizIndex].correct;
                   const isSelected = i === quizAnswer;
                   let cls = 'w-full text-left px-3 py-2.5 rounded-xl text-sm border transition-all ';
-                  if (quizAnswer === null) cls += 'border-[rgba(117,91,70,0.2)] text-[#5a4e46] hover:bg-[#fdf5ea] hover:border-[#deb887]/40';
+                  if (quizAnswer === null) cls += 'border-[rgba(117,91,70,0.2)] text-[#5a4e46] hover:bg-[#fdf5ea]';
                   else if (isCorrect) cls += 'border-emerald-400 bg-emerald-50 text-emerald-700';
                   else if (isSelected) cls += 'border-red-300 bg-red-50 text-red-600';
                   else cls += 'border-[rgba(117,91,70,0.1)] text-[#8d847c]';
@@ -265,17 +225,13 @@ export default function SkinExplorerPage() {
             </div>
           )}
           {quizFinished && (
-            <div className="flex flex-col items-center justify-center gap-4 py-6 text-center">
+            <div className="flex flex-col items-center gap-4 py-6 text-center">
               <div className="text-5xl">{quizScore >= 4 ? '🏆' : quizScore >= 2 ? '👍' : '📚'}</div>
               <div>
                 <h3 className="text-[#2f2a27] font-semibold text-lg">{quizScore}/{SKIN_QUIZ.length} correctas</h3>
-                <p className="text-[#8d847c] text-xs mt-1">
-                  {quizScore >= 4 ? 'Excelente dominio de dermatología' : quizScore >= 2 ? 'Buen avance. Sigue explorando' : 'Revisa las capas y vuelve a intentarlo'}
-                </p>
+                <p className="text-[#8d847c] text-xs mt-1">{quizScore >= 4 ? 'Excelente dominio' : quizScore >= 2 ? 'Buen avance' : 'Sigue explorando'}</p>
               </div>
-              <button onClick={startQuiz} className="px-5 py-2 bg-[#deb887]/20 text-[#b8903a] rounded-lg text-sm hover:bg-[#deb887]/30 transition-colors">
-                Repetir test
-              </button>
+              <button onClick={startQuiz} className="px-5 py-2 bg-[#deb887]/20 text-[#b8903a] rounded-lg text-sm hover:bg-[#deb887]/30 transition-colors">Repetir</button>
             </div>
           )}
         </div>
@@ -290,33 +246,24 @@ export default function SkinExplorerPage() {
           <div className="flex items-center gap-2">
             <span className="w-3 h-3 rounded-full" style={{ backgroundColor: hotspotDetail.color }} />
             <h2 className="text-[#2f2a27] font-bold" style={{ fontFamily: 'Playfair Display, serif' }}>{hotspotDetail.title}</h2>
-            <button onClick={() => engineRef.current?.clearSelection()} className="ml-auto text-[#8d847c] hover:text-[#2f2a27] transition-colors">
-              <X size={14} />
-            </button>
+            <button onClick={() => setSelected(null)} className="ml-auto text-[#8d847c] hover:text-[#2f2a27] transition-colors"><X size={14} /></button>
           </div>
           <p className="text-[#8d847c] text-xs italic">{hotspotDetail.subtitle}</p>
           <div>
-            <p className="text-[#8d847c] text-[10px] uppercase tracking-widest mb-2 flex items-center gap-1.5 font-semibold">
-              <Info size={10} /> Datos clave
-            </p>
+            <p className="text-[#8d847c] text-[10px] uppercase tracking-widest mb-2 flex items-center gap-1.5 font-semibold"><Info size={10} /> Datos clave</p>
             <ul className="space-y-1.5">
               {hotspotDetail.facts.map((f) => (
                 <li key={f} className="flex items-start gap-2 text-[#5a4e46] text-xs leading-relaxed">
-                  <span style={{ color: hotspotDetail.color }} className="mt-0.5 flex-shrink-0">◈</span>
-                  {f}
+                  <span style={{ color: hotspotDetail.color }} className="mt-0.5 flex-shrink-0">◈</span>{f}
                 </li>
               ))}
             </ul>
           </div>
           <div className="rounded-xl p-3 text-xs space-y-1.5" style={{ backgroundColor: hotspotDetail.color + '12', borderLeft: `2px solid ${hotspotDetail.color}` }}>
-            <p className="uppercase tracking-widest text-[9px] flex items-center gap-1 font-semibold" style={{ color: hotspotDetail.color }}>
-              <Beaker size={10} /> Relevancia estética
-            </p>
+            <p className="uppercase tracking-widest text-[9px] flex items-center gap-1 font-semibold" style={{ color: hotspotDetail.color }}><Beaker size={10} /> Relevancia estética</p>
             <p className="text-[#6b5e55] leading-relaxed">{hotspotDetail.aestheticNote}</p>
           </div>
-          <button onClick={() => engineRef.current?.clearSelection()} className="w-full py-2 rounded-lg text-xs text-[#8d847c] hover:text-[#2f2a27] hover:bg-[#f7efe4] transition-colors border border-[rgba(117,91,70,0.15)]">
-            ← Ver todos los puntos
-          </button>
+          <button onClick={() => setSelected(null)} className="w-full py-2 rounded-lg text-xs text-[#8d847c] hover:text-[#2f2a27] hover:bg-[#f7efe4] transition-colors border border-[rgba(117,91,70,0.15)]">← Ver todos los puntos</button>
         </div>
       ) : (
         <div className="p-4 space-y-4">
@@ -325,10 +272,7 @@ export default function SkinExplorerPage() {
               <BookOpen size={14} className="text-[#deb887]" />
               <span className="text-[#2f2a27] font-semibold text-sm" style={{ fontFamily: 'Playfair Display, serif' }}>Piel · Integumentum</span>
             </div>
-            <p className="text-[#6b5e55] text-xs leading-relaxed">
-              El órgano más grande del cuerpo. Barrera viva que siente, protege y regula.
-              Toca los puntos dorados en el visor para explorar sus estructuras.
-            </p>
+            <p className="text-[#6b5e55] text-xs leading-relaxed">El órgano más grande del cuerpo. Toca los puntos de colores en el modelo 3D para explorar sus estructuras anatómicas.</p>
             <dl className="mt-3 space-y-1">
               {[['Superficie', '~2 m²'], ['Peso', '3.5 – 5 kg'], ['Grosor', '0.5 – 4 mm'], ['Renovación', 'Cada 28 días']].map(([k, v]) => (
                 <div key={k} className="flex items-center justify-between">
@@ -369,37 +313,26 @@ export default function SkinExplorerPage() {
   return (
     <div className="h-screen overflow-hidden flex flex-col" style={{ background: '#f2e9dd' }}>
 
-      {/* ── Header ───────────────────────────────────────────────────────── */}
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header className="flex-shrink-0 flex items-center gap-3 px-4 py-3 border-b bg-white/80 backdrop-blur-sm z-20" style={{ borderColor: LINE }}>
         <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-[#deb887] hover:text-[#2f2a27] transition-colors text-sm font-medium">
-          <ArrowLeft size={16} />
-          <span className="hidden sm:inline">Volver</span>
+          <ArrowLeft size={16} /><span className="hidden sm:inline">Volver</span>
         </button>
-
         <div className="h-4 w-px hidden sm:block" style={{ backgroundColor: LINE }} />
-
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-xl bg-[#deb887] flex items-center justify-center shadow-sm shadow-[#deb887]/30">
             <Microscope size={16} className="text-white" />
           </div>
           <div>
-            <h1 className="text-[#2f2a27] font-semibold text-sm leading-none" style={{ fontFamily: 'Playfair Display, serif' }}>
-              DermoAtlas 3D
-            </h1>
+            <h1 className="text-[#2f2a27] font-semibold text-sm leading-none" style={{ fontFamily: 'Playfair Display, serif' }}>DermoAtlas 3D</h1>
             <p className="text-[#8d847c] text-[10px] mt-0.5">Explorador de la piel · Integumentum</p>
           </div>
         </div>
-
         <div className="ml-auto flex items-center gap-3">
           <span className="hidden md:flex items-center gap-1.5 text-[#8d847c] text-xs">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            Modelo interactivo
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />Modelo interactivo
           </span>
-          {/* Mobile: botón para abrir panel */}
-          <button
-            className="lg:hidden flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#deb887] text-white text-xs font-semibold"
-            onClick={() => setMobileOpen(true)}
-          >
+          <button className="lg:hidden flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#deb887] text-white text-xs font-semibold" onClick={() => setMobileOpen(true)}>
             <Menu size={14} /> Info
           </button>
         </div>
@@ -408,76 +341,44 @@ export default function SkinExplorerPage() {
       {/* ── Workspace ─────────────────────────────────────────────────────── */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
 
-        {/* ── Sidebar izquierdo — oculto en mobile ────────────────────── */}
+        {/* Sidebar izquierdo */}
         <aside className="hidden lg:flex flex-col w-64 xl:w-72 flex-shrink-0 overflow-y-auto bg-white/70 backdrop-blur-sm border-r" style={{ borderColor: LINE }}>
-          <div className="flex flex-shrink-0 border-b" style={{ borderColor: LINE }}>
-            {(['capas', 'condiciones', 'quiz'] as Tab[]).map((t) => (
-              <button
-                key={t}
-                onClick={() => setTab(t)}
-                className={`flex-1 py-2.5 text-xs font-semibold uppercase tracking-wide transition-colors ${
-                  tab === t ? 'text-[#deb887] border-b-2 border-[#deb887]' : 'text-[#8d847c] hover:text-[#5a4e46]'
-                }`}
-              >
-                {t === 'capas' ? 'Capas' : t === 'condiciones' ? 'Condiciones' : 'Quiz'}
-              </button>
-            ))}
-          </div>
+          <TabsNav />
           <TabContent />
         </aside>
 
-        {/* ── Visor 3D central ─────────────────────────────────────────── */}
-        <section className="flex-1 relative overflow-hidden" style={{ background: VIEWER_BG }}>
-          {/* Canvas Three.js */}
-          <div ref={mountRef} className="absolute inset-0" />
+        {/* Visor 3D */}
+        <section className="flex-1 relative overflow-hidden">
+          <SkinCanvas
+            ref={canvasRef}
+            hotspots={SKIN_HOTSPOTS}
+            selected={selected}
+            onSelect={setSelected}
+            autoRotate={autoRotate}
+            onInteraction={() => setAutoRotate(false)}
+          />
 
-          {/* Glow decorativo sutil */}
-          <div className="absolute inset-0 pointer-events-none">
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full blur-3xl" style={{ backgroundColor: 'rgba(222,184,135,0.08)' }} />
-          </div>
-
-          {/* Herramientas — vertical en desktop, horizontal en mobile (abajo) */}
-          {/* Desktop: columna izquierda centrada verticalmente */}
+          {/* Herramientas desktop */}
           <div className="hidden md:flex absolute left-4 top-1/2 -translate-y-1/2 flex-col gap-1.5 z-10 rounded-2xl p-1.5 backdrop-blur-lg" style={{ background: 'rgba(253,250,244,0.88)', border: `1px solid ${LINE}`, boxShadow: '0 8px 24px rgba(75,54,40,0.08)' }}>
             {tools.map(({ id, label, icon: Icon }) => (
-              <button
-                key={id}
-                onClick={() => handleTool(id)}
-                title={label}
-                className={`w-11 h-11 rounded-xl flex flex-col items-center justify-center gap-1 transition-all text-[9px] font-semibold ${
-                  activeTool === id || (id === 'rotate' && autoRotate)
-                    ? 'bg-[#deb887]/15 text-[#b8903a]'
-                    : 'text-[#8d847c] hover:bg-[#f7efe4] hover:text-[#5a4e46]'
-                }`}
-              >
+              <button key={id} onClick={() => handleTool(id)} title={label} className="w-11 h-11 rounded-xl flex flex-col items-center justify-center gap-1 transition-all text-[9px] font-semibold text-[#8d847c] hover:bg-[#f7efe4] hover:text-[#5a4e46]">
                 <Icon size={18} strokeWidth={1.6} />
                 <span className="hidden xl:block">{label}</span>
               </button>
             ))}
           </div>
 
-          {/* Mobile: fila horizontal de herramientas en la parte inferior */}
+          {/* Herramientas mobile (fila horizontal abajo) */}
           <div className="md:hidden absolute bottom-2 left-2 right-2 z-10 flex justify-around rounded-2xl p-1" style={{ background: 'rgba(253,250,244,0.92)', border: `1px solid ${LINE}`, boxShadow: '0 8px 24px rgba(75,54,40,0.1)' }}>
             {tools.map(({ id, label, icon: Icon }) => (
-              <button
-                key={id}
-                onClick={() => handleTool(id)}
-                title={label}
-                className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all ${
-                  activeTool === id || (id === 'rotate' && autoRotate)
-                    ? 'bg-[#deb887]/15 text-[#b8903a]'
-                    : 'text-[#8d847c] hover:bg-[#f7efe4]'
-                }`}
-              >
+              <button key={id} onClick={() => handleTool(id)} title={label} className="w-11 h-11 rounded-xl flex items-center justify-center transition-all text-[#8d847c] hover:bg-[#f7efe4]">
                 <Icon size={18} strokeWidth={1.6} />
               </button>
             ))}
           </div>
 
-          {/* Auto-rotate toggle — desktop sólo */}
-          <div className="hidden md:flex absolute right-4 bottom-5 z-10 items-center gap-2 rounded-xl px-3 py-2 text-[10px] font-medium cursor-pointer select-none" style={{ background: 'rgba(253,252,247,0.88)', border: `1px solid ${LINE}`, boxShadow: '0 4px 12px rgba(65,45,32,0.08)' }}
-            onClick={() => setAutoRotate((v) => !v)}
-          >
+          {/* Auto-rotate toggle desktop */}
+          <div className="hidden md:flex absolute right-5 bottom-5 z-10 items-center gap-2 rounded-xl px-3 py-2 text-[10px] font-medium cursor-pointer select-none" style={{ background: 'rgba(253,252,247,0.88)', border: `1px solid ${LINE}`, boxShadow: '0 4px 12px rgba(65,45,32,0.08)' }} onClick={() => setAutoRotate((v) => !v)}>
             <RotateCcw size={13} className="text-[#8d847c]" />
             <span className="text-[#5a4e46]">Auto rotar</span>
             <span className={`w-7 h-4 rounded-full flex items-center px-0.5 transition-colors ${autoRotate ? 'bg-[#70a9cb] justify-end' : 'bg-[#c8c2bb] justify-start'}`}>
@@ -485,13 +386,7 @@ export default function SkinExplorerPage() {
             </span>
           </div>
 
-          {/* Caption */}
-          <div className="absolute left-4 bottom-5 z-10 pointer-events-none hidden md:block">
-            <p className="text-[#8d847c] text-[9px] uppercase tracking-widest">Modelo 3D · haz clic en un punto para explorar</p>
-            <p className="text-[#b0a89e] text-[10px] font-medium italic mt-0.5">Integumentum · Piel humana</p>
-          </div>
-
-          {/* Tip note — estilo sticky note como en referencia */}
+          {/* Sticky note tip */}
           <div className="hidden lg:block absolute right-5 top-5 z-10 w-36 rotate-[-3deg]" style={{ background: '#fff2c9', padding: '12px 14px', boxShadow: '0 5px 12px rgba(93,69,43,0.12)', color: '#534a43' }}>
             <div className="flex items-center gap-1.5 mb-1.5">
               <Sparkles size={12} className="text-[#8d6bcc]" />
@@ -502,110 +397,44 @@ export default function SkinExplorerPage() {
             </p>
           </div>
 
-          {/* Loader */}
-          {loading && slowLoad && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center z-20 backdrop-blur-sm" style={{ background: 'rgba(251,246,238,0.7)' }}>
-              <div className="w-12 h-12 rounded-full border border-dashed border-[#deb887] flex items-center justify-center mb-4 animate-spin text-[#deb887]">
-                <Microscope size={20} />
-              </div>
-              <p className="text-[#2f2a27] font-semibold text-sm mb-1" style={{ fontFamily: 'Playfair Display, serif' }}>Preparando el modelo</p>
-              <p className="text-[#8d847c] text-xs mb-4">Cargando estructura de la piel...</p>
-              <div className="w-48 rounded-full h-1.5" style={{ backgroundColor: 'rgba(117,91,70,0.15)' }}>
-                <div className="h-1.5 rounded-full bg-[#deb887] transition-all" style={{ width: `${Math.max(8, Math.round(progress * 100))}%` }} />
-              </div>
-              <p className="text-[#8d847c] text-xs mt-2">{Math.max(8, Math.round(progress * 100))}%</p>
-            </div>
-          )}
-
-          {/* Callout hotspot */}
-          {selected && (
-            <div
-              className="absolute top-0 left-0 z-10 pointer-events-none"
-              ref={calloutCallback as React.RefCallback<HTMLDivElement>}
-              style={{ transform: 'translate3d(-300px, -300px, 0)' }}
-            >
-              <div className="pointer-events-auto rounded-xl p-3 max-w-[185px] shadow-xl" style={{ background: 'rgba(255,252,247,0.95)', backdropFilter: 'blur(10px)', border: `1px solid ${LINE}` }}>
-                <button className="absolute top-2 right-2 text-[#8d847c] hover:text-[#2f2a27] transition-colors" onClick={() => engineRef.current?.clearSelection()}>
-                  <X size={11} />
-                </button>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: selected.color }} />
-                  <b className="text-[#2f2a27] text-xs" style={{ fontFamily: 'Playfair Display, serif' }}>{selected.label}</b>
-                </div>
-                <p className="text-[#8d847c] text-[10px] leading-relaxed pr-3">{selected.detail}</p>
-              </div>
-            </div>
-          )}
-
-          <ul className="sr-only">
-            {SKIN_HOTSPOTS.map((h) => <li key={h.id}>{h.label}: {h.detail}</li>)}
-          </ul>
+          {/* Caption */}
+          <div className="absolute left-4 bottom-5 z-10 pointer-events-none hidden md:block">
+            <p className="text-[#8d847c] text-[9px] uppercase tracking-widest">Modelo 3D · haz clic en un punto para explorar</p>
+            <p className="text-[#b0a89e] text-[10px] font-medium italic mt-0.5">Integumentum · Piel humana</p>
+          </div>
         </section>
 
-        {/* ── Panel derecho — oculto en mobile ─────────────────────────── */}
+        {/* Panel derecho desktop */}
         <aside className="hidden lg:flex flex-col w-72 xl:w-80 flex-shrink-0 overflow-y-auto bg-white/70 backdrop-blur-sm border-l" style={{ borderColor: LINE }}>
           <RightPanelContent />
         </aside>
       </div>
 
-      {/* ── Drawer mobile — slide up desde abajo ─────────────────────── */}
+      {/* ── Drawer mobile ─────────────────────────────────────────────────── */}
       {mobileOpen && (
-        <div
-          className="lg:hidden fixed inset-0 z-50 flex flex-col justify-end"
-          style={{ background: 'rgba(52,39,30,0.24)', backdropFilter: 'blur(5px)' }}
-          onClick={() => setMobileOpen(false)}
-        >
-          <div
-            className="rounded-t-3xl max-h-[76vh] overflow-hidden flex flex-col"
-            style={{ background: '#fffaf3', boxShadow: '0 -20px 60px rgba(64,43,29,0.18)' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Handle */}
-            <div className="flex justify-center pt-2.5 pb-1 flex-shrink-0">
-              <div className="w-10 h-1 rounded-full bg-[#c8b8a2]" />
-            </div>
-
-            {/* Header del drawer */}
-            <div className="flex items-center gap-2 px-4 pb-2 flex-shrink-0 border-b" style={{ borderColor: LINE }}>
-              {(['capas', 'condiciones', 'quiz'] as Tab[]).map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setTab(t)}
-                  className={`flex-1 py-2 text-xs font-semibold uppercase tracking-wide transition-colors ${
-                    tab === t ? 'text-[#deb887] border-b-2 border-[#deb887]' : 'text-[#8d847c]'
-                  }`}
-                >
+        <div className="lg:hidden fixed inset-0 z-50 flex flex-col justify-end" style={{ background: 'rgba(52,39,30,0.24)', backdropFilter: 'blur(5px)' }} onClick={() => setMobileOpen(false)}>
+          <div className="rounded-t-3xl max-h-[76vh] overflow-hidden flex flex-col" style={{ background: '#fffaf3', boxShadow: '0 -20px 60px rgba(64,43,29,0.18)' }} onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-center pt-2.5 pb-1 flex-shrink-0"><div className="w-10 h-1 rounded-full bg-[#c8b8a2]" /></div>
+            <div className="flex items-center flex-shrink-0 border-b px-2" style={{ borderColor: LINE }}>
+              <div className="flex flex-1">{(['capas', 'condiciones', 'quiz'] as Tab[]).map((t) => (
+                <button key={t} onClick={() => setTab(t)} className={`flex-1 py-2.5 text-xs font-semibold uppercase tracking-wide transition-colors ${tab === t ? 'text-[#deb887] border-b-2 border-[#deb887]' : 'text-[#8d847c]'}`}>
                   {t === 'capas' ? 'Capas' : t === 'condiciones' ? 'Cond.' : 'Quiz'}
                 </button>
-              ))}
-              <button onClick={() => setMobileOpen(false)} className="ml-2 p-1 rounded-lg text-[#8d847c] hover:text-[#2f2a27] transition-colors">
-                <X size={18} />
-              </button>
+              ))}</div>
+              <button onClick={() => setMobileOpen(false)} className="p-2 text-[#8d847c]"><X size={18} /></button>
             </div>
-
-            {/* Info del hotspot seleccionado */}
             {selected && hotspotDetail && (
               <div className="px-4 py-3 flex-shrink-0 border-b" style={{ borderColor: LINE, backgroundColor: '#fdf5ea' }}>
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: hotspotDetail.color }} />
                   <span className="text-[#2f2a27] font-semibold text-sm" style={{ fontFamily: 'Playfair Display, serif' }}>{hotspotDetail.title}</span>
-                  <button onClick={() => engineRef.current?.clearSelection()} className="ml-auto text-[#8d847c]"><X size={12} /></button>
+                  <button onClick={() => setSelected(null)} className="ml-auto text-[#8d847c]"><X size={12} /></button>
                 </div>
                 <p className="text-[#6b5e55] text-xs mt-1 leading-relaxed">{hotspotDetail.aestheticNote}</p>
               </div>
             )}
-
-            {/* Contenido de tab */}
-            <div className="overflow-y-auto flex-1">
-              <TabContent />
-            </div>
-
-            {/* Info general si no hay hotspot */}
-            {!selected && (
-              <div className="p-4 flex-shrink-0 border-t" style={{ borderColor: LINE }}>
-                <RightPanelContent />
-              </div>
-            )}
+            <div className="overflow-y-auto flex-1"><TabContent /></div>
+            {!selected && <div className="p-4 flex-shrink-0 border-t" style={{ borderColor: LINE }}><RightPanelContent /></div>}
           </div>
         </div>
       )}
