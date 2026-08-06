@@ -13,8 +13,6 @@ import { Microscope } from 'lucide-react';
 import type { Hotspot } from './skin-data';
 
 const FIT_SIZE      = 3.8;
-const CAMERA_POS    = { x: 0, y: 2.0, z: 11.5 };  // más alto y atrás → modelo centrado y pequeño
-const CAMERA_TARGET = { x: 0, y: 1.2, z: 0 };       // apunta más alto → modelo sube en pantalla
 const PLINTH_Y      = -2.5;
 const DOT_SIZE      = 0.12;
 
@@ -43,6 +41,9 @@ class SkinRenderer {
   private wireframe    = false;
   private clipPlane    = new THREE.Plane(new THREE.Vector3(-1, 0, 0), 0);
 
+  private homePos    = new THREE.Vector3(0, 1, 9);
+  private homeTarget = new THREE.Vector3(0, 0, 0);
+
   constructor(container: HTMLElement, onSelect: OnSelectFn) {
     this.container = container;
     this.onSelect  = onSelect;
@@ -63,7 +64,7 @@ class SkinRenderer {
     this.scene.background = new THREE.Color(0xf7f0e7);
     container.appendChild(this.renderer.domElement);
 
-    this.camera.position.set(CAMERA_POS.x, CAMERA_POS.y, CAMERA_POS.z);
+    this.camera.position.set(0, 1, 9);
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping   = true;
     this.controls.dampingFactor   = 0.055;
@@ -75,7 +76,7 @@ class SkinRenderer {
     this.controls.maxDistance     = 18;
     this.controls.autoRotate      = true;
     this.controls.autoRotateSpeed = 0.65;
-    this.controls.target.set(CAMERA_TARGET.x, CAMERA_TARGET.y, CAMERA_TARGET.z);
+    this.controls.target.set(0, 0, 0);  // será sobreescrito por autoFrame
     this.controls.addEventListener('start', () => { this.dirty = true; });
 
     this.buildScene();
@@ -185,7 +186,33 @@ class SkinRenderer {
     });
 
     this.addHotspots(hotspots, pivot);
+    this.autoFrame(pivot);  // centra la cámara automáticamente
     onProgress(1);
+    this.dirty = true;
+  }
+
+  /** Centra la cámara en el bounding box del pivot — no requiere ajuste manual. */
+  private autoFrame(pivot: THREE.Group) {
+    pivot.updateWorldMatrix(true, true);
+    const box    = new THREE.Box3().setFromObject(pivot);
+    const center = box.getCenter(new THREE.Vector3());
+    const size   = box.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+
+    // Distancia para encuadrar el modelo con FOV vertical y margen del 30%
+    const fov      = this.camera.fov * Math.PI / 180;
+    const distance = (maxDim / 2) / Math.tan(fov / 2) * 1.3;
+
+    const camPos = new THREE.Vector3(center.x, center.y, center.z + distance);
+    this.camera.position.copy(camPos);
+    this.controls.target.copy(center);
+    this.controls.minDistance = distance * 0.4;
+    this.controls.maxDistance = distance * 3;
+    this.controls.update();
+
+    // Guardar para reset()
+    this.homePos.copy(camPos);
+    this.homeTarget.copy(center);
     this.dirty = true;
   }
 
@@ -303,9 +330,9 @@ class SkinRenderer {
 
   reset() {
     const sp = this.camera.position.clone();
-    const ep = new THREE.Vector3(CAMERA_POS.x, CAMERA_POS.y, CAMERA_POS.z);
     const st = this.controls.target.clone();
-    const et = new THREE.Vector3(CAMERA_TARGET.x, CAMERA_TARGET.y, CAMERA_TARGET.z);
+    const ep = this.homePos.clone();
+    const et = this.homeTarget.clone();
     const t0 = performance.now();
     const lerp = () => {
       if (this.disposed) return;
