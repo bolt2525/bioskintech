@@ -1648,6 +1648,28 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, message: 'Tabla de sesiones inicializada' });
     }
 
+    // Re-hashea MASTER_ADMIN_PASSWORD actual en la DB y desbloquea la cuenta
+    if (action === 'resetMasterPassword') {
+      const secret = (req.headers['x-setup-secret'] || req.query.secret || '').trim();
+      const expected = (process.env.ADMIN_SETUP_SECRET || '').trim();
+      if (!expected || secret !== expected)
+        return res.status(403).json({ error: 'Unauthorized — requiere x-setup-secret válido' });
+      const mu = (process.env.MASTER_ADMIN_USERNAME || '').trim();
+      const mp = (process.env.MASTER_ADMIN_PASSWORD || '').trim();
+      if (!mu || !mp) return res.status(400).json({ error: 'MASTER_ADMIN_USERNAME o MASTER_ADMIN_PASSWORD no configurados' });
+      const { hash, salt } = hashPassword(mp);
+      const r = await sql`
+        UPDATE clinic_users
+        SET password_hash=${hash}, salt=${salt}, hash_algo='pbkdf2',
+            failed_attempts=0, locked_until=NULL
+        WHERE username=${mu} AND role='master_admin'
+        RETURNING id, username
+      `;
+      if (!r.rows.length) return res.status(404).json({ error: `master_admin '${mu}' no encontrado en la DB — ejecuta initMultiTenant primero` });
+      await sql`UPDATE admin_sessions SET is_active=false WHERE username=${mu}`;
+      return res.status(200).json({ success: true, message: `Contraseña actualizada y cuenta desbloqueada para '${mu}'` });
+    }
+
     // ── Acciones públicas (no requieren autenticación) ─────────────────────
 
     // Verificar disponibilidad de email (registro)
