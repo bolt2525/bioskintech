@@ -88,19 +88,45 @@ class SkinRenderer {
   // ── Escena idéntica al repo ────────────────────────────────────────────────
 
   private buildScene() {
-    // Iluminación PBR mínima recomendada para ver colores del GLB
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+    // Iluminación PBR balanceada — sin sobre-exposición
+    this.scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+    this.scene.add(new THREE.HemisphereLight(0xfff8ee, 0x444433, 0.6));
 
-    const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
-    this.scene.add(hemi);
+    const key = new THREE.DirectionalLight(0xfff3e7, 1.8);
+    key.position.set(4.8, 6.5, 6.8);
+    this.scene.add(key);
 
-    const dir = new THREE.DirectionalLight(0xffffff, 1.2);
-    dir.position.set(5, 8, 6);
-    this.scene.add(dir);
-
-    const fill = new THREE.DirectionalLight(0xffeedd, 0.5);
-    fill.position.set(-4, 2, -4);
+    const fill = new THREE.DirectionalLight(0xe6ecff, 0.7);
+    fill.position.set(-4.5, 1.2, 5.2);
     this.scene.add(fill);
+
+    const rim = new THREE.DirectionalLight(0xffb7a5, 0.8);
+    rim.position.set(-4, 3.5, -5.5);
+    this.scene.add(rim);
+
+    // Env map PMREM (warm-cream) — esencial para materiales PBR con metalness>0
+    const w = 16, h = 32;
+    const data = new Uint8Array(w * h * 4);
+    const top = new THREE.Color(0xfff3e4);
+    const bot = new THREE.Color(0x6b4f45);
+    const mix = new THREE.Color();
+    for (let y = 0; y < h; y++) {
+      mix.copy(bot).lerp(top, Math.pow(1 - y / (h - 1), 0.7));
+      for (let x = 0; x < w; x++) {
+        const i = (y * w + x) * 4;
+        data[i]   = Math.round(mix.r * 255);
+        data[i+1] = Math.round(mix.g * 255);
+        data[i+2] = Math.round(mix.b * 255);
+        data[i+3] = 255;
+      }
+    }
+    const src = new THREE.DataTexture(data, w, h);
+    src.mapping     = THREE.EquirectangularReflectionMapping;
+    src.colorSpace  = THREE.SRGBColorSpace;
+    src.needsUpdate = true;
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    this.scene.environment = pmrem.fromEquirectangular(src).texture;
+    pmrem.dispose(); src.dispose();
 
     // Plinto
     const plinth = new THREE.Mesh(
@@ -141,8 +167,9 @@ class SkinRenderer {
     this.pivot = pivot;
     pivot.updateWorldMatrix(true, true);
 
-    // MUY IMPORTANTE: no reemplazar/sobreescribir el material del GLB.
-    // Solo asegurar colorSpace correcto en el mapa de color y activar update.
+    // Skin es material dieléctrico (no metálico). El GLB no especifica metallicFactor
+    // por lo que Three.js defaultea a 1.0 (totalmente metálico) — incorrecto para tejido.
+    // Sólo corregir metalness y asegurar colorSpace; no tocar roughness ni otros valores.
     model.traverse((child) => {
       if (!(child instanceof THREE.Mesh)) return;
       child.frustumCulled = false;
@@ -151,6 +178,9 @@ class SkinRenderer {
 
       const mats = Array.isArray(child.material) ? child.material : [child.material];
       mats.forEach((mat: any) => {
+        // metalness=0: piel es dieléctrica, no metálica
+        mat.metalness        = 0;
+        mat.envMapIntensity  = 0.4;
         if (mat.map) {
           mat.map.colorSpace = THREE.SRGBColorSpace;
           mat.map.needsUpdate = true;
