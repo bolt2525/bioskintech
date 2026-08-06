@@ -54,6 +54,8 @@ function AdminRoutes() {
           <Route path="/" element={<Navigate to="/admin/login" replace />} />
 
           <Route path="/admin/login"           element={<AdminLogin />} />
+          {/* Ruta pública — accesible desde la página de login, sin auth requerida */}
+          <Route path="/skin-explorer"          element={<SkinExplorerPage />} />
           <Route path="/admin/register"         element={<AdminRegister />} />
           <Route path="/admin/setup-password"   element={<AdminSetupPassword />} />
           <Route path="/admin/recover"          element={<AdminSetupPassword />} />
