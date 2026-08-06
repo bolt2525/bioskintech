@@ -13,8 +13,8 @@ import { Microscope } from 'lucide-react';
 import type { Hotspot } from './skin-data';
 
 const FIT_SIZE      = 3.8;
-const CAMERA_POS    = { x: 0, y: 1.4, z: 11.0 };  // más atrás y alto → modelo más pequeño y centrado
-const CAMERA_TARGET = { x: 0, y: 0.6, z: 0 };       // apunta más arriba → modelo sube en pantalla
+const CAMERA_POS    = { x: 0, y: 2.0, z: 11.5 };  // más alto y atrás → modelo centrado y pequeño
+const CAMERA_TARGET = { x: 0, y: 1.2, z: 0 };       // apunta más alto → modelo sube en pantalla
 const PLINTH_Y      = -2.5;
 const DOT_SIZE      = 0.12;
 
@@ -67,9 +67,12 @@ class SkinRenderer {
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping   = true;
     this.controls.dampingFactor   = 0.055;
-    this.controls.enablePan       = false;
+    this.controls.enablePan       = true;   // habilita pan con click derecho / dos dedos
+    this.controls.panSpeed        = 0.8;
+    this.controls.mouseButtons    = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+    this.controls.touches         = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
     this.controls.minDistance     = 5;
-    this.controls.maxDistance     = 15;
+    this.controls.maxDistance     = 18;
     this.controls.autoRotate      = true;
     this.controls.autoRotateSpeed = 0.65;
     this.controls.target.set(CAMERA_TARGET.x, CAMERA_TARGET.y, CAMERA_TARGET.z);
