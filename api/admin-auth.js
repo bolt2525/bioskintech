@@ -1016,7 +1016,7 @@ async function deleteUser(requestUser, userId) {
 async function sendAuthEmail(to, subject, html) {
   const user = (process.env.EMAIL_USER || '').trim();
   const pass = (process.env.EMAIL_PASS || '').trim();
-  if (!user || !pass) { console.warn('⚠️  EMAIL_USER/EMAIL_PASS no configurados — email no enviado'); return; }
+  if (!user || !pass) throw new Error('EMAIL_USER/EMAIL_PASS no configurados en variables de entorno');
   const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: { user, pass },
