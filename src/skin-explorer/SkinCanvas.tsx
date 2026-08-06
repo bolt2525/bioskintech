@@ -167,9 +167,9 @@ class SkinRenderer {
     this.pivot = pivot;
     pivot.updateWorldMatrix(true, true);
 
-    // Skin es material dieléctrico (no metálico). El GLB no especifica metallicFactor
-    // por lo que Three.js defaultea a 1.0 (totalmente metálico) — incorrecto para tejido.
-    // Sólo corregir metalness y asegurar colorSpace; no tocar roughness ni otros valores.
+    // Diagnóstico: usar emissiveMap para ver la textura SIN depender de iluminación.
+    // Si los colores aparecen → mapa cargado pero iluminación/material mal.
+    // Si sigue blanco → mat.map es null (textura no se cargó).
     model.traverse((child) => {
       if (!(child instanceof THREE.Mesh)) return;
       child.frustumCulled = false;
@@ -178,12 +178,23 @@ class SkinRenderer {
 
       const mats = Array.isArray(child.material) ? child.material : [child.material];
       mats.forEach((mat: any) => {
-        // metalness=0: piel es dieléctrica, no metálica
-        mat.metalness        = 0;
-        mat.envMapIntensity  = 0.4;
+        console.log('[DermoAtlas] mat.type:', mat.type, '| mat.map:', !!mat.map,
+          '| metalness:', mat.metalness, '| roughness:', mat.roughness);
+
+        mat.metalness       = 0;
+        mat.roughness       = 0.8;
+        mat.envMapIntensity = 0.4;
+
         if (mat.map) {
-          mat.map.colorSpace = THREE.SRGBColorSpace;
-          mat.map.needsUpdate = true;
+          mat.map.colorSpace    = THREE.SRGBColorSpace;
+          mat.map.needsUpdate   = true;
+          // Mostrar textura como emissive (independiente de luz) para verificar colores
+          mat.emissiveMap       = mat.map;
+          mat.emissive          = new THREE.Color(0.15, 0.15, 0.15);
+          mat.emissiveIntensity = 1;
+        } else {
+          // Si no hay mapa → rojo visible para diagnosticar
+          mat.color = new THREE.Color(1, 0, 0);
         }
         mat.needsUpdate = true;
       });
