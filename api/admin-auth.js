@@ -1024,6 +1024,44 @@ async function sendAuthEmail(to, subject, html) {
   await transporter.sendMail({ from: `"BIOSKIN Admin" <${user}>`, to, subject, html });
 }
 
+async function sendWelcomeEmail(userEmail, firstName, username, clinicName, clinicGmail) {
+  const appUrl = (process.env.APP_URL || 'https://bioskintechapp.com').replace(/\/$/, '');
+  const loginUrl = `${appUrl}/gestionestetica/admin/login?redirect=system-status`;
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#333;">
+      <div style="background:#deb887;padding:24px;text-align:center;border-radius:8px 8px 0 0;">
+        <h1 style="color:white;margin:0;font-size:26px;font-weight:bold;">BIOSKIN</h1>
+        <p style="color:rgba(255,255,255,0.9);margin:6px 0 0;font-size:13px;">Sistema de Gestión Clínica</p>
+      </div>
+      <div style="padding:30px;background:white;border:1px solid #eee;border-top:none;">
+        <h2 style="color:#222;margin-top:0;">¡Bienvenido, ${firstName}! 🎉</h2>
+        <p>Tu clínica <strong>${clinicName}</strong> ha sido registrada exitosamente en BIOSKIN.</p>
+
+        <div style="background:#fdf8f0;border:1px solid #deb887;border-radius:8px;padding:18px;margin:20px 0;">
+          <h3 style="color:#c9a876;margin-top:0;font-size:14px;">Tus datos de acceso</h3>
+          <p style="margin:4px 0;font-size:14px;"><strong>URL:</strong> <a href="${appUrl}/gestionestetica/admin/login" style="color:#deb887;">${appUrl}/gestionestetica/admin/login</a></p>
+          <p style="margin:4px 0;font-size:14px;"><strong>Usuario:</strong> <code style="background:#f5f5f5;padding:2px 6px;border-radius:4px;">${username}</code></p>
+          <p style="margin:4px 0;font-size:14px;"><strong>Email de login:</strong> ${userEmail}</p>
+          <p style="color:#e55;font-size:12px;margin-top:10px;">⚠️ Guarda estos datos. Los necesitarás para acceder a tu cuenta.</p>
+        </div>
+
+        <div style="background:#f0f7ff;border:1px solid #b3d4f5;border-radius:8px;padding:18px;margin:20px 0;">
+          <h3 style="color:#1a6bb5;margin-top:0;font-size:14px;">📅 Conecta tu Gmail con Google Calendar</h3>
+          <p style="font-size:14px;">Para enviar correos de agendamiento y sincronizar citas con Google Calendar, conecta tu cuenta: <strong>${clinicGmail}</strong></p>
+          <a href="${loginUrl}" style="display:inline-block;background:#deb887;color:white;padding:11px 22px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:14px;margin-top:10px;">Conectar Gmail →</a>
+          <p style="color:#888;font-size:12px;margin-top:12px;">También puedes hacerlo luego desde: <b>Panel → Estado del Sistema</b></p>
+        </div>
+
+        <p style="color:#999;font-size:12px;border-top:1px solid #eee;padding-top:15px;margin-top:20px;">
+          Si este correo llegó a Spam, márcalo como "No es spam" para futuros mensajes.<br>
+          ¿Necesitas ayuda? WhatsApp: +593 984 232 889
+        </p>
+      </div>
+    </div>
+  `;
+  await sendAuthEmail(userEmail, `¡Bienvenido a BIOSKIN! Tu clínica "${clinicName}" está lista`, html);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Google OAuth — login / registro de usuarios
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1143,21 +1181,41 @@ async function validateRegistrationCode(code) {
  * Requiere código de registro válido O subscription_id de pago confirmado.
  */
 async function registerClinic(body) {
-  const { code, subscription_id, email, password, first_name, last_name, gentilicio, profession,
-          clinic_name, clinic_phone, clinic_address, clinic_city, clinic_country, clinic_ruc, clinic_website } = body;
+  const { code, subscription_id, email, password, username: rawUsername, clinic_email,
+          first_name, last_name, gentilicio, profession,
+          clinic_name, clinic_phone, clinic_address, clinic_city, clinic_country,
+          clinic_ruc, clinic_website, cedula_profesional, especialidad } = body;
 
   if (!email?.trim() || !password?.trim() || !first_name?.trim() || !last_name?.trim())
     return { error: 'email, password, first_name y last_name son requeridos' };
-  if (password.length < 8)
-    return { error: 'La contraseña debe tener al menos 8 caracteres' };
+  if (!rawUsername?.trim())
+    return { error: 'El nombre de usuario es requerido' };
   if (!clinic_name?.trim())
     return { error: 'El nombre de la clínica es requerido' };
 
-  const emailNorm = email.trim().toLowerCase();
+  // Validar formato de contraseña: 8+ chars, al menos 1 letra y 1 número
+  if (password.length < 8) return { error: 'La contraseña debe tener al menos 8 caracteres' };
+  if (!/[a-zA-Z]/.test(password) || !/[0-9]/.test(password))
+    return { error: 'La contraseña debe contener al menos una letra y un número' };
 
-  // Verificar email disponible
-  const existing = await sql`SELECT id FROM clinic_users WHERE username=${emailNorm}`;
-  if (existing.rows.length) return { error: 'Ya existe una cuenta con ese correo' };
+  const emailNorm    = email.trim().toLowerCase();
+  const usernameNorm = rawUsername.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
+
+  // Validar email
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailNorm))
+    return { error: 'El correo electrónico no es válido' };
+
+  // Validar username
+  if (usernameNorm.length < 3 || usernameNorm.length > 20)
+    return { error: 'El nombre de usuario debe tener entre 3 y 20 caracteres' };
+
+  // Verificar email disponible (por email y username)
+  const existingEmail = await sql`SELECT id FROM clinic_users WHERE email = ${emailNorm}`;
+  if (existingEmail.rows.length) return { error: 'Ya existe una cuenta con ese correo electrónico' };
+
+  // Verificar username disponible
+  const existingUser = await sql`SELECT id FROM clinic_users WHERE username = ${usernameNorm}`;
+  if (existingUser.rows.length) return { error: 'El nombre de usuario ya está en uso. Elige otro.' };
 
   let codeRow = null;
   let planFeatures = ALL_FEATURES;
@@ -1189,14 +1247,15 @@ async function registerClinic(body) {
     return { error: 'Se requiere un código de registro o un pago confirmado' };
   }
 
-  // Crear clínica
+  // Crear clínica (usar clinic_email si se proporcionó, si no el email del usuario)
   const slug = clinic_name.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-');
+  const clinicContactEmail = clinic_email?.trim().toLowerCase() || emailNorm;
   const subExpires = new Date(Date.now() + 365 * 86400000); // 365 días desde hoy
   let clinicId;
   try {
     const clinicR = await sql`
       INSERT INTO clinics (name, slug, email, phone, address, city, country, ruc, website, subscription_expires_at)
-      VALUES (${clinic_name.trim()}, ${slug}, ${emailNorm}, ${clinic_phone||null}, ${clinic_address||null}, ${clinic_city||null}, ${clinic_country||'Ecuador'}, ${clinic_ruc||null}, ${clinic_website||null}, ${subExpires})
+      VALUES (${clinic_name.trim()}, ${slug}, ${clinicContactEmail}, ${clinic_phone||null}, ${clinic_address||null}, ${clinic_city||null}, ${clinic_country||'Ecuador'}, ${clinic_ruc||null}, ${clinic_website||null}, ${subExpires})
       RETURNING id
     `;
     clinicId = clinicR.rows[0].id;
@@ -1205,16 +1264,17 @@ async function registerClinic(body) {
     throw e;
   }
 
-  // Crear usuario admin de la clínica
+  // Crear usuario admin de la clínica (username = nombre de usuario personalizado)
   const { hash, salt } = hashPassword(password);
   const fullName = `${first_name.trim()} ${last_name.trim()}`;
   const userR = await sql`
     INSERT INTO clinic_users
       (clinic_id, username, password_hash, salt, hash_algo, full_name, email,
-       first_name, last_name, gentilicio, profession, role, access_scope)
+       first_name, last_name, gentilicio, profession, cedula_profesional, especialidad, role, access_scope)
     VALUES
-      (${clinicId}, ${emailNorm}, ${hash}, ${salt}, 'pbkdf2', ${fullName}, ${emailNorm},
-       ${first_name.trim()}, ${last_name.trim()}, ${gentilicio||null}, ${profession||null}, 'clinic_admin', ${accessScope})
+      (${clinicId}, ${usernameNorm}, ${hash}, ${salt}, 'pbkdf2', ${fullName}, ${emailNorm},
+       ${first_name.trim()}, ${last_name.trim()}, ${gentilicio||null}, ${profession||null},
+       ${cedula_profesional||null}, ${especialidad||null}, 'clinic_admin', ${accessScope})
     RETURNING id
   `;
   const userId = userR.rows[0].id;
@@ -1229,17 +1289,13 @@ async function registerClinic(body) {
     await sql`UPDATE registration_codes SET used_by=${userId}, used_at=NOW(), is_active=false WHERE id=${codeRow.id}`;
   }
 
-  // Crear sesión
-  const token = generateToken();
-  const exp   = new Date(Date.now() + SESSION_EXPIRY_MS);
-  await sql`
-    INSERT INTO admin_sessions (session_token, username, expires_at, clinic_user_id, role, clinic_id, access_scope)
-    VALUES (${token}, ${emailNorm}, ${exp}, ${userId}, 'clinic_admin', ${clinicId}, ${accessScope})
-  `;
+  // Enviar email de bienvenida (sin bloquear la respuesta si falla)
+  sendWelcomeEmail(emailNorm, first_name.trim(), usernameNorm, clinic_name.trim(), clinicContactEmail)
+    .catch(e => console.error('[register] sendWelcomeEmail error:', e.message));
 
   return {
-    success: true, sessionToken: token, expiresAt: exp,
-    user: { id: userId, username: emailNorm, full_name: fullName, email: emailNorm, role: 'clinic_admin', clinic_id: clinicId, access_scope: accessScope, first_name, last_name, gentilicio, profession },
+    success: true,
+    user: { username: usernameNorm, email: emailNorm, full_name: fullName, role: 'clinic_admin', clinic_id: clinicId },
     clinic: { id: clinicId, name: clinic_name.trim(), slug },
     features: planFeatures,
   };
@@ -1628,46 +1684,6 @@ export default async function handler(req, res) {
       return res.status(result.error ? 400 : 201).json(result);
     }
 
-    // Google OAuth — obtener URL de autenticación
-    if (action === 'googleAuthUrl') {
-      const purpose = req.query.purpose || 'login';
-      if (!['login', 'register'].includes(purpose)) return res.status(400).json({ error: 'purpose inválido' });
-      const result = await getGoogleAuthUrl(purpose);
-      return res.status(result.error ? 503 : 200).json(result);
-    }
-
-    // Google OAuth — callback (redirige al SPA con token)
-    if (action === 'googleCallback') {
-      const code  = req.query.code  || '';
-      const state = req.query.state || '';
-      const error = req.query.error || '';
-      const appUrl = (process.env.APP_URL || `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app'}`).trim();
-
-      if (error) return res.redirect(`${appUrl}/admin/login?googleError=${encodeURIComponent(error)}`);
-
-      const ip = (req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || '').split(',')[0].trim();
-      const ua = req.headers['user-agent'] || '';
-      const result = await handleGoogleCallback(code, state, ip, ua);
-
-      if (result.success) {
-        // Redirigir al SPA con token en query param (se lee desde AdminLogin y se guarda)
-        const u = result.user;
-        const dest = u.role === 'master_admin'
-          ? `/admin/master`
-          : u.clinic_id ? `/admin/${u.clinic_slug || ''}` : '/admin';
-        return res.redirect(`${appUrl}${dest}?token=${result.sessionToken}`);
-      }
-      if (result.needsClinicSetup) {
-        // Nuevo usuario Google → redirigir a registro con datos prellenados
-        const gd = encodeURIComponent(JSON.stringify(result.googleData));
-        return res.redirect(`${appUrl}/admin/register?googleData=${gd}`);
-      }
-      if (result.needsRegister) {
-        return res.redirect(`${appUrl}/admin/login?googleError=${encodeURIComponent('No hay cuenta. Regístrate primero.')}`);
-      }
-      return res.redirect(`${appUrl}/admin/login?googleError=${encodeURIComponent(result.error || 'Error al iniciar sesión con Google')}`);
-    }
-
     // Planes de suscripción disponibles (público)
     if (action === 'getPlans') {
       return res.status(200).json({ plans: SUBSCRIPTION_PLANS });
@@ -1720,8 +1736,17 @@ export default async function handler(req, res) {
     if (action === 'checkEmail') {
       const email = (req.query.email || req.body?.email || '').trim().toLowerCase();
       if (!email) return res.status(400).json({ error: 'email requerido' });
-      const r = await sql`SELECT id FROM clinic_users WHERE username = ${email}`;
+      // Verifica tanto el campo email como username (algunos usuarios tienen email como username)
+      const r = await sql`SELECT id FROM clinic_users WHERE email = ${email} OR username = ${email}`;
       return res.status(200).json({ available: r.rows.length === 0 });
+    }
+
+    // Verificar username disponible (público — sin autenticación requerida)
+    if (action === 'checkUsernamePublic') {
+      const u = (req.query.username || '').trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
+      if (!u || u.length < 3) return res.status(400).json({ error: 'username inválido (mín. 3 caracteres, solo letras, números y _)' });
+      const r = await sql`SELECT id FROM clinic_users WHERE username = ${u}`;
+      return res.status(200).json({ available: r.rows.length === 0, username: u });
     }
 
     if (action === 'validateCode') {
@@ -1746,33 +1771,6 @@ export default async function handler(req, res) {
       if (!invToken) return res.status(400).json({ error: 'token requerido' });
       const result = await useInviteLink(invToken, { ...userData });
       return res.status(result.error ? 400 : 201).json(result);
-    }
-
-    if (action === 'googleAuthUrl') {
-      const purpose = req.query.purpose || 'login';
-      const result = await getGoogleAuthUrl(purpose);
-      return res.status(result.error ? 503 : 200).json(result);
-    }
-
-    if (action === 'googleCallback') {
-      // Google redirige con GET: /api/admin-auth?action=googleCallback&code=...&state=...
-      const code  = req.query.code;
-      const state = req.query.state;
-      const ip    = (req.headers['x-forwarded-for'] || '').split(',')[0].trim();
-      const ua    = req.headers['user-agent'] || '';
-      const appUrl = (process.env.APP_URL || `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app'}`).trim();
-      const base   = `${appUrl}/gestionestetica/admin`;
-
-      const result = await handleGoogleCallback(code, state, ip, ua);
-
-      if (result.success) {
-        return res.redirect(302, `${base}/login?token=${result.sessionToken}`);
-      }
-      if (result.needsClinicSetup || result.needsRegister) {
-        const data = encodeURIComponent(JSON.stringify(result.googleData || {}));
-        return res.redirect(302, `${base}/register?googleData=${data}`);
-      }
-      return res.redirect(302, `${base}/login?googleError=${encodeURIComponent(result.error || 'Error de Google')}`);
     }
 
     // ── Planes de suscripción (público) ───────────────────────────────────
@@ -1889,9 +1887,14 @@ export default async function handler(req, res) {
 
     // ── OAuth Google por clínica ───────────────────────────────────────────
     if (action === 'oauthStart') {
-      if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master_admin' });
       const { clinicId } = req.body || {};
       if (!clinicId) return res.status(400).json({ error: 'clinicId requerido' });
+      const targetClinicId = parseInt(clinicId);
+      // clinic_admin puede conectar solo su propia clínica; master_admin puede conectar cualquiera
+      if (user.role === 'clinic_admin' && user.clinic_id !== targetClinicId)
+        return res.status(403).json({ error: 'Solo puedes conectar tu propia clínica' });
+      if (!requireRole(user, 'master_admin', 'clinic_admin'))
+        return res.status(403).json({ error: 'Sin permiso' });
       const clientId = (process.env.GOOGLE_CLIENT_ID || '').trim();
       if (!clientId) return res.status(503).json({ error: 'GOOGLE_CLIENT_ID no configurado' });
       const redirectUri = `https://${(process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app').trim()}/api/calendar`;
@@ -1922,6 +1925,64 @@ export default async function handler(req, res) {
       if (!clinicId) return res.status(400).json({ error: 'clinicId requerido' });
       await sql`DELETE FROM clinic_oauth_tokens WHERE clinic_id = ${clinicId}`;
       return res.status(200).json({ success: true, message: 'Conexión OAuth revocada' });
+    }
+
+    // Estado de conexión del email de la clínica (clinic_admin propia clínica o master_admin)
+    if (action === 'getEmailConnectionStatus') {
+      const clinicId = parseInt(req.query.clinicId || user.clinic_id || 0);
+      if (!clinicId) return res.status(400).json({ error: 'clinicId requerido' });
+      if (user.role === 'clinic_admin' && clinicId !== user.clinic_id)
+        return res.status(403).json({ error: 'Sin permiso' });
+      if (!requireRole(user, 'master_admin', 'clinic_admin'))
+        return res.status(403).json({ error: 'Sin permiso' });
+      const [tokRow, clinicRow] = await Promise.all([
+        sql`SELECT email, connected_at FROM clinic_oauth_tokens WHERE clinic_id = ${clinicId}`,
+        sql`SELECT email as clinic_email FROM clinics WHERE id = ${clinicId}`,
+      ]);
+      return res.status(200).json({
+        success: true,
+        connected:    tokRow.rows.length > 0,
+        email:        tokRow.rows[0]?.email || null,
+        connected_at: tokRow.rows[0]?.connected_at || null,
+        clinic_email: clinicRow.rows[0]?.clinic_email || null,
+      });
+    }
+
+    // Reenviar enlace de conexión de email por correo
+    if (action === 'sendEmailConnectionLink') {
+      const clinicId = parseInt(req.body?.clinicId || user.clinic_id || 0);
+      if (!clinicId) return res.status(400).json({ error: 'clinicId requerido' });
+      if (user.role === 'clinic_admin' && clinicId !== user.clinic_id)
+        return res.status(403).json({ error: 'Solo puedes reenviar para tu propia clínica' });
+      if (!requireRole(user, 'master_admin', 'clinic_admin'))
+        return res.status(403).json({ error: 'Sin permiso' });
+      // Obtener datos de la clínica y admin
+      const r = await sql`
+        SELECT c.name, c.email as clinic_email, u.email as admin_email, u.first_name
+        FROM clinics c
+        JOIN clinic_users u ON u.clinic_id = c.id
+        WHERE c.id = ${clinicId} AND u.role = 'clinic_admin' AND u.is_active = true
+        ORDER BY u.created_at LIMIT 1
+      `;
+      if (!r.rows.length) return res.status(404).json({ error: 'Clínica no encontrada' });
+      const clinic = r.rows[0];
+      const appUrl = (process.env.APP_URL || 'https://bioskintechapp.com').replace(/\/$/, '');
+      const loginUrl = `${appUrl}/gestionestetica/admin/login?redirect=system-status`;
+      const html = `
+        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#333;">
+          <div style="background:#deb887;padding:20px;text-align:center;border-radius:8px 8px 0 0;">
+            <h1 style="color:white;margin:0;font-size:24px;">BIOSKIN</h1>
+          </div>
+          <div style="padding:28px;background:white;border:1px solid #eee;border-top:none;">
+            <h2 style="color:#222;margin-top:0;">Conecta el Gmail de tu clínica</h2>
+            <p>Hola ${clinic.first_name}, recuerda conectar tu cuenta de Gmail <strong>${clinic.clinic_email || ''}</strong> para activar Google Calendar y correos automáticos de citas.</p>
+            <a href="${loginUrl}" style="display:inline-block;background:#deb887;color:white;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:bold;margin-top:10px;">Conectar Gmail →</a>
+            <p style="color:#888;font-size:12px;margin-top:15px;">Ir al panel → Estado del Sistema → Conectar Gmail</p>
+          </div>
+        </div>
+      `;
+      await sendAuthEmail(clinic.admin_email, 'BIOSKIN: Conecta el Gmail de tu clínica', html);
+      return res.status(200).json({ success: true, message: 'Enlace enviado por correo' });
     }
 
     // ── Configuración por clínica ─────────────────────────────────────────

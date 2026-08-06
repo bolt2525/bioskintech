@@ -758,6 +758,47 @@ export default function AdminRegister() {
         </div>
       </div>
 
+      {/* ── Modal de confirmación ──────────────────────────────────────────── */}
+      {showConfirm && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full">
+            <div className="h-1 bg-gradient-to-r from-[#deb887] via-[#e8c98a] to-[#deb887] rounded-t-2xl" />
+            <div className="p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-gray-900">Confirmar registro</h3>
+                <button onClick={() => setShowConfirm(false)} className="text-gray-400 hover:text-gray-600">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="bg-gray-50 rounded-xl p-4 space-y-2 text-sm text-gray-700">
+                <p><span className="font-medium text-gray-500">Clínica:</span> {clinicName}</p>
+                {clinicEmail && <p><span className="font-medium text-gray-500">Gmail clínica:</span> {clinicEmail}</p>}
+                <p><span className="font-medium text-gray-500">Nombre:</span> {firstName} {lastName}</p>
+                <p><span className="font-medium text-gray-500">Usuario:</span> <span className="font-mono">{username}</span></p>
+                <p><span className="font-medium text-gray-500">Email login:</span> {email}</p>
+              </div>
+
+              <p className="text-xs text-gray-400">Verifica que los datos sean correctos antes de crear tu cuenta.</p>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowConfirm(false)}
+                  className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 transition-colors">
+                  Editar
+                </button>
+                <button
+                  onClick={handleConfirmRegister}
+                  disabled={loading}
+                  className="flex-1 py-2.5 bg-[#deb887] text-white rounded-xl text-sm font-semibold hover:bg-[#c9a876] disabled:opacity-50 transition-colors">
+                  {loading ? 'Creando...' : 'Confirmar y crear'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Modal WhatsApp ─────────────────────────────────────────────────── */}
       {waModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
@@ -775,9 +816,7 @@ export default function AdminRegister() {
               </div>
 
               <p className="text-xs text-gray-500">
-                {linkOpened
-                  ? 'Completa tus datos y te contactaremos para validar tu pago o resolver tus dudas.'
-                  : 'Déjanos tus datos y un asesor te atenderá directamente por WhatsApp.'}
+                Déjanos tus datos y un asesor te atenderá directamente por WhatsApp.
               </p>
 
               <div className="space-y-3">

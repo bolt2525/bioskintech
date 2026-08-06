@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Activity, Database, Mail, Calendar, CheckCircle2, XCircle,
   Loader2, RefreshCw, ChevronDown, ChevronUp, Server,
-  Shield, Clock, User, Info
+  Shield, Clock, User, Info, Link2, Link2Off, Send
 } from 'lucide-react';
 import AdminLayout from '../components/layout/AdminLayout';
 import { useAuth } from '../hooks/useAuth';
@@ -124,12 +124,20 @@ const ServiceCard = ({
 export default function AdminSystemStatus() {
   const { user } = useAuth();
   const isMaster = user?.role === 'master_admin';
+  const isClinicAdmin = user?.role === 'clinic_admin';
 
   const [statusData, setStatusData] = useState<StatusData | null>(null);
   const [loadingAll, setLoadingAll] = useState(false);
   const [loadingCheck, setLoadingCheck] = useState<Record<string, boolean>>({});
   const [lastRun, setLastRun] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Estado de conexión de email de la clínica
+  const [emailConn, setEmailConn] = useState<{
+    connected: boolean; email: string | null; connected_at: string | null; clinic_email: string | null;
+  } | null>(null);
+  const [loadingEmailConn, setLoadingEmailConn] = useState(false);
+  const [emailConnMsg, setEmailConnMsg] = useState<string | null>(null);
 
   const runAllChecks = useCallback(async () => {
     setLoadingAll(true);
@@ -147,6 +155,48 @@ export default function AdminSystemStatus() {
     }
   }, []);
 
+  const fetchEmailConnectionStatus = useCallback(async () => {
+    if (!isClinicAdmin || !user?.clinic_id) return;
+    setLoadingEmailConn(true);
+    try {
+      const res = await fetch$(`/api/admin-auth?action=getEmailConnectionStatus&clinicId=${user.clinic_id}`);
+      const data = await res.json();
+      if (data.success) setEmailConn(data);
+    } catch { /* non-fatal */ }
+    finally { setLoadingEmailConn(false); }
+  }, [isClinicAdmin, user?.clinic_id]);
+
+  const handleConnectEmail = async () => {
+    if (!user?.clinic_id) return;
+    setLoadingEmailConn(true);
+    try {
+      const res = await fetch('/api/admin-auth?action=oauthStart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken') || ''}` },
+        body: JSON.stringify({ clinicId: user.clinic_id }),
+      });
+      const d = await res.json();
+      if (d.url) window.location.href = d.url;
+      else setEmailConnMsg(d.error || 'Error al iniciar conexión');
+    } catch { setEmailConnMsg('Error de conexión'); }
+    finally { setLoadingEmailConn(false); }
+  };
+
+  const handleResendConnectionLink = async () => {
+    if (!user?.clinic_id) return;
+    setLoadingEmailConn(true);
+    try {
+      const res = await fetch('/api/admin-auth?action=sendEmailConnectionLink', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken') || ''}` },
+        body: JSON.stringify({ clinicId: user.clinic_id }),
+      });
+      const d = await res.json();
+      setEmailConnMsg(d.success ? '✓ Enlace enviado a tu correo' : (d.error || 'Error al enviar'));
+    } catch { setEmailConnMsg('Error de conexión'); }
+    finally { setLoadingEmailConn(false); }
+  };
+
   const runSingleCheck = async (type: string) => {
     setLoadingCheck(p => ({ ...p, [type]: true }));
     try {
@@ -163,7 +213,10 @@ export default function AdminSystemStatus() {
     }
   };
 
-  useEffect(() => { runAllChecks(); }, [runAllChecks]);
+  useEffect(() => {
+    runAllChecks();
+    if (isClinicAdmin) fetchEmailConnectionStatus();
+  }, [runAllChecks, fetchEmailConnectionStatus, isClinicAdmin]);
 
   const allOk = statusData
     ? Object.values(statusData.checks).every(c => c.success)
@@ -255,6 +308,78 @@ export default function AdminSystemStatus() {
               loading={!!loadingCheck['calendar'] || loadingAll}
             />
           )}
+
+          {/* Gmail de la clínica — solo clinic_admin */}
+          {isClinicAdmin && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className={`bg-white rounded-2xl border p-5 shadow-sm transition-all ${
+                emailConn === null ? 'border-gray-200'
+                : emailConn.connected ? 'border-emerald-200'
+                : 'border-amber-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  <div className={`p-2.5 rounded-xl ${emailConn?.connected ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>
+                    {emailConn?.connected ? <Link2 className="w-5 h-5" /> : <Link2Off className="w-5 h-5" />}
+                  </div>
+                  <div>
+                    <p className="font-semibold text-gray-800">Gmail de la clínica</p>
+                    {emailConn?.email && <p className="text-xs text-gray-400">{emailConn.email}</p>}
+                    {!emailConn?.connected && emailConn?.clinic_email && (
+                      <p className="text-xs text-gray-400">Registrado: {emailConn.clinic_email}</p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {emailConn !== null && (
+                    <span className={`px-2.5 py-1 rounded-full text-xs font-medium border flex items-center gap-1 ${
+                      emailConn.connected
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-amber-50 text-amber-700 border-amber-200'
+                    }`}>
+                      {emailConn.connected
+                        ? <><CheckCircle2 className="w-3.5 h-3.5" /> Conectado</>
+                        : <><XCircle className="w-3.5 h-3.5" /> Desconectado</>
+                      }
+                    </span>
+                  )}
+                  {emailConn === null && <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-500">Sin verificar</span>}
+                  <button
+                    onClick={fetchEmailConnectionStatus}
+                    disabled={loadingEmailConn}
+                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+                    title="Verificar"
+                  >
+                    {loadingEmailConn ? <Loader2 className="w-4 h-4 animate-spin text-gray-400" /> : <RefreshCw className="w-4 h-4 text-gray-500" />}
+                  </button>
+                </div>
+              </div>
+
+              {emailConn !== null && !emailConn.connected && (
+                <div className="flex gap-2 mt-2">
+                  <button
+                    onClick={handleConnectEmail}
+                    disabled={loadingEmailConn}
+                    className="flex-1 py-2 bg-[#deb887] text-white rounded-lg text-xs font-semibold hover:bg-[#c9a876] disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5">
+                    <Link2 className="w-3.5 h-3.5" /> Conectar ahora
+                  </button>
+                  <button
+                    onClick={handleResendConnectionLink}
+                    disabled={loadingEmailConn}
+                    className="flex-1 py-2 border border-gray-200 text-gray-600 rounded-lg text-xs font-medium hover:bg-gray-50 disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5">
+                    <Send className="w-3.5 h-3.5" /> Reenviar link por correo
+                  </button>
+                </div>
+              )}
+
+              {emailConnMsg && (
+                <p className="mt-2 text-xs text-gray-500">{emailConnMsg}</p>
+              )}
+            </motion.div>
+          )}
         </div>
 
         {/* Info del sistema */}
@@ -289,7 +414,7 @@ export default function AdminSystemStatus() {
           </div>
         </div>
 
-        {!isMaster && (
+        {!isMaster && !isClinicAdmin && (
           <p className="mt-4 text-xs text-gray-400 text-center flex items-center justify-center gap-1">
             <Info className="w-3.5 h-3.5" />
             La verificación de Google Calendar está disponible solo para master_admin.
