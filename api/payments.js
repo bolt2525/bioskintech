@@ -83,7 +83,6 @@ export default async function handler(req, res) {
     if (action === 'preparePayment') {
       const { plan_key = 'plan_lanzamiento', email } = req.body || {};
       if (!PLANS[plan_key]) return res.status(400).json({ error: 'plan_key invalido' });
-      if (!email?.trim())   return res.status(400).json({ error: 'email requerido' });
 
       const plan       = PLANS[plan_key];
       // ponytail: clientTransactionId sin guiones -- rechazados por algunos parsers de PayPhone
@@ -143,7 +142,7 @@ export default async function handler(req, res) {
       await ensureSubscriptionsTable();
       const sub = await sql`
         INSERT INTO subscriptions (plan_name, amount_cents, currency, status, payphone_client_id, email, payphone_response)
-        VALUES (${plan.name}, ${plan.amount_cents}, 'USD', 'pending', ${clientTxId}, ${email.trim().toLowerCase()}, ${JSON.stringify(ppData)})
+        VALUES (${plan.name}, ${plan.amount_cents}, 'USD', 'pending', ${clientTxId}, ${email?.trim().toLowerCase() || null}, ${JSON.stringify(ppData)})
         RETURNING id
       `;
 

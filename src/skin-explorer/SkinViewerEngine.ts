@@ -22,8 +22,8 @@ const CAMERA_FOV = 34;
 const SURFACE_LIFT = 0.02;
 const VIEW_LIFT = 0.3;
 const PULSE_SECONDS = 4.5;
-const HOME_CAMERA = { x: 0, y: 0.3, z: 8.2 };
-const HOME_TARGET = { x: 0, y: 0.4, z: 0 };
+const HOME_CAMERA = { x: 0, y: 0.5, z: 7.5 };
+const HOME_TARGET = { x: 0.15, y: 0.9, z: 0 };
 const PLINTH_Y = -2.5;
 const PLINTH_TOP = PLINTH_Y + 0.17;
 const TAU = Math.PI * 2;
@@ -447,9 +447,16 @@ export class SkinViewerEngine {
         if (mat instanceof THREE.MeshStandardMaterial) {
           mat.roughness = THREE.MathUtils.clamp(mat.roughness ?? 0.5, 0.3, 0.75);
           mat.metalness = 0;
-          mat.envMapIntensity = 1.0;  // era 0.32 — permite que el env caliente el modelo
+          mat.envMapIntensity = 1.0;
           mat.emissive.set(0x000000);
           mat.emissiveIntensity = 0;
+          // KHR_materials_volume crea un MeshPhysicalMaterial con transmission > 0.
+          // Sin render pass de transmisión, el material renderiza blanco — desactivar.
+          if (mat instanceof THREE.MeshPhysicalMaterial) {
+            mat.transmission = 0;
+            mat.thickness = 0;
+            mat.ior = 1.5;
+          }
           if (mat.map) mat.map.colorSpace = THREE.SRGBColorSpace;
           if (mat.normalMap) mat.normalScale.multiplyScalar(0.62);
           for (const map of [mat.map, mat.normalMap, mat.roughnessMap, mat.aoMap]) {
@@ -626,7 +633,7 @@ export class SkinViewerEngine {
     return settled;
   }
 
-  pickHotspot(x: number, y: number, radius = 24) {
+  pickHotspot(x: number, y: number, radius = 32) {
     let best: Marker | null = null;
     let bestDistance = radius;
     for (const marker of this.markers) {

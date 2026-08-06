@@ -4,18 +4,16 @@
  *
  * Flujo 1: Código único → valida código → formulario → registro
  * Flujo 2: Pago PayPhone → seleccionar plan → pagar → formulario → registro
- * Extra: Login/registro con Google OAuth
  *
  * Post-pago o post-código: formulario con datos personales + datos de clínica.
  */
 
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
 import {
   Sparkles, Lock, Mail, User, Building2, Phone, MapPin,
   KeyRound, CreditCard, Eye, EyeOff, CheckCircle2, ArrowLeft, Globe,
-  MessageCircle, ExternalLink, X, ShieldCheck
+  MessageCircle, ExternalLink, X, ShieldCheck, AtSign, AlertTriangle
 } from 'lucide-react';
 
 // Contacto de soporte BioskinTech (número en formato internacional sin +)
@@ -29,17 +27,7 @@ const PAY_API = '/api/payments';
 // Tipos
 // ─────────────────────────────────────────────────────────────────────────────
 
-type Step = 'method' | 'code' | 'payment' | 'form' | 'clinic' | 'done';
-
-interface GoogleData {
-  email: string;
-  given_name?: string;
-  family_name?: string;
-  picture?: string;
-  google_id?: string;
-}
-
-interface PlanInfo { name: string; amount_cents: number; description: string; }
+type Step = 'method' | 'code' | 'payment' | 'form' | 'done';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Componente
@@ -48,12 +36,10 @@ interface PlanInfo { name: string; amount_cents: number; description: string; }
 export default function AdminRegister() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { login } = useAuth();
 
   const [step, setStep]               = useState<Step>('method');
   const [loading, setLoading]         = useState(false);
   const [error, setError]             = useState('');
-  const [success, setSuccess]         = useState('');
 
   // Código único
   const [code, setCode]               = useState('');
@@ -85,11 +71,21 @@ export default function AdminRegister() {
   const [emailTaken, setEmailTaken]   = useState(false);
   const [emailChecking, setEmailChecking] = useState(false);
 
-  // Google data prellenada
-  const [googleData, setGoogleData]   = useState<GoogleData | null>(null);
+  // Nombre de usuario
+  const [username, setUsername]             = useState('');
+  const [usernameSuggested, setUsernameSuggested] = useState(false);
+  const [usernameChecking, setUsernameChecking]   = useState(false);
+  const [usernameTaken, setUsernameTaken]   = useState(false);
 
-  // Enlace de pago
-  const [linkOpened, setLinkOpened]   = useState(false);
+  // Email Gmail de la clínica (para Calendar / correos de citas)
+  const [clinicEmail, setClinicEmail]       = useState('');
+  const [clinicEmailWarning, setClinicEmailWarning] = useState(false);
+
+  // Diálogo de confirmación antes de enviar
+  const [showConfirm, setShowConfirm]       = useState(false);
+
+  // Datos del registro exitoso (para la pantalla final)
+  const [registeredData, setRegisteredData] = useState<{ clinicName: string; username: string; email: string } | null>(null);
 
   // Modal WhatsApp
   const [waModal, setWaModal]         = useState(false);
@@ -98,25 +94,26 @@ export default function AdminRegister() {
   // Invite token desde URL
   const inviteToken  = searchParams.get('invite');
   const paymentParam = searchParams.get('payment');
-  const googleParam  = searchParams.get('googleData');
+
+  // ── Auto-sugerir username cuando nombre completo cambia ──────────────────
+  // ponytail: misma lógica que AdminMasterDashboard.generateUsername
+  function generateUsername(fullName: string): string {
+    const parts = fullName.trim().toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .split(/\s+/).filter(Boolean);
+    if (!parts.length) return '';
+    if (parts.length === 1) return parts[0].substring(0, 12);
+    const first   = parts[0][0];
+    const surname = parts[1];
+    const second  = parts.length >= 3 ? parts[2][0] : parts[parts.length - 1][0];
+    return `${first}${surname}${second}`.replace(/[^a-z0-9]/g, '');
+  }
 
   // ── Efectos de inicialización ─────────────────────────────────────────────
 
   useEffect(() => {
     // Si viene de invite link → ir directo al formulario
     if (inviteToken) { setStep('form'); return; }
-
-    // Si viene con datos de Google (post-OAuth)
-    if (googleParam) {
-      try {
-        const gd: GoogleData = JSON.parse(decodeURIComponent(googleParam));
-        setGoogleData(gd);
-        setEmail(gd.email || '');
-        setFirstName(gd.given_name || '');
-        setLastName(gd.family_name || '');
-        setStep('form');
-      } catch { /* ignorar */ }
-    }
 
     // Retorno de PayPhone: adjunta ?payment=confirm&id=X&clientTransactionId=Y
     if (paymentParam === 'confirm') {
@@ -144,10 +141,9 @@ export default function AdminRegister() {
       setError('Pago cancelado'); setStep('payment');
     }
 
-    // Cargar planes de suscripción
     // ponytail: plan único constante — sin fetch necesario
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inviteToken, googleParam, paymentParam]);
+  }, [inviteToken, paymentParam]);
 
   // ── Validar código ────────────────────────────────────────────────────────
 
@@ -172,40 +168,38 @@ export default function AdminRegister() {
     finally { setLoading(false); }
   }
 
-  // ── Iniciar pago PayPhone ─────────────────────────────────────────────────
-
+  // ── Iniciar pago PayPhone (sin email previo — PayPhone tiene su propio form)
   async function handleStartPayment() {
-    if (!email.trim()) { setError('Ingresa tu correo electrónico para continuar'); return; }
     setLoading(true); setError('');
     try {
       const r = await fetch(`${PAY_API}?action=preparePayment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan_key: 'plan_lanzamiento', email: email.trim() }),
+        body: JSON.stringify({ plan_key: 'plan_lanzamiento' }),
       });
       const d = await r.json();
       if (d.success && d.paymentUrl) {
         setSubId(d.subscription_id);
         window.location.href = d.paymentUrl;
       } else {
-        setError(d.error || 'Error al procesar el pago. Verifica tus datos e intenta de nuevo.');
+        setError(d.error || 'Error al procesar el pago. Intenta de nuevo.');
       }
-    } catch { setError('Error al conectar con PayPhone. Intenta de nuevo.'); }
+    } catch { setError('Error al conectar con PayPhone.'); }
     finally { setLoading(false); }
   }
 
-  // ── Login con Google ──────────────────────────────────────────────────────
-
-  async function handleGoogleAuth() {
-    setLoading(true); setError('');
+  // ── Verificar disponibilidad de username ──────────────────────────────────
+  const handleUsernameBlur = async (val: string) => {
+    const u = val.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
+    if (!u || u.length < 3) return;
+    setUsernameChecking(true);
     try {
-      const r = await fetch(`${API}?action=googleAuthUrl&purpose=register`);
+      const r = await fetch(`${API}?action=checkUsernamePublic&username=${encodeURIComponent(u)}`);
       const d = await r.json();
-      if (d.url) window.location.href = d.url;
-      else setError(d.error || 'Error al conectar con Google');
-    } catch { setError('Error al iniciar sesión con Google'); }
-    finally { setLoading(false); }
-  }
+      setUsernameTaken(!d.available);
+    } catch { /* ignore */ }
+    finally { setUsernameChecking(false); }
+  };
 
   const handleEmailBlur = async (val: string) => {
     const e = val.trim().toLowerCase();
@@ -224,13 +218,25 @@ export default function AdminRegister() {
   async function handleRegisterSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!clinicName.trim()) { setError('El nombre de la clínica es requerido'); return; }
-    if (!googleData && password.length < 8) { setError('La contraseña debe tener al menos 8 caracteres'); return; }
+    if (password.length < 8) { setError('La contraseña debe tener al menos 8 caracteres'); return; }
+    if (!/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) { setError('La contraseña debe tener al menos una letra y un número'); return; }
     if (emailTaken) { setError('Este email ya está en uso. Usa otro correo.'); return; }
+    if (!username.trim() || username.trim().length < 3) { setError('El nombre de usuario debe tener al menos 3 caracteres'); return; }
+    if (usernameTaken) { setError('El nombre de usuario ya está en uso. Elige otro.'); return; }
+    // Mostrar diálogo de confirmación en vez de enviar directamente
+    setShowConfirm(true);
+  }
 
+  async function handleConfirmRegister() {
+    setShowConfirm(false);
     setLoading(true); setError('');
     try {
+      const usernameFinal = username.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
       const body: Record<string, unknown> = {
         email: email.trim().toLowerCase(),
+        username: usernameFinal,
+        clinic_email: clinicEmail.trim().toLowerCase() || undefined,
+        password,
         first_name: firstName.trim(),
         last_name: lastName.trim(),
         gentilicio: gentilicio || undefined,
@@ -249,28 +255,25 @@ export default function AdminRegister() {
       // Fuente de autorización: código, pago o invite
       if (inviteToken) {
         body.token = inviteToken;
-        if (!googleData) body.password = password;
-        const action = 'useInvite';
-        const r = await fetch(`${API}?action=${action}`, {
+        const r = await fetch(`${API}?action=useInvite`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
         });
         const d = await r.json();
-        if (d.success) { await handlePostRegister(d); return; }
+        if (d.success) { handlePostRegister(d); return; }
         setError(d.error || 'Error al registrarse con la invitación');
         return;
       }
 
-      if (!googleData) body.password = password;
       if (code.trim() && codeValid) body.code = code.trim();
       else if (subscriptionId) body.subscription_id = subscriptionId;
-      else if (!googleData) { setError('Se requiere código o pago para registrarse'); setLoading(false); return; }
+      else { setError('Se requiere código o pago para registrarse'); setLoading(false); return; }
 
       const r = await fetch(`${API}?action=register`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
       });
       const d = await r.json();
       if (d.success) {
-        await handlePostRegister(d);
+        handlePostRegister(d);
       } else {
         setError(d.error || 'Error al registrarse');
       }
@@ -278,14 +281,13 @@ export default function AdminRegister() {
     finally { setLoading(false); }
   }
 
-  async function handlePostRegister(d: { sessionToken: string; user?: Record<string, unknown> }) {
-    // Guardar sesión directamente sin pasar por el login flow
-    localStorage.setItem('bioskin_session_token', d.sessionToken);
-    setSuccess('¡Registro exitoso! Redirigiendo...');
+  function handlePostRegister(d: { user?: { username?: string; email?: string }; clinic?: { name?: string } }) {
+    setRegisteredData({
+      clinicName: d.clinic?.name || clinicName,
+      username:   d.user?.username || username,
+      email:      d.user?.email || email,
+    });
     setStep('done');
-    setTimeout(() => {
-      navigate('/admin');
-    }, 1500);
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -341,12 +343,6 @@ export default function AdminRegister() {
                       <p className="text-xs text-gray-400">Pago con tarjeta de débito/crédito vía PayPhone</p>
                     </div>
                   </button>
-
-                  {/* Google */}
-                  <button onClick={handleGoogleAuth} disabled={loading} className="flex items-center justify-center gap-3 p-3 border-2 border-gray-200 rounded-xl hover:border-gray-300 hover:bg-gray-50 transition-all disabled:opacity-60">
-                    <svg className="w-5 h-5" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.1 0 5.9 1.1 8 2.9l5.9-5.9C34.3 3.2 29.4 1 24 1 14.7 1 6.8 6.7 3.4 14.9l6.9 5.3C12 14.5 17.5 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.7C35.8 32.5 32.3 35.5 28 36.9v5.6h7.9c4.6-4.2 7.3-10.5 7.3-18z"/><path fill="#FBBC05" d="M10.3 28.5A14.7 14.7 0 0 1 9.5 24c0-1.6.3-3.1.8-4.5L3.4 14.2A23.8 23.8 0 0 0 1 24c0 3.8.9 7.4 2.4 10.6l6.9-5.6z"/><path fill="#34A853" d="M24 47c6.4 0 11.8-2.1 15.7-5.7l-7.9-5.6c-2.1 1.4-4.8 2.2-7.8 2.2-6.3 0-11.6-4.2-13.5-9.8l-6.9 5.3C6.8 41.3 14.7 47 24 47z"/></svg>
-                    <span className="text-sm font-medium text-gray-700">Continuar con Google</span>
-                  </button>
                 </div>
 
                 <p className="text-center text-xs text-gray-400">
@@ -390,7 +386,7 @@ export default function AdminRegister() {
             {/* ── STEP: payment ────────────────────────────────────────── */}
             {step === 'payment' && (
               <>
-                <button onClick={() => { setStep('method'); setLinkOpened(false); }} className="flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600 transition-colors">
+                <button onClick={() => setStep('method')} className="flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600 transition-colors">
                   <ArrowLeft className="w-4 h-4" /> Volver
                 </button>
                 <div>
@@ -420,70 +416,60 @@ export default function AdminRegister() {
                   </div>
                 </div>
 
-                {/* Botón enlace de pago */}
-                {!linkOpened ? (
-                  <button
-                    onClick={() => { window.open(PAYMENT_LINK, '_blank', 'noopener,noreferrer'); setLinkOpened(true); }}
-                    className="w-full py-3 bg-[#deb887] text-white rounded-xl text-sm font-bold hover:bg-[#c9a876] transition-colors flex items-center justify-center gap-2 shadow-md shadow-[#deb887]/30">
-                    <ShieldCheck className="w-4 h-4" /> Pagar con enlace seguro PayPhone
-                    <ExternalLink className="w-3.5 h-3.5 opacity-70" />
-                  </button>
-                ) : (
-                  <div className="rounded-xl border border-green-200 bg-green-50 p-4 space-y-3">
+                {/* Botón PayPhone API directo */}
+                <button
+                  onClick={handleStartPayment}
+                  disabled={loading}
+                  className="w-full py-3 bg-[#deb887] text-white rounded-xl text-sm font-bold hover:bg-[#c9a876] disabled:opacity-50 transition-colors flex items-center justify-center gap-2 shadow-md shadow-[#deb887]/30">
+                  {loading ? (
+                    <span className="flex items-center gap-2">
+                      <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                      Procesando...
+                    </span>
+                  ) : (
+                    <><ShieldCheck className="w-4 h-4" /> Pagar con PayPhone</>
+                  )}
+                </button>
+
+                {error && (
+                  <div className="rounded-xl border border-red-200 bg-red-50 p-4 space-y-3">
                     <div className="flex items-start gap-2">
-                      <ShieldCheck className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+                      <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
                       <div>
-                        <p className="text-sm font-semibold text-green-800">Redirigido a página segura de PayPhone</p>
-                        <p className="text-xs text-green-600 mt-0.5">
-                          El pago se procesa directamente en la plataforma certificada de PayPhone. Una vez completado,
-                          envía tu comprobante para activar tu cuenta.
-                        </p>
+                        <p className="text-sm font-semibold text-red-800">Error al procesar el pago</p>
+                        <p className="text-xs text-red-600 mt-0.5">{error}</p>
                       </div>
                     </div>
-                    <button
-                      onClick={() => window.open(PAYMENT_LINK, '_blank', 'noopener,noreferrer')}
-                      className="w-full py-2 border border-green-300 text-green-700 rounded-lg text-xs font-medium hover:bg-green-100 transition-colors flex items-center justify-center gap-1.5">
-                      <ExternalLink className="w-3.5 h-3.5" /> Volver a abrir enlace de pago
-                    </button>
+                    <div className="flex gap-2">
+                      <a
+                        href={PAYMENT_LINK}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-1 py-2 bg-white border border-red-200 text-red-700 rounded-lg text-xs font-medium hover:bg-red-50 transition-colors flex items-center justify-center gap-1.5">
+                        <ExternalLink className="w-3.5 h-3.5" /> Pagar por enlace directo
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => setWaModal(true)}
+                        className="flex-1 py-2 bg-green-500 text-white rounded-lg text-xs font-semibold hover:bg-green-600 transition-colors flex items-center justify-center gap-1.5">
+                        <MessageCircle className="w-3.5 h-3.5" /> Contactar por WhatsApp
+                      </button>
+                    </div>
                   </div>
                 )}
 
                 {/* Contactar por WhatsApp */}
-                <div className="border-t border-gray-100 pt-4 space-y-2">
-                  <p className="text-xs text-gray-500 text-center">
-                    {linkOpened
-                      ? '¿Ya hiciste el pago? Envía tu comprobante para validación, o contáctanos si necesitas ayuda.'
-                      : '¿Prefieres consultar antes de pagar?'}
-                  </p>
-                  <button
-                    onClick={() => setWaModal(true)}
-                    className="w-full py-2.5 border-2 border-green-400 text-green-700 rounded-xl text-sm font-semibold hover:bg-green-50 transition-colors flex items-center justify-center gap-2">
-                    <MessageCircle className="w-4 h-4" />
-                    {linkOpened ? 'Enviar comprobante / Contactar soporte' : 'Contactar por WhatsApp'}
-                  </button>
-                </div>
-
-                <button onClick={handleStartPayment} disabled={loading || !email.trim()}
-                  className="w-full py-2.5 border-2 border-blue-400 text-blue-700 rounded-xl text-sm font-semibold hover:bg-blue-50 transition-colors flex items-center justify-center gap-2 opacity-70">
-                  <CreditCard className="w-4 h-4" /> Pago alternativo: PayPhone (integración directa)
-                </button>
-                {!email.trim() && (
-                  <div className="space-y-1.5">
-                    <label className="block text-xs font-medium text-gray-600">Correo electrónico (requerido para integración directa)</label>
-                    <div className="relative">
-                      <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-300 w-4 h-4" />
-                      <input
-                        type="email"
-                        value={email}
-                        onChange={e => setEmail(e.target.value)}
-                        placeholder="tu@email.com"
-                        className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-blue-300 focus:border-blue-400 outline-none transition-all"
-                      />
-                    </div>
+                {!error && (
+                  <div className="border-t border-gray-100 pt-4">
+                    <button
+                      type="button"
+                      onClick={() => setWaModal(true)}
+                      className="w-full py-2.5 border-2 border-green-400 text-green-700 rounded-xl text-sm font-semibold hover:bg-green-50 transition-colors flex items-center justify-center gap-2">
+                      <MessageCircle className="w-4 h-4" />
+                      ¿Preguntas? Contactar por WhatsApp
+                    </button>
                   </div>
                 )}
-
-                {error && <p className="text-red-600 text-sm bg-red-50 rounded-xl px-4 py-2.5">{error}</p>}
               </>
             )}
 
@@ -557,6 +543,34 @@ export default function AdminRegister() {
                   </div>
                 </div>
 
+                {/* Gmail de la clínica */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    Gmail de la clínica
+                    <span className="ml-1.5 text-xs font-normal text-[#c9a876]">(recomendado)</span>
+                  </label>
+                  <div className="relative">
+                    <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-300 w-4 h-4" />
+                    <input
+                      type="email"
+                      value={clinicEmail}
+                      onChange={e => {
+                        setClinicEmail(e.target.value);
+                        const v = e.target.value.trim().toLowerCase();
+                        setClinicEmailWarning(!!v && !v.endsWith('@gmail.com') && !v.endsWith('.google.com'));
+                      }}
+                      placeholder="miclinica@gmail.com"
+                      className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all"
+                    />
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1">Este Gmail se usará para Google Calendar y enviar correos de citas automáticos</p>
+                  {clinicEmailWarning && (
+                    <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
+                      <AlertTriangle className="w-3 h-3" /> Para usar Calendar y correos, se recomienda una cuenta de Gmail (@gmail.com)
+                    </p>
+                  )}
+                </div>
+
                 {/* ── Datos del Usuario ── */}
                 <div className="pt-2 border-t border-gray-100">
                   <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
@@ -586,12 +600,28 @@ export default function AdminRegister() {
                     <label className="block text-sm font-medium text-gray-700 mb-1.5">Nombres *</label>
                     <div className="relative">
                       <User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300 w-4 h-4" />
-                      <input required type="text" value={firstName} onChange={e => setFirstName(e.target.value)} placeholder="Ana María" className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
+                      <input required type="text" value={firstName}
+                        onChange={e => {
+                          setFirstName(e.target.value);
+                          if (!usernameSuggested || !username) {
+                            const suggested = generateUsername(`${e.target.value} ${lastName}`);
+                            if (suggested) { setUsername(suggested); setUsernameTaken(false); }
+                          }
+                        }}
+                        placeholder="Ana María" className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
                     </div>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1.5">Apellidos *</label>
-                    <input required type="text" value={lastName} onChange={e => setLastName(e.target.value)} placeholder="García López" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
+                    <input required type="text" value={lastName}
+                      onChange={e => {
+                        setLastName(e.target.value);
+                        if (!usernameSuggested || !username) {
+                          const suggested = generateUsername(`${firstName} ${e.target.value}`);
+                          if (suggested) { setUsername(suggested); setUsernameTaken(false); }
+                        }
+                      }}
+                      placeholder="García López" className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
                   </div>
                 </div>
 
@@ -617,40 +647,68 @@ export default function AdminRegister() {
                     className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
                 </div>
 
-                {/* Email */}
+                {/* Email de login */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Correo electrónico *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Correo electrónico de acceso *</label>
                   <div className="relative">
                     <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-300 w-4 h-4" />
                     <input required type="email" value={email}
                       onChange={e => { setEmail(e.target.value); setEmailTaken(false); }}
                       onBlur={e => handleEmailBlur(e.target.value)}
-                      disabled={!!googleData?.email} placeholder="tu@correo.com"
-                      className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all disabled:bg-gray-50 disabled:text-gray-500" />
+                      placeholder="tu@correo.com"
+                      className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
                   </div>
-                  <p className="text-xs text-gray-400 mt-1">Este correo será tu usuario de acceso</p>
+                  <p className="text-xs text-gray-400 mt-1">⚠️ Recuerda este correo — lo usarás para ingresar a BIOSKIN. Puede ser el mismo Gmail de la clínica u otro.</p>
                   {emailChecking && <p className="text-xs text-gray-400 mt-1">Verificando disponibilidad...</p>}
                   {emailTaken && <p className="text-xs text-red-500 mt-1">Este email ya está vinculado a otro usuario. Usa otro correo.</p>}
                 </div>
 
-                {/* Contraseña (solo si no es Google) */}
-                {!googleData && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Contraseña *</label>
-                    <div className="relative">
-                      <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-300 w-4 h-4" />
-                      <input required type={showPwd ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="Mínimo 8 caracteres" className="w-full pl-10 pr-10 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
-                      <button type="button" onClick={() => setShowPwd(p => !p)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500">
-                        {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
+                {/* Nombre de usuario */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Nombre de usuario *</label>
+                  <div className="relative">
+                    <AtSign className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-300 w-4 h-4" />
+                    <input
+                      type="text"
+                      value={username}
+                      onChange={e => {
+                        const v = e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '');
+                        setUsername(v);
+                        setUsernameSuggested(true);
+                        setUsernameTaken(false);
+                      }}
+                      onBlur={e => handleUsernameBlur(e.target.value)}
+                      placeholder="usuario_clinica"
+                      minLength={3}
+                      maxLength={20}
+                      required
+                      className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 font-mono placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all"
+                    />
                   </div>
-                )}
+                  <p className="text-xs text-gray-400 mt-1">También puedes ingresar con este nombre de usuario. Solo letras, números y guión bajo.</p>
+                  {usernameChecking && <p className="text-xs text-gray-400 mt-1">Verificando disponibilidad...</p>}
+                  {usernameTaken && <p className="text-xs text-red-500 mt-1">Este nombre de usuario ya está en uso. Elige otro.</p>}
+                  {!usernameTaken && username.length >= 3 && !usernameChecking && (
+                    <p className="text-xs text-emerald-600 mt-1">✓ Disponible</p>
+                  )}
+                </div>
+
+                {/* Contraseña */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Contraseña *</label>
+                  <div className="relative">
+                    <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-300 w-4 h-4" />
+                    <input required type={showPwd ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="Mínimo 8 caracteres, letras y números" className="w-full pl-10 pr-10 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
+                    <button type="button" onClick={() => setShowPwd(p => !p)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500">
+                      {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
 
                 {error && <p className="text-red-600 text-sm bg-red-50 rounded-xl px-4 py-2.5">{error}</p>}
 
-                <button type="submit" disabled={loading} className="w-full py-3 bg-[#deb887] text-white rounded-xl text-sm font-semibold hover:bg-[#c9a876] disabled:opacity-50 transition-colors shadow-md shadow-[#deb887]/30">
-                  {loading ? 'Registrando...' : 'Crear cuenta y clínica'}
+                <button type="submit" disabled={loading || usernameTaken || emailTaken} className="w-full py-3 bg-[#deb887] text-white rounded-xl text-sm font-semibold hover:bg-[#c9a876] disabled:opacity-50 transition-colors shadow-md shadow-[#deb887]/30">
+                  {loading ? 'Guardando...' : 'Guardar y crear clínica →'}
                 </button>
 
                 <p className="text-center text-xs text-gray-400">
@@ -662,10 +720,37 @@ export default function AdminRegister() {
 
             {/* ── STEP: done ───────────────────────────────────────────── */}
             {step === 'done' && (
-              <div className="py-8 text-center space-y-4">
-                <CheckCircle2 className="w-14 h-14 text-green-500 mx-auto" />
-                <h2 className="text-xl font-bold text-gray-900">¡Registro exitoso!</h2>
-                <p className="text-gray-500 text-sm">Tu clínica ha sido creada. Redirigiendo al panel...</p>
+              <div className="py-6 space-y-5">
+                <div className="text-center">
+                  <CheckCircle2 className="w-14 h-14 text-emerald-500 mx-auto mb-3" />
+                  <h2 className="text-xl font-bold text-gray-900">¡Clínica creada exitosamente!</h2>
+                  <p className="text-gray-500 text-sm mt-1">Se ha enviado un correo de bienvenida con tus datos de acceso.</p>
+                </div>
+
+                {registeredData && (
+                  <div className="bg-[#fdf8f0] border border-[#deb887]/40 rounded-xl p-4 space-y-2 text-sm">
+                    <p className="font-semibold text-gray-700 flex items-center gap-2">
+                      <Building2 className="w-4 h-4 text-[#deb887]" /> {registeredData.clinicName}
+                    </p>
+                    <p className="text-gray-600">
+                      <span className="font-medium">Usuario:</span> <span className="font-mono">{registeredData.username}</span>
+                    </p>
+                    <p className="text-gray-600">
+                      <span className="font-medium">Email de login:</span> {registeredData.email}
+                    </p>
+                  </div>
+                )}
+
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800 space-y-1">
+                  <p className="font-semibold">📧 Próximo paso recomendado</p>
+                  <p>Revisa tu correo (incluyendo Spam) para el link de conexión de tu Gmail con Google Calendar y correos automáticos.</p>
+                </div>
+
+                <button
+                  onClick={() => navigate('/admin/login')}
+                  className="w-full py-3 bg-[#deb887] text-white rounded-xl text-sm font-semibold hover:bg-[#c9a876] transition-colors shadow-md shadow-[#deb887]/30">
+                  Ir al login →
+                </button>
               </div>
             )}
 

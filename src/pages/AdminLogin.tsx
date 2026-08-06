@@ -12,7 +12,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Lock, Mail, Sparkles, Eye, EyeOff, ShieldCheck } from 'lucide-react';
 import SkinExplorerButton from '../skin-explorer/SkinExplorerButton';
@@ -23,7 +23,6 @@ import SkinExplorerButton from '../skin-explorer/SkinExplorerButton';
 
 export default function AdminLogin() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
   const { login, isAuthenticated } = useAuth();
 
   const [username, setUsername] = useState('');
@@ -43,17 +42,6 @@ export default function AdminLogin() {
   useEffect(() => {
     if (isAuthenticated) navigate('/admin');
   }, [isAuthenticated, navigate]);
-
-  // Manejar token de Google OAuth callback
-  useEffect(() => {
-    const token = searchParams.get('token');
-    const googleError = searchParams.get('googleError');
-    if (googleError) { setError(decodeURIComponent(googleError)); return; }
-    if (token) {
-      localStorage.setItem('bioskin_session_token', token);
-      navigate('/admin'); // basename lo convierte a /gestionestetica/admin
-    }
-  }, [searchParams, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -86,17 +74,6 @@ export default function AdminLogin() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleGoogleLogin = async () => {
-    setLoading(true); setError('');
-    try {
-      const r = await fetch('/api/admin-auth?action=googleAuthUrl&purpose=login');
-      const d = await r.json();
-      if (d.url) window.location.href = d.url;
-      else setError(d.error || 'Error al conectar con Google');
-    } catch { setError('Error al iniciar sesión con Google'); }
-    finally { setLoading(false); }
   };
 
   const handleVerifyOTP = async (e: React.FormEvent) => {
@@ -298,23 +275,6 @@ export default function AdminLogin() {
                 )}
               </button>
 
-              {/* Divisor */}
-              <div className="relative flex items-center gap-3">
-                <div className="flex-1 h-px bg-gray-100" />
-                <span className="text-xs text-gray-300">o</span>
-                <div className="flex-1 h-px bg-gray-100" />
-              </div>
-
-              {/* Google OAuth */}
-              <button
-                type="button"
-                onClick={handleGoogleLogin}
-                disabled={loading}
-                className="w-full flex items-center justify-center gap-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:border-gray-300 hover:bg-gray-50 transition-all disabled:opacity-50"
-              >
-                <svg className="w-4 h-4" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.1 0 5.9 1.1 8 2.9l5.9-5.9C34.3 3.2 29.4 1 24 1 14.7 1 6.8 6.7 3.4 14.9l6.9 5.3C12 14.5 17.5 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.7C35.8 32.5 32.3 35.5 28 36.9v5.6h7.9c4.6-4.2 7.3-10.5 7.3-18z"/><path fill="#FBBC05" d="M10.3 28.5A14.7 14.7 0 0 1 9.5 24c0-1.6.3-3.1.8-4.5L3.4 14.2A23.8 23.8 0 0 0 1 24c0 3.8.9 7.4 2.4 10.6l6.9-5.6z"/><path fill="#34A853" d="M24 47c6.4 0 11.8-2.1 15.7-5.7l-7.9-5.6c-2.1 1.4-4.8 2.2-7.8 2.2-6.3 0-11.6-4.2-13.5-9.8l-6.9 5.3C6.8 41.3 14.7 47 24 47z"/></svg>
-                Continuar con Google
-              </button>
 
             </form>
             </>
