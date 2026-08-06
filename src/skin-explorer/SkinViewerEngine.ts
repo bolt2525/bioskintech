@@ -22,8 +22,8 @@ const CAMERA_FOV = 34;
 const SURFACE_LIFT = 0.02;
 const VIEW_LIFT = 0.3;
 const PULSE_SECONDS = 4.5;
-const HOME_CAMERA = { x: 0, y: 1.05, z: 8.2 };
-const HOME_TARGET = { x: 0, y: 0.02, z: 0 };
+const HOME_CAMERA = { x: 0, y: 0.3, z: 8.2 };
+const HOME_TARGET = { x: 0, y: 0.4, z: 0 };
 const PLINTH_Y = -2.5;
 const PLINTH_TOP = PLINTH_Y + 0.17;
 const TAU = Math.PI * 2;
@@ -340,7 +340,7 @@ export class SkinViewerEngine {
 
     this.plinth = new THREE.Mesh(
       new THREE.CylinderGeometry(2.3, 2.48, 0.34, 56),
-      new THREE.MeshStandardMaterial({ color: 0xead7c1, roughness: 0.78, metalness: 0 }),
+      new THREE.MeshStandardMaterial({ color: 0xf0e4d0, roughness: 0.85, metalness: 0 }),
     );
     this.plinth.position.y = PLINTH_Y;
     this.scene.add(this.plinth);
@@ -378,8 +378,9 @@ export class SkinViewerEngine {
   private buildEnvironmentMap() {
     const width = 16, height = 32;
     const data = new Uint8Array(width * height * 4);
-    const top = new THREE.Color(0xfff3e4);
-    const bottom = new THREE.Color(0x6b4f45);
+    // Gradiente crema → marrón dorado, combina con el fondo claro del visor
+    const top = new THREE.Color(0xfff8ee);
+    const bottom = new THREE.Color(0xc49a6a);
     const mixed = new THREE.Color();
     for (let y = 0; y < height; y++) {
       mixed.copy(bottom).lerp(top, Math.pow(1 - y / (height - 1), 0.7));
@@ -444,9 +445,9 @@ export class SkinViewerEngine {
         mat.depthWrite = true; mat.depthTest = true;
         mat.side = THREE.FrontSide;
         if (mat instanceof THREE.MeshStandardMaterial) {
-          mat.roughness = THREE.MathUtils.clamp(mat.roughness ?? 0.5, 0.42, 0.62);
+          mat.roughness = THREE.MathUtils.clamp(mat.roughness ?? 0.5, 0.3, 0.75);
           mat.metalness = 0;
-          mat.envMapIntensity = 0.32;
+          mat.envMapIntensity = 1.0;  // era 0.32 — permite que el env caliente el modelo
           mat.emissive.set(0x000000);
           mat.emissiveIntensity = 0;
           if (mat.map) mat.map.colorSpace = THREE.SRGBColorSpace;
