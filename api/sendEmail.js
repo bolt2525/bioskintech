@@ -90,15 +90,8 @@ export default async function handler(req, res) {
     }
   };
 
-  // ponytail: configure extra recipients via EMAIL_STAFF_2, EMAIL_STAFF_3 env vars — no PII in code
-  const buildStaffRecipients = () => [
-    process.env.EMAIL_TO,
-    process.env.EMAIL_STAFF_2,
-    process.env.EMAIL_STAFF_3,
-  ]
-    .filter(Boolean)
-    .map((item) => String(item).trim())
-    .join(', ');
+  // ponytail: chatbot legacy — solo usa EMAIL_TO (EMAIL_STAFF_2/3 eran del MVP mono-clínica)
+  const buildStaffRecipients = () => process.env.EMAIL_TO || '';
 
   const { 
     name, 
@@ -142,6 +135,15 @@ export default async function handler(req, res) {
     // Admin notifications require an authenticated session (C-5 fix)
     const authResult = await authenticateRequest(req);
     if (!authResult.valid) return res.status(401).json({ success: false, message: 'No autenticado' });
+
+    // Multi-tenant: usar staff de la clínica configurado en master admin
+    const notifClinicId = req.body?.clinicId || authResult.effective_clinic_id || authResult.clinic_id;
+    const notifClinic   = notifClinicId ? await getClinicConfig(notifClinicId) : null;
+    const adminTo = [
+      notifClinic?.staff_email || process.env.EMAIL_TO,
+      ...(notifClinic?.staff_members || []).map(m => m.email),
+    ].filter(Boolean).join(', ') || process.env.EMAIL_TO;
+
     const transporter = nodemailer.createTransport({
       host: process.env.EMAIL_HOST,
       port: parseInt(process.env.EMAIL_PORT),
@@ -216,7 +218,7 @@ export default async function handler(req, res) {
     try {
       await transporter.sendMail({
         from: `Sistema BIOSKIN <${process.env.EMAIL_USER}>`,
-        to: buildStaffRecipients(),
+        to: adminTo,
         subject: selected.subject,
         html: `
           <div style="font-family:Arial,sans-serif;max-width:650px;margin:0 auto;padding:20px;">

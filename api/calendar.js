@@ -92,8 +92,8 @@ export default async function handler(req, res) {
   if (!clinicId) {
     const sessionUser = await authenticateRequest(req);
     if (sessionUser?.valid) clinicId = sessionUser.effective_clinic_id ?? sessionUser.clinic_id ?? null;
-  }
-
+  }  // Propaga clinicId a req.body para que los mockReqs internos de notificaciones lo incluyan
+  if (clinicId && req.body && !req.body.clinicId) req.body.clinicId = clinicId;
   async function getCalendarClient() {
     // 1. OAuth de la clínica
     const oauthClient = await getClinicOAuth2Client(clinicId);

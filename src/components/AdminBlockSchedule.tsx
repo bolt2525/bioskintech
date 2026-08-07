@@ -342,24 +342,7 @@ const AdminBlockSchedule: React.FC<BlockScheduleProps> = ({ onBack }) => {
       const data = await response.json();
 
       if (data.success) {
-        // Enviar notificación por email al equipo
-        await fetch('/api/sendEmail', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: 'Sistema BIOSKIN - Bloqueo de Horarios',
-            email: 'admin@bioskin.com',
-            message: `NOTIFICACIÓN: HORARIOS BLOQUEADOS\n\n` +
-                    `Fecha: ${selectedDay}\n` +
-                    `Horarios bloqueados: ${selectedHours.map(h => formatTimeLabel(h)).join(', ')}\n` +
-                    `Motivo: ${reason.trim()}\n` +
-                    `Administrador: BIOSKIN Admin\n` +
-                    `Fecha de bloqueo: ${new Date().toLocaleString('es-ES', { timeZone: 'America/Guayaquil' })}\n\n` +
-                    `Los horarios han sido bloqueados automáticamente en Google Calendar y no estarán disponibles para citas de pacientes.\n\n` +
-                    `Este es un mensaje automático del sistema de gestión BIOSKIN.`,
-          }),
-        });
-
+        // calendar.js ya envió la notificación al staff de la clínica internamente
         setSubmitted(true);
         setMessage(data.message);
         setMessageType('success');
