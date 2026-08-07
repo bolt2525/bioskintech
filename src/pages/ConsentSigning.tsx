@@ -3,6 +3,7 @@ import recordsFetch from "../utils/recordsFetch";
 import { useParams, useNavigate } from 'react-router-dom';
 import SignatureCanvas from 'react-signature-canvas';
 import { CheckCircle, AlertTriangle, PenTool, Eraser, Save, X } from 'lucide-react';
+import BrandLogo from '../components/ui/BrandLogo';
 
 interface ConsentSession {
   id: number;
@@ -216,7 +217,7 @@ export default function ConsentSigning() {
     <div className="min-h-screen bg-gray-50 pb-20">
       <header className="bg-white shadow-sm p-4 sticky top-0 z-10">
         <div className="max-w-3xl mx-auto flex items-center gap-4">
-          <img src="/images/logo/logo.png" alt="BioSkin Logo" className="h-12 w-auto object-contain" />
+          <BrandLogo className="h-12 w-auto object-contain" compact />
           <div className="flex-1 min-w-0">
             <h1 className="text-lg font-bold text-gray-800 truncate">Consentimiento Informado</h1>
             <p className="text-sm text-[#deb887] truncate">{session.procedure_type}</p>

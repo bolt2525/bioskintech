@@ -1,4 +1,5 @@
 import { ArrowLeft, Shield, Users, Database, Globe, Clock, UserCheck, FileText, Bell } from 'lucide-react';
+import BrandLogo from '../components/ui/BrandLogo';
 
 const CONTACT_EMAIL = 'bolt2525@gmail.com';
 const LAST_UPDATED = '08 de agosto de 2026';
@@ -49,8 +50,7 @@ export default function PrivacyPolicy() {
             <span className="hidden sm:inline">Volver</span>
           </button>
           <div className="flex items-center gap-3 flex-1">
-            <img src="/images/logo/logo.png" alt="BioSkinTech" className="h-10 w-auto object-contain" />
-            <p className="text-xs text-gray-400 mt-0.5">Política de Privacidad</p>
+            <BrandLogo className="h-10 w-auto object-contain" compact />
           </div>
           <span className="text-xs text-gray-400 hidden sm:block">Actualizado: {LAST_UPDATED}</span>
         </div>

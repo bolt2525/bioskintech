@@ -17,6 +17,7 @@ import { useAuth } from '../context/AuthContext';
 import { Lock, Mail, Eye, EyeOff, ShieldCheck } from 'lucide-react';
 import SkinExplorerButton from '../skin-explorer/SkinExplorerButton';
 import AppFooter from '../components/layout/AppFooter';
+import BrandLogo from '../components/ui/BrandLogo';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Componente
@@ -128,11 +129,7 @@ export default function AdminLogin() {
 
         {/* ── Branding ─────────────────────────────────────────────── */}
         <div className="text-center mb-8">
-          <img
-            src="/images/logo/logo.png"
-            alt="BioSkinTech"
-            className="h-28 w-auto object-contain mx-auto"
-          />
+          <BrandLogo className="h-28 w-auto object-contain mx-auto" />
           <p className="text-gray-400 mt-2 text-sm tracking-wide uppercase">
             Panel de Administración Clínica
           </p>

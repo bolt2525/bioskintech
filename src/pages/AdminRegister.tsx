@@ -16,6 +16,7 @@ import {
   MessageCircle, ExternalLink, X, ShieldCheck, AtSign, AlertTriangle
 } from 'lucide-react';
 import AppFooter from '../components/layout/AppFooter';
+import BrandLogo from '../components/ui/BrandLogo';
 
 // Contacto de soporte BioskinTech (número en formato internacional sin +)
 const BIOSKIN_SUPPORT_WA = '593984232889';
@@ -306,11 +307,7 @@ export default function AdminRegister() {
       <div className="relative max-w-lg w-full">
         {/* Branding */}
         <div className="text-center mb-6">
-          <img
-            src="/images/logo/logo.png"
-            alt="BioSkinTech"
-            className="h-24 w-auto object-contain mx-auto"
-          />
+          <BrandLogo className="h-24 w-auto object-contain mx-auto" />
           <p className="text-gray-400 mt-2 text-sm uppercase tracking-wide">Registro de nueva clínica</p>
         </div>
 
