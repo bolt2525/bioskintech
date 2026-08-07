@@ -417,6 +417,12 @@ export default function AdminRegister() {
                 </div>
 
                 {/* Botón PayPhone API directo */}
+                <p className="text-xs text-center text-gray-400 -mb-1">
+                  Al contratar confirmas que has leído y aceptas nuestras{' '}
+                  <a href="/condiciones-de-servicio" target="_blank" rel="noopener noreferrer" className="text-[#deb887] hover:underline font-medium">Condiciones de Servicio</a>
+                  {' '}y la{' '}
+                  <a href="/politica-de-privacidad" target="_blank" rel="noopener noreferrer" className="text-[#deb887] hover:underline font-medium">Política de Privacidad</a>.
+                </p>
                 <button
                   onClick={handleStartPayment}
                   disabled={loading}
