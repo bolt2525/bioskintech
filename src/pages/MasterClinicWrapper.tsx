@@ -42,13 +42,14 @@ export default function MasterClinicWrapper() {
   const [info, setInfo]      = useState<ClinicUserInfo | null>(null);
 
   // Solo master_admin puede acceder a estas rutas.
-  // Redirige si: usuario ya cargado y no es master_admin,
-  // o si checkAuth devolvió false (no autenticado en absoluto).
+  // Chequeo sincrónico en mount desde sessionStorage para evitar render y carga de datos antes de confirmar rol.
   useEffect(() => {
-    if (user !== null && user.role !== 'master_admin') {
+    const stored = sessionStorage.getItem('adminUser');
+    const u = stored ? JSON.parse(stored) : null;
+    if (!u || u.role !== 'master_admin') {
       navigate('/admin/login', { replace: true });
     }
-  }, [user]);
+  }, []);
 
   // Cargar datos de la clínica/usuario
   useEffect(() => {

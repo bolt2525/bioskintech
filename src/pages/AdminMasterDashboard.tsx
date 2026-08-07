@@ -835,6 +835,7 @@ export default function AdminMasterDashboard() {
   const { user, logout, checkAuth } = useAuth();
 
   // ── Estado general ───────────────────────────────────────────────────────
+  const [authReady, setAuthReady] = useState(false); // evita render de UI antes de confirmar rol
   const [tab, setTab] = useState<TabKey>('clinics');
   const [selectedModuleClinic, setSelectedModuleClinic] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1048,6 +1049,7 @@ export default function AdminMasterDashboard() {
       const stored = sessionStorage.getItem('adminUser');
       const u = stored ? JSON.parse(stored) : null;
       if (!u || u.role !== 'master_admin') { navigate('/admin'); return; }
+      setAuthReady(true);
       loadAll();
     });
   }, []);
@@ -1290,6 +1292,9 @@ export default function AdminMasterDashboard() {
   // ─────────────────────────────────────────────────────────────────────────
   // Render
   // ─────────────────────────────────────────────────────────────────────────
+
+  // No renderizar nada hasta que el rol sea confirmado como master_admin
+  if (!authReady) return null;
 
   return (
     <div className="min-h-screen bg-gray-50">
