@@ -41,9 +41,11 @@ export default function MasterClinicWrapper() {
   const [error, setError]   = useState<string | null>(null);
   const [info, setInfo]      = useState<ClinicUserInfo | null>(null);
 
-  // Solo master_admin puede acceder a estas rutas
+  // Solo master_admin puede acceder a estas rutas.
+  // Redirige si: usuario ya cargado y no es master_admin,
+  // o si checkAuth devolvió false (no autenticado en absoluto).
   useEffect(() => {
-    if (user && user.role !== 'master_admin') {
+    if (user !== null && user.role !== 'master_admin') {
       navigate('/admin/login', { replace: true });
     }
   }, [user]);

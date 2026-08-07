@@ -9,8 +9,10 @@ import {
 } from '../lib/finance-db.js';
 
 export default async function handler(req, res) {
-  // CORS basics
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // CORS — origin whitelist, no wildcard
+  const reqOrigin = req.headers.origin || '';
+  const allowedOrigins = (process.env.ADMIN_CORS_ORIGIN || 'https://bioskintechapp.com,https://bioskintech.vercel.app,http://localhost:5173').split(',').map(s => s.trim());
+  res.setHeader('Access-Control-Allow-Origin', allowedOrigins.includes(reqOrigin) ? reqOrigin : allowedOrigins[0]);
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PATCH, DELETE');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 

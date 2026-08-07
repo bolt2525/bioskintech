@@ -2,6 +2,7 @@
 import nodemailer from 'nodemailer';
 import { google } from 'googleapis';
 import { sql } from '@vercel/postgres';
+import { authenticateRequest } from '../lib/admin-auth.js';
 
 /** Obtiene un OAuth2 client con los tokens guardados para la clínica. Retorna null si no hay tokens. */
 async function getClinicOAuth2Client(clinicId) {
@@ -89,19 +90,15 @@ export default async function handler(req, res) {
     }
   };
 
-  const buildStaffRecipients = () => {
-    const recipients = [
-      process.env.EMAIL_TO,
-      'salud.bioskin@gmail.com',
-      'rafa1227_g@hotmail.com',
-      'dannypau.95@gmail.com'
-    ]
-      .filter(Boolean)
-      .map((item) => String(item).trim())
-      .join(', ');
-
-    return recipients;
-  };
+  // ponytail: configure extra recipients via EMAIL_STAFF_2, EMAIL_STAFF_3 env vars — no PII in code
+  const buildStaffRecipients = () => [
+    process.env.EMAIL_TO,
+    process.env.EMAIL_STAFF_2,
+    process.env.EMAIL_STAFF_3,
+  ]
+    .filter(Boolean)
+    .map((item) => String(item).trim())
+    .join(', ');
 
   const { 
     name, 
@@ -142,6 +139,9 @@ export default async function handler(req, res) {
     notificationType === 'admin_block_deleted' ||
     notificationType === 'admin_blocks_deleted'
   ) {
+    // Admin notifications require an authenticated session (C-5 fix)
+    const authResult = await authenticateRequest(req);
+    if (!authResult.valid) return res.status(401).json({ success: false, message: 'No autenticado' });
     const transporter = nodemailer.createTransport({
       host: process.env.EMAIL_HOST,
       port: parseInt(process.env.EMAIL_PORT),

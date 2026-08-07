@@ -1749,6 +1749,9 @@ export default async function handler(req, res) {
 
     // ── Limpiar sesiones expiradas ─────────────────────────────────────────
     if (action === 'cleanup') {
+      // Requiere autenticación — evita que actores externos invoquen operaciones de mantenimiento (M-2 fix)
+      const cleanupUser = await getRequestUser(req);
+      if (!cleanupUser) return res.status(401).json({ success: false, error: 'No autenticado' });
       const r = await sql`UPDATE admin_sessions SET is_active = false WHERE expires_at < NOW() AND is_active = true`;
       return res.status(200).json({ success: true, count: r.rowCount });
     }

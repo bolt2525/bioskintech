@@ -458,7 +458,12 @@ export default async function handler(req, res) {
       case 'inventoryGetItem':
         try {
           const itemId = req.query.id;
-          const itemResult = await pool.query('SELECT * FROM inventory_items WHERE id = $1', [itemId]);
+          const su = await getSessionUserOnce();
+          const cid = su?.effective_clinic_id ?? su?.clinic_id;
+          // Tenant check: restrict item visibility to the user's clinic (A-1 fix)
+          const itemResult = cid
+            ? await pool.query('SELECT * FROM inventory_items WHERE id = $1 AND (clinic_id = $2 OR clinic_id IS NULL)', [itemId, cid])
+            : await pool.query('SELECT * FROM inventory_items WHERE id = $1', [itemId]);
           
           if (itemResult.rows.length === 0) {
             return res.status(404).json({ error: 'Item not found' });
@@ -589,6 +594,16 @@ export default async function handler(req, res) {
           if (!['clinic_admin', 'master_admin'].includes(su.role))
             return res.status(403).json({ error: 'Solo administradores pueden eliminar lotes' });
           const { id } = req.query;
+          // Tenant check: verify batch belongs to user's clinic (A-1 fix)
+          const cid = su?.effective_clinic_id ?? su?.clinic_id;
+          if (cid != null && su.role !== 'master_admin') {
+            const chk = await pool.query(
+              'SELECT i.clinic_id FROM inventory_batches b JOIN inventory_items i ON i.id = b.item_id WHERE b.id = $1',
+              [id]
+            );
+            if (chk.rows.length && chk.rows[0].clinic_id !== cid)
+              return res.status(403).json({ error: 'Lote no pertenece a esta clínica' });
+          }
           await pool.query('DELETE FROM inventory_movements WHERE batch_id = $1', [id]);
           await pool.query('DELETE FROM inventory_batches WHERE id = $1', [id]);
           return res.status(200).json({ success: true });
@@ -600,7 +615,14 @@ export default async function handler(req, res) {
       case 'inventoryAddBatch':
         try {
           const { item_id, batch_number, expiration_date, quantity, cost_per_unit, user_id } = body;
-          
+          // Tenant check: verify item belongs to user's clinic before adding stock (A-1 fix)
+          const suBatch = await getSessionUserOnce();
+          const batchCid = suBatch?.effective_clinic_id ?? suBatch?.clinic_id;
+          if (batchCid != null && suBatch?.role !== 'master_admin') {
+            const itemChk = await pool.query('SELECT clinic_id FROM inventory_items WHERE id = $1', [item_id]);
+            if (itemChk.rows.length && itemChk.rows[0].clinic_id !== batchCid)
+              return res.status(403).json({ error: 'Ítem no pertenece a esta clínica' });
+          }
           // Start transaction
           const client = await pool.connect();
           try {
@@ -635,7 +657,17 @@ export default async function handler(req, res) {
       case 'inventoryConsume':
         try {
           const { batch_id, quantity, reason, user_id, reference_id, preferred_display_unit } = body;
-          
+          // Tenant check: verify batch belongs to user's clinic before consuming (A-1 fix)
+          const suCons = await getSessionUserOnce();
+          const consCid = suCons?.effective_clinic_id ?? suCons?.clinic_id;
+          if (consCid != null && suCons?.role !== 'master_admin') {
+            const tenantChk = await pool.query(
+              'SELECT i.clinic_id FROM inventory_batches b JOIN inventory_items i ON i.id = b.item_id WHERE b.id = $1',
+              [batch_id]
+            );
+            if (tenantChk.rows.length && tenantChk.rows[0].clinic_id !== consCid)
+              return res.status(403).json({ error: 'Lote no pertenece a esta clínica' });
+          }
           const client = await pool.connect();
           try {
             await client.query('BEGIN');
@@ -790,21 +822,37 @@ export default async function handler(req, res) {
         return res.status(200).json({ ...patient.rows[0], active_record_id: record.rows[0]?.id || null });
       }
 
-      case 'listRecords':
+      case 'listRecords': {
         const { patient_id } = req.query;
+        const su = await getSessionUserOnce();
+        const cid = su?.effective_clinic_id ?? su?.clinic_id;
+        if (cid != null && su?.role !== 'master_admin') {
+          const chk = await pool.query('SELECT clinic_id FROM patients WHERE id = $1', [patient_id]);
+          if (chk.rows.length && chk.rows[0].clinic_id !== cid)
+            return res.status(403).json({ error: 'Acceso no autorizado' });
+        }
         const records = await pool.query(
-          'SELECT * FROM clinical_records WHERE patient_id = $1 ORDER BY created_at DESC', 
+          'SELECT * FROM clinical_records WHERE patient_id = $1 ORDER BY created_at DESC',
           [patient_id]
         );
         return res.status(200).json(records.rows);
+      }
 
-      case 'createRecord':
+      case 'createRecord': {
         const { patient_id: p_id } = body;
+        const su = await getSessionUserOnce();
+        const cid = su?.effective_clinic_id ?? su?.clinic_id;
+        if (cid != null && su?.role !== 'master_admin') {
+          const chk = await pool.query('SELECT clinic_id FROM patients WHERE id = $1', [p_id]);
+          if (chk.rows.length && chk.rows[0].clinic_id !== cid)
+            return res.status(403).json({ error: 'Acceso no autorizado' });
+        }
         const newRecord = await pool.query(
-          'INSERT INTO clinical_records (patient_id, status) VALUES ($1, \'active\') RETURNING *',
+          "INSERT INTO clinical_records (patient_id, status) VALUES ($1, 'active') RETURNING *",
           [p_id]
         );
         return res.status(201).json(newRecord.rows[0]);
+      }
 
       case 'createPatient':
         try {
@@ -1049,8 +1097,19 @@ export default async function handler(req, res) {
         return res.status(200).json({ success: true });
       }
 
-      case 'deleteRecord':
+      case 'deleteRecord': {
         const { id: delRecordId } = req.query;
+        // Tenant check: verify record belongs to user's clinic (C-3 fix)
+        const suDR = await getSessionUserOnce();
+        const drCid = suDR?.effective_clinic_id ?? suDR?.clinic_id;
+        if (drCid != null && suDR?.role !== 'master_admin') {
+          const chk = await pool.query(
+            'SELECT p.clinic_id FROM patients p JOIN clinical_records cr ON cr.patient_id = p.id WHERE cr.id = $1',
+            [delRecordId]
+          );
+          if (chk.rows.length && chk.rows[0].clinic_id !== drCid)
+            return res.status(403).json({ error: 'Acceso no autorizado' });
+        }
         try {
           await pool.query('DELETE FROM clinical_records WHERE id = $1', [delRecordId]);
           return res.status(200).json({ success: true });
@@ -1058,6 +1117,7 @@ export default async function handler(req, res) {
           console.error('Error deleting record:', err);
           return res.status(500).json({ error: 'Error al eliminar expediente.' });
         }
+      }
 
       case 'getRecordData': {
         const { recordId, patientId } = req.query;
@@ -1093,6 +1153,15 @@ export default async function handler(req, res) {
         }
 
         const patientIdFromRecord = recordDetails.rows[0]?.patient_id;
+
+        // Tenant check: verify the record's patient belongs to the authenticated user's clinic (C-1 fix)
+        const suGrd = await getSessionUserOnce();
+        const grdCid = suGrd?.effective_clinic_id ?? suGrd?.clinic_id;
+        if (grdCid != null && suGrd?.role !== 'master_admin') {
+          const pChk = await pool.query('SELECT clinic_id FROM patients WHERE id = $1', [patientIdFromRecord]);
+          if (pChk.rows.length && pChk.rows[0].clinic_id !== grdCid)
+            return res.status(403).json({ error: 'Acceso no autorizado' });
+        }
 
         // Helper to safely query tables that might not exist yet
         const safeQuery = async (query, params) => {

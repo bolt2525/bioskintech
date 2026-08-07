@@ -47,10 +47,17 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true });
       }
 
-      // â”€â”€ Ãndice de contexto disponible para un paciente â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      // ── Índice de contexto disponible para un paciente ────────────────────
       case 'getContextIndex': {
         const { patient_id } = req.query;
         if (!patient_id) return res.status(400).json({ error: 'patient_id requerido' });
+
+        // Tenant check: verify patient belongs to authenticated user's clinic (C-4 fix)
+        if (effectiveClinicId != null && auth.role !== 'master_admin') {
+          const chk = await pool.query('SELECT clinic_id FROM patients WHERE id = $1', [patient_id]);
+          if (chk.rows.length && chk.rows[0].clinic_id !== effectiveClinicId)
+            return res.status(403).json({ error: 'Acceso no autorizado' });
+        }
 
         const [history, exams, diagnoses, treatments, prescriptions] = await Promise.all([
           pool.query(
@@ -95,7 +102,7 @@ export default async function handler(req, res) {
         });
       }
 
-      // â”€â”€ Consulta IA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      // ── Consulta IA ─────────────────────────────────────────────────────────
       case 'query': {
         const body = req.method === 'POST'
           ? await parseBody(req)
@@ -103,6 +110,13 @@ export default async function handler(req, res) {
 
         const { patient_id, patient_name, question, selections, save = false } = body;
         if (!question) return res.status(400).json({ error: 'question requerido' });
+
+        // Tenant check: verify patient belongs to authenticated user's clinic (C-4 fix)
+        if (patient_id && effectiveClinicId != null && auth.role !== 'master_admin') {
+          const chk = await pool.query('SELECT clinic_id FROM patients WHERE id = $1', [patient_id]);
+          if (chk.rows.length && chk.rows[0].clinic_id !== effectiveClinicId)
+            return res.status(403).json({ error: 'Acceso no autorizado' });
+        }
 
         const apiKey = process.env.GOOGLE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
         if (!apiKey) return res.status(503).json({ error: 'GEMINI_API_KEY no configurada' });
