@@ -870,6 +870,17 @@ export default async function handler(req, res) {
           const patientClinicId = suCreate?.effective_clinic_id ?? suCreate?.clinic_id ?? null;
           const patientCreatedBy = suCreate?.user_id ?? null;
 
+          // Verificar duplicado dentro de la misma clínica antes de insertar
+          if (cleanRut && patientClinicId != null) {
+            const dup = await pool.query(
+              'SELECT id, first_name, last_name, rut FROM patients WHERE rut = $1 AND clinic_id = $2',
+              [cleanRut, patientClinicId]
+            );
+            if (dup.rows.length > 0) {
+              return res.status(409).json({ conflict: 'same_clinic', patient: dup.rows[0] });
+            }
+          }
+
           // Usar INSERT con columnas de tenant si están disponibles
           let newPatient;
           if (patientClinicId != null) {
@@ -932,6 +943,80 @@ export default async function handler(req, res) {
           [pid, ...values]
         );
         return res.status(200).json(updatedPatient.rows[0]);
+      }
+
+      // ─── Importar snapshot de paciente (datos básicos + antecedentes) ────
+      case 'importPatientSnapshot': {
+        const { source_patient_id, import_fields = ['basic', 'history'] } = body;
+        if (!source_patient_id) return res.status(400).json({ error: 'source_patient_id requerido' });
+
+        const suImp = await getSessionUser(pool, req);
+        if (!suImp) return res.status(401).json({ error: 'No autenticado' });
+        const targetClinicId = suImp.effective_clinic_id ?? suImp.clinic_id;
+        if (!targetClinicId) return res.status(400).json({ error: 'Sin clínica activa' });
+
+        // Seguridad: source_patient debe pertenecer a la misma clínica
+        const srcChk = await pool.query(
+          'SELECT * FROM patients WHERE id = $1 AND clinic_id = $2',
+          [source_patient_id, targetClinicId]
+        );
+        if (!srcChk.rows.length) return res.status(403).json({ error: 'Paciente fuente no encontrado en tu clínica' });
+        const src = srcChk.rows[0];
+
+        // Crear nuevo paciente con los datos básicos (sin RUT para evitar conflicto)
+        const newRut = import_fields.includes('basic') ? null : null; // RUT se omite; usuario lo asignará
+        const insertFields = import_fields.includes('basic')
+          ? { first_name: src.first_name, last_name: src.last_name, email: src.email, phone: src.phone,
+              birth_date: src.birth_date, gender: src.gender, address: src.address, occupation: src.occupation,
+              clinic_id: targetClinicId, created_by_user_id: suImp.user_id }
+          : { clinic_id: targetClinicId, created_by_user_id: suImp.user_id, first_name: src.first_name, last_name: src.last_name };
+
+        const newPatient = await pool.query(
+          `INSERT INTO patients (first_name, last_name, rut, email, phone, birth_date, gender, address, occupation, clinic_id, created_by_user_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+          [insertFields.first_name, insertFields.last_name, src.rut,
+           insertFields.email || null, insertFields.phone || null,
+           insertFields.birth_date || null, insertFields.gender || null,
+           insertFields.address || null, insertFields.occupation || null,
+           targetClinicId, suImp.user_id || null]
+        );
+        const newPatientRow = newPatient.rows[0];
+
+        // Crear expediente inicial
+        const newRecord = await pool.query(
+          "INSERT INTO clinical_records (patient_id, status) VALUES ($1, 'active') RETURNING *",
+          [newPatientRow.id]
+        );
+        const newRecordRow = newRecord.rows[0];
+
+        // Copiar antecedentes si se solicita
+        if (import_fields.includes('history')) {
+          const srcRec = await pool.query(
+            'SELECT id FROM clinical_records WHERE patient_id = $1 ORDER BY created_at LIMIT 1',
+            [source_patient_id]
+          );
+          if (srcRec.rows.length > 0) {
+            const hist = await pool.query(
+              'SELECT * FROM medical_history WHERE record_id = $1 ORDER BY updated_at DESC LIMIT 1',
+              [srcRec.rows[0].id]
+            );
+            if (hist.rows.length > 0) {
+              const h = hist.rows[0];
+              await pool.query(
+                `INSERT INTO medical_history
+                 (record_id, pathological, non_pathological, family_history, surgical_history,
+                  allergies, current_medications, aesthetic_history, gynecological_history)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+                 ON CONFLICT DO NOTHING`,
+                [newRecordRow.id, h.pathological, h.non_pathological, h.family_history,
+                 h.surgical_history, h.allergies, h.current_medications, h.aesthetic_history, h.gynecological_history]
+              );
+            }
+          }
+        }
+
+        await logAudit(pool, { patientId: newPatientRow.id, sessionUser: suImp, actionType: 'create', module: 'patient', summary: `Paciente importado desde ID ${source_patient_id}: ${src.first_name} ${src.last_name}` });
+        return res.status(201).json({ patient: newPatientRow, record: newRecordRow });
       }
 
       case 'deletePatient': {

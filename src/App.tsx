@@ -38,6 +38,7 @@ import AdminFinance      from './pages/AdminFinance';
 import Clinical3D        from './pages/Clinical3D';
 import AdminSystemStatus from './pages/AdminSystemStatus';
 import AdminBackup       from './pages/AdminBackup';
+import AdminAgendaHub    from './pages/AdminAgendaHub';
 import MasterClinicWrapper   from './pages/MasterClinicWrapper';
 import ExternalMedicalFinance from './pages/ExternalMedicalFinance';
 import SkinExplorerPage from './skin-explorer/SkinExplorerPage';
@@ -66,6 +67,7 @@ function AdminRoutes() {
             <Route path="calendar"       element={<AdminCalendarManager />} />
             <Route path="block-schedule" element={<AdminBlockSchedule />} />
             <Route path="appointment"    element={<AdminAppointment />} />
+            <Route path="agenda"         element={<AdminAgendaHub />} />
             <Route path="clinical-records"                    element={<PatientList />} />
             <Route path="clinical-records/new"                element={<NewPatientForm />} />
             <Route path="clinical-records/edit/:patientId"    element={<NewPatientForm />} />
@@ -85,6 +87,7 @@ function AdminRoutes() {
           <Route path="/admin/:clinicSlug/:username/calendar"                                 element={<AdminCalendarManager />} />
           <Route path="/admin/:clinicSlug/:username/block-schedule"                           element={<AdminBlockSchedule />} />
           <Route path="/admin/:clinicSlug/:username/appointment"                              element={<AdminAppointment />} />
+          <Route path="/admin/:clinicSlug/:username/agenda"                                   element={<AdminAgendaHub />} />
           <Route path="/admin/:clinicSlug/:username/clinical-records"                         element={<PatientList />} />
           <Route path="/admin/:clinicSlug/:username/clinical-records/new"                     element={<NewPatientForm />} />
           <Route path="/admin/:clinicSlug/:username/clinical-records/edit/:patientId"         element={<NewPatientForm />} />
@@ -103,6 +106,7 @@ function AdminRoutes() {
           <Route path="/admin/calendar"       element={<AdminCalendarManager />} />
           <Route path="/admin/block-schedule" element={<AdminBlockSchedule />} />
           <Route path="/admin/appointment"    element={<AdminAppointment />} />
+          <Route path="/admin/agenda"         element={<AdminAgendaHub />} />
           <Route path="/admin/clinical-records"                    element={<PatientList />} />
           <Route path="/admin/clinical-records/new"                element={<NewPatientForm />} />
           <Route path="/admin/clinical-records/edit/:patientId"    element={<NewPatientForm />} />

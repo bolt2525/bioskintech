@@ -1,9 +1,9 @@
-﻿import React, { useState, useEffect, useCallback } from 'react';
+﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import {
   Database, Download, RefreshCw, Loader2, Users, FileText,
   Stethoscope, DollarSign, Package, Check, AlertCircle, Info,
-  ClipboardList
+  ClipboardList, Upload, FileJson,
 } from 'lucide-react';
 import AdminLayout from '../components/layout/AdminLayout';
 import { useAuth } from '../hooks/useAuth';
@@ -64,7 +64,9 @@ const MODULE_GROUPS = [
 // ── Componente principal ──────────────────────────────────────────────────────
 export default function AdminBackup() {
   const { user } = useAuth();
+  const isClinicAdmin = user?.role === 'clinic_admin' || user?.role === 'master_admin';
 
+  const [activeTab, setActiveTab] = useState<'export' | 'import'>('export');
   const [stats, setStats] = useState<StatsData | null>(null);
   const [loadingStats, setLoadingStats] = useState(false);
   const [selectedModules, setSelectedModules] = useState<Set<string>>(new Set(['patients']));
@@ -74,6 +76,13 @@ export default function AdminBackup() {
   );
   const [downloadDone, setDownloadDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Estado importación
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importPreview, setImportPreview] = useState<{ modules: string[]; metadata: any } | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadStats = useCallback(async () => {
     setLoadingStats(true);
@@ -145,11 +154,58 @@ export default function AdminBackup() {
     return group.statKeys.reduce((sum, key) => sum + (stats.stats[key]?.count || 0), 0);
   };
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportFile(file);
+    setImportResult(null);
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const data = JSON.parse(ev.target?.result as string);
+        if (data?.metadata && data?.modules) {
+          setImportPreview({ modules: Object.keys(data.modules), metadata: data.metadata });
+        } else {
+          setImportPreview(null);
+          setError('El archivo no es un backup válido de BIOSKIN');
+        }
+      } catch { setError('El archivo no es un JSON válido'); }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleImport = async () => {
+    if (!importFile) return;
+    setImporting(true);
+    setError(null);
+    try {
+      const text = await importFile.text();
+      const data = JSON.parse(text);
+      const res = await authFetch('/api/backup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || 'Error al importar');
+      const counts = Object.entries(result.imported || {}).map(([k, v]) => `${k}: ${v}`).join(', ');
+      setImportResult(`Importación completada — ${counts}`);
+      setImportFile(null);
+      setImportPreview(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      loadStats();
+    } catch (e: any) {
+      setError(e.message || 'Error durante la importación');
+    } finally {
+      setImporting(false);
+    }
+  };
+
   return (
     <AdminLayout>
       <div className="p-4 md:p-8 max-w-3xl mx-auto">
         {/* Header */}
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-4">
             <div className="p-3 bg-gradient-to-br from-blue-500 to-blue-700 rounded-2xl shadow-lg">
               <Database className="w-7 h-7 text-white" />
@@ -159,23 +215,42 @@ export default function AdminBackup() {
               <p className="text-sm text-gray-400">Estadísticas y respaldo de datos</p>
             </div>
           </div>
-          <button
-            onClick={loadStats}
-            disabled={loadingStats}
-            className="p-2 hover:bg-gray-100 rounded-xl border border-gray-200 transition-colors disabled:opacity-50"
-            title="Actualizar estadísticas"
-          >
+          <button onClick={loadStats} disabled={loadingStats}
+            className="p-2 hover:bg-gray-100 rounded-xl border border-gray-200 transition-colors disabled:opacity-50">
             {loadingStats ? <Loader2 className="w-4 h-4 animate-spin text-gray-400" /> : <RefreshCw className="w-4 h-4 text-gray-500" />}
           </button>
         </div>
 
-        {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-2xl text-red-700 text-sm flex gap-2">
-            <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-            {error}
+        {/* Tabs */}
+        {isClinicAdmin && (
+          <div className="flex gap-1 bg-gray-100 rounded-xl p-1 mb-6">
+            {[
+              { id: 'export', label: 'Exportar', icon: Download },
+              { id: 'import', label: 'Importar', icon: Upload },
+            ].map(t => (
+              <button key={t.id} onClick={() => setActiveTab(t.id as any)}
+                className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === t.id ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>
+                <t.icon className="w-4 h-4" />{t.label}
+              </button>
+            ))}
           </div>
         )}
 
+        {error && (
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-2xl text-red-700 text-sm flex gap-2">
+            <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />{error}
+          </div>
+        )}
+
+        {importResult && (
+          <div className="mb-6 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-700 text-sm flex gap-2">
+            <Check className="w-4 h-4 flex-shrink-0 mt-0.5" />{importResult}
+          </div>
+        )}
+
+        {/* Tab Exportar */}
+        {(activeTab === 'export' || !isClinicAdmin) && (
+          <>
         {/* Estadísticas globales */}
         {stats && (
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
@@ -287,6 +362,52 @@ export default function AdminBackup() {
         <p className="mt-3 text-xs text-gray-400 text-center">
           El archivo se descargará con la fecha actual. Guárdalo en un lugar seguro.
         </p>
+        <p className="mt-1 text-xs text-gray-300 text-center">
+          Nota: Las imágenes almacenadas en la nube no se incluyen en el archivo JSON (solo sus referencias URL).
+        </p>
+          </>
+        )}
+
+        {/* Tab Importar */}
+        {activeTab === 'import' && isClinicAdmin && (
+          <div className="space-y-4">
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex gap-3">
+              <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-amber-800">
+                La importación agrega los registros que no existen (por ID). Los registros existentes no se sobreescriben.
+                Solo funciona con backups generados por este mismo sistema.
+              </p>
+            </div>
+
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className="p-4 bg-gray-50 border-b border-gray-200">
+                <h2 className="font-semibold text-gray-700">Seleccionar archivo de backup</h2>
+                <p className="text-xs text-gray-400 mt-1">Formato JSON (.json) — exportado desde este panel</p>
+              </div>
+              <div className="p-4">
+                <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-[#deb887] hover:bg-[#deb887]/5 transition-colors">
+                  <FileJson className="w-8 h-8 text-gray-300 mb-2" />
+                  <span className="text-sm text-gray-500">{importFile ? importFile.name : 'Clic para seleccionar archivo .json'}</span>
+                  <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleFileSelect} />
+                </label>
+
+                {importPreview && (
+                  <div className="mt-4 p-3 bg-blue-50 border border-blue-100 rounded-xl">
+                    <p className="text-xs font-semibold text-blue-800 mb-1">Contenido detectado:</p>
+                    <p className="text-xs text-blue-700">Módulos: {importPreview.modules.join(', ')}</p>
+                    <p className="text-xs text-blue-600 mt-0.5">Generado: {importPreview.metadata.timestamp?.split('T')[0]} por {importPreview.metadata.generated_by}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <motion.button whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}
+              onClick={handleImport} disabled={importing || !importFile || !importPreview}
+              className="w-full py-4 rounded-2xl font-semibold flex items-center justify-center gap-3 shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed bg-gradient-to-r from-blue-500 to-blue-700 text-white hover:shadow-lg">
+              {importing ? <><Loader2 className="w-5 h-5 animate-spin" />Importando...</> : <><Upload className="w-5 h-5" />Importar datos</>}
+            </motion.button>
+          </div>
+        )}
       </div>
     </AdminLayout>
   );

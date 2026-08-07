@@ -5,7 +5,7 @@
 
 import {
   Calendar, Clock, Ban, ClipboardList,
-  DollarSign, Package, Cuboid, Database, Activity, MessageCircle, Brain, Microscope,
+  DollarSign, Package, Cuboid, Database, Activity, Brain, Microscope, CalendarDays,
 } from 'lucide-react';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -45,6 +45,7 @@ export interface ModuleConfig {
   path: string;
   iconColor: string;
   bgColor: string;
+  hidden?: boolean;
 }
 
 export const MODULE_LIST: ModuleConfig[] = [
@@ -58,31 +59,14 @@ export const MODULE_LIST: ModuleConfig[] = [
     bgColor: 'bg-[#deb887]/10',
   },
   {
+    // ponytail: feat:calendar es el representante del grupo; las sub-cards validan permisos individualmente
     feat: 'calendar',
-    title: 'Gestión de Agenda',
-    description: 'Visualiza y administra citas del calendario',
-    icon: Calendar,
-    path: '/admin/calendar',
+    title: 'Agenda',
+    description: 'Citas, calendario, bloqueos de horario y agendamiento',
+    icon: CalendarDays,
+    path: '/admin/agenda',
     iconColor: 'text-indigo-500',
     bgColor: 'bg-indigo-50',
-  },
-  {
-    feat: 'appointment',
-    title: 'Agendar Cita',
-    description: 'Crea citas manualmente en el sistema',
-    icon: Clock,
-    path: '/admin/appointment',
-    iconColor: 'text-orange-500',
-    bgColor: 'bg-orange-50',
-  },
-  {
-    feat: 'block_schedule',
-    title: 'Bloqueo de Horarios',
-    description: 'Bloquea horarios no disponibles',
-    icon: Ban,
-    path: '/admin/block-schedule',
-    iconColor: 'text-red-500',
-    bgColor: 'bg-red-50',
   },
   {
     feat: 'ai_consultation',
@@ -92,6 +76,7 @@ export const MODULE_LIST: ModuleConfig[] = [
     path: '/admin/ai-consultation',
     iconColor: 'text-[#deb887]',
     bgColor: 'bg-[#deb887]/10',
+    hidden: true,
   },
   {
     feat: 'finance',
@@ -123,7 +108,7 @@ export const MODULE_LIST: ModuleConfig[] = [
   {
     feat: 'system_status',
     title: 'Estado del Sistema',
-    description: 'Conectividad de servicios: DB, Calendar y Email',
+    description: 'Suscripción, email y conectividad de la clínica',
     icon: Activity,
     path: '/admin/system-status',
     iconColor: 'text-emerald-500',

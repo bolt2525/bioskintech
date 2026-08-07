@@ -25,6 +25,49 @@ export default async function handler(req, res) {
   const isMaster = auth.role === 'master_admin';
   const { type } = req.query;
 
+  // ── Estado relevante para el usuario (suscripción + demo) ────────────────
+  if (type === 'user-status') {
+    try {
+      const pool = getPool();
+      if (!pool) return res.status(503).json({ success: false, error: 'DB no disponible' });
+      const clinicId = auth.effective_clinic_id ?? auth.clinic_id;
+      if (!clinicId) return res.status(200).json({ success: true, status: 'master', plan_name: 'Master Admin' });
+
+      // clinics y clinic_users están en la misma BD (POSTGRES_URL / NEON_DATABASE_URL)
+      const [clinicRes, userRes] = await Promise.all([
+        pool.query('SELECT name, subscription_expires_at FROM clinics WHERE id = $1', [clinicId]),
+        auth.id
+          ? pool.query('SELECT is_demo, demo_expires_at FROM clinic_users WHERE id = $1', [auth.id])
+          : Promise.resolve({ rows: [] }),
+      ]);
+
+      const clinic = clinicRes.rows[0] || {};
+      const cu     = userRes.rows[0]   || {};
+      const expiresAt = clinic.subscription_expires_at ? new Date(clinic.subscription_expires_at) : null;
+      const daysRemaining = expiresAt
+        ? Math.ceil((expiresAt.getTime() - Date.now()) / 86_400_000)
+        : null;
+
+      let status = 'active';
+      if (cu.is_demo) status = 'demo';
+      else if (!expiresAt) status = 'no_subscription';
+      else if (daysRemaining < 0) status = 'expired';
+      else if (daysRemaining <= 21) status = 'expiring_soon';
+
+      return res.status(200).json({
+        success: true,
+        clinic_name: clinic.name || null,
+        subscription_expires_at: expiresAt ? expiresAt.toISOString() : null,
+        days_remaining: daysRemaining,
+        status,
+        is_demo: cu.is_demo || false,
+        demo_expires_at: cu.demo_expires_at || null,
+      });
+    } catch (e) {
+      return res.status(500).json({ success: false, error: e.message });
+    }
+  }
+
   if (type === 'all') {
     // Ejecutar todos los checks disponibles para el rol
     const results = {};
