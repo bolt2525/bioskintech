@@ -1261,7 +1261,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Ficha de Inyectable — BIOSKIN</title>
+  <title>Ficha de Inyectable — BioSkinTech</title>
   <style>
     @page { margin: 1.5cm; size: A4; }
     * { box-sizing: border-box; margin: 0; padding: 0; }

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Lock, Sparkles, Eye, EyeOff, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Lock, Eye, EyeOff, CheckCircle2, AlertCircle } from 'lucide-react';
 
 export default function AdminSetupPassword() {
   const navigate = useNavigate();
@@ -38,11 +38,12 @@ export default function AdminSetupPassword() {
     <div className="min-h-screen bg-gradient-to-br from-[#fdf8f0] via-white to-[#faf4ea] flex items-center justify-center px-4">
       <div className="relative max-w-md w-full">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-[#deb887] rounded-2xl shadow-lg shadow-[#deb887]/30 mb-4">
-            <Sparkles className="w-8 h-8 text-white" />
-          </div>
-          <h1 className="text-3xl font-bold text-gray-900" style={{ fontFamily: 'Playfair Display, serif' }}>BIOSKIN</h1>
-          <p className="text-gray-400 mt-1 text-sm uppercase tracking-wide">Configura tu contraseña</p>
+          <img
+            src="/images/logo/logo.png"
+            alt="BioSkinTech"
+            className="h-24 w-auto object-contain mx-auto"
+          />
+          <p className="text-gray-400 mt-2 text-sm uppercase tracking-wide">Configura tu contraseña</p>
         </div>
 
         <div className="bg-white rounded-2xl shadow-xl border border-[#deb887]/20 overflow-hidden">

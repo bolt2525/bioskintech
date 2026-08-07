@@ -181,7 +181,7 @@ export default function AdminDashboard() {
                   className="text-xl font-bold text-gray-900 leading-tight"
                   style={{ fontFamily: 'Playfair Display, serif' }}
                 >
-                  {effectiveUser?.clinic_name || 'BIOSKIN'}
+                  {effectiveUser?.clinic_name || 'BioSkinTech'}
                 </h1>
                 <p className="text-xs text-gray-400 leading-tight">
                   {ROLE_BADGE[effectiveUser?.role || ''] || 'Usuario'} · {effectiveUser?.full_name || effectiveUser?.username}

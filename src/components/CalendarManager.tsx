@@ -222,7 +222,7 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
     const dateStr = start.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
     const timeStr = event.start.dateTime ? start.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true }) : '';
 
-    const message = `Hola ${patientName}, le saludamos de BIOSKIN. Le recordamos su cita pendiente para el ${dateStr} a las ${timeStr}. Por favor confirme su asistencia.`;
+    const message = `Hola ${patientName}, le saludamos de BioSkinTech. Le recordamos su cita pendiente para el ${dateStr} a las ${timeStr}. Por favor confirme su asistencia.`;
     
     return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
   };

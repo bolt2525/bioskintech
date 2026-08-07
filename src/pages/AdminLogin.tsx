@@ -14,7 +14,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Lock, Mail, Sparkles, Eye, EyeOff, ShieldCheck } from 'lucide-react';
+import { Lock, Mail, Eye, EyeOff, ShieldCheck } from 'lucide-react';
 import SkinExplorerButton from '../skin-explorer/SkinExplorerButton';
 import AppFooter from '../components/layout/AppFooter';
 
@@ -128,17 +128,13 @@ export default function AdminLogin() {
 
         {/* ── Branding ─────────────────────────────────────────────── */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-[#deb887] rounded-2xl shadow-lg shadow-[#deb887]/30 mb-4">
-            <Sparkles className="w-8 h-8 text-white" />
-          </div>
-          <h1
-            className="text-4xl font-bold text-gray-900 tracking-tight"
-            style={{ fontFamily: 'Playfair Display, serif' }}
-          >
-            BIOSKIN
-          </h1>
-          <p className="text-gray-400 mt-1.5 text-sm tracking-wide uppercase">
-            Sistema de Gestión Clínica
+          <img
+            src="/images/logo/logo.png"
+            alt="BioSkinTech"
+            className="h-28 w-auto object-contain mx-auto"
+          />
+          <p className="text-gray-400 mt-2 text-sm tracking-wide uppercase">
+            Panel de Administración Clínica
           </p>
         </div>
 
@@ -285,7 +281,7 @@ export default function AdminLogin() {
 
         {/* Link de registro */}
         <p className="text-center text-xs text-gray-400 mt-4">
-          ¿Eres nuevo en BIOSKIN?{' '}
+          ¿Eres nuevo en BioSkinTech?{' '}
           <button onClick={() => navigate('/admin/register')} className="text-[#deb887] hover:underline font-medium">
             Registra tu clínica
           </button>

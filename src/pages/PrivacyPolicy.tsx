@@ -49,13 +49,8 @@ export default function PrivacyPolicy() {
             <span className="hidden sm:inline">Volver</span>
           </button>
           <div className="flex items-center gap-3 flex-1">
-            <div className="w-8 h-8 bg-[#deb887] rounded-lg flex items-center justify-center flex-shrink-0">
-              <Shield className="w-4 h-4 text-white" />
-            </div>
-            <div>
-              <p className="font-bold text-gray-900 text-sm leading-none">BIOSKIN</p>
-              <p className="text-xs text-gray-400 mt-0.5">Política de Privacidad</p>
-            </div>
+            <img src="/images/logo/logo.png" alt="BioSkinTech" className="h-10 w-auto object-contain" />
+            <p className="text-xs text-gray-400 mt-0.5">Política de Privacidad</p>
           </div>
           <span className="text-xs text-gray-400 hidden sm:block">Actualizado: {LAST_UPDATED}</span>
         </div>
@@ -91,7 +86,7 @@ export default function PrivacyPolicy() {
           <div className="bg-[#fdf8f0] rounded-xl p-4 space-y-1.5 border border-[#deb887]/20">
             <p><strong>Titular de la Plataforma:</strong> RAFAEL LARREA GALINDO</p>
             <p><strong>RUC:</strong> 0105872600001</p>
-            <p><strong>Domicilio:</strong> Cuenca, Ecuador</p>
+            <p><strong>País de operación:</strong> Ecuador</p>
             <p><strong>Correo de contacto:</strong>{' '}
               <a href={`mailto:${CONTACT_EMAIL}`} className="text-[#deb887] hover:underline">{CONTACT_EMAIL}</a>
             </p>
@@ -126,7 +121,7 @@ export default function PrivacyPolicy() {
         {/* 3. Categorías de Datos */}
         <Section number={3} title="Categorías de Datos Objeto de Tratamiento" icon={<Database className="w-4 h-4" />}>
           <p className="font-semibold text-gray-800">A. Datos de las Clínicas y Profesionales (Usuarios):</p>
-          <p>Nombres, apellidos, número de cédula/RUC, registro del MSP/SENESCYT, correo electrónico, teléfono y datos de facturación.</p>
+          <p>Nombres, apellidos, número de cédula/RUC, registro del MSP/SENESCYT, correo electrónico, teléfono y demás datos de contacto profesional.</p>
           <p className="font-semibold text-gray-800 mt-2">B. Datos de los Pacientes (Datos de Categoría Especial / Sensibles):</p>
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800">
             Al amparo del artículo 25 de la LOPDP, los datos relativos a la salud tienen categoría de <strong>datos sensibles</strong> y reciben la máxima protección.
@@ -168,7 +163,7 @@ export default function PrivacyPolicy() {
           <ul className="list-disc list-inside space-y-1.5 pl-1">
             <li>Gestionar la agenda, citas, historiales médicos y fichas estéticas/clínicas dentro de la plataforma.</li>
             <li>Registrar formalmente el entendimiento del paciente sobre los cuidados pre y post tratamiento, así como la aceptación de posibles complicaciones médicas.</li>
-            <li>Facilitar la emisión de facturación electrónica requerida por el Servicio de Rentas Internas (SRI).</li>
+            <li>Proveer al profesional herramientas de seguimiento administrativo y financiero interno de la clínica (a futuro, según los módulos habilitados).</li>
             <li>Garantizar el soporte técnico, mantenimiento y correcto funcionamiento de la plataforma.</li>
           </ul>
           <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-xs text-emerald-800">
@@ -203,6 +198,12 @@ export default function PrivacyPolicy() {
               {CONTACT_EMAIL}
             </a>
           </div>
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-800 mt-2">
+            <p className="font-semibold mb-1">📌 Nota de gestión de datos para Pacientes:</p>
+            <p>
+              Cuando la solicitud sea presentada por un <strong>Paciente</strong>, la Plataforma (en su rol de Encargado) notificará y coordinará de manera inmediata con la <strong>Clínica o Profesional de la salud</strong> correspondiente (Responsable del Tratamiento), a fin de validar la procedencia legal y médica de la solicitud antes de ejecutar cualquier modificación o eliminación técnica en las bases de datos.
+            </p>
+          </div>
         </Section>
 
         {/* 8. Modificaciones */}
@@ -217,7 +218,7 @@ export default function PrivacyPolicy() {
 
         {/* Footer de la página */}
         <div className="text-center text-xs text-gray-400 pt-4">
-          <p>BIOSKIN © {new Date().getFullYear()} · RUC 0105872600001 · Cuenca, Ecuador</p>
+          <p>BioSkinTech © {new Date().getFullYear()} · RUC 0105872600001 · Ecuador</p>
           <p className="mt-1">
             Este documento tiene validez legal conforme a la LOPDP (Ley Orgánica de Protección de Datos Personales del Ecuador).
           </p>

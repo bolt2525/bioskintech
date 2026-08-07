@@ -130,7 +130,7 @@ export default function AdminBackup() {
       const a = document.createElement('a');
       const dateStr = new Date().toISOString().split('T')[0];
       a.href = url;
-      a.download = `bioskin-backup-${dateStr}.json`;
+      a.download = `bioskintech-backup-${dateStr}.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -167,7 +167,7 @@ export default function AdminBackup() {
           setImportPreview({ modules: Object.keys(data.modules), metadata: data.metadata });
         } else {
           setImportPreview(null);
-          setError('El archivo no es un backup válido de BIOSKIN');
+          setError('El archivo no es un backup válido de BioSkinTech');
         }
       } catch { setError('El archivo no es un JSON válido'); }
     };

@@ -335,7 +335,7 @@ const AdminBlockSchedule: React.FC<BlockScheduleProps> = ({ onBack }) => {
           date: selectedDay,
           hours: selectedHours,
           reason: reason.trim(),
-          adminName: 'Administrador BIOSKIN'
+          adminName: 'Administrador BioSkinTech'
         }),
       });
 

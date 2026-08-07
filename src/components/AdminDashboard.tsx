@@ -317,7 +317,7 @@ const AdminDashboard: React.FC = () => {
             <div className="flex justify-between items-center">
               <div>
                 <h1 className="text-3xl font-bold text-gray-800">Panel Administrativo</h1>
-                <p className="text-gray-600 mt-1">Gestión y monitoreo de BIOSKIN</p>
+                <p className="text-gray-600 mt-1">Gestión y monitoreo de BioSkinTech</p>
               </div>
             </div>
             

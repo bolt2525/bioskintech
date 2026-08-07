@@ -256,7 +256,7 @@ export default function PrintModal({ patient, recordId, recordData, activeConsul
   </div>
   ${sections}
   ${signatureSection}
-  <div class="footer">Generado el ${new Date().toLocaleString('es')} &mdash; ${clinic.general.name||'BIOSKIN'}</div>
+  <div class="footer">Generado el ${new Date().toLocaleString('es')} &mdash; ${clinic.general.name||'BioSkinTech'}</div>
   <script>window.onload=()=>window.print();<\/script>
 </body>
 </html>`;

@@ -11,7 +11,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  Sparkles, Lock, Mail, User, Building2, Phone, MapPin,
+  Lock, Mail, User, Building2, Phone, MapPin,
   KeyRound, CreditCard, Eye, EyeOff, CheckCircle2, ArrowLeft, Globe,
   MessageCircle, ExternalLink, X, ShieldCheck, AtSign, AlertTriangle
 } from 'lucide-react';
@@ -306,11 +306,12 @@ export default function AdminRegister() {
       <div className="relative max-w-lg w-full">
         {/* Branding */}
         <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-14 h-14 bg-[#deb887] rounded-2xl shadow-lg shadow-[#deb887]/30 mb-3">
-            <Sparkles className="w-7 h-7 text-white" />
-          </div>
-          <h1 className="text-3xl font-bold text-gray-900 tracking-tight" style={{ fontFamily: 'Playfair Display, serif' }}>BIOSKIN</h1>
-          <p className="text-gray-400 mt-1 text-sm uppercase tracking-wide">Registro de nueva clínica</p>
+          <img
+            src="/images/logo/logo.png"
+            alt="BioSkinTech"
+            className="h-24 w-auto object-contain mx-auto"
+          />
+          <p className="text-gray-400 mt-2 text-sm uppercase tracking-wide">Registro de nueva clínica</p>
         </div>
 
         <div className="bg-white rounded-2xl shadow-xl border border-[#deb887]/20 overflow-hidden">
@@ -659,7 +660,7 @@ export default function AdminRegister() {
                       placeholder="tu@correo.com"
                       className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
                   </div>
-                  <p className="text-xs text-gray-400 mt-1">⚠️ Recuerda este correo — lo usarás para ingresar a BIOSKIN. Puede ser el mismo Gmail de la clínica u otro.</p>
+                  <p className="text-xs text-gray-400 mt-1">⚠️ Recuerda este correo — lo usarás para ingresar a BioSkinTech. Puede ser el mismo Gmail de la clínica u otro.</p>
                   {emailChecking && <p className="text-xs text-gray-400 mt-1">Verificando disponibilidad...</p>}
                   {emailTaken && <p className="text-xs text-red-500 mt-1">Este email ya está vinculado a otro usuario. Usa otro correo.</p>}
                 </div>
