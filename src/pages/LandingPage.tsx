@@ -5,6 +5,7 @@
  */
 
 import { Sparkles, Activity, Stethoscope, Smile, ChevronRight, ExternalLink } from 'lucide-react';
+import BrandLogo from '../components/ui/BrandLogo';
 
 const MODULES = [
   {
@@ -61,15 +62,7 @@ export default function LandingPage() {
       <header className="border-b border-[#deb887]/20 bg-white/70 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-[#deb887] rounded-xl flex items-center justify-center shadow-md shadow-[#deb887]/30">
-              <Sparkles className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <span className="text-lg font-bold text-gray-900 tracking-tight" style={{ fontFamily: 'Playfair Display, serif' }}>
-                BIOSKINTECH
-              </span>
-              <span className="text-xs text-gray-400 ml-2 hidden sm:inline">Plataforma de Gestión Clínica</span>
-            </div>
+            <BrandLogo className="h-10 w-auto object-contain" />
           </div>
           <a
             href="/gestionestetica/admin/login"
@@ -86,11 +79,16 @@ export default function LandingPage() {
           <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
           Plataforma activa
         </div>
-        <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4 leading-tight" style={{ fontFamily: 'Playfair Display, serif' }}>
-          Gestión Clínica <span className="text-[#deb887]">Inteligente</span>
+        <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-3 leading-tight" style={{ fontFamily: 'Playfair Display, serif' }}>
+          <span className="text-[#deb887]">BIOSKINTECH</span> Admin
         </h1>
-        <p className="text-gray-500 text-lg max-w-2xl mx-auto leading-relaxed">
-          BIOSKINTECH ofrece soluciones de gestión para diferentes especialidades médicas.
+        <p className="text-gray-600 text-xl font-medium mb-4">
+          Plataforma de Gestión Clínica Inteligente
+        </p>
+        <p className="text-gray-500 text-base max-w-2xl mx-auto leading-relaxed">
+          <strong>BIOSKINTECH Admin</strong> es un panel de administración web para profesionales de la salud y la estética médica.
+          Permite gestionar fichas clínicas de pacientes, agenda de citas, consentimientos informados digitales,
+          inventario, finanzas y más — todo desde un entorno seguro y centralizado.
           Elige tu área de práctica para acceder al panel correspondiente.
         </p>
       </section>
@@ -148,7 +146,9 @@ export default function LandingPage() {
           <p className="text-sm text-gray-400">
             © {new Date().getFullYear()} BIOSKINTECH · Todos los derechos reservados
           </p>
-          <div className="flex items-center gap-4 text-sm text-gray-400">
+          <div className="flex flex-wrap items-center justify-center gap-4 text-sm text-gray-400">
+            <a href="/politica-de-privacidad" target="_blank" rel="noopener noreferrer" className="hover:text-[#deb887] transition-colors">Política de Privacidad</a>
+            <a href="/condiciones-de-servicio" target="_blank" rel="noopener noreferrer" className="hover:text-[#deb887] transition-colors">Condiciones de Servicio</a>
             <a href="/gestionestetica/admin/login" className="hover:text-[#deb887] transition-colors">Acceso Clínicas</a>
             <a href="/gestionestetica/admin/register" className="hover:text-[#deb887] transition-colors">Registro</a>
           </div>
