@@ -92,6 +92,7 @@ export default function AdminRegister() {
   // Modal WhatsApp
   const [waModal, setWaModal]         = useState(false);
   const [waForm, setWaForm]           = useState({ nombre: '', apellido: '', cedula: '', motivo: 'compra' });
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
 
   // Invite token desde URL
   const inviteToken  = searchParams.get('invite');
@@ -706,7 +707,24 @@ export default function AdminRegister() {
 
                 {error && <p className="text-red-600 text-sm bg-red-50 rounded-xl px-4 py-2.5">{error}</p>}
 
-                <button type="submit" disabled={loading || usernameTaken || emailTaken} className="w-full py-3 bg-[#deb887] text-white rounded-xl text-sm font-semibold hover:bg-[#c9a876] disabled:opacity-50 transition-colors shadow-md shadow-[#deb887]/30">
+                {/* Aceptación obligatoria de Términos */}
+                <label className="flex items-start gap-3 p-3 rounded-xl border border-[#deb887]/20 bg-[#fdf8f0] cursor-pointer hover:bg-[#fdf0e0] transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={acceptedTerms}
+                    onChange={e => setAcceptedTerms(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 text-[#deb887] rounded focus:ring-[#deb887] flex-shrink-0"
+                  />
+                  <span className="text-xs text-gray-600 leading-relaxed">
+                    He leído y acepto las{' '}
+                    <a href="/condiciones-de-servicio" target="_blank" rel="noopener noreferrer" className="text-[#deb887] font-semibold hover:underline">Condiciones de Servicio</a>
+                    {' '}y la{' '}
+                    <a href="/politica-de-privacidad" target="_blank" rel="noopener noreferrer" className="text-[#deb887] font-semibold hover:underline">Política de Privacidad</a>
+                    {' '}de BioSkinTech. <span className="text-red-500">(Obligatorio)</span>
+                  </span>
+                </label>
+
+                <button type="submit" disabled={loading || usernameTaken || emailTaken || !acceptedTerms} className="w-full py-3 bg-[#deb887] text-white rounded-xl text-sm font-semibold hover:bg-[#c9a876] disabled:opacity-50 transition-colors shadow-md shadow-[#deb887]/30">
                   {loading ? 'Guardando...' : 'Guardar y crear clínica →'}
                 </button>
 

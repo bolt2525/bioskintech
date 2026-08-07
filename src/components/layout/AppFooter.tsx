@@ -12,6 +12,15 @@ export default function AppFooter({ theme = 'light' }: { theme?: 'dark' | 'light
         >
           Política de Privacidad
         </a>
+        {' '}·{' '}
+        <a
+          href="/condiciones-de-servicio"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-[#deb887] hover:text-[#c9a96e] hover:underline transition-colors"
+        >
+          Condiciones de Servicio
+        </a>
       </p>
     </footer>
   );
