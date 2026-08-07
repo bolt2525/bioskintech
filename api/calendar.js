@@ -9,7 +9,8 @@ async function getClinicOAuth2Client(clinicId) {
   const clientSecret = (process.env.GOOGLE_CLIENT_SECRET || '').trim();
   if (!clientId || !clientSecret) return null;
 
-  const redirectUri = `https://${(process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app').trim()}/api/calendar`;
+  const appBase    = (process.env.APP_URL || `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app'}`).replace(/\/$/, '').trim();
+  const redirectUri = `${appBase}/api/calendar`;
   const oAuth2      = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
 
   try {
@@ -48,7 +49,7 @@ export default async function handler(req, res) {
       const { clinicId } = JSON.parse(Buffer.from(state, 'base64url').toString());
       const clientId     = (process.env.GOOGLE_CLIENT_ID     || '').trim();
       const clientSecret = (process.env.GOOGLE_CLIENT_SECRET || '').trim();
-      const redirectUri  = `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app'}/api/calendar`;
+      const redirectUri  = (process.env.APP_URL || `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app'}`).replace(/\/$/, '').trim() + '/api/calendar';
       const oAuth2       = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
       const { tokens }   = await oAuth2.getToken(code);
       oAuth2.setCredentials(tokens);

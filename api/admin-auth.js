@@ -1919,7 +1919,8 @@ export default async function handler(req, res) {
         return res.status(403).json({ error: 'Sin permiso' });
       const clientId = (process.env.GOOGLE_CLIENT_ID || '').trim();
       if (!clientId) return res.status(503).json({ error: 'GOOGLE_CLIENT_ID no configurado' });
-      const redirectUri = `https://${(process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app').trim()}/api/calendar`;
+      const appBase = (process.env.APP_URL || `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app'}`).replace(/\/$/, '').trim();
+      const redirectUri = `${appBase}/api/calendar`;
       const state = Buffer.from(JSON.stringify({ clinicId, ts: Date.now() })).toString('base64url');
       // URLSearchParams codifica correctamente sin double-encoding
       const params = new URLSearchParams({
