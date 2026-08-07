@@ -173,7 +173,7 @@ export default function AdminSystemStatus() {
       const res = await fetch('/api/admin-auth?action=oauthStart', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken') || ''}` },
-        body: JSON.stringify({ clinicId: user.clinic_id }),
+        body: JSON.stringify({ clinicId: user.clinic_id, returnPath: '/admin' }),
       });
       const d = await res.json();
       if (d.url) window.location.href = d.url;

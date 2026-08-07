@@ -1921,7 +1921,8 @@ export default async function handler(req, res) {
       if (!clientId) return res.status(503).json({ error: 'GOOGLE_CLIENT_ID no configurado' });
       const appBase = (process.env.APP_URL || `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app'}`).replace(/\/$/, '').trim();
       const redirectUri = `${appBase}/api/calendar`;
-      const state = Buffer.from(JSON.stringify({ clinicId, ts: Date.now() })).toString('base64url');
+      const { returnPath } = req.body || {};
+      const state = Buffer.from(JSON.stringify({ clinicId, ts: Date.now(), returnPath: returnPath || '/admin/master' })).toString('base64url');
       // URLSearchParams codifica correctamente sin double-encoding
       const params = new URLSearchParams({
         response_type: 'code',

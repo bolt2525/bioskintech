@@ -46,7 +46,7 @@ export default async function handler(req, res) {
   // ── Callback OAuth de Google ────────────────────────────────────────────
   if (code && state && !action) {
     try {
-      const { clinicId } = JSON.parse(Buffer.from(state, 'base64url').toString());
+      const { clinicId, returnPath } = JSON.parse(Buffer.from(state, 'base64url').toString());
       const clientId     = (process.env.GOOGLE_CLIENT_ID     || '').trim();
       const clientSecret = (process.env.GOOGLE_CLIENT_SECRET || '').trim();
       const redirectUri  = (process.env.APP_URL || `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app'}`).replace(/\/$/, '').trim() + '/api/calendar';
@@ -70,11 +70,12 @@ export default async function handler(req, res) {
           updated_at = NOW()
       `;
 
-      // Redirigir al master dashboard con mensaje de éxito
-      return res.redirect(302, '/admin/master?oauth=success&clinic=' + clinicId);
+      // Redirigir a la página que inició el flujo OAuth
+      const dest = returnPath || '/admin/master';
+      return res.redirect(302, dest + '?oauth=success&clinic=' + clinicId);
     } catch (e) {
       console.error('❌ OAuth callback error:', e.message);
-      return res.redirect(302, '/admin/master?oauth=error&msg=' + encodeURIComponent(e.message));
+      return res.redirect(302, '/admin?oauth=error&msg=' + encodeURIComponent(e.message));
     }
   }
 

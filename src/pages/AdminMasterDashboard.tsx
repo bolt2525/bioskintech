@@ -1044,9 +1044,12 @@ export default function AdminMasterDashboard() {
   useEffect(() => {
     checkAuth().then(ok => {
       if (!ok) { navigate('/admin/login'); return; }
-      if (user && user.role !== 'master_admin') { navigate('/admin'); return; }
+      // ponytail: stale closure fix — user state no se actualiza en el cierre del .then()
+      const stored = sessionStorage.getItem('adminUser');
+      const u = stored ? JSON.parse(stored) : null;
+      if (!u || u.role !== 'master_admin') { navigate('/admin'); return; }
+      loadAll();
     });
-    loadAll();
   }, []);
 
   useEffect(() => {
