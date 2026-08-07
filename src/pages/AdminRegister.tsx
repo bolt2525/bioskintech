@@ -15,6 +15,7 @@ import {
   KeyRound, CreditCard, Eye, EyeOff, CheckCircle2, ArrowLeft, Globe,
   MessageCircle, ExternalLink, X, ShieldCheck, AtSign, AlertTriangle
 } from 'lucide-react';
+import AppFooter from '../components/layout/AppFooter';
 
 // Contacto de soporte BioskinTech (número en formato internacional sin +)
 const BIOSKIN_SUPPORT_WA = '593984232889';
@@ -895,6 +896,7 @@ export default function AdminRegister() {
           </div>
         </div>
       )}
+      <AppFooter theme="light" />
     </div>
   );
 }

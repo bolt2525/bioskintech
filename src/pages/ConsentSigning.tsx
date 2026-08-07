@@ -96,6 +96,7 @@ export default function ConsentSigning() {
         alternatives: isPending ? false : (data.declarations?.alternatives || false),
         image_use: isPending ? false : (data.authorizations?.image_use || false),
         photo_video: isPending ? false : (data.authorizations?.photo_video || false),
+        privacy_policy: isPending ? false : (data.authorizations?.privacy_policy || false),
       });
       if (data.signing_status === 'signed') {
         setSignatureData(data.signatures?.patient_sig_data || null);
@@ -135,10 +136,15 @@ export default function ConsentSigning() {
     }
 
     // Validate required declarations
-    const required = ['understanding', 'authorization'];
+    const required = ['understanding', 'authorization', 'privacy_policy'];
     const missing = required.filter(k => !declarations[k]);
     if (missing.length > 0) {
-      alert('Por favor acepte todas las declaraciones obligatorias');
+      const msgs: Record<string, string> = {
+        understanding: 'haber recibido información sobre el tratamiento',
+        authorization: 'autorizar el tratamiento',
+        privacy_policy: 'aceptar la Política de Privacidad',
+      };
+      alert(`Por favor acepte: ${missing.map(k => msgs[k] || k).join(', ')}`);
       return;
     }
 
@@ -154,7 +160,8 @@ export default function ConsentSigning() {
 
     const finalAuthorizations = {
       image_use: declarations.image_use,
-      photo_video: declarations.photo_video
+      photo_video: declarations.photo_video,
+      privacy_policy: declarations.privacy_policy,
     };
 
     try {
@@ -321,6 +328,28 @@ export default function ConsentSigning() {
                 <span className="text-sm text-gray-700">{item.label}</span>
               </label>
             ))}
+
+            {/* Aceptación obligatoria de Política de Privacidad */}
+            <label className="flex items-start gap-3 p-2 rounded hover:bg-gray-50 border border-[#deb887]/20 bg-[#fdf8f0]">
+              <input
+                type="checkbox"
+                checked={declarations.privacy_policy}
+                onChange={() => handleDeclarationChange('privacy_policy')}
+                className="mt-1 w-5 h-5 text-[#deb887] rounded focus:ring-[#deb887]"
+              />
+              <span className="text-sm text-gray-700">
+                Autorizo el uso y almacenamiento de mis datos personales, historial clínico y fotografías en la plataforma bajo los términos descritos en la{' '}
+                <a
+                  href="/politica-de-privacidad"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[#deb887] hover:text-[#c9a96e] font-medium hover:underline"
+                >
+                  Política de Privacidad
+                </a>
+                . <span className="text-red-500 font-medium">(Obligatorio)</span>
+              </span>
+            </label>
 
             <div className="border-t pt-3 mt-3">
               <label className="flex items-start gap-3 p-2 rounded hover:bg-gray-50">

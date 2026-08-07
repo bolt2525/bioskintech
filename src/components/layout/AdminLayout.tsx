@@ -19,6 +19,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, LogOut, User, ChevronRight } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import type { Breadcrumb } from '../../types';
+import AppFooter from './AppFooter';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Props
@@ -158,6 +159,7 @@ export default function AdminLayout({
       <div className="container-custom py-8">
         {children}
       </div>
+      <AppFooter theme="dark" />
     </div>
   );
 }

@@ -19,6 +19,7 @@ import { MasterViewProvider } from './context/MasterViewContext';
 import ErrorBoundary from './pages/ErrorBoundary';
 
 import LandingPage       from './pages/LandingPage';
+import PrivacyPolicy       from './pages/PrivacyPolicy';
 import AdminLogin          from './pages/AdminLogin';
 import AdminRegister       from './pages/AdminRegister';
 import AdminSetupPassword  from './pages/AdminSetupPassword';
@@ -157,9 +158,10 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/"                        element={<LandingPage />} />
-        <Route path="/consent-signing/:token"  element={<ConsentSigning />} />
-        <Route path="/medical-finance"         element={<ExternalMedicalFinance />} />
-        <Route path="*"                        element={<LandingPage />} />
+        <Route path="/consent-signing/:token"   element={<ConsentSigning />} />
+        <Route path="/politica-de-privacidad"   element={<PrivacyPolicy />} />
+        <Route path="/medical-finance"          element={<ExternalMedicalFinance />} />
+        <Route path="*"                         element={<LandingPage />} />
       </Routes>
     </BrowserRouter>
   );

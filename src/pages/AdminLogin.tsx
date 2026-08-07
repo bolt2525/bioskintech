@@ -16,6 +16,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Lock, Mail, Sparkles, Eye, EyeOff, ShieldCheck } from 'lucide-react';
 import SkinExplorerButton from '../skin-explorer/SkinExplorerButton';
+import AppFooter from '../components/layout/AppFooter';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Componente
@@ -293,9 +294,7 @@ export default function AdminLogin() {
         {/* DermoAtlas 3D — teaser interactivo */}
         <SkinExplorerButton />
 
-        <p className="text-center text-xs text-gray-300 mt-2">
-          BIOSKIN © {new Date().getFullYear()} · Panel Administrativo Interno
-        </p>
+        <AppFooter theme="light" />
       </div>
     </div>
   );

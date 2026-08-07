@@ -21,6 +21,7 @@ import {
   Users, Shield, Settings, Lock, Eye, EyeOff,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import AppFooter from '../components/layout/AppFooter';
 
 // Módulos y tipos de constants centralizados
 import { MODULE_LIST } from '../constants/features';
@@ -412,6 +413,7 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
+      <AppFooter theme="light" />
     </div>
   );
 }
