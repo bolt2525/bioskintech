@@ -395,6 +395,31 @@ async function initMultiTenantSchema() {
     WHERE email IS NOT NULL
   `;
 
+  await sql`
+    UPDATE clinic_settings cs
+    SET general = cs.general || jsonb_strip_nulls(jsonb_build_object(
+          'name',    CASE WHEN COALESCE(cs.general->>'name', '') = '' THEN c.name END,
+          'city',    CASE WHEN COALESCE(cs.general->>'city', '') = '' THEN c.city END,
+          'phone',   CASE WHEN COALESCE(cs.general->>'phone', '') = '' THEN c.phone END,
+          'address', CASE WHEN COALESCE(cs.general->>'address', '') = '' THEN c.address END,
+          'tax_id',  CASE WHEN COALESCE(cs.general->>'tax_id', '') = '' THEN c.ruc END
+        )),
+        email = cs.email || jsonb_strip_nulls(jsonb_build_object(
+          'staff_email', CASE WHEN COALESCE(cs.email->>'staff_email', '') = '' THEN c.email END,
+          'from_name',   CASE WHEN COALESCE(cs.email->>'from_name', '') = '' THEN c.name END,
+          'signature',   CASE WHEN COALESCE(cs.email->>'signature', '') = '' THEN 'El equipo de ' || c.name END
+        )),
+        updated_at = NOW()
+    FROM clinics c
+    WHERE cs.clinic_id = c.id
+      AND (
+        COALESCE(cs.general->>'name', '') = '' OR COALESCE(cs.general->>'city', '') = '' OR
+        COALESCE(cs.general->>'phone', '') = '' OR COALESCE(cs.general->>'address', '') = '' OR
+        COALESCE(cs.general->>'tax_id', '') = '' OR COALESCE(cs.email->>'staff_email', '') = '' OR
+        COALESCE(cs.email->>'from_name', '') = '' OR COALESCE(cs.email->>'signature', '') = ''
+      )
+  `;
+
   // Índices de rendimiento
   await sql`CREATE INDEX IF NOT EXISTS idx_clinic_users_username ON clinic_users(username) WHERE is_active = true`;
   try { await sql`CREATE INDEX IF NOT EXISTS idx_patients_clinic ON patients(clinic_id)`; } catch { /* patients aún no existe */ }
