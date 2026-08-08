@@ -724,10 +724,13 @@ async function loginUser(username, password, ip, ua, req) {
         </div>`
       );
       return { success: true, requiresOTP: true, otpToken, maskedEmail };
-    } catch (otpErr) {
-      // ponytail: si el email falla → continuar sin 2FA para no bloquear el acceso
-      console.error('[2FA] Error al enviar OTP:', otpErr.message);
-      await sql`UPDATE admin_sessions SET is_active=true WHERE session_token=${token}`;
+    } catch {
+      console.error('[2FA] No se pudo enviar el código de verificación');
+      await Promise.allSettled([
+        sql`DELETE FROM login_otp WHERE otp_token=${otpToken}`,
+        sql`DELETE FROM admin_sessions WHERE session_token=${token}`,
+      ]);
+      return { success: false, error: 'No se pudo enviar el código de verificación. Intenta nuevamente.' };
     }
   }
 
