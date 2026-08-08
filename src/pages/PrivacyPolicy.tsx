@@ -2,7 +2,7 @@ import { ArrowLeft, Shield, Users, Database, Globe, Clock, UserCheck, FileText, 
 import BrandLogo from '../components/ui/BrandLogo';
 
 const CONTACT_EMAIL = 'bolt2525@gmail.com';
-const LAST_UPDATED = '08 de agosto de 2026';
+const LAST_UPDATED = '07 de agosto de 2026';
 
 interface SectionProps {
   number: number;
