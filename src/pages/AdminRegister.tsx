@@ -82,6 +82,8 @@ export default function AdminRegister() {
   // Email Gmail de la clínica (para Calendar / correos de citas)
   const [clinicEmail, setClinicEmail]       = useState('');
   const [clinicEmailWarning, setClinicEmailWarning] = useState(false);
+  const [clinicEmailTaken, setClinicEmailTaken] = useState(false);
+  const [clinicEmailChecking, setClinicEmailChecking] = useState(false);
 
   // Diálogo de confirmación antes de enviar
   const [showConfirm, setShowConfirm]       = useState(false);
@@ -216,6 +218,18 @@ export default function AdminRegister() {
     finally { setEmailChecking(false); }
   };
 
+  const handleClinicEmailBlur = async (val: string) => {
+    const e = val.trim().toLowerCase();
+    if (!e || !e.includes('@')) return;
+    setClinicEmailChecking(true);
+    try {
+      const r = await fetch(`${API}?action=checkClinicEmail&email=${encodeURIComponent(e)}`);
+      const d = await r.json();
+      setClinicEmailTaken(!d.available);
+    } catch { /* el backend vuelve a validar al registrar */ }
+    finally { setClinicEmailChecking(false); }
+  };
+
   // ── Enviar formulario de registro ─────────────────────────────────────────
 
   async function handleRegisterSubmit(e: React.FormEvent) {
@@ -224,6 +238,7 @@ export default function AdminRegister() {
     if (password.length < 8) { setError('La contraseña debe tener al menos 8 caracteres'); return; }
     if (!/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) { setError('La contraseña debe tener al menos una letra y un número'); return; }
     if (emailTaken) { setError('Este email ya está en uso. Usa otro correo.'); return; }
+    if (clinicEmailTaken) { setError('Este email ya está vinculado a otra clínica. Usa otro correo.'); return; }
     if (!username.trim() || username.trim().length < 3) { setError('El nombre de usuario debe tener al menos 3 caracteres'); return; }
     if (usernameTaken) { setError('El nombre de usuario ya está en uso. Elige otro.'); return; }
     // Mostrar diálogo de confirmación en vez de enviar directamente
@@ -562,9 +577,11 @@ export default function AdminRegister() {
                       value={clinicEmail}
                       onChange={e => {
                         setClinicEmail(e.target.value);
+                        setClinicEmailTaken(false);
                         const v = e.target.value.trim().toLowerCase();
                         setClinicEmailWarning(!!v && !v.endsWith('@gmail.com') && !v.endsWith('.google.com'));
                       }}
+                      onBlur={e => handleClinicEmailBlur(e.target.value)}
                       placeholder="miclinica@gmail.com"
                       className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all"
                     />
@@ -575,6 +592,8 @@ export default function AdminRegister() {
                       <AlertTriangle className="w-3 h-3" /> Para usar Calendar y correos, se recomienda una cuenta de Gmail (@gmail.com)
                     </p>
                   )}
+                  {clinicEmailChecking && <p className="text-xs text-gray-400 mt-1">Verificando disponibilidad...</p>}
+                  {clinicEmailTaken && <p className="text-xs text-red-500 mt-1">Este email ya está vinculado a otra clínica. Usa otro correo.</p>}
                 </div>
 
                 {/* ── Datos del Usuario ── */}
@@ -647,9 +666,9 @@ export default function AdminRegister() {
 
                 {/* Cédula profesional */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Cédula profesional / Matrícula</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Cédula profesional / Matrícula / SENESCYT</label>
                   <input type="text" value={cedulaPro} onChange={e => setCedulaPro(e.target.value)}
-                    placeholder="MP-12345 / 01-0123456"
+                    placeholder="Registro SENESCYT / MP-12345"
                     className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
                 </div>
 
@@ -730,7 +749,7 @@ export default function AdminRegister() {
                   </span>
                 </label>
 
-                <button type="submit" disabled={loading || usernameTaken || emailTaken || !acceptedTerms} className="w-full py-3 bg-[#deb887] text-white rounded-xl text-sm font-semibold hover:bg-[#c9a876] disabled:opacity-50 transition-colors shadow-md shadow-[#deb887]/30">
+                <button type="submit" disabled={loading || usernameTaken || emailTaken || clinicEmailTaken || !acceptedTerms} className="w-full py-3 bg-[#deb887] text-white rounded-xl text-sm font-semibold hover:bg-[#c9a876] disabled:opacity-50 transition-colors shadow-md shadow-[#deb887]/30">
                   {loading ? 'Guardando...' : 'Guardar y crear clínica →'}
                 </button>
 

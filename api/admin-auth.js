@@ -389,6 +389,12 @@ async function initMultiTenantSchema() {
     try { await sql.query(col); } catch { /* ya existe */ }
   }
 
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS clinics_email_lower_unique
+    ON clinics (LOWER(email))
+    WHERE email IS NOT NULL
+  `;
+
   // Índices de rendimiento
   await sql`CREATE INDEX IF NOT EXISTS idx_clinic_users_username ON clinic_users(username) WHERE is_active = true`;
   try { await sql`CREATE INDEX IF NOT EXISTS idx_patients_clinic ON patients(clinic_id)`; } catch { /* patients aún no existe */ }
@@ -1200,10 +1206,13 @@ async function registerClinic(body) {
 
   const emailNorm    = email.trim().toLowerCase();
   const usernameNorm = rawUsername.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
+  const clinicContactEmail = clinic_email?.trim().toLowerCase() || emailNorm;
 
   // Validar email
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailNorm))
     return { error: 'El correo electrónico no es válido' };
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clinicContactEmail))
+    return { error: 'El correo electrónico de la clínica no es válido' };
 
   // Validar username
   if (usernameNorm.length < 3 || usernameNorm.length > 20)
@@ -1212,6 +1221,9 @@ async function registerClinic(body) {
   // Verificar email disponible (por email y username)
   const existingEmail = await sql`SELECT id FROM clinic_users WHERE email = ${emailNorm}`;
   if (existingEmail.rows.length) return { error: 'Ya existe una cuenta con ese correo electrónico' };
+
+  const existingClinicEmail = await sql`SELECT id FROM clinics WHERE LOWER(email) = ${clinicContactEmail}`;
+  if (existingClinicEmail.rows.length) return { error: 'Ese correo electrónico ya está vinculado a otra clínica' };
 
   // Verificar username disponible
   const existingUser = await sql`SELECT id FROM clinic_users WHERE username = ${usernameNorm}`;
@@ -1249,7 +1261,6 @@ async function registerClinic(body) {
 
   // Crear clínica (usar clinic_email si se proporcionó, si no el email del usuario)
   const slug = clinic_name.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-');
-  const clinicContactEmail = clinic_email?.trim().toLowerCase() || emailNorm;
   const subExpires = new Date(Date.now() + 365 * 86400000); // 365 días desde hoy
   let clinicId;
   try {
@@ -1260,7 +1271,9 @@ async function registerClinic(body) {
     `;
     clinicId = clinicR.rows[0].id;
   } catch (e) {
-    if (e.message?.includes('unique')) return { error: 'Ya existe una clínica con ese nombre' };
+    if (e.constraint === 'clinics_email_lower_unique')
+      return { error: 'Ese correo electrónico ya está vinculado a otra clínica' };
+    if (e.code === '23505') return { error: 'Ya existe una clínica con ese nombre' };
     throw e;
   }
 
@@ -1680,6 +1693,14 @@ export default async function handler(req, res) {
       return res.status(200).json({ available: r.rows.length === 0 });
     }
 
+    if (action === 'checkClinicEmail') {
+      const email = (req.query.email || '').trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+        return res.status(400).json({ error: 'email inválido' });
+      const r = await sql`SELECT id FROM clinics WHERE LOWER(email) = ${email}`;
+      return res.status(200).json({ available: r.rows.length === 0 });
+    }
+
     if (action === 'claimSetupToken') {
       const { token, newPassword } = req.body || {};
       const result = await claimSetupTokenFn(token, newPassword);
@@ -2034,10 +2055,10 @@ export default async function handler(req, res) {
       const r = await sql`SELECT * FROM clinic_settings WHERE clinic_id = ${clinicId}`;
       if (!r.rows.length) {
         // Crear con defaults si no existe
-        const clinicR = await sql`SELECT name, email, phone, address FROM clinics WHERE id = ${clinicId}`;
+        const clinicR = await sql`SELECT name, email, phone, address, city, ruc FROM clinics WHERE id = ${clinicId}`;
         const clinic  = clinicR.rows[0] || {};
         const defaults = {
-          general:    { name: clinic.name || '', city: '', tagline: '', logo_url: '', phone: clinic.phone || '', address: clinic.address || '', tax_id: '' },
+          general:    { name: clinic.name || '', city: clinic.city || '', tagline: '', logo_url: '', phone: clinic.phone || '', address: clinic.address || '', tax_id: clinic.ruc || '' },
           treatments: DEFAULT_TREATMENTS,
           email:      { staff_email: clinic.email || '', from_name: clinic.name || '', signature: `El equipo de ${clinic.name || 'la clínica'}`, whatsapp_number: '' },
           agenda:     { start_hour: '08:00', end_hour: '19:00', slot_minutes: 60, calendar_prefix: clinic.name || 'CLINICA' },
