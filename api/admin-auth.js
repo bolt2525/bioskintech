@@ -1931,7 +1931,7 @@ export default async function handler(req, res) {
         response_type: 'code',
         client_id:     clientId,
         redirect_uri:  redirectUri,
-        scope:         'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/gmail.send openid email profile',
+        scope:         'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/gmail.send openid email profile',
         access_type:   'offline',
         prompt:        'consent',
         state,
