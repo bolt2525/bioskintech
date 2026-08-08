@@ -597,6 +597,7 @@ async function loginUser(username, password, ip, ua, req) {
   }
 
   // Login contra DB — join con clinics para obtener slug y name
+  // SECURITY: antes de verificar password, validar master_key si el usuario es master_admin
   const r = await sql`
     SELECT cu.id, cu.username, cu.password_hash, cu.salt, cu.hash_algo, cu.role, cu.clinic_id, cu.access_scope,
            cu.failed_attempts, cu.locked_until, cu.is_active, cu.full_name, cu.email,
@@ -610,6 +611,24 @@ async function loginUser(username, password, ip, ua, req) {
 
   const u = r.rows[0];
   if (!u.is_active) return { success: false, error: 'Cuenta desactivada. Contacta al administrador.' };
+
+  // SECURITY: master_admin requiere MASTER_LOGIN_KEY adicional para autenticarse.
+  // Si la variable no está configurada, el login master queda bloqueado en producción.
+  if (u.role === 'master_admin') {
+    const masterKey = (process.env.MASTER_LOGIN_KEY || '').trim();
+    const providedKey = (req?.body?.master_key || '').trim();
+    if (!masterKey) {
+      // ponytail: MASTER_LOGIN_KEY no configurado → bloquear master login por seguridad
+      console.error('[SECURITY] MASTER_LOGIN_KEY no configurado — login master bloqueado');
+      return { success: false, error: 'Acceso de administrador no disponible. Configura MASTER_LOGIN_KEY.' };
+    }
+    // Comparación de tiempo constante — evitar timing attacks aunque las longitudes difieran
+    const keyA = Buffer.from(crypto.createHash('sha256').update(providedKey).digest('hex'), 'hex');
+    const keyB = Buffer.from(crypto.createHash('sha256').update(masterKey).digest('hex'), 'hex');
+    if (!crypto.timingSafeEqual(keyA, keyB)) {
+      return { success: false, error: 'Credenciales inválidas' };
+    }
+  }
 
   // Block demo users whose time has expired
   if (u.is_demo && u.demo_expires_at && new Date(u.demo_expires_at) < new Date()) {

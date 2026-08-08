@@ -22,6 +22,7 @@ import LandingPage       from './pages/LandingPage';
 import PrivacyPolicy       from './pages/PrivacyPolicy';
 import TermsOfService      from './pages/TermsOfService';
 import AdminLogin          from './pages/AdminLogin';
+import AdminMasterLogin    from './pages/AdminMasterLogin';
 import AdminRegister       from './pages/AdminRegister';
 import AdminSetupPassword  from './pages/AdminSetupPassword';
 import AdminDashboard    from './pages/AdminDashboard';
@@ -57,6 +58,8 @@ function AdminRoutes() {
           <Route path="/" element={<Navigate to="/admin/login" replace />} />
 
           <Route path="/admin/login"           element={<AdminLogin />} />
+          {/* Ruta de acceso master — no enlazada desde el panel público */}
+          <Route path="/admin/sys"             element={<AdminMasterLogin />} />
           {/* Ruta pública — accesible desde la página de login, sin auth requerida */}
           <Route path="/skin-explorer"          element={<SkinExplorerPage />} />
           <Route path="/admin/register"         element={<AdminRegister />} />

@@ -24,9 +24,9 @@ const PLANS = {
   plan_lanzamiento: {
     name:          'Plan Lanzamiento BioskinTech',
     subtitle:      'Precio especial de lanzamiento',
-    amount_cents:   24500,
-    base_cents:     21304,
-    tax_cents:       3196,
+    amount_cents:   26450,
+    base_cents:     23000,
+    tax_cents:       3450,
     period:         'anual',
     features:       ['calendar','block_schedule','appointment','clinical_records','finance','inventory','clinical_3d','system_status','backup'],
   },
@@ -115,11 +115,7 @@ export default async function handler(req, res) {
 
       const authHeader = `Bearer ${token}`;
 
-      console.log('=== PAYPHONE REQUEST (axios) ===');
-      console.log(`URL: POST ${PAYPHONE_BASE}/button/Prepare`);
-      console.log(`Headers: Content-Type=application/json | Authorization=Bearer ${token.substring(0,10)}...[${token.length} chars]`);
-      console.log(`Payload: ${JSON.stringify(payload)}`);
-      console.log('================================');
+      console.log(`[PayPhone] Prepare request: plan=${plan_key} amount=${plan.amount_cents} clientTxId=${clientTxId}`);
 
       let ppData;
       try {

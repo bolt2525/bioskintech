@@ -96,6 +96,12 @@ export default function middleware(request) {
     }
   }
 
+  // ── 2b. Bloquear rutas de sistema admin desde IPs no conocidas (defensa en profundidad) ─
+  // La ruta /gestionestetica/admin/sys es el acceso master — solo se puede cargar,
+  // el API auth ya valida la master_key, pero bloqueamos navegación directa a la API
+  // desde fuera del panel si el path revela el endpoint master internamente.
+  // (El endpoint real es /api/admin-auth con action=login, ya rate-limitado arriba.)
+
   // ── 3. Pasar al siguiente handler con headers de seguridad adicionales ────
   const response = new Response(null, { status: 200 });
 

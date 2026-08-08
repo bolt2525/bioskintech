@@ -50,13 +50,6 @@ export default function AdminLogin() {
     setError('');
     setLoading(true);
 
-    // Acceso especial: gestión médica externa (usuario sin rol admin)
-    if (username === 'mary' && password === 'b10sk1n.1125') {
-      setLoading(false);
-      navigate('/medical-finance');
-      return;
-    }
-
     try {
       const result = await login(username, password) as any;
       if (result.requiresOTP) {
