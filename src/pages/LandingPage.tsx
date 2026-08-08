@@ -80,13 +80,13 @@ export default function LandingPage() {
           Plataforma activa
         </div>
         <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-3 leading-tight" style={{ fontFamily: 'Playfair Display, serif' }}>
-          <span className="text-[#deb887]">BIOSKINTECH</span> Admin
+          <span className="text-[#deb887]">BIOSKINTECH</span>
         </h1>
         <p className="text-gray-600 text-xl font-medium mb-4">
           Plataforma de Gestión Clínica Inteligente
         </p>
         <p className="text-gray-500 text-base max-w-2xl mx-auto leading-relaxed">
-          <strong>BIOSKINTECH Admin</strong> es un panel de administración web para profesionales de la salud y la estética médica.
+          <strong>BIOSKINTECH</strong> es un panel de administración web para profesionales de la salud y la estética médica.
           Permite gestionar fichas clínicas de pacientes, agenda de citas, consentimientos informados digitales,
           inventario, finanzas y más — todo desde un entorno seguro y centralizado.
           Elige tu área de práctica para acceder al panel correspondiente.
