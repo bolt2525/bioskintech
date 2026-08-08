@@ -4,7 +4,7 @@
  * Punto de entrada global — muestra las líneas de gestión disponibles.
  */
 
-import { Sparkles, Activity, Stethoscope, Smile, ChevronRight, ExternalLink } from 'lucide-react';
+import { Sparkles, Activity, Stethoscope, Smile, ExternalLink } from 'lucide-react';
 import BrandLogo from '../components/ui/BrandLogo';
 
 const MODULES = [
@@ -63,13 +63,8 @@ export default function LandingPage() {
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <BrandLogo className="h-10 w-auto object-contain" />
+            <span className="font-bold text-gray-900 tracking-tight hidden sm:inline" style={{ fontFamily: 'Playfair Display, serif' }}>BIOSKINTECH</span>
           </div>
-          <a
-            href="/gestionestetica/admin/login"
-            className="flex items-center gap-1.5 text-sm font-medium text-[#deb887] hover:text-[#c9a876] transition-colors"
-          >
-            Acceder al panel <ChevronRight className="w-4 h-4" />
-          </a>
         </div>
       </header>
 

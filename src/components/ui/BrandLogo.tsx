@@ -9,7 +9,7 @@ export default function BrandLogo({ className = 'h-24 w-auto object-contain mx-a
   const [err, setErr] = useState(false);
 
   if (!err) {
-    return <img src="/images/logo/logo.png" alt="BioSkinTech" className={className} onError={() => setErr(true)} />;
+    return <img src="/images/logo/logo.png" alt="BIOSKINTECH" className={className} onError={() => setErr(true)} />;
   }
 
   if (compact) {
