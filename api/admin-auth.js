@@ -433,7 +433,7 @@ export async function initMultiTenantSchema() {
  *  - clinic_admin desde env ADMIN_USERNAME / ADMIN_PASSWORD
  *  - Features habilitadas para clínica bioskin
  */
-async function seedData() {
+export async function seedData() {
   // Clínica bioskin
   const existing = await sql`SELECT id FROM clinics WHERE slug = 'bioskin'`;
   let bioskinId;
