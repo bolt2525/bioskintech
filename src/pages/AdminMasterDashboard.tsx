@@ -977,7 +977,7 @@ export default function AdminMasterDashboard() {
   const [pwdModal,    setPwdModal]    = useState<{ open: boolean; userId?: number }>({ open: false });
 
   // ── Formularios ──────────────────────────────────────────────────────────
-  const [userForm, setUserForm]     = useState({ username: '', full_name: '', first_name: '', last_name: '', gentilicio: '', profession: '', email: '', role: 'clinic_user', access_scope: 'own', clinic_id: '', password: '', password2: '', cedula_profesional: '', especialidad: '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
+  const [userForm, setUserForm]     = useState({ username: '', full_name: '', first_name: '', last_name: '', gentilicio: '', profession: '', email: '', role: 'clinic_user', access_scope: 'own', finance_scope: 'all', inventory_scope: 'all', clinic_id: '', password: '', password2: '', cedula_profesional: '', especialidad: '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
   const [clinicForm, setClinicForm] = useState({ name: '', email: '', phone: '', address: '' });
   const [pwdForm, setPwdForm]       = useState({ password: '', password2: '' });
   const [showPwd, setShowPwd]       = useState<Record<string, boolean>>({});
@@ -1321,12 +1321,12 @@ export default function AdminMasterDashboard() {
 
   const openCreateUser = () => {
     setUsernameSuggestion(''); setUsernameStatus('idle');
-    setUserForm({ username: '', full_name: '', first_name: '', last_name: '', gentilicio: '', profession: '', email: '', role: 'clinic_user', access_scope: 'own', clinic_id: String(clinics[0]?.id || ''), password: '', password2: '', cedula_profesional: '', especialidad: '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
+    setUserForm({ username: '', full_name: '', first_name: '', last_name: '', gentilicio: '', profession: '', email: '', role: 'clinic_user', access_scope: 'own', finance_scope: 'all', inventory_scope: 'all', clinic_id: String(clinics[0]?.id || ''), password: '', password2: '', cedula_profesional: '', especialidad: '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
     setUserModal({ open: true });
   };
 
   const openEditUser = (u: ClinicUser) => {
-    setUserForm({ username: u.username, full_name: u.full_name || '', first_name: u.first_name || '', last_name: u.last_name || '', gentilicio: u.gentilicio || '', profession: u.profession || '', email: u.email || '', role: u.role, access_scope: u.access_scope, clinic_id: String(u.clinic_id || ''), password: '', password2: '', cedula_profesional: u.cedula_profesional || '', especialidad: u.especialidad || '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
+    setUserForm({ username: u.username, full_name: u.full_name || '', first_name: u.first_name || '', last_name: u.last_name || '', gentilicio: u.gentilicio || '', profession: u.profession || '', email: u.email || '', role: u.role, access_scope: u.access_scope, finance_scope: u.finance_scope || 'all', inventory_scope: u.inventory_scope || 'all', clinic_id: String(u.clinic_id || ''), password: '', password2: '', cedula_profesional: u.cedula_profesional || '', especialidad: u.especialidad || '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
     setUserModal({ open: true, userId: u.id });
   };
 
@@ -1399,7 +1399,7 @@ export default function AdminMasterDashboard() {
     // Si es nueva clínica, abrir modal de usuario pre-asignado a ella
     if (!clinicModal.clinicId && data.clinic) {
       await loadAll();
-      setUserForm({ username: '', full_name: '', first_name: '', last_name: '', gentilicio: '', profession: '', email: '', role: 'clinic_admin', access_scope: 'all', clinic_id: String(data.clinic.id), password: '', password2: '', cedula_profesional: '', especialidad: '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
+      setUserForm({ username: '', full_name: '', first_name: '', last_name: '', gentilicio: '', profession: '', email: '', role: 'clinic_admin', access_scope: 'all', finance_scope: 'all', inventory_scope: 'all', clinic_id: String(data.clinic.id), password: '', password2: '', cedula_profesional: '', especialidad: '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
       setUserModal({ open: true });
     }
     loadAll();
@@ -2145,21 +2145,52 @@ export default function AdminMasterDashboard() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Acceso</label>
-                <select value={userForm.access_scope} onChange={e => setUserForm(p => ({ ...p, access_scope: e.target.value }))} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] focus:outline-none">
-                  <option value="all">Todos los pacientes</option>
-                  <option value="own">Solo propios</option>
-                </select>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Clínica</label>
+                {userForm.role !== 'master_admin' ? (
+                  <select value={userForm.clinic_id} onChange={e => setUserForm(p => ({ ...p, clinic_id: e.target.value }))} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] focus:outline-none">
+                    <option value="">Sin clínica</option>
+                    {clinics.map(c => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
+                  </select>
+                ) : (
+                  <div className="px-3 py-2 border border-dashed border-gray-200 rounded-lg text-sm text-gray-400">Global (sin clínica)</div>
+                )}
               </div>
             </div>
 
+            {/* Control de acceso — pacientes, finanzas e inventario */}
             {userForm.role !== 'master_admin' && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Clínica</label>
-                <select value={userForm.clinic_id} onChange={e => setUserForm(p => ({ ...p, clinic_id: e.target.value }))} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] focus:outline-none">
-                  <option value="">Sin clínica</option>
-                  {clinics.map(c => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
-                </select>
+              <div className="border border-gray-100 rounded-xl p-3 space-y-2.5">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Control de acceso</p>
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-pink-400 inline-block" /> Pacientes
+                    </label>
+                    <select value={userForm.access_scope} onChange={e => setUserForm(p => ({ ...p, access_scope: e.target.value }))} className="w-full px-2 py-1.5 border rounded-lg text-xs focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] focus:outline-none">
+                      <option value="all">Todos</option>
+                      <option value="own">Solo propios</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" /> Finanzas
+                    </label>
+                    <select value={userForm.finance_scope} onChange={e => setUserForm(p => ({ ...p, finance_scope: e.target.value }))} className="w-full px-2 py-1.5 border rounded-lg text-xs focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] focus:outline-none">
+                      <option value="all">Todas</option>
+                      <option value="own">Solo propias</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 inline-block" /> Inventario
+                    </label>
+                    <select value={userForm.inventory_scope} onChange={e => setUserForm(p => ({ ...p, inventory_scope: e.target.value }))} className="w-full px-2 py-1.5 border rounded-lg text-xs focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] focus:outline-none">
+                      <option value="all">Todo</option>
+                      <option value="own">Solo propio</option>
+                    </select>
+                  </div>
+                </div>
+                <p className="text-[10px] text-gray-400">Define qué registros puede ver: solo los que creó él/ella, o todos los de la clínica.</p>
               </div>
             )}
 

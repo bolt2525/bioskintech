@@ -83,6 +83,8 @@ export interface ClinicUser {
   email: string;
   role: UserRole;
   access_scope: AccessScope;
+  finance_scope?: AccessScope;
+  inventory_scope?: AccessScope;
   is_active: boolean;
   last_login: string;
   clinic_id: number | null;
