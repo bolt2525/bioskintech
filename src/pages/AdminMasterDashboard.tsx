@@ -1326,7 +1326,7 @@ export default function AdminMasterDashboard() {
   };
 
   const openEditUser = (u: ClinicUser) => {
-    setUserForm({ username: u.username, full_name: u.full_name || '', first_name: (u as any).first_name || '', last_name: (u as any).last_name || '', gentilicio: (u as any).gentilicio || '', profession: (u as any).profession || '', email: u.email || '', role: u.role, access_scope: u.access_scope, clinic_id: String(u.clinic_id || ''), password: '', password2: '', cedula_profesional: (u as any).cedula_profesional || '', especialidad: (u as any).especialidad || '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
+    setUserForm({ username: u.username, full_name: u.full_name || '', first_name: u.first_name || '', last_name: u.last_name || '', gentilicio: u.gentilicio || '', profession: u.profession || '', email: u.email || '', role: u.role, access_scope: u.access_scope, clinic_id: String(u.clinic_id || ''), password: '', password2: '', cedula_profesional: u.cedula_profesional || '', especialidad: u.especialidad || '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
     setUserModal({ open: true, userId: u.id });
   };
 
@@ -2554,19 +2554,19 @@ export default function AdminMasterDashboard() {
                       <div>
                         <label className="block text-xs font-semibold text-gray-700 mb-1">Métodos de pago aceptados</label>
                         <div className="flex flex-wrap gap-1.5 mb-2 p-2 border rounded-lg bg-gray-50 min-h-[36px]">
-                          {settingsData.finanzas.payment_methods.map((m,i) => (
+                          {(settingsData.finanzas.payment_methods ?? []).map((m,i) => (
                             <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 bg-white border border-gray-200 rounded-full text-xs text-gray-700">
                               {m}
-                              <button onClick={()=>setSettingsData(s=>s?({...s,finanzas:{...s.finanzas,payment_methods:s.finanzas.payment_methods.filter((_,j)=>j!==i)}}):s)}
+                              <button onClick={()=>setSettingsData(s=>s?({...s,finanzas:{...s.finanzas,payment_methods:(s.finanzas.payment_methods??[]).filter((_,j)=>j!==i)}}):s)}
                                 className="text-gray-400 hover:text-red-500"><X className="w-2.5 h-2.5"/></button>
                             </span>
                           ))}
                         </div>
                         <div className="flex gap-2">
                           <input value={newPaymentMethod} onChange={e=>setNewPaymentMethod(e.target.value)}
-                            onKeyDown={e=>{if(e.key==='Enter'&&newPaymentMethod.trim()){setSettingsData(s=>s?({...s,finanzas:{...s.finanzas,payment_methods:[...s.finanzas.payment_methods,newPaymentMethod.trim()]}}):s);setNewPaymentMethod('');}}}
+                            onKeyDown={e=>{if(e.key==='Enter'&&newPaymentMethod.trim()){setSettingsData(s=>s?({...s,finanzas:{...s.finanzas,payment_methods:[...(s.finanzas.payment_methods??[]),newPaymentMethod.trim()]}}):s);setNewPaymentMethod('');}}}
                             placeholder="Agregar método de pago…" className="flex-1 px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
-                          <button onClick={()=>{if(newPaymentMethod.trim()){setSettingsData(s=>s?({...s,finanzas:{...s.finanzas,payment_methods:[...s.finanzas.payment_methods,newPaymentMethod.trim()]}}):s);setNewPaymentMethod('');}}}
+                          <button onClick={()=>{if(newPaymentMethod.trim()){setSettingsData(s=>s?({...s,finanzas:{...s.finanzas,payment_methods:[...(s.finanzas.payment_methods??[]),newPaymentMethod.trim()]}}):s);setNewPaymentMethod('');}}}
                             className="px-3 py-2 rounded-lg text-white" style={{background:'linear-gradient(135deg,#deb887,#c5a075)'}}>
                             <Plus className="w-4 h-4"/>
                           </button>
@@ -2603,19 +2603,19 @@ export default function AdminMasterDashboard() {
                       <div>
                         <label className="block text-xs font-semibold text-gray-700 mb-1">Categorías de productos</label>
                         <div className="flex flex-wrap gap-1.5 mb-2 p-2 border rounded-lg bg-gray-50 min-h-[36px]">
-                          {settingsData.inventario.categories.map((c,i) => (
+                          {(settingsData.inventario.categories ?? []).map((c,i) => (
                             <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 bg-white border border-gray-200 rounded-full text-xs text-gray-700">
                               {c}
-                              <button onClick={()=>setSettingsData(s=>s?({...s,inventario:{...s.inventario,categories:s.inventario.categories.filter((_,j)=>j!==i)}}):s)}
+                              <button onClick={()=>setSettingsData(s=>s?({...s,inventario:{...s.inventario,categories:(s.inventario.categories??[]).filter((_,j)=>j!==i)}}):s)}
                                 className="text-gray-400 hover:text-red-500"><X className="w-2.5 h-2.5"/></button>
                             </span>
                           ))}
                         </div>
                         <div className="flex gap-2">
                           <input value={newCategory} onChange={e=>setNewCategory(e.target.value)}
-                            onKeyDown={e=>{if(e.key==='Enter'&&newCategory.trim()){setSettingsData(s=>s?({...s,inventario:{...s.inventario,categories:[...s.inventario.categories,newCategory.trim()]}}):s);setNewCategory('');}}}
+                            onKeyDown={e=>{if(e.key==='Enter'&&newCategory.trim()){setSettingsData(s=>s?({...s,inventario:{...s.inventario,categories:[...(s.inventario.categories??[]),newCategory.trim()]}}):s);setNewCategory('');}}}
                             placeholder="Agregar categoría…" className="flex-1 px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
-                          <button onClick={()=>{if(newCategory.trim()){setSettingsData(s=>s?({...s,inventario:{...s.inventario,categories:[...s.inventario.categories,newCategory.trim()]}}):s);setNewCategory('');}}}
+                          <button onClick={()=>{if(newCategory.trim()){setSettingsData(s=>s?({...s,inventario:{...s.inventario,categories:[...(s.inventario.categories??[]),newCategory.trim()]}}):s);setNewCategory('');}}}
                             className="px-3 py-2 rounded-lg text-white" style={{background:'linear-gradient(135deg,#deb887,#c5a075)'}}>
                             <Plus className="w-4 h-4"/>
                           </button>

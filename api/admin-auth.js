@@ -927,7 +927,8 @@ async function listUsers(requestUser, clinicIdFilter) {
       return (await sql`
         SELECT cu.id, cu.username, cu.full_name, cu.email, cu.role, cu.access_scope,
                cu.is_active, cu.last_login, cu.clinic_id, c.name as clinic_name, c.slug as clinic_slug,
-               cu.cedula_profesional, cu.especialidad, cu.is_demo, cu.demo_expires_at
+               cu.cedula_profesional, cu.especialidad, cu.is_demo, cu.demo_expires_at,
+               cu.first_name, cu.last_name, cu.gentilicio, cu.profession
         FROM clinic_users cu LEFT JOIN clinics c ON cu.clinic_id = c.id
         WHERE cu.clinic_id = ${clinicIdFilter}
         ORDER BY cu.role, cu.username
@@ -936,7 +937,8 @@ async function listUsers(requestUser, clinicIdFilter) {
     return (await sql`
       SELECT cu.id, cu.username, cu.full_name, cu.email, cu.role, cu.access_scope,
              cu.is_active, cu.last_login, cu.clinic_id, c.name as clinic_name, c.slug as clinic_slug,
-             cu.cedula_profesional, cu.especialidad, cu.is_demo, cu.demo_expires_at
+             cu.cedula_profesional, cu.especialidad, cu.is_demo, cu.demo_expires_at,
+             cu.first_name, cu.last_name, cu.gentilicio, cu.profession
       FROM clinic_users cu LEFT JOIN clinics c ON cu.clinic_id = c.id
       ORDER BY c.name NULLS LAST, cu.role, cu.username
     `).rows;
@@ -944,7 +946,8 @@ async function listUsers(requestUser, clinicIdFilter) {
   // clinic_admin: solo su clínica
   return (await sql`
     SELECT id, username, full_name, email, role, access_scope, is_active, last_login, clinic_id,
-           is_demo, demo_expires_at
+           is_demo, demo_expires_at, first_name, last_name, gentilicio, profession,
+           cedula_profesional, especialidad
     FROM clinic_users WHERE clinic_id = ${requestUser.clinic_id}
     ORDER BY role, username
   `).rows;
@@ -999,7 +1002,8 @@ async function createUser(requestUser, body) {
 }
 
 async function updateUser(requestUser, body) {
-  const { id, full_name, email, role, access_scope, is_active, cedula_profesional, especialidad } = body;
+  const { id, full_name, first_name, last_name, gentilicio, profession,
+          email, role, access_scope, is_active, cedula_profesional, especialidad } = body;
   if (!id) return { error: 'id requerido' };
 
   if (requestUser.role === 'clinic_admin') {
@@ -1013,6 +1017,10 @@ async function updateUser(requestUser, body) {
   await sql`
     UPDATE clinic_users SET
       full_name           = COALESCE(${full_name           ?? null}, full_name),
+      first_name          = COALESCE(${first_name          ?? null}, first_name),
+      last_name           = COALESCE(${last_name           ?? null}, last_name),
+      gentilicio          = COALESCE(${gentilicio          ?? null}, gentilicio),
+      profession          = COALESCE(${profession          ?? null}, profession),
       email               = COALESCE(${email               ?? null}, email),
       access_scope        = COALESCE(${access_scope        ?? null}, access_scope),
       is_active           = COALESCE(${is_active           ?? null}, is_active),
@@ -1025,7 +1033,8 @@ async function updateUser(requestUser, body) {
   }
 
   const updated = await sql`
-    SELECT id, username, full_name, email, role, access_scope, is_active, clinic_id, cedula_profesional, especialidad
+    SELECT id, username, full_name, first_name, last_name, gentilicio, profession,
+           email, role, access_scope, is_active, clinic_id, cedula_profesional, especialidad
     FROM clinic_users WHERE id = ${id}
   `;
   return { success: true, user: updated.rows[0] };
@@ -2248,9 +2257,9 @@ export default async function handler(req, res) {
         treatments:     s.treatments,
         email:          s.email,
         agenda:         s.agenda,
-        finanzas:       s.finanzas       || DEFAULT_FINANZAS,
-        inventario:     s.inventario     || DEFAULT_INVENTARIO,
-        notificaciones: s.notificaciones || DEFAULT_NOTIFICACIONES,
+        finanzas:       { ...DEFAULT_FINANZAS,    ...(s.finanzas       || {}) },
+        inventario:     { ...DEFAULT_INVENTARIO,  ...(s.inventario     || {}) },
+        notificaciones: { ...DEFAULT_NOTIFICACIONES, ...(s.notificaciones || {}) },
       } });
     }
 

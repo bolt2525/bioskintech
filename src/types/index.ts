@@ -74,6 +74,12 @@ export interface ClinicUser {
   id: number;
   username: string;
   full_name: string;
+  first_name?: string;
+  last_name?: string;
+  gentilicio?: string;
+  profession?: string;
+  cedula_profesional?: string;
+  especialidad?: string;
   email: string;
   role: UserRole;
   access_scope: AccessScope;
