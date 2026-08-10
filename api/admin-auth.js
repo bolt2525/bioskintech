@@ -75,6 +75,22 @@ const SUBSCRIPTION_PLANS = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Auto-migración ligera — columnas nuevas que pueden no existir en instancias viejas
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ponytail: flag de módulo — serverless instances are short-lived, safe to skip on subsequent requests
+let _newColumnsMigrated = false;
+async function ensureNewColumns() {
+  if (_newColumnsMigrated) return;
+  try {
+    await sql.query("ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS finance_scope VARCHAR(20) DEFAULT 'all'");
+    await sql.query("ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS inventory_scope VARCHAR(20) DEFAULT 'all'");
+    await sql.query("ALTER TABLE invite_links ADD COLUMN IF NOT EXISTS access_scope VARCHAR(20) DEFAULT 'own'");
+  } catch { /* non-fatal — assume columns already exist if this fails */ }
+  _newColumnsMigrated = true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Helpers de criptografía
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -577,6 +593,7 @@ async function getAllClinicFeatures() {
  */
 async function loginUser(username, password, ip, ua, req) {
   cleanupExpiredDemos().catch(() => {});
+  await ensureNewColumns(); // ensure finance_scope/inventory_scope exist before SELECT
   // Verificar si multi-tenant está inicializado
   let count = 0;
   try {
