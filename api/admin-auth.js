@@ -1283,7 +1283,7 @@ async function registerClinic(body) {
   if (code) {
     const claimed = await sql`
       UPDATE registration_codes
-      SET used_by = -1
+      SET is_active = false, used_at = NOW()
       WHERE code = ${code.trim().toUpperCase()}
         AND is_active = true
         AND used_by IS NULL
