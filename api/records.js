@@ -1,125 +1,35 @@
-import pg from 'pg';
 import crypto from 'crypto';
-import { initClinicalDatabase } from '../lib/neon-clinical-db.js';
-const { Pool, types } = pg;
-
-// ── Solución real para bug de fechas -1 día ──────────────────────────────────
-// El driver pg convierte DATE/TIMESTAMP a objetos JS Date en UTC.
-// Al serializar a JSON quedan como "2026-05-15T00:00:00.000Z".
-// En Ecuador (UTC-5) el navegador interpreta eso como el 14 a las 7 PM → día anterior.
-// Solución: indicar a pg que devuelva estas columnas como strings tal como vienen de PG,
-// sin conversión de zona horaria. Así el frontend siempre recibe "YYYY-MM-DD" o
-// "YYYY-MM-DD HH:MM:SS" sin ambigüedad de timezone.
-types.setTypeParser(1082, val => val); // DATE         → "YYYY-MM-DD"
-types.setTypeParser(1114, val => val); // TIMESTAMP    → "YYYY-MM-DD HH:MM:SS"
-types.setTypeParser(1184, val => val); // TIMESTAMPTZ  → "YYYY-MM-DD HH:MM:SS+00"
+import { initClinicalDatabase, getPool, getAppPool } from '../lib/neon-clinical-db.js';
+import { authenticateRequest } from '../lib/admin-auth.js';
+import { generateUploadUrl, generateReadUrl, deleteR2Object } from '../lib/r2-service.js';
 
 console.log('✅ [API] records.js loaded');
 
 // Global flag to track initialization in the current container instance
 let dbInitialized = false;
-let poolInstance = null;
 
-// Lazy migration for injectables table (runs once per container)
-let injectablesMigrated = false;
-async function ensureInjectablesSchema(pool) {
-  if (injectablesMigrated) return;
-  try {
-    const migrations = [
-      "ALTER TABLE injectables ADD COLUMN IF NOT EXISTS product_type VARCHAR(20) DEFAULT 'toxina'",
-      "ALTER TABLE injectables ADD COLUMN IF NOT EXISTS units_used DECIMAL(6, 2)",
-      "ALTER TABLE injectables ADD COLUMN IF NOT EXISTS needle_type VARCHAR(100)",
-      "ALTER TABLE injectables ADD COLUMN IF NOT EXISTS mapping_data JSONB",
-      "ALTER TABLE injectables ADD COLUMN IF NOT EXISTS treatment_id INTEGER REFERENCES treatments(id) ON DELETE SET NULL",
-      "ALTER TABLE injectables ADD COLUMN IF NOT EXISTS dilution_volume DECIMAL(5, 2)",
-      "ALTER TABLE injectables ADD COLUMN IF NOT EXISTS follow_up_date DATE",
-      "ALTER TABLE injectables ADD COLUMN IF NOT EXISTS injection_plane VARCHAR(100)",
-      "ALTER TABLE injectables ADD COLUMN IF NOT EXISTS relleno_subtype VARCHAR(50)"
-    ];
-    for (const sql of migrations) {
-      try { await pool.query(sql); } catch(e) { /* column may already exist */ }
-    }
-    injectablesMigrated = true;
-    console.log('✅ Injectables schema verified');
-  } catch (e) {
-    console.error('⚠️ Injectables migration warning:', e.message);
-  }
-}
+// ─────────────────────────────────────────────────────────────────────────────
+// Auth helper — reads session from admin_sessions via @vercel/postgres (neondb_owner)
+// ─────────────────────────────────────────────────────────────────────────────
 
-function getPool() {
-  if (poolInstance) return poolInstance;
-  
-  const connectionString = process.env.NEON_DATABASE_URL || process.env.POSTGRES_URL;
-  
-  if (!connectionString) {
-    console.error('❌ No database connection string found (checked NEON_DATABASE_URL, POSTGRES_URL)');
-    return null;
-  }
-
-  try {
-    // ponytail: parse via WHATWG URL API para evitar que pg-connection-string
-    // dispare los warnings de SSL/url.parse() al recibir la raw connection string.
-    const u = new URL(connectionString);
-    poolInstance = new Pool({
-      host: u.hostname,
-      port: parseInt(u.port, 10) || 5432,
-      database: u.pathname.slice(1),
-      user: u.username,
-      password: u.password,
-      ssl: { rejectUnauthorized: true },
-      max: 1,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 5000,
-    });
-    return poolInstance;
-  } catch (e) {
-    console.error('❌ Error creating pool:', e);
-    return null;
-  }
-}
-
-// Obtiene usuario de sesión para tenant scoping.
-// Retorna {role, clinic_id, effective_clinic_id, user_id, access_scope, username} o null.
-// Cuando el usuario es master_admin y envía X-Target-Clinic-Id, effective_clinic_id
-// contiene la clínica destino para que las queries operen en ese contexto.
-async function getSessionUser(pool, req) {
-  const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
-  if (!token) return null;
-  try {
-    const r = await pool.query(`
-      SELECT s.role, s.clinic_id, s.clinic_user_id as user_id, s.access_scope, s.username
-      FROM admin_sessions s
-      LEFT JOIN clinic_users cu ON cu.id = s.clinic_user_id
-      WHERE s.session_token = $1
-        AND s.is_active = true
-        AND s.expires_at > NOW()
-        AND (s.clinic_user_id IS NULL OR cu.is_active = true)
-    `, [token]);
-    if (!r.rows.length) return null;
-    const s = r.rows[0];
-    const role = s.role || 'clinic_admin';
-
-    // Soporte para master_admin viendo una clínica específica
-    let effective_clinic_id = s.clinic_id;
-    if (role === 'master_admin') {
-      const targetHeader = req.headers['x-target-clinic-id'];
-      if (targetHeader) {
-        const parsed = parseInt(targetHeader, 10);
-        if (!isNaN(parsed) && parsed > 0) effective_clinic_id = parsed;
-      }
-    }
-
-    return { role, clinic_id: s.clinic_id, effective_clinic_id, user_id: s.user_id, access_scope: s.access_scope || 'all', username: s.username };
-  } catch (error) {
-    throw error;
-  }
+/** Builds the normalized session-user object from authenticateRequest result. */
+function buildSu(auth) {
+  if (!auth?.valid) return null;
+  return {
+    role:                auth.role,
+    clinic_id:           auth.clinic_id,           // UUID string
+    effective_clinic_id: auth.effective_clinic_id, // UUID string (may differ for master)
+    user_id:             auth.id,
+    access_scope:        auth.access_scope || 'all',
+    username:            auth.username,
+  };
 }
 
 /**
  * Registra un evento de auditoría en patient_audit_log.
  * Silencioso si falla — la auditoría nunca debe interrumpir la operación principal.
  */
-async function logAudit(pool, { patientId, recordId, sessionUser, actionType, module, summary, fieldChanges }) {
+async function logAudit(client, { patientId, recordId, sessionUser, actionType, module, summary, fieldChanges }) {
   try {
     await pool.query(
       `INSERT INTO patient_audit_log (patient_id, record_id, clinic_user_id, user_display_name, action_type, module, summary, field_changes)
@@ -146,7 +56,7 @@ export default async function handler(req, res) {
   const allowedOrigins = (process.env.ADMIN_CORS_ORIGIN || 'https://bioskintech.vercel.app,http://localhost:5173,http://localhost:4173').split(',').map(s => s.trim());
   res.setHeader('Access-Control-Allow-Origin', allowedOrigins.includes(requestOrigin) ? requestOrigin : allowedOrigins[0]);
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Target-Clinic-Id');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -161,26 +71,29 @@ export default async function handler(req, res) {
       action = body.action;
     }
 
-    // Get pool instance lazily
-    const pool = getPool();
+    // ── Auth ──────────────────────────────────────────────────────────────
+    // ponytail: whitelist mínima pública; cualquier acción nueva requiere auth por defecto
+    const PUBLIC_ACTIONS = new Set(['health', 'submitSignature', 'getSigningSession']);
+    let auth = null;
+    if (!PUBLIC_ACTIONS.has(action)) {
+      auth = await authenticateRequest(req);
+      if (!auth?.valid) return res.status(401).json({ error: 'No autenticado' });
+    }
 
-    if (!pool) {
-      console.error('❌ Database connection missing');
+    // Session user object compatible con código existente
+    const su = buildSu(auth);
+    // ponytail: alias para compatibilidad con handlers que usan getSessionUserOnce()
+    const getSessionUserOnce = async () => su;
+
+    const appPool = getAppPool();
+    if (!appPool) {
       return res.status(500).json({ error: 'Database connection not configured. Check NEON_DATABASE_URL.' });
     }
 
-    // Sesión del usuario activo — usado por auditoría y control de acceso
-    // ponytail: lazy, solo se resuelve una vez por request
-    let _sessionUser;
-    const getSessionUserOnce = async () => {
-      if (_sessionUser === undefined) _sessionUser = await getSessionUser(pool, req) || null;
-      return _sessionUser;
-    };
-
-    // Test connection on health check
+    // ── Health check ──────────────────────────────────────────────────────
     if (action === 'health') {
       try {
-        const client = await pool.connect();
+        const client = await appPool.connect();
         const result = await client.query('SELECT NOW()');
         client.release();
         return res.status(200).json({ 
@@ -217,15 +130,22 @@ export default async function handler(req, res) {
       }
     }
 
-    // Guard global de autenticación — todas las acciones salvo firma pública requieren sesión válida
-    // ponytail: whitelist mínima pública; cualquier acción nueva debe autenticarse por defecto
-    const PUBLIC_ACTIONS = new Set(['health', 'submitSignature', 'getSigningSession']);
-    if (!PUBLIC_ACTIONS.has(action)) {
-      const guardUser = await getSessionUserOnce();
-      if (!guardUser) return res.status(401).json({ error: 'No autenticado' });
-    }
+    // ── Acquire tenant-scoped client ──────────────────────────────────────
+    // is_local=false → session-level; se resetea a '' en el finally antes de release.
+    // ponytail: más simple que BEGIN/COMMIT y compatible con early-return en cada case.
+    const effectiveClinicId = su?.effective_clinic_id ?? su?.clinic_id ?? null;
+    const client = await appPool.connect();
 
-    switch (action) {
+    try {
+      await client.query(
+        "SELECT set_config('app.current_tenant', $1, false)",
+        [effectiveClinicId ? String(effectiveClinicId) : '']
+      );
+
+      // ponytail: pool alias para los pocos handlers que usan pool.connect() internamente
+      const pool = { query: (...a) => client.query(...a), connect: () => appPool.connect() };
+
+      switch (action) {
       case 'init':
       case 'initClinical':
         return res.status(200).json({ success: true, message: 'Clinical database initialized' });
@@ -2352,6 +2272,97 @@ export default async function handler(req, res) {
 
       default:
         return res.status(400).json({ error: 'Invalid action' });
+
+      // ==========================================
+      // PHOTOS MODULE (Cloudflare R2)
+      // ==========================================
+
+      case 'getPhotoUploadUrl': {
+        // Returns a presigned PUT URL — the client uploads directly to R2, never via server
+        const { record_id, content_type, photo_type, consultation_id } = body;
+        if (!record_id || !content_type) return res.status(400).json({ error: 'record_id y content_type requeridos' });
+        const allowed = ['image/jpeg','image/png','image/webp','image/heic'];
+        if (!allowed.includes(content_type)) return res.status(400).json({ error: 'Tipo de archivo no permitido' });
+
+        const clinicId = su?.effective_clinic_id ?? su?.clinic_id;
+        const r2Key = `clinics/${clinicId}/records/${record_id}/photos/${crypto.randomUUID()}.${content_type.split('/')[1]}`;
+        try {
+          const presignedUrl = await generateUploadUrl(r2Key, content_type);
+          return res.status(200).json({ presignedUrl, r2Key });
+        } catch (err) {
+          console.error('R2 upload URL error:', err);
+          return res.status(503).json({ error: 'Almacenamiento no configurado — Configure R2_ACCESS_KEY_ID en Vercel' });
+        }
+      }
+
+      case 'confirmPhotoUpload': {
+        const { record_id, r2_key, photo_type = 'general', face_zone, body_zone, session_label, notes, consultation_id, taken_at } = body;
+        if (!record_id || !r2_key) return res.status(400).json({ error: 'record_id y r2_key requeridos' });
+        const clinicId = su?.effective_clinic_id ?? su?.clinic_id;
+        try {
+          const result = await pool.query(
+            `INSERT INTO clinical_photos (record_id, consultation_id, clinic_id, r2_key, photo_type, face_zone, body_zone, session_label, notes, taken_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id, r2_key, photo_type, created_at`,
+            [record_id, consultation_id||null, clinicId, r2_key, photo_type, face_zone||null, body_zone||null, session_label||null, notes||null, taken_at||null]
+          );
+          return res.status(201).json(result.rows[0]);
+        } catch (err) {
+          return res.status(500).json({ error: err.message });
+        }
+      }
+
+      case 'listPhotos': {
+        const { record_id } = req.query;
+        if (!record_id) return res.status(400).json({ error: 'record_id requerido' });
+        try {
+          const result = await pool.query(
+            `SELECT id, r2_key, photo_type, face_zone, body_zone, session_label, notes, taken_at, created_at
+             FROM clinical_photos WHERE record_id = $1 ORDER BY taken_at DESC`,
+            [record_id]
+          );
+          // Generar read URLs firmadas (1h) para cada foto
+          const photos = await Promise.all(result.rows.map(async (p) => {
+            try { return { ...p, url: await generateReadUrl(p.r2_key) }; }
+            catch { return { ...p, url: null }; }
+          }));
+          return res.status(200).json(photos);
+        } catch (err) {
+          return res.status(500).json({ error: err.message });
+        }
+      }
+
+      case 'updatePhoto': {
+        const { id, photo_type, face_zone, body_zone, session_label, notes } = body;
+        if (!id) return res.status(400).json({ error: 'id requerido' });
+        try {
+          await pool.query(
+            `UPDATE clinical_photos SET photo_type=$1, face_zone=$2, body_zone=$3, session_label=$4, notes=$5 WHERE id=$6`,
+            [photo_type||null, face_zone||null, body_zone||null, session_label||null, notes||null, id]
+          );
+          return res.status(200).json({ success: true });
+        } catch (err) {
+          return res.status(500).json({ error: err.message });
+        }
+      }
+
+      case 'deletePhoto': {
+        const { id } = body;
+        if (!id) return res.status(400).json({ error: 'id requerido' });
+        try {
+          const r = await pool.query('SELECT r2_key FROM clinical_photos WHERE id = $1', [id]);
+          if (!r.rows.length) return res.status(404).json({ error: 'Foto no encontrada' });
+          await deleteR2Object(r.rows[0].r2_key);
+          await pool.query('DELETE FROM clinical_photos WHERE id = $1', [id]);
+          return res.status(200).json({ success: true });
+        } catch (err) {
+          return res.status(500).json({ error: err.message });
+        }
+      }
+    }
+    } finally {
+      // Limpiar tenant antes de devolver la conexión al pool
+      try { await client.query("SELECT set_config('app.current_tenant', '', false)"); } catch {}
+      client.release();
     }
   } catch (error) {
     console.error('Clinical Records API Error:', error);

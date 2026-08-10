@@ -109,10 +109,10 @@ function generateToken() {
 
 /** Crea todas las tablas necesarias (idempotente — safe to re-run) */
 async function initMultiTenantSchema() {
-  // Tabla de clínicas (tenants)
+  // Tabla de clínicas (tenants) — PK UUID
   await sql`
     CREATE TABLE IF NOT EXISTS clinics (
-      id         SERIAL PRIMARY KEY,
+      id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       name       VARCHAR(255) NOT NULL,
       slug       VARCHAR(100) UNIQUE NOT NULL,
       email      VARCHAR(255),
@@ -131,7 +131,7 @@ async function initMultiTenantSchema() {
   await sql`
     CREATE TABLE IF NOT EXISTS clinic_users (
       id              SERIAL PRIMARY KEY,
-      clinic_id       INTEGER REFERENCES clinics(id) ON DELETE CASCADE,
+      clinic_id       UUID REFERENCES clinics(id) ON DELETE CASCADE,
       username        VARCHAR(100) UNIQUE NOT NULL,
       password_hash   VARCHAR(255) NOT NULL,
       salt            VARCHAR(64),
@@ -161,7 +161,7 @@ async function initMultiTenantSchema() {
       is_active      BOOLEAN DEFAULT true,
       clinic_user_id INTEGER,
       role           VARCHAR(30),
-      clinic_id      INTEGER,
+      clinic_id      UUID,
       access_scope   VARCHAR(20)
     )
   `;
@@ -169,7 +169,7 @@ async function initMultiTenantSchema() {
   // Features habilitadas por clínica
   await sql`
     CREATE TABLE IF NOT EXISTS clinic_features (
-      clinic_id INTEGER NOT NULL REFERENCES clinics(id) ON DELETE CASCADE,
+      clinic_id UUID NOT NULL REFERENCES clinics(id) ON DELETE CASCADE,
       feature   VARCHAR(50) NOT NULL,
       enabled   BOOLEAN DEFAULT true,
       PRIMARY KEY (clinic_id, feature)
@@ -180,7 +180,7 @@ async function initMultiTenantSchema() {
   await sql`
     CREATE TABLE IF NOT EXISTS clinic_oauth_tokens (
       id            SERIAL PRIMARY KEY,
-      clinic_id     INTEGER NOT NULL REFERENCES clinics(id) ON DELETE CASCADE UNIQUE,
+      clinic_id     UUID NOT NULL REFERENCES clinics(id) ON DELETE CASCADE UNIQUE,
       access_token  TEXT,
       refresh_token TEXT NOT NULL,
       token_expiry  TIMESTAMP,
@@ -193,7 +193,7 @@ async function initMultiTenantSchema() {
   // Configuración personalizable por clínica (JSONB para evitar migraciones futuras)
   await sql`
     CREATE TABLE IF NOT EXISTS clinic_settings (
-      clinic_id  INTEGER PRIMARY KEY REFERENCES clinics(id) ON DELETE CASCADE,
+      clinic_id  UUID PRIMARY KEY REFERENCES clinics(id) ON DELETE CASCADE,
       general    JSONB NOT NULL DEFAULT '{}',
       treatments JSONB NOT NULL DEFAULT '[]',
       email      JSONB NOT NULL DEFAULT '{}',
@@ -267,7 +267,7 @@ async function initMultiTenantSchema() {
   await sql`
     CREATE TABLE IF NOT EXISTS subscriptions (
       id                      SERIAL PRIMARY KEY,
-      clinic_id               INTEGER REFERENCES clinics(id),
+      clinic_id               UUID REFERENCES clinics(id),
       plan_name               VARCHAR(100),
       amount_cents            INTEGER NOT NULL DEFAULT 0,
       currency                VARCHAR(10) DEFAULT 'USD',
@@ -287,7 +287,7 @@ async function initMultiTenantSchema() {
     CREATE TABLE IF NOT EXISTS invite_links (
       id          SERIAL PRIMARY KEY,
       token       VARCHAR(64) UNIQUE NOT NULL,
-      clinic_id   INTEGER REFERENCES clinics(id) ON DELETE CASCADE,
+      clinic_id   UUID REFERENCES clinics(id) ON DELETE CASCADE,
       role        VARCHAR(30) DEFAULT 'clinic_user',
       email       VARCHAR(255),
       features    JSONB DEFAULT '[]',

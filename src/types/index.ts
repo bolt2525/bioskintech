@@ -33,7 +33,7 @@ export interface AuthUser {
   full_name?: string;
   email?: string;
   role: UserRole;
-  clinic_id: number | null;
+  clinic_id: string | null;   // UUID string
   clinic_name?: string;
   clinic_slug?: string;
   access_scope: AccessScope;
