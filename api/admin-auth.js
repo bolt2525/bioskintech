@@ -604,7 +604,7 @@ async function getAllClinicFeatures() {
  */
 async function loginUser(username, password, ip, ua, req) {
   cleanupExpiredDemos().catch(() => {});
-  await ensureNewColumns(); // ensure finance_scope/inventory_scope exist before SELECT
+  // ensureNewColumns already called at handler start — no need to repeat here
   // Verificar si multi-tenant está inicializado
   let count = 0;
   try {
@@ -1525,13 +1525,11 @@ async function getInviteDetails(token) {
   if (!token || typeof token !== 'string' || token.length !== 64)
     return { valid: false, error: 'Token inválido' };
   if (!/^[0-9a-f]{64}$/.test(token)) return { valid: false, error: 'Token inválido' };
-  // Single query with text-safe JOIN — avoids UUID vs integer type mismatch on legacy schemas
   const r = await sql`
     SELECT il.role, il.email, il.is_used, il.expires_at, il.access_scope, il.features,
-           il.clinic_id::text as clinic_id_text,
            c.name as clinic_name
     FROM invite_links il
-    LEFT JOIN clinics c ON c.id::text = il.clinic_id::text
+    LEFT JOIN clinics c ON c.id = il.clinic_id
     WHERE il.token = ${token}
   `;
   if (!r.rows.length) return { valid: false, error: 'Enlace no encontrado' };
@@ -1543,7 +1541,7 @@ async function getInviteDetails(token) {
     : null;
   return {
     valid: true,
-    clinic_name: inv.clinic_name || 'Sin nombre',
+    clinic_name: inv.clinic_name || 'Clínica',
     role: inv.role,
     access_scope: inv.access_scope || 'own',
     features: Array.isArray(inv.features) ? inv.features : [],
@@ -1559,7 +1557,7 @@ async function listInviteLinks(requestUser) {
                cu.username as used_by_username, c.name as clinic_name
         FROM invite_links il
         LEFT JOIN clinic_users cu ON cu.id = il.used_by
-        LEFT JOIN clinics c ON c.id::text = il.clinic_id::text
+        LEFT JOIN clinics c ON c.id = il.clinic_id
         ORDER BY il.created_at DESC LIMIT 100
       `
     : await sql`
@@ -1567,8 +1565,8 @@ async function listInviteLinks(requestUser) {
                cu.username as used_by_username, c.name as clinic_name
         FROM invite_links il
         LEFT JOIN clinic_users cu ON cu.id = il.used_by
-        LEFT JOIN clinics c ON c.id::text = il.clinic_id::text
-        WHERE il.clinic_id::text = ${String(requestUser.clinic_id)}
+        LEFT JOIN clinics c ON c.id = il.clinic_id
+        WHERE il.clinic_id = ${requestUser.clinic_id}
         ORDER BY il.created_at DESC
       `;
   return r.rows;
@@ -1863,6 +1861,9 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-setup-secret, x-target-clinic-id');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
+
+  // Garantiza que las columnas nuevas existan antes de cualquier query
+  await ensureNewColumns();
 
   const action = req.query.action || req.body?.action;
 
