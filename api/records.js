@@ -82,8 +82,9 @@ export default async function handler(req, res) {
 
     // Session user object compatible con código existente
     const su = buildSu(auth);
-    // ponytail: alias para compatibilidad con handlers que usan getSessionUserOnce()
+    // ponytail: aliases — auth ya fue verificada arriba, ambas devuelven el mismo su
     const getSessionUserOnce = async () => su;
+    const getSessionUser = async (_pool, _req) => su;
 
     const appPool = getAppPool();
     if (!appPool) {
