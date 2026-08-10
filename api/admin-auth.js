@@ -350,7 +350,7 @@ export async function initMultiTenantSchema() {
   await sql`
     CREATE TABLE IF NOT EXISTS clinic_notifications (
       id         SERIAL PRIMARY KEY,
-      clinic_id  INTEGER NOT NULL REFERENCES clinics(id) ON DELETE CASCADE,
+      clinic_id  UUID NOT NULL REFERENCES clinics(id) ON DELETE CASCADE,
       type       VARCHAR(30) DEFAULT 'info',
       message    TEXT NOT NULL,
       is_read    BOOLEAN DEFAULT FALSE,
@@ -618,9 +618,8 @@ async function loginUser(username, password, ip, ua, req) {
     const masterKey = (process.env.MASTER_LOGIN_KEY || '').trim();
     const providedKey = (req?.body?.master_key || '').trim();
     if (!masterKey) {
-      // ponytail: MASTER_LOGIN_KEY no configurado → bloquear master login por seguridad
       console.error('[SECURITY] MASTER_LOGIN_KEY no configurado — login master bloqueado');
-      return { success: false, error: 'Acceso de administrador no disponible. Configura MASTER_LOGIN_KEY.' };
+      return { success: false, error: 'Credenciales inválidas' }; // no revelar razón
     }
     // Comparación de tiempo constante — evitar timing attacks aunque las longitudes difieran
     const keyA = Buffer.from(crypto.createHash('sha256').update(providedKey).digest('hex'), 'hex');
