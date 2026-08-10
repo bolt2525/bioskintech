@@ -794,11 +794,12 @@ export default async function handler(req, res) {
           // Verificar duplicado dentro de la misma clínica antes de insertar
           if (cleanRut && patientClinicId != null) {
             const dup = await pool.query(
-              'SELECT id, first_name, last_name, rut FROM patients WHERE rut = $1 AND clinic_id = $2',
+              'SELECT id, first_name, last_name, rut, created_by_user_id FROM patients WHERE rut = $1 AND clinic_id = $2',
               [cleanRut, patientClinicId]
             );
             if (dup.rows.length > 0) {
-              return res.status(409).json({ conflict: 'same_clinic', patient: dup.rows[0] });
+              const conflictType = dup.rows[0].created_by_user_id === patientCreatedBy ? 'same_user' : 'same_clinic';
+              return res.status(409).json({ conflict: conflictType, patient: dup.rows[0] });
             }
           }
 

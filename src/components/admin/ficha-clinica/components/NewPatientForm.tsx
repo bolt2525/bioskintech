@@ -5,7 +5,7 @@ import { Save, ArrowLeft, AlertCircle, Users, X } from 'lucide-react';
 import AdminLayout from '../../../layout/AdminLayout';
 import { useAdminNav } from '../../../../hooks/useAdminNav';
 
-interface DuplicatePatient { id: number; first_name: string; last_name: string; rut: string; }
+interface DuplicatePatient { id: number; first_name: string; last_name: string; rut: string; sameUser?: boolean; }
 
 export default function NewPatientForm() {
   const navigate = useNavigate();
@@ -92,8 +92,8 @@ export default function NewPatientForm() {
         nav(`ficha-clinica/paciente/${result.id}`);
       } else if (response.status === 409) {
         const data = await response.json();
-        if (data.conflict === 'same_clinic') {
-          setDuplicate(data.patient);
+        if (data.conflict === 'same_user' || data.conflict === 'same_clinic') {
+          setDuplicate({ ...data.patient, sameUser: data.conflict === 'same_user' });
           return;
         }
         throw new Error(data.error || 'Conflicto al crear paciente');
@@ -165,7 +165,8 @@ export default function NewPatientForm() {
                 <div className="h-1 bg-gradient-to-r from-[#deb887] to-[#c5a075]" />
                 <div className="px-5 py-4 border-b flex justify-between items-center">
                   <h3 className="font-semibold text-gray-900 flex items-center gap-2 text-sm">
-                    <Users className="w-4 h-4 text-[#deb887]" /> Paciente existente en tu clínica
+                    <Users className="w-4 h-4 text-[#deb887]" />
+                    {duplicate.sameUser ? 'Paciente ya registrado por ti' : 'Paciente existente en tu clínica'}
                   </h3>
                   <button onClick={() => setDuplicate(null)} className="text-gray-300 hover:text-gray-500">
                     <X className="w-4 h-4" />
@@ -173,35 +174,48 @@ export default function NewPatientForm() {
                 </div>
                 <div className="p-5 space-y-4">
                   <p className="text-sm text-gray-600">
-                    Este paciente ya fue registrado por otro profesional de tu clínica:
+                    {duplicate.sameUser
+                      ? 'Este paciente ya existe en tu expediente:'
+                      : 'Este paciente ya fue registrado por otro profesional de tu clínica:'}
                   </p>
                   <div className="bg-[#deb887]/10 border border-[#deb887]/20 rounded-xl p-3">
                     <p className="font-semibold text-gray-900">{duplicate.first_name} {duplicate.last_name}</p>
                     <p className="text-xs text-gray-500 mt-0.5">Cédula / RUC / RUT: {duplicate.rut}</p>
                   </div>
-                  <p className="text-sm text-gray-500">¿Qué deseas hacer?</p>
-                  <div className="space-y-2">
-                    <label className="flex items-center gap-3 cursor-pointer">
-                      <input type="checkbox" checked={importFields.basic} onChange={e => setImportFields(p => ({ ...p, basic: e.target.checked }))}
-                        className="w-4 h-4 accent-[#deb887]" />
-                      <span className="text-sm text-gray-700">Importar datos básicos del paciente</span>
-                    </label>
-                    <label className="flex items-center gap-3 cursor-pointer">
-                      <input type="checkbox" checked={importFields.history} onChange={e => setImportFields(p => ({ ...p, history: e.target.checked }))}
-                        className="w-4 h-4 accent-[#deb887]" />
-                      <span className="text-sm text-gray-700">Importar antecedentes médicos</span>
-                    </label>
-                  </div>
-                  <div className="flex gap-2 pt-2">
-                    <button onClick={handleImport} disabled={importing || (!importFields.basic && !importFields.history)}
-                      className="flex-1 py-2.5 bg-[#deb887] text-white rounded-xl text-sm font-semibold hover:bg-[#c9a876] disabled:opacity-50 transition-colors">
-                      {importing ? 'Importando...' : 'Importar y crear expediente'}
-                    </button>
-                    <button onClick={() => nav(`ficha-clinica/paciente/${duplicate.id}`)}
-                      className="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors">
-                      Ir al expediente existente
-                    </button>
-                  </div>
+                  {duplicate.sameUser ? (
+                    <div className="flex gap-2 pt-2">
+                      <button onClick={() => nav(`ficha-clinica/paciente/${duplicate.id}`)}
+                        className="flex-1 py-2.5 bg-[#deb887] text-white rounded-xl text-sm font-semibold hover:bg-[#c9a876] transition-colors">
+                        Ir al expediente existente
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-sm text-gray-500">¿Qué deseas hacer?</p>
+                      <div className="space-y-2">
+                        <label className="flex items-center gap-3 cursor-pointer">
+                          <input type="checkbox" checked={importFields.basic} onChange={e => setImportFields(p => ({ ...p, basic: e.target.checked }))}
+                            className="w-4 h-4 accent-[#deb887]" />
+                          <span className="text-sm text-gray-700">Importar datos básicos del paciente</span>
+                        </label>
+                        <label className="flex items-center gap-3 cursor-pointer">
+                          <input type="checkbox" checked={importFields.history} onChange={e => setImportFields(p => ({ ...p, history: e.target.checked }))}
+                            className="w-4 h-4 accent-[#deb887]" />
+                          <span className="text-sm text-gray-700">Importar antecedentes médicos</span>
+                        </label>
+                      </div>
+                      <div className="flex gap-2 pt-2">
+                        <button onClick={handleImport} disabled={importing || (!importFields.basic && !importFields.history)}
+                          className="flex-1 py-2.5 bg-[#deb887] text-white rounded-xl text-sm font-semibold hover:bg-[#c9a876] disabled:opacity-50 transition-colors">
+                          {importing ? 'Importando...' : 'Importar y crear expediente'}
+                        </button>
+                        <button onClick={() => nav(`ficha-clinica/paciente/${duplicate.id}`)}
+                          className="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors">
+                          Ir al expediente existente
+                        </button>
+                      </div>
+                    </>
+                  )}
                   <button onClick={() => setDuplicate(null)} className="w-full text-xs text-gray-400 hover:text-gray-600 transition-colors py-1">
                     Cancelar
                   </button>
