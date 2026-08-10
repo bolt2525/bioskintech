@@ -106,7 +106,7 @@ const AdminFinance = () => {
   const [newItems, setNewItems] = useState<FinanceItem[]>([]);
   const [showItems, setShowItems] = useState(false);
   // Modal de desglose para registros existentes
-  const [desgModal, setDesgModal] = useState<{ open: boolean; record: FinanceRecord | null; items: FinanceItem[]; loading: boolean }>({ open: false, record: null, items: [], loading: false });
+  const [desgModal, setDesgModal] = useState<{ open: boolean; record: FinanceRecord | null; items: FinanceItem[]; loading: boolean; updateRecord: boolean }>({ open: false, record: null, items: [], loading: false, updateRecord: false });
 
   // Cargar tasa IVA de settings de clínica
   useEffect(() => {
@@ -224,6 +224,11 @@ const AdminFinance = () => {
         tot = parseFloat((sub + taxV).toFixed(2));
       }
 
+      if (tot === 0 && !window.confirm('El valor total es $0.00.\n¿Desea guardar este registro como referencia sin valor contable?')) {
+        setSaving(false);
+        return;
+      }
+
       const res = await recordsFetch('/api/records', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -251,7 +256,7 @@ const AdminFinance = () => {
   };
 
   const openDesglose = async (record: FinanceRecord) => {
-    setDesgModal({ open: true, record, items: [], loading: true });
+    setDesgModal({ open: true, record, items: [], loading: true, updateRecord: false });
     try {
       const res  = await recordsFetch(`/api/records?action=financeItemsGet&record_id=${record.id}`);
       const data = await res.json();
@@ -270,7 +275,18 @@ const AdminFinance = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'financeItemsSave', record_id: desgModal.record.id, items: desgModal.items })
       });
-      setDesgModal({ open: false, record: null, items: [], loading: false });
+      if (desgModal.updateRecord) {
+        const rec = desgModal.record;
+        const iSub = parseFloat(desgModal.items.reduce((s, it) => s + (it.subtotal || 0), 0).toFixed(2));
+        const iTax = parseFloat(desgModal.items.reduce((s, it) => s + (it.tax || 0), 0).toFixed(2));
+        const iTot = parseFloat(desgModal.items.reduce((s, it) => s + (it.total || 0), 0).toFixed(2));
+        await recordsFetch('/api/records', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'financeUpdate', id: rec.id, date: rec.date, invoice_number: rec.invoice_number, entity: rec.entity, description: rec.description, type: rec.type, subtotal: iSub, tax: iTax, total: iTot })
+        });
+      }
+      setDesgModal({ open: false, record: null, items: [], loading: false, updateRecord: false });
       fetchData();
     } catch (e: any) {
       alert('Error al guardar desglose: ' + e.message);
@@ -979,13 +995,46 @@ const AdminFinance = () => {
                     className="mt-3 text-xs text-yellow-600 hover:text-yellow-800 flex items-center gap-1 font-medium">
                     <Plus size={12}/> Agregar línea
                   </button>
-                  {desgModal.items.length > 0 && (
-                    <div className="mt-4 pt-3 border-t text-right text-xs text-gray-600 space-y-0.5">
-                      <div>Subtotal: <span className="font-mono font-semibold">${desgModal.items.reduce((s,it)=>s+(it.subtotal||0),0).toFixed(2)}</span></div>
-                      <div>IVA: <span className="font-mono font-semibold text-yellow-700">${desgModal.items.reduce((s,it)=>s+(it.tax||0),0).toFixed(2)}</span></div>
-                      <div className="text-base font-bold text-gray-800">Total: <span className="font-mono">${desgModal.items.reduce((s,it)=>s+(it.total||0),0).toFixed(2)}</span></div>
-                    </div>
-                  )}
+                  {desgModal.items.length > 0 && (() => {
+                    const iSub = desgModal.items.reduce((s,it)=>s+(it.subtotal||0),0);
+                    const iTax = desgModal.items.reduce((s,it)=>s+(it.tax||0),0);
+                    const iTot = parseFloat(desgModal.items.reduce((s,it)=>s+(it.total||0),0).toFixed(2));
+                    const recTot = parseFloat(String(desgModal.record?.total || 0));
+                    const diff = parseFloat((iTot - recTot).toFixed(2));
+                    const matches = Math.abs(diff) < 0.02;
+                    return (
+                      <div className="mt-4 pt-3 border-t space-y-2">
+                        <div className="flex justify-between items-center text-xs bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                          <span className="text-gray-500">Total del registro:</span>
+                          <span className="font-mono font-semibold text-gray-700">${recTot.toFixed(2)}</span>
+                        </div>
+                        <div className="text-right text-xs text-gray-600 space-y-0.5">
+                          <div>Subtotal desglose: <span className="font-mono font-semibold">${iSub.toFixed(2)}</span></div>
+                          <div>IVA desglose: <span className="font-mono font-semibold text-yellow-700">${iTax.toFixed(2)}</span></div>
+                          <div className={`text-base font-bold ${matches ? 'text-green-700' : 'text-red-600'}`}>
+                            Total desglose: <span className="font-mono">${iTot.toFixed(2)}</span>
+                            {matches && <span className="ml-2 text-xs font-normal text-green-600">✓ Coincide</span>}
+                          </div>
+                        </div>
+                        {!matches && (
+                          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs">
+                            <p className="text-amber-800 font-medium">
+                              Diferencia de <strong>${diff > 0 ? '+' : ''}{diff.toFixed(2)}</strong> con el registro general.
+                            </p>
+                            <label className="flex items-center gap-2 mt-2 cursor-pointer select-none">
+                              <input
+                                type="checkbox"
+                                checked={desgModal.updateRecord}
+                                onChange={e => setDesgModal(prev => ({ ...prev, updateRecord: e.target.checked }))}
+                                className="rounded border-amber-400 accent-yellow-500"
+                              />
+                              <span className="text-amber-700 font-medium">Actualizar el registro general con los valores del desglose</span>
+                            </label>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </>
               )}
             </div>
