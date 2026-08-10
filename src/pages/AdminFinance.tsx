@@ -1086,6 +1086,13 @@ const ItemRow = ({ item, taxRate, onChange, onRemove }: ItemRowProps) => {
     const tax      = parseFloat((subtotal * ivaRate / 100).toFixed(2));
     onChange({ ...partial, quantity: qty, unit_price: uprice, iva_rate: ivaRate, subtotal, tax, total: parseFloat((subtotal+tax).toFixed(2)) });
   };
+  // ponytail: back-calculates subtotal+IVA from total; unit_price synced so qty*price=subtotal
+  const updateFromTotal = (value: string) => {
+    const total = parseFloat(value) || 0;
+    const { subtotal, tax } = calcFromTotal(total, item.iva_rate);
+    const qty = item.quantity || 1;
+    onChange({ ...item, total, subtotal, tax, unit_price: parseFloat((subtotal / qty).toFixed(4)) });
+  };
   const isDefaultIva = item.iva_rate === taxRate;
   const cls = "px-2 py-1.5 border rounded-lg text-xs focus:ring-1 focus:ring-yellow-400 outline-none w-full";
   return (
@@ -1110,7 +1117,14 @@ const ItemRow = ({ item, taxRate, onChange, onRemove }: ItemRowProps) => {
         />
       )}
       <span className="col-span-2 text-right text-xs font-mono text-gray-500 pr-1">${item.subtotal.toFixed(2)}</span>
-      <span className="col-span-1 text-right text-xs font-mono font-bold text-gray-800 pr-1">${item.total.toFixed(2)}</span>
+      <input
+        type="number"
+        value={item.total.toFixed(2)}
+        onChange={e => updateFromTotal(e.target.value)}
+        step="0.01" min="0"
+        title="Ingrese el total para calcular subtotal e IVA automáticamente"
+        className={`col-span-1 text-right ${cls} font-bold bg-yellow-50 border-yellow-200 focus:border-yellow-400`}
+      />
       <button onClick={onRemove} className="col-span-1 text-red-300 hover:text-red-500 flex justify-center"><X size={14}/></button>
     </div>
   );
