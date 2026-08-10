@@ -37,6 +37,13 @@ const ALL_FEATURES = [
 
 // Planes de suscripción predefinidos (precio en centavos USD)
 const SUBSCRIPTION_PLANS = {
+  plan_lanzamiento: {
+    name: 'Plan Lanzamiento BioskinTech',
+    features: ['calendar','block_schedule','appointment','clinical_records','finance','inventory','clinical_3d','system_status','backup'],
+    access_scope: 'all',
+    amount_cents: 26450,       // $264.50/año
+    description: 'Plan especial de lanzamiento con módulos principales',
+  },
   plan_completo: {
     name: 'Plan Completo',
     features: ALL_FEATURES,
@@ -1295,10 +1302,10 @@ async function registerClinic(body) {
     planFeatures = Array.isArray(codeRow.features) && codeRow.features.length ? codeRow.features : ALL_FEATURES;
     accessScope  = codeRow.access_scope || 'all';
   } else if (subscription_id) {
-    // Validar vía pago confirmado
+    // Validar vía pago confirmado (status='paid' — no 'registered' ni otro estado)
     const sub = await sql`SELECT * FROM subscriptions WHERE id=${subscription_id} AND status='paid'`;
-    if (!sub.rows.length) return { error: 'Pago no confirmado. Completa el pago primero.' };
-    const plan = SUBSCRIPTION_PLANS[sub.rows[0].plan_name] || SUBSCRIPTION_PLANS.plan_completo;
+    if (!sub.rows.length) return { error: 'Pago no confirmado, ya utilizado o expirado' };
+    const plan = Object.values(SUBSCRIPTION_PLANS).find(p => p.name === sub.rows[0].plan_name) || SUBSCRIPTION_PLANS.plan_completo;
     planFeatures = plan.features;
     accessScope  = plan.access_scope;
   } else {
@@ -1346,6 +1353,10 @@ async function registerClinic(body) {
   // Marcar código como usado
   if (codeRow) {
     await sql`UPDATE registration_codes SET used_by=${userId}, used_at=NOW(), is_active=false WHERE id=${codeRow.id}`;
+  }
+  // Marcar suscripción como usada (previene double-use del mismo subscription_id)
+  if (subscription_id) {
+    await sql`UPDATE subscriptions SET status='registered' WHERE id=${subscription_id} AND status='paid'`;
   }
 
   // Enviar email de bienvenida (sin bloquear la respuesta si falla)
