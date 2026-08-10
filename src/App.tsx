@@ -24,6 +24,7 @@ import TermsOfService      from './pages/TermsOfService';
 import AdminLogin          from './pages/AdminLogin';
 import AdminMasterLogin    from './pages/AdminMasterLogin';
 import AdminRegister       from './pages/AdminRegister';
+import InviteRegister      from './pages/InviteRegister';
 import AdminSetupPassword  from './pages/AdminSetupPassword';
 import AdminDashboard    from './pages/AdminDashboard';
 import AdminMasterDashboard from './pages/AdminMasterDashboard';
@@ -63,6 +64,7 @@ function AdminRoutes() {
           {/* Ruta pública — accesible desde la página de login, sin auth requerida */}
           <Route path="/skin-explorer"          element={<SkinExplorerPage />} />
           <Route path="/admin/register"         element={<AdminRegister />} />
+          <Route path="/admin/invite"           element={<InviteRegister />} />
           <Route path="/admin/setup-password"   element={<AdminSetupPassword />} />
           <Route path="/admin/recover"          element={<AdminSetupPassword />} />
           <Route path="/admin/master"   element={<AdminMasterDashboard />} />

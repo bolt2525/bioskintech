@@ -392,6 +392,7 @@ export async function initMultiTenantSchema() {
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS is_demo BOOLEAN DEFAULT FALSE",
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS demo_expires_at TIMESTAMP",
     "ALTER TABLE login_otp ADD COLUMN IF NOT EXISTS attempts INTEGER DEFAULT 0",
+    "ALTER TABLE invite_links ADD COLUMN IF NOT EXISTS access_scope VARCHAR(20) DEFAULT 'own'",
   ]) {
     try { await sql.query(col); } catch { /* ya existe */ }
   }
@@ -1415,95 +1416,201 @@ async function revokeRegistrationCode(requestUser, id) {
 
 async function generateInviteLink(requestUser, body) {
   if (!requireRole(requestUser, 'master_admin', 'clinic_admin')) return { error: 'Sin permiso' };
-  const { email, role = 'clinic_user', clinic_id, expires_hours = 72 } = body || {};
+  const { email, role = 'clinic_user', clinic_id, expires_hours = 72, access_scope = 'own', features = [] } = body || {};
 
   const targetClinicId = requestUser.role === 'master_admin' ? (clinic_id ?? requestUser.clinic_id) : requestUser.clinic_id;
   if (!targetClinicId) return { error: 'clinic_id requerido' };
+  if (!['clinic_admin', 'clinic_user'].includes(role)) return { error: 'Rol inválido para invitación' };
+
+  const emailNorm = email?.trim().toLowerCase() || null;
+  if (emailNorm && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailNorm))
+    return { error: 'Email inválido' };
 
   const token = crypto.randomBytes(32).toString('hex');
   const exp   = new Date(Date.now() + expires_hours * 3600000);
+  const featuresJson = JSON.stringify(Array.isArray(features) ? features.filter(f => ALL_FEATURES.includes(f)) : []);
 
   const r = await sql`
-    INSERT INTO invite_links (token, clinic_id, role, email, expires_at, created_by)
-    VALUES (${token}, ${targetClinicId}, ${role}, ${email||null}, ${exp}, ${requestUser.id})
-    RETURNING id, token, role, email, expires_at
+    INSERT INTO invite_links (token, clinic_id, role, email, access_scope, features, expires_at, created_by)
+    VALUES (${token}, ${targetClinicId}, ${role}, ${emailNorm}, ${access_scope}, ${featuresJson}::jsonb, ${exp}, ${requestUser.id})
+    RETURNING id, token, role, email, access_scope, features, expires_at
   `;
 
-  const appUrl = (process.env.APP_URL || `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app'}`).trim();
-  const link   = `${appUrl}/admin/register?invite=${token}`;
+  const appUrl = (process.env.APP_URL || `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app'}`).replace(/\/$/, '').trim();
+  const link   = `${appUrl}/gestionestetica/admin/invite?token=${token}`;
 
-  // Enviar email si hay dirección
-  if (email) {
+  if (emailNorm) {
     const clinicRow = await sql`SELECT name FROM clinics WHERE id=${targetClinicId}`;
     const clinicName = clinicRow.rows[0]?.name || 'BIOSKIN';
-    await sendAuthEmail(email, `Invitación para unirte a ${clinicName}`,
-      `<p>Has sido invitado a unirte a <b>${clinicName}</b> como <b>${role}</b>.</p>
-       <p><a href="${link}">Haz clic aquí para registrarte</a></p>
-       <p>Este enlace expira en ${expires_hours} horas.</p>`
-    );
+    const roleLabel = role === 'clinic_admin' ? 'Administrador de Clínica' : 'Usuario';
+    try {
+      await sendAuthEmail(emailNorm, `Invitación para unirte a ${clinicName} — BioskinTech`,
+        `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#333;">
+          <div style="background:#deb887;padding:20px;text-align:center;border-radius:8px 8px 0 0;">
+            <h1 style="color:white;margin:0;font-size:24px;">BIOSKIN</h1>
+            <p style="color:rgba(255,255,255,0.85);margin:4px 0 0;font-size:13px;">Sistema de Gestión Clínica</p>
+          </div>
+          <div style="padding:28px;background:white;border:1px solid #eee;border-top:none;border-radius:0 0 8px 8px;">
+            <h2 style="color:#222;margin-top:0;">¡Fuiste invitado a unirte a ${clinicName}!</h2>
+            <p>Has recibido una invitación para crear tu cuenta en BioskinTech como <strong>${roleLabel}</strong> de la clínica <strong>${clinicName}</strong>.</p>
+            <p style="color:#777;font-size:13px;">Este enlace es de <strong>un solo uso</strong> y expira en <strong>${expires_hours} horas</strong>.</p>
+            <div style="text-align:center;margin:28px 0;">
+              <a href="${link}" style="display:inline-block;background:#deb887;color:white;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:16px;">Crear mi cuenta →</a>
+            </div>
+            <p style="color:#bbb;font-size:11px;">Si no esperabas esta invitación, puedes ignorar este correo.</p>
+          </div>
+        </div>`
+      );
+    } catch { /* non-fatal — link is still returned */ }
   }
 
   return { success: true, invite: r.rows[0], link };
 }
 
+async function getInviteDetails(token) {
+  if (!token || typeof token !== 'string' || token.length !== 64)
+    return { valid: false, error: 'Token inválido' };
+  // Only alphanumeric hex — prevent injection
+  if (!/^[0-9a-f]{64}$/.test(token)) return { valid: false, error: 'Token inválido' };
+  const r = await sql`
+    SELECT il.role, il.email, il.is_used, il.expires_at, il.access_scope, il.features, c.name as clinic_name
+    FROM invite_links il
+    JOIN clinics c ON c.id = il.clinic_id
+    WHERE il.token = ${token}
+  `;
+  if (!r.rows.length) return { valid: false, error: 'Enlace no encontrado' };
+  const inv = r.rows[0];
+  if (inv.is_used) return { valid: false, error: 'Este enlace ya fue utilizado', used: true };
+  if (new Date(inv.expires_at) < new Date()) return { valid: false, error: 'Este enlace ha expirado', expired: true };
+  const maskedEmail = inv.email
+    ? inv.email.replace(/^(.{2}).*@(.{1,2}).*(\.\w+)$/, '$1***@$2***$3')
+    : null;
+  return {
+    valid: true,
+    clinic_name: inv.clinic_name,
+    role: inv.role,
+    access_scope: inv.access_scope || 'own',
+    features: Array.isArray(inv.features) ? inv.features : [],
+    email: maskedEmail,
+  };
+}
+
 async function listInviteLinks(requestUser) {
   if (!requireRole(requestUser, 'master_admin', 'clinic_admin')) return { error: 'Sin permiso' };
-  const clinicFilter = requestUser.role === 'master_admin'
-    ? sql`WHERE il.expires_at > NOW()`
-    : sql`WHERE il.clinic_id=${requestUser.clinic_id}`;
-  const r = await sql`
-    SELECT il.*, cu.username as used_by_username, c.name as clinic_name
-    FROM invite_links il
-    LEFT JOIN clinic_users cu ON cu.id = il.used_by
-    LEFT JOIN clinics c ON c.id = il.clinic_id
-    ${clinicFilter}
-    ORDER BY il.created_at DESC
-  `;
+  const r = requestUser.role === 'master_admin'
+    ? await sql`
+        SELECT il.*, cu.username as used_by_username, c.name as clinic_name
+        FROM invite_links il
+        LEFT JOIN clinic_users cu ON cu.id = il.used_by
+        LEFT JOIN clinics c ON c.id = il.clinic_id
+        ORDER BY il.created_at DESC LIMIT 100
+      `
+    : await sql`
+        SELECT il.*, cu.username as used_by_username, c.name as clinic_name
+        FROM invite_links il
+        LEFT JOIN clinic_users cu ON cu.id = il.used_by
+        LEFT JOIN clinics c ON c.id = il.clinic_id
+        WHERE il.clinic_id = ${requestUser.clinic_id}
+        ORDER BY il.created_at DESC
+      `;
   return r.rows;
+}
+
+async function revokeInvite(requestUser, id) {
+  if (!requireRole(requestUser, 'master_admin', 'clinic_admin')) return { error: 'Sin permiso' };
+  if (!id) return { error: 'id requerido' };
+  // Revoke marks as used without recording a user — prevents the link from being claimed
+  await sql`UPDATE invite_links SET is_used = true WHERE id = ${id} AND is_used = false`;
+  return { success: true };
 }
 
 /** Usa un invite link para registrar un nuevo usuario en una clínica existente */
 async function useInviteLink(token, body) {
-  if (!token) return { error: 'Token requerido' };
-  const inv = await sql`SELECT * FROM invite_links WHERE token=${token} AND is_used=false AND expires_at > NOW()`;
-  if (!inv.rows.length) return { error: 'Enlace inválido o expirado' };
-  const invite = inv.rows[0];
+  if (!token || typeof token !== 'string') return { error: 'Token requerido' };
+  if (!/^[0-9a-f]{64}$/.test(token)) return { error: 'Token inválido' };
 
-  const { email, password, first_name, last_name, gentilicio, profession } = body || {};
-  if (!email?.trim() || !password?.trim() || !first_name?.trim() || !last_name?.trim())
-    return { error: 'email, password, first_name y last_name son requeridos' };
-  if (password.length < 8) return { error: 'La contraseña debe tener al menos 8 caracteres' };
+  // Atomic claim — prevents race condition (two simultaneous requests using the same token)
+  const claimed = await sql`
+    UPDATE invite_links SET is_used = true
+    WHERE token = ${token} AND is_used = false AND expires_at > NOW()
+    RETURNING *
+  `;
+  if (!claimed.rows.length) return { error: 'Enlace inválido, ya utilizado o expirado' };
+  const invite = claimed.rows[0];
+
+  const { email, password, first_name, last_name, gentilicio, profession, username } = body || {};
+
+  // Undo claim helper — called if validation fails after atomic claim
+  const undoClaim = () => sql`UPDATE invite_links SET is_used = false, used_by = NULL WHERE id = ${invite.id}`;
+
+  if (!email?.trim() || !password?.trim() || !first_name?.trim() || !last_name?.trim()) {
+    await undoClaim();
+    return { error: 'email, contraseña, nombre y apellido son requeridos' };
+  }
+  if (password.length < 8) { await undoClaim(); return { error: 'La contraseña debe tener al menos 8 caracteres' }; }
+  if (!/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) {
+    await undoClaim();
+    return { error: 'La contraseña debe tener al menos una letra y un número' };
+  }
 
   const emailNorm = email.trim().toLowerCase();
-  if (invite.email && invite.email.toLowerCase() !== emailNorm)
-    return { error: 'Este enlace fue emitido para otro correo electrónico' };
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailNorm)) { await undoClaim(); return { error: 'Email inválido' }; }
 
-  const existing = await sql`SELECT id FROM clinic_users WHERE username=${emailNorm}`;
-  if (existing.rows.length) return { error: 'Ya existe una cuenta con ese correo' };
+  // Enforce scoped email if invite was issued for a specific address
+  if (invite.email && invite.email.toLowerCase() !== emailNorm) {
+    await undoClaim();
+    return { error: 'Este enlace fue emitido para otro correo electrónico' };
+  }
+
+  // Build username — use provided or derive from email prefix
+  const usernameFinal = (username?.trim().toLowerCase().replace(/[^a-z0-9_]/g, '') || emailNorm.split('@')[0].replace(/[^a-z0-9_]/g, '')).substring(0, 30);
+  if (usernameFinal.length < 3) { await undoClaim(); return { error: 'El nombre de usuario debe tener al menos 3 caracteres' }; }
+
+  const existing = await sql`SELECT id FROM clinic_users WHERE username = ${usernameFinal} OR email = ${emailNorm}`;
+  if (existing.rows.length) { await undoClaim(); return { error: 'Ya existe una cuenta con ese email o nombre de usuario' }; }
 
   const { hash, salt } = hashPassword(password);
-  const fullName = `${first_name.trim()} ${last_name.trim()}`;
+  const fullName    = `${first_name.trim()} ${last_name.trim()}`;
+  const accessScope = invite.access_scope || 'own';
+
   const userR = await sql`
     INSERT INTO clinic_users
       (clinic_id, username, password_hash, salt, hash_algo, full_name, email, first_name, last_name, gentilicio, profession, role, access_scope)
     VALUES
-      (${invite.clinic_id}, ${emailNorm}, ${hash}, ${salt}, 'pbkdf2', ${fullName}, ${emailNorm}, ${first_name.trim()}, ${last_name.trim()}, ${gentilicio||null}, ${profession||null}, ${invite.role}, 'own')
+      (${invite.clinic_id}, ${usernameFinal}, ${hash}, ${salt}, 'pbkdf2', ${fullName}, ${emailNorm},
+       ${first_name.trim()}, ${last_name.trim()}, ${gentilicio||null}, ${profession||null},
+       ${invite.role}, ${accessScope})
     RETURNING id
   `;
   const userId = userR.rows[0].id;
+  await sql`UPDATE invite_links SET used_by = ${userId} WHERE id = ${invite.id}`;
 
-  await sql`UPDATE invite_links SET is_used=true, used_by=${userId} WHERE id=${invite.id}`;
+  // Apply feature restrictions from invite (disable features NOT in the allowed list)
+  const inviteFeatures = Array.isArray(invite.features) ? invite.features : [];
+  if (inviteFeatures.length > 0) {
+    for (const feat of ALL_FEATURES) {
+      if (!inviteFeatures.includes(feat)) {
+        await sql`
+          INSERT INTO user_module_overrides (clinic_user_id, feature, enabled)
+          VALUES (${userId}, ${feat}, false)
+          ON CONFLICT (clinic_user_id, feature) DO UPDATE SET enabled = false
+        `;
+      }
+    }
+  }
 
-  const token2 = generateToken();
-  const exp    = new Date(Date.now() + SESSION_EXPIRY_MS);
+  const sessionToken = generateToken();
+  const exp = new Date(Date.now() + SESSION_EXPIRY_MS);
   await sql`
-    INSERT INTO admin_sessions (session_token, username, expires_at, clinic_user_id, role, clinic_id, access_scope)
-    VALUES (${token2}, ${emailNorm}, ${exp}, ${userId}, ${invite.role}, ${invite.clinic_id}, 'own')
+    INSERT INTO admin_sessions (session_token, username, expires_at, clinic_user_id, role, clinic_id, access_scope, is_active)
+    VALUES (${sessionToken}, ${usernameFinal}, ${exp}, ${userId}, ${invite.role}, ${invite.clinic_id}, ${accessScope}, true)
   `;
 
   return {
-    success: true, sessionToken: token2, expiresAt: exp,
-    user: { id: userId, username: emailNorm, full_name: fullName, email: emailNorm, role: invite.role, clinic_id: invite.clinic_id, access_scope: 'own', first_name, last_name, gentilicio, profession },
+    success: true, sessionToken, expiresAt: exp,
+    user: { id: userId, username: usernameFinal, full_name: fullName, email: emailNorm,
+            role: invite.role, clinic_id: invite.clinic_id, access_scope: accessScope,
+            first_name: first_name.trim(), last_name: last_name.trim(), gentilicio, profession },
     features: await getFeatures(invite.clinic_id),
   };
 }
@@ -1775,6 +1882,13 @@ export default async function handler(req, res) {
     if (action === 'register') {
       const result = await registerClinic(req.body || {});
       return res.status(result.error ? 400 : 201).json(result);
+    }
+
+    // Detalles públicos de una invitación (sin consumirla)
+    if (action === 'getInvite') {
+      const token = (req.query.token || '').trim();
+      const result = await getInviteDetails(token);
+      return res.status(result.valid === false ? 400 : 200).json(result);
     }
 
     // Usar invite link para registro en clínica existente
@@ -2445,6 +2559,11 @@ export default async function handler(req, res) {
     if (action === 'listInvites') {
       const result = await listInviteLinks(user);
       return res.status(result?.error ? 403 : 200).json(result);
+    }
+    if (action === 'revokeInvite') {
+      const id = req.body?.id || req.query.id;
+      const result = await revokeInvite(user, id);
+      return res.status(result.error ? 400 : 200).json(result);
     }
 
     // ── Suscripciones (solo master_admin) ────────────────────────────────

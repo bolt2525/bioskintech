@@ -587,8 +587,9 @@ function AccessCodesPanel({
   const [invites, setInvites] = useState<any[]>([]);
   const [codeModal, setCodeModal] = useState(false);
   const [invModal, setInvModal]   = useState(false);
+  const [generatedLink, setGeneratedLink] = useState<{ link: string; clinic: string } | null>(null);
   const [codeForm, setCodeForm]   = useState({ plan_name: 'Plan Lanzamiento BioskinTech', expires_days: 30, note: '' });
-  const [invForm, setInvForm]     = useState({ clinic_id: '', email: '', role: 'clinic_user', expires_hours: 72 });
+  const [invForm, setInvForm]     = useState({ clinic_id: '', email: '', role: 'clinic_user', expires_hours: 72, access_scope: 'own', features: [] as string[] });
   const [loading, setLoading]     = useState(false);
 
   const load = async () => {
@@ -624,6 +625,14 @@ function AccessCodesPanel({
     flash('Código revocado'); load();
   };
 
+  const revokeInvite = async (id: number) => {
+    if (!confirm('¿Revocar esta invitación? El link dejará de funcionar.')) return;
+    await fetch('/api/admin-auth?action=revokeInvite', {
+      method: 'POST', headers: authHeader(), body: JSON.stringify({ id }),
+    });
+    flash('Invitación revocada'); load();
+  };
+
   const generateInvite = async () => {
     if (!invForm.clinic_id) { flash('Selecciona una clínica', 'err'); return; }
     setLoading(true);
@@ -634,9 +643,10 @@ function AccessCodesPanel({
       });
       const d = await r.json();
       if (d.error) { flash(d.error, 'err'); return; }
-      if (d.link) { try { await navigator.clipboard.writeText(d.link); } catch { /* no clipboard access */ } }
-      flash(d.invite?.email ? `Invitación enviada a ${d.invite.email}` : 'Link copiado al portapapeles');
-      setInvModal(false); load();
+      setInvModal(false);
+      const clinicName = clinics.find(c => String(c.id) === invForm.clinic_id)?.name || '';
+      setGeneratedLink({ link: d.link, clinic: clinicName });
+      load();
     } finally { setLoading(false); }
   };
 
@@ -714,27 +724,34 @@ function AccessCodesPanel({
           <table className="w-full">
             <thead className="bg-gray-50">
               <tr className="text-xs text-gray-500 uppercase font-semibold">
-                {['Email','Clínica','Rol','Vence','Estado'].map(h => (
+                {['Email','Clínica','Rol','Vence','Estado','Acción'].map(h => (
                   <th key={h} className="px-4 py-2.5 text-left">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {invites.length === 0 ? (
-                <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-400">Sin invitaciones enviadas todavía</td></tr>
+                <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-400">Sin invitaciones enviadas todavía</td></tr>
               ) : invites.map((inv: any) => (
-                <tr key={inv.id} className="hover:bg-gray-50 transition-colors">
+                <tr key={inv.id} className={`hover:bg-gray-50 transition-colors ${inv.is_used || new Date(inv.expires_at) < new Date() ? 'opacity-60' : ''}`}>
                   <td className="px-4 py-3 text-sm text-gray-700">{inv.email || '—'}</td>
                   <td className="px-4 py-3 text-sm text-gray-600">{inv.clinic_name || `#${inv.clinic_id}`}</td>
                   <td className="px-4 py-3 text-xs capitalize text-gray-500">{(inv.role || '').replace('clinic_', '')}</td>
                   <td className="px-4 py-3 text-xs text-gray-400">{new Date(inv.expires_at).toLocaleDateString('es-EC')}</td>
                   <td className="px-4 py-3 text-xs">
-                    {inv.is_used
-                      ? <span className="text-gray-400">Usado · {inv.used_by_username || ''}</span>
-                      : new Date(inv.expires_at) < new Date()
-                        ? <span className="text-red-400">Expirado</span>
-                        : <span className="font-medium text-green-600">Activo</span>
+                    {inv.is_used && inv.used_by
+                      ? <span className="text-gray-400">Usado · {inv.used_by_username || `#${inv.used_by}`}</span>
+                      : inv.is_used
+                        ? <span className="text-gray-400">Revocado</span>
+                        : new Date(inv.expires_at) < new Date()
+                          ? <span className="text-red-400">Expirado</span>
+                          : <span className="font-medium text-green-600">Activo</span>
                     }
+                  </td>
+                  <td className="px-4 py-3">
+                    {!inv.is_used && new Date(inv.expires_at) > new Date() && (
+                      <button onClick={() => revokeInvite(inv.id)} className="text-xs text-red-500 hover:underline">Revocar</button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -785,10 +802,13 @@ function AccessCodesPanel({
       {/* Modal: Invitación */}
       {invModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-hidden flex flex-col">
             <div className="h-0.5 bg-blue-500 rounded-t-2xl" />
-            <div className="p-6 space-y-4">
-              <h3 className="font-bold text-gray-900">Enviar invitación</h3>
+            <div className="p-6 overflow-y-auto flex-1 space-y-4">
+              <h3 className="font-bold text-gray-900">Nueva invitación</h3>
+              <p className="text-xs text-gray-400 -mt-2">El link es de un solo uso y expira automáticamente. La persona invitada verá el nombre de la clínica al abrirlo.</p>
+
+              {/* Clínica */}
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Clínica *</label>
                 <select value={invForm.clinic_id} onChange={e => setInvForm(f => ({ ...f, clinic_id: e.target.value }))}
@@ -797,27 +817,132 @@ function AccessCodesPanel({
                   {clinics.map(c => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
                 </select>
               </div>
+
+              {/* Email */}
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Email del invitado (opcional)</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Email del invitado <span className="text-gray-300 font-normal">(opcional — si se ingresa, se enviará el link por correo)</span></label>
                 <input type="email" value={invForm.email} onChange={e => setInvForm(f => ({ ...f, email: e.target.value }))}
                   placeholder="correo@ejemplo.com"
                   className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-300 focus:border-blue-400 outline-none" />
               </div>
+
+              {/* Rol + Acceso */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Rol</label>
+                  <select value={invForm.role} onChange={e => setInvForm(f => ({ ...f, role: e.target.value }))}
+                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-300 focus:border-blue-400 outline-none">
+                    <option value="clinic_user">Usuario</option>
+                    <option value="clinic_admin">Administrador</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Acceso a pacientes</label>
+                  <select value={invForm.access_scope} onChange={e => setInvForm(f => ({ ...f, access_scope: e.target.value }))}
+                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-300 focus:border-blue-400 outline-none">
+                    <option value="own">Solo propios</option>
+                    <option value="all">Todos los pacientes</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Módulos permitidos */}
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Rol</label>
-                <select value={invForm.role} onChange={e => setInvForm(f => ({ ...f, role: e.target.value }))}
+                <label className="block text-xs font-medium text-gray-600 mb-2">
+                  Módulos habilitados para este usuario
+                  <span className="text-gray-400 font-normal ml-1">(vacío = todos los de la clínica)</span>
+                </label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {ALL_FEATURES.map(feat => {
+                    const meta    = FEATURE_META[feat as import('../constants/features').FeatureKey];
+                    if (!meta) return null;
+                    const Icon    = meta.icon;
+                    const checked = invForm.features.length === 0 || invForm.features.includes(feat);
+                    return (
+                      <label key={feat} className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer text-xs transition-all ${checked ? 'border-blue-200 bg-blue-50' : 'border-gray-100 bg-gray-50 opacity-50'}`}>
+                        <input type="checkbox" checked={checked}
+                          onChange={e => {
+                            const allOn = invForm.features.length === 0;
+                            const current = allOn ? [...ALL_FEATURES] : [...invForm.features];
+                            const next = e.target.checked ? [...current, feat] : current.filter(f => f !== feat);
+                            // If all are checked, store empty (= inherit all from clinic)
+                            setInvForm(f => ({ ...f, features: next.length === ALL_FEATURES.length ? [] : next }));
+                          }}
+                          className="w-3 h-3 accent-blue-500" />
+                        <Icon className={`w-3 h-3 ${meta.color}`} />
+                        <span className="truncate">{meta.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Expiración */}
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Expira en horas</label>
+                <select value={invForm.expires_hours} onChange={e => setInvForm(f => ({ ...f, expires_hours: parseInt(e.target.value) }))}
                   className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-300 focus:border-blue-400 outline-none">
-                  <option value="clinic_user">Usuario de clínica</option>
-                  <option value="clinic_admin">Administrador de clínica</option>
+                  <option value={24}>24 horas</option>
+                  <option value={48}>48 horas</option>
+                  <option value={72}>72 horas (3 días)</option>
+                  <option value={168}>7 días</option>
+                  <option value={720}>30 días</option>
                 </select>
               </div>
-              <div className="flex gap-3 pt-2">
-                <button onClick={() => setInvModal(false)} className="flex-1 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cancelar</button>
-                <button onClick={generateInvite} disabled={loading || !invForm.clinic_id}
-                  className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold disabled:opacity-50 hover:bg-blue-700">
-                  {loading ? 'Enviando...' : invForm.email ? 'Enviar por email' : 'Copiar link'}
-                </button>
+            </div>
+            <div className="p-6 border-t flex gap-3">
+              <button onClick={() => setInvModal(false)} className="flex-1 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cancelar</button>
+              <button onClick={generateInvite} disabled={loading || !invForm.clinic_id}
+                className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold disabled:opacity-50 hover:bg-blue-700">
+                {loading ? 'Generando...' : invForm.email ? 'Enviar por email' : 'Generar link'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Link generado */}
+      {generatedLink && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+            <div className="h-0.5 bg-gradient-to-r from-green-400 to-emerald-500 rounded-t-2xl" />
+            <div className="p-6 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-green-50 rounded-full flex items-center justify-center">
+                  <Check className="w-5 h-5 text-green-600" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900">Invitación lista</h3>
+                  <p className="text-xs text-gray-400">Para {generatedLink.clinic} — un solo uso</p>
+                </div>
               </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Link de invitación</label>
+                <div className="relative">
+                  <textarea readOnly rows={3}
+                    value={generatedLink.link}
+                    onClick={e => (e.target as HTMLTextAreaElement).select()}
+                    className="w-full px-3 py-2 border rounded-lg text-xs font-mono bg-gray-50 text-gray-700 focus:outline-none resize-none" />
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={async () => {
+                    try { await navigator.clipboard.writeText(generatedLink.link); flash('Link copiado'); }
+                    catch { flash('Selecciona el texto y cópialo (Ctrl+C)', 'err'); }
+                  }}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-white text-sm font-medium"
+                  style={{ background: 'linear-gradient(135deg,#deb887,#c5a075)' }}
+                >
+                  <Copy className="w-4 h-4" /> Copiar link
+                </button>
+                <a href={`https://wa.me/?text=${encodeURIComponent('Hola, usa este enlace para crear tu cuenta en BIOSKINTECH:\n' + generatedLink.link)}`}
+                  target="_blank" rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 px-4 py-2.5 bg-green-500 text-white rounded-lg text-sm font-medium hover:bg-green-600">
+                  WhatsApp
+                </a>
+              </div>
+              <button onClick={() => setGeneratedLink(null)} className="w-full py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cerrar</button>
             </div>
           </div>
         </div>
@@ -852,7 +977,7 @@ export default function AdminMasterDashboard() {
   const [pwdModal,    setPwdModal]    = useState<{ open: boolean; userId?: number }>({ open: false });
 
   // ── Formularios ──────────────────────────────────────────────────────────
-  const [userForm, setUserForm]     = useState({ username: '', full_name: '', email: '', role: 'clinic_user', access_scope: 'own', clinic_id: '', password: '', password2: '', cedula_profesional: '', especialidad: '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
+  const [userForm, setUserForm]     = useState({ username: '', full_name: '', first_name: '', last_name: '', gentilicio: '', profession: '', email: '', role: 'clinic_user', access_scope: 'own', clinic_id: '', password: '', password2: '', cedula_profesional: '', especialidad: '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
   const [clinicForm, setClinicForm] = useState({ name: '', email: '', phone: '', address: '' });
   const [pwdForm, setPwdForm]       = useState({ password: '', password2: '' });
   const [showPwd, setShowPwd]       = useState<Record<string, boolean>>({});
@@ -1196,12 +1321,12 @@ export default function AdminMasterDashboard() {
 
   const openCreateUser = () => {
     setUsernameSuggestion(''); setUsernameStatus('idle');
-    setUserForm({ username: '', full_name: '', email: '', role: 'clinic_user', access_scope: 'own', clinic_id: String(clinics[0]?.id || ''), password: '', password2: '', cedula_profesional: '', especialidad: '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
+    setUserForm({ username: '', full_name: '', first_name: '', last_name: '', gentilicio: '', profession: '', email: '', role: 'clinic_user', access_scope: 'own', clinic_id: String(clinics[0]?.id || ''), password: '', password2: '', cedula_profesional: '', especialidad: '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
     setUserModal({ open: true });
   };
 
   const openEditUser = (u: ClinicUser) => {
-    setUserForm({ username: u.username, full_name: u.full_name || '', email: u.email || '', role: u.role, access_scope: u.access_scope, clinic_id: String(u.clinic_id || ''), password: '', password2: '', cedula_profesional: (u as any).cedula_profesional || '', especialidad: (u as any).especialidad || '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
+    setUserForm({ username: u.username, full_name: u.full_name || '', first_name: (u as any).first_name || '', last_name: (u as any).last_name || '', gentilicio: (u as any).gentilicio || '', profession: (u as any).profession || '', email: u.email || '', role: u.role, access_scope: u.access_scope, clinic_id: String(u.clinic_id || ''), password: '', password2: '', cedula_profesional: (u as any).cedula_profesional || '', especialidad: (u as any).especialidad || '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
     setUserModal({ open: true, userId: u.id });
   };
 
@@ -1274,7 +1399,7 @@ export default function AdminMasterDashboard() {
     // Si es nueva clínica, abrir modal de usuario pre-asignado a ella
     if (!clinicModal.clinicId && data.clinic) {
       await loadAll();
-      setUserForm({ username: '', full_name: '', email: '', role: 'clinic_admin', access_scope: 'all', clinic_id: String(data.clinic.id), password: '', password2: '', cedula_profesional: '', especialidad: '' });
+      setUserForm({ username: '', full_name: '', first_name: '', last_name: '', gentilicio: '', profession: '', email: '', role: 'clinic_admin', access_scope: 'all', clinic_id: String(data.clinic.id), password: '', password2: '', cedula_profesional: '', especialidad: '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
       setUserModal({ open: true });
     }
     loadAll();
@@ -1924,16 +2049,62 @@ export default function AdminMasterDashboard() {
         <Modal title={userModal.userId ? 'Editar Usuario' : 'Nuevo Usuario'} onClose={() => setUserModal({ open: false })}>
           <div className="space-y-4">
 
-            {/* Nombre completo — genera username automáticamente */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Nombre completo *</label>
-              <input
-                type="text"
-                placeholder="Ej: Daniela Creamer Segarra"
-                value={userForm.full_name}
-                onChange={e => handleFullNameChange(e.target.value)}
-                className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] focus:outline-none"
-              />
+            {/* Nombre + Apellido → generan full_name y username automáticamente */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nombre *</label>
+                <input
+                  type="text"
+                  placeholder="Ej: Daniela"
+                  value={userForm.first_name}
+                  onChange={e => {
+                    const fn = e.target.value;
+                    const full = `${fn} ${userForm.last_name}`.trim();
+                    setUserForm(p => ({ ...p, first_name: fn, full_name: full }));
+                    if (!userModal.userId) handleFullNameChange(full);
+                  }}
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Apellido *</label>
+                <input
+                  type="text"
+                  placeholder="Ej: Creamer"
+                  value={userForm.last_name}
+                  onChange={e => {
+                    const ln = e.target.value;
+                    const full = `${userForm.first_name} ${ln}`.trim();
+                    setUserForm(p => ({ ...p, last_name: ln, full_name: full }));
+                    if (!userModal.userId) handleFullNameChange(full);
+                  }}
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] focus:outline-none"
+                />
+              </div>
+            </div>
+
+            {/* Tratamiento + Profesión */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tratamiento</label>
+                <select value={userForm.gentilicio} onChange={e => setUserForm(p => ({ ...p, gentilicio: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] focus:outline-none">
+                  <option value="">—</option>
+                  <option value="Dr.">Dr.</option>
+                  <option value="Dra.">Dra.</option>
+                  <option value="Lic.">Lic.</option>
+                  <option value="Lcda.">Lcda.</option>
+                  <option value="Ing.">Ing.</option>
+                  <option value="Sr.">Sr.</option>
+                  <option value="Sra.">Sra.</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Profesión</label>
+                <input type="text" value={userForm.profession} onChange={e => setUserForm(p => ({ ...p, profession: e.target.value }))}
+                  placeholder="Ej: Medicina Estética"
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] focus:outline-none" />
+              </div>
             </div>
 
             {/* Usuario — auto-generado, editable */}
