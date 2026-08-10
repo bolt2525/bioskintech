@@ -639,7 +639,7 @@ function AccessCodesPanel({
     try {
       const r = await fetch('/api/admin-auth?action=generateInvite', {
         method: 'POST', headers: authHeader(),
-        body: JSON.stringify({ ...invForm, clinic_id: parseInt(invForm.clinic_id) }),
+        body: JSON.stringify({ ...invForm }), // clinic_id is UUID, don't parseInt
       });
       const d = await r.json();
       if (d.error) { flash(d.error, 'err'); return; }

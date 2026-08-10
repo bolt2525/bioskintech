@@ -86,7 +86,18 @@ async function ensureNewColumns() {
     await sql.query("ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS finance_scope VARCHAR(20) DEFAULT 'all'");
     await sql.query("ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS inventory_scope VARCHAR(20) DEFAULT 'all'");
     await sql.query("ALTER TABLE invite_links ADD COLUMN IF NOT EXISTS access_scope VARCHAR(20) DEFAULT 'own'");
-  } catch { /* non-fatal — assume columns already exist if this fails */ }
+  } catch { /* non-fatal */ }
+
+  // Fix invite_links.clinic_id if it was created as INTEGER instead of UUID
+  try {
+    const t = await sql`SELECT data_type FROM information_schema.columns WHERE table_name='invite_links' AND column_name='clinic_id'`;
+    if (t.rows[0]?.data_type === 'integer') {
+      // Drop and recreate as UUID — old rows had wrong integer IDs anyway
+      await sql.query('ALTER TABLE invite_links DROP COLUMN IF EXISTS clinic_id');
+      await sql.query('ALTER TABLE invite_links ADD COLUMN clinic_id UUID REFERENCES clinics(id) ON DELETE CASCADE');
+    }
+  } catch { /* non-fatal */ }
+
   _newColumnsMigrated = true;
 }
 
@@ -1513,24 +1524,33 @@ async function generateInviteLink(requestUser, body) {
 async function getInviteDetails(token) {
   if (!token || typeof token !== 'string' || token.length !== 64)
     return { valid: false, error: 'Token inválido' };
-  // Only alphanumeric hex — prevent injection
   if (!/^[0-9a-f]{64}$/.test(token)) return { valid: false, error: 'Token inválido' };
+  // Fetch invite and clinic name separately — avoids UUID vs integer type clash on legacy schemas
   const r = await sql`
-    SELECT il.role, il.email, il.is_used, il.expires_at, il.access_scope, il.features, c.name as clinic_name
+    SELECT il.role, il.email, il.is_used, il.expires_at, il.access_scope, il.features, il.clinic_id
     FROM invite_links il
-    JOIN clinics c ON c.id = il.clinic_id
     WHERE il.token = ${token}
   `;
   if (!r.rows.length) return { valid: false, error: 'Enlace no encontrado' };
   const inv = r.rows[0];
   if (inv.is_used) return { valid: false, error: 'Este enlace ya fue utilizado', used: true };
   if (new Date(inv.expires_at) < new Date()) return { valid: false, error: 'Este enlace ha expirado', expired: true };
+  let clinic_name = 'BIOSKIN';
+  try {
+    const cR = await sql`SELECT name FROM clinics WHERE id = ${inv.clinic_id}::uuid`;
+    if (cR.rows.length) clinic_name = cR.rows[0].name;
+  } catch {
+    try { // fallback for legacy text/integer clinic_id stored as text
+      const cR2 = await sql`SELECT name FROM clinics WHERE id::text = ${String(inv.clinic_id)}`;
+      if (cR2.rows.length) clinic_name = cR2.rows[0].name;
+    } catch { /* use default */ }
+  }
   const maskedEmail = inv.email
     ? inv.email.replace(/^(.{2}).*@(.{1,2}).*(\.\w+)$/, '$1***@$2***$3')
     : null;
   return {
     valid: true,
-    clinic_name: inv.clinic_name,
+    clinic_name,
     role: inv.role,
     access_scope: inv.access_scope || 'own',
     features: Array.isArray(inv.features) ? inv.features : [],
@@ -1542,18 +1562,20 @@ async function listInviteLinks(requestUser) {
   if (!requireRole(requestUser, 'master_admin', 'clinic_admin')) return { error: 'Sin permiso' };
   const r = requestUser.role === 'master_admin'
     ? await sql`
-        SELECT il.*, cu.username as used_by_username, c.name as clinic_name
+        SELECT il.id, il.token, il.role, il.email, il.access_scope, il.is_used, il.expires_at, il.created_at,
+               cu.username as used_by_username,
+               (SELECT name FROM clinics WHERE id = il.clinic_id::text::uuid) as clinic_name
         FROM invite_links il
         LEFT JOIN clinic_users cu ON cu.id = il.used_by
-        LEFT JOIN clinics c ON c.id = il.clinic_id
         ORDER BY il.created_at DESC LIMIT 100
       `
     : await sql`
-        SELECT il.*, cu.username as used_by_username, c.name as clinic_name
+        SELECT il.id, il.token, il.role, il.email, il.access_scope, il.is_used, il.expires_at, il.created_at,
+               cu.username as used_by_username,
+               (SELECT name FROM clinics WHERE id = il.clinic_id::text::uuid) as clinic_name
         FROM invite_links il
         LEFT JOIN clinic_users cu ON cu.id = il.used_by
-        LEFT JOIN clinics c ON c.id = il.clinic_id
-        WHERE il.clinic_id = ${requestUser.clinic_id}
+        WHERE il.clinic_id::text = ${String(requestUser.clinic_id)}
         ORDER BY il.created_at DESC
       `;
   return r.rows;
