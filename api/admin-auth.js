@@ -108,7 +108,7 @@ function generateToken() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Crea todas las tablas necesarias (idempotente — safe to re-run) */
-async function initMultiTenantSchema() {
+export async function initMultiTenantSchema() {
   // Tabla de clínicas (tenants) — PK UUID
   await sql`
     CREATE TABLE IF NOT EXISTS clinics (
@@ -227,7 +227,7 @@ async function initMultiTenantSchema() {
   // Asignación de plantillas por clínica
   await sql`
     CREATE TABLE IF NOT EXISTS clinic_consent_templates (
-      clinic_id   INTEGER NOT NULL REFERENCES clinics(id) ON DELETE CASCADE,
+      clinic_id   UUID NOT NULL REFERENCES clinics(id) ON DELETE CASCADE,
       template_id INTEGER NOT NULL REFERENCES consent_templates(id) ON DELETE CASCADE,
       PRIMARY KEY (clinic_id, template_id)
     )
