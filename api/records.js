@@ -31,7 +31,7 @@ function buildSu(auth) {
  */
 async function logAudit(client, { patientId, recordId, sessionUser, actionType, module, summary, fieldChanges }) {
   try {
-    await pool.query(
+    await client.query(
       `INSERT INTO patient_audit_log (patient_id, record_id, clinic_user_id, user_display_name, action_type, module, summary, field_changes)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
       [
@@ -769,8 +769,8 @@ export default async function handler(req, res) {
             return res.status(403).json({ error: 'Acceso no autorizado' });
         }
         const newRecord = await pool.query(
-          "INSERT INTO clinical_records (patient_id, status) VALUES ($1, 'active') RETURNING *",
-          [p_id]
+          "INSERT INTO clinical_records (patient_id, clinic_id, status) VALUES ($1, $2, 'active') RETURNING *",
+          [p_id, cid]
         );
         return res.status(201).json(newRecord.rows[0]);
       }
@@ -818,7 +818,7 @@ export default async function handler(req, res) {
             );
           }
           // Create an initial clinical record for the patient
-          await pool.query('INSERT INTO clinical_records (patient_id, status) VALUES ($1, \'active\')', [newPatient.rows[0].id]);
+          await pool.query('INSERT INTO clinical_records (patient_id, clinic_id, status) VALUES ($1, $2, \'active\')', [newPatient.rows[0].id, patientClinicId]);
           // Audit
           await logAudit(pool, { patientId: newPatient.rows[0].id, sessionUser: suCreate, actionType: 'create', module: 'patient', summary: `Paciente creado: ${first_name} ${last_name}` });
           return res.status(201).json(newPatient.rows[0]);
@@ -905,8 +905,8 @@ export default async function handler(req, res) {
 
         // Crear expediente inicial
         const newRecord = await pool.query(
-          "INSERT INTO clinical_records (patient_id, status) VALUES ($1, 'active') RETURNING *",
-          [newPatientRow.id]
+          "INSERT INTO clinical_records (patient_id, clinic_id, status) VALUES ($1, $2, 'active') RETURNING *",
+          [newPatientRow.id, targetClinicId]
         );
         const newRecordRow = newRecord.rows[0];
 
@@ -1141,7 +1141,7 @@ export default async function handler(req, res) {
            
            // If still no record, create one
            if (r.rows.length === 0) {
-             const newRec = await pool.query('INSERT INTO clinical_records (patient_id, status) VALUES ($1, \'active\') RETURNING id', [patientId]);
+             const newRec = await pool.query('INSERT INTO clinical_records (patient_id, clinic_id, status) VALUES ($1, $2, \'active\') RETURNING id', [patientId, effectiveClinicId]);
              targetRecordId = newRec.rows[0].id;
            } else {
              targetRecordId = r.rows[0].id;
@@ -1246,9 +1246,9 @@ export default async function handler(req, res) {
                 enable_injectables: ccInj = false, enable_consents: ccCons = false } = body;
         if (!ccRid) return res.status(400).json({ error: 'record_id required' });
         const newCons = await pool.query(
-          `INSERT INTO consultations (record_id, reason, current_illness, enable_injectables, enable_consents)
-           VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-          [ccRid, ccReason, ccIllness, ccInj, ccCons]
+          `INSERT INTO consultations (record_id, clinic_id, reason, current_illness, enable_injectables, enable_consents)
+           VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+          [ccRid, effectiveClinicId, ccReason, ccIllness, ccInj, ccCons]
         );
         await logAudit(pool, { recordId: ccRid, sessionUser: await getSessionUserOnce(), actionType: 'create', module: 'consultation', summary: `Nueva consulta: ${ccReason || ''}` });
         return res.status(201).json(newCons.rows[0]);
@@ -1300,8 +1300,8 @@ export default async function handler(req, res) {
           );
         } else {
           await pool.query(
-            'INSERT INTO consultation_info (record_id, reason, current_illness) VALUES ($1, $2, $3)',
-            [recordId, reason, current_illness]
+            'INSERT INTO consultation_info (record_id, clinic_id, reason, current_illness) VALUES ($1, $2, $3, $4)',
+            [recordId, effectiveClinicId, reason, current_illness]
           );
         }
         
@@ -1309,8 +1309,8 @@ export default async function handler(req, res) {
         if ((reason && reason.trim()) || (current_illness && current_illness.trim())) {
           try {
             await pool.query(
-              'INSERT INTO consultation_history (record_id, reason, current_illness) VALUES ($1, $2, $3)',
-              [recordId, reason, current_illness]
+              'INSERT INTO consultation_history (record_id, clinic_id, reason, current_illness) VALUES ($1, $2, $3, $4)',
+              [recordId, effectiveClinicId, reason, current_illness]
             );
           } catch (histErr) {
             console.error('Error saving consultation history:', histErr);
@@ -1337,8 +1337,9 @@ export default async function handler(req, res) {
              await pool.query(`UPDATE medical_history SET ${hSet}, updated_at = NOW() WHERE record_id = $1`, [hid, ...hValues]);
            }
         } else {
-           const hFields = ['record_id', ...Object.keys(safeHistData)];
-           const hValues = [hid, ...Object.values(safeHistData)];
+           const safeHistNoClinic = Object.fromEntries(Object.entries(safeHistData).filter(([k]) => k !== 'clinic_id'));
+           const hFields = ['record_id', 'clinic_id', ...Object.keys(safeHistNoClinic)];
+           const hValues = [hid, effectiveClinicId, ...Object.values(safeHistNoClinic)];
            const hParams = hFields.map((_, i) => `$${i + 1}`).join(', ');
            await pool.query(`INSERT INTO medical_history (${hFields.join(', ')}) VALUES (${hParams})`, hValues);
         }
@@ -1347,8 +1348,8 @@ export default async function handler(req, res) {
         try {
           const snapUser = (await getSessionUserOnce())?.username || 'unknown';
           await pool.query(
-            'INSERT INTO medical_history_snapshots (record_id, snapshot_data, changed_by) VALUES ($1, $2, $3)',
-            [hid, JSON.stringify(safeHistData), snapUser]
+            'INSERT INTO medical_history_snapshots (record_id, clinic_id, snapshot_data, changed_by) VALUES ($1, $2, $3, $4)',
+            [hid, effectiveClinicId, JSON.stringify(safeHistData), snapUser]
           );
         } catch (snapErr) { console.warn('Snapshot save warning:', snapErr.message); }
         return res.status(200).json({ success: true });
