@@ -1427,7 +1427,11 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
 
   <div class="signature">
     <div class="signature-block">
-      <div class="signature-line">Firma del Profesional</div>
+      <div class="signature-line">
+        ${[user?.gentilicio, user?.full_name].filter(Boolean).join(' ') || 'Profesional'}
+        ${user?.cedula_profesional ? `<br><small style="font-size:10px;font-weight:normal;">${user.cedula_profesional}</small>` : ''}
+        ${user?.especialidad ? `<br><small style="font-size:10px;font-weight:normal;">${user.especialidad}</small>` : ''}
+      </div>
     </div>
     <div class="signature-block">
       <div class="signature-line">Firma del Paciente</div>
