@@ -752,10 +752,19 @@ export default async function handler(req, res) {
           if (chk.rows.length && chk.rows[0].clinic_id !== cid)
             return res.status(403).json({ error: 'Acceso no autorizado' });
         }
-        const records = await pool.query(
-          'SELECT * FROM clinical_records WHERE patient_id = $1 ORDER BY created_at DESC',
-          [patient_id]
-        );
+        // own-scope: mostrar solo el expediente del médico actual (o NULL = legado pre-feature)
+        let records;
+        if (su?.access_scope === 'own' && su?.user_id != null && su?.role !== 'master_admin') {
+          records = await pool.query(
+            'SELECT * FROM clinical_records WHERE patient_id = $1 AND (created_by_user_id = $2 OR created_by_user_id IS NULL) ORDER BY created_at DESC',
+            [patient_id, su.user_id]
+          );
+        } else {
+          records = await pool.query(
+            'SELECT * FROM clinical_records WHERE patient_id = $1 ORDER BY created_at DESC',
+            [patient_id]
+          );
+        }
         return res.status(200).json(records.rows);
       }
 
@@ -769,8 +778,8 @@ export default async function handler(req, res) {
             return res.status(403).json({ error: 'Acceso no autorizado' });
         }
         const newRecord = await pool.query(
-          "INSERT INTO clinical_records (patient_id, clinic_id, status) VALUES ($1, $2, 'active') RETURNING *",
-          [p_id, cid]
+          'INSERT INTO clinical_records (patient_id, clinic_id, created_by_user_id, status) VALUES ($1, $2, $3, $4) RETURNING *',
+          [p_id, cid, su?.user_id || null, 'active']
         );
         return res.status(201).json(newRecord.rows[0]);
       }
@@ -818,8 +827,11 @@ export default async function handler(req, res) {
               [first_name, last_name, cleanRut, email, phone, cleanBirthDate, gender, address, occupation]
             );
           }
-          // Create an initial clinical record for the patient
-          await pool.query('INSERT INTO clinical_records (patient_id, clinic_id, status) VALUES ($1, $2, \'active\')', [newPatient.rows[0].id, patientClinicId]);
+          // Create an initial clinical record for the patient — with user ownership
+          await pool.query(
+            'INSERT INTO clinical_records (patient_id, clinic_id, created_by_user_id, status) VALUES ($1, $2, $3, $4)',
+            [newPatient.rows[0].id, patientClinicId, patientCreatedBy, 'active']
+          );
           // Audit
           await logAudit(pool, { patientId: newPatient.rows[0].id, sessionUser: suCreate, actionType: 'create', module: 'patient', summary: `Paciente creado: ${first_name} ${last_name}` });
           return res.status(201).json(newPatient.rows[0]);
@@ -885,13 +897,57 @@ export default async function handler(req, res) {
         if (!srcChk.rows.length) return res.status(403).json({ error: 'Paciente fuente no encontrado en tu clínica' });
         const src = srcChk.rows[0];
 
-        // El paciente ya pertenece a esta clínica — no crear duplicado.
-        // Solo crear un nuevo expediente para el paciente existente.
+        // Si el usuario ya tiene un expediente para este paciente, devolver el existente (idempotente)
+        const existingRecord = await pool.query(
+          'SELECT * FROM clinical_records WHERE patient_id = $1 AND (created_by_user_id = $2 OR created_by_user_id IS NULL) AND status = $3 ORDER BY created_at DESC LIMIT 1',
+          [src.id, suImp.user_id, 'active']
+        );
+        if (existingRecord.rows.length > 0) {
+          return res.status(200).json({ patient: src, record: existingRecord.rows[0], already_exists: true });
+        }
+
+        // Crear expediente propio para este médico — NO se duplica el paciente
         const newRecord = await pool.query(
-          "INSERT INTO clinical_records (patient_id, clinic_id, status) VALUES ($1, $2, 'active') RETURNING *",
-          [src.id, targetClinicId]
+          'INSERT INTO clinical_records (patient_id, clinic_id, created_by_user_id, status) VALUES ($1, $2, $3, $4) RETURNING *',
+          [src.id, targetClinicId, suImp.user_id || null, 'active']
         );
         const newRecordRow = newRecord.rows[0];
+
+        // Registrar acceso del médico al paciente en patient_assignments (para listPatients own-scope)
+        await pool.query(
+          'INSERT INTO patient_assignments (patient_id, clinic_user_id, assigned_by, assigned_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT DO NOTHING',
+          [src.id, suImp.user_id, suImp.user_id]
+        );
+
+        // Copiar antecedentes si se solicita
+        if (import_fields.includes('history')) {
+          const srcRec = await pool.query(
+            'SELECT id FROM clinical_records WHERE patient_id = $1 ORDER BY created_at LIMIT 1',
+            [source_patient_id]
+          );
+          if (srcRec.rows.length > 0) {
+            const hist = await pool.query(
+              'SELECT * FROM medical_history WHERE record_id = $1 ORDER BY updated_at DESC LIMIT 1',
+              [srcRec.rows[0].id]
+            );
+            if (hist.rows.length > 0) {
+              const h = hist.rows[0];
+              await pool.query(
+                `INSERT INTO medical_history
+                 (record_id, pathological, non_pathological, family_history, surgical_history,
+                  allergies, current_medications, aesthetic_history, gynecological_history)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+                 ON CONFLICT DO NOTHING`,
+                [newRecordRow.id, h.pathological, h.non_pathological, h.family_history,
+                 h.surgical_history, h.allergies, h.current_medications, h.aesthetic_history, h.gynecological_history]
+              );
+            }
+          }
+        }
+
+        await logAudit(pool, { patientId: src.id, sessionUser: suImp, actionType: 'create', module: 'patient', summary: `Nuevo expediente creado para paciente existente ID ${source_patient_id}: ${src.first_name} ${src.last_name}` });
+        return res.status(201).json({ patient: src, record: newRecordRow });
+      }
 
         // Copiar antecedentes si se solicita
         if (import_fields.includes('history')) {
