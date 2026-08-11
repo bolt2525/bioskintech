@@ -88,6 +88,14 @@ async function ensureNewColumns() {
     await sql.query("ALTER TABLE invite_links ADD COLUMN IF NOT EXISTS access_scope VARCHAR(20) DEFAULT 'own'");
     // Restaurar clinic_id si fue eliminado por una migración anterior incorrecta
     await sql.query("ALTER TABLE invite_links ADD COLUMN IF NOT EXISTS clinic_id UUID REFERENCES clinics(id) ON DELETE CASCADE");
+    // Campos profesionales
+    await sql.query("ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS cedula_profesional VARCHAR(50)");
+    await sql.query("ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS matricula_senescyt VARCHAR(100)");
+    await sql.query("ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS especialidad VARCHAR(100)");
+    await sql.query("ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS gentilicio VARCHAR(50)");
+    await sql.query("ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS profession VARCHAR(100)");
+    await sql.query("ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS first_name VARCHAR(100)");
+    await sql.query("ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS last_name VARCHAR(100)");
   } catch { /* non-fatal — columns already exist */ }
   _newColumnsMigrated = true;
 }
@@ -2132,6 +2140,17 @@ export default async function handler(req, res) {
       if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master_admin' });
       const result = await updateClinic(req.body || {});
       return res.status(result.error ? 400 : 200).json(result);
+    }
+    if (action === 'deleteClinic') {
+      if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master_admin' });
+      const clinicId = req.query.id || req.body?.id;
+      if (!clinicId) return res.status(400).json({ error: 'id requerido' });
+      // Null out subscriptions.clinic_id (no CASCADE on that FK)
+      await sql`UPDATE subscriptions SET clinic_id = NULL WHERE clinic_id = ${clinicId}`;
+      // DELETE cascades to: clinic_users, clinic_features, clinic_settings,
+      // clinic_notifications, invite_links, consent_templates via clinic_consent_templates
+      await sql`DELETE FROM clinics WHERE id = ${clinicId}`;
+      return res.status(200).json({ success: true });
     }
     if (action === 'updateClinicSubscription') {
       if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master_admin' });

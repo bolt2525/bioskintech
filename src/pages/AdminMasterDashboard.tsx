@@ -1366,6 +1366,17 @@ export default function AdminMasterDashboard() {
     loadAll();
   };
 
+  const deleteClinic = async (clinic: Clinic) => {
+    if (!confirm(`¿Eliminar permanentemente la clínica "${clinic.name}"?\n\nSe eliminarán TODOS los usuarios, fichas clínicas, ajustes y datos asociados.\n\nEsta acción es IRREVERSIBLE.`)) return;
+    try {
+      const res = await fetch(`/api/admin-auth?action=deleteClinic&id=${clinic.id}`, { method: 'DELETE', headers: authHeader() });
+      const d = await res.json();
+      if (d.error) { flash(d.error, 'err'); return; }
+      flash(`Clínica "${clinic.name}" eliminada`);
+      loadAll();
+    } catch { flash('Error al eliminar la clínica', 'err'); }
+  };
+
   const doResetPwd = async () => {
     if (pwdForm.password !== pwdForm.password2) return flash('Las contraseñas no coinciden', 'err');
     const res  = await fetch('/api/admin-auth?action=resetPassword', {
@@ -1648,6 +1659,10 @@ export default function AdminMasterDashboard() {
                         <button onClick={() => setDemoModal({ open: true, clinicId: clinic.id, clinicName: clinic.name })}
                           className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition-colors">
                           ⏱ Demo
+                        </button>
+                        <button onClick={() => deleteClinic(clinic)}
+                          className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors" title="Eliminar clínica">
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </div>
