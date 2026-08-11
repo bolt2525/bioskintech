@@ -249,6 +249,11 @@ export default function PatientDetail() {
                     </div>
                     <div>
                       <h3 className="font-semibold text-gray-900">Expediente #{record.id}</h3>
+                      {record.created_by_full_name && (
+                        <p className="text-sm font-medium text-[#c9a876] mt-0.5">
+                          {record.created_by_gentilicio ? `${record.created_by_gentilicio} ` : ''}{record.created_by_full_name}
+                        </p>
+                      )}
                       <div className="flex items-center gap-4 text-sm text-gray-500 mt-1">
                         <span className="flex items-center gap-1">
                           <Calendar className="w-4 h-4" />

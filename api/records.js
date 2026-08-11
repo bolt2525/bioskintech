@@ -760,16 +760,25 @@ export default async function handler(req, res) {
           if (chk.rows.length && chk.rows[0].clinic_id !== cid)
             return res.status(403).json({ error: 'Acceso no autorizado' });
         }
-        // own-scope: mostrar solo el expediente del médico actual (o NULL = legado pre-feature)
+        // Join creator name so the UI can label each expediente by doctor
+        const selectWithCreator = `
+          SELECT cr.*,
+                 cu.full_name   AS created_by_full_name,
+                 cu.username    AS created_by_username,
+                 cu.gentilicio  AS created_by_gentilicio
+          FROM clinical_records cr
+          LEFT JOIN clinic_users cu ON cu.id = cr.created_by_user_id
+          WHERE cr.patient_id = $1
+        `;
         let records;
         if (su?.access_scope === 'own' && su?.user_id != null && su?.role !== 'master_admin') {
           records = await pool.query(
-            'SELECT * FROM clinical_records WHERE patient_id = $1 AND (created_by_user_id = $2 OR created_by_user_id IS NULL) ORDER BY created_at DESC',
+            selectWithCreator + ' AND (cr.created_by_user_id = $2 OR cr.created_by_user_id IS NULL) ORDER BY cr.created_at DESC',
             [patient_id, su.user_id]
           );
         } else {
           records = await pool.query(
-            'SELECT * FROM clinical_records WHERE patient_id = $1 ORDER BY created_at DESC',
+            selectWithCreator + ' ORDER BY cr.created_at DESC',
             [patient_id]
           );
         }
