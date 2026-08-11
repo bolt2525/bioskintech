@@ -1429,7 +1429,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     <div class="signature-block">
       <div class="signature-line">
         ${[user?.gentilicio, user?.full_name].filter(Boolean).join(' ') || 'Profesional'}
-        ${user?.cedula_profesional ? `<br><small style="font-size:10px;font-weight:normal;">${user.cedula_profesional}</small>` : ''}
+        ${user?.cedula_profesional ? `<br><small style="font-size:10px;font-weight:normal;">Cédula/RUC: ${user.cedula_profesional}</small>` : ''}
+        ${user?.matricula_senescyt ? `<br><small style="font-size:10px;font-weight:normal;">Matrícula SENESCYT: ${user.matricula_senescyt}</small>` : ''}
         ${user?.especialidad ? `<br><small style="font-size:10px;font-weight:normal;">${user.especialidad}</small>` : ''}
       </div>
     </div>

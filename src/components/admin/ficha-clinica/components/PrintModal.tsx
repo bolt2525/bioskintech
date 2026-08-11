@@ -76,11 +76,12 @@ export default function PrintModal({ patient, recordId, recordData, activeConsul
   const [profTemp, setProfTemp] = useState({
     name: user?.full_name || user?.username || '',
     cedula: user?.cedula_profesional || '',
+    matricula: user?.matricula_senescyt || '',
     especialidad: user?.especialidad || '',
   });
 
   const missingFields: string[] = [];
-  if (!profTemp.cedula) missingFields.push('cédula/matrícula');
+  if (!profTemp.matricula) missingFields.push('matrícula SENESCYT');
   if (!profTemp.especialidad) missingFields.push('especialidad');
 
   const toggle = (key: keyof PrintOptions) => setOpts(p => ({ ...p, [key]: !p[key] }));
@@ -242,7 +243,8 @@ export default function PrintModal({ patient, recordId, recordData, activeConsul
       <div class="professional-block">
         <div class="sig-line"></div>
         <div class="sig-name">${profTemp.name}</div>
-        ${profTemp.cedula ? `<div class="sig-detail">Cédula/Matrícula: ${profTemp.cedula}</div>` : ''}
+        ${profTemp.cedula ? `<div class="sig-detail">Cédula/RUC: ${profTemp.cedula}</div>` : ''}
+        ${profTemp.matricula ? `<div class="sig-detail">Matrícula SENESCYT: ${profTemp.matricula}</div>` : ''}
         ${profTemp.especialidad ? `<div class="sig-detail">${profTemp.especialidad}</div>` : ''}
       </div>` : '';
 
@@ -351,7 +353,8 @@ export default function PrintModal({ patient, recordId, recordData, activeConsul
                     className="px-4 pb-3 pt-1 border-t border-amber-100 bg-white/60 space-y-2">
                     {[
                       { key: 'name', label: 'Nombre profesional', placeholder: 'Dr. / Dra. Nombre Apellido' },
-                      { key: 'cedula', label: 'Cédula / Matrícula', placeholder: '0987654321' },
+                      { key: 'cedula', label: 'Cédula / RUC', placeholder: '0987654321' },
+                      { key: 'matricula', label: 'Matrícula SENESCYT', placeholder: '1020-12-86012345' },
                       { key: 'especialidad', label: 'Especialidad', placeholder: 'Medicina Estética' },
                     ].map(f => (
                       <div key={f.key}>

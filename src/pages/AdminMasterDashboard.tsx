@@ -977,7 +977,7 @@ export default function AdminMasterDashboard() {
   const [pwdModal,    setPwdModal]    = useState<{ open: boolean; userId?: number }>({ open: false });
 
   // ── Formularios ──────────────────────────────────────────────────────────
-  const [userForm, setUserForm]     = useState({ username: '', full_name: '', first_name: '', last_name: '', gentilicio: '', profession: '', email: '', role: 'clinic_user', access_scope: 'own', finance_scope: 'all', inventory_scope: 'all', clinic_id: '', password: '', password2: '', cedula_profesional: '', especialidad: '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
+  const [userForm, setUserForm]     = useState({ username: '', full_name: '', first_name: '', last_name: '', gentilicio: '', profession: '', email: '', role: 'clinic_user', access_scope: 'own', finance_scope: 'all', inventory_scope: 'all', clinic_id: '', password: '', password2: '', cedula_profesional: '', matricula_senescyt: '', especialidad: '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
   const [clinicForm, setClinicForm] = useState({ name: '', email: '', phone: '', address: '' });
   const [pwdForm, setPwdForm]       = useState({ password: '', password2: '' });
   const [showPwd, setShowPwd]       = useState<Record<string, boolean>>({});
@@ -1321,12 +1321,12 @@ export default function AdminMasterDashboard() {
 
   const openCreateUser = () => {
     setUsernameSuggestion(''); setUsernameStatus('idle');
-    setUserForm({ username: '', full_name: '', first_name: '', last_name: '', gentilicio: '', profession: '', email: '', role: 'clinic_user', access_scope: 'own', finance_scope: 'all', inventory_scope: 'all', clinic_id: String(clinics[0]?.id || ''), password: '', password2: '', cedula_profesional: '', especialidad: '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
+    setUserForm({ username: '', full_name: '', first_name: '', last_name: '', gentilicio: '', profession: '', email: '', role: 'clinic_user', access_scope: 'own', finance_scope: 'all', inventory_scope: 'all', clinic_id: String(clinics[0]?.id || ''), password: '', password2: '', cedula_profesional: '', matricula_senescyt: '', especialidad: '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
     setUserModal({ open: true });
   };
 
   const openEditUser = (u: ClinicUser) => {
-    setUserForm({ username: u.username, full_name: u.full_name || '', first_name: u.first_name || '', last_name: u.last_name || '', gentilicio: u.gentilicio || '', profession: u.profession || '', email: u.email || '', role: u.role, access_scope: u.access_scope, finance_scope: u.finance_scope || 'all', inventory_scope: u.inventory_scope || 'all', clinic_id: String(u.clinic_id || ''), password: '', password2: '', cedula_profesional: u.cedula_profesional || '', especialidad: u.especialidad || '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
+    setUserForm({ username: u.username, full_name: u.full_name || '', first_name: u.first_name || '', last_name: u.last_name || '', gentilicio: u.gentilicio || '', profession: u.profession || '', email: u.email || '', role: u.role, access_scope: u.access_scope, finance_scope: u.finance_scope || 'all', inventory_scope: u.inventory_scope || 'all', clinic_id: String(u.clinic_id || ''), password: '', password2: '', cedula_profesional: u.cedula_profesional || '', matricula_senescyt: (u as any).matricula_senescyt || '', especialidad: u.especialidad || '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
     setUserModal({ open: true, userId: u.id });
   };
 
@@ -1402,7 +1402,7 @@ export default function AdminMasterDashboard() {
     // Si es nueva clínica, abrir modal de usuario pre-asignado a ella
     if (!clinicModal.clinicId && data.clinic) {
       await loadAll();
-      setUserForm({ username: '', full_name: '', first_name: '', last_name: '', gentilicio: '', profession: '', email: '', role: 'clinic_admin', access_scope: 'all', finance_scope: 'all', inventory_scope: 'all', clinic_id: String(data.clinic.id), password: '', password2: '', cedula_profesional: '', especialidad: '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
+      setUserForm({ username: '', full_name: '', first_name: '', last_name: '', gentilicio: '', profession: '', email: '', role: 'clinic_admin', access_scope: 'all', finance_scope: 'all', inventory_scope: 'all', clinic_id: String(data.clinic.id), password: '', password2: '', cedula_profesional: '', matricula_senescyt: '', especialidad: '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
       setUserModal({ open: true });
     }
     loadAll();
@@ -2202,8 +2202,12 @@ export default function AdminMasterDashboard() {
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Datos profesionales (fichas clínicas)</p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Cédula / Matrícula</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Cédula / RUC</label>
                   <input type="text" value={userForm.cedula_profesional} onChange={e => setUserForm(p => ({ ...p, cedula_profesional: e.target.value }))} placeholder="Ej: 0987654321" className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] focus:outline-none" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Matrícula SENESCYT</label>
+                  <input type="text" value={userForm.matricula_senescyt} onChange={e => setUserForm(p => ({ ...p, matricula_senescyt: e.target.value }))} placeholder="Ej: 1020-12-86012345" className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] focus:outline-none" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Especialidad</label>

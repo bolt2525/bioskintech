@@ -394,6 +394,7 @@ export async function initMultiTenantSchema() {
     "ALTER TABLE clinic_settings ADD COLUMN IF NOT EXISTS inventario JSONB NOT NULL DEFAULT '{}'",
     "ALTER TABLE clinic_settings ADD COLUMN IF NOT EXISTS notificaciones JSONB NOT NULL DEFAULT '{}'",
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS cedula_profesional VARCHAR(50)",
+    "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS matricula_senescyt VARCHAR(100)",
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS especialidad VARCHAR(100)",
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS first_name VARCHAR(100)",
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS last_name VARCHAR(100)",
@@ -631,7 +632,7 @@ async function loginUser(username, password, ip, ua, req) {
     SELECT cu.id, cu.username, cu.password_hash, cu.salt, cu.hash_algo, cu.role, cu.clinic_id, cu.access_scope,
            cu.finance_scope, cu.inventory_scope,
            cu.failed_attempts, cu.locked_until, cu.is_active, cu.full_name, cu.email,
-           cu.cedula_profesional, cu.especialidad, cu.gentilicio, cu.profession, cu.first_name, cu.last_name,
+           cu.cedula_profesional, cu.matricula_senescyt, cu.especialidad, cu.gentilicio, cu.profession, cu.first_name, cu.last_name,
            cu.is_demo, cu.demo_expires_at, c.slug AS clinic_slug, c.name AS clinic_name
     FROM clinic_users cu
     LEFT JOIN clinics c ON c.id = cu.clinic_id
@@ -714,7 +715,7 @@ async function loginUser(username, password, ip, ua, req) {
           email: u.email, role: u.role, clinic_id: u.clinic_id, access_scope: u.access_scope,
           finance_scope: u.finance_scope || 'all', inventory_scope: u.inventory_scope || 'all',
           clinic_slug: u.clinic_slug || null, clinic_name: u.clinic_name || null,
-          cedula_profesional: u.cedula_profesional || null, especialidad: u.especialidad || null,
+          cedula_profesional: u.cedula_profesional || null, matricula_senescyt: u.matricula_senescyt || null, especialidad: u.especialidad || null,
           gentilicio: u.gentilicio || null, profession: u.profession || null,
           first_name: u.first_name || null, last_name: u.last_name || null,
           is_demo: u.is_demo || false, demo_expires_at: u.demo_expires_at || null },
@@ -774,7 +775,7 @@ async function loginUser(username, password, ip, ua, req) {
       email: u.email, role: u.role, clinic_id: u.clinic_id, access_scope: u.access_scope,
       finance_scope: u.finance_scope || 'all', inventory_scope: u.inventory_scope || 'all',
       clinic_slug: u.clinic_slug || null, clinic_name: u.clinic_name || null,
-      cedula_profesional: u.cedula_profesional || null, especialidad: u.especialidad || null,
+      cedula_profesional: u.cedula_profesional || null, matricula_senescyt: u.matricula_senescyt || null, especialidad: u.especialidad || null,
       gentilicio: u.gentilicio || null, profession: u.profession || null,
       first_name: u.first_name || null, last_name: u.last_name || null,
       is_demo: u.is_demo || false, demo_expires_at: u.demo_expires_at || null,
@@ -794,7 +795,7 @@ async function verifySession(token) {
     const r = await sql`
       SELECT s.username, s.expires_at, s.role, s.clinic_id, s.access_scope, s.clinic_user_id,
              cu.full_name, cu.email, cu.is_demo, cu.demo_expires_at,
-             cu.cedula_profesional, cu.especialidad, cu.gentilicio, cu.profession, cu.first_name, cu.last_name,
+             cu.cedula_profesional, cu.matricula_senescyt, cu.especialidad, cu.gentilicio, cu.profession, cu.first_name, cu.last_name,
              c.name as clinic_name, c.slug as clinic_slug,
              c.subscription_expires_at
       FROM admin_sessions s
@@ -823,7 +824,7 @@ async function verifySession(token) {
         id: s.clinic_user_id, username: s.username, full_name: s.full_name,
         email: s.email, role: s.role || 'clinic_admin', clinic_id: s.clinic_id,
         clinic_name: s.clinic_name, clinic_slug: s.clinic_slug, access_scope: s.access_scope || 'all',
-        cedula_profesional: s.cedula_profesional || null, especialidad: s.especialidad || null,
+        cedula_profesional: s.cedula_profesional || null, matricula_senescyt: s.matricula_senescyt || null, especialidad: s.especialidad || null,
         gentilicio: s.gentilicio || null, profession: s.profession || null,
         first_name: s.first_name || null, last_name: s.last_name || null,
         is_demo: s.is_demo || false,
@@ -958,7 +959,7 @@ async function listUsers(requestUser, clinicIdFilter) {
         SELECT cu.id, cu.username, cu.full_name, cu.email, cu.role, cu.access_scope,
                cu.finance_scope, cu.inventory_scope,
                cu.is_active, cu.last_login, cu.clinic_id, c.name as clinic_name, c.slug as clinic_slug,
-               cu.cedula_profesional, cu.especialidad, cu.is_demo, cu.demo_expires_at,
+               cu.cedula_profesional, cu.matricula_senescyt, cu.especialidad, cu.is_demo, cu.demo_expires_at,
                cu.first_name, cu.last_name, cu.gentilicio, cu.profession
         FROM clinic_users cu LEFT JOIN clinics c ON cu.clinic_id = c.id
         WHERE cu.clinic_id = ${clinicIdFilter}
@@ -969,7 +970,7 @@ async function listUsers(requestUser, clinicIdFilter) {
       SELECT cu.id, cu.username, cu.full_name, cu.email, cu.role, cu.access_scope,
              cu.finance_scope, cu.inventory_scope,
              cu.is_active, cu.last_login, cu.clinic_id, c.name as clinic_name, c.slug as clinic_slug,
-             cu.cedula_profesional, cu.especialidad, cu.is_demo, cu.demo_expires_at,
+             cu.cedula_profesional, cu.matricula_senescyt, cu.especialidad, cu.is_demo, cu.demo_expires_at,
              cu.first_name, cu.last_name, cu.gentilicio, cu.profession
       FROM clinic_users cu LEFT JOIN clinics c ON cu.clinic_id = c.id
       ORDER BY c.name NULLS LAST, cu.role, cu.username
@@ -980,7 +981,7 @@ async function listUsers(requestUser, clinicIdFilter) {
     SELECT id, username, full_name, email, role, access_scope, finance_scope, inventory_scope,
            is_active, last_login, clinic_id,
            is_demo, demo_expires_at, first_name, last_name, gentilicio, profession,
-           cedula_profesional, especialidad
+           cedula_profesional, matricula_senescyt, especialidad
     FROM clinic_users WHERE clinic_id = ${requestUser.clinic_id}
     ORDER BY role, username
   `).rows;
@@ -989,7 +990,7 @@ async function listUsers(requestUser, clinicIdFilter) {
 async function createUser(requestUser, body) {
   const { username, password, full_name, first_name, last_name, gentilicio, profession,
           email, role, access_scope, finance_scope, inventory_scope,
-          clinic_id, cedula_profesional, especialidad,
+          clinic_id, cedula_profesional, matricula_senescyt, especialidad,
           is_demo, demo_expires_at, send_setup_link } = body;
   if (!username?.trim() || !role)
     return { error: 'username y role son requeridos' };
@@ -1015,13 +1016,13 @@ async function createUser(requestUser, body) {
       INSERT INTO clinic_users
         (clinic_id, username, password_hash, salt, hash_algo, full_name, first_name, last_name,
          gentilicio, profession, email, role, access_scope, finance_scope, inventory_scope,
-         cedula_profesional, especialidad, is_demo, demo_expires_at)
+         cedula_profesional, matricula_senescyt, especialidad, is_demo, demo_expires_at)
       VALUES
         (${targetClinicId}, ${username.trim()}, ${hash}, ${salt}, 'pbkdf2',
          ${full_name || null}, ${first_name || null}, ${last_name || null},
          ${gentilicio || null}, ${profession || null}, ${email || null},
          ${role}, ${effectiveScope}, ${effectiveFinanceScope}, ${effectiveInventoryScope},
-         ${cedula_profesional || null}, ${especialidad || null},
+         ${cedula_profesional || null}, ${matricula_senescyt || null}, ${especialidad || null},
          ${isDemo}, ${demo_expires_at || null})
       RETURNING id, username, full_name, email, role, access_scope, finance_scope, inventory_scope,
                 clinic_id, is_active, is_demo, demo_expires_at
@@ -1042,7 +1043,7 @@ async function createUser(requestUser, body) {
 async function updateUser(requestUser, body) {
   const { id, full_name, first_name, last_name, gentilicio, profession,
           email, role, access_scope, finance_scope, inventory_scope,
-          is_active, cedula_profesional, especialidad } = body;
+          is_active, cedula_profesional, matricula_senescyt, especialidad } = body;
   if (!id) return { error: 'id requerido' };
 
   if (requestUser.role === 'clinic_admin') {
@@ -1066,6 +1067,7 @@ async function updateUser(requestUser, body) {
       inventory_scope     = COALESCE(${inventory_scope     ?? null}, inventory_scope),
       is_active           = COALESCE(${is_active           ?? null}, is_active),
       cedula_profesional  = COALESCE(${cedula_profesional  ?? null}, cedula_profesional),
+      matricula_senescyt  = COALESCE(${matricula_senescyt  ?? null}, matricula_senescyt),
       especialidad        = COALESCE(${especialidad        ?? null}, especialidad)
     WHERE id = ${id}
   `;
@@ -1076,7 +1078,7 @@ async function updateUser(requestUser, body) {
   const updated = await sql`
     SELECT id, username, full_name, first_name, last_name, gentilicio, profession,
            email, role, access_scope, finance_scope, inventory_scope,
-           is_active, clinic_id, cedula_profesional, especialidad
+           is_active, clinic_id, cedula_profesional, matricula_senescyt, especialidad
     FROM clinic_users WHERE id = ${id}
   `;
   return { success: true, user: updated.rows[0] };
@@ -1298,7 +1300,7 @@ async function registerClinic(body) {
   const { code, subscription_id, email, password, username: rawUsername, clinic_email,
           first_name, last_name, gentilicio, profession,
           clinic_name, clinic_phone, clinic_address, clinic_city, clinic_country,
-          clinic_ruc, clinic_website, cedula_profesional, especialidad } = body;
+          clinic_ruc, clinic_website, cedula_profesional, matricula_senescyt, especialidad } = body;
 
   if (!email?.trim() || !password?.trim() || !first_name?.trim() || !last_name?.trim())
     return { error: 'email, password, first_name y last_name son requeridos' };
@@ -1391,11 +1393,11 @@ async function registerClinic(body) {
   const userR = await sql`
     INSERT INTO clinic_users
       (clinic_id, username, password_hash, salt, hash_algo, full_name, email,
-       first_name, last_name, gentilicio, profession, cedula_profesional, especialidad, role, access_scope)
+       first_name, last_name, gentilicio, profession, cedula_profesional, matricula_senescyt, especialidad, role, access_scope)
     VALUES
       (${clinicId}, ${usernameNorm}, ${hash}, ${salt}, 'pbkdf2', ${fullName}, ${emailNorm},
        ${first_name.trim()}, ${last_name.trim()}, ${gentilicio||null}, ${profession||null},
-       ${cedula_profesional||null}, ${especialidad||null}, 'clinic_admin', ${accessScope})
+       ${cedula_profesional||null}, ${matricula_senescyt||null}, ${especialidad||null}, 'clinic_admin', ${accessScope})
     RETURNING id
   `;
   const userId = userR.rows[0].id;
@@ -1595,7 +1597,7 @@ async function useInviteLink(token, body) {
   const invite = claimed.rows[0];
 
   const { email, password, first_name, last_name, gentilicio, profession,
-          especialidad, cedula_profesional, username } = body || {};
+          especialidad, cedula_profesional, matricula_senescyt, username } = body || {};
 
   // Undo claim helper — called if validation fails after atomic claim
   const undoClaim = () => sql`UPDATE invite_links SET is_used = false, used_by = NULL WHERE id = ${invite.id}`;
@@ -1633,11 +1635,11 @@ async function useInviteLink(token, body) {
   const userR = await sql`
     INSERT INTO clinic_users
       (clinic_id, username, password_hash, salt, hash_algo, full_name, email, first_name, last_name,
-       gentilicio, profession, especialidad, cedula_profesional, role, access_scope)
+       gentilicio, profession, especialidad, cedula_profesional, matricula_senescyt, role, access_scope)
     VALUES
       (${invite.clinic_id}, ${usernameFinal}, ${hash}, ${salt}, 'pbkdf2', ${fullName}, ${emailNorm},
        ${first_name.trim()}, ${last_name.trim()}, ${gentilicio||null}, ${profession||null},
-       ${especialidad||null}, ${cedula_profesional||null},
+       ${especialidad||null}, ${cedula_profesional||null}, ${matricula_senescyt||null},
        ${invite.role}, ${accessScope})
     RETURNING id
   `;
@@ -1686,7 +1688,7 @@ async function verifyOTP(otpToken, code, ip, ua) {
   const r = await sql`
     SELECT lo.id, lo.code, lo.attempts, lo.user_id,
            cu.username, cu.full_name, cu.email, cu.role, cu.clinic_id, cu.access_scope,
-           cu.cedula_profesional, cu.especialidad, cu.gentilicio, cu.profession, cu.first_name, cu.last_name,
+           cu.cedula_profesional, cu.matricula_senescyt, cu.especialidad, cu.gentilicio, cu.profession, cu.first_name, cu.last_name,
            cu.is_demo, cu.demo_expires_at, c.slug AS clinic_slug, c.name AS clinic_name
     FROM login_otp lo
     JOIN clinic_users cu ON cu.id = lo.user_id
@@ -1731,7 +1733,7 @@ async function verifyOTP(otpToken, code, ip, ua) {
       id: row.user_id, username: row.username, full_name: row.full_name,
       email: row.email, role: row.role, clinic_id: row.clinic_id, access_scope: row.access_scope,
       clinic_slug: row.clinic_slug, clinic_name: row.clinic_name,
-      cedula_profesional: row.cedula_profesional || null, especialidad: row.especialidad || null,
+      cedula_profesional: row.cedula_profesional || null, matricula_senescyt: row.matricula_senescyt || null, especialidad: row.especialidad || null,
       gentilicio: row.gentilicio, profession: row.profession,
       first_name: row.first_name, last_name: row.last_name,
       is_demo: row.is_demo || false, demo_expires_at: row.demo_expires_at || null,

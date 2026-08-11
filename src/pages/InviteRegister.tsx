@@ -48,6 +48,7 @@ export default function InviteRegister() {
   const [profession,       setProfession]       = useState('');
   const [especialidad,     setEspecialidad]     = useState('');
   const [cedulaPro,        setCedulaPro]        = useState('');
+  const [matriculaSenescyt, setMatriculaSenescyt] = useState('');
   const [email,            setEmail]            = useState('');
   const [username,         setUsername]         = useState('');
   const [password,         setPassword]         = useState('');
@@ -136,6 +137,7 @@ export default function InviteRegister() {
           profession:         profession.trim() || undefined,
           especialidad:       especialidad.trim() || undefined,
           cedula_profesional: cedulaPro.trim() || undefined,
+          matricula_senescyt: matriculaSenescyt.trim() || undefined,
         }),
       });
       const d = await r.json();
@@ -273,12 +275,20 @@ export default function InviteRegister() {
               </div>
             </div>
 
-            {/* Cédula profesional */}
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Cédula / Matrícula / SENESCYT</label>
-              <input type="text" value={cedulaPro} onChange={e => setCedulaPro(e.target.value)}
-                placeholder="Registro SENESCYT / MP-12345"
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
+            {/* Cédula e identidad + Matrícula SENESCYT */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Cédula / RUC</label>
+                <input type="text" value={cedulaPro} onChange={e => setCedulaPro(e.target.value)}
+                  placeholder="Ej: 0987654321"
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Matrícula SENESCYT</label>
+                <input type="text" value={matriculaSenescyt} onChange={e => setMatriculaSenescyt(e.target.value)}
+                  placeholder="Ej: 1020-12-86012345"
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
+              </div>
             </div>
 
             {/* Email */}

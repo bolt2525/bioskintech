@@ -44,6 +44,7 @@ export interface AuthUser {
   gentilicio?: string | null;
   profession?: string | null;
   cedula_profesional?: string | null;
+  matricula_senescyt?: string | null;
   especialidad?: string | null;
   is_demo?: boolean;
   demo_expires_at?: string | null;

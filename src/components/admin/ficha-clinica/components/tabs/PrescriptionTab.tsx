@@ -277,6 +277,8 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, con
     const clinicPhone = clinic.general.phone   || '';
     const clinicAddr  = clinic.general.address || '';
     const doctorName  = [user?.gentilicio, user?.full_name].filter(Boolean).join(' ') || clinicName;
+    const doctorCedula = user?.cedula_profesional || '';
+    const doctorMatricula = user?.matricula_senescyt || '';
 
     const html = `
       <html lang="es">
@@ -323,6 +325,8 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, con
                  <div class="doctor-info">
                    <h2>${clinicTagline.toUpperCase()}</h2>
                    <h3>${doctorName.toUpperCase()}</h3>
+                   ${doctorMatricula ? `<p style="font-size:8px;margin:2px 0;color:#666;">SENESCYT: ${doctorMatricula}</p>` : ''}
+                   ${doctorCedula ? `<p style="font-size:8px;margin:2px 0;color:#666;">Cédula/RUC: ${doctorCedula}</p>` : ''}
                  </div>
                </div>
                
@@ -355,7 +359,9 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, con
                  <img src="${logoUrl}" class="logo" alt="${clinicName}" />
                  <div class="doctor-info">
                    <h2>${clinicTagline.toUpperCase()}</h2>
-                   <h3>${clinicName.toUpperCase()}</h3>
+                   <h3>${doctorName.toUpperCase()}</h3>
+                   ${doctorMatricula ? `<p style="font-size:8px;margin:2px 0;color:#666;">SENESCYT: ${doctorMatricula}</p>` : ''}
+                   ${doctorCedula ? `<p style="font-size:8px;margin:2px 0;color:#666;">Cédula/RUC: ${doctorCedula}</p>` : ''}
                  </div>
                </div>
                
