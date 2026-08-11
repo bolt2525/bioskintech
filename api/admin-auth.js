@@ -1585,7 +1585,8 @@ async function useInviteLink(token, body) {
   if (!claimed.rows.length) return { error: 'Enlace inválido, ya utilizado o expirado' };
   const invite = claimed.rows[0];
 
-  const { email, password, first_name, last_name, gentilicio, profession, username } = body || {};
+  const { email, password, first_name, last_name, gentilicio, profession,
+          especialidad, cedula_profesional, username } = body || {};
 
   // Undo claim helper — called if validation fails after atomic claim
   const undoClaim = () => sql`UPDATE invite_links SET is_used = false, used_by = NULL WHERE id = ${invite.id}`;
@@ -1622,10 +1623,12 @@ async function useInviteLink(token, body) {
 
   const userR = await sql`
     INSERT INTO clinic_users
-      (clinic_id, username, password_hash, salt, hash_algo, full_name, email, first_name, last_name, gentilicio, profession, role, access_scope)
+      (clinic_id, username, password_hash, salt, hash_algo, full_name, email, first_name, last_name,
+       gentilicio, profession, especialidad, cedula_profesional, role, access_scope)
     VALUES
       (${invite.clinic_id}, ${usernameFinal}, ${hash}, ${salt}, 'pbkdf2', ${fullName}, ${emailNorm},
        ${first_name.trim()}, ${last_name.trim()}, ${gentilicio||null}, ${profession||null},
+       ${especialidad||null}, ${cedula_profesional||null},
        ${invite.role}, ${accessScope})
     RETURNING id
   `;

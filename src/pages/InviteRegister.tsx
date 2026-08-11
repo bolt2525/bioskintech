@@ -13,7 +13,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   User, Mail, Lock, Eye, EyeOff, Building2, CheckCircle2,
-  AlertCircle, Loader2, ShieldCheck, KeyRound,
+  AlertCircle, Loader2, ShieldCheck, KeyRound, AtSign,
 } from 'lucide-react';
 import BrandLogo from '../components/ui/BrandLogo';
 import { useAuth } from '../context/AuthContext';
@@ -31,34 +31,32 @@ export default function InviteRegister() {
   const { checkAuth }   = useAuth();
   const token           = searchParams.get('token') || '';
 
-  // ── Estado general ────────────────────────────────────────────────────────
-  const [loading,   setLoading]   = useState(true);
+  const [loading,    setLoading]    = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [error,     setError]     = useState('');
+  const [error,      setError]      = useState('');
 
-  // ── Datos del invite ──────────────────────────────────────────────────────
   const [invite, setInvite] = useState<{
-    clinic_name: string;
-    role: string;
-    email: string | null;
-    access_scope: string;
-    features: string[];
+    clinic_name: string; role: string; email: string | null;
+    access_scope: string; features: string[];
   } | null>(null);
   const [inviteError, setInviteError] = useState('');
 
-  // ── Formulario ────────────────────────────────────────────────────────────
-  const [firstName,  setFirstName]  = useState('');
-  const [lastName,   setLastName]   = useState('');
-  const [email,      setEmail]      = useState('');
-  const [username,   setUsername]   = useState('');
-  const [password,   setPassword]   = useState('');
-  const [showPwd,    setShowPwd]    = useState(false);
-  const [profession, setProfession] = useState('');
+  // Campos del formulario — alineados con AdminRegister.tsx
+  const [gentilicio,       setGentilicio]       = useState('');
+  const [firstName,        setFirstName]        = useState('');
+  const [lastName,         setLastName]         = useState('');
+  const [profession,       setProfession]       = useState('');
+  const [especialidad,     setEspecialidad]     = useState('');
+  const [cedulaPro,        setCedulaPro]        = useState('');
+  const [email,            setEmail]            = useState('');
+  const [username,         setUsername]         = useState('');
+  const [password,         setPassword]         = useState('');
+  const [showPwd,          setShowPwd]          = useState(false);
+  const [acceptedTerms,    setAcceptedTerms]    = useState(false);
+  const [emailTaken,       setEmailTaken]       = useState(false);
+  const [emailChecking,    setEmailChecking]    = useState(false);
+  const [uCheck,           setUCheck]           = useState<'idle'|'checking'|'ok'|'taken'>('idle');
 
-  // username check
-  const [uCheck, setUCheck] = useState<'idle' | 'checking' | 'ok' | 'taken'>('idle');
-
-  // ── Cargar datos del invite ────────────────────────────────────────────────
   useEffect(() => {
     if (!token) { setInviteError('No se encontró el token de invitación.'); setLoading(false); return; }
     fetch(`${API}?action=getInvite&token=${encodeURIComponent(token)}`)
@@ -66,24 +64,23 @@ export default function InviteRegister() {
       .then(d => {
         if (!d.valid) { setInviteError(d.error || 'Enlace inválido o expirado'); return; }
         setInvite(d);
-        if (d.email) setEmail(d.email.includes('***') ? '' : d.email);
+        if (d.email && !d.email.includes('***')) setEmail(d.email);
       })
       .catch(() => setInviteError('Error al verificar la invitación'))
       .finally(() => setLoading(false));
   }, [token]);
 
-  // ── Auto-generar username desde nombre ────────────────────────────────────
   function buildUsername(fn: string, ln: string): string {
-    const f = fn.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
-    const l = ln.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+    const norm = (s: string) => s.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+    const f = norm(fn); const l = norm(ln);
     if (!f && !l) return '';
     if (!l) return f.substring(0, 12);
     return `${f[0] || ''}${l}`.substring(0, 20);
   }
 
   const handleNameChange = (fn: string, ln: string) => {
-    const suggested = buildUsername(fn, ln);
-    if (suggested) { setUsername(suggested); setUCheck('idle'); }
+    const s = buildUsername(fn, ln);
+    if (s) { setUsername(s); setUCheck('idle'); }
   };
 
   const checkUsername = async (val: string) => {
@@ -97,43 +94,54 @@ export default function InviteRegister() {
     } catch { setUCheck('idle'); }
   };
 
-  // ── Submit ────────────────────────────────────────────────────────────────
+  const checkEmail = async (val: string) => {
+    const e = val.trim().toLowerCase();
+    if (!e || !e.includes('@')) return;
+    setEmailChecking(true);
+    try {
+      const r = await fetch(`${API}?action=checkEmail&email=${encodeURIComponent(e)}`);
+      const d = await r.json();
+      setEmailTaken(!d.available);
+    } catch { /* ignore */ }
+    finally { setEmailChecking(false); }
+  };
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
     if (!firstName.trim() || !lastName.trim()) { setError('Nombre y apellido son requeridos'); return; }
-    if (!email.trim() || !email.includes('@')) { setError('Email válido requerido'); return; }
+    if (!email.trim() || !email.includes('@'))  { setError('Email válido requerido'); return; }
+    if (emailTaken) { setError('Este email ya está en uso. Usa otro correo.'); return; }
     if (!username.trim() || username.trim().length < 3) { setError('El usuario debe tener al menos 3 caracteres'); return; }
     if (uCheck === 'taken') { setError('El nombre de usuario ya está en uso'); return; }
     if (password.length < 8) { setError('La contraseña debe tener al menos 8 caracteres'); return; }
     if (!/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) {
-      setError('La contraseña debe contener al menos una letra y un número');
-      return;
+      setError('La contraseña debe contener al menos una letra y un número'); return;
     }
+    if (!acceptedTerms) { setError('Debes aceptar los Términos de Servicio para continuar'); return; }
 
     setSubmitting(true);
     try {
       const r = await fetch(`${API}?action=useInvite`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
+        body: JSON.stringify({
           token,
-          email:      email.trim().toLowerCase(),
-          username:   username.trim().toLowerCase().replace(/[^a-z0-9_]/g, ''),
+          email:              email.trim().toLowerCase(),
+          username:           username.trim().toLowerCase().replace(/[^a-z0-9_]/g, ''),
           password,
-          first_name: firstName.trim(),
-          last_name:  lastName.trim(),
-          profession: profession.trim() || undefined,
+          first_name:         firstName.trim(),
+          last_name:          lastName.trim(),
+          gentilicio:         gentilicio || undefined,
+          profession:         profession.trim() || undefined,
+          especialidad:       especialidad.trim() || undefined,
+          cedula_profesional: cedulaPro.trim() || undefined,
         }),
       });
       const d = await r.json();
       if (!d.success) { setError(d.error || 'Error al registrarse'); return; }
-
-      // Guardar sesión
       localStorage.setItem('adminToken', d.sessionToken);
       await checkAuth();
-
-      // Redirigir al dashboard de la clínica
       navigate('/admin', { replace: true });
     } catch { setError('Error de conexión. Intenta de nuevo.'); }
     finally { setSubmitting(false); }
@@ -215,69 +223,96 @@ export default function InviteRegister() {
               <p className="text-xs text-gray-400 mt-0.5">Completa tus datos para unirte a {invite?.clinic_name}</p>
             </div>
 
+            {/* Gentilicio */}
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Título / Gentilicio</label>
+              <select value={gentilicio} onChange={e => setGentilicio(e.target.value)}
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none bg-white transition-all">
+                <option value="">Sin título</option>
+                <option>Dr.</option><option>Dra.</option>
+                <option>Lcdo.</option><option>Lcda.</option>
+                <option>Ing.</option><option>Mg.</option>
+                <option>Cosmiatra</option><option>Esteticista</option>
+              </select>
+            </div>
+
             {/* Nombre + Apellido */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Nombre *</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Nombres *</label>
                 <div className="relative">
                   <User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300 w-3.5 h-3.5" />
-                  <input
-                    type="text"
-                    value={firstName}
+                  <input type="text" value={firstName} required
                     onChange={e => { setFirstName(e.target.value); handleNameChange(e.target.value, lastName); }}
-                    placeholder="Daniela"
-                    required
-                    className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all"
-                  />
+                    placeholder="Ana María"
+                    className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Apellido *</label>
-                <input
-                  type="text"
-                  value={lastName}
+                <label className="block text-xs font-medium text-gray-600 mb-1">Apellidos *</label>
+                <input type="text" value={lastName} required
                   onChange={e => { setLastName(e.target.value); handleNameChange(firstName, e.target.value); }}
-                  placeholder="García"
-                  required
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all"
-                />
+                  placeholder="García López"
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
               </div>
+            </div>
+
+            {/* Profesión + Especialidad */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Profesión</label>
+                <input type="text" value={profession} onChange={e => setProfession(e.target.value)}
+                  placeholder="Médico Estético, Cosmiatra..."
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Especialidad</label>
+                <input type="text" value={especialidad} onChange={e => setEspecialidad(e.target.value)}
+                  placeholder="Medicina Estética..."
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
+              </div>
+            </div>
+
+            {/* Cédula profesional */}
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Cédula / Matrícula / SENESCYT</label>
+              <input type="text" value={cedulaPro} onChange={e => setCedulaPro(e.target.value)}
+                placeholder="Registro SENESCYT / MP-12345"
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
             </div>
 
             {/* Email */}
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Email *</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Correo electrónico de acceso *</label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300 w-3.5 h-3.5" />
-                <input
-                  type="email"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
+                <input type="email" value={email} required
+                  onChange={e => { setEmail(e.target.value); setEmailTaken(false); }}
+                  onBlur={e => checkEmail(e.target.value)}
                   placeholder="tucorreo@ejemplo.com"
-                  required
-                  className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all"
-                />
+                  className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
               </div>
+              {emailChecking && <p className="text-xs text-gray-400 mt-1">Verificando disponibilidad...</p>}
+              {emailTaken    && <p className="text-xs text-red-500 mt-1">Este email ya está en uso. Usa otro correo.</p>}
             </div>
 
             {/* Username */}
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1 flex items-center gap-1.5">
-                <KeyRound className="w-3 h-3" />
+                <AtSign className="w-3 h-3" />
                 Nombre de usuario *
-                {uCheck === 'checking' && <span className="text-gray-400 font-normal">verificando...</span>}
-                {uCheck === 'ok'       && <span className="text-emerald-600 font-normal">✓ disponible</span>}
-                {uCheck === 'taken'    && <span className="text-red-500 font-normal">ya en uso</span>}
+                {uCheck === 'checking' && <span className="text-gray-400 font-normal ml-1">verificando...</span>}
+                {uCheck === 'ok'       && <span className="text-emerald-600 font-normal ml-1">✓ disponible</span>}
+                {uCheck === 'taken'    && <span className="text-red-500 font-normal ml-1">ya en uso</span>}
               </label>
-              <input
-                type="text"
-                value={username}
+              <input type="text" value={username} required
                 onChange={e => { setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '')); setUCheck('idle'); }}
                 onBlur={e => checkUsername(e.target.value)}
-                placeholder="tu_usuario"
-                required
+                placeholder="usuario_clinica"
+                minLength={3} maxLength={20}
                 className={`w-full px-3 py-2.5 border rounded-xl text-sm font-mono text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all ${uCheck === 'taken' ? 'border-red-300' : 'border-gray-200'}`}
               />
+              <p className="text-xs text-gray-400 mt-1">Solo letras, números y guión bajo. También puedes ingresar con este nombre.</p>
             </div>
 
             {/* Contraseña */}
@@ -285,14 +320,10 @@ export default function InviteRegister() {
               <label className="block text-xs font-medium text-gray-600 mb-1">Contraseña *</label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300 w-3.5 h-3.5" />
-                <input
-                  type={showPwd ? 'text' : 'password'}
-                  value={password}
+                <input type={showPwd ? 'text' : 'password'} value={password} required
                   onChange={e => setPassword(e.target.value)}
                   placeholder="Mínimo 8 caracteres, letras y números"
-                  required
-                  className="w-full pl-9 pr-10 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all"
-                />
+                  className="w-full pl-9 pr-10 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
                 <button type="button" onClick={() => setShowPwd(p => !p)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500">
                   {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -303,17 +334,18 @@ export default function InviteRegister() {
               )}
             </div>
 
-            {/* Especialidad (opcional) */}
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Especialidad / Profesión <span className="text-gray-300 font-normal">(opcional)</span></label>
-              <input
-                type="text"
-                value={profession}
-                onChange={e => setProfession(e.target.value)}
-                placeholder="Ej: Medicina Estética"
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all"
-              />
-            </div>
+            {/* Términos */}
+            <label className="flex items-start gap-3 p-3 rounded-xl border border-[#deb887]/20 bg-[#fdf8f0] cursor-pointer hover:bg-[#fdf0e0] transition-colors">
+              <input type="checkbox" checked={acceptedTerms} onChange={e => setAcceptedTerms(e.target.checked)}
+                className="mt-0.5 w-4 h-4 rounded accent-[#deb887] flex-shrink-0" />
+              <span className="text-xs text-gray-600 leading-relaxed">
+                He leído y acepto las{' '}
+                <a href="/condiciones-de-servicio" target="_blank" rel="noopener noreferrer" className="text-[#deb887] font-semibold hover:underline">Condiciones de Servicio</a>
+                {' '}y la{' '}
+                <a href="/politica-de-privacidad" target="_blank" rel="noopener noreferrer" className="text-[#deb887] font-semibold hover:underline">Política de Privacidad</a>
+                {' '}de BioSkinTech. <span className="text-red-500">(Obligatorio)</span>
+              </span>
+            </label>
 
             {/* Error */}
             {error && (
@@ -324,11 +356,8 @@ export default function InviteRegister() {
             )}
 
             {/* Submit */}
-            <button
-              type="submit"
-              disabled={submitting || uCheck === 'taken'}
-              className="w-full py-3 bg-[#deb887] text-white rounded-xl text-sm font-bold hover:bg-[#c9a876] disabled:opacity-50 transition-colors flex items-center justify-center gap-2 shadow-md shadow-[#deb887]/30"
-            >
+            <button type="submit" disabled={submitting || uCheck === 'taken' || emailTaken || !acceptedTerms}
+              className="w-full py-3 bg-[#deb887] text-white rounded-xl text-sm font-bold hover:bg-[#c9a876] disabled:opacity-50 transition-colors flex items-center justify-center gap-2 shadow-md shadow-[#deb887]/30">
               {submitting
                 ? <><Loader2 className="w-4 h-4 animate-spin" /> Creando cuenta...</>
                 : <><CheckCircle2 className="w-4 h-4" /> Crear mi cuenta</>
@@ -338,9 +367,7 @@ export default function InviteRegister() {
             <p className="text-center text-xs text-gray-400">
               ¿Ya tienes cuenta?{' '}
               <button type="button" onClick={() => navigate('/admin/login')}
-                className="text-[#deb887] hover:underline font-medium">
-                Inicia sesión
-              </button>
+                className="text-[#deb887] hover:underline font-medium">Inicia sesión</button>
             </p>
           </form>
         </div>
