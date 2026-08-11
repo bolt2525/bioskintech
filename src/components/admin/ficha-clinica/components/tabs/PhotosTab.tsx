@@ -2,10 +2,13 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Camera, Upload, X, Trash2, Edit3, Download,
-  SplitSquareHorizontal, CheckCircle, AlertCircle,
-  ChevronLeft, ChevronRight, Save, Tag, FolderOpen, Calendar,
+  CheckCircle, AlertCircle, ChevronLeft, ChevronRight,
+  Save, Tag, FolderOpen, Calendar, LayoutGrid, Clock,
+  SplitSquareHorizontal, ZoomIn, ZoomOut,
 } from 'lucide-react';
 import recordsFetch from '../../../../../utils/recordsFetch';
+
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 interface ClinicalPhoto {
   id: number;
@@ -30,175 +33,278 @@ interface PhotosTabProps {
   patientName: string;
 }
 
-const TYPE_LABELS: Record<ClinicalPhoto['photo_type'], string> = {
-  before: 'Antes',
-  after: 'Después',
-  diagnostic: 'Diagnóstico',
-  progress: 'Progreso',
-  general: 'General',
-};
+type ViewMode = 'grid' | 'timeline' | 'compare';
 
+// ─── Constants ───────────────────────────────────────────────────────────────
+
+const TYPE_LABELS: Record<ClinicalPhoto['photo_type'], string> = {
+  before: 'Antes', after: 'Después', diagnostic: 'Diagnóstico',
+  progress: 'Progreso', general: 'General',
+};
 const TYPE_BADGE: Record<ClinicalPhoto['photo_type'], string> = {
-  before: 'bg-blue-100 text-blue-700',
-  after: 'bg-green-100 text-green-700',
-  diagnostic: 'bg-purple-100 text-purple-700',
-  progress: 'bg-amber-100 text-amber-700',
+  before: 'bg-blue-100 text-blue-700', after: 'bg-green-100 text-green-700',
+  diagnostic: 'bg-purple-100 text-purple-700', progress: 'bg-amber-100 text-amber-700',
   general: 'bg-gray-100 text-gray-600',
 };
-
 const TYPE_DOT: Record<ClinicalPhoto['photo_type'], string> = {
-  before: 'bg-blue-400',
-  after: 'bg-green-400',
-  diagnostic: 'bg-purple-400',
-  progress: 'bg-amber-400',
-  general: 'bg-gray-400',
+  before: 'bg-blue-400', after: 'bg-green-400', diagnostic: 'bg-purple-400',
+  progress: 'bg-amber-400', general: 'bg-gray-400',
 };
-
 const FILTER_OPTIONS = [
   { value: 'all', label: 'Todos' },
-  { value: 'before', label: 'Antes' },
-  { value: 'after', label: 'Después' },
-  { value: 'diagnostic', label: 'Diagnóstico' },
-  { value: 'progress', label: 'Progreso' },
+  { value: 'before', label: 'Antes' }, { value: 'after', label: 'Después' },
+  { value: 'diagnostic', label: 'Diagnóstico' }, { value: 'progress', label: 'Progreso' },
   { value: 'general', label: 'General' },
 ];
-
 const FACE_ZONES = [
   'Frente', 'Zona T', 'Mejillas', 'Nariz', 'Mentón', 'Cuello',
   'Contorno de ojos', 'Labios', 'Pómulos', 'Cuerpo completo', 'Otra',
 ];
 
-export default function PhotosTab({ recordId, consultationId, patientName }: PhotosTabProps) {
+// ─── Photo card ───────────────────────────────────────────────────────────────
+// Separates image click zone from action bar — eliminates hover-overlay propagation issues.
+
+interface CardProps {
+  photo: ClinicalPhoto;
+  viewMode: ViewMode;
+  compareLeft: ClinicalPhoto | null;
+  compareRight: ClinicalPhoto | null;
+  onOpen: (p: ClinicalPhoto) => void;
+  onEdit: (p: ClinicalPhoto) => void;
+  onDelete: (p: ClinicalPhoto) => void;
+  onTypeChange: (p: ClinicalPhoto, t: ClinicalPhoto['photo_type']) => void;
+  onCompareSelect: (p: ClinicalPhoto) => void;
+}
+
+function PhotoCard({ photo, viewMode, compareLeft, compareRight, onOpen, onEdit, onDelete, onTypeChange, onCompareSelect }: CardProps) {
+  const [showTypeMenu, setShowTypeMenu] = useState(false);
+  const isA = compareLeft?.id === photo.id;
+  const isB = compareRight?.id === photo.id;
+  const isSelected = isA || isB;
+
+  const handleImageClick = () => {
+    if (viewMode === 'compare') onCompareSelect(photo);
+    else onOpen(photo);
+  };
+
+  return (
+    <div className={`rounded-xl overflow-hidden border-2 transition-all shadow-sm bg-white ${
+      isSelected ? 'border-[#deb887] ring-2 ring-[#deb887]/30' : 'border-gray-100 hover:border-gray-300'
+    }`}>
+      {/* Image zone — sole click target for lightbox/compare */}
+      <div className="aspect-square bg-gray-100 cursor-pointer relative overflow-hidden" onClick={handleImageClick}>
+        <img src={photo.r2_url} alt={TYPE_LABELS[photo.photo_type]} className="w-full h-full object-cover" loading="lazy" />
+        <span className={`absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${TYPE_BADGE[photo.photo_type]}`}>
+          {TYPE_LABELS[photo.photo_type]}
+        </span>
+        {viewMode === 'compare' && (isA || isB) && (
+          <div className={`absolute top-1.5 right-1.5 w-6 h-6 rounded-full flex items-center justify-center text-white font-bold text-xs shadow ${isA ? 'bg-blue-500' : 'bg-green-500'}`}>
+            {isA ? 'A' : 'B'}
+          </div>
+        )}
+        {photo.session_label && (
+          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 px-2 py-1">
+            <p className="text-white text-[10px] truncate">{photo.session_label}</p>
+          </div>
+        )}
+      </div>
+
+      {/* Action bar — always visible, isolated from image click zone */}
+      {viewMode !== 'compare' && (
+        <div className="flex items-center justify-between px-2 py-1.5 bg-white border-t border-gray-100">
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowTypeMenu(m => !m)}
+              className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors"
+              title="Cambiar categoría"
+            >
+              <Tag className="w-3.5 h-3.5" />
+            </button>
+            {showTypeMenu && (
+              <div className="absolute bottom-full left-0 mb-1 bg-white rounded-xl shadow-xl border border-gray-100 p-1.5 min-w-[140px] z-30">
+                {(Object.entries(TYPE_LABELS) as [ClinicalPhoto['photo_type'], string][]).map(([type, label]) => (
+                  <button key={type} type="button"
+                    onClick={() => { onTypeChange(photo, type); setShowTypeMenu(false); }}
+                    className={`w-full text-left px-2 py-1.5 text-xs rounded-lg hover:bg-gray-50 flex items-center gap-2 ${
+                      photo.photo_type === type ? 'font-semibold text-[#b8944d]' : 'text-gray-700'
+                    }`}>
+                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${TYPE_DOT[type]}`} />
+                    {label}
+                    {photo.photo_type === type && <CheckCircle className="w-3 h-3 text-[#b8944d] ml-auto" />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-0.5">
+            <button type="button" onClick={() => onEdit(photo)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors" title="Editar">
+              <Edit3 className="w-3.5 h-3.5" />
+            </button>
+            <a href={photo.r2_url} target="_blank" rel="noopener noreferrer" download
+              className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors" title="Descargar">
+              <Download className="w-3.5 h-3.5" />
+            </a>
+            <button type="button" onClick={() => onDelete(photo)} className="p-1.5 rounded-lg hover:bg-red-50 text-red-400 transition-colors" title="Eliminar">
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
+export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) {
   const [photos, setPhotos] = useState<ClinicalPhoto[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<string>('');
-  const [selectedPhoto, setSelectedPhoto] = useState<ClinicalPhoto | null>(null);
-  const [compareMode, setCompareMode] = useState(false);
-  const [compareLeft, setCompareLeft] = useState<ClinicalPhoto | null>(null);
-  const [compareRight, setCompareRight] = useState<ClinicalPhoto | null>(null);
-  const [filterType, setFilterType] = useState<string>('all');
-  const [dragOver, setDragOver] = useState(false);
-  const [editingPhoto, setEditingPhoto] = useState<ClinicalPhoto | null>(null);
+  const [uploadProgress, setUploadProgress] = useState('');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [r2Available, setR2Available] = useState<boolean | null>(null);
-  const [typeSelectorId, setTypeSelectorId] = useState<number | null>(null);
+  const [filterType, setFilterType] = useState('all');
+  const [dragOver, setDragOver] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>('grid');
+
+  // Grid
+  const [selectedPhoto, setSelectedPhoto] = useState<ClinicalPhoto | null>(null);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
+  const [editingPhoto, setEditingPhoto] = useState<ClinicalPhoto | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
-  // lightbox nav index
-  const [lightboxIndex, setLightboxIndex] = useState<number>(0);
+
+  // Compare
+  const [compareLeft, setCompareLeft] = useState<ClinicalPhoto | null>(null);
+  const [compareRight, setCompareRight] = useState<ClinicalPhoto | null>(null);
+  const [sliderPct, setSliderPct] = useState(50);
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const isDraggingSlider = useRef(false);
+  const isPanning = useRef(false);
+  const panStart = useRef({ x: 0, y: 0 });
+  const panOrigin = useRef({ x: 0, y: 0 });
+  const compareRef = useRef<HTMLDivElement>(null);
+
+  // Timeline
+  const [timelineIndex, setTimelineIndex] = useState(0);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const compareContainerRef = useRef<HTMLDivElement>(null);
-  const [sliderPct, setSliderPct] = useState(50);
-  const isDraggingSlider = useRef(false);
 
   const filteredPhotos = useMemo(
     () => filterType === 'all' ? photos : photos.filter(p => p.photo_type === filterType),
     [photos, filterType],
   );
 
-  // Agrupar por consulta — clave: consultation_id (null = fotos generales)
   const consultationGroups = useMemo(() => {
-    const map = new Map<string, { label: string; date?: string; photos: ClinicalPhoto[] }>();
+    const map = new Map<string, { label: string; photos: ClinicalPhoto[] }>();
     for (const p of filteredPhotos) {
       const key = p.consultation_id ? `c_${p.consultation_id}` : 'general';
       if (!map.has(key)) {
-        const label = p.consultation_id
-          ? `Consulta ${p.consultation_date ? new Date(p.consultation_date).toLocaleDateString('es-CL') : `#${p.consultation_id}`}`
-          : 'Fotos generales';
-        map.set(key, { label, date: p.consultation_date, photos: [] });
+        map.set(key, {
+          label: p.consultation_id
+            ? `Consulta ${p.consultation_date ? new Date(p.consultation_date).toLocaleDateString('es-CL') : `#${p.consultation_id}`}`
+            : 'Fotos generales',
+          photos: [],
+        });
       }
       map.get(key)!.photos.push(p);
     }
-    // consultas recientes primero; generales al final
-    return [...map.entries()].sort(([a], [b]) => {
-      if (a === 'general') return 1;
-      if (b === 'general') return -1;
-      return 0; // ya vienen ordenadas del backend DESC
-    });
+    return [...map.entries()].sort(([a], [b]) => a === 'general' ? 1 : b === 'general' ? -1 : 0);
   }, [filteredPhotos]);
 
-  useEffect(() => {
-    fetchPhotos();
-  }, [recordId]);
+  const timelinePhotos = useMemo(
+    () => [...photos].sort((a, b) =>
+      new Date(a.taken_at || a.created_at).getTime() - new Date(b.taken_at || b.created_at).getTime(),
+    ),
+    [photos],
+  );
+
+  // ── Effects ────────────────────────────────────────────────────────────────
+
+  useEffect(() => { fetchPhotos(); }, [recordId]);
 
   useEffect(() => {
-    if (message) {
-      const t = setTimeout(() => setMessage(null), 4000);
-      return () => clearTimeout(t);
-    }
+    if (!message) return;
+    const t = setTimeout(() => setMessage(null), 4000);
+    return () => clearTimeout(t);
   }, [message]);
 
-  // Close lightbox on Escape
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setSelectedPhoto(null);
-        setEditingPhoto(null);
-      }
+      if (e.key === 'Escape') { setSelectedPhoto(null); setEditingPhoto(null); }
+      if (selectedPhoto && e.key === 'ArrowLeft') lightboxNav(-1);
+      if (selectedPhoto && e.key === 'ArrowRight') lightboxNav(1);
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
+  });
+
+  // Global mouse move/up for slider + pan drag
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (isDraggingSlider.current && compareRef.current) {
+        const rect = compareRef.current.getBoundingClientRect();
+        setSliderPct(Math.max(5, Math.min(95, ((e.clientX - rect.left) / rect.width) * 100)));
+      }
+      if (isPanning.current) {
+        setPan({
+          x: panOrigin.current.x + (e.clientX - panStart.current.x),
+          y: panOrigin.current.y + (e.clientY - panStart.current.y),
+        });
+      }
+    };
+    const onUp = () => { isDraggingSlider.current = false; isPanning.current = false; };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
   }, []);
+
+  // ── Fetch ──────────────────────────────────────────────────────────────────
 
   const fetchPhotos = async () => {
     setLoading(true);
     try {
       const res = await recordsFetch(`/api/records?action=listPhotos&record_id=${recordId}`);
-      if (res.ok) {
-        const data = await res.json();
-        setPhotos(Array.isArray(data) ? data : []);
-      }
-    } catch {
-      setMessage({ type: 'error', text: 'Error al cargar las fotos' });
-    } finally {
-      setLoading(false);
-    }
+      if (res.ok) { const d = await res.json(); setPhotos(Array.isArray(d) ? d : []); }
+    } catch { setMessage({ type: 'error', text: 'Error al cargar las fotos' }); }
+    finally { setLoading(false); }
   };
 
-  // ponytail: solo usar canvas si el archivo supera el límite de Vercel (~3.2MB → 4.25MB base64 < 4.5MB)
-  const compressImage = (file: File, maxBytes = 3.2 * 1024 * 1024): Promise<{ base64: string; type: string }> =>
+  // ── Upload ─────────────────────────────────────────────────────────────────
+
+  // ponytail: resize solo si supera 3.2 MB → base64 < 4.5 MB Vercel limit
+  const compressImage = (file: File): Promise<{ base64: string; type: string }> =>
     new Promise((resolve, reject) => {
-      if (file.size <= maxBytes) {
-        // archivo pequeño: leer directo sin pérdida de calidad
-        const reader = new FileReader();
-        reader.onload = () => {
-          const b64 = (reader.result as string).split(',')[1];
-          resolve({ base64: b64, type: file.type || 'image/jpeg' });
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-        return;
+      const MAX = 3.2 * 1024 * 1024;
+      if (file.size <= MAX) {
+        const r = new FileReader();
+        r.onload = () => resolve({ base64: (r.result as string).split(',')[1], type: file.type || 'image/jpeg' });
+        r.onerror = reject; r.readAsDataURL(file); return;
       }
-      // archivo grande: resize a 2560px máx, calidad 0.92 descendente
       const img = new Image();
       const url = URL.createObjectURL(file);
       img.onload = () => {
         URL.revokeObjectURL(url);
         const canvas = document.createElement('canvas');
-        const MAX_DIM = 2560;
+        const DIM = 2560;
         let { width, height } = img;
-        if (width > MAX_DIM || height > MAX_DIM) {
-          if (width > height) { height = Math.round(height * MAX_DIM / width); width = MAX_DIM; }
-          else { width = Math.round(width * MAX_DIM / height); height = MAX_DIM; }
+        if (width > DIM || height > DIM) {
+          if (width > height) { height = Math.round(height * DIM / width); width = DIM; }
+          else { width = Math.round(width * DIM / height); height = DIM; }
         }
         canvas.width = width; canvas.height = height;
         canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
-        let quality = 0.92;
-        const tryCompress = () => {
-          const dataUrl = canvas.toDataURL('image/jpeg', quality);
-          const base64 = dataUrl.split(',')[1];
-          if (base64.length * 0.75 < maxBytes || quality <= 0.65) {
-            resolve({ base64, type: 'image/jpeg' });
-          } else {
-            quality -= 0.08;
-            tryCompress();
-          }
+        let q = 0.92;
+        const go = () => {
+          const d = canvas.toDataURL('image/jpeg', q);
+          const b = d.split(',')[1];
+          if (b.length * 0.75 < MAX || q <= 0.65) resolve({ base64: b, type: 'image/jpeg' });
+          else { q -= 0.08; go(); }
         };
-        tryCompress();
+        go();
       };
-      img.onerror = reject;
-      img.src = url;
+      img.onerror = reject; img.src = url;
     });
 
   const handleUpload = useCallback(async (files: File[]) => {
@@ -206,568 +312,491 @@ export default function PhotosTab({ recordId, consultationId, patientName }: Pho
     setUploading(true);
     let anyFailed = false;
     for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      setUploadProgress(`Subiendo ${i + 1} de ${files.length}: ${file.name}`);
       try {
-        setUploadProgress(`Procesando ${i + 1} de ${files.length}…`);
-        const { base64, type } = await compressImage(file);
-        setUploadProgress(`Subiendo ${i + 1} de ${files.length}: ${file.name}`);
+        setUploadProgress(`Procesando ${i + 1}/${files.length}…`);
+        const { base64, type } = await compressImage(files[i]);
+        setUploadProgress(`Subiendo ${i + 1}/${files.length}…`);
         const res = await recordsFetch('/api/records', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            action: 'uploadPhotoProxy',
-            fileBase64: base64,
-            filename: file.name,
-            content_type: type,
-            record_id: recordId,
-            consultation_id: consultationId,
+            action: 'uploadPhotoProxy', fileBase64: base64, content_type: type,
+            record_id: recordId, consultation_id: consultationId,
             session_label: new Date().toLocaleDateString('es-CL'),
           }),
         });
-        if (res.status === 503) {
-          setR2Available(false);
-          setMessage({ type: 'error', text: 'Almacenamiento no configurado — Configure las variables R2 en Vercel' });
-          setUploading(false); setUploadProgress(''); return;
-        }
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.error || `Error al subir (${res.status})`);
-        }
+        if (res.status === 503) { setR2Available(false); setMessage({ type: 'error', text: 'Almacenamiento R2 no configurado' }); setUploading(false); setUploadProgress(''); return; }
+        if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `Error ${res.status}`); }
         setR2Available(true);
-      } catch (err: any) {
-        anyFailed = true;
-        setMessage({ type: 'error', text: err.message || 'Error al subir foto' });
-      }
+      } catch (err: any) { anyFailed = true; setMessage({ type: 'error', text: err.message || 'Error al subir' }); }
     }
     setUploading(false); setUploadProgress('');
-    if (!anyFailed) setMessage({ type: 'success', text: `${files.length} foto(s) subida(s) correctamente` });
+    if (!anyFailed) setMessage({ type: 'success', text: `${files.length} foto(s) subida(s)` });
     await fetchPhotos();
   }, [recordId, consultationId]);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files?.length) {
-      handleUpload(Array.from(e.target.files));
-      e.target.value = '';
-    }
-  };
-
   const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOver(false);
+    e.preventDefault(); setDragOver(false);
     const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
     if (files.length) handleUpload(files);
   };
 
+  // ── CRUD ───────────────────────────────────────────────────────────────────
+
   const handleDelete = async (photo: ClinicalPhoto) => {
-    if (!confirm(`¿Eliminar esta foto? Esta acción no se puede deshacer.`)) return;
-    try {
-      const res = await recordsFetch('/api/records', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'deletePhoto', id: photo.id }),
-      });
-      if (res.ok) {
-        setPhotos(prev => prev.filter(p => p.id !== photo.id));
-        if (selectedPhoto?.id === photo.id) setSelectedPhoto(null);
-        setMessage({ type: 'success', text: 'Foto eliminada' });
-      }
-    } catch {
-      setMessage({ type: 'error', text: 'Error al eliminar' });
+    if (!confirm('¿Eliminar esta foto? Esta acción no se puede deshacer.')) return;
+    const res = await recordsFetch('/api/records', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'deletePhoto', id: photo.id }),
+    });
+    if (res.ok) {
+      setPhotos(prev => prev.filter(p => p.id !== photo.id));
+      if (selectedPhoto?.id === photo.id) setSelectedPhoto(null);
+      if (compareLeft?.id === photo.id) setCompareLeft(null);
+      if (compareRight?.id === photo.id) setCompareRight(null);
+      setMessage({ type: 'success', text: 'Foto eliminada' });
     }
   };
 
   const handleSaveEdit = async () => {
     if (!editingPhoto) return;
-    try {
-      const res = await recordsFetch('/api/records', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'updatePhoto',
-          id: editingPhoto.id,
-          photo_type: editingPhoto.photo_type,
-          notes: editingPhoto.notes,
-          session_label: editingPhoto.session_label,
-          face_zone: editingPhoto.face_zone,
-        }),
-      });
-      if (res.ok) {
-        setPhotos(prev => prev.map(p => p.id === editingPhoto.id ? editingPhoto : p));
-        setMessage({ type: 'success', text: 'Foto actualizada' });
-        setEditingPhoto(null);
-      }
-    } catch {
-      setMessage({ type: 'error', text: 'Error al actualizar' });
-    }
+    const res = await recordsFetch('/api/records', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'updatePhoto', id: editingPhoto.id, photo_type: editingPhoto.photo_type, notes: editingPhoto.notes, session_label: editingPhoto.session_label, face_zone: editingPhoto.face_zone }),
+    });
+    if (res.ok) { setPhotos(prev => prev.map(p => p.id === editingPhoto.id ? editingPhoto : p)); setMessage({ type: 'success', text: 'Foto actualizada' }); setEditingPhoto(null); }
   };
 
-  // Compare slider drag
-  const handleSliderMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    isDraggingSlider.current = true;
+  const handleTypeChange = async (photo: ClinicalPhoto, newType: ClinicalPhoto['photo_type']) => {
+    if (photo.photo_type === newType) return;
+    const res = await recordsFetch('/api/records', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'updatePhoto', id: photo.id, photo_type: newType }),
+    });
+    if (res.ok) setPhotos(prev => prev.map(p => p.id === photo.id ? { ...p, photo_type: newType } : p));
   };
-  const handleSliderMouseMove = useCallback((e: MouseEvent) => {
-    if (!isDraggingSlider.current || !compareContainerRef.current) return;
-    const rect = compareContainerRef.current.getBoundingClientRect();
-    const pct = Math.max(5, Math.min(95, ((e.clientX - rect.left) / rect.width) * 100));
-    setSliderPct(pct);
-  }, []);
-  const handleSliderMouseUp = useCallback(() => { isDraggingSlider.current = false; }, []);
 
-  useEffect(() => {
-    window.addEventListener('mousemove', handleSliderMouseMove);
-    window.addEventListener('mouseup', handleSliderMouseUp);
-    return () => {
-      window.removeEventListener('mousemove', handleSliderMouseMove);
-      window.removeEventListener('mouseup', handleSliderMouseUp);
-    };
-  }, [handleSliderMouseMove, handleSliderMouseUp]);
+  // ── Lightbox ───────────────────────────────────────────────────────────────
 
-  // Lightbox navigation
   const openLightbox = (photo: ClinicalPhoto) => {
     const idx = filteredPhotos.findIndex(p => p.id === photo.id);
     setLightboxIndex(idx >= 0 ? idx : 0);
     setSelectedPhoto(photo);
   };
+
   const lightboxNav = (dir: 1 | -1) => {
     const next = (lightboxIndex + dir + filteredPhotos.length) % filteredPhotos.length;
     setLightboxIndex(next);
     setSelectedPhoto(filteredPhotos[next]);
   };
 
+  // ── Compare ────────────────────────────────────────────────────────────────
+
+  const resetCompare = () => { setCompareLeft(null); setCompareRight(null); setZoom(1); setPan({ x: 0, y: 0 }); setSliderPct(50); };
+
   const handleCompareSelect = (photo: ClinicalPhoto) => {
+    if (compareLeft?.id === photo.id) { setCompareLeft(compareRight); setCompareRight(null); return; }
+    if (compareRight?.id === photo.id) { setCompareRight(null); return; }
     if (!compareLeft) { setCompareLeft(photo); return; }
-    if (!compareRight && photo.id !== compareLeft.id) { setCompareRight(photo); return; }
-    setCompareLeft(photo);
-    setCompareRight(null);
+    if (!compareRight) { setCompareRight(photo); return; }
+    setCompareLeft(photo); setCompareRight(null);
   };
 
-  const quickChangeType = async (photo: ClinicalPhoto, newType: ClinicalPhoto['photo_type']) => {
-    if (photo.photo_type === newType) { setTypeSelectorId(null); return; }
-    try {
-      const res = await recordsFetch('/api/records', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'updatePhoto', id: photo.id, photo_type: newType }),
-      });
-      if (res.ok) {
-        setPhotos(prev => prev.map(p => p.id === photo.id ? { ...p, photo_type: newType } : p));
-        setTypeSelectorId(null);
-      }
-    } catch { setTypeSelectorId(null); }
+  const handleCompareWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setZoom(z => {
+      const next = Math.max(1, Math.min(5, z + (e.deltaY > 0 ? -0.2 : 0.2)));
+      if (next <= 1) setPan({ x: 0, y: 0 });
+      return next;
+    });
+  };
+
+  const imgStyle = {
+    transform: `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
+    transformOrigin: 'center center',
   };
 
   const toggleGroup = (key: string) =>
-    setCollapsedGroups(prev => {
-      const next = new Set(prev);
-      next.has(key) ? next.delete(key) : next.add(key);
-      return next;
-    });
+    setCollapsedGroups(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
+
+  // ── Shared card props ──────────────────────────────────────────────────────
+
+  const cardProps = {
+    viewMode, compareLeft, compareRight,
+    onOpen: openLightbox, onEdit: setEditingPhoto, onDelete: handleDelete,
+    onTypeChange: handleTypeChange, onCompareSelect: handleCompareSelect,
+  };
+
+  // ─── RENDER ────────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+
+      {/* ── Header ─────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <Camera className="w-5 h-5 text-[#b8944d]" />
           <h3 className="text-lg font-semibold text-gray-800">Registro Fotográfico</h3>
           {photos.length > 0 && (
-            <span className="px-2 py-0.5 bg-[#deb887]/20 text-[#b8944d] rounded-full text-xs font-medium">
-              {photos.length}
-            </span>
+            <span className="px-2 py-0.5 bg-[#deb887]/20 text-[#b8944d] rounded-full text-xs font-medium">{photos.length}</span>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          {photos.length >= 2 && (
-            <button
-              onClick={() => { setCompareMode(m => !m); setCompareLeft(null); setCompareRight(null); }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border transition-colors ${
-                compareMode
-                  ? 'bg-[#deb887]/20 border-[#deb887]/60 text-[#b8944d]'
-                  : 'border-gray-200 text-gray-600 hover:border-[#deb887]/40 hover:text-[#b8944d]'
-              }`}
-            >
-              <SplitSquareHorizontal className="w-4 h-4" />
-              {compareMode ? 'Cancelar' : 'Comparar'}
-            </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* View mode tabs */}
+          {photos.length >= 1 && (
+            <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs">
+              {([
+                ['grid', LayoutGrid, 'Galería'],
+                ['timeline', Clock, 'Línea de tiempo'],
+                ['compare', SplitSquareHorizontal, 'Comparar'],
+              ] as [ViewMode, React.ElementType, string][]).map(([mode, Icon, label]) => (
+                <button key={mode} type="button"
+                  onClick={() => { setViewMode(mode); if (mode !== 'compare') resetCompare(); }}
+                  className={`flex items-center gap-1 px-3 py-2 font-medium transition-colors ${
+                    viewMode === mode ? 'bg-[#deb887] text-white' : 'text-gray-600 hover:bg-gray-50'
+                  }`}>
+                  <Icon className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">{label}</span>
+                </button>
+              ))}
+            </div>
           )}
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-[#deb887] text-white rounded-lg hover:bg-[#b8944d] transition-colors disabled:opacity-60"
-          >
+          <button type="button" disabled={uploading} onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm bg-[#deb887] text-white rounded-lg hover:bg-[#b8944d] transition-colors disabled:opacity-60">
             <Upload className="w-4 h-4" />
             Subir Fotos
           </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            multiple
-            className="hidden"
-            onChange={handleFileChange}
-          />
+          <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden"
+            onChange={e => { if (e.target.files?.length) { handleUpload(Array.from(e.target.files)); e.target.value = ''; } }} />
         </div>
       </div>
 
-      {/* Message */}
+      {/* ── Status banners ─────────────────────────────────────────── */}
       <AnimatePresence>
         {message && (
-          <motion.div
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm ${
-              message.type === 'success'
-                ? 'bg-green-50 text-green-700 border border-green-200'
-                : 'bg-red-50 text-red-700 border border-red-200'
-            }`}
-          >
-            {message.type === 'success'
-              ? <CheckCircle className="w-4 h-4 flex-shrink-0" />
-              : <AlertCircle className="w-4 h-4 flex-shrink-0" />}
+          <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm border ${
+              message.type === 'success' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'
+            }`}>
+            {message.type === 'success' ? <CheckCircle className="w-4 h-4 flex-shrink-0" /> : <AlertCircle className="w-4 h-4 flex-shrink-0" />}
             {message.text}
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Upload progress */}
       {uploading && (
         <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-[#deb887]/40 rounded-lg text-sm text-[#b8944d]">
           <div className="w-4 h-4 border-2 border-[#deb887] border-t-transparent rounded-full animate-spin" />
-          {uploadProgress || 'Subiendo...'}
+          {uploadProgress || 'Subiendo…'}
         </div>
       )}
 
-      {/* R2 not configured warning */}
-      {r2Available === false && (
-        <div className="flex items-center gap-2 px-4 py-3 bg-orange-50 border border-orange-200 rounded-lg text-sm text-orange-700">
-          <AlertCircle className="w-4 h-4 flex-shrink-0" />
-          Almacenamiento no configurado — Configure las variables R2 en el panel de administración
-        </div>
-      )}
-
-      {/* Compare mode instructions */}
-      {compareMode && (
-        <div className="px-4 py-2.5 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
-          {!compareLeft
-            ? 'Selecciona la primera foto para comparar'
-            : !compareRight
-            ? 'Selecciona la segunda foto para comparar'
-            : null}
-        </div>
-      )}
-
-      {/* Filter chips */}
-      {photos.length > 0 && (
+      {/* ── Filter chips — solo en vista galería ────────────────── */}
+      {viewMode === 'grid' && photos.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {FILTER_OPTIONS.map(opt => (
-            <button
-              key={opt.value}
-              onClick={() => setFilterType(opt.value)}
+            <button key={opt.value} type="button" onClick={() => setFilterType(opt.value)}
               className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                filterType === opt.value
-                  ? 'bg-[#deb887] text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
+                filterType === opt.value ? 'bg-[#deb887] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}>
               {opt.label}
-              {opt.value !== 'all' && (
-                <span className="ml-1 opacity-70">
-                  ({photos.filter(p => p.photo_type === opt.value).length})
-                </span>
-              )}
+              {opt.value !== 'all' && <span className="ml-1 opacity-70">({photos.filter(p => p.photo_type === opt.value).length})</span>}
             </button>
           ))}
         </div>
       )}
 
-      {/* Compare view */}
-      {compareMode && compareLeft && compareRight && (
-        <div className="rounded-xl overflow-hidden border border-gray-200 shadow-sm">
-          <div
-            ref={compareContainerRef}
-            className="relative h-80 bg-gray-900 select-none cursor-col-resize"
-            style={{ userSelect: 'none' }}
-          >
-            {/* Right image — full width base */}
-            <img
-              src={compareRight.r2_url}
-              alt="Después"
-              className="absolute inset-0 w-full h-full object-contain"
-            />
-            {/* Left image — clipped by slider */}
-            <div
-              className="absolute inset-0 overflow-hidden"
-              style={{ width: `${sliderPct}%` }}
-            >
-              <img
-                src={compareLeft.r2_url}
-                alt="Antes"
-                className="absolute inset-0 h-full object-contain"
-                style={{ width: compareContainerRef.current?.offsetWidth ?? '100%' }}
-              />
+      {/* ════════════════════════════════════════════════════════════
+          VISTA GALERÍA
+      ════════════════════════════════════════════════════════════ */}
+      {viewMode === 'grid' && (
+        <>
+          {loading ? (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+              {[1, 2, 3, 4].map(i => <div key={i} className="aspect-square bg-gray-100 rounded-xl animate-pulse" />)}
             </div>
-            {/* Slider line */}
-            <div
-              className="absolute top-0 bottom-0 flex items-center justify-center cursor-col-resize"
-              style={{ left: `${sliderPct}%`, transform: 'translateX(-50%)' }}
-              onMouseDown={handleSliderMouseDown}
-            >
-              <div className="w-0.5 h-full bg-white opacity-80" />
-              <div className="absolute w-8 h-8 bg-white rounded-full shadow-lg flex items-center justify-center">
-                <ChevronLeft className="w-3 h-3 text-gray-600" />
-                <ChevronRight className="w-3 h-3 text-gray-600" />
+          ) : filteredPhotos.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 border-2 border-dashed border-gray-200 rounded-xl"
+              onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)} onDrop={handleDrop}>
+              <Camera className="w-14 h-14 text-gray-300 mb-3" />
+              <p className="text-gray-500 font-medium mb-1">Sin fotos registradas</p>
+              <p className="text-gray-400 text-sm mb-4">Arrastra imágenes aquí o usa el botón para subir</p>
+              <button type="button" onClick={() => fileInputRef.current?.click()}
+                className="px-4 py-2 bg-[#deb887] text-white rounded-lg text-sm hover:bg-[#b8944d]">
+                + Subir primera foto
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-5">
+              {consultationGroups.map(([key, group]) => {
+                const isCollapsed = collapsedGroups.has(key);
+                return (
+                  <div key={key}>
+                    <button type="button" onClick={() => toggleGroup(key)}
+                      className="flex items-center gap-2 w-full mb-3 text-left">
+                      {key === 'general' ? <FolderOpen className="w-4 h-4 text-gray-400" /> : <Calendar className="w-4 h-4 text-[#b8944d]" />}
+                      <span className={`text-sm font-semibold ${key === 'general' ? 'text-gray-500' : 'text-gray-700'}`}>{group.label}</span>
+                      <span className="text-xs text-gray-400">({group.photos.length})</span>
+                      <ChevronRight className={`w-3.5 h-3.5 text-gray-300 ml-auto transition-transform ${isCollapsed ? '' : 'rotate-90'}`} />
+                      <div className="flex-1 h-px bg-gray-100 ml-1" />
+                    </button>
+                    {!isCollapsed && (
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                        {group.photos.map(photo => <PhotoCard key={photo.id} photo={photo} {...cardProps} />)}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {photos.length > 0 && (
+            <div onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={handleDrop}
+              className={`flex items-center justify-center gap-2 py-4 border-2 border-dashed rounded-xl text-sm mt-2 transition-colors ${
+                dragOver ? 'border-[#deb887] bg-[#deb887]/10 text-[#b8944d]' : 'border-gray-200 text-gray-400 hover:border-gray-300'
+              }`}>
+              <Upload className="w-4 h-4" />
+              Arrastra fotos aquí para subir
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ════════════════════════════════════════════════════════════
+          VISTA LÍNEA DE TIEMPO — carrusel cronológico
+      ════════════════════════════════════════════════════════════ */}
+      {viewMode === 'timeline' && (
+        <div className="space-y-4">
+          {loading || timelinePhotos.length === 0 ? (
+            <div className="text-center py-16 text-gray-400">
+              {loading ? 'Cargando…' : 'No hay fotos para mostrar en la línea de tiempo'}
+            </div>
+          ) : (
+            <>
+              {/* Carrusel principal */}
+              <div className="relative bg-gray-900 rounded-xl overflow-hidden" style={{ height: 420 }}>
+                <AnimatePresence mode="wait">
+                  <motion.img key={timelinePhotos[timelineIndex]?.id} src={timelinePhotos[timelineIndex]?.r2_url}
+                    alt="" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }}
+                    transition={{ duration: 0.2 }} className="w-full h-full object-contain" />
+                </AnimatePresence>
+                {/* Info overlay */}
+                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4 pointer-events-none">
+                  <div className="flex items-end justify-between">
+                    <div>
+                      <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${TYPE_BADGE[timelinePhotos[timelineIndex]?.photo_type]}`}>
+                        {TYPE_LABELS[timelinePhotos[timelineIndex]?.photo_type]}
+                      </span>
+                      {timelinePhotos[timelineIndex]?.session_label && (
+                        <p className="text-white text-sm mt-1">{timelinePhotos[timelineIndex].session_label}</p>
+                      )}
+                      {timelinePhotos[timelineIndex]?.notes && (
+                        <p className="text-white/70 text-xs italic mt-0.5">"{timelinePhotos[timelineIndex].notes}"</p>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      <p className="text-white/70 text-xs">
+                        {new Date(timelinePhotos[timelineIndex]?.taken_at || timelinePhotos[timelineIndex]?.created_at)
+                          .toLocaleDateString('es-CL', { day: 'numeric', month: 'long', year: 'numeric' })}
+                      </p>
+                      <p className="text-white/40 text-xs mt-0.5">{timelineIndex + 1} / {timelinePhotos.length}</p>
+                    </div>
+                  </div>
+                </div>
+                {/* Navigation */}
+                {timelinePhotos.length > 1 && (
+                  <>
+                    <button type="button"
+                      onClick={() => setTimelineIndex(i => (i - 1 + timelinePhotos.length) % timelinePhotos.length)}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 p-2.5 bg-black/50 hover:bg-black/70 rounded-full text-white transition-colors">
+                      <ChevronLeft className="w-5 h-5" />
+                    </button>
+                    <button type="button"
+                      onClick={() => setTimelineIndex(i => (i + 1) % timelinePhotos.length)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-2.5 bg-black/50 hover:bg-black/70 rounded-full text-white transition-colors">
+                      <ChevronRight className="w-5 h-5" />
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {/* Thumbnail strip */}
+              <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                {timelinePhotos.map((photo, idx) => (
+                  <button key={photo.id} type="button" onClick={() => setTimelineIndex(idx)}
+                    className={`flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition-all ${
+                      idx === timelineIndex ? 'border-[#deb887] scale-105 ring-2 ring-[#deb887]/40' : 'border-transparent opacity-50 hover:opacity-80'
+                    }`}>
+                    <img src={photo.r2_url} alt="" className="w-full h-full object-cover" loading="lazy" />
+                  </button>
+                ))}
+              </div>
+
+              {/* Dot timeline */}
+              <div className="relative overflow-x-auto pb-2 scrollbar-hide">
+                <div className="absolute left-0 right-0 h-px bg-gray-200" style={{ top: 6 }} />
+                <div className="flex items-start gap-0 min-w-max px-2">
+                  {timelinePhotos.map((photo, idx) => (
+                    <button key={photo.id} type="button" onClick={() => setTimelineIndex(idx)}
+                      className="flex flex-col items-center gap-1 px-3 group" style={{ minWidth: 64 }}>
+                      <div className={`w-3 h-3 rounded-full border-2 z-10 transition-all ${
+                        idx === timelineIndex
+                          ? 'bg-[#deb887] border-[#deb887] scale-125'
+                          : `${TYPE_DOT[photo.photo_type]} border-white ring-1 ring-gray-300 group-hover:scale-110`
+                      }`} />
+                      <span className="text-[9px] text-gray-400 whitespace-nowrap group-hover:text-gray-600">
+                        {new Date(photo.taken_at || photo.created_at).toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit' })}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ════════════════════════════════════════════════════════════
+          VISTA COMPARAR — selección libre + slider + zoom sincronizado
+      ════════════════════════════════════════════════════════════ */}
+      {viewMode === 'compare' && (
+        <div className="space-y-4">
+          {/* Instrucción contextual */}
+          <div className="flex items-center gap-2 px-4 py-2.5 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
+            <SplitSquareHorizontal className="w-4 h-4 flex-shrink-0" />
+            {!compareLeft ? 'Selecciona la foto A (azul) en la galería de abajo — de cualquier categoría'
+              : !compareRight ? 'Ahora selecciona la foto B (verde) — pueden ser de categorías diferentes'
+              : 'Rueda del ratón = zoom sincronizado · Arrastra = mover ambas · Desliza la línea central'}
+          </div>
+
+          {/* Panel comparación — aparece cuando hay 2 fotos seleccionadas */}
+          {compareLeft && compareRight && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-gray-500">Zoom {zoom.toFixed(1)}x</span>
+                  <button type="button" onClick={() => setZoom(z => Math.max(1, z - 0.25))} className="p-1 rounded hover:bg-gray-100 text-gray-600"><ZoomOut className="w-4 h-4" /></button>
+                  <button type="button" onClick={() => setZoom(z => Math.min(5, z + 0.25))} className="p-1 rounded hover:bg-gray-100 text-gray-600"><ZoomIn className="w-4 h-4" /></button>
+                  <button type="button" onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}
+                    className="px-2 py-0.5 text-xs rounded border border-gray-200 hover:bg-gray-50 text-gray-600">Reset</button>
+                </div>
+                <button type="button" onClick={resetCompare} className="text-xs text-gray-400 hover:text-gray-600 underline">Cambiar selección</button>
+              </div>
+
+              {/* Slider container */}
+              <div ref={compareRef}
+                className="relative rounded-xl overflow-hidden border border-gray-200 select-none bg-gray-900"
+                style={{ height: 440, cursor: zoom > 1 ? 'grab' : 'col-resize', userSelect: 'none' }}
+                onWheel={handleCompareWheel}
+                onMouseDown={e => {
+                  if (zoom > 1) {
+                    isPanning.current = true;
+                    panStart.current = { x: e.clientX, y: e.clientY };
+                    panOrigin.current = pan;
+                  }
+                }}>
+                {/* Foto B — base (derecha) */}
+                <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
+                  <img src={compareRight.r2_url} alt="B" className="w-full h-full object-contain" style={imgStyle} draggable={false} />
+                </div>
+                {/* Foto A — clipped (izquierda) */}
+                <div className="absolute inset-0 overflow-hidden" style={{ clipPath: `inset(0 ${100 - sliderPct}% 0 0)` }}>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <img src={compareLeft.r2_url} alt="A" className="w-full h-full object-contain" style={imgStyle} draggable={false} />
+                  </div>
+                </div>
+                {/* Divider handle */}
+                <div className="absolute top-0 bottom-0 z-10 flex items-center justify-center"
+                  style={{ left: `${sliderPct}%`, transform: 'translateX(-50%)', cursor: 'col-resize' }}
+                  onMouseDown={e => { e.stopPropagation(); e.preventDefault(); isDraggingSlider.current = true; }}>
+                  <div className="w-0.5 h-full bg-white/70" />
+                  <div className="absolute w-9 h-9 bg-white rounded-full shadow-xl flex items-center justify-center gap-0.5">
+                    <ChevronLeft className="w-3 h-3 text-gray-500" />
+                    <ChevronRight className="w-3 h-3 text-gray-500" />
+                  </div>
+                </div>
+                {/* Labels */}
+                <span className="absolute top-2 left-2 z-10 text-xs font-medium text-white bg-blue-500/80 px-2 py-0.5 rounded">
+                  A · {TYPE_LABELS[compareLeft.photo_type]}{compareLeft.session_label ? ` · ${compareLeft.session_label}` : ''}
+                </span>
+                <span className="absolute top-2 right-2 z-10 text-xs font-medium text-white bg-green-500/80 px-2 py-0.5 rounded">
+                  B · {TYPE_LABELS[compareRight.photo_type]}{compareRight.session_label ? ` · ${compareRight.session_label}` : ''}
+                </span>
+                <span className="absolute bottom-2 left-1/2 -translate-x-1/2 z-10 text-xs text-white/70 bg-black/40 px-2 py-0.5 rounded">
+                  {Math.round(sliderPct)}%
+                </span>
               </div>
             </div>
-            {/* Labels */}
-            <span className="absolute top-2 left-2 text-xs text-white bg-black/50 px-2 py-0.5 rounded">
-              {TYPE_LABELS[compareLeft.photo_type]} {compareLeft.session_label ? `· ${compareLeft.session_label}` : ''}
-            </span>
-            <span className="absolute top-2 right-2 text-xs text-white bg-black/50 px-2 py-0.5 rounded">
-              {TYPE_LABELS[compareRight.photo_type]} {compareRight.session_label ? `· ${compareRight.session_label}` : ''}
-            </span>
-            <span className="absolute bottom-2 left-1/2 -translate-x-1/2 text-xs text-white bg-black/50 px-2 py-0.5 rounded">
-              {Math.round(sliderPct)}%
-            </span>
+          )}
+
+          {/* Galería de selección — todos los tipos, agrupados por categoría */}
+          <div className="space-y-4">
+            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Seleccionar fotos — toca para marcar A o B</p>
+            {loading ? (
+              <div className="grid grid-cols-4 gap-2">{[1,2,3,4].map(i => <div key={i} className="aspect-square bg-gray-100 rounded-lg animate-pulse" />)}</div>
+            ) : photos.length === 0 ? (
+              <p className="text-gray-400 text-sm text-center py-8">Sin fotos disponibles</p>
+            ) : (
+              (Object.entries(TYPE_LABELS) as [ClinicalPhoto['photo_type'], string][])
+                .filter(([type]) => photos.some(p => p.photo_type === type))
+                .map(([type, label]) => (
+                  <div key={type}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className={`w-2 h-2 rounded-full ${TYPE_DOT[type]}`} />
+                      <span className="text-xs font-medium text-gray-600">{label} ({photos.filter(p => p.photo_type === type).length})</span>
+                    </div>
+                    <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
+                      {photos.filter(p => p.photo_type === type).map(photo => {
+                        const isA = compareLeft?.id === photo.id;
+                        const isB = compareRight?.id === photo.id;
+                        return (
+                          <button key={photo.id} type="button" onClick={() => handleCompareSelect(photo)}
+                            className={`aspect-square rounded-lg overflow-hidden border-2 relative transition-all ${
+                              isA ? 'border-blue-500 ring-2 ring-blue-300' : isB ? 'border-green-500 ring-2 ring-green-300' : 'border-transparent hover:border-gray-300 hover:scale-105'
+                            }`}>
+                            <img src={photo.r2_url} alt="" className="w-full h-full object-cover" loading="lazy" />
+                            {(isA || isB) && (
+                              <div className={`absolute inset-0 flex items-center justify-center text-white font-bold text-lg ${isA ? 'bg-blue-500/40' : 'bg-green-500/40'}`}>
+                                {isA ? 'A' : 'B'}
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))
+            )}
           </div>
         </div>
       )}
 
-      {/* Photo grid — grouped by consultation */}
-      {loading ? (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-          {[1, 2, 3, 4].map(i => (
-            <div key={i} className="aspect-square bg-gray-100 rounded-xl animate-pulse" />
-          ))}
-        </div>
-      ) : filteredPhotos.length === 0 && !compareMode ? (
-        <div
-          className="flex flex-col items-center justify-center py-16 border-2 border-dashed border-gray-200 rounded-xl text-center"
-          onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={handleDrop}
-        >
-          <Camera className="w-14 h-14 text-gray-300 mb-3" />
-          <p className="text-gray-500 font-medium mb-1">Sin fotos registradas</p>
-          <p className="text-gray-400 text-sm mb-4">
-            {filterType !== 'all'
-              ? `No hay fotos del tipo "${TYPE_LABELS[filterType as ClinicalPhoto['photo_type']]}"`
-              : 'Arrastra imágenes aquí o usa el botón para subir'}
-          </p>
-          {filterType === 'all' && (
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="px-4 py-2 bg-[#deb887] text-white rounded-lg text-sm hover:bg-[#b8944d] transition-colors"
-            >
-              + Subir primera foto
-            </button>
-          )}
-        </div>
-      ) : (
-        <div className="space-y-6">
-          {consultationGroups.map(([key, group]) => {
-            const isCollapsed = collapsedGroups.has(key);
-            const isGeneral = key === 'general';
-            return (
-              <div key={key}>
-                {/* Group header */}
-                <button
-                  onClick={() => toggleGroup(key)}
-                  className="flex items-center gap-2 w-full mb-3 text-left group"
-                >
-                  {isGeneral
-                    ? <FolderOpen className="w-4 h-4 text-gray-400" />
-                    : <Calendar className="w-4 h-4 text-[#b8944d]" />}
-                  <span className={`text-sm font-semibold ${isGeneral ? 'text-gray-500' : 'text-gray-700'}`}>
-                    {group.label}
-                    {group.photos[0]?.consultation_reason && (
-                      <span className="font-normal text-gray-400 ml-1.5">· {group.photos[0].consultation_reason.slice(0, 60)}</span>
-                    )}
-                  </span>
-                  <span className="text-xs text-gray-400 ml-1">({group.photos.length})</span>
-                  <ChevronRight className={`w-3.5 h-3.5 text-gray-300 ml-auto transition-transform group-hover:text-gray-400 ${isCollapsed ? '' : 'rotate-90'}`} />
-                  <div className="flex-1 h-px bg-gray-100 ml-1" />
-                </button>
-
-                {!isCollapsed && (
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                    {group.photos.map(photo => {
-                      const isCompareSelected = compareLeft?.id === photo.id || compareRight?.id === photo.id;
-                      return (
-                        <motion.div
-                          key={photo.id}
-                          layout
-                          initial={{ opacity: 0, scale: 0.95 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          exit={{ opacity: 0, scale: 0.95 }}
-                          className={`group relative aspect-square bg-gray-100 rounded-xl overflow-hidden cursor-pointer border-2 transition-all ${
-                            isCompareSelected
-                              ? 'border-[#deb887] ring-2 ring-[#deb887]/40'
-                              : 'border-transparent hover:border-gray-200'
-                          }`}
-                          onClick={() => compareMode ? handleCompareSelect(photo) : openLightbox(photo)}
-                        >
-                          <img
-                            src={photo.r2_url}
-                            alt={TYPE_LABELS[photo.photo_type]}
-                            className="w-full h-full object-cover"
-                            loading="lazy"
-                          />
-                          {/* Type badge */}
-                          <span className={`absolute top-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-semibold ${TYPE_BADGE[photo.photo_type]}`}>
-                            {TYPE_LABELS[photo.photo_type]}
-                          </span>
-                          {/* Compare check */}
-                          {compareMode && isCompareSelected && (
-                            <div className="absolute top-2 right-2 w-6 h-6 bg-[#deb887] rounded-full flex items-center justify-center">
-                              <CheckCircle className="w-4 h-4 text-white" />
-                            </div>
-                          )}
-                          {/* Hover overlay */}
-                          {!compareMode && (
-                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2">
-                              <div className="flex gap-1 ml-auto">
-                                {/* Quick type selector */}
-                                <div className="relative">
-                                  <button
-                                    onClick={e => { e.stopPropagation(); setTypeSelectorId(typeSelectorId === photo.id ? null : photo.id); }}
-                                    className="p-1.5 bg-white/90 rounded-lg hover:bg-white transition-colors"
-                                    title="Mover a categoría"
-                                  >
-                                    <Tag className="w-3 h-3 text-gray-700" />
-                                  </button>
-                                  {typeSelectorId === photo.id && (
-                                    <div
-                                      className="absolute bottom-full right-0 mb-1 bg-white rounded-xl shadow-xl border border-gray-100 p-1.5 min-w-[130px] z-20"
-                                      onClick={e => e.stopPropagation()}
-                                    >
-                                      {(Object.entries(TYPE_LABELS) as [ClinicalPhoto['photo_type'], string][]).map(([type, label]) => (
-                                        <button
-                                          key={type}
-                                          onClick={() => quickChangeType(photo, type)}
-                                          className={`w-full text-left px-2 py-1.5 text-xs rounded-lg hover:bg-gray-50 flex items-center gap-2 transition-colors ${
-                                            photo.photo_type === type ? 'font-semibold text-[#b8944d]' : 'text-gray-700'
-                                          }`}
-                                        >
-                                          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${TYPE_DOT[type]}`} />
-                                          {label}
-                                          {photo.photo_type === type && <CheckCircle className="w-3 h-3 text-[#b8944d] ml-auto" />}
-                                        </button>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-                                <button
-                                  onClick={e => { e.stopPropagation(); setEditingPhoto(photo); }}
-                                  className="p-1.5 bg-white/90 rounded-lg hover:bg-white transition-colors"
-                                  title="Editar"
-                                >
-                                  <Edit3 className="w-3 h-3 text-gray-700" />
-                                </button>
-                                <a
-                                  href={photo.r2_url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  onClick={e => e.stopPropagation()}
-                                  download
-                                  className="p-1.5 bg-white/90 rounded-lg hover:bg-white transition-colors"
-                                  title="Descargar"
-                                >
-                                  <Download className="w-3 h-3 text-gray-700" />
-                                </a>
-                                <button
-                                  onClick={e => { e.stopPropagation(); handleDelete(photo); }}
-                                  className="p-1.5 bg-white/90 rounded-lg hover:bg-red-50 transition-colors"
-                                  title="Eliminar"
-                                >
-                                  <Trash2 className="w-3 h-3 text-red-500" />
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                          {/* Session label */}
-                          {photo.session_label && (
-                            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent px-2 py-1">
-                              <p className="text-white text-[10px] truncate">{photo.session_label}</p>
-                            </div>
-                          )}
-                        </motion.div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Drop zone (shown when photos exist) */}
-      {photos.length > 0 && (
-        <div
-          onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={handleDrop}
-          className={`flex items-center justify-center gap-2 py-4 border-2 border-dashed rounded-xl text-sm transition-colors ${
-            dragOver
-              ? 'border-[#deb887] bg-[#deb887]/10 text-[#b8944d]'
-              : 'border-gray-200 text-gray-400 hover:border-gray-300'
-          }`}
-        >
-          <Upload className="w-4 h-4" />
-          Arrastra fotos aquí para subir
-        </div>
-      )}
-
-      {/* Lightbox */}
+      {/* ════════════════════════════════════════════════════════════
+          LIGHTBOX
+      ════════════════════════════════════════════════════════════ */}
       <AnimatePresence>
         {selectedPhoto && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
-            onClick={() => setSelectedPhoto(null)}
-          >
-            <motion.div
-              initial={{ scale: 0.95 }}
-              animate={{ scale: 1 }}
-              exit={{ scale: 0.95 }}
-              className="relative max-w-4xl w-full max-h-full flex flex-col gap-3"
-              onClick={e => e.stopPropagation()}
-            >
-              {/* Close */}
-              <button
-                onClick={() => setSelectedPhoto(null)}
-                className="absolute -top-10 right-0 text-white/70 hover:text-white"
-              >
+            onClick={() => setSelectedPhoto(null)}>
+            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
+              className="relative max-w-4xl w-full flex flex-col gap-3"
+              onClick={e => e.stopPropagation()}>
+              <button onClick={() => setSelectedPhoto(null)} className="absolute -top-10 right-0 text-white/70 hover:text-white">
                 <X className="w-6 h-6" />
               </button>
-              {/* Nav */}
               {filteredPhotos.length > 1 && (
                 <>
-                  <button
-                    onClick={() => lightboxNav(-1)}
-                    className="absolute left-2 top-1/2 -translate-y-1/2 z-10 p-2 bg-black/50 hover:bg-black/70 rounded-full text-white"
-                  >
+                  <button onClick={() => lightboxNav(-1)} className="absolute left-2 top-1/2 -translate-y-1/2 z-10 p-2 bg-black/50 hover:bg-black/70 rounded-full text-white">
                     <ChevronLeft className="w-5 h-5" />
                   </button>
-                  <button
-                    onClick={() => lightboxNav(1)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 z-10 p-2 bg-black/50 hover:bg-black/70 rounded-full text-white"
-                  >
+                  <button onClick={() => lightboxNav(1)} className="absolute right-2 top-1/2 -translate-y-1/2 z-10 p-2 bg-black/50 hover:bg-black/70 rounded-full text-white">
                     <ChevronRight className="w-5 h-5" />
                   </button>
                 </>
               )}
-              <img
-                src={selectedPhoto.r2_url}
-                alt={TYPE_LABELS[selectedPhoto.photo_type]}
-                className="w-full max-h-[65vh] object-contain rounded-xl"
-              />
-              {/* Meta */}
+              <img src={selectedPhoto.r2_url} alt={TYPE_LABELS[selectedPhoto.photo_type]} className="w-full max-h-[65vh] object-contain rounded-xl" />
               <div className="bg-white/10 backdrop-blur rounded-xl p-4 text-white text-sm flex flex-wrap gap-4">
                 <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${TYPE_BADGE[selectedPhoto.photo_type]}`}>
                   {TYPE_LABELS[selectedPhoto.photo_type]}
@@ -775,105 +804,76 @@ export default function PhotosTab({ recordId, consultationId, patientName }: Pho
                 {selectedPhoto.session_label && <span>Sesión: <strong>{selectedPhoto.session_label}</strong></span>}
                 {selectedPhoto.face_zone && <span>Zona: <strong>{selectedPhoto.face_zone}</strong></span>}
                 {selectedPhoto.notes && <span className="w-full text-white/80 italic">"{selectedPhoto.notes}"</span>}
-                <span className="ml-auto text-white/50 text-xs">
-                  {new Date(selectedPhoto.created_at).toLocaleDateString('es-CL')}
-                </span>
+                <span className="ml-auto text-white/50 text-xs">{new Date(selectedPhoto.created_at).toLocaleDateString('es-CL')}</span>
               </div>
-              {/* Counter */}
               {filteredPhotos.length > 1 && (
-                <p className="text-center text-white/50 text-xs">
-                  {lightboxIndex + 1} / {filteredPhotos.length}
-                </p>
+                <p className="text-center text-white/50 text-xs">{lightboxIndex + 1} / {filteredPhotos.length}</p>
               )}
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Edit modal */}
+      {/* ════════════════════════════════════════════════════════════
+          EDIT MODAL
+      ════════════════════════════════════════════════════════════ */}
       <AnimatePresence>
         {editingPhoto && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
-            onClick={() => setEditingPhoto(null)}
-          >
-            <motion.div
-              initial={{ scale: 0.95, y: 10 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.95, y: 10 }}
+            onClick={() => setEditingPhoto(null)}>
+            <motion.div initial={{ scale: 0.95, y: 10 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95 }}
               className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md space-y-4"
-              onClick={e => e.stopPropagation()}
-            >
+              onClick={e => e.stopPropagation()}>
               <div className="flex items-center justify-between">
                 <h4 className="font-semibold text-gray-800">Editar foto</h4>
-                <button onClick={() => setEditingPhoto(null)} className="text-gray-400 hover:text-gray-600">
-                  <X className="w-5 h-5" />
-                </button>
+                <button onClick={() => setEditingPhoto(null)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
               </div>
-              <img
-                src={editingPhoto.r2_url}
-                alt=""
-                className="w-full h-40 object-contain bg-gray-50 rounded-lg"
-              />
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Tipo de foto</label>
-                  <select
-                    value={editingPhoto.photo_type}
-                    onChange={e => setEditingPhoto(p => p ? { ...p, photo_type: e.target.value as ClinicalPhoto['photo_type'] } : p)}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-1 focus:ring-[#deb887] focus:border-[#deb887] outline-none"
-                  >
-                    {Object.entries(TYPE_LABELS).map(([v, l]) => (
-                      <option key={v} value={v}>{l}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Etiqueta de sesión</label>
-                  <input
-                    type="text"
-                    value={editingPhoto.session_label || ''}
-                    onChange={e => setEditingPhoto(p => p ? { ...p, session_label: e.target.value } : p)}
-                    placeholder="ej: Sesión 1, Mes 2..."
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-1 focus:ring-[#deb887] focus:border-[#deb887] outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Zona</label>
-                  <select
-                    value={editingPhoto.face_zone || ''}
-                    onChange={e => setEditingPhoto(p => p ? { ...p, face_zone: e.target.value } : p)}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-1 focus:ring-[#deb887] focus:border-[#deb887] outline-none"
-                  >
-                    <option value="">Sin especificar</option>
-                    {FACE_ZONES.map(z => <option key={z} value={z}>{z}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Notas</label>
-                  <textarea
-                    value={editingPhoto.notes || ''}
-                    onChange={e => setEditingPhoto(p => p ? { ...p, notes: e.target.value } : p)}
-                    rows={2}
-                    placeholder="Observaciones adicionales..."
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-1 focus:ring-[#deb887] focus:border-[#deb887] outline-none resize-none"
-                  />
+              <img src={editingPhoto.r2_url} alt="" className="w-full h-40 object-contain bg-gray-50 rounded-lg" />
+
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1.5">Tipo</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(Object.entries(TYPE_LABELS) as [ClinicalPhoto['photo_type'], string][]).map(([type, label]) => (
+                    <button key={type} type="button"
+                      onClick={() => setEditingPhoto(p => p ? { ...p, photo_type: type } : p)}
+                      className={`px-2 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                        editingPhoto.photo_type === type ? 'bg-[#deb887]/20 border-[#deb887] text-[#b8944d]' : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                      }`}>
+                      {label}
+                    </button>
+                  ))}
                 </div>
               </div>
-              <div className="flex justify-end gap-2 pt-1">
-                <button
-                  onClick={() => setEditingPhoto(null)}
-                  className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 transition-colors"
-                >
+
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Zona</label>
+                <select value={editingPhoto.face_zone || ''} onChange={e => setEditingPhoto(p => p ? { ...p, face_zone: e.target.value } : p)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                  <option value="">Sin especificar</option>
+                  {FACE_ZONES.map(z => <option key={z} value={z}>{z}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Etiqueta de sesión</label>
+                <input value={editingPhoto.session_label || ''} onChange={e => setEditingPhoto(p => p ? { ...p, session_label: e.target.value } : p)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="Ej: Sesión 1, Pre-tratamiento…" />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Notas</label>
+                <textarea value={editingPhoto.notes || ''} onChange={e => setEditingPhoto(p => p ? { ...p, notes: e.target.value } : p)}
+                  rows={2} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none" placeholder="Observaciones…" />
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <button type="button" onClick={() => setEditingPhoto(null)}
+                  className="flex-1 px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50">
                   Cancelar
                 </button>
-                <button
-                  onClick={handleSaveEdit}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-[#deb887] text-white rounded-lg text-sm hover:bg-[#b8944d] transition-colors"
-                >
+                <button type="button" onClick={handleSaveEdit}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2 bg-[#deb887] text-white rounded-lg text-sm hover:bg-[#b8944d]">
                   <Save className="w-4 h-4" />
                   Guardar
                 </button>
