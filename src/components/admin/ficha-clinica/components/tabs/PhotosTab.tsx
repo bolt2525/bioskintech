@@ -177,10 +177,8 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
   // Compare
   const [compareLeft, setCompareLeft] = useState<ClinicalPhoto | null>(null);
   const [compareRight, setCompareRight] = useState<ClinicalPhoto | null>(null);
-  const [sliderPct, setSliderPct] = useState(50);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
-  const isDraggingSlider = useRef(false);
   const isPanning = useRef(false);
   const panStart = useRef({ x: 0, y: 0 });
   const panOrigin = useRef({ x: 0, y: 0 });
@@ -240,13 +238,9 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
     return () => window.removeEventListener('keydown', handler);
   });
 
-  // Global mouse move/up for slider + pan drag
+  // Global mouse move/up for pan drag
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
-      if (isDraggingSlider.current && compareRef.current) {
-        const rect = compareRef.current.getBoundingClientRect();
-        setSliderPct(Math.max(5, Math.min(95, ((e.clientX - rect.left) / rect.width) * 100)));
-      }
       if (isPanning.current) {
         setPan({
           x: panOrigin.current.x + (e.clientX - panStart.current.x),
@@ -254,11 +248,27 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
         });
       }
     };
-    const onUp = () => { isDraggingSlider.current = false; isPanning.current = false; };
+    const onUp = () => { isPanning.current = false; };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
     return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
   }, []);
+
+  // Non-passive wheel listener on compare container to prevent page scroll
+  useEffect(() => {
+    const el = compareRef.current;
+    if (!el) return;
+    const handler = (e: WheelEvent) => {
+      e.preventDefault();
+      setZoom(z => {
+        const next = Math.max(1, Math.min(5, z + (e.deltaY > 0 ? -0.2 : 0.2)));
+        if (next <= 1) setPan({ x: 0, y: 0 });
+        return next;
+      });
+    };
+    el.addEventListener('wheel', handler, { passive: false });
+    return () => el.removeEventListener('wheel', handler);
+  }, [compareLeft, compareRight]);
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
 
@@ -391,7 +401,7 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
 
   // ── Compare ────────────────────────────────────────────────────────────────
 
-  const resetCompare = () => { setCompareLeft(null); setCompareRight(null); setZoom(1); setPan({ x: 0, y: 0 }); setSliderPct(50); };
+  const resetCompare = () => { setCompareLeft(null); setCompareRight(null); setZoom(1); setPan({ x: 0, y: 0 }); };
 
   const handleCompareSelect = (photo: ClinicalPhoto) => {
     if (compareLeft?.id === photo.id) { setCompareLeft(compareRight); setCompareRight(null); return; }
@@ -399,15 +409,6 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
     if (!compareLeft) { setCompareLeft(photo); return; }
     if (!compareRight) { setCompareRight(photo); return; }
     setCompareLeft(photo); setCompareRight(null);
-  };
-
-  const handleCompareWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setZoom(z => {
-      const next = Math.max(1, Math.min(5, z + (e.deltaY > 0 ? -0.2 : 0.2)));
-      if (next <= 1) setPan({ x: 0, y: 0 });
-      return next;
-    });
   };
 
   const imgStyle = {
@@ -667,7 +668,7 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
             <SplitSquareHorizontal className="w-4 h-4 flex-shrink-0" />
             {!compareLeft ? 'Selecciona la foto A (azul) en la galería de abajo — de cualquier categoría'
               : !compareRight ? 'Ahora selecciona la foto B (verde) — pueden ser de categorías diferentes'
-              : 'Rueda del ratón = zoom sincronizado · Arrastra = mover ambas · Desliza la línea central'}
+              : 'Rueda del ratón = zoom sincronizado en ambas fotos · Arrastra para mover · Ambas imágenes se mueven juntas'}
           </div>
 
           {/* Panel comparación — aparece cuando hay 2 fotos seleccionadas */}
@@ -684,48 +685,31 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
                 <button type="button" onClick={resetCompare} className="text-xs text-gray-400 hover:text-gray-600 underline">Cambiar selección</button>
               </div>
 
-              {/* Slider container */}
+              {/* Side-by-side container — ambas fotos completas con zoom/pan sincronizado */}
               <div ref={compareRef}
-                className="relative rounded-xl overflow-hidden border border-gray-200 select-none bg-gray-900"
-                style={{ height: 440, cursor: zoom > 1 ? 'grab' : 'col-resize', userSelect: 'none' }}
-                onWheel={handleCompareWheel}
+                className="flex gap-1 rounded-xl overflow-hidden border border-gray-200 select-none bg-gray-900"
+                style={{ height: 440, cursor: zoom > 1 ? 'grab' : 'default', userSelect: 'none' }}
                 onMouseDown={e => {
-                  if (zoom > 1) {
-                    isPanning.current = true;
-                    panStart.current = { x: e.clientX, y: e.clientY };
-                    panOrigin.current = pan;
-                  }
+                  isPanning.current = true;
+                  panStart.current = { x: e.clientX, y: e.clientY };
+                  panOrigin.current = pan;
                 }}>
-                {/* Foto B — base (derecha) */}
-                <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
+                {/* Panel A — foto completa izquierda */}
+                <div className="relative flex-1 overflow-hidden flex items-center justify-center bg-gray-900">
+                  <img src={compareLeft.r2_url} alt="A" className="w-full h-full object-contain" style={imgStyle} draggable={false} />
+                  <span className="absolute top-2 left-2 z-10 text-xs font-medium text-white bg-blue-500/80 px-2 py-0.5 rounded pointer-events-none">
+                    A · {TYPE_LABELS[compareLeft.photo_type]}{compareLeft.session_label ? ` · ${compareLeft.session_label}` : ''}
+                  </span>
+                </div>
+                {/* Separador */}
+                <div className="w-0.5 bg-white/30 flex-shrink-0" />
+                {/* Panel B — foto completa derecha */}
+                <div className="relative flex-1 overflow-hidden flex items-center justify-center bg-gray-900">
                   <img src={compareRight.r2_url} alt="B" className="w-full h-full object-contain" style={imgStyle} draggable={false} />
+                  <span className="absolute top-2 right-2 z-10 text-xs font-medium text-white bg-green-500/80 px-2 py-0.5 rounded pointer-events-none">
+                    B · {TYPE_LABELS[compareRight.photo_type]}{compareRight.session_label ? ` · ${compareRight.session_label}` : ''}
+                  </span>
                 </div>
-                {/* Foto A — clipped (izquierda) */}
-                <div className="absolute inset-0 overflow-hidden" style={{ clipPath: `inset(0 ${100 - sliderPct}% 0 0)` }}>
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <img src={compareLeft.r2_url} alt="A" className="w-full h-full object-contain" style={imgStyle} draggable={false} />
-                  </div>
-                </div>
-                {/* Divider handle */}
-                <div className="absolute top-0 bottom-0 z-10 flex items-center justify-center"
-                  style={{ left: `${sliderPct}%`, transform: 'translateX(-50%)', cursor: 'col-resize' }}
-                  onMouseDown={e => { e.stopPropagation(); e.preventDefault(); isDraggingSlider.current = true; }}>
-                  <div className="w-0.5 h-full bg-white/70" />
-                  <div className="absolute w-9 h-9 bg-white rounded-full shadow-xl flex items-center justify-center gap-0.5">
-                    <ChevronLeft className="w-3 h-3 text-gray-500" />
-                    <ChevronRight className="w-3 h-3 text-gray-500" />
-                  </div>
-                </div>
-                {/* Labels */}
-                <span className="absolute top-2 left-2 z-10 text-xs font-medium text-white bg-blue-500/80 px-2 py-0.5 rounded">
-                  A · {TYPE_LABELS[compareLeft.photo_type]}{compareLeft.session_label ? ` · ${compareLeft.session_label}` : ''}
-                </span>
-                <span className="absolute top-2 right-2 z-10 text-xs font-medium text-white bg-green-500/80 px-2 py-0.5 rounded">
-                  B · {TYPE_LABELS[compareRight.photo_type]}{compareRight.session_label ? ` · ${compareRight.session_label}` : ''}
-                </span>
-                <span className="absolute bottom-2 left-1/2 -translate-x-1/2 z-10 text-xs text-white/70 bg-black/40 px-2 py-0.5 rounded">
-                  {Math.round(sliderPct)}%
-                </span>
               </div>
             </div>
           )}
