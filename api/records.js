@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { initClinicalDatabase, getPool, getAppPool } from '../lib/neon-clinical-db.js';
 import { authenticateRequest } from '../lib/admin-auth.js';
-import { generateUploadUrl, generateReadUrl, deleteR2Object } from '../lib/r2-service.js';
+import { generateUploadUrl, generateReadUrl, deleteR2Object, putR2Object } from '../lib/r2-service.js';
 
 console.log('✅ [API] records.js loaded');
 
@@ -2324,6 +2324,31 @@ export default async function handler(req, res) {
       // ==========================================
       // PHOTOS MODULE (Cloudflare R2)
       // ==========================================
+
+      case 'uploadPhotoProxy': {
+        // Cliente envía base64 → servidor sube a R2 y guarda metadata
+        const { fileBase64, content_type, record_id, consultation_id, session_label, photo_type = 'general', face_zone } = body;
+        if (!fileBase64 || !record_id || !content_type) return res.status(400).json({ error: 'fileBase64, record_id y content_type requeridos' });
+        const allowed = ['image/jpeg','image/png','image/webp','image/heic'];
+        if (!allowed.includes(content_type)) return res.status(400).json({ error: 'Tipo de archivo no permitido' });
+        const clinicId = su?.effective_clinic_id ?? su?.clinic_id;
+        const ext = content_type.split('/')[1] || 'jpg';
+        const r2Key = `clinics/${clinicId}/records/${record_id}/photos/${crypto.randomUUID()}.${ext}`;
+        try {
+          const buffer = Buffer.from(fileBase64, 'base64');
+          await putR2Object(r2Key, buffer, content_type);
+          const result = await pool.query(
+            `INSERT INTO clinical_photos (record_id, consultation_id, clinic_id, r2_key, photo_type, face_zone, session_label, taken_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,NOW()) RETURNING id, r2_key, photo_type, created_at`,
+            [record_id, consultation_id||null, clinicId, r2Key, photo_type, face_zone||null, session_label||null]
+          );
+          return res.status(201).json(result.rows[0]);
+        } catch (err) {
+          console.error('uploadPhotoProxy error:', err);
+          if (err.message?.includes('no configuradas')) return res.status(503).json({ error: 'Almacenamiento no configurado — Configure R2_ACCESS_KEY_ID en Vercel' });
+          return res.status(500).json({ error: err.message });
+        }
+      }
 
       case 'getPhotoUploadUrl': {
         // Returns a presigned PUT URL — the client uploads directly to R2, never via server
