@@ -145,162 +145,296 @@ export default function PrintModal({ patient, recordId, recordData, activeConsul
   const handlePrint = () => {
     const h = recordData?.history || {};
     const consultation = activeConsultation;
-
-    const formatDate = (d: string) => d ? new Date(d).toLocaleDateString('es') : '';
-    const sectionHtml = (title: string, content: string) =>
-      `<div class="section"><h2>${title}</h2><div class="content">${content}</div></div>`;
-    const field = (label: string, val: any) =>
-      val ? `<div class="field"><span class="label">${label}:</span> <span>${val}</span></div>` : '';
-    const datePrefix = (d: string) => opts.includeDates && d ? `<span class="date">${formatDate(d)}</span> ` : '';
-    const trow = (cells: string[]) => '<tr>' + cells.map(c => `<td>${c}</td>`).join('') + '</tr>';
     const esc = (s: any) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const formatDate = (d: string) => d ? new Date(d).toLocaleDateString('es-EC', { day: '2-digit', month: 'long', year: 'numeric' }) : '';
+    const formatDateShort = (d: string) => d ? new Date(d).toLocaleDateString('es-EC', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
+    const field = (label: string, val: any) =>
+      val ? `<div class="field"><span class="label">${label}:</span> <span class="val">${esc(String(val))}</span></div>` : '';
+    const sectionHtml = (title: string, content: string, subtitle = '') =>
+      `<div class="section"><div class="section-head"><h2>${title}</h2>${subtitle ? `<span class="section-sub">${subtitle}</span>` : ''}</div><div class="content">${content}</div></div>`;
+    const trow = (cells: string[]) => '<tr>' + cells.map(c => `<td>${c}</td>`).join('') + '</tr>';
+
+    // Clinic info
+    const clinicName    = clinic.general.name || user?.clinic_name || 'Cl\u00ednica';
+    const clinicTagline = clinic.general.tagline || '';
+    const clinicAddr    = clinic.general.address || '';
+    const clinicCity    = clinic.general.city || '';
+    const clinicPhone   = clinic.general.phone || '';
+    const clinicEmail   = clinic.email?.staff_email || '';
+    const clinicTaxId   = clinic.general.tax_id || '';
+    const logoHtml      = clinic.general.logo_url
+      ? `<img src="${clinic.general.logo_url}" alt="${esc(clinicName)}" class="clinic-logo" />`
+      : `<div class="clinic-logo-placeholder">${esc(clinicName.substring(0,2).toUpperCase())}</div>`;
+
+    // Professional info
+    const profName       = profTemp.name || user?.full_name || '';
+    const profEsp        = profTemp.especialidad || '';
+    const profMatricula  = profTemp.matricula || '';
+    const profCedula     = profTemp.cedula || '';
+
+    // Patient calculated age
+    const patientAge = patient?.birth_date
+      ? Math.floor((Date.now() - new Date(patient.birth_date).getTime()) / (365.25 * 86400000))
+      : null;
+
+    // Today formatted
+    const todayLong = new Date().toLocaleDateString('es-EC', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
     let sections = '';
 
     if (opts.antecedentes) {
-      sections += sectionHtml('Antecedentes Clínicos', [
-        field('Antecedentes patológicos', h.pathological),
-        field('Antecedentes no patológicos', h.non_pathological),
-        field('Antecedentes familiares', h.family_history),
-        field('Antecedentes quirúrgicos', h.surgical_history),
-        field('Alergias', h.allergies),
-        field('Medicación actual', h.current_medications),
-        field('Antecedentes estéticos', h.aesthetic_history),
-        field('Antecedentes ginecológicos', h.gynecological_history),
-        field('Rutina facial', h.facial_routine),
-      ].filter(Boolean).join('') || '<em>Sin datos</em>');
+      const content = [
+        field('Antecedentes patol\u00f3gicos',   h.pathological),
+        field('Antecedentes no patol\u00f3gicos', h.non_pathological),
+        field('Antecedentes familiares',     h.family_history),
+        field('Antecedentes quir\u00fargicos',    h.surgical_history),
+        field('Alergias',                    h.allergies),
+        field('Medicaci\u00f3n actual',           h.current_medications),
+        field('Antecedentes est\u00e9ticos',      h.aesthetic_history),
+        field('Antecedentes ginecol\u00f3gicos',  h.gynecological_history),
+        field('Rutina facial',               h.facial_routine),
+      ].filter(Boolean).join('') || '<em class="empty">Sin datos registrados</em>';
+      sections += sectionHtml('Antecedentes Cl\u00ednicos', content);
     }
 
     if (opts.consulta && consultation) {
-      sections += sectionHtml(
-        'Consulta' + (opts.includeDates ? ` — ${formatDate(consultation.created_at)}` : ''),
-        [field('Motivo', consultation.reason), field('Historia de la enfermedad actual', consultation.current_illness)].filter(Boolean).join('') || '<em>Sin datos</em>'
-      );
+      const subtitle = opts.includeDates && consultation.created_at ? formatDateShort(consultation.created_at) : '';
+      const content = [
+        field('Motivo de consulta',               consultation.reason),
+        field('Historia de la enfermedad actual',  consultation.current_illness),
+        field('Observaciones',                     consultation.observations),
+      ].filter(Boolean).join('') || '<em class="empty">Sin datos</em>';
+      sections += sectionHtml('Consulta', content, subtitle);
     }
 
     if (opts.examenFisico) {
-      const esc = (s: any) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      const trow = (cells: string[]) => '<tr>' + cells.map(c => `<td>${c}</td>`).join('') + '</tr>';
-      filterItems('examenFisico').forEach((ex: any, i: number, arr: any[]) => {
-        const title = 'Examen Físico' + (arr.length > 1 ? ` #${i+1}` : '') + (opts.includeDates && ex.created_at ? ` â€” ${formatDate(ex.created_at)}` : '');
-        const paramRows = [['Tipo de piel',ex.skin_type],['Fototipo',ex.phototype],['Escala Glogau',ex.glogau_scale],['Hidratación',ex.hydration],['Elasticidad',ex.elasticity],['Fotoprotección',ex.photoprotection],['Textura',ex.texture],['Poros',ex.poros],['Pigmentación',ex.pigmentation],['Sensibilidad',ex.sensitivity]].filter(([,v])=>v).map(([k,v])=>trow([k+'',esc(v)])).join('');
-        const fm: any[] = (() => { try { return JSON.parse(ex.face_map_data || '[]'); } catch { return []; } })();
-        const bm: any[] = (() => { try { return JSON.parse(ex.body_map_data || '[]'); } catch { return []; } })();
-        const marks = [
-          fm.length ? `<div class="marks-title">Marcaciones faciales (${fm.length}):</div><div class="marks-list">${fm.map((m:any)=>`<span class="mark">${esc(m.category)}${m.tercio?' &bull; '+esc(m.tercio):''}${m.notes?' â€” '+esc(m.notes):''}</span>`).join('')}</div>` : '',
-          bm.length ? `<div class="marks-title">Marcaciones corporales (${bm.length}):</div><div class="marks-list">${bm.map((m:any)=>`<span class="mark">${esc(m.category)}${m.tercio?' &bull; '+esc(m.tercio):''}${m.notes?' â€” '+esc(m.notes):''}</span>`).join('')}</div>` : '',
-        ].filter(Boolean).join('');
-        sections += sectionHtml(title, (paramRows ? `<table class="param-table"><tbody>${paramRows}</tbody></table>` : '') + (ex.lesions_description ? field('Descripción de lesiones', ex.lesions_description) : '') + marks || '<em>Sin datos</em>');
-      });
+      const items = filterItems('examenFisico');
+      if (items.length === 0) {
+        sections += sectionHtml('Examen F\u00edsico', '<em class="empty">Sin datos registrados</em>');
+      } else {
+        items.forEach((ex: any, i: number, arr: any[]) => {
+          const subtitle = opts.includeDates && ex.created_at ? formatDateShort(ex.created_at) : '';
+          const titleSuffix = arr.length > 1 ? ` #${i+1}` : '';
+          const paramRows = ([
+            ['Tipo de piel', ex.skin_type], ['Fototipo', ex.phototype],
+            ['Escala Glogau', ex.glogau_scale], ['Hidrataci\u00f3n', ex.hydration],
+            ['Elasticidad', ex.elasticity], ['Fotoprotecci\u00f3n', ex.photoprotection],
+            ['Textura', ex.texture], ['Poros', ex.poros],
+            ['Pigmentaci\u00f3n', ex.pigmentation], ['Sensibilidad', ex.sensitivity],
+          ] as [string, string][]).filter(([,v]) => v)
+            .map(([k,v]) => trow([`<span class="param-key">${esc(k)}</span>`, `<span class="param-val">${esc(v)}</span>`])).join('');
+          const tableHtml = paramRows
+            ? `<table class="param-table"><tbody>${paramRows}</tbody></table>`
+            : '';
+          const lesionsHtml = ex.lesions_description
+            ? `<div class="field" style="margin-top:6px"><span class="label">Descripci\u00f3n de lesiones:</span> <span class="val">${esc(ex.lesions_description)}</span></div>`
+            : '';
+          const fm: any[] = (() => { try { return JSON.parse(ex.face_map_data || '[]'); } catch { return []; } })();
+          const bm: any[] = (() => { try { return JSON.parse(ex.body_map_data || '[]'); } catch { return []; } })();
+          const marks = [
+            fm.length ? `<div class="marks-title">Marcaciones faciales (${fm.length}):</div><div class="marks-list">${fm.map((m:any)=>`<span class="mark">${esc(m.category)}${m.tercio ? ' &middot; '+esc(m.tercio) : ''}${m.notes ? ' &mdash; '+esc(m.notes) : ''}</span>`).join('')}</div>` : '',
+            bm.length ? `<div class="marks-title">Marcaciones corporales (${bm.length}):</div><div class="marks-list">${bm.map((m:any)=>`<span class="mark">${esc(m.category)}${m.tercio ? ' &middot; '+esc(m.tercio) : ''}${m.notes ? ' &mdash; '+esc(m.notes) : ''}</span>`).join('')}</div>` : '',
+          ].filter(Boolean).join('');
+          const empty = !paramRows && !lesionsHtml && !marks;
+          sections += sectionHtml('Examen F\u00edsico' + titleSuffix, (empty ? '<em class="empty">Sin datos</em>' : tableHtml + lesionsHtml + marks), subtitle);
+        });
+      }
     }
-
-    const logoHtml = clinic.general.logo_url
-      ? `<img src="${clinic.general.logo_url}" alt="Logo" style="height:50px;object-fit:contain;" />`
-      : '';
 
     if (opts.diagnostico) {
       const items = filterItems('diagnostico');
-      if (items.length) {
-        const rows = items.map((d: any, i: number, arr: any[]) =>
-          (arr.length > 1 ? `<div style="font-size:8pt;color:#999;margin-bottom:2px">#${i+1}${opts.includeDates && d.date ? ' — '+formatDate(d.date) : ''}</div>` : '')
-          + field('Diagnóstico', d.diagnosis_text)
-          + field('Plan de tratamiento', d.treatment_plan)
-        ).join('<hr style="border:none;border-top:1px solid #f0f0f0;margin:6px 0"/>');
-        sections += sectionHtml('Diagnósticos', rows || '<em>Sin datos</em>');
+      if (!items.length) {
+        sections += sectionHtml('Diagn\u00f3sticos', '<em class="empty">Sin diagn\u00f3sticos registrados</em>');
+      } else {
+        const rows = items.map((d: any, i: number, arr: any[]) => {
+          const sub = opts.includeDates && d.date ? `<span class="item-date">${formatDateShort(d.date)}</span>` : '';
+          return `<div class="item-block">${arr.length > 1 ? `<div class="item-num">${sub}Diagn\u00f3stico ${i+1}</div>` : sub}`
+            + field('Diagn\u00f3stico', d.diagnosis_text)
+            + field('Plan de tratamiento', d.treatment_plan)
+            + field('Observaciones', d.observations)
+            + '</div>';
+        }).join('');
+        sections += sectionHtml('Diagn\u00f3sticos', rows);
       }
     }
 
     if (opts.tratamientos) {
       const items = filterItems('tratamientos');
-      if (items.length) {
-        const rows = items.map((t: any, i: number, arr: any[]) =>
-          (arr.length > 1 ? `<div style="font-size:8pt;color:#999;margin-bottom:2px">#${i+1}${opts.includeDates && t.date ? ' — '+formatDate(t.date) : ''}</div>` : '')
-          + field('Procedimiento', t.procedure_name)
-          + field('Área', t.area)
-          + field('Estado', t.status)
-          + field('Notas', t.notes)
-        ).join('<hr style="border:none;border-top:1px solid #f0f0f0;margin:6px 0"/>');
-        sections += sectionHtml('Tratamientos', rows || '<em>Sin datos</em>');
+      if (!items.length) {
+        sections += sectionHtml('Tratamientos', '<em class="empty">Sin tratamientos registrados</em>');
+      } else {
+        const rows = items.map((t: any, i: number, arr: any[]) => {
+          const sub = opts.includeDates && t.date ? `<span class="item-date">${formatDateShort(t.date)}</span>` : '';
+          return `<div class="item-block">${arr.length > 1 ? `<div class="item-num">${sub}Tratamiento ${i+1}</div>` : sub}`
+            + field('Procedimiento', t.procedure_name)
+            + field('\u00c1rea', t.area)
+            + field('Cantidad de sesiones', t.sessions)
+            + field('Estado', t.status)
+            + field('Notas', t.notes)
+            + '</div>';
+        }).join('');
+        sections += sectionHtml('Tratamientos', rows);
       }
     }
 
+    // Annex references
+    const annexSections: string[] = [];
     if (opts.recetas) {
       const count = filterItems('recetas').length;
-      sections += sectionHtml('Recetas', `<p class="annex-ref">→ Ver receta${count > 1 ? `s (${count})` : ''} — anexo a este documento</p>`);
+      annexSections.push(`Receta${count > 1 ? 's m\u00e9dicas (' + count + ')' : ' m\u00e9dica'}`);
     }
-
     if (opts.inyectables) {
       const count = filterItems('inyectables').length;
-      sections += sectionHtml('Inyectables', `<p class="annex-ref">→ Ver registro de inyectable${count > 1 ? `s (${count})` : ''} — anexo a este documento</p>`);
+      annexSections.push(`Registro de inyectable${count > 1 ? 's (' + count + ')' : ''}`);
     }
-
     if (opts.consentimientos) {
       const count = filterItems('consentimientos').length;
-      sections += sectionHtml('Consentimientos', `<p class="annex-ref">→ Ver consentimiento${count > 1 ? `s informados (${count})` : ' informado'} — anexo a este documento</p>`);
+      annexSections.push(`Consentimiento${count > 1 ? 's informados (' + count + ')' : ' informado'}`);
+    }
+    if (annexSections.length) {
+      const list = annexSections.map((a, i) => `<li><strong>${i+1}. ${a}</strong> &mdash; imprimir desde el tab correspondiente de la ficha cl\u00ednica.</li>`).join('');
+      sections += sectionHtml('Documentos Anexos a Imprimir', `<p class="annex-intro">Los siguientes documentos forman parte de esta historia cl\u00ednica. Imp\u00edmalos desde sus respectivos tabs en la ficha del paciente:</p><ul class="annex-list">${list}</ul>`);
     }
 
-    const signatureSection = opts.includeSignature ? `
-      <div class="professional-block">
+    // Signature block
+    const signatureHtml = opts.includeSignature ? `
+    <div class="sig-section">
+      <div class="sig-block">
+        <div class="sig-line-space"></div>
         <div class="sig-line"></div>
-        <div class="sig-name">${profTemp.name}</div>
-        ${profTemp.cedula ? `<div class="sig-detail">Cédula/RUC: ${profTemp.cedula}</div>` : ''}
-        ${profTemp.matricula ? `<div class="sig-detail">Matrícula SENESCYT: ${profTemp.matricula}</div>` : ''}
-        ${profTemp.especialidad ? `<div class="sig-detail">${profTemp.especialidad}</div>` : ''}
-      </div>` : '';
+        <div class="sig-name">${esc(profName) || '&nbsp;'}</div>
+        ${profEsp ? `<div class="sig-detail">${esc(profEsp)}</div>` : ''}
+        ${profMatricula ? `<div class="sig-detail">Matr. SENESCYT: ${esc(profMatricula)}</div>` : ''}
+        ${profCedula ? `<div class="sig-detail">C\u00e9dula/RUC: ${esc(profCedula)}</div>` : ''}
+      </div>
+      <div class="sig-block">
+        <div class="sig-line-space"></div>
+        <div class="sig-line"></div>
+        <div class="sig-name">Firma del Paciente / Representante</div>
+        <div class="sig-detail">${esc(patient?.first_name || '')} ${esc(patient?.last_name || '')}</div>
+      </div>
+    </div>` : '';
+
+    // Footer contact
+    const contactItems = [
+      clinicAddr ? '\u{1F4CD} ' + clinicAddr + (clinicCity ? ', ' + clinicCity : '') : '',
+      clinicPhone ? '\u{1F4DE} ' + clinicPhone : '',
+      clinicEmail ? '\u2709 ' + clinicEmail : '',
+      clinicTaxId ? 'RUC: ' + clinicTaxId : '',
+    ].filter(Boolean);
 
     const html = `<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Ficha Clínica — ${patient?.first_name} ${patient?.last_name}</title>
+  <title>Ficha Cl\u00ednica \u2014 ${esc(patient?.first_name || '')} ${esc(patient?.last_name || '')}</title>
   <style>
+    @page{size:A4 portrait;margin:18mm 15mm 20mm 15mm}
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:Arial,sans-serif;font-size:10pt;color:#333;padding:15mm;max-width:210mm}
-    .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #deb887;padding-bottom:10px;margin-bottom:14px}
-    .clinic-h1{font-size:14pt;color:#b8944d;font-family:Georgia,serif}
-    .clinic-sub{font-size:8.5pt;color:#666;line-height:1.4}
-    .patient-block{background:#fdf8f0;border:1px solid #e8d5b0;border-radius:5px;padding:8px 12px;margin-bottom:14px}
-    .patient-name{font-size:12pt;color:#333;font-family:Georgia,serif;font-weight:bold}
-    .patient-sub{font-size:8.5pt;color:#666;margin-top:2px}
-    .section{margin-bottom:14px;page-break-inside:avoid}
-    .section h2{font-size:8.5pt;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;color:#b8944d;border-bottom:1px solid #e8d5b0;padding-bottom:3px;margin-bottom:6px}
-    .content{font-size:9.5pt;line-height:1.5}
-    .field{margin-bottom:3px}
-    .label{font-weight:bold;color:#555}
-    .date{font-size:8pt;color:#999;margin-right:3px}
-    .table{width:100%;border-collapse:collapse;font-size:8.5pt;margin-top:4px}
-    .table th{background:#fdf8f0;color:#b8944d;text-align:left;padding:4px 6px;border:1px solid #e8d5b0;font-size:7.5pt;text-transform:uppercase}
-    .table td{padding:3px 6px;border:1px solid #e8d5b0;vertical-align:top}
-    .table tr:nth-child(even) td{background:#fafaf8}
-    .param-table{width:100%;border-collapse:collapse;font-size:8.5pt}
-    .param-table td{padding:2px 6px;border-bottom:1px solid #f0f0f0}
-    .param-table td:first-child{font-weight:bold;color:#555;width:35%;white-space:nowrap}
-    .marks-title{font-size:8pt;font-weight:bold;color:#888;margin-top:6px;margin-bottom:3px;text-transform:uppercase}
-    .marks-list{display:flex;flex-wrap:wrap;gap:4px}
-    .mark{font-size:8pt;padding:2px 7px;background:#fdf8f0;border:1px solid #e8d5b0;border-radius:3px;color:#666}
-    .professional-block{margin-top:36px;text-align:center;page-break-inside:avoid}
-    .sig-line{border-top:1px solid #333;width:200px;margin:0 auto 5px}
-    .sig-name{font-weight:bold;font-size:10pt}
-    .sig-detail{font-size:8.5pt;color:#666}
-    .footer{margin-top:20px;font-size:7.5pt;color:#aaa;text-align:center;border-top:1px solid #eee;padding-top:6px}
-    .annex-ref{font-style:italic;color:#666;padding:8px 12px;background:#fdf8f0;border:1px dashed #e8d5b0;border-radius:4px;margin:4px 0}
-    @media print{body{padding:8mm}}
+    body{font-family:'Segoe UI',Arial,sans-serif;font-size:9.5pt;color:#2d2d2d;background:#fff}
+    .letterhead{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #deb887;padding-bottom:12px;margin-bottom:6px}
+    .lh-left{display:flex;align-items:flex-start;gap:12px}
+    .clinic-logo{height:56px;width:auto;object-fit:contain}
+    .clinic-logo-placeholder{width:56px;height:56px;background:#deb887;color:#fff;font-size:18pt;font-weight:700;border-radius:6px;display:flex;align-items:center;justify-content:center}
+    .clinic-name{font-size:15pt;font-weight:700;color:#b8944d;font-family:Georgia,serif;line-height:1.1}
+    .clinic-tag{font-size:8pt;color:#888;margin-top:2px}
+    .lh-right{text-align:right;font-size:8pt;color:#666;min-width:170px}
+    .lh-right .exp-num{font-size:11pt;font-weight:700;color:#b8944d}
+    .lh-right .lh-date{font-size:8.5pt;color:#444;margin-top:3px;text-transform:capitalize}
+    .lh-right .lh-city{font-size:8pt;color:#888}
+    .prof-bar{display:flex;justify-content:space-between;align-items:center;background:#fdf8f0;border:1px solid #e8d5b0;border-radius:5px;padding:7px 12px;margin-bottom:14px;margin-top:8px}
+    .prof-name{font-size:10pt;font-weight:700;color:#222}
+    .prof-details{font-size:8pt;color:#666;margin-top:2px}
+    .doc-label{font-size:8pt;font-weight:600;color:#b8944d;text-transform:uppercase;letter-spacing:.5px}
+    .patient-block{border:1.5px solid #deb887;border-radius:6px;padding:10px 14px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+    .patient-name{font-size:12pt;font-family:Georgia,serif;font-weight:700;color:#1a1a1a}
+    .patient-sub{font-size:8.5pt;color:#555;margin-top:3px;line-height:1.7}
+    .patient-right{text-align:right;font-size:8.5pt;color:#666;flex-shrink:0}
+    .section{margin-bottom:13px;page-break-inside:avoid}
+    .section-head{display:flex;align-items:baseline;gap:8px;border-bottom:1.5px solid #e8d5b0;padding-bottom:3px;margin-bottom:7px}
+    .section h2{font-size:8pt;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#b8944d;margin:0}
+    .section-sub{font-size:7.5pt;color:#999}
+    .content{font-size:9pt;line-height:1.55}
+    .field{margin-bottom:4px}
+    .label{font-weight:600;color:#444}
+    .val{color:#111}
+    .empty{color:#aaa;font-style:italic;font-size:8.5pt}
+    .param-table{width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:6px}
+    .param-table tbody tr:nth-child(odd){background:#fdf8f0}
+    .param-table td{padding:3px 8px;border-bottom:1px solid #f0ebe0}
+    .param-key{font-weight:600;color:#555;display:inline-block;min-width:160px}
+    .param-val{color:#222}
+    .marks-title{font-size:7.5pt;font-weight:700;color:#999;margin-top:7px;margin-bottom:3px;text-transform:uppercase;letter-spacing:.3px}
+    .marks-list{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px}
+    .mark{font-size:7.5pt;padding:2px 8px;background:#fdf8f0;border:1px solid #e8d5b0;border-radius:3px;color:#555}
+    .item-block{padding:6px 0;border-bottom:1px solid #f5f0e8}
+    .item-block:last-child{border-bottom:none}
+    .item-num{font-size:7.5pt;font-weight:700;color:#b8944d;margin-bottom:4px;text-transform:uppercase;letter-spacing:.3px}
+    .item-date{font-size:7.5pt;color:#999;margin-right:6px}
+    .annex-intro{font-size:8.5pt;color:#555;margin-bottom:8px;font-style:italic}
+    .annex-list{list-style:none;padding:0}
+    .annex-list li{font-size:8.5pt;padding:5px 10px;margin-bottom:4px;background:#fdf8f0;border-left:3px solid #deb887;border-radius:0 4px 4px 0;color:#333}
+    .sig-section{display:flex;justify-content:space-around;margin-top:40px;page-break-inside:avoid;gap:20px}
+    .sig-block{flex:1;text-align:center;max-width:220px}
+    .sig-line-space{height:52px}
+    .sig-line{border-top:1px solid #333;margin-bottom:5px}
+    .sig-name{font-size:9pt;font-weight:700;color:#111}
+    .sig-detail{font-size:7.5pt;color:#555;margin-top:1px}
+    .contact-footer{margin-top:18px;border-top:1.5px solid #e8d5b0;padding-top:8px;font-size:7.5pt;color:#666;text-align:center;line-height:1.8}
+    .gen-footer{margin-top:5px;font-size:7pt;color:#bbb;text-align:center}
+    @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
   </style>
 </head>
 <body>
-  <div class="header">
-    <div>${logoHtml}<p class="clinic-h1">${clinic.general.name||'Clínica'}</p>
-      <p class="clinic-sub">${[clinic.general.address, clinic.general.phone?'Tel: '+clinic.general.phone:''].filter(Boolean).join(' &bull; ')}</p>
+  <div class="letterhead">
+    <div class="lh-left">
+      ${logoHtml}
+      <div>
+        <div class="clinic-name">${esc(clinicName)}</div>
+        ${clinicTagline ? `<div class="clinic-tag">${esc(clinicTagline)}</div>` : ''}
+      </div>
     </div>
-    <div style="text-align:right;font-size:8.5pt;color:#999"><div>Expediente #${recordId}</div><div>${new Date().toLocaleDateString('es')}</div></div>
+    <div class="lh-right">
+      <div style="font-size:8pt;color:#aaa;text-transform:uppercase;letter-spacing:.5px">Historia Cl\u00ednica</div>
+      <div class="exp-num">Exp. #${recordId}</div>
+      <div class="lh-date">${todayLong}</div>
+      ${clinicCity ? `<div class="lh-city">${esc(clinicCity)}</div>` : ''}
+    </div>
   </div>
+
+  ${(profName || profEsp) ? `
+  <div class="prof-bar">
+    <div>
+      <div class="prof-name">${esc(profName)}</div>
+      <div class="prof-details">${[profEsp, profMatricula ? 'Matr. SENESCYT: ' + profMatricula : '', profCedula ? 'C\u00e9dula/RUC: ' + profCedula : ''].filter(Boolean).join(' &nbsp;&middot;&nbsp; ')}</div>
+    </div>
+    <div class="doc-label">Ficha Cl\u00ednica</div>
+  </div>` : ''}
+
   <div class="patient-block">
-    <p class="patient-name">${patient?.first_name} ${patient?.last_name}</p>
-    <p class="patient-sub">${[patient?.rut?'RUT: '+patient.rut:'', patient?.birth_date?'Nac: '+formatDate(patient.birth_date):'', patient?.gender||''].filter(Boolean).join(' &bull; ')}</p>
+    <div>
+      <div class="patient-name">${esc(patient?.first_name || '')} ${esc(patient?.last_name || '')}</div>
+      <div class="patient-sub">
+        ${patient?.rut ? `<strong>C\u00e9dula/ID:</strong> ${esc(patient.rut)} &nbsp;&nbsp;` : ''}
+        ${patient?.birth_date ? `<strong>Nac:</strong> ${formatDateShort(patient.birth_date)} &nbsp;&nbsp;` : ''}
+        ${patientAge !== null ? `<strong>Edad:</strong> ${patientAge} a\u00f1os &nbsp;&nbsp;` : ''}
+        ${patient?.gender ? `<strong>Sexo:</strong> ${esc(patient.gender)}` : ''}
+      </div>
+      ${patient?.phone ? `<div class="patient-sub"><strong>Tel:</strong> ${esc(patient.phone)}</div>` : ''}
+      ${patient?.email ? `<div class="patient-sub"><strong>Email:</strong> ${esc(patient.email)}</div>` : ''}
+    </div>
+    <div class="patient-right">
+      <div><strong>Fecha de atenci\u00f3n</strong></div>
+      <div>${new Date().toLocaleDateString('es-EC')}</div>
+    </div>
   </div>
+
   ${sections}
-  ${signatureSection}
-  <div class="footer">Generado el ${new Date().toLocaleString('es')} &mdash; ${clinic.general.name||'BioSkinTech'}</div>
+
+  ${signatureHtml}
+
+  ${contactItems.length ? `<div class="contact-footer">${contactItems.join(' &nbsp;&nbsp;|&nbsp;&nbsp; ')}</div>` : ''}
+  <div class="gen-footer">Documento generado el ${new Date().toLocaleString('es-EC')} &mdash; ${esc(clinicName)}</div>
   <script>window.onload=()=>window.print();<\/script>
 </body>
 </html>`;
