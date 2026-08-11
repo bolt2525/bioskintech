@@ -1109,8 +1109,11 @@ async function deleteUser(requestUser, userId) {
   } else if (requestUser.role !== 'master_admin') {
     return { error: 'Sin permiso' };
   }
-  await sql`UPDATE clinic_users SET is_active = false WHERE id = ${userId}`;
-  await sql`UPDATE admin_sessions SET is_active = false WHERE clinic_user_id = ${userId}`;
+  // Limpiar FK sin CASCADE antes del DELETE
+  await sql`UPDATE invite_links SET used_by = NULL WHERE used_by = ${userId}`;
+  await sql`UPDATE invite_links SET created_by = NULL WHERE created_by = ${userId}`;
+  await sql`DELETE FROM admin_sessions WHERE clinic_user_id = ${userId}`;
+  await sql`DELETE FROM clinic_users WHERE id = ${userId}`;
   return { success: true };
 }
 

@@ -1358,8 +1358,11 @@ export default function AdminMasterDashboard() {
   };
 
   const deleteUser = async (u: ClinicUser) => {
-    if (!confirm(`¿Desactivar a ${u.username}? Su acceso será revocado.`)) return;
-    await fetch(`/api/admin-auth?action=deleteUser&id=${u.id}`, { method: 'DELETE', headers: authHeader() });
+    if (!confirm(`¿Eliminar permanentemente a "${u.username}"?\n\nEsta acción no se puede deshacer. El usuario podrá volver a registrarse con el mismo email.`)) return;
+    const res = await fetch(`/api/admin-auth?action=deleteUser&id=${u.id}`, { method: 'DELETE', headers: authHeader() });
+    const d = await res.json();
+    if (d.error) { flash(d.error, 'err'); return; }
+    flash(`Usuario "${u.username}" eliminado`);
     loadAll();
   };
 
@@ -1741,7 +1744,7 @@ export default function AdminMasterDashboard() {
                               <Key className="w-3.5 h-3.5" />
                             </button>
                             {u.role !== 'master_admin' && (
-                              <button onClick={() => deleteUser(u)} className="p-1.5 text-red-500 hover:bg-red-50 rounded" title="Desactivar">
+                              <button onClick={() => deleteUser(u)} className="p-1.5 text-red-500 hover:bg-red-50 rounded" title="Eliminar usuario">
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             )}
