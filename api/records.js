@@ -2395,8 +2395,8 @@ export default async function handler(req, res) {
           );
           // Generar read URLs firmadas (1h) para cada foto
           const photos = await Promise.all(result.rows.map(async (p) => {
-            try { return { ...p, url: await generateReadUrl(p.r2_key) }; }
-            catch { return { ...p, url: null }; }
+            try { return { ...p, r2_url: await generateReadUrl(p.r2_key) }; }
+            catch { return { ...p, r2_url: null }; }
           }));
           return res.status(200).json(photos);
         } catch (err) {
