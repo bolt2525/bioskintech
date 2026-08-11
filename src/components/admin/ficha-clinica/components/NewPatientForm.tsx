@@ -191,7 +191,7 @@ export default function NewPatientForm() {
                     </div>
                   ) : (
                     <>
-                      <p className="text-sm text-gray-500">¿Qué deseas hacer?</p>
+                      <p className="text-sm text-gray-500">Selecciona qué datos importar para crear tu expediente:</p>
                       <div className="space-y-2">
                         <label className="flex items-center gap-3 cursor-pointer">
                           <input type="checkbox" checked={importFields.basic} onChange={e => setImportFields(p => ({ ...p, basic: e.target.checked }))}
@@ -204,14 +204,17 @@ export default function NewPatientForm() {
                           <span className="text-sm text-gray-700">Importar antecedentes médicos</span>
                         </label>
                       </div>
+                      <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                        Debes importar el paciente para poder acceder a su expediente desde tu cuenta.
+                      </p>
                       <div className="flex gap-2 pt-2">
                         <button onClick={handleImport} disabled={importing || (!importFields.basic && !importFields.history)}
                           className="flex-1 py-2.5 bg-[#deb887] text-white rounded-xl text-sm font-semibold hover:bg-[#c9a876] disabled:opacity-50 transition-colors">
-                          {importing ? 'Importando...' : 'Importar y crear expediente'}
+                          {importing ? 'Importando...' : 'Importar y abrir expediente'}
                         </button>
-                        <button onClick={() => nav(`ficha-clinica/paciente/${duplicate.id}`)}
-                          className="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors">
-                          Ir al expediente existente
+                        <button onClick={() => setDuplicate(null)}
+                          className="py-2.5 px-4 border border-gray-200 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors">
+                          Cancelar
                         </button>
                       </div>
                     </>
