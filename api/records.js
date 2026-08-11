@@ -741,7 +741,7 @@ export default async function handler(req, res) {
         // Also fetch active record ID — scoped to user for 'own' access
         let recordQuery, recordParams;
         if (su?.access_scope === 'own' && su.user_id != null && su.role !== 'master_admin') {
-          recordQuery = "SELECT id FROM clinical_records WHERE patient_id = $1 AND status = 'active' AND (created_by_user_id = $2 OR created_by_user_id IS NULL) ORDER BY created_at DESC LIMIT 1";
+          recordQuery = "SELECT id FROM clinical_records WHERE patient_id = $1 AND status = 'active' AND created_by_user_id = $2 ORDER BY created_at DESC LIMIT 1";
           recordParams = [id, su.user_id];
         } else {
           recordQuery = "SELECT id FROM clinical_records WHERE patient_id = $1 AND status = 'active' ORDER BY created_at DESC LIMIT 1";
@@ -773,7 +773,7 @@ export default async function handler(req, res) {
         let records;
         if (su?.access_scope === 'own' && su?.user_id != null && su?.role !== 'master_admin') {
           records = await pool.query(
-            selectWithCreator + ' AND (cr.created_by_user_id = $2 OR cr.created_by_user_id IS NULL) ORDER BY cr.created_at DESC',
+            selectWithCreator + ' AND cr.created_by_user_id = $2 ORDER BY cr.created_at DESC',
             [patient_id, su.user_id]
           );
         } else {
@@ -1162,12 +1162,12 @@ export default async function handler(req, res) {
            let r;
            if (isOwnScope) {
              r = await pool.query(
-               "SELECT id FROM clinical_records WHERE patient_id = $1 AND (created_by_user_id = $2 OR created_by_user_id IS NULL) AND status = 'active' ORDER BY created_at DESC LIMIT 1",
+               "SELECT id FROM clinical_records WHERE patient_id = $1 AND created_by_user_id = $2 AND status = 'active' ORDER BY created_at DESC LIMIT 1",
                [patientId, su.user_id]
              );
              if (r.rows.length === 0) {
                r = await pool.query(
-                 'SELECT id FROM clinical_records WHERE patient_id = $1 AND (created_by_user_id = $2 OR created_by_user_id IS NULL) ORDER BY created_at DESC LIMIT 1',
+                 'SELECT id FROM clinical_records WHERE patient_id = $1 AND created_by_user_id = $2 ORDER BY created_at DESC LIMIT 1',
                  [patientId, su.user_id]
                );
              }

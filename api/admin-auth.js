@@ -2058,7 +2058,7 @@ export default async function handler(req, res) {
     // Gestión de usuarios
     if (action === 'listUsers') {
       if (!requireRole(user, 'master_admin', 'clinic_admin')) return res.status(403).json({ error: 'Sin permiso' });
-      const clinicIdFilter = req.query.clinicId ? parseInt(req.query.clinicId) : null;
+      const clinicIdFilter = req.query.clinicId || null; // UUID — no parseInt
       return res.status(200).json(await listUsers(user, clinicIdFilter));
     }
     if (action === 'createUser') {
