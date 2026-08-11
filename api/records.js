@@ -957,36 +957,6 @@ export default async function handler(req, res) {
         return res.status(201).json({ patient: src, record: newRecordRow });
       }
 
-        // Copiar antecedentes si se solicita
-        if (import_fields.includes('history')) {
-          const srcRec = await pool.query(
-            'SELECT id FROM clinical_records WHERE patient_id = $1 ORDER BY created_at LIMIT 1',
-            [source_patient_id]
-          );
-          if (srcRec.rows.length > 0) {
-            const hist = await pool.query(
-              'SELECT * FROM medical_history WHERE record_id = $1 ORDER BY updated_at DESC LIMIT 1',
-              [srcRec.rows[0].id]
-            );
-            if (hist.rows.length > 0) {
-              const h = hist.rows[0];
-              await pool.query(
-                `INSERT INTO medical_history
-                 (record_id, pathological, non_pathological, family_history, surgical_history,
-                  allergies, current_medications, aesthetic_history, gynecological_history)
-                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-                 ON CONFLICT DO NOTHING`,
-                [newRecordRow.id, h.pathological, h.non_pathological, h.family_history,
-                 h.surgical_history, h.allergies, h.current_medications, h.aesthetic_history, h.gynecological_history]
-              );
-            }
-          }
-        }
-
-        await logAudit(pool, { patientId: src.id, sessionUser: suImp, actionType: 'create', module: 'patient', summary: `Nuevo expediente creado para paciente existente ID ${source_patient_id}: ${src.first_name} ${src.last_name}` });
-        return res.status(201).json({ patient: src, record: newRecordRow });
-      }
-
       case 'deletePatient': {
         const { id: delPid } = req.query;
         // Clinic scope check
