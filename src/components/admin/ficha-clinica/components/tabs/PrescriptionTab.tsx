@@ -276,6 +276,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, con
     const clinicCity  = clinic.general.city    || '';
     const clinicPhone = clinic.general.phone   || '';
     const clinicAddr  = clinic.general.address || '';
+    const doctorName  = [user?.gentilicio, user?.full_name].filter(Boolean).join(' ') || clinicName;
 
     const html = `
       <html lang="es">
@@ -318,15 +319,15 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, con
             <!-- Left Column -->
             <div class="column">
                <div class="header">
-                 <img src="${logoUrl}" class="logo" alt="Bio Skin" />
+                 <img src="${logoUrl}" class="logo" alt="${clinicName}" />
                  <div class="doctor-info">
-                   <h2>SALUD Y ESTÉTICA</h2>
-                   <h3>DRA. DANIELA CREAMER</h3>
+                   <h2>${clinicTagline.toUpperCase()}</h2>
+                   <h3>${doctorName.toUpperCase()}</h3>
                  </div>
                </div>
                
                <div class="patient-info">
-                 <p><strong>Cuenca, a ${dateStr}</strong></p>
+                 <p><strong>${clinicCity ? clinicCity + ', a ' : ''}${dateStr}</strong></p>
                  <div class="patient-details">
                     <span><strong>Paciente:</strong> ${patientName.toUpperCase()}</span>
                     <span><strong>EDAD:</strong> ${patientAge || ''} AÑOS</span>

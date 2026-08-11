@@ -74,6 +74,8 @@ const API_URL = '/api/records';
 export default function ConsentimientosTab({ patientId, recordId, patient, consultationId }: Props) {
   const { settings: clinic } = useClinicSettings();
   const { user } = useAuth();
+  const clinicDisplayName = clinic.general.name || user?.clinic_name || 'Clínica';
+  const professionalName = [user?.gentilicio, user?.full_name].filter(Boolean).join(' ');
   const [consents, setConsents] = useState<ConsentForm[]>([]);
   const [dbTemplates, setDbTemplates] = useState<any[]>([]);
   const [view, setView] = useState<'list' | 'form' | 'preview'>('list');
@@ -388,7 +390,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
       },
       signatures: {
         patient_name: patient ? `${patient.first_name} ${patient.last_name}` : '',
-        professional_name: 'Dra. Daniela Creamer'
+        professional_name: professionalName || ''
       },
       attachments: []
     });
@@ -1049,7 +1051,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                               value={currentConsent.signatures?.professional_name}
                               onChange={(e) => updateNestedField('signatures', 'professional_name', e.target.value)}
                               className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all"
-                              placeholder="Dra. Daniela Creamer"
+                              placeholder="Nombre del profesional"
                             />
                           </div>
                           <Tooltip content="Cargar firma guardada">
@@ -1257,10 +1259,10 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                   {/* Header */}
                   <div className="flex flex-col md:flex-row justify-between items-start mb-8 border-b-2 border-[#deb887] pb-6 gap-4 md:gap-0">
                     <div className="flex items-center gap-6">
-                      <img src="/images/logo/logo.png" alt="BioSkin Logo" className="h-24 w-auto object-contain" onError={e => (e.currentTarget.style.display = 'none')} />
+                      <img src={clinic.general.logo_url || '/images/logo/logo.png'} alt="Logo" className="h-24 w-auto object-contain" onError={e => (e.currentTarget.style.display = 'none')} />
                       <div>
-                        <h2 className="text-2xl font-bold text-gray-900 tracking-tight">BIOSKIN SALUD Y ESTETICA</h2>
-                        <p className="text-base font-bold text-[#deb887] mt-1">DRA. DANIELA CREAMER</p>
+                        <h2 className="text-2xl font-bold text-gray-900 tracking-tight">{clinicDisplayName.toUpperCase()}</h2>
+                        <p className="text-base font-bold text-[#deb887] mt-1">{(currentConsent?.signatures?.professional_name || professionalName).toUpperCase()}</p>
                         <p className="text-sm text-gray-500">Cosmiatría y Dermatocosmiatría Clínica</p>
                       </div>
                     </div>
@@ -1430,7 +1432,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
             </div>
             
             <div className="text-center text-xs text-gray-400 mt-12 border-t border-gray-100 pt-4">
-              Documento generado el {new Date().toLocaleDateString()}  BIOSKIN SALUD Y ESTÉTICA
+              Documento generado el {new Date().toLocaleDateString()} — {clinicDisplayName}
             </div>
             </div>
                 </td>

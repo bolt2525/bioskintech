@@ -74,9 +74,9 @@ export default function PrintModal({ patient, recordId, recordData, activeConsul
   // Temporary professional data (not saved to DB)
   const [showProfForm, setShowProfForm] = useState(false);
   const [profTemp, setProfTemp] = useState({
-    name: (user as any)?.full_name || (user as any)?.username || '',
-    cedula: (user as any)?.cedula_profesional || '',
-    especialidad: (user as any)?.especialidad || '',
+    name: user?.full_name || user?.username || '',
+    cedula: user?.cedula_profesional || '',
+    especialidad: user?.especialidad || '',
   });
 
   const missingFields: string[] = [];

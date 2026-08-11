@@ -31,12 +31,20 @@ export interface AuthUser {
   id?: number;
   username: string;
   full_name?: string;
+  first_name?: string;
+  last_name?: string;
   email?: string;
   role: UserRole;
   clinic_id: string | null;   // UUID string
   clinic_name?: string;
   clinic_slug?: string;
   access_scope: AccessScope;
+  finance_scope?: string;
+  inventory_scope?: string;
+  gentilicio?: string | null;
+  profession?: string | null;
+  cedula_profesional?: string | null;
+  especialidad?: string | null;
   is_demo?: boolean;
   demo_expires_at?: string | null;
   subscriptionWarningDays?: number | null;

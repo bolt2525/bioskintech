@@ -714,6 +714,7 @@ async function loginUser(username, password, ip, ua, req) {
           email: u.email, role: u.role, clinic_id: u.clinic_id, access_scope: u.access_scope,
           finance_scope: u.finance_scope || 'all', inventory_scope: u.inventory_scope || 'all',
           clinic_slug: u.clinic_slug || null, clinic_name: u.clinic_name || null,
+          cedula_profesional: u.cedula_profesional || null, especialidad: u.especialidad || null,
           gentilicio: u.gentilicio || null, profession: u.profession || null,
           first_name: u.first_name || null, last_name: u.last_name || null,
           is_demo: u.is_demo || false, demo_expires_at: u.demo_expires_at || null },
@@ -792,7 +793,9 @@ async function verifySession(token) {
   try {
     const r = await sql`
       SELECT s.username, s.expires_at, s.role, s.clinic_id, s.access_scope, s.clinic_user_id,
-             cu.full_name, cu.email, cu.is_demo, cu.demo_expires_at, c.name as clinic_name, c.slug as clinic_slug,
+             cu.full_name, cu.email, cu.is_demo, cu.demo_expires_at,
+             cu.cedula_profesional, cu.especialidad, cu.gentilicio, cu.profession, cu.first_name, cu.last_name,
+             c.name as clinic_name, c.slug as clinic_slug,
              c.subscription_expires_at
       FROM admin_sessions s
       LEFT JOIN clinic_users cu ON cu.id = s.clinic_user_id
@@ -820,6 +823,9 @@ async function verifySession(token) {
         id: s.clinic_user_id, username: s.username, full_name: s.full_name,
         email: s.email, role: s.role || 'clinic_admin', clinic_id: s.clinic_id,
         clinic_name: s.clinic_name, clinic_slug: s.clinic_slug, access_scope: s.access_scope || 'all',
+        cedula_profesional: s.cedula_profesional || null, especialidad: s.especialidad || null,
+        gentilicio: s.gentilicio || null, profession: s.profession || null,
+        first_name: s.first_name || null, last_name: s.last_name || null,
         is_demo: s.is_demo || false,
         demo_expires_at: s.demo_expires_at || null,
       },
@@ -1680,7 +1686,7 @@ async function verifyOTP(otpToken, code, ip, ua) {
   const r = await sql`
     SELECT lo.id, lo.code, lo.attempts, lo.user_id,
            cu.username, cu.full_name, cu.email, cu.role, cu.clinic_id, cu.access_scope,
-           cu.gentilicio, cu.profession, cu.first_name, cu.last_name,
+           cu.cedula_profesional, cu.especialidad, cu.gentilicio, cu.profession, cu.first_name, cu.last_name,
            cu.is_demo, cu.demo_expires_at, c.slug AS clinic_slug, c.name AS clinic_name
     FROM login_otp lo
     JOIN clinic_users cu ON cu.id = lo.user_id
@@ -1725,6 +1731,7 @@ async function verifyOTP(otpToken, code, ip, ua) {
       id: row.user_id, username: row.username, full_name: row.full_name,
       email: row.email, role: row.role, clinic_id: row.clinic_id, access_scope: row.access_scope,
       clinic_slug: row.clinic_slug, clinic_name: row.clinic_name,
+      cedula_profesional: row.cedula_profesional || null, especialidad: row.especialidad || null,
       gentilicio: row.gentilicio, profession: row.profession,
       first_name: row.first_name, last_name: row.last_name,
       is_demo: row.is_demo || false, demo_expires_at: row.demo_expires_at || null,
