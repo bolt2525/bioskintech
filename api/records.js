@@ -885,29 +885,11 @@ export default async function handler(req, res) {
         if (!srcChk.rows.length) return res.status(403).json({ error: 'Paciente fuente no encontrado en tu clínica' });
         const src = srcChk.rows[0];
 
-        // Crear nuevo paciente con los datos básicos (sin RUT para evitar conflicto)
-        const newRut = import_fields.includes('basic') ? null : null; // RUT se omite; usuario lo asignará
-        const insertFields = import_fields.includes('basic')
-          ? { first_name: src.first_name, last_name: src.last_name, email: src.email, phone: src.phone,
-              birth_date: src.birth_date, gender: src.gender, address: src.address, occupation: src.occupation,
-              clinic_id: targetClinicId, created_by_user_id: suImp.user_id }
-          : { clinic_id: targetClinicId, created_by_user_id: suImp.user_id, first_name: src.first_name, last_name: src.last_name };
-
-        const newPatient = await pool.query(
-          `INSERT INTO patients (first_name, last_name, rut, email, phone, birth_date, gender, address, occupation, clinic_id, created_by_user_id)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
-          [insertFields.first_name, insertFields.last_name, src.rut,
-           insertFields.email || null, insertFields.phone || null,
-           insertFields.birth_date || null, insertFields.gender || null,
-           insertFields.address || null, insertFields.occupation || null,
-           targetClinicId, suImp.user_id || null]
-        );
-        const newPatientRow = newPatient.rows[0];
-
-        // Crear expediente inicial
+        // El paciente ya pertenece a esta clínica — no crear duplicado.
+        // Solo crear un nuevo expediente para el paciente existente.
         const newRecord = await pool.query(
           "INSERT INTO clinical_records (patient_id, clinic_id, status) VALUES ($1, $2, 'active') RETURNING *",
-          [newPatientRow.id, targetClinicId]
+          [src.id, targetClinicId]
         );
         const newRecordRow = newRecord.rows[0];
 
@@ -937,8 +919,8 @@ export default async function handler(req, res) {
           }
         }
 
-        await logAudit(pool, { patientId: newPatientRow.id, sessionUser: suImp, actionType: 'create', module: 'patient', summary: `Paciente importado desde ID ${source_patient_id}: ${src.first_name} ${src.last_name}` });
-        return res.status(201).json({ patient: newPatientRow, record: newRecordRow });
+        await logAudit(pool, { patientId: src.id, sessionUser: suImp, actionType: 'create', module: 'patient', summary: `Nuevo expediente creado para paciente existente ID ${source_patient_id}: ${src.first_name} ${src.last_name}` });
+        return res.status(201).json({ patient: src, record: newRecordRow });
       }
 
       case 'deletePatient': {
