@@ -738,8 +738,16 @@ export default async function handler(req, res) {
             if (!asgn.rows.length) return res.status(403).json({ error: 'Acceso no autorizado a este paciente' });
           }
         }
-        // Also fetch active record ID
-        const record = await pool.query('SELECT id FROM clinical_records WHERE patient_id = $1 AND status = \'active\' LIMIT 1', [id]);
+        // Also fetch active record ID — scoped to user for 'own' access
+        let recordQuery, recordParams;
+        if (su?.access_scope === 'own' && su.user_id != null && su.role !== 'master_admin') {
+          recordQuery = "SELECT id FROM clinical_records WHERE patient_id = $1 AND status = 'active' AND (created_by_user_id = $2 OR created_by_user_id IS NULL) ORDER BY created_at DESC LIMIT 1";
+          recordParams = [id, su.user_id];
+        } else {
+          recordQuery = "SELECT id FROM clinical_records WHERE patient_id = $1 AND status = 'active' ORDER BY created_at DESC LIMIT 1";
+          recordParams = [id];
+        }
+        const record = await pool.query(recordQuery, recordParams);
         return res.status(200).json({ ...patient.rows[0], active_record_id: record.rows[0]?.id || null });
       }
 
@@ -1170,17 +1178,33 @@ export default async function handler(req, res) {
 
         // If no recordId provided, try to find one for the patient
         if ((!targetRecordId || targetRecordId === 'undefined' || targetRecordId === 'null') && patientId) {
-           // Try to find active record first
-           let r = await pool.query('SELECT id FROM clinical_records WHERE patient_id = $1 AND status = \'active\' LIMIT 1', [patientId]);
-           
-           // If no active record, try to find ANY record
-           if (r.rows.length === 0) {
-             r = await pool.query('SELECT id FROM clinical_records WHERE patient_id = $1 ORDER BY created_at DESC LIMIT 1', [patientId]);
+           // Find record filtered by user scope
+           const isOwnScope = su?.access_scope === 'own' && su?.user_id != null && su?.role !== 'master_admin';
+           let r;
+           if (isOwnScope) {
+             r = await pool.query(
+               "SELECT id FROM clinical_records WHERE patient_id = $1 AND (created_by_user_id = $2 OR created_by_user_id IS NULL) AND status = 'active' ORDER BY created_at DESC LIMIT 1",
+               [patientId, su.user_id]
+             );
+             if (r.rows.length === 0) {
+               r = await pool.query(
+                 'SELECT id FROM clinical_records WHERE patient_id = $1 AND (created_by_user_id = $2 OR created_by_user_id IS NULL) ORDER BY created_at DESC LIMIT 1',
+                 [patientId, su.user_id]
+               );
+             }
+           } else {
+             r = await pool.query("SELECT id FROM clinical_records WHERE patient_id = $1 AND status = 'active' ORDER BY created_at DESC LIMIT 1", [patientId]);
+             if (r.rows.length === 0) {
+               r = await pool.query('SELECT id FROM clinical_records WHERE patient_id = $1 ORDER BY created_at DESC LIMIT 1', [patientId]);
+             }
            }
            
-           // If still no record, create one
+           // If still no record, create one with user ownership
            if (r.rows.length === 0) {
-             const newRec = await pool.query('INSERT INTO clinical_records (patient_id, clinic_id, status) VALUES ($1, $2, \'active\') RETURNING id', [patientId, effectiveClinicId]);
+             const newRec = await pool.query(
+               'INSERT INTO clinical_records (patient_id, clinic_id, created_by_user_id, status) VALUES ($1, $2, $3, $4) RETURNING id',
+               [patientId, effectiveClinicId, su?.user_id || null, 'active']
+             );
              targetRecordId = newRec.rows[0].id;
            } else {
              targetRecordId = r.rows[0].id;
@@ -1206,6 +1230,13 @@ export default async function handler(req, res) {
           const pChk = await pool.query('SELECT clinic_id FROM patients WHERE id = $1', [patientIdFromRecord]);
           if (pChk.rows.length && pChk.rows[0].clinic_id !== grdCid)
             return res.status(403).json({ error: 'Acceso no autorizado' });
+        }
+        // own-scope: verify this record belongs to the current user
+        if (suGrd?.access_scope === 'own' && suGrd?.user_id != null && suGrd?.role !== 'master_admin') {
+          if (recordDetails.rows[0].created_by_user_id !== null &&
+              recordDetails.rows[0].created_by_user_id !== suGrd.user_id) {
+            return res.status(403).json({ error: 'No tienes permiso para acceder a este expediente' });
+          }
         }
 
         // Helper to safely query tables that might not exist yet
