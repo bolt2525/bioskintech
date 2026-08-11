@@ -2321,9 +2321,6 @@ export default async function handler(req, res) {
         }
       }
 
-      default:
-        return res.status(400).json({ error: 'Invalid action' });
-
       // ==========================================
       // PHOTOS MODULE (Cloudflare R2)
       // ==========================================
@@ -2409,6 +2406,9 @@ export default async function handler(req, res) {
           return res.status(500).json({ error: err.message });
         }
       }
+
+      default:
+        return res.status(400).json({ error: 'Invalid action' });
     }
     } finally {
       // Limpiar tenant antes de devolver la conexión al pool
