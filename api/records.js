@@ -905,9 +905,9 @@ export default async function handler(req, res) {
         if (!srcChk.rows.length) return res.status(403).json({ error: 'Paciente fuente no encontrado en tu clínica' });
         const src = srcChk.rows[0];
 
-        // Si el usuario ya tiene un expediente para este paciente, devolver el existente (idempotente)
+        // Idempotente: solo match exacto por user_id (NULL = legacy sin dueño, no cuenta como propio)
         const existingRecord = await pool.query(
-          'SELECT * FROM clinical_records WHERE patient_id = $1 AND (created_by_user_id = $2 OR created_by_user_id IS NULL) AND status = $3 ORDER BY created_at DESC LIMIT 1',
+          'SELECT * FROM clinical_records WHERE patient_id = $1 AND created_by_user_id = $2 AND status = $3 ORDER BY created_at DESC LIMIT 1',
           [src.id, suImp.user_id, 'active']
         );
         if (existingRecord.rows.length > 0) {
@@ -927,11 +927,11 @@ export default async function handler(req, res) {
           [src.id, suImp.user_id, suImp.user_id]
         );
 
-        // Copiar antecedentes si se solicita
+        // Copiar antecedentes si se solicita — desde el expediente más antiguo del paciente, excluyendo el recién creado
         if (import_fields.includes('history')) {
           const srcRec = await pool.query(
-            'SELECT id FROM clinical_records WHERE patient_id = $1 ORDER BY created_at LIMIT 1',
-            [source_patient_id]
+            'SELECT id FROM clinical_records WHERE patient_id = $1 AND id != $2 ORDER BY created_at ASC LIMIT 1',
+            [source_patient_id, newRecordRow.id]
           );
           if (srcRec.rows.length > 0) {
             const hist = await pool.query(
