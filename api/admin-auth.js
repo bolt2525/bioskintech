@@ -88,13 +88,23 @@ async function ensureNewColumns() {
     await sql.query("ALTER TABLE invite_links ADD COLUMN IF NOT EXISTS access_scope VARCHAR(20) DEFAULT 'own'");
   } catch { /* non-fatal */ }
 
-  // Fix invite_links.clinic_id if it was created as INTEGER instead of UUID
+  // Alinear invite_links.clinic_id al tipo real de clinics.id (puede ser INTEGER o UUID según versión del schema)
   try {
-    const t = await sql`SELECT data_type FROM information_schema.columns WHERE table_name='invite_links' AND column_name='clinic_id'`;
-    if (t.rows[0]?.data_type === 'integer') {
-      // Drop and recreate as UUID — old rows had wrong integer IDs anyway
+    const [ct, it] = await Promise.all([
+      sql`SELECT data_type FROM information_schema.columns WHERE table_name='clinics'      AND column_name='id'`,
+      sql`SELECT data_type FROM information_schema.columns WHERE table_name='invite_links' AND column_name='clinic_id'`,
+    ]);
+    const clinicsType  = ct.rows[0]?.data_type; // tipo real de clinics.id en esta BD
+    const inviteType   = it.rows[0]?.data_type; // tipo actual de invite_links.clinic_id
+
+    if (clinicsType && clinicsType !== inviteType) {
+      // Tipo incorrecto (o columna ausente) — recrear para que coincida con clinics.id
       await sql.query('ALTER TABLE invite_links DROP COLUMN IF EXISTS clinic_id');
-      await sql.query('ALTER TABLE invite_links ADD COLUMN clinic_id UUID REFERENCES clinics(id) ON DELETE CASCADE');
+      if (clinicsType === 'uuid') {
+        await sql.query("ALTER TABLE invite_links ADD COLUMN clinic_id UUID    REFERENCES clinics(id) ON DELETE CASCADE");
+      } else {
+        await sql.query("ALTER TABLE invite_links ADD COLUMN clinic_id INTEGER REFERENCES clinics(id) ON DELETE CASCADE");
+      }
     }
   } catch { /* non-fatal */ }
 
