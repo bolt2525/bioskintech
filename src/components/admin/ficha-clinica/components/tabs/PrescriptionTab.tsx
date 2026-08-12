@@ -340,16 +340,14 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, con
 
                <div class="section-header">INDICACIONES:</div>
                <ol class="product-list">
-                 ${currentPrescription.items.map(item => `
-                   <li>
-                     ${item.nombre_comercial || item.medicamento} ${item.presentacion || ''}
-                   </li>
-                 `).join('')}
+                 ${currentPrescription.items.filter(i => i.nombre_comercial || i.medicamento).map(item => `
+                   <li>${(item.nombre_comercial || item.medicamento || '')}${item.presentacion ? ' ' + item.presentacion : ''}${item.dosis ? ' — ' + item.dosis : ''}</li>
+                 `).join('') || '<li style="color:#aaa;list-style:none">Sin medicamentos registrados</li>'}
                </ol>
 
                <div class="footer">
-                  <div class="footer-item"><span class="icon"></span> ${clinicPhone}</div>
-                  <div class="footer-item"><span class="icon"></span> ${clinicAddr}</div>
+                  ${clinicPhone ? `<div class="footer-item">${clinicPhone}</div>` : ''}
+                  ${clinicAddr ? `<div class="footer-item">${clinicAddr}</div>` : ''}
                </div>
             </div>
 
@@ -378,28 +376,24 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, con
                <div class="routine-section">
                  <div class="routine-title">RUTINA DE MAÑANA</div>
                  <ol class="product-list">
-                   ${currentPrescription.items.filter(i => i.rutina === 'mañana' || i.rutina === 'ambos').map(item => `
-                     <li>
-                       ${item.indicaciones || `Aplicar ${item.nombre_comercial || item.medicamento}`}
-                     </li>
-                   `).join('')}
+                   ${currentPrescription.items.filter(i => (i.rutina === 'mañana' || i.rutina === 'ambos') && (i.nombre_comercial || i.medicamento)).map(item => `
+                     <li>${item.indicaciones || `Aplicar ${item.nombre_comercial || item.medicamento}`}</li>
+                   `).join('') || '<li style="color:#aaa;list-style:none">—</li>'}
                  </ol>
                </div>
 
                <div class="routine-section">
                  <div class="routine-title">RUTINA DE NOCHE</div>
                  <ol class="product-list">
-                   ${currentPrescription.items.filter(i => i.rutina === 'noche' || i.rutina === 'ambos').map(item => `
-                     <li>
-                       ${item.indicaciones || `Aplicar ${item.nombre_comercial || item.medicamento}`}
-                     </li>
-                   `).join('')}
+                   ${currentPrescription.items.filter(i => (i.rutina === 'noche' || i.rutina === 'ambos') && (i.nombre_comercial || i.medicamento)).map(item => `
+                     <li>${item.indicaciones || `Aplicar ${item.nombre_comercial || item.medicamento}`}</li>
+                   `).join('') || '<li style="color:#aaa;list-style:none">—</li>'}
                  </ol>
                </div>
                
                <div class="footer">
-                  <div class="footer-item"><span class="icon"></span> ${clinicPhone}</div>
-                  <div class="footer-item"><span class="icon"></span> ${clinicAddr}</div>
+                  ${clinicPhone ? `<div class="footer-item">${clinicPhone}</div>` : ''}
+                  ${clinicAddr ? `<div class="footer-item">${clinicAddr}</div>` : ''}
                </div>
             </div>
           </div>

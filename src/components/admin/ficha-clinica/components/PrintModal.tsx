@@ -72,7 +72,7 @@ export default function PrintModal({ patient, recordId, recordData, activeConsul
   const [selected, setSelected] = useState<Record<string, string[] | null>>({});
   const [showProfForm, setShowProfForm] = useState(false);
   const [profTemp, setProfTemp] = useState({
-    name: user?.full_name || user?.username || '',
+    name: [user?.gentilicio, user?.full_name].filter(Boolean).join(' ') || user?.username || '',
     cedula: user?.cedula_profesional || '',
     matricula: user?.matricula_senescyt || '',
     especialidad: user?.especialidad || '',
@@ -86,13 +86,14 @@ export default function PrintModal({ patient, recordId, recordData, activeConsul
   // Sync profTemp with fresh user data; only fill still-empty slots to preserve manual edits
   useEffect(() => {
     if (!user) return;
+    const freshName = [user.gentilicio, user.full_name].filter(Boolean).join(' ') || user.username || '';
     setProfTemp(prev => ({
-      name:        prev.name        || user.full_name        || user.username || '',
-      cedula:      prev.cedula      || user.cedula_profesional || '',
-      matricula:   prev.matricula   || user.matricula_senescyt || '',
-      especialidad: prev.especialidad || user.especialidad     || '',
+      name:         prev.name         || freshName,
+      cedula:       prev.cedula       || user.cedula_profesional || '',
+      matricula:    prev.matricula    || user.matricula_senescyt || '',
+      especialidad: prev.especialidad || user.especialidad       || '',
     }));
-  }, [user?.cedula_profesional, user?.matricula_senescyt, user?.especialidad, user?.full_name]);
+  }, [user?.gentilicio, user?.cedula_profesional, user?.matricula_senescyt, user?.especialidad, user?.full_name]);
 
   const missingFields: string[] = [];
   if (!profTemp.matricula) missingFields.push('matrícula SENESCYT');

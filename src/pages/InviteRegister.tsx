@@ -232,9 +232,22 @@ export default function InviteRegister() {
                 className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none bg-white transition-all">
                 <option value="">Sin título</option>
                 <option>Dr.</option><option>Dra.</option>
+                <option>Md.</option>
+                <option>Odont.</option>
                 <option>Lcdo.</option><option>Lcda.</option>
-                <option>Ing.</option><option>Mg.</option>
-                <option>Cosmiatra</option><option>Esteticista</option>
+                <option>Lic.</option>
+                <option>Enf.</option>
+                <option>Psic.</option>
+                <option>Nut.</option>
+                <option>Bioquím.</option>
+                <option>Farm.</option>
+                <option>Ing.</option>
+                <option>Mg.</option><option>Mgtr.</option>
+                <option>Ph.D.</option>
+                <option>Cosm.</option>
+                <option>Cosmiatra</option>
+                <option>Esteticista</option>
+                <option>Sr.</option><option>Sra.</option>
               </select>
             </div>
 

@@ -1263,7 +1263,9 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                       <div>
                         <h2 className="text-2xl font-bold text-gray-900 tracking-tight">{clinicDisplayName.toUpperCase()}</h2>
                         <p className="text-base font-bold text-[#deb887] mt-1">{(currentConsent?.signatures?.professional_name || professionalName).toUpperCase()}</p>
-                        <p className="text-sm text-gray-500">Cosmiatría y Dermatocosmiatría Clínica</p>
+                        {(clinic.general.tagline || user?.especialidad) && (
+                          <p className="text-sm text-gray-500">{clinic.general.tagline || user?.especialidad}</p>
+                        )}
                       </div>
                     </div>
                     <div className="text-right text-sm text-gray-600 space-y-1">

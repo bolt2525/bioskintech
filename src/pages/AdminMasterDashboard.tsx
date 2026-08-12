@@ -2114,9 +2114,23 @@ export default function AdminMasterDashboard() {
                   <option value="">—</option>
                   <option value="Dr.">Dr.</option>
                   <option value="Dra.">Dra.</option>
-                  <option value="Lic.">Lic.</option>
+                  <option value="Md.">Md.</option>
+                  <option value="Odont.">Odont.</option>
+                  <option value="Lcdo.">Lcdo.</option>
                   <option value="Lcda.">Lcda.</option>
+                  <option value="Lic.">Lic.</option>
+                  <option value="Enf.">Enf.</option>
+                  <option value="Psic.">Psic.</option>
+                  <option value="Nut.">Nut.</option>
+                  <option value="Bioquím.">Bioquím.</option>
+                  <option value="Farm.">Farm.</option>
                   <option value="Ing.">Ing.</option>
+                  <option value="Mg.">Mg.</option>
+                  <option value="Mgtr.">Mgtr.</option>
+                  <option value="Ph.D.">Ph.D.</option>
+                  <option value="Cosm.">Cosm.</option>
+                  <option value="Cosmiatra">Cosmiatra</option>
+                  <option value="Esteticista">Esteticista</option>
                   <option value="Sr.">Sr.</option>
                   <option value="Sra.">Sra.</option>
                 </select>
