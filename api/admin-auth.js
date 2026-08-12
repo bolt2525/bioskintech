@@ -2192,9 +2192,8 @@ export default async function handler(req, res) {
     if (action === 'oauthStart') {
       const { clinicId } = req.body || {};
       if (!clinicId) return res.status(400).json({ error: 'clinicId requerido' });
-      const targetClinicId = parseInt(clinicId);
       // clinic_admin puede conectar solo su propia clínica; master_admin puede conectar cualquiera
-      if (user.role === 'clinic_admin' && user.clinic_id !== targetClinicId)
+      if (user.role === 'clinic_admin' && String(user.clinic_id) !== String(clinicId))
         return res.status(403).json({ error: 'Solo puedes conectar tu propia clínica' });
       if (!requireRole(user, 'master_admin', 'clinic_admin'))
         return res.status(403).json({ error: 'Sin permiso' });
@@ -2306,7 +2305,7 @@ export default async function handler(req, res) {
       const clinicId = req.query.clinicId || req.body?.clinicId;
       if (!clinicId) return res.status(400).json({ error: 'clinicId requerido' });
       // master_admin puede ver cualquier clínica; clinic_admin solo la suya
-      if (user.role !== 'master_admin' && parseInt(clinicId) !== user.clinic_id)
+      if (user.role !== 'master_admin' && String(clinicId) !== String(user.clinic_id))
         return res.status(403).json({ error: 'Sin permiso' });
 
       const r = await sql`SELECT * FROM clinic_settings WHERE clinic_id = ${clinicId}`;
@@ -2345,7 +2344,7 @@ export default async function handler(req, res) {
       if (!clinicId || !section || !data) return res.status(400).json({ error: 'clinicId, section y data son requeridos' });
       if (!['general','treatments','email','agenda','finanzas','inventario','notificaciones'].includes(section))
         return res.status(400).json({ error: 'section inválida' });
-      if (user.role !== 'master_admin' && parseInt(clinicId) !== user.clinic_id)
+      if (user.role !== 'master_admin' && String(clinicId) !== String(user.clinic_id))
         return res.status(403).json({ error: 'Sin permiso' });
 
       const dataStr = JSON.stringify(data);
@@ -2442,7 +2441,7 @@ export default async function handler(req, res) {
     if (action === 'getClinicConsentTemplates') {
       const { clinicId } = req.query;
       if (!clinicId) return res.status(400).json({ error: 'clinicId requerido' });
-      if (user.role !== 'master_admin' && parseInt(clinicId) !== user.clinic_id)
+      if (user.role !== 'master_admin' && String(clinicId) !== String(user.clinic_id))
         return res.status(403).json({ error: 'Sin permiso' });
       const result = await sql`
         SELECT ct.* FROM consent_templates ct

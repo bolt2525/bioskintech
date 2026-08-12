@@ -2753,10 +2753,14 @@ export default function AdminMasterDashboard() {
                                           onChange={async e => {
                                             const assign = e.target.checked;
                                             setSettingsAssigned(p => assign ? [...p, t.id] : p.filter(id => id !== t.id));
-                                            await fetch('/api/admin-auth?action=assignConsentTemplate', {
-                                              method:'POST', headers:authHeader(),
-                                              body:JSON.stringify({clinicId:settingsModal.clinicId, templateId:t.id, assign}),
-                                            });
+                                            try {
+                                              const r = await fetch('/api/admin-auth?action=assignConsentTemplate', {
+                                                method:'POST', headers:authHeader(),
+                                                body:JSON.stringify({clinicId:settingsModal.clinicId, templateId:t.id, assign}),
+                                              });
+                                              const d = await r.json();
+                                              flash(d.error || (assign ? `"${t.name}" asignada` : `"${t.name}" removida`), d.error ? 'err' : 'ok');
+                                            } catch { flash('Error al actualizar asignación', 'err'); }
                                           }} />
                                         <div className="min-w-0">
                                           <p className="text-sm text-gray-900 truncate">{t.name}</p>
@@ -2878,7 +2882,11 @@ export default function AdminMasterDashboard() {
                 {settingsData && settingsTab !== 'modules' && settingsTab !== 'grupos' && (
                   <div className="px-5 py-3 border-t bg-gray-50 flex justify-end gap-2">
                     <button onClick={() => setSettingsModal(null)} className="px-4 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-100">Cancelar</button>
-                    <button onClick={() => saveSettingsSection(settingsTab as keyof ClinicSettingsData)}
+                    <button onClick={() => {
+                      // agenda tab also owns the treatments list
+                      if (settingsTab === 'agenda') saveSettingsSection('treatments');
+                      saveSettingsSection(settingsTab as keyof ClinicSettingsData);
+                    }}
                       disabled={settingsSaving}
                       className="flex items-center gap-2 px-5 py-2 rounded-lg text-white text-sm font-medium disabled:opacity-60"
                       style={{background:'linear-gradient(135deg,#deb887,#c5a075)'}}>
