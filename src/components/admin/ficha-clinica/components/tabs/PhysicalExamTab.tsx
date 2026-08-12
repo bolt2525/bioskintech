@@ -380,6 +380,8 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
   // 3D region context for modal suggestions
   const [pendingRegion, setPendingRegion] = useState<FacialRegion | null>(null);
   const [showReferenceLines, setShowReferenceLines] = useState(true);
+  // Warning modal para confirmación de guardado con campos incompletos
+  const [saveWarning, setSaveWarning] = useState<{ messages: string[]; payload: any } | null>(null);
 
   useEffect(() => {
     if (physicalExams.length > 0 && !currentExam.id) {
@@ -468,37 +470,15 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
     }
   };
 
-  const handleSubmit = async () => {
-    // Validation
-    const hasEmptyFields = !currentExam.skin_type || !currentExam.phototype || !currentExam.glogau_scale;
-    const hasNoMarks = faceMarks.length === 0 && bodyMarks.length === 0;
-
-    if (hasEmptyFields || hasNoMarks) {
-      let warningMsg = 'Advertencia:\n';
-      if (hasEmptyFields) warningMsg += '- Hay campos obligatorios sin seleccionar (Tipo de piel, Fototipo, Glogau).\n';
-      if (hasNoMarks) warningMsg += '- No se han registrado lesiones en el mapa facial ni corporal.\n';
-      warningMsg += '\n¿Desea guardar de todos modos?';
-
-      if (!confirm(warningMsg)) return;
-    }
-
+  const doSave = async (payload: any) => {
     setSaving(true);
     setMessage(null);
-
-    const examToSave = {
-      ...currentExam,
-      face_map_data: JSON.stringify(faceMarks),
-      body_map_data: JSON.stringify(bodyMarks),
-      ...(consultationId ? { consultation_id: consultationId } : {})
-    };
-
     try {
       const response = await recordsFetch('/api/records?action=savePhysicalExam', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(examToSave),
+        body: JSON.stringify(payload),
       });
-
       if (response.ok) {
         setMessage({ type: 'success', text: 'Examen físico guardado correctamente' });
         onSave();
@@ -511,6 +491,28 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleSubmit = () => {
+    const hasEmptyFields = !currentExam.skin_type || !currentExam.phototype || !currentExam.glogau_scale;
+    const hasNoMarks = faceMarks.length === 0 && bodyMarks.length === 0;
+
+    const payload = {
+      ...currentExam,
+      face_map_data: JSON.stringify(faceMarks),
+      body_map_data: JSON.stringify(bodyMarks),
+      ...(consultationId ? { consultation_id: consultationId } : {})
+    };
+
+    if (hasEmptyFields || hasNoMarks) {
+      const msgs: string[] = [];
+      if (hasEmptyFields) msgs.push('Hay campos obligatorios sin seleccionar (Tipo de piel, Fototipo, Glogau).');
+      if (hasNoMarks) msgs.push('No se han registrado lesiones en el mapa facial ni corporal.');
+      setSaveWarning({ messages: msgs, payload });
+      return;
+    }
+
+    doSave(payload);
   };
 
   const handlePrint = () => {
@@ -647,19 +649,70 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
       className="flex flex-col md:flex-row h-auto md:h-[800px] gap-6"
     >
       {typeof document !== 'undefined' && createPortal(
-        <AnimatePresence>
-          {isModalOpen && editingMark && (
-            <MarkEditModal 
-              mark={editingMark} 
-              onSave={saveMarkFromModal} 
-              onCancel={() => { setIsModalOpen(false); setPendingRegion(null); }}
-              categories={LESION_CATALOG}
-              tercio={pendingRegion?.tercio}
-              suggestedZones={activeTab === 'facial' ? pendingRegion?.suggestions : undefined}
-              zoneGroups={activeTab === 'corporal' ? BODY_ZONE_GROUPS : undefined}
-            />
-          )}
-        </AnimatePresence>,
+        <>
+          <AnimatePresence>
+            {isModalOpen && editingMark && (
+              <MarkEditModal 
+                mark={editingMark} 
+                onSave={saveMarkFromModal} 
+                onCancel={() => { setIsModalOpen(false); setPendingRegion(null); }}
+                categories={LESION_CATALOG}
+                tercio={pendingRegion?.tercio}
+                suggestedZones={activeTab === 'facial' ? pendingRegion?.suggestions : undefined}
+                zoneGroups={activeTab === 'corporal' ? BODY_ZONE_GROUPS : undefined}
+              />
+            )}
+          </AnimatePresence>
+          <AnimatePresence>
+            {saveWarning && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+              >
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.9, y: 10 }}
+                  className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-gray-100 p-6"
+                >
+                  <div className="flex items-start gap-4 mb-5">
+                    <div className="p-2.5 rounded-xl bg-amber-100 shrink-0">
+                      <AlertCircle className="w-5 h-5 text-amber-600" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-gray-800 text-lg">Advertencia</h3>
+                      <ul className="mt-2 space-y-1">
+                        {saveWarning.messages.map((m, i) => (
+                          <li key={i} className="text-sm text-gray-600 flex items-start gap-2">
+                            <span className="text-amber-500 font-bold mt-0.5">•</span>
+                            {m}
+                          </li>
+                        ))}
+                      </ul>
+                      <p className="mt-3 text-sm text-gray-500">¿Desea guardar de todos modos?</p>
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+                    <button
+                      onClick={() => setSaveWarning(null)}
+                      className="px-5 py-2.5 text-gray-600 hover:bg-gray-50 rounded-xl transition-colors border border-gray-200 font-medium"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={() => { const p = saveWarning.payload; setSaveWarning(null); doSave(p); }}
+                      className="px-5 py-2.5 bg-[#deb887] text-white rounded-xl hover:bg-[#c5a075] transition-colors font-medium shadow-lg shadow-[#deb887]/20"
+                    >
+                      Guardar de todos modos
+                    </button>
+                  </div>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </>,
         document.body
       )}
 

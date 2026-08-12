@@ -1971,30 +1971,29 @@ const ThreeEngine: React.FC<{
         markerGroup.add(new THREE.Mesh(outerGeo, outerMat));
         group.add(markerGroup);
 
-      } else if (marker.type === 'Zonal' && faceMesh) {
-        let targetMesh: THREE.Mesh | null = null;
-        if (faceMesh.type === 'Group' || faceMesh.type === 'Scene') {
-          faceMesh.traverse((child) => {
-            if (child instanceof THREE.Mesh && !targetMesh) targetMesh = child;
-          });
-        } else if (faceMesh instanceof THREE.Mesh) {
-          targetMesh = faceMesh;
-        }
-        if (!targetMesh) return;
+      } else if (marker.type === 'Zonal') {
+        // Esfera grande semi-transparente — más robusta que DecalGeometry para cualquier modelo
+        const markerGroup = new THREE.Group();
+        markerGroup.position.copy(pos);
+        markerGroup.userData.markerId = marker.id ?? `m-${Date.now()}`;
 
-        let width = marker.scale?.x || marker.radius || 0.3;
-        let height = marker.scale?.y || marker.radius || 0.3;
-        const euler = new THREE.Euler(marker.rotation[0], marker.rotation[1], marker.rotation[2]);
-        const depth = Math.max(width, height) * 1.5;
-        const size = new THREE.Vector3(width, height, depth);
+        const radius = marker.radius || 0.22;
 
-        const decalGeo = new DecalGeometry(targetMesh, pos, euler, size);
-        const decalMat = new THREE.MeshPhysicalMaterial({
-          color, transparent: true, opacity: 0.6, roughness: 0.2, clearcoat: 1,
-          polygonOffset: true, polygonOffsetFactor: -1,
+        const haloGeo = new THREE.SphereGeometry(radius, 18, 18);
+        const haloMat = new THREE.MeshBasicMaterial({
+          color, transparent: true, opacity: 0.28, depthWrite: false, depthTest: false,
         });
-        const decalMesh = new THREE.Mesh(decalGeo, decalMat);
-        group.add(decalMesh);
+        markerGroup.add(new THREE.Mesh(haloGeo, haloMat));
+
+        const ringGeo = new THREE.TorusGeometry(radius, radius * 0.06, 8, 32);
+        const ringMat = new THREE.MeshBasicMaterial({ color, depthWrite: false, depthTest: false });
+        markerGroup.add(new THREE.Mesh(ringGeo, ringMat));
+
+        const coreGeo = new THREE.SphereGeometry(radius * 0.18, 8, 8);
+        const coreMat = new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false });
+        markerGroup.add(new THREE.Mesh(coreGeo, coreMat));
+
+        group.add(markerGroup);
       }
     });
   }, [markers, modelVersion]);
