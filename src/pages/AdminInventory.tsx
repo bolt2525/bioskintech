@@ -22,6 +22,8 @@ export default function AdminInventory() {
   const [stats, setStats] = useState<any>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [loading, setLoading] = useState(true);
+  // Categories from clinic settings (fallback to categories from existing items)
+  const [settingsCategories, setSettingsCategories] = useState<string[]>([]);
 
   // Search & filter state
   const [search, setSearch] = useState('');
@@ -40,6 +42,18 @@ export default function AdminInventory() {
   const [clinicUsers, setClinicUsers] = useState<{ id: number; username: string; full_name: string }[]>([]);
 
   useEffect(() => { fetchInventory(); fetchStats(); }, [filterUserId]);
+
+  // Cargar categorías y settings de inventario desde configuración de clínica
+  useEffect(() => {
+    const cid = user?.clinic_id;
+    if (!cid) return;
+    fetch(`/api/admin-auth?action=getClinicSettings&clinicId=${cid}`, {
+      headers: { Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken') || ''}` }
+    }).then(r => r.json()).then(d => {
+      const cats = d.settings?.inventario?.categories;
+      if (Array.isArray(cats) && cats.length > 0) setSettingsCategories(cats);
+    }).catch(() => {});
+  }, [user?.clinic_id]);
 
   // Cargar usuarios de la clínica para el filtro (solo admins)
   useEffect(() => {
@@ -174,9 +188,11 @@ export default function AdminInventory() {
   }, [items, search, categoryFilter]);
 
   const categories = useMemo(() => {
-    const cats = Array.from(new Set(items.map(i => i.category).filter(Boolean)));
-    return cats.sort();
-  }, [items]);
+    // Merge categories from settings (curated list) with those already in use
+    const fromItems = Array.from(new Set(items.map(i => i.category).filter(Boolean)));
+    const merged = Array.from(new Set([...settingsCategories, ...fromItems]));
+    return merged.sort();
+  }, [items, settingsCategories]);
 
   const suggestedSku = useMemo(() => {
     const numericSkus = items
@@ -394,6 +410,7 @@ export default function AdminInventory() {
         <InventoryForm
           initialData={selectedItem}
           suggestedSku={selectedItem?.id ? undefined : suggestedSku}
+          categories={categories.length > 0 ? categories : undefined}
           onClose={() => { setShowForm(false); setSelectedItem(null); }}
           onSave={handleCreateItem}
           onSaveWithStock={selectedItem?.id ? undefined : handleCreateWithStock}

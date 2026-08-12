@@ -5,13 +5,14 @@ import { X, Save, AlertCircle, ChevronRight, ChevronLeft, Package, Plus, Calenda
 interface InventoryFormProps {
   initialData?: any;
   suggestedSku?: string;
+  categories?: string[];  // from clinic inventario settings
   onClose: () => void;
   onSave: (data: any) => Promise<void>;
   /** Called only on new products, with initial stock data */
   onSaveWithStock?: (itemData: any, stockData: any) => Promise<void>;
 }
 
-export default function InventoryForm({ initialData, suggestedSku, onClose, onSave, onSaveWithStock }: InventoryFormProps) {
+export default function InventoryForm({ initialData, suggestedSku, categories, onClose, onSave, onSaveWithStock }: InventoryFormProps) {
   const isEditing = !!initialData?.id;
   const [step, setStep] = useState<1 | 2>(1);
 
@@ -220,10 +221,10 @@ export default function InventoryForm({ initialData, suggestedSku, onClose, onSa
                     <div>
                       <label className={labelCls}>Categoría</label>
                       <select className={inputCls} value={formData.category} onChange={e => f('category', e.target.value)}>
-                        <option>Inyectable</option>
-                        <option>Consumible</option>
-                        <option>Venta</option>
-                        <option>Equipamiento</option>
+                        {(categories && categories.length > 0
+                          ? categories
+                          : ['Inyectable','Consumible','Venta','Equipamiento']
+                        ).map(c => <option key={c}>{c}</option>)}
                       </select>
                     </div>
                     <div>

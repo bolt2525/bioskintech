@@ -32,13 +32,26 @@ function getDaysFromDate(startDate: Date, count = 30) {
   return days;
 }
 
-const allTimes = ['07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'];
+// Generates time slots at slotMinutes intervals between startHour and endHour
+function generateTimeSlots(startHour: string, endHour: string, slotMinutes: number): string[] {
+  const [sH, sM] = startHour.split(':').map(Number);
+  const [eH, eM] = endHour.split(':').map(Number);
+  const endTotal = eH * 60 + eM;
+  const slots: string[] = [];
+  let total = sH * 60 + sM;
+  while (total < endTotal) {
+    const h = Math.floor(total / 60), m = total % 60;
+    slots.push(`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`);
+    total += slotMinutes;
+  }
+  return slots;
+}
 
 type EventType = { start: string; end: string };
-function isHourOccupied2h(selectedDay: string, hour: string, events: EventType[]): boolean {
+function isHourOccupied(selectedDay: string, hour: string, events: EventType[], slotMinutes: number): boolean {
   if (!selectedDay) return true;
   const startTime = new Date(selectedDay + 'T' + hour + ':00');
-  const endTime = new Date(startTime.getTime() + 2 * 60 * 60 * 1000);
+  const endTime = new Date(startTime.getTime() + slotMinutes * 60 * 1000);
   return events.some(ev => {
     const evStart = new Date(ev.start);
     const evEnd = new Date(ev.end);
@@ -109,6 +122,10 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
   const [clinicTreatments, setClinicTreatments] = useState<string[]>([]);
   // Staff/médicos disponibles para asignar a la cita
   const [staffMembers, setStaffMembers] = useState<Array<{ name: string; email: string }>>([]);
+  // Agenda settings from clinic config
+  const [agendaSlotMinutes, setAgendaSlotMinutes] = useState(60);
+  const [agendaStartHour, setAgendaStartHour]     = useState('07:00');
+  const [agendaEndHour, setAgendaEndHour]         = useState('20:00');
   useEffect(() => {
     if (!user?.clinic_id) return;
     fetch(`/api/admin-auth?action=getClinicSettings&clinicId=${user.clinic_id}`, {
@@ -118,9 +135,13 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
       .then(d => {
         if (d.settings?.treatments?.length) setClinicTreatments(d.settings.treatments);
         if (d.settings?.email?.staff_members?.length) setStaffMembers(d.settings.email.staff_members);
+        if (d.settings?.agenda?.slot_minutes) setAgendaSlotMinutes(d.settings.agenda.slot_minutes);
+        if (d.settings?.agenda?.start_hour)   setAgendaStartHour(d.settings.agenda.start_hour);
+        if (d.settings?.agenda?.end_hour)     setAgendaEndHour(d.settings.agenda.end_hour);
       })
       .catch(() => {}); // fallback silencioso al catálogo global
   }, [user?.clinic_id]);
+  const availableTimes = generateTimeSlots(agendaStartHour, agendaEndHour, agendaSlotMinutes);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   
@@ -187,21 +208,14 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
     setError('');
     try {
       const start = `${selectedDay}T${selectedHour}:00${TIMEZONE}`;
-      const [h, m] = selectedHour.split(':').map(Number);
-      let endHour = h + 2;
-      let endDay = selectedDay;
-      if (endHour >= 24) {
-        endHour -= 24;
-        const [year, month, day] = selectedDay.split('-').map(Number);
-        const nextDate = new Date(year, month - 1, day + 1);
-        endDay = [
-          nextDate.getFullYear(),
-          (nextDate.getMonth() + 1).toString().padStart(2, '0'),
-          nextDate.getDate().toString().padStart(2, '0')
-        ].join('-');
-      }
       const pad = (n: number) => n.toString().padStart(2, '0');
-      const end = `${endDay}T${pad(endHour)}:${pad(m)}:00${TIMEZONE}`;
+      const endMs = new Date(`${selectedDay}T${selectedHour}:00`).getTime() + agendaSlotMinutes * 60 * 1000;
+      const endObj = new Date(endMs);
+      const endDay = `${endObj.getFullYear()}-${pad(endObj.getMonth()+1)}-${pad(endObj.getDate())}`;
+      const end = `${endDay}T${pad(endObj.getHours())}:${pad(endObj.getMinutes())}:00${TIMEZONE}`;
+      const durationLabel = agendaSlotMinutes >= 60
+        ? `${agendaSlotMinutes / 60}h`
+        : `${agendaSlotMinutes} min`;
 
       // Mensaje con notas del administrador
       const adminMessage = formData.adminNotes ? 
@@ -220,7 +234,7 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
             'Email: ' + formData.email + '\n' +
             'Servicio: ' + formData.service + '\n' +
             'Fecha: ' + selectedDay + '\n' +
-            'Hora: ' + selectedHour + ' (2 horas)' + '\n' +
+            'Hora: ' + selectedHour + ` (${durationLabel})` + '\n' +
             'Comentario del paciente: ' + formData.message + 
             adminMessage +
             '\n[AGENDADO POR ADMINISTRADOR]',
@@ -387,8 +401,8 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
             {loadingHours ? (
               <div className="text-center col-span-full w-full">Cargando horarios...</div>
             ) : (
-              allTimes.map(h => {
-                const isOccupied = isHourOccupied2h(selectedDay, h, events);
+              availableTimes.map(h => {
+                const isOccupied = isHourOccupied(selectedDay, h, events, agendaSlotMinutes);
                 const isPast = isHourPast(selectedDay, h);
                 const isDisabled = isOccupied || isPast;
                 

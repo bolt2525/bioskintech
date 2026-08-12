@@ -317,6 +317,19 @@ export default async function handler(req, res) {
           if (!su) return res.status(401).json({ error: 'No autenticado' });
           const invClinicId = su?.effective_clinic_id ?? su?.clinic_id ?? null;
 
+          // Fetch expiry_alert_days from clinic settings (default 30)
+          let expiryAlertDays = 30;
+          if (invClinicId) {
+            try {
+              const settingsRow = await pool.query(
+                `SELECT inventario->>'expiry_alert_days' AS expiry_alert_days FROM clinic_settings WHERE clinic_id = $1`,
+                [invClinicId]
+              );
+              const val = parseInt(settingsRow.rows[0]?.expiry_alert_days);
+              if (!isNaN(val) && val > 0) expiryAlertDays = val;
+            } catch { /* use default */ }
+          }
+
           // Usar parámetros $1 — sin interpolación de string para clinic_id
           const clinicParam = invClinicId ? [invClinicId] : [];
           const iWhere = invClinicId ? `AND (i.clinic_id = $1 OR i.clinic_id IS NULL)` : '';
@@ -340,7 +353,7 @@ export default async function handler(req, res) {
           const batchStats = await pool.query(`
             SELECT
               COUNT(CASE WHEN b.expiration_date < CURRENT_DATE THEN 1 END)::int AS expired_count,
-              COUNT(CASE WHEN b.expiration_date >= CURRENT_DATE AND b.expiration_date <= CURRENT_DATE + INTERVAL '30 days' THEN 1 END)::int AS expiring_soon_count
+              COUNT(CASE WHEN b.expiration_date >= CURRENT_DATE AND b.expiration_date <= CURRENT_DATE + INTERVAL '${expiryAlertDays} days' THEN 1 END)::int AS expiring_soon_count
             FROM inventory_batches b ${bWhere}
             WHERE b.status = 'active'
           `, clinicParam);
@@ -355,12 +368,12 @@ export default async function handler(req, res) {
             SELECT b.id, b.batch_number, b.expiration_date, b.quantity_current,
               i.name AS item_name, i.sku, i.unit_of_measure,
               CASE WHEN b.expiration_date < CURRENT_DATE THEN 'expired'
-                   WHEN b.expiration_date <= CURRENT_DATE + INTERVAL '30 days' THEN 'expiring_soon'
+                   WHEN b.expiration_date <= CURRENT_DATE + INTERVAL '${expiryAlertDays} days' THEN 'expiring_soon'
               END AS alert_type
             FROM inventory_batches b
             JOIN inventory_items i ON b.item_id = i.id
             WHERE b.status = 'active'
-              AND (b.expiration_date < CURRENT_DATE OR b.expiration_date <= CURRENT_DATE + INTERVAL '30 days')
+              AND (b.expiration_date < CURRENT_DATE OR b.expiration_date <= CURRENT_DATE + INTERVAL '${expiryAlertDays} days')
               ${alertWhere}
             ORDER BY b.expiration_date ASC LIMIT 20
           `, clinicParam);

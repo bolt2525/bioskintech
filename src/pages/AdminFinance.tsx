@@ -102,21 +102,25 @@ const AdminFinance = () => {
   const [taxRate, setTaxRate] = useState(15); // % IVA desde settings de clínica
   const [clinicTaxRate, setClinicTaxRate] = useState(15); // valor original inmutable del settings
   const [taxRateEditing, setTaxRateEditing] = useState(false); // campo IVA editable en el form
+  const [currencySymbol, setCurrencySymbol] = useState('$');
+  const [invoicePrefix, setInvoicePrefix] = useState('FAC');
   // Items del formulario nuevo
   const [newItems, setNewItems] = useState<FinanceItem[]>([]);
   const [showItems, setShowItems] = useState(false);
   // Modal de desglose para registros existentes
   const [desgModal, setDesgModal] = useState<{ open: boolean; record: FinanceRecord | null; items: FinanceItem[]; loading: boolean; updateRecord: boolean }>({ open: false, record: null, items: [], loading: false, updateRecord: false });
 
-  // Cargar tasa IVA de settings de clínica
+  // Cargar settings de finanzas de la clínica
   useEffect(() => {
     const cid = user?.clinic_id;
     if (!cid) return;
     fetch(`/api/admin-auth?action=getClinicSettings&clinicId=${cid}`, {
       headers: { Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken') || ''}` }
     }).then(r => r.json()).then(d => {
-      const tp = d.settings?.finanzas?.tax_percent;
-      if (tp != null) { setTaxRate(parseFloat(tp)); setClinicTaxRate(parseFloat(tp)); }
+      const fin = d.settings?.finanzas;
+      if (fin?.tax_percent != null) { setTaxRate(parseFloat(fin.tax_percent)); setClinicTaxRate(parseFloat(fin.tax_percent)); }
+      if (fin?.currency_symbol) setCurrencySymbol(fin.currency_symbol);
+      if (fin?.invoice_prefix)  setInvoicePrefix(fin.invoice_prefix);
     }).catch(() => {});
   }, [user?.clinic_id]);
   
@@ -514,7 +518,7 @@ const AdminFinance = () => {
                 </div>
                 <div>
                   <label className="text-xs text-gray-500 mb-1 block">Nº Factura</label>
-                  <input type="text" value={newForm.invoice_number} onChange={e => setNewForm(p => ({...p, invoice_number: e.target.value}))} placeholder="FAC-001" className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 outline-none" />
+                  <input type="text" value={newForm.invoice_number} onChange={e => setNewForm(p => ({...p, invoice_number: e.target.value}))} placeholder={`${invoicePrefix}-001`} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 outline-none" />
                 </div>
                 <div className="md:col-span-2">
                   <label className="text-xs text-gray-500 mb-1 block">Entidad / Cliente *</label>
@@ -611,7 +615,7 @@ const AdminFinance = () => {
                     <span className="col-span-2 text-right">Subtotal</span><span className="col-span-1 text-right">Total</span><span className="col-span-1"/>
                   </div>
                   {newItems.map((it, idx) => (
-                    <ItemRow key={idx} item={it} taxRate={taxRate}
+                    <ItemRow key={idx} item={it} taxRate={taxRate} currencySymbol={currencySymbol}
                       onChange={updated => setNewItems(prev => prev.map((x, i) => i === idx ? updated : x))}
                       onRemove={() => setNewItems(prev => prev.filter((_, i) => i !== idx))}
                     />
@@ -622,9 +626,9 @@ const AdminFinance = () => {
                   </button>
                   {newItems.length > 0 && (
                     <div className="mt-3 pt-2 border-t border-yellow-200 text-right text-xs text-gray-600 space-y-0.5">
-                      <div>Subtotal: <span className="font-mono font-semibold">${newItems.reduce((s,it)=>s+it.subtotal,0).toFixed(2)}</span></div>
-                      <div>IVA ({taxRate}%): <span className="font-mono font-semibold text-yellow-700">${newItems.reduce((s,it)=>s+it.tax,0).toFixed(2)}</span></div>
-                      <div className="text-base font-bold text-gray-800">Total: <span className="font-mono">${newItems.reduce((s,it)=>s+it.total,0).toFixed(2)}</span></div>
+                      <div>Subtotal: <span className="font-mono font-semibold">{currencySymbol}{newItems.reduce((s,it)=>s+it.subtotal,0).toFixed(2)}</span></div>
+                      <div>IVA ({taxRate}%): <span className="font-mono font-semibold text-yellow-700">{currencySymbol}{newItems.reduce((s,it)=>s+it.tax,0).toFixed(2)}</span></div>
+                      <div className="text-base font-bold text-gray-800">Total: <span className="font-mono">{currencySymbol}{newItems.reduce((s,it)=>s+it.total,0).toFixed(2)}</span></div>
                     </div>
                   )}
                 </div>
@@ -704,15 +708,15 @@ const AdminFinance = () => {
             <div className="flex gap-6 text-sm">
               <div>
                 <p className="text-gray-400 text-xs uppercase tracking-wider mb-0.5">Subtotal</p>
-                <p className="font-mono font-bold">${getSelectionMetrics().subtotal.toFixed(2)}</p>
+                <p className="font-mono font-bold">{currencySymbol}{getSelectionMetrics().subtotal.toFixed(2)}</p>
               </div>
               <div>
                 <p className="text-gray-400 text-xs uppercase tracking-wider mb-0.5">IVA</p>
-                <p className="font-mono font-bold text-yellow-400">${getSelectionMetrics().tax.toFixed(2)}</p>
+                <p className="font-mono font-bold text-yellow-400">{currencySymbol}{getSelectionMetrics().tax.toFixed(2)}</p>
               </div>
               <div>
                 <p className="text-gray-400 text-xs uppercase tracking-wider mb-0.5">Total</p>
-                <p className="font-mono font-bold text-xl">${getSelectionMetrics().total.toFixed(2)}</p>
+                <p className="font-mono font-bold text-xl">{currencySymbol}{getSelectionMetrics().total.toFixed(2)}</p>
               </div>
             </div>
 
@@ -726,30 +730,10 @@ const AdminFinance = () => {
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <MetricCard 
-            title="Balance Total" 
-            amount={metrics.balanceTotal} 
-            icon={DollarSign} 
-            color={metrics.balanceTotal >= 0 ? "black" : "red"} 
-          />
-          <MetricCard 
-            title="Ingresos" 
-            amount={metrics.totalIngresos} 
-            icon={TrendingUp} 
-            color="green" 
-          />
-          <MetricCard 
-            title="Egresos" 
-            amount={metrics.totalEgresos} 
-            icon={TrendingDown} 
-            color="red" 
-          />
-          <MetricCard 
-            title="Balance IVA" 
-            amount={metrics.totalIVA} 
-            icon={PieChart} 
-            color={metrics.totalIVA >= 0 ? "orange" : "blue"} 
-          />
+          <MetricCard title="Balance Total" amount={metrics.balanceTotal} icon={DollarSign} color={metrics.balanceTotal >= 0 ? "black" : "red"} currencySymbol={currencySymbol} />
+          <MetricCard title="Ingresos" amount={metrics.totalIngresos} icon={TrendingUp} color="green" currencySymbol={currencySymbol} />
+          <MetricCard title="Egresos" amount={metrics.totalEgresos} icon={TrendingDown} color="red" currencySymbol={currencySymbol} />
+          <MetricCard title="Balance IVA" amount={metrics.totalIVA} icon={PieChart} color={metrics.totalIVA >= 0 ? "orange" : "blue"} currencySymbol={currencySymbol} />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
@@ -783,7 +767,7 @@ const AdminFinance = () => {
                   <p className="text-xs text-gray-400">Débito Fiscal</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-lg font-bold text-gray-800">${metrics.ivaIngresos.toFixed(2)}</p>
+                  <p className="text-lg font-bold text-gray-800">{currencySymbol}{metrics.ivaIngresos.toFixed(2)}</p>
                 </div>
               </div>
 
@@ -793,7 +777,7 @@ const AdminFinance = () => {
                   <p className="text-xs text-gray-400">Crédito Tributario</p>
                 </div>
                 <div className="text-right">
-                   <p className="text-lg font-bold text-emerald-600">-${metrics.ivaEgresos.toFixed(2)}</p>
+                   <p className="text-lg font-bold text-emerald-600">-{currencySymbol}{metrics.ivaEgresos.toFixed(2)}</p>
                 </div>
               </div>
 
@@ -803,7 +787,7 @@ const AdminFinance = () => {
                      {metrics.totalIVA >= 0 ? 'IMPUESTO A PAGAR' : 'CRÉDITO A FAVOR'}
                    </p>
                    <p className={`text-2xl font-bold ${metrics.totalIVA >= 0 ? 'text-orange-700' : 'text-blue-700'}`}>
-                     ${Math.abs(metrics.totalIVA).toFixed(2)}
+                     {currencySymbol}{Math.abs(metrics.totalIVA).toFixed(2)}
                    </p>
                 </div>
                 <p className="text-xs opacity-75 leading-tight">
@@ -920,13 +904,13 @@ const AdminFinance = () => {
                             </td>
                           )}
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500">
-                            ${parseFloat(String(record.subtotal || 0)).toFixed(2)}
+                            {currencySymbol}{parseFloat(String(record.subtotal || 0)).toFixed(2)}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500">
-                            ${parseFloat(String(record.tax || 0)).toFixed(2)}
+                            {currencySymbol}{parseFloat(String(record.tax || 0)).toFixed(2)}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-right text-gray-800">
-                            ${parseFloat(String(record.total)).toFixed(2)}
+                            {currencySymbol}{parseFloat(String(record.total)).toFixed(2)}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                             <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -985,7 +969,7 @@ const AdminFinance = () => {
                   </div>
                   <div className="space-y-1">
                     {desgModal.items.map((it, idx) => (
-                      <ItemRow key={idx} item={it} taxRate={taxRate}
+                      <ItemRow key={idx} item={it} taxRate={taxRate} currencySymbol={currencySymbol}
                         onChange={updated => setDesgModal(prev => ({ ...prev, items: prev.items.map((x,i) => i===idx ? updated : x) }))}
                         onRemove={() => setDesgModal(prev => ({ ...prev, items: prev.items.filter((_,i) => i!==idx) }))}
                       />
@@ -1006,20 +990,20 @@ const AdminFinance = () => {
                       <div className="mt-4 pt-3 border-t space-y-2">
                         <div className="flex justify-between items-center text-xs bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
                           <span className="text-gray-500">Total del registro:</span>
-                          <span className="font-mono font-semibold text-gray-700">${recTot.toFixed(2)}</span>
+                          <span className="font-mono font-semibold text-gray-700">{currencySymbol}{recTot.toFixed(2)}</span>
                         </div>
                         <div className="text-right text-xs text-gray-600 space-y-0.5">
-                          <div>Subtotal desglose: <span className="font-mono font-semibold">${iSub.toFixed(2)}</span></div>
-                          <div>IVA desglose: <span className="font-mono font-semibold text-yellow-700">${iTax.toFixed(2)}</span></div>
+                          <div>Subtotal desglose: <span className="font-mono font-semibold">{currencySymbol}{iSub.toFixed(2)}</span></div>
+                          <div>IVA desglose: <span className="font-mono font-semibold text-yellow-700">{currencySymbol}{iTax.toFixed(2)}</span></div>
                           <div className={`text-base font-bold ${matches ? 'text-green-700' : 'text-red-600'}`}>
-                            Total desglose: <span className="font-mono">${iTot.toFixed(2)}</span>
+                            Total desglose: <span className="font-mono">{currencySymbol}{iTot.toFixed(2)}</span>
                             {matches && <span className="ml-2 text-xs font-normal text-green-600">✓ Coincide</span>}
                           </div>
                         </div>
                         {!matches && (
                           <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs">
                             <p className="text-amber-800 font-medium">
-                              Diferencia de <strong>${diff > 0 ? '+' : ''}{diff.toFixed(2)}</strong> con el registro general.
+                              Diferencia de <strong>{currencySymbol}{diff > 0 ? '+' : ''}{diff.toFixed(2)}</strong> con el registro general.
                             </p>
                             <label className="flex items-center gap-2 mt-2 cursor-pointer select-none">
                               <input
@@ -1056,9 +1040,10 @@ interface MetricCardProps {
   amount: number;
   icon: any;
   color: 'blue' | 'green' | 'red' | 'orange' | 'black';
+  currencySymbol?: string;
 }
 
-const MetricCard = ({ title, amount, icon: Icon, color }: MetricCardProps) => {
+const MetricCard = ({ title, amount, icon: Icon, color, currencySymbol = '$' }: MetricCardProps) => {
   const colorStyles: Record<string, string> = {
     blue: "text-blue-600 bg-blue-50 border-blue-100",
     green: "text-emerald-600 bg-emerald-50 border-emerald-100",
@@ -1072,7 +1057,7 @@ const MetricCard = ({ title, amount, icon: Icon, color }: MetricCardProps) => {
       <div className="flex justify-between items-start mb-4">
         <div>
           <p className="text-sm font-medium text-gray-500 mb-1">{title}</p>
-          <h3 className="text-2xl font-bold text-gray-900">${amount.toFixed(2)}</h3>
+          <h3 className="text-2xl font-bold text-gray-900">{currencySymbol}{amount.toFixed(2)}</h3>
         </div>
         <div className={`p-3 rounded-xl ${colorStyles[color]}`}>
           <Icon size={20} />
@@ -1165,7 +1150,7 @@ const ItemRow = ({ item, taxRate, onChange, onRemove }: ItemRowProps) => {
           className={`col-span-1 text-right ${cls} border-yellow-400`}
         />
       )}
-      <span className="col-span-2 text-right text-xs font-mono text-gray-500 pr-1">${item.subtotal.toFixed(2)}</span>
+      <span className="col-span-2 text-right text-xs font-mono text-gray-500 pr-1">{currencySymbol}{item.subtotal.toFixed(2)}</span>
       <input
         type="number"
         value={item.total.toFixed(2)}
