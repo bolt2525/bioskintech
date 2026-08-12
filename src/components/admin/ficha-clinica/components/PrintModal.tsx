@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Printer, X, AlertCircle, ChevronDown, ChevronUp, Settings } from 'lucide-react';
 import { useClinicSettings } from '../../../../hooks/useClinicSettings';
@@ -66,12 +66,10 @@ function CheckboxUI({ checked, onChange }: { checked: boolean; onChange: () => v
 
 export default function PrintModal({ patient, recordId, recordData, activeConsultation, onClose }: Props) {
   const { settings: clinic } = useClinicSettings();
-  const { user } = useAuth();
+  const { user, checkAuth } = useAuth();
   const [opts, setOpts] = useState<PrintOptions>(DEFAULT_OPTIONS);
-  // Per-section expanded state and item-level selection
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [selected, setSelected] = useState<Record<string, string[] | null>>({});
-  // Temporary professional data (not saved to DB)
   const [showProfForm, setShowProfForm] = useState(false);
   const [profTemp, setProfTemp] = useState({
     name: user?.full_name || user?.username || '',
@@ -79,6 +77,22 @@ export default function PrintModal({ patient, recordId, recordData, activeConsul
     matricula: user?.matricula_senescyt || '',
     especialidad: user?.especialidad || '',
   });
+
+  // Refresh user data from DB on open — master admin may have updated professional fields
+  useEffect(() => {
+    checkAuth().then(() => {}).catch(() => {});
+  }, []);
+
+  // Sync profTemp with fresh user data; only fill still-empty slots to preserve manual edits
+  useEffect(() => {
+    if (!user) return;
+    setProfTemp(prev => ({
+      name:        prev.name        || user.full_name        || user.username || '',
+      cedula:      prev.cedula      || user.cedula_profesional || '',
+      matricula:   prev.matricula   || user.matricula_senescyt || '',
+      especialidad: prev.especialidad || user.especialidad     || '',
+    }));
+  }, [user?.cedula_profesional, user?.matricula_senescyt, user?.especialidad, user?.full_name]);
 
   const missingFields: string[] = [];
   if (!profTemp.matricula) missingFields.push('matrícula SENESCYT');

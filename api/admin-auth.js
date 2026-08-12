@@ -82,21 +82,23 @@ const SUBSCRIPTION_PLANS = {
 let _newColumnsMigrated = false;
 async function ensureNewColumns() {
   if (_newColumnsMigrated) return;
-  try {
-    await sql.query("ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS finance_scope VARCHAR(20) DEFAULT 'all'");
-    await sql.query("ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS inventory_scope VARCHAR(20) DEFAULT 'all'");
-    await sql.query("ALTER TABLE invite_links ADD COLUMN IF NOT EXISTS access_scope VARCHAR(20) DEFAULT 'own'");
-    // Restaurar clinic_id si fue eliminado por una migración anterior incorrecta
-    await sql.query("ALTER TABLE invite_links ADD COLUMN IF NOT EXISTS clinic_id UUID REFERENCES clinics(id) ON DELETE CASCADE");
-    // Campos profesionales
-    await sql.query("ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS cedula_profesional VARCHAR(50)");
-    await sql.query("ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS matricula_senescyt VARCHAR(100)");
-    await sql.query("ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS especialidad VARCHAR(100)");
-    await sql.query("ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS gentilicio VARCHAR(50)");
-    await sql.query("ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS profession VARCHAR(100)");
-    await sql.query("ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS first_name VARCHAR(100)");
-    await sql.query("ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS last_name VARCHAR(100)");
-  } catch { /* non-fatal — columns already exist */ }
+  // Each ALTER is independent so one failure cannot skip the remaining migrations
+  const migrations = [
+    "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS finance_scope VARCHAR(20) DEFAULT 'all'",
+    "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS inventory_scope VARCHAR(20) DEFAULT 'all'",
+    "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS cedula_profesional VARCHAR(50)",
+    "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS matricula_senescyt VARCHAR(100)",
+    "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS especialidad VARCHAR(100)",
+    "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS gentilicio VARCHAR(50)",
+    "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS profession VARCHAR(100)",
+    "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS first_name VARCHAR(100)",
+    "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS last_name VARCHAR(100)",
+    "ALTER TABLE invite_links ADD COLUMN IF NOT EXISTS access_scope VARCHAR(20) DEFAULT 'own'",
+    "ALTER TABLE invite_links ADD COLUMN IF NOT EXISTS clinic_id UUID REFERENCES clinics(id) ON DELETE CASCADE",
+  ];
+  for (const stmt of migrations) {
+    try { await sql.query(stmt); } catch { /* column already exists — safe to ignore */ }
+  }
   _newColumnsMigrated = true;
 }
 
@@ -1064,19 +1066,19 @@ async function updateUser(requestUser, body) {
 
   await sql`
     UPDATE clinic_users SET
-      full_name           = COALESCE(${full_name           ?? null}, full_name),
-      first_name          = COALESCE(${first_name          ?? null}, first_name),
-      last_name           = COALESCE(${last_name           ?? null}, last_name),
-      gentilicio          = COALESCE(${gentilicio          ?? null}, gentilicio),
-      profession          = COALESCE(${profession          ?? null}, profession),
-      email               = COALESCE(${email               ?? null}, email),
-      access_scope        = COALESCE(${access_scope        ?? null}, access_scope),
-      finance_scope       = COALESCE(${finance_scope       ?? null}, finance_scope),
-      inventory_scope     = COALESCE(${inventory_scope     ?? null}, inventory_scope),
+      full_name           = COALESCE(NULLIF(${full_name           ?? ''}, ''), full_name),
+      first_name          = COALESCE(NULLIF(${first_name          ?? ''}, ''), first_name),
+      last_name           = COALESCE(NULLIF(${last_name           ?? ''}, ''), last_name),
+      gentilicio          = COALESCE(NULLIF(${gentilicio          ?? ''}, ''), gentilicio),
+      profession          = COALESCE(NULLIF(${profession          ?? ''}, ''), profession),
+      email               = COALESCE(NULLIF(${email               ?? ''}, ''), email),
+      access_scope        = COALESCE(NULLIF(${access_scope        ?? ''}, ''), access_scope),
+      finance_scope       = COALESCE(NULLIF(${finance_scope       ?? ''}, ''), finance_scope),
+      inventory_scope     = COALESCE(NULLIF(${inventory_scope     ?? ''}, ''), inventory_scope),
       is_active           = COALESCE(${is_active           ?? null}, is_active),
-      cedula_profesional  = COALESCE(${cedula_profesional  ?? null}, cedula_profesional),
-      matricula_senescyt  = COALESCE(${matricula_senescyt  ?? null}, matricula_senescyt),
-      especialidad        = COALESCE(${especialidad        ?? null}, especialidad)
+      cedula_profesional  = COALESCE(NULLIF(${cedula_profesional  ?? ''}, ''), cedula_profesional),
+      matricula_senescyt  = COALESCE(NULLIF(${matricula_senescyt  ?? ''}, ''), matricula_senescyt),
+      especialidad        = COALESCE(NULLIF(${especialidad        ?? ''}, ''), especialidad)
     WHERE id = ${id}
   `;
   if (requestUser.role === 'master_admin' && role != null) {

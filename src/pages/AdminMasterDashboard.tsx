@@ -1345,6 +1345,10 @@ export default function AdminMasterDashboard() {
     const data   = await res.json();
     if (data.error) return flash(data.error, 'err');
     flash(userModal.userId ? 'Usuario actualizado' : 'Usuario creado');
+    // If master admin updated their own profile, refresh auth context with new data
+    if (userModal.userId && data.user?.id && String(data.user.id) === String(user?.id)) {
+      checkAuth().catch(() => {});
+    }
     setUserModal({ open: false });
     loadAll();
   };

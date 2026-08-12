@@ -104,6 +104,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = await res.json();
 
       if (data.success && data.valid && data.user) {
+        // persistAuth keeps sessionStorage in sync with fresh DB data from verifySession
+        persistAuth(token, data.user, data.expiresAt || sessionStorage.getItem(SS_EXPIRY) || '', data.features || []);
         applySession(data.user, data.features || [], data.user_module_overrides || []);
         if (data.subscriptionWarningDays !== undefined) {
           setUser(prev => prev ? { ...prev, subscriptionWarningDays: data.subscriptionWarningDays } : null);
