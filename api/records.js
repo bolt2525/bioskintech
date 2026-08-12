@@ -1431,8 +1431,8 @@ export default async function handler(req, res) {
            }
         } else {
            if (!pid_exam) return res.status(400).json({ error: 'Falta el ID del expediente (record_id)' });
-           const eFields = ['record_id', ...Object.keys(safeExamData)];
-           const eValues = [pid_exam, ...Object.values(safeExamData)];
+           const eFields = ['record_id', 'clinic_id', ...Object.keys(safeExamData)];
+           const eValues = [pid_exam, effectiveClinicId, ...Object.values(safeExamData)];
            const eParams = eFields.map((_, i) => `$${i + 1}`).join(', ');
            await pool.query(`INSERT INTO physical_exams (${eFields.join(', ')}) VALUES (${eParams})`, eValues);
         }
@@ -1457,8 +1457,8 @@ export default async function handler(req, res) {
            }
            return res.status(200).json({ success: true });
         } else {
-           const dFields = ['record_id', ...Object.keys(safeDiagData)];
-           const dValues = [did, ...Object.values(safeDiagData)];
+           const dFields = ['record_id', 'clinic_id', ...Object.keys(safeDiagData)];
+           const dValues = [did, effectiveClinicId, ...Object.values(safeDiagData)];
            const dParams = dFields.map((_, i) => `$${i + 1}`).join(', ');
            const newDiag = await pool.query(`INSERT INTO diagnoses (${dFields.join(', ')}) VALUES (${dParams}) RETURNING *`, dValues);
            await logAudit(pool, { recordId: did, sessionUser: await getSessionUserOnce(), actionType: 'tab_save', module: 'diagnosis', summary: 'Registró Diagnóstico' });
@@ -1475,8 +1475,8 @@ export default async function handler(req, res) {
         const { record_id: tid, ...treatData } = body;
         // Whitelist: solo identificadores SQL válidos — previene SQL injection por nombres de columna
         const safeTreatData = Object.fromEntries(Object.entries(treatData).filter(([k]) => /^\w+$/.test(k)));
-        const tFields = ['record_id', ...Object.keys(safeTreatData)];
-        const tValues = [tid, ...Object.values(safeTreatData)];
+        const tFields = ['record_id', 'clinic_id', ...Object.keys(safeTreatData)];
+        const tValues = [tid, effectiveClinicId, ...Object.values(safeTreatData)];
         const tParams = tFields.map((_, i) => `$${i + 1}`).join(', ');
         const newTreat = await pool.query(`INSERT INTO treatments (${tFields.join(', ')}) VALUES (${tParams}) RETURNING *`, tValues);
         await logAudit(pool, { recordId: tid, sessionUser: await getSessionUserOnce(), actionType: 'create', module: 'treatment', summary: `Agregó tratamiento: ${safeTreatData.name || safeTreatData.procedure_name || ''}` });
@@ -1564,8 +1564,8 @@ export default async function handler(req, res) {
           }
         }
 
-        const fields = ['record_id', ...Object.keys(cleanData)];
-        const values = [injRecId, ...Object.values(cleanData)];
+        const fields = ['record_id', 'clinic_id', ...Object.keys(cleanData)];
+        const values = [injRecId, effectiveClinicId, ...Object.values(cleanData)];
 
         // Include treatment_id only if provided (column may not exist in older schemas)
         if (injTid) {
@@ -1684,8 +1684,8 @@ export default async function handler(req, res) {
 
       case 'createPrescription': {
         const { ficha_id, fecha, diagnostico, items, consultation_id: prescConsId } = body;
-        const prescFields = ['record_id', 'date', 'diagnosis', 'items'];
-        const prescValues = [ficha_id, fecha, diagnostico, JSON.stringify(items)];
+        const prescFields = ['record_id', 'clinic_id', 'date', 'diagnosis', 'items'];
+        const prescValues = [ficha_id, effectiveClinicId, fecha, diagnostico, JSON.stringify(items)];
         if (prescConsId) { prescFields.push('consultation_id'); prescValues.push(prescConsId); }
         const prescParams = prescFields.map((_, i) => `$${i + 1}`).join(', ');
         const newPresc = await pool.query(
@@ -1994,23 +1994,23 @@ export default async function handler(req, res) {
           // Create
           const insertQuery = `
             INSERT INTO consent_forms (
-              record_id, patient_id, status, created_by,
+              record_id, patient_id, clinic_id, status, created_by,
               procedure_type, zone, sessions,
               objectives, description, risks, benefits, alternatives,
               pre_care, post_care, contraindications,
               critical_antecedents, authorizations, declarations,
               signatures, attachments
             ) VALUES (
-              $1, $2, $3, $4,
-              $5, $6, $7,
-              $8, $9, $10, $11, $12,
-              $13, $14, $15,
-              $16, $17, $18,
-              $19, $20
+              $1, $2, $3, $4, $5,
+              $6, $7, $8,
+              $9, $10, $11, $12, $13,
+              $14, $15, $16,
+              $17, $18, $19,
+              $20, $21
             ) RETURNING *
           `;
           const created = await pool.query(insertQuery, [
-            saveRid, savePid, status || 'draft', created_by,
+            saveRid, savePid, effectiveClinicId, status || 'draft', created_by,
             procedure_type, zone, sessions,
             JSON.stringify(objectives || []), description || '', JSON.stringify(risks || []), JSON.stringify(benefits || []), JSON.stringify(alternatives || []),
             JSON.stringify(pre_care || []), JSON.stringify(post_care || []), JSON.stringify(contraindications || []),

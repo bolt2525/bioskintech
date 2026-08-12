@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
 import { Save, AlertCircle, Plus, Trash2, Copy, Printer, Info, Edit2, Check, User, FileText, Eye, EyeOff } from 'lucide-react';
@@ -645,19 +646,22 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
       animate={{ opacity: 1, y: 0 }}
       className="flex flex-col md:flex-row h-auto md:h-[800px] gap-6"
     >
-      <AnimatePresence>
-        {isModalOpen && editingMark && (
-          <MarkEditModal 
-            mark={editingMark} 
-            onSave={saveMarkFromModal} 
-            onCancel={() => { setIsModalOpen(false); setPendingRegion(null); }}
-            categories={LESION_CATALOG}
-            tercio={pendingRegion?.tercio}
-            suggestedZones={activeTab === 'facial' ? pendingRegion?.suggestions : undefined}
-            zoneGroups={activeTab === 'corporal' ? BODY_ZONE_GROUPS : undefined}
-          />
-        )}
-      </AnimatePresence>
+      {typeof document !== 'undefined' && createPortal(
+        <AnimatePresence>
+          {isModalOpen && editingMark && (
+            <MarkEditModal 
+              mark={editingMark} 
+              onSave={saveMarkFromModal} 
+              onCancel={() => { setIsModalOpen(false); setPendingRegion(null); }}
+              categories={LESION_CATALOG}
+              tercio={pendingRegion?.tercio}
+              suggestedZones={activeTab === 'facial' ? pendingRegion?.suggestions : undefined}
+              zoneGroups={activeTab === 'corporal' ? BODY_ZONE_GROUPS : undefined}
+            />
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
 
       {/* Sidebar List */}
       <div className="w-full md:w-72 border-r-0 md:border-r border-b md:border-b-0 border-gray-100 pr-0 md:pr-6 pb-4 md:pb-0 flex flex-col gap-4 shrink-0">
