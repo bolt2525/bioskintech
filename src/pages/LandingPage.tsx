@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import {
   Sparkles, Activity, Stethoscope, Smile, ChevronRight,
-  FileText, CalendarDays, Brain, Package, DollarSign,
-  MessageSquare, Shield, Users, CheckCircle,
+  FileText, CalendarDays, HardDrive, Package, DollarSign,
+  Wrench, Shield, Users, CheckCircle,
 } from 'lucide-react';
 import BrandLogo from '../components/ui/BrandLogo';
 
@@ -14,7 +14,7 @@ const MODULES = [
     description: 'Panel completo para clínicas de medicina estética y cosmética.',
     href: '/gestionestetica/admin/login',
     status: 'active' as const,
-    accent: '#deb887',
+    accent: '#c4a882',
   },
   {
     key: 'odonto',
@@ -23,7 +23,7 @@ const MODULES = [
     description: 'Fichas dentales, radiografías y planes de tratamiento.',
     href: '#',
     status: 'soon' as const,
-    accent: '#60a5fa',
+    accent: '#93b5c8',
   },
   {
     key: 'medgen',
@@ -32,7 +32,7 @@ const MODULES = [
     description: 'Consultas, recetas digitales y seguimiento de pacientes.',
     href: '#',
     status: 'soon' as const,
-    accent: '#34d399',
+    accent: '#96ba9a',
   },
   {
     key: 'otros',
@@ -41,7 +41,7 @@ const MODULES = [
     description: 'Más especialidades y servicios BIOSKINTECH próximamente.',
     href: '#',
     status: 'soon' as const,
-    accent: '#a78bfa',
+    accent: '#b5a8c4',
   },
 ];
 
@@ -52,8 +52,8 @@ const FEATURES = [
     subtitle: 'Gestión completa de pacientes',
     description: 'Historial médico con antecedentes, diagnósticos, tratamientos, fotografías clínicas y evolución. Todo centralizado y accesible desde cualquier dispositivo.',
     tags: ['Antecedentes', 'Diagnóstico', 'Evolución', 'Fotos'],
-    accent: '#deb887',
-    bg: 'linear-gradient(135deg, #1e1500 0%, #0f0a00 100%)',
+    accent: '#c4a882',
+    bg: 'linear-gradient(135deg, #1a1208 0%, #0d0a04 100%)',
   },
   {
     icon: Shield,
@@ -61,26 +61,17 @@ const FEATURES = [
     subtitle: 'Firma electrónica segura',
     description: 'Consentimientos informados que el paciente firma desde su propio dispositivo con enlace único y seguro. Sin papel, con validez legal.',
     tags: ['Firma digital', 'Sin papel', 'Enlace único', 'Legal'],
-    accent: '#60a5fa',
-    bg: 'linear-gradient(135deg, #001829 0%, #000f1a 100%)',
+    accent: '#93b5c8',
+    bg: 'linear-gradient(135deg, #081420 0%, #040c14 100%)',
   },
   {
     icon: CalendarDays,
     title: 'Agenda Inteligente',
     subtitle: 'Sincronización Google Calendar',
-    description: 'Gestión de citas con integración bidireccional a Google Calendar. Recordatorios automáticos vía WhatsApp, bloqueo de horarios y agenda diaria para el staff.',
-    tags: ['Google Cal', 'WhatsApp', 'Recordatorios', 'Bloqueos'],
-    accent: '#34d399',
-    bg: 'linear-gradient(135deg, #001a0f 0%, #000f07 100%)',
-  },
-  {
-    icon: Brain,
-    title: 'Inteligencia Artificial',
-    subtitle: 'Asistente Gema IA',
-    description: 'Diagnóstico asistido por IA, generación automática de protocolos de tratamiento personalizados y asistente virtual Gema integrado en cada ficha clínica.',
-    tags: ['Diagnóstico IA', 'Protocolos', 'GPT-4', 'Gemini'],
-    accent: '#c084fc',
-    bg: 'linear-gradient(135deg, #1a0029 0%, #0e001a 100%)',
+    description: 'Gestión de citas con integración bidireccional a Google Calendar. Recordatorios por correo, bloqueo de horarios y configuración de disponibilidad.',
+    tags: ['Google Cal', 'Email', 'Recordatorios', 'Bloqueos'],
+    accent: '#96ba9a',
+    bg: 'linear-gradient(135deg, #0a160c 0%, #050d07 100%)',
   },
   {
     icon: Package,
@@ -88,8 +79,8 @@ const FEATURES = [
     subtitle: 'Control de productos y lotes',
     description: 'Gestión de inventario con control por lotes, fechas de vencimiento, alertas automáticas y movimientos vinculados a cada tratamiento aplicado.',
     tags: ['Lotes', 'Vencimientos', 'Alertas', 'Movimientos'],
-    accent: '#fb923c',
-    bg: 'linear-gradient(135deg, #1a0e00 0%, #0f0800 100%)',
+    accent: '#c4b09a',
+    bg: 'linear-gradient(135deg, #1a1008 0%, #0d0a04 100%)',
   },
   {
     icon: DollarSign,
@@ -97,26 +88,35 @@ const FEATURES = [
     subtitle: 'Control financiero completo',
     description: 'Registro de ingresos y egresos, análisis de rentabilidad por tratamiento, reportes mensuales y exportación de datos financieros de tu clínica.',
     tags: ['Ingresos', 'Egresos', 'Reportes', 'Análisis'],
-    accent: '#4ade80',
-    bg: 'linear-gradient(135deg, #001a00 0%, #000f00 100%)',
+    accent: '#a0ba98',
+    bg: 'linear-gradient(135deg, #0a160a 0%, #050d05 100%)',
   },
   {
-    icon: MessageSquare,
-    title: 'Bot WhatsApp Interno',
-    subtitle: 'Tu equipo siempre informado',
-    description: 'Bot de WhatsApp para el staff: agenda diaria automática, notificaciones de nuevas citas y recordatorios internos. Comunicación centralizada sin esfuerzo.',
-    tags: ['WhatsApp', 'Agenda staff', 'Alertas', 'Automático'],
-    accent: '#2dd4bf',
-    bg: 'linear-gradient(135deg, #001a18 0%, #000f0d 100%)',
+    icon: HardDrive,
+    title: 'Seguridad y Respaldos',
+    subtitle: 'Tus datos siempre protegidos',
+    description: 'Autenticación en dos pasos (2FA), contraseñas cifradas con PBKDF2, respaldos automáticos y aislamiento total de datos por clínica.',
+    tags: ['2FA', 'PBKDF2', 'Respaldos', 'Cifrado'],
+    accent: '#b5a8c4',
+    bg: 'linear-gradient(135deg, #120a1a 0%, #0a0510 100%)',
+  },
+  {
+    icon: Wrench,
+    title: 'Servicio Técnico',
+    subtitle: 'Gestión de equipos y reparaciones',
+    description: 'Módulo de servicio técnico para registro y seguimiento de reparaciones de equipos estéticos, generación de informes técnicos y control de garantías.',
+    tags: ['Equipos', 'Reparaciones', 'Informes', 'Garantías'],
+    accent: '#c4a898',
+    bg: 'linear-gradient(135deg, #1a1008 0%, #0d0a05 100%)',
   },
   {
     icon: Users,
     title: 'Multi-Clínica y Roles',
     subtitle: 'Escalable y seguro',
-    description: 'Arquitectura multi-tenant con roles diferenciados: administrador y colaboradores. Datos completamente aislados entre clínicas con cifrado PBKDF2.',
-    tags: ['Multi-sede', 'Roles', 'Aislamiento', 'Cifrado'],
-    accent: '#f472b6',
-    bg: 'linear-gradient(135deg, #1a0016 0%, #0f000e 100%)',
+    description: 'Arquitectura multi-tenant con roles diferenciados: administrador y colaboradores. Datos completamente aislados entre clínicas.',
+    tags: ['Multi-sede', 'Roles', 'Aislamiento', 'Permisos'],
+    accent: '#b8a0b8',
+    bg: 'linear-gradient(135deg, #150a15 0%, #0d050d 100%)',
   },
 ];
 
@@ -152,8 +152,8 @@ export default function LandingPage() {
               Registrarse
             </a>
             <a href="/gestionestetica/admin/login"
-              className="text-sm font-semibold bg-[#deb887] text-black px-5 py-2 rounded-full
-                         hover:bg-[#c9a876] transition-all shadow-lg shadow-[#deb887]/20 hover:shadow-[#deb887]/40">
+              className="text-sm font-semibold bg-[#c4a882] text-black px-5 py-2 rounded-full
+                         hover:bg-[#b09878] transition-all shadow-lg shadow-[#c4a882]/20 hover:shadow-[#c4a882]/40">
               Ingresar
             </a>
           </div>
@@ -172,8 +172,8 @@ export default function LandingPage() {
 
         <div className="content flex-1 flex flex-col items-center justify-center px-6 pt-32 pb-20 text-center">
           {/* Badge */}
-          <div className="inline-flex items-center gap-2 bg-[#deb887]/10 border border-[#deb887]/25
-                          rounded-full px-4 py-1.5 text-sm text-[#deb887] font-medium mb-10 backdrop-blur-sm">
+          <div className="inline-flex items-center gap-2 bg-[#c4a882]/10 border border-[#c4a882]/25
+                          rounded-full px-4 py-1.5 text-sm text-[#c4a882] font-medium mb-10 backdrop-blur-sm">
             <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
             Plataforma activa · Gestión Estética disponible ahora
           </div>
@@ -186,7 +186,7 @@ export default function LandingPage() {
 
           <p className="text-white/65 text-lg md:text-xl font-light mb-3 max-w-xl">
             Plataforma de{' '}
-            <span className="text-[#deb887] font-semibold">Gestión Clínica Inteligente</span>
+            <span className="text-[#c4a882] font-semibold">Gestión Clínica Inteligente</span>
           </p>
           <p className="text-white/40 text-sm md:text-base max-w-lg leading-relaxed mb-12">
             Administra fichas de pacientes, agenda, consentimientos digitales,
@@ -196,9 +196,9 @@ export default function LandingPage() {
           {/* CTAs */}
           <div className="flex flex-wrap items-center justify-center gap-4 mb-16">
             <a href="/gestionestetica/admin/login"
-              className="inline-flex items-center gap-2 bg-[#deb887] text-black font-bold
-                         px-8 py-3.5 rounded-full hover:bg-[#c9a876] transition-all
-                         hover:shadow-2xl hover:shadow-[#deb887]/30 hover:-translate-y-0.5 text-sm">
+              className="inline-flex items-center gap-2 bg-[#c4a882] text-black font-bold
+                         px-8 py-3.5 rounded-full hover:bg-[#b09878] transition-all
+                         hover:shadow-2xl hover:shadow-[#c4a882]/30 hover:-translate-y-0.5 text-sm">
               Acceder al panel <ChevronRight className="w-4 h-4" />
             </a>
             <a href="/gestionestetica/admin/register"
@@ -214,10 +214,10 @@ export default function LandingPage() {
             {[
               { value: '8+', label: 'Módulos integrados' },
               { value: '100%', label: 'Digital y sin papel' },
-              { value: 'IA', label: 'Diagnóstico asistido' },
+              { value: '2FA', label: 'Acceso seguro' },
             ].map(s => (
               <div key={s.label} className="text-center">
-                <div className="text-2xl font-bold text-[#deb887]">{s.value}</div>
+                <div className="text-2xl font-bold text-[#c4a882]">{s.value}</div>
                 <div className="text-xs text-white/35 mt-0.5 whitespace-nowrap">{s.label}</div>
               </div>
             ))}
@@ -236,7 +236,7 @@ export default function LandingPage() {
       <section className="bg-[#080807] py-20 px-6">
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-12">
-            <p className="text-[#deb887] text-xs font-bold uppercase tracking-[0.2em] mb-3">
+            <p className="text-[#c4a882] text-xs font-bold uppercase tracking-[0.2em] mb-3">
               Especialidades
             </p>
             <h2 className="text-3xl md:text-4xl font-bold text-white mb-4"
@@ -310,7 +310,7 @@ export default function LandingPage() {
       <section className="bg-[#050504] py-20 px-6">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-14">
-            <p className="text-[#deb887] text-xs font-bold uppercase tracking-[0.2em] mb-3">
+            <p className="text-[#c4a882] text-xs font-bold uppercase tracking-[0.2em] mb-3">
               Todo en uno
             </p>
             <h2 className="text-3xl md:text-4xl font-bold text-white mb-4"
@@ -383,7 +383,7 @@ export default function LandingPage() {
       {/* ── Beneficios ───────────────────────────────────────────────── */}
       <section className="bg-[#080807] py-20 px-6 border-t border-white/5">
         <div className="max-w-4xl mx-auto text-center">
-          <p className="text-[#deb887] text-xs font-bold uppercase tracking-[0.2em] mb-3">Plan único</p>
+          <p className="text-[#c4a882] text-xs font-bold uppercase tracking-[0.2em] mb-3">Plan único</p>
           <h2 className="text-3xl md:text-4xl font-bold text-white mb-4"
             style={{ fontFamily: 'Playfair Display, serif' }}>
             Un solo plan. Todo incluido.
@@ -399,7 +399,7 @@ export default function LandingPage() {
             ].map(b => (
               <div key={b} className="flex items-start gap-3 text-left p-4
                                       bg-white/[0.02] border border-white/5 rounded-xl">
-                <CheckCircle className="w-4 h-4 text-[#deb887] flex-shrink-0 mt-0.5" />
+                <CheckCircle className="w-4 h-4 text-[#c4a882] flex-shrink-0 mt-0.5" />
                 <span className="text-white/55 text-sm">{b}</span>
               </div>
             ))}
@@ -423,9 +423,9 @@ export default function LandingPage() {
           </p>
           <div className="flex flex-wrap justify-center gap-4">
             <a href="/gestionestetica/admin/register"
-              className="inline-flex items-center gap-2 bg-[#deb887] text-black font-bold
-                         px-8 py-4 rounded-full hover:bg-[#c9a876] transition-all
-                         hover:shadow-2xl hover:shadow-[#deb887]/30 hover:-translate-y-0.5">
+              className="inline-flex items-center gap-2 bg-[#c4a882] text-black font-bold
+                         px-8 py-4 rounded-full hover:bg-[#b09878] transition-all
+                         hover:shadow-2xl hover:shadow-[#c4a882]/30 hover:-translate-y-0.5">
               Registrar mi clínica <ChevronRight className="w-4 h-4" />
             </a>
             <a href="/gestionestetica/admin/login"
@@ -447,16 +447,16 @@ export default function LandingPage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center justify-center gap-5 text-xs text-white/25">
-            <a href="/politica-de-privacidad" className="hover:text-[#deb887] transition-colors">
+            <a href="/politica-de-privacidad" className="hover:text-[#c4a882] transition-colors">
               Política de Privacidad
             </a>
-            <a href="/condiciones-de-servicio" className="hover:text-[#deb887] transition-colors">
+            <a href="/condiciones-de-servicio" className="hover:text-[#c4a882] transition-colors">
               Condiciones de Servicio
             </a>
-            <a href="/gestionestetica/admin/login" className="hover:text-[#deb887] transition-colors">
+            <a href="/gestionestetica/admin/login" className="hover:text-[#c4a882] transition-colors">
               Acceso Clínicas
             </a>
-            <a href="/gestionestetica/admin/register" className="hover:text-[#deb887] transition-colors">
+            <a href="/gestionestetica/admin/register" className="hover:text-[#c4a882] transition-colors">
               Registro
             </a>
           </div>

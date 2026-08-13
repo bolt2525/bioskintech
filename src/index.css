@@ -65,19 +65,19 @@
 }
 .gradient-bg .base {
   position: absolute; inset: 0; z-index: 0;
-  background: linear-gradient(204deg, #e7e6e2 0%, #cbc199 14%, #b09538 35%, #4e4324 58%, #1f1d15 81%, #040404 100%);
+  background: linear-gradient(204deg, #cdc9c4 0%, #8a7f68 14%, #473c26 35%, #201a0e 58%, #110f09 81%, #040404 100%);
 }
 .gradient-bg .treatment {
   position: absolute; inset: 0; z-index: 1;
-  background-image: repeating-conic-gradient(from 86deg at 74% 16%, transparent 0 8%, rgba(218,179,47,0.30) 10%, rgba(229,225,210,0.25) 12%, transparent 14%);
+  background-image: repeating-conic-gradient(from 86deg at 74% 16%, transparent 0 8%, rgba(196,168,130,0.22) 10%, rgba(210,200,185,0.18) 12%, transparent 14%);
   filter: blur(28px);
-  opacity: 0.35;
+  opacity: 0.30;
 }
 .gradient-bg .glow {
   position: absolute; inset: 0; z-index: 2;
   background:
-    radial-gradient(ellipse at 61% 4%, rgba(255,255,255,0.21), transparent 38%),
-    radial-gradient(ellipse at 55% 38%, rgba(218,179,47,0.22), transparent 42%);
+    radial-gradient(ellipse at 61% 4%, rgba(220,210,195,0.14), transparent 38%),
+    radial-gradient(ellipse at 55% 38%, rgba(196,168,130,0.14), transparent 42%);
 }
 .gradient-bg .vignette {
   position: absolute; inset: 0; z-index: 4;
@@ -135,7 +135,7 @@
 
 /* ─── Masked logo text animation ───────────────────────────────────────────── */
 .text-logo-mask {
-  background-image: url('/images/logo/logo.png'), linear-gradient(135deg, #deb887 0%, #f0d080 30%, #c9a876 60%, #b09538 100%);
+  background-image: url('/images/logo/logo.png'), linear-gradient(135deg, #c4a882 0%, #ddd0b8 30%, #b09878 60%, #8a7055 100%);
   background-size: 320%, 100%;
   background-position: 30% 40%, center;
   -webkit-background-clip: text;

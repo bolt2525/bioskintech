@@ -1,7 +1,7 @@
 import { ArrowLeft, Shield, Users, Database, Globe, Clock, UserCheck, FileText, Bell, Cookie, BarChart2, AlertTriangle, Trash2 } from 'lucide-react';
 import BrandLogo from '../components/ui/BrandLogo';
 
-const CONTACT_EMAIL = 'bolt2525@gmail.com';
+const CONTACT_EMAIL = 'soporte-tecnico@bioskintechapp.com';
 const LAST_UPDATED = '07 de agosto de 2026';
 
 interface SectionProps {
@@ -84,8 +84,7 @@ export default function PrivacyPolicy() {
         {/* 1. Identificación */}
         <Section number={1} title="Identificación del Responsable y del Encargado" icon={<UserCheck className="w-4 h-4" />}>
           <div className="bg-[#fdf8f0] rounded-xl p-4 space-y-1.5 border border-[#deb887]/20">
-            <p><strong>Titular de la Plataforma:</strong> RAFAEL LARREA GALINDO</p>
-            <p><strong>RUC:</strong> 0105872600001</p>
+            <p><strong>Plataforma:</strong> BIOSKINTECH</p>
             <p><strong>País de operación:</strong> Ecuador</p>
             <p><strong>Correo de contacto:</strong>{' '}
               <a href={`mailto:${CONTACT_EMAIL}`} className="text-[#deb887] hover:underline">{CONTACT_EMAIL}</a>
@@ -283,7 +282,7 @@ export default function PrivacyPolicy() {
 
         {/* Footer de la página */}
         <div className="text-center text-xs text-gray-400 pt-4">
-          <p>BioSkinTech © {new Date().getFullYear()} · RUC 0105872600001 · Ecuador</p>
+          <p>BioSkinTech © {new Date().getFullYear()} · Ecuador</p>
           <p className="mt-1">
             Este documento tiene validez legal conforme a la LOPDP (Ley Orgánica de Protección de Datos Personales del Ecuador).
           </p>

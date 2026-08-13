@@ -250,7 +250,7 @@ export default function AdminLogin() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-[#deb887] text-white py-2.5 rounded-xl font-semibold text-sm hover:bg-[#c5a075] active:scale-[0.98] transition-all shadow-sm shadow-[#deb887]/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full bg-[#c4a882] text-white py-2.5 rounded-xl font-semibold text-sm hover:bg-[#b09878] active:scale-[0.98] transition-all shadow-sm shadow-[#c4a882]/20 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? (
                   <span className="flex items-center justify-center gap-2">

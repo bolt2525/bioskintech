@@ -1,7 +1,7 @@
 import { ArrowLeft, FileText, Users, Shield, AlertCircle, Clock, Ban, RefreshCw, Scale, Settings, HelpCircle } from 'lucide-react';
 import BrandLogo from '../components/ui/BrandLogo';
 
-const CONTACT_EMAIL = 'bolt2525@gmail.com';
+const CONTACT_EMAIL = 'soporte-tecnico@bioskintechapp.com';
 const LAST_UPDATED = '07 de agosto de 2026';
 const PLAN_PRICE = '$245 USD / año';
 
@@ -93,7 +93,7 @@ export default function TermsOfService() {
             <li>Gestión de agenda y citas con integración Google Calendar</li>
             <li>Consentimientos informados digitales con firma electrónica</li>
             <li>Módulos de inventario, finanzas y reportes administrativos</li>
-            <li>Herramientas de diagnóstico e inteligencia artificial aplicada</li>
+            <li>Servicio técnico para equipos estéticos</li>
           </ul>
           <p>El acceso a estos módulos depende del plan contratado y de las funcionalidades habilitadas por el administrador de la Plataforma.</p>
         </Section>
@@ -158,7 +158,7 @@ export default function TermsOfService() {
         <Section number={6} title="Propiedad Intelectual" icon={<Shield className="w-4 h-4" />}>
           <p>
             El software, diseño, marca, logotipos y demás elementos de la Plataforma son propiedad exclusiva de{' '}
-            <strong>RAFAEL LARREA GALINDO / BIOSKINTECH</strong>. Todos los derechos reservados.
+            <strong>BIOSKINTECH</strong>. Todos los derechos reservados.
           </p>
           <p>
             El Cliente recibe una <strong>licencia de uso limitada, no exclusiva y no transferible</strong> para acceder a la Plataforma durante el período de suscripción activa. Esta licencia no implica cesión de ningún derecho de propiedad intelectual.
@@ -296,7 +296,7 @@ export default function TermsOfService() {
 
         {/* Footer de la página */}
         <div className="text-center text-xs text-gray-400 pt-4">
-          <p>BioSkinTech © {new Date().getFullYear()} · RUC 0105872600001 · Ecuador</p>
+          <p>BioSkinTech © {new Date().getFullYear()} · Ecuador</p>
           <p className="mt-1">
             Al registrarte o usar la Plataforma aceptas estas Condiciones de Servicio y nuestra{' '}
             <a href="/politica-de-privacidad" className="text-[#deb887] hover:underline">Política de Privacidad</a>.
