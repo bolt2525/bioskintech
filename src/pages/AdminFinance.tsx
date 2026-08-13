@@ -117,10 +117,11 @@ const AdminFinance = () => {
     fetch(`/api/admin-auth?action=getClinicSettings&clinicId=${cid}`, {
       headers: { Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken') || ''}` }
     }).then(r => r.json()).then(d => {
-      const fin = d.settings?.finanzas;
-      if (fin?.tax_percent != null) { setTaxRate(parseFloat(fin.tax_percent)); setClinicTaxRate(parseFloat(fin.tax_percent)); }
-      if (fin?.currency_symbol) setCurrencySymbol(fin.currency_symbol);
-      if (fin?.invoice_prefix)  setInvoicePrefix(fin.invoice_prefix);
+      const fin = d.settings?.finanzas ?? {};
+      const taxPct = parseFloat(String(fin.tax_percent ?? 15));
+      if (!isNaN(taxPct)) { setTaxRate(taxPct); setClinicTaxRate(taxPct); }
+      setCurrencySymbol(fin.currency_symbol || '$');
+      setInvoicePrefix(fin.invoice_prefix || 'FAC');
     }).catch(() => {});
   }, [user?.clinic_id]);
   
@@ -910,7 +911,7 @@ const AdminFinance = () => {
                             {currencySymbol}{parseFloat(String(record.tax || 0)).toFixed(2)}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-right text-gray-800">
-                            {currencySymbol}{parseFloat(String(record.total)).toFixed(2)}
+                            {currencySymbol}{parseFloat(String(record.total || 0)).toFixed(2)}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                             <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -1106,10 +1107,11 @@ const EditRow = ({ data, onChange, onSave, onCancel }: EditRowProps) => {
 interface ItemRowProps {
   item: FinanceItem;
   taxRate: number;
+  currencySymbol?: string;
   onChange: (updated: FinanceItem) => void;
   onRemove: () => void;
 }
-const ItemRow = ({ item, taxRate, onChange, onRemove }: ItemRowProps) => {
+const ItemRow = ({ item, taxRate, currencySymbol = '$', onChange, onRemove }: ItemRowProps) => {
   const [ivaEditing, setIvaEditing] = useState(false);
   const update = (field: keyof FinanceItem, value: string) => {
     const partial = { ...item, [field]: parseFloat(value) || 0 };
