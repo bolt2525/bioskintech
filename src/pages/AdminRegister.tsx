@@ -315,21 +315,23 @@ export default function AdminRegister() {
   // ─────────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#fdf8f0] via-white to-[#faf4ea] flex items-center justify-center px-4 py-8 relative overflow-hidden">
-      {/* Blobs decorativos */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute -top-48 -right-48 w-96 h-96 bg-[#deb887]/10 rounded-full blur-3xl" />
-        <div className="absolute -bottom-48 -left-48 w-96 h-96 bg-[#deb887]/10 rounded-full blur-3xl" />
-      </div>
+    <div className="gradient-bg min-h-screen flex items-center justify-center px-4 py-8">
+      <div className="base" />
+      <div className="treatment" />
+      <div className="glow" />
+      <div className="vignette" />
+      <div className="noise" />
+      <div className="scanlines" />
 
-      <div className="relative max-w-lg w-full">
+      <div className="content w-full flex flex-col items-center">
+      <div className="max-w-lg w-full">
         {/* Branding */}
         <div className="text-center mb-6">
           <BrandLogo className="h-24 w-auto object-contain mx-auto" />
-          <p className="text-gray-400 mt-2 text-sm uppercase tracking-wide">Registro de nueva clínica</p>
+          <p className="text-white/40 mt-2 text-sm uppercase tracking-wide">Registro de nueva clínica</p>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-xl border border-[#deb887]/20 overflow-hidden">
+        <div className="glass-card rounded-2xl overflow-hidden shadow-2xl">
           <div className="h-1 bg-gradient-to-r from-[#deb887] via-[#e8c98a] to-[#deb887]" />
 
           <div className="p-6 space-y-5">
@@ -338,31 +340,31 @@ export default function AdminRegister() {
             {step === 'method' && (
               <>
                 <div>
-                  <h2 className="text-lg font-semibold text-gray-900">¿Cómo deseas registrarte?</h2>
-                  <p className="text-gray-400 text-sm mt-0.5">Elige tu método de acceso</p>
+                  <h2 className="text-lg font-semibold text-white">¿Cómo deseas registrarte?</h2>
+                  <p className="text-white/40 text-sm mt-0.5">Elige tu método de acceso</p>
                 </div>
 
                 <div className="grid gap-3">
                   {/* Código único */}
-                  <button onClick={() => setStep('code')} className="flex items-center gap-3 p-4 border-2 border-[#deb887]/40 rounded-xl hover:border-[#deb887] hover:bg-[#fdf8f0] transition-all text-left">
+                  <button onClick={() => setStep('code')} className="flex items-center gap-3 p-4 border-2 border-[#deb887]/25 rounded-xl hover:border-[#deb887]/60 hover:bg-white/5 transition-all text-left">
                     <KeyRound className="w-5 h-5 text-[#deb887] flex-shrink-0" />
                     <div>
-                      <p className="text-sm font-semibold text-gray-800">Tengo un código de acceso</p>
-                      <p className="text-xs text-gray-400">Ingresa el código que te enviaron</p>
+                      <p className="text-sm font-semibold text-white">Tengo un código de acceso</p>
+                      <p className="text-xs text-white/40">Ingresa el código que te enviaron</p>
                     </div>
                   </button>
 
                   {/* PayPhone */}
-                  <button onClick={() => setStep('payment')} className="flex items-center gap-3 p-4 border-2 border-blue-100 rounded-xl hover:border-blue-300 hover:bg-blue-50/50 transition-all text-left">
-                    <CreditCard className="w-5 h-5 text-blue-500 flex-shrink-0" />
+                  <button onClick={() => setStep('payment')} className="flex items-center gap-3 p-4 border-2 border-blue-500/20 rounded-xl hover:border-blue-500/40 hover:bg-blue-500/5 transition-all text-left">
+                    <CreditCard className="w-5 h-5 text-blue-400 flex-shrink-0" />
                     <div>
-                      <p className="text-sm font-semibold text-gray-800">Contratar suscripción</p>
-                      <p className="text-xs text-gray-400">Pago con tarjeta de débito/crédito vía PayPhone</p>
+                      <p className="text-sm font-semibold text-white">Contratar suscripción</p>
+                      <p className="text-xs text-white/40">Pago con tarjeta de débito/crédito vía PayPhone</p>
                     </div>
                   </button>
                 </div>
 
-                <p className="text-center text-xs text-gray-400">
+                <p className="text-center text-xs text-white/35">
                   ¿Ya tienes cuenta?{' '}
                   <button onClick={() => navigate('/admin/login')} className="text-[#deb887] hover:underline font-medium">Inicia sesión</button>
                 </p>
@@ -956,7 +958,8 @@ export default function AdminRegister() {
           </div>
         </div>
       )}
-      <AppFooter theme="light" />
+      <AppFooter theme="dark" />
+    </div>
     </div>
   );
 }

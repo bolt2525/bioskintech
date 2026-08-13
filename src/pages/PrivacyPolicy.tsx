@@ -1,4 +1,4 @@
-import { ArrowLeft, Shield, Users, Database, Globe, Clock, UserCheck, FileText, Bell } from 'lucide-react';
+import { ArrowLeft, Shield, Users, Database, Globe, Clock, UserCheck, FileText, Bell, Cookie, BarChart2, AlertTriangle, Trash2 } from 'lucide-react';
 import BrandLogo from '../components/ui/BrandLogo';
 
 const CONTACT_EMAIL = 'bolt2525@gmail.com';
@@ -206,13 +206,78 @@ export default function PrivacyPolicy() {
           </div>
         </Section>
 
-        {/* 8. Modificaciones */}
-        <Section number={8} title="Modificaciones a la Política de Privacidad" icon={<Bell className="w-4 h-4" />}>
+        {/* 8. Cookies y Herramientas de Análisis */}
+        <Section number={8} title="Cookies y Herramientas de Análisis" icon={<Cookie className="w-4 h-4" />}>
+          <p>
+            La Plataforma puede utilizar <strong>cookies técnicas</strong> necesarias para el correcto funcionamiento del sistema (gestión de sesión, autenticación, preferencias). El uso de estas cookies es imprescindible y no puede desactivarse sin comprometer la funcionalidad.
+          </p>
+          <p>
+            Adicionalmente, la Plataforma puede integrar herramientas de análisis de comportamiento anónimo e información estadística no identificable (como patrones de uso de módulos), con el único objetivo de mejorar la experiencia de usuario y la calidad del servicio.
+          </p>
+          <div className="bg-[#fdf8f0] border border-[#deb887]/20 rounded-xl p-3 text-xs text-gray-700">
+            <p className="font-semibold mb-1">Importante:</p>
+            <ul className="list-disc list-inside space-y-1 pl-1">
+              <li>Las cookies no contienen datos sensibles de pacientes.</li>
+              <li>Los datos estadísticos son agregados y no permiten identificar personas individuales.</li>
+              <li>No utilizamos cookies de terceros con fines publicitarios.</li>
+            </ul>
+          </div>
+        </Section>
+
+        {/* 9. Seguridad de Cuentas */}
+        <Section number={9} title="Seguridad de Cuentas y Contraseñas" icon={<BarChart2 className="w-4 h-4" />}>
+          <ul className="list-disc list-inside space-y-1.5 pl-1">
+            <li>Cada cuenta requiere usuario y contraseña únicos. Las contraseñas se almacenan de forma <strong>cifrada con PBKDF2</strong> — nunca en texto plano.</li>
+            <li>Se recomienda cerrar sesión después de cada uso, especialmente en dispositivos compartidos.</li>
+            <li>El sistema permite el restablecimiento seguro de contraseñas mediante código enviado al correo registrado. La Plataforma <strong>nunca reenvía contraseñas por correo</strong>.</li>
+            <li>La Plataforma implementa <strong>verificación en dos pasos (2FA)</strong> para proteger el acceso al panel administrativo.</li>
+            <li>Se aplica bloqueo automático de cuenta tras múltiples intentos fallidos de inicio de sesión.</li>
+          </ul>
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 mt-1">
+            El Cliente es responsable de mantener la confidencialidad de sus credenciales y de notificar de inmediato cualquier acceso no autorizado a{' '}
+            <a href={`mailto:${CONTACT_EMAIL}`} className="text-[#deb887] font-semibold hover:underline">{CONTACT_EMAIL}</a>.
+          </div>
+        </Section>
+
+        {/* 10. Incidentes de Seguridad */}
+        <Section number={10} title="Incidentes de Seguridad y Notificación" icon={<AlertTriangle className="w-4 h-4" />}>
+          <p>
+            En caso de detectar un incidente de seguridad que pudiera comprometer la confidencialidad, integridad o disponibilidad de los datos personales almacenados, la Plataforma:
+          </p>
+          <ol className="list-decimal list-inside space-y-1.5 pl-1">
+            <li>Tomará acciones inmediatas para contener y mitigar el incidente.</li>
+            <li>Notificará a las Clínicas y Usuarios afectados en el menor tiempo posible a través del correo registrado en el sistema.</li>
+            <li>Comunicará el incidente a la autoridad de control competente (Dirección Nacional de Registro de Datos Públicos - DINARDAP) dentro del plazo establecido por la LOPDP.</li>
+            <li>Documentará el incidente y las acciones correctivas aplicadas.</li>
+          </ol>
+        </Section>
+
+        {/* 11. Eliminación de Datos de Ex-Clientes */}
+        <Section number={11} title="Eliminación de Datos de Ex-Clientes" icon={<Trash2 className="w-4 h-4" />}>
+          <p>
+            Cuando una clínica o profesional de la salud cancele su suscripción o solicite la baja del servicio, los datos almacenados serán gestionados de la siguiente manera:
+          </p>
+          <ul className="list-disc list-inside space-y-1.5 pl-1">
+            <li>Se entregará al Cliente un respaldo completo de sus datos clínicos y administrativos antes de proceder a cualquier eliminación.</li>
+            <li>Los datos se conservarán en modo inactivo durante un periodo de <strong>30 días calendario</strong> adicionales tras la cancelación para permitir la recuperación ante cancelaciones involuntarias.</li>
+            <li>Transcurrido dicho plazo, los datos podrán ser eliminados de forma definitiva de los servidores de la Plataforma.</li>
+            <li>Los ex-clientes podrán solicitar la <strong>eliminación inmediata y certificada</strong> de todos sus datos enviando una solicitud por escrito a: <a href={`mailto:${CONTACT_EMAIL}`} className="text-[#deb887] font-semibold hover:underline">{CONTACT_EMAIL}</a>.</li>
+          </ul>
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-800">
+            La Plataforma no reutilizará ni transferirá los datos de clínicas que hayan dado de baja el servicio.
+          </div>
+        </Section>
+
+        {/* 12. Modificaciones */}
+        <Section number={12} title="Modificaciones a la Política de Privacidad" icon={<Bell className="w-4 h-4" />}>
           <p>
             La Plataforma se reserva el derecho de modificar esta política en cualquier momento para adaptarla a actualizaciones del sistema, nuevas especialidades médicas integradas o reformas legislativas en el Ecuador.
           </p>
           <p>
-            Toda modificación será notificada a las clínicas usuarias dentro del panel de control de la aplicación con un aviso de lectura obligatoria.
+            Toda modificación será notificada a las clínicas usuarias dentro del panel de control de la aplicación con un aviso de lectura obligatoria. Se recomienda revisar este documento periódicamente.
+          </p>
+          <p className="text-xs text-gray-500">
+            El uso continuo de la Plataforma tras la notificación de cambios implica la aceptación de los términos actualizados.
           </p>
         </Section>
 

@@ -56,3 +56,127 @@
     @apply absolute bottom-0 left-1/2 transform -translate-x-1/2 h-1 w-16 bg-[#deb887] rounded-full mt-2;
   }
 }
+
+/* ─── Landing: Gradient Background ────────────────────────────────────────── */
+.gradient-bg {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+.gradient-bg .base {
+  position: absolute; inset: 0; z-index: 0;
+  background: linear-gradient(204deg, #e7e6e2 0%, #cbc199 14%, #b09538 35%, #4e4324 58%, #1f1d15 81%, #040404 100%);
+}
+.gradient-bg .treatment {
+  position: absolute; inset: 0; z-index: 1;
+  background-image: repeating-conic-gradient(from 86deg at 74% 16%, transparent 0 8%, rgba(218,179,47,0.30) 10%, rgba(229,225,210,0.25) 12%, transparent 14%);
+  filter: blur(28px);
+  opacity: 0.35;
+}
+.gradient-bg .glow {
+  position: absolute; inset: 0; z-index: 2;
+  background:
+    radial-gradient(ellipse at 61% 4%, rgba(255,255,255,0.21), transparent 38%),
+    radial-gradient(ellipse at 55% 38%, rgba(218,179,47,0.22), transparent 42%);
+}
+.gradient-bg .vignette {
+  position: absolute; inset: 0; z-index: 4;
+  background:
+    radial-gradient(circle at center, transparent 25%, rgba(0,0,0,0.16) 58%, rgba(0,0,0,0.85) 100%),
+    linear-gradient(to bottom, transparent 45%, rgba(0,0,0,0.75) 100%);
+}
+.gradient-bg .noise {
+  position: absolute; inset: 0; z-index: 5;
+  mix-blend-mode: soft-light;
+  opacity: 0.2;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 180px 180px;
+}
+.gradient-bg .particles {
+  position: absolute; inset: 0; z-index: 3;
+  background:
+    radial-gradient(circle at 16% 72%, rgba(229,225,210,0.10) 0, transparent 1px),
+    radial-gradient(circle at 6% 53%, rgba(229,225,210,0.19) 0, transparent 3px),
+    radial-gradient(circle at 81% 85%, rgba(229,225,210,0.17) 0, transparent 2px),
+    radial-gradient(circle at 21% 41%, rgba(255,255,255,0.39) 0, transparent 3px),
+    radial-gradient(circle at 89% 47%, rgba(229,225,210,0.13) 0, transparent 3px),
+    radial-gradient(circle at 31% 35%, rgba(229,225,210,0.35) 0, transparent 2px),
+    radial-gradient(circle at 84% 63%, rgba(255,255,255,0.26) 0, transparent 2px),
+    radial-gradient(circle at 50% 45%, rgba(255,255,255,0.29) 0, transparent 2px),
+    radial-gradient(circle at 12% 14%, rgba(255,255,255,0.29) 0, transparent 2px),
+    radial-gradient(circle at 55% 42%, rgba(255,255,255,0.28) 0, transparent 2px),
+    radial-gradient(circle at 81% 34%, rgba(255,255,255,0.29) 0, transparent 2px),
+    radial-gradient(circle at 64% 16%, rgba(255,255,255,0.32) 0, transparent 1px),
+    radial-gradient(circle at 84% 58%, rgba(229,225,210,0.13) 0, transparent 3px),
+    radial-gradient(circle at 55% 65%, rgba(255,255,255,0.36) 0, transparent 3px),
+    radial-gradient(circle at 79% 35%, rgba(229,225,210,0.17) 0, transparent 2px),
+    radial-gradient(circle at 85% 66%, rgba(229,225,210,0.33) 0, transparent 2px),
+    radial-gradient(circle at 58% 58%, rgba(255,255,255,0.38) 0, transparent 1px),
+    radial-gradient(circle at 84% 29%, rgba(255,255,255,0.12) 0, transparent 2px),
+    radial-gradient(circle at 70% 33%, rgba(255,255,255,0.37) 0, transparent 2px),
+    radial-gradient(circle at 57% 34%, rgba(255,255,255,0.19) 0, transparent 1px),
+    radial-gradient(circle at 71% 80%, rgba(229,225,210,0.30) 0, transparent 3px),
+    radial-gradient(circle at 5% 33%, rgba(229,225,210,0.19) 0, transparent 2px),
+    radial-gradient(circle at 7% 59%, rgba(255,255,255,0.35) 0, transparent 3px),
+    radial-gradient(circle at 58% 79%, rgba(255,255,255,0.39) 0, transparent 2px),
+    radial-gradient(circle at 47% 59%, rgba(229,225,210,0.17) 0, transparent 3px),
+    radial-gradient(circle at 94% 71%, rgba(229,225,210,0.22) 0, transparent 2px),
+    radial-gradient(circle at 67% 29%, rgba(255,255,255,0.29) 0, transparent 3px);
+}
+.gradient-bg .scanlines {
+  position: absolute; inset: 0; z-index: 8;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.061) 2px, rgba(0,0,0,0.061) 4px);
+  pointer-events: none;
+}
+.gradient-bg .content {
+  position: relative;
+  z-index: 10;
+}
+
+/* ─── Masked logo text animation ───────────────────────────────────────────── */
+.text-logo-mask {
+  background-image: url('/images/logo/logo.png'), linear-gradient(135deg, #deb887 0%, #f0d080 30%, #c9a876 60%, #b09538 100%);
+  background-size: 320%, 100%;
+  background-position: 30% 40%, center;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: maskShift 14s ease-in-out infinite;
+}
+@keyframes maskShift {
+  0%   { background-position: 30% 40%, center; background-size: 320%, 100%; }
+  25%  { background-position: 72% 18%, center; background-size: 360%, 100%; }
+  50%  { background-position: 18% 75%, center; background-size: 290%, 100%; }
+  75%  { background-position: 82% 55%, center; background-size: 340%, 100%; }
+  100% { background-position: 30% 40%, center; background-size: 320%, 100%; }
+}
+
+/* ─── Chromatic grid cards ──────────────────────────────────────────────────── */
+.chromatic-card {
+  filter: grayscale(85%) brightness(0.7);
+  transition: filter 0.5s ease, transform 0.35s ease, box-shadow 0.5s ease;
+}
+.chromatic-card:hover {
+  filter: grayscale(0%) brightness(1.05);
+  transform: translateY(-8px) scale(1.015);
+}
+
+/* ─── Login dark glass card ─────────────────────────────────────────────────── */
+.glass-card {
+  background: rgba(15, 12, 8, 0.72);
+  border: 1px solid rgba(222, 184, 135, 0.18);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+.glass-input {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.12);
+  color: rgba(255,255,255,0.9);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.glass-input::placeholder { color: rgba(255,255,255,0.25); }
+.glass-input:focus {
+  outline: none;
+  border-color: rgba(222,184,135,0.6);
+  box-shadow: 0 0 0 3px rgba(222,184,135,0.12);
+}

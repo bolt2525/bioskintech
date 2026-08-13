@@ -109,27 +109,27 @@ export default function AdminLogin() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#fdf8f0] via-white to-[#faf4ea] flex items-center justify-center px-4 relative overflow-hidden">
+    <div className="gradient-bg min-h-screen flex items-center justify-center px-4">
+      <div className="base" />
+      <div className="treatment" />
+      <div className="glow" />
+      <div className="vignette" />
+      <div className="noise" />
+      <div className="scanlines" />
 
-      {/* Blobs decorativos de fondo */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute -top-48 -right-48 w-96 h-96 bg-[#deb887]/10 rounded-full blur-3xl" />
-        <div className="absolute -bottom-48 -left-48 w-96 h-96 bg-[#deb887]/10 rounded-full blur-3xl" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] bg-[#deb887]/5 rounded-full blur-3xl" />
-      </div>
-
-      <div className="relative max-w-md w-full">
+      <div className="content w-full flex flex-col items-center">
+      <div className="max-w-md w-full">
 
         {/* ── Branding ─────────────────────────────────────────────── */}
         <div className="text-center mb-8">
           <BrandLogo className="h-28 w-auto object-contain mx-auto" />
-          <p className="text-gray-400 mt-2 text-sm tracking-wide uppercase">
+          <p className="text-white/40 mt-2 text-sm tracking-wide uppercase">
             Panel de Administración Clínica
           </p>
         </div>
 
         {/* ── Card de login ─────────────────────────────────────────── */}
-        <div className="bg-white rounded-2xl shadow-xl border border-[#deb887]/20 overflow-hidden">
+        <div className="glass-card rounded-2xl overflow-hidden shadow-2xl">
           {/* Barra dorada superior */}
           <div className="h-1 bg-gradient-to-r from-[#deb887] via-[#e8c98a] to-[#deb887]" />
 
@@ -140,28 +140,28 @@ export default function AdminLogin() {
                 <div className="text-center">
                   <ShieldCheck className="w-12 h-12 text-[#deb887] mx-auto mb-3" />
                   <h2 className="text-lg font-semibold text-gray-900">Verificación en dos pasos</h2>
-                  <p className="text-gray-400 text-sm mt-1">
-                    Enviamos un código de 6 dígitos a <strong>{maskedEmail}</strong>
+                  <p className="text-white/50 text-sm mt-1">
+                    Enviamos un código de 6 dígitos a <strong className="text-white/80">{maskedEmail}</strong>
                   </p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Código de verificación</label>
+                  <label className="block text-sm font-medium text-white/70 mb-1.5">Código de verificación</label>
                   <input
                     type="text" inputMode="numeric" maxLength={6} autoFocus required
                     value={otpCode}
                     onChange={e => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                     placeholder="000000"
-                    className="w-full px-4 py-3 border border-gray-200 rounded-xl text-center text-3xl font-mono tracking-widest text-gray-800 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all"
+                    className="glass-input w-full px-4 py-3 rounded-xl text-center text-3xl font-mono tracking-widest"
                   />
                 </div>
                 <label className="flex items-center gap-2 cursor-pointer select-none">
                   <input type="checkbox" checked={trustDevice} onChange={e => setTrustDevice(e.target.checked)}
                     className="w-4 h-4 rounded accent-[#deb887]" />
-                  <span className="text-xs text-gray-500">No pedir código en este dispositivo por 30 días</span>
+                  <span className="text-xs text-white/40">No pedir código en este dispositivo por 30 días</span>
                 </label>
                 {error && (
-                  <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3">
-                    <p className="text-red-600 text-sm">{error}</p>
+                  <div className="bg-red-900/30 border border-red-500/30 rounded-xl px-4 py-3">
+                    <p className="text-red-400 text-sm">{error}</p>
                   </div>
                 )}
                 <button type="submit" disabled={loading || otpCode.length < 6}
@@ -174,10 +174,10 @@ export default function AdminLogin() {
                   ) : 'Confirmar acceso'}
                 </button>
                 <button type="button" onClick={() => { setOtpStep(false); setOtpCode(''); setError(''); }}
-                  className="w-full text-sm text-gray-400 hover:text-gray-600 transition-colors py-1">
+                  className="w-full text-sm text-white/35 hover:text-white/60 transition-colors py-1">
                   ← Volver al inicio de sesión
                 </button>
-                <p className="text-center text-xs text-gray-400">
+                <p className="text-center text-xs text-white/35">
                   ¿No llegó el código?{' '}
                   <button type="button" onClick={() => navigate('/admin/recover')}
                     className="text-[#deb887] hover:underline font-medium">
@@ -189,8 +189,8 @@ export default function AdminLogin() {
               /* ── Primer paso: usuario + contraseña ───────────────── */
               <>
             <div className="mb-6">
-              <h2 className="text-lg font-semibold text-gray-900">Acceso al Panel</h2>
-              <p className="text-gray-400 text-sm mt-0.5">
+              <h2 className="text-lg font-semibold text-white">Acceso al Panel</h2>
+              <p className="text-white/40 text-sm mt-0.5">
                 Ingresa tus credenciales para continuar
               </p>
             </div>
@@ -199,16 +199,16 @@ export default function AdminLogin() {
 
               {/* Correo / Usuario */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                <label className="block text-sm font-medium text-white/70 mb-1.5">
                   Correo electrónico o usuario
                 </label>
                 <div className="relative">
-                  <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-300 w-4 h-4" />
+                  <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/25 w-4 h-4" />
                   <input
                     type="text"
                     value={username}
                     onChange={e => setUsername(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all"
+                    className="glass-input w-full pl-10 pr-4 py-2.5 rounded-xl text-sm"
                     placeholder="tu@correo.com"
                     autoComplete="username"
                     required
@@ -218,21 +218,21 @@ export default function AdminLogin() {
 
               {/* Contraseña */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                <label className="block text-sm font-medium text-white/70 mb-1.5">
                   Contraseña
                 </label>
                 <div className="relative">
-                  <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-300 w-4 h-4" />
+                  <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/25 w-4 h-4" />
                   <input
                     type={showPwd ? 'text' : 'password'}
                     value={password}
                     onChange={e => setPassword(e.target.value)}
-                    className="w-full pl-10 pr-10 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all"
+                    className="glass-input w-full pl-10 pr-10 py-2.5 rounded-xl text-sm"
                     placeholder="••••••••"
                     autoComplete="current-password"
                     required
                   />
-                  <button type="button" onClick={() => setShowPwd(p => !p)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500 transition-colors">
+                  <button type="button" onClick={() => setShowPwd(p => !p)} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/25 hover:text-white/60 transition-colors">
                     {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
@@ -240,9 +240,9 @@ export default function AdminLogin() {
 
               {/* Mensaje de error */}
               {error && (
-                <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3 flex items-start gap-2.5">
+                <div className="bg-red-900/30 border border-red-500/30 rounded-xl px-4 py-3 flex items-start gap-2.5">
                   <div className="w-1.5 h-1.5 bg-red-400 rounded-full mt-1.5 flex-shrink-0" />
-                  <p className="text-red-600 text-sm">{error}</p>
+                  <p className="text-red-400 text-sm">{error}</p>
                 </div>
               )}
 
@@ -270,7 +270,7 @@ export default function AdminLogin() {
         </div>
 
         {/* Link de registro */}
-        <p className="text-center text-xs text-gray-400 mt-4">
+        <p className="text-center text-xs text-white/35 mt-4">
           ¿Eres nuevo en BioSkinTech?{' '}
           <button onClick={() => navigate('/admin/register')} className="text-[#deb887] hover:underline font-medium">
             Registra tu clínica
@@ -280,7 +280,8 @@ export default function AdminLogin() {
         {/* DermoAtlas 3D — teaser interactivo */}
         <SkinExplorerButton />
 
-        <AppFooter theme="light" />
+        <AppFooter theme="dark" />
+      </div>
       </div>
     </div>
   );

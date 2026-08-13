@@ -198,13 +198,33 @@ export default function TermsOfService() {
           <p>BIOSKINTECH no será responsable por daños o perjuicios derivados de:</p>
           <ul className="list-disc list-inside space-y-1 pl-1">
             <li>Uso incorrecto o negligente de la Plataforma por parte del Cliente o sus usuarios.</li>
-            <li>Decisiones médicas, clínicas o estéticas tomadas por los profesionales basándose en la información registrada en el sistema.</li>
+            <li><strong>Procedimientos médicos, diagnósticos, tratamientos estéticos o recetas</strong> emitidos por los profesionales que utilizan la Plataforma. BIOSKINTECH provee herramientas de gestión, no servicios médicos directos.</li>
+            <li>Conducta inapropiada, negligencia o mala praxis del profesional de la salud. Ante una denuncia debidamente comprobada, BIOSKINTECH se reserva el derecho de suspender o no renovar la suscripción del profesional.</li>
+            <li>Información cargada en el sistema por el Cliente, su equipo médico, asistentes o secretarias.</li>
             <li>Pérdida de datos atribuible a acciones u omisiones del propio Cliente.</li>
             <li>Interrupciones del servicio por causas ajenas a BIOSKINTECH (proveedores de infraestructura, problemas de conectividad, fuerza mayor).</li>
           </ul>
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 mt-1">
             En ningún caso la responsabilidad total de BIOSKINTECH ante el Cliente excederá el valor de la suscripción anual efectivamente pagada por el período en disputa.
           </div>
+        </Section>
+
+        {/* 9b. Recomendación para Pacientes */}
+        <Section number={9} title="Recomendación a los Pacientes — Verificación Profesional" icon={<Users className="w-4 h-4" />}>
+          <p>
+            BIOSKINTECH insta a los pacientes a investigar y validar cuidadosamente la información del profesional o centro estético antes de someterse a cualquier procedimiento.
+          </p>
+          <div className="bg-[#fdf8f0] border border-[#deb887]/20 rounded-xl p-4 space-y-2 text-xs">
+            <p className="font-semibold text-gray-800">En Ecuador, puedes verificar:</p>
+            <ul className="list-disc list-inside space-y-1 pl-1 text-gray-700">
+              <li>Títulos profesionales registrados en la <strong>SENESCYT</strong> (senescyt.gob.ec)</li>
+              <li>Registros de profesionales de salud en el <strong>Ministerio de Salud Pública (MSP)</strong></li>
+              <li>Habilitación de establecimientos de salud en la plataforma del MSP</li>
+            </ul>
+          </div>
+          <p className="text-xs text-gray-500">
+            BIOSKINTECH no verifica ni certifica las credenciales de los profesionales registrados. La responsabilidad de la idoneidad profesional recae exclusivamente en el propio profesional o clínica contratante.
+          </p>
         </Section>
 
         {/* 10. Suspensión y Cancelación */}
@@ -250,6 +270,28 @@ export default function TermsOfService() {
               <a href={`mailto:${CONTACT_EMAIL}`} className="text-[#deb887] hover:underline font-medium">{CONTACT_EMAIL}</a>
             </p>
           </div>
+        </Section>
+
+        {/* 13. Respaldo de Datos y Continuidad */}
+        <Section number={13} title="Respaldo de Datos y Continuidad del Servicio" icon={<RefreshCw className="w-4 h-4" />}>
+          <p>
+            BIOSKINTECH implementa mecanismos de respaldo automático de la información clínica y administrativa almacenada en la Plataforma, con el objetivo de garantizar la integridad y recuperabilidad de los datos ante incidentes técnicos.
+          </p>
+          <ul className="list-disc list-inside space-y-1.5 pl-1">
+            <li>Los respaldos se realizan de forma periódica en la infraestructura de Neon Postgres con replicación geográfica.</li>
+            <li>Los mantenimientos planificados se notificarán con anticipación en el panel de control.</li>
+            <li>Las interrupciones por mantenimiento, actualizaciones o ciberataques serán comunicadas oportunamente.</li>
+          </ul>
+        </Section>
+
+        {/* 14. Enlace a Terceros */}
+        <Section number={14} title="Enlaces a Sitios de Terceros" icon={<Settings className="w-4 h-4" />}>
+          <p>
+            La Plataforma puede incluir integraciones o referencias a servicios de terceros (Google Calendar, PayPhone, WhatsApp Business API, entre otros). BIOSKINTECH no asume responsabilidad alguna sobre el contenido, políticas de privacidad ni términos de dichos servicios externos.
+          </p>
+          <p className="text-xs text-gray-500">
+            Se recomienda al Cliente revisar los términos y condiciones de cada servicio integrado de forma independiente.
+          </p>
         </Section>
 
         {/* Footer de la página */}
