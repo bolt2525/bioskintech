@@ -919,9 +919,16 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
             </div>
             
             <div className="mt-6">
-              <h4 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
-                <div className="w-1 h-4 bg-[#deb887] rounded-full" />
-                Lesiones Marcadas ({activeTab === 'facial' ? faceMarks.length : bodyMarks.length})
+              <h4 className="font-bold text-gray-800 mb-3 flex items-center gap-2 flex-wrap">
+                <div className="w-1 h-4 bg-[#deb887] rounded-full shrink-0" />
+                <span>Lesiones Marcadas</span>
+                <span className="ml-auto flex items-center gap-2 text-sm font-normal text-gray-500">
+                  <span className="font-bold text-gray-800"><span>{faceMarks.length + bodyMarks.length}</span> total</span>
+                  <span className="text-gray-300">·</span>
+                  <span>Puntual: <span className="font-semibold text-gray-700">{[...faceMarks,...bodyMarks].filter(m=>m.distribution!=='zonal').length}</span></span>
+                  <span className="text-gray-300">·</span>
+                  <span>Zonal: <span className="font-semibold text-[#b8944d]">{[...faceMarks,...bodyMarks].filter(m=>m.distribution==='zonal').length}</span></span>
+                </span>
               </h4>
 
               {/* Legacy 2D marks banner */}

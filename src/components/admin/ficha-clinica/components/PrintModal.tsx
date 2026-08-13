@@ -244,8 +244,10 @@ export default function PrintModal({ patient, recordId, recordData, activeConsul
           const lesionsHtml = ex.lesions_description
             ? `<div class="field" style="margin-top:6px"><span class="label">Descripci\u00f3n de lesiones:</span> <span class="val">${esc(ex.lesions_description)}</span></div>`
             : '';
-          const fm: any[] = (() => { try { return JSON.parse(ex.face_map_data || '[]'); } catch { return []; } })();
-          const bm: any[] = (() => { try { return JSON.parse(ex.body_map_data || '[]'); } catch { return []; } })();
+          // JSONB vuelve ya parseado como array; JSON.parse(array) falla silenciosamente
+          const parseFm = (d: any) => { if (!d) return []; if (Array.isArray(d)) return d; try { return JSON.parse(d); } catch { return []; } };
+          const fm: any[] = parseFm(ex.face_map_data);
+          const bm: any[] = parseFm(ex.body_map_data);
           const marks = [
             fm.length ? `<div class="marks-title">Marcaciones faciales (${fm.length}):</div><div class="marks-list">${fm.map((m:any)=>`<span class="mark">${esc(m.category)}${m.tercio ? ' &middot; '+esc(m.tercio) : ''}${m.notes ? ' &mdash; '+esc(m.notes) : ''}</span>`).join('')}</div>` : '',
             bm.length ? `<div class="marks-title">Marcaciones corporales (${bm.length}):</div><div class="marks-list">${bm.map((m:any)=>`<span class="mark">${esc(m.category)}${m.tercio ? ' &middot; '+esc(m.tercio) : ''}${m.notes ? ' &mdash; '+esc(m.notes) : ''}</span>`).join('')}</div>` : '',

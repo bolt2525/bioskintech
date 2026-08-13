@@ -1513,7 +1513,6 @@ export default async function handler(req, res) {
       // --- INYECTABLES ---
 
       case 'getInjectablesByRecord': {
-        await ensureInjectablesSchema(pool);
         const { record_id: injRecordId } = req.query;
         if (!injRecordId) return res.status(400).json({ error: 'record_id required' });
         const injByRecord = await pool.query(
@@ -1534,7 +1533,6 @@ export default async function handler(req, res) {
       }
 
       case 'addInjectable': {
-        await ensureInjectablesSchema(pool);
         const { record_id: injRecId, treatment_id: injTid, ...injData } = body;
         if (!injRecId) return res.status(400).json({ error: 'record_id required' });
 

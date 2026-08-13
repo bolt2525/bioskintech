@@ -251,7 +251,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   } | null>(null);
   const [unitsModalInput, setUnitsModalInput] = useState('');
   // Multi-step states for trazado point modal
-  const [unitsModalStep, setUnitsModalStep] = useState<1 | 2 | 3>(1);
+  const [unitsModalStep, setUnitsModalStep] = useState<1 | 2 | 3 | 4>(1);
   const [unitsModalTercio, setUnitsModalTercio] = useState<'superior' | 'medio' | 'inferior' | ''>('');
   const [unitsModalZone, setUnitsModalZone] = useState('');
   const [unitsModalZoneFilter, setUnitsModalZoneFilter] = useState('');
@@ -3470,7 +3470,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                   <h3 className="text-sm font-bold text-gray-800">
                     {current.product_type === 'relleno'
                       ? (unitsModalStep === 1 ? 'Volumen (ml)' : unitsModalStep === 2 ? 'Tercio facial' : 'Zona anatómica')
-                      : (unitsModalStep === 1 ? 'Unidades (UI)' : unitsModalStep === 2 ? 'Tercio facial' : 'Zona anatómica')
+                      : (unitsModalStep === 1 ? 'Unidades (UI)' : unitsModalStep === 2 ? 'Tercio facial' : unitsModalStep === 3 ? 'Zona anatómica' : 'Plano de inyección')
                     }
                   </h3>
                   <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{unitsModal.pointName}</p>
@@ -3483,10 +3483,10 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 </button>
               </div>
 
-              {/* Step progress bar — pasos 1→2→3 */}
+              {/* Step progress bar — 4 pasos para toxina, 3 para relleno */}
               <div className="flex gap-1 mb-4">
-                {[1, 2, 3].map(s => (
-                  <div key={s} className={`h-1 flex-1 rounded-full transition-colors ${s <= unitsModalStep ? (current.product_type === 'relleno' ? 'bg-violet-400' : 'bg-[#deb887]') : 'bg-gray-200'}`} />
+                {(current.product_type === 'toxina' ? [1, 2, 3, 4] : [1, 2, 3]).map(s => (
+                  <div key={s} className={`h-1 flex-1 rounded-full transition-colors ${s <= unitsModalStep ? 'bg-[#deb887]' : 'bg-gray-200'}`} />
                 ))}
               </div>
 
@@ -3615,6 +3615,28 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 </div>
               )}
 
+              {/* Step 4: Plano de inyección (solo toxina) */}
+              {unitsModalStep === 4 && current.product_type === 'toxina' && (
+                <div className="mb-4 space-y-2">
+                  {(['Superficial', 'Medio', 'Profundo'] as const).map(plane => (
+                    <button
+                      key={plane}
+                      onClick={() => setUnitsModalPlane(p => p === plane ? '' : plane)}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 text-left text-sm font-semibold transition-all ${
+                        unitsModalPlane === plane
+                          ? 'bg-[#deb887]/10 border-[#deb887] text-[#b8944d] shadow-md'
+                          : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+                      }`}
+                    >
+                      <div className={`w-3 h-3 rounded-full ${plane === 'Superficial' ? 'bg-sky-400' : plane === 'Medio' ? 'bg-[#deb887]' : 'bg-amber-700'}`} />
+                      {plane}
+                      {unitsModalPlane === plane && <Check className="w-4 h-4 ml-auto" />}
+                    </button>
+                  ))}
+                  <p className="text-[10px] text-gray-400 text-center pt-1">Opcional — puede omitirse</p>
+                </div>
+              )}
+
               {/* Step 3: Zone (ambos tipos) */}
               {unitsModalStep === 3 && unitsModalTercio && (
                 <div className="mb-4">
@@ -3695,15 +3717,15 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                   {/* Volver — pasos 2+ */}
                   {unitsModalStep > 1 && (
                     <button
-                      onClick={() => setUnitsModalStep(prev => (prev - 1) as 1 | 2 | 3)}
+                      onClick={() => setUnitsModalStep(prev => (prev - 1) as 1 | 2 | 3 | 4)}
                       className="px-3 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50 transition-colors"
                     >
                       ←
                     </button>
                   )}
 
-                  {/* Guardar — paso 1 y paso 3 (final) */}
-                  {(unitsModalStep === 1 || unitsModalStep === 3) && (
+                  {/* Guardar — paso 1, paso 3 relleno, paso 4 toxina */}
+                  {(unitsModalStep === 1 || (unitsModalStep === 3 && current.product_type !== 'toxina') || unitsModalStep === 4) && (
                     <button
                       onClick={handleUnitsModalConfirm}
                       disabled={!unitsModalInput || Number(unitsModalInput) <= 0}
@@ -3714,12 +3736,22 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     </button>
                   )}
 
-                  {/* Siguiente — solo paso 2 */}
+                  {/* Siguiente — paso 2 */}
                   {unitsModalStep === 2 && (
                     <button
                       onClick={() => { if (!unitsModalTercio) return; setUnitsModalStep(3); setUnitsModalZoneFilter(''); }}
                       disabled={!unitsModalTercio}
                       className="flex-1 px-4 py-2.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-semibold hover:bg-gray-200 transition-colors disabled:opacity-40 flex items-center justify-center gap-1"
+                    >
+                      Siguiente →
+                    </button>
+                  )}
+
+                  {/* Siguiente → Plano — paso 3 solo toxina */}
+                  {unitsModalStep === 3 && current.product_type === 'toxina' && (
+                    <button
+                      onClick={() => setUnitsModalStep(4)}
+                      className="flex-1 px-4 py-2.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-semibold hover:bg-gray-200 transition-colors flex items-center justify-center gap-1"
                     >
                       Siguiente →
                     </button>

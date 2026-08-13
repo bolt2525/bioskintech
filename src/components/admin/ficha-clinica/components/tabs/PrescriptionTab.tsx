@@ -780,9 +780,9 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, con
                     onChange={e => updateItem(idx, 'rutina', e.target.value as any)}
                   >
                     <option value="">Seleccionar...</option>
-                    <option value="mañana">?? Mañana</option>
-                    <option value="noche">?? Noche</option>
-                    <option value="ambos">?? Ambos</option>
+                    <option value="mañana">☀️ Mañana</option>
+                    <option value="noche">🌙 Noche</option>
+                    <option value="ambos">🌗 Mañana y Noche</option>
                   </select>
                 </div>
                 <div className="lg:col-span-2 space-y-1.5 flex flex-col">
