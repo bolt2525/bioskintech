@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import {
   Sparkles, Activity, Stethoscope, Smile, ChevronRight,
-  FileText, CalendarDays, HardDrive, Package, DollarSign,
-  Wrench, Shield, Users, CheckCircle,
+  FileText, CalendarDays, Box, Package, DollarSign,
+  Camera, Shield, Users, CheckCircle, X, MessageCircle,
 } from 'lucide-react';
 import BrandLogo from '../components/ui/BrandLogo';
 
@@ -92,22 +92,22 @@ const FEATURES = [
     bg: 'linear-gradient(135deg, #0a160a 0%, #050d05 100%)',
   },
   {
-    icon: HardDrive,
-    title: 'Seguridad y Respaldos',
-    subtitle: 'Tus datos siempre protegidos',
-    description: 'Autenticación en dos pasos (2FA), contraseñas cifradas con PBKDF2, respaldos automáticos y aislamiento total de datos por clínica.',
-    tags: ['2FA', 'PBKDF2', 'Respaldos', 'Cifrado'],
-    accent: '#b5a8c4',
-    bg: 'linear-gradient(135deg, #120a1a 0%, #0a0510 100%)',
+    icon: Box,
+    title: 'Herramientas 3D Clínicas',
+    subtitle: 'DermoAtlas y Mapeo Facial',
+    description: 'DermoAtlas 3D para explorar capas anatómicas de la piel, y mapeo facial tridimensional para registrar puntos de inyección, trazar líneas de referencia y capturar el procedimiento desde múltiples ángulos.',
+    tags: ['DermoAtlas', 'Mapeo 3D', 'Inyectables', 'Capturas'],
+    accent: '#90bab8',
+    bg: 'linear-gradient(135deg, #081618 0%, #040c0d 100%)',
   },
   {
-    icon: Wrench,
-    title: 'Servicio Técnico',
-    subtitle: 'Gestión de equipos y reparaciones',
-    description: 'Módulo de servicio técnico para registro y seguimiento de reparaciones de equipos estéticos, generación de informes técnicos y control de garantías.',
-    tags: ['Equipos', 'Reparaciones', 'Informes', 'Garantías'],
-    accent: '#c4a898',
-    bg: 'linear-gradient(135deg, #1a1008 0%, #0d0a05 100%)',
+    icon: Camera,
+    title: 'Galería Clínica',
+    subtitle: 'Fotos antes/después + comparación',
+    description: 'Galería fotográfica por paciente con categorías (antes, después, diagnóstico, progreso). Modo comparación lado a lado con zoom sincronizado y navegación por línea de tiempo.',
+    tags: ['Antes/Después', 'Comparación', 'Zoom', 'Timeline'],
+    accent: '#b8a0c4',
+    bg: 'linear-gradient(135deg, #100a18 0%, #0a060f 100%)',
   },
   {
     icon: Users,
@@ -120,8 +120,98 @@ const FEATURES = [
   },
 ];
 
+const GALLERY_ITEMS = [
+  { id: 1, label: 'Panel Principal',      grad: 'from-amber-900/50 to-[#070b14]',   icon: Sparkles },
+  { id: 2, label: 'Fichas Clínicas',       grad: 'from-amber-800/40 to-[#070b14]',   icon: FileText },
+  { id: 3, label: 'Mapeo 3D Facial',       grad: 'from-cyan-900/50 to-[#070b14]',    icon: Box },
+  { id: 4, label: 'Agenda y Citas',        grad: 'from-emerald-900/50 to-[#070b14]', icon: CalendarDays },
+  { id: 5, label: 'Comparación de Fotos',  grad: 'from-violet-900/50 to-[#070b14]',  icon: Camera },
+  { id: 6, label: 'Inventario',            grad: 'from-orange-900/50 to-[#070b14]',  icon: Package },
+  { id: 7, label: 'Finanzas',              grad: 'from-green-900/50 to-[#070b14]',   icon: DollarSign },
+  { id: 8, label: 'Consentimientos',       grad: 'from-blue-900/50 to-[#070b14]',    icon: Shield },
+];
+
+const WA_NUMBER = '593984232889';
+const WA_DEMO_LINK = `https://wa.me/${WA_NUMBER}?text=Hola%2C%20quisiera%20solicitar%20una%20demo%20gratuita%20de%20BIOSKINTECH%20%F0%9F%8C%9F`;
+
+function ServiceModal({ mode, onClose }: { mode: 'login' | 'register' | null; onClose: () => void }) {
+  if (!mode) return null;
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+      onClick={onClose}>
+      <div className="absolute inset-0 bg-black/80 backdrop-blur-md" />
+      <div className="relative w-full max-w-md" onClick={e => e.stopPropagation()}>
+        <div className="glass-card rounded-3xl overflow-hidden shadow-2xl">
+          <div className="h-0.5 bg-gradient-to-r from-[#c4a882] via-[#d8c4a8] to-[#c4a882]" />
+          <div className="p-7">
+            <div className="flex items-start justify-between mb-6">
+              <div>
+                <h3 className="text-lg font-bold text-white">
+                  {mode === 'login' ? 'Acceder al panel' : 'Registrar mi clínica'}
+                </h3>
+                <p className="text-white/40 text-xs mt-0.5">Selecciona tu especialidad</p>
+              </div>
+              <button onClick={onClose}
+                className="text-white/25 hover:text-white/70 transition-colors mt-0.5">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              {MODULES.map(mod => {
+                const Icon = mod.icon;
+                const active = mod.status === 'active';
+                const href = active
+                  ? (mode === 'login' ? mod.href : mod.href.replace('/login', '/register'))
+                  : '#';
+                return (
+                  <a
+                    key={mod.key}
+                    href={href}
+                    onClick={active ? undefined : e => e.preventDefault()}
+                    className={`relative flex flex-col gap-3 p-4 rounded-2xl border transition-all duration-300 ${
+                      active
+                        ? 'border-[#c4a882]/25 bg-white/[0.03] hover:bg-white/[0.07] hover:border-[#c4a882]/55 cursor-pointer'
+                        : 'border-white/5 bg-white/[0.015] opacity-35 cursor-default'
+                    }`}
+                  >
+                    <span className={`absolute top-2 right-2 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                      active ? 'text-green-400 bg-green-400/10' : 'text-white/25 bg-white/5'
+                    }`}>
+                      {active ? 'Activo' : 'Próximo'}
+                    </span>
+                    <div style={{ color: mod.accent }}>
+                      <Icon className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-white leading-tight">{mod.label}</p>
+                      <p className="text-[11px] text-white/30 mt-0.5 leading-snug">{mod.description}</p>
+                    </div>
+                  </a>
+                );
+              })}
+            </div>
+
+            <p className="text-center text-xs text-white/25 mt-5">
+              {mode === 'login' ? '¿Sin cuenta? ' : '¿Ya tienes cuenta? '}
+              <button
+                onClick={() => onClose()}
+                className="text-[#c4a882] hover:underline font-medium">
+                <a href={mode === 'login' ? '/gestionestetica/admin/register' : '/gestionestetica/admin/login'}>
+                  {mode === 'login' ? 'Registrar clínica' : 'Iniciar sesión'}
+                </a>
+              </button>
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function LandingPage() {
   const [scrolled, setScrolled] = useState(false);
+  const [modalMode, setModalMode] = useState<'login' | 'register' | null>(null);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 50);
@@ -130,12 +220,13 @@ export default function LandingPage() {
   }, []);
 
   return (
-    <div className="bg-black text-white">
+    <div className="bg-[#070b14] text-white">
+      <ServiceModal mode={modalMode} onClose={() => setModalMode(null)} />
 
       {/* ── Header fijo ─────────────────────────────────────────────── */}
       <header className={`fixed top-0 inset-x-0 z-50 transition-all duration-500 ${
         scrolled
-          ? 'bg-black/85 backdrop-blur-md border-b border-[#deb887]/15 shadow-xl shadow-black/50'
+          ? 'bg-[#070b14]/92 backdrop-blur-md border-b border-[#c4a882]/15 shadow-xl shadow-black/50'
           : 'bg-transparent'
       }`}>
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
@@ -195,18 +286,20 @@ export default function LandingPage() {
 
           {/* CTAs */}
           <div className="flex flex-wrap items-center justify-center gap-4 mb-16">
-            <a href="/gestionestetica/admin/login"
+            <button
+              onClick={() => setModalMode('login')}
               className="inline-flex items-center gap-2 bg-[#c4a882] text-black font-bold
                          px-8 py-3.5 rounded-full hover:bg-[#b09878] transition-all
                          hover:shadow-2xl hover:shadow-[#c4a882]/30 hover:-translate-y-0.5 text-sm">
               Acceder al panel <ChevronRight className="w-4 h-4" />
-            </a>
-            <a href="/gestionestetica/admin/register"
+            </button>
+            <button
+              onClick={() => setModalMode('register')}
               className="inline-flex items-center gap-2 bg-white/5 border border-white/20 text-white
                          font-medium px-8 py-3.5 rounded-full hover:bg-white/10 transition-all
                          text-sm backdrop-blur-sm">
               Registrar mi clínica
-            </a>
+            </button>
           </div>
 
           {/* Stats row */}
@@ -233,7 +326,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── Especialidades / módulos de acceso ──────────────────────── */}
-      <section className="bg-[#080807] py-20 px-6">
+      <section className="bg-[#080e1c] py-20 px-6">
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-12">
             <p className="text-[#c4a882] text-xs font-bold uppercase tracking-[0.2em] mb-3">
@@ -380,8 +473,90 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── Beneficios ───────────────────────────────────────────────── */}
-      <section className="bg-[#080807] py-20 px-6 border-t border-white/5">
+      {/* ── Galería circular ───────────────────────────────────────────── */}
+      <section className="bg-[#07091a] py-20 overflow-hidden border-t border-white/5">
+        <div className="max-w-7xl mx-auto px-6 mb-10">
+          <p className="text-[#c4a882] text-xs font-bold uppercase tracking-[0.2em] mb-3">Galería</p>
+          <h2 className="text-3xl md:text-4xl font-bold text-white mb-2"
+            style={{ fontFamily: 'Playfair Display, serif' }}>
+            El software en acción
+          </h2>
+          <p className="text-white/30 text-xs">
+            Coloca tus capturas en{' '}
+            <code className="text-[#c4a882] bg-white/5 px-1.5 py-0.5 rounded">public/images/gallery/preview-1.jpg</code>
+            {' '}... hasta{' '}
+            <code className="text-[#c4a882] bg-white/5 px-1.5 py-0.5 rounded">preview-8.jpg</code>
+          </p>
+        </div>
+        <div className="overflow-hidden">
+          <div className="gallery-track">
+            {[...GALLERY_ITEMS, ...GALLERY_ITEMS].map((item, idx) => {
+              const Icon = item.icon;
+              return (
+                <div key={`${item.id}-${idx}`} className="gallery-card">
+                  {/* Placeholder gradient (shows when image absent) */}
+                  <div className={`absolute inset-0 bg-gradient-to-br ${item.grad} flex items-center justify-center`}>
+                    <Icon className="w-14 h-14 text-white/10" />
+                  </div>
+                  {/* Real image (covers gradient when present) */}
+                  <img
+                    src={`/images/gallery/preview-${item.id}.jpg`}
+                    alt={item.label}
+                    className="absolute inset-0 w-full h-full object-cover"
+                    onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                  />
+                  <div className="absolute bottom-0 inset-x-0 p-4 bg-gradient-to-t from-black/80 to-transparent">
+                    <p className="text-white text-sm font-semibold">{item.label}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Galería circular ──────────────────────────────────────────── */}
+      <section className="bg-[#07091a] py-20 overflow-hidden border-t border-white/5">
+        <div className="max-w-7xl mx-auto px-6 mb-10">
+          <p className="text-[#c4a882] text-xs font-bold uppercase tracking-[0.2em] mb-3">Galería</p>
+          <h2 className="text-3xl md:text-4xl font-bold text-white mb-2"
+            style={{ fontFamily: 'Playfair Display, serif' }}>
+            El software en acción
+          </h2>
+          <p className="text-white/30 text-xs">
+            Agrega tus capturas en{' '}
+            <code className="text-[#c4a882] bg-white/5 px-1.5 py-0.5 rounded text-[11px]">public/images/gallery/preview-1.jpg</code>
+            {' '}→{' '}
+            <code className="text-[#c4a882] bg-white/5 px-1.5 py-0.5 rounded text-[11px]">preview-8.jpg</code>
+          </p>
+        </div>
+        <div className="overflow-hidden">
+          <div className="gallery-track">
+            {[...GALLERY_ITEMS, ...GALLERY_ITEMS].map((item, idx) => {
+              const Icon = item.icon;
+              return (
+                <div key={`${item.id}-${idx}`} className="gallery-card">
+                  <div className={`absolute inset-0 bg-gradient-to-br ${item.grad} flex items-center justify-center`}>
+                    <Icon className="w-14 h-14 text-white/10" />
+                  </div>
+                  <img
+                    src={`/images/gallery/preview-${item.id}.jpg`}
+                    alt={item.label}
+                    className="absolute inset-0 w-full h-full object-cover"
+                    onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                  />
+                  <div className="absolute bottom-0 inset-x-0 p-4 bg-gradient-to-t from-black/80 to-transparent">
+                    <p className="text-white text-sm font-semibold">{item.label}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Beneficios ────────────────────────────────────────────────── */}
+      <section className="bg-[#080e1c] py-20 px-6 border-t border-white/5">
         <div className="max-w-4xl mx-auto text-center">
           <p className="text-[#c4a882] text-xs font-bold uppercase tracking-[0.2em] mb-3">Plan único</p>
           <h2 className="text-3xl md:text-4xl font-bold text-white mb-4"
@@ -407,7 +582,37 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── CTA final — gradient-bg ──────────────────────────────────── */}
+      {/* ── Demo / Cuenta de prueba ─────────────────────────────────────── */}
+      <section className="bg-[#060912] py-20 px-6 border-t border-white/5">
+        <div className="max-w-3xl mx-auto text-center">
+          <p className="text-[#90bab8] text-xs font-bold uppercase tracking-[0.2em] mb-3">
+            Sin compromiso
+          </p>
+          <h2 className="text-3xl md:text-4xl font-bold text-white mb-4"
+            style={{ fontFamily: 'Playfair Display, serif' }}>
+            Solicita una demo gratuita
+          </h2>
+          <p className="text-white/40 text-sm mb-8 max-w-lg mx-auto leading-relaxed">
+            Prueba todas las funcionalidades de BIOSKINTECH sin compromiso.
+            Te configuramos un entorno de demo con datos de ejemplo para que explores el sistema a tu ritmo.
+          </p>
+          <a
+            href={WA_DEMO_LINK}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-3 bg-[#25d366] text-white font-bold
+                       px-8 py-4 rounded-full hover:bg-[#1eb558] transition-all
+                       hover:shadow-2xl hover:shadow-[#25d366]/25 hover:-translate-y-0.5 text-sm">
+            <MessageCircle className="w-5 h-5" />
+            Solicitar demo por WhatsApp
+          </a>
+          <p className="text-white/20 text-xs mt-4">
+            Respondemos en horario de atención · Sin datos de tarjeta requeridos
+          </p>
+        </div>
+      </section>
+
+      {/* ── CTA final ───────────────────────────────────────────────────── */}
       <section className="gradient-bg py-24 px-6">
         <div className="base" />
         <div className="glow" />
@@ -422,28 +627,30 @@ export default function LandingPage() {
             Gestión profesional, digital y centralizada para tu práctica estética.
           </p>
           <div className="flex flex-wrap justify-center gap-4">
-            <a href="/gestionestetica/admin/register"
+            <button
+              onClick={() => setModalMode('register')}
               className="inline-flex items-center gap-2 bg-[#c4a882] text-black font-bold
                          px-8 py-4 rounded-full hover:bg-[#b09878] transition-all
                          hover:shadow-2xl hover:shadow-[#c4a882]/30 hover:-translate-y-0.5">
               Registrar mi clínica <ChevronRight className="w-4 h-4" />
-            </a>
-            <a href="/gestionestetica/admin/login"
+            </button>
+            <button
+              onClick={() => setModalMode('login')}
               className="inline-flex items-center gap-2 bg-white/5 border border-white/20
                          text-white font-medium px-8 py-4 rounded-full hover:bg-white/10 transition-all">
               Ya tengo cuenta
-            </a>
+            </button>
           </div>
         </div>
       </section>
 
       {/* ── Footer ──────────────────────────────────────────────────── */}
-      <footer className="bg-black border-t border-white/5">
+      <footer className="bg-[#050810] border-t border-white/5">
         <div className="max-w-6xl mx-auto px-6 py-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <BrandLogo className="h-8 w-auto object-contain opacity-80" />
             <p className="text-xs text-white/25">
-              © {new Date().getFullYear()} BIOSKINTECH · RUC 0105872600001 · Ecuador
+              © {new Date().getFullYear()} BIOSKINTECH · Ecuador
             </p>
           </div>
           <div className="flex flex-wrap items-center justify-center gap-5 text-xs text-white/25">
