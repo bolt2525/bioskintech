@@ -121,14 +121,14 @@ const FEATURES = [
 ];
 
 const GALLERY_ITEMS = [
-  { id: 1, label: 'Panel Principal',      grad: 'from-amber-900/50 to-[#070b14]',   icon: Sparkles },
-  { id: 2, label: 'Fichas Clínicas',       grad: 'from-amber-800/40 to-[#070b14]',   icon: FileText },
-  { id: 3, label: 'Mapeo 3D Facial',       grad: 'from-cyan-900/50 to-[#070b14]',    icon: Box },
-  { id: 4, label: 'Agenda y Citas',        grad: 'from-emerald-900/50 to-[#070b14]', icon: CalendarDays },
-  { id: 5, label: 'Comparación de Fotos',  grad: 'from-violet-900/50 to-[#070b14]',  icon: Camera },
-  { id: 6, label: 'Inventario',            grad: 'from-orange-900/50 to-[#070b14]',  icon: Package },
-  { id: 7, label: 'Finanzas',              grad: 'from-green-900/50 to-[#070b14]',   icon: DollarSign },
-  { id: 8, label: 'Consentimientos',       grad: 'from-blue-900/50 to-[#070b14]',    icon: Shield },
+  { file: 'panelPrincipal.jpg',        label: 'Panel Principal',       grad: 'from-amber-900/50 to-[#070b14]',   icon: Sparkles },
+  { file: 'fichaClinica.jpg',          label: 'Ficha Clínica',          grad: 'from-amber-800/40 to-[#070b14]',   icon: FileText },
+  { file: 'mapeo3Dfacial.jpg',         label: 'Mapeo 3D Facial',        grad: 'from-cyan-900/50 to-[#070b14]',    icon: Box },
+  { file: 'agendamiento.jpg',          label: 'Agendamiento',           grad: 'from-emerald-900/50 to-[#070b14]', icon: CalendarDays },
+  { file: 'comparacionFotos.jpg',      label: 'Comparación de Fotos',   grad: 'from-violet-900/50 to-[#070b14]',  icon: Camera },
+  { file: 'inventario.jpg',            label: 'Inventario',             grad: 'from-orange-900/50 to-[#070b14]',  icon: Package },
+  { file: 'finanzas.jpg',              label: 'Finanzas',               grad: 'from-green-900/50 to-[#070b14]',   icon: DollarSign },
+  { file: 'consentimientoInformado.jpg', label: 'Consentimiento Informado', grad: 'from-blue-900/50 to-[#070b14]', icon: Shield },
 ];
 
 const WA_NUMBER = '593984232889';
@@ -473,48 +473,6 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── Galería circular ───────────────────────────────────────────── */}
-      <section className="bg-[#07091a] py-20 overflow-hidden border-t border-white/5">
-        <div className="max-w-7xl mx-auto px-6 mb-10">
-          <p className="text-[#c4a882] text-xs font-bold uppercase tracking-[0.2em] mb-3">Galería</p>
-          <h2 className="text-3xl md:text-4xl font-bold text-white mb-2"
-            style={{ fontFamily: 'Playfair Display, serif' }}>
-            El software en acción
-          </h2>
-          <p className="text-white/30 text-xs">
-            Coloca tus capturas en{' '}
-            <code className="text-[#c4a882] bg-white/5 px-1.5 py-0.5 rounded">public/images/gallery/preview-1.jpg</code>
-            {' '}... hasta{' '}
-            <code className="text-[#c4a882] bg-white/5 px-1.5 py-0.5 rounded">preview-8.jpg</code>
-          </p>
-        </div>
-        <div className="overflow-hidden">
-          <div className="gallery-track">
-            {[...GALLERY_ITEMS, ...GALLERY_ITEMS].map((item, idx) => {
-              const Icon = item.icon;
-              return (
-                <div key={`${item.id}-${idx}`} className="gallery-card">
-                  {/* Placeholder gradient (shows when image absent) */}
-                  <div className={`absolute inset-0 bg-gradient-to-br ${item.grad} flex items-center justify-center`}>
-                    <Icon className="w-14 h-14 text-white/10" />
-                  </div>
-                  {/* Real image (covers gradient when present) */}
-                  <img
-                    src={`/images/gallery/preview-${item.id}.jpg`}
-                    alt={item.label}
-                    className="absolute inset-0 w-full h-full object-cover"
-                    onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-                  />
-                  <div className="absolute bottom-0 inset-x-0 p-4 bg-gradient-to-t from-black/80 to-transparent">
-                    <p className="text-white text-sm font-semibold">{item.label}</p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
       {/* ── Galería circular ──────────────────────────────────────────── */}
       <section className="bg-[#07091a] py-20 overflow-hidden border-t border-white/5">
         <div className="max-w-7xl mx-auto px-6 mb-10">
@@ -523,30 +481,24 @@ export default function LandingPage() {
             style={{ fontFamily: 'Playfair Display, serif' }}>
             El software en acción
           </h2>
-          <p className="text-white/30 text-xs">
-            Agrega tus capturas en{' '}
-            <code className="text-[#c4a882] bg-white/5 px-1.5 py-0.5 rounded text-[11px]">public/images/gallery/preview-1.jpg</code>
-            {' '}→{' '}
-            <code className="text-[#c4a882] bg-white/5 px-1.5 py-0.5 rounded text-[11px]">preview-8.jpg</code>
-          </p>
         </div>
         <div className="overflow-hidden">
           <div className="gallery-track">
             {[...GALLERY_ITEMS, ...GALLERY_ITEMS].map((item, idx) => {
               const Icon = item.icon;
               return (
-                <div key={`${item.id}-${idx}`} className="gallery-card">
+                <div key={`${item.file}-${idx}`} className="gallery-card">
                   <div className={`absolute inset-0 bg-gradient-to-br ${item.grad} flex items-center justify-center`}>
                     <Icon className="w-14 h-14 text-white/10" />
                   </div>
                   <img
-                    src={`/images/gallery/preview-${item.id}.jpg`}
+                    src={`/images/gallery/${item.file}`}
                     alt={item.label}
-                    className="absolute inset-0 w-full h-full object-cover"
-                    onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                    className="absolute inset-0 w-full h-full object-cover object-top"
                   />
-                  <div className="absolute bottom-0 inset-x-0 p-4 bg-gradient-to-t from-black/80 to-transparent">
-                    <p className="text-white text-sm font-semibold">{item.label}</p>
+                  {/* Title overlay at bottom */}
+                  <div className="absolute bottom-0 inset-x-0 px-4 py-3 bg-gradient-to-t from-black/90 via-black/50 to-transparent">
+                    <p className="text-white text-sm font-semibold leading-tight">{item.label}</p>
                   </div>
                 </div>
               );

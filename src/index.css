@@ -184,10 +184,12 @@
 /* ─── Landing: Circular Gallery ───────────────────────────────────────── */
 .gallery-track {
   display: flex;
+  flex-wrap: nowrap;
   gap: 1.25rem;
-  padding: 1.5rem 0 2rem;
-  animation: galleryScroll 50s linear infinite;
+  padding: 2rem 0 2.5rem;
+  animation: galleryScroll 55s linear infinite;
   width: max-content;
+  will-change: transform;
 }
 .gallery-track:hover { animation-play-state: paused; }
 @keyframes galleryScroll {
@@ -196,24 +198,26 @@
 }
 .gallery-card {
   flex-shrink: 0;
-  width: 240px;
-  height: 320px;
-  border-radius: 1.25rem;
+  /* landscape 16:9 — screenshots */
+  width: 380px;
+  height: 240px;
+  border-radius: 1rem;
   overflow: hidden;
   position: relative;
-  filter: grayscale(85%) brightness(0.65);
-  transition: filter 0.5s ease, transform 0.35s ease, box-shadow 0.4s ease;
+  filter: grayscale(80%) brightness(0.7);
+  transition: filter 0.45s ease, transform 0.35s ease, box-shadow 0.45s ease;
   cursor: default;
 }
 .gallery-card:hover {
-  filter: grayscale(0%) brightness(1.05);
-  box-shadow: 0 24px 60px rgba(0,0,0,0.5);
+  filter: grayscale(0%) brightness(1.08);
+  box-shadow: 0 20px 50px rgba(0,0,0,0.6), 0 0 0 1px rgba(196,168,130,0.25);
+  z-index: 2;
 }
-.gallery-card:nth-child(4n+1)  { transform: rotate(-2.5deg) translateY(4px); }
-.gallery-card:nth-child(4n+2)  { transform: rotate(1.8deg) translateY(-4px); }
-.gallery-card:nth-child(4n+3)  { transform: rotate(-1.2deg) translateY(6px); }
-.gallery-card:nth-child(4n)    { transform: rotate(2.2deg) translateY(-2px); }
-.gallery-card:nth-child(4n+1):hover  { transform: rotate(-2.5deg) scale(1.04) translateY(-6px); }
-.gallery-card:nth-child(4n+2):hover  { transform: rotate(1.8deg) scale(1.04) translateY(-6px); }
-.gallery-card:nth-child(4n+3):hover  { transform: rotate(-1.2deg) scale(1.04) translateY(-6px); }
-.gallery-card:nth-child(4n):hover    { transform: rotate(2.2deg) scale(1.04) translateY(-6px); }
+.gallery-card:nth-child(4n+1)  { transform: rotate(-1.5deg) translateY(3px); }
+.gallery-card:nth-child(4n+2)  { transform: rotate(1.2deg) translateY(-3px); }
+.gallery-card:nth-child(4n+3)  { transform: rotate(-0.8deg) translateY(4px); }
+.gallery-card:nth-child(4n)    { transform: rotate(1.8deg) translateY(-2px); }
+.gallery-card:nth-child(4n+1):hover  { transform: rotate(-1.5deg) scale(1.04) translateY(-8px); }
+.gallery-card:nth-child(4n+2):hover  { transform: rotate(1.2deg)  scale(1.04) translateY(-8px); }
+.gallery-card:nth-child(4n+3):hover  { transform: rotate(-0.8deg) scale(1.04) translateY(-8px); }
+.gallery-card:nth-child(4n):hover    { transform: rotate(1.8deg)  scale(1.04) translateY(-8px); }
