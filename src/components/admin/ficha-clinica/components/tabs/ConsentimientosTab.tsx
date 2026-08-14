@@ -63,6 +63,7 @@ interface ConsentForm {
     professional_name: string;
     patient_sig_data?: string;
     professional_sig_data?: string;
+    sig_scale?: 'sm' | 'md' | 'lg' | 'xl';
   };
   attachments: any[];
 }
@@ -419,7 +420,8 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
       },
       signatures: {
         patient_name: patient ? `${patient.first_name} ${patient.last_name}` : '',
-        professional_name: professionalName || ''
+        professional_name: professionalName || '',
+        sig_scale: 'md',
       },
       attachments: []
     });
@@ -449,6 +451,24 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
 
   const handleSave = async () => {
     if (!currentConsent) return;
+
+  const SIG_SCALE_H: Record<string, string> = { sm: 'h-14', md: 'h-20', lg: 'h-28', xl: 'h-36' };
+  const sigHeightClass = SIG_SCALE_H[currentConsent.signatures?.sig_scale || 'md'] || 'h-20';
+
+  const handleScaleChange = async (newScale: 'sm' | 'md' | 'lg' | 'xl') => {
+    const updatedConsent = { ...currentConsent, signatures: { ...currentConsent.signatures, sig_scale: newScale } };
+    setCurrentConsent(updatedConsent);
+    if (!updatedConsent.id) return; // new consent — scale saved on next manual save
+    try {
+      await recordsFetch(`${API_URL}?action=saveConsent`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...updatedConsent, ...(consultationId ? { consultation_id: consultationId } : {}) })
+      });
+      setMessage({ type: 'success', text: 'Tamaño de firma actualizado' });
+    } catch {
+      setMessage({ type: 'error', text: 'Error al guardar tamaño' });
+    }
+  };
     setLoading(true);
     setMessage(null);
     try {
@@ -1237,6 +1257,25 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                     )}
                   </AnimatePresence>
 
+                  {/* Signature print size control */}
+                  <div className="flex items-center gap-4 bg-amber-50 border border-amber-200 rounded-xl p-4">
+                    <span className="text-sm font-semibold text-amber-800 whitespace-nowrap">Tamaño en impresión:</span>
+                    <div className="flex gap-2">
+                      {(['sm', 'md', 'lg', 'xl'] as const).map((s) => {
+                        const labels: Record<string, string> = { sm: 'S', md: 'M', lg: 'L', xl: 'XL' };
+                        const active = (currentConsent.signatures?.sig_scale || 'md') === s;
+                        return (
+                          <button key={s} onClick={() => handleScaleChange(s)}
+                            className={`w-9 h-9 rounded-lg text-sm font-bold transition-all ${active ? 'bg-[#deb887] text-white shadow-md' : 'bg-white border border-gray-300 text-gray-600 hover:border-[#deb887] hover:text-[#deb887]'}`}
+                          >{labels[s]}</button>
+                        );
+                      })}
+                    </div>
+                    <span className="text-xs text-amber-700 ml-auto">
+                      {!currentConsent.id ? 'Se guarda al hacer click en Guardar' : 'Se guarda automáticamente'}
+                    </span>
+                  </div>
+
                   <div className="flex justify-end pt-6 border-t border-gray-100">
                     <div className="flex items-center gap-4 bg-gray-50 p-3 rounded-xl border border-gray-200">
                       <label className="block text-sm font-bold text-gray-700">Estado del Documento:</label>
@@ -1486,7 +1525,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                   <img 
                     src={currentConsent.signatures.patient_sig_data} 
                     alt="Firma Paciente" 
-                    className="h-16 object-contain mb-2"
+                    className={`${sigHeightClass} object-contain mb-2`}
                   />
                 )}
                 <div className="w-full border-t border-gray-400 pt-2 text-center">
@@ -1500,7 +1539,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                   <img 
                     src={currentConsent.signatures.professional_sig_data} 
                     alt="Firma Profesional" 
-                    className="h-16 object-contain mb-2"
+                    className={`${sigHeightClass} object-contain mb-2`}
                   />
                 )}
                 <div className="w-full border-t border-gray-400 pt-2 text-center">
