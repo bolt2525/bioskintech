@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect, useMemo } from 'react';
-import { Package, Plus, CheckCircle, Activity, Calendar, Search, RefreshCw, LayoutGrid, List, Filter } from 'lucide-react';
+import { Package, Plus, CheckCircle, Activity, Calendar, Search, RefreshCw, LayoutGrid, List, Filter, Trash2, AlertTriangle } from 'lucide-react';
 import recordsFetch from "../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
 import AdminLayout from '../components/layout/AdminLayout';
@@ -37,6 +37,7 @@ export default function AdminInventory() {
   const [drawerItem, setDrawerItem] = useState<any>(null);
 
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<any>(null);
   // Filtro por profesional (solo admins)
   const [filterUserId, setFilterUserId] = useState<number | ''>('');
   const [clinicUsers, setClinicUsers] = useState<{ id: number; username: string; full_name: string }[]>([]);
@@ -146,8 +147,12 @@ export default function AdminInventory() {
     refresh();
   };
 
-  const handleDeleteItem = async (item: any) => {
-    if (!window.confirm(`¿Eliminar "${item.name}"? Esta acción no se puede deshacer.`)) return;
+  const handleDeleteItem = (item: any) => setDeleteTarget(item);
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    const item = deleteTarget;
+    setDeleteTarget(null);
     const res = await recordsFetch(`/api/records?action=inventoryDeleteItem&id=${item.id}`, { method: 'DELETE' });
     if (!res.ok) { const e = await res.json(); alert(e.error || 'Error al eliminar'); return; }
     setDrawerItem(null);
@@ -433,6 +438,54 @@ export default function AdminInventory() {
           onSave={handleConsumeStock}
         />
       )}
+
+      {/* ── CONFIRM DELETE MODAL ── */}
+      <AnimatePresence>
+        {deleteTarget && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+            onClick={() => setDeleteTarget(null)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex flex-col items-center text-center gap-3">
+                <div className="w-14 h-14 bg-red-50 rounded-full flex items-center justify-center">
+                  <Trash2 className="w-7 h-7 text-red-500" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">Eliminar producto</h3>
+                  <p className="text-sm text-gray-500 mt-1">
+                    ¿Eliminar <span className="font-semibold text-gray-800">"{deleteTarget.name}"</span>?
+                    Se borrarán también sus lotes y movimientos. Esta acción no se puede deshacer.
+                  </p>
+                </div>
+                <div className="flex gap-3 w-full mt-2">
+                  <button
+                    onClick={() => setDeleteTarget(null)}
+                    className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-gray-700 font-medium text-sm hover:bg-gray-50 transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={confirmDelete}
+                    className="flex-1 px-4 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white font-semibold text-sm transition-colors"
+                  >
+                    Eliminar
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </AdminLayout>
   );
 }

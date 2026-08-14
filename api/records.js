@@ -493,28 +493,25 @@ export default async function handler(req, res) {
             return res.status(403).json({ error: 'Solo administradores pueden eliminar productos' });
           const { id } = req.query;
           const invClinicId = su?.effective_clinic_id ?? su?.clinic_id ?? null;
-          // Verificar ownership antes de eliminar
           if (invClinicId) {
             const check = await pool.query('SELECT id FROM inventory_items WHERE id = $1 AND (clinic_id = $2 OR clinic_id IS NULL)', [id, invClinicId]);
             if (check.rows.length === 0) return res.status(403).json({ error: 'Producto no encontrado en tu clínica' });
           }
-          const client = await pool.connect();
+          // Use pool.query (tenant-scoped client) — not pool.connect() which would skip set_config tenant
+          await pool.query('BEGIN');
           try {
-            await client.query('BEGIN');
-            const batchesCheck = await client.query('SELECT id FROM inventory_batches WHERE item_id = $1', [id]);
+            const batchesCheck = await pool.query('SELECT id FROM inventory_batches WHERE item_id = $1', [id]);
             const batchIds = batchesCheck.rows.map(b => b.id);
             if (batchIds.length > 0) {
-              await client.query('DELETE FROM inventory_movements WHERE batch_id = ANY($1)', [batchIds]);
-              await client.query('DELETE FROM inventory_batches WHERE item_id = $1', [id]);
+              await pool.query('DELETE FROM inventory_movements WHERE batch_id = ANY($1)', [batchIds]);
+              await pool.query('DELETE FROM inventory_batches WHERE item_id = $1', [id]);
             }
-            await client.query('DELETE FROM inventory_items WHERE id = $1', [id]);
-            await client.query('COMMIT');
+            await pool.query('DELETE FROM inventory_items WHERE id = $1', [id]);
+            await pool.query('COMMIT');
             return res.status(200).json({ success: true });
           } catch (txError) {
-            await client.query('ROLLBACK');
+            await pool.query('ROLLBACK');
             throw txError;
-          } finally {
-            client.release();
           }
         } catch (err) {
           console.error('Error deleting inventory item:', err);
