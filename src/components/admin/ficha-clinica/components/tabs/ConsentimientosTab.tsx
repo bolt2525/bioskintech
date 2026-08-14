@@ -236,7 +236,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
       
       if (res.ok) {
         const data = await res.json();
-        const url = `${window.location.origin}/#${data.url}`;
+        const url = `${window.location.origin}${data.url}`;
         setSigningUrl(url);
         setShowQr(true);
         setMessage({ type: 'success', text: 'Nuevo enlace generado' });
@@ -270,7 +270,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
       
       if (res.ok) {
         const data = await res.json();
-        const url = `${window.location.origin}/#${data.url}`;
+        const url = `${window.location.origin}${data.url}`;
         setSigningUrl(url);
         setShowQr(true);
         setMessage({ type: 'success', text: 'Enlace de firma generado' });

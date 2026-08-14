@@ -1305,6 +1305,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
 <body>
   <div class="header">
     <div class="header-left">
+      ${clinic.general.logo_url ? `<img src="${clinic.general.logo_url}" alt="Logo" style="height:48px;width:auto;object-fit:contain;margin-bottom:6px;" onerror="this.style.display='none'">` : ''}
       <h1>${clinicDisplayName}</h1>
       <p>${clinic.general.tagline || 'Centro de Medicina Estética'}</p>
       ${clinic.general.address ? `<p style="font-size:10px;color:#aaa;">${clinic.general.address}${clinic.general.city ? ', ' + clinic.general.city : ''}</p>` : ''}

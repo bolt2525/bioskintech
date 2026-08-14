@@ -136,9 +136,12 @@ export default function AdminInventory() {
     const batchRes = await recordsFetch('/api/records?action=inventoryAddBatch', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...stockData, item_id: newItem.id, user_id: username })
+      body: JSON.stringify({ ...stockData, item_id: newItem.id, user_id: user?.id })
     });
-    if (!batchRes.ok) throw new Error('Producto creado pero error al registrar stock inicial');
+    if (!batchRes.ok) {
+      refresh(); // el item ya fue creado aunque el batch falle
+      throw new Error('Producto creado pero error al registrar stock inicial');
+    }
     setSuccessMessage('Producto creado con stock inicial');
     refresh();
   };
@@ -156,7 +159,7 @@ export default function AdminInventory() {
     const res = await recordsFetch('/api/records?action=inventoryAddBatch', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...data, user_id: username })
+      body: JSON.stringify({ ...data, user_id: user?.id })
     });
     if (!res.ok) throw new Error('Error al agregar stock');
     setSuccessMessage('Stock ingresado');
@@ -168,7 +171,7 @@ export default function AdminInventory() {
     const res = await recordsFetch('/api/records?action=inventoryConsume', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...data, user_id: username })
+      body: JSON.stringify({ ...data, user_id: user?.id })
     });
     if (!res.ok) throw new Error('Error al registrar consumo');
     setSuccessMessage('Consumo registrado');

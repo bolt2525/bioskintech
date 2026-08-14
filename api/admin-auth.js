@@ -2298,7 +2298,7 @@ export default async function handler(req, res) {
       'Tratamiento Anti-Acné','Carboxiterapia','Otro'
     ];
     const DEFAULT_FINANZAS    = { currency: 'USD', currency_symbol: '$', tax_percent: 15, invoice_prefix: 'INV', payment_methods: ['Efectivo','Transferencia','Tarjeta de crédito','Tarjeta de débito'], invoice_notes: '' };
-    const DEFAULT_INVENTARIO  = { expiry_alert_days: 30, low_stock_alert: true, require_batch: true, categories: ['Toxinas','Rellenos','Skincare','Equipos','Consumibles','Medicamentos','Otros'] };
+    const DEFAULT_INVENTARIO  = { expiry_alert_days: 30, low_stock_alert: true, require_batch: true, categories: ['Inyectable','Consumibles','Venta','Toxinas','Rellenos','Skincare','Equipos','Medicamentos','Otros'] };
     const DEFAULT_NOTIFICACIONES = { appointment_confirmation: true, appointment_reminder: true, low_stock_notification: false, whatsapp_enabled: false, reminder_hours_before: 24 };
 
     if (action === 'getClinicSettings') {
@@ -2311,10 +2311,10 @@ export default async function handler(req, res) {
       const r = await sql`SELECT * FROM clinic_settings WHERE clinic_id = ${clinicId}`;
       if (!r.rows.length) {
         // Crear con defaults si no existe
-        const clinicR = await sql`SELECT name, email, phone, address, city, ruc FROM clinics WHERE id = ${clinicId}`;
+        const clinicR = await sql`SELECT name, email, phone, address, city, ruc, logo_url FROM clinics WHERE id = ${clinicId}`;
         const clinic  = clinicR.rows[0] || {};
         const defaults = {
-          general:    { name: clinic.name || '', city: clinic.city || '', tagline: '', logo_url: '', phone: clinic.phone || '', address: clinic.address || '', tax_id: clinic.ruc || '' },
+          general:    { name: clinic.name || '', city: clinic.city || '', tagline: '', logo_url: clinic.logo_url || '', phone: clinic.phone || '', address: clinic.address || '', tax_id: clinic.ruc || '' },
           treatments: DEFAULT_TREATMENTS,
           email:      { staff_email: clinic.email || '', from_name: clinic.name || '', signature: `El equipo de ${clinic.name || 'la clínica'}`, whatsapp_number: '' },
           agenda:     { start_hour: '08:00', end_hour: '19:00', slot_minutes: 60, calendar_prefix: clinic.name || 'CLINICA' },

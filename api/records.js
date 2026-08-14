@@ -557,6 +557,9 @@ export default async function handler(req, res) {
             if (itemChk.rows.length && itemChk.rows[0].clinic_id !== batchCid)
               return res.status(403).json({ error: 'Ítem no pertenece a esta clínica' });
           }
+          // Resolve clinic_id for insertion (use item's clinic_id as source of truth)
+          const itemRow = await pool.query('SELECT clinic_id FROM inventory_items WHERE id = $1', [item_id]);
+          const resolvedClinicId = itemRow.rows[0]?.clinic_id ?? batchCid ?? null;
           // Start transaction
           const client = await pool.connect();
           try {
@@ -564,16 +567,16 @@ export default async function handler(req, res) {
             
             // Create Batch
             const newBatch = await client.query(`
-              INSERT INTO inventory_batches (item_id, batch_number, expiration_date, quantity_initial, quantity_current, cost_per_unit, status)
-              VALUES ($1, $2, $3, $4, $4, $5, 'active')
+              INSERT INTO inventory_batches (item_id, clinic_id, batch_number, expiration_date, quantity_initial, quantity_current, cost_per_unit, status)
+              VALUES ($1, $2, $3, $4, $4, $5, $6, 'active')
               RETURNING *
-            `, [item_id, batch_number, expiration_date, quantity, cost_per_unit]);
+            `, [item_id, resolvedClinicId, batch_number, expiration_date, quantity, cost_per_unit]);
 
             // Record Movement
             await client.query(`
-              INSERT INTO inventory_movements (batch_id, movement_type, quantity_change, reason, user_id)
-              VALUES ($1, 'PURCHASE', $2, 'Ingreso inicial de lote', $3)
-            `, [newBatch.rows[0].id, quantity, user_id]);
+              INSERT INTO inventory_movements (batch_id, clinic_id, movement_type, quantity_change, reason, user_id)
+              VALUES ($1, $2, 'PURCHASE', $3, 'Ingreso inicial de lote', $4)
+            `, [newBatch.rows[0].id, resolvedClinicId, quantity, user_id]);
 
             await client.query('COMMIT');
             return res.status(201).json(newBatch.rows[0]);

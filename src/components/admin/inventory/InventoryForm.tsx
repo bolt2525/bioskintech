@@ -21,7 +21,7 @@ export default function InventoryForm({ initialData, suggestedSku, categories, o
     name: initialData?.name || '',
     brand: initialData?.brand || '',
     description: initialData?.description || '',
-    category: initialData?.category || 'Inyectable',
+    category: initialData?.category || '',
     group_name: initialData?.group_name || '',
     unit_of_measure: initialData?.unit_of_measure || 'Vial',
     min_stock_level: initialData?.min_stock_level ?? 5,
@@ -221,9 +221,10 @@ export default function InventoryForm({ initialData, suggestedSku, categories, o
                     <div>
                       <label className={labelCls}>Categoría</label>
                       <select className={inputCls} value={formData.category} onChange={e => f('category', e.target.value)}>
+                        <option value="">Seleccionar categoría...</option>
                         {(categories && categories.length > 0
                           ? categories
-                          : ['Inyectable','Consumible','Venta','Equipamiento']
+                          : ['Inyectable','Consumibles','Venta','Equipamiento']
                         ).map(c => <option key={c}>{c}</option>)}
                       </select>
                     </div>
