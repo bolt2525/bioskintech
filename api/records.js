@@ -1808,15 +1808,18 @@ export default async function handler(req, res) {
         return res.status(200).json({ message: 'Consent forms table initialized' });
 
       case 'initProfessionalSignatures':
-        await pool.query(`
+        // DDL requires neondb_owner (appPool/bioskin_app has no CREATE TABLE permission)
+        await getPool().query(`
           CREATE TABLE IF NOT EXISTS professional_signatures (
             id SERIAL PRIMARY KEY,
             professional_name VARCHAR(150),
             signature_data TEXT,
+            cedula VARCHAR(50),
             created_at TIMESTAMP DEFAULT NOW(),
             updated_at TIMESTAMP DEFAULT NOW()
           );
         `);
+        await getPool().query(`ALTER TABLE professional_signatures ADD COLUMN IF NOT EXISTS cedula VARCHAR(50)`);
         return res.status(200).json({ message: 'Professional signatures table initialized' });
 
       case 'saveProfessionalSignature': {
