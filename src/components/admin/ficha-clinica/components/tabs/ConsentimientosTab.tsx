@@ -112,12 +112,12 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
 
   // Carga plantillas de consentimiento desde la DB para esta clínica
   const loadDbTemplates = async () => {
-    const clinicId = effectiveClinicId;
-    if (!clinicId) return; // sin contexto de clínica: usa locales
     setTemplatesLoading(true);
     try {
+      // Server derives clinic from session for regular users; pass clinicId for master admin context
+      const params = effectiveClinicId ? `&clinicId=${effectiveClinicId}` : '';
       const res = await recordsFetch(
-        `/api/admin-auth?action=getClinicConsentTemplates&clinicId=${clinicId}`
+        `/api/admin-auth?action=getClinicConsentTemplates${params}`
       );
       if (res.ok) {
         const data = await res.json();
@@ -711,9 +711,10 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
           <div className="relative" ref={dropdownRef}>
             <div className="relative">
               <input
+                id="consent-template-search"
+                name="consent-template-search"
                 type="text"
-                className="w-full p-2.5 pl-10 border border-blue-200 rounded-lg bg-white text-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
-                placeholder="Buscar procedimiento..."
+                aria-label="Buscar plantilla de consentimiento"
                 value={searchTerm}
                 onChange={(e) => {
                   setSearchTerm(e.target.value);
@@ -799,8 +800,10 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                 <div className="space-y-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Procedimiento<FieldHelp text={HELP.consent.procedure_type} /></label>
+                      <label htmlFor="consent-procedure-type" className="block text-sm font-medium text-gray-700 mb-1">Tipo de Procedimiento<FieldHelp text={HELP.consent.procedure_type} /></label>
                       <input
+                        id="consent-procedure-type"
+                        name="consent-procedure-type"
                         type="text"
                         value={currentConsent.procedure_type}
                         onChange={(e) => updateField('procedure_type', e.target.value)}
@@ -809,8 +812,10 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Zona a Tratar<FieldHelp text={HELP.consent.zone} /></label>
+                      <label htmlFor="consent-zone" className="block text-sm font-medium text-gray-700 mb-1">Zona a Tratar<FieldHelp text={HELP.consent.zone} /></label>
                       <input
+                        id="consent-zone"
+                        name="consent-zone"
                         type="text"
                         value={currentConsent.zone}
                         onChange={(e) => updateField('zone', e.target.value)}
@@ -819,8 +824,10 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Número de Sesiones<FieldHelp text={HELP.consent.sessions} /></label>
+                      <label htmlFor="consent-sessions" className="block text-sm font-medium text-gray-700 mb-1">Número de Sesiones<FieldHelp text={HELP.consent.sessions} /></label>
                       <input
+                        id="consent-sessions"
+                        name="consent-sessions"
                         type="number"
                         value={currentConsent.sessions}
                         onChange={(e) => updateField('sessions', parseInt(e.target.value))}
@@ -902,19 +909,21 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                     </h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Alergias</label>
+                        <label htmlFor="consent-allergies" className="block text-sm font-medium text-gray-700 mb-1">Alergias</label>
                         <input
+                          id="consent-allergies"
+                          name="consent-allergies"
                           type="text"
-                          value={currentConsent.critical_antecedents?.allergies}
                           onChange={(e) => updateNestedField('critical_antecedents', 'allergies', e.target.value)}
                           className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Medicación Actual</label>
+                        <label htmlFor="consent-medications" className="block text-sm font-medium text-gray-700 mb-1">Medicación Actual</label>
                         <input
+                          id="consent-medications"
+                          name="consent-medications"
                           type="text"
-                          value={currentConsent.critical_antecedents?.medications}
                           onChange={(e) => updateNestedField('critical_antecedents', 'medications', e.target.value)}
                           className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all"
                         />

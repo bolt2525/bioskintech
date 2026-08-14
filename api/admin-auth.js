@@ -2468,10 +2468,15 @@ export default async function handler(req, res) {
     }
 
     if (action === 'getClinicConsentTemplates') {
-      const { clinicId } = req.query;
-      if (!clinicId) return res.status(400).json({ error: 'clinicId requerido' });
-      if (user.role !== 'master_admin' && String(clinicId) !== String(user.clinic_id))
-        return res.status(403).json({ error: 'Sin permiso' });
+      // For non-master admins the server derives clinicId from their session — no need to trust client param
+      let clinicId = req.query.clinicId;
+      if (user.role === 'master_admin') {
+        if (!clinicId) return res.status(400).json({ error: 'clinicId requerido para master_admin' });
+      } else {
+        // Always use session clinic_id for regular users — ignore (but verify) client param
+        clinicId = user.clinic_id;
+        if (!clinicId) return res.status(403).json({ error: 'Sin cl\u00ednica asociada en sesi\u00f3n' });
+      }
       const result = await sql`
         SELECT ct.* FROM consent_templates ct
         JOIN clinic_consent_templates cct ON ct.id = cct.template_id
