@@ -1316,19 +1316,37 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                 <td className="print:px-[1.5cm] align-top">
                   {/* Header */}
                   <div className="flex flex-col md:flex-row justify-between items-start mb-8 border-b-2 border-[#deb887] pb-6 gap-4 md:gap-0">
-                    <div className="flex items-center gap-6">
-                      <img src={clinic.general.logo_url || '/images/logo/logo.png'} alt="Logo" className="h-24 w-auto object-contain" onError={e => (e.currentTarget.style.display = 'none')} />
+                    <div className="flex items-start gap-5">
+                      <img src={clinic.general.logo_url || '/images/logo/logo.png'} alt="Logo" className="h-24 w-auto object-contain flex-shrink-0" onError={e => (e.currentTarget.style.display = 'none')} />
                       <div>
-                        <h2 className="text-2xl font-bold text-gray-900 tracking-tight">{clinicDisplayName.toUpperCase()}</h2>
-                        <p className="text-base font-bold text-[#deb887] mt-1">{(currentConsent?.signatures?.professional_name || professionalName).toUpperCase()}</p>
-                        {(clinic.general.tagline || user?.especialidad) && (
-                          <p className="text-sm text-gray-500">{clinic.general.tagline || user?.especialidad}</p>
+                        {clinic.general.establishment_type && (
+                          <p className="text-xs font-semibold text-[#deb887] uppercase tracking-widest mb-0.5">{clinic.general.establishment_type}</p>
                         )}
+                        <h2 className="text-2xl font-bold text-gray-900 tracking-tight">{clinicDisplayName.toUpperCase()}</h2>
+                        {clinic.general.tagline && (
+                          <p className="text-sm text-gray-500 mt-0.5">{clinic.general.tagline}</p>
+                        )}
+                        <div className="mt-1.5 text-xs text-gray-500 space-y-0.5">
+                          {(clinic.general.address || clinic.general.city) && (
+                            <p>{[clinic.general.address, clinic.general.city].filter(Boolean).join(' \u2014 ')}</p>
+                          )}
+                          {clinic.general.phone && <p>Tel: {clinic.general.phone}</p>}
+                          {clinic.general.tax_id && <p>RUC/NIF: {clinic.general.tax_id}</p>}
+                        </div>
                       </div>
                     </div>
-                    <div className="text-right text-sm text-gray-600 space-y-1">
-                      <p><strong>Fecha:</strong> {new Date().toLocaleDateString()}</p>
+                    <div className="text-right text-sm text-gray-600 space-y-0.5 flex-shrink-0">
+                      <p><strong>Fecha:</strong> {new Date().toLocaleDateString('es-EC')}</p>
                       <p><strong>Expediente:</strong> #{recordId}</p>
+                      {(currentConsent?.signatures?.professional_name || professionalName) && (
+                        <div className="mt-3 pt-3 border-t border-gray-200">
+                          <p className="font-semibold text-gray-800">{(currentConsent?.signatures?.professional_name || professionalName).toUpperCase()}</p>
+                          {user?.especialidad && <p className="text-xs text-[#deb887]">{user.especialidad}</p>}
+                          {user?.profession && !user?.especialidad && <p className="text-xs text-gray-500">{user.profession}</p>}
+                          {user?.cedula_profesional && <p className="text-xs text-gray-500">Céd. Prof.: {user.cedula_profesional}</p>}
+                          {user?.matricula_senescyt && <p className="text-xs text-gray-500">Mat. SENESCYT: {user.matricula_senescyt}</p>}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -1485,14 +1503,18 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                   />
                 )}
                 <div className="w-full border-t border-gray-400 pt-2 text-center">
-                  <p className="font-bold text-gray-900">{currentConsent.signatures?.professional_name}</p>
+                  <p className="font-bold text-gray-900">{currentConsent.signatures?.professional_name || professionalName}</p>
+                  {user?.especialidad && <p className="text-xs text-[#deb887] mt-0.5">{user.especialidad}</p>}
+                  {user?.cedula_profesional && <p className="text-xs text-gray-500">C\u00e9d. Prof.: {user.cedula_profesional}</p>}
                   <p className="text-sm text-gray-500 uppercase tracking-wider mt-1">Firma del Profesional</p>
                 </div>
               </div>
             </div>
             
-            <div className="text-center text-xs text-gray-400 mt-12 border-t border-gray-100 pt-4">
-              Documento generado el {new Date().toLocaleDateString()} — {clinicDisplayName}
+            <div className="text-center text-xs text-gray-400 mt-12 border-t border-gray-100 pt-4 space-y-0.5">
+              <p className="font-medium text-gray-500">{clinicDisplayName}{clinic.general.city ? ` — ${clinic.general.city}` : ''}{clinic.general.phone ? ` — Tel: ${clinic.general.phone}` : ''}</p>
+              <p>Documento generado el {new Date().toLocaleDateString('es-EC')}</p>
+            </div>
             </div>
             </div>
                 </td>
