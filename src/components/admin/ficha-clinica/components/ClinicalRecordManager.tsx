@@ -365,6 +365,8 @@ export default function ClinicalRecordManager() {
                   <ConsentimientosTab
                     patientId={patient?.id}
                     recordId={parseInt(recordId!)}
+                    recordSeq={recordData?.recordSeq}
+                    recordCreatedAt={recordData?.recordCreatedAt}
                     patient={patient}
                     consultationId={activeConsultation?.id}
                     consultations={recordData?.consultations || []}

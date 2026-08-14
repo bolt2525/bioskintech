@@ -69,14 +69,23 @@ interface ConsentForm {
 interface Props {
   patientId: number;
   recordId: number;
+  recordSeq?: number;
+  recordCreatedAt?: string;
   patient?: any;
   consultationId?: number;
   consultations?: ConsultationRef[];
 }
 
+function clinicCode(clinicName: string, seq: number, createdAt?: string): string {
+  const words = (clinicName || 'CL').trim().toUpperCase().split(/\s+/).filter(Boolean);
+  const initials = words.length === 1 ? words[0].substring(0, 2) : words.slice(0, 3).map(w => w[0]).join('');
+  const year = createdAt ? new Date(createdAt).getFullYear() : new Date().getFullYear();
+  return `${initials}-${year}-${String(seq).padStart(3, '0')}`;
+}
+
 const API_URL = '/api/records';
 
-export default function ConsentimientosTab({ patientId, recordId, patient, consultationId, consultations = [] }: Props) {
+export default function ConsentimientosTab({ patientId, recordId, recordSeq, recordCreatedAt, patient, consultationId, consultations = [] }: Props) {
   const { settings: clinic } = useClinicSettings();
   const { user } = useAuth();
   const { clinicId: masterViewClinicId } = useMasterView();
@@ -1292,7 +1301,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                     </div>
                     <div className="text-right text-sm text-gray-600 space-y-1">
                       <p><strong>Fecha:</strong> {new Date().toLocaleDateString()}</p>
-                      <p><strong>Expediente:</strong> #{recordId}</p>
+                      <p><strong>Expediente:</strong> {recordSeq ? clinicCode(clinicDisplayName, recordSeq, recordCreatedAt) : `#${recordId}`}</p>
                     </div>
                   </div>
 

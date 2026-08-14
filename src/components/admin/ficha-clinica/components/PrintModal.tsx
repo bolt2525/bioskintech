@@ -64,6 +64,14 @@ function CheckboxUI({ checked, onChange }: { checked: boolean; onChange: () => v
   );
 }
 
+// Mismo formato que PatientDetail/PatientList (orden DESC = más reciente es 001)
+function clinicCode(clinicName: string, seq: number, createdAt?: string): string {
+  const words = (clinicName || 'CL').trim().toUpperCase().split(/\s+/).filter(Boolean);
+  const initials = words.length === 1 ? words[0].substring(0, 2) : words.slice(0, 3).map(w => w[0]).join('');
+  const year = createdAt ? new Date(createdAt).getFullYear() : new Date().getFullYear();
+  return `${initials}-${year}-${String(seq).padStart(3, '0')}`;
+}
+
 export default function PrintModal({ patient, recordId, recordData, activeConsultation, onClose }: Props) {
   const { settings: clinic } = useClinicSettings();
   const { user, checkAuth } = useAuth();
@@ -178,7 +186,10 @@ export default function PrintModal({ patient, recordId, recordData, activeConsul
     const clinicEmail   = clinic.email?.staff_email || '';
     const clinicTaxId   = clinic.general.tax_id || '';
     const logoHtml = `<img src="${clinic.general.logo_url || (window.location.origin + '/images/logo/logo.png')}" alt="${esc(clinicName)}" class="clinic-logo" onerror="this.onerror=null;this.src='${window.location.origin}/images/logo/logo.png'" />`;
-
+    // Código formateado del expediente (mismo formato que la vista de lista)
+    const expCode = recordData?.recordSeq
+      ? clinicCode(clinicName, recordData.recordSeq, recordData.recordCreatedAt)
+      : `#${recordId}`;
     // Professional info
     const profName       = profTemp.name || user?.full_name || '';
     const profEsp        = profTemp.especialidad || '';
@@ -411,7 +422,7 @@ export default function PrintModal({ patient, recordId, recordData, activeConsul
     </div>
     <div class="lh-right">
       <div style="font-size:8pt;color:#aaa;text-transform:uppercase;letter-spacing:.5px">Historia Cl\u00ednica</div>
-      <div class="exp-num">Exp. #${recordId}</div>
+      <div class="exp-num">Exp. ${esc(expCode)}</div>
       <div class="lh-date">${todayLong}</div>
       ${clinicCity ? `<div class="lh-city">${esc(clinicCity)}</div>` : ''}
     </div>

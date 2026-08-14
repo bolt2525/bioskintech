@@ -1283,9 +1283,17 @@ export default async function handler(req, res) {
           safeQuery('SELECT * FROM consultations WHERE record_id = $1 ORDER BY created_at DESC', [targetRecordId])
         ]);
 
+        // Posición ordinal del expediente para el mismo paciente (mismo orden que listRecords: DESC)
+        const seqRes = await pool.query(
+          `SELECT rn FROM (SELECT id, ROW_NUMBER() OVER (ORDER BY created_at DESC, id DESC) AS rn FROM clinical_records WHERE patient_id = $1) t WHERE id = $2`,
+          [patientIdFromRecord, targetRecordId]
+        );
+
         return res.status(200).json({
           recordId: targetRecordId,
           patientId: patientIdFromRecord,
+          recordSeq: seqRes.rows[0]?.rn ?? null,
+          recordCreatedAt: recordDetails.rows[0]?.created_at ?? null,
           history: history.rows[0] || {},
           physicalExams: physical.rows,
           diagnoses: diagnoses.rows,
