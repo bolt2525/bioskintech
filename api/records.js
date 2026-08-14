@@ -1847,8 +1847,9 @@ export default async function handler(req, res) {
       case 'getSigningSession': {
         const { token } = req.query;
         if (!token) return res.status(400).json({ error: 'Token required' });
-        
-        const session = await pool.query(
+        // Use owner pool (bypasses RLS) — public action, no tenant context
+        const ownerPool = getPool();
+        const session = await ownerPool.query(
           'SELECT * FROM consent_forms WHERE signing_token = $1',
           [token]
         );
@@ -1858,7 +1859,7 @@ export default async function handler(req, res) {
         const data = session.rows[0];
         
         // Fetch patient details
-        const patient = await pool.query(
+        const patient = await ownerPool.query(
           'SELECT first_name, last_name, rut, phone, birth_date FROM patients WHERE id = $1',
           [data.patient_id]
         );
@@ -1872,9 +1873,9 @@ export default async function handler(req, res) {
       case 'submitSignature': {
         const { token, signature, declarations, authorizations } = body;
         if (!token || !signature) return res.status(400).json({ error: 'Token and signature required' });
-        
-        // Get current signatures to preserve professional signature if exists
-        const current = await pool.query('SELECT signatures FROM consent_forms WHERE signing_token = $1', [token]);
+        // Use owner pool (bypasses RLS) — public action, no tenant context
+        const ownerPool = getPool();
+        const current = await ownerPool.query('SELECT signatures FROM consent_forms WHERE signing_token = $1', [token]);
         if (current.rows.length === 0) return res.status(404).json({ error: 'Session not found' });
         
         const currentSigs = current.rows[0].signatures || {};
@@ -1884,7 +1885,7 @@ export default async function handler(req, res) {
           patient_signed_at: new Date().toISOString()
         };
         
-        await pool.query(
+        await ownerPool.query(
           'UPDATE consent_forms SET signatures = $1, declarations = $2, authorizations = $3, signing_status = $4, status = $5, updated_at = NOW() WHERE signing_token = $6',
           [JSON.stringify(newSigs), JSON.stringify(declarations), JSON.stringify(authorizations || {}), 'signed', 'finalized', token]
         );
