@@ -63,9 +63,10 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
   const messageRef = useRef<HTMLDivElement>(null);
 
   // Sort treatments by date descending for the history list
-  const sortedTreatments = [...treatments].sort((a, b) => 
-    new Date(b.date).getTime() - new Date(a.date).getTime()
-  );
+  const sortedTreatments = [...treatments]
+    .filter(t => t.consultation_id === consultationId)
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const otherTreatCount = treatments.filter(t => t.consultation_id !== consultationId).length;
 
   useEffect(() => {
     if (message) {
@@ -173,12 +174,13 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
           >
             <Layers className="w-4 h-4" />
           </button>
-          {consultations.length > 1 && (
-            <button onClick={() => setCrossHistOpen(true)} title="Ver todas las consultas" className="p-1 hover:bg-[#deb887]/10 rounded-lg">
+          {otherTreatCount > 0 && (
+            <button onClick={() => setCrossHistOpen(true)} title={`Ver ${otherTreatCount} tratamiento(s) de otras consultas`} className="p-1 hover:bg-[#deb887]/10 rounded-lg relative">
               <History className="w-3.5 h-3.5 text-[#b8944d]" />
+              <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-[#b8944d] text-white text-[8px] rounded-full flex items-center justify-center font-bold">{otherTreatCount > 9 ? '9+' : otherTreatCount}</span>
             </button>
           )}
-          <span className="text-xs bg-gray-100 text-gray-500 rounded-full px-2 py-0.5">{treatments.length}</span>
+          <span className="text-xs bg-gray-100 text-gray-500 rounded-full px-2 py-0.5">{sortedTreatments.length}</span>
         </div>
         <div className="flex-1 overflow-y-auto space-y-3 max-h-[200px] md:max-h-none pr-2 custom-scrollbar">
           {sortedTreatments.length === 0 ? (

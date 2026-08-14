@@ -83,6 +83,9 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, con
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [crossHistOpen, setCrossHistOpen] = useState(false);
   const messageRef = useRef<HTMLDivElement>(null);
+  // Filter prescriptions to current consultation for sidebar display
+  const currentPrescriptions = prescriptions.filter(p => p.consultation_id === consultationId);
+  const otherPrescCount = prescriptions.filter(p => p.consultation_id !== consultationId).length;
 
   useEffect(() => {
     loadPrescriptions();
@@ -430,16 +433,17 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, con
           <div className="w-1 h-5 bg-[#deb887] rounded-full" />
           Historial de Recetas
           <span className="ml-auto flex items-center gap-1">
-            <span className="text-xs bg-gray-100 text-gray-500 rounded-full px-2 py-0.5">{prescriptions.length}</span>
-            {consultations.length > 1 && (
-              <button onClick={() => setCrossHistOpen(true)} title="Ver todas las consultas" className="p-1 hover:bg-[#deb887]/10 rounded-lg">
+            <span className="text-xs bg-gray-100 text-gray-500 rounded-full px-2 py-0.5">{currentPrescriptions.length}</span>
+            {otherPrescCount > 0 && (
+              <button onClick={() => setCrossHistOpen(true)} title={`Ver ${otherPrescCount} receta(s) de otras consultas`} className="p-1 hover:bg-[#deb887]/10 rounded-lg relative">
                 <History className="w-3.5 h-3.5 text-[#b8944d]" />
+                <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-[#b8944d] text-white text-[8px] rounded-full flex items-center justify-center font-bold">{otherPrescCount > 9 ? '9+' : otherPrescCount}</span>
               </button>
             )}
           </span>
         </div>
         <div className="flex-1 overflow-y-auto space-y-3 max-h-[200px] md:max-h-none pr-2 custom-scrollbar">
-          {prescriptions.map((p, index) => {
+          {currentPrescriptions.map((p, index) => {
             const rawDate = p.fecha || '';
             const dateObj = rawDate ? new Date(toDateOnly(rawDate) + 'T12:00:00') : null;
             const dateFormatted = dateObj && !isNaN(dateObj.getTime())

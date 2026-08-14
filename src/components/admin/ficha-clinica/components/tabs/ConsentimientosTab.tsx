@@ -100,6 +100,8 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [crossHistOpen, setCrossHistOpen] = useState(false);
   const messageRef = useRef<HTMLDivElement>(null);
+  const currentConsents = consents.filter(c => c.consultation_id === consultationId);
+  const otherConsentCount = consents.filter(c => c.consultation_id !== consultationId).length;
 
   // Combina plantillas de DB (por clínica) con fallback a locales
   const templates = dbTemplates.length > 0 ? dbTemplates : localTemplates;
@@ -497,12 +499,13 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
         <div className="flex items-center gap-2">
           <div className="w-1 h-6 bg-[#deb887] rounded-full" />
           <h3 className="text-lg font-bold text-gray-800">Historial de Consentimientos</h3>
-          {consultations.length > 1 && (
-            <button onClick={() => setCrossHistOpen(true)} title="Ver todas las consultas" className="ml-2 p-1 hover:bg-[#deb887]/10 rounded-lg">
+          {otherConsentCount > 0 && (
+            <button onClick={() => setCrossHistOpen(true)} title={`Ver ${otherConsentCount} consentimiento(s) de otras consultas`} className="ml-2 p-1 hover:bg-[#deb887]/10 rounded-lg relative">
               <History className="w-4 h-4 text-[#b8944d]" />
+              <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-[#b8944d] text-white text-[8px] rounded-full flex items-center justify-center font-bold">{otherConsentCount > 9 ? '9+' : otherConsentCount}</span>
             </button>
           )}
-          <span className="text-xs bg-gray-100 text-gray-500 rounded-full px-2 py-0.5 ml-1">{consents.length}</span>
+          <span className="text-xs bg-gray-100 text-gray-500 rounded-full px-2 py-0.5 ml-1">{currentConsents.length}</span>
         </div>
         <div className="flex gap-2">
           <Tooltip content="Actualizar estructura DB">
@@ -562,7 +565,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-100">
-            {consents.map((consent, index) => (
+            {currentConsents.map((consent, index) => (
               <motion.tr 
                 key={consent.id} 
                 initial={{ opacity: 0, y: 10 }}

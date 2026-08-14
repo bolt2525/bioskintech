@@ -372,6 +372,8 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
   const messageRef = useRef<HTMLDivElement>(null);
   const [deleting, setDeleting] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const currentExams = physicalExams.filter(e => e.consultation_id === consultationId);
+  const otherExamCount = physicalExams.filter(e => e.consultation_id !== consultationId).length;
   
   // Canvas State
   const [faceMarks, setFaceMarks] = useState<Mark[]>([]);
@@ -729,16 +731,17 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
           <div className="w-1 h-5 bg-[#deb887] rounded-full" />
           Historial de Exámenes
           <span className="ml-auto flex items-center gap-1">
-            <span className="text-xs bg-gray-100 text-gray-500 rounded-full px-2 py-0.5">{physicalExams.length}</span>
-            {consultations.length > 1 && (
-              <button onClick={() => setCrossHistOpen(true)} title="Ver todas las consultas" className="p-1 hover:bg-[#deb887]/10 rounded-lg">
+            <span className="text-xs bg-gray-100 text-gray-500 rounded-full px-2 py-0.5">{currentExams.length}</span>
+            {otherExamCount > 0 && (
+              <button onClick={() => setCrossHistOpen(true)} title={`Ver ${otherExamCount} examen(es) de otras consultas`} className="p-1 hover:bg-[#deb887]/10 rounded-lg relative">
                 <History className="w-3.5 h-3.5 text-[#b8944d]" />
+                <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-[#b8944d] text-white text-[8px] rounded-full flex items-center justify-center font-bold">{otherExamCount > 9 ? '9+' : otherExamCount}</span>
               </button>
             )}
           </span>
         </div>
         <div className="flex-1 overflow-y-auto space-y-3 max-h-[200px] md:max-h-none pr-2 custom-scrollbar">
-          {physicalExams.map((exam, index) => (
+          {currentExams.map((exam, index) => (
             <motion.div
               key={exam.id || index}
               whileHover={{ scale: 1.02 }}

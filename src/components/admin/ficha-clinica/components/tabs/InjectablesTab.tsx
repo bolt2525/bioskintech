@@ -1460,12 +1460,14 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   };
 
-  // Filtrar injectables por tipo activo y sub-tipo (relleno)
+  // Filtrar injectables por tipo activo, sub-tipo y consulta activa
   const filteredInjectables = injectables.filter(i => {
+    if (i.consultation_id !== consultationId) return false;
     if (i.product_type !== activeType) return false;
     if (activeType === 'relleno') return (i.relleno_subtype || 'relleno_ha') === rellenoSubType;
     return true;
   });
+  const otherInjCount = injectables.filter(i => i.consultation_id !== consultationId).length;
 
   // Resetear COMPLETAMENTE al cambiar de sub-tab (aislamiento botox vs HA)
   useEffect(() => {
@@ -1632,10 +1634,11 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
           <div className="w-1 h-5 rounded-full" style={{ background: activeType === 'toxina' ? '#deb887' : '#a855f7' }} />
           {activeType === 'toxina' ? 'Historial Toxina' : `Historial · ${RELLENO_SUBTYPE_LABELS[rellenoSubType]}`}
           <span className="ml-auto flex items-center gap-1">
-            <span className="text-xs bg-gray-100 text-gray-500 rounded-full px-2 py-0.5">{injectables.filter(i => i.product_type === activeType).length}</span>
-            {consultations.length > 1 && (
-              <button onClick={() => setCrossHistOpen(true)} title="Ver todas las consultas" className="p-1 hover:bg-[#deb887]/10 rounded-lg">
+            <span className="text-xs bg-gray-100 text-gray-500 rounded-full px-2 py-0.5">{filteredInjectables.length}</span>
+            {otherInjCount > 0 && (
+              <button onClick={() => setCrossHistOpen(true)} title={`Ver ${otherInjCount} inyectable(s) de otras consultas`} className="p-1 hover:bg-[#deb887]/10 rounded-lg relative">
                 <History className="w-3.5 h-3.5 text-[#b8944d]" />
+                <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-[#b8944d] text-white text-[8px] rounded-full flex items-center justify-center font-bold">{otherInjCount > 9 ? '9+' : otherInjCount}</span>
               </button>
             )}
           </span>

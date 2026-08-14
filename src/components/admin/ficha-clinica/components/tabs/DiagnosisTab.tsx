@@ -194,6 +194,9 @@ export default function DiagnosisTab({ recordId, diagnoses, patientName, consult
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   };
 
+  const currentDiagnoses = diagnoses.filter(d => d.consultation_id === consultationId);
+  const otherDiagCount = diagnoses.filter(d => d.consultation_id !== consultationId).length;
+
   return (
     <>
     <motion.div 
@@ -207,16 +210,17 @@ export default function DiagnosisTab({ recordId, diagnoses, patientName, consult
           <div className="w-1 h-5 bg-[#deb887] rounded-full" />
           Historial de Diagnósticos
           <span className="ml-auto flex items-center gap-1">
-            <span className="text-xs bg-gray-100 text-gray-500 rounded-full px-2 py-0.5">{diagnoses.length}</span>
-            {consultations.length > 1 && (
-              <button onClick={() => setCrossHistOpen(true)} title="Ver todas las consultas" className="p-1 hover:bg-[#deb887]/10 rounded-lg">
+            <span className="text-xs bg-gray-100 text-gray-500 rounded-full px-2 py-0.5">{currentDiagnoses.length}</span>
+            {otherDiagCount > 0 && (
+              <button onClick={() => setCrossHistOpen(true)} title={`Ver ${otherDiagCount} registro(s) de otras consultas`} className="p-1 hover:bg-[#deb887]/10 rounded-lg relative">
                 <History className="w-3.5 h-3.5 text-[#b8944d]" />
+                <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-[#b8944d] text-white text-[8px] rounded-full flex items-center justify-center font-bold">{otherDiagCount > 9 ? '9+' : otherDiagCount}</span>
               </button>
             )}
           </span>
         </div>
         <div className="flex-1 overflow-y-auto space-y-3 max-h-[200px] md:max-h-none pr-2 custom-scrollbar">
-          {diagnoses.map((diag, index) => (
+          {currentDiagnoses.map((diag, index) => (
             <motion.div
               key={diag.id || index}
               whileHover={{ scale: 1.02 }}
@@ -244,10 +248,11 @@ export default function DiagnosisTab({ recordId, diagnoses, patientName, consult
             <Plus className="w-4 h-4" />
             Nuevo Diagnóstico
           </motion.button>
-          {diagnoses.length === 0 && (
+          {currentDiagnoses.length === 0 && (
             <div className="text-gray-400 text-sm text-center py-8 flex flex-col items-center gap-2">
               <AlertCircle className="w-8 h-8 opacity-20" />
-              No hay diagnósticos registrados
+              No hay diagnósticos en esta consulta
+              {otherDiagCount > 0 && <span className="text-xs text-[#b8944d] cursor-pointer hover:underline" onClick={() => setCrossHistOpen(true)}>Ver historial de otras consultas</span>}
             </div>
           )}
         </div>
