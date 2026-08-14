@@ -1283,17 +1283,9 @@ export default async function handler(req, res) {
           safeQuery('SELECT * FROM consultations WHERE record_id = $1 ORDER BY created_at DESC', [targetRecordId])
         ]);
 
-        // Posición ordinal del expediente para el mismo paciente (mismo orden que listRecords: DESC)
-        const seqRes = await pool.query(
-          `SELECT rn FROM (SELECT id, ROW_NUMBER() OVER (ORDER BY created_at DESC, id DESC) AS rn FROM clinical_records WHERE patient_id = $1) t WHERE id = $2`,
-          [patientIdFromRecord, targetRecordId]
-        );
-
         return res.status(200).json({
           recordId: targetRecordId,
           patientId: patientIdFromRecord,
-          recordSeq: seqRes.rows[0]?.rn ?? null,
-          recordCreatedAt: recordDetails.rows[0]?.created_at ?? null,
           history: history.rows[0] || {},
           physicalExams: physical.rows,
           diagnoses: diagnoses.rows,
@@ -1969,6 +1961,7 @@ export default async function handler(req, res) {
           id: saveCid, 
           record_id: saveRid, 
           patient_id: savePid,
+          consultation_id: saveConsultId,
           status,
           created_by,
           procedure_type,
@@ -2010,8 +2003,9 @@ export default async function handler(req, res) {
               authorizations = COALESCE($14, authorizations),
               declarations = COALESCE($15, declarations),
               signatures = COALESCE($16, signatures),
-              attachments = COALESCE($17, attachments)
-            WHERE id = $18 RETURNING *
+              attachments = COALESCE($17, attachments),
+              consultation_id = COALESCE($18, consultation_id)
+            WHERE id = $19 RETURNING *
           `;
           const updated = await pool.query(updateQuery, [
             status, procedure_type, zone, sessions, 
@@ -2019,6 +2013,7 @@ export default async function handler(req, res) {
             JSON.stringify(pre_care), JSON.stringify(post_care), JSON.stringify(contraindications),
             JSON.stringify(critical_antecedents), JSON.stringify(authorizations), JSON.stringify(declarations),
             JSON.stringify(signatures), JSON.stringify(attachments),
+            saveConsultId || null,
             saveCid
           ]);
           return res.status(200).json(updated.rows[0]);
@@ -2031,14 +2026,14 @@ export default async function handler(req, res) {
               objectives, description, risks, benefits, alternatives,
               pre_care, post_care, contraindications,
               critical_antecedents, authorizations, declarations,
-              signatures, attachments
+              signatures, attachments, consultation_id
             ) VALUES (
               $1, $2, $3, $4, $5,
               $6, $7, $8,
               $9, $10, $11, $12, $13,
               $14, $15, $16,
               $17, $18, $19,
-              $20, $21
+              $20, $21, $22
             ) RETURNING *
           `;
           const created = await pool.query(insertQuery, [
@@ -2047,7 +2042,7 @@ export default async function handler(req, res) {
             JSON.stringify(objectives || []), description || '', JSON.stringify(risks || []), JSON.stringify(benefits || []), JSON.stringify(alternatives || []),
             JSON.stringify(pre_care || []), JSON.stringify(post_care || []), JSON.stringify(contraindications || []),
             JSON.stringify(critical_antecedents || {}), JSON.stringify(authorizations || {}), JSON.stringify(declarations || {}),
-            JSON.stringify(signatures || {}), JSON.stringify(attachments || [])
+            JSON.stringify(signatures || {}), JSON.stringify(attachments || []), saveConsultId || null
           ]);
           return res.status(200).json(created.rows[0]);
         }
