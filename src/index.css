@@ -181,24 +181,21 @@
   box-shadow: 0 0 0 3px rgba(196,168,130,0.12);
 }
 
-/* ─── Landing: Circular Gallery ───────────────────────────────────────── */
+/* ─── Landing: Gallery ───────────────────────────────────────────────── */
+.gallery-scroll-container {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.gallery-scroll-container::-webkit-scrollbar { display: none; }
 .gallery-track {
   display: flex;
   flex-wrap: nowrap;
   gap: 1.25rem;
   padding: 2rem 0 2.5rem;
-  animation: galleryScroll 55s linear infinite;
   width: max-content;
-  will-change: transform;
-}
-.gallery-track:hover { animation-play-state: paused; }
-@keyframes galleryScroll {
-  0%   { transform: translateX(0); }
-  100% { transform: translateX(calc(-50% - 0.625rem)); }
 }
 .gallery-card {
   flex-shrink: 0;
-  /* landscape 16:9 — screenshots */
   width: 380px;
   height: 240px;
   border-radius: 1rem;
@@ -206,7 +203,7 @@
   position: relative;
   filter: grayscale(80%) brightness(0.7);
   transition: filter 0.45s ease, transform 0.35s ease, box-shadow 0.45s ease;
-  cursor: default;
+  cursor: pointer;
 }
 .gallery-card:hover {
   filter: grayscale(0%) brightness(1.08);

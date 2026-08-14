@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
-  Sparkles, Activity, Stethoscope, Smile, ChevronRight,
+  Sparkles, Activity, Stethoscope, Smile, ChevronLeft, ChevronRight,
   FileText, CalendarDays, Box, Package, DollarSign,
   Camera, Shield, Users, CheckCircle, X, MessageCircle,
 } from 'lucide-react';
@@ -212,6 +212,29 @@ function ServiceModal({ mode, onClose }: { mode: 'login' | 'register' | null; on
 export default function LandingPage() {
   const [scrolled, setScrolled] = useState(false);
   const [modalMode, setModalMode] = useState<'login' | 'register' | null>(null);
+
+  // Gallery auto-scroll + nav
+  const galleryRef   = useRef<HTMLDivElement>(null);
+  const galleryPause = useRef(false);
+  const [lightboxItem, setLightboxItem] = useState<typeof GALLERY_ITEMS[0] | null>(null);
+  const GALLERY_HALF = GALLERY_ITEMS.length * 400; // px — single set width
+
+  useEffect(() => {
+    const el = galleryRef.current;
+    if (!el) return;
+    const id = setInterval(() => {
+      if (galleryPause.current) return;
+      el.scrollLeft += 1;
+      if (el.scrollLeft >= GALLERY_HALF) el.scrollLeft -= GALLERY_HALF;
+    }, 16);
+    return () => clearInterval(id);
+  }, []);
+
+  const galleryNav = (dir: -1 | 1) => {
+    galleryPause.current = true;
+    galleryRef.current?.scrollBy({ left: dir * 800, behavior: 'smooth' });
+    setTimeout(() => { galleryPause.current = false; }, 1200);
+  };
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 50);
@@ -473,39 +496,79 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── Galería circular ──────────────────────────────────────────── */}
+      {/* ── Galería ─────────────────────────────────────────────── */}
       <section className="bg-[#07091a] py-20 overflow-hidden border-t border-white/5">
-        <div className="max-w-7xl mx-auto px-6 mb-10">
-          <p className="text-[#c4a882] text-xs font-bold uppercase tracking-[0.2em] mb-3">Galería</p>
-          <h2 className="text-3xl md:text-4xl font-bold text-white mb-2"
-            style={{ fontFamily: 'Playfair Display, serif' }}>
-            El software en acción
-          </h2>
-        </div>
-        <div className="overflow-hidden">
-          <div className="gallery-track">
-            {[...GALLERY_ITEMS, ...GALLERY_ITEMS].map((item, idx) => {
-              const Icon = item.icon;
-              return (
-                <div key={`${item.file}-${idx}`} className="gallery-card">
-                  <div className={`absolute inset-0 bg-gradient-to-br ${item.grad} flex items-center justify-center`}>
-                    <Icon className="w-14 h-14 text-white/10" />
-                  </div>
-                  <img
-                    src={`/images/gallery/${item.file}`}
-                    alt={item.label}
-                    className="absolute inset-0 w-full h-full object-cover object-top"
-                  />
-                  {/* Title overlay at bottom */}
-                  <div className="absolute bottom-0 inset-x-0 px-4 py-3 bg-gradient-to-t from-black/90 via-black/50 to-transparent">
-                    <p className="text-white text-sm font-semibold leading-tight">{item.label}</p>
-                  </div>
-                </div>
-              );
-            })}
+        <div className="max-w-7xl mx-auto px-6 mb-10 flex items-end justify-between gap-4 flex-wrap">
+          <div>
+            <p className="text-[#c4a882] text-xs font-bold uppercase tracking-[0.2em] mb-3">Galería</p>
+            <h2 className="text-3xl md:text-4xl font-bold text-white mb-2"
+              style={{ fontFamily: 'Playfair Display, serif' }}>
+              El software de gestión clínica en acción
+            </h2>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <button onClick={() => galleryNav(-1)} aria-label="Anterior"
+              className="p-2.5 rounded-full bg-white/5 border border-white/10 text-white/60 hover:bg-white/10 hover:text-[#c4a882] hover:border-[#c4a882]/30 transition-all">
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+            <button onClick={() => galleryNav(1)} aria-label="Siguiente"
+              className="p-2.5 rounded-full bg-white/5 border border-white/10 text-white/60 hover:bg-white/10 hover:text-[#c4a882] hover:border-[#c4a882]/30 transition-all">
+              <ChevronRight className="w-5 h-5" />
+            </button>
           </div>
         </div>
+        <div className="relative">
+          <div ref={galleryRef} className="gallery-scroll-container">
+            <div className="gallery-track">
+              {[...GALLERY_ITEMS, ...GALLERY_ITEMS].map((item, idx) => {
+                const Icon = item.icon;
+                return (
+                  <div key={`${item.file}-${idx}`} className="gallery-card"
+                    onClick={() => setLightboxItem(item)}>
+                    <div className={`absolute inset-0 bg-gradient-to-br ${item.grad} flex items-center justify-center`}>
+                      <Icon className="w-14 h-14 text-white/10" />
+                    </div>
+                    <img
+                      src={`/images/gallery/${item.file}`}
+                      alt={item.label}
+                      className="absolute inset-0 w-full h-full object-cover object-top"
+                    />
+                    <div className="absolute bottom-0 inset-x-0 px-4 py-3 bg-gradient-to-t from-black/90 via-black/50 to-transparent">
+                      <p className="text-white text-sm font-semibold leading-tight">{item.label}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          {/* Flecha izquierda */}
+          <button onClick={() => galleryNav(-1)} aria-label="Anterior"
+            className="absolute left-0 top-0 h-full px-4 flex items-center bg-gradient-to-r from-[#07091a]/80 to-transparent text-white/40 hover:text-[#c4a882] transition-colors group z-10">
+            <ChevronLeft className="w-8 h-8 group-hover:scale-110 transition-transform" />
+          </button>
+          {/* Flecha derecha */}
+          <button onClick={() => galleryNav(1)} aria-label="Siguiente"
+            className="absolute right-0 top-0 h-full px-4 flex items-center bg-gradient-to-l from-[#07091a]/80 to-transparent text-white/40 hover:text-[#c4a882] transition-colors group z-10">
+            <ChevronRight className="w-8 h-8 group-hover:scale-110 transition-transform" />
+          </button>
+        </div>
       </section>
+
+      {/* Lightbox */}
+      {lightboxItem && (
+        <div className="fixed inset-0 z-[200] bg-black/92 backdrop-blur-lg flex items-center justify-center p-4"
+          onClick={() => setLightboxItem(null)}>
+          <button onClick={() => setLightboxItem(null)}
+            className="absolute top-5 right-5 p-2 rounded-full bg-white/10 text-white/70 hover:text-white hover:bg-white/20 transition-all">
+            <X className="w-5 h-5" />
+          </button>
+          <div onClick={e => e.stopPropagation()} className="max-w-5xl w-full space-y-3">
+            <img src={`/images/gallery/${lightboxItem.file}`} alt={lightboxItem.label}
+              className="w-full rounded-2xl shadow-2xl object-contain max-h-[82vh]" />
+            <p className="text-white/50 text-sm text-center">{lightboxItem.label}</p>
+          </div>
+        </div>
+      )}
 
       {/* ── Beneficios ────────────────────────────────────────────────── */}
       <section className="bg-[#080e1c] py-20 px-6 border-t border-white/5">
