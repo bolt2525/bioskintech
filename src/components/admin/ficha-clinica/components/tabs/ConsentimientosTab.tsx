@@ -715,6 +715,8 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                 name="consent-template-search"
                 type="text"
                 aria-label="Buscar plantilla de consentimiento"
+                className="w-full p-2.5 pl-10 border border-blue-200 rounded-lg bg-white text-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+                placeholder="Buscar procedimiento..."
                 value={searchTerm}
                 onChange={(e) => {
                   setSearchTerm(e.target.value);
