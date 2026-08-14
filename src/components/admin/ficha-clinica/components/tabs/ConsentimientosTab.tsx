@@ -1281,7 +1281,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                   {/* Header */}
                   <div className="flex flex-col md:flex-row justify-between items-start mb-8 border-b-2 border-[#deb887] pb-6 gap-4 md:gap-0">
                     <div className="flex items-center gap-6">
-                      <img src={clinic.general.logo_url || '/images/logo/logo.png'} alt="Logo" className="h-24 w-auto object-contain" onError={e => (e.currentTarget.style.display = 'none')} />
+                      <img src={clinic.general.logo_url || '/images/logo/logo.png'} alt="Logo" className="h-24 w-auto object-contain" onError={e => { (e.currentTarget as HTMLImageElement).src = '/images/logo/logo.png'; }} />
                       <div>
                         <h2 className="text-2xl font-bold text-gray-900 tracking-tight">{clinicDisplayName.toUpperCase()}</h2>
                         <p className="text-base font-bold text-[#deb887] mt-1">{(currentConsent?.signatures?.professional_name || professionalName).toUpperCase()}</p>

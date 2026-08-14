@@ -177,9 +177,7 @@ export default function PrintModal({ patient, recordId, recordData, activeConsul
     const clinicPhone   = clinic.general.phone || '';
     const clinicEmail   = clinic.email?.staff_email || '';
     const clinicTaxId   = clinic.general.tax_id || '';
-    const logoHtml      = clinic.general.logo_url
-      ? `<img src="${clinic.general.logo_url}" alt="${esc(clinicName)}" class="clinic-logo" />`
-      : `<div class="clinic-logo-placeholder">${esc(clinicName.substring(0,2).toUpperCase())}</div>`;
+    const logoHtml = `<img src="${clinic.general.logo_url || (window.location.origin + '/images/logo/logo.png')}" alt="${esc(clinicName)}" class="clinic-logo" onerror="this.onerror=null;this.src='${window.location.origin}/images/logo/logo.png'" />`;
 
     // Professional info
     const profName       = profTemp.name || user?.full_name || '';

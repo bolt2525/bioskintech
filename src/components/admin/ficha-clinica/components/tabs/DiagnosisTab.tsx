@@ -152,10 +152,15 @@ export default function DiagnosisTab({ recordId, diagnoses, patientName, consult
         </head>
         <body>
           <div class="header">
-            <h1>${clinic.general.name || 'BioSkinTech'}</h1>
-            <p>${clinic.general.establishment_type || clinic.general.tagline || 'Dermatología y Medicina Estética'}</p>
-            ${clinic.general.address ? `<p>${clinic.general.address}${clinic.general.city ? ' — ' + clinic.general.city : ''}</p>` : ''}
-            ${clinic.general.phone ? `<p>Tel: ${clinic.general.phone}</p>` : ''}
+            <div style="display:flex;align-items:center;gap:14px;justify-content:center;margin-bottom:8px;">
+              <img src="${clinic.general.logo_url || (window.location.origin + '/images/logo/logo.png')}" style="height:52px;width:auto;object-fit:contain;" onerror="this.onerror=null;this.src='${window.location.origin}/images/logo/logo.png'" alt="Logo" />
+              <div style="text-align:left;">
+                <h1 style="margin:0;font-size:20px;color:#deb887;">${clinic.general.name || 'BioSkinTech'}</h1>
+                <p style="margin:2px 0 0;font-size:11px;color:#666;">${clinic.general.establishment_type || clinic.general.tagline || 'Dermatología y Medicina Estética'}</p>
+              </div>
+            </div>
+            ${clinic.general.address ? `<p style="font-size:11px;margin:2px 0;">${clinic.general.address}${clinic.general.city ? ' — ' + clinic.general.city : ''}</p>` : ''}
+            ${clinic.general.phone ? `<p style="font-size:11px;margin:2px 0;">Tel: ${clinic.general.phone}</p>` : ''}
           </div>
           
           <div class="info">

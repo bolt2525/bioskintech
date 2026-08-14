@@ -281,12 +281,13 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, con
     const dateStr = new Date().toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' }).toUpperCase();
     // Datos dinámicos de la clínica
     const logoUrl = clinic.general.logo_url || `${window.location.origin}/images/logo/logo.png`;
+    const fallbackLogo = `${window.location.origin}/images/logo/logo.png`;
     const clinicName  = clinicDisplayName;
     const clinicTagline = clinic.general.establishment_type || clinic.general.tagline || 'Centro de Medicina Estética';
     const clinicCity  = clinic.general.city    || '';
     const clinicPhone = clinic.general.phone   || '';
     const clinicAddr  = clinic.general.address || '';
-    const doctorName  = [user?.gentilicio, user?.full_name].filter(Boolean).join(' ') || clinicName;
+    const doctorLine  = [user?.gentilicio, user?.full_name].filter(Boolean).join(' ');
     const doctorCedula = user?.cedula_profesional || '';
     const doctorMatricula = user?.matricula_senescyt || '';
 
@@ -322,7 +323,8 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, con
             .routine-title { font-size: 10px; color: #333; margin-bottom: 8px; text-transform: uppercase; }
 
             .footer { margin-top: auto; font-size: 8px; color: #666; padding-top: 10px; }
-            .footer-item { display: flex; align-items: center; gap: 5px; margin-bottom: 3px; }
+            .footer-item { display: flex; align-items: center; gap: 4px; margin-bottom: 4px; }
+            .footer-item svg { flex-shrink: 0; }
             .icon { margin-right: 5px; }
           </style>
         </head>
@@ -331,10 +333,11 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, con
             <!-- Left Column -->
             <div class="column">
                <div class="header">
-                 <img src="${logoUrl}" class="logo" alt="${clinicName}" />
+                 <img src="${logoUrl}" class="logo" alt="${clinicName}" onerror="this.onerror=null;this.src='${fallbackLogo}'" />
                  <div class="doctor-info">
                    <h2>${clinicTagline.toUpperCase()}</h2>
-                   <h3>${doctorName.toUpperCase()}</h3>
+                   <h3>${clinicName.toUpperCase()}</h3>
+                   ${doctorLine ? `<p style="font-size:9px;margin:3px 0;color:#333;font-weight:500;">${doctorLine}</p>` : ''}
                    ${doctorMatricula ? `<p style="font-size:8px;margin:2px 0;color:#666;">SENESCYT: ${doctorMatricula}</p>` : ''}
                    ${doctorCedula ? `<p style="font-size:8px;margin:2px 0;color:#666;">Cédula/RUC: ${doctorCedula}</p>` : ''}
                  </div>
@@ -356,18 +359,19 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, con
                </ol>
 
                <div class="footer">
-                  ${clinicPhone ? `<div class="footer-item">${clinicPhone}</div>` : ''}
-                  ${clinicAddr ? `<div class="footer-item">${clinicAddr}</div>` : ''}
+                  ${clinicPhone ? `<div class="footer-item"><svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.67 12a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 3.55 1h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>${clinicPhone}</div>` : ''}
+                  ${clinicAddr ? `<div class="footer-item"><svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>${clinicAddr}</div>` : ''}
                </div>
             </div>
 
             <!-- Right Column -->
             <div class="column">
                <div class="header">
-                 <img src="${logoUrl}" class="logo" alt="${clinicName}" />
+                 <img src="${logoUrl}" class="logo" alt="${clinicName}" onerror="this.onerror=null;this.src='${fallbackLogo}'" />
                  <div class="doctor-info">
                    <h2>${clinicTagline.toUpperCase()}</h2>
-                   <h3>${doctorName.toUpperCase()}</h3>
+                   <h3>${clinicName.toUpperCase()}</h3>
+                   ${doctorLine ? `<p style="font-size:9px;margin:3px 0;color:#333;font-weight:500;">${doctorLine}</p>` : ''}
                    ${doctorMatricula ? `<p style="font-size:8px;margin:2px 0;color:#666;">SENESCYT: ${doctorMatricula}</p>` : ''}
                    ${doctorCedula ? `<p style="font-size:8px;margin:2px 0;color:#666;">Cédula/RUC: ${doctorCedula}</p>` : ''}
                  </div>
@@ -402,8 +406,8 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, con
                </div>
                
                <div class="footer">
-                  ${clinicPhone ? `<div class="footer-item">${clinicPhone}</div>` : ''}
-                  ${clinicAddr ? `<div class="footer-item">${clinicAddr}</div>` : ''}
+                  ${clinicPhone ? `<div class="footer-item"><svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.67 12a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 3.55 1h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>${clinicPhone}</div>` : ''}
+                  ${clinicAddr ? `<div class="footer-item"><svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>${clinicAddr}</div>` : ''}
                </div>
             </div>
           </div>
