@@ -119,8 +119,8 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
       );
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data.templates)) {
-          // Always update — even if empty, replaces stale data
+        // Only update if results arrived — never clear with empty to avoid stale-wipe bug
+        if (Array.isArray(data.templates) && data.templates.length > 0) {
           setDbTemplates(data.templates);
         }
       } else {
@@ -144,9 +144,13 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
     };
   }, []);
 
+  // Templates reload only when clinic context changes — recordId changes must NOT re-fetch templates
+  useEffect(() => {
+    loadDbTemplates();
+  }, [effectiveClinicId]);
+
   useEffect(() => {
     loadConsents();
-    loadDbTemplates();
     // Initialize professional signatures table
     recordsFetch('/api/records?action=initProfessionalSignatures').catch(console.error);
   }, [patientId, recordId, effectiveClinicId]);
