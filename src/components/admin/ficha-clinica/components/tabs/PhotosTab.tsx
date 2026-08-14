@@ -157,8 +157,14 @@ function PhotoCard({ photo, viewMode, compareLeft, compareRight, onOpen, onEdit,
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
+const PAGE_SIZE = 24;
+
 export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) {
   const [photos, setPhotos] = useState<ClinicalPhoto[]>([]);
+  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextOffset, setNextOffset] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState('');
@@ -220,7 +226,7 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
 
   // ── Effects ────────────────────────────────────────────────────────────────
 
-  useEffect(() => { fetchPhotos(); }, [recordId]);
+  useEffect(() => { fetchPhotos(0); }, [recordId]);
 
   useEffect(() => {
     if (!message) return;
@@ -272,13 +278,23 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
 
-  const fetchPhotos = async () => {
-    setLoading(true);
+  const fetchPhotos = async (startOffset: number) => {
+    const isReset = startOffset === 0;
+    if (isReset) setLoading(true); else setLoadingMore(true);
     try {
-      const res = await recordsFetch(`/api/records?action=listPhotos&record_id=${recordId}`);
-      if (res.ok) { const d = await res.json(); setPhotos(Array.isArray(d) ? d : []); }
+      const res = await recordsFetch(
+        `/api/records?action=listPhotos&record_id=${recordId}&limit=${PAGE_SIZE}&offset=${startOffset}`
+      );
+      if (res.ok) {
+        const d = await res.json();
+        const loaded: ClinicalPhoto[] = Array.isArray(d.photos) ? d.photos : [];
+        if (isReset) setPhotos(loaded); else setPhotos(prev => [...prev, ...loaded]);
+        setTotal(d.total ?? 0);
+        setHasMore(d.hasMore ?? false);
+        setNextOffset(startOffset + PAGE_SIZE);
+      }
     } catch { setMessage({ type: 'error', text: 'Error al cargar las fotos' }); }
-    finally { setLoading(false); }
+    finally { if (isReset) setLoading(false); else setLoadingMore(false); }
   };
 
   // ── Upload ─────────────────────────────────────────────────────────────────
@@ -341,7 +357,7 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
     }
     setUploading(false); setUploadProgress('');
     if (!anyFailed) setMessage({ type: 'success', text: `${files.length} foto(s) subida(s)` });
-    await fetchPhotos();
+    await fetchPhotos(0);
   }, [recordId, consultationId]);
 
   const handleDrop = (e: React.DragEvent) => {
@@ -437,8 +453,8 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
         <div className="flex items-center gap-2">
           <Camera className="w-5 h-5 text-[#b8944d]" />
           <h3 className="text-lg font-semibold text-gray-800">Registro Fotográfico</h3>
-          {photos.length > 0 && (
-            <span className="px-2 py-0.5 bg-[#deb887]/20 text-[#b8944d] rounded-full text-xs font-medium">{photos.length}</span>
+          {total > 0 && (
+            <span className="px-2 py-0.5 bg-[#deb887]/20 text-[#b8944d] rounded-full text-xs font-medium">{total}</span>
           )}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -549,6 +565,17 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
                   </div>
                 );
               })}
+            </div>
+          )}
+
+          {hasMore && (
+            <div className="flex justify-center mt-2">
+              <button type="button" disabled={loadingMore} onClick={() => fetchPhotos(nextOffset)}
+                className="flex items-center gap-2 px-5 py-2 rounded-lg border border-[#deb887] text-[#b8944d] text-sm font-medium hover:bg-[#deb887]/10 transition-colors disabled:opacity-60">
+                {loadingMore
+                  ? <><div className="w-3.5 h-3.5 border-2 border-[#deb887] border-t-transparent rounded-full animate-spin" />Cargando…</>
+                  : `Cargar más fotos (${total - photos.length} restantes)`}
+              </button>
             </div>
           )}
 

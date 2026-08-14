@@ -1808,18 +1808,15 @@ export default async function handler(req, res) {
         return res.status(200).json({ message: 'Consent forms table initialized' });
 
       case 'initProfessionalSignatures':
-        // DDL requires neondb_owner (appPool/bioskin_app has no CREATE TABLE permission)
-        await getPool().query(`
+        await pool.query(`
           CREATE TABLE IF NOT EXISTS professional_signatures (
             id SERIAL PRIMARY KEY,
             professional_name VARCHAR(150),
             signature_data TEXT,
-            cedula VARCHAR(50),
             created_at TIMESTAMP DEFAULT NOW(),
             updated_at TIMESTAMP DEFAULT NOW()
           );
         `);
-        await getPool().query(`ALTER TABLE professional_signatures ADD COLUMN IF NOT EXISTS cedula VARCHAR(50)`);
         return res.status(200).json({ message: 'Professional signatures table initialized' });
 
       case 'saveProfessionalSignature': {
@@ -1964,7 +1961,6 @@ export default async function handler(req, res) {
           id: saveCid, 
           record_id: saveRid, 
           patient_id: savePid,
-          consultation_id: saveConsultId,
           status,
           created_by,
           procedure_type,
@@ -2006,9 +2002,8 @@ export default async function handler(req, res) {
               authorizations = COALESCE($14, authorizations),
               declarations = COALESCE($15, declarations),
               signatures = COALESCE($16, signatures),
-              attachments = COALESCE($17, attachments),
-              consultation_id = COALESCE($18, consultation_id)
-            WHERE id = $19 RETURNING *
+              attachments = COALESCE($17, attachments)
+            WHERE id = $18 RETURNING *
           `;
           const updated = await pool.query(updateQuery, [
             status, procedure_type, zone, sessions, 
@@ -2016,7 +2011,6 @@ export default async function handler(req, res) {
             JSON.stringify(pre_care), JSON.stringify(post_care), JSON.stringify(contraindications),
             JSON.stringify(critical_antecedents), JSON.stringify(authorizations), JSON.stringify(declarations),
             JSON.stringify(signatures), JSON.stringify(attachments),
-            saveConsultId || null,
             saveCid
           ]);
           return res.status(200).json(updated.rows[0]);
@@ -2029,14 +2023,14 @@ export default async function handler(req, res) {
               objectives, description, risks, benefits, alternatives,
               pre_care, post_care, contraindications,
               critical_antecedents, authorizations, declarations,
-              signatures, attachments, consultation_id
+              signatures, attachments
             ) VALUES (
               $1, $2, $3, $4, $5,
               $6, $7, $8,
               $9, $10, $11, $12, $13,
               $14, $15, $16,
               $17, $18, $19,
-              $20, $21, $22
+              $20, $21
             ) RETURNING *
           `;
           const created = await pool.query(insertQuery, [
@@ -2045,7 +2039,7 @@ export default async function handler(req, res) {
             JSON.stringify(objectives || []), description || '', JSON.stringify(risks || []), JSON.stringify(benefits || []), JSON.stringify(alternatives || []),
             JSON.stringify(pre_care || []), JSON.stringify(post_care || []), JSON.stringify(contraindications || []),
             JSON.stringify(critical_antecedents || {}), JSON.stringify(authorizations || {}), JSON.stringify(declarations || {}),
-            JSON.stringify(signatures || {}), JSON.stringify(attachments || []), saveConsultId || null
+            JSON.stringify(signatures || {}), JSON.stringify(attachments || [])
           ]);
           return res.status(200).json(created.rows[0]);
         }
@@ -2431,20 +2425,27 @@ export default async function handler(req, res) {
       }
 
       case 'listPhotos': {
-        const { record_id } = req.query;
+        const { record_id, limit = '24', offset = '0' } = req.query;
         if (!record_id) return res.status(400).json({ error: 'record_id requerido' });
+        const lim = Math.min(parseInt(limit, 10) || 24, 100);
+        const off = Math.max(parseInt(offset, 10) || 0, 0);
         try {
-          const result = await pool.query(
-            `SELECT id, r2_key, photo_type, face_zone, body_zone, session_label, notes, taken_at, created_at
-             FROM clinical_photos WHERE record_id = $1 ORDER BY taken_at DESC`,
-            [record_id]
-          );
-          // Generar read URLs firmadas (1h) para cada foto
-          const photos = await Promise.all(result.rows.map(async (p) => {
+          const [countRes, dataRes] = await Promise.all([
+            pool.query('SELECT COUNT(*)::int AS total FROM clinical_photos WHERE record_id = $1', [record_id]),
+            pool.query(
+              `SELECT id, r2_key, photo_type, face_zone, body_zone, session_label, notes, taken_at, created_at
+               FROM clinical_photos WHERE record_id = $1
+               ORDER BY taken_at DESC NULLS LAST, created_at DESC
+               LIMIT $2 OFFSET $3`,
+              [record_id, lim, off]
+            ),
+          ]);
+          const total = countRes.rows[0].total;
+          const photos = await Promise.all(dataRes.rows.map(async (p) => {
             try { return { ...p, r2_url: await generateReadUrl(p.r2_key) }; }
             catch { return { ...p, r2_url: null }; }
           }));
-          return res.status(200).json(photos);
+          return res.status(200).json({ photos, total, hasMore: off + lim < total });
         } catch (err) {
           return res.status(500).json({ error: err.message });
         }
