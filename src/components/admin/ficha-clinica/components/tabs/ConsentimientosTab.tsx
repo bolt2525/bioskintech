@@ -296,7 +296,8 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
         setCurrentConsent(data);
         if (data.signatures?.patient_sig_data) {
           setShowQr(false);
-          setMessage({ type: 'success', text: '¿Firma recibida correctamente!' });
+          loadConsents(); // refresh list so signed state reflects in the list
+          setMessage({ type: 'success', text: '¡Firma recibida correctamente!' });
         } else {
           setMessage({ type: 'error', text: 'Aún no se ha recibido la firma' });
         }
@@ -1367,36 +1368,36 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
               <h3 className="font-bold border-b-2 border-[#deb887] mb-3 text-lg text-gray-900">6. DECLARACIONES Y AUTORIZACIONES</h3>
               <div className="space-y-3 text-sm bg-gray-50 p-6 rounded-lg border border-gray-100">
                 <p className="flex gap-3">
-                  <span className="font-bold text-lg leading-none">{currentConsent.declarations?.understanding ? '' : ''}</span>
+                  <span className={`font-bold text-lg leading-none ${currentConsent.declarations?.understanding ? 'text-emerald-600' : 'text-gray-300'}`}>{currentConsent.declarations?.understanding ? '✓' : '✗'}</span>
                   Declaro haber recibido información clara y completa del tratamiento.
                 </p>
                 <p className="flex gap-3">
-                  <span className="font-bold text-lg leading-none">{currentConsent.declarations?.questions ? '' : ''}</span>
+                  <span className={`font-bold text-lg leading-none ${currentConsent.declarations?.questions ? 'text-emerald-600' : 'text-gray-300'}`}>{currentConsent.declarations?.questions ? '✓' : '✗'}</span>
                   He tenido oportunidad de resolver todas mis dudas.
                 </p>
                 <p className="flex gap-3">
-                  <span className="font-bold text-lg leading-none">{currentConsent.declarations?.results ? '' : ''}</span>
+                  <span className={`font-bold text-lg leading-none ${currentConsent.declarations?.results ? 'text-emerald-600' : 'text-gray-300'}`}>{currentConsent.declarations?.results ? '✓' : '✗'}</span>
                   Entiendo que los resultados pueden variar y no se garantizan resultados específicos.
                 </p>
                 <p className="flex gap-3">
-                  <span className="font-bold text-lg leading-none">{currentConsent.declarations?.authorization ? '' : ''}</span>
+                  <span className={`font-bold text-lg leading-none ${currentConsent.declarations?.authorization ? 'text-emerald-600' : 'text-gray-300'}`}>{currentConsent.declarations?.authorization ? '✓' : '✗'}</span>
                   Autorizo voluntariamente la realización del tratamiento.
                 </p>
                 <p className="flex gap-3">
-                  <span className="font-bold text-lg leading-none">{currentConsent.declarations?.revocation ? '' : ''}</span>
+                  <span className={`font-bold text-lg leading-none ${currentConsent.declarations?.revocation ? 'text-emerald-600' : 'text-gray-300'}`}>{currentConsent.declarations?.revocation ? '✓' : '✗'}</span>
                   Sé que puedo revocar este consentimiento en cualquier momento antes del procedimiento.
                 </p>
                 <p className="flex gap-3">
-                  <span className="font-bold text-lg leading-none">{currentConsent.declarations?.alternatives ? '' : ''}</span>
+                  <span className={`font-bold text-lg leading-none ${currentConsent.declarations?.alternatives ? 'text-emerald-600' : 'text-gray-300'}`}>{currentConsent.declarations?.alternatives ? '✓' : '✗'}</span>
                   Me han explicado las alternativas de tratamiento, incluyendo la opción de no tratarme.
                 </p>
                 <div className="mt-4 pt-4 border-t border-gray-200">
                   <p className="flex gap-3 mb-2">
-                    <span className="font-bold text-lg leading-none">{currentConsent.authorizations?.image_use ? '' : ''}</span>
+                    <span className={`font-bold text-lg leading-none ${currentConsent.authorizations?.image_use ? 'text-emerald-600' : 'text-gray-300'}`}>{currentConsent.authorizations?.image_use ? '✓' : '✗'}</span>
                     Autorizo el uso de mis imágenes con fines educativos y/o promocionales.
                   </p>
                   <p className="flex gap-3">
-                    <span className="font-bold text-lg leading-none">{currentConsent.authorizations?.photo_video ? '' : ''}</span>
+                    <span className={`font-bold text-lg leading-none ${currentConsent.authorizations?.photo_video ? 'text-emerald-600' : 'text-gray-300'}`}>{currentConsent.authorizations?.photo_video ? '✓' : '✗'}</span>
                     Autorizo la toma de fotografías y/o videos del procedimiento para registro clínico.
                   </p>
                 </div>
