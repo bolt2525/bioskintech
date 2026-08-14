@@ -992,11 +992,12 @@ export default function AdminMasterDashboard() {
   const [subDays, setSubDays]   = useState(365);
   const [subNoExpiry, setSubNoExpiry] = useState(false);
   const [demoModal, setDemoModal] = useState<{ open: boolean; clinicId: number | null; clinicName: string }>({ open: false, clinicId: null, clinicName: '' });
-  const [demoForm, setDemoForm]  = useState({ username: '', password: '', showPassword: false, value: 1, unit: 'days' as 'hours' | 'days' | 'weeks' });
+  const [demoForm, setDemoForm]  = useState({ username: '', password: '', showPassword: false, value: 1, unit: 'days' as 'hours' | 'days' | 'weeks', changeExpiry: false, expiryValue: 1, expiryUnit: 'days' as 'hours' | 'days' | 'weeks' });
   const [demoUsers, setDemoUsers] = useState<Array<{ id: number; username: string; is_active: boolean; demo_expires_at: string | null; last_login: string | null }>>([]);
   const [demoEditTarget, setDemoEditTarget] = useState<{ id: number; username: string } | null>(null);
   const [demoCreatedCreds, setDemoCreatedCreds] = useState<{ username: string; password: string } | null>(null);
   const [demoLoading, setDemoLoading] = useState(false);
+  const [demoExpiryEdit, setDemoExpiryEdit] = useState<{ userId: number; value: number; unit: 'hours' | 'days' | 'weeks' } | null>(null);
   const [notifModal, setNotifModal] = useState<{ open: boolean; clinicId: number | null; clinicName: string }>({ open: false, clinicId: null, clinicName: '' });
   const [notifMessage, setNotifMessage] = useState('');
   const [now, setNow] = useState(new Date());
@@ -1309,6 +1310,9 @@ export default function AdminMasterDashboard() {
 
   const saveDemoCredentials = async () => {
     if (!demoEditTarget || !demoModal.clinicId) return;
+    const newExpiry = demoForm.changeExpiry
+      ? new Date(Date.now() + demoForm.expiryValue * (demoForm.expiryUnit === 'hours' ? 3600000 : demoForm.expiryUnit === 'weeks' ? 7*86400000 : 86400000)).toISOString()
+      : undefined;
     try {
       const r = await fetch('/api/admin-auth?action=updateDemoCredentials', {
         method: 'POST', headers: authHeader(),
@@ -1316,6 +1320,7 @@ export default function AdminMasterDashboard() {
           userId: demoEditTarget.id,
           username: demoForm.username.trim() || undefined,
           password: demoForm.password || undefined,
+          ...(newExpiry ? { demo_expires_at: newExpiry } : {}),
         }),
       });
       const d = await r.json();
@@ -1327,6 +1332,22 @@ export default function AdminMasterDashboard() {
       const usersData = await usersRes.json();
       setDemoUsers(usersData.users || []);
     } catch { flash('Error al actualizar credenciales', 'err'); }
+  };
+
+  const saveDemoExpiry = async (userId: number, value: number, unit: 'hours' | 'days' | 'weeks') => {
+    const multiplier = unit === 'hours' ? 3600000 : unit === 'weeks' ? 7 * 86400000 : 86400000;
+    const demo_expires_at = new Date(Date.now() + value * multiplier).toISOString();
+    try {
+      const r = await fetch('/api/admin-auth?action=updateDemoCredentials', {
+        method: 'POST', headers: authHeader(),
+        body: JSON.stringify({ userId, demo_expires_at }),
+      });
+      const d = await r.json();
+      if (d.error) { flash(d.error, 'err'); return; }
+      flash('Tiempo de demo actualizado');
+      setDemoExpiryEdit(null);
+      loadAll();
+    } catch { flash('Error al actualizar tiempo', 'err'); }
   };
 
   const sendNotification = async () => {
@@ -2114,18 +2135,49 @@ export default function AdminMasterDashboard() {
                       const exp = u.demo_expires_at ? new Date(u.demo_expires_at) : null;
                       const daysLeft = exp ? Math.ceil((exp.getTime() - Date.now()) / 86400000) : null;
                       const isExpired = daysLeft !== null && daysLeft < 0;
+                      const isEditing = demoExpiryEdit?.userId === u.id;
                       return (
-                        <div key={u.id} className="px-5 py-3 flex items-center gap-3">
-                          <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isExpired ? 'bg-red-500' : 'bg-amber-400'}`} />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-800">{u.username}</p>
-                            <p className="text-xs text-gray-400">{u.clinic_name}</p>
+                        <div key={u.id}>
+                          <div className="px-5 py-3 flex items-center gap-3">
+                            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isExpired ? 'bg-red-500' : daysLeft !== null && daysLeft <= 3 ? 'bg-amber-400 animate-pulse' : 'bg-amber-400'}`} />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-800">{u.username}</p>
+                              <p className="text-xs text-gray-400">{u.clinic_name}</p>
+                            </div>
+                            {exp ? (
+                              isExpired
+                                ? <span className="text-xs text-red-500 font-medium">Expirada</span>
+                                : <span className="text-xs text-amber-600">{daysLeft}d restantes · {exp.toLocaleDateString('es-EC')}</span>
+                            ) : <span className="text-xs text-gray-400">Sin vencimiento</span>}
+                            <button
+                              onClick={() => setDemoExpiryEdit(isEditing ? null : { userId: u.id, value: 1, unit: 'days' })}
+                              title="Editar tiempo"
+                              className={`p-1.5 rounded-lg border text-xs transition-colors ${isEditing ? 'bg-amber-50 border-amber-300 text-amber-600' : 'border-gray-200 text-gray-400 hover:bg-gray-50 hover:text-amber-600'}`}
+                            >
+                              <RefreshCw className="w-3.5 h-3.5" />
+                            </button>
                           </div>
-                          {exp ? (
-                            isExpired
-                              ? <span className="text-xs text-red-500 font-medium">Expirada</span>
-                              : <span className="text-xs text-amber-600">{exp.toLocaleString('es-EC', { dateStyle: 'short', timeStyle: 'short' })} · {daysLeft}d</span>
-                          ) : <span className="text-xs text-gray-400">Sin vencimiento</span>}
+                          {isEditing && (
+                            <div className="px-5 pb-3 flex items-center gap-2 bg-amber-50/50">
+                              <input type="number" min={1} max={999} value={demoExpiryEdit.value}
+                                onChange={e => setDemoExpiryEdit(s => s ? { ...s, value: Math.max(1, parseInt(e.target.value)||1) } : s)}
+                                className="w-20 px-2 py-1.5 border rounded-lg text-xs focus:ring-2 focus:ring-amber-300 outline-none" />
+                              <select value={demoExpiryEdit.unit}
+                                onChange={e => setDemoExpiryEdit(s => s ? { ...s, unit: e.target.value as 'hours' | 'days' | 'weeks' } : s)}
+                                className="flex-1 px-2 py-1.5 border rounded-lg text-xs focus:ring-2 focus:ring-amber-300 outline-none bg-white">
+                                <option value="hours">Horas</option>
+                                <option value="days">Días</option>
+                                <option value="weeks">Semanas</option>
+                              </select>
+                              <p className="text-[10px] text-gray-500 shrink-0">
+                                {new Date(Date.now() + demoExpiryEdit.value * (demoExpiryEdit.unit === 'hours' ? 3600000 : demoExpiryEdit.unit === 'weeks' ? 7*86400000 : 86400000)).toLocaleDateString('es-EC')}
+                              </p>
+                              <button onClick={() => saveDemoExpiry(u.id, demoExpiryEdit.value, demoExpiryEdit.unit)}
+                                className="px-3 py-1.5 text-white rounded-lg text-xs font-semibold whitespace-nowrap"
+                                style={{ background: 'linear-gradient(135deg,#f59e0b,#d97706)' }}>Guardar</button>
+                              <button onClick={() => setDemoExpiryEdit(null)} className="px-2 py-1.5 border rounded-lg text-xs text-gray-500 hover:bg-gray-50">Cancelar</button>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -3120,17 +3172,18 @@ export default function AdminMasterDashboard() {
                     {demoUsers.map(u => {
                       const exp = u.demo_expires_at ? new Date(u.demo_expires_at) : null;
                       const expired = exp ? exp < new Date() : false;
+                      const daysLeft = exp ? Math.ceil((exp.getTime() - Date.now()) / 86400000) : null;
                       return (
                         <div key={u.id} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs ${expired ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'}`}>
                           <UserCheck className="w-3.5 h-3.5 text-gray-400 shrink-0" />
                           <span className="font-mono font-medium flex-1">{u.username}</span>
-                          <span className={`text-[10px] ${expired ? 'text-red-500' : 'text-gray-400'}`}>
-                            {exp ? (expired ? 'Vencido' : exp.toLocaleDateString('es-EC')) : 'Sin exp.'}
+                          <span className={`text-[10px] ${expired ? 'text-red-500' : daysLeft !== null && daysLeft <= 3 ? 'text-amber-500' : 'text-gray-400'}`}>
+                            {exp ? (expired ? 'Vencido' : `${daysLeft}d`) : 'Sin exp.'}
                           </span>
                           <button
                             onClick={() => {
                               setDemoEditTarget({ id: u.id, username: u.username });
-                              setDemoForm(f => ({ ...f, username: u.username, password: genDemoPassword() }));
+                              setDemoForm(f => ({ ...f, username: u.username, password: genDemoPassword(), changeExpiry: false, expiryValue: 1, expiryUnit: 'days' }));
                               setDemoCreatedCreds(null);
                             }}
                             className="text-[10px] text-amber-600 hover:underline whitespace-nowrap"
@@ -3179,8 +3232,35 @@ export default function AdminMasterDashboard() {
                   </div>
                 </div>
 
-                {/* Validity (solo para nuevo) */}
-                {!demoEditTarget && (
+                {/* Validity: siempre para nuevo, toggle para editar */}
+                {demoEditTarget ? (
+                  <div className="mb-3">
+                    <label className="flex items-center gap-2 text-xs font-medium text-gray-600 mb-2 cursor-pointer select-none">
+                      <input type="checkbox" checked={demoForm.changeExpiry}
+                        onChange={e => setDemoForm(f => ({ ...f, changeExpiry: e.target.checked }))}
+                        className="rounded accent-amber-500" />
+                      Cambiar tiempo de acceso
+                    </label>
+                    {demoForm.changeExpiry && (
+                      <>
+                        <div className="flex gap-2">
+                          <input type="number" min={1} max={999} value={demoForm.expiryValue}
+                            onChange={e => setDemoForm(f => ({ ...f, expiryValue: Math.max(1, parseInt(e.target.value)||1) }))}
+                            className="w-24 px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-amber-300 outline-none" />
+                          <select value={demoForm.expiryUnit} onChange={e => setDemoForm(f => ({ ...f, expiryUnit: e.target.value as 'hours' | 'days' | 'weeks' }))}
+                            className="flex-1 px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-amber-300 outline-none bg-white">
+                            <option value="hours">Horas</option>
+                            <option value="days">Días</option>
+                            <option value="weeks">Semanas</option>
+                          </select>
+                        </div>
+                        <p className="text-xs text-gray-400 mt-1">
+                          Nuevo vencimiento: <strong>{new Date(Date.now() + demoForm.expiryValue * (demoForm.expiryUnit === 'hours' ? 3600000 : demoForm.expiryUnit === 'weeks' ? 7*86400000 : 86400000)).toLocaleString('es-EC')}</strong>
+                        </p>
+                      </>
+                    )}
+                  </div>
+                ) : (
                   <div className="mb-3">
                     <label className="block text-xs font-medium text-gray-600 mb-1">Validez</label>
                     <div className="flex gap-2">

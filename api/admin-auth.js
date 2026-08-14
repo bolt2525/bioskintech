@@ -2633,7 +2633,7 @@ export default async function handler(req, res) {
 
     if (action === 'updateDemoCredentials') {
       if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master_admin' });
-      const { userId, username: newUsername, password: newPassword } = req.body || {};
+      const { userId, username: newUsername, password: newPassword, demo_expires_at: newExpiry } = req.body || {};
       if (!userId) return res.status(400).json({ error: 'userId requerido' });
       const check = await sql`SELECT id, is_demo FROM clinic_users WHERE id = ${userId}`;
       if (!check.rows[0]) return res.status(404).json({ error: 'Usuario no encontrado' });
@@ -2655,6 +2655,10 @@ export default async function handler(req, res) {
         tempPassword = newPassword;
         const { hash, salt } = hashPassword(newPassword);
         await sql`UPDATE clinic_users SET password_hash = ${hash}, salt = ${salt}, hash_algo = 'pbkdf2' WHERE id = ${userId}`;
+      }
+      if (newExpiry !== undefined) {
+        const expiryVal = newExpiry ? new Date(newExpiry) : null;
+        await sql`UPDATE clinic_users SET demo_expires_at = ${expiryVal} WHERE id = ${userId}`;
       }
       return res.status(200).json({ success: true, ...(tempPassword ? { temp_password: tempPassword } : {}) });
     }
