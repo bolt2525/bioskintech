@@ -1004,7 +1004,7 @@ export default function AdminMasterDashboard() {
 
   // ── Ajustes por clínica ───────────────────────────────────────────────────
   type ClinicSettingsData = {
-    general:        { name: string; city: string; tagline: string; logo_url: string; phone: string; address: string; tax_id: string };
+    general:        { name: string; city: string; tagline: string; establishment_type: string; logo_url: string; phone: string; address: string; tax_id: string };
     treatments:     string[];
     email:          { staff_email: string; from_name: string; signature: string; whatsapp_number: string; staff_members?: Array<{ name: string; email: string }> };
     agenda:         { start_hour: string; end_hour: string; slot_minutes: number; calendar_prefix: string };
@@ -2631,6 +2631,27 @@ export default function AdminMasterDashboard() {
                     {/* ── GENERAL ── */}
                     {settingsTab === 'general' && (<>
                       <p className="text-xs text-gray-400">Información pública de la clínica usada en recetas, emails y reportes.</p>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Tipo de establecimiento</label>
+                        <select value={settingsData.general.establishment_type || ''}
+                          onChange={e => setSettingsData(s => s ? ({ ...s, general: { ...s.general, establishment_type: e.target.value } }) : s)}
+                          className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none bg-white">
+                          <option value="">Sin especificar</option>
+                          <option>Clínica</option>
+                          <option>Clínica Estética</option>
+                          <option>Centro Estético</option>
+                          <option>Centro de Medicina Estética</option>
+                          <option>Consultorio Médico</option>
+                          <option>Consultorio Estético</option>
+                          <option>Spa Médico</option>
+                          <option>Spa</option>
+                          <option>Centro de Bienestar</option>
+                          <option>Centro de Dermatología</option>
+                          <option>Centro de Salud</option>
+                          <option>Centro de Nutrición</option>
+                          <option>Consultorio Odontológico</option>
+                        </select>
+                      </div>
                       <div className="grid grid-cols-2 gap-3">
                         {([
                           ['name','Nombre de la clínica','text'],['city','Ciudad','text'],

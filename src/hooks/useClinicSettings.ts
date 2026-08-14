@@ -9,13 +9,14 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 
 export interface ClinicGeneralSettings {
-  name:     string;
-  city:     string;
-  tagline:  string;
-  logo_url: string;
-  phone:    string;
-  address:  string;
-  tax_id:   string;
+  name:               string;
+  city:               string;
+  tagline:            string;
+  establishment_type: string;
+  logo_url:           string;
+  phone:              string;
+  address:            string;
+  tax_id:             string;
 }
 
 export interface ClinicEmailSettings {
@@ -41,7 +42,7 @@ export interface ClinicSettings {
 }
 
 const DEFAULTS: ClinicSettings = {
-  general:    { name: '', city: '', tagline: '', logo_url: '', phone: '', address: '', tax_id: '' },
+  general:    { name: '', city: '', tagline: '', establishment_type: '', logo_url: '', phone: '', address: '', tax_id: '' },
   treatments: [],
   email:      { staff_email: '', from_name: '', signature: '', whatsapp_number: '' },
   agenda:     { start_hour: '08:00', end_hour: '19:00', slot_minutes: 60, calendar_prefix: '' },

@@ -282,7 +282,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, con
     // Datos dinámicos de la clínica
     const logoUrl = clinic.general.logo_url || `${window.location.origin}/images/logo/logo.png`;
     const clinicName  = clinicDisplayName;
-    const clinicTagline = clinic.general.tagline || 'Centro de Medicina Estética';
+    const clinicTagline = clinic.general.establishment_type || clinic.general.tagline || 'Centro de Medicina Estética';
     const clinicCity  = clinic.general.city    || '';
     const clinicPhone = clinic.general.phone   || '';
     const clinicAddr  = clinic.general.address || '';

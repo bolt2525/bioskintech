@@ -62,6 +62,7 @@ export default function AdminRegister() {
 
   // Formulario clínica
   const [clinicName, setClinicName]   = useState('');
+  const [clinicEstablishmentType, setClinicEstablishmentType] = useState('');
   const [clinicPhone, setClinicPhone] = useState('');
   const [clinicAddress, setClinicAddress] = useState('');
   const [clinicCity, setClinicCity]   = useState('');
@@ -261,6 +262,7 @@ export default function AdminRegister() {
         gentilicio: gentilicio || undefined,
         profession: profession || undefined,
         clinic_name: clinicName.trim(),
+        clinic_establishment_type: clinicEstablishmentType || undefined,
         clinic_phone: clinicPhone || undefined,
         clinic_address: clinicAddress || undefined,
         clinic_city: clinicCity || undefined,
@@ -521,6 +523,28 @@ export default function AdminRegister() {
                     <Building2 className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-300 w-4 h-4" />
                     <input required type="text" value={clinicName} onChange={e => setClinicName(e.target.value)} placeholder="Mi Clínica Estética" className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
                   </div>
+                </div>
+
+                {/* Tipo de establecimiento */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Tipo de establecimiento</label>
+                  <select value={clinicEstablishmentType} onChange={e => setClinicEstablishmentType(e.target.value)}
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all bg-white">
+                    <option value="">Seleccionar tipo...</option>
+                    <option>Clínica</option>
+                    <option>Clínica Estética</option>
+                    <option>Centro Estético</option>
+                    <option>Centro de Medicina Estética</option>
+                    <option>Consultorio Médico</option>
+                    <option>Consultorio Estético</option>
+                    <option>Spa Médico</option>
+                    <option>Spa</option>
+                    <option>Centro de Bienestar</option>
+                    <option>Centro de Dermatología</option>
+                    <option>Centro de Salud</option>
+                    <option>Centro de Nutrición</option>
+                    <option>Consultorio Odontológico</option>
+                  </select>
                 </div>
 
                 {/* RUC */}

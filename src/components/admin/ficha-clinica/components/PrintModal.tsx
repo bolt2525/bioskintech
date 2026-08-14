@@ -171,7 +171,7 @@ export default function PrintModal({ patient, recordId, recordData, activeConsul
 
     // Clinic info
     const clinicName    = clinic.general.name || user?.clinic_name || 'Cl\u00ednica';
-    const clinicTagline = clinic.general.tagline || '';
+    const clinicTagline = clinic.general.establishment_type || clinic.general.tagline || '';
     const clinicAddr    = clinic.general.address || '';
     const clinicCity    = clinic.general.city || '';
     const clinicPhone   = clinic.general.phone || '';

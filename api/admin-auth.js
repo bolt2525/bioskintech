@@ -1330,7 +1330,8 @@ async function registerClinic(body) {
   const { code, subscription_id, email, password, username: rawUsername, clinic_email,
           first_name, last_name, gentilicio, profession,
           clinic_name, clinic_phone, clinic_address, clinic_city, clinic_country,
-          clinic_ruc, clinic_website, cedula_profesional, matricula_senescyt, especialidad } = body;
+          clinic_ruc, clinic_website, cedula_profesional, matricula_senescyt, especialidad,
+          clinic_establishment_type } = body;
 
   if (!email?.trim() || !password?.trim() || !first_name?.trim() || !last_name?.trim())
     return { error: 'email, password, first_name y last_name son requeridos' };
@@ -1436,6 +1437,14 @@ async function registerClinic(body) {
   for (const f of planFeatures) {
     await sql`INSERT INTO clinic_features (clinic_id, feature, enabled) VALUES (${clinicId}, ${f}, true) ON CONFLICT (clinic_id, feature) DO NOTHING`;
   }
+
+  // Guardar settings iniciales con establishment_type
+  const initialGeneral = JSON.stringify({
+    name: clinic_name.trim(), city: clinic_city || '', tagline: '',
+    establishment_type: clinic_establishment_type || '',
+    logo_url: '', phone: clinic_phone || '', address: clinic_address || '', tax_id: clinic_ruc || '',
+  });
+  await sql`INSERT INTO clinic_settings (clinic_id, general) VALUES (${clinicId}, ${initialGeneral}::jsonb) ON CONFLICT (clinic_id) DO UPDATE SET general = ${initialGeneral}::jsonb`;
 
   // Marcar código como usado
   if (codeRow) {
@@ -2334,7 +2343,7 @@ export default async function handler(req, res) {
         const clinicR = await sql`SELECT name, email, phone, address, city, ruc, logo_url FROM clinics WHERE id = ${clinicId}`;
         const clinic  = clinicR.rows[0] || {};
         const defaults = {
-          general:    { name: clinic.name || '', city: clinic.city || '', tagline: '', logo_url: clinic.logo_url || '', phone: clinic.phone || '', address: clinic.address || '', tax_id: clinic.ruc || '' },
+          general:    { name: clinic.name || '', city: clinic.city || '', tagline: '', establishment_type: '', logo_url: clinic.logo_url || '', phone: clinic.phone || '', address: clinic.address || '', tax_id: clinic.ruc || '' },
           treatments: DEFAULT_TREATMENTS,
           email:      { staff_email: clinic.email || '', from_name: clinic.name || '', signature: `El equipo de ${clinic.name || 'la clínica'}`, whatsapp_number: '' },
           agenda:     { start_hour: '08:00', end_hour: '19:00', slot_minutes: 60, calendar_prefix: clinic.name || 'CLINICA' },

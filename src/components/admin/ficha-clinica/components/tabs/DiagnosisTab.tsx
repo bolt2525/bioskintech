@@ -153,7 +153,7 @@ export default function DiagnosisTab({ recordId, diagnoses, patientName, consult
         <body>
           <div class="header">
             <h1>${clinic.general.name || 'BioSkinTech'}</h1>
-            <p>${clinic.general.tagline || 'Dermatología y Medicina Estética'}</p>
+            <p>${clinic.general.establishment_type || clinic.general.tagline || 'Dermatología y Medicina Estética'}</p>
             ${clinic.general.address ? `<p>${clinic.general.address}${clinic.general.city ? ' — ' + clinic.general.city : ''}</p>` : ''}
             ${clinic.general.phone ? `<p>Tel: ${clinic.general.phone}</p>` : ''}
           </div>

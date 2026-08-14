@@ -1314,7 +1314,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     <div class="header-left">
       ${clinic.general.logo_url ? `<img src="${clinic.general.logo_url}" alt="Logo" style="height:48px;width:auto;object-fit:contain;margin-bottom:6px;" onerror="this.style.display='none'">` : ''}
       <h1>${clinicDisplayName}</h1>
-      <p>${clinic.general.tagline || 'Centro de Medicina Estética'}</p>
+      <p>${clinic.general.establishment_type || clinic.general.tagline || 'Centro de Medicina Estética'}</p>
       ${clinic.general.address ? `<p style="font-size:10px;color:#aaa;">${clinic.general.address}${clinic.general.city ? ', ' + clinic.general.city : ''}</p>` : ''}
     </div>
     <div class="header-right">
@@ -1448,7 +1448,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   </div>
 
   <div class="footer">
-    ${clinicDisplayName} — ${clinic.general.tagline || 'Centro de Medicina Estética'} · Documento generado el ${new Date().toLocaleString('es-EC')}
+    ${clinicDisplayName} — ${clinic.general.establishment_type || clinic.general.tagline || 'Centro de Medicina Estética'} · Documento generado el ${new Date().toLocaleString('es-EC')}
   </div>
   <script>window.onload = () => window.print()</script>
 </body>
