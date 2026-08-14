@@ -371,6 +371,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
   const [crossHistOpen, setCrossHistOpen] = useState(false);
   const messageRef = useRef<HTMLDivElement>(null);
   const [deleting, setDeleting] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const currentExams = physicalExams.filter(e => e.consultation_id === consultationId);
   const otherExamCount = physicalExams.filter(e => e.consultation_id !== consultationId).length;
