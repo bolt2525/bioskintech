@@ -24,6 +24,7 @@ interface ConsentForm {
   id?: number;
   record_id: number;
   patient_id: number;
+  consultation_id?: number;
   status: 'draft' | 'finalized' | 'annulled';
   created_at?: string;
   created_by?: string;
@@ -1307,13 +1308,13 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
           </button>
         </div>
 
-        <div id="printable-consent" className="bg-white p-8 md:p-12 max-w-4xl mx-auto shadow-xl print:shadow-none print:p-0 rounded-xl">
+        <div id="printable-consent" className="bg-white p-6 md:p-8 max-w-4xl mx-auto shadow-xl print:shadow-none print:p-0 rounded-xl">
           <table className="w-full">
-            <thead className="hidden print:table-header-group"><tr><td className="h-[1.5cm]"></td></tr></thead>
-            <tfoot className="hidden print:table-footer-group"><tr><td className="h-[1.5cm]"></td></tr></tfoot>
+            <thead className="hidden print:table-header-group"><tr><td className="h-[1cm]"></td></tr></thead>
+            <tfoot className="hidden print:table-footer-group"><tr><td className="h-[1cm]"></td></tr></tfoot>
             <tbody>
               <tr>
-                <td className="print:px-[1.5cm] align-top">
+                <td className="print:px-[1.2cm] align-top">
                   {/* Header */}
                   <div className="flex flex-col md:flex-row justify-between items-start mb-8 border-b-2 border-[#deb887] pb-6 gap-4 md:gap-0">
                     <div className="flex items-start gap-5">
@@ -1351,9 +1352,9 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                   </div>
 
           {/* Patient Info */}
-          <div className="bg-gray-50 p-6 rounded-xl mb-10 text-sm border border-gray-100">
-            <h3 className="font-bold text-gray-900 mb-4 border-b border-gray-200 pb-2 text-base">INFORMACIÓN DEL PACIENTE</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-3 gap-x-8">
+          <div className="bg-gray-50 p-3 rounded-lg mb-5 text-xs border border-gray-100">
+            <h3 className="font-bold text-gray-900 mb-2 border-b border-gray-200 pb-1.5 text-xs uppercase tracking-wide">Información del Paciente</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-1 gap-x-8">
               <p><strong className="text-gray-700">Nombre:</strong> {patient?.first_name} {patient?.last_name}</p>
               <p><strong className="text-gray-700">Identificación:</strong> {patient?.rut || 'N/A'}</p>
               <p><strong className="text-gray-700">Edad:</strong> {patient?.birth_date ? calculateAge(patient.birth_date) : 'N/A'} años</p>
@@ -1361,46 +1362,46 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
             </div>
           </div>
 
-          <div className="text-center mb-10">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">CONSENTIMIENTO INFORMADO</h1>
-            <h2 className="text-xl text-[#deb887] font-medium uppercase tracking-wide">{currentConsent.procedure_type}</h2>
+          <div className="text-center mb-6">
+            <h1 className="text-2xl font-bold text-gray-900 mb-1">CONSENTIMIENTO INFORMADO</h1>
+            <h2 className="text-sm text-[#deb887] font-medium uppercase tracking-wide">{currentConsent.procedure_type}</h2>
           </div>
 
-          <div className="space-y-8 text-gray-800 leading-relaxed">
+          <div className="space-y-5 text-gray-800 leading-snug text-xs">
             <section>
-              <h3 className="font-bold border-b-2 border-[#deb887] mb-3 text-lg text-gray-900">1. DESCRIPCIÓN DEL PROCEDIMIENTO</h3>
-              <div className="bg-gray-50 p-4 rounded-lg border border-gray-100">
-                <p className="mb-2"><strong>Zona a tratar:</strong> {currentConsent.zone}</p>
-                <p className="mb-2"><strong>Sesiones estimadas:</strong> {currentConsent.sessions}</p>
-                <p className="whitespace-pre-wrap mt-2">{currentConsent.description}</p>
+              <h3 className="font-bold border-b border-[#deb887] mb-2 text-sm text-gray-900 pb-1">1. DESCRIPCIÓN DEL PROCEDIMIENTO</h3>
+              <div className="bg-gray-50 p-3 rounded border border-gray-100">
+                <p className="mb-1"><strong>Zona a tratar:</strong> {currentConsent.zone}</p>
+                <p className="mb-1"><strong>Sesiones estimadas:</strong> {currentConsent.sessions}</p>
+                <p className="whitespace-pre-wrap mt-1">{currentConsent.description}</p>
               </div>
             </section>
 
             {currentConsent.objectives?.length > 0 && (
               <section>
-                <h3 className="font-bold border-b-2 border-[#deb887] mb-3 text-lg text-gray-900">2. OBJETIVOS</h3>
-                <ul className="list-disc pl-5 space-y-1 marker:text-[#deb887]">
+                <h3 className="font-bold border-b border-[#deb887] mb-2 text-sm text-gray-900 pb-1">2. OBJETIVOS</h3>
+                <ul className="list-disc pl-4 space-y-0.5 marker:text-[#deb887]">
                   {currentConsent.objectives.map((obj, i) => <li key={i}>{obj}</li>)}
                 </ul>
               </section>
             )}
 
             <section>
-              <h3 className="font-bold border-b-2 border-[#deb887] mb-3 text-lg text-gray-900">3. RIESGOS Y BENEFICIOS</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="bg-red-50 p-4 rounded-lg border border-red-100">
-                  <h4 className="font-bold mb-2 text-red-800 flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4" /> Riesgos
+              <h3 className="font-bold border-b border-[#deb887] mb-2 text-sm text-gray-900 pb-1">3. RIESGOS Y BENEFICIOS</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="bg-red-50 p-3 rounded border border-red-100">
+                  <h4 className="font-bold mb-1.5 text-red-800 flex items-center gap-1.5 text-xs">
+                    <AlertTriangle className="w-3.5 h-3.5" /> Riesgos
                   </h4>
-                  <ul className="list-disc pl-5 text-sm space-y-1 marker:text-red-400">
+                  <ul className="list-disc pl-4 space-y-0.5 marker:text-red-400">
                     {currentConsent.risks?.map((r, i) => <li key={i}>{r}</li>)}
                   </ul>
                 </div>
-                <div className="bg-emerald-50 p-4 rounded-lg border border-emerald-100">
-                  <h4 className="font-bold mb-2 text-emerald-800 flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4" /> Beneficios
+                <div className="bg-emerald-50 p-3 rounded border border-emerald-100">
+                  <h4 className="font-bold mb-1.5 text-emerald-800 flex items-center gap-1.5 text-xs">
+                    <CheckCircle className="w-3.5 h-3.5" /> Beneficios
                   </h4>
-                  <ul className="list-disc pl-5 text-sm space-y-1 marker:text-emerald-400">
+                  <ul className="list-disc pl-4 space-y-0.5 marker:text-emerald-400">
                     {currentConsent.benefits?.map((b, i) => <li key={i}>{b}</li>)}
                   </ul>
                 </div>
@@ -1408,17 +1409,17 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
             </section>
 
             <section>
-              <h3 className="font-bold border-b-2 border-[#deb887] mb-3 text-lg text-gray-900">4. CUIDADOS</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              <h3 className="font-bold border-b border-[#deb887] mb-2 text-sm text-gray-900 pb-1">4. CUIDADOS</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <h4 className="font-bold mb-2 text-gray-800">Previos:</h4>
-                  <ul className="list-disc pl-5 text-sm space-y-1 marker:text-[#deb887]">
+                  <h4 className="font-bold mb-1 text-gray-800 text-xs">Previos:</h4>
+                  <ul className="list-disc pl-4 space-y-0.5 marker:text-[#deb887]">
                     {currentConsent.pre_care?.map((c, i) => <li key={i}>{c}</li>)}
                   </ul>
                 </div>
                 <div>
-                  <h4 className="font-bold mb-2 text-gray-800">Posteriores:</h4>
-                  <ul className="list-disc pl-5 text-sm space-y-1 marker:text-[#deb887]">
+                  <h4 className="font-bold mb-1 text-gray-800 text-xs">Posteriores:</h4>
+                  <ul className="list-disc pl-4 space-y-0.5 marker:text-[#deb887]">
                     {currentConsent.post_care?.map((c, i) => <li key={i}>{c}</li>)}
                   </ul>
                 </div>
@@ -1426,71 +1427,71 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
             </section>
 
             <section>
-              <h3 className="font-bold border-b-2 border-[#deb887] mb-3 text-lg text-gray-900">5. ANTECEDENTES CRÍTICOS</h3>
-              <div className="bg-gray-50 p-4 rounded-lg border border-gray-100 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+              <h3 className="font-bold border-b border-[#deb887] mb-2 text-sm text-gray-900 pb-1">5. ANTECEDENTES CRÍTICOS</h3>
+              <div className="bg-gray-50 p-3 rounded border border-gray-100 grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <p className="mb-1"><strong className="text-gray-700">Alergias:</strong> {currentConsent.critical_antecedents?.allergies || 'Niega'}</p>
+                  <p className="mb-0.5"><strong className="text-gray-700">Alergias:</strong> {currentConsent.critical_antecedents?.allergies || 'Niega'}</p>
                   <p><strong className="text-gray-700">Medicación:</strong> {currentConsent.critical_antecedents?.medications || 'Niega'}</p>
                 </div>
                 <div>
-                  <p className="mb-1"><strong className="text-gray-700">Embarazo/Lactancia:</strong> {currentConsent.critical_antecedents?.pregnancy ? 'Sí' : 'No'}</p>
+                  <p className="mb-0.5"><strong className="text-gray-700">Embarazo/Lactancia:</strong> {currentConsent.critical_antecedents?.pregnancy ? 'Sí' : 'No'}</p>
                   <p><strong className="text-gray-700">Herpes Recurrente:</strong> {currentConsent.critical_antecedents?.herpes ? 'Sí' : 'No'}</p>
                 </div>
               </div>
             </section>
 
             <section>
-              <h3 className="font-bold border-b-2 border-[#deb887] mb-3 text-lg text-gray-900">6. DECLARACIONES Y AUTORIZACIONES</h3>
-              <div className="space-y-3 text-sm bg-gray-50 p-6 rounded-lg border border-gray-100">
-                <p className="flex gap-3">
-                  <span className={`font-bold text-lg leading-none ${currentConsent.declarations?.understanding ? 'text-emerald-600' : 'text-gray-300'}`}>{currentConsent.declarations?.understanding ? '✓' : '✗'}</span>
+              <h3 className="font-bold border-b border-[#deb887] mb-2 text-sm text-gray-900 pb-1">6. DECLARACIONES Y AUTORIZACIONES</h3>
+              <div className="space-y-2 bg-gray-50 p-4 rounded border border-gray-100">
+                <p className="flex gap-2">
+                  <span className={`font-bold text-base leading-none flex-shrink-0 ${currentConsent.declarations?.understanding ? 'text-emerald-600' : 'text-gray-300'}`}>{currentConsent.declarations?.understanding ? '✓' : '✗'}</span>
                   Declaro haber recibido información clara y completa del tratamiento.
                 </p>
-                <p className="flex gap-3">
-                  <span className={`font-bold text-lg leading-none ${currentConsent.declarations?.questions ? 'text-emerald-600' : 'text-gray-300'}`}>{currentConsent.declarations?.questions ? '✓' : '✗'}</span>
+                <p className="flex gap-2">
+                  <span className={`font-bold text-base leading-none flex-shrink-0 ${currentConsent.declarations?.questions ? 'text-emerald-600' : 'text-gray-300'}`}>{currentConsent.declarations?.questions ? '✓' : '✗'}</span>
                   He tenido oportunidad de resolver todas mis dudas.
                 </p>
-                <p className="flex gap-3">
-                  <span className={`font-bold text-lg leading-none ${currentConsent.declarations?.results ? 'text-emerald-600' : 'text-gray-300'}`}>{currentConsent.declarations?.results ? '✓' : '✗'}</span>
+                <p className="flex gap-2">
+                  <span className={`font-bold text-base leading-none flex-shrink-0 ${currentConsent.declarations?.results ? 'text-emerald-600' : 'text-gray-300'}`}>{currentConsent.declarations?.results ? '✓' : '✗'}</span>
                   Entiendo que los resultados pueden variar y no se garantizan resultados específicos.
                 </p>
-                <p className="flex gap-3">
-                  <span className={`font-bold text-lg leading-none ${currentConsent.declarations?.authorization ? 'text-emerald-600' : 'text-gray-300'}`}>{currentConsent.declarations?.authorization ? '✓' : '✗'}</span>
+                <p className="flex gap-2">
+                  <span className={`font-bold text-base leading-none flex-shrink-0 ${currentConsent.declarations?.authorization ? 'text-emerald-600' : 'text-gray-300'}`}>{currentConsent.declarations?.authorization ? '✓' : '✗'}</span>
                   Autorizo voluntariamente la realización del tratamiento.
                 </p>
-                <p className="flex gap-3">
-                  <span className={`font-bold text-lg leading-none ${currentConsent.declarations?.revocation ? 'text-emerald-600' : 'text-gray-300'}`}>{currentConsent.declarations?.revocation ? '✓' : '✗'}</span>
+                <p className="flex gap-2">
+                  <span className={`font-bold text-base leading-none flex-shrink-0 ${currentConsent.declarations?.revocation ? 'text-emerald-600' : 'text-gray-300'}`}>{currentConsent.declarations?.revocation ? '✓' : '✗'}</span>
                   Sé que puedo revocar este consentimiento en cualquier momento antes del procedimiento.
                 </p>
-                <p className="flex gap-3">
-                  <span className={`font-bold text-lg leading-none ${currentConsent.declarations?.alternatives ? 'text-emerald-600' : 'text-gray-300'}`}>{currentConsent.declarations?.alternatives ? '✓' : '✗'}</span>
+                <p className="flex gap-2">
+                  <span className={`font-bold text-base leading-none flex-shrink-0 ${currentConsent.declarations?.alternatives ? 'text-emerald-600' : 'text-gray-300'}`}>{currentConsent.declarations?.alternatives ? '✓' : '✗'}</span>
                   Me han explicado las alternativas de tratamiento, incluyendo la opción de no tratarme.
                 </p>
-                <div className="mt-4 pt-4 border-t border-gray-200">
-                  <p className="flex gap-3 mb-2">
-                    <span className={`font-bold text-lg leading-none ${currentConsent.authorizations?.image_use ? 'text-emerald-600' : 'text-gray-300'}`}>{currentConsent.authorizations?.image_use ? '✓' : '✗'}</span>
+                <div className="mt-3 pt-3 border-t border-gray-200">
+                  <p className="flex gap-2 mb-1.5">
+                    <span className={`font-bold text-base leading-none flex-shrink-0 ${currentConsent.authorizations?.image_use ? 'text-emerald-600' : 'text-gray-300'}`}>{currentConsent.authorizations?.image_use ? '✓' : '✗'}</span>
                     Autorizo el uso de mis imágenes con fines educativos y/o promocionales.
                   </p>
-                  <p className="flex gap-3">
-                    <span className={`font-bold text-lg leading-none ${currentConsent.authorizations?.photo_video ? 'text-emerald-600' : 'text-gray-300'}`}>{currentConsent.authorizations?.photo_video ? '✓' : '✗'}</span>
+                  <p className="flex gap-2">
+                    <span className={`font-bold text-base leading-none flex-shrink-0 ${currentConsent.authorizations?.photo_video ? 'text-emerald-600' : 'text-gray-300'}`}>{currentConsent.authorizations?.photo_video ? '✓' : '✗'}</span>
                     Autorizo la toma de fotografías y/o videos del procedimiento para registro clínico.
                   </p>
                 </div>
               </div>
             </section>
 
-            <div className="mt-16 grid grid-cols-1 sm:grid-cols-2 gap-16 pt-8 page-break-inside-avoid">
+            <div className="mt-10 grid grid-cols-1 sm:grid-cols-2 gap-10 pt-5 page-break-inside-avoid">
               <div className="flex flex-col items-center">
                 {currentConsent.signatures?.patient_sig_data && (
                   <img 
                     src={currentConsent.signatures.patient_sig_data} 
                     alt="Firma Paciente" 
-                    className="h-24 object-contain mb-2"
+                    className="h-16 object-contain mb-2"
                   />
                 )}
                 <div className="w-full border-t border-gray-400 pt-2 text-center">
-                  <p className="font-bold text-gray-900">{currentConsent.signatures?.patient_name}</p>
-                  <p className="text-sm text-gray-500 uppercase tracking-wider mt-1">Firma del Paciente</p>
+                  <p className="font-bold text-gray-900 text-sm">{currentConsent.signatures?.patient_name}</p>
+                  <p className="text-xs text-gray-500 uppercase tracking-wider mt-0.5">Firma del Paciente</p>
                 </div>
               </div>
               
@@ -1499,7 +1500,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                   <img 
                     src={currentConsent.signatures.professional_sig_data} 
                     alt="Firma Profesional" 
-                    className="h-24 object-contain mb-2"
+                    className="h-16 object-contain mb-2"
                   />
                 )}
                 <div className="w-full border-t border-gray-400 pt-2 text-center">
