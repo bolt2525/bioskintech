@@ -141,7 +141,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
     loadDbTemplates();
     // Initialize professional signatures table
     recordsFetch('/api/records?action=initProfessionalSignatures').catch(console.error);
-  }, [patientId, recordId]);
+  }, [patientId, recordId, effectiveClinicId]);
 
   useEffect(() => {
     if (message) {
