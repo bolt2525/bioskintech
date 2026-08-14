@@ -48,6 +48,20 @@ async function logAudit(client, { patientId, recordId, sessionUser, actionType, 
   } catch { /* silencioso — auditoría no bloquea operaciones */ }
 }
 
+/** IDOR guard — returns false if item doesn't belong to the current clinic */
+const CLINICAL_TABLES = new Set(['physical_exams', 'diagnoses', 'treatments', 'injectables', 'consent_forms']);
+async function ownedByClinic(pool, table, itemId, clinicId) {
+  if (!clinicId || !CLINICAL_TABLES.has(table)) return true;
+  const r = await pool.query(
+    `SELECT p.clinic_id FROM ${table} t
+     JOIN clinical_records cr ON cr.id = t.record_id
+     JOIN patients p ON p.id = cr.patient_id
+     WHERE t.id = $1`,
+    [itemId]
+  );
+  return r.rows.length > 0 && String(r.rows[0].clinic_id) === String(clinicId);
+}
+
 export default async function handler(req, res) {
   console.log(`[Clinical Records API] Request received: ${req.method} ${req.url}`);
 
@@ -1439,10 +1453,13 @@ export default async function handler(req, res) {
         return res.status(200).json({ success: true });
       }
 
-      case 'deletePhysicalExam':
+      case 'deletePhysicalExam': {
         const { id: delExamId } = req.query;
+        if (!(await ownedByClinic(pool, 'physical_exams', delExamId, effectiveClinicId)))
+          return res.status(403).json({ error: 'Sin permiso' });
         await pool.query('DELETE FROM physical_exams WHERE id = $1', [delExamId]);
         return res.status(200).json({ success: true });
+      }
 
       case 'saveDiagnosis': {
         const { id: diagId, record_id: did, date: diagDate, ...diagData } = body;
@@ -1466,10 +1483,13 @@ export default async function handler(req, res) {
         }
       }
 
-      case 'deleteDiagnosis':
+      case 'deleteDiagnosis': {
         const { id: delDiagId } = req.query;
+        if (!(await ownedByClinic(pool, 'diagnoses', delDiagId, effectiveClinicId)))
+          return res.status(403).json({ error: 'Sin permiso' });
         await pool.query('DELETE FROM diagnoses WHERE id = $1', [delDiagId]);
         return res.status(200).json({ success: true });
+      }
 
       case 'addTreatment': {
         const { record_id: tid, ...treatData } = body;
@@ -1505,10 +1525,13 @@ export default async function handler(req, res) {
           return res.status(500).json({ error: err.message });
         }
 
-      case 'deleteTreatment':
+      case 'deleteTreatment': {
         const { id: delTreatId } = req.query;
+        if (!(await ownedByClinic(pool, 'treatments', delTreatId, effectiveClinicId)))
+          return res.status(403).json({ error: 'Sin permiso' });
         await pool.query('DELETE FROM treatments WHERE id = $1', [delTreatId]);
         return res.status(200).json({ success: true });
+      }
 
       // --- INYECTABLES ---
 
@@ -1617,6 +1640,8 @@ export default async function handler(req, res) {
       case 'deleteInjectable': {
         const { id: delInjId } = req.query;
         if (!delInjId) return res.status(400).json({ error: 'id required' });
+        if (!(await ownedByClinic(pool, 'injectables', delInjId, effectiveClinicId)))
+          return res.status(403).json({ error: 'Sin permiso' });
         await pool.query('DELETE FROM injectables WHERE id = $1', [delInjId]);
         return res.status(200).json({ success: true });
       }
@@ -2020,10 +2045,13 @@ export default async function handler(req, res) {
         }
       }
 
-      case 'deleteConsent':
+      case 'deleteConsent': {
         const { id: delCid } = req.query;
+        if (!(await ownedByClinic(pool, 'consent_forms', delCid, effectiveClinicId)))
+          return res.status(403).json({ error: 'Sin permiso' });
         await pool.query('DELETE FROM consent_forms WHERE id = $1', [delCid]);
         return res.status(200).json({ message: 'Consent deleted' });
+      }
 
       // ==========================================
       // FINANCE MODULE ACTIONS

@@ -8,9 +8,18 @@ import { useAdminNav } from '../../../../hooks/useAdminNav';
 import { useAuth } from '../../../../hooks/useAuth';
 import { useMasterView } from '../../../../context/MasterViewContext';
 
+/** Formats a stable per-clinic patient code: {INITIALS}-{YEAR}-{SEQ:03} */
+function clinicCode(clinicName: string, seq: number, createdAt?: string): string {
+  const words = (clinicName || 'CL').trim().toUpperCase().split(/\s+/).filter(Boolean);
+  const initials = words.length === 1 ? words[0].substring(0, 2) : words.slice(0, 3).map(w => w[0]).join('');
+  const year = createdAt ? new Date(createdAt).getFullYear() : new Date().getFullYear();
+  return `${initials}-${year}-${String(seq).padStart(3, '0')}`;
+}
+
 interface Patient {
   id: number;
   seq?: number;
+  created_at?: string;
   first_name: string;
   last_name: string;
   rut: string;
@@ -252,7 +261,7 @@ export default function PatientList() {
                           <div>
                             <div className="font-medium text-gray-900">{patient.first_name} {patient.last_name}</div>
                             <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-sm text-gray-400">#{patient.seq ?? patient.id}</span>
+                              <span className="text-sm text-gray-400">{patient.seq ? clinicCode(user?.clinic_name || '', patient.seq, patient.created_at) : `#${patient.id}`}</span>
                               {isAdmin && patient.created_by_user_name && (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 text-xs font-medium">
                                   <User className="w-2.5 h-2.5" />

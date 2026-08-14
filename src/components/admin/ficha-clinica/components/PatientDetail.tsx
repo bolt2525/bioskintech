@@ -4,6 +4,15 @@ import { Plus, FileText, Calendar, Clock, ArrowRight, Edit2, Trash2 } from 'luci
 import AdminLayout from '../../../layout/AdminLayout';
 import recordsFetch from '../../../../utils/recordsFetch';
 import { useAdminNav } from '../../../../hooks/useAdminNav';
+import { useAuth } from '../../../../hooks/useAuth';
+
+/** Formats clinical record code: {INITIALS}-{YEAR}-{SEQ:03} */
+function clinicCode(clinicName: string, seq: number, createdAt?: string): string {
+  const words = (clinicName || 'CL').trim().toUpperCase().split(/\s+/).filter(Boolean);
+  const initials = words.length === 1 ? words[0].substring(0, 2) : words.slice(0, 3).map(w => w[0]).join('');
+  const year = createdAt ? new Date(createdAt).getFullYear() : new Date().getFullYear();
+  return `${initials}-${year}-${String(seq).padStart(3, '0')}`;
+}
 
 interface Patient {
   id: number;
@@ -29,6 +38,7 @@ export default function PatientDetail() {
   const { patientId } = useParams();
   const navigate = useNavigate();
   const { nav } = useAdminNav();
+  const { user } = useAuth();
   const [patient, setPatient] = useState<Patient | null>(null);
   const [records, setRecords] = useState<ClinicalRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -248,7 +258,7 @@ export default function PatientDetail() {
                       <FileText className="w-6 h-6" />
                     </div>
                     <div>
-                      <h3 className="font-semibold text-gray-900">Expediente #{recIdx + 1}</h3>
+                      <h3 className="font-semibold text-gray-900">Expediente {clinicCode(user?.clinic_name || '', recIdx + 1, record.created_at)}</h3>
                       {record.created_by_full_name && (
                         <p className="text-sm font-medium text-[#c9a876] mt-0.5">
                           {record.created_by_gentilicio ? `${record.created_by_gentilicio} ` : ''}{record.created_by_full_name}
