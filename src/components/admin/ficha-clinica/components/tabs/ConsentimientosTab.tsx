@@ -86,6 +86,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
   const professionalName = [user?.gentilicio, user?.full_name].filter(Boolean).join(' ');
   const [consents, setConsents] = useState<ConsentForm[]>([]);
   const [dbTemplates, setDbTemplates] = useState<any[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
   const [view, setView] = useState<'list' | 'form' | 'preview'>('list');
   const [loading, setLoading] = useState(false);
   const [currentConsent, setCurrentConsent] = useState<ConsentForm | null>(null);
@@ -113,6 +114,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
   const loadDbTemplates = async () => {
     const clinicId = effectiveClinicId;
     if (!clinicId) return; // sin contexto de clínica: usa locales
+    setTemplatesLoading(true);
     try {
       const res = await recordsFetch(
         `/api/admin-auth?action=getClinicConsentTemplates&clinicId=${clinicId}`
@@ -129,6 +131,8 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
       }
     } catch (err) {
       console.error('[ConsentimientosTab] getClinicConsentTemplates error:', err);
+    } finally {
+      setTemplatesLoading(false);
     }
   };
 
@@ -692,7 +696,18 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
 
         {/* Template Selector */}
         <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
-          <label className="block text-sm font-medium text-blue-900 mb-2">Cargar Plantilla de Consentimiento</label>
+          <div className="flex items-center justify-between mb-2">
+            <label className="block text-sm font-medium text-blue-900">Cargar Plantilla de Consentimiento</label>
+            <button
+              onClick={loadDbTemplates}
+              disabled={templatesLoading}
+              title={dbTemplates.length > 0 ? `${dbTemplates.length} plantillas cargadas` : 'Cargar plantillas desde base de datos'}
+              className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 disabled:opacity-50 transition-colors px-2 py-1 rounded-lg hover:bg-blue-100"
+            >
+              <RefreshCw size={13} className={templatesLoading ? 'animate-spin' : ''} />
+              {dbTemplates.length > 0 ? `${dbTemplates.length} plantillas` : 'Recargar'}
+            </button>
+          </div>
           <div className="relative" ref={dropdownRef}>
             <div className="relative">
               <input
