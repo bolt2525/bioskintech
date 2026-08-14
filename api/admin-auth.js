@@ -99,6 +99,23 @@ async function ensureNewColumns() {
   for (const stmt of migrations) {
     try { await sql.query(stmt); } catch { /* column already exists — safe to ignore */ }
   }
+  // Ensure consent template tables exist on every cold start (not just after initMultiTenant)
+  try {
+    await sql.query(`CREATE TABLE IF NOT EXISTS consent_templates (
+      id SERIAL PRIMARY KEY, name VARCHAR(255) NOT NULL,
+      procedure_type VARCHAR(150), zone VARCHAR(150), sessions INTEGER DEFAULT 1,
+      objectives JSONB DEFAULT '[]', description TEXT,
+      risks JSONB DEFAULT '[]', benefits JSONB DEFAULT '[]',
+      alternatives JSONB DEFAULT '[]', pre_care JSONB DEFAULT '[]',
+      post_care JSONB DEFAULT '[]', contraindications JSONB DEFAULT '[]',
+      is_active BOOLEAN DEFAULT true, created_at TIMESTAMP DEFAULT NOW(), updated_at TIMESTAMP DEFAULT NOW()
+    )`);
+    await sql.query(`CREATE TABLE IF NOT EXISTS clinic_consent_templates (
+      clinic_id   UUID    NOT NULL REFERENCES clinics(id) ON DELETE CASCADE,
+      template_id INTEGER NOT NULL REFERENCES consent_templates(id) ON DELETE CASCADE,
+      PRIMARY KEY (clinic_id, template_id)
+    )`);
+  } catch { /* silencioso — si clinics no existe aún, fallará en la primera petición no-init */ }
   _newColumnsMigrated = true;
 }
 

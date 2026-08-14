@@ -12,6 +12,7 @@ import SignatureCanvas from 'react-signature-canvas';
 import { Tooltip } from '../../../../ui/Tooltip';
 import { useClinicSettings } from '../../../../../hooks/useClinicSettings';
 import { useAuth } from '../../../../../context/AuthContext';
+import { useMasterView } from '../../../../../context/MasterViewContext';
 import FieldHelp from '../FieldHelp';
 import { HELP } from '../../data/fieldHelpTexts';
 
@@ -78,6 +79,9 @@ const API_URL = '/api/records';
 export default function ConsentimientosTab({ patientId, recordId, patient, consultationId, consultations = [] }: Props) {
   const { settings: clinic } = useClinicSettings();
   const { user } = useAuth();
+  const { clinicId: masterViewClinicId } = useMasterView();
+  // Use masterViewClinicId when master_admin is viewing a specific clinic
+  const effectiveClinicId = user?.clinic_id || (masterViewClinicId ? String(masterViewClinicId) : null);
   const clinicDisplayName = clinic.general.name || user?.clinic_name || 'Clínica';
   const professionalName = [user?.gentilicio, user?.full_name].filter(Boolean).join(' ');
   const [consents, setConsents] = useState<ConsentForm[]>([]);
@@ -105,8 +109,8 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
 
   // Carga plantillas de consentimiento desde la DB para esta clínica
   const loadDbTemplates = async () => {
-    const clinicId = user?.clinic_id;
-    if (!clinicId) return; // master_admin sin clínica: no carga por defecto
+    const clinicId = effectiveClinicId;
+    if (!clinicId) return; // sin contexto de clínica: usa locales
     try {
       const res = await recordsFetch(
         `/api/admin-auth?action=getClinicConsentTemplates&clinicId=${clinicId}`
