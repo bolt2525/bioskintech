@@ -200,6 +200,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [crossHistOpen, setCrossHistOpen] = useState(false);
   const viewerRef = useRef<HTMLDivElement>(null);
+  const messageRef = useRef<HTMLDivElement>(null);
 
   // Capture panel states
   const [captureModalOpen, setCaptureModalOpen] = useState(false);
@@ -440,6 +441,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   // Auto-dismiss messages
   useEffect(() => {
     if (message) {
+      messageRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       const t = setTimeout(() => setMessage(null), 4000);
       return () => clearTimeout(t);
     }
@@ -1752,6 +1754,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
         <AnimatePresence>
           {message && (
             <motion.div
+              ref={messageRef}
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}

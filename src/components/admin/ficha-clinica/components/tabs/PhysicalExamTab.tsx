@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
@@ -369,6 +369,7 @@ const MarkEditModal = ({
 export default function PhysicalExamTab({ recordId, physicalExams, patientName, consultationId, consultations = [], onSave }: PhysicalExamTabProps) {
   const [currentExam, setCurrentExam] = useState<PhysicalExam>({ ...EMPTY_EXAM, record_id: recordId });
   const [crossHistOpen, setCrossHistOpen] = useState(false);
+  const messageRef = useRef<HTMLDivElement>(null);
   const [deleting, setDeleting] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   
@@ -397,6 +398,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
 
   useEffect(() => {
     if (message) {
+      messageRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       const timer = setTimeout(() => setMessage(null), 3000);
       return () => clearTimeout(timer);
     }
@@ -832,6 +834,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
         <AnimatePresence>
           {message && (
             <motion.div 
+              ref={messageRef}
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}

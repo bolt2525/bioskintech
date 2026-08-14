@@ -95,6 +95,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [crossHistOpen, setCrossHistOpen] = useState(false);
+  const messageRef = useRef<HTMLDivElement>(null);
 
   // Combina plantillas de DB (por clínica) con fallback a locales
   const templates = dbTemplates.length > 0 ? dbTemplates : localTemplates;
@@ -140,6 +141,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
 
   useEffect(() => {
     if (message) {
+      messageRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       const timer = setTimeout(() => setMessage(null), 3000);
       return () => clearTimeout(timer);
     }
@@ -527,6 +529,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
       <AnimatePresence>
         {message && (
           <motion.div 
+            ref={messageRef}
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}

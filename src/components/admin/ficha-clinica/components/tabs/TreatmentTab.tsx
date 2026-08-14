@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Calendar, DollarSign, Clock, Save, Trash2, Copy, Check, AlertCircle, FileText, Pencil, Layers, History } from 'lucide-react';
@@ -60,6 +60,7 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [groupByProcedure, setGroupByProcedure] = useState(false);
   const [crossHistOpen, setCrossHistOpen] = useState(false);
+  const messageRef = useRef<HTMLDivElement>(null);
 
   // Sort treatments by date descending for the history list
   const sortedTreatments = [...treatments].sort((a, b) => 
@@ -68,6 +69,7 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
 
   useEffect(() => {
     if (message) {
+      messageRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       const timer = setTimeout(() => setMessage(null), 3000);
       return () => clearTimeout(timer);
     }
@@ -306,6 +308,7 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
         <AnimatePresence>
           {message && (
             <motion.div 
+              ref={messageRef}
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}

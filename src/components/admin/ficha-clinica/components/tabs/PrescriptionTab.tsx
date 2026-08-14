@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Trash2, Save, FileText, Copy, Printer, Search, Calendar, Check, AlertCircle, Pill, Pencil, History } from 'lucide-react';
@@ -82,6 +82,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, con
   const [selectedTemplate, setSelectedTemplate] = useState('');
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [crossHistOpen, setCrossHistOpen] = useState(false);
+  const messageRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadPrescriptions();
@@ -90,6 +91,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, con
 
   useEffect(() => {
     if (message) {
+      messageRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       const timer = setTimeout(() => setMessage(null), 3000);
       return () => clearTimeout(timer);
     }
@@ -607,6 +609,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, con
         <AnimatePresence>
           {message && (
             <motion.div 
+              ref={messageRef}
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
