@@ -19,7 +19,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   LogOut, Building2, Users, Shield, RefreshCw, ChevronDown, ChevronUp,
   Plus, Edit, Trash2, Eye, EyeOff, Key, X, Check, AlertCircle,
-  Activity, ClipboardList, ChevronRight, Sparkles, Lock, Mail, Unlink, Copy, ExternalLink, Settings2, LayoutDashboard, UserCheck, Calendar, Infinity,
+  Activity, ClipboardList, ChevronRight, Sparkles, Lock, Mail, Unlink, Copy, ExternalLink, Settings2, LayoutDashboard, UserCheck, Calendar, Infinity, Clock,
 } from 'lucide-react';
 
 // Constantes centralizadas — no duplicar aquí
@@ -1808,16 +1808,29 @@ export default function AdminMasterDashboard() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {filteredUsers.map(u => (
-                      <tr key={u.id} className={`hover:bg-gray-50 transition-colors ${!u.is_active ? 'opacity-50' : ''}`}>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                              {(u.username || '?')[0].toUpperCase()}
-                            </div>
-                            <span className="font-medium text-gray-900 text-sm">{u.username}</span>
-                          </div>
-                        </td>
+                    {filteredUsers.map(u => {
+                      const demoExp = u.is_demo && u.demo_expires_at ? new Date(u.demo_expires_at) : null;
+                      const demoDaysLeft = demoExp ? Math.ceil((demoExp.getTime() - Date.now()) / 86400000) : null;
+                      const demoExpired = demoDaysLeft !== null && demoDaysLeft < 0;
+                      const isEditingExpiry = demoExpiryEdit?.userId === u.id;
+                      return (
+                        <React.Fragment key={u.id}>
+                          <tr className={`hover:bg-gray-50 transition-colors ${!u.is_active ? 'opacity-50' : ''}`}>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                                  {(u.username || '?')[0].toUpperCase()}
+                                </div>
+                                <div>
+                                  <span className="font-medium text-gray-900 text-sm">{u.username}</span>
+                                  {demoExp && (
+                                    <p className={`text-[10px] mt-0.5 font-medium ${demoExpired ? 'text-red-500' : demoDaysLeft !== null && demoDaysLeft <= 3 ? 'text-amber-500' : 'text-amber-600'}`}>
+                                      ⏱ {demoExpired ? 'Vencido' : `${demoDaysLeft}d restantes`}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            </td>
                         <td className="px-4 py-3 text-sm text-gray-600">{u.full_name || '—'}</td>
                         <td className="px-4 py-3">
                           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ROLE_COLORS[u.role] || 'bg-gray-100 text-gray-600'}`}>
@@ -1838,32 +1851,70 @@ export default function AdminMasterDashboard() {
                           </button>
                         </td>
                         <td className="px-4 py-3">
-                          <div className="flex gap-1">
-                            {/* Botón "Ver módulos" — solo para usuarios con clínica */}
-                            {u.clinic_slug && u.role !== 'master_admin' && (
-                              <button
-                                onClick={() => navigate(`/admin/master/${u.clinic_slug}/${u.username}`)}
-                                className="p-1.5 text-purple-600 hover:bg-purple-50 rounded"
-                                title={`Ver módulos de ${u.username}`}
-                              >
-                                <LayoutDashboard className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                            <button onClick={() => openEditUser(u)} className="p-1.5 text-[#c5a075] hover:bg-[#deb887]/10 rounded" title="Editar">
-                              <Edit className="w-3.5 h-3.5" />
-                            </button>
-                            <button onClick={() => { setPwdForm({ password: '', password2: '' }); setPwdModal({ open: true, userId: u.id }); }} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded" title="Cambiar contraseña">
-                              <Key className="w-3.5 h-3.5" />
-                            </button>
-                            {u.role !== 'master_admin' && (
-                              <button onClick={() => deleteUser(u)} className="p-1.5 text-red-500 hover:bg-red-50 rounded" title="Eliminar usuario">
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                              <div className="flex gap-1">
+                                {/* Botón "Ver módulos" — solo para usuarios con clínica */}
+                                {u.clinic_slug && u.role !== 'master_admin' && (
+                                  <button
+                                    onClick={() => navigate(`/admin/master/${u.clinic_slug}/${u.username}`)}
+                                    className="p-1.5 text-purple-600 hover:bg-purple-50 rounded"
+                                    title={`Ver módulos de ${u.username}`}
+                                  >
+                                    <LayoutDashboard className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                                <button onClick={() => openEditUser(u)} className="p-1.5 text-[#c5a075] hover:bg-[#deb887]/10 rounded" title="Editar">
+                                  <Edit className="w-3.5 h-3.5" />
+                                </button>
+                                <button onClick={() => { setPwdForm({ password: '', password2: '' }); setPwdModal({ open: true, userId: u.id }); }} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded" title="Cambiar contraseña">
+                                  <Key className="w-3.5 h-3.5" />
+                                </button>
+                                {u.is_demo && (
+                                  <button
+                                    onClick={() => setDemoExpiryEdit(isEditingExpiry ? null : { userId: u.id, value: 7, unit: 'days' })}
+                                    className={`p-1.5 rounded ${isEditingExpiry ? 'bg-amber-100 text-amber-700' : 'text-amber-500 hover:bg-amber-50'}`}
+                                    title="Editar tiempo demo"
+                                  >
+                                    <Clock className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                                {u.role !== 'master_admin' && (
+                                  <button onClick={() => deleteUser(u)} className="p-1.5 text-red-500 hover:bg-red-50 rounded" title="Eliminar usuario">
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                          {/* Inline expiry editor — solo para demos */}
+                          {u.is_demo && isEditingExpiry && (
+                            <tr className="bg-amber-50/60">
+                              <td colSpan={7} className="px-6 py-3 border-l-4 border-amber-400">
+                                <div className="flex flex-wrap items-center gap-3 text-xs">
+                                  <span className="font-medium text-gray-700">Nuevo tiempo para <span className="font-mono">{u.username}</span>:</span>
+                                  <input type="number" min={1} max={999} value={demoExpiryEdit.value}
+                                    onChange={e => setDemoExpiryEdit(s => s ? { ...s, value: Math.max(1, parseInt(e.target.value)||1) } : s)}
+                                    className="w-20 px-2 py-1 border rounded-lg focus:ring-2 focus:ring-amber-300 outline-none" />
+                                  <select value={demoExpiryEdit.unit}
+                                    onChange={e => setDemoExpiryEdit(s => s ? { ...s, unit: e.target.value as 'hours' | 'days' | 'weeks' } : s)}
+                                    className="px-2 py-1 border rounded-lg focus:ring-2 focus:ring-amber-300 outline-none bg-white">
+                                    <option value="hours">Horas</option>
+                                    <option value="days">Días</option>
+                                    <option value="weeks">Semanas</option>
+                                  </select>
+                                  <span className="text-gray-500">
+                                    → vence {new Date(Date.now() + demoExpiryEdit.value * (demoExpiryEdit.unit === 'hours' ? 3600000 : demoExpiryEdit.unit === 'weeks' ? 7*86400000 : 86400000)).toLocaleString('es-EC', { dateStyle: 'short', timeStyle: 'short' })}
+                                  </span>
+                                  <button onClick={() => saveDemoExpiry(u.id, demoExpiryEdit.value, demoExpiryEdit.unit)}
+                                    className="px-3 py-1 text-white rounded-lg font-semibold"
+                                    style={{ background: 'linear-gradient(135deg,#f59e0b,#d97706)' }}>Guardar</button>
+                                  <button onClick={() => setDemoExpiryEdit(null)} className="px-3 py-1 border rounded-lg text-gray-500 hover:bg-white">Cancelar</button>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
                   </tbody>
                 </table>
                 {filteredUsers.length === 0 && (
