@@ -1516,7 +1516,6 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
               <p>Documento generado el {new Date().toLocaleDateString('es-EC')}</p>
             </div>
             </div>
-            </div>
                 </td>
               </tr>
             </tbody>
