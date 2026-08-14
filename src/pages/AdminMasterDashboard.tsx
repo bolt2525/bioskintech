@@ -13,7 +13,7 @@
  * (mismo origen que AdminDashboard → sin duplicación).
  */
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, Fragment } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -1814,7 +1814,7 @@ export default function AdminMasterDashboard() {
                       const demoExpired = demoDaysLeft !== null && demoDaysLeft < 0;
                       const isEditingExpiry = demoExpiryEdit?.userId === u.id;
                       return (
-                        <React.Fragment key={u.id}>
+                        <Fragment key={u.id}>
                           <tr className={`hover:bg-gray-50 transition-colors ${!u.is_active ? 'opacity-50' : ''}`}>
                             <td className="px-4 py-3">
                               <div className="flex items-center gap-2">
@@ -1912,7 +1912,7 @@ export default function AdminMasterDashboard() {
                               </td>
                             </tr>
                           )}
-                        </React.Fragment>
+                        </Fragment>
                       );
                     })}
                   </tbody>
