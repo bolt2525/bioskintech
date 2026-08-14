@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
-import { Save, AlertCircle, Plus, Trash2, Copy, Printer, Check, Edit2 } from 'lucide-react';
+import { Save, AlertCircle, Plus, Trash2, Copy, Printer, Check, Edit2, History } from 'lucide-react';
+import CrossConsultHistoryModal, { type ConsultationRef } from '../CrossConsultHistoryModal';
 import diagnosisOptions from '../../data/diagnosis_options.json';
 import { Tooltip } from '../../../../ui/Tooltip';
 import { useClinicSettings } from '../../../../../hooks/useClinicSettings';
+import FieldHelp from '../FieldHelp';
+import { HELP } from '../../data/fieldHelpTexts';
 
 /** Extrae solo YYYY-MM-DD de un ISO timestamp o string de PG para evitar desfase de zona horaria */
 const toDateOnly = (d: string | null | undefined): string => {
@@ -31,6 +34,7 @@ interface DiagnosisTabProps {
   diagnoses: Diagnosis[];
   patientName?: string;
   consultationId?: number;
+  consultations?: ConsultationRef[];
   onSave: () => void;
 }
 
@@ -42,12 +46,13 @@ const EMPTY_DIAGNOSIS: Omit<Diagnosis, 'record_id'> = {
   notes: ''
 };
 
-export default function DiagnosisTab({ recordId, diagnoses, patientName, consultationId, onSave }: DiagnosisTabProps) {
+export default function DiagnosisTab({ recordId, diagnoses, patientName, consultationId, consultations = [], onSave }: DiagnosisTabProps) {
   const { settings: clinic } = useClinicSettings();
   const [currentDiagnosis, setCurrentDiagnosis] = useState<Diagnosis>({ ...EMPTY_DIAGNOSIS, record_id: recordId });
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [crossHistOpen, setCrossHistOpen] = useState(false);
 
   useEffect(() => {
     if (diagnoses.length > 0 && !currentDiagnosis.id) {
@@ -188,6 +193,7 @@ export default function DiagnosisTab({ recordId, diagnoses, patientName, consult
   };
 
   return (
+    <>
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
@@ -198,6 +204,14 @@ export default function DiagnosisTab({ recordId, diagnoses, patientName, consult
         <div className="font-bold text-gray-800 flex items-center gap-2">
           <div className="w-1 h-5 bg-[#deb887] rounded-full" />
           Historial de Diagnósticos
+          <span className="ml-auto flex items-center gap-1">
+            <span className="text-xs bg-gray-100 text-gray-500 rounded-full px-2 py-0.5">{diagnoses.length}</span>
+            {consultations.length > 1 && (
+              <button onClick={() => setCrossHistOpen(true)} title="Ver todas las consultas" className="p-1 hover:bg-[#deb887]/10 rounded-lg">
+                <History className="w-3.5 h-3.5 text-[#b8944d]" />
+              </button>
+            )}
+          </span>
         </div>
         <div className="flex-1 overflow-y-auto space-y-3 max-h-[200px] md:max-h-none pr-2 custom-scrollbar">
           {diagnoses.map((diag, index) => (
@@ -320,7 +334,7 @@ export default function DiagnosisTab({ recordId, diagnoses, patientName, consult
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
           <div className="space-y-2">
-            <label className="block text-sm font-bold text-gray-700">Diagnóstico</label>
+            <label className="block text-sm font-bold text-gray-700">Diagnóstico<FieldHelp text={HELP.diagnosis.diagnosis_text} /></label>
             <input
               type="text"
               required
@@ -338,7 +352,7 @@ export default function DiagnosisTab({ recordId, diagnoses, patientName, consult
           </div>
 
           <div className="space-y-2">
-            <label className="block text-sm font-bold text-gray-700">CIE-10 (Opcional)</label>
+            <label className="block text-sm font-bold text-gray-700">CIE-10 (Opcional)<FieldHelp text={HELP.diagnosis.cie10_code} /></label>
             <input
               type="text"
               className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
@@ -349,7 +363,7 @@ export default function DiagnosisTab({ recordId, diagnoses, patientName, consult
           </div>
 
           <div className="space-y-2">
-            <label className="block text-sm font-bold text-gray-700">Tipo</label>
+            <label className="block text-sm font-bold text-gray-700">Tipo<FieldHelp text={HELP.diagnosis.type} /></label>
             <select
               className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
               value={currentDiagnosis.type}
@@ -362,7 +376,7 @@ export default function DiagnosisTab({ recordId, diagnoses, patientName, consult
           </div>
 
           <div className="space-y-2">
-            <label className="block text-sm font-bold text-gray-700">Severidad</label>
+            <label className="block text-sm font-bold text-gray-700">Severidad<FieldHelp text={HELP.diagnosis.severity} /></label>
             <select
               className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
               value={currentDiagnosis.severity}
@@ -375,7 +389,7 @@ export default function DiagnosisTab({ recordId, diagnoses, patientName, consult
           </div>
 
           <div className="col-span-1 md:col-span-2 space-y-2">
-            <label className="block text-sm font-bold text-gray-700">Notas / Observaciones</label>
+            <label className="block text-sm font-bold text-gray-700">Notas / Observaciones<FieldHelp text={HELP.diagnosis.notes} /></label>
             <textarea
               rows={4}
               className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#deb887] outline-none resize-none transition-all bg-gray-50/50 focus:bg-white"
@@ -388,5 +402,33 @@ export default function DiagnosisTab({ recordId, diagnoses, patientName, consult
       </div>
 
     </motion.div>
+    <CrossConsultHistoryModal
+      isOpen={crossHistOpen}
+      onClose={() => setCrossHistOpen(false)}
+      tabLabel="Diagnósticos"
+      consultations={consultations}
+      items={diagnoses}
+      currentConsultationId={consultationId}
+      renderItem={d => (
+        <div className="flex items-start gap-2">
+          <span className={`mt-1 w-2 h-2 rounded-full shrink-0 ${d.type === 'confirmed' ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+          <div>
+            <p className="font-medium text-gray-800 line-clamp-2">{d.diagnosis_text}</p>
+            <p className="text-gray-400 mt-0.5">{d.date ? new Date(toDateOnly(d.date)+'T12:00:00').toLocaleDateString('es-EC') : ''}</p>
+          </div>
+        </div>
+      )}
+      renderDetail={d => (
+        <>
+          <div><span className="text-gray-400">Texto:</span> <span className="font-medium">{d.diagnosis_text}</span></div>
+          {d.cie10_code && <div><span className="text-gray-400">CIE-10:</span> {d.cie10_code}</div>}
+          <div><span className="text-gray-400">Tipo:</span> {d.type === 'confirmed' ? 'Confirmado' : 'Presuntivo'}</div>
+          {d.severity && <div><span className="text-gray-400">Severidad:</span> {d.severity}</div>}
+          {d.notes && <div><span className="text-gray-400">Notas:</span> {d.notes}</div>}
+          {d.date && <div><span className="text-gray-400">Fecha:</span> {new Date(toDateOnly(d.date)+'T12:00:00').toLocaleDateString('es-EC')}</div>}
+        </>
+      )}
+    />
+    </>
   );
 }

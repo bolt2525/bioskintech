@@ -328,6 +328,7 @@ export default function ClinicalRecordManager() {
                     physicalExams={recordData?.physicalExams || []}
                     patientName={patient ? `${patient.first_name} ${patient.last_name}` : ''}
                     consultationId={activeConsultation?.id}
+                    consultations={recordData?.consultations || []}
                     onSave={() => fetchData(false)}
                   />
                 )}
@@ -337,6 +338,7 @@ export default function ClinicalRecordManager() {
                     diagnoses={recordData?.diagnoses || []}
                     patientName={patient ? `${patient.first_name} ${patient.last_name}` : ''}
                     consultationId={activeConsultation?.id}
+                    consultations={recordData?.consultations || []}
                     onSave={() => fetchData(false)}
                   />
                 )}
@@ -346,6 +348,7 @@ export default function ClinicalRecordManager() {
                     treatments={recordData?.treatments || []}
                     patientName={patient ? `${patient.first_name} ${patient.last_name}` : ''}
                     consultationId={activeConsultation?.id}
+                    consultations={recordData?.consultations || []}
                     onSave={() => fetchData(false)}
                   />
                 )}
@@ -355,6 +358,7 @@ export default function ClinicalRecordManager() {
                     patientName={patient ? `${patient.first_name} ${patient.last_name}` : ''}
                     patientAge={patient?.birth_date ? calculateAge(patient.birth_date) : ''}
                     consultationId={activeConsultation?.id}
+                    consultations={recordData?.consultations || []}
                   />
                 )}
                 {activeTab === 'consent' && activeConsultation && enabledOptional.consents && (
@@ -363,6 +367,7 @@ export default function ClinicalRecordManager() {
                     recordId={parseInt(recordId!)}
                     patient={patient}
                     consultationId={activeConsultation?.id}
+                    consultations={recordData?.consultations || []}
                   />
                 )}
                 {activeTab === 'injectables' && activeConsultation && enabledOptional.injectables && (
@@ -371,6 +376,7 @@ export default function ClinicalRecordManager() {
                     injectables={recordData?.injectables || []}
                     patientName={patient ? `${patient.first_name} ${patient.last_name}` : ''}
                     consultationId={activeConsultation?.id}
+                    consultations={recordData?.consultations || []}
                     onSave={() => fetchData(false)}
                   />
                 )}

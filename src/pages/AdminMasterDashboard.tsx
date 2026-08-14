@@ -992,7 +992,11 @@ export default function AdminMasterDashboard() {
   const [subDays, setSubDays]   = useState(365);
   const [subNoExpiry, setSubNoExpiry] = useState(false);
   const [demoModal, setDemoModal] = useState<{ open: boolean; clinicId: number | null; clinicName: string }>({ open: false, clinicId: null, clinicName: '' });
-  const [demoForm, setDemoForm]  = useState({ username: '', value: 1, unit: 'days' as 'hours' | 'days' | 'weeks' });
+  const [demoForm, setDemoForm]  = useState({ username: '', password: '', showPassword: false, value: 1, unit: 'days' as 'hours' | 'days' | 'weeks' });
+  const [demoUsers, setDemoUsers] = useState<Array<{ id: number; username: string; is_active: boolean; demo_expires_at: string | null; last_login: string | null }>>([]);
+  const [demoEditTarget, setDemoEditTarget] = useState<{ id: number; username: string } | null>(null);
+  const [demoCreatedCreds, setDemoCreatedCreds] = useState<{ username: string; password: string } | null>(null);
+  const [demoLoading, setDemoLoading] = useState(false);
   const [notifModal, setNotifModal] = useState<{ open: boolean; clinicId: number | null; clinicName: string }>({ open: false, clinicId: null, clinicName: '' });
   const [notifMessage, setNotifMessage] = useState('');
   const [now, setNow] = useState(new Date());
@@ -1241,8 +1245,38 @@ export default function AdminMasterDashboard() {
     } catch { flash('Error al actualizar suscripción', 'err'); }
   };
 
+  /** Genera contraseña legible con browser crypto */
+  const genDemoPassword = () => {
+    const arr = new Uint8Array(12);
+    crypto.getRandomValues(arr);
+    return btoa(String.fromCharCode(...arr))
+      .replace(/\+/g, 'a').replace(/\//g, 'b').replace(/=/g, '')
+      .substring(0, 12);
+  };
+
+  const loadDemoModalData = async (clinicId: number) => {
+    setDemoLoading(true);
+    try {
+      const [nextRes, usersRes] = await Promise.all([
+        fetch('/api/admin-auth?action=getNextDemoUsername', { headers: authHeader() }),
+        fetch(`/api/admin-auth?action=listDemoUsers&clinicId=${clinicId}`, { headers: authHeader() }),
+      ]);
+      const [nextData, usersData] = await Promise.all([nextRes.json(), usersRes.json()]);
+      setDemoForm(f => ({ ...f, username: nextData.username || 'demo0001', password: genDemoPassword() }));
+      setDemoUsers(usersData.users || []);
+    } catch { /* silencioso */ }
+    finally { setDemoLoading(false); }
+  };
+
+  const openDemoModal = (clinicId: number, clinicName: string) => {
+    setDemoModal({ open: true, clinicId, clinicName });
+    setDemoCreatedCreds(null);
+    setDemoEditTarget(null);
+    loadDemoModalData(clinicId);
+  };
+
   const createDemoUser = async () => {
-    if (!demoModal.clinicId || !demoForm.username.trim()) return;
+    if (!demoModal.clinicId || !demoForm.username.trim() || !demoForm.password) return;
     const multiplier = demoForm.unit === 'hours' ? 3600000 : demoForm.unit === 'weeks' ? 7 * 86400000 : 86400000;
     const demoExpiresAt = new Date(Date.now() + demoForm.value * multiplier).toISOString();
     try {
@@ -1250,6 +1284,7 @@ export default function AdminMasterDashboard() {
         method: 'POST', headers: authHeader(),
         body: JSON.stringify({
           username: demoForm.username.trim(),
+          password: demoForm.password,
           role: 'clinic_user',
           clinic_id: demoModal.clinicId,
           is_demo: true,
@@ -1259,11 +1294,39 @@ export default function AdminMasterDashboard() {
       });
       const d = await r.json();
       if (d.error) { flash(d.error, 'err'); return; }
-      flash(`Usuario demo "${demoForm.username}" creado (válido ${demoForm.value} ${demoForm.unit})`);
-      setDemoModal({ open: false, clinicId: null, clinicName: '' });
-      setDemoForm({ username: '', value: 1, unit: 'days' });
+      setDemoCreatedCreds({ username: demoForm.username.trim(), password: demoForm.password });
       loadAll();
+      // Refresh list and prepare next username
+      const [nextRes, usersRes] = await Promise.all([
+        fetch('/api/admin-auth?action=getNextDemoUsername', { headers: authHeader() }),
+        fetch(`/api/admin-auth?action=listDemoUsers&clinicId=${demoModal.clinicId}`, { headers: authHeader() }),
+      ]);
+      const [nextData, usersData] = await Promise.all([nextRes.json(), usersRes.json()]);
+      setDemoUsers(usersData.users || []);
+      setDemoForm(f => ({ ...f, username: nextData.username || '', password: genDemoPassword() }));
     } catch { flash('Error al crear usuario demo', 'err'); }
+  };
+
+  const saveDemoCredentials = async () => {
+    if (!demoEditTarget || !demoModal.clinicId) return;
+    try {
+      const r = await fetch('/api/admin-auth?action=updateDemoCredentials', {
+        method: 'POST', headers: authHeader(),
+        body: JSON.stringify({
+          userId: demoEditTarget.id,
+          username: demoForm.username.trim() || undefined,
+          password: demoForm.password || undefined,
+        }),
+      });
+      const d = await r.json();
+      if (d.error) { flash(d.error, 'err'); return; }
+      setDemoCreatedCreds({ username: demoForm.username.trim() || demoEditTarget.username, password: demoForm.password });
+      setDemoEditTarget(null);
+      loadAll();
+      const usersRes = await fetch(`/api/admin-auth?action=listDemoUsers&clinicId=${demoModal.clinicId}`, { headers: authHeader() });
+      const usersData = await usersRes.json();
+      setDemoUsers(usersData.users || []);
+    } catch { flash('Error al actualizar credenciales', 'err'); }
   };
 
   const sendNotification = async () => {
@@ -1669,7 +1732,7 @@ export default function AdminMasterDashboard() {
                         <button onClick={() => { setSelectedModuleClinic(clinic.id); setTab('modules'); }} className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-[#c5a075] bg-[#deb887]/10 hover:bg-[#deb887]/20 rounded-lg transition-colors">
                           <Sparkles className="w-3.5 h-3.5" /> Módulos
                         </button>
-                        <button onClick={() => setDemoModal({ open: true, clinicId: clinic.id, clinicName: clinic.name })}
+                        <button onClick={() => openDemoModal(clinic.id, clinic.name)}
                           className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition-colors">
                           ⏱ Demo
                         </button>
@@ -3018,47 +3081,145 @@ export default function AdminMasterDashboard() {
         </div>
       )}
 
-      {/* ── Modal: Crear usuario demo ─────────────────────────────────── */}
+      {/* ── Modal: Gestión de demo ─────────────────────────────────────── */}
       {demoModal.open && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full max-h-[90vh] overflow-y-auto">
             <div className="h-0.5 bg-gradient-to-r from-amber-400 to-amber-600 rounded-t-2xl" />
-            <div className="p-6 space-y-4">
-              <h3 className="font-bold text-gray-900">Crear usuario demo — {demoModal.clinicName}</h3>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Nombre de usuario *</label>
-                <input type="text" value={demoForm.username}
-                  onChange={e => setDemoForm(f => ({ ...f, username: e.target.value }))}
-                  placeholder="demo_usuario" autoFocus
-                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-amber-300 outline-none" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Validez</label>
-                <div className="flex gap-2">
-                  <input type="number" min={1} max={999} value={demoForm.value}
-                    onChange={e => setDemoForm(f => ({ ...f, value: Math.max(1, parseInt(e.target.value)||1) }))}
-                    className="w-24 px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-amber-300 outline-none" />
-                  <select value={demoForm.unit} onChange={e => setDemoForm(f => ({ ...f, unit: e.target.value as any }))}
-                    className="flex-1 px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-amber-300 outline-none bg-white">
-                    <option value="hours">Horas</option>
-                    <option value="days">Días</option>
-                    <option value="weeks">Semanas</option>
-                  </select>
-                </div>
-                <p className="text-xs text-gray-400 mt-1">
-                  Vence: <strong>{new Date(Date.now() + demoForm.value * (demoForm.unit === 'hours' ? 3600000 : demoForm.unit === 'weeks' ? 7*86400000 : 86400000)).toLocaleString('es-EC')}</strong>
-                </p>
-              </div>
-              <p className="text-xs text-gray-500 bg-amber-50 rounded-lg p-2">
-                El usuario demo tendrá acceso solo a sus propios datos. Sin email ni recuperación. Se elimina automáticamente al vencer.
-              </p>
-              <div className="flex gap-3 pt-1">
-                <button onClick={() => setDemoModal({ open: false, clinicId: null, clinicName: '' })} className="flex-1 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cancelar</button>
-                <button onClick={createDemoUser} disabled={!demoForm.username.trim()}
-                  className="flex-1 py-2 text-white rounded-lg text-sm font-semibold disabled:opacity-50"
-                  style={{ background: 'linear-gradient(135deg,#f59e0b,#d97706)' }}>
-                  Crear demo
+            <div className="p-5 space-y-4">
+              {/* Header */}
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-gray-900 text-sm">⏱ Demo — {demoModal.clinicName}</h3>
+                <button onClick={() => { setDemoModal({ open: false, clinicId: null, clinicName: '' }); setDemoCreatedCreds(null); setDemoEditTarget(null); }} className="p-1 hover:bg-gray-100 rounded-lg">
+                  <X className="w-4 h-4 text-gray-400" />
                 </button>
+              </div>
+
+              {/* Credenciales guardadas */}
+              {demoCreatedCreds && (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 space-y-3">
+                  <p className="text-xs font-semibold text-emerald-700 flex items-center gap-1.5"><Check className="w-3.5 h-3.5" /> Credenciales listas</p>
+                  {[{ label: 'Usuario', value: demoCreatedCreds.username }, { label: 'Contraseña', value: demoCreatedCreds.password }].map(({ label, value }) => (
+                    <div key={label} className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500 w-20 shrink-0">{label}:</span>
+                      <code className="flex-1 bg-white border rounded px-2 py-1 text-xs font-mono text-gray-800 truncate">{value}</code>
+                      <button onClick={() => navigator.clipboard.writeText(value)} title="Copiar" className="p-1 hover:bg-emerald-100 rounded">
+                        <Copy className="w-3.5 h-3.5 text-emerald-600" />
+                      </button>
+                    </div>
+                  ))}
+                  <button onClick={() => setDemoCreatedCreds(null)} className="text-xs text-emerald-600 hover:underline">Crear otro demo</button>
+                </div>
+              )}
+
+              {/* Lista de demos existentes */}
+              {!demoLoading && demoUsers.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-gray-500 mb-2">Demos activos en esta clínica</p>
+                  <div className="space-y-1.5">
+                    {demoUsers.map(u => {
+                      const exp = u.demo_expires_at ? new Date(u.demo_expires_at) : null;
+                      const expired = exp ? exp < new Date() : false;
+                      return (
+                        <div key={u.id} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs ${expired ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'}`}>
+                          <UserCheck className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                          <span className="font-mono font-medium flex-1">{u.username}</span>
+                          <span className={`text-[10px] ${expired ? 'text-red-500' : 'text-gray-400'}`}>
+                            {exp ? (expired ? 'Vencido' : exp.toLocaleDateString('es-EC')) : 'Sin exp.'}
+                          </span>
+                          <button
+                            onClick={() => {
+                              setDemoEditTarget({ id: u.id, username: u.username });
+                              setDemoForm(f => ({ ...f, username: u.username, password: genDemoPassword() }));
+                              setDemoCreatedCreds(null);
+                            }}
+                            className="text-[10px] text-amber-600 hover:underline whitespace-nowrap"
+                          >Editar</button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {demoLoading && <p className="text-xs text-gray-400 text-center py-2">Cargando...</p>}
+
+              <div className="border-t pt-4">
+                <p className="text-xs font-semibold text-gray-700 mb-3">{demoEditTarget ? `Editar: ${demoEditTarget.username}` : 'Nuevo demo'}</p>
+
+                {/* Username */}
+                <div className="mb-3">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Usuario *</label>
+                  <input type="text" value={demoForm.username}
+                    onChange={e => setDemoForm(f => ({ ...f, username: e.target.value }))}
+                    placeholder="demo0001"
+                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-amber-300 outline-none font-mono" />
+                </div>
+
+                {/* Password */}
+                <div className="mb-3">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Contraseña *</label>
+                  <div className="flex gap-1.5">
+                    <div className="flex-1 flex items-center border rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-amber-300">
+                      <input
+                        type={demoForm.showPassword ? 'text' : 'password'}
+                        value={demoForm.password}
+                        onChange={e => setDemoForm(f => ({ ...f, password: e.target.value }))}
+                        className="flex-1 px-3 py-2 text-sm outline-none font-mono"
+                      />
+                      <button type="button" onClick={() => setDemoForm(f => ({ ...f, showPassword: !f.showPassword }))} className="px-2 text-gray-400 hover:text-gray-600">
+                        {demoForm.showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    <button type="button" onClick={() => setDemoForm(f => ({ ...f, password: genDemoPassword() }))} title="Regenerar" className="px-2 border rounded-lg hover:bg-gray-50">
+                      <RefreshCw className="w-4 h-4 text-gray-400" />
+                    </button>
+                    <button type="button" onClick={() => navigator.clipboard.writeText(demoForm.password)} title="Copiar" className="px-2 border rounded-lg hover:bg-gray-50">
+                      <Copy className="w-4 h-4 text-gray-400" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Validity (solo para nuevo) */}
+                {!demoEditTarget && (
+                  <div className="mb-3">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Validez</label>
+                    <div className="flex gap-2">
+                      <input type="number" min={1} max={999} value={demoForm.value}
+                        onChange={e => setDemoForm(f => ({ ...f, value: Math.max(1, parseInt(e.target.value)||1) }))}
+                        className="w-24 px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-amber-300 outline-none" />
+                      <select value={demoForm.unit} onChange={e => setDemoForm(f => ({ ...f, unit: e.target.value as 'hours' | 'days' | 'weeks' }))}
+                        className="flex-1 px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-amber-300 outline-none bg-white">
+                        <option value="hours">Horas</option>
+                        <option value="days">Días</option>
+                        <option value="weeks">Semanas</option>
+                      </select>
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1">
+                      Vence: <strong>{new Date(Date.now() + demoForm.value * (demoForm.unit === 'hours' ? 3600000 : demoForm.unit === 'weeks' ? 7*86400000 : 86400000)).toLocaleString('es-EC')}</strong>
+                    </p>
+                  </div>
+                )}
+
+                <p className="text-xs text-gray-500 bg-amber-50 rounded-lg p-2 mb-3">
+                  Acceso solo a datos propios. Sin email ni recuperación. Se elimina al vencer.
+                </p>
+
+                <div className="flex gap-2">
+                  {demoEditTarget
+                    ? <>
+                        <button onClick={() => { setDemoEditTarget(null); setDemoForm(f => ({ ...f, username: '', password: genDemoPassword() })); }} className="flex-1 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cancelar</button>
+                        <button onClick={saveDemoCredentials} disabled={!demoForm.username.trim() && !demoForm.password}
+                          className="flex-1 py-2 text-white rounded-lg text-sm font-semibold disabled:opacity-50"
+                          style={{ background: 'linear-gradient(135deg,#f59e0b,#d97706)' }}>Actualizar</button>
+                      </>
+                    : <>
+                        <button onClick={() => setDemoModal({ open: false, clinicId: null, clinicName: '' })} className="flex-1 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cerrar</button>
+                        <button onClick={createDemoUser} disabled={!demoForm.username.trim() || !demoForm.password}
+                          className="flex-1 py-2 text-white rounded-lg text-sm font-semibold disabled:opacity-50"
+                          style={{ background: 'linear-gradient(135deg,#f59e0b,#d97706)' }}>Crear demo</button>
+                      </>
+                  }
+                </div>
               </div>
             </div>
           </div>

@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
-import { Save, AlertCircle, Plus, Trash2, Copy, Printer, Info, Edit2, Check, User, FileText, Eye, EyeOff } from 'lucide-react';
+import { Save, AlertCircle, Plus, Trash2, Copy, Printer, Info, Edit2, Check, User, FileText, Eye, EyeOff, History } from 'lucide-react';
+import CrossConsultHistoryModal, { type ConsultationRef } from '../CrossConsultHistoryModal';
 import { CLINICAL_FIELDS, LESION_CATALOG, PARAMETER_TOOLTIPS } from '../../../../../data/clinical-catalogs';
 import { Mark } from '../FaceMapCanvas';
 import BodyMapCanvas from '../BodyMapCanvas';
@@ -12,6 +13,8 @@ import type { ReferenceLine } from '../ReferenceLinePanel';
 import { Tooltip } from '../../../../ui/Tooltip';
 import { Select } from '../../../../ui/Select';
 import trazadoData from '../../data/trazado-referencia-superior.json';
+import FieldHelp from '../FieldHelp';
+import { HELP } from '../../data/fieldHelpTexts';
 
 // -- Constantes para el visor 3D facial ----------------------------------------
 const _trazado = trazadoData as any;
@@ -167,6 +170,7 @@ interface PhysicalExamTabProps {
   physicalExams: PhysicalExam[];
   patientName: string;
   consultationId?: number;
+  consultations?: ConsultationRef[];
   onSave: () => void;
 }
 
@@ -362,9 +366,9 @@ const MarkEditModal = ({
   );
 };
 
-export default function PhysicalExamTab({ recordId, physicalExams, patientName, consultationId, onSave }: PhysicalExamTabProps) {
+export default function PhysicalExamTab({ recordId, physicalExams, patientName, consultationId, consultations = [], onSave }: PhysicalExamTabProps) {
   const [currentExam, setCurrentExam] = useState<PhysicalExam>({ ...EMPTY_EXAM, record_id: recordId });
-  const [saving, setSaving] = useState(false);
+  const [crossHistOpen, setCrossHistOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   
@@ -643,6 +647,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
   const legacyFaceMarks = faceMarks.filter(m => !m.is3D);
 
   return (
+    <>
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
@@ -721,6 +726,14 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
         <div className="font-bold text-gray-800 flex items-center gap-2">
           <div className="w-1 h-5 bg-[#deb887] rounded-full" />
           Historial de Exámenes
+          <span className="ml-auto flex items-center gap-1">
+            <span className="text-xs bg-gray-100 text-gray-500 rounded-full px-2 py-0.5">{physicalExams.length}</span>
+            {consultations.length > 1 && (
+              <button onClick={() => setCrossHistOpen(true)} title="Ver todas las consultas" className="p-1 hover:bg-[#deb887]/10 rounded-lg">
+                <History className="w-3.5 h-3.5 text-[#b8944d]" />
+              </button>
+            )}
+          </span>
         </div>
         <div className="flex-1 overflow-y-auto space-y-3 max-h-[200px] md:max-h-none pr-2 custom-scrollbar">
           {physicalExams.map((exam, index) => (
@@ -1011,7 +1024,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
             {Object.entries(CLINICAL_FIELDS).map(([key, field]) => (
               <div key={key} className="space-y-1.5 group">
                 <div className="flex items-center gap-2">
-                  <label className="block text-sm font-bold text-gray-700 group-hover:text-[#deb887] transition-colors">{field.label}</label>
+                  <label className="block text-sm font-bold text-gray-700 group-hover:text-[#deb887] transition-colors">{field.label}<FieldHelp text={(HELP.physical as any)[key] || ''} /></label>
                   <Tooltip content={PARAMETER_TOOLTIPS[key] || ''}>
                     <Info size={14} className="text-gray-400 hover:text-[#deb887] transition-colors cursor-help" />
                   </Tooltip>
@@ -1026,7 +1039,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
             ))}
 
             <div className="space-y-2 mt-4 pt-4 border-t border-gray-100">
-              <label className="block text-sm font-bold text-gray-700">Notas Adicionales</label>
+              <label className="block text-sm font-bold text-gray-700">Notas Adicionales<FieldHelp text={HELP.physical.lesions_description} /></label>
               <textarea
                 name="lesions_description"
                 rows={4}
@@ -1040,5 +1053,31 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
         </div>
       </div>
     </motion.div>
+    <CrossConsultHistoryModal
+      isOpen={crossHistOpen}
+      onClose={() => setCrossHistOpen(false)}
+      tabLabel="Exámen Físico"
+      consultations={consultations}
+      items={physicalExams}
+      currentConsultationId={consultationId}
+      renderItem={e => (
+        <div>
+          <p className="font-medium text-gray-800">{e.skin_type || 'Examen físico'}{e.phototype ? ` — Fototipo: ${e.phototype}` : ''}</p>
+          <p className="text-gray-400">{e.created_at ? new Date(e.created_at).toLocaleDateString('es-EC') : ''}</p>
+        </div>
+      )}
+      renderDetail={e => (
+        <>
+          {e.skin_type && <div><span className="text-gray-400">Tipo piel:</span> {e.skin_type}</div>}
+          {e.phototype && <div><span className="text-gray-400">Fototipo:</span> {e.phototype}</div>}
+          {e.glogau_scale && <div><span className="text-gray-400">Glogau:</span> {e.glogau_scale}</div>}
+          {e.hydration && <div><span className="text-gray-400">Hidratación:</span> {e.hydration}</div>}
+          {e.elasticity && <div><span className="text-gray-400">Elasticidad:</span> {e.elasticity}</div>}
+          {e.lesions_description && <div><span className="text-gray-400">Lesiones:</span> {e.lesions_description}</div>}
+          {e.created_at && <div><span className="text-gray-400">Fecha:</span> {new Date(e.created_at).toLocaleDateString('es-EC')}</div>}
+        </>
+      )}
+    />
+    </>
   );
 }

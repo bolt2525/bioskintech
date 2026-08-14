@@ -1,11 +1,14 @@
 ﻿import React, { useState, useEffect } from 'react';
 import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Trash2, Save, FileText, Copy, Printer, Search, Calendar, Check, AlertCircle, Pill, Pencil } from 'lucide-react';
+import { Plus, Trash2, Save, FileText, Copy, Printer, Search, Calendar, Check, AlertCircle, Pill, Pencil, History } from 'lucide-react';
+import CrossConsultHistoryModal, { type ConsultationRef } from '../CrossConsultHistoryModal';
 import prescriptionOptions from '../data/prescription_options.json';
 import { Tooltip } from '../../../../ui/Tooltip';
 import { useClinicSettings } from '../../../../../hooks/useClinicSettings';
 import { useAuth } from '../../../../../context/AuthContext';
+import FieldHelp from '../FieldHelp';
+import { HELP } from '../../data/fieldHelpTexts';
 
 /** Extrae solo YYYY-MM-DD de un ISO timestamp o string de PG para evitar desfase de zona horaria */
 const toDateOnly = (d: string | null | undefined): string => {
@@ -46,6 +49,7 @@ interface PrescriptionTabProps {
   patientName: string;
   patientAge?: number | string;
   consultationId?: number;
+  consultations?: ConsultationRef[];
 }
 
 const EMPTY_ITEM: PrescriptionItem = {
@@ -61,7 +65,7 @@ const EMPTY_ITEM: PrescriptionItem = {
   rutina: ''
 };
 
-export default function PrescriptionTab({ recordId, patientName, patientAge, consultationId }: PrescriptionTabProps) {
+export default function PrescriptionTab({ recordId, patientName, patientAge, consultationId, consultations = [] }: PrescriptionTabProps) {
   const { settings: clinic } = useClinicSettings();
   const { user } = useAuth();
   const clinicDisplayName = clinic.general.name || user?.clinic_name || 'Clínica';
@@ -77,6 +81,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, con
   const [deleting, setDeleting] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState('');
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [crossHistOpen, setCrossHistOpen] = useState(false);
 
   useEffect(() => {
     loadPrescriptions();
@@ -411,6 +416,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, con
   };
 
   return (
+    <>
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
@@ -421,6 +427,14 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, con
         <div className="font-bold text-gray-800 flex items-center gap-2">
           <div className="w-1 h-5 bg-[#deb887] rounded-full" />
           Historial de Recetas
+          <span className="ml-auto flex items-center gap-1">
+            <span className="text-xs bg-gray-100 text-gray-500 rounded-full px-2 py-0.5">{prescriptions.length}</span>
+            {consultations.length > 1 && (
+              <button onClick={() => setCrossHistOpen(true)} title="Ver todas las consultas" className="p-1 hover:bg-[#deb887]/10 rounded-lg">
+                <History className="w-3.5 h-3.5 text-[#b8944d]" />
+              </button>
+            )}
+          </span>
         </div>
         <div className="flex-1 overflow-y-auto space-y-3 max-h-[200px] md:max-h-none pr-2 custom-scrollbar">
           {prescriptions.map((p, index) => {
@@ -643,7 +657,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, con
             </div>
           </div>
           <div className="col-span-1 md:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Diagnóstico</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Diagnóstico<FieldHelp text={HELP.prescription.diagnostico} /></label>
             <input
               type="text"
               className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
@@ -679,7 +693,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, con
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4 pr-12">
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-gray-500 uppercase tracking-wide flex items-center gap-1">
-                    Principio Activo <span className="text-red-400">*</span>
+                    Principio Activo <span className="text-red-400">*</span><FieldHelp text={HELP.prescription.medicamento} />
                   </label>
                   <input
                     list={`meds-${idx}`}
@@ -693,7 +707,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, con
                   </datalist>
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">Nombre Comercial</label>
+                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">Nombre Comercial<FieldHelp text={HELP.prescription.nombre_comercial} /></label>
                   <input
                     className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] focus:border-transparent outline-none transition-all bg-gray-50 focus:bg-white"
                     value={item.nombre_comercial}
@@ -773,7 +787,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, con
                   </datalist>
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-gray-500 uppercase">Rutina</label>
+                  <label className="text-xs font-medium text-gray-500 uppercase">Rutina<FieldHelp text={HELP.prescription.rutina} /></label>
                   <select
                     className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all hover:bg-gray-50 focus:bg-white cursor-pointer"
                     value={item.rutina}
@@ -786,7 +800,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, con
                   </select>
                 </div>
                 <div className="lg:col-span-2 space-y-1.5 flex flex-col">
-                  <label className="text-xs font-medium text-gray-500 uppercase">Indicaciones Adicionales</label>
+                  <label className="text-xs font-medium text-gray-500 uppercase">Indicaciones Adicionales<FieldHelp text={HELP.prescription.indicaciones} /></label>
                   <textarea
                     className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all hover:bg-gray-50 focus:bg-white min-h-[42px] overflow-hidden resize-none"
                     value={item.indicaciones}
@@ -829,5 +843,33 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, con
         </motion.button>
       </div>
     </motion.div>
+    <CrossConsultHistoryModal
+      isOpen={crossHistOpen}
+      onClose={() => setCrossHistOpen(false)}
+      tabLabel="Recetas"
+      consultations={consultations}
+      items={prescriptions}
+      currentConsultationId={consultationId}
+      renderItem={p => (
+        <div>
+          <p className="font-medium text-gray-800">{p.diagnostico || 'Receta'}</p>
+          <p className="text-gray-400">{p.fecha ? new Date(toDateOnly(p.fecha)+'T12:00:00').toLocaleDateString('es-EC') : ''} — {p.items?.length || 0} med.</p>
+        </div>
+      )}
+      renderDetail={p => (
+        <>
+          {p.diagnostico && <div><span className="text-gray-400">Diagnóstico:</span> <span className="font-medium">{p.diagnostico}</span></div>}
+          {p.fecha && <div><span className="text-gray-400">Fecha:</span> {new Date(toDateOnly(p.fecha)+'T12:00:00').toLocaleDateString('es-EC')}</div>}
+          {p.items?.map((item: any, i: number) => (
+            <div key={i} className="border rounded-lg p-2 mt-2 space-y-0.5">
+              <p className="font-medium">{item.medicamento || item.nombre_comercial}</p>
+              {item.indicaciones && <p className="text-gray-500">{item.indicaciones}</p>}
+              {item.rutina && <p className="text-[#b8944d]">{item.rutina}</p>}
+            </div>
+          ))}
+        </>
+      )}
+    />
+    </>
   );
 }

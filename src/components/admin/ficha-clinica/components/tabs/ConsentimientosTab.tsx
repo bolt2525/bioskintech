@@ -4,13 +4,16 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   FileText, Plus, Trash2, Edit, Eye, Save, Printer, 
   CheckCircle, XCircle, AlertTriangle, ChevronRight, ChevronDown,
-  Copy, RefreshCw, QrCode, Smartphone, Eraser, X, Maximize2, Search, Check, AlertCircle
+  Copy, RefreshCw, QrCode, Smartphone, Eraser, X, Maximize2, Search, Check, AlertCircle, History
 } from 'lucide-react';
+import CrossConsultHistoryModal, { type ConsultationRef } from '../CrossConsultHistoryModal';
 import { QRCodeSVG } from 'qrcode.react';
 import SignatureCanvas from 'react-signature-canvas';
 import { Tooltip } from '../../../../ui/Tooltip';
 import { useClinicSettings } from '../../../../../hooks/useClinicSettings';
 import { useAuth } from '../../../../../context/AuthContext';
+import FieldHelp from '../FieldHelp';
+import { HELP } from '../../data/fieldHelpTexts';
 
 // Fallback local templates (sólo si la clínica no tiene asignadas desde DB)
 const localTemplatesGlob = import.meta.glob('/src/data/consent-templates/*.json', { eager: true });
@@ -67,11 +70,12 @@ interface Props {
   recordId: number;
   patient?: any;
   consultationId?: number;
+  consultations?: ConsultationRef[];
 }
 
 const API_URL = '/api/records';
 
-export default function ConsentimientosTab({ patientId, recordId, patient, consultationId }: Props) {
+export default function ConsentimientosTab({ patientId, recordId, patient, consultationId, consultations = [] }: Props) {
   const { settings: clinic } = useClinicSettings();
   const { user } = useAuth();
   const clinicDisplayName = clinic.general.name || user?.clinic_name || 'Clínica';
@@ -90,6 +94,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [crossHistOpen, setCrossHistOpen] = useState(false);
 
   // Combina plantillas de DB (por clínica) con fallback a locales
   const templates = dbTemplates.length > 0 ? dbTemplates : localTemplates;
@@ -486,6 +491,12 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
         <div className="flex items-center gap-2">
           <div className="w-1 h-6 bg-[#deb887] rounded-full" />
           <h3 className="text-lg font-bold text-gray-800">Historial de Consentimientos</h3>
+          {consultations.length > 1 && (
+            <button onClick={() => setCrossHistOpen(true)} title="Ver todas las consultas" className="ml-2 p-1 hover:bg-[#deb887]/10 rounded-lg">
+              <History className="w-4 h-4 text-[#b8944d]" />
+            </button>
+          )}
+          <span className="text-xs bg-gray-100 text-gray-500 rounded-full px-2 py-0.5 ml-1">{consents.length}</span>
         </div>
         <div className="flex gap-2">
           <Tooltip content="Actualizar estructura DB">
@@ -753,7 +764,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                 <div className="space-y-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Procedimiento</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Procedimiento<FieldHelp text={HELP.consent.procedure_type} /></label>
                       <input
                         type="text"
                         value={currentConsent.procedure_type}
@@ -763,7 +774,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Zona a Tratar</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Zona a Tratar<FieldHelp text={HELP.consent.zone} /></label>
                       <input
                         type="text"
                         value={currentConsent.zone}
@@ -773,7 +784,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Número de Sesiones</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Número de Sesiones<FieldHelp text={HELP.consent.sessions} /></label>
                       <input
                         type="number"
                         value={currentConsent.sessions}
@@ -1452,6 +1463,29 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
       {view === 'list' && renderList()}
       {view === 'form' && renderForm()}
       {view === 'preview' && renderPreview()}
+      <CrossConsultHistoryModal
+        isOpen={crossHistOpen}
+        onClose={() => setCrossHistOpen(false)}
+        tabLabel="Consentimientos"
+        consultations={consultations}
+        items={consents}
+        currentConsultationId={consultationId}
+        renderItem={c => (
+          <div>
+            <p className="font-medium text-gray-800">{c.procedure_type || c.form_type || 'Consentimiento'}</p>
+            <p className="text-gray-400">{c.zone ? `${c.zone} — ` : ''}{c.status === 'signed' ? 'Firmado' : c.status === 'annulled' ? 'Anulado' : 'Borrador'}{c.created_at ? ` — ${new Date(c.created_at).toLocaleDateString('es-EC')}` : ''}</p>
+          </div>
+        )}
+        renderDetail={c => (
+          <>
+            {c.procedure_type && <div><span className="text-gray-400">Procedimiento:</span> <span className="font-medium">{c.procedure_type}</span></div>}
+            {c.zone && <div><span className="text-gray-400">Zona:</span> {c.zone}</div>}
+            {c.sessions > 0 && <div><span className="text-gray-400">Sesiones:</span> {c.sessions}</div>}
+            <div><span className="text-gray-400">Estado:</span> {c.status === 'signed' ? 'Finalizado' : c.status === 'annulled' ? 'Anulado' : 'Borrador'}</div>
+            {c.created_at && <div><span className="text-gray-400">Fecha:</span> {new Date(c.created_at).toLocaleDateString('es-EC')}</div>}
+          </>
+        )}
+      />
     </div>
   );
 }

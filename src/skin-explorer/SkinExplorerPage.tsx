@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, RotateCcw, ZoomIn, Layers3, ScanLine, CircleDashed, RotateCw,
   Microscope, X, ChevronRight, BookOpen, HelpCircle, CheckCircle, XCircle,
-  Sparkles, Info, Beaker, Menu,
+  Sparkles, Info, Beaker, Menu, Maximize2, Minimize2,
 } from 'lucide-react';
 import { SkinCanvas, type SkinCanvasHandle } from './SkinCanvas';
 import type { Hotspot } from './skin-data';
@@ -26,6 +26,21 @@ export default function SkinExplorerPage() {
   const [tab, setTab] = useState<Tab>('capas');
   const [selectedLayer, setSelectedLayer] = useState<SkinLayer>(SKIN_LAYERS[0]);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const onFsChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  };
 
   const [quizActive, setQuizActive] = useState(false);
   const [quizIndex, setQuizIndex] = useState(0);
@@ -393,6 +408,11 @@ export default function SkinExplorerPage() {
                 </button>
               );
             })}
+            <button onClick={toggleFullscreen} title={isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
+              className="w-11 h-11 rounded-xl flex flex-col items-center justify-center gap-1 transition-all text-[9px] font-semibold text-[#8d847c] hover:bg-[#f7efe4] hover:text-[#5a4e46]">
+              {isFullscreen ? <Minimize2 size={18} strokeWidth={1.6} /> : <Maximize2 size={18} strokeWidth={1.6} />}
+              <span className="hidden xl:block">{isFullscreen ? 'Salir' : 'Pantalla'}</span>
+            </button>
           </div>
 
           {/* Herramientas mobile (fila horizontal abajo) */}
@@ -408,6 +428,10 @@ export default function SkinExplorerPage() {
                 </button>
               );
             })}
+            <button onClick={toggleFullscreen} title={isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
+              className="w-11 h-11 rounded-xl flex items-center justify-center transition-all text-[#8d847c] hover:bg-[#f7efe4]">
+              {isFullscreen ? <Minimize2 size={18} strokeWidth={1.6} /> : <Maximize2 size={18} strokeWidth={1.6} />}
+            </button>
           </div>
 
           {/* Callout hotspot — posicionado sobre el punto en 3D */}

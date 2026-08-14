@@ -5,8 +5,9 @@ import {
   Droplets, Plus, Save, Trash2, Printer, Copy,
   ChevronDown, ChevronUp, Box, Calendar,
   FlaskConical, Crosshair, X, Check, Info, Images, Minus, Eye, EyeOff, Pencil, AlertCircle, Undo2,
-  PenLine, Pentagon, Circle, Square, Pipette
+  PenLine, Pentagon, Circle, Square, Pipette, History
 } from 'lucide-react';
+import CrossConsultHistoryModal, { type ConsultationRef } from '../CrossConsultHistoryModal';
 import { Tooltip } from '../../../../ui/Tooltip';
 import injectablesCatalog from '../../data/injectables.json';
 import Clinical3DViewer, { Marker3D, EditablePoint, FreehandLine, SurfaceShape, DrawingTool } from '../Clinical3DViewer';
@@ -17,6 +18,8 @@ import type { LinePreset } from '../ReferenceLinePanel';
 import trazadoSuperior from '../../data/trazado-referencia-superior.json';
 import { useClinicSettings } from '../../../../../hooks/useClinicSettings';
 import { useAuth } from '../../../../../context/AuthContext';
+import FieldHelp from '../FieldHelp';
+import { HELP } from '../../data/fieldHelpTexts';
 
 // ==========================================
 // TYPES
@@ -87,6 +90,7 @@ interface InjectablesTabProps {
   injectables: Injectable[];
   patientName?: string;
   consultationId?: number;
+  consultations?: ConsultationRef[];
   onSave: () => void;
 }
 
@@ -179,7 +183,7 @@ const EMPTY_INJECTABLE: Injectable = {
 // COMPONENT
 // ==========================================
 
-export default function InjectablesTab({ recordId, injectables: initialInjectables, patientName, consultationId, onSave }: InjectablesTabProps) {
+export default function InjectablesTab({ recordId, injectables: initialInjectables, patientName, consultationId, consultations = [], onSave }: InjectablesTabProps) {
   const { settings: clinic } = useClinicSettings();
   const { user } = useAuth();
   // Nombre de la clínica: settings > auth token > placeholder
@@ -194,6 +198,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   const [markers3D, setMarkers3D] = useState<Marker3D[]>([]);
   const [injectionPoints, setInjectionPoints] = useState<InjectionPoint[]>([]);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [crossHistOpen, setCrossHistOpen] = useState(false);
   const viewerRef = useRef<HTMLDivElement>(null);
 
   // Capture panel states
@@ -1547,6 +1552,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   // ==========================================
 
   return (
+    <>
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
@@ -1623,6 +1629,14 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
         <div className="font-bold text-gray-800 flex items-center gap-2">
           <div className="w-1 h-5 rounded-full" style={{ background: activeType === 'toxina' ? '#deb887' : '#a855f7' }} />
           {activeType === 'toxina' ? 'Historial Toxina' : `Historial · ${RELLENO_SUBTYPE_LABELS[rellenoSubType]}`}
+          <span className="ml-auto flex items-center gap-1">
+            <span className="text-xs bg-gray-100 text-gray-500 rounded-full px-2 py-0.5">{injectables.filter(i => i.product_type === activeType).length}</span>
+            {consultations.length > 1 && (
+              <button onClick={() => setCrossHistOpen(true)} title="Ver todas las consultas" className="p-1 hover:bg-[#deb887]/10 rounded-lg">
+                <History className="w-3.5 h-3.5 text-[#b8944d]" />
+              </button>
+            )}
+          </span>
         </div>
         <div className="flex-1 overflow-y-auto space-y-3 max-h-[200px] md:max-h-none pr-2 custom-scrollbar">
           {/* Pending duplicate card — shown at top while unsaved */}
@@ -1960,7 +1974,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
               </div>
             </div>
             <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-gray-700">Marca / Producto</label>
+              <label className="block text-sm font-medium text-gray-700">Marca / Producto{current.product_type === 'toxina' && <FieldHelp text={HELP.toxina.brand} />}</label>
               <input
                 type="text"
                 list="inj-tab-brands"
@@ -1974,7 +1988,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
               </datalist>
             </div>
             <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-gray-700">Nombre del Producto <span className="text-red-400">*</span></label>
+              <label className="block text-sm font-medium text-gray-700">Nombre del Producto <span className="text-red-400">*</span><FieldHelp text={current.product_type === 'toxina' ? HELP.toxina.product_name : HELP.relleno.product_name} /></label>
               <input
                 type="text"
                 className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
@@ -2007,7 +2021,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
               />
             </div>
             <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-gray-700">{current.product_type === 'toxina' ? 'Unidades (UI)' : 'Volumen (ml)'}</label>
+              <label className="block text-sm font-medium text-gray-700">{current.product_type === 'toxina' ? 'Unidades (UI)' : 'Volumen (ml)'}<FieldHelp text={current.product_type === 'toxina' ? HELP.toxina.units_used : HELP.relleno.volume_used} /></label>
               {current.product_type === 'toxina' ? (
                 <input
                   type="number"
@@ -2034,7 +2048,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
           {current.product_type === 'toxina' && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-gray-700">Técnica</label>
+              <label className="block text-sm font-medium text-gray-700">Técnica<FieldHelp text={HELP.toxina.technique} /></label>
               <input
                 type="text"
                 list="inj-tab-techniques"
@@ -2048,7 +2062,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
               </datalist>
             </div>
             <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-gray-700">Aguja / Cánula</label>
+              <label className="block text-sm font-medium text-gray-700">Aguja / Cánula<FieldHelp text={HELP.toxina.needle_type} /></label>
               <input
                 type="text"
                 list="inj-tab-needles"
@@ -2071,6 +2085,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide">
                   Dilución (ml SS 0.9%)
                   <span className="ml-1 text-[10px] font-normal text-gray-400 normal-case">— concentración resultante</span>
+                  <FieldHelp text={HELP.toxina.dilution_volume} />
                 </label>
                 <div className="flex items-center gap-2">
                   <input
@@ -2094,6 +2109,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
               <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide">
                 <Calendar className="w-3.5 h-3.5 text-gray-400" />
                 Fecha de Control
+                <FieldHelp text={current.product_type === 'toxina' ? HELP.toxina.follow_up_date : HELP.relleno.follow_up_date} />
               </label>
               <input
                 type="date"
@@ -3775,5 +3791,32 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
       </AnimatePresence>
       </div> {/* end layout principal flex row */}
     </motion.div>
+    <CrossConsultHistoryModal
+      isOpen={crossHistOpen}
+      onClose={() => setCrossHistOpen(false)}
+      tabLabel="Inyectables"
+      consultations={consultations}
+      items={injectables}
+      currentConsultationId={consultationId}
+      renderItem={inj => (
+        <div>
+          <p className="font-medium text-gray-800">{inj.product_name || inj.product_type}{inj.brand ? ` — ${inj.brand}` : ''}</p>
+          <p className="text-gray-400 capitalize">{inj.product_type}{inj.date ? ` — ${new Date(inj.date).toLocaleDateString('es-EC')}` : ''}</p>
+        </div>
+      )}
+      renderDetail={inj => (
+        <>
+          <div><span className="text-gray-400">Tipo:</span> <span className="capitalize font-medium">{inj.product_type}</span></div>
+          {inj.product_name && <div><span className="text-gray-400">Producto:</span> {inj.product_name}</div>}
+          {inj.brand && <div><span className="text-gray-400">Marca:</span> {inj.brand}</div>}
+          {inj.units_used > 0 && <div><span className="text-gray-400">Unidades:</span> {inj.units_used} U</div>}
+          {inj.volume_used > 0 && <div><span className="text-gray-400">Volumen:</span> {inj.volume_used} mL</div>}
+          {inj.technique && <div><span className="text-gray-400">Técnica:</span> {inj.technique}</div>}
+          {inj.notes && <div><span className="text-gray-400">Notas:</span> {inj.notes}</div>}
+          {inj.date && <div><span className="text-gray-400">Fecha:</span> {new Date(inj.date).toLocaleDateString('es-EC')}</div>}
+        </>
+      )}
+    />
+    </>
   );
 }

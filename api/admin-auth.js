@@ -1006,9 +1006,12 @@ async function createUser(requestUser, body) {
     return { error: 'username y role son requeridos' };
 
   const isDemo = !!is_demo;
-  const effectivePassword = isDemo ? crypto.randomBytes(16).toString('hex') : (password || '');
+  // For demos: use provided password or generate one; caller receives temp_password in response
+  const effectivePassword = isDemo ? (password?.trim() || crypto.randomBytes(10).toString('base64url')) : (password || '');
   if (!isDemo && effectivePassword.length < 8)
     return { error: 'La contraseña debe tener al menos 8 caracteres' };
+  if (isDemo && effectivePassword.length < 6)
+    return { error: 'La contraseña demo debe tener al menos 6 caracteres' };
   if (requestUser.role === 'clinic_admin' && !['clinic_admin', 'clinic_user'].includes(role))
     return { error: 'Solo puedes crear usuarios de tipo clinic_admin o clinic_user' };
 
@@ -1042,7 +1045,7 @@ async function createUser(requestUser, body) {
     if (email && send_setup_link && !isDemo) {
       try { await generateSetupTokenFn(user.id, email, requestUser); setupLinkSent = true; } catch { /* non-fatal */ }
     }
-    return { success: true, user, setupLinkSent };
+    return { success: true, user, setupLinkSent, ...(isDemo ? { temp_password: effectivePassword } : {}) };
   } catch (e) {
     if (e.message?.includes('unique') || e.message?.includes('duplicate'))
       return { error: 'El nombre de usuario ya existe' };
@@ -2603,6 +2606,57 @@ export default async function handler(req, res) {
       if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master_admin' });
       await cleanupExpiredDemos();
       return res.status(200).json({ success: true });
+    }
+
+    // ── Demo helpers ─────────────────────────────────────────────────────
+    if (action === 'getNextDemoUsername') {
+      if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master_admin' });
+      const r = await sql`
+        SELECT COALESCE(MAX(SUBSTRING(username FROM 5)::INTEGER), 0) AS max_seq
+        FROM clinic_users WHERE is_demo = true AND username ~ '^demo\\d+$'
+      `;
+      const next = (r.rows[0]?.max_seq || 0) + 1;
+      return res.status(200).json({ username: `demo${String(next).padStart(4, '0')}` });
+    }
+
+    if (action === 'listDemoUsers') {
+      if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master_admin' });
+      const clinicId = parseInt(req.query.clinicId);
+      if (!clinicId) return res.status(400).json({ error: 'clinicId requerido' });
+      const r = await sql`
+        SELECT id, username, is_active, demo_expires_at, last_login
+        FROM clinic_users WHERE clinic_id = ${clinicId} AND is_demo = true
+        ORDER BY created_at DESC
+      `;
+      return res.status(200).json({ users: r.rows });
+    }
+
+    if (action === 'updateDemoCredentials') {
+      if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master_admin' });
+      const { userId, username: newUsername, password: newPassword } = req.body || {};
+      if (!userId) return res.status(400).json({ error: 'userId requerido' });
+      const check = await sql`SELECT id, is_demo FROM clinic_users WHERE id = ${userId}`;
+      if (!check.rows[0]) return res.status(404).json({ error: 'Usuario no encontrado' });
+      if (!check.rows[0].is_demo) return res.status(400).json({ error: 'El usuario no es una cuenta demo' });
+      if (newUsername?.trim()) {
+        const clean = newUsername.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
+        if (!clean) return res.status(400).json({ error: 'Nombre de usuario inválido' });
+        try {
+          await sql`UPDATE clinic_users SET username = ${clean} WHERE id = ${userId}`;
+        } catch (e) {
+          if (e.message?.includes('unique') || e.message?.includes('duplicate'))
+            return res.status(400).json({ error: 'El nombre de usuario ya existe' });
+          throw e;
+        }
+      }
+      let tempPassword = null;
+      if (newPassword) {
+        if (newPassword.length < 6) return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+        tempPassword = newPassword;
+        const { hash, salt } = hashPassword(newPassword);
+        await sql`UPDATE clinic_users SET password_hash = ${hash}, salt = ${salt}, hash_algo = 'pbkdf2' WHERE id = ${userId}`;
+      }
+      return res.status(200).json({ success: true, ...(tempPassword ? { temp_password: tempPassword } : {}) });
     }
 
     // ── Notificaciones de clínica ─────────────────────────────────────────

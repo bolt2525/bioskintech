@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Calendar, DollarSign, Clock, Save, Trash2, Copy, Check, AlertCircle, FileText, Pencil, Layers } from 'lucide-react';
+import { Plus, Calendar, DollarSign, Clock, Save, Trash2, Copy, Check, AlertCircle, FileText, Pencil, Layers, History } from 'lucide-react';
+import CrossConsultHistoryModal, { type ConsultationRef } from '../CrossConsultHistoryModal';
 import treatmentOptions from '../../data/treatment_options.json';
 import { Tooltip } from '../../../../ui/Tooltip';
+import FieldHelp from '../FieldHelp';
+import { HELP } from '../../data/fieldHelpTexts';
 
 /** Extrae solo YYYY-MM-DD de un ISO timestamp o string de PG para evitar desfase de zona horaria */
 const toDateOnly = (d: string | null | undefined): string => {
@@ -35,6 +38,7 @@ interface TreatmentTabProps {
   treatments: Treatment[];
   patientName?: string;
   consultationId?: number;
+  consultations?: ConsultationRef[];
   onSave: () => void;
 }
 
@@ -48,13 +52,14 @@ const EMPTY_TREATMENT: Treatment = {
   notes: '',
 };
 
-export default function TreatmentTab({ recordId, treatments, patientName, consultationId, onSave }: TreatmentTabProps) {
+export default function TreatmentTab({ recordId, treatments, patientName, consultationId, consultations = [], onSave }: TreatmentTabProps) {
   const [currentTreatment, setCurrentTreatment] = useState<Treatment>({ ...EMPTY_TREATMENT });
   const [dateLocked, setDateLocked] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [groupByProcedure, setGroupByProcedure] = useState(false);
+  const [crossHistOpen, setCrossHistOpen] = useState(false);
 
   // Sort treatments by date descending for the history list
   const sortedTreatments = [...treatments].sort((a, b) => 
@@ -148,6 +153,7 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
   };
 
   return (
+    <>
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
@@ -165,6 +171,12 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
           >
             <Layers className="w-4 h-4" />
           </button>
+          {consultations.length > 1 && (
+            <button onClick={() => setCrossHistOpen(true)} title="Ver todas las consultas" className="p-1 hover:bg-[#deb887]/10 rounded-lg">
+              <History className="w-3.5 h-3.5 text-[#b8944d]" />
+            </button>
+          )}
+          <span className="text-xs bg-gray-100 text-gray-500 rounded-full px-2 py-0.5">{treatments.length}</span>
         </div>
         <div className="flex-1 overflow-y-auto space-y-3 max-h-[200px] md:max-h-none pr-2 custom-scrollbar">
           {sortedTreatments.length === 0 ? (
@@ -345,7 +357,7 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
               </div>
             </div>
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">Procedimiento</label>
+              <label className="block text-sm font-medium text-gray-700">Procedimiento<FieldHelp text={HELP.treatment.procedure_name} /></label>
               <input
                 type="text"
                 required
@@ -362,7 +374,7 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
               </datalist>
             </div>
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">Equipo Utilizado</label>
+              <label className="block text-sm font-medium text-gray-700">Equipo Utilizado<FieldHelp text={HELP.treatment.equipment_used} /></label>
               <input
                 type="text"
                 list="equipment-list"
@@ -378,7 +390,7 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
               </datalist>
             </div>
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">Zona Tratada</label>
+              <label className="block text-sm font-medium text-gray-700">Zona Tratada<FieldHelp text={HELP.treatment.area_treated} /></label>
               <input
                 type="text"
                 className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
@@ -389,7 +401,7 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700">Duración (min)</label>
+                <label className="block text-sm font-medium text-gray-700">Duración (min)<FieldHelp text={HELP.treatment.duration_minutes} /></label>
                 <div className="relative">
                   <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <input
@@ -401,7 +413,7 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
                 </div>
               </div>
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700">Costo</label>
+                <label className="block text-sm font-medium text-gray-700">Costo<FieldHelp text={HELP.treatment.cost} /></label>
                 <div className="relative">
                   <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <input
@@ -416,7 +428,7 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
           </div>
           
           <div className="space-y-2">
-            <label className="block text-sm font-medium text-gray-700">Notas / Parámetros</label>
+            <label className="block text-sm font-medium text-gray-700">Notas / Parámetros<FieldHelp text={HELP.treatment.notes} /></label>
             <textarea
               rows={5}
               className="w-full p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none resize-none transition-all bg-gray-50/50 focus:bg-white"
@@ -429,5 +441,31 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
         </div>
       </div>
     </motion.div>
+    <CrossConsultHistoryModal
+      isOpen={crossHistOpen}
+      onClose={() => setCrossHistOpen(false)}
+      tabLabel="Tratamientos"
+      consultations={consultations}
+      items={treatments}
+      currentConsultationId={consultationId}
+      renderItem={t => (
+        <div>
+          <p className="font-medium text-gray-800">{t.procedure_name}</p>
+          <p className="text-gray-400">{t.date ? new Date(toDateOnly(t.date)+'T12:00:00').toLocaleDateString('es-EC') : ''}{t.equipment_used ? ` — ${t.equipment_used}` : ''}</p>
+        </div>
+      )}
+      renderDetail={t => (
+        <>
+          <div><span className="text-gray-400">Procedimiento:</span> <span className="font-medium">{t.procedure_name}</span></div>
+          {t.equipment_used && <div><span className="text-gray-400">Equipo:</span> {t.equipment_used}</div>}
+          {t.area_treated && <div><span className="text-gray-400">Área:</span> {t.area_treated}</div>}
+          {t.duration_minutes > 0 && <div><span className="text-gray-400">Duración:</span> {t.duration_minutes} min</div>}
+          {t.cost > 0 && <div><span className="text-gray-400">Costo:</span> ${t.cost}</div>}
+          {t.notes && <div><span className="text-gray-400">Notas:</span> {t.notes}</div>}
+          {t.date && <div><span className="text-gray-400">Fecha:</span> {new Date(toDateOnly(t.date)+'T12:00:00').toLocaleDateString('es-EC')}</div>}
+        </>
+      )}
+    />
+    </>
   );
 }
