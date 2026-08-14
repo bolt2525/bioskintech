@@ -238,7 +238,7 @@ export default function PatientDetail() {
                 No hay expedientes registrados para este paciente.
               </div>
             ) : (
-              records.map((record) => (
+              records.map((record, recIdx) => (
                 <div 
                   key={record.id}
                   className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow flex justify-between items-center group"
@@ -248,7 +248,7 @@ export default function PatientDetail() {
                       <FileText className="w-6 h-6" />
                     </div>
                     <div>
-                      <h3 className="font-semibold text-gray-900">Expediente #{record.id}</h3>
+                      <h3 className="font-semibold text-gray-900">Expediente #{recIdx + 1}</h3>
                       {record.created_by_full_name && (
                         <p className="text-sm font-medium text-[#c9a876] mt-0.5">
                           {record.created_by_gentilicio ? `${record.created_by_gentilicio} ` : ''}{record.created_by_full_name}

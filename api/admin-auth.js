@@ -2629,10 +2629,14 @@ export default async function handler(req, res) {
     if (action === 'getNextDemoUsername') {
       if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master_admin' });
       const r = await sql`
-        SELECT COALESCE(MAX(SUBSTRING(username FROM 5)::INTEGER), 0) AS max_seq
+        SELECT SUBSTRING(username FROM 5)::INTEGER AS num
         FROM clinic_users WHERE is_demo = true AND username ~ '^demo\\d+$'
+        ORDER BY num
       `;
-      const next = (r.rows[0]?.max_seq || 0) + 1;
+      // Find first gap starting at 1 — reuses usernames freed by deleted accounts
+      const taken = new Set(r.rows.map(row => row.num));
+      let next = 1;
+      while (taken.has(next)) next++;
       return res.status(200).json({ username: `demo${String(next).padStart(4, '0')}` });
     }
 

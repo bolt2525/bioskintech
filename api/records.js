@@ -670,7 +670,7 @@ export default async function handler(req, res) {
 
         // ponytail: helper para queries con owner JOIN — evita repetición
         const fromOwner = `FROM patients p LEFT JOIN clinic_users cu ON cu.id = p.created_by_user_id`;
-        const selOwner  = `SELECT p.*, cu.full_name AS created_by_user_name, cu.username AS created_by_username`;
+        const selOwner  = `SELECT p.*, cu.full_name AS created_by_user_name, cu.username AS created_by_username, ROW_NUMBER() OVER (PARTITION BY p.clinic_id ORDER BY p.id) AS seq`;
         // filtro de pacientes propios + asignados
         const ownFilter = `AND (p.created_by_user_id = $2 OR EXISTS (SELECT 1 FROM patient_assignments pa WHERE pa.patient_id = p.id AND pa.clinic_user_id = $2))`;
 

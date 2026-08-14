@@ -10,6 +10,7 @@ import { useMasterView } from '../../../../context/MasterViewContext';
 
 interface Patient {
   id: number;
+  seq?: number;
   first_name: string;
   last_name: string;
   rut: string;
@@ -251,7 +252,7 @@ export default function PatientList() {
                           <div>
                             <div className="font-medium text-gray-900">{patient.first_name} {patient.last_name}</div>
                             <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-sm text-gray-500">ID: {patient.id}</span>
+                              <span className="text-sm text-gray-400">#{patient.seq ?? patient.id}</span>
                               {isAdmin && patient.created_by_user_name && (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 text-xs font-medium">
                                   <User className="w-2.5 h-2.5" />
