@@ -64,6 +64,8 @@ interface ConsentForm {
     patient_sig_data?: string;
     professional_sig_data?: string;
     sig_scale?: 'sm' | 'md' | 'lg' | 'xl';
+    patient_sig_size?: number;
+    professional_sig_size?: number;
   };
   attachments: any[];
 }
@@ -449,26 +451,25 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
     }
   };
 
-  const handleSave = async () => {
+  // Signature size helpers — component scope, not inside handleSave
+  const patientSigSize  = currentConsent?.signatures?.patient_sig_size  ?? 80;
+  const profSigSize     = currentConsent?.signatures?.professional_sig_size ?? 80;
+
+  const handleSigSizeChange = async (field: 'patient_sig_size' | 'professional_sig_size', px: number) => {
     if (!currentConsent) return;
-
-  const SIG_SCALE_H: Record<string, string> = { sm: 'h-14', md: 'h-20', lg: 'h-28', xl: 'h-36' };
-  const sigHeightClass = SIG_SCALE_H[currentConsent.signatures?.sig_scale || 'md'] || 'h-20';
-
-  const handleScaleChange = async (newScale: 'sm' | 'md' | 'lg' | 'xl') => {
-    const updatedConsent = { ...currentConsent, signatures: { ...currentConsent.signatures, sig_scale: newScale } };
-    setCurrentConsent(updatedConsent);
-    if (!updatedConsent.id) return; // new consent — scale saved on next manual save
+    const updated = { ...currentConsent, signatures: { ...currentConsent.signatures, [field]: px } };
+    setCurrentConsent(updated);
+    if (!updated.id) return;
     try {
       await recordsFetch(`${API_URL}?action=saveConsent`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...updatedConsent, ...(consultationId ? { consultation_id: consultationId } : {}) })
+        body: JSON.stringify({ ...updated, ...(consultationId ? { consultation_id: consultationId } : {}) })
       });
-      setMessage({ type: 'success', text: 'Tamaño de firma actualizado' });
-    } catch {
-      setMessage({ type: 'error', text: 'Error al guardar tamaño' });
-    }
+    } catch { /* silent — size is in state even if save fails */ }
   };
+
+  const handleSave = async () => {
+    if (!currentConsent) return;
     setLoading(true);
     setMessage(null);
     try {
@@ -1257,23 +1258,44 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                     )}
                   </AnimatePresence>
 
-                  {/* Signature print size control */}
-                  <div className="flex items-center gap-4 bg-amber-50 border border-amber-200 rounded-xl p-4">
-                    <span className="text-sm font-semibold text-amber-800 whitespace-nowrap">Tamaño en impresión:</span>
-                    <div className="flex gap-2">
-                      {(['sm', 'md', 'lg', 'xl'] as const).map((s) => {
-                        const labels: Record<string, string> = { sm: 'S', md: 'M', lg: 'L', xl: 'XL' };
-                        const active = (currentConsent.signatures?.sig_scale || 'md') === s;
-                        return (
-                          <button key={s} onClick={() => handleScaleChange(s)}
-                            className={`w-9 h-9 rounded-lg text-sm font-bold transition-all ${active ? 'bg-[#deb887] text-white shadow-md' : 'bg-white border border-gray-300 text-gray-600 hover:border-[#deb887] hover:text-[#deb887]'}`}
-                          >{labels[s]}</button>
-                        );
-                      })}
+                  {/* Signature print size sliders — individual per signature */}
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3">
+                    <p className="text-sm font-semibold text-amber-800">Tamaño de firma en impresión</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <div className="flex justify-between mb-1">
+                          <span className="text-xs text-amber-700 font-medium">Firma del Paciente</span>
+                          <span className="text-xs text-amber-600 font-bold">{patientSigSize}px</span>
+                        </div>
+                        <input type="range" min={40} max={200} step={4} value={patientSigSize}
+                          onChange={e => handleSigSizeChange('patient_sig_size', Number(e.target.value))}
+                          className="w-full h-2 rounded-full accent-[#deb887] cursor-pointer"
+                        />
+                        {currentConsent.signatures?.patient_sig_data && (
+                          <div className="mt-2 flex justify-center border border-dashed border-amber-200 rounded-lg p-2 bg-white">
+                            <img src={currentConsent.signatures.patient_sig_data} alt="preview"
+                              style={{ height: `${patientSigSize}px` }} className="object-contain" />
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <div className="flex justify-between mb-1">
+                          <span className="text-xs text-amber-700 font-medium">Firma del Profesional</span>
+                          <span className="text-xs text-amber-600 font-bold">{profSigSize}px</span>
+                        </div>
+                        <input type="range" min={40} max={200} step={4} value={profSigSize}
+                          onChange={e => handleSigSizeChange('professional_sig_size', Number(e.target.value))}
+                          className="w-full h-2 rounded-full accent-[#deb887] cursor-pointer"
+                        />
+                        {currentConsent.signatures?.professional_sig_data && (
+                          <div className="mt-2 flex justify-center border border-dashed border-amber-200 rounded-lg p-2 bg-white">
+                            <img src={currentConsent.signatures.professional_sig_data} alt="preview"
+                              style={{ height: `${profSigSize}px` }} className="object-contain" />
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <span className="text-xs text-amber-700 ml-auto">
-                      {!currentConsent.id ? 'Se guarda al hacer click en Guardar' : 'Se guarda automáticamente'}
-                    </span>
+                    <p className="text-xs text-amber-600">{!currentConsent.id ? '⚠ Se guarda con el botón Guardar' : '✓ Se guarda automáticamente al mover el control'}</p>
                   </div>
 
                   <div className="flex justify-end pt-6 border-t border-gray-100">
@@ -1525,7 +1547,8 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                   <img 
                     src={currentConsent.signatures.patient_sig_data} 
                     alt="Firma Paciente" 
-                    className={`${sigHeightClass} object-contain mb-2`}
+                    style={{ height: `${patientSigSize}px` }}
+                    className="object-contain mb-2"
                   />
                 )}
                 <div className="w-full border-t border-gray-400 pt-2 text-center">
@@ -1539,7 +1562,8 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                   <img 
                     src={currentConsent.signatures.professional_sig_data} 
                     alt="Firma Profesional" 
-                    className={`${sigHeightClass} object-contain mb-2`}
+                    style={{ height: `${profSigSize}px` }}
+                    className="object-contain mb-2"
                   />
                 )}
                 <div className="w-full border-t border-gray-400 pt-2 text-center">
