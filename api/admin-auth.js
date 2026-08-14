@@ -2475,7 +2475,7 @@ export default async function handler(req, res) {
       const result = await sql`
         SELECT ct.* FROM consent_templates ct
         JOIN clinic_consent_templates cct ON ct.id = cct.template_id
-        WHERE cct.clinic_id = ${clinicId} AND ct.is_active = true
+        WHERE cct.clinic_id = ${clinicId}::uuid AND ct.is_active = true
         ORDER BY ct.name ASC`;
       return res.status(200).json({ templates: result.rows });
     }
@@ -2484,7 +2484,7 @@ export default async function handler(req, res) {
       if (user.role !== 'master_admin') return res.status(403).json({ error: 'Solo master_admin' });
       const { clinicId } = req.query;
       if (!clinicId) return res.status(400).json({ error: 'clinicId requerido' });
-      const result = await sql`SELECT template_id FROM clinic_consent_templates WHERE clinic_id = ${clinicId}`;
+      const result = await sql`SELECT template_id FROM clinic_consent_templates WHERE clinic_id = ${clinicId}::uuid`;
       return res.status(200).json({ assigned: result.rows.map(r => r.template_id) });
     }
 
@@ -2494,9 +2494,9 @@ export default async function handler(req, res) {
       if (!clinicId || !templateId) return res.status(400).json({ error: 'clinicId y templateId requeridos' });
       if (assign) {
         await sql`INSERT INTO clinic_consent_templates (clinic_id, template_id)
-          VALUES (${clinicId}, ${templateId}) ON CONFLICT DO NOTHING`;
+          VALUES (${clinicId}::uuid, ${templateId}) ON CONFLICT DO NOTHING`;
       } else {
-        await sql`DELETE FROM clinic_consent_templates WHERE clinic_id = ${clinicId} AND template_id = ${templateId}`;
+        await sql`DELETE FROM clinic_consent_templates WHERE clinic_id = ${clinicId}::uuid AND template_id = ${templateId}`;
       }
       return res.status(200).json({ success: true });
     }

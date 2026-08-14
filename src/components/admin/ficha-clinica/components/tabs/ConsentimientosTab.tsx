@@ -69,23 +69,14 @@ interface ConsentForm {
 interface Props {
   patientId: number;
   recordId: number;
-  recordSeq?: number;
-  recordCreatedAt?: string;
   patient?: any;
   consultationId?: number;
   consultations?: ConsultationRef[];
 }
 
-function clinicCode(clinicName: string, seq: number, createdAt?: string): string {
-  const words = (clinicName || 'CL').trim().toUpperCase().split(/\s+/).filter(Boolean);
-  const initials = words.length === 1 ? words[0].substring(0, 2) : words.slice(0, 3).map(w => w[0]).join('');
-  const year = createdAt ? new Date(createdAt).getFullYear() : new Date().getFullYear();
-  return `${initials}-${year}-${String(seq).padStart(3, '0')}`;
-}
-
 const API_URL = '/api/records';
 
-export default function ConsentimientosTab({ patientId, recordId, recordSeq, recordCreatedAt, patient, consultationId, consultations = [] }: Props) {
+export default function ConsentimientosTab({ patientId, recordId, patient, consultationId, consultations = [] }: Props) {
   const { settings: clinic } = useClinicSettings();
   const { user } = useAuth();
   const { clinicId: masterViewClinicId } = useMasterView();
@@ -128,11 +119,17 @@ export default function ConsentimientosTab({ patientId, recordId, recordSeq, rec
       );
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data.templates) && data.templates.length > 0) {
+        if (Array.isArray(data.templates)) {
+          // Always update — even if empty, replaces stale data
           setDbTemplates(data.templates);
         }
+      } else {
+        const text = await res.text().catch(() => '');
+        console.error('[ConsentimientosTab] getClinicConsentTemplates failed:', res.status, text);
       }
-    } catch { /* silencioso — usa locales como fallback */ }
+    } catch (err) {
+      console.error('[ConsentimientosTab] getClinicConsentTemplates error:', err);
+    }
   };
 
   useEffect(() => {
@@ -1290,18 +1287,18 @@ export default function ConsentimientosTab({ patientId, recordId, recordSeq, rec
                   {/* Header */}
                   <div className="flex flex-col md:flex-row justify-between items-start mb-8 border-b-2 border-[#deb887] pb-6 gap-4 md:gap-0">
                     <div className="flex items-center gap-6">
-                      <img src={clinic.general.logo_url || '/images/logo/logo.png'} alt="Logo" className="h-24 w-auto object-contain" onError={e => { (e.currentTarget as HTMLImageElement).src = '/images/logo/logo.png'; }} />
+                      <img src={clinic.general.logo_url || '/images/logo/logo.png'} alt="Logo" className="h-24 w-auto object-contain" onError={e => (e.currentTarget.style.display = 'none')} />
                       <div>
                         <h2 className="text-2xl font-bold text-gray-900 tracking-tight">{clinicDisplayName.toUpperCase()}</h2>
                         <p className="text-base font-bold text-[#deb887] mt-1">{(currentConsent?.signatures?.professional_name || professionalName).toUpperCase()}</p>
-                        {(clinic.general.establishment_type || clinic.general.tagline || user?.especialidad) && (
-                          <p className="text-sm text-gray-500">{clinic.general.establishment_type || clinic.general.tagline || user?.especialidad}</p>
+                        {(clinic.general.tagline || user?.especialidad) && (
+                          <p className="text-sm text-gray-500">{clinic.general.tagline || user?.especialidad}</p>
                         )}
                       </div>
                     </div>
                     <div className="text-right text-sm text-gray-600 space-y-1">
                       <p><strong>Fecha:</strong> {new Date().toLocaleDateString()}</p>
-                      <p><strong>Expediente:</strong> {recordSeq ? clinicCode(clinicDisplayName, recordSeq, recordCreatedAt) : `#${recordId}`}</p>
+                      <p><strong>Expediente:</strong> #{recordId}</p>
                     </div>
                   </div>
 
