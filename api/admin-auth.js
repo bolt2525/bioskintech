@@ -19,6 +19,8 @@
 import { sql } from '@vercel/postgres';
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
+import { deleteR2Object } from '../lib/r2-service.js';
+import { getPool } from '../lib/neon-clinical-db.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuración de seguridad
@@ -908,8 +910,38 @@ async function recordTrustedDevice(userId, deviceToken, ip, ua) {
 
 // ─── Demo account cleanup ──────────────────────────────────────────────────
 
+/** Elimina todos los objetos R2 de fotos clínicas de una clínica. Non-fatal. */
+async function deleteClinicR2Objects(clinicId) {
+  try {
+    const pool = getPool();
+    const { rows } = await pool.query('SELECT r2_key FROM clinical_photos WHERE clinic_id = $1', [clinicId]);
+    await Promise.all(rows.map(r => deleteR2Object(r.r2_key).catch(() => {})));
+  } catch { /* non-fatal */ }
+}
+
 async function cleanupExpiredDemos() {
   try {
+    // Obtener demos expiradas antes de borrarlas
+    const expired = await sql`
+      SELECT id, clinic_id FROM clinic_users
+      WHERE is_demo = true AND demo_expires_at IS NOT NULL AND demo_expires_at < NOW()
+    `;
+    if (!expired.rows.length) return;
+
+    // Por cada clínica única: si no quedan usuarios activos, borrar fotos R2
+    const clinicIds = [...new Set(expired.rows.filter(r => r.clinic_id).map(r => r.clinic_id))];
+    for (const clinicId of clinicIds) {
+      const activeLeft = await sql`
+        SELECT COUNT(*) AS cnt FROM clinic_users
+        WHERE clinic_id = ${clinicId}
+          AND NOT (is_demo = true AND demo_expires_at IS NOT NULL AND demo_expires_at < NOW())
+      `;
+      if (parseInt(activeLeft.rows[0].cnt) === 0) {
+        await deleteClinicR2Objects(clinicId);
+      }
+    }
+
+    // Borrar demos expiradas de la BD
     await sql`
       DELETE FROM clinic_users
       WHERE is_demo = true AND demo_expires_at IS NOT NULL AND demo_expires_at < NOW()
@@ -2176,6 +2208,8 @@ export default async function handler(req, res) {
       if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master_admin' });
       const clinicId = req.query.id || req.body?.id;
       if (!clinicId) return res.status(400).json({ error: 'id requerido' });
+      // Borrar fotos de Cloudflare R2 antes de eliminar de la BD
+      await deleteClinicR2Objects(clinicId);
       // Null out subscriptions.clinic_id (no CASCADE on that FK)
       await sql`UPDATE subscriptions SET clinic_id = NULL WHERE clinic_id = ${clinicId}`;
       // DELETE cascades to: clinic_users, clinic_features, clinic_settings,

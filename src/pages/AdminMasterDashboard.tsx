@@ -19,7 +19,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   LogOut, Building2, Users, Shield, RefreshCw, ChevronDown, ChevronUp,
   Plus, Edit, Trash2, Eye, EyeOff, Key, X, Check, AlertCircle,
-  Activity, ClipboardList, ChevronRight, Sparkles, Lock, Mail, Unlink, Copy, ExternalLink, Settings2, LayoutDashboard, UserCheck, Calendar, Infinity, Clock,
+  Activity, ClipboardList, ChevronRight, Sparkles, Lock, Mail, Unlink, Copy, ExternalLink, Settings2, LayoutDashboard, UserCheck, Calendar, Infinity, Clock, Bell,
 } from 'lucide-react';
 
 // Constantes centralizadas — no duplicar aquí
@@ -78,6 +78,17 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
       </div>
     </div>
   );
+}
+
+/** Formatea ms restantes en d/h/m para el display de tiempo de demos */
+function formatTimeLeft(ms: number): string {
+  if (ms <= 0) return 'Vencido';
+  const days = Math.floor(ms / 86400000);
+  if (days >= 1) return `${days}d restantes`;
+  const hours = Math.floor(ms / 3600000);
+  if (hours >= 1) return `${hours}h restantes`;
+  const minutes = Math.ceil(ms / 60000);
+  return `${minutes}m restantes`;
 }
 
 /**
@@ -1001,6 +1012,7 @@ export default function AdminMasterDashboard() {
   const [notifModal, setNotifModal] = useState<{ open: boolean; clinicId: number | null; clinicName: string }>({ open: false, clinicId: null, clinicName: '' });
   const [notifMessage, setNotifMessage] = useState('');
   const [now, setNow] = useState(new Date());
+  const [showNotifications, setShowNotifications] = useState(false);
 
   // ── Ajustes por clínica ───────────────────────────────────────────────────
   type ClinicSettingsData = {
@@ -1464,7 +1476,7 @@ export default function AdminMasterDashboard() {
   };
 
   const deleteClinic = async (clinic: Clinic) => {
-    if (!confirm(`¿Eliminar permanentemente la clínica "${clinic.name}"?\n\nSe eliminarán TODOS los usuarios, fichas clínicas, ajustes y datos asociados.\n\nEsta acción es IRREVERSIBLE.`)) return;
+    if (!confirm(`¿Eliminar permanentemente la clínica "${clinic.name}"?\n\nSe eliminarán TODOS los usuarios, fichas clínicas, ajustes y datos asociados.\nTambién se eliminarán TODAS las fotos subidas a Cloudflare R2.\n\nEsta acción es IRREVERSIBLE.`)) return;
     try {
       const res = await fetch(`/api/admin-auth?action=deleteClinic&id=${clinic.id}`, { method: 'DELETE', headers: authHeader() });
       const d = await res.json();
@@ -1525,6 +1537,31 @@ export default function AdminMasterDashboard() {
     return matchSearch && matchClinic;
   });
 
+  // ─── Notificaciones de vencimiento ───────────────────────────────────────
+  type NotifItem = { key: string; type: 'demo_urgent' | 'demo_expired' | 'clinic_expiring' | 'clinic_grace' | 'clinic_expired'; label: string; detail: string };
+  const notificationItems: NotifItem[] = [];
+  allUsers.forEach(u => {
+    if (!u.is_demo || !u.demo_expires_at) return;
+    const msLeft = new Date(u.demo_expires_at).getTime() - Date.now();
+    if (msLeft <= 0) {
+      notificationItems.push({ key: `demo_exp_${u.id}`, type: 'demo_expired', label: u.username, detail: `Demo expirada · ${u.clinic_name || '—'}` });
+    } else if (msLeft <= 3 * 86400000) {
+      notificationItems.push({ key: `demo_urg_${u.id}`, type: 'demo_urgent', label: u.username, detail: `${formatTimeLeft(msLeft)} · ${u.clinic_name || '—'}` });
+    }
+  });
+  clinics.forEach(c => {
+    if (!c.subscription_expires_at) return;
+    const msLeft = new Date(c.subscription_expires_at).getTime() - Date.now();
+    const daysLeft = msLeft / 86400000;
+    if (msLeft > 0 && daysLeft <= 30) {
+      notificationItems.push({ key: `clinic_exp_${c.id}`, type: 'clinic_expiring', label: c.name, detail: `${Math.ceil(daysLeft)}d restantes` });
+    } else if (msLeft <= 0 && daysLeft >= -21) {
+      notificationItems.push({ key: `clinic_grace_${c.id}`, type: 'clinic_grace', label: c.name, detail: `${Math.ceil(21 + daysLeft)}d de gracia restantes` });
+    } else if (msLeft <= 0 && daysLeft < -21) {
+      notificationItems.push({ key: `clinic_dead_${c.id}`, type: 'clinic_expired', label: c.name, detail: 'Período de gracia agotado' });
+    }
+  });
+
   // ─────────────────────────────────────────────────────────────────────────
   // Render
   // ─────────────────────────────────────────────────────────────────────────
@@ -1559,6 +1596,66 @@ export default function AdminMasterDashboard() {
               <button onClick={loadAll} className="p-2 rounded-lg bg-white/5 hover:bg-[#deb887]/10 border border-white/10 hover:border-[#deb887]/30 transition-all" title="Recargar datos">
                 <RefreshCw className={`w-4 h-4 text-white/60 hover:text-[#deb887] transition-colors ${loading ? 'animate-spin' : ''}`} />
               </button>
+
+              {/* ── Campana de notificaciones ── */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowNotifications(v => !v)}
+                  className="relative p-2 rounded-lg bg-white/5 hover:bg-[#deb887]/10 border border-white/10 hover:border-[#deb887]/30 transition-all"
+                  title="Notificaciones de vencimiento"
+                >
+                  <Bell className={`w-4 h-4 ${notificationItems.length > 0 ? 'text-amber-400' : 'text-white/60'}`} />
+                  {notificationItems.length > 0 && (
+                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
+                      {notificationItems.length > 9 ? '9+' : notificationItems.length}
+                    </span>
+                  )}
+                </button>
+
+                {showNotifications && (
+                  <div className="absolute right-0 top-10 w-80 bg-white border border-gray-200 rounded-2xl shadow-2xl z-50 overflow-hidden">
+                    <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Bell className="w-4 h-4 text-amber-500" />
+                        <span className="font-semibold text-gray-900 text-sm">Alertas de vencimiento</span>
+                      </div>
+                      <button onClick={() => setShowNotifications(false)} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+                    </div>
+                    {notificationItems.length === 0 ? (
+                      <p className="px-4 py-5 text-sm text-gray-400 text-center">Sin alertas activas</p>
+                    ) : (
+                      <div className="max-h-80 overflow-y-auto divide-y divide-gray-50">
+                        {notificationItems.map(item => {
+                          const colors: Record<string, string> = {
+                            demo_expired:    'text-red-500 bg-red-50',
+                            demo_urgent:     'text-amber-600 bg-amber-50',
+                            clinic_expiring: 'text-orange-500 bg-orange-50',
+                            clinic_grace:    'text-red-600 bg-red-50',
+                            clinic_expired:  'text-red-700 bg-red-100',
+                          };
+                          const icons: Record<string, string> = {
+                            demo_expired:    '⏱',
+                            demo_urgent:     '⏱',
+                            clinic_expiring: '🏥',
+                            clinic_grace:    '⚠️',
+                            clinic_expired:  '🚫',
+                          };
+                          return (
+                            <div key={item.key} className={`px-4 py-2.5 flex items-start gap-2.5 ${colors[item.type]?.split(' ')[1] || ''}`}>
+                              <span className="text-sm mt-0.5">{icons[item.type]}</span>
+                              <div>
+                                <p className={`text-xs font-semibold ${colors[item.type]?.split(' ')[0] || 'text-gray-800'}`}>{item.label}</p>
+                                <p className="text-[11px] text-gray-500">{item.detail}</p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
               <button
                 onClick={() => { logout(); navigate('/admin/login'); }}
                 className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-red-500/10 border border-white/10 hover:border-red-400/30 rounded-lg transition-all text-sm text-white/60 hover:text-red-400"
@@ -1810,8 +1907,8 @@ export default function AdminMasterDashboard() {
                   <tbody className="divide-y divide-gray-50">
                     {filteredUsers.map(u => {
                       const demoExp = u.is_demo && u.demo_expires_at ? new Date(u.demo_expires_at) : null;
-                      const demoDaysLeft = demoExp ? Math.ceil((demoExp.getTime() - Date.now()) / 86400000) : null;
-                      const demoExpired = demoDaysLeft !== null && demoDaysLeft < 0;
+                      const demoMsLeft = demoExp ? demoExp.getTime() - Date.now() : null;
+                      const demoExpired = demoMsLeft !== null && demoMsLeft <= 0;
                       const isEditingExpiry = demoExpiryEdit?.userId === u.id;
                       return (
                         <Fragment key={u.id}>
@@ -1824,8 +1921,8 @@ export default function AdminMasterDashboard() {
                                 <div>
                                   <span className="font-medium text-gray-900 text-sm">{u.username}</span>
                                   {demoExp && (
-                                    <p className={`text-[10px] mt-0.5 font-medium ${demoExpired ? 'text-red-500' : demoDaysLeft !== null && demoDaysLeft <= 3 ? 'text-amber-500' : 'text-amber-600'}`}>
-                                      ⏱ {demoExpired ? 'Vencido' : `${demoDaysLeft}d restantes`}
+                                    <p className={`text-[10px] mt-0.5 font-medium ${demoExpired ? 'text-red-500' : demoMsLeft !== null && demoMsLeft <= 3 * 86400000 ? 'text-amber-500' : 'text-amber-600'}`}>
+                                      ⏱ {demoExpired ? 'Vencido' : formatTimeLeft(demoMsLeft!)}
                                     </p>
                                   )}
                                 </div>
@@ -2143,16 +2240,20 @@ export default function AdminMasterDashboard() {
                   const exp = clinic.subscription_expires_at ? new Date(clinic.subscription_expires_at) : null;
                   const daysLeft = exp ? Math.ceil((exp.getTime() - Date.now()) / 86400000) : null;
                   const isExpired = daysLeft !== null && daysLeft < 0;
+                  const graceLeft = isExpired && daysLeft !== null ? 21 + daysLeft : null; // días de gracia restantes
+                  const inGrace   = graceLeft !== null && graceLeft >= 0;
                   const isWarning = daysLeft !== null && daysLeft >= 0 && daysLeft <= 30;
                   return (
-                    <div key={clinic.id} className="px-5 py-3 flex items-center gap-3">
-                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isExpired ? 'bg-red-500' : isWarning ? 'bg-orange-400' : exp === null ? 'bg-emerald-500' : 'bg-emerald-400'}`} />
+                    <div key={clinic.id} className={`px-5 py-3 flex items-center gap-3 ${isExpired && !inGrace ? 'bg-red-50/40' : ''}`}>
+                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${!inGrace && isExpired ? 'bg-red-600' : inGrace ? 'bg-orange-400 animate-pulse' : isWarning ? 'bg-orange-400' : exp === null ? 'bg-emerald-500' : 'bg-emerald-400'}`} />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-gray-800 truncate">{clinic.name}</p>
                         {exp === null ? (
                           <p className="text-xs text-emerald-600 flex items-center gap-1"><Infinity className="w-3 h-3" /> Sin vencimiento</p>
+                        ) : inGrace ? (
+                          <p className="text-xs text-orange-600 font-medium">⚠️ Gracia: {graceLeft}d restantes · venció {exp.toLocaleDateString('es-EC')}</p>
                         ) : isExpired ? (
-                          <p className="text-xs text-red-500 font-medium">Vencida el {exp.toLocaleDateString('es-EC')}</p>
+                          <p className="text-xs text-red-600 font-bold">🚫 Gracia agotada — requiere acción</p>
                         ) : (
                           <p className={`text-xs ${isWarning ? 'text-orange-500 font-medium' : 'text-gray-400'}`}>
                             Vence {exp.toLocaleDateString('es-EC')} · {daysLeft}d restantes
@@ -2184,13 +2285,13 @@ export default function AdminMasterDashboard() {
                   <div className="divide-y divide-gray-50">
                     {demoUsers.map(u => {
                       const exp = u.demo_expires_at ? new Date(u.demo_expires_at) : null;
-                      const daysLeft = exp ? Math.ceil((exp.getTime() - Date.now()) / 86400000) : null;
-                      const isExpired = daysLeft !== null && daysLeft < 0;
+                      const msLeft = exp ? exp.getTime() - Date.now() : null;
+                      const isExpired = msLeft !== null && msLeft <= 0;
                       const isEditing = demoExpiryEdit?.userId === u.id;
                       return (
                         <div key={u.id}>
                           <div className="px-5 py-3 flex items-center gap-3">
-                            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isExpired ? 'bg-red-500' : daysLeft !== null && daysLeft <= 3 ? 'bg-amber-400 animate-pulse' : 'bg-amber-400'}`} />
+                            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isExpired ? 'bg-red-500' : msLeft !== null && msLeft <= 3 * 86400000 ? 'bg-amber-400 animate-pulse' : 'bg-amber-400'}`} />
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-medium text-gray-800">{u.username}</p>
                               <p className="text-xs text-gray-400">{u.clinic_name}</p>
@@ -2198,7 +2299,7 @@ export default function AdminMasterDashboard() {
                             {exp ? (
                               isExpired
                                 ? <span className="text-xs text-red-500 font-medium">Expirada</span>
-                                : <span className="text-xs text-amber-600">{daysLeft}d restantes · {exp.toLocaleDateString('es-EC')}</span>
+                                : <span className="text-xs text-amber-600">{formatTimeLeft(msLeft!)} · {exp.toLocaleDateString('es-EC')}</span>
                             ) : <span className="text-xs text-gray-400">Sin vencimiento</span>}
                             <button
                               onClick={() => setDemoExpiryEdit(isEditing ? null : { userId: u.id, value: 1, unit: 'days' })}
