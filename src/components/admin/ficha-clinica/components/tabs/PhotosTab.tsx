@@ -202,7 +202,8 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
   const dateGroups = useMemo(() => {
     const map = new Map<string, { label: string; photos: ClinicalPhoto[] }>();
     for (const p of filteredPhotos) {
-      const key = (p.taken_at || p.created_at)?.slice(0, 10) ?? 'sin-fecha';
+      const _d = new Date(p.taken_at || p.created_at || '');
+      const key = isNaN(_d.getTime()) ? 'sin-fecha' : _d.toLocaleDateString('en-CA');
       if (!map.has(key)) map.set(key, {
         label: key !== 'sin-fecha'
           ? new Date(key + 'T12:00:00').toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
@@ -217,7 +218,8 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
   const allDateGroups = useMemo(() => {
     const map = new Map<string, { label: string; photos: ClinicalPhoto[] }>();
     for (const p of photos) {
-      const key = (p.taken_at || p.created_at)?.slice(0, 10) ?? 'sin-fecha';
+      const _d = new Date(p.taken_at || p.created_at || '');
+      const key = isNaN(_d.getTime()) ? 'sin-fecha' : _d.toLocaleDateString('en-CA');
       if (!map.has(key)) map.set(key, {
         label: key !== 'sin-fecha'
           ? new Date(key + 'T12:00:00').toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
