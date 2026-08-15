@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Camera, Upload, X, Trash2, Edit3, Download,
   CheckCircle, AlertCircle, ChevronLeft, ChevronRight,
-  Save, Tag, FolderOpen, Calendar, LayoutGrid, Clock,
+  Save, Tag, Calendar, LayoutGrid, Clock,
   SplitSquareHorizontal, ZoomIn, ZoomOut,
 } from 'lucide-react';
 import recordsFetch from '../../../../../utils/recordsFetch';
@@ -56,11 +56,6 @@ const FILTER_OPTIONS = [
   { value: 'diagnostic', label: 'Diagnóstico' }, { value: 'progress', label: 'Progreso' },
   { value: 'general', label: 'General' },
 ];
-const FACE_ZONES = [
-  'Frente', 'Zona T', 'Mejillas', 'Nariz', 'Mentón', 'Cuello',
-  'Contorno de ojos', 'Labios', 'Pómulos', 'Cuerpo completo', 'Otra',
-];
-
 // ─── Photo card ───────────────────────────────────────────────────────────────
 // Separates image click zone from action bar — eliminates hover-overlay propagation issues.
 
@@ -102,9 +97,10 @@ function PhotoCard({ photo, viewMode, compareLeft, compareRight, onOpen, onEdit,
             {isA ? 'A' : 'B'}
           </div>
         )}
-        {photo.session_label && (
+        {(photo.session_label || photo.face_zone) && (
           <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 px-2 py-1">
-            <p className="text-white text-[10px] truncate">{photo.session_label}</p>
+            {photo.session_label && <p className="text-white text-[10px] truncate">{photo.session_label}</p>}
+            {photo.face_zone && <p className="text-white/80 text-[9px] truncate italic">{photo.face_zone}</p>}
           </div>
         )}
       </div>
@@ -192,6 +188,8 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
 
   // Timeline
   const [timelineIndex, setTimelineIndex] = useState(0);
+  const [timelineMultiSelect, setTimelineMultiSelect] = useState(false);
+  const [timelineSelected, setTimelineSelected] = useState<Set<number>>(new Set());
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -200,22 +198,35 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
     [photos, filterType],
   );
 
-  const consultationGroups = useMemo(() => {
+  const dateGroups = useMemo(() => {
     const map = new Map<string, { label: string; photos: ClinicalPhoto[] }>();
     for (const p of filteredPhotos) {
-      const key = p.consultation_id ? `c_${p.consultation_id}` : 'general';
-      if (!map.has(key)) {
-        map.set(key, {
-          label: p.consultation_id
-            ? `Consulta ${p.consultation_date ? new Date(p.consultation_date).toLocaleDateString('es-CL') : `#${p.consultation_id}`}`
-            : 'Fotos generales',
-          photos: [],
-        });
-      }
+      const key = (p.taken_at || p.created_at)?.slice(0, 10) ?? 'sin-fecha';
+      if (!map.has(key)) map.set(key, {
+        label: key !== 'sin-fecha'
+          ? new Date(key + 'T12:00:00').toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+          : 'Sin fecha registrada',
+        photos: [],
+      });
       map.get(key)!.photos.push(p);
     }
-    return [...map.entries()].sort(([a], [b]) => a === 'general' ? 1 : b === 'general' ? -1 : 0);
+    return [...map.entries()].sort(([a], [b]) => b.localeCompare(a));
   }, [filteredPhotos]);
+
+  const allDateGroups = useMemo(() => {
+    const map = new Map<string, { label: string; photos: ClinicalPhoto[] }>();
+    for (const p of photos) {
+      const key = (p.taken_at || p.created_at)?.slice(0, 10) ?? 'sin-fecha';
+      if (!map.has(key)) map.set(key, {
+        label: key !== 'sin-fecha'
+          ? new Date(key + 'T12:00:00').toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+          : 'Sin fecha registrada',
+        photos: [],
+      });
+      map.get(key)!.photos.push(p);
+    }
+    return [...map.entries()].sort(([a], [b]) => b.localeCompare(a));
+  }, [photos]);
 
   const timelinePhotos = useMemo(
     () => [...photos].sort((a, b) =>
@@ -545,14 +556,14 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
             </div>
           ) : (
             <div className="space-y-5">
-              {consultationGroups.map(([key, group]) => {
+              {dateGroups.map(([key, group]) => {
                 const isCollapsed = collapsedGroups.has(key);
                 return (
                   <div key={key}>
                     <button type="button" onClick={() => toggleGroup(key)}
                       className="flex items-center gap-2 w-full mb-3 text-left">
-                      {key === 'general' ? <FolderOpen className="w-4 h-4 text-gray-400" /> : <Calendar className="w-4 h-4 text-[#b8944d]" />}
-                      <span className={`text-sm font-semibold ${key === 'general' ? 'text-gray-500' : 'text-gray-700'}`}>{group.label}</span>
+                      <Calendar className="w-4 h-4 text-[#b8944d]" />
+                      <span className="text-sm font-semibold text-gray-700">{group.label}</span>
                       <span className="text-xs text-gray-400">({group.photos.length})</span>
                       <ChevronRight className={`w-3.5 h-3.5 text-gray-300 ml-auto transition-transform ${isCollapsed ? '' : 'rotate-90'}`} />
                       <div className="flex-1 h-px bg-gray-100 ml-1" />
@@ -596,13 +607,64 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
       ════════════════════════════════════════════════════════════ */}
       {viewMode === 'timeline' && (
         <div className="space-y-4">
+          {!loading && timelinePhotos.length > 0 && (
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-gray-500">
+                {timelineMultiSelect && timelineSelected.size > 0
+                  ? `${timelineSelected.size} foto(s) seleccionada(s)`
+                  : `${timelinePhotos.length} foto(s) en total`}
+              </span>
+              <button type="button"
+                onClick={() => { setTimelineMultiSelect(m => !m); setTimelineSelected(new Set()); }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  timelineMultiSelect ? 'bg-[#deb887] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}>
+                <CheckCircle className="w-3.5 h-3.5" />
+                {timelineMultiSelect ? 'Cancelar selección' : 'Selección múltiple'}
+              </button>
+            </div>
+          )}
           {loading || timelinePhotos.length === 0 ? (
             <div className="text-center py-16 text-gray-400">
               {loading ? 'Cargando…' : 'No hay fotos para mostrar en la línea de tiempo'}
             </div>
+          ) : timelineMultiSelect ? (
+            <div className="space-y-4">
+              {allDateGroups.map(([dateKey, group]) => (
+                <div key={dateKey}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Calendar className="w-3.5 h-3.5 text-[#b8944d]" />
+                    <span className="text-xs font-semibold text-gray-700">{group.label}</span>
+                    <span className="text-xs text-gray-400">({group.photos.length})</span>
+                  </div>
+                  <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
+                    {group.photos.map(photo => {
+                      const isSel = timelineSelected.has(photo.id);
+                      return (
+                        <button key={photo.id} type="button"
+                          onClick={() => setTimelineSelected(prev => { const n = new Set(prev); n.has(photo.id) ? n.delete(photo.id) : n.add(photo.id); return n; })}
+                          className={`relative aspect-square rounded-lg overflow-hidden border-2 transition-all ${
+                            isSel ? 'border-[#deb887] ring-2 ring-[#deb887]/40' : 'border-transparent hover:border-gray-300'
+                          }`}>
+                          <img src={photo.r2_url} alt="" className="w-full h-full object-cover" loading="lazy" />
+                          {isSel && (
+                            <div className="absolute top-1 right-1 w-5 h-5 bg-[#deb887] rounded-full flex items-center justify-center">
+                              <CheckCircle className="w-3.5 h-3.5 text-white" />
+                            </div>
+                          )}
+                          <span className={`absolute top-1 left-1 px-1 py-0.5 rounded text-[8px] font-semibold leading-tight ${TYPE_BADGE[photo.photo_type]}`}>
+                            {TYPE_LABELS[photo.photo_type].slice(0, 3)}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : (
             <>
-              {/* Carrusel principal */}
+              {/* Carrusel principal */
               <div className="relative bg-gray-900 rounded-xl overflow-hidden" style={{ height: 420 }}>
                 <AnimatePresence mode="wait">
                   <motion.img key={timelinePhotos[timelineIndex]?.id} src={timelinePhotos[timelineIndex]?.r2_url}
@@ -749,35 +811,33 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
             ) : photos.length === 0 ? (
               <p className="text-gray-400 text-sm text-center py-8">Sin fotos disponibles</p>
             ) : (
-              (Object.entries(TYPE_LABELS) as [ClinicalPhoto['photo_type'], string][])
-                .filter(([type]) => photos.some(p => p.photo_type === type))
-                .map(([type, label]) => (
-                  <div key={type}>
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className={`w-2 h-2 rounded-full ${TYPE_DOT[type]}`} />
-                      <span className="text-xs font-medium text-gray-600">{label} ({photos.filter(p => p.photo_type === type).length})</span>
-                    </div>
-                    <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
-                      {photos.filter(p => p.photo_type === type).map(photo => {
-                        const isA = compareLeft?.id === photo.id;
-                        const isB = compareRight?.id === photo.id;
-                        return (
-                          <button key={photo.id} type="button" onClick={() => handleCompareSelect(photo)}
-                            className={`aspect-square rounded-lg overflow-hidden border-2 relative transition-all ${
-                              isA ? 'border-blue-500 ring-2 ring-blue-300' : isB ? 'border-green-500 ring-2 ring-green-300' : 'border-transparent hover:border-gray-300 hover:scale-105'
-                            }`}>
-                            <img src={photo.r2_url} alt="" className="w-full h-full object-cover" loading="lazy" />
-                            {(isA || isB) && (
-                              <div className={`absolute inset-0 flex items-center justify-center text-white font-bold text-lg ${isA ? 'bg-blue-500/40' : 'bg-green-500/40'}`}>
-                                {isA ? 'A' : 'B'}
-                              </div>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
+              allDateGroups.map(([dateKey, group]) => (
+                <div key={dateKey}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Calendar className="w-3.5 h-3.5 text-[#b8944d]" />
+                    <span className="text-xs font-medium text-gray-600">{group.label} ({group.photos.length})</span>
                   </div>
-                ))
+                  <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
+                    {group.photos.map(photo => {
+                      const isA = compareLeft?.id === photo.id;
+                      const isB = compareRight?.id === photo.id;
+                      return (
+                        <button key={photo.id} type="button" onClick={() => handleCompareSelect(photo)}
+                          className={`aspect-square rounded-lg overflow-hidden border-2 relative transition-all ${
+                            isA ? 'border-blue-500 ring-2 ring-blue-300' : isB ? 'border-green-500 ring-2 ring-green-300' : 'border-transparent hover:border-gray-300 hover:scale-105'
+                          }`}>
+                          <img src={photo.r2_url} alt="" className="w-full h-full object-cover" loading="lazy" />
+                          {(isA || isB) && (
+                            <div className={`absolute inset-0 flex items-center justify-center text-white font-bold text-lg ${isA ? 'bg-blue-500/40' : 'bg-green-500/40'}`}>
+                              {isA ? 'A' : 'B'}
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))
             )}
           </div>
         </div>
@@ -858,12 +918,9 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Zona</label>
-                <select value={editingPhoto.face_zone || ''} onChange={e => setEditingPhoto(p => p ? { ...p, face_zone: e.target.value } : p)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
-                  <option value="">Sin especificar</option>
-                  {FACE_ZONES.map(z => <option key={z} value={z}>{z}</option>)}
-                </select>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Descripción / Zona</label>
+                <input value={editingPhoto.face_zone || ''} onChange={e => setEditingPhoto(p => p ? { ...p, face_zone: e.target.value } : p)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="Ej: dorso nasal, frente, mejillas…" />
               </div>
 
               <div>

@@ -2430,17 +2430,17 @@ export default async function handler(req, res) {
         const lim = Math.min(parseInt(limit, 10) || 24, 100);
         const off = Math.max(parseInt(offset, 10) || 0, 0);
         try {
-          const [countRes, dataRes] = await Promise.all([
-            pool.query('SELECT COUNT(*)::int AS total FROM clinical_photos WHERE record_id = $1', [record_id]),
-            pool.query(
-              `SELECT id, r2_key, photo_type, face_zone, body_zone, session_label, notes, taken_at, created_at
-               FROM clinical_photos WHERE record_id = $1
-               ORDER BY taken_at DESC NULLS LAST, created_at DESC
-               LIMIT $2 OFFSET $3`,
-              [record_id, lim, off]
-            ),
-          ]);
-          const total = countRes.rows[0].total;
+          const countRes = await pool.query(
+            'SELECT COUNT(*)::int AS total FROM clinical_photos WHERE record_id = $1', [record_id]
+          );
+          const total = parseInt(countRes.rows[0].total, 10) || 0;
+          const dataRes = await pool.query(
+            `SELECT id, r2_key, photo_type, face_zone, body_zone, session_label, notes, taken_at, created_at
+             FROM clinical_photos WHERE record_id = $1
+             ORDER BY taken_at DESC NULLS LAST, created_at DESC
+             LIMIT $2 OFFSET $3`,
+            [record_id, lim, off]
+          );
           const photos = await Promise.all(dataRes.rows.map(async (p) => {
             try { return { ...p, r2_url: await generateReadUrl(p.r2_key) }; }
             catch { return { ...p, r2_url: null }; }
