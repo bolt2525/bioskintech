@@ -190,6 +190,7 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
   const [timelineIndex, setTimelineIndex] = useState(0);
   const [timelineMultiSelect, setTimelineMultiSelect] = useState(false);
   const [timelineSelected, setTimelineSelected] = useState<Set<number>>(new Set());
+  const [timelineFilter, setTimelineFilter] = useState<Set<number>>(new Set());
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -228,12 +229,12 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
     return [...map.entries()].sort(([a], [b]) => b.localeCompare(a));
   }, [photos]);
 
-  const timelinePhotos = useMemo(
-    () => [...photos].sort((a, b) =>
+  const timelinePhotos = useMemo(() => {
+    const sorted = [...photos].sort((a, b) =>
       new Date(a.taken_at || a.created_at).getTime() - new Date(b.taken_at || b.created_at).getTime(),
-    ),
-    [photos],
-  );
+    );
+    return timelineFilter.size > 0 ? sorted.filter(p => timelineFilter.has(p.id)) : sorted;
+  }, [photos, timelineFilter]);
 
   // ── Effects ────────────────────────────────────────────────────────────────
 
@@ -608,21 +609,47 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
       ════════════════════════════════════════════════════════════ */}
       {viewMode === 'timeline' && (
         <div className="space-y-4">
-          {!loading && timelinePhotos.length > 0 && (
-            <div className="flex items-center justify-between">
+          {!loading && photos.length > 0 && (
+            <div className="flex items-center justify-between gap-2">
               <span className="text-sm text-gray-500">
                 {timelineMultiSelect && timelineSelected.size > 0
                   ? `${timelineSelected.size} foto(s) seleccionada(s)`
-                  : `${timelinePhotos.length} foto(s) en total`}
+                  : timelineFilter.size > 0
+                    ? `Mostrando ${timelinePhotos.length} de ${photos.length}`
+                    : `${timelinePhotos.length} foto(s) en total`}
               </span>
-              <button type="button"
-                onClick={() => { setTimelineMultiSelect(m => !m); setTimelineSelected(new Set()); }}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                  timelineMultiSelect ? 'bg-[#deb887] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}>
-                <CheckCircle className="w-3.5 h-3.5" />
-                {timelineMultiSelect ? 'Cancelar selección' : 'Selección múltiple'}
-              </button>
+              <div className="flex items-center gap-2">
+                {timelineFilter.size > 0 && !timelineMultiSelect && (
+                  <button type="button" onClick={() => { setTimelineFilter(new Set()); setTimelineIndex(0); }}
+                    className="text-xs text-gray-400 hover:text-gray-600 underline">
+                    Ver todas
+                  </button>
+                )}
+                {timelineMultiSelect && timelineSelected.size > 0 && (
+                  <button type="button"
+                    onClick={() => { setTimelineFilter(new Set(timelineSelected)); setTimelineMultiSelect(false); setTimelineSelected(new Set()); setTimelineIndex(0); }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-green-500 text-white hover:bg-green-600 transition-colors">
+                    <CheckCircle className="w-3.5 h-3.5" />
+                    Listo
+                  </button>
+                )}
+                <button type="button"
+                  onClick={() => {
+                    if (!timelineMultiSelect) {
+                      setTimelineMultiSelect(true);
+                      setTimelineSelected(new Set(timelineFilter));
+                    } else {
+                      setTimelineMultiSelect(false);
+                      setTimelineSelected(new Set());
+                    }
+                  }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                    timelineMultiSelect ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}>
+                  <CheckCircle className="w-3.5 h-3.5" />
+                  {timelineMultiSelect ? 'Cancelar' : 'Selección múltiple'}
+                </button>
+              </div>
             </div>
           )}
           {loading || timelinePhotos.length === 0 ? (
