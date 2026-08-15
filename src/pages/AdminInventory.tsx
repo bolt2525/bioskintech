@@ -198,9 +198,7 @@ export default function AdminInventory() {
   const categories = useMemo(() => {
     const DEFAULT_CATS = ['Consumibles', 'Equipamiento', 'Inyectable', 'Venta'];
     const fromItems = Array.from(new Set(items.map(i => i.category).filter(Boolean)));
-    // ponytail: use DEFAULT_CATS as base when clinic has no custom settings configured
-    const base = settingsCategories.length > 0 ? settingsCategories : DEFAULT_CATS;
-    return Array.from(new Set([...base, ...fromItems])).sort();
+    return Array.from(new Set([...DEFAULT_CATS, ...settingsCategories, ...fromItems])).sort();
   }, [items, settingsCategories]);
 
   const suggestedSku = useMemo(() => {
