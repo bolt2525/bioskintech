@@ -310,7 +310,7 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
 
   // ── Upload ─────────────────────────────────────────────────────────────────
 
-  // ponytail: resize solo si supera 3.2 MB → base64 < 4.5 MB Vercel limit
+  // ponytail: >5 MB → DIM 2048 + q 0.85 (dimensión reduce más sin perder calidad); 3.2-5 MB → DIM 2560 + q 0.88; ambos cap en q=0.65 por límite Vercel 4.5 MB
   const compressImage = (file: File): Promise<{ base64: string; type: string }> =>
     new Promise((resolve, reject) => {
       const MAX = 3.2 * 1024 * 1024;
@@ -319,12 +319,13 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
         r.onload = () => resolve({ base64: (r.result as string).split(',')[1], type: file.type || 'image/jpeg' });
         r.onerror = reject; r.readAsDataURL(file); return;
       }
+      const isLarge = file.size > 5 * 1024 * 1024;
       const img = new Image();
       const url = URL.createObjectURL(file);
       img.onload = () => {
         URL.revokeObjectURL(url);
         const canvas = document.createElement('canvas');
-        const DIM = 2560;
+        const DIM = isLarge ? 2048 : 2560;
         let { width, height } = img;
         if (width > DIM || height > DIM) {
           if (width > height) { height = Math.round(height * DIM / width); width = DIM; }
@@ -332,12 +333,12 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
         }
         canvas.width = width; canvas.height = height;
         canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
-        let q = 0.92;
+        let q = isLarge ? 0.85 : 0.88;
         const go = () => {
           const d = canvas.toDataURL('image/jpeg', q);
           const b = d.split(',')[1];
           if (b.length * 0.75 < MAX || q <= 0.65) resolve({ base64: b, type: 'image/jpeg' });
-          else { q -= 0.08; go(); }
+          else { q -= 0.07; go(); }
         };
         go();
       };
@@ -664,7 +665,7 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
             </div>
           ) : (
             <>
-              {/* Carrusel principal */
+              {/* Carrusel principal */}
               <div className="relative bg-gray-900 rounded-xl overflow-hidden" style={{ height: 420 }}>
                 <AnimatePresence mode="wait">
                   <motion.img key={timelinePhotos[timelineIndex]?.id} src={timelinePhotos[timelineIndex]?.r2_url}
