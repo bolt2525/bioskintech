@@ -1544,8 +1544,8 @@ export default function AdminMasterDashboard() {
     if (!u.is_demo || !u.demo_expires_at) return;
     const msLeft = new Date(u.demo_expires_at).getTime() - Date.now();
     if (msLeft <= 0) {
-      notificationItems.push({ key: `demo_exp_${u.id}`, type: 'demo_expired', label: u.username, detail: `Demo expirada · ${u.clinic_name || '—'}` });
-    } else if (msLeft <= 3 * 86400000) {
+      notificationItems.push({ key: `demo_exp_${u.id}`, type: 'demo_expired', label: u.username, detail: `Cuenta demo expirada · ${u.clinic_name || '—'}` });
+    } else if (msLeft <= 86400000) {
       notificationItems.push({ key: `demo_urg_${u.id}`, type: 'demo_urgent', label: u.username, detail: `${formatTimeLeft(msLeft)} · ${u.clinic_name || '—'}` });
     }
   });
@@ -1921,7 +1921,7 @@ export default function AdminMasterDashboard() {
                                 <div>
                                   <span className="font-medium text-gray-900 text-sm">{u.username}</span>
                                   {demoExp && (
-                                    <p className={`text-[10px] mt-0.5 font-medium ${demoExpired ? 'text-red-500' : demoMsLeft !== null && demoMsLeft <= 3 * 86400000 ? 'text-amber-500' : 'text-amber-600'}`}>
+                                    <p className={`text-[10px] mt-0.5 font-medium ${demoExpired ? 'text-red-500' : demoMsLeft !== null && demoMsLeft <= 86400000 ? 'text-amber-500' : 'text-amber-600'}`}>
                                       ⏱ {demoExpired ? 'Vencido' : formatTimeLeft(demoMsLeft!)}
                                     </p>
                                   )}
@@ -2291,7 +2291,7 @@ export default function AdminMasterDashboard() {
                       return (
                         <div key={u.id}>
                           <div className="px-5 py-3 flex items-center gap-3">
-                            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isExpired ? 'bg-red-500' : msLeft !== null && msLeft <= 3 * 86400000 ? 'bg-amber-400 animate-pulse' : 'bg-amber-400'}`} />
+                            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isExpired ? 'bg-red-500' : msLeft !== null && msLeft <= 86400000 ? 'bg-amber-400 animate-pulse' : 'bg-amber-400'}`} />
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-medium text-gray-800">{u.username}</p>
                               <p className="text-xs text-gray-400">{u.clinic_name}</p>
@@ -3350,7 +3350,7 @@ export default function AdminMasterDashboard() {
                         <div key={u.id} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs ${expired ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'}`}>
                           <UserCheck className="w-3.5 h-3.5 text-gray-400 shrink-0" />
                           <span className="font-mono font-medium flex-1">{u.username}</span>
-                          <span className={`text-[10px] ${expired ? 'text-red-500' : daysLeft !== null && daysLeft <= 3 ? 'text-amber-500' : 'text-gray-400'}`}>
+                          <span className={`text-[10px] ${expired ? 'text-red-500' : daysLeft !== null && daysLeft <= 1 ? 'text-amber-500' : 'text-gray-400'}`}>
                             {exp ? (expired ? 'Vencido' : `${daysLeft}d`) : 'Sin exp.'}
                           </span>
                           <button
