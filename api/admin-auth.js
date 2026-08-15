@@ -30,6 +30,18 @@ const SESSION_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 horas
 const LOCK_ATTEMPTS     = 5;                    // intentos antes de bloquear
 const LOCK_MS           = 15 * 60 * 1000;       // 15 minutos de bloqueo
 
+// Defaults para nuevas clínicas — usados en creación y en getClinicSettings lazy-init
+const DEFAULT_TREATMENTS = [
+  'Consulta + Escáner Facial','Botox / Toxina Botulínica','Relleno de Labios',
+  'Relleno de Ojeras','Relleno de Pómulos','Limpieza Facial Profunda',
+  'Peeling Químico','Mesoterapia Facial','Láser CO2 Fraccionado',
+  'Radiofrecuencia','Hidratación Profunda','Depilación Láser',
+  'Tratamiento Anti-Acné','Carboxiterapia','Otro'
+];
+const DEFAULT_FINANZAS = { currency: 'USD', currency_symbol: '$', tax_percent: 15, invoice_prefix: 'INV', payment_methods: ['Efectivo','Transferencia','Tarjeta de crédito','Tarjeta de débito'], invoice_notes: '' };
+const DEFAULT_INVENTARIO = { expiry_alert_days: 30, low_stock_alert: true, require_batch: true, categories: ['Inyectable','Consumibles','Venta','Toxinas','Rellenos','Skincare','Equipos','Medicamentos','Otros'] };
+const DEFAULT_NOTIFICACIONES = { appointment_confirmation: true, appointment_reminder: true, low_stock_notification: false, whatsapp_enabled: false, reminder_hours_before: 24 };
+
 // Lista de features reconocidas — debe coincidir con src/constants/features.ts
 const ALL_FEATURES = [
   'calendar', 'block_schedule', 'appointment',
@@ -1470,13 +1482,17 @@ async function registerClinic(body) {
     await sql`INSERT INTO clinic_features (clinic_id, feature, enabled) VALUES (${clinicId}, ${f}, true) ON CONFLICT (clinic_id, feature) DO NOTHING`;
   }
 
-  // Guardar settings iniciales con establishment_type
+  // Guardar settings iniciales completos (todos los módulos con defaults)
   const initialGeneral = JSON.stringify({
     name: clinic_name.trim(), city: clinic_city || '', tagline: '',
     establishment_type: clinic_establishment_type || '',
     logo_url: '', phone: clinic_phone || '', address: clinic_address || '', tax_id: clinic_ruc || '',
   });
-  await sql`INSERT INTO clinic_settings (clinic_id, general) VALUES (${clinicId}, ${initialGeneral}::jsonb) ON CONFLICT (clinic_id) DO UPDATE SET general = ${initialGeneral}::jsonb`;
+  const initialEmail = JSON.stringify({ staff_email: clinicContactEmail || '', from_name: clinic_name.trim(), signature: `El equipo de ${clinic_name.trim()}`, whatsapp_number: '' });
+  const initialAgenda = JSON.stringify({ start_hour: '08:00', end_hour: '19:00', slot_minutes: 60, calendar_prefix: clinic_name.trim() });
+  await sql`INSERT INTO clinic_settings (clinic_id, general, treatments, email, agenda, finanzas, inventario, notificaciones)
+    VALUES (${clinicId}, ${initialGeneral}::jsonb, ${JSON.stringify(DEFAULT_TREATMENTS)}::jsonb, ${initialEmail}::jsonb, ${initialAgenda}::jsonb, ${JSON.stringify(DEFAULT_FINANZAS)}::jsonb, ${JSON.stringify(DEFAULT_INVENTARIO)}::jsonb, ${JSON.stringify(DEFAULT_NOTIFICACIONES)}::jsonb)
+    ON CONFLICT (clinic_id) DO UPDATE SET general = ${initialGeneral}::jsonb`;
 
   // Marcar código como usado
   if (codeRow) {
@@ -2353,16 +2369,6 @@ export default async function handler(req, res) {
     }
 
     // ── Configuración por clínica ─────────────────────────────────────────
-    const DEFAULT_TREATMENTS = [
-      'Consulta + Escáner Facial','Botox / Toxina Botulínica','Relleno de Labios',
-      'Relleno de Ojeras','Relleno de Pómulos','Limpieza Facial Profunda',
-      'Peeling Químico','Mesoterapia Facial','Láser CO2 Fraccionado',
-      'Radiofrecuencia','Hidratación Profunda','Depilación Láser',
-      'Tratamiento Anti-Acné','Carboxiterapia','Otro'
-    ];
-    const DEFAULT_FINANZAS    = { currency: 'USD', currency_symbol: '$', tax_percent: 15, invoice_prefix: 'INV', payment_methods: ['Efectivo','Transferencia','Tarjeta de crédito','Tarjeta de débito'], invoice_notes: '' };
-    const DEFAULT_INVENTARIO  = { expiry_alert_days: 30, low_stock_alert: true, require_batch: true, categories: ['Inyectable','Consumibles','Venta','Toxinas','Rellenos','Skincare','Equipos','Medicamentos','Otros'] };
-    const DEFAULT_NOTIFICACIONES = { appointment_confirmation: true, appointment_reminder: true, low_stock_notification: false, whatsapp_enabled: false, reminder_hours_before: 24 };
 
     if (action === 'getClinicSettings') {
       const clinicId = req.query.clinicId || req.body?.clinicId;
@@ -2385,9 +2391,15 @@ export default async function handler(req, res) {
           inventario:       DEFAULT_INVENTARIO,
           notificaciones:   DEFAULT_NOTIFICACIONES,
         };
-        await sql`INSERT INTO clinic_settings (clinic_id, general, treatments, email, agenda)
-          VALUES (${clinicId}, ${JSON.stringify(defaults.general)}, ${JSON.stringify(defaults.treatments)}, ${JSON.stringify(defaults.email)}, ${JSON.stringify(defaults.agenda)})
+        await sql`INSERT INTO clinic_settings (clinic_id, general, treatments, email, agenda, finanzas, inventario, notificaciones)
+          VALUES (${clinicId}, ${JSON.stringify(defaults.general)}, ${JSON.stringify(defaults.treatments)}, ${JSON.stringify(defaults.email)}, ${JSON.stringify(defaults.agenda)}, ${JSON.stringify(DEFAULT_FINANZAS)}, ${JSON.stringify(DEFAULT_INVENTARIO)}, ${JSON.stringify(DEFAULT_NOTIFICACIONES)})
           ON CONFLICT (clinic_id) DO NOTHING`;
+        // Backfill any nulls on existing rows (clinics created before these columns existed)
+        await sql`UPDATE clinic_settings SET
+          finanzas = COALESCE(finanzas, ${JSON.stringify(DEFAULT_FINANZAS)}::jsonb),
+          inventario = COALESCE(inventario, ${JSON.stringify(DEFAULT_INVENTARIO)}::jsonb),
+          notificaciones = COALESCE(notificaciones, ${JSON.stringify(DEFAULT_NOTIFICACIONES)}::jsonb)
+          WHERE clinic_id = ${clinicId}`;
         return res.status(200).json({ success: true, settings: defaults });
       }
       const s = r.rows[0];
