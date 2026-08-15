@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -453,7 +453,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
 
   // Signature size helpers — component scope, not inside handleSave
   const patientSigSize  = currentConsent?.signatures?.patient_sig_size  ?? 80;
-  const profSigSize     = currentConsent?.signatures?.professional_sig_size ?? 80;
+  const profSigSize     = currentConsent?.signatures?.professional_sig_size ?? 120;
 
   const handleSigSizeChange = async (field: 'patient_sig_size' | 'professional_sig_size', px: number) => {
     if (!currentConsent) return;
@@ -1263,11 +1263,8 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                     <p className="text-sm font-semibold text-amber-800">Tamaño de firma en impresión</p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <div className="flex justify-between mb-1">
-                          <span className="text-xs text-amber-700 font-medium">Firma del Paciente</span>
-                          <span className="text-xs text-amber-600 font-bold">{patientSigSize}px</span>
-                        </div>
-                        <input type="range" min={40} max={200} step={4} value={patientSigSize}
+                        <span className="text-xs text-amber-700 font-medium mb-1 block">Firma del Paciente</span>
+                        <input type="range" min={80} max={300} step={4} value={patientSigSize}
                           onChange={e => handleSigSizeChange('patient_sig_size', Number(e.target.value))}
                           className="w-full h-2 rounded-full accent-[#deb887] cursor-pointer"
                         />
@@ -1279,11 +1276,8 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                         )}
                       </div>
                       <div>
-                        <div className="flex justify-between mb-1">
-                          <span className="text-xs text-amber-700 font-medium">Firma del Profesional</span>
-                          <span className="text-xs text-amber-600 font-bold">{profSigSize}px</span>
-                        </div>
-                        <input type="range" min={40} max={200} step={4} value={profSigSize}
+                        <span className="text-xs text-amber-700 font-medium mb-1 block">Firma del Profesional</span>
+                        <input type="range" min={80} max={300} step={4} value={profSigSize}
                           onChange={e => handleSigSizeChange('professional_sig_size', Number(e.target.value))}
                           className="w-full h-2 rounded-full accent-[#deb887] cursor-pointer"
                         />
