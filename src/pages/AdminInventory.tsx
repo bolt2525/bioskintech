@@ -196,10 +196,11 @@ export default function AdminInventory() {
   }, [items, search, categoryFilter]);
 
   const categories = useMemo(() => {
-    // Merge categories from settings (curated list) with those already in use
+    const DEFAULT_CATS = ['Consumibles', 'Equipamiento', 'Inyectable', 'Venta'];
     const fromItems = Array.from(new Set(items.map(i => i.category).filter(Boolean)));
-    const merged = Array.from(new Set([...settingsCategories, ...fromItems]));
-    return merged.sort();
+    // ponytail: use DEFAULT_CATS as base when clinic has no custom settings configured
+    const base = settingsCategories.length > 0 ? settingsCategories : DEFAULT_CATS;
+    return Array.from(new Set([...base, ...fromItems])).sort();
   }, [items, settingsCategories]);
 
   const suggestedSku = useMemo(() => {
