@@ -579,7 +579,7 @@ export default async function handler(req, res) {
             // Create Batch
             const newBatch = await client.query(`
               INSERT INTO inventory_batches (item_id, clinic_id, batch_number, expiration_date, quantity_initial, quantity_current, cost_per_unit, status)
-              VALUES ($1, $2, $3, $4, $4, $5, $6, 'active')
+              VALUES ($1, $2, $3, $4, $5, $5, $6, 'active')
               RETURNING *
             `, [item_id, resolvedClinicId, batch_number, expiration_date, quantity, cost_per_unit]);
 
@@ -2425,27 +2425,20 @@ export default async function handler(req, res) {
       }
 
       case 'listPhotos': {
-        const { record_id, limit = '24', offset = '0' } = req.query;
+        const { record_id } = req.query;
         if (!record_id) return res.status(400).json({ error: 'record_id requerido' });
-        const lim = Math.min(parseInt(limit, 10) || 24, 100);
-        const off = Math.max(parseInt(offset, 10) || 0, 0);
         try {
-          const countRes = await pool.query(
-            'SELECT COUNT(*)::int AS total FROM clinical_photos WHERE record_id = $1', [record_id]
-          );
-          const total = parseInt(countRes.rows[0].total, 10) || 0;
-          const dataRes = await pool.query(
+          const result = await pool.query(
             `SELECT id, r2_key, photo_type, face_zone, body_zone, session_label, notes, taken_at, created_at
-             FROM clinical_photos WHERE record_id = $1
-             ORDER BY taken_at DESC NULLS LAST, created_at DESC
-             LIMIT $2 OFFSET $3`,
-            [record_id, lim, off]
+             FROM clinical_photos WHERE record_id = $1 ORDER BY taken_at DESC`,
+            [record_id]
           );
-          const photos = await Promise.all(dataRes.rows.map(async (p) => {
+          // Generar read URLs firmadas (1h) para cada foto
+          const photos = await Promise.all(result.rows.map(async (p) => {
             try { return { ...p, r2_url: await generateReadUrl(p.r2_key) }; }
             catch { return { ...p, r2_url: null }; }
           }));
-          return res.status(200).json({ photos, total, hasMore: off + lim < total });
+          return res.status(200).json(photos);
         } catch (err) {
           return res.status(500).json({ error: err.message });
         }
