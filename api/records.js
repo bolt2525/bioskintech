@@ -1955,6 +1955,7 @@ export default async function handler(req, res) {
           id: saveCid, 
           record_id: saveRid, 
           patient_id: savePid,
+          consultation_id: consId,
           status,
           created_by,
           procedure_type,
@@ -1980,27 +1981,28 @@ export default async function handler(req, res) {
           const updateQuery = `
             UPDATE consent_forms SET
               status = COALESCE($1, status),
+              consultation_id = COALESCE($2, consultation_id),
               updated_at = NOW(),
-              procedure_type = COALESCE($2, procedure_type),
-              zone = COALESCE($3, zone),
-              sessions = COALESCE($4, sessions),
-              objectives = COALESCE($5, objectives),
-              description = COALESCE($6, description),
-              risks = COALESCE($7, risks),
-              benefits = COALESCE($8, benefits),
-              alternatives = COALESCE($9, alternatives),
-              pre_care = COALESCE($10, pre_care),
-              post_care = COALESCE($11, post_care),
-              contraindications = COALESCE($12, contraindications),
-              critical_antecedents = COALESCE($13, critical_antecedents),
-              authorizations = COALESCE($14, authorizations),
-              declarations = COALESCE($15, declarations),
-              signatures = COALESCE($16, signatures),
-              attachments = COALESCE($17, attachments)
-            WHERE id = $18 RETURNING *
+              procedure_type = COALESCE($3, procedure_type),
+              zone = COALESCE($4, zone),
+              sessions = COALESCE($5, sessions),
+              objectives = COALESCE($6, objectives),
+              description = COALESCE($7, description),
+              risks = COALESCE($8, risks),
+              benefits = COALESCE($9, benefits),
+              alternatives = COALESCE($10, alternatives),
+              pre_care = COALESCE($11, pre_care),
+              post_care = COALESCE($12, post_care),
+              contraindications = COALESCE($13, contraindications),
+              critical_antecedents = COALESCE($14, critical_antecedents),
+              authorizations = COALESCE($15, authorizations),
+              declarations = COALESCE($16, declarations),
+              signatures = COALESCE($17, signatures),
+              attachments = COALESCE($18, attachments)
+            WHERE id = $19 RETURNING *
           `;
           const updated = await pool.query(updateQuery, [
-            status, procedure_type, zone, sessions, 
+            status, consId, procedure_type, zone, sessions, 
             JSON.stringify(objectives), description, JSON.stringify(risks), JSON.stringify(benefits), JSON.stringify(alternatives),
             JSON.stringify(pre_care), JSON.stringify(post_care), JSON.stringify(contraindications),
             JSON.stringify(critical_antecedents), JSON.stringify(authorizations), JSON.stringify(declarations),
@@ -2012,23 +2014,23 @@ export default async function handler(req, res) {
           // Create
           const insertQuery = `
             INSERT INTO consent_forms (
-              record_id, patient_id, clinic_id, status, created_by,
+              record_id, patient_id, clinic_id, consultation_id, status, created_by,
               procedure_type, zone, sessions,
               objectives, description, risks, benefits, alternatives,
               pre_care, post_care, contraindications,
               critical_antecedents, authorizations, declarations,
               signatures, attachments
             ) VALUES (
-              $1, $2, $3, $4, $5,
-              $6, $7, $8,
-              $9, $10, $11, $12, $13,
-              $14, $15, $16,
-              $17, $18, $19,
-              $20, $21
+              $1, $2, $3, $4, $5, $6,
+              $7, $8, $9,
+              $10, $11, $12, $13, $14,
+              $15, $16, $17,
+              $18, $19, $20,
+              $21, $22
             ) RETURNING *
           `;
           const created = await pool.query(insertQuery, [
-            saveRid, savePid, effectiveClinicId, status || 'draft', created_by,
+            saveRid, savePid, effectiveClinicId, consId, status || 'draft', created_by,
             procedure_type, zone, sessions,
             JSON.stringify(objectives || []), description || '', JSON.stringify(risks || []), JSON.stringify(benefits || []), JSON.stringify(alternatives || []),
             JSON.stringify(pre_care || []), JSON.stringify(post_care || []), JSON.stringify(contraindications || []),
