@@ -106,6 +106,7 @@ export type DrawingTool =
   | 'freehand-brush'   // mantener+arrastrar para pintar
   | 'freehand-poly'    // clic por vértice, doble-clic para cerrar
   | 'straight-line'    // drag A→B: línea recta sobre superficie
+  | 'shape-arrow'      // drag A→B: flecha con cabeza en B
   | 'shape-circle'     // clic+arrastrar para definir radio
   | 'shape-rect'       // clic+arrastrar para definir tamaño
   | 'ha-fan'           // Abanico: clic centro + drag longitud
@@ -786,7 +787,7 @@ const ThreeEngine: React.FC<{
       }
 
       // ── Modo freehand brush ────────────────────────────────────────────────
-      if (tool === 'freehand-brush' || tool === 'straight-line' || tool === 'ha-fan' || tool === 'ha-fern') {
+      if (tool === 'freehand-brush' || tool === 'straight-line' || tool === 'shape-arrow' || tool === 'ha-fan' || tool === 'ha-fern') {
         if (!faceMeshRef.current || !cameraRef.current) return;
         const rect = renderer.domElement.getBoundingClientRect();
         mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
@@ -986,7 +987,7 @@ const ThreeEngine: React.FC<{
           const dx = e.clientX - brushLastScreenPos.x;
           const dy = e.clientY - brushLastScreenPos.y;
           const moved = Math.sqrt(dx * dx + dy * dy) >= BRUSH_SAMPLE_PX;
-          const isSnap = tool === 'straight-line' || tool === 'ha-fan' || tool === 'ha-grid' || tool === 'ha-fern';
+          const isSnap = tool === 'straight-line' || tool === 'shape-arrow' || tool === 'ha-fan' || tool === 'ha-grid' || tool === 'ha-fern';
           if (moved || isSnap) {
             if (isSnap) {
               if (brushPoints.length === 1) brushPoints.push(hits[0].point.clone());
@@ -1012,6 +1013,18 @@ const ThreeEngine: React.FC<{
               } else if (tool === 'straight-line') {
                 // Línea recta proyectada a la superficie
                 brushPreviewGroupRef.current.add(buildSurfaceTube(surfaceLine(ptA, ptB), col, 0.55, th, false));
+              } else if (tool === 'shape-arrow') {
+                // Flecha: línea + cabeza de flecha
+                brushPreviewGroupRef.current.add(buildSurfaceTube(surfaceLine(ptA, ptB), col, 0.55, th, false));
+                const dir = ptB.clone().sub(ptA).normalize();
+                const len = ptA.distanceTo(ptB);
+                const arrowLen = Math.max(0.05, len * 0.25);
+                let perp = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize();
+                if (perp.lengthSq() < 0.01) perp = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 0, 1)).normalize();
+                const tL = ptB.clone().addScaledVector(dir, -arrowLen).addScaledVector(perp, arrowLen * 0.5);
+                const tR = ptB.clone().addScaledVector(dir, -arrowLen).addScaledVector(perp, -arrowLen * 0.5);
+                brushPreviewGroupRef.current.add(buildSurfaceTube(surfaceLine(ptB, tL, 6), col, 0.55, th, false));
+                brushPreviewGroupRef.current.add(buildSurfaceTube(surfaceLine(ptB, tR, 6), col, 0.55, th, false));
               } else if (tool === 'ha-fan') {
                 // Ghost completo del abanico
                 const dir = ptB.clone().sub(ptA).normalize();
@@ -1108,8 +1121,7 @@ const ThreeEngine: React.FC<{
                 .addScaledVector(shapeAnchor.tangent, Math.cos(a) * r)
                 .addScaledVector(bitangent, Math.sin(a) * r);
               const origin = wp.clone().add(shapeAnchor.normal.clone().multiplyScalar(2));
-              rc.set(origin, dir.clone().negate().add(shapeAnchor.normal.clone().negate()));
-              rc.set(origin, new THREE.Vector3(0, 0, -1));
+              rc.set(origin, shapeAnchor.normal.clone().negate());
               const hits2 = rc.intersectObject(faceMeshRef.current!, true);
               previewPts.push(hits2.length > 0 ? hits2[0].point.clone() : wp);
             }
@@ -1124,7 +1136,7 @@ const ThreeEngine: React.FC<{
                 .addScaledVector(shapeAnchor.tangent, u)
                 .addScaledVector(bitangent, v);
               const origin = wp.clone().addScaledVector(shapeAnchor.normal, 2);
-              rc.set(origin, new THREE.Vector3(0, 0, -1));
+              rc.set(origin, shapeAnchor.normal.clone().negate());
               const hits2 = rc.intersectObject(faceMeshRef.current!, true);
               previewPts.push(hits2.length > 0 ? hits2[0].point.clone() : wp);
             }
@@ -1225,6 +1237,33 @@ const ThreeEngine: React.FC<{
             points: pts.map(p => ({ x: p.x, y: p.y, z: p.z })),
             color: col,
             thickness: th,
+          });
+        }
+        // Flecha (shape-arrow): línea + cabeza en B, agrupadas
+        else if (tool === 'shape-arrow' && ptA && ptB) {
+          const groupId = `arrow-${Date.now()}`;
+          const shaftPts = surfaceLine(ptA, ptB);
+          callbacks.current.onFreehandLineComplete?.({
+            id: `fh-${Date.now()}-s`,
+            points: shaftPts.map(p => ({ x: p.x, y: p.y, z: p.z })),
+            color: col, thickness: th, groupId,
+          });
+          const dir = ptB.clone().sub(ptA).normalize();
+          const len = ptA.distanceTo(ptB);
+          const arrowLen = Math.max(0.05, len * 0.25);
+          let perp = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize();
+          if (perp.lengthSq() < 0.01) perp = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 0, 1)).normalize();
+          const tL = ptB.clone().addScaledVector(dir, -arrowLen).addScaledVector(perp, arrowLen * 0.5);
+          const tR = ptB.clone().addScaledVector(dir, -arrowLen).addScaledVector(perp, -arrowLen * 0.5);
+          callbacks.current.onFreehandLineComplete?.({
+            id: `fh-${Date.now()}-l`,
+            points: surfaceLine(ptB, tL, 8).map(p => ({ x: p.x, y: p.y, z: p.z })),
+            color: col, thickness: th, groupId,
+          });
+          callbacks.current.onFreehandLineComplete?.({
+            id: `fh-${Date.now()}-r`,
+            points: surfaceLine(ptB, tR, 8).map(p => ({ x: p.x, y: p.y, z: p.z })),
+            color: col, thickness: th, groupId,
           });
         }
         // Abanico (fan): N líneas proyectadas a superficie
@@ -1388,7 +1427,7 @@ const ThreeEngine: React.FC<{
 
       // ── Modo brush/shape/straight/ha (excepto ha-grid que usa click): ignorar onClick ──
       if (tool === 'freehand-brush' || tool === 'shape-circle' || tool === 'shape-rect'
-        || tool === 'straight-line' || tool === 'ha-fan' || tool === 'ha-fern') return;
+        || tool === 'straight-line' || tool === 'shape-arrow' || tool === 'ha-fan' || tool === 'ha-fern') return;
 
       // ── ha-grid: flujo 3-step basado en clicks ─────────────────────────────
       if (tool === 'ha-grid') {
@@ -2171,7 +2210,7 @@ const ThreeEngine: React.FC<{
             .addScaledVector(tangent, Math.cos(a) * radius)
             .addScaledVector(bitangent, Math.sin(a) * radius);
           const origin = wp.clone().addScaledVector(normal, 2);
-          rc.set(origin, new THREE.Vector3(0, 0, -1));
+          rc.set(origin, normal.clone().negate());
           if (faceMesh) {
             const hits = rc.intersectObject(faceMesh, true);
             pts.push(hits.length > 0 ? hits[0].point.clone() : wp);
@@ -2190,7 +2229,7 @@ const ThreeEngine: React.FC<{
             .addScaledVector(tangent, u)
             .addScaledVector(bitangent, v);
           const origin = wp.clone().addScaledVector(normal, 2);
-          rc.set(origin, new THREE.Vector3(0, 0, -1));
+          rc.set(origin, normal.clone().negate());
           if (faceMesh) {
             const hits = rc.intersectObject(faceMesh, true);
             pts.push(hits.length > 0 ? hits[0].point.clone() : wp);

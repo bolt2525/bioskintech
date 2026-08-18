@@ -5,7 +5,7 @@ import {
   Droplets, Plus, Save, Trash2, Printer, Copy,
   ChevronDown, ChevronUp, Box, Calendar,
   FlaskConical, Crosshair, X, Check, Info, Images, Minus, Eye, EyeOff, Pencil, AlertCircle, Undo2,
-  PenLine, Pentagon, Circle, Square, Pipette, History
+  PenLine, Pentagon, Circle, Square, Pipette, History, MoveRight
 } from 'lucide-react';
 import CrossConsultHistoryModal, { type ConsultationRef } from '../CrossConsultHistoryModal';
 import { Tooltip } from '../../../../ui/Tooltip';
@@ -244,6 +244,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   const [showEditablePoints, setShowEditablePoints] = useState(true);
   const [showLines, setShowLines] = useState(true);
   const [showBoundaryLines, setShowBoundaryLines] = useState(true);
+  const [showFreehandLines, setShowFreehandLines] = useState(true);
   const [showVisibilityDropdown, setShowVisibilityDropdown] = useState(false);
   const [refJsonLoaded, setRefJsonLoaded] = useState(false);
   const [pointMode, setPointMode] = useState<'none' | 'add' | 'delete'>('none');
@@ -264,11 +265,13 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   const [unitsModalPlane, setUnitsModalPlane] = useState('');
   const [unitsModalTecnica, setUnitsModalTecnica] = useState(''); // HA: técnica puntual
   const [, setDialogPlane] = useState('');
-  // Undo stack: snapshots of {injectionPoints, markers3D, editablePoints} before each mutation
+  // Undo stack: snapshots of {injectionPoints, markers3D, editablePoints, freehandLines, surfaceShapes} before each mutation
   const [undoStack, setUndoStack] = useState<Array<{
     injectionPoints: InjectionPoint[];
     markers3D: Marker3D[];
     editablePoints: EditablePoint[];
+    freehandLines: FreehandLine[];
+    surfaceShapes: SurfaceShape[];
   }>>([]);
   // Clear-points confirmation state
   const [showClearConfirm, setShowClearConfirm] = useState(false);
@@ -278,6 +281,17 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   const unitOverlayRef = useRef<HTMLDivElement>(null);
   // Timer ref to push undo only once per drag gesture on point-move
   const moveUndoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Refs so pushUndo can snapshot current freehand/shape state without stale closures
+  const freehandLinesRef = useRef<FreehandLine[]>([]);
+  const surfaceShapesRef = useRef<SurfaceShape[]>([]);
+  const injectionPointsRef = useRef<InjectionPoint[]>([]);
+  const markers3DRef = useRef<Marker3D[]>([]);
+  const editablePointsRef = useRef<EditablePoint[]>([]);
+  useEffect(() => { freehandLinesRef.current = freehandLines; }, [freehandLines]);
+  useEffect(() => { surfaceShapesRef.current = surfaceShapes; }, [surfaceShapes]);
+  useEffect(() => { injectionPointsRef.current = injectionPoints; }, [injectionPoints]);
+  useEffect(() => { markers3DRef.current = markers3D; }, [markers3D]);
+  useEffect(() => { editablePointsRef.current = editablePoints; }, [editablePoints]);
   // True while the form holds an unsaved duplicate (shows pending card in sidebar)
   const [isPendingDuplicate, setIsPendingDuplicate] = useState(false);
 
@@ -296,7 +310,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   const [surfaceShapes, setSurfaceShapes] = useState<SurfaceShape[]>([]);
   const [activeTool, setActiveTool] = useState<DrawingTool>('none');
   const [brushColor, setBrushColor] = useState('#8b5cf6');
-  const [brushThickness, setBrushThickness] = useState(1.0);
+  const [brushThickness, setBrushThickness] = useState(1.5);
   // Elemento seleccionado en el visor 3D para editar propiedades
   const [selectedElement, setSelectedElement] = useState<{
     id: string;
@@ -575,8 +589,9 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   // ── HANDLERS: Dibujo libre y formas ─────────────────────────────────────
 
   const handleFreehandComplete = useCallback((line: FreehandLine) => {
+    pushUndo();
     setFreehandLines(prev => [...prev, line]);
-  }, []);
+  }, [pushUndo]);
 
   /** Actualiza los puntos de una línea existente (después de resize/move de handles) */
   const handleFreehandLineUpdated = useCallback((id: string, points: { x: number; y: number; z: number }[]) => {
@@ -584,8 +599,9 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   }, []);
 
   const handleShapeComplete = useCallback((shape: SurfaceShape) => {
+    pushUndo();
     setSurfaceShapes(prev => [...prev, shape]);
-  }, []);
+  }, [pushUndo]);
 
   const handleElementSelected = useCallback((id: string | null, type: string | null) => {
     if (!id) { setSelectedElement(null); return; }
@@ -614,6 +630,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
 
   const handleDeleteSelected = () => {
     if (!selectedElement) return;
+    pushUndo();
     if (selectedElement.type === 'reference-line')
       setReferenceLines(prev => prev.filter(l => l.id !== selectedElement.id));
     else if (selectedElement.type === 'freehand')
@@ -625,6 +642,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
 
   /** Eliminar todas las líneas de un mismo grupo (abanico, malla, helecho) */
   const handleDeleteGroup = (groupId: string) => {
+    pushUndo();
     setFreehandLines(prev => prev.filter(l => l.groupId !== groupId));
     setSelectedElement(null);
   };
@@ -772,11 +790,17 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     setBulkApplySelected(new Set());
   };
 
-  // ── pushUndo: snapshot before any point mutation ───────────────────────
-  const pushUndo = useCallback((pts: InjectionPoint[], m3d: Marker3D[], eps: EditablePoint[]) => {
+  // ── pushUndo: snapshot before any mutation — reads from refs for safety ───────────────────────
+  const pushUndo = useCallback((pts?: InjectionPoint[], m3d?: Marker3D[], eps?: EditablePoint[]) => {
     setUndoStack(prev => [
       ...prev.slice(-19),
-      { injectionPoints: pts, markers3D: m3d, editablePoints: eps },
+      {
+        injectionPoints: pts ?? injectionPointsRef.current,
+        markers3D: m3d ?? markers3DRef.current,
+        editablePoints: eps ?? editablePointsRef.current,
+        freehandLines: freehandLinesRef.current,
+        surfaceShapes: surfaceShapesRef.current,
+      },
     ]);
   }, []);
 
@@ -788,6 +812,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
       setInjectionPoints(last.injectionPoints);
       setMarkers3D(last.markers3D);
       setEditablePoints(last.editablePoints);
+      setFreehandLines(last.freehandLines);
+      setSurfaceShapes(last.surfaceShapes);
       setShowClearConfirm(false);
       return prev.slice(0, -1);
     });
@@ -1312,9 +1338,9 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
 <body>
   <div class="header">
     <div class="header-left">
-      <img src="${clinic.general.logo_url || (window.location.origin + '/images/logo/logo.png')}" alt="Logo" style="height:48px;width:auto;object-fit:contain;margin-bottom:6px;" onerror="this.onerror=null;this.src='${window.location.origin}/images/logo/logo.png'">
+      ${clinic.general.logo_url ? `<img src="${clinic.general.logo_url}" alt="Logo" style="height:48px;width:auto;object-fit:contain;margin-bottom:6px;" onerror="this.style.display='none'">` : ''}
       <h1>${clinicDisplayName}</h1>
-      <p>${clinic.general.establishment_type || clinic.general.tagline || 'Centro de Medicina Estética'}</p>
+      <p>${clinic.general.tagline || 'Centro de Medicina Estética'}</p>
       ${clinic.general.address ? `<p style="font-size:10px;color:#aaa;">${clinic.general.address}${clinic.general.city ? ', ' + clinic.general.city : ''}</p>` : ''}
     </div>
     <div class="header-right">
@@ -1448,7 +1474,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   </div>
 
   <div class="footer">
-    ${clinicDisplayName} — ${clinic.general.establishment_type || clinic.general.tagline || 'Centro de Medicina Estética'} · Documento generado el ${new Date().toLocaleString('es-EC')}
+    ${clinicDisplayName} — ${clinic.general.tagline || 'Centro de Medicina Estética'} · Documento generado el ${new Date().toLocaleString('es-EC')}
   </div>
   <script>window.onload = () => window.print()</script>
 </body>
@@ -2326,6 +2352,17 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                           Recta
                         </button>
                       </Tooltip>
+                      <Tooltip content="Flecha: arrastrar de A a B, punta en B">
+                        <button
+                          onClick={() => { setActiveTool(activeTool === 'shape-arrow' ? 'none' : 'shape-arrow'); setPointMode('none'); setShowHaShapesDropdown(false); setShowShapesDropdown(false); }}
+                          className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-all ${
+                            activeTool === 'shape-arrow' ? 'bg-violet-500/25 text-violet-300 border-violet-500/50' : 'bg-slate-700/50 text-slate-400 border-slate-600 hover:bg-slate-700'
+                          }`}
+                        >
+                          <MoveRight className="w-3 h-3" />
+                          Flecha
+                        </button>
+                      </Tooltip>
                       {/* Grupo Patrones HA */}
                       <div className="relative">
                         <button
@@ -2377,7 +2414,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                   <Tooltip content="Grosor de las líneas y formas">
                     <label className="flex items-center gap-1.5">
                       <span className="text-[10px] text-slate-400">Grosor</span>
-                      <input type="range" min={0.5} max={3} step={0.1} value={brushThickness} onChange={e => setBrushThickness(Number(e.target.value))} className="w-16 accent-violet-400" />
+                      <input type="range" min={1} max={4} step={0.1} value={brushThickness} onChange={e => setBrushThickness(Number(e.target.value))} className="w-16 accent-violet-400" />
                       <span className="text-[10px] text-slate-500 w-5">{brushThickness.toFixed(1)}x</span>
                     </label>
                   </Tooltip>
@@ -2389,6 +2426,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                         {activeTool === 'freehand-brush' && '● Pincel'}
                         {activeTool === 'freehand-poly' && '● Polilínea'}
                         {activeTool === 'straight-line' && '● Recta'}
+                        {activeTool === 'shape-arrow' && '● Flecha'}
                         {activeTool === 'shape-circle' && '● Círculo'}
                         {activeTool === 'shape-rect' && '● Rect.'}
                         {activeTool === 'ha-fan' && '● Abanico'}
@@ -2516,6 +2554,11 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                               <span>Puntos del trazado</span>
                               {showEditablePoints ? <Eye className="w-3.5 h-3.5 text-yellow-400" /> : <EyeOff className="w-3.5 h-3.5 text-slate-500" />}
                             </button>
+                            <button onMouseDown={() => { setShowFreehandLines(v => !v); }}
+                              className="w-full flex items-center justify-between px-3 py-2.5 text-xs text-slate-200 hover:bg-slate-700 transition-colors border-t border-slate-700">
+                              <span>Líneas de trazado</span>
+                              {showFreehandLines ? <Eye className="w-3.5 h-3.5 text-violet-400" /> : <EyeOff className="w-3.5 h-3.5 text-slate-500" />}
+                            </button>
                             {injectionPoints.some(ip => ip.units > 0) && (
                               <button onMouseDown={() => { setShowUnitNumbers(v => !v); }}
                                 className="w-full flex items-center justify-between px-3 py-2.5 text-xs text-slate-200 hover:bg-slate-700 transition-colors border-t border-slate-700">
@@ -2524,10 +2567,10 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                               </button>
                             )}
                             <button
-                              onMouseDown={() => { const newVal = !(showLines && showEditablePoints); setShowLines(newVal); setShowEditablePoints(newVal); }}
+                              onMouseDown={() => { const newVal = !(showLines && showEditablePoints && showFreehandLines); setShowLines(newVal); setShowEditablePoints(newVal); setShowFreehandLines(newVal); }}
                               className="w-full flex items-center justify-between px-3 py-2.5 text-xs text-slate-200 hover:bg-slate-700 transition-colors border-t border-slate-700">
-                              <span className="font-semibold">{showLines && showEditablePoints ? 'Ocultar todo' : 'Mostrar todo'}</span>
-                              {showLines && showEditablePoints ? <EyeOff className="w-3.5 h-3.5 text-slate-400" /> : <Eye className="w-3.5 h-3.5 text-emerald-400" />}
+                              <span className="font-semibold">{showLines && showEditablePoints && showFreehandLines ? 'Ocultar todo' : 'Mostrar todo'}</span>
+                              {showLines && showEditablePoints && showFreehandLines ? <EyeOff className="w-3.5 h-3.5 text-slate-400" /> : <Eye className="w-3.5 h-3.5 text-emerald-400" />}
                             </button>
                           </div>
                         )}
@@ -2563,8 +2606,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                         onProjectedPositions={handleProjectedPositions}
                         tercioBoundaries={showBoundaryLines ? tercioBoundaries : null}
                         selectedPointId={selectedPointId ?? hoveredPointId ?? undefined}
-                        freehandLines={freehandLines}
-                        surfaceShapes={surfaceShapes}
+                        freehandLines={showFreehandLines ? freehandLines : []}
+                        surfaceShapes={showFreehandLines ? surfaceShapes : []}
                         activeTool={activeTool}
                         selectedElementId={selectedElement?.id ?? null}
                         pendingBrushColor={brushColor}
@@ -3032,7 +3075,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                                             if (rowEpId) handleToggleBulkPoint(rowEpId);
                                           } else {
                                             if (rowEpId) setSelectedPointId(isSelected ? null : rowEpId);
-                                            setExpandedPointId(isExpanded ? null : expandKey);
+                                            if (current.product_type !== 'toxina') setExpandedPointId(isExpanded ? null : expandKey);
                                           }
                                         }}
                                       >
@@ -3051,6 +3094,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                                         <div className="flex items-center gap-1.5 flex-shrink-0">
                                           <span className="font-semibold text-gray-800">{p.units} {unitLabel}</span>
                                           {!bulkApplyMode && <span className="text-gray-400 w-9 text-right">{totalUsed > 0 ? Math.round((p.units / totalUsed) * 100) : 0}%</span>}
+                                          {!bulkApplyMode && current.product_type !== 'toxina' && <ChevronDown className={`w-3 h-3 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />}
                                           {!bulkApplyMode && rowEpId && (
                                             <button onClick={e => { e.stopPropagation(); handleEditablePointClicked(rowEpId); }} className="p-0.5 text-[#deb887] hover:text-[#b8944d] rounded" title="Editar">
                                               <Pencil className="w-3 h-3" />
@@ -3063,8 +3107,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                                           )}
                                         </div>
                                       </div>
-                                      {/* Inline editor */}
-                                      {isExpanded && !bulkApplyMode && (
+                                      {/* Inline editor — solo relleno; en toxina, técnica/aguja van en el producto y plano en el modal */}
+                                      {isExpanded && !bulkApplyMode && current.product_type !== 'toxina' && (
                                         <div className="px-3 pb-3 pt-1 bg-amber-50/50 space-y-2 border-t border-amber-100">
                                           <div className="grid grid-cols-2 gap-1.5">
                                             <div>
