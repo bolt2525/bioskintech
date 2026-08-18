@@ -1394,6 +1394,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
       ? `<div class="section"><div class="section-title">Técnica de Aplicación</div><div class="grid-2"><div class="field"><div class="label">Técnica</div><div class="value">${current.technique || '—'}</div></div><div class="field"><div class="label">Aguja / Cánula</div><div class="value">${current.needle_type || '—'}</div></div></div></div>`
       : '';
     const distributionSectionTitle = isRelleno && haVials.length > 0 ? 'Distribución por Vial' : 'Distribución del Vial';
+    const remClass = remaining < 0 ? 'danger' : '';
     const distributionSectionDesc = isRelleno && haVials.length > 0
       ? 'Resumen del producto inyectado por jeringa. <strong>Utilizado</strong>: suma de ml aplicados en sus puntos. <strong>Restante</strong>: sobrante de esa jeringa.'
       : `Resumen de la distribución del producto inyectado. <strong>Total Vial</strong>: cantidad disponible. <strong>Utilizadas</strong>: suma de unidades aplicadas. <strong>Restantes</strong>: sobrante en el vial. <strong>Puntos</strong>: sitios de inyección.`;
