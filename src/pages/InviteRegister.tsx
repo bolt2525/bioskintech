@@ -100,7 +100,8 @@ export default function InviteRegister() {
     if (!e || !e.includes('@')) return;
     setEmailChecking(true);
     try {
-      const r = await fetch(`${API}?action=checkEmail&email=${encodeURIComponent(e)}`);
+      // Pasar token para que el backend verifique solo dentro de esta clínica
+      const r = await fetch(`${API}?action=checkEmail&email=${encodeURIComponent(e)}&invite_token=${encodeURIComponent(token)}`);
       const d = await r.json();
       setEmailTaken(!d.available);
     } catch { /* ignore */ }

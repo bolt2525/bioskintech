@@ -681,6 +681,11 @@ async function loginUser(username, password, ip, ua, req) {
   `;
   if (!r.rows.length) return { success: false, error: 'Credenciales inválidas' };
 
+  // Email en múltiples clínicas — el username es único globalmente y no tiene este problema
+  if (r.rows.length > 1) {
+    return { success: false, error: 'Hay múltiples cuentas asociadas a este correo. Por favor ingresa con tu nombre de usuario.' };
+  }
+
   const u = r.rows[0];
   if (!u.is_active) return { success: false, error: 'Cuenta desactivada. Contacta al administrador.' };
 
@@ -1717,8 +1722,8 @@ async function useInviteLink(token, body) {
   const usernameFinal = (username?.trim().toLowerCase().replace(/[^a-z0-9_]/g, '') || emailNorm.split('@')[0].replace(/[^a-z0-9_]/g, '')).substring(0, 30);
   if (usernameFinal.length < 3) { await undoClaim(); return { error: 'El nombre de usuario debe tener al menos 3 caracteres' }; }
 
-  const existingEmailInv = await sql`SELECT id FROM clinic_users WHERE email = ${emailNorm}`;
-  if (existingEmailInv.rows.length) { await undoClaim(); return { error: 'Ya existe una cuenta con ese correo electrónico. Usa otro correo.', field: 'email' }; }
+  const existingEmailInv = await sql`SELECT id FROM clinic_users WHERE email = ${emailNorm} AND clinic_id = ${invite.clinic_id}`;
+  if (existingEmailInv.rows.length) { await undoClaim(); return { error: 'Ya existe un usuario con ese correo en esta clínica. Usa otro correo.', field: 'email' }; }
 
   const existingUsernameInv = await sql`SELECT id FROM clinic_users WHERE username = ${usernameFinal}`;
   if (existingUsernameInv.rows.length) { await undoClaim(); return { error: 'El nombre de usuario ya está en uso. Elige otro.', field: 'username' }; }
@@ -2013,6 +2018,16 @@ export default async function handler(req, res) {
     if (action === 'checkEmail') {
       const email = (req.query.email || req.body?.email || '').trim().toLowerCase();
       if (!email) return res.status(400).json({ error: 'email requerido' });
+      const inviteToken = (req.query.invite_token || '').trim();
+      if (inviteToken && /^[0-9a-f]{64}$/.test(inviteToken)) {
+        // Check per-clínica: mismo email puede existir en otra clínica
+        const inv = await sql`SELECT clinic_id FROM invite_links WHERE token = ${inviteToken} AND is_used = false AND expires_at > NOW()`;
+        if (inv.rows.length) {
+          const r = await sql`SELECT id FROM clinic_users WHERE email = ${email} AND clinic_id = ${inv.rows[0].clinic_id}`;
+          return res.status(200).json({ available: r.rows.length === 0 });
+        }
+      }
+      // Check global (registro nueva clínica)
       const r = await sql`SELECT id FROM clinic_users WHERE email = ${email} OR username = ${email}`;
       return res.status(200).json({ available: r.rows.length === 0 });
     }
