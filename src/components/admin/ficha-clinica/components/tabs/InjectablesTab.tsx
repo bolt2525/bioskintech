@@ -591,7 +591,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   const handleFreehandComplete = useCallback((line: FreehandLine) => {
     pushUndo();
     setFreehandLines(prev => [...prev, line]);
-  }, [pushUndo]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /** Actualiza los puntos de una línea existente (después de resize/move de handles) */
   const handleFreehandLineUpdated = useCallback((id: string, points: { x: number; y: number; z: number }[]) => {
@@ -601,7 +602,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   const handleShapeComplete = useCallback((shape: SurfaceShape) => {
     pushUndo();
     setSurfaceShapes(prev => [...prev, shape]);
-  }, [pushUndo]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleElementSelected = useCallback((id: string | null, type: string | null) => {
     if (!id) { setSelectedElement(null); return; }
