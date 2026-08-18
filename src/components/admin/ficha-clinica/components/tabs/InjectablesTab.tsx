@@ -281,17 +281,12 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   const unitOverlayRef = useRef<HTMLDivElement>(null);
   // Timer ref to push undo only once per drag gesture on point-move
   const moveUndoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Refs so pushUndo can snapshot current freehand/shape state without stale closures
+  // Refs so pushUndo can snapshot all drawing state without stale closures
   const freehandLinesRef = useRef<FreehandLine[]>([]);
   const surfaceShapesRef = useRef<SurfaceShape[]>([]);
   const injectionPointsRef = useRef<InjectionPoint[]>([]);
   const markers3DRef = useRef<Marker3D[]>([]);
   const editablePointsRef = useRef<EditablePoint[]>([]);
-  useEffect(() => { freehandLinesRef.current = freehandLines; }, [freehandLines]);
-  useEffect(() => { surfaceShapesRef.current = surfaceShapes; }, [surfaceShapes]);
-  useEffect(() => { injectionPointsRef.current = injectionPoints; }, [injectionPoints]);
-  useEffect(() => { markers3DRef.current = markers3D; }, [markers3D]);
-  useEffect(() => { editablePointsRef.current = editablePoints; }, [editablePoints]);
   // True while the form holds an unsaved duplicate (shows pending card in sidebar)
   const [isPendingDuplicate, setIsPendingDuplicate] = useState(false);
 
@@ -345,6 +340,12 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
 
   // Keep ref in sync with state to avoid closure issues in the RAF callback
   useEffect(() => { showUnitNumbersRef.current = showUnitNumbers; }, [showUnitNumbers]);
+  // Keep undo-snapshot refs in sync — placed here so all state vars above are already declared
+  useEffect(() => { freehandLinesRef.current = freehandLines; }, [freehandLines]);
+  useEffect(() => { surfaceShapesRef.current = surfaceShapes; }, [surfaceShapes]);
+  useEffect(() => { injectionPointsRef.current = injectionPoints; }, [injectionPoints]);
+  useEffect(() => { markers3DRef.current = markers3D; }, [markers3D]);
+  useEffect(() => { editablePointsRef.current = editablePoints; }, [editablePoints]);
 
   // Fetch extra catalog items managed by master admin (non-blocking)
   useEffect(() => {
