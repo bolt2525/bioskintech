@@ -1,4 +1,5 @@
 ﻿import React, { useState, useEffect, useCallback } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Activity, Database, Mail, Calendar, CheckCircle2, XCircle,
@@ -80,6 +81,8 @@ const ServiceCard = ({
 
 // ── Vista de usuario (suscripción + Gmail) ────────────────────────────────────
 function UserStatusView({ isClinicAdmin, user }: { isClinicAdmin: boolean; user: any }) {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [userStatus, setUserStatus] = useState<UserStatus | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(false);
   const [emailConn, setEmailConn] = useState<{ connected: boolean; email: string | null; connected_at: string | null; clinic_email: string | null; } | null>(null);
@@ -113,7 +116,7 @@ function UserStatusView({ isClinicAdmin, user }: { isClinicAdmin: boolean; user:
       const res = await fetch('/api/admin-auth?action=oauthStart', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken') || ''}` },
-        body: JSON.stringify({ clinicId: user.clinic_id, returnPath: '/admin' }),
+        body: JSON.stringify({ clinicId: user.clinic_id, returnPath: '/#/admin/system-status' }),
       });
       const d = await res.json();
       if (d.url) window.location.href = d.url;
@@ -136,7 +139,16 @@ function UserStatusView({ isClinicAdmin, user }: { isClinicAdmin: boolean; user:
     finally { setLoadingEmailConn(false); }
   };
 
-  useEffect(() => { fetchUserStatus(); fetchEmailConn(); }, [fetchUserStatus, fetchEmailConn]);
+  useEffect(() => {
+    fetchUserStatus();
+    fetchEmailConn();
+    // Detectar retorno exitoso del OAuth de Google
+    const params = new URLSearchParams(location.search);
+    if (params.get('oauth') === 'success') {
+      setEmailConnMsg('\u2713 Gmail conectado correctamente');
+      navigate(location.pathname, { replace: true }); // limpiar query param
+    }
+  }, [fetchUserStatus, fetchEmailConn]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const badge = (() => {
     if (!userStatus) return null;

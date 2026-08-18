@@ -2343,9 +2343,9 @@ export default async function handler(req, res) {
 
     // Estado de conexión del email de la clínica (clinic_admin propia clínica o master_admin)
     if (action === 'getEmailConnectionStatus') {
-      const clinicId = parseInt(req.query.clinicId || user.clinic_id || 0);
+      const clinicId = req.query.clinicId || user.clinic_id || null; // UUID — no parseInt
       if (!clinicId) return res.status(400).json({ error: 'clinicId requerido' });
-      if (user.role === 'clinic_admin' && clinicId !== user.clinic_id)
+      if (user.role === 'clinic_admin' && String(clinicId) !== String(user.clinic_id))
         return res.status(403).json({ error: 'Sin permiso' });
       if (!requireRole(user, 'master_admin', 'clinic_admin'))
         return res.status(403).json({ error: 'Sin permiso' });
@@ -2364,9 +2364,9 @@ export default async function handler(req, res) {
 
     // Reenviar enlace de conexión de email por correo
     if (action === 'sendEmailConnectionLink') {
-      const clinicId = parseInt(req.body?.clinicId || user.clinic_id || 0);
+      const clinicId = req.body?.clinicId || user.clinic_id || null; // UUID — no parseInt
       if (!clinicId) return res.status(400).json({ error: 'clinicId requerido' });
-      if (user.role === 'clinic_admin' && clinicId !== user.clinic_id)
+      if (user.role === 'clinic_admin' && String(clinicId) !== String(user.clinic_id))
         return res.status(403).json({ error: 'Solo puedes reenviar para tu propia clínica' });
       if (!requireRole(user, 'master_admin', 'clinic_admin'))
         return res.status(403).json({ error: 'Sin permiso' });
