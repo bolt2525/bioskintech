@@ -70,9 +70,27 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [user, setUser]                       = useState<AuthUser | null>(null);
-  const [features, setFeatures]               = useState<string[]>([]);
+  // Hydratar estado inmediatamente desde sessionStorage para evitar flash de "Clínica"
+  // checkAuth() sigue validando contra el servidor en background
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => !!sessionStorage.getItem(SS_TOKEN));
+  const [user, setUser] = useState<AuthUser | null>(() => {
+    try {
+      const stored = sessionStorage.getItem(SS_USER);
+      if (!stored) return null;
+      const parsed = JSON.parse(stored);
+      // features van dentro del objeto SS_USER (ver persistAuth)
+      const { features: _f, ...u } = parsed;
+      return u as AuthUser;
+    } catch { return null; }
+  });
+  const [features, setFeatures] = useState<string[]>(() => {
+    try {
+      const stored = sessionStorage.getItem(SS_USER);
+      if (!stored) return [];
+      const parsed = JSON.parse(stored);
+      return Array.isArray(parsed.features) ? parsed.features : [];
+    } catch { return []; }
+  });
   const [userModuleOverrides, setUserModuleOverrides] = useState<Array<{ feature: string; enabled: boolean }>>([]);
 
   const applySession = (u: AuthUser, feat: string[], overrides: Array<{ feature: string; enabled: boolean }> = []): void => {
