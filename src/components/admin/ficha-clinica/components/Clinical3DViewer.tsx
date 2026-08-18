@@ -313,6 +313,8 @@ interface Clinical3DViewerProps {
   /** Callback cuando el usuario mueve un endpoint de una línea freehand (resize) */
   onFreehandLineUpdated?: (id: string, points: { x: number; y: number; z: number }[]) => void;
   onGridStepChange?: (step: number) => void;
+  /** Callback cuando el cursor snap a un punto en una línea (imán); null = sin snap */
+  onSnapPointChange?: (pt: { x: number; y: number; z: number } | null) => void;
   /** Configuración de formas HA (abanico, malla, helecho) */
   haShapeConfig?: { fanLines: number; fanAngle: number; gridCells: number; fernBranches: number };
   /** IDs de puntos sin zona clasificada → se renderizan en celeste hasta completarlos */
@@ -1665,7 +1667,7 @@ const ThreeEngine: React.FC<{
       if (prevHoveredEpId) {
         editablePointsGroupRef.current?.children.forEach((g: THREE.Object3D) => {
           if (g.userData.editableId === prevHoveredEpId) {
-            const isHL = callbacks.current.highlightedPointIds?.includes(prevHoveredEpId);
+            const isHL = callbacks.current.highlightedPointIds?.includes(prevHoveredEpId!);
             g.scale.setScalar(selectedEditableId === prevHoveredEpId ? 1.8 : isHL ? 1.5 : 1.0);
           }
         });
@@ -1751,7 +1753,7 @@ const ThreeEngine: React.FC<{
               if (prevHoveredEpId) {
                 editablePointsGroupRef.current?.children.forEach((g: THREE.Object3D) => {
                   if (g.userData.editableId === prevHoveredEpId) {
-                    const isHL = callbacks.current.highlightedPointIds?.includes(prevHoveredEpId);
+                    const isHL = callbacks.current.highlightedPointIds?.includes(prevHoveredEpId!);
                     g.scale.setScalar(selectedEditableId === prevHoveredEpId ? 1.8 : isHL ? 1.5 : 1.0);
                   }
                 });

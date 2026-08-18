@@ -10,7 +10,7 @@ import {
 import CrossConsultHistoryModal, { type ConsultationRef } from '../CrossConsultHistoryModal';
 import { Tooltip } from '../../../../ui/Tooltip';
 import injectablesCatalog from '../../data/injectables.json';
-import Clinical3DViewer, { Marker3D, EditablePoint, FreehandLine, SurfaceShape, DrawingTool } from '../Clinical3DViewer';
+import Clinical3DViewer, { Marker3D, EditablePoint, FreehandLine, SurfaceShape, DrawingTool, MarkerType } from '../Clinical3DViewer';
 import type { ReferenceLine, LineType, ProjectedPosition } from '../Clinical3DViewer';
 import InjectableCaptureModal, { CaptureImage } from '../InjectableCaptureModal';
 import ReferenceLinePanel from '../ReferenceLinePanel';
@@ -43,6 +43,7 @@ interface Injectable {
   id?: number;
   record_id?: number;
   treatment_id?: number;
+  consultation_id?: number;
   date: string;
   product_type: 'toxina' | 'relleno';
   relleno_subtype?: string;
@@ -1158,6 +1159,10 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
       // Preservar todos los campos del punto existente (evita perder vial_id, needle, etc.)
       const newPoint: InjectionPoint = {
         ...(existing || {}),
+        type: (existing?.type ?? 'Puntual') as MarkerType,
+        pathologyId: existing?.pathologyId ?? '',
+        rotation: existing?.rotation ?? [],
+        normal: existing?.normal ?? { x: 0, y: 0, z: 0 },
         position: { x: pt.x, y: pt.y, z: pt.z },
         zone: effectiveLabel,
         tercio: effectiveTercio as 'superior' | 'medio' | 'inferior',
@@ -1754,7 +1759,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
             <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.97 }}
-              onClick={handleNew}
+              onClick={() => handleNew()}
               className={`flex items-center justify-center gap-2 w-full px-3 py-2.5 text-sm font-medium rounded-xl border transition-all ${
                 activeType === 'toxina'
                   ? 'text-[#b8944d] bg-[#deb887]/10 hover:bg-[#deb887]/20 border-[#deb887]/30'
@@ -1811,7 +1816,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={handleNew}
+                onClick={() => handleNew()}
                 className="p-2 hover:bg-gray-100 rounded-lg text-gray-600 border border-gray-200"
               >
                 <Plus className="w-5 h-5" />
