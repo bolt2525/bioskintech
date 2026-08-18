@@ -1802,15 +1802,7 @@ export default async function handler(req, res) {
         return res.status(200).json({ message: 'Consent forms table initialized' });
 
       case 'initProfessionalSignatures':
-        await pool.query(`
-          CREATE TABLE IF NOT EXISTS professional_signatures (
-            id SERIAL PRIMARY KEY,
-            professional_name VARCHAR(150),
-            signature_data TEXT,
-            created_at TIMESTAMP DEFAULT NOW(),
-            updated_at TIMESTAMP DEFAULT NOW()
-          );
-        `);
+        // La tabla se crea en initClinicalDatabase() — solo confirmar existencia
         return res.status(200).json({ message: 'Professional signatures table initialized' });
 
       case 'saveProfessionalSignature': {
@@ -2421,20 +2413,25 @@ export default async function handler(req, res) {
       }
 
       case 'listPhotos': {
-        const { record_id } = req.query;
+        const { record_id, limit: lim, offset: off } = req.query;
         if (!record_id) return res.status(400).json({ error: 'record_id requerido' });
+        const pageSize = Math.min(parseInt(lim) || 24, 50);
+        const offset   = Math.max(parseInt(off) || 0, 0);
         try {
+          const countRes = await pool.query(
+            `SELECT COUNT(*) FROM clinical_photos WHERE record_id = $1`, [record_id]
+          );
+          const total = parseInt(countRes.rows[0].count);
           const result = await pool.query(
             `SELECT id, r2_key, photo_type, face_zone, body_zone, session_label, notes, taken_at, created_at
-             FROM clinical_photos WHERE record_id = $1 ORDER BY taken_at DESC`,
-            [record_id]
+             FROM clinical_photos WHERE record_id = $1 ORDER BY taken_at DESC LIMIT $2 OFFSET $3`,
+            [record_id, pageSize, offset]
           );
-          // Generar read URLs firmadas (1h) para cada foto
           const photos = await Promise.all(result.rows.map(async (p) => {
             try { return { ...p, r2_url: await generateReadUrl(p.r2_key) }; }
             catch { return { ...p, r2_url: null }; }
           }));
-          return res.status(200).json(photos);
+          return res.status(200).json({ photos, total, hasMore: offset + pageSize < total });
         } catch (err) {
           return res.status(500).json({ error: err.message });
         }
