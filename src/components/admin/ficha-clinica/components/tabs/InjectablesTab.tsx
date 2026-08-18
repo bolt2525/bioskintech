@@ -464,9 +464,12 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   }, [message]);
 
   // Computed values
-  const totalVial = Number(current.product_type === 'toxina' ? current.units_used : current.volume_used) || 0;
-  const totalUsed = injectionPoints.reduce((sum, p) => sum + p.units, 0);
-  const remaining = totalVial - totalUsed;
+  // Para multi-vial relleno: sumar todos los viales; para toxina/relleno simple: usar el campo del formulario
+  const totalVial = haVials.length > 0
+    ? parseFloat(haVials.reduce((s, v) => s + v.volume_ml, 0).toFixed(2))
+    : Number(current.product_type === 'toxina' ? current.units_used : current.volume_used) || 0;
+  const totalUsed = parseFloat(injectionPoints.reduce((sum, p) => sum + p.units, 0).toFixed(2));
+  const remaining = parseFloat((totalVial - totalUsed).toFixed(2));
   const unitLabel = current.product_type === 'toxina' ? 'UI' : 'ml';
 
   // Validation: require product name + units before 3D marking
@@ -1263,19 +1266,65 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     }
 
     // Build tercio breakdown for print
+    const isRelleno = current.product_type === 'relleno';
     const tercioCSS: Record<string, { bg: string; border: string; text: string }> = {
       superior: { bg: '#e0f7fa', border: '#00bcd4', text: '#006064' },
       medio: { bg: '#ede7f6', border: '#7c4dff', text: '#4527a0' },
       inferior: { bg: '#fff8e1', border: '#ffc107', text: '#e65100' },
     };
     const tercioNames: Record<string, string> = { superior: 'Tercio Superior', medio: 'Tercio Medio', inferior: 'Tercio Inferior' };
+    // Build a vial color map for quick lookup
+    const vialColorMap = new Map(haVials.map(v => [v.id, { color: v.color, name: v.product_name || 'Vial' }]));
+
     let tercioBreakdownHtml = '';
     for (const t of ['superior', 'medio', 'inferior'] as const) {
       const pts = pointsByTercio[t];
       if (!pts || pts.length === 0) continue;
-      const totalT = pts.reduce((s, p) => s + p.units, 0);
+      const totalT = parseFloat(pts.reduce((s, p) => s + p.units, 0).toFixed(2));
       const css = tercioCSS[t];
-      tercioBreakdownHtml += `<div style="margin-bottom:12px;"><div style="background:${css.bg};border:1px solid ${css.border};border-radius:6px;padding:8px 12px;margin-bottom:4px;"><strong style="color:${css.text};font-size:12px;">${tercioNames[t]}</strong><span style="float:right;font-size:11px;color:${css.text};">${pts.length} punto(s) · ${totalT} ${unitLabel}</span></div><table style="width:100%;border-collapse:collapse;"><thead><tr style="background:#faf6f0;"><th style="font-size:10px;text-transform:uppercase;color:#b8944d;padding:4px 8px;text-align:left;border-bottom:1px solid #e8dcc8;">#</th><th style="font-size:10px;text-transform:uppercase;color:#b8944d;padding:4px 8px;text-align:left;border-bottom:1px solid #e8dcc8;">Zona Anatómica</th><th style="font-size:10px;text-transform:uppercase;color:#b8944d;padding:4px 8px;text-align:left;border-bottom:1px solid #e8dcc8;">Plano</th><th style="font-size:10px;text-transform:uppercase;color:#b8944d;padding:4px 8px;text-align:right;border-bottom:1px solid #e8dcc8;">${unitLabel} Aplicadas</th><th style="font-size:10px;text-transform:uppercase;color:#b8944d;padding:4px 8px;text-align:right;border-bottom:1px solid #e8dcc8;">% Dosis</th></tr></thead><tbody>${pts.map((p, i) => `<tr><td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;">${i + 1}</td><td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;">${p.label || '—'}</td><td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;color:#7c3aed;">${p.injection_plane || '—'}</td><td style="font-size:11px;padding:4px 8px;text-align:right;border-bottom:1px solid #f0f0f0;">${p.units}</td><td style="font-size:11px;padding:4px 8px;text-align:right;border-bottom:1px solid #f0f0f0;">${totalUsed > 0 ? Math.round((p.units / totalUsed) * 100) : 0}%</td></tr>`).join('')}</tbody></table></div>`;
+      // Headers: add Técnica + Cánula columns for relleno
+      const extraHeaders = isRelleno
+        ? `<th style="font-size:10px;text-transform:uppercase;color:#b8944d;padding:4px 8px;text-align:left;border-bottom:1px solid #e8dcc8;">Técnica</th><th style="font-size:10px;text-transform:uppercase;color:#b8944d;padding:4px 8px;text-align:left;border-bottom:1px solid #e8dcc8;">Cánula/Aguja</th>`
+        : '';
+      // For multi-vial relleno: add Vial column header
+      const vialHeader = (isRelleno && haVials.length > 0)
+        ? `<th style="font-size:10px;text-transform:uppercase;color:#b8944d;padding:4px 8px;text-align:left;border-bottom:1px solid #e8dcc8;">Vial</th>`
+        : '';
+      tercioBreakdownHtml += `<div style="margin-bottom:12px;">
+        <div style="background:${css.bg};border:1px solid ${css.border};border-radius:6px;padding:8px 12px;margin-bottom:4px;">
+          <strong style="color:${css.text};font-size:12px;">${tercioNames[t]}</strong>
+          <span style="float:right;font-size:11px;color:${css.text};">${pts.length} punto(s) · ${totalT} ${unitLabel}</span>
+        </div>
+        <table style="width:100%;border-collapse:collapse;">
+          <thead><tr style="background:#faf6f0;">
+            <th style="font-size:10px;text-transform:uppercase;color:#b8944d;padding:4px 8px;text-align:left;border-bottom:1px solid #e8dcc8;">#</th>
+            ${vialHeader}
+            <th style="font-size:10px;text-transform:uppercase;color:#b8944d;padding:4px 8px;text-align:left;border-bottom:1px solid #e8dcc8;">Zona Anatómica</th>
+            <th style="font-size:10px;text-transform:uppercase;color:#b8944d;padding:4px 8px;text-align:left;border-bottom:1px solid #e8dcc8;">Plano</th>
+            ${extraHeaders}
+            <th style="font-size:10px;text-transform:uppercase;color:#b8944d;padding:4px 8px;text-align:right;border-bottom:1px solid #e8dcc8;">${unitLabel} Aplicadas</th>
+            <th style="font-size:10px;text-transform:uppercase;color:#b8944d;padding:4px 8px;text-align:right;border-bottom:1px solid #e8dcc8;">% Dosis</th>
+          </tr></thead>
+          <tbody>${pts.map((p, i) => {
+            const vialInfo = p.vial_id ? vialColorMap.get(p.vial_id) : null;
+            const vialCell = (isRelleno && haVials.length > 0)
+              ? `<td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;">${vialInfo ? `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${vialInfo.color};margin-right:4px;"></span>${vialInfo.name}` : '—'}</td>`
+              : '';
+            const extraCells = isRelleno
+              ? `<td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;">${p.technique_at_point || '—'}</td><td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;">${p.needle_at_point || '—'}</td>`
+              : '';
+            return `<tr>
+              <td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;">${i + 1}</td>
+              ${vialCell}
+              <td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;">${p.label || '—'}</td>
+              <td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;color:#7c3aed;">${p.injection_plane || '—'}</td>
+              ${extraCells}
+              <td style="font-size:11px;padding:4px 8px;text-align:right;border-bottom:1px solid #f0f0f0;">${p.units}</td>
+              <td style="font-size:11px;padding:4px 8px;text-align:right;border-bottom:1px solid #f0f0f0;">${totalUsed > 0 ? Math.round((p.units / totalUsed) * 100) : 0}%</td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table>
+      </div>`;
     }
     // Legend for percentage
     if (tercioBreakdownHtml) {
@@ -1283,10 +1332,75 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
         <strong style="color:#4b5563;">Leyenda:</strong>
         <strong>% Dosis</strong> = porcentaje de unidades aplicadas en cada punto respecto al total de ${unitLabel} utilizadas (${totalUsed} ${unitLabel}).
         <strong>Zona Anatómica</strong> = área facial específica donde se realizó la inyección, clasificada por tercio facial.
+        ${isRelleno ? `<strong>Técnica / Cánula</strong> = registradas por punto de inyección.` : ''}
       </div>`;
     }
 
-    // Zone summary
+    // Build per-vial summary for multi-vial relleno print
+    let vialSummaryHtml = '';
+    if (isRelleno && haVials.length > 0) {
+      vialSummaryHtml = `<div style="margin-bottom:12px;"><table style="width:100%;border-collapse:collapse;">
+        <thead><tr style="background:#faf6f0;">
+          <th style="font-size:10px;text-transform:uppercase;color:#b8944d;padding:5px 8px;text-align:left;border-bottom:1px solid #e8dcc8;">Vial / Producto</th>
+          <th style="font-size:10px;text-transform:uppercase;color:#b8944d;padding:5px 8px;text-align:left;border-bottom:1px solid #e8dcc8;">Marca</th>
+          <th style="font-size:10px;text-transform:uppercase;color:#b8944d;padding:5px 8px;text-align:left;border-bottom:1px solid #e8dcc8;">Lote</th>
+          <th style="font-size:10px;text-transform:uppercase;color:#b8944d;padding:5px 8px;text-align:right;border-bottom:1px solid #e8dcc8;">Vol. Total</th>
+          <th style="font-size:10px;text-transform:uppercase;color:#b8944d;padding:5px 8px;text-align:right;border-bottom:1px solid #e8dcc8;">Utilizado</th>
+          <th style="font-size:10px;text-transform:uppercase;color:#b8944d;padding:5px 8px;text-align:right;border-bottom:1px solid #e8dcc8;">Restante</th>
+          <th style="font-size:10px;text-transform:uppercase;color:#b8944d;padding:5px 8px;text-align:right;border-bottom:1px solid #e8dcc8;">Puntos</th>
+        </tr></thead>
+        <tbody>${haVials.map(v => {
+          const vPts = injectionPoints.filter(p => p.vial_id === v.id);
+          const vUsed = parseFloat(vPts.reduce((s, p) => s + p.units, 0).toFixed(2));
+          const vRem = parseFloat((v.volume_ml - vUsed).toFixed(2));
+          return `<tr>
+            <td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${v.color};margin-right:5px;"></span>${v.product_name || '—'}</td>
+            <td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;">${v.brand || '—'}</td>
+            <td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;">${v.lot_number || '—'}</td>
+            <td style="font-size:11px;padding:4px 8px;text-align:right;border-bottom:1px solid #f0f0f0;">${v.volume_ml} ml</td>
+            <td style="font-size:11px;padding:4px 8px;text-align:right;border-bottom:1px solid #f0f0f0;color:#b8944d;">${vUsed} ml</td>
+            <td style="font-size:11px;padding:4px 8px;text-align:right;border-bottom:1px solid #f0f0f0;color:${vRem < 0 ? '#dc2626' : '#059669'};">${vRem} ml</td>
+            <td style="font-size:11px;padding:4px 8px;text-align:right;border-bottom:1px solid #f0f0f0;">${vPts.length}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table></div>`;
+    }
+
+    // Pre-compute product info block to avoid deeply nested template literals
+    let productInfoHtml = '';
+    if (isRelleno && haVials.length > 0) {
+      const vialRows = haVials.map(v => {
+        const expStr = v.expiration_date ? new Date(v.expiration_date + 'T12:00:00').toLocaleDateString('es-EC') : '—';
+        return `<tr><td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${v.color};margin-right:5px;"></span>${v.product_name || '—'}</td><td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;">${v.brand || '—'}</td><td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;">${v.lot_number || '—'}</td><td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;">${expStr}</td><td style="font-size:11px;padding:4px 8px;text-align:right;border-bottom:1px solid #f0f0f0;">${v.volume_ml} ml</td></tr>`;
+      }).join('');
+      const subTypeLabel = rellenoSubType === 'hidratacion' ? 'Hidratación' : rellenoSubType === 'bioestimulador' ? 'Bioestimuladores' : 'Relleno (Ácido Hialurónico)';
+      const dateStr = current.date ? new Date(current.date + 'T12:00:00').toLocaleDateString('es-EC') : '—';
+      productInfoHtml = `<p style="font-size:11px;color:#6b7280;margin-bottom:8px;">Sesión multi-vial — ${haVials.length} jeringa(s) registrada(s).</p><table style="width:100%;border-collapse:collapse;margin-bottom:8px;"><thead><tr style="background:#faf6f0;"><th style="font-size:10px;text-transform:uppercase;color:#b8944d;padding:5px 8px;text-align:left;border-bottom:1px solid #e8dcc8;">Producto</th><th style="font-size:10px;text-transform:uppercase;color:#b8944d;padding:5px 8px;text-align:left;border-bottom:1px solid #e8dcc8;">Marca</th><th style="font-size:10px;text-transform:uppercase;color:#b8944d;padding:5px 8px;text-align:left;border-bottom:1px solid #e8dcc8;">Lote</th><th style="font-size:10px;text-transform:uppercase;color:#b8944d;padding:5px 8px;text-align:left;border-bottom:1px solid #e8dcc8;">Vencimiento</th><th style="font-size:10px;text-transform:uppercase;color:#b8944d;padding:5px 8px;text-align:right;border-bottom:1px solid #e8dcc8;">Volumen</th></tr></thead><tbody>${vialRows}</tbody></table><div class="grid"><div class="field"><div class="label">Tipo</div><div class="value"><span class="type-badge type-relleno">${subTypeLabel}</span></div></div><div class="field"><div class="label">Fecha</div><div class="value">${dateStr}</div></div><div class="field"><div class="label">Vol. Total Sesión</div><div class="value">${totalVial} ml</div></div></div>`;
+    } else {
+      const typeBadge = current.product_type === 'toxina' ? 'type-toxina' : 'type-relleno';
+      const typeLabel = current.product_type === 'toxina' ? 'Toxina Botulínica' : (rellenoSubType === 'hidratacion' ? 'Hidratación' : rellenoSubType === 'bioestimulador' ? 'Bioestimuladores' : 'Relleno (Ácido Hialurónico)');
+      const volLabel = current.product_type === 'toxina' ? 'Unidades (UI)' : 'Volumen (ml)';
+      const volValue = current.product_type === 'toxina' ? (current.units_used || '—') : (current.volume_used || '—');
+      const expStr = current.expiration_date ? new Date(current.expiration_date + 'T12:00:00').toLocaleDateString('es-EC') : '—';
+      productInfoHtml = `<div class="grid"><div class="field"><div class="label">Tipo</div><div class="value"><span class="type-badge ${typeBadge}">${typeLabel}</span></div></div><div class="field"><div class="label">Producto</div><div class="value">${current.product_name || '—'}</div></div><div class="field"><div class="label">Marca</div><div class="value">${current.brand || '—'}</div></div></div><div class="grid"><div class="field"><div class="label">Lote</div><div class="value">${current.lot_number || '—'}</div></div><div class="field"><div class="label">Vencimiento</div><div class="value">${expStr}</div></div><div class="field"><div class="label">${volLabel}</div><div class="value">${volValue}</div></div></div>`;
+      if (current.product_type === 'toxina' && current.dilution_volume) {
+        const conc = (Number(current.units_used) / Number(current.dilution_volume)).toFixed(2);
+        productInfoHtml += `<div class="grid-2" style="margin-top:8px;"><div class="field"><div class="label">Dilución — Suero Fisiológico 0.9%</div><div class="value">${current.dilution_volume} ml</div></div><div class="field"><div class="label">Concentración Resultante</div><div class="value">${conc} UI/ml</div></div></div>`;
+      }
+    }
+
+    // Pre-compute técnica block (only for toxina)
+    const tecnicaHtml = current.product_type === 'toxina'
+      ? `<div class="section"><div class="section-title">Técnica de Aplicación</div><div class="grid-2"><div class="field"><div class="label">Técnica</div><div class="value">${current.technique || '—'}</div></div><div class="field"><div class="label">Aguja / Cánula</div><div class="value">${current.needle_type || '—'}</div></div></div></div>`
+      : '';
+    const distributionSectionTitle = isRelleno && haVials.length > 0 ? 'Distribución por Vial' : 'Distribución del Vial';
+    const distributionSectionDesc = isRelleno && haVials.length > 0
+      ? 'Resumen del producto inyectado por jeringa. <strong>Utilizado</strong>: suma de ml aplicados en sus puntos. <strong>Restante</strong>: sobrante de esa jeringa.'
+      : `Resumen de la distribución del producto inyectado. <strong>Total Vial</strong>: cantidad disponible. <strong>Utilizadas</strong>: suma de unidades aplicadas. <strong>Restantes</strong>: sobrante en el vial. <strong>Puntos</strong>: sitios de inyección.`;
+    const distributionBody = isRelleno && haVials.length > 0
+      ? vialSummaryHtml + `<div class="summary-bar" style="margin-top:8px;"><div class="summary-card"><div class="sc-label">Total Sesión</div><div class="sc-value">${totalVial} ml</div></div><div class="summary-card"><div class="sc-label">Utilizado</div><div class="sc-value">${totalUsed} ml</div></div><div class="summary-card ${remClass}"><div class="sc-label">Restante</div><div class="sc-value">${remaining} ml</div></div><div class="summary-card"><div class="sc-label">Puntos</div><div class="sc-value">${injectionPoints.length}</div></div></div>`
+      : `<div class="summary-bar"><div class="summary-card"><div class="sc-label">Total Vial</div><div class="sc-value">${totalVial} ${unitLabel}</div></div><div class="summary-card"><div class="sc-label">Utilizadas</div><div class="sc-value">${totalUsed} ${unitLabel}</div></div><div class="summary-card ${remClass}"><div class="sc-label">Restantes</div><div class="sc-value">${remaining} ${unitLabel}</div></div><div class="summary-card"><div class="sc-label">Puntos</div><div class="sc-value">${injectionPoints.length}</div></div></div>`;
+    const desgloseLegendExtra = isRelleno ? ' Las columnas Técnica y Cánula/Aguja corresponden a los valores registrados por punto.' : '';
     const zoneMap = new Map<string, { units: number; count: number }>();
     injectionPoints.forEach(p => {
       const existing = zoneMap.get(p.label) || { units: 0, count: 0 };
@@ -1364,74 +1478,19 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
 
   <div class="section">
     <div class="section-title">Información del Producto</div>
-    <div class="grid">
-      <div class="field">
-        <div class="label">Tipo</div>
-        <div class="value"><span class="type-badge ${current.product_type === 'toxina' ? 'type-toxina' : 'type-relleno'}">${current.product_type === 'toxina' ? 'Toxina Botulínica' : (rellenoSubType === 'hidratacion' ? 'Hidratación' : rellenoSubType === 'bioestimulador' ? 'Bioestimuladores' : 'Relleno (Ácido Hialurónico)')}</span></div>
-      </div>
-      <div class="field">
-        <div class="label">Producto</div>
-        <div class="value">${current.product_name || '—'}</div>
-      </div>
-      <div class="field">
-        <div class="label">Marca</div>
-        <div class="value">${current.brand || '—'}</div>
-      </div>
-    </div>
-    <div class="grid">
-      <div class="field">
-        <div class="label">Lote</div>
-        <div class="value">${current.lot_number || '—'}</div>
-      </div>
-      <div class="field">
-        <div class="label">Vencimiento</div>
-        <div class="value">${current.expiration_date ? new Date(current.expiration_date + 'T12:00:00').toLocaleDateString('es-EC') : '—'}</div>
-      </div>
-      <div class="field">
-        <div class="label">${current.product_type === 'toxina' ? 'Unidades (UI)' : 'Volumen (ml)'}</div>
-        <div class="value">${current.product_type === 'toxina' ? (current.units_used || '—') : (current.volume_used || '—')}</div>
-      </div>
-    </div>
-    ${current.product_type === 'toxina' && current.dilution_volume ? `<div class="grid-2" style="margin-top:8px;">
-      <div class="field">
-        <div class="label">Dilución — Suero Fisiológico 0.9%</div>
-        <div class="value">${current.dilution_volume} ml</div>
-      </div>
-      <div class="field">
-        <div class="label">Concentración Resultante</div>
-        <div class="value">${(Number(current.units_used) / Number(current.dilution_volume)).toFixed(2)} UI/ml</div>
-      </div>
-    </div>` : ''}
+    ${productInfoHtml}
   </div>
 
-  <div class="section">
-    <div class="section-title">Técnica de Aplicación</div>
-    <div class="grid-2">
-      <div class="field">
-        <div class="label">Técnica</div>
-        <div class="value">${current.technique || '—'}</div>
-      </div>
-      <div class="field">
-        <div class="label">Aguja / Cánula</div>
-        <div class="value">${current.needle_type || '—'}</div>
-      </div>
-    </div>
-  </div>
-
+  ${tecnicaHtml}
   ${injectionPoints.length > 0 ? `
   <div class="section">
-    <div class="section-title">Distribución del Vial</div>
-    <p style="font-size:11px;color:#6b7280;margin-bottom:8px;">Resumen de la distribución del producto inyectado. <strong>Total Vial</strong>: cantidad disponible. <strong>Utilizadas</strong>: suma de unidades aplicadas. <strong>Restantes</strong>: sobrante en el vial. <strong>Puntos</strong>: sitios de inyección.</p>
-    <div class="summary-bar">
-      <div class="summary-card"><div class="sc-label">Total Vial</div><div class="sc-value">${totalVial} ${unitLabel}</div></div>
-      <div class="summary-card"><div class="sc-label">Utilizadas</div><div class="sc-value">${totalUsed} ${unitLabel}</div></div>
-      <div class="summary-card ${remaining < 0 ? 'danger' : ''}"><div class="sc-label">Restantes</div><div class="sc-value">${remaining} ${unitLabel}</div></div>
-      <div class="summary-card"><div class="sc-label">Puntos</div><div class="sc-value">${injectionPoints.length}</div></div>
-    </div>
+    <div class="section-title">${distributionSectionTitle}</div>
+    <p style="font-size:11px;color:#6b7280;margin-bottom:8px;">${distributionSectionDesc}</p>
+    ${distributionBody}
   </div>
   <div class="section">
     <div class="section-title">Desglose por Tercio Facial</div>
-    <p style="font-size:11px;color:#6b7280;margin-bottom:8px;">Distribución detallada de los puntos de inyección clasificados por tercio facial (superior, medio e inferior). La columna <strong>% Dosis</strong> indica el porcentaje que representa cada punto respecto al total de ${unitLabel} aplicadas.</p>
+    <p style="font-size:11px;color:#6b7280;margin-bottom:8px;">Distribución detallada de los puntos de inyección clasificados por tercio facial (superior, medio e inferior). La columna <strong>% Dosis</strong> indica el porcentaje que representa cada punto respecto al total de ${unitLabel} aplicadas.${desgloseLegendExtra}</p>
     ${tercioBreakdownHtml}
     ${zoneSummaryHtml}
   </div>` : ''}
