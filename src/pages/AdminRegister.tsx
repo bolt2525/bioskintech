@@ -87,6 +87,10 @@ export default function AdminRegister() {
   const [clinicEmailTaken, setClinicEmailTaken] = useState(false);
   const [clinicEmailChecking, setClinicEmailChecking] = useState(false);
 
+  // Nombre de clínica — disponibilidad
+  const [clinicNameError, setClinicNameError]     = useState('');
+  const [clinicNameChecking, setClinicNameChecking] = useState(false);
+
   // Diálogo de confirmación antes de enviar
   const [showConfirm, setShowConfirm]       = useState(false);
 
@@ -232,6 +236,19 @@ export default function AdminRegister() {
     finally { setClinicEmailChecking(false); }
   };
 
+  const handleClinicNameBlur = async (val: string) => {
+    const name = val.trim();
+    if (!name || name.length < 2) return;
+    setClinicNameChecking(true);
+    setClinicNameError('');
+    try {
+      const r = await fetch(`${API}?action=checkClinicName&name=${encodeURIComponent(name)}`);
+      const d = await r.json();
+      if (!d.available) setClinicNameError('Ya existe una clínica registrada con ese nombre. Elige otro.');
+    } catch { /* ignore — backend valida al registrar */ }
+    finally { setClinicNameChecking(false); }
+  };
+
   // ── Enviar formulario de registro ─────────────────────────────────────────
 
   async function handleRegisterSubmit(e: React.FormEvent) {
@@ -297,6 +314,11 @@ export default function AdminRegister() {
       if (d.success) {
         handlePostRegister(d);
       } else {
+        // Resaltar el campo específico con conflicto
+        if (d.field === 'clinic_name') setClinicNameError(d.error || 'Nombre de clínica no disponible');
+        if (d.field === 'email') setEmailTaken(true);
+        if (d.field === 'clinic_email') setClinicEmailTaken(true);
+        if (d.field === 'username') setUsernameTaken(true);
         setError(d.error || 'Error al registrarse');
       }
     } catch { setError('Error de conexión'); }
@@ -521,8 +543,15 @@ export default function AdminRegister() {
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Nombre de la clínica *</label>
                   <div className="relative">
                     <Building2 className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-300 w-4 h-4" />
-                    <input required type="text" value={clinicName} onChange={e => setClinicName(e.target.value)} placeholder="Mi Clínica Estética" className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
+                    <input required type="text" value={clinicName}
+                      onChange={e => { setClinicName(e.target.value); setClinicNameError(''); }}
+                      onBlur={e => handleClinicNameBlur(e.target.value)}
+                      placeholder="Mi Clínica Estética"
+                      className={`w-full pl-10 pr-4 py-2.5 border rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all ${clinicNameError ? 'border-red-400 bg-red-50' : 'border-gray-200'}`} />
                   </div>
+                  {clinicNameChecking && <p className="text-xs text-gray-400 mt-1">Verificando disponibilidad...</p>}
+                  {clinicNameError && <p className="text-xs text-red-600 mt-1 flex items-center gap-1"><AlertTriangle className="w-3 h-3 flex-shrink-0" />{clinicNameError}</p>}
+                  {!clinicNameError && !clinicNameChecking && clinicName.trim().length >= 2 && <p className="text-xs text-emerald-600 mt-1">✓ Nombre disponible</p>}
                 </div>
 
                 {/* Tipo de establecimiento */}
@@ -794,7 +823,7 @@ export default function AdminRegister() {
                   </span>
                 </label>
 
-                <button type="submit" disabled={loading || usernameTaken || emailTaken || clinicEmailTaken || !acceptedTerms} className="w-full py-3 bg-[#deb887] text-white rounded-xl text-sm font-semibold hover:bg-[#c9a876] disabled:opacity-50 transition-colors shadow-md shadow-[#deb887]/30">
+                <button type="submit" disabled={loading || usernameTaken || emailTaken || clinicEmailTaken || !!clinicNameError || clinicNameChecking || !acceptedTerms} className="w-full py-3 bg-[#deb887] text-white rounded-xl text-sm font-semibold hover:bg-[#c9a876] disabled:opacity-50 transition-colors shadow-md shadow-[#deb887]/30">
                   {loading ? 'Guardando...' : 'Guardar y crear clínica →'}
                 </button>
 

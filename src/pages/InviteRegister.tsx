@@ -141,7 +141,12 @@ export default function InviteRegister() {
         }),
       });
       const d = await r.json();
-      if (!d.success) { setError(d.error || 'Error al registrarse'); return; }
+      if (!d.success) {
+        if (d.field === 'email') setEmailTaken(true);
+        if (d.field === 'username') setUCheck('taken');
+        setError(d.error || 'Error al registrarse');
+        return;
+      }
       localStorage.setItem('adminToken', d.sessionToken);
       await checkAuth();
       navigate('/admin', { replace: true });

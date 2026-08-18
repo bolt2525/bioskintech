@@ -1405,14 +1405,19 @@ async function registerClinic(body) {
 
   // Verificar email disponible (por email y username)
   const existingEmail = await sql`SELECT id FROM clinic_users WHERE email = ${emailNorm}`;
-  if (existingEmail.rows.length) return { error: 'Ya existe una cuenta con ese correo electrónico' };
+  if (existingEmail.rows.length) return { error: 'Ya existe una cuenta con ese correo electrónico', field: 'email' };
 
   const existingClinicEmail = await sql`SELECT id FROM clinics WHERE LOWER(email) = ${clinicContactEmail}`;
-  if (existingClinicEmail.rows.length) return { error: 'Ese correo electrónico ya está vinculado a otra clínica' };
+  if (existingClinicEmail.rows.length) return { error: 'Ese correo electrónico ya está vinculado a otra clínica', field: 'clinic_email' };
 
   // Verificar username disponible
   const existingUser = await sql`SELECT id FROM clinic_users WHERE username = ${usernameNorm}`;
-  if (existingUser.rows.length) return { error: 'El nombre de usuario ya está en uso. Elige otro.' };
+  if (existingUser.rows.length) return { error: 'El nombre de usuario ya está en uso. Elige otro.', field: 'username' };
+
+  // Verificar nombre de clínica disponible ANTES de consumir el código (evita invalidación prematura)
+  const slugToCheck = clinic_name.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-');
+  const existingClinicName = await sql`SELECT id FROM clinics WHERE LOWER(name) = LOWER(${clinic_name.trim()}) OR slug = ${slugToCheck}`;
+  if (existingClinicName.rows.length) return { error: 'Ya existe una clínica registrada con ese nombre. Por favor elige otro nombre para tu clínica.', field: 'clinic_name' };
 
   let codeRow = null;
   let planFeatures = ALL_FEATURES;
@@ -1457,8 +1462,8 @@ async function registerClinic(body) {
     clinicId = clinicR.rows[0].id;
   } catch (e) {
     if (e.constraint === 'clinics_email_lower_unique')
-      return { error: 'Ese correo electrónico ya está vinculado a otra clínica' };
-    if (e.code === '23505') return { error: 'Ya existe una clínica con ese nombre' };
+      return { error: 'Ese correo electrónico ya está vinculado a otra clínica', field: 'clinic_email' };
+    if (e.code === '23505') return { error: 'Ya existe una clínica con ese nombre. Por favor elige otro nombre.', field: 'clinic_name' };
     throw e;
   }
 
@@ -1712,8 +1717,11 @@ async function useInviteLink(token, body) {
   const usernameFinal = (username?.trim().toLowerCase().replace(/[^a-z0-9_]/g, '') || emailNorm.split('@')[0].replace(/[^a-z0-9_]/g, '')).substring(0, 30);
   if (usernameFinal.length < 3) { await undoClaim(); return { error: 'El nombre de usuario debe tener al menos 3 caracteres' }; }
 
-  const existing = await sql`SELECT id FROM clinic_users WHERE username = ${usernameFinal} OR email = ${emailNorm}`;
-  if (existing.rows.length) { await undoClaim(); return { error: 'Ya existe una cuenta con ese email o nombre de usuario' }; }
+  const existingEmailInv = await sql`SELECT id FROM clinic_users WHERE email = ${emailNorm}`;
+  if (existingEmailInv.rows.length) { await undoClaim(); return { error: 'Ya existe una cuenta con ese correo electrónico. Usa otro correo.', field: 'email' }; }
+
+  const existingUsernameInv = await sql`SELECT id FROM clinic_users WHERE username = ${usernameFinal}`;
+  if (existingUsernameInv.rows.length) { await undoClaim(); return { error: 'El nombre de usuario ya está en uso. Elige otro.', field: 'username' }; }
 
   const { hash, salt } = hashPassword(password);
   const fullName    = `${first_name.trim()} ${last_name.trim()}`;
@@ -2005,7 +2013,15 @@ export default async function handler(req, res) {
     if (action === 'checkEmail') {
       const email = (req.query.email || req.body?.email || '').trim().toLowerCase();
       if (!email) return res.status(400).json({ error: 'email requerido' });
-      const r = await sql`SELECT id FROM clinic_users WHERE username=${email}`;
+      const r = await sql`SELECT id FROM clinic_users WHERE email = ${email} OR username = ${email}`;
+      return res.status(200).json({ available: r.rows.length === 0 });
+    }
+
+    if (action === 'checkClinicName') {
+      const name = (req.query.name || '').trim();
+      if (!name || name.length < 2) return res.status(200).json({ available: true });
+      const slug = name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-');
+      const r = await sql`SELECT id FROM clinics WHERE LOWER(name) = LOWER(${name}) OR slug = ${slug}`;
       return res.status(200).json({ available: r.rows.length === 0 });
     }
 
