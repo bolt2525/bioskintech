@@ -18,6 +18,7 @@ const LINE = 'rgba(117,91,70,0.18)';
 export default function SkinExplorerPage() {
   const navigate = useNavigate();
   const canvasRef = useRef<SkinCanvasHandle>(null);
+  const sectionRef = useRef<HTMLElement>(null);
 
   const [selected, setSelected] = useState<Hotspot | null>(null);
   const [autoRotate, setAutoRotate] = useState(true);
@@ -36,7 +37,7 @@ export default function SkinExplorerPage() {
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(() => {});
+      sectionRef.current?.requestFullscreen().catch(() => {});
     } else {
       document.exitFullscreen().catch(() => {});
     }
@@ -384,7 +385,7 @@ export default function SkinExplorerPage() {
         </aside>
 
         {/* Visor 3D */}
-        <section className="flex-1 relative overflow-hidden">
+        <section ref={sectionRef} className="flex-1 relative overflow-hidden" style={{ background: '#f2e9dd' }}>
           <SkinCanvas
             ref={canvasRef}
             hotspots={SKIN_HOTSPOTS}
