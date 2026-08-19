@@ -2327,7 +2327,9 @@ export default async function handler(req, res) {
       const redirectUri = `${appBase}/api/calendar`;
       const { returnPath } = req.body || {};
       const state = Buffer.from(JSON.stringify({ clinicId, ts: Date.now(), returnPath: returnPath || '/admin/master' })).toString('base64url');
-      // URLSearchParams codifica correctamente sin double-encoding
+      // Obtener el correo registrado de la clínica para pre-seleccionarlo en Google
+      const clinicEmailRow = await sql`SELECT email FROM clinics WHERE id = ${clinicId}`;
+      const loginHint = clinicEmailRow.rows[0]?.email || '';
       const params = new URLSearchParams({
         response_type: 'code',
         client_id:     clientId,
@@ -2336,6 +2338,7 @@ export default async function handler(req, res) {
         access_type:   'offline',
         prompt:        'consent',
         state,
+        ...(loginHint ? { login_hint: loginHint } : {}),
       });
       const url = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
       return res.status(200).json({ success: true, url });
