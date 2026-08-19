@@ -135,6 +135,8 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
   const [agendaSlotMinutes, setAgendaSlotMinutes] = useState(60);
   const [agendaStartHour, setAgendaStartHour]     = useState('07:00');
   const [agendaEndHour, setAgendaEndHour]         = useState('20:00');
+  // Duration selected for this specific appointment (independent of display interval)
+  const [appointmentDuration, setAppointmentDuration] = useState(60);
 
   useEffect(() => {
     if (!user?.clinic_id) return;
@@ -151,14 +153,18 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
     ]).then(([settings, professionals, staffEmails]) => {
       if (settings.settings?.treatments?.length) setClinicTreatments(settings.settings.treatments);
       if (settings.settings?.email?.staff_members?.length) setExternalStaff(settings.settings.email.staff_members);
-      if (settings.settings?.agenda?.slot_minutes) setAgendaSlotMinutes(settings.settings.agenda.slot_minutes);
+      if (settings.settings?.agenda?.slot_minutes) {
+        setAgendaSlotMinutes(settings.settings.agenda.slot_minutes);
+        setAppointmentDuration(settings.settings.agenda.slot_minutes); // default duration = clinic default
+      }
       if (settings.settings?.agenda?.start_hour)   setAgendaStartHour(settings.settings.agenda.start_hour);
       if (settings.settings?.agenda?.end_hour)     setAgendaEndHour(settings.settings.agenda.end_hour);
       if (professionals.professionals) setClinicProfessionals(professionals.professionals);
       if (staffEmails.emails?.length)  { setPersonalEmails(staffEmails.emails); setSelectedPersonalEmails(staffEmails.emails); setNotifyPersonalStaff(true); }
     }).catch(() => {});
   }, [user?.clinic_id]);
-  const availableTimes = generateTimeSlots(agendaStartHour, agendaEndHour, agendaSlotMinutes);
+  // Display slots always every 30 min; occupancy check uses the selected appointment duration
+  const availableTimes = generateTimeSlots(agendaStartHour, agendaEndHour, 30);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   
@@ -226,13 +232,13 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
     try {
       const start = `${selectedDay}T${selectedHour}:00${TIMEZONE}`;
       const pad = (n: number) => n.toString().padStart(2, '0');
-      const endMs = new Date(`${selectedDay}T${selectedHour}:00`).getTime() + agendaSlotMinutes * 60 * 1000;
+      const endMs = new Date(`${selectedDay}T${selectedHour}:00`).getTime() + appointmentDuration * 60 * 1000;
       const endObj = new Date(endMs);
       const endDay = `${endObj.getFullYear()}-${pad(endObj.getMonth()+1)}-${pad(endObj.getDate())}`;
       const end = `${endDay}T${pad(endObj.getHours())}:${pad(endObj.getMinutes())}:00${TIMEZONE}`;
-      const durationLabel = agendaSlotMinutes >= 60
-        ? `${agendaSlotMinutes / 60}h`
-        : `${agendaSlotMinutes} min`;
+      const durationLabel = appointmentDuration >= 60
+        ? `${appointmentDuration / 60}h`
+        : `${appointmentDuration} min`;
 
       // Mensaje con notas del administrador
       const adminMessage = formData.adminNotes ? 
@@ -411,7 +417,27 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
 
       {step === 2 && (
         <>
-          <h4 className="text-lg font-semibold mb-5 text-[#0d5c6c] text-center">2. Selecciona la hora (2 horas de cita)</h4>
+          <h4 className="text-lg font-semibold mb-3 text-[#0d5c6c] text-center">2. Selecciona hora y duración</h4>
+
+          {/* Duration selector */}
+          <div className="flex items-center justify-center gap-2 mb-4 flex-wrap">
+            <span className="text-sm text-gray-500 mr-1">Duración:</span>
+            {([30, 60, 90, 120] as const).map(min => (
+              <button
+                key={min}
+                type="button"
+                onClick={() => setAppointmentDuration(min)}
+                className={`px-4 py-1.5 rounded-full text-sm font-semibold border-2 transition-all ${
+                  appointmentDuration === min
+                    ? 'bg-[#deb887] border-[#deb887] text-white shadow'
+                    : 'bg-white border-[#dde7eb] text-[#0d5c6c] hover:border-[#deb887]'
+                }`}
+              >
+                {min < 60 ? `${min} min` : min === 60 ? '1 h' : min === 90 ? '1:30 h' : '2 h'}
+              </button>
+            ))}
+          </div>
+
           <div className="mb-4 text-center text-sm text-gray-600">
             Fecha seleccionada: {selectedDay && (() => {
               const [year, month, day] = selectedDay.split('-').map(Number);
@@ -425,7 +451,7 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
               <div className="text-center col-span-full w-full">Cargando horarios...</div>
             ) : (
               availableTimes.map(h => {
-                const isOccupied = isHourOccupied(selectedDay, h, events, agendaSlotMinutes);
+                const isOccupied = isHourOccupied(selectedDay, h, events, appointmentDuration);
                 const isPast = isHourPast(selectedDay, h);
                 const isDisabled = isOccupied || isPast;
                 

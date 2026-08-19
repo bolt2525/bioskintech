@@ -117,6 +117,7 @@ export default function AdminDashboard() {
   const [newTreatment, setNewTreatment]     = useState('');
   const [personalEmails, setPersonalEmails] = useState<string[]>([]);
   const [newPersonalEmail, setNewPersonalEmail] = useState('');
+  const [agendaSettings, setAgendaSettings] = useState({ start_hour: '08:00', end_hour: '19:00', slot_minutes: 60, calendar_prefix: '' });
   const [agendaSaving, setAgendaSaving]     = useState(false);
   const [agendaMsg, setAgendaMsg]           = useState<{ text: string; ok: boolean } | null>(null);
 
@@ -210,6 +211,11 @@ export default function AdminDashboard() {
         ]);
         if (settingsRes.settings?.treatments?.length) setClinicTreatments(settingsRes.settings.treatments);
         if (staffRes.emails) setPersonalEmails(staffRes.emails);
+        // Load agenda schedule settings
+        if (settingsRes.settings?.agenda) {
+          const a = settingsRes.settings.agenda;
+          setAgendaSettings({ start_hour: a.start_hour || '08:00', end_hour: a.end_hour || '19:00', slot_minutes: a.slot_minutes || 60, calendar_prefix: a.calendar_prefix || '' });
+        }
         // Pre-fill clinic form for clinic_admin
         if (user.role === 'clinic_admin') {
           const g = settingsRes.settings?.general || {};
@@ -277,6 +283,21 @@ export default function AdminDashboard() {
         setPwdMsg({ text: d.error || 'Código incorrecto', ok: false });
       }
     } finally { setPwdSaving(false); }
+  };
+
+  // ─── Guardar horario de agenda (clinic_admin) ──────────────────────────────
+  const handleSaveAgendaSettings = async () => {
+    if (!user?.clinic_id) return;
+    setAgendaSaving(true); setAgendaMsg(null);
+    try {
+      const res = await fetch('/api/admin-auth?action=saveClinicSettings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken')}` },
+        body: JSON.stringify({ clinicId: user.clinic_id, section: 'agenda', data: agendaSettings }),
+      });
+      const d = await res.json();
+      setAgendaMsg({ text: d.error || '¡Horario guardado!', ok: !!d.success });
+    } finally { setAgendaSaving(false); }
   };
 
   // ─── Guardar tratamientos de clínica ────────────────────────────────────
@@ -721,6 +742,54 @@ export default function AdminDashboard() {
                   {/* ── AGENDA ── */}
                   {settingsTab === 'agenda' && (
                     <>
+                      {/* Horario laboral */}
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-xs font-semibold text-gray-700">Horario de atención</p>
+                          {user?.role !== 'clinic_admin' && <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">Solo el admin puede editar</span>}
+                        </div>
+                        <div className="grid grid-cols-3 gap-3">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Hora inicio</label>
+                            <input type="time" value={agendaSettings.start_hour}
+                              disabled={user?.role !== 'clinic_admin'}
+                              onChange={e => setAgendaSettings(p => ({ ...p, start_hour: e.target.value }))}
+                              className={`w-full px-3 py-2 border rounded-lg text-sm outline-none ${
+                                user?.role === 'clinic_admin'
+                                  ? 'focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] bg-white'
+                                  : 'bg-gray-50 text-gray-500'
+                              }`} />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Hora fin</label>
+                            <input type="time" value={agendaSettings.end_hour}
+                              disabled={user?.role !== 'clinic_admin'}
+                              onChange={e => setAgendaSettings(p => ({ ...p, end_hour: e.target.value }))}
+                              className={`w-full px-3 py-2 border rounded-lg text-sm outline-none ${
+                                user?.role === 'clinic_admin'
+                                  ? 'focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] bg-white'
+                                  : 'bg-gray-50 text-gray-500'
+                              }`} />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Slot por defecto</label>
+                            <select value={agendaSettings.slot_minutes}
+                              disabled={user?.role !== 'clinic_admin'}
+                              onChange={e => setAgendaSettings(p => ({ ...p, slot_minutes: parseInt(e.target.value) }))}
+                              className={`w-full px-3 py-2 border rounded-lg text-sm outline-none ${
+                                user?.role === 'clinic_admin'
+                                  ? 'focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] bg-white'
+                                  : 'bg-gray-50 text-gray-500'
+                              }`}>
+                              {[30, 45, 60, 90, 120].map(m => (
+                                <option key={m} value={m}>{m < 60 ? `${m} min` : m === 60 ? '1 h' : m === 90 ? '1:30 h' : '2 h'}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="border-t border-gray-100 pt-4">
                       {/* Tratamientos */}
                       <div>
                         <div className="flex items-center justify-between mb-2">
@@ -750,6 +819,7 @@ export default function AdminDashboard() {
                             </button>
                           </div>
                         )}
+                      </div>
                       </div>
 
                       <div className="border-t border-gray-100 pt-4">
@@ -849,6 +919,12 @@ export default function AdminDashboard() {
                   )}
                   {settingsTab === 'agenda' && (
                     <>
+                      {user?.role === 'clinic_admin' && (
+                        <button onClick={handleSaveAgendaSettings} disabled={agendaSaving}
+                          className="px-4 py-2 rounded-lg text-sm font-medium border border-[#deb887] text-[#99652f] hover:bg-[#deb887]/10 disabled:opacity-60">
+                          {agendaSaving ? '...' : 'Guardar horario'}
+                        </button>
+                      )}
                       {user?.role === 'clinic_admin' && (
                         <button onClick={handleSaveTreatments} disabled={agendaSaving}
                           className="px-4 py-2 rounded-lg text-sm font-medium border border-[#deb887] text-[#99652f] hover:bg-[#deb887]/10 disabled:opacity-60">
