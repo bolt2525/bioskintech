@@ -789,7 +789,7 @@ export default function AdminDashboard() {
                       </div>
 
                       <div className="border-t border-gray-100 pt-3">
-                      {/* Tratamientos */}}
+                      {/* Tratamientos */}
                       <div>
                         <div className="flex items-center justify-between mb-2">
                           <p className="text-xs font-semibold text-gray-700">Tratamientos disponibles ({clinicTreatments.length})</p>
