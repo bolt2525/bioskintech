@@ -2,7 +2,7 @@
 // Componente de agendamiento avanzado para administradores
 
 import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, User, Phone, Mail, MessageSquare, Save, ArrowLeft, ChevronLeft, ChevronRight, UserCheck, MessageCircle, X, CheckSquare, Square } from 'lucide-react';
+import { Calendar, Clock, User, Phone, Mail, MessageSquare, Save, ArrowLeft, ChevronLeft, ChevronRight, UserCheck, MessageCircle, X, CheckSquare, Square, AlertTriangle } from 'lucide-react';
 import recordsFetch from '../utils/recordsFetch';
 import { services } from '../data/services';
 import { useAuth } from '../context/AuthContext';
@@ -49,19 +49,24 @@ function generateTimeSlots(startHour: string, endHour: string, slotMinutes: numb
 
 type EventType = { start: string; end: string };
 // ponytail: endHour param blocks slots that would overflow business hours
-function isHourOccupied(selectedDay: string, hour: string, events: EventType[], slotMinutes: number, endHour?: string): boolean {
+function isHourOccupied(selectedDay: string, hour: string, events: EventType[], slotMinutes: number): boolean {
   if (!selectedDay) return true;
   const startTime = new Date(selectedDay + 'T' + hour + ':00');
   const endTime = new Date(startTime.getTime() + slotMinutes * 60 * 1000);
-  if (endHour) {
-    const dayEnd = new Date(selectedDay + 'T' + endHour + ':00');
-    if (endTime > dayEnd) return true;
-  }
   return events.some(ev => {
     const evStart = new Date(ev.start);
     const evEnd = new Date(ev.end);
     return (startTime < evEnd && endTime > evStart);
   });
+}
+
+/** Returns true if the appointment end time exceeds the clinic closing hour. */
+function isOverflow(selectedDay: string, hour: string, slotMinutes: number, endHour: string): boolean {
+  if (!selectedDay || !endHour) return false;
+  const startTime = new Date(selectedDay + 'T' + hour + ':00');
+  const endTime = new Date(startTime.getTime() + slotMinutes * 60 * 1000);
+  const dayEnd = new Date(selectedDay + 'T' + endHour + ':00');
+  return endTime > dayEnd;
 }
 
 // Función para verificar si una hora ya pasó en el día actual
@@ -142,6 +147,7 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
   const [agendaEndHour, setAgendaEndHour]         = useState('20:00');
   // Duration selected for this specific appointment (independent of display interval)
   const [appointmentDuration, setAppointmentDuration] = useState(30);
+  const [hourClearedMsg, setHourClearedMsg]           = useState('');
 
   useEffect(() => {
     if (!user?.clinic_id) return;
@@ -228,16 +234,19 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
       .finally(() => setLoadingHours(false));
   }, [selectedDay]);
 
-  useEffect(() => { setSelectedHour(''); }, [selectedDay]);
+  useEffect(() => { setSelectedHour(''); setHourClearedMsg(''); }, [selectedDay]);
 
-  // Clear selected hour when duration changes and the slot is no longer valid
+  // When duration changes: clear hour if now occupied by events; show reason message
   useEffect(() => {
-    if (selectedHour && selectedDay) {
-      if (isHourOccupied(selectedDay, selectedHour, events, appointmentDuration, agendaEndHour) ||
-          isHourPast(selectedDay, selectedHour)) {
-        setSelectedHour('');
-      }
+    if (!selectedHour || !selectedDay) return;
+    const dLabel = appointmentDuration < 60 ? `${appointmentDuration} min`
+      : appointmentDuration === 60 ? '1 h' : appointmentDuration === 90 ? '1:30 h' : '2 h';
+    if (isHourOccupied(selectedDay, selectedHour, events, appointmentDuration) ||
+        isHourPast(selectedDay, selectedHour)) {
+      setHourClearedMsg(`⚠️ ${formatTimeLabel(selectedHour)} ya no está disponible para ${dLabel}. Selecciona otra hora.`);
+      setSelectedHour('');
     }
+    // Overflow is handled with an inline warning — hour stays selected
   }, [appointmentDuration]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -453,6 +462,15 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
             ))}
           </div>
 
+          {/* Warning: hora liberada por cambio de duración */}
+          {hourClearedMsg && (
+            <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 mb-3 text-sm text-amber-800">
+              <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5 text-amber-500" />
+              <span>{hourClearedMsg}</span>
+              <button onClick={() => setHourClearedMsg('')} className="ml-auto text-amber-400 hover:text-amber-600"><X className="w-3.5 h-3.5" /></button>
+            </div>
+          )}
+
           <div className="mb-4 text-center text-sm text-gray-600">
             Fecha seleccionada: {selectedDay && (() => {
               const [year, month, day] = selectedDay.split('-').map(Number);
@@ -466,32 +484,54 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
               <div className="text-center col-span-full w-full">Cargando horarios...</div>
             ) : (
               availableTimes.map(h => {
-                const isOccupied = isHourOccupied(selectedDay, h, events, appointmentDuration, agendaEndHour);
+                const isOccupied = isHourOccupied(selectedDay, h, events, appointmentDuration);
                 const isPast = isHourPast(selectedDay, h);
+                const overflow = !isOccupied && !isPast && isOverflow(selectedDay, h, appointmentDuration, agendaEndHour);
                 const isDisabled = isOccupied || isPast;
                 
                 return (
                   <button
                     key={h}
                     disabled={isDisabled}
-                    onClick={() => setSelectedHour(h)}
+                    onClick={() => { setSelectedHour(h); setHourClearedMsg(''); }}
                     className={`rounded-xl p-4 border-2 text-[#0d5c6c] flex flex-col items-center transition-all duration-150
-                      ${selectedHour === h 
-                        ? 'bg-[#ffcfc4] border-[#fa9271] font-bold shadow-lg scale-105' 
-                        : 'bg-white border-[#dde7eb] hover:bg-[#ffe2db]'}
+                      ${selectedHour === h
+                        ? overflow
+                          ? 'bg-amber-100 border-amber-400 font-bold shadow-lg scale-105'
+                          : 'bg-[#ffcfc4] border-[#fa9271] font-bold shadow-lg scale-105'
+                        : overflow
+                          ? 'bg-amber-50 border-amber-300 hover:bg-amber-100 text-amber-800'
+                          : 'bg-white border-[#dde7eb] hover:bg-[#ffe2db]'}
                       ${isDisabled ? 'opacity-30 cursor-not-allowed' : ''}
                     `}
                   >
-                    <Clock className="w-5 h-5 mb-2" />
+                    <Clock className={`w-5 h-5 mb-2 ${overflow && selectedHour !== h ? 'text-amber-500' : ''}`} />
                     <span className="text-lg font-semibold">{formatTimeLabel(h)}</span>
                     {isOccupied && <span className="text-xs text-red-500 mt-1">Ocupado</span>}
                     {isPast && !isOccupied && <span className="text-xs text-gray-500 mt-1">Pasado</span>}
+                    {overflow && <span className="text-[10px] text-amber-600 mt-1 font-medium leading-tight text-center">⚠️ Excede<br/>horario</span>}
                   </button>
                 );
               })
             )}
           </div>
           
+          {/* Overflow confirmation banner when selected hour exceeds business hours */}
+          {selectedHour && isOverflow(selectedDay, selectedHour, appointmentDuration, agendaEndHour) && (() => {
+            const endMs = new Date(`${selectedDay}T${selectedHour}:00`).getTime() + appointmentDuration * 60 * 1000;
+            const endObj = new Date(endMs);
+            const endLabel = endObj.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true });
+            return (
+              <div className="flex items-start gap-2 bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 mb-3 text-sm">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5 text-amber-500" />
+                <div>
+                  <p className="font-semibold text-amber-800">La cita terminaría a las {endLabel}</p>
+                  <p className="text-amber-700 text-xs mt-0.5">El horario de atención cierra a las {formatTimeLabel(agendaEndHour)}. Puedes continuar o cambiar la duración.</p>
+                </div>
+              </div>
+            );
+          })()}
+
           <div className="flex justify-between">
             <button
               onClick={() => setStep(1)}
