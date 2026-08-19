@@ -48,10 +48,15 @@ function generateTimeSlots(startHour: string, endHour: string, slotMinutes: numb
 }
 
 type EventType = { start: string; end: string };
-function isHourOccupied(selectedDay: string, hour: string, events: EventType[], slotMinutes: number): boolean {
+// ponytail: endHour param blocks slots that would overflow business hours
+function isHourOccupied(selectedDay: string, hour: string, events: EventType[], slotMinutes: number, endHour?: string): boolean {
   if (!selectedDay) return true;
   const startTime = new Date(selectedDay + 'T' + hour + ':00');
   const endTime = new Date(startTime.getTime() + slotMinutes * 60 * 1000);
+  if (endHour) {
+    const dayEnd = new Date(selectedDay + 'T' + endHour + ':00');
+    if (endTime > dayEnd) return true;
+  }
   return events.some(ev => {
     const evStart = new Date(ev.start);
     const evEnd = new Date(ev.end);
@@ -224,6 +229,16 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
   }, [selectedDay]);
 
   useEffect(() => { setSelectedHour(''); }, [selectedDay]);
+
+  // Clear selected hour when duration changes and the slot is no longer valid
+  useEffect(() => {
+    if (selectedHour && selectedDay) {
+      if (isHourOccupied(selectedDay, selectedHour, events, appointmentDuration, agendaEndHour) ||
+          isHourPast(selectedDay, selectedHour)) {
+        setSelectedHour('');
+      }
+    }
+  }, [appointmentDuration]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -451,7 +466,7 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
               <div className="text-center col-span-full w-full">Cargando horarios...</div>
             ) : (
               availableTimes.map(h => {
-                const isOccupied = isHourOccupied(selectedDay, h, events, appointmentDuration);
+                const isOccupied = isHourOccupied(selectedDay, h, events, appointmentDuration, agendaEndHour);
                 const isPast = isHourPast(selectedDay, h);
                 const isDisabled = isOccupied || isPast;
                 
