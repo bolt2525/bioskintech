@@ -2440,11 +2440,14 @@ export default async function handler(req, res) {
       case 'updatePhoto': {
         const { id, photo_type, face_zone, body_zone, session_label, notes } = body;
         if (!id) return res.status(400).json({ error: 'id requerido' });
+        const clinicIdUp = su?.effective_clinic_id ?? su?.clinic_id;
         try {
-          await pool.query(
-            `UPDATE clinical_photos SET photo_type=$1, face_zone=$2, body_zone=$3, session_label=$4, notes=$5 WHERE id=$6`,
-            [photo_type||null, face_zone||null, body_zone||null, session_label||null, notes||null, id]
+          const upRes = await pool.query(
+            `UPDATE clinical_photos SET photo_type=$1, face_zone=$2, body_zone=$3, session_label=$4, notes=$5
+             WHERE id=$6 AND clinic_id=$7`,
+            [photo_type||null, face_zone||null, body_zone||null, session_label||null, notes||null, id, clinicIdUp]
           );
+          if (upRes.rowCount === 0) return res.status(404).json({ error: 'Foto no encontrada' });
           return res.status(200).json({ success: true });
         } catch (err) {
           return res.status(500).json({ error: err.message });
@@ -2454,10 +2457,14 @@ export default async function handler(req, res) {
       case 'deletePhoto': {
         const { id } = body;
         if (!id) return res.status(400).json({ error: 'id requerido' });
+        const clinicIdDel = su?.effective_clinic_id ?? su?.clinic_id;
         try {
-          const r = await pool.query('SELECT r2_key FROM clinical_photos WHERE id = $1', [id]);
+          const r = await pool.query(
+            'SELECT r2_key FROM clinical_photos WHERE id = $1 AND clinic_id = $2',
+            [id, clinicIdDel]
+          );
           if (!r.rows.length) return res.status(404).json({ error: 'Foto no encontrada' });
-          await deleteR2Object(r.rows[0].r2_key);
+          if (r.rows[0].r2_key) await deleteR2Object(r.rows[0].r2_key);
           await pool.query('DELETE FROM clinical_photos WHERE id = $1', [id]);
           return res.status(200).json({ success: true });
         } catch (err) {
