@@ -168,11 +168,12 @@ export default function AdminDashboard() {
       const appointments: UpcomingAppointment[] = (data.events || [])
         .filter((ev: any) => ev.eventType !== 'block')
         .map((ev: any) => {
-          const start = new Date(ev.startDateTime || ev.start?.dateTime || ev.start?.date);
+          const startStr = ev.startDateTime || ev.start?.dateTime || ev.start?.date || '';
+          const start = new Date(startStr);
           const diffDays = Math.floor((start.getTime() - today.getTime()) / 86_400_000);
           // ponytail: parse "Profesional: X" from Calendar event description
           const professional = (ev.description || '').match(/Profesional:\s*([^\n]+)/)?.[1]?.trim() || '';
-          return { ...ev, daysUntil: diffDays, isToday: diffDays === 0, isTomorrow: diffDays === 1, professional };
+          return { ...ev, start: startStr, daysUntil: diffDays, isToday: diffDays === 0, isTomorrow: diffDays === 1, professional };
         })
         .sort((a: any, b: any) => new Date(a.startDateTime).getTime() - new Date(b.startDateTime).getTime());
       setUpcomingAppointments(appointments);
