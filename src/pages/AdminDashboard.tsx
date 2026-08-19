@@ -211,7 +211,6 @@ export default function AdminDashboard() {
         ]);
         if (settingsRes.settings?.treatments?.length) setClinicTreatments(settingsRes.settings.treatments);
         if (staffRes.emails) setPersonalEmails(staffRes.emails);
-        // Load agenda schedule settings
         if (settingsRes.settings?.agenda) {
           const a = settingsRes.settings.agenda;
           setAgendaSettings({ start_hour: a.start_hour || '08:00', end_hour: a.end_hour || '19:00', slot_minutes: a.slot_minutes || 60, calendar_prefix: a.calendar_prefix || '' });
@@ -789,8 +788,8 @@ export default function AdminDashboard() {
                         </div>
                       </div>
 
-                      <div className="border-t border-gray-100 pt-4">
-                      {/* Tratamientos */}
+                      <div className="border-t border-gray-100 pt-3">
+                      {/* Tratamientos */}}
                       <div>
                         <div className="flex items-center justify-between mb-2">
                           <p className="text-xs font-semibold text-gray-700">Tratamientos disponibles ({clinicTreatments.length})</p>
