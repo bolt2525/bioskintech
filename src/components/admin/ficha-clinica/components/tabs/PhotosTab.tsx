@@ -4,7 +4,7 @@ import {
   Camera, Upload, X, Trash2, Edit3, Download,
   CheckCircle, AlertCircle, ChevronLeft, ChevronRight,
   Save, Tag, Calendar, LayoutGrid, Clock,
-  SplitSquareHorizontal, ZoomIn, ZoomOut,
+  SplitSquareHorizontal, ZoomIn, ZoomOut, ImageOff,
 } from 'lucide-react';
 import recordsFetch from '../../../../../utils/recordsFetch';
 
@@ -73,6 +73,7 @@ interface CardProps {
 
 function PhotoCard({ photo, viewMode, compareLeft, compareRight, onOpen, onEdit, onDelete, onTypeChange, onCompareSelect }: CardProps) {
   const [showTypeMenu, setShowTypeMenu] = useState(false);
+  const [imgError, setImgError] = useState(!photo.r2_url);
   const isA = compareLeft?.id === photo.id;
   const isB = compareRight?.id === photo.id;
   const isSelected = isA || isB;
@@ -88,7 +89,14 @@ function PhotoCard({ photo, viewMode, compareLeft, compareRight, onOpen, onEdit,
     }`}>
       {/* Image zone — sole click target for lightbox/compare */}
       <div className="aspect-square bg-gray-100 cursor-pointer relative overflow-hidden" onClick={handleImageClick}>
-        <img src={photo.r2_url} alt={TYPE_LABELS[photo.photo_type]} className="w-full h-full object-cover" loading="lazy" />
+        {imgError ? (
+          <div className="w-full h-full flex flex-col items-center justify-center gap-1 text-gray-400">
+            <ImageOff className="w-8 h-8" />
+            <span className="text-[10px]">No disponible</span>
+          </div>
+        ) : (
+          <img src={photo.r2_url!} alt={TYPE_LABELS[photo.photo_type]} className="w-full h-full object-cover" loading="lazy" onError={() => setImgError(true)} />
+        )}
         <span className={`absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${TYPE_BADGE[photo.photo_type]}`}>
           {TYPE_LABELS[photo.photo_type]}
         </span>
