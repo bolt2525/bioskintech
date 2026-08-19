@@ -2,7 +2,7 @@
 // Componente de agendamiento avanzado para administradores
 
 import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, User, Phone, Mail, MessageSquare, Save, ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Calendar, Clock, User, Phone, Mail, MessageSquare, Save, ArrowLeft, ChevronLeft, ChevronRight, UserCheck, MessageCircle, X, CheckSquare, Square } from 'lucide-react';
 import recordsFetch from '../utils/recordsFetch';
 import { services } from '../data/services';
 import { useAuth } from '../context/AuthContext';
@@ -120,26 +120,43 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
 
   // Tratamientos desde configuración de clínica (fallback al catálogo global)
   const [clinicTreatments, setClinicTreatments] = useState<string[]>([]);
-  // Staff/médicos disponibles para asignar a la cita
-  const [staffMembers, setStaffMembers] = useState<Array<{ name: string; email: string }>>([]);
+  // Profesionales del sistema para asignar a la cita
+  const [clinicProfessionals, setClinicProfessionals] = useState<Array<{ id: number; username: string; full_name: string; email: string; especialidad?: string; gentilicio?: string }>>([]);
+  // Staff members externos (sin login) desde clinic_settings
+  const [externalStaff, setExternalStaff] = useState<Array<{ name: string; email: string }>>([]);
+  // Correos CC personales del usuario logueado
+  const [personalEmails, setPersonalEmails] = useState<string[]>([]);
+  const [selectedPersonalEmails, setSelectedPersonalEmails] = useState<string[]>([]);
+  const [notifyPersonalStaff, setNotifyPersonalStaff] = useState(false);
+  // Selector de profesional
+  const [showProfessionalModal, setShowProfessionalModal] = useState(false);
+  const [showStaffEmailModal, setShowStaffEmailModal]     = useState(false);
   // Agenda settings from clinic config
   const [agendaSlotMinutes, setAgendaSlotMinutes] = useState(60);
   const [agendaStartHour, setAgendaStartHour]     = useState('07:00');
   const [agendaEndHour, setAgendaEndHour]         = useState('20:00');
+
   useEffect(() => {
     if (!user?.clinic_id) return;
-    fetch(`/api/admin-auth?action=getClinicSettings&clinicId=${user.clinic_id}`, {
-      headers: { 'Authorization': `Bearer ${sessionStorage.getItem('adminSessionToken')}` }
-    })
-      .then(r => r.json())
-      .then(d => {
-        if (d.settings?.treatments?.length) setClinicTreatments(d.settings.treatments);
-        if (d.settings?.email?.staff_members?.length) setStaffMembers(d.settings.email.staff_members);
-        if (d.settings?.agenda?.slot_minutes) setAgendaSlotMinutes(d.settings.agenda.slot_minutes);
-        if (d.settings?.agenda?.start_hour)   setAgendaStartHour(d.settings.agenda.start_hour);
-        if (d.settings?.agenda?.end_hour)     setAgendaEndHour(d.settings.agenda.end_hour);
-      })
-      .catch(() => {}); // fallback silencioso al catálogo global
+    Promise.all([
+      fetch(`/api/admin-auth?action=getClinicSettings&clinicId=${user.clinic_id}`, {
+        headers: { 'Authorization': `Bearer ${sessionStorage.getItem('adminSessionToken')}` }
+      }).then(r => r.json()),
+      fetch('/api/admin-auth?action=getClinicProfessionals', {
+        headers: { 'Authorization': `Bearer ${sessionStorage.getItem('adminSessionToken')}` }
+      }).then(r => r.json()),
+      fetch('/api/admin-auth?action=getPersonalStaffEmails', {
+        headers: { 'Authorization': `Bearer ${sessionStorage.getItem('adminSessionToken')}` }
+      }).then(r => r.json()),
+    ]).then(([settings, professionals, staffEmails]) => {
+      if (settings.settings?.treatments?.length) setClinicTreatments(settings.settings.treatments);
+      if (settings.settings?.email?.staff_members?.length) setExternalStaff(settings.settings.email.staff_members);
+      if (settings.settings?.agenda?.slot_minutes) setAgendaSlotMinutes(settings.settings.agenda.slot_minutes);
+      if (settings.settings?.agenda?.start_hour)   setAgendaStartHour(settings.settings.agenda.start_hour);
+      if (settings.settings?.agenda?.end_hour)     setAgendaEndHour(settings.settings.agenda.end_hour);
+      if (professionals.professionals) setClinicProfessionals(professionals.professionals);
+      if (staffEmails.emails?.length)  { setPersonalEmails(staffEmails.emails); setSelectedPersonalEmails(staffEmails.emails); setNotifyPersonalStaff(true); }
+    }).catch(() => {});
   }, [user?.clinic_id]);
   const availableTimes = generateTimeSlots(agendaStartHour, agendaEndHour, agendaSlotMinutes);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
@@ -158,8 +175,8 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
     service: '',
     message: '',
     adminNotes: '',
-    selected_doctor: '', // nombre del médico/staff seleccionado
-    selected_doctor_email: '', // email del médico/staff seleccionado
+    selected_doctor: user?.full_name || user?.username || '', // default: usuario logueado
+    selected_doctor_email: user?.email || '',
   });
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -220,6 +237,9 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
       // Mensaje con notas del administrador
       const adminMessage = formData.adminNotes ? 
         `\n--- NOTAS DEL ADMINISTRADOR ---\n${formData.adminNotes}\n--- FIN NOTAS ---\n` : '';
+      // Include professional name in calendar event description so notification bell can parse it
+      const professionalLine = formData.selected_doctor ? `\nProfesional: ${formData.selected_doctor}` : '';
+      const additionalEmails = notifyPersonalStaff ? selectedPersonalEmails : [];
 
       const res = await fetch('/api/sendEmail', {
         method: 'POST',
@@ -236,7 +256,7 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
             'Fecha: ' + selectedDay + '\n' +
             'Hora: ' + selectedHour + ` (${durationLabel})` + '\n' +
             'Comentario del paciente: ' + formData.message + 
-            adminMessage +
+            adminMessage + professionalLine +
             '\n[AGENDADO POR ADMINISTRADOR]',
           start,
           end,
@@ -244,6 +264,7 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
           phone: formData.phone,
           selected_staff_email: formData.selected_doctor_email || undefined,
           selected_staff_name:  formData.selected_doctor       || undefined,
+          additional_notify_emails: additionalEmails.length ? additionalEmails : undefined,
         }),
       });
       const result = await res.json();
@@ -267,7 +288,9 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
     setStep(1);
     setSelectedDay('');
     setSelectedHour('');
-    setFormData({ name: '', email: '', phone: '', service: '', message: '', adminNotes: '', selected_doctor: '', selected_doctor_email: '' });
+    setFormData({ name: '', email: '', phone: '', service: '', message: '', adminNotes: '',
+      selected_doctor: user?.full_name || user?.username || '',
+      selected_doctor_email: user?.email || '' });
     setSubmitted(false);
     setError('');
     setConfirming(false);
@@ -511,21 +534,55 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
                   ))}
                 </select>
 
-                {/* Selector de médico/staff (si hay staff configurado en la clínica) */}
-                {staffMembers.length > 0 && (
-                  <select
-                    value={formData.selected_doctor}
-                    onChange={e => {
-                      const m = staffMembers.find(s => s.name === e.target.value);
-                      setFormData(f => ({ ...f, selected_doctor: e.target.value, selected_doctor_email: m?.email || '' }));
-                    }}
-                    className="w-full p-3 rounded border border-gray-200 bg-white focus:border-[#deb887] focus:ring-2 focus:ring-[#deb887] focus:ring-opacity-20"
-                  >
-                    <option value="">Médico / Staff asignado (opcional)</option>
-                    {staffMembers.map(m => (
-                      <option key={m.email} value={m.name}>{m.name}</option>
-                    ))}
-                  </select>
+                {/* Profesional asignado a la cita */}
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-medium text-gray-700 flex items-center gap-1.5">
+                      <UserCheck className="w-4 h-4 text-[#deb887]" /> Profesional asignado
+                    </p>
+                    <button type="button" onClick={() => setShowProfessionalModal(true)}
+                      className="text-xs text-[#deb887] hover:text-[#c5a075] font-medium underline">
+                      Cambiar
+                    </button>
+                  </div>
+                  {formData.selected_doctor ? (
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-full bg-[#deb887]/20 flex items-center justify-center text-[#99652f] font-bold text-sm">
+                        {(formData.selected_doctor).charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">{formData.selected_doctor}</p>
+                        <p className="text-xs text-gray-400 truncate">{formData.selected_doctor_email || '—'}</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-400 italic">Sin profesional asignado</p>
+                  )}
+                </div>
+
+                {/* Notificar staff personal */}
+                {personalEmails.length > 0 && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <button type="button" onClick={() => setNotifyPersonalStaff(p => !p)}
+                        className="flex-shrink-0 text-[#deb887]">
+                        {notifyPersonalStaff ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4 text-gray-400" />}
+                      </button>
+                      <span className="text-sm font-medium text-amber-800">Notificar a mi staff personal</span>
+                    </label>
+                    {notifyPersonalStaff && (
+                      <div className="mt-1.5">
+                        <p className="text-xs text-amber-700 mb-1">Se enviará copia a:</p>
+                        <div className="flex flex-wrap gap-1">
+                          {selectedPersonalEmails.map(e => (
+                            <span key={e} className="text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">{e}</span>
+                          ))}
+                        </div>
+                        <button type="button" onClick={() => setShowStaffEmailModal(true)}
+                          className="text-xs text-amber-700 underline mt-1">Ver/cambiar correos</button>
+                      </div>
+                    )}
+                  </div>
                 )}
 
                 <div className="relative">
@@ -683,9 +740,21 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
             <p className="text-green-800 font-medium">
               La cita ha sido registrada en el calendario y se ha enviado la confirmación por email.
             </p>
-            <p className="text-green-700 text-sm mt-2">
-              El paciente recibirá también una notificación por WhatsApp.
-            </p>
+            {formData.phone && (() => {
+              const phoneClean = formData.phone.replace(/[\s\-+]/g, '').replace(/^0/, '');
+              const waText = encodeURIComponent(
+                `Hola ${formData.name}, ¡gracias por agendar tu cita! 🧴✨\n` +
+                `Hemos registrado tu cita para el servicio "${formData.service}" el ${selectedDay} a las ${selectedHour}.\n` +
+                `Si tienes alguna pregunta, responde este mensaje.\n¡Nos vemos pronto!`
+              );
+              return (
+                <a href={`https://wa.me/593${phoneClean}?text=${waText}`} target="_blank" rel="noopener noreferrer"
+                  className="mt-3 flex items-center justify-center gap-2 w-full py-2.5 rounded-lg bg-green-500 hover:bg-green-600 text-white font-medium text-sm transition-colors">
+                  <MessageCircle className="w-4 h-4" />
+                  Enviar mensaje de WhatsApp al paciente
+                </a>
+              );
+            })()}
           </div>
           
           <div className="space-y-3 mb-6">
@@ -701,6 +770,112 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
             >
               Volver al Dashboard
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Selector de profesional ───────────────────────────── */}
+      {showProfessionalModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+            <div className="h-0.5 bg-gradient-to-r from-[#deb887] to-[#c5a075]" />
+            <div className="px-4 py-3 border-b flex justify-between items-center">
+              <h4 className="font-semibold text-gray-900 text-sm flex items-center gap-2">
+                <UserCheck className="w-4 h-4 text-[#deb887]" /> Seleccionar Profesional
+              </h4>
+              <button onClick={() => setShowProfessionalModal(false)} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="p-4 space-y-2 max-h-80 overflow-y-auto">
+              {/* Option: assign to self */}
+              <button onClick={() => {
+                  setFormData(f => ({ ...f, selected_doctor: user?.full_name || user?.username || '', selected_doctor_email: user?.email || '' }));
+                  setShowProfessionalModal(false);
+                }}
+                className="w-full flex items-center gap-3 p-3 rounded-xl border-2 border-[#deb887]/40 bg-[#deb887]/5 hover:border-[#deb887] text-left transition-colors">
+                <div className="w-8 h-8 rounded-full bg-[#deb887] flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                  {(user?.full_name || user?.username || 'Y').charAt(0).toUpperCase()}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-gray-900 truncate">{user?.full_name || user?.username} <span className="text-[10px] text-[#deb887] ml-1">(yo)</span></p>
+                  <p className="text-xs text-gray-400 truncate">{user?.email || '—'}</p>
+                </div>
+              </button>
+
+              {/* System users */}
+              {clinicProfessionals.filter(p => p.id !== user?.id).map(p => (
+                <button key={p.id} onClick={() => {
+                    setFormData(f => ({ ...f, selected_doctor: p.full_name || p.username, selected_doctor_email: p.email || '' }));
+                    setShowProfessionalModal(false);
+                  }}
+                  className="w-full flex items-center gap-3 p-3 rounded-xl border border-gray-200 hover:border-[#deb887]/60 hover:bg-[#deb887]/5 text-left transition-colors">
+                  <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 font-bold text-sm flex-shrink-0">
+                    {(p.full_name || p.username).charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">{p.full_name || p.username}</p>
+                    <p className="text-xs text-gray-400 truncate">{p.email || '—'}{p.especialidad ? ` · ${p.especialidad}` : ''}</p>
+                  </div>
+                </button>
+              ))}
+
+              {/* External staff (no system login) */}
+              {externalStaff.length > 0 && (
+                <>
+                  <p className="text-xs text-gray-400 pt-1 pb-0.5 font-medium">Externos (sin acceso al sistema)</p>
+                  {externalStaff.map((m, i) => (
+                    <button key={i} onClick={() => {
+                        setFormData(f => ({ ...f, selected_doctor: m.name, selected_doctor_email: m.email }));
+                        setShowProfessionalModal(false);
+                      }}
+                      className="w-full flex items-center gap-3 p-3 rounded-xl border border-gray-200 hover:border-[#deb887]/60 hover:bg-[#deb887]/5 text-left transition-colors">
+                      <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 font-bold text-sm flex-shrink-0">
+                        {m.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">{m.name}</p>
+                        <p className="text-xs text-gray-400 truncate">{m.email}</p>
+                      </div>
+                    </button>
+                  ))}
+                </>
+              )}
+
+              {/* No-one option */}
+              <button onClick={() => { setFormData(f => ({ ...f, selected_doctor: '', selected_doctor_email: '' })); setShowProfessionalModal(false); }}
+                className="w-full p-2.5 rounded-xl border border-dashed border-gray-200 text-xs text-gray-400 hover:bg-gray-50 transition-colors text-center">
+                Sin profesional asignado
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Selección de correos staff ────────────────────────── */}
+      {showStaffEmailModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xs overflow-hidden">
+            <div className="h-0.5 bg-gradient-to-r from-[#deb887] to-[#c5a075]" />
+            <div className="px-4 py-3 border-b flex justify-between items-center">
+              <h4 className="font-semibold text-gray-900 text-sm">Correos staff personal</h4>
+              <button onClick={() => setShowStaffEmailModal(false)} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="p-4 space-y-2">
+              {personalEmails.map(e => {
+                const selected = selectedPersonalEmails.includes(e);
+                return (
+                  <button key={e} onClick={() => setSelectedPersonalEmails(p => selected ? p.filter(x => x !== e) : [...p, e])}
+                    className={`w-full flex items-center gap-3 p-2.5 rounded-xl border text-left text-sm transition-colors ${selected ? 'border-[#deb887] bg-[#deb887]/8 text-gray-900' : 'border-gray-200 text-gray-600'}`}>
+                    {selected ? <CheckSquare className="w-4 h-4 text-[#deb887] flex-shrink-0" /> : <Square className="w-4 h-4 text-gray-300 flex-shrink-0" />}
+                    <span className="truncate">{e}</span>
+                  </button>
+                );
+              })}
+              <button onClick={() => setShowStaffEmailModal(false)}
+                className="w-full mt-1 py-2 rounded-xl text-white text-sm font-medium"
+                style={{ background: 'linear-gradient(135deg,#deb887,#c5a075)' }}>
+                Listo
+              </button>
+            </div>
           </div>
         </div>
       )}

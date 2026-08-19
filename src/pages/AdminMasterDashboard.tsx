@@ -2697,7 +2697,7 @@ export default function AdminMasterDashboard() {
               <nav className="w-44 flex-shrink-0 border-r bg-gray-50 p-2 flex flex-col gap-0.5 overflow-y-auto">
                 {([
                   ['general',        '🏥', 'General'],
-                  ['email',          '📧', 'Email & Staff'],
+                  ['email',          '📧', 'Email & Comunicación'],
                   ['agenda',         '📅', 'Agenda'],
                   ['finanzas',       '💰', 'Finanzas'],
                   ['inventario',     '📦', 'Inventario'],
@@ -2788,9 +2788,9 @@ export default function AdminMasterDashboard() {
                       </div>
                     </>)}
 
-                    {/* ── EMAIL & STAFF ── */}
+                    {/* ── EMAIL & COMUNICACIÓN ── */}
                     {settingsTab === 'email' && (<>
-                      <p className="text-xs text-gray-400">Configuración de emails, WhatsApp y personal de la clínica.</p>
+                      <p className="text-xs text-gray-400">Configuración de emails, WhatsApp y firma para esta clínica.</p>
                       <div className="grid grid-cols-2 gap-3">
                         {([
                           ['staff_email','Email del staff (notificaciones)','email'],
@@ -2807,7 +2807,10 @@ export default function AdminMasterDashboard() {
                         ))}
                       </div>
                       <div>
-                        <label className="block text-xs font-semibold text-gray-700 mb-1">👨‍⚕️ Staff / Médicos asignables a citas</label>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">👨‍⚕️ Profesionales Externos
+                          <span className="ml-2 text-[10px] font-normal text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">Sin cuenta en el sistema</span>
+                        </label>
+                        <p className="text-xs text-gray-400 mb-2">Personas que reciben notificaciones pero no tienen acceso al panel. Los usuarios registrados con login están disponibles automáticamente en agendamiento.</p>
                         <div className="space-y-1.5 max-h-36 overflow-y-auto mb-2">
                           {((settingsData.email as any).staff_members || []).map((m: any, i: number) => (
                             <div key={i} className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-1.5 border border-gray-100">
@@ -2822,6 +2825,21 @@ export default function AdminMasterDashboard() {
                           allUsers={allUsers.filter(u => u.clinic_id === settingsModal?.clinicId)}
                           onAdd={m => setSettingsData(s => s ? ({...s,email:{...s.email,staff_members:[...((s.email as any).staff_members||[]),m]} as any}) : s)}
                         />
+                        {/* Read-only list of registered system users */}
+                        {allUsers.filter(u => u.clinic_id === settingsModal?.clinicId && u.is_active).length > 0 && (
+                          <div className="mt-3 pt-3 border-t border-gray-100">
+                            <p className="text-xs font-semibold text-gray-600 mb-1.5">👥 Usuarios del sistema — disponibles en agendamiento</p>
+                            <div className="space-y-1 max-h-28 overflow-y-auto">
+                              {allUsers.filter(u => u.clinic_id === settingsModal?.clinicId && u.is_active).map(u => (
+                                <div key={u.id} className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 border border-emerald-100 rounded-lg">
+                                  <span className="flex-1 text-xs text-gray-800 font-medium truncate">{u.full_name || u.username}</span>
+                                  <span className="text-xs text-gray-400 truncate">{u.email || '—'}</span>
+                                  <span className="text-[10px] text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded-full flex-shrink-0">Sistema</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </>)}
 
@@ -2858,7 +2876,9 @@ export default function AdminMasterDashboard() {
                         </div>
                       </div>
                       <div>
-                        <label className="block text-xs font-semibold text-gray-700 mb-1">Tratamientos disponibles ({settingsData.treatments.length})</label>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">Tratamientos disponibles ({settingsData.treatments.length})
+                          <span className="ml-2 text-[10px] font-normal text-gray-400">También editables desde Ajustes del usuario</span>
+                        </label>
                         <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto mb-2 p-2 border rounded-lg bg-gray-50">
                           {settingsData.treatments.map((t,i) => (
                             <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 bg-white border border-gray-200 rounded-full text-xs text-gray-700">

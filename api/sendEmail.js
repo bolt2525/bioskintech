@@ -118,6 +118,8 @@ export default async function handler(req, res) {
     // Staff seleccionado para la cita (también recibirá la notificación)
     selected_staff_email,
     selected_staff_name,
+    // Correos CC adicionales del staff personal del usuario
+    additional_notify_emails,
   } = req.body;
 
   // ============================================
@@ -343,12 +345,22 @@ export default async function handler(req, res) {
     `;
 
     const patientEmailHtml = `
-      <div style="font-family:Segoe UI,Arial,sans-serif;">
-        <h2 style="color:#ba9256;">¡Tu cita está en proceso!</h2>
-        <p>Hola <b>${escapeHtml(paciente)}</b>,<br>Gracias por confiar en <b>${escapeHtml(clinic.name)}</b>. Hemos recibido tu solicitud.</p>
-        <pre style="background:#f5f5f5;padding:10px;border-radius:8px;font-family:inherit;white-space:pre-wrap;">${escapeHtml(message)}</pre>
-        <p style="margin-top:18px;">En breve te confirmaremos la cita. <b>¿Dudas? Responde este email.</b></p>
-        <p style="margin-top:24px;font-size:15px;">— ${escapeHtml(clinic.signature)}</p>
+      <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;">
+        <div style="background:linear-gradient(135deg,#8a6b3f 0%,#ba9256 100%);color:#fff;padding:22px 24px;border-radius:12px 12px 0 0;">
+          <h2 style="margin:0 0 4px;font-size:20px;">¡Tu cita está confirmada!</h2>
+          <p style="margin:0;font-size:13px;opacity:.85;">${escapeHtml(clinic.name)}</p>
+        </div>
+        <div style="background:#fff;border:1px solid #ececec;border-top:0;padding:24px;border-radius:0 0 12px 12px;">
+          <p style="margin:0 0 16px;color:#444;">Hola <strong>${escapeHtml(paciente)}</strong>, hemos recibido tu solicitud de cita. Aquí está el resumen:</p>
+          <table style="width:100%;border-collapse:collapse;">
+            <tr style="background:#faf5ef;"><td style="padding:10px 12px;border-bottom:1px solid #f0e8d8;color:#666;font-size:13px;width:40%;">Servicio</td><td style="padding:10px 12px;border-bottom:1px solid #f0e8d8;font-weight:600;color:#333;font-size:13px;">${escapeHtml(tratamiento)}</td></tr>
+            <tr><td style="padding:10px 12px;border-bottom:1px solid #f0e8d8;color:#666;font-size:13px;">Fecha</td><td style="padding:10px 12px;border-bottom:1px solid #f0e8d8;font-weight:600;color:#333;font-size:13px;">${escapeHtml(fecha || 'Por confirmar')}</td></tr>
+            <tr style="background:#faf5ef;"><td style="padding:10px 12px;border-bottom:1px solid #f0e8d8;color:#666;font-size:13px;">Hora</td><td style="padding:10px 12px;border-bottom:1px solid #f0e8d8;font-weight:600;color:#333;font-size:13px;">${escapeHtml(hora || 'Por confirmar')}</td></tr>
+            <tr><td style="padding:10px 12px;color:#666;font-size:13px;">Clínica</td><td style="padding:10px 12px;font-weight:600;color:#333;font-size:13px;">${escapeHtml(clinic.name)}${clinic.city ? ' &mdash; ' + escapeHtml(clinic.city) : ''}</td></tr>
+          </table>
+          <p style="margin:20px 0 0;color:#555;font-size:13px;">En breve te confirmaremos. ¿Tienes alguna pregunta? Responde este correo.</p>
+          <p style="margin:20px 0 0;color:#888;font-size:12px;border-top:1px solid #eee;padding-top:16px;">&mdash; ${escapeHtml(clinic.signature)}</p>
+        </div>
       </div>
     `;
 
@@ -392,6 +404,16 @@ export default async function handler(req, res) {
         }});
         console.log('📧 Copia enviada al médico seleccionado:', selected_staff_email);
       }
+      // CC a staff personal del usuario
+      if (Array.isArray(additional_notify_emails)) {
+        for (const ccEmail of additional_notify_emails) {
+          if (ccEmail && ccEmail !== staffTo && ccEmail !== selected_staff_email) {
+            await gmail.users.messages.send({ userId: 'me', requestBody: {
+              raw: makeRaw(ccEmail, `🗓️ Copia: cita ${paciente}${fecha ? ` (${fecha})` : ''}`, staffEmailHtml, fromAddr)
+            }});
+          }
+        }
+      }
       await gmail.users.messages.send({ userId: 'me', requestBody: {
         raw: makeRaw(email, `¡Hemos recibido tu cita en ${clinic.name}!`, patientEmailHtml, fromAddr)
       }});
@@ -411,6 +433,14 @@ export default async function handler(req, res) {
       if (selected_staff_email && selected_staff_email !== staffTo) {
         await transporter.sendMail({ from: process.env.EMAIL_USER, to: selected_staff_email, subject: `🗓️ [Tu cita] ${paciente}`, html: doctorEmailHtml });
       }
+      // CC a staff personal del usuario
+      if (Array.isArray(additional_notify_emails)) {
+        for (const ccEmail of additional_notify_emails) {
+          if (ccEmail && ccEmail !== staffTo && ccEmail !== selected_staff_email) {
+            await transporter.sendMail({ from: process.env.EMAIL_USER, to: ccEmail, subject: `🗓️ Copia: cita ${paciente}`, html: staffEmailHtml });
+          }
+        }
+      }
       await transporter.sendMail({ from: process.env.EMAIL_USER, to: email, subject: `¡Hemos recibido tu cita en ${clinic.name}!`, html: patientEmailHtml });
       emailSuccess = true;
     } else {
@@ -422,7 +452,6 @@ export default async function handler(req, res) {
     errorDetails.push(`Email: ${emailErr.message}`);
   }
 
-  // --- RESPUESTA FINAL AL CLIENTE ---
   // Si al menos uno de los dos procesos importantes funcionó (Calendar o Email), lo consideramos éxito parcial
   if (calendarSuccess || emailSuccess) {
       if (!calendarSuccess && start && end) {

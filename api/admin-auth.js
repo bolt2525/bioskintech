@@ -109,6 +109,9 @@ async function ensureNewColumns() {
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS last_name VARCHAR(100)",
     "ALTER TABLE invite_links ADD COLUMN IF NOT EXISTS access_scope VARCHAR(20) DEFAULT 'own'",
     "ALTER TABLE invite_links ADD COLUMN IF NOT EXISTS clinic_id UUID REFERENCES clinics(id) ON DELETE CASCADE",
+    "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS pwd_change_token VARCHAR(128)",
+    "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS pwd_change_expires TIMESTAMPTZ",
+    "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS personal_staff_emails JSONB DEFAULT '[]'::jsonb",
   ];
   for (const stmt of migrations) {
     try { await sql.query(stmt); } catch { /* column already exists — safe to ignore */ }
@@ -2826,6 +2829,189 @@ export default async function handler(req, res) {
       if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master_admin' });
       const r = await sql`SELECT s.*, c.name as clinic_name FROM subscriptions s LEFT JOIN clinics c ON c.id = s.clinic_id ORDER BY s.created_at DESC`;
       return res.status(200).json(r.rows);
+    }
+
+    // ── Perfil propio: cualquier usuario autenticado puede actualizar sus datos ─
+    if (action === 'updateOwnProfile') {
+      const rawFull   = (req.body?.full_name          || '').trim();
+      const rawFirst  = (req.body?.first_name         || '').trim();
+      const rawLast   = (req.body?.last_name          || '').trim();
+      const rawEmail  = (req.body?.email              || '').trim().toLowerCase();
+      const rawCed    = (req.body?.cedula_profesional || '').trim();
+      const rawMat    = (req.body?.matricula_senescyt || '').trim();
+      const rawEsp    = (req.body?.especialidad       || '').trim();
+      const rawGent   = (req.body?.gentilicio         || '').trim();
+      const rawProf   = (req.body?.profession         || '').trim();
+      if (rawEmail) {
+        // Email format validation
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail))
+          return res.status(400).json({ error: 'Formato de email inválido' });
+        // Uniqueness within same clinic (or global for master_admin)
+        const conflict = user.clinic_id
+          ? await sql`SELECT id FROM clinic_users WHERE LOWER(email) = ${rawEmail} AND id != ${user.id} AND clinic_id = ${user.clinic_id}`
+          : await sql`SELECT id FROM clinic_users WHERE LOWER(email) = ${rawEmail} AND id != ${user.id}`;
+        if (conflict.rows.length) return res.status(400).json({ error: 'Este email ya lo usa otro usuario' });
+      }
+      await sql`
+        UPDATE clinic_users SET
+          full_name          = CASE WHEN ${rawFull}  != '' THEN ${rawFull}  ELSE full_name          END,
+          first_name         = CASE WHEN ${rawFirst} != '' THEN ${rawFirst} ELSE first_name         END,
+          last_name          = CASE WHEN ${rawLast}  != '' THEN ${rawLast}  ELSE last_name          END,
+          email              = CASE WHEN ${rawEmail} != '' THEN ${rawEmail} ELSE email              END,
+          cedula_profesional = CASE WHEN ${rawCed}   != '' THEN ${rawCed}   ELSE cedula_profesional END,
+          matricula_senescyt = CASE WHEN ${rawMat}   != '' THEN ${rawMat}   ELSE matricula_senescyt END,
+          especialidad       = CASE WHEN ${rawEsp}   != '' THEN ${rawEsp}   ELSE especialidad       END,
+          gentilicio         = CASE WHEN ${rawGent}  != '' THEN ${rawGent}  ELSE gentilicio         END,
+          profession         = CASE WHEN ${rawProf}  != '' THEN ${rawProf}  ELSE profession         END
+        WHERE id = ${user.id}
+      `;
+      const upd = await sql`SELECT id,username,full_name,first_name,last_name,email,gentilicio,profession,cedula_profesional,matricula_senescyt,especialidad FROM clinic_users WHERE id = ${user.id}`;
+      return res.status(200).json({ success: true, user: upd.rows[0] });
+    }
+
+    // ── Info básica de clínica (solo clinic_admin o master_admin) ────────────
+    if (action === 'updateClinicBasicInfo') {
+      if (!requireRole(user, 'clinic_admin', 'master_admin')) return res.status(403).json({ error: 'Solo administradores' });
+      const clinicId = user.clinic_id;
+      if (!clinicId) return res.status(400).json({ error: 'Sin clínica asignada' });
+      const n = (req.body?.name        || '').trim();
+      const p = (req.body?.phone       || '').trim();
+      const a = (req.body?.address     || '').trim();
+      const c = (req.body?.city        || '').trim();
+      const w = (req.body?.website     || '').trim();
+      const d = (req.body?.description || '').trim();
+      await sql`
+        UPDATE clinics SET
+          name        = CASE WHEN ${n} != '' THEN ${n} ELSE name        END,
+          phone       = CASE WHEN ${p} != '' THEN ${p} ELSE phone       END,
+          address     = CASE WHEN ${a} != '' THEN ${a} ELSE address     END,
+          city        = CASE WHEN ${c} != '' THEN ${c} ELSE city        END,
+          website     = CASE WHEN ${w} != '' THEN ${w} ELSE website     END,
+          description = CASE WHEN ${d} != '' THEN ${d} ELSE description END
+        WHERE id = ${clinicId}
+      `;
+      // Keep clinic_settings.general in sync
+      try {
+        const gs = await sql`SELECT general FROM clinic_settings WHERE clinic_id = ${clinicId}`;
+        if (gs.rows.length) {
+          const g = gs.rows[0].general || {};
+          const merged = { ...g, ...(n&&{name:n}), ...(p&&{phone:p}), ...(a&&{address:a}), ...(c&&{city:c}), ...(w&&{website:w}), ...(d&&{description:d}) };
+          await sql`UPDATE clinic_settings SET general = ${JSON.stringify(merged)}::jsonb WHERE clinic_id = ${clinicId}`;
+        }
+      } catch { /* silencioso */ }
+      const upd = await sql`SELECT id,name,phone,address,city,website,description FROM clinics WHERE id = ${clinicId}`;
+      return res.status(200).json({ success: true, clinic: upd.rows[0] });
+    }
+
+    // ── Enviar código OTP para cambio de contraseña ───────────────────────────
+    if (action === 'sendPasswordChangeCode') {
+      const { currentPassword, newPassword } = req.body || {};
+      if (!currentPassword || !newPassword) return res.status(400).json({ error: 'Campos requeridos' });
+      if (newPassword.length < 8) return res.status(400).json({ error: 'Mínimo 8 caracteres para la nueva contraseña' });
+      const uRow = await sql`SELECT password_hash,salt,hash_algo,email FROM clinic_users WHERE id = ${user.id}`;
+      if (!uRow.rows.length) return res.status(404).json({ error: 'Usuario no encontrado' });
+      const { password_hash, salt: storedSalt, hash_algo, email: userEmail } = uRow.rows[0];
+      if (!userEmail?.trim())
+        return res.status(400).json({ error: 'Debes registrar tu email en Mi Perfil antes de cambiar la contraseña.' });
+      if (!verifyPassword(currentPassword, password_hash, storedSalt, hash_algo))
+        return res.status(401).json({ error: 'Contraseña actual incorrecta' });
+      // Generate 6-digit OTP, store SHA-256 hash to avoid leaking plain code
+      const otpPlain = crypto.randomInt(100000, 999999).toString();
+      const otpHash  = crypto.createHash('sha256').update(otpPlain).digest('hex');
+      const expires  = new Date(Date.now() + 15 * 60 * 1000);
+      await sql`UPDATE clinic_users SET pwd_change_token = ${otpHash}, pwd_change_expires = ${expires.toISOString()} WHERE id = ${user.id}`;
+      // Send verification email via SMTP
+      try {
+        const transporter = nodemailer.createTransport({
+          host: process.env.EMAIL_HOST,
+          port: parseInt(process.env.EMAIL_PORT || '587'),
+          secure: parseInt(process.env.EMAIL_PORT || '587') === 465,
+          requireTLS: parseInt(process.env.EMAIL_PORT || '587') !== 465,
+          auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+        });
+        const displayName = user.full_name || user.username;
+        await transporter.sendMail({
+          from: `BIOSKIN <${process.env.EMAIL_USER}>`,
+          to: userEmail.trim(),
+          subject: '🔐 Código de verificación — Cambio de contraseña BIOSKIN',
+          html: `<div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:20px">
+            <div style="background:linear-gradient(135deg,#8a6b3f,#ba9256);color:#fff;padding:18px 20px;border-radius:12px 12px 0 0;text-align:center">
+              <h2 style="margin:0;font-size:20px">🔐 Código de Verificación</h2>
+            </div>
+            <div style="background:#fff;border:1px solid #ececec;border-top:0;padding:24px 20px;border-radius:0 0 12px 12px;text-align:center">
+              <p style="color:#333;margin-bottom:16px">Hola <strong>${displayName}</strong>, ingresa este código para confirmar el cambio de contraseña:</p>
+              <div style="font-size:38px;font-weight:bold;letter-spacing:10px;color:#ba9256;background:#faf5ef;border-radius:12px;padding:16px 24px;display:inline-block;margin:8px 0">${otpPlain}</div>
+              <p style="color:#666;font-size:13px;margin-top:16px">Válido por <strong>15 minutos</strong>. Si no solicitaste este cambio, ignora este mensaje.</p>
+            </div>
+          </div>`,
+        });
+      } catch (emailErr) {
+        console.error('OTP email error:', emailErr.message);
+        await sql`UPDATE clinic_users SET pwd_change_token = NULL, pwd_change_expires = NULL WHERE id = ${user.id}`;
+        return res.status(500).json({ error: 'Error al enviar el correo. Revisa la configuración SMTP.' });
+      }
+      const masked = userEmail.replace(/(.{2})[^@]+(@.+)/, '$1***$2');
+      return res.status(200).json({ success: true, message: `Código enviado a ${masked}` });
+    }
+
+    // ── Verificar OTP y cambiar contraseña ───────────────────────────────────
+    if (action === 'verifyAndChangePassword') {
+      const { otpCode, newPassword } = req.body || {};
+      if (!otpCode || !newPassword) return res.status(400).json({ error: 'Campos requeridos' });
+      if (newPassword.length < 8) return res.status(400).json({ error: 'Mínimo 8 caracteres' });
+      const uRow = await sql`SELECT pwd_change_token, pwd_change_expires FROM clinic_users WHERE id = ${user.id}`;
+      if (!uRow.rows.length) return res.status(404).json({ error: 'Usuario no encontrado' });
+      const { pwd_change_token, pwd_change_expires } = uRow.rows[0];
+      if (!pwd_change_token || !pwd_change_expires) return res.status(400).json({ error: 'Sin verificación pendiente. Solicita un nuevo código.' });
+      if (new Date(pwd_change_expires) < new Date()) {
+        await sql`UPDATE clinic_users SET pwd_change_token = NULL, pwd_change_expires = NULL WHERE id = ${user.id}`;
+        return res.status(400).json({ error: 'Código expirado. Solicita uno nuevo.' });
+      }
+      const inputHash = crypto.createHash('sha256').update(String(otpCode).trim()).digest('hex');
+      const storedBuf = Buffer.from(pwd_change_token, 'hex');
+      const inputBuf  = Buffer.from(inputHash, 'hex');
+      if (storedBuf.length !== inputBuf.length || !crypto.timingSafeEqual(storedBuf, inputBuf))
+        return res.status(401).json({ error: 'Código incorrecto' });
+      const { hash, salt } = hashPassword(newPassword);
+      await sql`
+        UPDATE clinic_users SET
+          password_hash = ${hash}, salt = ${salt}, hash_algo = 'pbkdf2',
+          pwd_change_token = NULL, pwd_change_expires = NULL
+        WHERE id = ${user.id}
+      `;
+      // Invalidate ALL sessions (frontend will redirect to login)
+      await sql`UPDATE admin_sessions SET is_active = false WHERE clinic_user_id = ${user.id}`;
+      return res.status(200).json({ success: true, requireLogout: true, message: 'Contraseña cambiada exitosamente' });
+    }
+
+    // ── Profesionales de la clínica (para selector en agendamiento) ──────────
+    if (action === 'getClinicProfessionals') {
+      if (!user.clinic_id) return res.status(400).json({ error: 'Sin clínica asignada' });
+      const rows = await sql`
+        SELECT id, username, full_name, email, cedula_profesional, especialidad, gentilicio, profession
+        FROM clinic_users
+        WHERE clinic_id = ${user.clinic_id} AND is_active = true
+        ORDER BY full_name, username
+      `;
+      return res.status(200).json({ success: true, professionals: rows.rows });
+    }
+
+    // ── Correos CC personales del usuario ────────────────────────────────────
+    if (action === 'getPersonalStaffEmails') {
+      const r = await sql`SELECT personal_staff_emails FROM clinic_users WHERE id = ${user.id}`;
+      return res.status(200).json({ success: true, emails: r.rows[0]?.personal_staff_emails || [] });
+    }
+
+    if (action === 'updatePersonalStaffEmails') {
+      const { emails } = req.body || {};
+      if (!Array.isArray(emails)) return res.status(400).json({ error: 'emails debe ser un array' });
+      if (emails.length > 10) return res.status(400).json({ error: 'Máximo 10 correos de staff personal' });
+      const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      const bad = emails.find(e => typeof e !== 'string' || !emailRe.test(e.trim()));
+      if (bad !== undefined) return res.status(400).json({ error: `Email inválido: ${bad}` });
+      const cleaned = emails.map(e => e.trim().toLowerCase());
+      await sql`UPDATE clinic_users SET personal_staff_emails = ${JSON.stringify(cleaned)}::jsonb WHERE id = ${user.id}`;
+      return res.status(200).json({ success: true, emails: cleaned });
     }
 
     return res.status(400).json({ success: false, error: 'Acción no válida' });
