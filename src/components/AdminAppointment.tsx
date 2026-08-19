@@ -136,7 +136,7 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
   const [agendaStartHour, setAgendaStartHour]     = useState('07:00');
   const [agendaEndHour, setAgendaEndHour]         = useState('20:00');
   // Duration selected for this specific appointment (independent of display interval)
-  const [appointmentDuration, setAppointmentDuration] = useState(60);
+  const [appointmentDuration, setAppointmentDuration] = useState(30);
 
   useEffect(() => {
     if (!user?.clinic_id) return;
@@ -155,7 +155,7 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
       if (settings.settings?.email?.staff_members?.length) setExternalStaff(settings.settings.email.staff_members);
       if (settings.settings?.agenda?.slot_minutes) {
         setAgendaSlotMinutes(settings.settings.agenda.slot_minutes);
-        setAppointmentDuration(settings.settings.agenda.slot_minutes); // default duration = clinic default
+        // ponytail: keep duration default at 30 regardless of clinic slot setting
       }
       if (settings.settings?.agenda?.start_hour)   setAgendaStartHour(settings.settings.agenda.start_hour);
       if (settings.settings?.agenda?.end_hour)     setAgendaEndHour(settings.settings.agenda.end_hour);
