@@ -22,6 +22,7 @@ import {
   UserCircle, CalendarDays, Building2, KeyRound, Plus, Trash2, UserCheck,
 } from 'lucide-react';
 import { useEffect, useState, useRef } from 'react';
+import { Fragment } from 'react';
 import AppFooter from '../components/layout/AppFooter';
 
 // Módulos y tipos de constants centralizados
@@ -651,10 +652,10 @@ export default function AdminDashboard() {
                       {/* Progress steps */}
                       <div className="flex items-center gap-2 mb-2">
                         {[1,2,3].map(s => (
-                          <React.Fragment key={s}>
+                        <Fragment key={s}>
                             <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${pwdStep >= s ? 'bg-[#deb887] text-white' : 'bg-gray-100 text-gray-400'}`}>{s}</div>
                             {s < 3 && <div className={`flex-1 h-0.5 rounded ${pwdStep > s ? 'bg-[#deb887]' : 'bg-gray-100'}`} />}
-                          </React.Fragment>
+                          </Fragment>
                         ))}
                       </div>
 
