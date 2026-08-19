@@ -684,7 +684,7 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
                     
                     <div>
                       <span className="font-semibold text-gray-700">Hora:</span>
-                      <p className="text-gray-900">{selectedHour && formatTimeLabel(selectedHour)} (2 horas)</p>
+                      <p className="text-gray-900">{selectedHour && formatTimeLabel(selectedHour)} ({appointmentDuration < 60 ? `${appointmentDuration} min` : appointmentDuration % 60 === 0 ? `${appointmentDuration / 60} h` : `${Math.floor(appointmentDuration / 60)}:30 h`})</p>
                     </div>
                     
                     <div>
