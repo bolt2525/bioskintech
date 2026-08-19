@@ -126,6 +126,7 @@ export default function AdminDashboard() {
   const [editingClinicField, setEditingClinicField] = useState<string | null>(null);
   const [clinicSaving, setClinicSaving]     = useState(false);
   const [clinicMsg, setClinicMsg]           = useState<{ text: string; ok: boolean } | null>(null);
+  const [registeredClinicEmail, setRegisteredClinicEmail] = useState<string>('');
 
   // Verificar autenticación al montar
   useEffect(() => {
@@ -222,6 +223,7 @@ export default function AdminDashboard() {
             name: g.name || '', phone: g.phone || '', address: g.address || '',
             city: g.city || '', website: g.website || '', description: g.description || '',
           });
+          if (settingsRes.clinic_email) setRegisteredClinicEmail(settingsRes.clinic_email);
         }
       } catch { /* silencioso */ }
     }
@@ -856,6 +858,21 @@ export default function AdminDashboard() {
                     <>
                       <p className="text-xs text-gray-400">Haz clic en ✏️ para editar cada campo.</p>
                       <div className="grid grid-cols-2 gap-3">
+                        {/* Correo de la clínica — solo lectura, solo master admin puede cambiarlo */}
+                        {registeredClinicEmail && (
+                          <div className="col-span-2">
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Correo de la clínica</label>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="email"
+                                value={registeredClinicEmail}
+                                disabled
+                                className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-500 cursor-not-allowed"
+                              />
+                              <span className="text-xs text-gray-400 whitespace-nowrap">Solo el master admin puede modificarlo</span>
+                            </div>
+                          </div>
+                        )}
                         {([
                           ['name',        'Nombre de la clínica', 'text',  'col-span-2'],
                           ['phone',       'Teléfono',             'tel',   ''],

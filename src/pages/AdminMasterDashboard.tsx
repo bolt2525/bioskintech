@@ -20,6 +20,7 @@ import {
   LogOut, Building2, Users, Shield, RefreshCw, ChevronDown, ChevronUp,
   Plus, Edit, Trash2, Eye, EyeOff, Key, X, Check, AlertCircle,
   Activity, ClipboardList, ChevronRight, Sparkles, Lock, Mail, Unlink, Copy, ExternalLink, Settings2, LayoutDashboard, UserCheck, Calendar, Infinity, Clock, Bell,
+  Link2Off, Loader2, CheckCircle2,
 } from 'lucide-react';
 
 // Constantes centralizadas — no duplicar aquí
@@ -987,6 +988,10 @@ export default function AdminMasterDashboard() {
   const [clinicModal, setClinicModal] = useState<{ open: boolean; clinicId?: number }>({ open: false });
   const [pwdModal,    setPwdModal]    = useState<{ open: boolean; userId?: number }>({ open: false });
 
+  // Estado de conexión OAuth para el modal Editar Clínica
+  const [clinicEmailConn, setClinicEmailConn] = useState<{ connected: boolean; email: string | null } | null>(null);
+  const [disconnecting, setDisconnecting] = useState(false);
+
   // ── Formularios ──────────────────────────────────────────────────────────
   const [userForm, setUserForm]     = useState({ username: '', full_name: '', first_name: '', last_name: '', gentilicio: '', profession: '', email: '', role: 'clinic_user', access_scope: 'own', finance_scope: 'all', inventory_scope: 'all', clinic_id: '', password: '', password2: '', cedula_profesional: '', matricula_senescyt: '', especialidad: '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
   const [clinicForm, setClinicForm] = useState({ name: '', email: '', phone: '', address: '' });
@@ -1503,11 +1508,35 @@ export default function AdminMasterDashboard() {
   const openCreateClinic = () => {
     setClinicForm({ name: '', email: '', phone: '', address: '' });
     setClinicModal({ open: true });
+    setClinicEmailConn(null);
   };
 
   const openEditClinic = (c: Clinic) => {
     setClinicForm({ name: c.name, email: c.email || '', phone: c.phone || '', address: c.address || '' });
     setClinicModal({ open: true, clinicId: c.id });
+    setClinicEmailConn(null); // reset mientras carga
+    fetch(`/api/admin-auth?action=getEmailConnectionStatus&clinicId=${c.id}`, { headers: authHeader() })
+      .then(r => r.json())
+      .then(d => { if (d.success) setClinicEmailConn({ connected: d.connected, email: d.email }); })
+      .catch(() => {});
+  };
+
+  const handleDisconnectAndChange = async () => {
+    const clinicId = clinicModal.clinicId;
+    if (!clinicId) return;
+    if (!confirm('¿Revocar el acceso de Google y desconectar este correo?\n\nLa clínica deberá reconectar con el nuevo correo desde Estado del Sistema.')) return;
+    setDisconnecting(true);
+    try {
+      const res = await fetch('/api/admin-auth?action=disconnectClinicOAuth', {
+        method: 'POST', headers: authHeader(), body: JSON.stringify({ clinicId }),
+      });
+      const d = await res.json();
+      if (d.error) { flash(d.error, 'err'); return; }
+      setClinicEmailConn({ connected: false, email: null });
+      flash('Cuenta desconectada. Ya puedes cambiar el correo.');
+      loadOauthStatus();
+    } catch { flash('Error al desconectar', 'err'); }
+    finally { setDisconnecting(false); }
   };
 
   const saveClinic = async () => {
@@ -3239,7 +3268,6 @@ export default function AdminMasterDashboard() {
               )}
             </div>
             {[
-              { label: 'Email de contacto', key: 'email',   type: 'email' },
               { label: 'Teléfono',          key: 'phone',   type: 'tel' },
               { label: 'Dirección',         key: 'address', type: 'text' },
             ].map(f => (
@@ -3253,6 +3281,32 @@ export default function AdminMasterDashboard() {
                 />
               </div>
             ))}
+            {/* Email de contacto — con badge de conexión OAuth */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Email de contacto</label>
+              <input
+                type="email"
+                value={clinicForm.email}
+                onChange={e => setClinicForm(p => ({ ...p, email: e.target.value }))}
+                disabled={clinicEmailConn?.connected === true}
+                className={`w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-amber-300 focus:outline-none ${clinicEmailConn?.connected ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}`}
+              />
+              {clinicEmailConn === null && clinicModal.clinicId && (
+                <p className="mt-1 text-xs text-gray-400 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Verificando estado...</p>
+              )}
+              {clinicEmailConn?.connected && (
+                <div className="mt-1.5 flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-1 text-xs text-emerald-600 font-medium">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Esta cuenta está conectada con la clínica
+                  </span>
+                  <button onClick={handleDisconnectAndChange} disabled={disconnecting}
+                    className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700 disabled:opacity-50 font-medium transition-colors">
+                    {disconnecting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Link2Off className="w-3 h-3" />}
+                    Desconectar y cambiar
+                  </button>
+                </div>
+              )}
+            </div>
             {!clinicModal.clinicId && (
               <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
                 ℹ️ Al guardar, podrás crear el primer usuario administrador de esta clínica.

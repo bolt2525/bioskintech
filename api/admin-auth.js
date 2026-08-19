@@ -1914,6 +1914,17 @@ async function createClinic(body) {
 async function updateClinic(body) {
   const { id, name, email, phone, address, is_active } = body;
   if (!id) return { error: 'id requerido' };
+  // Bloquear cambio de email si la clínica tiene OAuth activo
+  if (email != null && email !== '') {
+    const currentClinic = await sql`SELECT email FROM clinics WHERE id = ${id}`;
+    const currentEmail  = currentClinic.rows[0]?.email || '';
+    if (email.trim().toLowerCase() !== currentEmail.trim().toLowerCase()) {
+      const oauthTok = await sql`SELECT id FROM clinic_oauth_tokens WHERE clinic_id = ${id}`;
+      if (oauthTok.rows.length) {
+        return { error: 'El correo de la clínica está conectado con Google. Desconéctalo primero antes de cambiarlo.' };
+      }
+    }
+  }
   await sql`
     UPDATE clinics SET
       name      = COALESCE(${name      ?? null}, name),
@@ -2344,6 +2355,25 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, message: 'Conexión OAuth revocada' });
     }
 
+    // Desconectar OAuth con revocación real en Google (master_admin o clinic_admin propia clínica)
+    if (action === 'disconnectClinicOAuth') {
+      const clinicId = req.body?.clinicId || (user.role === 'clinic_admin' ? user.clinic_id : null);
+      if (!clinicId) return res.status(400).json({ error: 'clinicId requerido' });
+      if (user.role === 'clinic_admin' && String(clinicId) !== String(user.clinic_id))
+        return res.status(403).json({ error: 'Solo puedes desconectar tu propia clínica' });
+      if (!requireRole(user, 'master_admin', 'clinic_admin'))
+        return res.status(403).json({ error: 'Sin permiso' });
+      // Revocar el token con Google antes de borrar de la DB
+      const tok = await sql`SELECT refresh_token FROM clinic_oauth_tokens WHERE clinic_id = ${clinicId}`;
+      if (tok.rows.length && tok.rows[0].refresh_token) {
+        try {
+          await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(tok.rows[0].refresh_token)}`, { method: 'POST' });
+        } catch { /* non-fatal — borramos de DB de todas formas */ }
+      }
+      await sql`DELETE FROM clinic_oauth_tokens WHERE clinic_id = ${clinicId}`;
+      return res.status(200).json({ success: true, message: 'Cuenta desconectada y acceso revocado en Google' });
+    }
+
     // Estado de conexión del email de la clínica (clinic_admin propia clínica o master_admin)
     if (action === 'getEmailConnectionStatus') {
       const clinicId = req.query.clinicId || user.clinic_id || null; // UUID — no parseInt
@@ -2437,7 +2467,9 @@ export default async function handler(req, res) {
         return res.status(200).json({ success: true, settings: defaults });
       }
       const s = r.rows[0];
-      return res.status(200).json({ success: true, settings: {
+      // Obtener clinic_email para mostrarlo como read-only en ajustes del usuario
+      const ceRow = await sql`SELECT email FROM clinics WHERE id = ${clinicId}`;
+      return res.status(200).json({ success: true, clinic_email: ceRow.rows[0]?.email || null, settings: {
         general:        s.general,
         treatments:     s.treatments,
         email:          s.email,
