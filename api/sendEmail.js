@@ -144,10 +144,7 @@ export default async function handler(req, res) {
     ].filter(Boolean).join(', ') || process.env.EMAIL_TO;
 
     const transporter = nodemailer.createTransport({
-      host: process.env.EMAIL_HOST,
-      port: parseInt(process.env.EMAIL_PORT || '587'),
-      secure: parseInt(process.env.EMAIL_PORT || '587') === 465,
-      requireTLS: parseInt(process.env.EMAIL_PORT || '587') !== 465,
+      service: 'gmail',
       auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
     });
 
@@ -424,9 +421,7 @@ export default async function handler(req, res) {
       // Fallback: SMTP legacy
       console.log('📧 Enviando vía SMTP');
       const transporter = nodemailer.createTransport({
-        host: process.env.EMAIL_HOST, port: parseInt(process.env.EMAIL_PORT || '587'),
-        secure: parseInt(process.env.EMAIL_PORT || '587') === 465,
-        requireTLS: parseInt(process.env.EMAIL_PORT || '587') !== 465,
+        service: 'gmail',
         auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
       });
       if (staffTo) await transporter.sendMail({ from: process.env.EMAIL_USER, to: staffTo, subject: `🗓️ Nueva cita - ${paciente}`, html: staffEmailHtml });

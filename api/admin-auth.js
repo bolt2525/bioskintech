@@ -2920,21 +2920,12 @@ export default async function handler(req, res) {
       const otpHash  = crypto.createHash('sha256').update(otpPlain).digest('hex');
       const expires  = new Date(Date.now() + 15 * 60 * 1000);
       await sql`UPDATE clinic_users SET pwd_change_token = ${otpHash}, pwd_change_expires = ${expires.toISOString()} WHERE id = ${user.id}`;
-      // Send verification email via SMTP
+      // Send verification email via sendAuthEmail (service: 'gmail')
       try {
-        const transporter = nodemailer.createTransport({
-          host: process.env.EMAIL_HOST,
-          port: parseInt(process.env.EMAIL_PORT || '587'),
-          secure: parseInt(process.env.EMAIL_PORT || '587') === 465,
-          requireTLS: parseInt(process.env.EMAIL_PORT || '587') !== 465,
-          auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-        });
         const displayName = user.full_name || user.username;
-        await transporter.sendMail({
-          from: `BIOSKIN <${process.env.EMAIL_USER}>`,
-          to: userEmail.trim(),
-          subject: '🔐 Código de verificación — Cambio de contraseña BIOSKIN',
-          html: `<div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:20px">
+        await sendAuthEmail(userEmail.trim(),
+          '🔐 Código de verificación — Cambio de contraseña BIOSKIN',
+          `<div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:20px">
             <div style="background:linear-gradient(135deg,#8a6b3f,#ba9256);color:#fff;padding:18px 20px;border-radius:12px 12px 0 0;text-align:center">
               <h2 style="margin:0;font-size:20px">🔐 Código de Verificación</h2>
             </div>
@@ -2943,8 +2934,8 @@ export default async function handler(req, res) {
               <div style="font-size:38px;font-weight:bold;letter-spacing:10px;color:#ba9256;background:#faf5ef;border-radius:12px;padding:16px 24px;display:inline-block;margin:8px 0">${otpPlain}</div>
               <p style="color:#666;font-size:13px;margin-top:16px">Válido por <strong>15 minutos</strong>. Si no solicitaste este cambio, ignora este mensaje.</p>
             </div>
-          </div>`,
-        });
+          </div>`
+        );
       } catch (emailErr) {
         console.error('OTP email error:', emailErr.message);
         await sql`UPDATE clinic_users SET pwd_change_token = NULL, pwd_change_expires = NULL WHERE id = ${user.id}`;
