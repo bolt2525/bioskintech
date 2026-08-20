@@ -2326,7 +2326,7 @@ export default async function handler(req, res) {
       const appBase = (process.env.APP_URL || `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app'}`).replace(/\/$/, '').trim();
       const redirectUri = `${appBase}/api/calendar`;
       const { returnPath } = req.body || {};
-      const state = Buffer.from(JSON.stringify({ clinicId, ts: Date.now(), returnPath: returnPath || '/admin/master' })).toString('base64url');
+      const state = Buffer.from(JSON.stringify({ clinicId, ts: Date.now(), returnPath: returnPath || '/gestionestetica/admin/master' })).toString('base64url');
       // Obtener el correo registrado de la clínica para pre-seleccionarlo en Google
       const clinicEmailRow = await sql`SELECT email FROM clinics WHERE id = ${clinicId}`;
       const loginHint = clinicEmailRow.rows[0]?.email || '';

@@ -73,7 +73,7 @@ export default async function handler(req, res) {
       `;
 
       // Redirigir a la página que inició el flujo OAuth
-      const dest = returnPath || '/admin/master';
+      const dest = returnPath || '/gestionestetica/admin/master';
       return res.redirect(302, dest + '?oauth=success&clinic=' + clinicId);
     } catch (e) {
       console.error('❌ OAuth callback error:', e.message);

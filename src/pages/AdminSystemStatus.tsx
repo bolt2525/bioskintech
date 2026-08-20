@@ -116,7 +116,7 @@ function UserStatusView({ isClinicAdmin, user }: { isClinicAdmin: boolean; user:
       const res = await fetch('/api/admin-auth?action=oauthStart', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken') || ''}` },
-        body: JSON.stringify({ clinicId: user.clinic_id, returnPath: '/#/admin/system-status' }),
+        body: JSON.stringify({ clinicId: user.clinic_id, returnPath: '/gestionestetica/admin/system-status' }),
       });
       const d = await res.json();
       if (d.url) window.location.href = d.url;
