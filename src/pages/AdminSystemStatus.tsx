@@ -116,7 +116,7 @@ function UserStatusView({ isClinicAdmin, user }: { isClinicAdmin: boolean; user:
       const res = await fetch('/api/admin-auth?action=oauthStart', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken') || ''}` },
-        body: JSON.stringify({ clinicId: user.clinic_id, returnPath: '/gestionestetica/admin/system-status' }),
+        body: JSON.stringify({ clinicId: user.clinic_id, returnPath: '/gestionestetica/admin' }),
       });
       const d = await res.json();
       if (d.url) window.location.href = d.url;
@@ -146,7 +146,7 @@ function UserStatusView({ isClinicAdmin, user }: { isClinicAdmin: boolean; user:
     const params = new URLSearchParams(location.search);
     if (params.get('oauth') === 'success') {
       setEmailConnMsg('\u2713 Gmail conectado correctamente');
-      navigate(location.pathname, { replace: true }); // limpiar query param
+      navigate('/admin', { replace: true }); // evitar que back vuelva a Google OAuth
     }
   }, [fetchUserStatus, fetchEmailConn]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -327,7 +327,7 @@ export default function AdminSystemStatus() {
   // ── Vista clinic_admin / clinic_user ──────────────────────────────────
   if (!isMaster) {
     return (
-      <AdminLayout>
+      <AdminLayout backPath="/admin">
         <div className="p-4 md:p-8 max-w-2xl mx-auto">
           <div className="flex items-center gap-4 mb-8">
             <div className="p-3 rounded-2xl shadow-lg bg-gradient-to-br from-[#deb887] to-[#c5a075]">
@@ -347,7 +347,7 @@ export default function AdminSystemStatus() {
   // ── Vista master_admin: infra completa ────────────────────────────────
   const allOk = statusData ? Object.values(statusData.checks).every(c => c.success) : null;
   return (
-    <AdminLayout>
+    <AdminLayout backPath="/admin/master">
       <div className="p-4 md:p-8 max-w-3xl mx-auto">
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-4">

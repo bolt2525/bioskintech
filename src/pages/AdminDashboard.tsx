@@ -12,7 +12,7 @@
  *  - Modal de estado del sistema (Calendar + SMTP)
  */
 
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useMasterView } from '../context/MasterViewContext';
 import { useAdminNav } from '../hooks/useAdminNav';
@@ -74,6 +74,7 @@ function urgency(a: UpcomingAppointment) {
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { isAuthenticated, user, hasFeature, logout, checkAuth, userModuleOverrides } = useAuth();
   const masterView = useMasterView();
   const { nav } = useAdminNav();
@@ -90,6 +91,9 @@ export default function AdminDashboard() {
   const [showNotifications, setShowNotifications]       = useState(false);
   const [upcomingAppointments, setUpcomingAppointments] = useState<UpcomingAppointment[]>([]);
   const [loadingNotifications, setLoadingNotifications] = useState(false);
+
+  // Toast para mensajes transitorios (ej. retorno de OAuth)
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
 
   // ─── Settings modal ─────────────────────────────────────────────────────
   const [showSettings, setShowSettings]   = useState(false);
@@ -132,6 +136,16 @@ export default function AdminDashboard() {
   useEffect(() => {
     checkAuth().then(ok => { if (!ok) navigate('/admin/login'); });
   }, []);
+
+  // Detectar retorno exitoso del flujo OAuth de Gmail
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get('oauth') === 'success') {
+      setToastMsg('✓ Gmail conectado correctamente');
+      navigate(location.pathname, { replace: true }); // limpiar query param
+      setTimeout(() => setToastMsg(null), 5000);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Redirigir master_admin a su propio panel SOLO si no está en modo master-view
   useEffect(() => {
@@ -369,7 +383,12 @@ export default function AdminDashboard() {
   return (
     <div className="min-h-screen bg-[#fafafa]">
 
-      {/* ── Header ──────────────────────────────────────────────────────── */}
+      {/* Toast de retorno OAuth */}
+      {toastMsg && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-2 bg-emerald-600 text-white px-5 py-3 rounded-xl shadow-lg text-sm font-medium animate-fade-in">
+          {toastMsg}
+        </div>
+      )}
       <div className="bg-white border-b border-gray-100 sticky top-0 z-30">
         <div className="container-custom py-3.5">
           <div className="flex items-center justify-between gap-3 flex-wrap">
