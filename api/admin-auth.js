@@ -53,7 +53,7 @@ const ALL_FEATURES = [
 const SUBSCRIPTION_PLANS = {
   plan_lanzamiento: {
     name: 'Plan Lanzamiento BioskinTech',
-    features: ['calendar','block_schedule','appointment','clinical_records','finance','inventory','clinical_3d','system_status','backup'],
+    features: ['calendar','block_schedule','appointment','clinical_records','finance','inventory','system_status','backup'],
     access_scope: 'all',
     amount_cents: 26450,       // $264.50/año
     description: 'Plan especial de lanzamiento con módulos principales',
@@ -920,7 +920,7 @@ async function checkTrustedDevice(userId, deviceToken) {
 }
 
 async function recordTrustedDevice(userId, deviceToken, ip, ua) {
-  const exp = new Date(Date.now() + 30 * 86400000); // 30 days
+  const exp = new Date(Date.now() + 90 * 86400000); // 90 days
   await sql`
     INSERT INTO trusted_devices (user_id, device_token, ip_address, user_agent, expires_at)
     VALUES (${userId}, ${deviceToken}, ${ip||null}, ${ua||null}, ${exp})

@@ -38,7 +38,6 @@ export default function AdminLogin() {
   const [otpToken, setOtpToken]       = useState('');
   const [otpCode, setOtpCode]         = useState('');
   const [maskedEmail, setMaskedEmail] = useState('');
-  const [trustDevice, setTrustDevice] = useState(false);
 
   // Redirigir si ya está autenticado
   useEffect(() => {
@@ -83,17 +82,14 @@ export default function AdminLogin() {
       });
       const d = await r.json();
       if (d.success) {
-        if (trustDevice) {
-          const newDeviceToken = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
-          localStorage.setItem('bioskin_device_token', newDeviceToken);
-          try {
-            await fetch('/api/admin-auth?action=trustDevice', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${d.sessionToken}` },
-              body: JSON.stringify({ device_token: newDeviceToken }),
-            });
-          } catch { /* non-fatal */ }
-        }
+        // Auto-register this device as trusted for 90 days
+        const deviceToken = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
+        localStorage.setItem('bioskin_device_token', deviceToken);
+        fetch('/api/admin-auth?action=trustDevice', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${d.sessionToken}` },
+          body: JSON.stringify({ device_token: deviceToken }),
+        }).catch(() => {}); // non-fatal
         sessionStorage.setItem('adminSessionToken', d.sessionToken);
         sessionStorage.setItem('adminUser', JSON.stringify({ ...d.user, subscriptionWarningDays: d.subscriptionWarningDays }));
         sessionStorage.setItem('adminSessionExpiry', String(d.expiresAt));
@@ -154,11 +150,6 @@ export default function AdminLogin() {
                     className="glass-input w-full px-4 py-3 rounded-xl text-center text-3xl font-mono tracking-widest"
                   />
                 </div>
-                <label className="flex items-center gap-2 cursor-pointer select-none">
-                  <input type="checkbox" checked={trustDevice} onChange={e => setTrustDevice(e.target.checked)}
-                    className="w-4 h-4 rounded accent-[#deb887]" />
-                  <span className="text-xs text-white/40">No pedir código en este dispositivo por 30 días</span>
-                </label>
                 {error && (
                   <div className="bg-red-900/30 border border-red-500/30 rounded-xl px-4 py-3">
                     <p className="text-red-400 text-sm">{error}</p>

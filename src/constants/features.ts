@@ -104,6 +104,7 @@ export const MODULE_LIST: ModuleConfig[] = [
     path: '/admin/clinical-3d',
     iconColor: 'text-violet-500',
     bgColor: 'bg-violet-50',
+    hidden: true,
   },
   {
     feat: 'system_status',
