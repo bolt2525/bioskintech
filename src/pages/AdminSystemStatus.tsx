@@ -327,7 +327,7 @@ export default function AdminSystemStatus() {
   // ── Vista clinic_admin / clinic_user ──────────────────────────────────
   if (!isMaster) {
     return (
-      <AdminLayout backPath="/admin">
+      <AdminLayout backPath="/admin" title="Estado del Sistema">
         <div className="p-4 md:p-8 max-w-2xl mx-auto">
           <div className="flex items-center gap-4 mb-8">
             <div className="p-3 rounded-2xl shadow-lg bg-gradient-to-br from-[#deb887] to-[#c5a075]">
@@ -347,7 +347,7 @@ export default function AdminSystemStatus() {
   // ── Vista master_admin: infra completa ────────────────────────────────
   const allOk = statusData ? Object.values(statusData.checks).every(c => c.success) : null;
   return (
-    <AdminLayout backPath="/admin/master">
+    <AdminLayout backPath="/admin/master" title="Estado del Sistema">
       <div className="p-4 md:p-8 max-w-3xl mx-auto">
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-4">

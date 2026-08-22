@@ -24,6 +24,7 @@ const getLocalDate = (): string => {
 
 interface Treatment {
   id?: number;
+  consultation_id?: number;
   date: string;
   procedure_name: string;
   equipment_used: string;

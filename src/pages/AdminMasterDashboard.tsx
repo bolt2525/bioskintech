@@ -25,6 +25,7 @@ import {
 
 // Constantes centralizadas — no duplicar aquí
 import { ALL_FEATURES, FEATURE_META, MODULE_LIST } from '../constants/features';
+import type { FeatureKey } from '../constants/features';
 import { ROLE_LABELS, ROLE_COLORS } from '../constants/theme';
 import { slugify } from '../utils/slugify';
 
@@ -1062,7 +1063,7 @@ export default function AdminMasterDashboard() {
     if (!settingsModal) return;
     await fetch('/api/records', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader(), 'X-Target-Clinic-Id': String(settingsModal.clinicId) },
+      headers: { ...authHeader(), 'Content-Type': 'application/json', 'X-Target-Clinic-Id': String(settingsModal.clinicId) },
       body: JSON.stringify({ action: 'manageSharingGroup', mode, group_id: groupId, name, description }),
     });
     loadSharingGroups(settingsModal.clinicId);
@@ -1072,7 +1073,7 @@ export default function AdminMasterDashboard() {
     if (!settingsModal) return;
     await fetch('/api/records', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader(), 'X-Target-Clinic-Id': String(settingsModal.clinicId) },
+      headers: { ...authHeader(), 'Content-Type': 'application/json', 'X-Target-Clinic-Id': String(settingsModal.clinicId) },
       body: JSON.stringify({ action: 'manageSharingMember', mode, group_id: groupId, clinic_user_id: userId }),
     });
     loadSharingGroups(settingsModal.clinicId);
@@ -2829,7 +2830,7 @@ export default function AdminMasterDashboard() {
                         ] as [keyof typeof settingsData.email, string, string][]).map(([k,label,type]) => (
                           <div key={k}>
                             <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
-                            <input type={type} value={(settingsData.email as Record<string,string>)[k as string] || ''}
+                            <input type={type} value={(settingsData.email as unknown as Record<string,string>)[k as string] || ''}
                               onChange={e => setSettingsData(s => s ? ({...s,email:{...s.email,[k]:e.target.value}}) : s)}
                               className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
                           </div>

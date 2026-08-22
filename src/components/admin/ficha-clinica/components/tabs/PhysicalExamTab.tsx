@@ -149,6 +149,7 @@ function getFacialRegion(pos: { x: number; y: number; z: number }): FacialRegion
 interface PhysicalExam {
   id?: number;
   record_id: number;
+  consultation_id?: number;
   skin_type: string;
   phototype: string;
   glogau_scale: string;

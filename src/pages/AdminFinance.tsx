@@ -956,7 +956,7 @@ const AdminFinance = () => {
                 <h3 className="font-bold text-gray-900">Desglose de ítems</h3>
                 <p className="text-xs text-gray-400 mt-0.5">{desgModal.record.entity} · {desgModal.record.invoice_number || 'S/N'} · {String(desgModal.record.date).split('T')[0]}</p>
               </div>
-              <button onClick={() => setDesgModal({ open: false, record: null, items: [], loading: false })} className="text-gray-300 hover:text-gray-500"><X className="w-5 h-5" /></button>
+              <button onClick={() => setDesgModal({ open: false, record: null, items: [], loading: false, updateRecord: false })} className="text-gray-300 hover:text-gray-500"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-5 overflow-y-auto flex-1">
               {desgModal.loading ? (
@@ -1024,7 +1024,7 @@ const AdminFinance = () => {
               )}
             </div>
             <div className="p-5 border-t flex justify-end gap-3">
-              <button onClick={() => setDesgModal({ open: false, record: null, items: [], loading: false })} className="px-4 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cancelar</button>
+              <button onClick={() => setDesgModal({ open: false, record: null, items: [], loading: false, updateRecord: false })} className="px-4 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cancelar</button>
               <button onClick={saveDesglose} disabled={saving} className="px-5 py-2 bg-yellow-500 text-gray-900 font-semibold rounded-lg text-sm disabled:opacity-50 hover:bg-yellow-400">
                 {saving ? 'Guardando…' : 'Guardar desglose'}
               </button>

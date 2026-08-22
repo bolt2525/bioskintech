@@ -21,6 +21,7 @@ const toDateOnly = (d: string | null | undefined): string => {
 interface Diagnosis {
   id?: number;
   record_id: number;
+  consultation_id?: number;
   date?: string;
   diagnosis_text: string;
   cie10_code: string;

@@ -274,7 +274,7 @@ export default function AIConsultationModule() {
   const totalSelected = Object.values(selections).reduce((a, s) => a + s.ids.length, 0);
 
   return (
-    <AdminLayout>
+    <AdminLayout title="Consultas IA">
       <div className="p-4 md:p-8 max-w-4xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">

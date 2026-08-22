@@ -523,7 +523,7 @@ export default function AdminRegister() {
             )}
 
             {/* ── STEP: form (datos personales + clínica) ──────────────── */}
-            {(step === 'form' || step === 'clinic') && (
+            {step === 'form' && (
               <form onSubmit={handleRegisterSubmit} className="space-y-4">
                 <div>
                   <h2 className="text-lg font-semibold text-gray-900">Datos de registro</h2>

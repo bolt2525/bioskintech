@@ -168,6 +168,8 @@ export interface ClinicalRecord {
   treatment_plan?: string;
   notes?: string;
   created_by?: string;
+  created_by_full_name?: string;
+  created_by_gentilicio?: string;
   created_at: string;
 }
 

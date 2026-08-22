@@ -259,7 +259,7 @@ class SkinRenderer {
   private pickDot(event: MouseEvent) {
     const { x, y } = this.getCanvasNDC(event);
     const ray = new THREE.Raycaster();
-    ray.setFromCamera({ x, y }, this.camera);
+    ray.setFromCamera(new THREE.Vector2(x, y), this.camera);
     const hits = ray.intersectObjects(this.dotMeshes.map(d => d.mesh));
     return hits.length ? this.dotMeshes.find(d => d.mesh === hits[0].object) ?? null : null;
   }

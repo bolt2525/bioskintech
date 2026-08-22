@@ -32,6 +32,8 @@ interface ClinicalRecord {
   created_at: string;
   status: string;
   updated_at: string;
+  created_by_full_name?: string;
+  created_by_gentilicio?: string;
 }
 
 export default function PatientDetail() {

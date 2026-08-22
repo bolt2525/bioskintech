@@ -39,6 +39,7 @@ interface PrescriptionItem {
 
 interface Prescription {
   id?: number;
+  consultation_id?: number;
   fecha: string;
   diagnostico: string;
   items: PrescriptionItem[];
