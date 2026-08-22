@@ -434,7 +434,8 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
 
   const handleEdit = (consent: ConsentForm) => {
     setCurrentConsent(consent);
-    setView('form');
+    // Finalized consents are immutable — open in preview only
+    setView(consent.status === 'finalized' ? 'preview' : 'form');
     setActiveTab(0);
     setMessage(null);
   };
@@ -626,26 +627,41 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                   <div className="flex justify-end gap-2">
-                    <Tooltip content="Editar">
-                      <motion.button 
-                        whileHover={{ scale: 1.1 }}
-                        whileTap={{ scale: 0.9 }}
-                        onClick={() => handleEdit(consent)} 
-                        className="text-blue-600 hover:bg-blue-50 p-2 rounded-lg transition-colors"
-                      >
-                        <Edit size={18} />
-                      </motion.button>
-                    </Tooltip>
-                    <Tooltip content="Eliminar">
-                      <motion.button 
-                        whileHover={{ scale: 1.1 }}
-                        whileTap={{ scale: 0.9 }}
-                        onClick={() => handleDelete(consent.id!)} 
-                        className="text-red-600 hover:bg-red-50 p-2 rounded-lg transition-colors"
-                      >
-                        <Trash2 size={18} />
-                      </motion.button>
-                    </Tooltip>
+                    {consent.status === 'finalized' ? (
+                      <Tooltip content="Vista Previa">
+                        <motion.button
+                          whileHover={{ scale: 1.1 }}
+                          whileTap={{ scale: 0.9 }}
+                          onClick={() => handleEdit(consent)}
+                          className="text-emerald-600 hover:bg-emerald-50 p-2 rounded-lg transition-colors"
+                        >
+                          <Eye size={18} />
+                        </motion.button>
+                      </Tooltip>
+                    ) : (
+                      <>
+                        <Tooltip content="Editar">
+                          <motion.button 
+                            whileHover={{ scale: 1.1 }}
+                            whileTap={{ scale: 0.9 }}
+                            onClick={() => handleEdit(consent)} 
+                            className="text-blue-600 hover:bg-blue-50 p-2 rounded-lg transition-colors"
+                          >
+                            <Edit size={18} />
+                          </motion.button>
+                        </Tooltip>
+                        <Tooltip content="Eliminar">
+                          <motion.button 
+                            whileHover={{ scale: 1.1 }}
+                            whileTap={{ scale: 0.9 }}
+                            onClick={() => handleDelete(consent.id!)} 
+                            className="text-red-600 hover:bg-red-50 p-2 rounded-lg transition-colors"
+                          >
+                            <Trash2 size={18} />
+                          </motion.button>
+                        </Tooltip>
+                      </>
+                    )}
                   </div>
                 </td>
               </motion.tr>
