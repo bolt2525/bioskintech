@@ -378,7 +378,8 @@ export default function AdminDashboard() {
   const disabledByOverride = new Set(
     userModuleOverrides.filter(o => !o.enabled).map(o => o.feature)
   );
-  const tiles = MODULE_LIST.filter(m => !m.hidden && effectiveHasFeature(m.feat) && !disabledByOverride.has(m.feat));
+  // hidden:true = opt-in; tile aparece solo cuando la feature está explícitamente habilitada
+  const tiles = MODULE_LIST.filter(m => effectiveHasFeature(m.feat) && !disabledByOverride.has(m.feat));
 
   return (
     <div className="min-h-screen bg-[#fafafa]">
