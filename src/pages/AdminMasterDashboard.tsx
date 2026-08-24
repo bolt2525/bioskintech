@@ -3123,14 +3123,15 @@ export default function AdminMasterDashboard() {
                           </div>
                         )}
 
-                        {/* Otros módulos */}
-                        {ALL_FEATURES.filter(f => f !== 'clinical_records' && (featMap[settingsModal.clinicId]||{})[f] !== false).map(feat => {
+                        {/* Otros módulos — con toggles reales */}
+                        {ALL_FEATURES.filter(f => f !== 'clinical_records').map(feat => {
                           const meta = FEATURE_META[feat]; const Icon = meta.icon;
+                          const enabled = (featMap[settingsModal.clinicId]||{})[feat] !== false;
                           return (
                             <div key={feat} className="flex items-center gap-3 p-3 border border-gray-100 rounded-xl bg-gray-50">
-                              <Icon className={`w-4 h-4 ${meta.color}`} />
-                              <span className="text-sm text-gray-700 flex-1">{meta.label}</span>
-                              <span className="text-xs text-emerald-600 font-medium bg-emerald-50 px-2 py-0.5 rounded-full">Activo</span>
+                              <Icon className={`w-4 h-4 ${enabled ? meta.color : 'text-gray-300'}`} />
+                              <span className={`text-sm flex-1 ${enabled ? 'text-gray-700' : 'text-gray-400'}`}>{meta.label}</span>
+                              <FeatureToggle checked={enabled} onChange={v => handleToggleFeature(settingsModal.clinicId, feat, v)} />
                             </div>
                           );
                         })}
