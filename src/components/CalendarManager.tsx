@@ -58,7 +58,10 @@ interface CalendarEvent {
 const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
   const { settings: clinicSettings } = useClinicSettings();
   const { user } = useAuth();
-  const clinicName = clinicSettings.general.name || user?.clinic_name || 'nuestra clínica';
+  const clinicName         = clinicSettings.general.name || user?.clinic_name || 'nuestra clínica';
+  const establishmentType  = clinicSettings.general.establishment_type || '';
+  // e.g. "Centro Estético BIOSKIN" or just "BIOSKIN"
+  const clinicIdentity     = establishmentType ? `${establishmentType} ${clinicName}` : clinicName;
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [calendarNotConfigured, setCalendarNotConfigured] = useState(false);
@@ -227,7 +230,7 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
     const dateStr = start.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
     const timeStr = event.start.dateTime ? start.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true }) : '';
 
-    const message = `Hola ${patientName}, le saludamos de ${clinicName}. Le recordamos su cita pendiente para el ${dateStr} a las ${timeStr}. Por favor confirme su asistencia.`;
+    const message = `Hola ${patientName} 👋, le saludamos de ${clinicIdentity}.\n\nLe recordamos su cita agendada para el ${dateStr} a las ${timeStr}.\n\nPor favor confirme su asistencia respondiendo este mensaje. ¡Le esperamos! 🗓️`;
     
     return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
   };
