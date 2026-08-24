@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 
 // Constantes centralizadas — no duplicar aquí
-import { ALL_FEATURES, FEATURE_META, MODULE_LIST } from '../constants/features';
+import { ALL_FEATURES, FEATURE_META, MODULE_LIST, OPT_IN_FEATURES } from '../constants/features';
 import type { FeatureKey } from '../constants/features';
 import { ROLE_LABELS, ROLE_COLORS } from '../constants/theme';
 import { slugify } from '../utils/slugify';
@@ -122,7 +122,8 @@ function ClinicFeaturesPanel({
           {ALL_FEATURES.map(feat => {
             const meta    = FEATURE_META[feat];
             const Icon    = meta.icon;
-            const enabled = featMap[feat] !== false;
+            // opt-in features default to OFF if no explicit enabled=true row
+            const enabled = OPT_IN_FEATURES.includes(feat) ? featMap[feat] === true : featMap[feat] !== false;
             return (
               <div key={feat} className="flex items-center justify-between p-2 rounded-lg bg-gray-50 border border-gray-100">
                 <div className="flex items-center gap-1.5 min-w-0">
@@ -3126,7 +3127,10 @@ export default function AdminMasterDashboard() {
                         {/* Otros módulos — con toggles reales */}
                         {ALL_FEATURES.filter(f => f !== 'clinical_records').map(feat => {
                           const meta = FEATURE_META[feat]; const Icon = meta.icon;
-                          const enabled = (featMap[settingsModal.clinicId]||{})[feat] !== false;
+                          // opt-in features default to OFF if no explicit enabled=true row
+                          const enabled = OPT_IN_FEATURES.includes(feat)
+                            ? (featMap[settingsModal.clinicId]||{})[feat] === true
+                            : (featMap[settingsModal.clinicId]||{})[feat] !== false;
                           return (
                             <div key={feat} className="flex items-center gap-3 p-3 border border-gray-100 rounded-xl bg-gray-50">
                               <Icon className={`w-4 h-4 ${enabled ? meta.color : 'text-gray-300'}`} />

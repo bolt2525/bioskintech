@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect } from 'react';
-import { Search, Plus, FileText, User, Calendar, Edit2, Trash2, Clock, UserPlus, X, ArrowRightLeft, Share2 } from 'lucide-react';
+import { Search, Plus, FileText, User, Calendar, Edit2, Trash2, Clock, UserPlus, X, ArrowRightLeft, Share2, Eye } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import AdminLayout from '../../../layout/AdminLayout';
 import recordsFetch from '../../../../utils/recordsFetch';
@@ -65,6 +65,33 @@ export default function PatientList() {
   const [filterUserId, setFilterUserId] = useState<number | ''>('');
 
   const isAdmin = user?.role === 'clinic_admin' || user?.role === 'master_admin';
+  const { hasFeature } = useAuth();
+
+  // Modal "Ver Paciente"
+  const [patientModal, setPatientModal] = useState<{ id: number; full: any | null; record: any | null; loading: boolean } | null>(null);
+
+  const openPatientModal = async (patientId: number) => {
+    setPatientModal({ id: patientId, full: null, record: null, loading: true });
+    try {
+      const [pRes, rRes] = await Promise.all([
+        recordsFetch(`/api/records?action=getPatient&id=${patientId}`),
+        hasFeature('treatment_notes_view')
+          ? recordsFetch(`/api/records?action=getRecordsByPatient&patient_id=${patientId}`)
+          : Promise.resolve(null),
+      ]);
+      const full = pRes.ok ? await pRes.json() : null;
+      // Fetch record data using active_record_id from patient list state
+      const pat = patients.find(p => p.id === patientId);
+      let record = null;
+      if (hasFeature('treatment_notes_view') && pat?.active_record_id) {
+        const rrRes = await recordsFetch(`/api/records?action=getRecordData&recordId=${pat.active_record_id}`);
+        if (rrRes.ok) record = await rrRes.json();
+      }
+      setPatientModal({ id: patientId, full, record, loading: false });
+    } catch {
+      setPatientModal(prev => prev ? { ...prev, loading: false } : null);
+    }
+  };
 
   useEffect(() => {
     fetchPatients();
@@ -319,6 +346,13 @@ export default function PatientList() {
                             </>
                           )}
                           <button 
+                            onClick={(e) => { e.stopPropagation(); openPatientModal(patient.id); }}
+                            className="p-2 text-gray-500 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition-colors"
+                            title="Ver datos del paciente"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <button 
                             onClick={(e) => { e.stopPropagation(); nav(`ficha-clinica/paciente/${patient.id}`); }}
                             className="text-[#deb887] hover:text-[#c5a075] font-medium flex items-center gap-1 ml-2"
                           >
@@ -343,6 +377,103 @@ export default function PatientList() {
           patientName={auditModal.patientName}
           onClose={() => setAuditModal(null)}
         />
+      )}
+
+      {/* Modal Ver Paciente */}
+      {patientModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setPatientModal(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center justify-between p-5 border-b border-gray-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-[#deb887]/20 flex items-center justify-center">
+                  <User className="w-5 h-5 text-[#deb887]" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900 text-base">
+                    {patientModal.full ? `${patientModal.full.first_name} ${patientModal.full.last_name}` : 'Cargando...'}
+                  </h3>
+                  <p className="text-xs text-gray-400">Datos del paciente</p>
+                </div>
+              </div>
+              <button onClick={() => setPatientModal(null)} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 p-5 space-y-5">
+              {patientModal.loading ? (
+                <div className="flex justify-center py-10">
+                  <div className="w-8 h-8 border-2 border-[#deb887] border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : patientModal.full ? (
+                <>
+                  {/* Información del paciente */}
+                  <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                    <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Información personal</h4>
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                      {[
+                        ['Nombre completo', `${patientModal.full.first_name} ${patientModal.full.last_name}`],
+                        ['Cédula / RUC', patientModal.full.rut || '—'],
+                        ['Correo', patientModal.full.email || '—'],
+                        ['Teléfono', patientModal.full.phone || '—'],
+                        ['Fecha de nacimiento', patientModal.full.birth_date ? new Date(patientModal.full.birth_date).toLocaleDateString('es-EC') : '—'],
+                        ['Género', patientModal.full.gender || '—'],
+                        ['Tipo de sangre', patientModal.full.tipo_sangre || '—'],
+                        ['Estado civil', patientModal.full.estado_civil || '—'],
+                        ['Ocupación', patientModal.full.occupation || '—'],
+                        ['Dirección', patientModal.full.address || '—'],
+                      ].map(([label, value]) => (
+                        <div key={label}>
+                          <span className="text-gray-400 text-xs">{label}</span>
+                          <p className="text-gray-800 font-medium truncate">{value}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Notas de tratamiento (solo si feature activa) */}
+                  {hasFeature('treatment_notes_view') && (
+                    <div className="border border-teal-100 rounded-xl overflow-hidden">
+                      <div className="bg-teal-50 px-4 py-2.5 flex items-center gap-2">
+                        <Eye className="w-4 h-4 text-teal-600" />
+                        <span className="text-xs font-semibold text-teal-700 uppercase tracking-wider">Notas de tratamiento</span>
+                      </div>
+                      {!patientModal.record || !(patientModal.record.treatments?.length) ? (
+                        <p className="text-xs text-gray-400 px-4 py-3">Sin tratamientos registrados</p>
+                      ) : (
+                        <div className="divide-y divide-gray-50 max-h-48 overflow-y-auto">
+                          {(patientModal.record.treatments as any[])
+                            .filter(t => t.notes?.trim())
+                            .map((t, i) => (
+                              <div key={t.id ?? i} className="px-4 py-3">
+                                <p className="text-xs font-semibold text-gray-600">{t.procedure_name} <span className="font-normal text-gray-400">— {t.date ? new Date(t.date.split('T')[0]+'T12:00:00').toLocaleDateString('es-EC') : ''}</span></p>
+                                <p className="text-xs text-gray-700 mt-1 whitespace-pre-wrap">{t.notes}</p>
+                              </div>
+                            ))}
+                          {(patientModal.record.treatments as any[]).filter(t => t.notes?.trim()).length === 0 && (
+                            <p className="text-xs text-gray-400 px-4 py-3">Sin observaciones registradas</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-gray-400 text-center py-6">No se pudo cargar la información</p>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-gray-100 flex justify-end">
+              <button
+                onClick={() => { setPatientModal(null); nav(`ficha-clinica/paciente/${patientModal.id}`); }}
+                className="flex items-center gap-2 px-4 py-2 bg-[#deb887] text-white rounded-lg hover:bg-[#c5a075] text-sm font-medium transition-colors"
+              >
+                <FileText className="w-4 h-4" /> Ver Ficha Completa
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Modal de asignación / traslado */}
