@@ -73,18 +73,12 @@ export default function PatientList() {
   const openPatientModal = async (patientId: number) => {
     setPatientModal({ id: patientId, full: null, record: null, loading: true });
     try {
-      const [pRes, rRes] = await Promise.all([
-        recordsFetch(`/api/records?action=getPatient&id=${patientId}`),
-        hasFeature('treatment_notes_view')
-          ? recordsFetch(`/api/records?action=getRecordsByPatient&patient_id=${patientId}`)
-          : Promise.resolve(null),
-      ]);
+      const pRes = await recordsFetch(`/api/records?action=getPatient&id=${patientId}`);
       const full = pRes.ok ? await pRes.json() : null;
-      // Fetch record data using active_record_id from patient list state
-      const pat = patients.find(p => p.id === patientId);
       let record = null;
-      if (hasFeature('treatment_notes_view') && pat?.active_record_id) {
-        const rrRes = await recordsFetch(`/api/records?action=getRecordData&recordId=${pat.active_record_id}`);
+      // full.active_record_id is returned by getPatient (joins clinical_records)
+      if (hasFeature('treatment_notes_view') && full?.active_record_id) {
+        const rrRes = await recordsFetch(`/api/records?action=getRecordData&recordId=${full.active_record_id}`);
         if (rrRes.ok) record = await rrRes.json();
       }
       setPatientModal({ id: patientId, full, record, loading: false });
@@ -439,23 +433,40 @@ export default function PatientList() {
                         <Eye className="w-4 h-4 text-teal-600" />
                         <span className="text-xs font-semibold text-teal-700 uppercase tracking-wider">Notas de tratamiento</span>
                       </div>
-                      {!patientModal.record || !(patientModal.record.treatments?.length) ? (
-                        <p className="text-xs text-gray-400 px-4 py-3">Sin tratamientos registrados</p>
-                      ) : (
-                        <div className="divide-y divide-gray-50 max-h-48 overflow-y-auto">
-                          {(patientModal.record.treatments as any[])
-                            .filter(t => t.notes?.trim())
-                            .map((t, i) => (
-                              <div key={t.id ?? i} className="px-4 py-3">
-                                <p className="text-xs font-semibold text-gray-600">{t.procedure_name} <span className="font-normal text-gray-400">— {t.date ? new Date(t.date.split('T')[0]+'T12:00:00').toLocaleDateString('es-EC') : ''}</span></p>
-                                <p className="text-xs text-gray-700 mt-1 whitespace-pre-wrap">{t.notes}</p>
-                              </div>
-                            ))}
-                          {(patientModal.record.treatments as any[]).filter(t => t.notes?.trim()).length === 0 && (
-                            <p className="text-xs text-gray-400 px-4 py-3">Sin observaciones registradas</p>
-                          )}
-                        </div>
-                      )}
+                      {!patientModal.record ? (
+                        <p className="text-xs text-gray-400 px-4 py-3">Sin expediente disponible</p>
+                      ) : (() => {
+                        const treatments = (patientModal.record.treatments || []) as any[];
+                        const consultations = (patientModal.record.consultations || []) as any[];
+                        const withNotes = treatments.filter(t => t.notes?.trim());
+                        if (!withNotes.length) return <p className="text-xs text-gray-400 px-4 py-3">Sin notas de tratamiento registradas</p>;
+                        return (
+                          <div className="divide-y divide-gray-50 max-h-56 overflow-y-auto">
+                            {consultations
+                              .slice().sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                              .map((consult: any) => {
+                                const ts = withNotes.filter(t => t.consultation_id === consult.id);
+                                if (!ts.length) return null;
+                                return (
+                                  <div key={consult.id}>
+                                    <div className="bg-gray-50 px-4 py-1.5">
+                                      <span className="text-xs text-gray-500 font-medium">
+                                        {new Date(consult.created_at?.split('T')[0]+'T12:00:00').toLocaleDateString('es-EC', { year:'numeric', month:'short', day:'numeric' })}
+                                        {consult.reason ? ` — ${consult.reason}` : ''}
+                                      </span>
+                                    </div>
+                                    {ts.map((t: any, i: number) => (
+                                      <div key={t.id ?? i} className="px-4 py-2">
+                                        <p className="text-xs font-semibold text-gray-600">{t.procedure_name}</p>
+                                        <p className="text-xs text-gray-700 mt-0.5 whitespace-pre-wrap">{t.notes}</p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                );
+                              })}
+                          </div>
+                        );
+                      })()}
                     </div>
                   )}
                 </>

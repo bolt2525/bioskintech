@@ -405,29 +405,27 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
 
                <div class="section-header">INDICACIONES:</div>
                
-               <div class="routine-section">
-                 <div class="routine-title">RUTINA DE MAÑANA</div>
-                 <ol class="product-list">
-                   ${currentPrescription.items.filter(i => (i.rutina === 'mañana' || i.rutina === 'ambos') && (i.nombre_comercial || i.medicamento)).map(item => `
-                     <li>${item.indicaciones || `Aplicar ${item.nombre_comercial || item.medicamento}`}</li>
-                   `).join('') || '<li style="color:#aaa;list-style:none">—</li>'}
-                 </ol>
-               </div>
-
-               <div class="routine-section">
-                 <div class="routine-title">RUTINA DE NOCHE</div>
-                 <ol class="product-list">
-                   ${currentPrescription.items.filter(i => (i.rutina === 'noche' || i.rutina === 'ambos') && (i.nombre_comercial || i.medicamento)).map(item => `
-                     <li>${item.indicaciones || `Aplicar ${item.nombre_comercial || item.medicamento}`}</li>
-                   `).join('') || '<li style="color:#aaa;list-style:none">—</li>'}
-                 </ol>
-               </div>
-               ${(() => { const noRutina = currentPrescription.items.filter(i => i.rutina === '' && (i.nombre_comercial || i.medicamento) && i.indicaciones?.trim()); return noRutina.length > 0 ? `
-               <div class="routine-section">
-                 <ol class="product-list" style="padding-left:0;list-style:none;">
-                   ${noRutina.map(item => `<li style="margin-bottom:6px;">${item.indicaciones}</li>`).join('')}
-                 </ol>
-               </div>` : ''; })()}
+               ${(() => {
+                 const mananaItems = currentPrescription.items.filter(i => (i.rutina === 'mañana' || i.rutina === 'ambos') && (i.nombre_comercial || i.medicamento));
+                 const nocheItems  = currentPrescription.items.filter(i => (i.rutina === 'noche'  || i.rutina === 'ambos') && (i.nombre_comercial || i.medicamento));
+                 const noRutina    = currentPrescription.items.filter(i => i.rutina === '' && (i.nombre_comercial || i.medicamento) && i.indicaciones?.trim());
+                 const sections = [];
+                 if (mananaItems.length) sections.push(`
+                   <div class="routine-section">
+                     <div class="routine-title">RUTINA DE MAÑANA</div>
+                     <ol class="product-list">${mananaItems.map(item => `<li>${item.indicaciones || `Aplicar ${item.nombre_comercial || item.medicamento}`}</li>`).join('')}</ol>
+                   </div>`);
+                 if (nocheItems.length) sections.push(`
+                   <div class="routine-section">
+                     <div class="routine-title">RUTINA DE NOCHE</div>
+                     <ol class="product-list">${nocheItems.map(item => `<li>${item.indicaciones || `Aplicar ${item.nombre_comercial || item.medicamento}`}</li>`).join('')}</ol>
+                   </div>`);
+                 if (noRutina.length) sections.push(`
+                   <div class="routine-section">
+                     <ol class="product-list" style="padding-left:0;list-style:none;">${noRutina.map(item => `<li style="margin-bottom:6px;">${item.indicaciones}</li>`).join('')}</ol>
+                   </div>`);
+                 return sections.join('') || '<p style="color:#aaa;font-size:9px;">Sin indicaciones de rutina</p>';
+               })()}
                
                <div class="footer">
                   ${clinicPhone ? `<div class="footer-item"><svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.67 12a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 3.55 1h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>${clinicPhone}</div>` : ''}
