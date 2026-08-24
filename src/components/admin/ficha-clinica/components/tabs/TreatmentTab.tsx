@@ -308,19 +308,20 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
                 {deleting ? <div className="animate-spin w-5 h-5 border-2 border-red-300 border-t-red-500 rounded-full" /> : <Trash2 className="w-5 h-5" />}
               </motion.button>
             </Tooltip>
+
+            {hasFeature('treatment_notes_view') && (
+              <Tooltip content="Ver observaciones del expediente">
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => setNotesModalOpen(true)}
+                  className="p-2 hover:bg-teal-50 rounded-lg text-teal-600 border border-teal-100"
+                >
+                  <Eye className="w-5 h-5" />
+                </motion.button>
+              </Tooltip>
+            )}
           </div>
-          {hasFeature('treatment_notes_view') && (
-            <Tooltip content="Ver observaciones del expediente">
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setNotesModalOpen(true)}
-                className="p-2 hover:bg-teal-50 rounded-lg text-teal-600 border border-teal-100"
-              >
-                <Eye className="w-5 h-5" />
-              </motion.button>
-            </Tooltip>
-          )}
         </div>
 
         <AnimatePresence>

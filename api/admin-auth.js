@@ -49,6 +49,8 @@ const ALL_FEATURES = [
   'system_status', 'backup', 'ai_consultation', 'skin_explorer',
   'treatment_notes_view',
 ];
+// ponytail: features desactivadas por defecto — requieren activación explícita por clínica
+const OPT_IN_FEATURES = ['treatment_notes_view'];
 
 // Planes de suscripción predefinidos (precio en centavos USD)
 const SUBSCRIPTION_PLANS = {
@@ -596,15 +598,19 @@ async function seedFeatures(clinicId) {
 
 /** Devuelve las features habilitadas para una clínica (master_admin → todas) */
 async function getFeatures(clinicId) {
-  if (!clinicId) return ALL_FEATURES;
+  if (!clinicId) return ALL_FEATURES.filter(f => !OPT_IN_FEATURES.includes(f));
   try {
-    // ponytail: tomar TODAS las rows y filtrar deshabilitadas → soporta clínicas con registros parciales
     const r = await sql`SELECT feature, enabled FROM clinic_features WHERE clinic_id = ${clinicId}`;
-    if (!r.rows.length) return ALL_FEATURES; // nunca configurado → todo habilitado
-    const disabled = new Set(r.rows.filter(x => !x.enabled).map(x => x.feature));
-    return ALL_FEATURES.filter(f => !disabled.has(f));
+    const rows = r.rows;
+    const explicitEnabled  = new Set(rows.filter(x =>  x.enabled).map(x => x.feature));
+    const explicitDisabled = new Set(rows.filter(x => !x.enabled).map(x => x.feature));
+    return ALL_FEATURES.filter(f => {
+      if (explicitDisabled.has(f)) return false;
+      if (OPT_IN_FEATURES.includes(f)) return explicitEnabled.has(f); // opt-in: solo si activado
+      return true; // feature normal: activa a menos que esté desactivada explícitamente
+    });
   } catch {
-    return ALL_FEATURES; // fallback si la tabla no existe aún
+    return ALL_FEATURES.filter(f => !OPT_IN_FEATURES.includes(f));
   }
 }
 
