@@ -5,7 +5,7 @@
 
 import {
   Calendar, Clock, Ban, ClipboardList,
-  DollarSign, Package, Cuboid, Database, Activity, Brain, Microscope, CalendarDays,
+  DollarSign, Package, Cuboid, Database, Activity, Brain, Microscope, CalendarDays, Eye,
 } from 'lucide-react';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -15,6 +15,7 @@ export const ALL_FEATURES = [
   'calendar', 'block_schedule', 'appointment',
   'clinical_records', 'finance', 'inventory', 'clinical_3d',
   'system_status', 'backup', 'ai_consultation', 'skin_explorer',
+  'treatment_notes_view',
 ] as const;
 
 export type FeatureKey = typeof ALL_FEATURES[number];
@@ -32,7 +33,10 @@ export const FEATURE_META: Record<FeatureKey, { label: string; icon: React.Compo
   clinical_3d:      { label: 'Visualización 3D', icon: Cuboid,        color: 'text-violet-500' },
   ai_consultation:  { label: 'Consultas IA',     icon: Brain,         color: 'text-[#deb887]'  },
   system_status:    { label: 'Estado Sistema',   icon: Activity,      color: 'text-emerald-600' },
-  backup:           { label: 'Base de Datos',    icon: Database,      color: 'text-blue-600'   },  skin_explorer:    { label: 'DermoAtlas 3D',    icon: Microscope, color: 'text-amber-600'  },};
+  backup:           { label: 'Base de Datos',    icon: Database,      color: 'text-blue-600'   },
+  skin_explorer:    { label: 'DermoAtlas 3D',    icon: Microscope, color: 'text-amber-600'  },
+  treatment_notes_view: { label: 'Vista de Notas de Tratamiento', icon: Eye, color: 'text-teal-600' },
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuración de módulos — tiles del dashboard

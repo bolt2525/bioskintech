@@ -49,8 +49,10 @@ interface PrescriptionTabProps {
   recordId: number;
   patientName: string;
   patientAge?: number | string;
+  patientRut?: string;
   consultationId?: number;
   consultations?: ConsultationRef[];
+  diagnoses?: { consultation_id?: number; diagnosis_text: string; cie10_code?: string }[];
 }
 
 const EMPTY_ITEM: PrescriptionItem = {
@@ -66,7 +68,7 @@ const EMPTY_ITEM: PrescriptionItem = {
   rutina: ''
 };
 
-export default function PrescriptionTab({ recordId, patientName, patientAge, consultationId, consultations = [] }: PrescriptionTabProps) {
+export default function PrescriptionTab({ recordId, patientName, patientAge, patientRut, consultationId, consultations = [], diagnoses = [] }: PrescriptionTabProps) {
   const { settings: clinic } = useClinicSettings();
   const { user } = useAuth();
   const clinicDisplayName = clinic.general.name || user?.clinic_name || 'Clínica';
@@ -76,6 +78,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, con
     diagnostico: '',
     items: [{ ...EMPTY_ITEM }]
   });
+  const [activeCie10, setActiveCie10] = useState('');
   const [dateLocked, setDateLocked] = useState(false);
   const [templates, setTemplates] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -92,6 +95,16 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, con
     loadPrescriptions();
     loadTemplates();
   }, [recordId]);
+
+  // Auto-fill diagnosis from DiagnosisTab when active consultation changes
+  useEffect(() => {
+    if (!consultationId) return;
+    const d = diagnoses.find(x => x.consultation_id === consultationId) ?? diagnoses[0];
+    if (d) {
+      setCurrentPrescription(prev => ({ ...prev, diagnostico: prev.diagnostico || d.diagnosis_text }));
+      setActiveCie10(d.cie10_code || '');
+    }
+  }, [consultationId, diagnoses]);
 
   useEffect(() => {
     if (message) {
@@ -350,6 +363,8 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, con
                     <span><strong>Paciente:</strong> ${patientName.toUpperCase()}</span>
                     <span><strong>EDAD:</strong> ${patientAge || ''} AÑOS</span>
                  </div>
+                 ${patientRut ? `<div style="font-size:9px;margin-top:3px;"><strong>Cédula/RUC:</strong> ${patientRut}</div>` : ''}
+                 ${currentPrescription.diagnostico ? `<div style="font-size:9px;margin-top:4px;"><strong>Diagnóstico:</strong> ${currentPrescription.diagnostico}${activeCie10 ? ' &nbsp;<span style="color:#555">(CIE-10: ' + activeCie10 + ')</span>' : ''}</div>` : ''}
                </div>
 
                <div class="section-header">INDICACIONES:</div>
@@ -384,6 +399,8 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, con
                     <span><strong>Paciente:</strong> ${patientName.toUpperCase()}</span>
                     <span><strong>EDAD:</strong> ${patientAge || ''} AÑOS</span>
                  </div>
+                 ${patientRut ? `<div style="font-size:9px;margin-top:3px;"><strong>Cédula/RUC:</strong> ${patientRut}</div>` : ''}
+                 ${currentPrescription.diagnostico ? `<div style="font-size:9px;margin-top:4px;"><strong>Diagnóstico:</strong> ${currentPrescription.diagnostico}${activeCie10 ? ' &nbsp;<span style="color:#555">(CIE-10: ' + activeCie10 + ')</span>' : ''}</div>` : ''}
                </div>
 
                <div class="section-header">INDICACIONES:</div>
@@ -405,6 +422,12 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, con
                    `).join('') || '<li style="color:#aaa;list-style:none">—</li>'}
                  </ol>
                </div>
+               ${(() => { const noRutina = currentPrescription.items.filter(i => i.rutina === '' && (i.nombre_comercial || i.medicamento) && i.indicaciones?.trim()); return noRutina.length > 0 ? `
+               <div class="routine-section">
+                 <ol class="product-list" style="padding-left:0;list-style:none;">
+                   ${noRutina.map(item => `<li style="margin-bottom:6px;">${item.indicaciones}</li>`).join('')}
+                 </ol>
+               </div>` : ''; })()}
                
                <div class="footer">
                   ${clinicPhone ? `<div class="footer-item"><svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.67 12a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 3.55 1h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>${clinicPhone}</div>` : ''}

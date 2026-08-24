@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Calendar, DollarSign, Clock, Save, Trash2, Copy, Check, AlertCircle, FileText, Pencil, Layers, History } from 'lucide-react';
+import { Plus, Calendar, DollarSign, Clock, Save, Trash2, Copy, Check, AlertCircle, FileText, Pencil, Layers, History, Eye, X } from 'lucide-react';
 import CrossConsultHistoryModal, { type ConsultationRef } from '../CrossConsultHistoryModal';
+import { useAuth } from '../../../../../context/AuthContext';
 import treatmentOptions from '../../data/treatment_options.json';
 import { Tooltip } from '../../../../ui/Tooltip';
 import FieldHelp from '../FieldHelp';
@@ -54,6 +55,7 @@ const EMPTY_TREATMENT: Treatment = {
 };
 
 export default function TreatmentTab({ recordId, treatments, patientName, consultationId, consultations = [], onSave }: TreatmentTabProps) {
+  const { hasFeature } = useAuth();
   const [currentTreatment, setCurrentTreatment] = useState<Treatment>({ ...EMPTY_TREATMENT });
   const [dateLocked, setDateLocked] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -61,6 +63,7 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [groupByProcedure, setGroupByProcedure] = useState(false);
   const [crossHistOpen, setCrossHistOpen] = useState(false);
+  const [notesModalOpen, setNotesModalOpen] = useState(false);
   const messageRef = useRef<HTMLDivElement>(null);
 
   // Sort treatments by date descending for the history list
@@ -306,6 +309,18 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
               </motion.button>
             </Tooltip>
           </div>
+          {hasFeature('treatment_notes_view') && (
+            <Tooltip content="Ver observaciones del expediente">
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setNotesModalOpen(true)}
+                className="p-2 hover:bg-teal-50 rounded-lg text-teal-600 border border-teal-100"
+              >
+                <Eye className="w-5 h-5" />
+              </motion.button>
+            </Tooltip>
+          )}
         </div>
 
         <AnimatePresence>
@@ -472,6 +487,45 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
         </>
       )}
     />
+    {notesModalOpen && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setNotesModalOpen(false)}>
+        <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-between p-4 border-b border-gray-100">
+            <h3 className="font-semibold text-gray-800 flex items-center gap-2"><Eye className="w-5 h-5 text-teal-600" /> Observaciones del expediente</h3>
+            <button onClick={() => setNotesModalOpen(false)} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-5 h-5 text-gray-500" /></button>
+          </div>
+          <div className="overflow-y-auto max-h-[calc(80vh-60px)] p-4 space-y-4">
+            {consultations.length === 0 ? (
+              <p className="text-gray-400 text-sm text-center py-8">Sin consultas registradas</p>
+            ) : (
+              consultations
+                .slice()
+                .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                .map(consult => {
+                  const ts = treatments.filter(t => t.consultation_id === consult.id && t.notes?.trim());
+                  return (
+                    <div key={consult.id} className="border border-gray-100 rounded-lg overflow-hidden">
+                      <div className="bg-gray-50 px-4 py-2 flex items-center gap-2">
+                        <Calendar className="w-4 h-4 text-[#deb887]" />
+                        <span className="text-sm font-medium text-gray-700">{new Date(toDateOnly(consult.created_at)+'T12:00:00').toLocaleDateString('es-EC', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                        {consult.reason && <span className="text-xs text-gray-400 ml-1">&mdash; {consult.reason}</span>}
+                      </div>
+                      {ts.length === 0 ? (
+                        <p className="text-gray-300 text-xs px-4 py-3">Sin observaciones en esta consulta</p>
+                      ) : ts.map((t, i) => (
+                        <div key={t.id ?? i} className="px-4 py-3 border-t border-gray-50">
+                          <p className="text-xs font-semibold text-gray-600 mb-1">{t.procedure_name}</p>
+                          <p className="text-sm text-gray-700 whitespace-pre-wrap">{t.notes}</p>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })
+            )}
+          </div>
+        </div>
+      </div>
+    )}
     </>
   );
 }

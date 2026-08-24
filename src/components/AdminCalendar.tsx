@@ -310,20 +310,36 @@ const AdminCalendar: React.FC<AdminCalendarProps> = ({ onBack }) => {
     let email = '';
     let service = '';
     let notes = '';
+    let adminNotes = '';
+    let inAdminBlock = false;
+    const adminLines: string[] = [];
     
     lines.forEach(line => {
+      if (line.startsWith('--- NOTAS DEL ADMINISTRADOR ---')) {
+        inAdminBlock = true;
+        return;
+      }
+      if (line.startsWith('--- FIN NOTAS ---')) {
+        inAdminBlock = false;
+        return;
+      }
+      if (inAdminBlock) {
+        adminLines.push(line);
+        return;
+      }
       if (line.startsWith('Teléfono:')) {
         phone = line.replace('Teléfono:', '').trim();
       } else if (line.startsWith('Correo:') || line.includes('@')) {
         email = line.replace('Correo:', '').trim();
       } else if (line.startsWith('Servicio:')) {
         service = line.replace('Servicio:', '').trim();
-      } else if (line.includes('Comentario adicional:')) {
-        notes = line.replace('Comentario adicional:', '').trim();
+      } else if (line.includes('Comentario del paciente:')) {
+        notes = line.replace('Comentario del paciente:', '').trim();
       }
     });
+    adminNotes = adminLines.filter(l => l.trim()).join('\n');
     
-    return { phone, email, service, notes };
+    return { phone, email, service, notes, adminNotes };
   };
 
   if (calendarNotConfigured) {
@@ -647,7 +663,12 @@ const AdminCalendar: React.FC<AdminCalendarProps> = ({ onBack }) => {
                     
                     {eventInfo.notes && (
                       <div className="mt-3 p-3 bg-gray-50 rounded text-sm text-gray-600">
-                        <strong>Notas:</strong> {eventInfo.notes}
+                        <strong>Comentario del paciente:</strong> {eventInfo.notes}
+                      </div>
+                    )}
+                    {eventInfo.adminNotes && (
+                      <div className="mt-2 p-3 bg-amber-50 rounded text-sm text-amber-800">
+                        <strong>Notas del administrador:</strong> {eventInfo.adminNotes}
                       </div>
                     )}
                   </div>

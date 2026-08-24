@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import recordsFetch from '../utils/recordsFetch';
+import { useClinicSettings } from '../hooks/useClinicSettings';
+import { useAuth } from '../context/AuthContext';
 import { 
   Calendar,
   Trash2,
@@ -54,6 +56,9 @@ interface CalendarEvent {
 }
 
 const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
+  const { settings: clinicSettings } = useClinicSettings();
+  const { user } = useAuth();
+  const clinicName = clinicSettings.general.name || user?.clinic_name || 'nuestra clínica';
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [calendarNotConfigured, setCalendarNotConfigured] = useState(false);
@@ -222,7 +227,7 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
     const dateStr = start.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
     const timeStr = event.start.dateTime ? start.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true }) : '';
 
-    const message = `Hola ${patientName}, le saludamos de BioSkinTech. Le recordamos su cita pendiente para el ${dateStr} a las ${timeStr}. Por favor confirme su asistencia.`;
+    const message = `Hola ${patientName}, le saludamos de ${clinicName}. Le recordamos su cita pendiente para el ${dateStr} a las ${timeStr}. Por favor confirme su asistencia.`;
     
     return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
   };

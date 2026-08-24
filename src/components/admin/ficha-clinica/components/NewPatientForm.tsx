@@ -22,7 +22,9 @@ export default function NewPatientForm() {
     birth_date: '',
     gender: '',
     address: '',
-    occupation: ''
+    occupation: '',
+    tipo_sangre: '',
+    estado_civil: ''
   });
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -54,7 +56,9 @@ export default function NewPatientForm() {
           birth_date: formattedDate,
           gender: data.gender || '',
           address: data.address || '',
-          occupation: data.occupation || ''
+          occupation: data.occupation || '',
+          tipo_sangre: data.tipo_sangre || '',
+          estado_civil: data.estado_civil || ''
         });
       } else {
         throw new Error('Error cargando datos del paciente');
@@ -320,6 +324,38 @@ export default function NewPatientForm() {
                 value={formData.occupation}
                 onChange={handleChange}
               />
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-gray-700">Tipo de Sangre <span className="text-gray-400 font-normal">(opcional)</span></label>
+              <input
+                type="text"
+                name="tipo_sangre"
+                list="tipo-sangre-options"
+                className="w-full p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none"
+                placeholder="Ej: O+"
+                value={formData.tipo_sangre}
+                onChange={handleChange}
+              />
+              <datalist id="tipo-sangre-options">
+                {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(o => <option key={o} value={o} />)}
+              </datalist>
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-gray-700">Estado Civil <span className="text-gray-400 font-normal">(opcional)</span></label>
+              <input
+                type="text"
+                name="estado_civil"
+                list="estado-civil-options"
+                className="w-full p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none"
+                placeholder="Ej: Soltero/a"
+                value={formData.estado_civil}
+                onChange={handleChange}
+              />
+              <datalist id="estado-civil-options">
+                {['Soltero/a','Casado/a','Divorciado/a','Viudo/a','Unión libre'].map(o => <option key={o} value={o} />)}
+              </datalist>
             </div>
           </div>
 

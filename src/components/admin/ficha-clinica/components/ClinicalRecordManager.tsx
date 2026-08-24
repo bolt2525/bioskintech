@@ -357,8 +357,10 @@ export default function ClinicalRecordManager() {
                     recordId={recordData?.recordId}
                     patientName={patient ? `${patient.first_name} ${patient.last_name}` : ''}
                     patientAge={patient?.birth_date ? calculateAge(patient.birth_date) : ''}
+                    patientRut={patient?.rut || ''}
                     consultationId={activeConsultation?.id}
                     consultations={recordData?.consultations || []}
+                    diagnoses={recordData?.diagnoses || []}
                   />
                 )}
                 {activeTab === 'consent' && activeConsultation && enabledOptional.consents && (

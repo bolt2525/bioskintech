@@ -153,6 +153,8 @@ export interface Patient {
   gender?: string;
   address?: string;
   occupation?: string;
+  tipo_sangre?: string;
+  estado_civil?: string;
   clinic_id?: number;
   created_at: string;
   updated_at: string;

@@ -47,6 +47,7 @@ const ALL_FEATURES = [
   'calendar', 'block_schedule', 'appointment',
   'clinical_records', 'finance', 'inventory', 'clinical_3d',
   'system_status', 'backup', 'ai_consultation', 'skin_explorer',
+  'treatment_notes_view',
 ];
 
 // Planes de suscripción predefinidos (precio en centavos USD)

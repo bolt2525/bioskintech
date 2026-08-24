@@ -824,7 +824,7 @@ export default async function handler(req, res) {
 
       case 'createPatient':
         try {
-          const { first_name, last_name, rut, email, phone, birth_date, gender, address, occupation } = body;
+          const { first_name, last_name, rut, email, phone, birth_date, gender, address, occupation, tipo_sangre, estado_civil } = body;
           
           console.log('📝 Creating patient:', { first_name, last_name, rut, email });
 
@@ -854,15 +854,15 @@ export default async function handler(req, res) {
           let newPatient;
           if (patientClinicId != null) {
             newPatient = await pool.query(
-              `INSERT INTO patients (first_name, last_name, rut, email, phone, birth_date, gender, address, occupation, clinic_id, created_by_user_id)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
-              [first_name, last_name, cleanRut, email, phone, cleanBirthDate, gender, address, occupation, patientClinicId, patientCreatedBy]
+              `INSERT INTO patients (first_name, last_name, rut, email, phone, birth_date, gender, address, occupation, tipo_sangre, estado_civil, clinic_id, created_by_user_id)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`,
+              [first_name, last_name, cleanRut, email, phone, cleanBirthDate, gender, address, occupation, tipo_sangre || null, estado_civil || null, patientClinicId, patientCreatedBy]
             );
           } else {
             newPatient = await pool.query(
-              `INSERT INTO patients (first_name, last_name, rut, email, phone, birth_date, gender, address, occupation)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
-              [first_name, last_name, cleanRut, email, phone, cleanBirthDate, gender, address, occupation]
+              `INSERT INTO patients (first_name, last_name, rut, email, phone, birth_date, gender, address, occupation, tipo_sangre, estado_civil)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+              [first_name, last_name, cleanRut, email, phone, cleanBirthDate, gender, address, occupation, tipo_sangre || null, estado_civil || null]
             );
           }
           // Create an initial clinical record for the patient — with user ownership
@@ -896,7 +896,7 @@ export default async function handler(req, res) {
         const { id: pid, ...updates } = body;
         // Whitelist de campos permitidos (previene SQL injection por nombres de columna)
         const suUpd = await getSessionUser(pool, req);
-        const ALLOWED_PATIENT_FIELDS = ['first_name', 'last_name', 'rut', 'email', 'phone', 'birth_date', 'gender', 'address', 'occupation'];
+        const ALLOWED_PATIENT_FIELDS = ['first_name', 'last_name', 'rut', 'email', 'phone', 'birth_date', 'gender', 'address', 'occupation', 'tipo_sangre', 'estado_civil'];
         // master_admin puede reasignar clinic_id (para corregir pacientes huérfanos)
         if (suUpd?.role === 'master_admin') ALLOWED_PATIENT_FIELDS.push('clinic_id');
         const safe = Object.fromEntries(Object.entries(updates).filter(([k]) => ALLOWED_PATIENT_FIELDS.includes(k)));

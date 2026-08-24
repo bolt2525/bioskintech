@@ -148,9 +148,15 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
   // Duration selected for this specific appointment (independent of display interval)
   const [appointmentDuration, setAppointmentDuration] = useState(30);
   const [hourClearedMsg, setHourClearedMsg]           = useState('');
+  const [gmailNotConfigured, setGmailNotConfigured]   = useState(false);
 
   useEffect(() => {
     if (!user?.clinic_id) return;
+    // Verificar que la clínica tenga Gmail OAuth conectado antes de mostrar el formulario
+    recordsFetch(`/api/calendar?action=health&clinicId=${user.clinic_id}`)
+      .then(r => r.json())
+      .then(d => { if (!d.hasOAuth) setGmailNotConfigured(true); })
+      .catch(() => setGmailNotConfigured(true));
     Promise.all([
       fetch(`/api/admin-auth?action=getClinicSettings&clinicId=${user.clinic_id}`, {
         headers: { 'Authorization': `Bearer ${sessionStorage.getItem('adminSessionToken')}` }
@@ -339,6 +345,25 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
     setSelectedYear(today.getFullYear());
     setSelectedDay('');
   };
+
+  if (gmailNotConfigured) {
+    return (
+      <div className="max-w-6xl mx-auto bg-white rounded-lg shadow-lg p-6">
+        <button onClick={onBack} className="flex items-center gap-2 text-[#deb887] hover:text-[#d4a574] font-medium mb-6">
+          <ArrowLeft className="w-5 h-5" />
+          Volver al Dashboard
+        </button>
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <AlertTriangle className="w-16 h-16 text-amber-400 mb-4" />
+          <h3 className="text-xl font-semibold text-gray-800 mb-2">Cuenta Gmail no conectada</h3>
+          <p className="text-gray-500 max-w-sm">
+            Esta clínica no tiene una cuenta Gmail vinculada. Para agendar citas es necesario conectar Gmail
+            desde el panel del Master Admin → Ajustes de la clínica → Email / Gmail.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-6xl mx-auto bg-white rounded-lg shadow-lg p-6">
