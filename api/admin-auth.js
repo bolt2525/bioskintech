@@ -2630,7 +2630,6 @@ export default async function handler(req, res) {
 
     if (action === 'seedConsentTemplates') {
       if (user.role !== 'master_admin') return res.status(403).json({ error: 'Solo master_admin' });
-      const { force } = req.body || {};
 
       // Asegurar que las tablas existen antes de consultar
       try {
@@ -2645,11 +2644,6 @@ export default async function handler(req, res) {
         )`;
       } catch { /* ya existe */ }
 
-      const count = await sql`SELECT COUNT(*) FROM consent_templates WHERE is_active = true`;
-      if (parseInt(count.rows[0].count) > 0 && !force) {
-        return res.status(200).json({ message: `${count.rows[0].count} plantillas ya sembradas` });
-      }
-
       let seeds = [];
       try {
         const { readFileSync } = await import('fs');
@@ -2658,14 +2652,21 @@ export default async function handler(req, res) {
         seeds = JSON.parse(readFileSync(seedPath, 'utf8'));
       } catch (e) {
         console.error('Seed file not found, using inline fallback:', e.message);
-        // Fallback mínimo inline — el archivo completo viene de data/ via includeFiles
         seeds = [
           { name: 'Consentimiento Informado General', procedure_type: 'Procedimiento Estético', description: 'Consentimiento informado para procedimientos de medicina y estética.', objectives: ['Mejorar la apariencia estética'], risks: ['Reacciones alérgicas leves','Enrojecimiento temporal'], benefits: ['Mejora estética','Procedimiento mínimamente invasivo'], alternatives: ['No realizar el tratamiento'], pre_care: ['No aplicar maquillaje el día del procedimiento'], post_care: ['Evitar exposición solar 48h','Aplicar protector solar'] },
           { name: 'HIFU Facial', procedure_type: 'HIFU Facial (Ultrasonido Focalizado de Alta Intensidad)', description: 'HIFU aplica energía de ultrasonido focalizada para efecto tensor sin cirugía.', objectives: ['Tensado de piel y efecto lifting no quirúrgico','Definición del contorno mandibular'], risks: ['Sensación de calor durante aplicación','Enrojecimiento leve'], benefits: ['Rejuvenecimiento sin cirugía','Sin tiempo de inactividad'], pre_care: ['Piel completamente limpia'], post_care: ['Usar protector solar FPS 50+'] },
         ];
       }
 
-      let inserted = 0;
+      // Deactivate templates whose names were superseded by renamed seeds
+      const SUPERSEDED_NAMES = [
+        'Rejuvenecimiento Facial Toxina Botulinica Xeomin 100ui',
+      ];
+      for (const oldName of SUPERSEDED_NAMES) {
+        try { await sql`UPDATE consent_templates SET is_active=false, updated_at=NOW() WHERE name=${oldName}`; } catch { /* ok */ }
+      }
+
+      let inserted = 0, updated = 0;
       for (const t of seeds) {
         const obj   = JSON.stringify(t.objectives   || []);
         const rsk   = JSON.stringify(t.risks        || []);
@@ -2676,16 +2677,28 @@ export default async function handler(req, res) {
         const contra = JSON.stringify(t.contraindications || []);
         const name  = (t.name || t.procedure_type || 'Plantilla').substring(0, 254);
         try {
-          await sql`INSERT INTO consent_templates
-            (name, procedure_type, zone, sessions, objectives, description, risks, benefits,
-             alternatives, pre_care, post_care, contraindications)
-            VALUES (${name}, ${t.procedure_type||null}, ${t.zone||null}, ${t.sessions||1},
-              ${obj}::jsonb, ${t.description||null}, ${rsk}::jsonb, ${ben}::jsonb,
-              ${alt}::jsonb, ${pre}::jsonb, ${post}::jsonb, ${contra}::jsonb)`;
-          inserted++;
+          // Upsert por nombre: actualiza si ya existe, inserta si no
+          const existing = await sql`SELECT id FROM consent_templates WHERE name=${name} LIMIT 1`;
+          if (existing.rows.length > 0) {
+            await sql`UPDATE consent_templates SET procedure_type=${t.procedure_type||null},
+              zone=${t.zone||null}, sessions=${t.sessions||1}, objectives=${obj}::jsonb,
+              description=${t.description||null}, risks=${rsk}::jsonb, benefits=${ben}::jsonb,
+              alternatives=${alt}::jsonb, pre_care=${pre}::jsonb, post_care=${post}::jsonb,
+              contraindications=${contra}::jsonb, is_active=true, updated_at=NOW()
+              WHERE id=${existing.rows[0].id}`;
+            updated++;
+          } else {
+            await sql`INSERT INTO consent_templates
+              (name, procedure_type, zone, sessions, objectives, description, risks, benefits,
+               alternatives, pre_care, post_care, contraindications)
+              VALUES (${name}, ${t.procedure_type||null}, ${t.zone||null}, ${t.sessions||1},
+                ${obj}::jsonb, ${t.description||null}, ${rsk}::jsonb, ${ben}::jsonb,
+                ${alt}::jsonb, ${pre}::jsonb, ${post}::jsonb, ${contra}::jsonb)`;
+            inserted++;
+          }
         } catch { /* skip on error */ }
       }
-      return res.status(200).json({ success: true, inserted, message: `${inserted} plantillas sembradas correctamente` });
+      return res.status(200).json({ success: true, inserted, updated, message: `${inserted} nuevas, ${updated} actualizadas` });
     }
 
     // ── Gestión de permisos de módulo por usuario ───────────────────────────

@@ -370,13 +370,13 @@ function ConsentTemplatesPanel({
   };
 
   const seedTemplates = async () => {
-    if (!confirm('¿Sembrar las plantillas estándar del sistema?')) return;
+    if (!confirm('¿Sincronizar plantillas estándar? Se insertarán las nuevas y se actualizarán las existentes.')) return;
     const res  = await fetch('/api/admin-auth?action=seedConsentTemplates', {
-      method: 'POST', headers: authHeader(), body: JSON.stringify({ force: false }),
+      method: 'POST', headers: authHeader(), body: JSON.stringify({}),
     });
     const data = await res.json();
     if (data.error) { flash(data.error, 'err'); return; }
-    flash(data.message || `${data.inserted ?? 0} plantillas sembradas`);
+    flash(data.message || `${(data.inserted ?? 0) + (data.updated ?? 0)} plantillas sincronizadas`);
     load();
   };
 
