@@ -325,6 +325,8 @@ interface Clinical3DViewerProps {
   onEditablePointHovered?: (id: string | null) => void;
   /** Callback cuando el usuario hace clic en el fondo vacío (sin malla) */
   onBackgroundClick?: () => void;
+  /** Escala multiplicadora del tamaño de marcaciones puntuales (1.0 = default) */
+  pointMarkerScale?: number;
 }
 
 // ==========================================
@@ -338,6 +340,7 @@ const ThreeEngine: React.FC<{
   onMeshClick: (data: any) => void;
   onLoaded: () => void;
   onError: (msg: string) => void;
+  pointMarkerScale?: number;
   readOnly: boolean;
   referenceLines?: ReferenceLine[];
   lineDrawingMode?: LineType | null;
@@ -386,6 +389,7 @@ const ThreeEngine: React.FC<{
   highlightedPointIds = [],
   onEditablePointHovered,
   onBackgroundClick,
+  pointMarkerScale = 1.0,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -2000,11 +2004,11 @@ const ThreeEngine: React.FC<{
         const markerGroup = new THREE.Group();
         markerGroup.position.copy(pos);
         markerGroup.userData.markerId = marker.id ?? `m-${Date.now()}`;
-        const coreGeo = new THREE.SphereGeometry(0.06, 12, 12);
+        const coreGeo = new THREE.SphereGeometry(0.06 * pointMarkerScale, 12, 12);
         const coreMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
         markerGroup.add(new THREE.Mesh(coreGeo, coreMat));
 
-        const outerGeo = new THREE.SphereGeometry(0.12, 16, 16);
+        const outerGeo = new THREE.SphereGeometry(0.12 * pointMarkerScale, 16, 16);
         const outerMat = new THREE.MeshPhysicalMaterial({
           color, emissive: color, emissiveIntensity: 1.5,
           transparent: true, opacity: 0.8, roughness: 0, transmission: 0.9, thickness: 0.5,
@@ -2037,7 +2041,7 @@ const ThreeEngine: React.FC<{
         group.add(markerGroup);
       }
     });
-  }, [markers, modelVersion]);
+  }, [markers, modelVersion, pointMarkerScale]);
 
   // 4b. Renderizar puntos editables (trazado de referencia)
   useEffect(() => {
@@ -2526,6 +2530,7 @@ export default function Clinical3DViewer({
   highlightedPointIds = [],
   onEditablePointHovered,
   onBackgroundClick,
+  pointMarkerScale = 1.0,
 }: Clinical3DViewerProps) {
   const [modelSource, setModelSource] = useState<{ type: 'url' | 'buffer'; data: string | ArrayBuffer }>({
     type: 'url',
@@ -2616,6 +2621,7 @@ export default function Clinical3DViewer({
             highlightedPointIds={highlightedPointIds}
             onEditablePointHovered={onEditablePointHovered}
             onBackgroundClick={onBackgroundClick}
+            pointMarkerScale={pointMarkerScale}
           />
         )}
       </div>

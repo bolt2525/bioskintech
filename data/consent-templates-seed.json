@@ -289,14 +289,14 @@
     "name": "Rejuvenecimiento Facial Laser Co2"
   },
   {
-    "procedure_type": "Tratamiento de Rejuvenecimiento Facial con Toxina Botulínica Tipo A (XEOMIN 100UI)",
-    "description": "El procedimiento consiste en la infiltración intramuscular de toxina botulínica tipo A (Xeomin), una proteína pura de alta precisión, mediante agujas extrafinas en puntos estratégicos del rostro. El objetivo es relajar temporalmente los músculos responsables de las arrugas dinámicas (de expresión). El efecto comienza a ser visible entre el 3er y 5to día, alcanzando su máximo resultado a los 15 días. La duración del efecto varía según cada paciente, generalmente entre 3 y 4 meses.",
+    "procedure_type": "Tratamiento de Rejuvenecimiento Facial con Toxina Botulínica Tipo A",
+    "description": "El procedimiento consiste en la infiltración intramuscular de toxina botulínica tipo A, mediante agujas extrafinas en puntos estratégicos del rostro. El objetivo es relajar temporalmente los músculos responsables de las arrugas dinámicas (de expresión). El efecto comienza a ser visible entre el 3er y 5to día, alcanzando su máximo resultado a los 15 días. La duración del efecto varía según cada paciente, generalmente entre 3 y 4 meses.",
     "objectives": [
       "Atenuar o eliminar arrugas dinámicas en frente, entrecejo y patas de gallo.",
       "Prevenir la formación de surcos profundos o arrugas estáticas.",
       "Lograr una apariencia facial más descansada, joven y natural.",
       "Corregir asimetrías leves en la mímica facial.",
-      "Aprovechar la pureza de Xeomin para minimizar el riesgo de inmunogenicidad (resistencia al producto)."
+      "Minimizar el riesgo de inmunogenicidad (resistencia al producto)."
     ],
     "risks": [
       "Cefalea leve transitoria (dolor de cabeza) tras la aplicación.",
@@ -312,7 +312,7 @@
       "Resultados naturales sin perder la expresividad facial.",
       "Procedimiento mínimamente invasivo con reincorporación inmediata a la vida diaria.",
       "Piel con textura más suave y poros visiblemente reducidos en las zonas tratadas.",
-      "Alta pureza del fármaco (Xeomin), ideal para pacientes que buscan tratamientos recurrentes sin generar tolerancia."
+      "Tratamiento recurrente con bajo riesgo de generar tolerancia."
     ],
     "pre_care": [
       "Evitar el consumo de alcohol 48 horas antes del procedimiento.",
@@ -333,7 +333,7 @@
       "En caso de cefalea, solo tomar acetaminofén 500 mg.",
       "Asistir a la cita de revisión programada (generalmente a los 10-15 días) para evaluar la necesidad de retoque."
     ],
-    "name": "Rejuvenecimiento Facial Toxina Botulinica Xeomin 100ui"
+    "name": "Rejuvenecimiento Facial Toxina Botulinica Tipo A"
   },
   {
     "procedure_type": "Tratamiento Facial con Microneedling",
@@ -551,5 +551,36 @@
       "Asistir puntualmente a todas las sesiones programadas para garantizar la sinergia del tratamiento."
     ],
     "name": "Tratamiento Reduccion Papada Combinado"
+  },
+  {
+    "name": "Hollywood Peel Laser Nd Yag",
+    "procedure_type": "Hollywood Peel con Láser Nd:YAG",
+    "description": "El láser Nd:YAG Q-Switched emite pulsos de energía muy cortos que son absorbidos selectivamente por el pigmento de la mascarilla de carbón activado. Esto fragmenta el pigmento de la mascarilla, logrando una exfoliación de células muertas, estimulación de colágeno y control de glándula sebácea en la piel.",
+    "objectives": [
+      "Control de glándula sebácea.",
+      "Exfoliación profunda.",
+      "Estimulación de colágeno.",
+      "Unificación del tono de la piel."
+    ],
+    "risks": [
+      "Sensación de hormigueo durante el procedimiento.",
+      "Leve sensación de calor en zonas sensibles (mejillas, mentón).",
+      "Leve pigmentación en rostro por presencia de mascarilla de carbón dentro del poro que se elimina en la primera lavada."
+    ],
+    "benefits": [
+      "Método seguro y efectivo para exfoliar la piel, controlar la glándula sebácea y estimular colágeno en la piel.",
+      "Ideal en piel mixta, grasa y con tendencia a acné."
+    ],
+    "pre_care": [
+      "No exponer la zona al sol por 3 días.",
+      "Uso estricto de protector solar 3 días antes del tratamiento.",
+      "No realizar cuando existan brotes activos de acné (pústulas, pápulas, comedones abiertos y cerrados o en una piel inflamada)."
+    ],
+    "post_care": [
+      "No exponer al sol, usar protector solar estrictamente todos los días.",
+      "No colocar retinol, vitamina C o realizar peelings agresivos por 4 días posteriores al procedimiento.",
+      "Evitar actividad física de impacto 24 horas post tratamiento.",
+      "Evitar piscinas, saunas y lugares calientes 24 horas post tratamiento."
+    ]
   }
 ]

@@ -923,6 +923,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
                     skipConfirmation={true}
                     onMarkerPlaced={handle3DMarkerPlaced}
                     height="420px"
+                    pointMarkerScale={0.5}
                   />
                 </div>
               ) : (
@@ -934,6 +935,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
                     skipConfirmation={true}
                     onMarkerPlaced={handleBody3DMarkerPlaced}
                     height="420px"
+                    pointMarkerScale={0.5}
                   />
                 </div>
               )}

@@ -1577,9 +1577,9 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                   />
                 )}
                 <div className="w-full border-t border-gray-400 pt-2 text-center">
-                  <p className="font-bold text-gray-900">{currentConsent.signatures?.professional_name || professionalName}</p>
+                  <p className="font-bold text-gray-900">{professionalName || currentConsent.signatures?.professional_name}</p>
                   {user?.especialidad && <p className="text-xs text-[#deb887] mt-0.5">{user.especialidad}</p>}
-                  {user?.cedula_profesional && <p className="text-xs text-gray-500">C\u00e9d. Prof.: {user.cedula_profesional}</p>}
+                  {user?.cedula_profesional && <p className="text-xs text-gray-500">Céd. Prof.: {user.cedula_profesional}</p>}
                   <p className="text-sm text-gray-500 uppercase tracking-wider mt-1">Firma del Profesional</p>
                 </div>
               </div>
