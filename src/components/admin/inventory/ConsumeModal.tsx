@@ -1,5 +1,6 @@
 ﻿import React, { useState, useEffect } from 'react';
 import { X, Save, AlertCircle, ShoppingCart, Package, Layers } from 'lucide-react';
+import recordsFetch from '../../../utils/recordsFetch';
 
 interface ConsumeModalProps {
   item: any;
@@ -19,7 +20,7 @@ export default function ConsumeModal({ item, onClose, onSave }: ConsumeModalProp
 
   useEffect(() => {
     setLoading(true);
-    fetch(`/api/records?action=inventoryGetItem&id=${item.id}`)
+    recordsFetch(`/api/records?action=inventoryGetItem&id=${item.id}`)
       .then(res => res.json())
       .then(data => {
         if (data.batches) {

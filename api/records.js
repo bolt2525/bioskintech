@@ -2162,6 +2162,8 @@ export default async function handler(req, res) {
         const client = await pool.connect();
         try {
           await client.query('BEGIN');
+          // Propagar tenant context al cliente interno para compatibilidad con RLS
+          await client.query("SELECT set_config('app.current_tenant', $1, false)", [clinicId ? String(clinicId) : '']);
           // Borrar items anteriores
           await client.query('DELETE FROM financial_items WHERE record_id = $1', [record_id]);
 
@@ -2179,9 +2181,9 @@ export default async function handler(req, res) {
             totalTax      += tax;
             totalTotal    += total;
             await client.query(
-              `INSERT INTO financial_items (record_id, description, quantity, unit_price, iva_rate, subtotal, tax, total, sort_order)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-              [record_id, it.description, qty, uprice, ivaRate,
+              `INSERT INTO financial_items (record_id, clinic_id, description, quantity, unit_price, iva_rate, subtotal, tax, total, sort_order)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+              [record_id, clinicId ?? null, it.description, qty, uprice, ivaRate,
                subtotal, tax, total, i]
             );
           }

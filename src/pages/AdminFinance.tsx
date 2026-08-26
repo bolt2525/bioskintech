@@ -61,6 +61,9 @@ const calcFromTotal = (total: number, ivaRate: number): { subtotal: number; tax:
   return { subtotal, tax };
 };
 
+// Normaliza separadores decimales: acepta tanto punto como coma
+const parseAmount = (v: string): number => parseFloat(String(v).replace(',', '.')) || 0;
+
 const EMPTY_FORM = { date: new Date().toISOString().split('T')[0], invoice_number: '', entity: '', description: '', type: 'ingreso' as const, subtotal: '', tax: '', total: '' };
 const EMPTY_ITEM = (ivaRate = 15): FinanceItem => ({ description: '', quantity: 1, unit_price: 0, iva_rate: ivaRate, subtotal: 0, tax: 0, total: 0 });
 
@@ -244,11 +247,15 @@ const AdminFinance = () => {
 
       // Guardar items si los hay
       if (showItems && newItems.length > 0 && created.id) {
-        await recordsFetch('/api/records', {
+        const itemsRes = await recordsFetch('/api/records', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'financeItemsSave', record_id: created.id, items: newItems })
         });
+        if (!itemsRes.ok) {
+          const errData = await itemsRes.json().catch(() => ({}));
+          throw new Error(errData.error || `Error al guardar desglose (${itemsRes.status})`);
+        }
       }
 
       setNewForm(EMPTY_FORM); setNewItems([]); setShowItems(false); setShowNewForm(false);
@@ -576,23 +583,23 @@ const AdminFinance = () => {
                 <div className="grid grid-cols-3 gap-3 mb-3">
                   <div>
                     <label className="text-xs text-gray-500 mb-1 block">Subtotal</label>
-                    <input type="number" value={newForm.subtotal} onChange={e => {
-                      const sub = parseFloat(e.target.value) || 0;
+                    <input type="text" inputMode="decimal" value={newForm.subtotal} onChange={e => {
+                      const sub = parseAmount(e.target.value);
                       const tax = parseFloat((sub * taxRate / 100).toFixed(2));
                       setNewForm(p => ({...p, subtotal: e.target.value, tax: String(tax), total: String(parseFloat((sub+tax).toFixed(2)))}));
-                    }} step="0.01" placeholder="0.00" className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 outline-none text-right" />
+                    }} placeholder="0.00" className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 outline-none text-right" />
                   </div>
                   <div>
                     <label className="text-xs text-gray-500 mb-1 block">IVA</label>
-                    <input type="number" value={newForm.tax} onChange={e => setNewForm(p => ({...p, tax: e.target.value}))} step="0.01" placeholder="0.00" className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 outline-none text-right" />
+                    <input type="text" inputMode="decimal" value={newForm.tax} onChange={e => setNewForm(p => ({...p, tax: e.target.value}))} placeholder="0.00" className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 outline-none text-right" />
                   </div>
                   <div>
                     <label className="text-xs text-gray-500 mb-1 block flex items-center gap-1"><Calculator size={11}/> Total (calcular desde total)</label>
-                    <input type="number" value={newForm.total} onChange={e => {
-                      const tot = parseFloat(e.target.value) || 0;
+                    <input type="text" inputMode="decimal" value={newForm.total} onChange={e => {
+                      const tot = parseAmount(e.target.value);
                       const { subtotal, tax } = calcFromTotal(tot, taxRate);
                       setNewForm(p => ({...p, total: e.target.value, subtotal: String(subtotal), tax: String(tax)}));
-                    }} step="0.01" placeholder="0.00" className="w-full px-3 py-2 border border-yellow-300 rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 outline-none text-right font-bold" />
+                    }} placeholder="0.00" className="w-full px-3 py-2 border border-yellow-300 rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 outline-none text-right font-bold" />
                   </div>
                 </div>
               )}
@@ -1114,17 +1121,17 @@ interface ItemRowProps {
 const ItemRow = ({ item, taxRate, currencySymbol = '$', onChange, onRemove }: ItemRowProps) => {
   const [ivaEditing, setIvaEditing] = useState(false);
   const update = (field: keyof FinanceItem, value: string) => {
-    const partial = { ...item, [field]: parseFloat(value) || 0 };
-    const qty     = field === 'quantity'   ? (parseFloat(value) || 1) : item.quantity;
-    const uprice  = field === 'unit_price' ? (parseFloat(value) || 0) : item.unit_price;
-    const ivaRate = field === 'iva_rate'   ? (parseFloat(value) || 0) : item.iva_rate;
+    const partial = { ...item, [field]: parseAmount(value) };
+    const qty     = field === 'quantity'   ? (parseAmount(value) || 1) : item.quantity;
+    const uprice  = field === 'unit_price' ? (parseAmount(value) || 0) : item.unit_price;
+    const ivaRate = field === 'iva_rate'   ? (parseAmount(value) || 0) : item.iva_rate;
     const subtotal = parseFloat((qty * uprice).toFixed(2));
     const tax      = parseFloat((subtotal * ivaRate / 100).toFixed(2));
     onChange({ ...partial, quantity: qty, unit_price: uprice, iva_rate: ivaRate, subtotal, tax, total: parseFloat((subtotal+tax).toFixed(2)) });
   };
   // ponytail: back-calculates subtotal+IVA from total; unit_price synced so qty*price=subtotal
   const updateFromTotal = (value: string) => {
-    const total = parseFloat(value) || 0;
+    const total = parseAmount(value);
     const { subtotal, tax } = calcFromTotal(total, item.iva_rate);
     const qty = item.quantity || 1;
     onChange({ ...item, total, subtotal, tax, unit_price: parseFloat((subtotal / qty).toFixed(4)) });
@@ -1134,8 +1141,8 @@ const ItemRow = ({ item, taxRate, currencySymbol = '$', onChange, onRemove }: It
   return (
     <div className="grid grid-cols-12 gap-1 items-center">
       <input value={item.description} onChange={e => onChange({ ...item, description: e.target.value })} placeholder="Descripción del ítem" className={`col-span-4 ${cls}`} />
-      <input type="number" value={item.quantity}   onChange={e => update('quantity', e.target.value)}   step="0.01" min="0" className={`col-span-1 text-right ${cls}`} />
-      <input type="number" value={item.unit_price} onChange={e => update('unit_price', e.target.value)} step="0.01" min="0" className={`col-span-2 text-right ${cls}`} />
+      <input type="text" inputMode="decimal" value={item.quantity}   onChange={e => update('quantity', e.target.value)}   className={`col-span-1 text-right ${cls}`} />
+      <input type="text" inputMode="decimal" value={item.unit_price} onChange={e => update('unit_price', e.target.value)} className={`col-span-2 text-right ${cls}`} />
       {/* IVA% — gris cuando es el default, editable al click */}
       {!ivaEditing ? (
         <div className={`col-span-1 flex items-center justify-between px-2 py-1.5 rounded-lg border cursor-pointer group ${isDefaultIva ? 'bg-gray-50 border-gray-200' : 'bg-yellow-50 border-yellow-300'}`}
@@ -1154,10 +1161,10 @@ const ItemRow = ({ item, taxRate, currencySymbol = '$', onChange, onRemove }: It
       )}
       <span className="col-span-2 text-right text-xs font-mono text-gray-500 pr-1">{currencySymbol}{item.subtotal.toFixed(2)}</span>
       <input
-        type="number"
+        type="text"
+        inputMode="decimal"
         value={item.total.toFixed(2)}
         onChange={e => updateFromTotal(e.target.value)}
-        step="0.01" min="0"
         title="Ingrese el total para calcular subtotal e IVA automáticamente"
         className={`col-span-1 text-right ${cls} font-bold bg-yellow-50 border-yellow-200 focus:border-yellow-400`}
       />
