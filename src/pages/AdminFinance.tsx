@@ -267,12 +267,23 @@ const AdminFinance = () => {
     }
   };
 
+  // Normaliza campos NUMERIC de PostgreSQL que llegan como strings
+  const normalizeItem = (it: any): FinanceItem => ({
+    ...it,
+    quantity:   parseFloat(it.quantity   ?? 1),
+    unit_price: parseFloat(it.unit_price ?? 0),
+    iva_rate:   parseFloat(it.iva_rate   ?? 0),
+    subtotal:   parseFloat(it.subtotal   ?? 0),
+    tax:        parseFloat(it.tax        ?? 0),
+    total:      parseFloat(it.total      ?? 0),
+  });
+
   const openDesglose = async (record: FinanceRecord) => {
     setDesgModal({ open: true, record, items: [], loading: true, updateRecord: false });
     try {
       const res  = await recordsFetch(`/api/records?action=financeItemsGet&record_id=${record.id}`);
       const data = await res.json();
-      setDesgModal(prev => ({ ...prev, items: Array.isArray(data) ? data : [], loading: false }));
+      setDesgModal(prev => ({ ...prev, items: Array.isArray(data) ? data.map(normalizeItem) : [], loading: false }));
     } catch {
       setDesgModal(prev => ({ ...prev, items: [], loading: false }));
     }
@@ -289,9 +300,9 @@ const AdminFinance = () => {
       });
       if (desgModal.updateRecord) {
         const rec = desgModal.record;
-        const iSub = parseFloat(desgModal.items.reduce((s, it) => s + (it.subtotal || 0), 0).toFixed(2));
-        const iTax = parseFloat(desgModal.items.reduce((s, it) => s + (it.tax || 0), 0).toFixed(2));
-        const iTot = parseFloat(desgModal.items.reduce((s, it) => s + (it.total || 0), 0).toFixed(2));
+        const iSub = parseFloat(desgModal.items.reduce((s, it) => s + parseFloat(String(it.subtotal || 0)), 0).toFixed(2));
+        const iTax = parseFloat(desgModal.items.reduce((s, it) => s + parseFloat(String(it.tax || 0)), 0).toFixed(2));
+        const iTot = parseFloat(desgModal.items.reduce((s, it) => s + parseFloat(String(it.total || 0)), 0).toFixed(2));
         await recordsFetch('/api/records', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -921,11 +932,11 @@ const AdminFinance = () => {
                             {currencySymbol}{parseFloat(String(record.total || 0)).toFixed(2)}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                            <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="flex justify-end gap-2">
                               <button 
                                 onClick={() => openDesglose(record)}
-                                className="p-1 text-gray-400 hover:text-yellow-600 hover:bg-yellow-50 rounded"
-                                title="Desglosar ítems"
+                                className="p-1 text-yellow-500 hover:text-yellow-700 hover:bg-yellow-50 rounded"
+                                title="Ver / editar desglose de ítems"
                               >
                                 <Package size={16} />
                               </button>
