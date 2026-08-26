@@ -1058,9 +1058,50 @@ const ThreeEngine: React.FC<{
               if (bodyHandle) bodyHandle.position.copy(surfPt);
             }
           } else if (handleDragRole === 'shape-scale') {
-            // Arrastrar handle de escala — mover handle visualmente
+            // Arrastrar handle de escala — mover handle y mostrar preview de la forma escalada
             const scaleHandle = handlesGroupRef.current?.children.find((h: any) => h.userData.handleRole === 'shape-scale');
             if (scaleHandle) scaleHandle.position.copy(surfPt);
+            const origShape = handleBodyOriginalShapeData;
+            if (origShape && brushPreviewGroupRef.current) {
+              clearBrushPreview();
+              const ctr = new THREE.Vector3(origShape.center.x, origShape.center.y, origShape.center.z);
+              const newDist = surfPt.distanceTo(ctr);
+              const sCol = new THREE.Color(origShape.color);
+              const sTh = (origShape.thickness || 1.0) * 0.003;
+              const sNrm = new THREE.Vector3(origShape.normal.x, origShape.normal.y, origShape.normal.z).normalize();
+              const sTan2 = origShape.tangent
+                ? new THREE.Vector3(origShape.tangent.x, origShape.tangent.y, origShape.tangent.z).normalize()
+                : new THREE.Vector3().crossVectors(sNrm, new THREE.Vector3(0, 1, 0)).normalize();
+              const sBi2 = new THREE.Vector3().crossVectors(sNrm, sTan2).normalize();
+              const rcP = new THREE.Raycaster();
+              const projectPt = (wp: THREE.Vector3) => {
+                if (!faceMeshRef.current) return wp;
+                rcP.set(wp.clone().addScaledVector(sNrm, 2), sNrm.clone().negate());
+                const h = rcP.intersectObject(faceMeshRef.current, true);
+                return h.length > 0 ? h[0].point.clone() : wp;
+              };
+              if (origShape.shapeType === 'circle') {
+                const N = 48;
+                const cirPts: THREE.Vector3[] = [];
+                for (let i = 0; i <= N; i++) {
+                  const a = (i / N) * Math.PI * 2;
+                  cirPts.push(projectPt(ctr.clone().addScaledVector(sTan2, Math.cos(a) * newDist).addScaledVector(sBi2, Math.sin(a) * newDist)));
+                }
+                brushPreviewGroupRef.current.add(buildSurfaceTube(cirPts, sCol, 0.8, sTh, false));
+              } else {
+                const sv2 = surfPt.clone().sub(ctr);
+                const nHW = Math.max(0.01, Math.abs(sv2.dot(sTan2)));
+                const nHH = Math.max(0.01, Math.abs(sv2.dot(sBi2)));
+                const cOff: [number, number][] = [[-nHW, -nHH], [nHW, -nHH], [nHW, nHH], [-nHW, nHH]];
+                const c3D = cOff.map(([u, v]) => projectPt(ctr.clone().addScaledVector(sTan2, u).addScaledVector(sBi2, v)));
+                for (let i = 0; i < 4; i++) {
+                  const sideA = c3D[i], sideB = c3D[(i + 1) % 4];
+                  const sp: THREE.Vector3[] = [];
+                  for (let s = 0; s <= 8; s++) sp.push(projectPt(sideA.clone().lerp(sideB, s / 8)));
+                  if (sp.length >= 2) brushPreviewGroupRef.current.add(buildSurfaceTube(sp, sCol, 0.8, sTh, false));
+                }
+              }
+            }
           }
           isDragging = true;
         }
@@ -1190,14 +1231,14 @@ const ThreeEngine: React.FC<{
         const rawDist = Math.sqrt(
           (e.clientX - startPos.x) ** 2 + (e.clientY - startPos.y) ** 2
         ) * unitsPerPx;
-        const r = Math.max(0.05, rawDist);
+        const r = Math.max(0.01, rawDist);
         shapeCurrentRadius = r;
         shapeCurrentW = r * 1.6;
         shapeCurrentH = r;
 
         // Limpiar preview anterior
         clearBrushPreview();
-        if (brushPreviewGroupRef.current && r > 0.05) {
+        if (brushPreviewGroupRef.current && r > 0.01) {
           const col = new THREE.Color(callbacks.current.pendingBrushColor || '#8b5cf6');
           const th = (callbacks.current.pendingBrushThickness || 1.0) * 0.003;
           const tool = callbacks.current.activeTool;
@@ -1325,7 +1366,7 @@ const ThreeEngine: React.FC<{
             const center = new THREE.Vector3(origShape.center.x, origShape.center.y, origShape.center.z);
             const newDist = scaleHandle.position.distanceTo(center);
             if (origShape.shapeType === 'circle') {
-              callbacks.current.onSurfaceShapeUpdated?.(lineId, { radius: Math.max(0.05, newDist) });
+              callbacks.current.onSurfaceShapeUpdated?.(lineId, { radius: Math.max(0.01, newDist) });
             } else {
               const sNorm = new THREE.Vector3(origShape.normal.x, origShape.normal.y, origShape.normal.z).normalize();
               const sTan = origShape.tangent
@@ -1334,8 +1375,8 @@ const ThreeEngine: React.FC<{
               const sBi = new THREE.Vector3().crossVectors(sNorm, sTan).normalize();
               const sv = scaleHandle.position.clone().sub(center);
               callbacks.current.onSurfaceShapeUpdated?.(lineId, {
-                width: Math.max(0.1, Math.abs(sv.dot(sTan)) * 2),
-                height: Math.max(0.1, Math.abs(sv.dot(sBi)) * 2),
+                width: Math.max(0.02, Math.abs(sv.dot(sTan)) * 2),
+                height: Math.max(0.02, Math.abs(sv.dot(sBi)) * 2),
               });
             }
           }
@@ -1582,7 +1623,7 @@ const ThreeEngine: React.FC<{
         const screenDist = Math.sqrt(
           (e.clientX - startPos.x) ** 2 + (e.clientY - startPos.y) ** 2
         );
-        if (screenDist >= 8 && (shapeCurrentRadius > 0.05 || shapeCurrentW > 0.05)) {
+        if (screenDist >= 3 && (shapeCurrentRadius > 0.01 || shapeCurrentW > 0.01)) {
           const id = `sh-${Date.now()}`;
           const col = callbacks.current.pendingBrushColor || '#8b5cf6';
           const th = callbacks.current.pendingBrushThickness || 1.0;
@@ -2541,13 +2582,13 @@ const ThreeEngine: React.FC<{
       grp2.userData.handleRole = role;
       grp2.userData.handleLineId = lineId;
       // Esfera visual
-      const geo = new THREE.SphereGeometry(0.018, 10, 10);
+      const geo = new THREE.SphereGeometry(0.011, 10, 10);
       const mat = new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.92 });
       const vis = new THREE.Mesh(geo, mat);
       vis.renderOrder = 1003;
       grp2.add(vis);
       // Hitbox invisible para facilitar el click
-      const hGeo = new THREE.SphereGeometry(0.06, 8, 8);
+      const hGeo = new THREE.SphereGeometry(0.045, 8, 8);
       const hMat = new THREE.MeshBasicMaterial({ visible: false });
       const hit = new THREE.Mesh(hGeo, hMat);
       hit.userData.isHitbox = true;
