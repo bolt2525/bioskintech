@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
-import { Save, Check, Plus, Trash2, MessageSquare, Calendar, Edit3, AlertCircle } from 'lucide-react';
+import { Save, Check, Plus, Trash2, MessageSquare, Calendar, Edit3, AlertCircle, Settings2 } from 'lucide-react';
 import { Tooltip } from '../../../../ui/Tooltip';
+import ConsultationActivatedModal from '../ConsultationActivatedModal';
 
 interface Consultation {
   id: number;
@@ -36,6 +37,25 @@ export default function ConsultationTab({
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [deleting, setDeleting] = useState<number | null>(null);
+  const [showTabsModal, setShowTabsModal] = useState(false);
+
+  const handleUpdateTabs = async (enableInj: boolean, enableCons: boolean) => {
+    if (!activeConsultation) return;
+    try {
+      const r = await recordsFetch('/api/records', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'updateConsultation', id: activeConsultation.id, enable_injectables: enableInj, enable_consents: enableCons }),
+      });
+      if (r.ok) {
+        const updated: Consultation = await r.json();
+        onSelectConsultation(updated);
+        onSave();
+        setMessage({ type: 'success', text: 'Tabs actualizados' });
+      }
+    } catch { setMessage({ type: 'error', text: 'Error al actualizar tabs' }); }
+    setShowTabsModal(false);
+  };
 
   useEffect(() => {
     if (message) {
@@ -243,15 +263,33 @@ export default function ConsultationTab({
                   </p>
                 </div>
               )}
-              {(activeConsultation.enable_injectables || activeConsultation.enable_consents) && (
-                <div className="flex items-center gap-2 pt-1">
+              <div className="flex items-center gap-2 pt-1">
                   <span className="text-xs text-gray-400">Tabs habilitados:</span>
                   {activeConsultation.enable_injectables && <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded-full font-medium">Inyectables</span>}
                   {activeConsultation.enable_consents && <span className="text-xs px-2 py-1 bg-purple-100 text-purple-700 rounded-full font-medium">Consentimientos</span>}
+                  {!activeConsultation.enable_injectables && !activeConsultation.enable_consents && (
+                    <span className="text-xs text-gray-300 italic">Ninguno</span>
+                  )}
+                  <Tooltip content="Editar tabs habilitados">
+                    <button onClick={() => setShowTabsModal(true)}
+                      className="ml-1 p-1 rounded-md text-gray-300 hover:text-[#b8944d] hover:bg-amber-50 transition-colors">
+                      <Settings2 className="w-3.5 h-3.5" />
+                    </button>
+                  </Tooltip>
                 </div>
-              )}
             </div>
           </motion.div>
+        )}
+
+        {showTabsModal && activeConsultation && (
+          <ConsultationActivatedModal
+            consultationId={activeConsultation.id}
+            initialInjectables={activeConsultation.enable_injectables}
+            initialConsents={activeConsultation.enable_consents}
+            isEdit
+            onConfirm={handleUpdateTabs}
+            onClose={() => setShowTabsModal(false)}
+          />
         )}
 
         {!isFormMode && !activeConsultation && (

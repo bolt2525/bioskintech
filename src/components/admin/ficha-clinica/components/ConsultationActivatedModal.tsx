@@ -6,11 +6,14 @@ interface Props {
   consultationId: number;
   onConfirm: (enableInjectables: boolean, enableConsents: boolean) => void;
   onClose: () => void;
+  initialInjectables?: boolean;
+  initialConsents?: boolean;
+  isEdit?: boolean;
 }
 
-export default function ConsultationActivatedModal({ consultationId, onConfirm, onClose }: Props) {
-  const [enableInjectables, setEnableInjectables] = useState(false);
-  const [enableConsents, setEnableConsents] = useState(false);
+export default function ConsultationActivatedModal({ consultationId, onConfirm, onClose, initialInjectables = false, initialConsents = false, isEdit = false }: Props) {
+  const [enableInjectables, setEnableInjectables] = useState(initialInjectables);
+  const [enableConsents, setEnableConsents] = useState(initialConsents);
 
   return (
     <AnimatePresence>
@@ -30,7 +33,7 @@ export default function ConsultationActivatedModal({ consultationId, onConfirm, 
                   <CheckCircle className="w-5 h-5 text-[#b8944d]" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-gray-800">Consulta registrada</h3>
+                  <h3 className="text-base font-bold text-gray-800">{isEdit ? 'Editar tabs habilitados' : 'Consulta registrada'}</h3>
                   <p className="text-xs text-gray-500 mt-0.5">ID #{consultationId}</p>
                 </div>
               </div>
@@ -43,7 +46,7 @@ export default function ConsultationActivatedModal({ consultationId, onConfirm, 
           {/* Body */}
           <div className="px-6 py-5 space-y-4">
             <p className="text-sm text-gray-600">
-              ¿Deseas habilitar tabs adicionales para esta sesión de consulta?
+              {isEdit ? 'Activa o desactiva los tabs adicionales para esta consulta.' : '¿Deseas habilitar tabs adicionales para esta sesión de consulta?'}
             </p>
 
             {/* Injectables toggle */}
@@ -109,7 +112,7 @@ export default function ConsultationActivatedModal({ consultationId, onConfirm, 
               onClick={onClose}
               className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors"
             >
-              Continuar sin habilitar
+              {isEdit ? 'Cancelar' : 'Continuar sin habilitar'}
             </button>
             <button
               onClick={() => onConfirm(enableInjectables, enableConsents)}
