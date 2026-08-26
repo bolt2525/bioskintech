@@ -1131,6 +1131,8 @@ interface ItemRowProps {
 }
 const ItemRow = ({ item, taxRate, currencySymbol = '$', onChange, onRemove }: ItemRowProps) => {
   const [ivaEditing, setIvaEditing] = useState(false);
+  // Estado local para el campo total mientras el usuario escribe
+  const [totalDraft, setTotalDraft] = useState<string | null>(null);
   const update = (field: keyof FinanceItem, value: string) => {
     const partial = { ...item, [field]: parseAmount(value) };
     const qty     = field === 'quantity'   ? (parseAmount(value) || 1) : item.quantity;
@@ -1174,8 +1176,12 @@ const ItemRow = ({ item, taxRate, currencySymbol = '$', onChange, onRemove }: It
       <input
         type="text"
         inputMode="decimal"
-        value={item.total.toFixed(2)}
-        onChange={e => updateFromTotal(e.target.value)}
+        value={totalDraft !== null ? totalDraft : (item.total === 0 ? '' : item.total.toFixed(2))}
+        placeholder="0.00"
+        onFocus={e => { setTotalDraft(item.total === 0 ? '' : item.total.toFixed(2)); e.target.select(); }}
+        onChange={e => setTotalDraft(e.target.value)}
+        onBlur={() => { updateFromTotal(totalDraft ?? '0'); setTotalDraft(null); }}
+        onKeyDown={e => { if (e.key === 'Enter') { updateFromTotal(totalDraft ?? '0'); setTotalDraft(null); (e.target as HTMLInputElement).blur(); } }}
         title="Ingrese el total para calcular subtotal e IVA automáticamente"
         className={`col-span-1 text-right ${cls} font-bold bg-yellow-50 border-yellow-200 focus:border-yellow-400`}
       />
