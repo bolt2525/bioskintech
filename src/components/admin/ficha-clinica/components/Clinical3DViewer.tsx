@@ -315,7 +315,7 @@ interface Clinical3DViewerProps {
   /** Callback cuando el usuario mueve un endpoint de una línea freehand (resize/move) */
   onFreehandLineUpdated?: (id: string, points: { x: number; y: number; z: number }[], segments?: { x: number; y: number; z: number }[][]) => void;
   /** Callback cuando el usuario mueve o redimensiona una forma en superficie */
-  onSurfaceShapeUpdated?: (id: string, update: { center?: { x: number; y: number; z: number }; radius?: number; width?: number; height?: number }) => void;
+  onSurfaceShapeUpdated?: (id: string, update: { center?: { x: number; y: number; z: number }; normal?: { x: number; y: number; z: number }; tangent?: { x: number; y: number; z: number }; radius?: number; width?: number; height?: number }) => void;
   onGridStepChange?: (step: number) => void;
   /** Callback cuando el cursor snap a un punto en una línea (imán); null = sin snap */
   onSnapPointChange?: (pt: { x: number; y: number; z: number } | null) => void;
@@ -369,7 +369,7 @@ const ThreeEngine: React.FC<{
   onShapeComplete?: (shape: SurfaceShape) => void;
   onElementSelected?: (id: string | null, type: string | null) => void;
   onFreehandLineUpdated?: (id: string, points: { x: number; y: number; z: number }[], segments?: { x: number; y: number; z: number }[][]) => void;
-  onSurfaceShapeUpdated?: (id: string, update: { center?: { x: number; y: number; z: number }; radius?: number; width?: number; height?: number }) => void;
+  onSurfaceShapeUpdated?: (id: string, update: { center?: { x: number; y: number; z: number }; normal?: { x: number; y: number; z: number }; tangent?: { x: number; y: number; z: number }; radius?: number; width?: number; height?: number }) => void;
   onGridStepChange?: (step: number) => void;
   /** Callback cuando el cursor snap a un punto en una línea (imán); null = sin snap */
   onSnapPointChange?: (pt: { x: number; y: number; z: number } | null) => void;
@@ -542,6 +542,7 @@ const ThreeEngine: React.FC<{
     let handleBodyOriginalSegments: { x: number; y: number; z: number }[][] | null = null;
     let handleBodyShapeStartSurface: THREE.Vector3 | null = null;
     let handleBodyOriginalShapeCenter: { x: number; y: number; z: number } | null = null;
+    let handleBodyOriginalShapeData: SurfaceShape | null = null;
 
     // ── Estado dibujo libre (HA) ───────────────────────────────────────────
     let brushActive = false;
@@ -796,7 +797,8 @@ const ThreeEngine: React.FC<{
             handleBodyOriginalSegments = null;
             handleBodyShapeStartSurface = null;
             handleBodyOriginalShapeCenter = null;
-            // Pre-capturar estado de compound shapes para cualquier tipo de handle drag
+            handleBodyOriginalShapeData = null;
+            // Pre-capturar estado de compound shapes y shapes para cualquier tipo de handle drag
             const precLine = callbacks.current.freehandLines?.find((l: FreehandLine) => l.id === handleDragLineId);
             if (precLine?.segments) {
               handleBodyOriginalPoints = [...precLine.points];
@@ -805,6 +807,7 @@ const ThreeEngine: React.FC<{
             const precShape = callbacks.current.surfaceShapes?.find((s: SurfaceShape) => s.id === handleDragLineId);
             if (precShape) {
               handleBodyOriginalShapeCenter = { ...precShape.center };
+              handleBodyOriginalShapeData = { ...precShape };
             }
             if (controlsRef.current) controlsRef.current.enabled = false;
             isDragging = false;
@@ -949,27 +952,40 @@ const ThreeEngine: React.FC<{
           const surfPt = hits[0].point;
           if (handleDragRole === 'start' || handleDragRole === 'end') {
             if (handleBodyOriginalSegments && handleBodyOriginalPoints) {
-              // Forma compuesta: mover toda la forma (translateción desde ancla original)
-              if (!handleBodyStartSurface) handleBodyStartSurface = surfPt.clone();
-              const origAnchorIdx = handleDragRole === 'start' ? 0 : handleBodyOriginalPoints.length - 1;
-              const origAnchor = handleBodyOriginalPoints[origAnchorIdx];
-              const offset = surfPt.clone().sub(new THREE.Vector3(origAnchor.x, origAnchor.y, origAnchor.z));
-              // Mover todos los handles por el offset
-              handlesGroupRef.current?.children.forEach((h: any) => {
-                const hRole = h.userData.handleRole;
-                const hOrigIdx = hRole === 'start' ? 0 : hRole === 'end' ? handleBodyOriginalPoints!.length - 1 : Math.floor(handleBodyOriginalPoints!.length / 2);
-                const hOrig = handleBodyOriginalPoints![hOrigIdx];
-                h.position.set(hOrig.x + offset.x, hOrig.y + offset.y, hOrig.z + offset.z);
-              });
-              clearBrushPreview();
-              const dLine = callbacks.current.freehandLines?.find((l: FreehandLine) => l.id === handleDragLineId);
-              if (dLine && brushPreviewGroupRef.current) {
-                const col = new THREE.Color(dLine.color);
-                const th = (dLine.thickness || 1.0) * 0.003;
-                handleBodyOriginalSegments.forEach(seg => {
-                  const moved = seg.map(p => new THREE.Vector3(p.x + offset.x, p.y + offset.y, p.z + offset.z));
-                  brushPreviewGroupRef.current!.add(buildSurfaceTube(moved, col, 0.5, th, false));
+              // Forma compuesta: escalar+rotar desde ancla opuesta (no trasladar)
+              const draggedOrigIdx = handleDragRole === 'start' ? 0 : handleBodyOriginalPoints.length - 1;
+              const fixedOrigIdx = handleDragRole === 'start' ? handleBodyOriginalPoints.length - 1 : 0;
+              const ptFixed = handleBodyOriginalPoints[fixedOrigIdx];
+              const ptDragged = handleBodyOriginalPoints[draggedOrigIdx];
+              const ptFixedV = new THREE.Vector3(ptFixed.x, ptFixed.y, ptFixed.z);
+              const ptDraggedV = new THREE.Vector3(ptDragged.x, ptDragged.y, ptDragged.z);
+              const origLen = ptDraggedV.distanceTo(ptFixedV);
+              if (origLen > 0.01) {
+                const newLen = surfPt.distanceTo(ptFixedV);
+                const scale = newLen / origLen;
+                const origDir = ptDraggedV.clone().sub(ptFixedV).normalize();
+                const newDir = surfPt.clone().sub(ptFixedV).normalize();
+                const q = newDir.lengthSq() > 0.001 ? new THREE.Quaternion().setFromUnitVectors(origDir, newDir) : new THREE.Quaternion();
+                // Mover todos los handles por la transformación
+                handlesGroupRef.current?.children.forEach((h: any) => {
+                  const hOrigIdx = h.userData.handleRole === 'start' ? 0 : h.userData.handleRole === 'end' ? handleBodyOriginalPoints!.length - 1 : Math.floor(handleBodyOriginalPoints!.length / 2);
+                  const hOrig = handleBodyOriginalPoints![hOrigIdx];
+                  const v = new THREE.Vector3(hOrig.x, hOrig.y, hOrig.z).sub(ptFixedV).applyQuaternion(q).multiplyScalar(scale);
+                  h.position.copy(ptFixedV.clone().add(v));
                 });
+                clearBrushPreview();
+                const dLine = callbacks.current.freehandLines?.find((l: FreehandLine) => l.id === handleDragLineId);
+                if (dLine && brushPreviewGroupRef.current) {
+                  const col = new THREE.Color(dLine.color);
+                  const th = (dLine.thickness || 1.0) * 0.003;
+                  handleBodyOriginalSegments.forEach(seg => {
+                    const moved = seg.map(p => {
+                      const v = new THREE.Vector3(p.x, p.y, p.z).sub(ptFixedV).applyQuaternion(q).multiplyScalar(scale);
+                      return ptFixedV.clone().add(v);
+                    });
+                    brushPreviewGroupRef.current!.add(buildSurfaceTube(moved, col, 0.5, th, false));
+                  });
+                }
               }
             } else {
               // Línea simple: mover el handle y previsualizar entre los dos extremos
@@ -1038,11 +1054,13 @@ const ThreeEngine: React.FC<{
               handleBodyOriginalShapeCenter = shape ? { ...shape.center } : null;
             }
             if (handleBodyOriginalShapeCenter && handleBodyShapeStartSurface) {
-              const offset = surfPt.clone().sub(handleBodyShapeStartSurface);
-              // Mover el handle visual
               const bodyHandle = handlesGroupRef.current?.children.find((h: any) => h.userData.handleRole === 'shape-body');
               if (bodyHandle) bodyHandle.position.copy(surfPt);
             }
+          } else if (handleDragRole === 'shape-scale') {
+            // Arrastrar handle de escala — mover handle visualmente
+            const scaleHandle = handlesGroupRef.current?.children.find((h: any) => h.userData.handleRole === 'shape-scale');
+            if (scaleHandle) scaleHandle.position.copy(surfPt);
           }
           isDragging = true;
         }
@@ -1271,15 +1289,59 @@ const ThreeEngine: React.FC<{
         clearBrushPreview(); // limpiar preview en tiempo real
         isDragging = true;
 
-        // ── shape-body: mover el centro de una SurfaceShape ───────────────
+        // ── shape-body: mover el centro de una SurfaceShape + re-proyectar ───────────────
         if (role === 'shape-body') {
           const bodyHandle = handlesGroupRef.current?.children.find((h: any) => h.userData.handleRole === 'shape-body');
           if (bodyHandle) {
-            const newCenter = { x: bodyHandle.position.x, y: bodyHandle.position.y, z: bodyHandle.position.z };
-            callbacks.current.onSurfaceShapeUpdated?.(lineId, { center: newCenter });
+            const projCenter = projectToSurface(bodyHandle.position.clone());
+            const update: Record<string, any> = { center: { x: projCenter.x, y: projCenter.y, z: projCenter.z } };
+            // Re-estimar normal/tangent en el nuevo centro para que la forma se pegue correctamente
+            if (faceMeshRef.current) {
+              const rc2 = new THREE.Raycaster();
+              rc2.set(new THREE.Vector3(projCenter.x, projCenter.y, 12), new THREE.Vector3(0, 0, -1));
+              const fHits2 = rc2.intersectObject(faceMeshRef.current, true);
+              if (fHits2.length > 0 && fHits2[0].face) {
+                const n2 = fHits2[0].face.normal.clone().transformDirection(fHits2[0].object.matrixWorld).normalize();
+                const up2 = new THREE.Vector3(0, 1, 0);
+                let t2 = new THREE.Vector3().crossVectors(n2, up2).normalize();
+                if (t2.lengthSq() < 0.01) t2 = new THREE.Vector3().crossVectors(n2, new THREE.Vector3(1, 0, 0)).normalize();
+                update.normal = { x: n2.x, y: n2.y, z: n2.z };
+                update.tangent = { x: t2.x, y: t2.y, z: t2.z };
+              }
+            }
+            callbacks.current.onSurfaceShapeUpdated?.(lineId, update);
           }
           handleBodyShapeStartSurface = null;
           handleBodyOriginalShapeCenter = null;
+          handleBodyOriginalShapeData = null;
+          return;
+        }
+
+        // ── shape-scale: redimensionar radio/ancho/alto de una SurfaceShape ───────────
+        if (role === 'shape-scale') {
+          const scaleHandle = handlesGroupRef.current?.children.find((h: any) => h.userData.handleRole === 'shape-scale');
+          const origShape = handleBodyOriginalShapeData;
+          if (scaleHandle && origShape) {
+            const center = new THREE.Vector3(origShape.center.x, origShape.center.y, origShape.center.z);
+            const newDist = scaleHandle.position.distanceTo(center);
+            if (origShape.shapeType === 'circle') {
+              callbacks.current.onSurfaceShapeUpdated?.(lineId, { radius: Math.max(0.05, newDist) });
+            } else {
+              const sNorm = new THREE.Vector3(origShape.normal.x, origShape.normal.y, origShape.normal.z).normalize();
+              const sTan = origShape.tangent
+                ? new THREE.Vector3(origShape.tangent.x, origShape.tangent.y, origShape.tangent.z).normalize()
+                : new THREE.Vector3().crossVectors(sNorm, new THREE.Vector3(0, 1, 0)).normalize();
+              const sBi = new THREE.Vector3().crossVectors(sNorm, sTan).normalize();
+              const sv = scaleHandle.position.clone().sub(center);
+              callbacks.current.onSurfaceShapeUpdated?.(lineId, {
+                width: Math.max(0.1, Math.abs(sv.dot(sTan)) * 2),
+                height: Math.max(0.1, Math.abs(sv.dot(sBi)) * 2),
+              });
+            }
+          }
+          handleBodyShapeStartSurface = null;
+          handleBodyOriginalShapeCenter = null;
+          handleBodyOriginalShapeData = null;
           return;
         }
 
@@ -1288,19 +1350,37 @@ const ThreeEngine: React.FC<{
 
         if (role === 'start' || role === 'end') {
           if (line.segments && handleBodyOriginalPoints && handleBodyOriginalSegments) {
-            // Forma compuesta: emitir traducción desde ancla original del handle arrastrado
+            // Forma compuesta: escalar+rotar desde ancla opuesta + re-proyectar a superficie
             const handle = handlesGroupRef.current?.children.find((h: any) => h.userData.handleRole === role);
             if (handle) {
-              const origAnchorIdx = role === 'start' ? 0 : handleBodyOriginalPoints.length - 1;
-              const origAnchor = handleBodyOriginalPoints[origAnchorIdx];
-              const offset = new THREE.Vector3(
-                handle.position.x - origAnchor.x,
-                handle.position.y - origAnchor.y,
-                handle.position.z - origAnchor.z,
-              );
-              const newPoints = handleBodyOriginalPoints.map(p => ({ x: p.x + offset.x, y: p.y + offset.y, z: p.z + offset.z }));
-              const newSegs = handleBodyOriginalSegments.map(seg => seg.map(p => ({ x: p.x + offset.x, y: p.y + offset.y, z: p.z + offset.z })));
-              callbacks.current.onFreehandLineUpdated?.(lineId, newPoints, newSegs);
+              const draggedOrigIdx = role === 'start' ? 0 : handleBodyOriginalPoints.length - 1;
+              const fixedOrigIdx = role === 'start' ? handleBodyOriginalPoints.length - 1 : 0;
+              const ptFixed = handleBodyOriginalPoints[fixedOrigIdx];
+              const ptDragged = handleBodyOriginalPoints[draggedOrigIdx];
+              const ptFixedV = new THREE.Vector3(ptFixed.x, ptFixed.y, ptFixed.z);
+              const ptDraggedV = new THREE.Vector3(ptDragged.x, ptDragged.y, ptDragged.z);
+              const origLen = ptDraggedV.distanceTo(ptFixedV);
+              if (origLen > 0.01) {
+                const newLen = handle.position.distanceTo(ptFixedV);
+                const scale = newLen / origLen;
+                const origDir = ptDraggedV.clone().sub(ptFixedV).normalize();
+                const newDir = handle.position.clone().sub(ptFixedV).normalize();
+                const q = newDir.lengthSq() > 0.001 ? new THREE.Quaternion().setFromUnitVectors(origDir, newDir) : new THREE.Quaternion();
+                const transformPt = (p: { x: number; y: number; z: number }): THREE.Vector3 => {
+                  const v = new THREE.Vector3(p.x, p.y, p.z).sub(ptFixedV).applyQuaternion(q).multiplyScalar(scale);
+                  return ptFixedV.clone().add(v);
+                };
+                const newPoints = handleBodyOriginalPoints.map(p => {
+                  const proj = projectToSurface(transformPt(p));
+                  return { x: proj.x, y: proj.y, z: proj.z };
+                });
+                const newSegs = handleBodyOriginalSegments.map(seg => {
+                  const movedA = projectToSurface(transformPt(seg[0]));
+                  const movedB = projectToSurface(transformPt(seg[seg.length - 1]));
+                  return surfaceLine(movedA, movedB, Math.max(seg.length, 8)).map(p => ({ x: p.x, y: p.y, z: p.z }));
+                });
+                callbacks.current.onFreehandLineUpdated?.(lineId, newPoints, newSegs);
+              }
             }
             handleBodyStartSurface = null;
             handleBodyOriginalPoints = null;
@@ -1324,7 +1404,7 @@ const ThreeEngine: React.FC<{
           }
         } else if (role === 'body' && handleBodyOriginalPoints && handleBodyStartSurface) {
           if (handleBodyOriginalSegments) {
-            // Forma compuesta: emitir puntos ancla + segmentos desplazados
+            // Forma compuesta: traducir + re-proyectar cada segmento a la superficie
             const startH = handlesGroupRef.current?.children.find((h: any) => h.userData.handleRole === 'start');
             const bodyH = handlesGroupRef.current?.children.find((h: any) => h.userData.handleRole === 'body');
             if (startH && bodyH) {
@@ -1333,10 +1413,15 @@ const ThreeEngine: React.FC<{
                 startH.position.y - handleBodyOriginalPoints[0].y,
                 startH.position.z - handleBodyOriginalPoints[0].z,
               );
-              const newPoints = handleBodyOriginalPoints.map(p => ({ x: p.x + offset.x, y: p.y + offset.y, z: p.z + offset.z }));
-              const newSegments = handleBodyOriginalSegments.map(seg =>
-                seg.map(p => ({ x: p.x + offset.x, y: p.y + offset.y, z: p.z + offset.z }))
-              );
+              const newPoints = handleBodyOriginalPoints.map(p => {
+                const proj = projectToSurface(new THREE.Vector3(p.x + offset.x, p.y + offset.y, p.z + offset.z));
+                return { x: proj.x, y: proj.y, z: proj.z };
+              });
+              const newSegments = handleBodyOriginalSegments.map(seg => {
+                const movedA = projectToSurface(new THREE.Vector3(seg[0].x + offset.x, seg[0].y + offset.y, seg[0].z + offset.z));
+                const movedB = projectToSurface(new THREE.Vector3(seg[seg.length-1].x + offset.x, seg[seg.length-1].y + offset.y, seg[seg.length-1].z + offset.z));
+                return surfaceLine(movedA, movedB, Math.max(seg.length, 8)).map(p => ({ x: p.x, y: p.y, z: p.z }));
+              });
               callbacks.current.onFreehandLineUpdated?.(lineId, newPoints, newSegments);
             }
           } else {
@@ -2473,8 +2558,24 @@ const ThreeEngine: React.FC<{
     // Verificar si es una forma SurfaceShape
     const shape = surfaceShapes.find(s => s.id === selectedElementId);
     if (shape) {
-      // Handle cuerpo (naranja) en el centro para mover la forma
+      // Handle cuerpo (naranja): mover la forma
       grp.add(makeHandle(0xf59e0b, 'shape-body', shape.center, shape.id));
+      // Handle de escala (cyan): en el borde para redimensionar
+      const sNormal = new THREE.Vector3(shape.normal.x, shape.normal.y, shape.normal.z).normalize();
+      const sTangent = shape.tangent
+        ? new THREE.Vector3(shape.tangent.x, shape.tangent.y, shape.tangent.z).normalize()
+        : new THREE.Vector3().crossVectors(sNormal, new THREE.Vector3(0, 1, 0)).normalize();
+      let scalePt: { x: number; y: number; z: number };
+      if (shape.shapeType === 'circle') {
+        const r = shape.radius || 0.3;
+        scalePt = { x: shape.center.x + sTangent.x * r, y: shape.center.y + sTangent.y * r, z: shape.center.z + sTangent.z * r };
+      } else {
+        const hw = (shape.width || 0.4) / 2;
+        const sBitangent = new THREE.Vector3().crossVectors(sNormal, sTangent).normalize();
+        const hh = (shape.height || 0.25) / 2;
+        scalePt = { x: shape.center.x + sTangent.x * hw + sBitangent.x * hh, y: shape.center.y + sTangent.y * hw + sBitangent.y * hh, z: shape.center.z + sTangent.z * hw + sBitangent.z * hh };
+      }
+      grp.add(makeHandle(0x06b6d4, 'shape-scale', scalePt, shape.id));
       return;
     }
 

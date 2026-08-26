@@ -2796,13 +2796,13 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                           {selectedElement.type === 'freehand' && !(selectedElementData as FreehandLine)?.groupId && (
                             <p className="text-[9px] text-slate-400 italic mb-2">
                               {(selectedElementData as FreehandLine)?.segments
-                                ? '🟡 Arrastrar para mover forma completa'
-                                : '🟢 Arrastrar inicio · 🔵 Arrastrar fin · 🟡 Mover línea'}
+                                ? '�🔵 Escalar/rotar · 🟡 Mover forma'
+                                : '🟢 Inicio · 🔵 Fin · 🟡 Mover línea'}
                             </p>
                           )}
                           {selectedElement.type === 'shape' && (
                             <p className="text-[9px] text-slate-400 italic mb-2">
-                              🟡 Arrastrar para mover forma
+                              🟡 Mover · 🔵 Redimensionar
                             </p>
                           )}
                           {/* Opciones de eliminación según tipo */}
