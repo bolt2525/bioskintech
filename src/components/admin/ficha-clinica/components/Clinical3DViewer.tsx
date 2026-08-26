@@ -163,8 +163,8 @@ const buildSurfaceTube = (
     const SPACING = 0.040;
     const DOT_R = radius * 1.5;
     const HALO_R = radius * 3;
-    // Hitbox invisible para cada punto dashed (radio 8× más grande para raycasting)
-    const HIT_R = radius * 8;
+    // Hitbox invisible para cada punto dashed (radio 4× más grande para raycasting)
+    const HIT_R = radius * 4;
     let acc = 0;
     for (let i = 1; i < pts.length; i++) {
       const seg = pts[i].distanceTo(pts[i - 1]);
@@ -201,8 +201,8 @@ const buildSurfaceTube = (
     const mesh = new THREE.Mesh(tubeGeo, tubeMat);
     mesh.renderOrder = 999;
     grp.add(mesh);
-    // Tubo hitbox invisible (radio 12× para raycasting confiable sobre tubos finos)
-    const hitGeo = new THREE.TubeGeometry(curve, segments, radius * 12, 6, false);
+    // Tubo hitbox invisible (radio 4× para raycasting confiable sobre tubos finos)
+    const hitGeo = new THREE.TubeGeometry(curve, segments, radius * 4, 6, false);
     const hitMat = new THREE.MeshBasicMaterial({ visible: false });
     const hitMesh = new THREE.Mesh(hitGeo, hitMat);
     hitMesh.userData.isHitbox = true;
@@ -796,6 +796,16 @@ const ThreeEngine: React.FC<{
             handleBodyOriginalSegments = null;
             handleBodyShapeStartSurface = null;
             handleBodyOriginalShapeCenter = null;
+            // Pre-capturar estado de compound shapes para cualquier tipo de handle drag
+            const precLine = callbacks.current.freehandLines?.find((l: FreehandLine) => l.id === handleDragLineId);
+            if (precLine?.segments) {
+              handleBodyOriginalPoints = [...precLine.points];
+              handleBodyOriginalSegments = precLine.segments.map(s => [...s]);
+            }
+            const precShape = callbacks.current.surfaceShapes?.find((s: SurfaceShape) => s.id === handleDragLineId);
+            if (precShape) {
+              handleBodyOriginalShapeCenter = { ...precShape.center };
+            }
             if (controlsRef.current) controlsRef.current.enabled = false;
             isDragging = false;
             return;
@@ -938,23 +948,47 @@ const ThreeEngine: React.FC<{
         if (hits.length > 0) {
           const surfPt = hits[0].point;
           if (handleDragRole === 'start' || handleDragRole === 'end') {
-            // Mover el handle visualmente
-            const handle = handlesGroupRef.current?.children.find(
-              (h: any) => h.userData.handleRole === handleDragRole && h.userData.handleLineId === handleDragLineId
-            );
-            if (handle) handle.position.copy(surfPt);
-            // Preview en tiempo real: regenerar la línea entre los dos extremos actuales
-            const startH = handlesGroupRef.current?.children.find((h: any) => h.userData.handleRole === 'start');
-            const endH = handlesGroupRef.current?.children.find((h: any) => h.userData.handleRole === 'end');
-            if (startH && endH) {
+            if (handleBodyOriginalSegments && handleBodyOriginalPoints) {
+              // Forma compuesta: mover toda la forma (translateción desde ancla original)
+              if (!handleBodyStartSurface) handleBodyStartSurface = surfPt.clone();
+              const origAnchorIdx = handleDragRole === 'start' ? 0 : handleBodyOriginalPoints.length - 1;
+              const origAnchor = handleBodyOriginalPoints[origAnchorIdx];
+              const offset = surfPt.clone().sub(new THREE.Vector3(origAnchor.x, origAnchor.y, origAnchor.z));
+              // Mover todos los handles por el offset
+              handlesGroupRef.current?.children.forEach((h: any) => {
+                const hRole = h.userData.handleRole;
+                const hOrigIdx = hRole === 'start' ? 0 : hRole === 'end' ? handleBodyOriginalPoints!.length - 1 : Math.floor(handleBodyOriginalPoints!.length / 2);
+                const hOrig = handleBodyOriginalPoints![hOrigIdx];
+                h.position.set(hOrig.x + offset.x, hOrig.y + offset.y, hOrig.z + offset.z);
+              });
               clearBrushPreview();
-              const line = callbacks.current.freehandLines?.find((l: FreehandLine) => l.id === handleDragLineId);
-              if (line) {
-                const col = new THREE.Color(line.color);
-                const th = (line.thickness || 1.0) * 0.003;
-                const previewPts = surfaceLine(startH.position.clone(), endH.position.clone(), 10);
-                if (brushPreviewGroupRef.current) {
-                  brushPreviewGroupRef.current.add(buildSurfaceTube(previewPts, col, 0.5, th, false));
+              const dLine = callbacks.current.freehandLines?.find((l: FreehandLine) => l.id === handleDragLineId);
+              if (dLine && brushPreviewGroupRef.current) {
+                const col = new THREE.Color(dLine.color);
+                const th = (dLine.thickness || 1.0) * 0.003;
+                handleBodyOriginalSegments.forEach(seg => {
+                  const moved = seg.map(p => new THREE.Vector3(p.x + offset.x, p.y + offset.y, p.z + offset.z));
+                  brushPreviewGroupRef.current!.add(buildSurfaceTube(moved, col, 0.5, th, false));
+                });
+              }
+            } else {
+              // Línea simple: mover el handle y previsualizar entre los dos extremos
+              const handle = handlesGroupRef.current?.children.find(
+                (h: any) => h.userData.handleRole === handleDragRole && h.userData.handleLineId === handleDragLineId
+              );
+              if (handle) handle.position.copy(surfPt);
+              const startH = handlesGroupRef.current?.children.find((h: any) => h.userData.handleRole === 'start');
+              const endH = handlesGroupRef.current?.children.find((h: any) => h.userData.handleRole === 'end');
+              if (startH && endH) {
+                clearBrushPreview();
+                const line = callbacks.current.freehandLines?.find((l: FreehandLine) => l.id === handleDragLineId);
+                if (line) {
+                  const col = new THREE.Color(line.color);
+                  const th = (line.thickness || 1.0) * 0.003;
+                  const previewPts = surfaceLine(startH.position.clone(), endH.position.clone(), 10);
+                  if (brushPreviewGroupRef.current) {
+                    brushPreviewGroupRef.current.add(buildSurfaceTube(previewPts, col, 0.5, th, false));
+                  }
                 }
               }
             }
@@ -1253,8 +1287,26 @@ const ThreeEngine: React.FC<{
         if (!line) return;
 
         if (role === 'start' || role === 'end') {
-          // Solo para líneas simples (sin segments): re-proyectar entre extremos
-          if (!line.segments) {
+          if (line.segments && handleBodyOriginalPoints && handleBodyOriginalSegments) {
+            // Forma compuesta: emitir traducción desde ancla original del handle arrastrado
+            const handle = handlesGroupRef.current?.children.find((h: any) => h.userData.handleRole === role);
+            if (handle) {
+              const origAnchorIdx = role === 'start' ? 0 : handleBodyOriginalPoints.length - 1;
+              const origAnchor = handleBodyOriginalPoints[origAnchorIdx];
+              const offset = new THREE.Vector3(
+                handle.position.x - origAnchor.x,
+                handle.position.y - origAnchor.y,
+                handle.position.z - origAnchor.z,
+              );
+              const newPoints = handleBodyOriginalPoints.map(p => ({ x: p.x + offset.x, y: p.y + offset.y, z: p.z + offset.z }));
+              const newSegs = handleBodyOriginalSegments.map(seg => seg.map(p => ({ x: p.x + offset.x, y: p.y + offset.y, z: p.z + offset.z })));
+              callbacks.current.onFreehandLineUpdated?.(lineId, newPoints, newSegs);
+            }
+            handleBodyStartSurface = null;
+            handleBodyOriginalPoints = null;
+            handleBodyOriginalSegments = null;
+          } else if (!line.segments) {
+            // Línea simple: re-proyectar entre los nuevos extremos
             const handle = handlesGroupRef.current?.children.find(
               (h: any) => h.userData.handleRole === role
             );
@@ -2253,19 +2305,6 @@ const ThreeEngine: React.FC<{
           }
           masterGrp.add(segGrp);
         });
-        // Hitbox invisible sobre los puntos ancla para facilitar la selección
-        if (line.points.length >= 2) {
-          const anchorPts = line.points.map(p => new THREE.Vector3(p.x, p.y, p.z));
-          const hitGrp = buildSurfaceTube(anchorPts, col, 0, r * 12, false);
-          hitGrp.traverse((c: any) => {
-            if (c.isMesh) {
-              c.userData.freehandId = line.id;
-              c.userData.isHitbox = true;
-              (c.material as THREE.Material).visible = false;
-            }
-          });
-          masterGrp.add(hitGrp);
-        }
         grp.add(masterGrp);
       } else {
         // Línea simple
@@ -2444,10 +2483,11 @@ const ThreeEngine: React.FC<{
     if (!line || line.points.length < 2) return;
 
     if (line.segments && line.segments.length > 0) {
-      // Forma compuesta: solo handle cuerpo en el punto medio de los anclas
-      const midIdx = Math.floor(line.points.length / 2);
-      grp.add(makeHandle(0xf59e0b, 'body', line.points[midIdx], line.id));
-      // También handles en extremos como anclas visuales (verde y azul), no funcionales para re-proyectar
+      // Forma compuesta: handle cuerpo en el punto medio del primer segmento (sobre la superficie)
+      const firstSeg = line.segments[0];
+      const bodyPt = firstSeg[Math.floor(firstSeg.length / 2)] || line.points[0];
+      grp.add(makeHandle(0xf59e0b, 'body', bodyPt, line.id));
+      // Handles de extremo en los puntos ancla
       grp.add(makeHandle(0x22c55e, 'start', line.points[0], line.id));
       grp.add(makeHandle(0x3b82f6, 'end', line.points[line.points.length - 1], line.id));
     } else {
