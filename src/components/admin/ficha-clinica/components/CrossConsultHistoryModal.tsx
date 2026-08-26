@@ -36,16 +36,21 @@ export default function CrossConsultHistoryModal({
 
   if (!isOpen) return null;
 
-  // Group items by consultation_id
+  // Group items by consultation_id — coerce to number to handle string/number mismatch from DB
   const grouped: Array<{ consult: ConsultationRef | null; items: typeof items }> = [];
 
+  const knownIds = new Set(consultations.map(c => Number(c.id)));
+
   for (const consult of consultations) {
-    const consultItems = items.filter(i => i.consultation_id === consult.id);
+    const consultItems = items.filter(i => Number(i.consultation_id) === Number(consult.id));
     if (consultItems.length > 0) grouped.push({ consult, items: consultItems });
   }
   // Items without consultation_id
   const ungrouped = items.filter(i => !i.consultation_id);
   if (ungrouped.length > 0) grouped.push({ consult: null, items: ungrouped });
+  // Orphaned: has a consultation_id but it doesn't exist in current record's consultations
+  const orphaned = items.filter(i => i.consultation_id && !knownIds.has(Number(i.consultation_id)));
+  if (orphaned.length > 0) grouped.push({ consult: null, items: orphaned });
 
   const selectedItem = selectedId != null ? items.find(i => i.id === selectedId) : null;
 

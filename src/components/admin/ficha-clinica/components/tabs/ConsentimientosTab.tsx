@@ -105,8 +105,8 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [crossHistOpen, setCrossHistOpen] = useState(false);
   const messageRef = useRef<HTMLDivElement>(null);
-  const currentConsents = consents.filter(c => c.consultation_id === consultationId);
-  const otherConsentCount = consents.filter(c => c.consultation_id !== consultationId).length;
+  const currentConsents = consents.filter(c => Number(c.consultation_id) === Number(consultationId));
+  const otherConsentCount = consents.filter(c => Number(c.consultation_id) !== Number(consultationId)).length;
 
   // Combina plantillas de DB (por clínica) con fallback a locales
   const templates = dbTemplates.length > 0 ? dbTemplates : localTemplates;
