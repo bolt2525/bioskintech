@@ -2297,7 +2297,7 @@ export default async function handler(req, res) {
 
     // Gestión de features
     if (action === 'getFeatures') {
-      const clinicId = req.query.clinicId ? parseInt(req.query.clinicId) : (user.clinic_id || null);
+      const clinicId = req.query.clinicId || (user.clinic_id || null);
       if (user.role !== 'master_admin' && clinicId !== user.clinic_id)
         return res.status(403).json({ error: 'Sin permiso' });
       return res.status(200).json({ success: true, features: await getFeatures(clinicId), allFeatures: ALL_FEATURES });
@@ -2791,11 +2791,11 @@ export default async function handler(req, res) {
 
     if (action === 'listDemoUsers') {
       if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master_admin' });
-      const clinicId = parseInt(req.query.clinicId);
+      const clinicId = (req.query.clinicId || '').trim();
       if (!clinicId) return res.status(400).json({ error: 'clinicId requerido' });
       const r = await sql`
         SELECT id, username, is_active, demo_expires_at, last_login
-        FROM clinic_users WHERE clinic_id = ${clinicId} AND is_demo = true
+        FROM clinic_users WHERE clinic_id = ${clinicId}::uuid AND is_demo = true
         ORDER BY created_at DESC
       `;
       return res.status(200).json({ users: r.rows });

@@ -88,8 +88,8 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
   const [crossHistOpen, setCrossHistOpen] = useState(false);
   const messageRef = useRef<HTMLDivElement>(null);
   // Filter prescriptions to current consultation for sidebar display
-  const currentPrescriptions = prescriptions.filter(p => p.consultation_id === consultationId);
-  const otherPrescCount = prescriptions.filter(p => p.consultation_id !== consultationId).length;
+  const currentPrescriptions = prescriptions.filter(p => Number(p.consultation_id) === Number(consultationId));
+  const otherPrescCount = prescriptions.filter(p => Number(p.consultation_id) !== Number(consultationId)).length;
 
   useEffect(() => {
     loadPrescriptions();
@@ -99,7 +99,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
   // Auto-fill diagnosis from DiagnosisTab when active consultation changes
   useEffect(() => {
     if (!consultationId) return;
-    const d = diagnoses.find(x => x.consultation_id === consultationId) ?? diagnoses[0];
+    const d = diagnoses.find(x => Number(x.consultation_id) === Number(consultationId)) ?? diagnoses[0];
     if (d) {
       setCurrentPrescription(prev => ({ ...prev, diagnostico: prev.diagnostico || d.diagnosis_text }));
       setActiveCie10(d.cie10_code || '');

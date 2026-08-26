@@ -503,7 +503,7 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
                 .slice()
                 .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
                 .map(consult => {
-                  const ts = treatments.filter(t => t.consultation_id === consult.id && t.notes?.trim());
+                  const ts = treatments.filter(t => Number(t.consultation_id) === Number(consult.id) && t.notes?.trim());
                   return (
                     <div key={consult.id} className="border border-gray-100 rounded-lg overflow-hidden">
                       <div className="bg-gray-50 px-4 py-2 flex items-center gap-2">

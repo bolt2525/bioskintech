@@ -100,7 +100,7 @@ export default function CrossConsultHistoryModal({
               )}
               {grouped.map(({ consult, items: gItems }, idx) => {
                 const key = consult?.id ?? null;
-                const isCurrent = consult?.id === currentConsultationId;
+                const isCurrent = Number(consult?.id) === Number(currentConsultationId);
                 const expanded = expandedConsults.has(key);
                 return (
                   <div key={idx} className="border rounded-xl overflow-hidden">

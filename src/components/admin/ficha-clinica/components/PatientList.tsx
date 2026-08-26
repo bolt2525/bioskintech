@@ -445,7 +445,7 @@ export default function PatientList() {
                             {consultations
                               .slice().sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
                               .map((consult: any) => {
-                                const ts = withNotes.filter(t => t.consultation_id === consult.id);
+                                const ts = withNotes.filter(t => Number(t.consultation_id) === Number(consult.id));
                                 if (!ts.length) return null;
                                 return (
                                   <div key={consult.id}>
