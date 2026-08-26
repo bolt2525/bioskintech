@@ -1047,7 +1047,7 @@ const ThreeEngine: React.FC<{
               }
             }
           } else if (handleDragRole === 'shape-body') {
-            // Arrastrar una forma (SurfaceShape) — mover su centro
+            // Arrastrar una forma — mover centro y mostrar preview en tiempo real
             if (!handleBodyShapeStartSurface) {
               handleBodyShapeStartSurface = surfPt.clone();
               const shape = callbacks.current.surfaceShapes?.find((s: SurfaceShape) => s.id === handleDragLineId);
@@ -1056,6 +1056,44 @@ const ThreeEngine: React.FC<{
             if (handleBodyOriginalShapeCenter && handleBodyShapeStartSurface) {
               const bodyHandle = handlesGroupRef.current?.children.find((h: any) => h.userData.handleRole === 'shape-body');
               if (bodyHandle) bodyHandle.position.copy(surfPt);
+              // Preview en tiempo real: shape con tamaño original en el nuevo centro
+              const origShape = handleBodyOriginalShapeData;
+              if (origShape && brushPreviewGroupRef.current) {
+                clearBrushPreview();
+                const sCol2 = new THREE.Color(origShape.color);
+                const sTh2 = (origShape.thickness || 1.0) * 0.003;
+                const sNrm2 = new THREE.Vector3(origShape.normal.x, origShape.normal.y, origShape.normal.z).normalize();
+                const sTan3 = origShape.tangent
+                  ? new THREE.Vector3(origShape.tangent.x, origShape.tangent.y, origShape.tangent.z).normalize()
+                  : new THREE.Vector3().crossVectors(sNrm2, new THREE.Vector3(0, 1, 0)).normalize();
+                const sBi3 = new THREE.Vector3().crossVectors(sNrm2, sTan3).normalize();
+                const rcM = new THREE.Raycaster();
+                const projMove = (wp: THREE.Vector3) => {
+                  if (!faceMeshRef.current) return wp;
+                  rcM.set(wp.clone().addScaledVector(sNrm2, 2), sNrm2.clone().negate());
+                  const h = rcM.intersectObject(faceMeshRef.current, true);
+                  return h.length > 0 ? h[0].point.clone() : wp;
+                };
+                if (origShape.shapeType === 'circle') {
+                  const r2 = origShape.radius || 0.3;
+                  const cPts: THREE.Vector3[] = [];
+                  for (let i = 0; i <= 48; i++) {
+                    const a = (i / 48) * Math.PI * 2;
+                    cPts.push(projMove(surfPt.clone().addScaledVector(sTan3, Math.cos(a) * r2).addScaledVector(sBi3, Math.sin(a) * r2)));
+                  }
+                  brushPreviewGroupRef.current.add(buildSurfaceTube(cPts, sCol2, 0.8, sTh2, false));
+                } else {
+                  const hw2 = (origShape.width || 0.4) / 2, hh2 = (origShape.height || 0.25) / 2;
+                  const cOff2: [number, number][] = [[-hw2, -hh2], [hw2, -hh2], [hw2, hh2], [-hw2, hh2]];
+                  const c3D2 = cOff2.map(([u, v]) => projMove(surfPt.clone().addScaledVector(sTan3, u).addScaledVector(sBi3, v)));
+                  for (let i = 0; i < 4; i++) {
+                    const sA2 = c3D2[i], sB2 = c3D2[(i + 1) % 4];
+                    const sp2: THREE.Vector3[] = [];
+                    for (let s = 0; s <= 8; s++) sp2.push(projMove(sA2.clone().lerp(sB2, s / 8)));
+                    if (sp2.length >= 2) brushPreviewGroupRef.current.add(buildSurfaceTube(sp2, sCol2, 0.8, sTh2, false));
+                  }
+                }
+              }
             }
           } else if (handleDragRole === 'shape-scale') {
             // Arrastrar handle de escala — mover handle y mostrar preview de la forma escalada
@@ -1147,12 +1185,16 @@ const ThreeEngine: React.FC<{
                 // Línea recta proyectada a la superficie
                 brushPreviewGroupRef.current.add(buildSurfaceTube(surfaceLine(ptA, ptB), col, 0.55, th, false));
               } else if (tool === 'shape-arrow') {
-                // Flecha: línea + cabeza de flecha
+                // Flecha: usar normal de superficie en la punta para perp en-plano (evita que la cabeza se oculte)
                 brushPreviewGroupRef.current.add(buildSurfaceTube(surfaceLine(ptA, ptB), col, 0.55, th, false));
                 const dir = ptB.clone().sub(ptA).normalize();
                 const len = ptA.distanceTo(ptB);
                 const arrowLen = Math.max(0.05, len * 0.25);
-                let perp = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize();
+                const tipNormal = hits[0].face
+                  ? hits[0].face.normal.clone().transformDirection(hits[0].object.matrixWorld).normalize()
+                  : new THREE.Vector3(0, 0, 1);
+                let perp = new THREE.Vector3().crossVectors(dir, tipNormal).normalize();
+                if (perp.lengthSq() < 0.01) perp = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize();
                 if (perp.lengthSq() < 0.01) perp = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 0, 1)).normalize();
                 const tL = ptB.clone().addScaledVector(dir, -arrowLen).addScaledVector(perp, arrowLen * 0.5);
                 const tR = ptB.clone().addScaledVector(dir, -arrowLen).addScaledVector(perp, -arrowLen * 0.5);
@@ -1508,7 +1550,23 @@ const ThreeEngine: React.FC<{
           const dir = ptB.clone().sub(ptA).normalize();
           const len = ptA.distanceTo(ptB);
           const arrowLen = Math.max(0.05, len * 0.25);
-          let perp = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize();
+          // Perp en el plano de la superficie en la punta (normal de superficie × dir)
+          let perp: THREE.Vector3;
+          if (faceMeshRef.current && cameraRef.current) {
+            const rcTip = new THREE.Raycaster();
+            const camDir = ptB.clone().sub(cameraRef.current.position).normalize();
+            rcTip.set(cameraRef.current.position.clone(), camDir);
+            const tipHits = rcTip.intersectObject(faceMeshRef.current, true);
+            if (tipHits.length > 0 && tipHits[0].face) {
+              const tipN = tipHits[0].face.normal.clone().transformDirection(tipHits[0].object.matrixWorld).normalize();
+              perp = new THREE.Vector3().crossVectors(dir, tipN).normalize();
+            } else {
+              perp = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize();
+            }
+          } else {
+            perp = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize();
+          }
+          if (perp.lengthSq() < 0.01) perp = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize();
           if (perp.lengthSq() < 0.01) perp = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 0, 1)).normalize();
           const tL = ptB.clone().addScaledVector(dir, -arrowLen).addScaledVector(perp, arrowLen * 0.5);
           const tR = ptB.clone().addScaledVector(dir, -arrowLen).addScaledVector(perp, -arrowLen * 0.5);
