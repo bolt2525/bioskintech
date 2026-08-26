@@ -374,8 +374,8 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
   const [deleting, setDeleting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
-  const currentExams = physicalExams.filter(e => e.consultation_id === consultationId);
-  const otherExamCount = physicalExams.filter(e => e.consultation_id !== consultationId).length;
+  const currentExams = physicalExams.filter(e => Number(e.consultation_id) === Number(consultationId));
+  const otherExamCount = physicalExams.filter(e => Number(e.consultation_id) !== Number(consultationId)).length;
   
   // Canvas State
   const [faceMarks, setFaceMarks] = useState<Mark[]>([]);
@@ -392,13 +392,22 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
   // Warning modal para confirmación de guardado con campos incompletos
   const [saveWarning, setSaveWarning] = useState<{ messages: string[]; payload: any } | null>(null);
 
+  // Reset form when active consultation changes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (physicalExams.length > 0 && !currentExam.id) {
-      loadExam(physicalExams[0]);
-    } else if (physicalExams.length === 0 && !currentExam.id) {
-      resetExam();
-    }
-  }, [physicalExams, recordId]);
+    const examForConsult = physicalExams.find(e => Number(e.consultation_id) === Number(consultationId));
+    if (examForConsult) loadExam(examForConsult);
+    else resetExam();
+  }, [consultationId]);
+
+  // Load exam from data on initial load (data arrives async after mount)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (currentExam.id) return;
+    const examForConsult = physicalExams.find(e => Number(e.consultation_id) === Number(consultationId));
+    if (examForConsult) loadExam(examForConsult);
+    else resetExam();
+  }, [physicalExams.length, recordId]);
 
   useEffect(() => {
     if (message) {

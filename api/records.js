@@ -1341,6 +1341,15 @@ export default async function handler(req, res) {
       case 'deleteConsultation': {
         const { id: dcId } = req.query;
         if (!dcId) return res.status(400).json({ error: 'id required' });
+        // Cascade: delete all records linked to this consultation before removing it
+        await Promise.all([
+          pool.query('DELETE FROM physical_exams   WHERE consultation_id = $1', [dcId]),
+          pool.query('DELETE FROM diagnoses         WHERE consultation_id = $1', [dcId]),
+          pool.query('DELETE FROM treatments        WHERE consultation_id = $1', [dcId]),
+          pool.query('DELETE FROM prescriptions     WHERE consultation_id = $1', [dcId]),
+          pool.query('DELETE FROM consent_forms     WHERE consultation_id = $1', [dcId]),
+          pool.query('DELETE FROM injectables       WHERE consultation_id = $1', [dcId]),
+        ]);
         await pool.query('DELETE FROM consultations WHERE id = $1', [dcId]);
         return res.status(200).json({ success: true });
       }

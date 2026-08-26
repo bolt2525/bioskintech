@@ -56,13 +56,22 @@ export default function DiagnosisTab({ recordId, diagnoses, patientName, consult
   const messageRef = useRef<HTMLDivElement>(null);
   const [crossHistOpen, setCrossHistOpen] = useState(false);
 
+  // Reset form when active consultation changes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (diagnoses.length > 0 && !currentDiagnosis.id) {
-      setCurrentDiagnosis(diagnoses[0]);
-    } else if (diagnoses.length === 0 && !currentDiagnosis.id) {
-      setCurrentDiagnosis({ ...EMPTY_DIAGNOSIS, record_id: recordId });
-    }
-  }, [diagnoses, recordId]);
+    const diagForConsult = diagnoses.find(d => Number(d.consultation_id) === Number(consultationId));
+    if (diagForConsult) setCurrentDiagnosis(diagForConsult);
+    else setCurrentDiagnosis({ ...EMPTY_DIAGNOSIS, record_id: recordId });
+  }, [consultationId]);
+
+  // Load from data on initial load (data arrives async after mount)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (currentDiagnosis.id) return;
+    const diagForConsult = diagnoses.find(d => Number(d.consultation_id) === Number(consultationId));
+    if (diagForConsult) setCurrentDiagnosis(diagForConsult);
+    else setCurrentDiagnosis({ ...EMPTY_DIAGNOSIS, record_id: recordId });
+  }, [diagnoses.length, recordId]);
 
   useEffect(() => {
     if (message) {
@@ -200,8 +209,8 @@ export default function DiagnosisTab({ recordId, diagnoses, patientName, consult
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   };
 
-  const currentDiagnoses = diagnoses.filter(d => d.consultation_id === consultationId);
-  const otherDiagCount = diagnoses.filter(d => d.consultation_id !== consultationId).length;
+  const currentDiagnoses = diagnoses.filter(d => Number(d.consultation_id) === Number(consultationId));
+  const otherDiagCount = diagnoses.filter(d => Number(d.consultation_id) !== Number(consultationId)).length;
 
   return (
     <>

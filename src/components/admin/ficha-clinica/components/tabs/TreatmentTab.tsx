@@ -68,9 +68,9 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
 
   // Sort treatments by date descending for the history list
   const sortedTreatments = [...treatments]
-    .filter(t => t.consultation_id === consultationId)
+    .filter(t => Number(t.consultation_id) === Number(consultationId))
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  const otherTreatCount = treatments.filter(t => t.consultation_id !== consultationId).length;
+  const otherTreatCount = treatments.filter(t => Number(t.consultation_id) !== Number(consultationId)).length;
 
   useEffect(() => {
     if (message) {

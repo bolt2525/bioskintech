@@ -1556,12 +1556,12 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
 
   // Filtrar injectables por tipo activo, sub-tipo y consulta activa
   const filteredInjectables = injectables.filter(i => {
-    if (i.consultation_id !== consultationId) return false;
+    if (Number(i.consultation_id) !== Number(consultationId)) return false;
     if (i.product_type !== activeType) return false;
     if (activeType === 'relleno') return (i.relleno_subtype || 'relleno_ha') === rellenoSubType;
     return true;
   });
-  const otherInjCount = injectables.filter(i => i.consultation_id !== consultationId).length;
+  const otherInjCount = injectables.filter(i => Number(i.consultation_id) !== Number(consultationId)).length;
 
   // Resetear COMPLETAMENTE al cambiar de sub-tab (aislamiento botox vs HA)
   useEffect(() => {
