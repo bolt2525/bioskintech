@@ -612,14 +612,17 @@ export default async function handler(req, res) {
           }
           const client = await pool.connect();
           try {
+            // Propagar tenant context al cliente interno (necesario para RLS)
+            await client.query("SELECT set_config('app.current_tenant', $1, false)", [consCid ? String(consCid) : '']);
             await client.query('BEGIN');
             
             // Check current stock
-            const batchRes = await client.query('SELECT quantity_current, item_id FROM inventory_batches WHERE id = $1', [batch_id]);
+            const batchRes = await client.query('SELECT quantity_current, item_id, clinic_id FROM inventory_batches WHERE id = $1', [batch_id]);
             if (batchRes.rows.length === 0) throw new Error('Batch not found');
             
             const currentQty = parseFloat(batchRes.rows[0].quantity_current);
             const itemId = batchRes.rows[0].item_id;
+            const batchClinicId = batchRes.rows[0].clinic_id;
 
             if (currentQty < quantity) throw new Error('Insufficient stock in this batch');
 
@@ -647,9 +650,9 @@ export default async function handler(req, res) {
             // Record Movement only if quantity > 0
             if (quantity > 0) {
               await client.query(`
-                INSERT INTO inventory_movements (batch_id, movement_type, quantity_change, reason, reference_id, user_id)
-                VALUES ($1, 'CONSUMPTION', $2, $3, $4, $5)
-              `, [batch_id, -quantity, reason, reference_id, user_id]);
+                INSERT INTO inventory_movements (batch_id, clinic_id, movement_type, quantity_change, reason, reference_id, user_id)
+                VALUES ($1, $2, 'CONSUMPTION', $3, $4, $5, $6)
+              `, [batch_id, batchClinicId, -quantity, reason, reference_id, user_id]);
             }
 
             await client.query('COMMIT');
