@@ -1131,8 +1131,9 @@ interface ItemRowProps {
 }
 const ItemRow = ({ item, taxRate, currencySymbol = '$', onChange, onRemove }: ItemRowProps) => {
   const [ivaEditing, setIvaEditing] = useState(false);
-  // Estado local para el campo total mientras el usuario escribe
-  const [totalDraft, setTotalDraft] = useState<string | null>(null);
+  // Estado local para campos numéricos mientras el usuario escribe
+  const [totalDraft, setTotalDraft]   = useState<string | null>(null);
+  const [upriceDraft, setUpriceDraft] = useState<string | null>(null);
   const update = (field: keyof FinanceItem, value: string) => {
     const partial = { ...item, [field]: parseAmount(value) };
     const qty     = field === 'quantity'   ? (parseAmount(value) || 1) : item.quantity;
@@ -1154,8 +1155,17 @@ const ItemRow = ({ item, taxRate, currencySymbol = '$', onChange, onRemove }: It
   return (
     <div className="grid grid-cols-12 gap-1 items-center">
       <input value={item.description} onChange={e => onChange({ ...item, description: e.target.value })} placeholder="Descripción del ítem" className={`col-span-4 ${cls}`} />
-      <input type="text" inputMode="decimal" value={item.quantity}   onChange={e => update('quantity', e.target.value)}   className={`col-span-1 text-right ${cls}`} />
-      <input type="text" inputMode="decimal" value={item.unit_price} onChange={e => update('unit_price', e.target.value)} className={`col-span-2 text-right ${cls}`} />
+      <input type="text" inputMode="decimal" value={item.quantity} onChange={e => update('quantity', e.target.value)} className={`col-span-1 text-right ${cls}`} />
+      <input
+        type="text" inputMode="decimal"
+        value={upriceDraft !== null ? upriceDraft : (item.unit_price === 0 ? '' : String(item.unit_price))}
+        placeholder="0.00"
+        onFocus={e => { setUpriceDraft(item.unit_price === 0 ? '' : String(item.unit_price)); e.target.select(); }}
+        onChange={e => setUpriceDraft(e.target.value)}
+        onBlur={() => { update('unit_price', upriceDraft ?? '0'); setUpriceDraft(null); }}
+        onKeyDown={e => { if (e.key === 'Enter') { update('unit_price', upriceDraft ?? '0'); setUpriceDraft(null); (e.target as HTMLInputElement).blur(); } }}
+        className={`col-span-2 text-right ${cls}`}
+      />
       {/* IVA% — gris cuando es el default, editable al click */}
       {!ivaEditing ? (
         <div className={`col-span-1 flex items-center justify-between px-2 py-1.5 rounded-lg border cursor-pointer group ${isDefaultIva ? 'bg-gray-50 border-gray-200' : 'bg-yellow-50 border-yellow-300'}`}
