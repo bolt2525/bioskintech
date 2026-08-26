@@ -71,13 +71,15 @@ export interface ProjectedPosition {
 
 export interface FreehandLine {
   id: string;
-  /** Puntos 3D que forman la trayectoria (sobre la superficie del modelo) */
+  /** Puntos 3D ancla (extremos para handles) — o todos los puntos si no hay segments */
   points: { x: number; y: number; z: number }[];
+  /** Sub-trayectorias de formas compuestas (flecha, abanico, helecho, malla) */
+  segments?: { x: number; y: number; z: number }[][];
   color: string;
   /** Grosor relativo: 1.0 = radio base 0.003 */
   thickness: number;
   label?: string;
-  /** Agrupación de múltiples líneas (ej. Abanico, Malla, Helecho) */
+  /** Agrupación de múltiples líneas (legado — ya no se usa para nuevas formas) */
   groupId?: string;
   /** Técnica HA pre-rellenada al generar la forma */
   technique_preset?: string;
@@ -310,8 +312,10 @@ interface Clinical3DViewerProps {
   onShapeComplete?: (shape: SurfaceShape) => void;
   /** Callback al seleccionar una línea/forma existente por clic. id=null → deseleccionar */
   onElementSelected?: (id: string | null, type: string | null) => void;
-  /** Callback cuando el usuario mueve un endpoint de una línea freehand (resize) */
-  onFreehandLineUpdated?: (id: string, points: { x: number; y: number; z: number }[]) => void;
+  /** Callback cuando el usuario mueve un endpoint de una línea freehand (resize/move) */
+  onFreehandLineUpdated?: (id: string, points: { x: number; y: number; z: number }[], segments?: { x: number; y: number; z: number }[][]) => void;
+  /** Callback cuando el usuario mueve o redimensiona una forma en superficie */
+  onSurfaceShapeUpdated?: (id: string, update: { center?: { x: number; y: number; z: number }; radius?: number; width?: number; height?: number }) => void;
   onGridStepChange?: (step: number) => void;
   /** Callback cuando el cursor snap a un punto en una línea (imán); null = sin snap */
   onSnapPointChange?: (pt: { x: number; y: number; z: number } | null) => void;
@@ -364,7 +368,8 @@ const ThreeEngine: React.FC<{
   onFreehandLineComplete?: (line: FreehandLine) => void;
   onShapeComplete?: (shape: SurfaceShape) => void;
   onElementSelected?: (id: string | null, type: string | null) => void;
-  onFreehandLineUpdated?: (id: string, points: { x: number; y: number; z: number }[]) => void;
+  onFreehandLineUpdated?: (id: string, points: { x: number; y: number; z: number }[], segments?: { x: number; y: number; z: number }[][]) => void;
+  onSurfaceShapeUpdated?: (id: string, update: { center?: { x: number; y: number; z: number }; radius?: number; width?: number; height?: number }) => void;
   onGridStepChange?: (step: number) => void;
   /** Callback cuando el cursor snap a un punto en una línea (imán); null = sin snap */
   onSnapPointChange?: (pt: { x: number; y: number; z: number } | null) => void;
@@ -383,7 +388,7 @@ const ThreeEngine: React.FC<{
   freehandLines = [], surfaceShapes = [],
   activeTool = 'none', selectedElementId = null,
   pendingBrushColor = '#8b5cf6', pendingBrushThickness = 1.0,
-  onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onGridStepChange, onSnapPointChange,
+  onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onSurfaceShapeUpdated, onGridStepChange, onSnapPointChange,
   haShapeConfig = { fanLines: 5, fanAngle: 25, gridCells: 4, fernBranches: 5 },
   incompletePointIds = [],
   highlightedPointIds = [],
@@ -418,16 +423,16 @@ const ThreeEngine: React.FC<{
     onMeshClick, onLoaded, onError, zones, readOnly, lineDrawingMode, onLinePointAnchored,
     pointMode, onEditablePointMoved, onEditablePointDeleted, onEditablePointClicked, onProjectedPositions,
     activeTool, selectedElementId, pendingBrushColor, pendingBrushThickness,
-    onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onGridStepChange, onSnapPointChange,
-    haShapeConfig, freehandLines, incompletePointIds, highlightedPointIds, onEditablePointHovered, onBackgroundClick,
+    onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onSurfaceShapeUpdated, onGridStepChange, onSnapPointChange,
+    haShapeConfig, freehandLines, surfaceShapes, incompletePointIds, highlightedPointIds, onEditablePointHovered, onBackgroundClick,
   });
   useEffect(() => {
     callbacks.current = {
       onMeshClick, onLoaded, onError, zones, readOnly, lineDrawingMode, onLinePointAnchored,
       pointMode, onEditablePointMoved, onEditablePointDeleted, onEditablePointClicked, onProjectedPositions,
       activeTool, selectedElementId, pendingBrushColor, pendingBrushThickness,
-      onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onGridStepChange, onSnapPointChange,
-      haShapeConfig, freehandLines, incompletePointIds, highlightedPointIds, onEditablePointHovered, onBackgroundClick,
+      onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onSurfaceShapeUpdated, onGridStepChange, onSnapPointChange,
+      haShapeConfig, freehandLines, surfaceShapes, incompletePointIds, highlightedPointIds, onEditablePointHovered, onBackgroundClick,
     };
   });
 
@@ -529,11 +534,14 @@ const ThreeEngine: React.FC<{
     let draggedEditableGroup: THREE.Group | null = null;
     let dragMoved = false;
 
-    // ── Handle drag (resize/move de líneas seleccionadas) ──────────────────
-    let handleDragRole: 'start' | 'end' | 'body' | null = null;
+    // ── Handle drag (resize/move de líneas/formas seleccionadas) ──────────────────
+    let handleDragRole: 'start' | 'end' | 'body' | 'shape-body' | 'shape-scale' | null = null;
     let handleDragLineId: string | null = null;
     let handleBodyStartSurface: THREE.Vector3 | null = null;
     let handleBodyOriginalPoints: { x: number; y: number; z: number }[] | null = null;
+    let handleBodyOriginalSegments: { x: number; y: number; z: number }[][] | null = null;
+    let handleBodyShapeStartSurface: THREE.Vector3 | null = null;
+    let handleBodyOriginalShapeCenter: { x: number; y: number; z: number } | null = null;
 
     // ── Estado dibujo libre (HA) ───────────────────────────────────────────
     let brushActive = false;
@@ -785,6 +793,9 @@ const ThreeEngine: React.FC<{
             handleDragLineId = hitGrp.userData.handleLineId;
             handleBodyStartSurface = null;
             handleBodyOriginalPoints = null;
+            handleBodyOriginalSegments = null;
+            handleBodyShapeStartSurface = null;
+            handleBodyOriginalShapeCenter = null;
             if (controlsRef.current) controlsRef.current.enabled = false;
             isDragging = false;
             return;
@@ -953,6 +964,7 @@ const ThreeEngine: React.FC<{
               handleBodyStartSurface = surfPt.clone();
               const line = callbacks.current.freehandLines?.find((l: FreehandLine) => l.id === handleDragLineId);
               handleBodyOriginalPoints = line ? [...line.points] : null;
+              handleBodyOriginalSegments = line?.segments ? line.segments.map(s => [...s]) : null;
             }
             if (handleBodyOriginalPoints && handleBodyStartSurface) {
               const offset = surfPt.clone().sub(handleBodyStartSurface);
@@ -963,17 +975,39 @@ const ThreeEngine: React.FC<{
                 const orig = handleBodyOriginalPoints![origIdx];
                 h.position.set(orig.x + offset.x, orig.y + offset.y, orig.z + offset.z);
               });
-              // Preview en tiempo real de la línea desplazada
+              // Preview en tiempo real de la línea/forma desplazada
               clearBrushPreview();
               const line = callbacks.current.freehandLines?.find((l: FreehandLine) => l.id === handleDragLineId);
               if (line && brushPreviewGroupRef.current) {
                 const col = new THREE.Color(line.color);
                 const th = (line.thickness || 1.0) * 0.003;
-                const movedPts = handleBodyOriginalPoints.map(p =>
-                  new THREE.Vector3(p.x + offset.x, p.y + offset.y, p.z + offset.z)
-                );
-                brushPreviewGroupRef.current.add(buildSurfaceTube(movedPts, col, 0.5, th, false));
+                if (handleBodyOriginalSegments) {
+                  // Forma compuesta: mover todos los segmentos
+                  handleBodyOriginalSegments.forEach(seg => {
+                    const movedSeg = seg.map(p => new THREE.Vector3(p.x + offset.x, p.y + offset.y, p.z + offset.z));
+                    brushPreviewGroupRef.current!.add(buildSurfaceTube(movedSeg, col, 0.5, th, false));
+                  });
+                } else {
+                  // Línea simple
+                  const movedPts = handleBodyOriginalPoints.map(p =>
+                    new THREE.Vector3(p.x + offset.x, p.y + offset.y, p.z + offset.z)
+                  );
+                  brushPreviewGroupRef.current.add(buildSurfaceTube(movedPts, col, 0.5, th, false));
+                }
               }
+            }
+          } else if (handleDragRole === 'shape-body') {
+            // Arrastrar una forma (SurfaceShape) — mover su centro
+            if (!handleBodyShapeStartSurface) {
+              handleBodyShapeStartSurface = surfPt.clone();
+              const shape = callbacks.current.surfaceShapes?.find((s: SurfaceShape) => s.id === handleDragLineId);
+              handleBodyOriginalShapeCenter = shape ? { ...shape.center } : null;
+            }
+            if (handleBodyOriginalShapeCenter && handleBodyShapeStartSurface) {
+              const offset = surfPt.clone().sub(handleBodyShapeStartSurface);
+              // Mover el handle visual
+              const bodyHandle = handlesGroupRef.current?.children.find((h: any) => h.userData.handleRole === 'shape-body');
+              if (bodyHandle) bodyHandle.position.copy(surfPt);
             }
           }
           isDragging = true;
@@ -1115,12 +1149,11 @@ const ThreeEngine: React.FC<{
           const col = new THREE.Color(callbacks.current.pendingBrushColor || '#8b5cf6');
           const th = (callbacks.current.pendingBrushThickness || 1.0) * 0.003;
           const tool = callbacks.current.activeTool;
-          let previewPts: THREE.Vector3[] = [];
           const rc = new THREE.Raycaster();
-          const dir = new THREE.Vector3(0, 0, -1);
           if (tool === 'shape-circle') {
             const N = 48;
             const bitangent = new THREE.Vector3().crossVectors(shapeAnchor.normal, shapeAnchor.tangent).normalize();
+            const circlePts: THREE.Vector3[] = [];
             for (let i = 0; i <= N; i++) {
               const a = (i / N) * Math.PI * 2;
               const wp = shapeAnchor.point.clone()
@@ -1129,27 +1162,39 @@ const ThreeEngine: React.FC<{
               const origin = wp.clone().add(shapeAnchor.normal.clone().multiplyScalar(2));
               rc.set(origin, shapeAnchor.normal.clone().negate());
               const hits2 = rc.intersectObject(faceMeshRef.current!, true);
-              previewPts.push(hits2.length > 0 ? hits2[0].point.clone() : wp);
+              circlePts.push(hits2.length > 0 ? hits2[0].point.clone() : wp);
+            }
+            if (circlePts.length >= 2) {
+              brushPreviewGroupRef.current.add(buildSurfaceTube(circlePts, col, 0.7, th, false));
             }
           } else {
+            // Rectángulo: previsualizar con 4 lados separados (sin Catmull-Rom en esquinas)
             const bitangent = new THREE.Vector3().crossVectors(shapeAnchor.normal, shapeAnchor.tangent).normalize();
             const hw = shapeCurrentW / 2, hh = shapeCurrentH / 2;
-            const corners = [
-              [-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh], [-hw, -hh]
-            ];
-            for (const [u, v] of corners) {
-              const wp = shapeAnchor.point.clone()
-                .addScaledVector(shapeAnchor.tangent, u)
+            const rectCorners: [number, number][] = [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]];
+            const corners3DPrev = rectCorners.map(([u, v]) => {
+              const wp = shapeAnchor!.point.clone()
+                .addScaledVector(shapeAnchor!.tangent, u)
                 .addScaledVector(bitangent, v);
-              const origin = wp.clone().addScaledVector(shapeAnchor.normal, 2);
-              rc.set(origin, shapeAnchor.normal.clone().negate());
+              const origin = wp.clone().addScaledVector(shapeAnchor!.normal, 2);
+              rc.set(origin, shapeAnchor!.normal.clone().negate());
               const hits2 = rc.intersectObject(faceMeshRef.current!, true);
-              previewPts.push(hits2.length > 0 ? hits2[0].point.clone() : wp);
+              return hits2.length > 0 ? hits2[0].point.clone() : wp;
+            });
+            for (let i = 0; i < 4; i++) {
+              const a3 = corners3DPrev[i];
+              const b3 = corners3DPrev[(i + 1) % 4];
+              const sidePrev: THREE.Vector3[] = [];
+              for (let s = 0; s <= 8; s++) {
+                const wp = a3.clone().lerp(b3, s / 8);
+                const origin = wp.clone().addScaledVector(shapeAnchor!.normal, 2);
+                rc.set(origin, shapeAnchor!.normal.clone().negate());
+                const hits2 = rc.intersectObject(faceMeshRef.current!, true);
+                sidePrev.push(hits2.length > 0 ? hits2[0].point.clone() : wp);
+              }
+              if (sidePrev.length >= 2)
+                brushPreviewGroupRef.current.add(buildSurfaceTube(sidePrev, col, 0.7, th, false));
             }
-          }
-          if (previewPts.length >= 2) {
-            const preview = buildSurfaceTube(previewPts, col, 0.7, th, false);
-            brushPreviewGroupRef.current.add(preview);
           }
         }
         return;
@@ -1192,34 +1237,68 @@ const ThreeEngine: React.FC<{
         clearBrushPreview(); // limpiar preview en tiempo real
         isDragging = true;
 
+        // ── shape-body: mover el centro de una SurfaceShape ───────────────
+        if (role === 'shape-body') {
+          const bodyHandle = handlesGroupRef.current?.children.find((h: any) => h.userData.handleRole === 'shape-body');
+          if (bodyHandle) {
+            const newCenter = { x: bodyHandle.position.x, y: bodyHandle.position.y, z: bodyHandle.position.z };
+            callbacks.current.onSurfaceShapeUpdated?.(lineId, { center: newCenter });
+          }
+          handleBodyShapeStartSurface = null;
+          handleBodyOriginalShapeCenter = null;
+          return;
+        }
+
         const line = callbacks.current.freehandLines?.find((l: FreehandLine) => l.id === lineId);
         if (!line) return;
 
         if (role === 'start' || role === 'end') {
-          const handle = handlesGroupRef.current?.children.find(
-            (h: any) => h.userData.handleRole === role
-          );
-          if (handle) {
-            const newPos = handle.position;
-            const isStart = role === 'start';
-            const otherPt = isStart
-              ? new THREE.Vector3(line.points[line.points.length - 1].x, line.points[line.points.length - 1].y, line.points[line.points.length - 1].z)
-              : new THREE.Vector3(line.points[0].x, line.points[0].y, line.points[0].z);
-            const newPts = isStart
-              ? surfaceLine(newPos.clone(), otherPt)
-              : surfaceLine(otherPt, newPos.clone());
-            callbacks.current.onFreehandLineUpdated?.(lineId, newPts.map(p => ({ x: p.x, y: p.y, z: p.z })));
+          // Solo para líneas simples (sin segments): re-proyectar entre extremos
+          if (!line.segments) {
+            const handle = handlesGroupRef.current?.children.find(
+              (h: any) => h.userData.handleRole === role
+            );
+            if (handle) {
+              const newPos = handle.position;
+              const isStart = role === 'start';
+              const otherPt = isStart
+                ? new THREE.Vector3(line.points[line.points.length - 1].x, line.points[line.points.length - 1].y, line.points[line.points.length - 1].z)
+                : new THREE.Vector3(line.points[0].x, line.points[0].y, line.points[0].z);
+              const newPts = isStart
+                ? surfaceLine(newPos.clone(), otherPt)
+                : surfaceLine(otherPt, newPos.clone());
+              callbacks.current.onFreehandLineUpdated?.(lineId, newPts.map(p => ({ x: p.x, y: p.y, z: p.z })));
+            }
           }
         } else if (role === 'body' && handleBodyOriginalPoints && handleBodyStartSurface) {
-          // Emitir puntos traducidos proyectados
-          const startHandle = handlesGroupRef.current?.children.find((h: any) => h.userData.handleRole === 'start');
-          const endHandle = handlesGroupRef.current?.children.find((h: any) => h.userData.handleRole === 'end');
-          if (startHandle && endHandle) {
-            const newPts = surfaceLine(startHandle.position.clone(), endHandle.position.clone());
-            callbacks.current.onFreehandLineUpdated?.(lineId, newPts.map(p => ({ x: p.x, y: p.y, z: p.z })));
+          if (handleBodyOriginalSegments) {
+            // Forma compuesta: emitir puntos ancla + segmentos desplazados
+            const startH = handlesGroupRef.current?.children.find((h: any) => h.userData.handleRole === 'start');
+            const bodyH = handlesGroupRef.current?.children.find((h: any) => h.userData.handleRole === 'body');
+            if (startH && bodyH) {
+              const offset = new THREE.Vector3(
+                startH.position.x - handleBodyOriginalPoints[0].x,
+                startH.position.y - handleBodyOriginalPoints[0].y,
+                startH.position.z - handleBodyOriginalPoints[0].z,
+              );
+              const newPoints = handleBodyOriginalPoints.map(p => ({ x: p.x + offset.x, y: p.y + offset.y, z: p.z + offset.z }));
+              const newSegments = handleBodyOriginalSegments.map(seg =>
+                seg.map(p => ({ x: p.x + offset.x, y: p.y + offset.y, z: p.z + offset.z }))
+              );
+              callbacks.current.onFreehandLineUpdated?.(lineId, newPoints, newSegments);
+            }
+          } else {
+            // Línea simple: re-proyectar entre handles extremos desplazados
+            const startHandle = handlesGroupRef.current?.children.find((h: any) => h.userData.handleRole === 'start');
+            const endHandle = handlesGroupRef.current?.children.find((h: any) => h.userData.handleRole === 'end');
+            if (startHandle && endHandle) {
+              const newPts = surfaceLine(startHandle.position.clone(), endHandle.position.clone());
+              callbacks.current.onFreehandLineUpdated?.(lineId, newPts.map(p => ({ x: p.x, y: p.y, z: p.z })));
+            }
           }
           handleBodyStartSurface = null;
           handleBodyOriginalPoints = null;
+          handleBodyOriginalSegments = null;
         }
         return;
       }
@@ -1245,15 +1324,9 @@ const ThreeEngine: React.FC<{
             thickness: th,
           });
         }
-        // Flecha (shape-arrow): línea + cabeza en B, agrupadas
+        // Flecha (shape-arrow): forma compuesta de un solo FreehandLine con segments
         else if (tool === 'shape-arrow' && ptA && ptB) {
-          const groupId = `arrow-${Date.now()}`;
           const shaftPts = surfaceLine(ptA, ptB);
-          callbacks.current.onFreehandLineComplete?.({
-            id: `fh-${Date.now()}-s`,
-            points: shaftPts.map(p => ({ x: p.x, y: p.y, z: p.z })),
-            color: col, thickness: th, groupId,
-          });
           const dir = ptB.clone().sub(ptA).normalize();
           const len = ptA.distanceTo(ptB);
           const arrowLen = Math.max(0.05, len * 0.25);
@@ -1262,42 +1335,42 @@ const ThreeEngine: React.FC<{
           const tL = ptB.clone().addScaledVector(dir, -arrowLen).addScaledVector(perp, arrowLen * 0.5);
           const tR = ptB.clone().addScaledVector(dir, -arrowLen).addScaledVector(perp, -arrowLen * 0.5);
           callbacks.current.onFreehandLineComplete?.({
-            id: `fh-${Date.now()}-l`,
-            points: surfaceLine(ptB, tL, 8).map(p => ({ x: p.x, y: p.y, z: p.z })),
-            color: col, thickness: th, groupId,
-          });
-          callbacks.current.onFreehandLineComplete?.({
-            id: `fh-${Date.now()}-r`,
-            points: surfaceLine(ptB, tR, 8).map(p => ({ x: p.x, y: p.y, z: p.z })),
-            color: col, thickness: th, groupId,
+            id: `fh-${Date.now()}-arrow`,
+            points: [ptA, ptB].map(p => ({ x: p.x, y: p.y, z: p.z })),
+            segments: [
+              shaftPts.map(p => ({ x: p.x, y: p.y, z: p.z })),
+              surfaceLine(ptB, tL, 8).map(p => ({ x: p.x, y: p.y, z: p.z })),
+              surfaceLine(ptB, tR, 8).map(p => ({ x: p.x, y: p.y, z: p.z })),
+            ],
+            color: col, thickness: th, technique_preset: 'Flecha',
           });
         }
-        // Abanico (fan): N líneas proyectadas a superficie
+        // Abanico (fan): forma compuesta de un solo FreehandLine con segments
         else if (tool === 'ha-fan' && ptA && ptB) {
-          const groupId = `fan-${Date.now()}`;
           const cfg = callbacks.current.haShapeConfig || { fanLines: 5, fanAngle: 25, gridCells: 4, fernBranches: 5 };
           const dir = ptB.clone().sub(ptA).normalize();
           const len = ptA.distanceTo(ptB);
           if (len > 0.05) {
             const perp = new THREE.Vector3(-dir.y, dir.x, 0).normalize();
             const N = cfg.fanLines;
+            const fanSegs: { x: number; y: number; z: number }[][] = [];
             for (let i = 0; i < N; i++) {
               const t = N === 1 ? 0 : (i / (N - 1) - 0.5) * 2;
               const rad = (t * cfg.fanAngle * Math.PI) / 180;
               const fanDir = dir.clone().addScaledVector(perp, Math.tan(rad)).normalize();
               const endPt = ptA.clone().addScaledVector(fanDir, len);
-              const pts = surfaceLine(ptA, endPt);
-              callbacks.current.onFreehandLineComplete?.({
-                id: `fh-${Date.now()}-${i}`,
-                points: pts.map(p => ({ x: p.x, y: p.y, z: p.z })),
-                color: col, thickness: th, groupId, technique_preset: 'Abanico',
-              });
+              fanSegs.push(surfaceLine(ptA, endPt).map(p => ({ x: p.x, y: p.y, z: p.z })));
             }
+            callbacks.current.onFreehandLineComplete?.({
+              id: `fh-${Date.now()}-fan`,
+              points: [ptA, ptB].map(p => ({ x: p.x, y: p.y, z: p.z })),
+              segments: fanSegs,
+              color: col, thickness: th, technique_preset: 'Abanico',
+            });
           }
         }
-        // Malla (grid): NxN líneas proyectadas a superficie
+        // Malla (grid): forma compuesta de un solo FreehandLine con segments
         else if (tool === 'ha-grid' && ptA && ptB) {
-          const groupId = `grid-${Date.now()}`;
           const cfg = callbacks.current.haShapeConfig || { fanLines: 5, fanAngle: 25, gridCells: 4, fernBranches: 5 };
           const dir = ptB.clone().sub(ptA);
           const dirNorm = dir.clone().normalize();
@@ -1306,34 +1379,30 @@ const ThreeEngine: React.FC<{
           const lenDir = dir.length();
           const lenPerp = lenDir * 0.65;
           const N = cfg.gridCells;
-          // Líneas paralelas a dir (corriendo a lo largo)
+          const gridSegs: { x: number; y: number; z: number }[][] = [];
           for (let i = 0; i <= N; i++) {
             const base = ptA.clone().addScaledVector(perp, (i / N - 0.5) * lenPerp);
-            const pts = surfaceLine(base, base.clone().addScaledVector(dirNorm, lenDir), 12);
-            callbacks.current.onFreehandLineComplete?.({ id: `fh-${Date.now()}-h${i}`, points: pts.map(p => ({x:p.x,y:p.y,z:p.z})), color: col, thickness: th, groupId, technique_preset: 'Malla' });
+            gridSegs.push(surfaceLine(base, base.clone().addScaledVector(dirNorm, lenDir), 12).map(p => ({x:p.x,y:p.y,z:p.z})));
           }
-          // Líneas paralelas a perp (cruzadas)
           for (let j = 0; j <= N; j++) {
             const base = ptA.clone().addScaledVector(dirNorm, (j / N) * lenDir);
-            const p1 = base.clone().addScaledVector(perp, -lenPerp / 2);
-            const p2 = base.clone().addScaledVector(perp, lenPerp / 2);
-            const pts = surfaceLine(p1, p2, 12);
-            callbacks.current.onFreehandLineComplete?.({ id: `fh-${Date.now()}-v${j}`, points: pts.map(p => ({x:p.x,y:p.y,z:p.z})), color: col, thickness: th, groupId, technique_preset: 'Malla' });
+            gridSegs.push(surfaceLine(base.clone().addScaledVector(perp, -lenPerp/2), base.clone().addScaledVector(perp, lenPerp/2), 12).map(p => ({x:p.x,y:p.y,z:p.z})));
           }
+          callbacks.current.onFreehandLineComplete?.({
+            id: `fh-${Date.now()}-grid`,
+            points: [ptA, ptB].map(p => ({ x: p.x, y: p.y, z: p.z })),
+            segments: gridSegs,
+            color: col, thickness: th, technique_preset: 'Malla',
+          });
         }
-        // Helecho (fern): línea central + ramificaciones, todo proyectado
+        // Helecho (fern): forma compuesta de un solo FreehandLine con segments
         else if (tool === 'ha-fern' && ptA && ptB) {
-          const groupId = `fern-${Date.now()}`;
           const cfg = callbacks.current.haShapeConfig || { fanLines: 5, fanAngle: 25, gridCells: 4, fernBranches: 5 };
           const dir = ptB.clone().sub(ptA);
           const len = dir.length();
           if (len > 0.05) {
-            const centralPts = surfaceLine(ptA, ptB);
-            callbacks.current.onFreehandLineComplete?.({
-              id: `fh-${Date.now()}-c`,
-              points: centralPts.map(p => ({ x: p.x, y: p.y, z: p.z })),
-              color: col, thickness: th, groupId, technique_preset: 'Helecho',
-            });
+            const fernSegs: { x: number; y: number; z: number }[][] = [];
+            fernSegs.push(surfaceLine(ptA, ptB).map(p => ({ x: p.x, y: p.y, z: p.z })));
             const perp = new THREE.Vector3(-dir.normalize().y, dir.normalize().x, 0).normalize();
             const N = cfg.fernBranches;
             for (let i = 1; i <= N; i++) {
@@ -1342,13 +1411,14 @@ const ThreeEngine: React.FC<{
               const branchLen = len * 0.25 * (1 - t * 0.5);
               const sign = i % 2 === 0 ? 1 : -1;
               const tip = base.clone().addScaledVector(perp, sign * branchLen);
-              const branchPts = surfaceLine(base, tip, 8);
-              callbacks.current.onFreehandLineComplete?.({
-                id: `fh-${Date.now()}-b${i}`,
-                points: branchPts.map(p => ({ x: p.x, y: p.y, z: p.z })),
-                color: col, thickness: th * 0.7, groupId, technique_preset: 'Helecho',
-              });
+              fernSegs.push(surfaceLine(base, tip, 8).map(p => ({ x: p.x, y: p.y, z: p.z })));
             }
+            callbacks.current.onFreehandLineComplete?.({
+              id: `fh-${Date.now()}-fern`,
+              points: [ptA, ptB].map(p => ({ x: p.x, y: p.y, z: p.z })),
+              segments: fernSegs,
+              color: col, thickness: th, technique_preset: 'Helecho',
+            });
           }
         }
         // Freehand brush normal
@@ -1476,14 +1546,13 @@ const ThreeEngine: React.FC<{
           const N = cfg.gridCells;
           const col = callbacks.current.pendingBrushColor || '#8b5cf6';
           const th = callbacks.current.pendingBrushThickness || 1.0;
-          const groupId = `grid-${Date.now()}`;
+          const gridSegs3: { x: number; y: number; z: number }[][] = [];
 
           // Líneas a lo largo de dirM (N+1 líneas)
           for (let i = 0; i <= N; i++) {
             const t = i / N;
             const base = ptA.clone().addScaledVector(gridDirPerp, (t - 0.5) * gridHalfWidth * 2);
-            const pts = surfaceLine(base, base.clone().addScaledVector(dirM, gridLen), 12);
-            callbacks.current.onFreehandLineComplete?.({ id: `fh-${Date.now()}-h${i}`, points: pts.map(p => ({x:p.x,y:p.y,z:p.z})), color: col, thickness: th, groupId, technique_preset: 'Malla' });
+            gridSegs3.push(surfaceLine(base, base.clone().addScaledVector(dirM, gridLen), 12).map(p => ({x:p.x,y:p.y,z:p.z})));
           }
           // Líneas a lo largo de gridDirPerp (N+1 líneas)
           for (let j = 0; j <= N; j++) {
@@ -1491,9 +1560,14 @@ const ThreeEngine: React.FC<{
             const base = ptA.clone().addScaledVector(dirM, t * gridLen);
             const p1 = base.clone().addScaledVector(gridDirPerp, -gridHalfWidth);
             const p2 = base.clone().addScaledVector(gridDirPerp, gridHalfWidth);
-            const pts = surfaceLine(p1, p2, 12);
-            callbacks.current.onFreehandLineComplete?.({ id: `fh-${Date.now()}-v${j}`, points: pts.map(p => ({x:p.x,y:p.y,z:p.z})), color: col, thickness: th, groupId, technique_preset: 'Malla' });
+            gridSegs3.push(surfaceLine(p1, p2, 12).map(p => ({x:p.x,y:p.y,z:p.z})));
           }
+          callbacks.current.onFreehandLineComplete?.({
+            id: `fh-${Date.now()}-grid3`,
+            points: [ptA, ptA.clone().addScaledVector(dirM, gridLen)].map(p => ({x:p.x,y:p.y,z:p.z})),
+            segments: gridSegs3,
+            color: col, thickness: th, technique_preset: 'Malla',
+          });
           // Reset
           gridStep = 0;
           gridAnchorA = null;
@@ -2156,24 +2230,60 @@ const ThreeEngine: React.FC<{
       });
     }
     freehandLines.forEach(line => {
-      if (line.points.length < 2) return;
-      const pts = line.points.map(p => new THREE.Vector3(p.x, p.y, p.z));
       const col = new THREE.Color(line.color);
       const r = (line.thickness || 1.0) * 0.003;
-      const lineGrp = buildSurfaceTube(pts, col, 1.0, r, false);
-      lineGrp.userData.freehandId = line.id;
-      // También propagar el id a todos los meshes hijos (para raycast de selección)
-      lineGrp.traverse(c => { if ((c as THREE.Mesh).isMesh) c.userData.freehandId = line.id; });
-      // Highlight del elemento seleccionado
-      if (selectedElementId === line.id) {
-        lineGrp.traverse((c: any) => {
-          if (c.isMesh && c.material) {
-            c.material = c.material.clone();
-            c.material.color = new THREE.Color(line.color).addScalar(0.3);
+      const isSelected = selectedElementId === line.id;
+
+      if (line.segments && line.segments.length > 0) {
+        // Forma compuesta: un grupo maestro con sub-grupos por segmento
+        const masterGrp = new THREE.Group();
+        masterGrp.userData.freehandId = line.id;
+        line.segments.forEach(segPts => {
+          if (segPts.length < 2) return;
+          const pts3 = segPts.map(p => new THREE.Vector3(p.x, p.y, p.z));
+          const segGrp = buildSurfaceTube(pts3, col, 1.0, r, false);
+          segGrp.traverse((c: any) => { if (c.isMesh) c.userData.freehandId = line.id; });
+          if (isSelected) {
+            segGrp.traverse((c: any) => {
+              if (c.isMesh && c.material && !c.userData.isHitbox) {
+                c.material = c.material.clone();
+                c.material.color = new THREE.Color(line.color).addScalar(0.3);
+              }
+            });
           }
+          masterGrp.add(segGrp);
         });
+        // Hitbox invisible sobre los puntos ancla para facilitar la selección
+        if (line.points.length >= 2) {
+          const anchorPts = line.points.map(p => new THREE.Vector3(p.x, p.y, p.z));
+          const hitGrp = buildSurfaceTube(anchorPts, col, 0, r * 12, false);
+          hitGrp.traverse((c: any) => {
+            if (c.isMesh) {
+              c.userData.freehandId = line.id;
+              c.userData.isHitbox = true;
+              (c.material as THREE.Material).visible = false;
+            }
+          });
+          masterGrp.add(hitGrp);
+        }
+        grp.add(masterGrp);
+      } else {
+        // Línea simple
+        if (line.points.length < 2) return;
+        const pts = line.points.map(p => new THREE.Vector3(p.x, p.y, p.z));
+        const lineGrp = buildSurfaceTube(pts, col, 1.0, r, false);
+        lineGrp.userData.freehandId = line.id;
+        lineGrp.traverse(c => { if ((c as THREE.Mesh).isMesh) c.userData.freehandId = line.id; });
+        if (isSelected) {
+          lineGrp.traverse((c: any) => {
+            if (c.isMesh && c.material) {
+              c.material = c.material.clone();
+              c.material.color = new THREE.Color(line.color).addScalar(0.3);
+            }
+          });
+        }
+        grp.add(lineGrp);
       }
-      grp.add(lineGrp);
     });
   }, [freehandLines, selectedElementId, modelVersion]);
 
@@ -2205,11 +2315,10 @@ const ThreeEngine: React.FC<{
       const col = new THREE.Color(shape.color);
       const r = (shape.thickness || 1.0) * 0.003;
 
-      let pts: THREE.Vector3[] = [];
-
       if (shape.shapeType === 'circle') {
         const radius = shape.radius || 0.3;
         const N = 64;
+        let circlePts: THREE.Vector3[] = [];
         for (let i = 0; i <= N; i++) {
           const a = (i / N) * Math.PI * 2;
           const wp = center.clone()
@@ -2219,34 +2328,13 @@ const ThreeEngine: React.FC<{
           rc.set(origin, normal.clone().negate());
           if (faceMesh) {
             const hits = rc.intersectObject(faceMesh, true);
-            pts.push(hits.length > 0 ? hits[0].point.clone() : wp);
+            circlePts.push(hits.length > 0 ? hits[0].point.clone() : wp);
           } else {
-            pts.push(wp);
+            circlePts.push(wp);
           }
         }
-        pts = bridgeZ(pts, 0.20);
-      } else {
-        // Rectangle
-        const hw = (shape.width || 0.4) / 2;
-        const hh = (shape.height || 0.25) / 2;
-        const corners: [number, number][] = [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh], [-hw, -hh]];
-        for (const [u, v] of corners) {
-          const wp = center.clone()
-            .addScaledVector(tangent, u)
-            .addScaledVector(bitangent, v);
-          const origin = wp.clone().addScaledVector(normal, 2);
-          rc.set(origin, normal.clone().negate());
-          if (faceMesh) {
-            const hits = rc.intersectObject(faceMesh, true);
-            pts.push(hits.length > 0 ? hits[0].point.clone() : wp);
-          } else {
-            pts.push(wp);
-          }
-        }
-      }
-
-      if (pts.length >= 2) {
-        const shapeGrp = buildSurfaceTube(pts, col, shape.opacity || 0.85, r, false);
+        circlePts = bridgeZ(circlePts, 0.20);
+        const shapeGrp = buildSurfaceTube(circlePts, col, shape.opacity || 0.85, r, false);
         shapeGrp.userData.shapeId = shape.id;
         shapeGrp.traverse(c => { if ((c as THREE.Mesh).isMesh) c.userData.shapeId = shape.id; });
         if (selectedElementId === shape.id) {
@@ -2258,11 +2346,59 @@ const ThreeEngine: React.FC<{
           });
         }
         grp.add(shapeGrp);
+      } else {
+        // Rectángulo: 4 lados separados para evitar esquinas redondeadas por Catmull-Rom
+        const hw = (shape.width || 0.4) / 2;
+        const hh = (shape.height || 0.25) / 2;
+        const cornerOffsets: [number, number][] = [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]];
+        // Proyectar las 4 esquinas a la superficie
+        const corners3D = cornerOffsets.map(([u, v]) => {
+          const wp = center.clone().addScaledVector(tangent, u).addScaledVector(bitangent, v);
+          const origin = wp.clone().addScaledVector(normal, 2);
+          rc.set(origin, normal.clone().negate());
+          if (faceMesh) {
+            const hits = rc.intersectObject(faceMesh, true);
+            return hits.length > 0 ? hits[0].point.clone() : wp;
+          }
+          return wp;
+        });
+        const rectGrp = new THREE.Group();
+        rectGrp.userData.shapeId = shape.id;
+        const SIDE_STEPS = 10;
+        for (let i = 0; i < 4; i++) {
+          const a3 = corners3D[i];
+          const b3 = corners3D[(i + 1) % 4];
+          // Proyectar puntos intermedios del lado a la superficie (línea recta proyectada)
+          const sidePts: THREE.Vector3[] = [];
+          for (let s = 0; s <= SIDE_STEPS; s++) {
+            const wp = a3.clone().lerp(b3, s / SIDE_STEPS);
+            const origin = wp.clone().addScaledVector(normal, 2);
+            rc.set(origin, normal.clone().negate());
+            if (faceMesh) {
+              const hits = rc.intersectObject(faceMesh, true);
+              sidePts.push(hits.length > 0 ? hits[0].point.clone() : wp);
+            } else {
+              sidePts.push(wp);
+            }
+          }
+          const sideGrp = buildSurfaceTube(sidePts, col, shape.opacity || 0.85, r, false);
+          sideGrp.traverse((c: any) => { if (c.isMesh) c.userData.shapeId = shape.id; });
+          if (selectedElementId === shape.id) {
+            sideGrp.traverse((c: any) => {
+              if (c.isMesh && c.material && !c.userData.isHitbox) {
+                c.material = c.material.clone();
+                c.material.color = new THREE.Color(shape.color).addScalar(0.25);
+              }
+            });
+          }
+          rectGrp.add(sideGrp);
+        }
+        grp.add(rectGrp);
       }
     });
   }, [surfaceShapes, selectedElementId, modelVersion]);
 
-  // 4g. Handles de edición para la línea freehand seleccionada
+  // 4g. Handles de edición para el elemento seleccionado (línea freehand o shape)
   useEffect(() => {
     const grp = handlesGroupRef.current;
     if (!grp) return;
@@ -2274,22 +2410,20 @@ const ThreeEngine: React.FC<{
       c.material?.dispose();
     }
     if (!selectedElementId) return;
-    const line = freehandLines.find(l => l.id === selectedElementId);
-    if (!line || line.points.length < 2) return;
 
-    const makeHandle = (color: number, role: 'start' | 'end' | 'body', pt: { x: number; y: number; z: number }) => {
+    const makeHandle = (color: number, role: string, pt: { x: number; y: number; z: number }, lineId: string) => {
       const grp2 = new THREE.Group();
       grp2.position.set(pt.x, pt.y, pt.z);
       grp2.userData.handleRole = role;
-      grp2.userData.handleLineId = line.id;
-      // Esfera visual pequeña (1px aproximado en la escena)
-      const geo = new THREE.SphereGeometry(0.015, 10, 10);
-      const mat = new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.90 });
+      grp2.userData.handleLineId = lineId;
+      // Esfera visual
+      const geo = new THREE.SphereGeometry(0.018, 10, 10);
+      const mat = new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.92 });
       const vis = new THREE.Mesh(geo, mat);
       vis.renderOrder = 1003;
       grp2.add(vis);
-      // Esfera hitbox invisible más grande para facilitar el click
-      const hGeo = new THREE.SphereGeometry(0.055, 8, 8);
+      // Hitbox invisible para facilitar el click
+      const hGeo = new THREE.SphereGeometry(0.06, 8, 8);
       const hMat = new THREE.MeshBasicMaterial({ visible: false });
       const hit = new THREE.Mesh(hGeo, hMat);
       hit.userData.isHitbox = true;
@@ -2297,14 +2431,33 @@ const ThreeEngine: React.FC<{
       return grp2;
     };
 
-    // Handle inicio (verde)
-    grp.add(makeHandle(0x22c55e, 'start', line.points[0]));
-    // Handle fin (azul)
-    grp.add(makeHandle(0x3b82f6, 'end', line.points[line.points.length - 1]));
-    // Handle cuerpo — punto medio (naranja, para arrastrar toda la línea)
-    const midIdx = Math.floor(line.points.length / 2);
-    grp.add(makeHandle(0xf59e0b, 'body', line.points[midIdx]));
-  }, [selectedElementId, freehandLines, modelVersion]);
+    // Verificar si es una forma SurfaceShape
+    const shape = surfaceShapes.find(s => s.id === selectedElementId);
+    if (shape) {
+      // Handle cuerpo (naranja) en el centro para mover la forma
+      grp.add(makeHandle(0xf59e0b, 'shape-body', shape.center, shape.id));
+      return;
+    }
+
+    // Verificar si es una línea freehand
+    const line = freehandLines.find(l => l.id === selectedElementId);
+    if (!line || line.points.length < 2) return;
+
+    if (line.segments && line.segments.length > 0) {
+      // Forma compuesta: solo handle cuerpo en el punto medio de los anclas
+      const midIdx = Math.floor(line.points.length / 2);
+      grp.add(makeHandle(0xf59e0b, 'body', line.points[midIdx], line.id));
+      // También handles en extremos como anclas visuales (verde y azul), no funcionales para re-proyectar
+      grp.add(makeHandle(0x22c55e, 'start', line.points[0], line.id));
+      grp.add(makeHandle(0x3b82f6, 'end', line.points[line.points.length - 1], line.id));
+    } else {
+      // Línea simple: handles de inicio, fin y cuerpo
+      grp.add(makeHandle(0x22c55e, 'start', line.points[0], line.id));
+      grp.add(makeHandle(0x3b82f6, 'end', line.points[line.points.length - 1], line.id));
+      const midIdx = Math.floor(line.points.length / 2);
+      grp.add(makeHandle(0xf59e0b, 'body', line.points[midIdx], line.id));
+    }
+  }, [selectedElementId, freehandLines, surfaceShapes, modelVersion]);
 
   // 4. Renderizar líneas de referencia sobre la superficie del modelo
   useEffect(() => {
@@ -2523,6 +2676,7 @@ export default function Clinical3DViewer({
   onShapeComplete,
   onElementSelected,
   onFreehandLineUpdated,
+  onSurfaceShapeUpdated,
   onGridStepChange,
   onSnapPointChange,
   haShapeConfig = { fanLines: 5, fanAngle: 25, gridCells: 4, fernBranches: 5 },
@@ -2614,6 +2768,7 @@ export default function Clinical3DViewer({
             onShapeComplete={onShapeComplete}
             onElementSelected={onElementSelected}
             onFreehandLineUpdated={onFreehandLineUpdated}
+            onSurfaceShapeUpdated={onSurfaceShapeUpdated}
             onGridStepChange={onGridStepChange}
             onSnapPointChange={onSnapPointChange}
             haShapeConfig={haShapeConfig}

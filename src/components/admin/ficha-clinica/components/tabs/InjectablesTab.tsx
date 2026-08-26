@@ -599,9 +599,16 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** Actualiza los puntos de una línea existente (después de resize/move de handles) */
-  const handleFreehandLineUpdated = useCallback((id: string, points: { x: number; y: number; z: number }[]) => {
-    setFreehandLines(prev => prev.map(l => l.id === id ? { ...l, points } : l));
+  /** Actualiza los puntos (y opcionalmente segmentos) de una línea existente después de resize/move */
+  const handleFreehandLineUpdated = useCallback((id: string, points: { x: number; y: number; z: number }[], segments?: { x: number; y: number; z: number }[][]) => {
+    setFreehandLines(prev => prev.map(l => l.id === id ? { ...l, points, ...(segments !== undefined ? { segments } : {}) } : l));
+  }, []);
+
+  /** Actualiza la posición o tamaño de una SurfaceShape después de mover/escalar su handle */
+  const handleSurfaceShapeUpdated = useCallback((id: string, update: { center?: { x: number; y: number; z: number }; radius?: number; width?: number; height?: number }) => {
+    pushUndo();
+    setSurfaceShapes(prev => prev.map(s => s.id === id ? { ...s, ...update } : s));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleShapeComplete = useCallback((shape: SurfaceShape) => {
@@ -2405,32 +2412,36 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     )}
                   </div>
 
-                  {/* Herramientas HA (solo para relleno) */}
+                  {/* Herramientas de línea y flecha — disponibles en toxina y relleno */}
+                  <>
+                    <div className="w-px h-5 bg-slate-600 mx-0.5" />
+                    <Tooltip content="Línea recta: arrastrar de A a B sobre la piel">
+                      <button
+                        onClick={() => { setActiveTool(activeTool === 'straight-line' ? 'none' : 'straight-line'); setPointMode('none'); setShowHaShapesDropdown(false); }}
+                        className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-all ${
+                          activeTool === 'straight-line' ? 'bg-violet-500/25 text-violet-300 border-violet-500/50' : 'bg-slate-700/50 text-slate-400 border-slate-600 hover:bg-slate-700'
+                        }`}
+                      >
+                        <Minus className="w-3 h-3" />
+                        Recta
+                      </button>
+                    </Tooltip>
+                    <Tooltip content="Flecha: arrastrar de A a B, punta en B">
+                      <button
+                        onClick={() => { setActiveTool(activeTool === 'shape-arrow' ? 'none' : 'shape-arrow'); setPointMode('none'); setShowHaShapesDropdown(false); setShowShapesDropdown(false); }}
+                        className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-all ${
+                          activeTool === 'shape-arrow' ? 'bg-violet-500/25 text-violet-300 border-violet-500/50' : 'bg-slate-700/50 text-slate-400 border-slate-600 hover:bg-slate-700'
+                        }`}
+                      >
+                        <MoveRight className="w-3 h-3" />
+                        Flecha
+                      </button>
+                    </Tooltip>
+                  </>
+
+                  {/* Patrones HA (solo para relleno) */}
                   {activeType === 'relleno' && (
                     <>
-                      <div className="w-px h-5 bg-slate-600 mx-0.5" />
-                      <Tooltip content="Línea recta: arrastrar de A a B sobre la piel">
-                        <button
-                          onClick={() => { setActiveTool(activeTool === 'straight-line' ? 'none' : 'straight-line'); setPointMode('none'); setShowHaShapesDropdown(false); }}
-                          className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-all ${
-                            activeTool === 'straight-line' ? 'bg-violet-500/25 text-violet-300 border-violet-500/50' : 'bg-slate-700/50 text-slate-400 border-slate-600 hover:bg-slate-700'
-                          }`}
-                        >
-                          <Minus className="w-3 h-3" />
-                          Recta
-                        </button>
-                      </Tooltip>
-                      <Tooltip content="Flecha: arrastrar de A a B, punta en B">
-                        <button
-                          onClick={() => { setActiveTool(activeTool === 'shape-arrow' ? 'none' : 'shape-arrow'); setPointMode('none'); setShowHaShapesDropdown(false); setShowShapesDropdown(false); }}
-                          className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-all ${
-                            activeTool === 'shape-arrow' ? 'bg-violet-500/25 text-violet-300 border-violet-500/50' : 'bg-slate-700/50 text-slate-400 border-slate-600 hover:bg-slate-700'
-                          }`}
-                        >
-                          <MoveRight className="w-3 h-3" />
-                          Flecha
-                        </button>
-                      </Tooltip>
                       {/* Grupo Patrones HA */}
                       <div className="relative">
                         <button
@@ -2684,6 +2695,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                         onShapeComplete={handleShapeComplete}
                         onElementSelected={handleElementSelected}
                         onFreehandLineUpdated={handleFreehandLineUpdated}
+                        onSurfaceShapeUpdated={handleSurfaceShapeUpdated}
                         onGridStepChange={setGridDrawStep}
                         onSnapPointChange={setSnapPoint}
                         haShapeConfig={haShapeConfig}
@@ -2783,7 +2795,14 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                           {/* Info de handles para líneas freehand */}
                           {selectedElement.type === 'freehand' && !(selectedElementData as FreehandLine)?.groupId && (
                             <p className="text-[9px] text-slate-400 italic mb-2">
-                              🟢 Arrastrar inicio · 🔵 Arrastrar fin · 🟡 Mover línea
+                              {(selectedElementData as FreehandLine)?.segments
+                                ? '🟡 Arrastrar para mover forma completa'
+                                : '🟢 Arrastrar inicio · 🔵 Arrastrar fin · 🟡 Mover línea'}
+                            </p>
+                          )}
+                          {selectedElement.type === 'shape' && (
+                            <p className="text-[9px] text-slate-400 italic mb-2">
+                              🟡 Arrastrar para mover forma
                             </p>
                           )}
                           {/* Opciones de eliminación según tipo */}
