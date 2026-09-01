@@ -17,6 +17,7 @@
 import { sql } from '@vercel/postgres';
 import crypto from 'crypto';
 import axios from 'axios';
+import nodemailer from 'nodemailer';
 
 const PAYPHONE_BASE = 'https://pay.payphonetodoesposible.com/api';
 
@@ -73,6 +74,32 @@ async function ensureSubscriptionsTable() {
   `;
   // ponytail: migración idempotente para tablas ya existentes sin la columna
   await sql`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS email TEXT`;
+}
+
+async function notifyMasterAdminPayment(planName, email, amount) {
+  const user = (process.env.EMAIL_USER || '').trim();
+  const pass = (process.env.EMAIL_PASS || '').trim();
+  if (!user || !pass) return;
+  const appUrl = (process.env.APP_URL || 'https://bioskintechapp.com').replace(/\/$/, '');
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#333;">
+      <div style="background:#222;padding:18px 24px;border-radius:8px 8px 0 0;">
+        <h1 style="color:#deb887;margin:0;font-size:20px;">BIOSKIN — Nuevo pago confirmado</h1>
+      </div>
+      <div style="padding:24px;background:white;border:1px solid #eee;border-top:none;">
+        <p>Se ha confirmado un pago en PayPhone:</p>
+        <table style="border-collapse:collapse;width:100%;font-size:14px;">
+          <tr><td style="padding:6px 10px;background:#fdf8f0;font-weight:bold;">Plan</td><td style="padding:6px 10px;background:#fdf8f0;">${planName}</td></tr>
+          <tr><td style="padding:6px 10px;">Email</td><td style="padding:6px 10px;">${email || 'No registrado'}</td></tr>
+          <tr><td style="padding:6px 10px;background:#fdf8f0;">Monto</td><td style="padding:6px 10px;background:#fdf8f0;">$${(amount / 100).toFixed(2)} USD</td></tr>
+        </table>
+        <p style="margin-top:16px;color:#888;font-size:12px;">El cliente aún debe completar el registro de su clínica.</p>
+        <p style="margin-top:8px;"><a href="${appUrl}/gestionestetica/admin/master" style="background:#deb887;color:white;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:bold;">Ver Master Admin →</a></p>
+      </div>
+    </div>
+  `;
+  const transporter = nodemailer.createTransport({ service: 'gmail', auth: { user, pass } });
+  await transporter.sendMail({ from: `"BIOSKIN Admin" <${user}>`, to: 'bolt2525@gmail.com', subject: `[BIOSKIN] Nuevo pago: ${planName}`, html });
 }
 
 export default async function handler(req, res) {
@@ -196,7 +223,9 @@ export default async function handler(req, res) {
         return res.status(200).json({ success: false, status: 'cancelled', message: txData.message || 'Pago cancelado o rechazado' });
       }
 
-      const sub = await sql`SELECT id, plan_name FROM subscriptions WHERE payphone_client_id = ${clientTransactionId}`;
+      const sub = await sql`SELECT id, plan_name, email, amount_cents FROM subscriptions WHERE payphone_client_id = ${clientTransactionId}`;
+      notifyMasterAdminPayment(sub.rows[0]?.plan_name, sub.rows[0]?.email, sub.rows[0]?.amount_cents)
+        .catch(e => console.error('[payments] masterAdminNotify error:', e.message));
       return res.status(200).json({
         success:         true,
         status:          'paid',

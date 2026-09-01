@@ -1267,6 +1267,28 @@ async function sendWelcomeEmail(userEmail, firstName, username, clinicName, clin
   await sendAuthEmail(userEmail, `¡Bienvenido a BIOSKIN! Tu clínica "${clinicName}" está lista`, html);
 }
 
+async function sendMasterAdminAlert(clinicName, adminEmail, adminUsername, adminFullName, plan) {
+  const appUrl = (process.env.APP_URL || 'https://bioskintechapp.com').replace(/\/$/, '');
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#333;">
+      <div style="background:#222;padding:18px 24px;border-radius:8px 8px 0 0;">
+        <h1 style="color:#deb887;margin:0;font-size:20px;">BIOSKIN — Nueva clínica registrada</h1>
+      </div>
+      <div style="padding:24px;background:white;border:1px solid #eee;border-top:none;">
+        <p style="margin-top:0;">Se ha registrado una nueva clínica en el sistema:</p>
+        <table style="border-collapse:collapse;width:100%;font-size:14px;">
+          <tr><td style="padding:6px 10px;background:#fdf8f0;font-weight:bold;">Clínica</td><td style="padding:6px 10px;background:#fdf8f0;">${clinicName}</td></tr>
+          <tr><td style="padding:6px 10px;">Admin</td><td style="padding:6px 10px;">${adminFullName} (@${adminUsername})</td></tr>
+          <tr><td style="padding:6px 10px;background:#fdf8f0;">Email</td><td style="padding:6px 10px;background:#fdf8f0;">${adminEmail}</td></tr>
+          <tr><td style="padding:6px 10px;">Plan</td><td style="padding:6px 10px;">${plan || 'Código de acceso'}</td></tr>
+        </table>
+        <p style="margin-top:16px;"><a href="${appUrl}/gestionestetica/admin/master" style="background:#deb887;color:white;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:bold;">Ver en Master Admin →</a></p>
+      </div>
+    </div>
+  `;
+  await sendAuthEmail('bolt2525@gmail.com', `[BIOSKIN] Nueva clínica registrada: ${clinicName}`, html);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Google OAuth — login / registro de usuarios
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1437,6 +1459,7 @@ async function registerClinic(body) {
   let codeRow = null;
   let planFeatures = ALL_FEATURES;
   let accessScope   = 'all';
+  let planName      = null;
 
   // Validar vía código único — claim atómico previene race conditions
   if (code) {
@@ -1453,6 +1476,7 @@ async function registerClinic(body) {
     codeRow      = claimed.rows[0];
     planFeatures = Array.isArray(codeRow.features) && codeRow.features.length ? codeRow.features : ALL_FEATURES;
     accessScope  = codeRow.access_scope || 'all';
+    planName     = codeRow.plan_name;
   } else if (subscription_id) {
     // Validar vía pago confirmado (status='paid' — no 'registered' ni otro estado)
     const sub = await sql`SELECT * FROM subscriptions WHERE id=${subscription_id} AND status='paid'`;
@@ -1460,6 +1484,7 @@ async function registerClinic(body) {
     const plan = Object.values(SUBSCRIPTION_PLANS).find(p => p.name === sub.rows[0].plan_name) || SUBSCRIPTION_PLANS.plan_completo;
     planFeatures = plan.features;
     accessScope  = plan.access_scope;
+    planName     = sub.rows[0].plan_name;
   } else {
     return { error: 'Se requiere un código de registro o un pago confirmado' };
   }
@@ -1497,9 +1522,11 @@ async function registerClinic(body) {
   `;
   const userId = userR.rows[0].id;
 
-  // Habilitar features según plan
+  // Habilitar features según plan — ai_consultation y clinical_3d se crean deshabilitados
+  const DISABLED_BY_DEFAULT = new Set(['ai_consultation', 'clinical_3d']);
   for (const f of planFeatures) {
-    await sql`INSERT INTO clinic_features (clinic_id, feature, enabled) VALUES (${clinicId}, ${f}, true) ON CONFLICT (clinic_id, feature) DO NOTHING`;
+    const enabledVal = !DISABLED_BY_DEFAULT.has(f);
+    await sql`INSERT INTO clinic_features (clinic_id, feature, enabled) VALUES (${clinicId}, ${f}, ${enabledVal}) ON CONFLICT (clinic_id, feature) DO NOTHING`;
   }
 
   // Guardar settings iniciales completos (todos los módulos con defaults)
@@ -1526,6 +1553,8 @@ async function registerClinic(body) {
   // Enviar email de bienvenida (sin bloquear la respuesta si falla)
   sendWelcomeEmail(emailNorm, first_name.trim(), usernameNorm, clinic_name.trim(), clinicContactEmail)
     .catch(e => console.error('[register] sendWelcomeEmail error:', e.message));
+  sendMasterAdminAlert(clinic_name.trim(), emailNorm, usernameNorm, `${first_name.trim()} ${last_name.trim()}`, planName)
+    .catch(e => console.error('[register] masterAdminAlert error:', e.message));
 
   return {
     success: true,

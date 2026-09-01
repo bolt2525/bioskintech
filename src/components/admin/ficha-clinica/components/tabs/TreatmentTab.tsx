@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Calendar, DollarSign, Clock, Save, Trash2, Copy, Check, AlertCircle, FileText, Pencil, Layers, History, Eye, X } from 'lucide-react';
+import { Plus, Calendar, DollarSign, Clock, Save, Trash2, Copy, Check, AlertCircle, FileText, Pencil, Layers, History, Eye, X, ChevronDown, ChevronRight } from 'lucide-react';
 import CrossConsultHistoryModal, { type ConsultationRef } from '../CrossConsultHistoryModal';
 import { useAuth } from '../../../../../context/AuthContext';
 import treatmentOptions from '../../data/treatment_options.json';
@@ -62,6 +62,7 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
   const [deleting, setDeleting] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [groupByProcedure, setGroupByProcedure] = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [crossHistOpen, setCrossHistOpen] = useState(false);
   const [notesModalOpen, setNotesModalOpen] = useState(false);
   const messageRef = useRef<HTMLDivElement>(null);
@@ -195,41 +196,71 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
           ) : groupByProcedure ? (
             // ── Vista agrupada por procedimiento ──────────────────────────
             (() => {
+              // ponytail: normalize key to prevent mismatches from trailing spaces or case
               const grouped = sortedTreatments.reduce((acc, t) => {
-                const key = t.procedure_name || 'Sin procedimiento';
-                if (!acc[key]) acc[key] = [];
-                acc[key].push(t);
+                const normalKey = (t.procedure_name || 'Sin procedimiento').trim().toLowerCase();
+                if (!acc[normalKey]) acc[normalKey] = { displayName: (t.procedure_name || 'Sin procedimiento').trim(), items: [] };
+                acc[normalKey].items.push(t);
                 return acc;
-              }, {} as Record<string, Treatment[]>);
-              return Object.entries(grouped).map(([proc, treats]) => (
-                <div key={proc} className="space-y-1.5">
-                  <div className="flex items-center justify-between px-2 py-1.5 bg-[#deb887]/10 rounded-lg sticky top-0 z-10">
-                    <span className="text-xs font-bold text-[#b8944d] truncate">{proc}</span>
-                    <span className="text-[10px] font-medium bg-[#deb887]/20 text-[#b8944d] px-1.5 py-0.5 rounded-full shrink-0 ml-1">
-                      {treats.length} ses.
-                    </span>
-                  </div>
-                  {treats.map((t, idx) => (
-                    <motion.div
-                      key={t.id || idx}
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      onClick={() => handleSelect(t)}
-                      className={`p-3 rounded-xl cursor-pointer border transition-all shadow-sm ${
-                        currentTreatment.id === t.id
-                          ? 'bg-[#deb887] text-white border-[#deb887] shadow-md'
-                          : 'bg-white border-gray-100 hover:bg-gray-50 hover:border-[#deb887]/30'
-                      }`}
+              }, {} as Record<string, { displayName: string; items: Treatment[] }>);
+              return Object.entries(grouped).map(([normalKey, { displayName, items: treats }]) => {
+                const isCollapsed = collapsedGroups.has(normalKey);
+                const toggleCollapse = () => setCollapsedGroups(prev => {
+                  const next = new Set(prev);
+                  next.has(normalKey) ? next.delete(normalKey) : next.add(normalKey);
+                  return next;
+                });
+                return (
+                  <div key={normalKey} className="space-y-1.5">
+                    <button
+                      type="button"
+                      onClick={toggleCollapse}
+                      className="w-full flex items-center justify-between px-2 py-1.5 bg-[#deb887]/10 hover:bg-[#deb887]/20 rounded-lg transition-colors"
                     >
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="font-medium">{new Date(toDateOnly(t.date) + 'T12:00:00').toLocaleDateString('es-EC')}</span>
-                        <FileText className="w-3.5 h-3.5 opacity-60" />
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        {isCollapsed
+                          ? <ChevronRight className="w-3.5 h-3.5 text-[#b8944d] shrink-0" />
+                          : <ChevronDown className="w-3.5 h-3.5 text-[#b8944d] shrink-0" />}
+                        <span className="text-xs font-bold text-[#b8944d] truncate">{displayName}</span>
                       </div>
-                      <div className="text-xs opacity-75 truncate mt-0.5">{t.equipment_used || 'Sin equipo'}</div>
-                    </motion.div>
-                  ))}
-                </div>
-              ));
+                      <span className="text-[10px] font-medium bg-[#deb887]/20 text-[#b8944d] px-1.5 py-0.5 rounded-full shrink-0 ml-1">
+                        {treats.length} ses.
+                      </span>
+                    </button>
+                    <AnimatePresence initial={false}>
+                      {!isCollapsed && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.15 }}
+                          className="overflow-hidden space-y-1.5"
+                        >
+                          {treats.map((t, idx) => (
+                            <motion.div
+                              key={t.id || idx}
+                              whileHover={{ scale: 1.02 }}
+                              whileTap={{ scale: 0.98 }}
+                              onClick={() => handleSelect(t)}
+                              className={`p-3 rounded-xl cursor-pointer border transition-all shadow-sm ${
+                                currentTreatment.id === t.id
+                                  ? 'bg-[#deb887] text-white border-[#deb887] shadow-md'
+                                  : 'bg-white border-gray-100 hover:bg-gray-50 hover:border-[#deb887]/30'
+                              }`}
+                            >
+                              <div className="flex justify-between items-center text-xs">
+                                <span className="font-medium">{new Date(toDateOnly(t.date) + 'T12:00:00').toLocaleDateString('es-EC')}</span>
+                                <FileText className="w-3.5 h-3.5 opacity-60" />
+                              </div>
+                              <div className="text-xs opacity-75 truncate mt-0.5">{t.equipment_used || 'Sin equipo'}</div>
+                            </motion.div>
+                          ))}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                );
+              });
             })()
           ) : (
             // ── Vista plana ──────────────────────────────────────────────
