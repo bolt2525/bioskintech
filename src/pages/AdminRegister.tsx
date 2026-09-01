@@ -433,8 +433,8 @@ export default function AdminRegister() {
                   <ArrowLeft className="w-4 h-4" /> Volver
                 </button>
                 <div>
-                  <h2 className="text-lg font-semibold text-gray-900">Suscripción Anual</h2>
-                  <p className="text-gray-400 text-sm mt-0.5">Pago único anual · Plan de Lanzamiento</p>
+                  <h2 className="text-lg font-semibold text-white">Suscripción Anual</h2>
+                  <p className="text-white/55 text-sm mt-0.5">Pago único anual · Plan de Lanzamiento</p>
                 </div>
 
                 {/* Plan único BioskinTech */}
@@ -445,7 +445,7 @@ export default function AdminRegister() {
                       <p className="text-xs text-[#deb887] font-semibold mt-0.5">🎉 Precio especial de lanzamiento</p>
                     </div>
                     <div className="text-right flex-shrink-0 ml-3">
-                      <p className="text-2xl font-black text-[#deb887]">$245</p>
+                      <p className="text-2xl font-black text-[#deb887]">$259.95</p>
                       <p className="text-xs text-gray-400">IVA incluido / año</p>
                     </div>
                   </div>

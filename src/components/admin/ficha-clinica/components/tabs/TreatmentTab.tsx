@@ -65,6 +65,8 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [crossHistOpen, setCrossHistOpen] = useState(false);
   const [notesModalOpen, setNotesModalOpen] = useState(false);
+  // ponytail: string state to allow empty field and comma-as-decimal-separator
+  const [costInput, setCostInput] = useState('');
   const messageRef = useRef<HTMLDivElement>(null);
 
   // Sort treatments by date descending for the history list
@@ -83,12 +85,14 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
 
   const handleNew = () => {
     setCurrentTreatment({ ...EMPTY_TREATMENT, date: getLocalDate() });
+    setCostInput('');
     setDateLocked(false);
     setMessage(null);
   };
 
   const handleSelect = (treatment: Treatment) => {
     setCurrentTreatment({ ...treatment, date: toDateOnly(treatment.date) });
+    setCostInput(treatment.cost > 0 ? String(treatment.cost) : '');
     setDateLocked(true);
     setMessage(null);
   };
@@ -152,10 +156,8 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
 
   const handleDuplicate = () => {
     const { id, ...rest } = currentTreatment;
-    setCurrentTreatment({
-      ...rest,
-      date: getLocalDate()
-    });
+    setCurrentTreatment({ ...rest, date: getLocalDate() });
+    setCostInput(rest.cost > 0 ? String(rest.cost) : '');
     setDateLocked(false);
     setMessage({ type: 'success', text: 'Tratamiento duplicado. Guarde para crear uno nuevo.' });
   };
@@ -470,10 +472,17 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
                 <div className="relative">
                   <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="decimal"
                     className="w-full pl-10 p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
-                    value={currentTreatment.cost}
-                    onChange={e => setCurrentTreatment({...currentTreatment, cost: parseFloat(e.target.value) || 0})}
+                    placeholder="0.00"
+                    value={costInput}
+                    onChange={e => {
+                      const raw = e.target.value.replace(',', '.');
+                      setCostInput(raw);
+                      const n = parseFloat(raw);
+                      setCurrentTreatment(prev => ({ ...prev, cost: isNaN(n) ? 0 : n }));
+                    }}
                   />
                 </div>
               </div>

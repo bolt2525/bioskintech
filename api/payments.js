@@ -25,9 +25,9 @@ const PLANS = {
   plan_lanzamiento: {
     name:          'Plan Lanzamiento BioskinTech',
     subtitle:      'Precio especial de lanzamiento',
-    amount_cents:   26450,
-    base_cents:     23000,
-    tax_cents:       3450,
+    amount_cents:   25995,
+    base_cents:     22604,
+    tax_cents:       3391,
     period:         'anual',
     features:       ['calendar','block_schedule','appointment','clinical_records','finance','inventory','clinical_3d','system_status','backup'],
   },
@@ -127,10 +127,10 @@ export default async function handler(req, res) {
 
       // Payload con orden y campos idénticos al ejemplo PHP oficial de PayPhone
       const payload = {
-        amount:              plan.amount_cents,   // 26450
+        amount:              plan.amount_cents,   // 25995
         amountWithoutTax:    0,
-        amountWithTax:       plan.base_cents,     // 23000
-        tax:                 plan.tax_cents,      // 3450
+        amountWithTax:       plan.base_cents,     // 22604
+        tax:                 plan.tax_cents,      // 3391
         service:             0,
         tip:                 0,
         storeId,
