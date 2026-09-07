@@ -1594,7 +1594,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     setBulkApplyMode(false);
     setBulkApplySourceIdx(null);
     setBulkApplySelected(new Set());
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [activeType]);
 
   const getDbItems = (cat: string) => dbCatalog.filter(d => d.categoria === cat).map(d => d.elemento);

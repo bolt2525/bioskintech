@@ -393,7 +393,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
   const [saveWarning, setSaveWarning] = useState<{ messages: string[]; payload: any } | null>(null);
 
   // Reset form when active consultation changes
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     const examForConsult = physicalExams.find(e => Number(e.consultation_id) === Number(consultationId));
     if (examForConsult) loadExam(examForConsult);
@@ -401,7 +401,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
   }, [consultationId]);
 
   // Load exam from data on initial load (data arrives async after mount)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (currentExam.id) return;
     const examForConsult = physicalExams.find(e => Number(e.consultation_id) === Number(consultationId));

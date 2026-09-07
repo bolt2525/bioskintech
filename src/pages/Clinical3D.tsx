@@ -332,7 +332,7 @@ const ThreeScene = ({ modelSource, markers, zones, onMeshClick, onLoaded, onErro
       
       // Moveremos la cámara en coordenadas esféricas relativas al target
       const position = camera.position.clone().sub(controls.target);
-      let r = position.length();
+      const r = position.length();
       let theta = Math.atan2(position.x, position.z); // horizontal
       let phi = Math.acos(position.y / r); // vertical
       
@@ -1001,8 +1001,8 @@ const ThreeScene = ({ modelSource, markers, zones, onMeshClick, onLoaded, onErro
         
         console.log("Zona detectada:", zoneDetectedName, "Registrada:", !!registeredZone);
 
-        let finalRadius = 0.6;
-        let finalRotation = [dummy.rotation.x, dummy.rotation.y, dummy.rotation.z];
+        const finalRadius = 0.6;
+        const finalRotation = [dummy.rotation.x, dummy.rotation.y, dummy.rotation.z];
         
         if (registeredZone) {
             // Usar escala rectangular guardada

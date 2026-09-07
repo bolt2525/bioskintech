@@ -571,7 +571,7 @@ const ThreeEngine: React.FC<{
     // ── Estado snap / imán ────────────────────────────────────────────────
     let currentSnapPt: THREE.Vector3 | null = null; // punto snap activo
     let snapPtIsVertex = false; // true si es un vértice/intersección
-    let snapFrameCount = 0;
+    const snapFrameCount = 0;
 
     const clearSnap = () => {
       if (currentSnapPt) {

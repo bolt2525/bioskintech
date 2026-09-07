@@ -57,7 +57,7 @@ export default function DiagnosisTab({ recordId, diagnoses, patientName, consult
   const [crossHistOpen, setCrossHistOpen] = useState(false);
 
   // Reset form when active consultation changes
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     const diagForConsult = diagnoses.find(d => Number(d.consultation_id) === Number(consultationId));
     if (diagForConsult) setCurrentDiagnosis(diagForConsult);
@@ -65,7 +65,7 @@ export default function DiagnosisTab({ recordId, diagnoses, patientName, consult
   }, [consultationId]);
 
   // Load from data on initial load (data arrives async after mount)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (currentDiagnosis.id) return;
     const diagForConsult = diagnoses.find(d => Number(d.consultation_id) === Number(consultationId));

@@ -198,8 +198,8 @@ export default function ExternalMedicalFinance() {
       let successCount = 0;
       
       for (const record of parsedRecords) {
-        let url = '/api/external-finance?action=save-record';
-        let payload: any = record;
+        const url = '/api/external-finance?action=save-record';
+        const payload: any = record;
 
 
 
