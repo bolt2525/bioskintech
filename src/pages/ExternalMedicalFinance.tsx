@@ -52,6 +52,10 @@ interface FinanceRecord {
 
 export default function ExternalMedicalFinance() {
   const navigate = useNavigate();
+  const authHeaders = () => {
+    const token = sessionStorage.getItem('adminSessionToken');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
   
   // UI Mode
   const [viewMode, setViewMode] = useState<'create' | 'list'>('create');
@@ -87,7 +91,7 @@ export default function ExternalMedicalFinance() {
       if (filters.assistant) query += `&assistant=${filters.assistant}`;
       if (filters.month) query += `&month=${filters.month}`;
       
-      const res = await fetch(query);
+      const res = await fetch(query, { headers: authHeaders() });
       if (!res.ok) throw new Error('Error al cargar lista');
       const data = await res.json();
       setRecords(data);
@@ -108,7 +112,7 @@ export default function ExternalMedicalFinance() {
     try {
       const res = await fetch(`/api/external-finance?action=delete`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ id })
       });
       if (!res.ok) throw new Error('Falló eliminación');
@@ -150,7 +154,7 @@ export default function ExternalMedicalFinance() {
     try {
       const response = await fetch('/api/external-finance?action=process-note', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ note: rawNote, assistant })
       });
 
@@ -217,7 +221,7 @@ export default function ExternalMedicalFinance() {
 
         const response = await fetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...authHeaders() },
             body: JSON.stringify(payload)
         });
 

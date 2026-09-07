@@ -59,5 +59,5 @@ Usa el agente más especializado posible según el tipo de tarea:
 - **Auth multi-tenant**: `master_admin` → `clinic_admin` → `clinic_user`. Siempre pasar por `lib/admin-auth.js`.
 - **Design tokens**: Colores y roles en `src/constants/theme.ts`. No hardcodear `#deb887` en nuevos archivos.
 - **Features**: Agregar nuevos módulos a `src/constants/features.ts` y a `ALL_FEATURES` en `api/admin-auth.js`.
-- **Vercel Functions**: Límite 12. Actualmente 11 usadas. No crear nuevas sin eliminar alguna primero.
+- **Vercel Functions**: Límite 12 según el plan documentado. El repositorio contiene 9 archivos de función en `api/`; confirmar el límite y funciones efectivas en el proyecto Vercel antes de crear otra.
 - **No crear páginas públicas**: Este proyecto es admin-only.

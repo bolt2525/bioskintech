@@ -1,30 +1,3 @@
-# Ponytail — Lazy Senior Dev Mode
-
-You are a lazy senior developer. Lazy means efficient, not careless. The best code is the code never written.
-
-Before writing any code, stop at the first rung that holds:
-
-1. Does this need to be built at all? (YAGNI)
-2. Does the standard library already do this? Use it.
-3. Does a native platform feature cover it? Use it.
-4. Does an already-installed dependency solve it? Use it.
-5. Can this be one line? Make it one line.
-6. Only then: write the minimum code that works.
-
-Rules:
-
-- No abstractions that weren't explicitly requested.
-- No new dependency if it can be avoided.
-- No boilerplate nobody asked for.
-- Deletion over addition. Boring over clever. Fewest files possible.
-- Question complex requests: "Do you actually need X, or does Y cover it?"
-- Pick the edge-case-correct option when two stdlib approaches are the same size — lazy means less code, not the flimsier algorithm.
-- Mark intentional simplifications with a `ponytail:` comment. If the shortcut has a known ceiling (global lock, O(n²) scan, naive heuristic), the comment names the ceiling and the upgrade path.
-
-Not lazy about: input validation at trust boundaries, error handling that prevents data loss, security, accessibility, anything explicitly requested. Non-trivial logic leaves ONE runnable check behind — the smallest thing that fails if the logic breaks. Trivial one-liners need no test.
-
----
-
 # BIOSKIN Admin Panel — AI Developer Guide (v2.0)
 
 ## Project Overview
@@ -61,11 +34,10 @@ lib/
 │   ├── finanzas/          ← Ingresos, egresos, reportes
 │   ├── ia/                ← Diagnóstico IA, protocolos, asistente Gema
 │   ├── inventario/        ← Stock, lotes, vencimientos
-│   ├── bot-interno/       ← Bot WhatsApp staff, agenda diaria
-│   └── tecnico/           ← Reparaciones, informes BioskinTech
+│   └── bot-interno/       ← Integraciones internas documentadas
 ├── admin-auth.js          ← Helper de auth para APIs
 ├── neon-clinical-db.js    ← Pool pg con type parsers de fechas
-└── neon-chatbot-db.js     ← Tablas del bot (internal_bot_*, chatbot_*)
+└── r2-service.js          ← Cloudflare R2 para fotos clínicas
 ```
 
 ### 🚨 **CRITICAL VERCEL CONSTRAINTS**
@@ -74,11 +46,11 @@ lib/
 - **MÁXIMO 12 funciones** en Vercel Hobby plan
 - **Inventario actual** de `/api/`:
   ```
-  admin-auth.js, backup.js, calendar.js, external-finance.js,
-  internal-bot-api.js, records.js, search.js, sendEmail.js,
-  system-status.js, technical-service.js, whatsapp-internal.js
+  admin-auth.js, ai-consultation.js, backup.js, calendar.js,
+  external-finance.js, payments.js, records.js, sendEmail.js,
+  system-status.js
   ```
-  → **11 funciones usadas, 1 disponible**
+  → **9 funciones detectadas en el repositorio**. El límite efectivo depende del plan y del despliegue de Vercel.
 - **Regla**: Antes de crear una nueva función, verificar si se puede agregar a una existente
 
 #### **Vercel Storage**
@@ -87,10 +59,10 @@ lib/
 - Proyecto ID: configurar en nueva cuenta Vercel
 
 #### **Database Management**
-- **SINGLE DATABASE ONLY**: Use existing SQLite database at `data/blogs.db`
-- **NO additional databases**: Don't create new DB files or external databases
-- **Schema expansion**: Add tables to existing database using `lib/database.js`
-- **Migrations**: Use existing initialization scripts in `init-database.js`
+- **SINGLE DATABASE ONLY**: Neon PostgreSQL es la única base de datos de la App.
+- **NO additional databases**: No crear archivos `.db` ni introducir SQLite.
+- **Schema expansion**: Extender `initClinicalDatabase()` o `initMultiTenantSchema()` con migraciones idempotentes.
+- **Migrations**: Usar los scripts existentes en `scripts/` y revisar el esquema real antes de aplicar cambios.
 
 ### Critical File Organization
 ```
@@ -107,10 +79,9 @@ src/
 │   └── admin/
 │       ├── ficha-clinica/    # Pacientes, antecedentes, recetas, tratamientos
 │       ├── inventory/        # Inventario: lotes, movimientos, alertas
-│       └── technical/        # Servicio técnico: documentos e informes
 ├── pages/                    # Solo páginas admin (no hay páginas públicas)
 └── utils/slugify.ts
-api/                          # Vercel serverless functions (11 funciones)
+api/                          # Vercel serverless functions (9 detectadas)
 lib/
 ├── db/index.js               # Punto de entrada unificado de DB
 ├── modules/                  # Módulos organizados por dominio
@@ -119,10 +90,9 @@ lib/
 │   ├── finanzas/             # Finance db + AI
 │   ├── ia/                   # AI diagnóstico, protocolos, asistente
 │   ├── inventario/           # (doc — lógica en api/records.js)
-│   ├── bot-interno/          # WhatsApp staff bot
-│   └── tecnico/              # (doc — lógica en api/technical-service.js)
+│   └── bot-interno/          # Integraciones internas documentadas
 ├── neon-clinical-db.js       # Pool pg con type parsers de fechas
-└── neon-chatbot-db.js        # Tablas bot (internal_bot_*, chatbot_*)
+└── r2-service.js             # Cliente Cloudflare R2
 ```
 
 ### Fichas Clínicas — Sub-módulos
@@ -147,7 +117,7 @@ El módulo más importante. Acciones en `api/records.js`:
 ### Integration Points
 
 #### Google Services Integration
-- **Calendar API**: `/api/getEvents.js` - fetches occupied time slots
+- **Calendar API**: `/api/calendar.js` - gestiona eventos y horarios ocupados
 - **Email**: `/api/sendEmail.js` - sends confirmation emails and WhatsApp notifications
 - **Environment**: Requires `GOOGLE_CREDENTIALS_BASE64` and email credentials
 
@@ -183,12 +153,15 @@ Uses TailwindCSS with mobile-first approach and custom container class `containe
 #### **Current Function Inventory (Monitor Before Adding New)**
 ```
 /api/
-├── ai-blog/generate-production.js  # AI blog generation
-├── blogs/index.js                  # Blog listing endpoint  
-├── blogs/[slug].js                 # Individual blog endpoint
-├── blogs/static.js                 # Static fallback
-├── getEvents.js                    # Google Calendar integration
-└── sendEmail.js                    # Email/WhatsApp notifications
+├── admin-auth.js                   # Auth, sesiones, clínicas y usuarios
+├── ai-consultation.js              # Consultas de IA clínica
+├── backup.js                       # Exportación/restauración
+├── calendar.js                     # Google Calendar
+├── external-finance.js             # Finanzas externas
+├── payments.js                     # PayPhone
+├── records.js                      # Fichas, inventario y fotos
+├── sendEmail.js                    # Notificaciones
+└── system-status.js                # Estado de servicios
 ```
 
 #### **Function Development Rules**

@@ -8,7 +8,8 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:security": "node --test tests/security.test.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1106.0",

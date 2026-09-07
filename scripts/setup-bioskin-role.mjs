@@ -38,6 +38,7 @@ const TENANT_TABLES = [
   'inventory_movements',
   'financial_records',
   'financial_items',
+  'external_finance_records',
   'sharing_groups',
   'patient_audit_log',
   'clinical_photos',

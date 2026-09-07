@@ -50,6 +50,24 @@ async function logAudit(client, { patientId, recordId, sessionUser, actionType, 
 
 /** IDOR guard — returns false if item doesn't belong to the current clinic */
 const CLINICAL_TABLES = new Set(['physical_exams', 'diagnoses', 'treatments', 'injectables', 'consent_forms']);
+const MAX_PHOTO_BYTES = 4 * 1024 * 1024;
+const PHOTO_TYPES = new Set(['before', 'after', 'diagnostic', 'progress', 'general']);
+
+async function recordBelongsToClinic(pool, recordId, clinicId) {
+  if (!recordId || !clinicId) return false;
+  const result = await pool.query(
+    'SELECT 1 FROM clinical_records WHERE id = $1 AND clinic_id = $2 LIMIT 1',
+    [recordId, clinicId]
+  );
+  return result.rows.length > 0;
+}
+
+export function isOwnedPhotoKey(key, clinicId, recordId) {
+  const prefix = `clinics/${clinicId}/records/${recordId}/photos/`;
+  return typeof key === 'string' && key.startsWith(prefix) &&
+    /^[a-f0-9-]{36}\.(?:jpg|jpeg|png|webp|heic)$/i.test(key.slice(prefix.length));
+}
+
 async function ownedByClinic(pool, table, itemId, clinicId) {
   if (!clinicId || !CLINICAL_TABLES.has(table)) return true;
   const r = await pool.query(
@@ -2374,10 +2392,12 @@ export default async function handler(req, res) {
         const allowed = ['image/jpeg','image/png','image/webp','image/heic'];
         if (!allowed.includes(content_type)) return res.status(400).json({ error: 'Tipo de archivo no permitido' });
         const clinicId = su?.effective_clinic_id ?? su?.clinic_id;
+        if (!(await recordBelongsToClinic(pool, record_id, clinicId))) return res.status(404).json({ error: 'Expediente no encontrado' });
         const ext = content_type.split('/')[1] || 'jpg';
         const r2Key = `clinics/${clinicId}/records/${record_id}/photos/${crypto.randomUUID()}.${ext}`;
         try {
           const buffer = Buffer.from(fileBase64, 'base64');
+          if (buffer.length === 0 || buffer.length > MAX_PHOTO_BYTES) return res.status(413).json({ error: 'La imagen supera el límite permitido de 4 MB' });
           await putR2Object(r2Key, buffer, content_type);
           const result = await pool.query(
             `INSERT INTO clinical_photos (record_id, consultation_id, clinic_id, r2_key, photo_type, face_zone, session_label, taken_at)
@@ -2394,15 +2414,17 @@ export default async function handler(req, res) {
 
       case 'getPhotoUploadUrl': {
         // Returns a presigned PUT URL — the client uploads directly to R2, never via server
-        const { record_id, content_type, photo_type, consultation_id } = body;
-        if (!record_id || !content_type) return res.status(400).json({ error: 'record_id y content_type requeridos' });
+        const { record_id, content_type, content_length } = body;
+        if (!record_id || !content_type || !content_length) return res.status(400).json({ error: 'record_id, content_type y content_length requeridos' });
+        if (!Number.isInteger(content_length) || content_length < 1 || content_length > MAX_PHOTO_BYTES) return res.status(413).json({ error: 'La imagen supera el límite permitido de 4 MB' });
         const allowed = ['image/jpeg','image/png','image/webp','image/heic'];
         if (!allowed.includes(content_type)) return res.status(400).json({ error: 'Tipo de archivo no permitido' });
 
         const clinicId = su?.effective_clinic_id ?? su?.clinic_id;
+        if (!(await recordBelongsToClinic(appPool, record_id, clinicId))) return res.status(404).json({ error: 'Expediente no encontrado' });
         const r2Key = `clinics/${clinicId}/records/${record_id}/photos/${crypto.randomUUID()}.${content_type.split('/')[1]}`;
         try {
-          const presignedUrl = await generateUploadUrl(r2Key, content_type);
+          const presignedUrl = await generateUploadUrl(r2Key, content_type, content_length);
           return res.status(200).json({ presignedUrl, r2Key });
         } catch (err) {
           console.error('R2 upload URL error:', err);
@@ -2414,6 +2436,10 @@ export default async function handler(req, res) {
         const { record_id, r2_key, photo_type = 'general', face_zone, body_zone, session_label, notes, consultation_id, taken_at } = body;
         if (!record_id || !r2_key) return res.status(400).json({ error: 'record_id y r2_key requeridos' });
         const clinicId = su?.effective_clinic_id ?? su?.clinic_id;
+        if (!PHOTO_TYPES.has(photo_type)) return res.status(400).json({ error: 'Tipo de foto inválido' });
+        if (!(await recordBelongsToClinic(pool, record_id, clinicId)) || !isOwnedPhotoKey(r2_key, clinicId, record_id)) {
+          return res.status(400).json({ error: 'Clave de almacenamiento inválida' });
+        }
         try {
           const result = await pool.query(
             `INSERT INTO clinical_photos (record_id, consultation_id, clinic_id, r2_key, photo_type, face_zone, body_zone, session_label, notes, taken_at)
@@ -2431,15 +2457,17 @@ export default async function handler(req, res) {
         if (!record_id) return res.status(400).json({ error: 'record_id requerido' });
         const pageSize = Math.min(parseInt(lim) || 24, 50);
         const offset   = Math.max(parseInt(off) || 0, 0);
+        const clinicId = su?.effective_clinic_id ?? su?.clinic_id;
+        if (!(await recordBelongsToClinic(pool, record_id, clinicId))) return res.status(404).json({ error: 'Expediente no encontrado' });
         try {
           const countRes = await pool.query(
-            `SELECT COUNT(*) FROM clinical_photos WHERE record_id = $1`, [record_id]
+            `SELECT COUNT(*) FROM clinical_photos WHERE record_id = $1 AND clinic_id = $2`, [record_id, clinicId]
           );
           const total = parseInt(countRes.rows[0].count);
           const result = await pool.query(
             `SELECT id, r2_key, photo_type, face_zone, body_zone, session_label, notes, taken_at, created_at
-             FROM clinical_photos WHERE record_id = $1 ORDER BY taken_at DESC LIMIT $2 OFFSET $3`,
-            [record_id, pageSize, offset]
+             FROM clinical_photos WHERE record_id = $1 AND clinic_id = $2 ORDER BY taken_at DESC LIMIT $3 OFFSET $4`,
+            [record_id, clinicId, pageSize, offset]
           );
           const photos = await Promise.all(result.rows.map(async (p) => {
             try { return { ...p, r2_url: await generateReadUrl(p.r2_key) }; }

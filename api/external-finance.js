@@ -1,6 +1,7 @@
 
 import { parseMedicalNote } from '../lib/medical-finance-service.js';
 import { requireAuth } from '../lib/admin-auth.js';
+import { requireRole } from '../lib/admin-auth.js';
 import { 
   saveFinanceRecord, 
   getFinanceRecords, 
@@ -22,6 +23,8 @@ export default async function handler(req, res) {
 
   const user = await requireAuth(req, res);
   if (!user) return;
+  if (!requireRole(user, res, 'clinic_admin', 'master_admin')) return;
+  if (!user.clinic_id) return res.status(400).json({ error: 'Se requiere una clínica activa' });
 
   const { action } = req.query;
 
@@ -56,7 +59,7 @@ export default async function handler(req, res) {
         if (!record || !record.patient_name) {
           return res.status(400).json({ error: 'Missing required record fields' });
         }
-        const savedRecord = await saveFinanceRecord(record);
+        const savedRecord = await saveFinanceRecord(record, user.clinic_id);
         return res.status(200).json({ success: true, id: savedRecord.id });
       }
     }
@@ -68,7 +71,7 @@ export default async function handler(req, res) {
           assistant: req.query.assistant,
           month: req.query.month
         };
-        const records = await getFinanceRecords(filters);
+        const records = await getFinanceRecords(filters, user.clinic_id);
         return res.status(200).json(records);
       }
     }
@@ -79,7 +82,8 @@ export default async function handler(req, res) {
       if (!id || !updates) {
         return res.status(400).json({ error: 'Missing id or updates' });
       }
-      const updated = await updateFinanceRecord(id, updates);
+      const updated = await updateFinanceRecord(id, updates, user.clinic_id);
+      if (!updated) return res.status(404).json({ error: 'Registro no encontrado' });
       return res.status(200).json({ success: true, data: updated });
     }
 
@@ -88,7 +92,8 @@ export default async function handler(req, res) {
       const { id } = req.body || req.query;
       if (!id) return res.status(400).json({ error: 'Missing id' });
       
-      await deleteFinanceRecord(id);
+      const deleted = await deleteFinanceRecord(id, user.clinic_id);
+      if (!deleted) return res.status(404).json({ error: 'Registro no encontrado' });
       return res.status(200).json({ success: true });
     }
 
@@ -96,6 +101,6 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error(`Error in external-finance [${action}]:`, error);
-    return res.status(500).json({ error: error.message || 'Internal Server Error' });
+    return res.status(500).json({ error: 'No se pudo procesar la solicitud' });
   }
 }
