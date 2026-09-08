@@ -18,6 +18,9 @@ Antes de escribir código, detente en el primer nivel que aguante:
 
 ---
 
+## 📐 Documentación de Arquitectura (Obligatorio para TODOS los agentes)
+Cualquier agente — `Experto Frontend`, `Experto Backend`, `Guardián de Seguridad`, `Auditor de Código`, `DevOps y Vercel`, `QA y Testing` o el agente principal — que realice un cambio mayor en la estructura, arquitectura por capas, esquema de datos o integraciones externas **debe** actualizar `ARCHITECTURE.md` y `PROGRESS.md` como parte de esa misma tarea, siguiendo `.github/instructions/architecture-sync.instructions.md`. No se considera la tarea cerrada sin esa actualización, sin importar qué archivos haya tocado el agente.
+
 ## Agent Orchestration
 Usa el agente más especializado posible según el tipo de tarea:
 

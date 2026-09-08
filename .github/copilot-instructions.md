@@ -289,6 +289,8 @@ When adding new products, update `src/data/products.ts` and ensure images follow
 
 ## 📚 Documentation Management Protocol
 
+Regla completa y obligatoria para todos los agentes: `.github/instructions/architecture-sync.instructions.md`.
+
 ### **Automatic Documentation Updates**
 **MANDATORY**: After completing ANY file creation, modification, or feature implementation, you MUST update the following documentation files:
 

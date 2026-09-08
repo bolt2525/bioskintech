@@ -1,18 +1,12 @@
 ---
-description: "Use siempre que un cambio modifique la estructura, arquitectura o capas del sistema: nuevas tablas o migraciones, nuevas funciones API, nuevos módulos, nuevas integraciones externas, cambios en RLS/tenancy, o cambios en el flujo de datos entre capas. Mantiene ARCHITECTURE.md y PROGRESS.md como fuente de verdad sincronizada con el código real."
+description: "Use siempre que un cambio modifique la estructura, arquitectura o capas del sistema: nuevas tablas o migraciones, nuevas funciones API, nuevos módulos, nuevas integraciones externas, cambios en RLS/tenancy, o cambios en el flujo de datos entre capas. Aplica a TODOS los agentes (frontend, backend, seguridad, QA, DevOps, auditor), sin importar qué archivos toquen. Mantiene ARCHITECTURE.md y PROGRESS.md como fuente de verdad sincronizada con el código real."
 name: "Architecture Sync — Documentación Obligatoria"
 applyTo:
-  - "api/**"
-  - "lib/**"
-  - "scripts/**"
-  - "vercel.json"
-  - "middleware.js"
-  - "package.json"
-  - "src/constants/features.ts"
+  - "**"
 ---
 # Architecture Sync — Documentación Obligatoria
 
-Esta instrucción **no se debe pasar por alto**. Aplica cada vez que un cambio afecte la estructura o la arquitectura por capas del proyecto.
+Esta instrucción **no se debe pasar por alto** y aplica a **cualquier agente**, sin importar su especialidad (frontend, backend, seguridad, QA, DevOps, auditor) ni qué archivos haya modificado. Aplica cada vez que un cambio afecte la estructura o la arquitectura por capas del proyecto.
 
 ## Qué cuenta como cambio de arquitectura
 - Nueva tabla, columna, índice, política RLS o migración en Neon.
