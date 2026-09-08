@@ -34,6 +34,7 @@ Usa el agente más especializado posible según el tipo de tarea:
 - Si una tarea modifica `api/**` o `lib/**`, debe pasar revisión de **seguridad** y **QA** antes de considerarse cerrada.
 - Si una tarea afecta producción o deployment, usa `DevOps y Vercel`.
 - Si se va a eliminar o simplificar código, valida primero con `Auditor de Código` y luego verifica con `QA y Testing`.
+- Si una tarea cambia la estructura, arquitectura por capas, esquema de datos o integraciones externas, aplica **obligatoriamente** `.github/instructions/architecture-sync.instructions.md` — actualizar `ARCHITECTURE.md`/`PROGRESS.md` no es opcional.
 
 ## Recommended Skills
 - **`vercel-operations`**: despliegues, producción, logs y Vercel.

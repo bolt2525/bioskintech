@@ -18,6 +18,7 @@ El build de producción pasa. El lint global no está limpio: en la línea base 
 | Variables Vercel | `NEON_APP_URL`, `NEON_DATABASE_URL`, `POSTGRES_URL`, R2, Google, PayPhone, correo y master key aparecen cifradas en los entornos correspondientes | Nombres confirmados; valores no se leen |
 | Cloudflare R2 | Bucket `bioskin-fotos`, creado 2026-08-04, región ENAM, clase Standard | Confirmado por MCP y Wrangler |
 | R2 CORS | Orígenes BIOSKIN y localhost; métodos GET/PUT/DELETE/HEAD; headers restringidos | Confirmado en bucket |
+| R2 credenciales | `R2_ACCESS_KEY_ID` (32 chars hex) y `R2_SECRET_ACCESS_KEY` (64 chars hex, SHA-256 del token) rotadas en Production y Preview el 2026-09-07; verificadas con round-trip real PUT→GET→DELETE contra el bucket | Confirmado funcional end-to-end |
 | Neon | Diagnósticos ejecutados mediante `vercel env run`; host Neon, tipos, tablas y políticas consultados sin exponer secretos | Confirmado en entorno conectado |
 
 La existencia de una variable en Vercel no demuestra por sí sola que su valor sea válido ni que el flujo de producción haya sido ejercitado.
@@ -83,7 +84,9 @@ El flujo actual tiene dos caminos:
 1. `uploadPhotoProxy`: recibe base64, valida MIME permitido, limita el buffer a 4 MB, sube a R2 y registra metadatos.
 2. `getPhotoUploadUrl` + `confirmPhotoUpload`: genera una URL PUT firmada, el cliente sube a R2 y luego confirma la metadata en Neon.
 
-Las lecturas generan URLs firmadas temporales. El código no demuestra object versioning, cifrado de aplicación ni un límite máximo efectivo para la subida directa PUT; esos puntos requieren configuración o prueba real de R2.
+Las lecturas generan URLs firmadas temporales. `getPhotoUploadUrl` exige `content_length` y `generateUploadUrl` firma el `ContentLength` exacto, rechazando por encima de 4 MB antes de emitir la URL. El código no demuestra object versioning ni cifrado de aplicación adicional al TLS/presigned-URL; esos puntos siguen dependiendo de configuración de proveedor.
+
+**Reset de producción (2026-09-07):** se vació el bucket (47 → 0 objetos reales, confirmado por `GET .../objects`) y se limpiaron las 46 filas huérfanas de `clinical_photos` (0 tras el borrado), ya que las credenciales previas eran un placeholder roto (`[REDACTED]`, 11 caracteres) que impedía cualquier operación real. Se generó un token R2 nuevo desde el dashboard de Cloudflare, se cargaron `R2_ACCESS_KEY_ID`/`R2_SECRET_ACCESS_KEY` reales en Vercel (Production y Preview) y se verificó con una prueba real de subida, lectura y borrado contra el bucket (`PUT` → `GET` 200 con contenido íntegro → `DELETE` → `GET` posterior 404). El código de `deletePhoto` fue revisado línea por línea y es correcto: borra el objeto R2 primero y solo si eso tiene éxito borra la fila en Neon, por lo que no genera huérfanos nuevos.
 
 ## 5. RLS y aislamiento
 
@@ -112,9 +115,10 @@ Las operaciones de fotos también validan que el expediente pertenezca al tenant
 1. El lint global falla y mantiene deuda previa del frontend.
 2. El rate limiting de `middleware.js` vive en memoria y no persiste entre instancias Edge.
 3. La CSP permite `unsafe-inline` y `unsafe-eval`; debe revisarse contra el bundle y una estrategia de nonce/hash antes de endurecerla.
-4. La validación de magic bytes y dimensiones reales de imágenes todavía no está implementada.
+4. La validación de magic bytes y dimensiones reales de imágenes todavía no está implementada (solo se valida `Content-Type` declarado y tamaño).
 5. No debe prometerse object versioning, cifrado en reposo, backups automáticos, alta disponibilidad o cumplimiento legal específico sin evidencia de proveedor/configuración.
 6. La firma digital está implementada como captura y persistencia de firma/declaraciones; su validez jurídica depende del marco legal y del procedimiento de la clínica.
+7. El bucket `bioskin-fotos` quedó vacío tras el reset del 2026-09-07; cualquier foto clínica anterior a esa fecha debe volver a subirse.
 
 ## 8. Comandos de validación ejecutados
 
@@ -131,3 +135,8 @@ Las operaciones de fotos también validan que el expediente pertenezca al tenant
 - Migración idempotente `scripts/init-schema.mjs` — pasa; creó `external_finance_records` y aplicó RLS/políticas.
 - Vercel CLI — proyecto y nombres de variables confirmados sin revelar valores.
 - Cloudflare MCP/Wrangler — bucket y reglas CORS confirmados.
+- Reset real de R2: `DELETE` de 47/47 objetos vía API de Cloudflare — confirmado `count: 0`.
+- Limpieza real de Neon: `DELETE FROM clinical_photos` — 46/46 filas eliminadas, confirmado `count: 0`.
+- Rotación de credenciales R2: nuevo Access Key ID (32 hex) y Secret Access Key (64 hex) cargados en Vercel Production y Preview.
+- Prueba funcional real end-to-end (`scripts/verify-r2-e2e.mjs`) contra Production — pasa: PUT, GET (200, contenido íntegro), DELETE, GET posterior (404).
+- Redeploy de Production tras cada cambio de variables de entorno R2 — `Ready` ambas veces.
