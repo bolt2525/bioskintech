@@ -114,6 +114,7 @@ export default function middleware(request) {
 }
 
 export const config = {
+  runtime: 'nodejs',
   // Aplica a todas las rutas excepto assets estáticos
   matcher: [
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js)$).*)',

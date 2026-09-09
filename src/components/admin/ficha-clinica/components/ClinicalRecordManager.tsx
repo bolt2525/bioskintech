@@ -361,6 +361,7 @@ export default function ClinicalRecordManager() {
                     consultationId={activeConsultation?.id}
                     consultations={recordData?.consultations || []}
                     diagnoses={recordData?.diagnoses || []}
+                    allergies={recordData?.history?.allergies || ''}
                   />
                 )}
                 {activeTab === 'consent' && activeConsultation && enabledOptional.consents && (

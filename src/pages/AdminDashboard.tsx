@@ -35,6 +35,7 @@ type SettingsTab = 'profile' | 'password' | 'agenda' | 'clinic';
 type ProfileForm = {
   full_name: string; first_name: string; last_name: string; email: string;
   cedula_profesional: string; matricula_senescyt: string;
+  registro_acess: string;
   especialidad: string; gentilicio: string; profession: string;
 };
 
@@ -102,7 +103,7 @@ export default function AdminDashboard() {
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
 
   // Profile tab
-  const [profileForm, setProfileForm]     = useState<ProfileForm>({ full_name: '', first_name: '', last_name: '', email: '', cedula_profesional: '', matricula_senescyt: '', especialidad: '', gentilicio: '', profession: '' });
+  const [profileForm, setProfileForm]     = useState<ProfileForm>({ full_name: '', first_name: '', last_name: '', email: '', cedula_profesional: '', matricula_senescyt: '', registro_acess: '', especialidad: '', gentilicio: '', profession: '' });
   const [editingField, setEditingField]   = useState<string | null>(null);
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileMsg, setProfileMsg]       = useState<{ text: string; ok: boolean } | null>(null);
@@ -212,7 +213,7 @@ export default function AdminDashboard() {
       setProfileForm({
         full_name: user.full_name || '', first_name: user.first_name || '',
         last_name: user.last_name || '', email: user.email || '',
-        cedula_profesional: user.cedula_profesional || '', matricula_senescyt: user.matricula_senescyt || '',
+        cedula_profesional: user.cedula_profesional || '', matricula_senescyt: user.matricula_senescyt || '', registro_acess: user.registro_acess || '',
         especialidad: user.especialidad || '', gentilicio: user.gentilicio || '', profession: user.profession || '',
       });
     }
@@ -662,6 +663,7 @@ export default function AdminDashboard() {
                           ['especialidad',       'Especialidad',       'text',  ''],
                           ['cedula_profesional', 'Cédula profesional', 'text',  ''],
                           ['matricula_senescyt', 'Matrícula',          'text',  ''],
+                          ['registro_acess',      'Registro ACESS',      'text',  ''],
                         ] as [keyof ProfileForm, string, string, string][]).map(([k, label, type, span]) => {
                           const isEditing = editingField === k;
                           return (

@@ -50,7 +50,7 @@ const ALL_FEATURES = [
   'treatment_notes_view',
 ];
 // ponytail: features desactivadas por defecto — requieren activación explícita por clínica
-const OPT_IN_FEATURES = ['treatment_notes_view'];
+const OPT_IN_FEATURES = ['treatment_notes_view', 'ai_consultation', 'clinical_3d'];
 
 // Planes de suscripción predefinidos (precio en centavos USD)
 const SUBSCRIPTION_PLANS = {
@@ -105,6 +105,7 @@ async function ensureNewColumns() {
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS inventory_scope VARCHAR(20) DEFAULT 'all'",
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS cedula_profesional VARCHAR(50)",
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS matricula_senescyt VARCHAR(100)",
+    "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS registro_acess VARCHAR(100)",
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS especialidad VARCHAR(100)",
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS gentilicio VARCHAR(50)",
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS profession VARCHAR(100)",
@@ -581,12 +582,12 @@ export async function seedData() {
   return { bioskinId };
 }
 
-/** Habilita todas las features para una clínica (idempotente) */
+/** Inicializa las features de una clínica (idempotente) */
 async function seedFeatures(clinicId) {
   for (const f of ALL_FEATURES) {
     await sql`
       INSERT INTO clinic_features (clinic_id, feature, enabled)
-      VALUES (${clinicId}, ${f}, true)
+      VALUES (${clinicId}, ${f}, ${!OPT_IN_FEATURES.includes(f)})
       ON CONFLICT (clinic_id, feature) DO NOTHING
     `;
   }
@@ -683,7 +684,7 @@ async function loginUser(username, password, ip, ua, req) {
     SELECT cu.id, cu.username, cu.password_hash, cu.salt, cu.hash_algo, cu.role, cu.clinic_id, cu.access_scope,
            cu.finance_scope, cu.inventory_scope,
            cu.failed_attempts, cu.locked_until, cu.is_active, cu.full_name, cu.email,
-           cu.cedula_profesional, cu.matricula_senescyt, cu.especialidad, cu.gentilicio, cu.profession, cu.first_name, cu.last_name,
+           cu.cedula_profesional, cu.matricula_senescyt, cu.registro_acess, cu.especialidad, cu.gentilicio, cu.profession, cu.first_name, cu.last_name,
            cu.is_demo, cu.demo_expires_at, c.slug AS clinic_slug, c.name AS clinic_name
     FROM clinic_users cu
     LEFT JOIN clinics c ON c.id = cu.clinic_id
@@ -771,7 +772,7 @@ async function loginUser(username, password, ip, ua, req) {
           email: u.email, role: u.role, clinic_id: u.clinic_id, access_scope: u.access_scope,
           finance_scope: u.finance_scope || 'all', inventory_scope: u.inventory_scope || 'all',
           clinic_slug: u.clinic_slug || null, clinic_name: u.clinic_name || null,
-          cedula_profesional: u.cedula_profesional || null, matricula_senescyt: u.matricula_senescyt || null, especialidad: u.especialidad || null,
+          cedula_profesional: u.cedula_profesional || null, matricula_senescyt: u.matricula_senescyt || null, registro_acess: u.registro_acess || null, especialidad: u.especialidad || null,
           gentilicio: u.gentilicio || null, profession: u.profession || null,
           first_name: u.first_name || null, last_name: u.last_name || null,
           is_demo: u.is_demo || false, demo_expires_at: u.demo_expires_at || null },
@@ -831,7 +832,7 @@ async function loginUser(username, password, ip, ua, req) {
       email: u.email, role: u.role, clinic_id: u.clinic_id, access_scope: u.access_scope,
       finance_scope: u.finance_scope || 'all', inventory_scope: u.inventory_scope || 'all',
       clinic_slug: u.clinic_slug || null, clinic_name: u.clinic_name || null,
-      cedula_profesional: u.cedula_profesional || null, matricula_senescyt: u.matricula_senescyt || null, especialidad: u.especialidad || null,
+          cedula_profesional: u.cedula_profesional || null, matricula_senescyt: u.matricula_senescyt || null, registro_acess: u.registro_acess || null, especialidad: u.especialidad || null,
       gentilicio: u.gentilicio || null, profession: u.profession || null,
       first_name: u.first_name || null, last_name: u.last_name || null,
       is_demo: u.is_demo || false, demo_expires_at: u.demo_expires_at || null,
@@ -851,7 +852,7 @@ async function verifySession(token) {
     const r = await sql`
       SELECT s.username, s.expires_at, s.role, s.clinic_id, s.access_scope, s.clinic_user_id,
              cu.full_name, cu.email, cu.is_demo, cu.demo_expires_at,
-             cu.cedula_profesional, cu.matricula_senescyt, cu.especialidad, cu.gentilicio, cu.profession, cu.first_name, cu.last_name,
+             cu.cedula_profesional, cu.matricula_senescyt, cu.registro_acess, cu.especialidad, cu.gentilicio, cu.profession, cu.first_name, cu.last_name,
              c.name as clinic_name, c.slug as clinic_slug,
              c.subscription_expires_at
       FROM admin_sessions s
@@ -880,7 +881,7 @@ async function verifySession(token) {
         id: s.clinic_user_id, username: s.username, full_name: s.full_name,
         email: s.email, role: s.role || 'clinic_admin', clinic_id: s.clinic_id,
         clinic_name: s.clinic_name, clinic_slug: s.clinic_slug, access_scope: s.access_scope || 'all',
-        cedula_profesional: s.cedula_profesional || null, matricula_senescyt: s.matricula_senescyt || null, especialidad: s.especialidad || null,
+        cedula_profesional: s.cedula_profesional || null, matricula_senescyt: s.matricula_senescyt || null, registro_acess: s.registro_acess || null, especialidad: s.especialidad || null,
         gentilicio: s.gentilicio || null, profession: s.profession || null,
         first_name: s.first_name || null, last_name: s.last_name || null,
         is_demo: s.is_demo || false,
@@ -1132,7 +1133,7 @@ async function createUser(requestUser, body) {
 async function updateUser(requestUser, body) {
   const { id, full_name, first_name, last_name, gentilicio, profession,
           email, role, access_scope, finance_scope, inventory_scope,
-          is_active, cedula_profesional, matricula_senescyt, especialidad } = body;
+          is_active, cedula_profesional, matricula_senescyt, registro_acess, especialidad } = body;
   if (!id) return { error: 'id requerido' };
 
   if (requestUser.role === 'clinic_admin') {
@@ -1157,6 +1158,7 @@ async function updateUser(requestUser, body) {
       is_active           = COALESCE(${is_active           ?? null}, is_active),
       cedula_profesional  = COALESCE(NULLIF(${cedula_profesional  ?? ''}, ''), cedula_profesional),
       matricula_senescyt  = COALESCE(NULLIF(${matricula_senescyt  ?? ''}, ''), matricula_senescyt),
+      registro_acess      = COALESCE(NULLIF(${registro_acess      ?? ''}, ''), registro_acess),
       especialidad        = COALESCE(NULLIF(${especialidad        ?? ''}, ''), especialidad)
     WHERE id = ${id}
   `;
@@ -1167,7 +1169,7 @@ async function updateUser(requestUser, body) {
   const updated = await sql`
     SELECT id, username, full_name, first_name, last_name, gentilicio, profession,
            email, role, access_scope, finance_scope, inventory_scope,
-           is_active, clinic_id, cedula_profesional, matricula_senescyt, especialidad
+           is_active, clinic_id, cedula_profesional, matricula_senescyt, registro_acess, especialidad
     FROM clinic_users WHERE id = ${id}
   `;
   return { success: true, user: updated.rows[0] };
@@ -1411,7 +1413,7 @@ async function registerClinic(body) {
   const { code, subscription_id, email, password, username: rawUsername, clinic_email,
           first_name, last_name, gentilicio, profession,
           clinic_name, clinic_phone, clinic_address, clinic_city, clinic_country,
-          clinic_ruc, clinic_website, cedula_profesional, matricula_senescyt, especialidad,
+          clinic_ruc, clinic_website, cedula_profesional, matricula_senescyt, registro_acess, especialidad,
           clinic_establishment_type } = body;
 
   if (!email?.trim() || !password?.trim() || !first_name?.trim() || !last_name?.trim())
@@ -1513,19 +1515,18 @@ async function registerClinic(body) {
   const userR = await sql`
     INSERT INTO clinic_users
       (clinic_id, username, password_hash, salt, hash_algo, full_name, email,
-       first_name, last_name, gentilicio, profession, cedula_profesional, matricula_senescyt, especialidad, role, access_scope)
+      first_name, last_name, gentilicio, profession, cedula_profesional, matricula_senescyt, registro_acess, especialidad, role, access_scope)
     VALUES
       (${clinicId}, ${usernameNorm}, ${hash}, ${salt}, 'pbkdf2', ${fullName}, ${emailNorm},
        ${first_name.trim()}, ${last_name.trim()}, ${gentilicio||null}, ${profession||null},
-       ${cedula_profesional||null}, ${matricula_senescyt||null}, ${especialidad||null}, 'clinic_admin', ${accessScope})
+      ${cedula_profesional||null}, ${matricula_senescyt||null}, ${body.registro_acess||null}, ${especialidad||null}, 'clinic_admin', ${accessScope})
     RETURNING id
   `;
   const userId = userR.rows[0].id;
 
-  // Habilitar features según plan — ai_consultation y clinical_3d se crean deshabilitados
-  const DISABLED_BY_DEFAULT = new Set(['ai_consultation', 'clinical_3d']);
+  // Habilitar features según plan — las features opt-in se crean deshabilitadas
   for (const f of planFeatures) {
-    const enabledVal = !DISABLED_BY_DEFAULT.has(f);
+    const enabledVal = !OPT_IN_FEATURES.includes(f);
     await sql`INSERT INTO clinic_features (clinic_id, feature, enabled) VALUES (${clinicId}, ${f}, ${enabledVal}) ON CONFLICT (clinic_id, feature) DO NOTHING`;
   }
 
@@ -1560,7 +1561,7 @@ async function registerClinic(body) {
     success: true,
     user: { username: usernameNorm, email: emailNorm, full_name: fullName, role: 'clinic_admin', clinic_id: clinicId },
     clinic: { id: clinicId, name: clinic_name.trim(), slug },
-    features: planFeatures,
+    features: planFeatures.filter(f => !OPT_IN_FEATURES.includes(f)),
   };
 }
 
@@ -1733,7 +1734,7 @@ async function useInviteLink(token, body) {
   const invite = claimed.rows[0];
 
   const { email, password, first_name, last_name, gentilicio, profession,
-          especialidad, cedula_profesional, matricula_senescyt, username } = body || {};
+      especialidad, cedula_profesional, matricula_senescyt, registro_acess, username } = body || {};
 
   // Undo claim helper — called if validation fails after atomic claim
   const undoClaim = () => sql`UPDATE invite_links SET is_used = false, used_by = NULL WHERE id = ${invite.id}`;
@@ -1774,11 +1775,11 @@ async function useInviteLink(token, body) {
   const userR = await sql`
     INSERT INTO clinic_users
       (clinic_id, username, password_hash, salt, hash_algo, full_name, email, first_name, last_name,
-       gentilicio, profession, especialidad, cedula_profesional, matricula_senescyt, role, access_scope)
+      gentilicio, profession, especialidad, cedula_profesional, matricula_senescyt, registro_acess, role, access_scope)
     VALUES
       (${invite.clinic_id}, ${usernameFinal}, ${hash}, ${salt}, 'pbkdf2', ${fullName}, ${emailNorm},
        ${first_name.trim()}, ${last_name.trim()}, ${gentilicio||null}, ${profession||null},
-       ${especialidad||null}, ${cedula_profesional||null}, ${matricula_senescyt||null},
+      ${especialidad||null}, ${cedula_profesional||null}, ${matricula_senescyt||null}, ${registro_acess||null},
        ${invite.role}, ${accessScope})
     RETURNING id
   `;
@@ -1827,7 +1828,7 @@ async function verifyOTP(otpToken, code, ip, ua) {
   const r = await sql`
     SELECT lo.id, lo.code, lo.attempts, lo.user_id,
            cu.username, cu.full_name, cu.email, cu.role, cu.clinic_id, cu.access_scope,
-           cu.cedula_profesional, cu.matricula_senescyt, cu.especialidad, cu.gentilicio, cu.profession, cu.first_name, cu.last_name,
+           cu.cedula_profesional, cu.matricula_senescyt, cu.registro_acess, cu.especialidad, cu.gentilicio, cu.profession, cu.first_name, cu.last_name,
            cu.is_demo, cu.demo_expires_at, c.slug AS clinic_slug, c.name AS clinic_name
     FROM login_otp lo
     JOIN clinic_users cu ON cu.id = lo.user_id
@@ -1872,7 +1873,7 @@ async function verifyOTP(otpToken, code, ip, ua) {
       id: row.user_id, username: row.username, full_name: row.full_name,
       email: row.email, role: row.role, clinic_id: row.clinic_id, access_scope: row.access_scope,
       clinic_slug: row.clinic_slug, clinic_name: row.clinic_name,
-      cedula_profesional: row.cedula_profesional || null, matricula_senescyt: row.matricula_senescyt || null, especialidad: row.especialidad || null,
+      cedula_profesional: row.cedula_profesional || null, matricula_senescyt: row.matricula_senescyt || null, registro_acess: row.registro_acess || null, especialidad: row.especialidad || null,
       gentilicio: row.gentilicio, profession: row.profession,
       first_name: row.first_name, last_name: row.last_name,
       is_demo: row.is_demo || false, demo_expires_at: row.demo_expires_at || null,
@@ -2923,6 +2924,7 @@ export default async function handler(req, res) {
       const rawEmail  = (req.body?.email              || '').trim().toLowerCase();
       const rawCed    = (req.body?.cedula_profesional || '').trim();
       const rawMat    = (req.body?.matricula_senescyt || '').trim();
+      const rawAcess  = (req.body?.registro_acess      || '').trim();
       const rawEsp    = (req.body?.especialidad       || '').trim();
       const rawGent   = (req.body?.gentilicio         || '').trim();
       const rawProf   = (req.body?.profession         || '').trim();
@@ -2944,12 +2946,13 @@ export default async function handler(req, res) {
           email              = CASE WHEN ${rawEmail} != '' THEN ${rawEmail} ELSE email              END,
           cedula_profesional = CASE WHEN ${rawCed}   != '' THEN ${rawCed}   ELSE cedula_profesional END,
           matricula_senescyt = CASE WHEN ${rawMat}   != '' THEN ${rawMat}   ELSE matricula_senescyt END,
+          registro_acess     = CASE WHEN ${rawAcess} != '' THEN ${rawAcess} ELSE registro_acess END,
           especialidad       = CASE WHEN ${rawEsp}   != '' THEN ${rawEsp}   ELSE especialidad       END,
           gentilicio         = CASE WHEN ${rawGent}  != '' THEN ${rawGent}  ELSE gentilicio         END,
           profession         = CASE WHEN ${rawProf}  != '' THEN ${rawProf}  ELSE profession         END
         WHERE id = ${user.id}
       `;
-      const upd = await sql`SELECT id,username,full_name,first_name,last_name,email,gentilicio,profession,cedula_profesional,matricula_senescyt,especialidad FROM clinic_users WHERE id = ${user.id}`;
+      const upd = await sql`SELECT id,username,full_name,first_name,last_name,email,gentilicio,profession,cedula_profesional,matricula_senescyt,registro_acess,especialidad FROM clinic_users WHERE id = ${user.id}`;
       return res.status(200).json({ success: true, user: upd.rows[0] });
     }
 

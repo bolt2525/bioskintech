@@ -71,6 +71,7 @@ export default function AdminRegister() {
   const [clinicWebsite, setClinicWebsite] = useState('');
   const [cedulaPro, setCedulaPro]     = useState('');
   const [matriculaSenescyt, setMatriculaSenescyt] = useState('');
+  const [registroAcess, setRegistroAcess] = useState('');
   const [especialidad, setEspecialidad] = useState('');
   const [emailTaken, setEmailTaken]   = useState(false);
   const [emailChecking, setEmailChecking] = useState(false);
@@ -288,6 +289,7 @@ export default function AdminRegister() {
         clinic_website: clinicWebsite || undefined,
         cedula_profesional: cedulaPro || undefined,
         matricula_senescyt: matriculaSenescyt || undefined,
+        registro_acess: registroAcess || undefined,
         especialidad: especialidad || undefined,
       };
 
@@ -744,6 +746,12 @@ export default function AdminRegister() {
                       placeholder="Ej: 1020-12-86012345"
                       className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
                   </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Registro ACESS <span className="text-gray-400 font-normal">(opcional)</span></label>
+                  <input type="text" value={registroAcess} onChange={e => setRegistroAcess(e.target.value)}
+                    placeholder="Se puede completar después en Mi Información"
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
                 </div>
 
                 {/* Email de login */}

@@ -1713,7 +1713,11 @@ export default async function handler(req, res) {
         const mappedPrescriptions = prescriptionsList.rows.map(p => ({
           ...p,
           fecha: p.date,
-          diagnostico: p.diagnosis
+          diagnostico: p.diagnosis,
+          mode: p.prescription_mode || 'routine',
+          validity_type: p.validity_type || null,
+          valid_until: p.valid_until || null,
+          regulatory_snapshot: p.regulatory_snapshot || {},
         }));
         return res.status(200).json(mappedPrescriptions);
 
@@ -1726,13 +1730,20 @@ export default async function handler(req, res) {
           ...pData,
           fecha: pData.date,
           diagnostico: pData.diagnosis,
-          items: pData.items || []
+          items: pData.items || [],
+          mode: pData.prescription_mode || 'routine',
+          validity_type: pData.validity_type || null,
+          valid_until: pData.valid_until || null,
+          regulatory_snapshot: pData.regulatory_snapshot || {},
         });
 
       case 'createPrescription': {
-        const { ficha_id, fecha, diagnostico, items, consultation_id: prescConsId } = body;
-        const prescFields = ['record_id', 'clinic_id', 'date', 'diagnosis', 'items'];
-        const prescValues = [ficha_id, effectiveClinicId, fecha, diagnostico, JSON.stringify(items)];
+        const { ficha_id, fecha, diagnostico, items, consultation_id: prescConsId,
+                mode = 'routine', validity_type = null, valid_until = null,
+                regulatory_snapshot = {} } = body;
+        const safeMode = mode === 'prescription' ? 'prescription' : 'routine';
+        const prescFields = ['record_id', 'clinic_id', 'date', 'diagnosis', 'items', 'prescription_mode', 'validity_type', 'valid_until', 'regulatory_snapshot'];
+        const prescValues = [ficha_id, effectiveClinicId, fecha, diagnostico, JSON.stringify(items), safeMode, validity_type, valid_until, JSON.stringify(regulatory_snapshot || {})];
         if (prescConsId) { prescFields.push('consultation_id'); prescValues.push(prescConsId); }
         const prescParams = prescFields.map((_, i) => `$${i + 1}`).join(', ');
         const newPresc = await pool.query(
@@ -1744,10 +1755,12 @@ export default async function handler(req, res) {
       }
 
       case 'updatePrescription':
-        const { id: updPrescId, fecha: updFecha, diagnostico: updDiag, items: updItems } = body;
+        const { id: updPrescId, fecha: updFecha, diagnostico: updDiag, items: updItems,
+                mode: updMode = 'routine', validity_type: updValidityType = null,
+                valid_until: updValidUntil = null, regulatory_snapshot: updSnapshot = {} } = body;
         await pool.query(
-          'UPDATE prescriptions SET date = $1, diagnosis = $2, items = $3 WHERE id = $4',
-          [updFecha, updDiag, JSON.stringify(updItems), updPrescId]
+          'UPDATE prescriptions SET date = $1, diagnosis = $2, items = $3, prescription_mode = $4, validity_type = $5, valid_until = $6, regulatory_snapshot = $7 WHERE id = $8',
+          [updFecha, updDiag, JSON.stringify(updItems), updMode === 'prescription' ? 'prescription' : 'routine', updValidityType, updValidUntil, JSON.stringify(updSnapshot || {}), updPrescId]
         );
         return res.status(200).json({ message: 'Receta updated' });
 

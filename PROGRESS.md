@@ -21,9 +21,19 @@
 - ✅ 2026-09-07 Verificado con round-trip real (PUT→GET→DELETE→GET) que R2 es funcional end-to-end en Production.
 - ✅ 2026-09-07 Redeploy de Production tras cada cambio de variables R2.
 - ✅ 2026-09-07 Creada instrucción obligatoria `.github/instructions/architecture-sync.instructions.md` para mantener ARCHITECTURE.md/PROGRESS.md sincronizados con cualquier cambio de estructura o capas.
+- ✅ 2026-09-09 Desactivados por defecto módulos IA, 3D y vista de tratamiento.
+- ✅ 2026-09-09 Corregido frontmatter de instrucción de arquitectura.
+- ✅ 2026-09-09 Añadidos modos rutina/receta y revisión previa de impresión.
+- ✅ 2026-09-09 Añadidos vigencia, ACESS opcional y firma/sello manual.
+- ✅ 2026-09-09 Verificado proyecto Neon BIOSKINTECH, RLS y migración real de recetas/ACESS.
+- ✅ 2026-09-09 Actualizadas dependencias runtime; `npm audit --omit=dev` quedó en 0 vulnerabilidades.
+- ✅ 2026-09-09 Migrado middleware Vercel a runtime Node.js y verificado deployment Production Ready.
+- ✅ 2026-09-09 Documentadas CLIs Vercel, Neon y Wrangler instaladas, autenticadas y configuradas.
+- ✅ 2026-09-09 Corregido layout responsive y scrollbar visible del listado de medicamentos.
 
 ## Pendientes verificables
 
 - ⏳ Resolver o registrar la deuda de lint global: 471 errores y 54 warnings en la línea base.
+- ⏳ Revisar vulnerabilidades restantes exclusivamente en herramientas dev/build; `npm audit --force` propone downgrades incompatibles.
 - ⏳ Ampliar pruebas automatizadas a auth y backup.
 - ⏳ Volver a subir fotos clínicas reales — el bucket quedó vacío tras el reset de pruebas.

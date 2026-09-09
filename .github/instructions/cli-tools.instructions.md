@@ -34,9 +34,11 @@ echo "valor_secreto" | vercel env add NOMBRE_VAR preview --force
 
 ---
 
-## 2. Neon PostgreSQL (vía scripts Node.js)
+## 2. Neon PostgreSQL (CLI + scripts Node.js)
 
-**No existe CLI nativa de Neon instalada.** Todo acceso a Neon se hace vía scripts Node.js que leen credenciales del `.env.local`.
+**CLI disponible y autenticada:** `neonctl 2.20.2`, instalada globalmente como `neon`/`neonctl`. La cuenta autenticada es `bolt2525` y tiene acceso al proyecto `BIOSKINTECH` (`orange-recipe-92983474`, `aws-us-east-1`), verificado el 2026-09-09.
+
+La CLI gestiona identidad, proyectos, ramas, bases, roles y operaciones. Las consultas y migraciones de este repositorio continúan usando scripts Node.js que leen `.env.local`, porque permiten ejecutar SQL parametrizado y validaciones RLS específicas del proyecto.
 
 **Patrón de ejecución:**
 ```bash
@@ -51,6 +53,7 @@ node --env-file=.env.local scripts/<nombre>.mjs
 | `init-schema.mjs` | Crea schema auth (UUID) + schema clínico (UUID) desde cero. |
 | `setup-bioskin-role.mjs` | Crea rol `bioskin_app` + FORCE RLS + 4 políticas por tabla clínica. Requiere `BIOSKIN_APP_PASSWORD`. |
 | `seed-data.mjs` | Crea clínica BIOSKIN + master_admin + clinic_admin desde env vars. |
+| `apply-migrations.mjs` | Aplica migraciones idempotentes de auth, clínica, recetas y ACESS. |
 
 **Ejemplo: secuencia completa de reset + reinit:**
 ```powershell
@@ -116,3 +119,9 @@ wrangler r2 object list bioskin-fotos             # Listar objetos
 - **Nunca usar `neondb_owner` en queries clínicas** — usar siempre `getAppPool()` + RLS.
 - **Antes de agregar nuevas tablas clínicas**: agregarlas también a la lista `TENANT_TABLES` en `scripts/setup-bioskin-role.mjs` y volver a ejecutar el script.
 - **Después de agregar variables de entorno**: siempre hacer `vercel --prod --yes` para que el deploy las recoja.
+
+### Estado verificado de CLIs (2026-09-09)
+
+- `vercel 56.3.0`: instalado y autenticado en `bioskintech`; proyecto `bioskintech/bioskintech` y variables cifradas confirmados.
+- `neonctl 2.20.2`: instalado y autenticado; proyecto BIOSKINTECH accesible y migración de recetas/ACESS aplicada.
+- `wrangler 4.118.0`: instalado globalmente y autenticado para la cuenta Cloudflare documentada arriba.

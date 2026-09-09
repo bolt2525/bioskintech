@@ -25,6 +25,8 @@ const migrations = [
   "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS last_name VARCHAR(100)",
   "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS gentilicio VARCHAR(50)",
   "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS profession VARCHAR(100)",
+  "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS matricula_senescyt VARCHAR(100)",
+  "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS registro_acess VARCHAR(100)",
   "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS google_id VARCHAR(255)",
   "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS avatar_url TEXT",
   // Columnas en clinics
@@ -43,6 +45,11 @@ const migrations = [
   "ALTER TABLE clinic_settings ADD COLUMN IF NOT EXISTS finanzas JSONB NOT NULL DEFAULT '{}'",
   "ALTER TABLE clinic_settings ADD COLUMN IF NOT EXISTS inventario JSONB NOT NULL DEFAULT '{}'",
   "ALTER TABLE clinic_settings ADD COLUMN IF NOT EXISTS notificaciones JSONB NOT NULL DEFAULT '{}'",
+  // Campos compatibles para distinguir guía domiciliaria y receta médica
+  "ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS prescription_mode VARCHAR(20) NOT NULL DEFAULT 'routine'",
+  "ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS validity_type VARCHAR(30)",
+  "ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS valid_until DATE",
+  "ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS regulatory_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb",
 ];
 
 const newTables = [

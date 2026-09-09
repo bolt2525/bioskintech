@@ -19,7 +19,7 @@ export const ALL_FEATURES = [
 ] as const;
 
 // ponytail: features desactivadas por defecto — requieren opt-in explícito por clínica
-export const OPT_IN_FEATURES: readonly string[] = ['treatment_notes_view'];
+export const OPT_IN_FEATURES: readonly string[] = ['treatment_notes_view', 'ai_consultation', 'clinical_3d'];
 
 export type FeatureKey = typeof ALL_FEATURES[number];
 

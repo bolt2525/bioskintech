@@ -49,6 +49,7 @@ export default function InviteRegister() {
   const [especialidad,     setEspecialidad]     = useState('');
   const [cedulaPro,        setCedulaPro]        = useState('');
   const [matriculaSenescyt, setMatriculaSenescyt] = useState('');
+  const [registroAcess, setRegistroAcess] = useState('');
   const [email,            setEmail]            = useState('');
   const [username,         setUsername]         = useState('');
   const [password,         setPassword]         = useState('');
@@ -139,6 +140,7 @@ export default function InviteRegister() {
           especialidad:       especialidad.trim() || undefined,
           cedula_profesional: cedulaPro.trim() || undefined,
           matricula_senescyt: matriculaSenescyt.trim() || undefined,
+          registro_acess: registroAcess.trim() || undefined,
         }),
       });
       const d = await r.json();
@@ -276,6 +278,12 @@ export default function InviteRegister() {
                   placeholder="García López"
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
               </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Registro ACESS <span className="font-normal text-gray-400">(opcional)</span></label>
+              <input type="text" value={registroAcess} onChange={e => setRegistroAcess(e.target.value)}
+                placeholder="Se puede completar después en Mi Información"
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 placeholder-gray-300 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none transition-all" />
             </div>
 
             {/* Profesión + Especialidad */}

@@ -59,6 +59,8 @@ El repositorio contiene 9 archivos de función bajo `/api/`. El límite efectivo
 
 La inicialización de `api/admin-auth.js` crea las tablas de clínicas, usuarios, sesiones, features, configuración, OAuth, OTP, dispositivos confiables, invitaciones, suscripciones y notificaciones. Los roles principales son `master_admin`, `clinic_admin` y `clinic_user`, con scopes de acceso que pueden limitarse a datos propios.
 
+Las clínicas nuevas reciben deshabilitadas por defecto `treatment_notes_view`, `ai_consultation` y `clinical_3d`; el Master Admin debe activarlas explícitamente desde la configuración de módulos.
+
 ### Fichas clínicas
 
 `lib/neon-clinical-db.js` crea tablas para:
@@ -74,6 +76,8 @@ La inicialización de `api/admin-auth.js` crea las tablas de clínicas, usuarios
 - auditoría, asignaciones y grupos;
 - catálogos globales;
 - `clinical_photos` con `r2_key` y metadatos.
+
+Las recetas mantienen compatibilidad con la tabla `prescriptions` existente y agregan columnas idempotentes para `prescription_mode`, vigencia y `regulatory_snapshot`. El modo `routine` es el predeterminado; `prescription` exige confirmación explícita antes de imprimir, muestra campos faltantes y reserva firma/sello manual. El registro profesional ACESS se almacena opcionalmente en `clinic_users.registro_acess` y se puede editar desde Mi Información. La migración oficial está en `scripts/apply-migrations.mjs` y fue aplicada en Neon el 2026-09-09.
 
 Hay migraciones idempotentes embebidas en la inicialización. El código conserva migraciones históricas que intentan agregar `clinic_id` como `INTEGER` en algunas tablas, mientras el esquema actual declara `UUID`; esta compatibilidad debe auditarse sobre la base real antes de eliminarla.
 

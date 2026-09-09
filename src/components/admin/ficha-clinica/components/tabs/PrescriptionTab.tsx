@@ -1,7 +1,7 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
 import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Trash2, Save, FileText, Copy, Printer, Search, Calendar, Check, AlertCircle, Pill, Pencil, History } from 'lucide-react';
+import { Plus, Trash2, Save, FileText, Copy, Printer, Search, Calendar, Check, AlertCircle, Pill, Pencil, History, Stethoscope, Home, ShieldAlert, LockKeyhole } from 'lucide-react';
 import CrossConsultHistoryModal, { type ConsultationRef } from '../CrossConsultHistoryModal';
 import prescriptionOptions from '../data/prescription_options.json';
 import { Tooltip } from '../../../../ui/Tooltip';
@@ -29,6 +29,7 @@ interface PrescriptionItem {
   nombre_comercial: string;
   presentacion: string;
   dosis: string;
+  cantidad: string;
   frecuencia: string;
   via: string;
   duracion: string;
@@ -43,6 +44,10 @@ interface Prescription {
   fecha: string;
   diagnostico: string;
   items: PrescriptionItem[];
+  mode?: 'routine' | 'prescription';
+  validity_type?: 'outpatient' | 'emergency' | 'hospitalization' | 'antimicrobial' | '';
+  valid_until?: string | null;
+  regulatory_snapshot?: Record<string, string>;
 }
 
 interface PrescriptionTabProps {
@@ -53,6 +58,7 @@ interface PrescriptionTabProps {
   consultationId?: number;
   consultations?: ConsultationRef[];
   diagnoses?: { consultation_id?: number; diagnosis_text: string; cie10_code?: string }[];
+  allergies?: string;
 }
 
 const EMPTY_ITEM: PrescriptionItem = {
@@ -60,6 +66,7 @@ const EMPTY_ITEM: PrescriptionItem = {
   nombre_comercial: '',
   presentacion: '',
   dosis: '',
+  cantidad: '',
   frecuencia: '',
   via: '',
   duracion: '',
@@ -68,7 +75,7 @@ const EMPTY_ITEM: PrescriptionItem = {
   rutina: ''
 };
 
-export default function PrescriptionTab({ recordId, patientName, patientAge, patientRut, consultationId, consultations = [], diagnoses = [] }: PrescriptionTabProps) {
+export default function PrescriptionTab({ recordId, patientName, patientAge, patientRut, consultationId, consultations = [], diagnoses = [], allergies = '' }: PrescriptionTabProps) {
   const { settings: clinic } = useClinicSettings();
   const { user } = useAuth();
   const clinicDisplayName = clinic.general.name || user?.clinic_name || 'Clínica';
@@ -76,9 +83,19 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
   const [currentPrescription, setCurrentPrescription] = useState<Prescription>({
     fecha: getLocalDate(),
     diagnostico: '',
-    items: [{ ...EMPTY_ITEM }]
+    items: [{ ...EMPTY_ITEM }],
+    mode: 'routine',
+    validity_type: 'outpatient',
   });
   const [activeCie10, setActiveCie10] = useState('');
+  const [mode, setMode] = useState<'routine' | 'prescription'>('routine');
+  const [validityType, setValidityType] = useState<Prescription['validity_type']>('outpatient');
+  const [manualAllergies, setManualAllergies] = useState(allergies || '');
+    const [manualCie10, setManualCie10] = useState('');
+    const [manualAcess, setManualAcess] = useState('');
+    const [manualMatricula, setManualMatricula] = useState('');
+  const [showPrintReview, setShowPrintReview] = useState(false);
+  const [printAcknowledged, setPrintAcknowledged] = useState(false);
   const [dateLocked, setDateLocked] = useState(false);
   const [templates, setTemplates] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -135,15 +152,34 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
   };
 
   const handleSave = async () => {
+    const activeItems = currentPrescription.items.filter(i => i.medicamento || i.nombre_comercial || i.indicaciones);
+    if (mode === 'routine' && activeItems.some(i => !i.nombre_comercial.trim() || !i.rutina || !i.indicaciones.trim())) {
+      setMessage({ type: 'error', text: 'En modo rutina completa nombre comercial, rutina e indicaciones en cada producto.' });
+      return;
+    }
+    if (mode === 'prescription' && !activeItems.length) {
+      setMessage({ type: 'error', text: 'Agrega al menos un medicamento para guardar la receta.' });
+      return;
+    }
     setLoading(true);
     setMessage(null);
     try {
       const action = currentPrescription.id ? 'updatePrescription' : 'createPrescription';
       const body = {
         ...currentPrescription,
+        mode,
+        validity_type: mode === 'prescription' ? validityType : null,
         ficha_id: recordId,
         ...(consultationId ? { consultation_id: consultationId } : {}),
-        items: currentPrescription.items.filter(i => i.medicamento || i.nombre_comercial || i.indicaciones)
+        items: activeItems,
+        regulatory_snapshot: mode === 'prescription' ? {
+          allergies: manualAllergies.trim() || 'No registrado',
+          cie10: manualCie10 || activeCie10 || '',
+          acess: manualAcess || user?.registro_acess || '',
+          matricula: manualMatricula || user?.matricula_senescyt || '',
+          patient_name: patientName,
+          patient_age: String(patientAge || ''),
+        } : {},
       };
 
       const res = await recordsFetch(`/api/records?action=${action}`, {
@@ -159,8 +195,10 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
           setCurrentPrescription({
             fecha: getLocalDate(),
             diagnostico: '',
-            items: [{ ...EMPTY_ITEM }]
+            items: [{ ...EMPTY_ITEM }], mode: 'routine', validity_type: 'outpatient'
           });
+          setMode('routine'); setValidityType('outpatient'); setManualAllergies(allergies || '');
+          setManualCie10(''); setManualAcess(''); setManualMatricula('');
           setDateLocked(false);
         }
         setMessage({ type: 'success', text: 'Receta guardada correctamente' });
@@ -180,6 +218,13 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
       const res = await recordsFetch(`/api/records?action=getPrescription&id=${id}`);
       const data = await res.json();
       setCurrentPrescription({ ...data, fecha: toDateOnly(data.fecha) });
+      setMode(data.mode === 'prescription' ? 'prescription' : 'routine');
+      setValidityType(data.validity_type || 'outpatient');
+      setManualAllergies(data.regulatory_snapshot?.allergies || allergies || '');
+      setManualCie10(data.regulatory_snapshot?.cie10 || '');
+      setManualAcess(data.regulatory_snapshot?.acess || '');
+      setManualMatricula(data.regulatory_snapshot?.matricula || '');
+      setActiveCie10(data.regulatory_snapshot?.cie10 || activeCie10);
       setDateLocked(true);
       setMessage(null);
     } catch (error) {
@@ -191,8 +236,10 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
     setCurrentPrescription({
       fecha: getLocalDate(),
       diagnostico: '',
-      items: [{ ...EMPTY_ITEM }]
+      items: [{ ...EMPTY_ITEM }], mode: 'routine', validity_type: 'outpatient'
     });
+    setMode('routine'); setValidityType('outpatient'); setManualAllergies(allergies || '');
+    setManualCie10(''); setManualAcess(''); setManualMatricula('');
     setDateLocked(false);
     setMessage(null);
   };
@@ -291,6 +338,15 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
   };
 
   const handlePrint = () => {
+    if (mode === 'prescription') {
+      setPrintAcknowledged(false);
+      setShowPrintReview(true);
+      return;
+    }
+    printDocument();
+  };
+
+  const printDocument = () => {
     setMessage({ type: 'success', text: 'Abriendo vista de impresión...' });
     const dateStr = new Date().toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' }).toUpperCase();
     // Datos dinámicos de la clínica
@@ -303,7 +359,17 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
     const clinicAddr  = clinic.general.address || '';
     const doctorLine  = [user?.gentilicio, user?.full_name].filter(Boolean).join(' ');
     const doctorCedula = user?.cedula_profesional || '';
-    const doctorMatricula = user?.matricula_senescyt || '';
+    const doctorMatricula = manualMatricula || user?.matricula_senescyt || '';
+    const doctorAcess = manualAcess || user?.registro_acess || '';
+    const modeTitle = mode === 'prescription' ? 'RECETA MÉDICA' : 'GUÍA DE CUIDADO DOMICILIARIO';
+    const validDays = validityType === 'emergency' || validityType === 'hospitalization' ? 1 : 3;
+    const validUntil = new Date(Date.now() + validDays * 86400000).toLocaleDateString('es-EC');
+    const validityLabel = mode === 'prescription'
+      ? ({ outpatient: 'Consulta externa', emergency: 'Emergencia', hospitalization: 'Hospitalización', antimicrobial: 'Antimicrobiano' } as Record<string, string>)[validityType || 'outpatient'] || 'Consulta externa'
+      : '';
+    const prescriptionItems = currentPrescription.items.filter(i => i.medicamento || i.nombre_comercial || i.indicaciones);
+    const prescriptionLeftHtml = prescriptionItems.map((item, index) => `<div class="medicine"><strong>${index + 1}. ${item.medicamento || item.nombre_comercial || 'Medicamento'}</strong>${item.nombre_comercial ? ` <span>(${item.nombre_comercial})</span>` : ''}${item.presentacion || item.dosis ? `<br><small>${[item.presentacion, item.dosis].filter(Boolean).join(' · ')}</small>` : ''}</div>`).join('') || '<em>Sin medicamentos registrados</em>';
+    const prescriptionRightHtml = prescriptionItems.map((item, index) => `<div class="medicine"><strong>${index + 1}.</strong> ${[['Vía', item.via], ['Cantidad', item.cantidad], ['Dosis', item.dosis], ['Frecuencia', item.frecuencia], ['Duración', item.duracion]].filter(([, value]) => value).map(([label, value]) => `<span>${label}: ${value}</span>`).join(' · ') || item.indicaciones || 'Sin indicaciones registradas'}</div>`).join('') || '<em>Sin indicaciones registradas</em>';
 
     const html = `
       <html lang="es">
@@ -328,7 +394,10 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
             .patient-details { display: flex; justify-content: space-between; margin-top: 10px; }
 
             .section-title { font-weight: bold; margin-bottom: 10px; font-size: 10px; text-transform: uppercase; border-bottom: 2px solid #000; display: inline-block; padding-bottom: 2px; width: 20px; border-bottom: 3px solid #000; }
+            .document-title { text-align: center; font-weight: bold; font-size: 12px; margin: 5px 0 12px; letter-spacing: .3px; }
             .section-header { font-weight: bold; margin-bottom: 10px; font-size: 10px; text-transform: uppercase; }
+            .medicine { font-size: 9px; line-height: 1.35; padding: 5px 0; border-bottom: 1px solid #eee; }
+            .medicine span { color: #333; }
 
             .product-list { list-style-type: decimal; padding-left: 20px; margin: 0; }
             .product-list li { margin-bottom: 6px; font-size: 10px; line-height: 1.4; }
@@ -346,6 +415,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
           <div class="container">
             <!-- Left Column -->
             <div class="column">
+              <div class="document-title">${modeTitle}</div>
                <div class="header">
                  <img src="${logoUrl}" class="logo" alt="${clinicName}" onerror="this.onerror=null;this.src='${fallbackLogo}'" />
                  <div class="doctor-info">
@@ -353,6 +423,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
                    <h3>${clinicName.toUpperCase()}</h3>
                    ${doctorLine ? `<p style="font-size:9px;margin:3px 0;color:#333;font-weight:500;">${doctorLine}</p>` : ''}
                    ${doctorMatricula ? `<p style="font-size:8px;margin:2px 0;color:#666;">SENESCYT: ${doctorMatricula}</p>` : ''}
+                   ${doctorAcess ? `<p style="font-size:8px;margin:2px 0;color:#666;">ACESS: ${doctorAcess}</p>` : ''}
                    ${doctorCedula ? `<p style="font-size:8px;margin:2px 0;color:#666;">Cédula/RUC: ${doctorCedula}</p>` : ''}
                  </div>
                </div>
@@ -365,14 +436,12 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
                  </div>
                  ${patientRut ? `<div style="font-size:9px;margin-top:3px;"><strong>Cédula/RUC:</strong> ${patientRut}</div>` : ''}
                  ${currentPrescription.diagnostico ? `<div style="font-size:9px;margin-top:4px;"><strong>Diagnóstico:</strong> ${currentPrescription.diagnostico}${activeCie10 ? ' &nbsp;<span style="color:#555">(CIE-10: ' + activeCie10 + ')</span>' : ''}</div>` : ''}
+                 ${mode === 'prescription' ? `<div style="font-size:9px;margin-top:4px;"><strong>Receta:</strong> REC-${new Date().getFullYear()}-${String(currentPrescription.id || 'NUEVA').padStart(6, '0')} &nbsp; <strong>Vigencia:</strong> ${validityLabel} hasta ${validUntil}</div><div style="font-size:9px;margin-top:3px;"><strong>Alergias:</strong> ${manualAllergies || 'No registrado'}</div>` : ''}
                </div>
 
                <div class="section-header">INDICACIONES:</div>
-               <ol class="product-list">
-                 ${currentPrescription.items.filter(i => i.nombre_comercial || i.medicamento).map(item => `
-                   <li>${(item.nombre_comercial || item.medicamento || '')}${item.presentacion ? ' ' + item.presentacion : ''}${item.dosis ? ' — ' + item.dosis : ''}</li>
-                 `).join('') || '<li style="color:#aaa;list-style:none">Sin medicamentos registrados</li>'}
-               </ol>
+                 ${mode === 'prescription' ? `<div>${prescriptionLeftHtml}</div>` : `<ol class="product-list">${currentPrescription.items.filter(i => i.nombre_comercial || i.medicamento).map(item => `<li>${(item.nombre_comercial || item.medicamento || '')}${item.presentacion ? ' ' + item.presentacion : ''}${item.dosis ? ' — ' + item.dosis : ''}</li>`).join('') || '<li style="color:#aaa;list-style:none">Sin productos registrados</li>'}</ol>`}
+               ${mode === 'prescription' ? '<div style="margin-top:18px;border-top:1px solid #999;padding-top:6px;text-align:center;font-size:8px;color:#666;">Firma y sello del profesional</div>' : ''}
 
                <div class="footer">
                   ${clinicPhone ? `<div class="footer-item"><svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.67 12a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 3.55 1h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>${clinicPhone}</div>` : ''}
@@ -382,6 +451,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
 
             <!-- Right Column -->
             <div class="column">
+              <div class="document-title">${modeTitle}</div>
                <div class="header">
                  <img src="${logoUrl}" class="logo" alt="${clinicName}" onerror="this.onerror=null;this.src='${fallbackLogo}'" />
                  <div class="doctor-info">
@@ -389,6 +459,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
                    <h3>${clinicName.toUpperCase()}</h3>
                    ${doctorLine ? `<p style="font-size:9px;margin:3px 0;color:#333;font-weight:500;">${doctorLine}</p>` : ''}
                    ${doctorMatricula ? `<p style="font-size:8px;margin:2px 0;color:#666;">SENESCYT: ${doctorMatricula}</p>` : ''}
+                   ${doctorAcess ? `<p style="font-size:8px;margin:2px 0;color:#666;">ACESS: ${doctorAcess}</p>` : ''}
                    ${doctorCedula ? `<p style="font-size:8px;margin:2px 0;color:#666;">Cédula/RUC: ${doctorCedula}</p>` : ''}
                  </div>
                </div>
@@ -401,11 +472,12 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
                  </div>
                  ${patientRut ? `<div style="font-size:9px;margin-top:3px;"><strong>Cédula/RUC:</strong> ${patientRut}</div>` : ''}
                  ${currentPrescription.diagnostico ? `<div style="font-size:9px;margin-top:4px;"><strong>Diagnóstico:</strong> ${currentPrescription.diagnostico}${activeCie10 ? ' &nbsp;<span style="color:#555">(CIE-10: ' + activeCie10 + ')</span>' : ''}</div>` : ''}
+                 ${mode === 'prescription' ? `<div style="font-size:9px;margin-top:4px;"><strong>Receta:</strong> REC-${new Date().getFullYear()}-${String(currentPrescription.id || 'NUEVA').padStart(6, '0')} &nbsp; <strong>Vigencia:</strong> ${validityLabel} hasta ${validUntil}</div><div style="font-size:9px;margin-top:3px;"><strong>Alergias:</strong> ${manualAllergies || 'No registrado'}</div>` : ''}
                </div>
 
                <div class="section-header">INDICACIONES:</div>
                
-               ${(() => {
+               ${mode === 'prescription' ? `<div>${prescriptionRightHtml}</div>` : (() => {
                  const mananaItems = currentPrescription.items.filter(i => (i.rutina === 'mañana' || i.rutina === 'ambos') && (i.nombre_comercial || i.medicamento));
                  const nocheItems  = currentPrescription.items.filter(i => (i.rutina === 'noche'  || i.rutina === 'ambos') && (i.nombre_comercial || i.medicamento));
                  const noRutina    = currentPrescription.items.filter(i => i.rutina === '' && (i.nombre_comercial || i.medicamento) && i.indicaciones?.trim());
@@ -426,6 +498,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
                    </div>`);
                  return sections.join('') || '<p style="color:#aaa;font-size:9px;">Sin indicaciones de rutina</p>';
                })()}
+               ${mode === 'prescription' ? '<div style="margin-top:18px;border-top:1px solid #999;padding-top:6px;text-align:center;font-size:8px;color:#666;">Firma y sello del profesional</div>' : ''}
                
                <div class="footer">
                   ${clinicPhone ? `<div class="footer-item"><svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.67 12a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 3.55 1h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>${clinicPhone}</div>` : ''}
@@ -446,12 +519,25 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   };
 
+  const prescriptionItems = currentPrescription.items.filter(i => i.medicamento || i.nombre_comercial || i.indicaciones);
+  const missingPrintFields = mode === 'prescription' ? [
+    !currentPrescription.diagnostico.trim() && 'diagnóstico',
+    !(manualCie10 || activeCie10).trim() && 'código CIE-10',
+    !manualAllergies.trim() && 'alergias (se mostrará No registrado)',
+    !user?.matricula_senescyt && 'matrícula SENESCYT',
+    !(manualAcess || user?.registro_acess) && 'registro ACESS',
+    ...prescriptionItems.flatMap((item, index) => [
+      !(item.medicamento || item.nombre_comercial).trim() && `nombre del medicamento ${index + 1}`,
+      !item.presentacion.trim() && `presentación ${index + 1}`,
+    ]),
+  ].filter(Boolean) as string[] : [];
+
   return (
     <>
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="flex flex-col md:flex-row h-auto md:h-[600px] gap-6"
+      className="flex flex-col md:flex-row h-auto md:h-[calc(100vh-170px)] md:min-h-[620px] min-h-0 gap-6"
     >
       {/* Sidebar List */}
       <div className="w-full md:w-72 border-r-0 md:border-r border-b md:border-b-0 border-gray-100 pr-0 md:pr-6 pb-4 md:pb-0 flex flex-col gap-4 shrink-0">
@@ -525,7 +611,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
       </div>
 
       {/* Main Form */}
-      <div className="flex-1 flex flex-col gap-6 relative overflow-visible md:overflow-hidden">
+      <div className="flex-1 min-h-0 flex flex-col gap-6 relative overflow-visible md:overflow-hidden">
         {/* Toolbar */}
         <div className="flex flex-wrap gap-4 justify-between items-center bg-white p-4 rounded-xl border border-gray-100 shadow-sm sticky top-0 z-10">
           <div className="flex gap-2 items-center">
@@ -657,6 +743,17 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
           )}
         </AnimatePresence>
 
+        <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+          <div className="flex flex-col lg:flex-row lg:items-center gap-3">
+            <div className="flex items-center gap-2 text-sm font-semibold text-gray-700"><FileText className="w-4 h-4 text-[#b8944d]" /> Tipo de documento</div>
+            <div className="flex rounded-xl border border-gray-200 p-1 bg-gray-50 flex-1">
+              <button type="button" onClick={() => { setMode('routine'); setCurrentPrescription(p => ({ ...p, mode: 'routine' })); }} className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${mode === 'routine' ? 'bg-white text-[#99652f] shadow-sm border border-[#deb887]/40' : 'text-gray-400 hover:text-gray-600'}`}><Home className="w-4 h-4" /> Rutina / Guía domiciliaria</button>
+              <button type="button" onClick={() => { setMode('prescription'); setCurrentPrescription(p => ({ ...p, mode: 'prescription' })); }} className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${mode === 'prescription' ? 'bg-[#deb887] text-white shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}><Stethoscope className="w-4 h-4" /> Receta médica</button>
+            </div>
+          </div>
+          {mode === 'routine' ? <div className="mt-3 flex items-start gap-2 text-xs text-gray-500 bg-gray-50 rounded-lg p-3"><LockKeyhole className="w-4 h-4 text-gray-400 flex-shrink-0" /><span>Modo guía: los campos farmacológicos están bloqueados. Activa <strong>Receta médica</strong> para habilitarlos.</span></div> : <div className="mt-3 space-y-3"><div className="flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3"><ShieldAlert className="w-4 h-4 text-amber-600 flex-shrink-0" /><span>La plataforma proporciona herramientas. La emisión, firma, sello, validez y uso de la receta son responsabilidad exclusiva del profesional habilitado ante ACESS.</span></div><div className="flex flex-col sm:flex-row sm:items-center gap-2"><label className="text-xs font-semibold text-gray-600">Vigencia de la receta</label><select value={validityType} onChange={e => setValidityType(e.target.value as Prescription['validity_type'])} className="p-2 border border-gray-200 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-[#deb887]"><option value="outpatient">Consulta externa — 3 días</option><option value="emergency">Emergencia — 1 día</option><option value="hospitalization">Hospitalización — 1 día</option><option value="antimicrobial">Antimicrobiano — 3 días</option></select></div><div><label className="block text-xs font-semibold text-gray-600 mb-1">Alergias del paciente</label><textarea value={manualAllergies} onChange={e => setManualAllergies(e.target.value)} rows={2} placeholder="Se carga desde Antecedentes. Puedes completar varias alergias aquí para esta receta." className="w-full p-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#deb887] resize-y" /></div></div>}
+        </div>
+
         {/* Header Fields */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
           <div>
@@ -702,7 +799,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
         </div>
 
         {/* Items List (Cards) */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar pb-24 bg-gray-50/50 rounded-xl border border-gray-200">
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4 custom-scrollbar pb-24 bg-gray-50/50 rounded-xl border border-gray-200" style={{ scrollbarColor: '#deb887 #f3f4f6', scrollbarWidth: 'thin' }}>
           {currentPrescription.items.map((item, idx) => (
             <motion.div 
               key={idx}
@@ -730,7 +827,8 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
                   </label>
                   <input
                     list={`meds-${idx}`}
-                    className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] focus:border-transparent outline-none transition-all bg-gray-50 focus:bg-white font-medium"
+                    disabled={mode === 'routine'}
+                    className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] focus:border-transparent outline-none transition-all bg-gray-50 focus:bg-white font-medium disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
                     value={item.medicamento}
                     onChange={e => updateItem(idx, 'medicamento', e.target.value)}
                     placeholder="Buscar medicamento..."
@@ -755,6 +853,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
                   <label className="text-xs font-medium text-gray-500 uppercase">Presentación</label>
                   <input
                     list={`pres-${idx}`}
+                    disabled={mode === 'routine'}
                     className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all hover:bg-gray-50 focus:bg-white"
                     value={item.presentacion}
                     onChange={e => updateItem(idx, 'presentacion', e.target.value)}
@@ -768,6 +867,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
                   <label className="text-xs font-medium text-gray-500 uppercase">Dosis</label>
                   <input
                     list={`dose-${idx}`}
+                    disabled={mode === 'routine'}
                     className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all hover:bg-gray-50 focus:bg-white"
                     value={item.dosis}
                     onChange={e => updateItem(idx, 'dosis', e.target.value)}
@@ -781,6 +881,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
                   <label className="text-xs font-medium text-gray-500 uppercase">Frecuencia</label>
                   <input
                     list={`freq-${idx}`}
+                    disabled={mode === 'routine'}
                     className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all hover:bg-gray-50 focus:bg-white"
                     value={item.frecuencia}
                     onChange={e => updateItem(idx, 'frecuencia', e.target.value)}
@@ -794,6 +895,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
                   <label className="text-xs font-medium text-gray-500 uppercase">Vía</label>
                   <input
                     list={`route-${idx}`}
+                    disabled={mode === 'routine'}
                     className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all hover:bg-gray-50 focus:bg-white"
                     value={item.via}
                     onChange={e => updateItem(idx, 'via', e.target.value)}
@@ -810,6 +912,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
                   <label className="text-xs font-medium text-gray-500 uppercase">Duración</label>
                   <input
                     list={`dur-${idx}`}
+                    disabled={mode === 'routine'}
                     className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all hover:bg-gray-50 focus:bg-white"
                     value={item.duracion}
                     onChange={e => updateItem(idx, 'duracion', e.target.value)}
@@ -822,6 +925,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-gray-500 uppercase">Rutina<FieldHelp text={HELP.prescription.rutina} /></label>
                   <select
+                    disabled={mode === 'prescription'}
                     className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all hover:bg-gray-50 focus:bg-white cursor-pointer"
                     value={item.rutina}
                     onChange={e => updateItem(idx, 'rutina', e.target.value as any)}
@@ -831,6 +935,10 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
                     <option value="noche">🌙 Noche</option>
                     <option value="ambos">🌗 Mañana y Noche</option>
                   </select>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-gray-500 uppercase">Cantidad</label>
+                  <input disabled={mode === 'routine'} className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all hover:bg-gray-50 focus:bg-white disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed" value={item.cantidad} onChange={e => updateItem(idx, 'cantidad', e.target.value)} placeholder="Ej. 20 tabletas" />
                 </div>
                 <div className="lg:col-span-2 space-y-1.5 flex flex-col">
                   <label className="text-xs font-medium text-gray-500 uppercase">Indicaciones Adicionales<FieldHelp text={HELP.prescription.indicaciones} /></label>
@@ -876,6 +984,21 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
         </motion.button>
       </div>
     </motion.div>
+    {showPrintReview && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-4">
+          <div className="flex items-start gap-3"><ShieldAlert className="w-6 h-6 text-amber-600 flex-shrink-0" /><div><h3 className="font-bold text-gray-900">Revisar receta médica</h3><p className="text-sm text-gray-500 mt-1">La impresión puede continuar aunque existan campos no registrados. Verifica la información antes de firmar y sellar.</p></div></div>
+          {missingPrintFields.length > 0 && <div className="rounded-xl bg-amber-50 border border-amber-200 p-3"><p className="text-xs font-semibold text-amber-800 mb-1">Datos pendientes:</p><p className="text-xs text-amber-700">{missingPrintFields.join(', ')}.</p></div>}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label className="text-xs font-semibold text-gray-600">CIE-10 temporal<input value={manualCie10} onChange={e => setManualCie10(e.target.value)} placeholder={activeCie10 || 'Ej. L70.0'} className="mt-1 w-full p-2 border border-gray-200 rounded-lg font-normal outline-none focus:ring-2 focus:ring-[#deb887]" /></label>
+            <label className="text-xs font-semibold text-gray-600">Registro ACESS temporal<input value={manualAcess} onChange={e => setManualAcess(e.target.value)} placeholder={user?.registro_acess || 'Registro ACESS'} className="mt-1 w-full p-2 border border-gray-200 rounded-lg font-normal outline-none focus:ring-2 focus:ring-[#deb887]" /></label>
+            <label className="text-xs font-semibold text-gray-600 sm:col-span-2">Matrícula SENESCYT temporal<input value={manualMatricula} onChange={e => setManualMatricula(e.target.value)} placeholder={user?.matricula_senescyt || 'Matrícula SENESCYT'} className="mt-1 w-full p-2 border border-gray-200 rounded-lg font-normal outline-none focus:ring-2 focus:ring-[#deb887]" /></label>
+          </div>
+          <label className="flex items-start gap-2 text-sm text-gray-700"><input type="checkbox" checked={printAcknowledged} onChange={e => setPrintAcknowledged(e.target.checked)} className="mt-0.5 accent-[#deb887]" /><span>Confirmo que revisé la receta y entiendo que su emisión, firma, sello y uso son responsabilidad exclusiva del profesional habilitado.</span></label>
+          <div className="flex gap-3"><button type="button" onClick={() => setShowPrintReview(false)} className="flex-1 px-4 py-2.5 rounded-xl bg-gray-100 text-gray-700 font-medium">Volver</button><button type="button" disabled={!printAcknowledged} onClick={() => { setShowPrintReview(false); printDocument(); }} className="flex-1 px-4 py-2.5 rounded-xl bg-[#deb887] text-white font-semibold disabled:opacity-50">Continuar e imprimir</button></div>
+        </div>
+      </div>
+    )}
     <CrossConsultHistoryModal
       isOpen={crossHistOpen}
       onClose={() => setCrossHistOpen(false)}

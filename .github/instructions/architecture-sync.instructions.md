@@ -2,7 +2,7 @@
 description: "Use siempre que un cambio modifique la estructura, arquitectura o capas del sistema: nuevas tablas o migraciones, nuevas funciones API, nuevos módulos, nuevas integraciones externas, cambios en RLS/tenancy, o cambios en el flujo de datos entre capas. Aplica a TODOS los agentes (frontend, backend, seguridad, QA, DevOps, auditor), sin importar qué archivos toquen. Mantiene ARCHITECTURE.md y PROGRESS.md como fuente de verdad sincronizada con el código real."
 name: "Architecture Sync — Documentación Obligatoria"
 applyTo:
-  - "**"
+  "**"
 ---
 # Architecture Sync — Documentación Obligatoria
 
