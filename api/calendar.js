@@ -3,6 +3,8 @@ import sendEmailHandler from './sendEmail.js';
 import { sql } from '@vercel/postgres';
 import { authenticateRequest } from '../lib/admin-auth.js';
 
+const isGoogleAuthError = (error) => error?.code === 401 || error?.response?.status === 401 || /invalid_grant|invalid authentication credentials/i.test(error?.message || '');
+
 // ── Helper: obtener OAuth2 client con tokens de clínica ──────────────────────
 async function getClinicOAuth2Client(clinicId) {
   const clientId     = (process.env.GOOGLE_CLIENT_ID     || '').trim();
@@ -146,6 +148,10 @@ export default async function handler(req, res) {
         return res.status(400).json({ success: false, message: 'Acción no válida' });
     }
   } catch (error) {
+    if (isGoogleAuthError(error) && clinicId) {
+      await sql`DELETE FROM clinic_oauth_tokens WHERE clinic_id = ${clinicId}`;
+      return res.status(200).json({ success: false, calendarNotConfigured: true, requiresReconnect: true, message: 'La conexión de Google expiró o fue revocada. Vuelve a conectar Gmail desde los ajustes de la clínica.' });
+    }
     // Calendario no configurado → no es un crash, es un estado esperado
     if (error.message?.includes('No hay cuenta Gmail') || error.message?.includes('Credenciales de Google')) {
       return res.status(200).json({ success: false, calendarNotConfigured: true, message: error.message });

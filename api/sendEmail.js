@@ -4,6 +4,8 @@ import { google } from 'googleapis';
 import { sql } from '@vercel/postgres';
 import { authenticateRequest } from '../lib/admin-auth.js';
 
+const isGoogleAuthError = (error) => error?.code === 401 || error?.response?.status === 401 || /invalid_grant|invalid authentication credentials/i.test(error?.message || '');
+
 /** Obtiene un OAuth2 client con los tokens guardados para la clínica. Retorna null si no hay tokens. */
 async function getClinicOAuth2Client(clinicId) {
   if (!clinicId) return null;
@@ -320,6 +322,10 @@ export default async function handler(req, res) {
     }
   } catch (calErr) {
     console.error('❌ Error en Calendar:', calErr.message);
+    if (isGoogleAuthError(calErr) && req.body?.clinicId) {
+      await sql`DELETE FROM clinic_oauth_tokens WHERE clinic_id = ${req.body.clinicId}`;
+      errorDetails.push('Calendar: conexión de Google inválida; requiere reconexión');
+    }
     errorDetails.push(`Calendar: ${calErr.message}`);
   }
 
@@ -444,6 +450,10 @@ export default async function handler(req, res) {
 
   } catch (emailErr) {
     console.error('❌ Error enviando correos:', emailErr.message);
+    if (isGoogleAuthError(emailErr) && req.body?.clinicId) {
+      await sql`DELETE FROM clinic_oauth_tokens WHERE clinic_id = ${req.body.clinicId}`;
+      errorDetails.push('Email: conexión de Google inválida; requiere reconexión');
+    }
     errorDetails.push(`Email: ${emailErr.message}`);
   }
 

@@ -61,6 +61,8 @@ La inicialización de `api/admin-auth.js` crea las tablas de clínicas, usuarios
 
 Las clínicas nuevas reciben deshabilitadas por defecto `treatment_notes_view`, `ai_consultation` y `clinical_3d`; el Master Admin debe activarlas explícitamente desde la configuración de módulos.
 
+Los avisos de registro esperan la finalización de SMTP antes de responder. Las conexiones Gmail/Calendar con credenciales OAuth inválidas se limpian al detectar `401` y se marcan para reconexión, conservando SMTP como fallback para notificaciones de citas.
+
 ### Fichas clínicas
 
 `lib/neon-clinical-db.js` crea tablas para:

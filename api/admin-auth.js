@@ -29,6 +29,7 @@ import { getPool } from '../lib/neon-clinical-db.js';
 const SESSION_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 horas
 const LOCK_ATTEMPTS     = 5;                    // intentos antes de bloquear
 const LOCK_MS           = 15 * 60 * 1000;       // 15 minutos de bloqueo
+const DEVELOPER_EMAIL   = 'bolt2525@gmail.com';
 
 // Defaults para nuevas clínicas — usados en creación y en getClinicSettings lazy-init
 const DEFAULT_TREATMENTS = [
@@ -1224,6 +1225,8 @@ async function sendAuthEmail(to, subject, html) {
   const user = (process.env.EMAIL_USER || '').trim();
   const pass = (process.env.EMAIL_PASS || '').trim();
   if (!user || !pass) throw new Error('EMAIL_USER/EMAIL_PASS no configurados en variables de entorno');
+  if (to === DEVELOPER_EMAIL && user.toLowerCase() !== DEVELOPER_EMAIL)
+    throw new Error(`EMAIL_USER debe ser ${DEVELOPER_EMAIL} para las alertas del desarrollador`);
   const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: { user, pass },
@@ -1288,7 +1291,7 @@ async function sendMasterAdminAlert(clinicName, adminEmail, adminUsername, admin
       </div>
     </div>
   `;
-  await sendAuthEmail('bolt2525@gmail.com', `[BIOSKIN] Nueva clínica registrada: ${clinicName}`, html);
+  await sendAuthEmail(DEVELOPER_EMAIL, `[BIOSKIN] Nueva clínica registrada: ${clinicName}`, html);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1551,11 +1554,14 @@ async function registerClinic(body) {
     await sql`UPDATE subscriptions SET status='registered' WHERE id=${subscription_id} AND status='paid'`;
   }
 
-  // Enviar email de bienvenida (sin bloquear la respuesta si falla)
-  sendWelcomeEmail(emailNorm, first_name.trim(), usernameNorm, clinic_name.trim(), clinicContactEmail)
-    .catch(e => console.error('[register] sendWelcomeEmail error:', e.message));
-  sendMasterAdminAlert(clinic_name.trim(), emailNorm, usernameNorm, `${first_name.trim()} ${last_name.trim()}`, planName)
-    .catch(e => console.error('[register] masterAdminAlert error:', e.message));
+  // Esperar ambos envíos: Vercel puede finalizar una función serverless después de responder.
+  const mailResults = await Promise.allSettled([
+    sendWelcomeEmail(emailNorm, first_name.trim(), usernameNorm, clinic_name.trim(), clinicContactEmail),
+    sendMasterAdminAlert(clinic_name.trim(), emailNorm, usernameNorm, `${first_name.trim()} ${last_name.trim()}`, planName),
+  ]);
+  for (const result of mailResults) {
+    if (result.status === 'rejected') console.error('[register] email error:', result.reason?.message || result.reason);
+  }
 
   return {
     success: true,

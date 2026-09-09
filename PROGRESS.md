@@ -30,6 +30,7 @@
 - ✅ 2026-09-09 Migrado middleware Vercel a runtime Node.js y verificado deployment Production Ready.
 - ✅ 2026-09-09 Documentadas CLIs Vercel, Neon y Wrangler instaladas, autenticadas y configuradas.
 - ✅ 2026-09-09 Corregido layout responsive y scrollbar visible del listado de medicamentos.
+- ✅ 2026-09-09 Corregido envío de alertas de registro y reconexión OAuth inválida.
 - ✅ 2026-09-09 Compactado layout visual del tab Recetas.
 
 ## Pendientes verificables
