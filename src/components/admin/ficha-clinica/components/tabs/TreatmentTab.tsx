@@ -1,14 +1,26 @@
 import React, { useState, useEffect, useRef } from 'react';
 import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Calendar, DollarSign, Clock, Save, Trash2, Copy, Check, AlertCircle, FileText, Pencil, Layers, History, Eye, X, ChevronDown, ChevronRight, Sparkles } from 'lucide-react';
+import { Plus, Calendar, DollarSign, Clock, Save, Trash2, Copy, Check, AlertCircle, FileText, Pencil, Layers, History, Eye, X, ChevronDown, ChevronRight, Sparkles, Wrench } from 'lucide-react';
 import CrossConsultHistoryModal, { type ConsultationRef } from '../CrossConsultHistoryModal';
-import TreatmentParametersModal, { type TreatmentParameters } from './TreatmentParametersModal';
+import TreatmentParametersModal, { type TreatmentParameters, formatParametersAsText, upsertNotesBlock, removeNotesBlock } from './TreatmentParametersModal';
 import { useAuth } from '../../../../../context/AuthContext';
 import treatmentOptions from '../../data/treatment_options.json';
 import { Tooltip } from '../../../../ui/Tooltip';
 import FieldHelp from '../FieldHelp';
 import { HELP } from '../../data/fieldHelpTexts';
+
+// Sugerencias de equipos: nombres de marcas/modelos ya catalogados por tipo de aparatología
+const EQUIPMENT_SUGGESTIONS: string[] = [
+  ...Object.entries(treatmentOptions.procedures)
+    .filter(([key]) => /^(equipos_|tips_|handpieces|aplicadores_|transductores_)/.test(key))
+    .flatMap(([, arr]) => arr as string[]),
+  ...treatmentOptions.equipment,
+];
+
+/** Divide el string "equipment_used" (separado por comas) en una lista de nombres limpios */
+const parseEquipmentNames = (equipmentUsed: string): string[] =>
+  (equipmentUsed || '').split(',').map(s => s.trim()).filter(Boolean);
 
 /** Extrae solo YYYY-MM-DD de un ISO timestamp o string de PG para evitar desfase de zona horaria */
 const toDateOnly = (d: string | null | undefined): string => {
@@ -30,7 +42,7 @@ interface Treatment {
   date: string;
   procedure_name: string;
   equipment_used: string;
-  parameters?: TreatmentParameters | null;
+  parameters?: Record<string, TreatmentParameters> | null;
   area_treated: string;
   duration_minutes: number;
   cost: number;
@@ -69,6 +81,8 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
   const [crossHistOpen, setCrossHistOpen] = useState(false);
   const [notesModalOpen, setNotesModalOpen] = useState(false);
   const [paramsModalOpen, setParamsModalOpen] = useState(false);
+  const [editingEquipmentName, setEditingEquipmentName] = useState('');
+  const [equipmentInput, setEquipmentInput] = useState('');
   // ponytail: string state to allow empty field and comma-as-decimal-separator
   const [costInput, setCostInput] = useState('');
   const messageRef = useRef<HTMLDivElement>(null);
@@ -90,6 +104,7 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
   const handleNew = () => {
     setCurrentTreatment({ ...EMPTY_TREATMENT, date: getLocalDate() });
     setCostInput('');
+    setEquipmentInput('');
     setDateLocked(false);
     setMessage(null);
   };
@@ -97,6 +112,7 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
   const handleSelect = (treatment: Treatment) => {
     setCurrentTreatment({ ...treatment, date: toDateOnly(treatment.date) });
     setCostInput(treatment.cost > 0 ? String(treatment.cost) : '');
+    setEquipmentInput('');
     setDateLocked(true);
     setMessage(null);
   };
@@ -162,11 +178,62 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
     const { id, ...rest } = currentTreatment;
     setCurrentTreatment({ ...rest, date: getLocalDate() });
     setCostInput(rest.cost > 0 ? String(rest.cost) : '');
+    setEquipmentInput('');
     setDateLocked(false);
     setMessage({ type: 'success', text: 'Tratamiento duplicado. Guarde para crear uno nuevo.' });
   };
 
-  const paramCount = currentTreatment.parameters ? Object.keys(currentTreatment.parameters).length : 0;
+  const equipmentNames = parseEquipmentNames(currentTreatment.equipment_used);
+
+  /** Abre el modal para registrar parámetros de un equipo nuevo (desde el input) */
+  const handleAddEquipment = () => {
+    const name = equipmentInput.trim();
+    if (!name) return;
+    setEditingEquipmentName(name);
+    setParamsModalOpen(true);
+  };
+
+  /** Abre el modal para editar los parámetros de un equipo ya registrado */
+  const handleEditEquipment = (name: string) => {
+    setEditingEquipmentName(name);
+    setParamsModalOpen(true);
+  };
+
+  /** Quita un equipo de la lista y su bloque correspondiente en "Notas" */
+  const handleRemoveEquipment = (name: string) => {
+    setCurrentTreatment(prev => {
+      const remainingNames = parseEquipmentNames(prev.equipment_used).filter(n => n.toLowerCase() !== name.toLowerCase());
+      const remainingParams = { ...(prev.parameters || {}) };
+      delete remainingParams[name];
+      return {
+        ...prev,
+        equipment_used: remainingNames.join(', '),
+        parameters: Object.keys(remainingParams).length > 0 ? remainingParams : null,
+        notes: removeNotesBlock(prev.notes, name),
+      };
+    });
+  };
+
+  /** Guarda los parámetros del equipo en edición: agrega/actualiza la lista y el resumen en "Notas" */
+  const handleSaveEquipmentParams = (params: TreatmentParameters) => {
+    const name = editingEquipmentName;
+    setCurrentTreatment(prev => {
+      const existingNames = parseEquipmentNames(prev.equipment_used);
+      const nameExists = existingNames.some(n => n.toLowerCase() === name.toLowerCase());
+      const newNames = nameExists ? existingNames : [...existingNames, name];
+      const newParamsMap = { ...(prev.parameters || {}) };
+      const hasParams = Object.keys(params).length > 0;
+      if (hasParams) newParamsMap[name] = params; else delete newParamsMap[name];
+      const newNotes = upsertNotesBlock(prev.notes, name, hasParams ? formatParametersAsText(name, params) : '');
+      return {
+        ...prev,
+        equipment_used: newNames.join(', '),
+        parameters: Object.keys(newParamsMap).length > 0 ? newParamsMap : null,
+        notes: newNotes,
+      };
+    });
+    setEquipmentInput('');
+  };
 
   return (
     <>
@@ -360,26 +427,6 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
                 </motion.button>
               </Tooltip>
             )}
-
-            <Tooltip content="Parámetros del equipo / sesión (JSON)">
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setParamsModalOpen(true)}
-                className={`relative p-2 rounded-lg border transition-colors ${
-                  paramCount > 0
-                    ? 'bg-[#deb887]/15 border-[#deb887]/40 text-[#b8944d]'
-                    : 'hover:bg-gray-100 text-gray-600 border-gray-200'
-                }`}
-              >
-                <Sparkles className="w-5 h-5" />
-                {paramCount > 0 && (
-                  <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-[#b8944d] text-white text-[9px] rounded-full flex items-center justify-center font-bold">
-                    {paramCount}
-                  </span>
-                )}
-              </motion.button>
-            </Tooltip>
           </div>
         </div>
 
@@ -456,19 +503,62 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
             </div>
             <div className="space-y-2">
               <label className="block text-sm font-medium text-gray-700">Equipo Utilizado<FieldHelp text={HELP.treatment.equipment_used} /></label>
-              <input
-                type="text"
-                list="equipment-list"
-                className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
-                value={currentTreatment.equipment_used}
-                onChange={e => setCurrentTreatment({...currentTreatment, equipment_used: e.target.value})}
-                placeholder="Ej: Hydrafacial, Laser CO2"
-              />
+              {equipmentNames.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {equipmentNames.map(name => {
+                    const hasParams = !!currentTreatment.parameters?.[name] && Object.keys(currentTreatment.parameters[name]).length > 0;
+                    return (
+                      <span
+                        key={name}
+                        onClick={() => handleEditEquipment(name)}
+                        title="Editar parámetros"
+                        className={`group inline-flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-full text-xs font-medium border cursor-pointer transition-colors ${
+                          hasParams
+                            ? 'bg-[#deb887]/15 border-[#deb887]/40 text-[#b8944d] hover:bg-[#deb887]/25'
+                            : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
+                        }`}
+                      >
+                        {hasParams ? <Sparkles className="w-3 h-3" /> : <Wrench className="w-3 h-3 opacity-60" />}
+                        {name}
+                        <button
+                          type="button"
+                          onClick={e => { e.stopPropagation(); handleRemoveEquipment(name); }}
+                          className="p-0.5 rounded-full hover:bg-black/10 shrink-0"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  list="equipment-list"
+                  className="flex-1 p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
+                  value={equipmentInput}
+                  onChange={e => setEquipmentInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddEquipment(); } }}
+                  placeholder="Ej: Nd:YAG 1064nm, Hydrafacial..."
+                />
+                <Tooltip content="Registrar parámetros de este equipo">
+                  <button
+                    type="button"
+                    onClick={handleAddEquipment}
+                    disabled={!equipmentInput.trim()}
+                    className="px-3 rounded-lg bg-[#deb887] text-white hover:bg-[#c5a075] disabled:opacity-40 disabled:cursor-not-allowed shrink-0 flex items-center gap-1 text-sm font-medium"
+                  >
+                    <Plus className="w-4 h-4" /> Añadir
+                  </button>
+                </Tooltip>
+              </div>
               <datalist id="equipment-list">
-                {treatmentOptions.equipment.map((e: string, i: number) => (
+                {EQUIPMENT_SUGGESTIONS.map((e: string, i: number) => (
                   <option key={i} value={e} />
                 ))}
               </datalist>
+              <p className="text-[11px] text-gray-400">Puedes registrar varios equipos en la misma sesión; los parámetros se agregan a "Notas".</p>
             </div>
             <div className="space-y-2">
               <label className="block text-sm font-medium text-gray-700">Zona Tratada<FieldHelp text={HELP.treatment.area_treated} /></label>
@@ -596,10 +686,10 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
     <TreatmentParametersModal
       isOpen={paramsModalOpen}
       onClose={() => setParamsModalOpen(false)}
-      equipmentUsed={currentTreatment.equipment_used}
+      equipmentName={editingEquipmentName}
       procedureName={currentTreatment.procedure_name}
-      value={currentTreatment.parameters}
-      onSave={params => setCurrentTreatment(prev => ({ ...prev, parameters: Object.keys(params).length > 0 ? params : null }))}
+      initialParams={currentTreatment.parameters?.[editingEquipmentName]}
+      onSave={handleSaveEquipmentParams}
     />
     </>
   );

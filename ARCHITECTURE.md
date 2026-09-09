@@ -74,7 +74,7 @@ Los avisos administrativos al desarrollador cubren registro público, invitacion
 - pacientes y expedientes;
 - antecedentes, consultas e historial;
 - exámenes físicos y mapas JSONB;
-- diagnósticos, tratamientos y recetas (`treatments.parameters JSONB` guarda parámetros estructurados de equipo/sesión, capturados vía modal con plantillas por tipo de aparatología o manual; `notes` sigue siendo texto libre de observaciones);
+- diagnósticos, tratamientos y recetas (`treatments.equipment_used` admite lista de equipos separados por coma —una sesión puede usar varias aparatologías—; `treatments.parameters JSONB` guarda un mapa `{ nombreEquipo: { campo: valor } }` capturado por equipo vía modal con plantillas según tipo de aparatología o manual; al guardar, el resumen legible de cada equipo se inserta/actualiza como bloque en `notes`, que sigue siendo texto libre editable);
 - inyectables y `mapping_data` JSONB;
 - consentimientos, tokens y firmas;
 - inventario, lotes y movimientos;

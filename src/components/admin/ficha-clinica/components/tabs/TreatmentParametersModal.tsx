@@ -1,7 +1,8 @@
 /**
- * Modal para registrar parámetros estructurados (JSONB) de una sesión de tratamiento.
- * Sugiere campos según el tipo de aparatología detectado en equipo/procedimiento,
+ * Modal para registrar los parámetros de un equipo/aparatología dentro de una sesión de tratamiento.
+ * Sugiere campos según el tipo de aparatología detectado en el nombre del equipo/procedimiento,
  * pero también soporta tratamientos manuales sin aparatología y campos libres.
+ * El resultado se formatea como texto legible y se inserta en el campo "Notas" del tratamiento.
  */
 import { useEffect, useState } from 'react';
 import { X, Sparkles, Plus, Trash2 } from 'lucide-react';
@@ -106,17 +107,60 @@ function detectCategory(equipmentUsed: string, procedureName: string): string {
 type ParamValue = string | number;
 export type TreatmentParameters = Record<string, ParamValue>;
 
+// Etiquetas y unidades planas para formatear los parámetros como texto legible en "Notas"
+const FIELD_LABELS: Record<string, string> = {};
+const FIELD_UNITS: Record<string, string> = {};
+for (const t of Object.values(TEMPLATES)) {
+  for (const f of t.fields) {
+    FIELD_LABELS[f.key] = f.label;
+    if (f.unit) FIELD_UNITS[f.key] = f.unit;
+  }
+}
+
+const NOTES_MARKER = '🔧';
+
+/** Convierte los parámetros de un equipo en un bloque de texto legible para "Notas" */
+export function formatParametersAsText(equipmentName: string, params: TreatmentParameters): string {
+  const lines = Object.entries(params).map(([key, val]) => {
+    const label = FIELD_LABELS[key] || key;
+    const unit = FIELD_UNITS[key];
+    return `  • ${label}: ${val}${unit ? ' ' + unit : ''}`;
+  });
+  return [`${NOTES_MARKER} ${equipmentName}`, ...lines].join('\n');
+}
+
+function splitNotesBlocks(notes: string): string[] {
+  return notes.split(/\n\s*\n/).map(b => b.trim()).filter(Boolean);
+}
+
+/** Inserta o reemplaza (por nombre de equipo) el bloque de parámetros dentro del texto de notas. Pasa block='' para eliminarlo. */
+export function upsertNotesBlock(notes: string, equipmentName: string, block: string): string {
+  const blocks = splitNotesBlocks(notes || '');
+  const marker = `${NOTES_MARKER} ${equipmentName}`;
+  const idx = blocks.findIndex(b => b.startsWith(marker));
+  if (block) {
+    if (idx >= 0) blocks[idx] = block; else blocks.push(block);
+  } else if (idx >= 0) {
+    blocks.splice(idx, 1);
+  }
+  return blocks.join('\n\n');
+}
+
+export function removeNotesBlock(notes: string, equipmentName: string): string {
+  return upsertNotesBlock(notes, equipmentName, '');
+}
+
 interface TreatmentParametersModalProps {
   isOpen: boolean;
   onClose: () => void;
-  equipmentUsed: string;
+  equipmentName: string;
   procedureName: string;
-  value: TreatmentParameters | null | undefined;
+  initialParams: TreatmentParameters | null | undefined;
   onSave: (params: TreatmentParameters) => void;
 }
 
 export default function TreatmentParametersModal({
-  isOpen, onClose, equipmentUsed, procedureName, value, onSave,
+  isOpen, onClose, equipmentName, procedureName, initialParams, onSave,
 }: TreatmentParametersModalProps) {
   const [category, setCategory] = useState('manual');
   const [templateValues, setTemplateValues] = useState<Record<string, string>>({});
@@ -124,10 +168,10 @@ export default function TreatmentParametersModal({
 
   useEffect(() => {
     if (!isOpen) return;
-    const detected = detectCategory(equipmentUsed, procedureName);
+    const detected = detectCategory(equipmentName, procedureName);
     setCategory(detected);
     const templateKeys = new Set(Object.values(TEMPLATES).flatMap(t => t.fields.map(f => f.key)));
-    const initial = value || {};
+    const initial = initialParams || {};
     const tv: Record<string, string> = {};
     const custom: Array<{ key: string; value: string }> = [];
     for (const [k, v] of Object.entries(initial)) {
@@ -136,7 +180,7 @@ export default function TreatmentParametersModal({
     }
     setTemplateValues(tv);
     setCustomFields(custom);
-  }, [isOpen, equipmentUsed, procedureName, value]);
+  }, [isOpen, equipmentName, procedureName, initialParams]);
 
   if (!isOpen) return null;
 
@@ -162,7 +206,7 @@ export default function TreatmentParametersModal({
       <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[85vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between p-4 border-b border-gray-100 shrink-0">
           <h3 className="font-semibold text-gray-800 flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-[#b8944d]" /> Parámetros del equipo / sesión
+            <Sparkles className="w-5 h-5 text-[#b8944d]" /> Parámetros — <span className="text-[#b8944d]">{equipmentName}</span>
           </h3>
           <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-5 h-5 text-gray-500" /></button>
         </div>
