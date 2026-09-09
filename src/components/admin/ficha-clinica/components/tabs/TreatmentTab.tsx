@@ -85,11 +85,13 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
   const [deleting, setDeleting] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [groupByProcedure, setGroupByProcedure] = useState(true);
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [crossHistOpen, setCrossHistOpen] = useState(false);
   const [notesModalOpen, setNotesModalOpen] = useState(false);
   const [paramsModalOpen, setParamsModalOpen] = useState(false);
   const [editingEquipmentName, setEditingEquipmentName] = useState('');
+  const [duplicating, setDuplicating] = useState(false);
+  const [highlightedId, setHighlightedId] = useState<number | null>(null);
   // ponytail: string state to allow empty field and comma-as-decimal-separator
   const [costInput, setCostInput] = useState('');
   const messageRef = useRef<HTMLDivElement>(null);
@@ -180,12 +182,47 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
     }
   };
 
-  const handleDuplicate = () => {
+  /** Duplica el tratamiento actual: lo guarda de inmediato como una nueva sesión (nuevo id) y la selecciona/resalta en el historial */
+  const handleDuplicate = async () => {
+    if (!currentTreatment.id) return;
     const { id, ...rest } = currentTreatment;
-    setCurrentTreatment({ ...rest, date: getLocalDate() });
-    setCostInput(rest.cost > 0 ? String(rest.cost) : '');
-    setDateLocked(false);
-    setMessage({ type: 'success', text: 'Tratamiento duplicado. Guarde para crear uno nuevo.' });
+    setDuplicating(true);
+    setMessage(null);
+    try {
+      const body = {
+        record_id: recordId,
+        ...rest,
+        date: getLocalDate(),
+        ...(consultationId ? { consultation_id: consultationId } : {}),
+      };
+      const response = await recordsFetch('/api/records?action=addTreatment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const resBody = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(resBody?.error || `Error al duplicar (HTTP ${response.status})`);
+      }
+
+      onSave();
+      const newTreatment: Treatment = { ...resBody, date: toDateOnly(resBody.date) };
+      setCurrentTreatment(newTreatment);
+      setCostInput(newTreatment.cost > 0 ? String(newTreatment.cost) : '');
+      setDateLocked(false);
+      if (groupByProcedure) {
+        const normalKey = (newTreatment.procedure_name || 'Sin procedimiento').trim().toLowerCase();
+        setExpandedGroups(prev => new Set(prev).add(normalKey));
+      }
+      setHighlightedId(newTreatment.id ?? null);
+      setTimeout(() => setHighlightedId(null), 2500);
+      setMessage({ type: 'success', text: 'Tratamiento duplicado y guardado como nueva sesión. Ajusta la fecha u otros datos y guarda los cambios.' });
+    } catch (error) {
+      console.error('Error duplicating treatment:', error);
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Error al duplicar el tratamiento' });
+    } finally {
+      setDuplicating(false);
+    }
   };
 
   const equipmentNames = parseEquipmentNames(currentTreatment.equipment_used);
@@ -283,8 +320,8 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
                 return acc;
               }, {} as Record<string, { displayName: string; items: Treatment[] }>);
               return Object.entries(grouped).map(([normalKey, { displayName, items: treats }]) => {
-                const isCollapsed = collapsedGroups.has(normalKey);
-                const toggleCollapse = () => setCollapsedGroups(prev => {
+                const isCollapsed = !expandedGroups.has(normalKey);
+                const toggleCollapse = () => setExpandedGroups(prev => {
                   const next = new Set(prev);
                   next.has(normalKey) ? next.delete(normalKey) : next.add(normalKey);
                   return next;
@@ -322,6 +359,10 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
                               whileTap={{ scale: 0.98 }}
                               onClick={() => handleSelect(t)}
                               className={`p-3 rounded-xl cursor-pointer border transition-all shadow-sm ${
+                                highlightedId === t.id
+                                  ? 'ring-2 ring-emerald-400 animate-pulse border-emerald-300'
+                                  : ''
+                              } ${
                                 currentTreatment.id === t.id
                                   ? 'bg-[#deb887] text-white border-[#deb887] shadow-md'
                                   : 'bg-white border-gray-100 hover:bg-gray-50 hover:border-[#deb887]/30'
@@ -350,6 +391,10 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
                 whileTap={{ scale: 0.98 }}
                 onClick={() => t && handleSelect(t)}
                 className={`p-4 rounded-xl cursor-pointer border transition-all shadow-sm ${
+                  highlightedId === t.id
+                    ? 'ring-2 ring-emerald-400 animate-pulse border-emerald-300'
+                    : ''
+                } ${
                   currentTreatment.id === t.id 
                     ? 'bg-[#deb887] text-white border-[#deb887] shadow-md' 
                     : 'bg-white border-gray-100 hover:bg-gray-50 hover:border-[#deb887]/30'
@@ -395,15 +440,15 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
               </motion.button>
             </Tooltip>
 
-            <Tooltip content="Duplicar">
+            <Tooltip content="Duplicar como nueva sesión">
               <motion.button 
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={handleDuplicate} 
-                disabled={!currentTreatment.id}
+                disabled={!currentTreatment.id || duplicating}
                 className="p-2 hover:bg-gray-100 rounded-lg text-gray-600 border border-gray-200 disabled:opacity-50"
               >
-                <Copy className="w-5 h-5" />
+                {duplicating ? <div className="animate-spin w-5 h-5 border-2 border-gray-300 border-t-gray-500 rounded-full" /> : <Copy className="w-5 h-5" />}
               </motion.button>
             </Tooltip>
 

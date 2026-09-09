@@ -1458,7 +1458,8 @@ export default async function handler(req, res) {
       case 'savePhysicalExam': {
         const { id: examId, record_id: pid_exam, created_at, ...examData } = body;
         // Whitelist: solo identificadores SQL válidos — previene SQL injection por nombres de columna
-        const safeExamData = Object.fromEntries(Object.entries(examData).filter(([k]) => /^\w+$/.test(k)));
+        // clinic_id se excluye: lo fija el servidor via effectiveClinicId, nunca el cliente
+        const safeExamData = Object.fromEntries(Object.entries(examData).filter(([k]) => /^\w+$/.test(k) && k !== 'clinic_id'));
         
         if (examId) {
            const eFields = Object.keys(safeExamData);
@@ -1488,7 +1489,8 @@ export default async function handler(req, res) {
       case 'saveDiagnosis': {
         const { id: diagId, record_id: did, date: diagDate, ...diagData } = body;
         // Whitelist: solo identificadores SQL válidos — previene SQL injection por nombres de columna
-        const safeDiagData = Object.fromEntries(Object.entries(diagData).filter(([k]) => /^\w+$/.test(k)));
+        // clinic_id se excluye: lo fija el servidor via effectiveClinicId, nunca el cliente
+        const safeDiagData = Object.fromEntries(Object.entries(diagData).filter(([k]) => /^\w+$/.test(k) && k !== 'clinic_id'));
         if (diagId) {
            const dFields = Object.keys(safeDiagData);
            const dValues = Object.values(safeDiagData);
@@ -1518,7 +1520,8 @@ export default async function handler(req, res) {
       case 'addTreatment': {
         const { record_id: tid, ...treatData } = body;
         // Whitelist: solo identificadores SQL válidos — previene SQL injection por nombres de columna
-        const safeTreatData = Object.fromEntries(Object.entries(treatData).filter(([k]) => /^\w+$/.test(k)));
+        // clinic_id/id se excluyen: un tratamiento duplicado en el cliente puede traer el clinic_id de la fila original
+        const safeTreatData = Object.fromEntries(Object.entries(treatData).filter(([k]) => /^\w+$/.test(k) && k !== 'clinic_id' && k !== 'id'));
         if (safeTreatData.parameters && typeof safeTreatData.parameters === 'object') {
           safeTreatData.parameters = JSON.stringify(safeTreatData.parameters);
         }
@@ -1533,7 +1536,8 @@ export default async function handler(req, res) {
       case 'updateTreatment': {
         const { id: upTreatId, ...upTreatData } = body;
         // Whitelist: solo identificadores SQL válidos — previene SQL injection por nombres de columna
-        const safeUpTreat = Object.fromEntries(Object.entries(upTreatData).filter(([k]) => /^\w+$/.test(k)));
+        // clinic_id se excluye: no debe ser modificable por el cliente (aislamiento de tenant)
+        const safeUpTreat = Object.fromEntries(Object.entries(upTreatData).filter(([k]) => /^\w+$/.test(k) && k !== 'clinic_id'));
         if (safeUpTreat.parameters && typeof safeUpTreat.parameters === 'object') {
           safeUpTreat.parameters = JSON.stringify(safeUpTreat.parameters);
         }
