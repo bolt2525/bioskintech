@@ -1234,6 +1234,21 @@ async function sendAuthEmail(to, subject, html) {
   await transporter.sendMail({ from: `"BIOSKIN Admin" <${user}>`, to, subject, html });
 }
 
+export async function sendDeveloperAlert(event, details = {}) {
+  const escape = (value) => String(value ?? 'No especificado')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  const rows = Object.entries(details)
+    .map(([label, value]) => `<tr><td style="padding:7px 10px;background:#fdf8f0;font-weight:bold;">${escape(label)}</td><td style="padding:7px 10px;">${escape(value)}</td></tr>`)
+    .join('');
+  await sendAuthEmail(DEVELOPER_EMAIL, `[BIOSKIN] ${event}`, `
+    <div style="font-family:Arial,sans-serif;max-width:620px;margin:0 auto;color:#333;">
+      <div style="background:#222;padding:18px 24px;border-radius:8px 8px 0 0;"><h1 style="color:#deb887;margin:0;font-size:20px;">BIOSKIN — ${event}</h1></div>
+      <div style="padding:24px;background:#fff;border:1px solid #eee;border-top:0;"><table style="border-collapse:collapse;width:100%;font-size:14px;">${rows}</table></div>
+    </div>
+  `);
+}
+
 async function sendWelcomeEmail(userEmail, firstName, username, clinicName, clinicGmail) {
   const appUrl = (process.env.APP_URL || 'https://bioskintechapp.com').replace(/\/$/, '');
   const loginUrl = `${appUrl}/gestionestetica/admin/login?redirect=system-status`;
@@ -1813,6 +1828,13 @@ async function useInviteLink(token, body) {
     VALUES (${sessionToken}, ${usernameFinal}, ${exp}, ${userId}, ${invite.role}, ${invite.clinic_id}, ${accessScope}, true)
   `;
 
+  await sendDeveloperAlert('Nuevo usuario registrado por invitación', {
+    Clínica: invite.clinic_id,
+    Usuario: `${fullName} (@${usernameFinal})`,
+    Email: emailNorm,
+    Rol: invite.role,
+  }).catch(e => console.error('[invite] developer alert error:', e.message));
+
   return {
     success: true, sessionToken, expiresAt: exp,
     user: { id: userId, username: usernameFinal, full_name: fullName, email: emailNorm,
@@ -2301,11 +2323,25 @@ export default async function handler(req, res) {
     if (action === 'createClinic') {
       if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master_admin' });
       const result = await createClinic(req.body || {});
+      if (result.success) {
+        await sendDeveloperAlert('Nueva clínica creada desde Master Admin', {
+          Clínica: result.clinic?.name,
+          Email: result.clinic?.email,
+          Acción: 'createClinic',
+        }).catch(e => console.error('[clinic] developer alert error:', e.message));
+      }
       return res.status(result.error ? 400 : 201).json(result);
     }
     if (action === 'updateClinic') {
       if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master_admin' });
       const result = await updateClinic(req.body || {});
+      if (result.success) {
+        await sendDeveloperAlert('Clínica actualizada desde Master Admin', {
+          Clínica: result.clinic?.name,
+          Email: result.clinic?.email,
+          Acción: 'updateClinic',
+        }).catch(e => console.error('[clinic] developer alert error:', e.message));
+      }
       return res.status(result.error ? 400 : 200).json(result);
     }
     if (action === 'deleteClinic') {
@@ -2398,6 +2434,8 @@ export default async function handler(req, res) {
       const { clinicId } = req.body || {};
       if (!clinicId) return res.status(400).json({ error: 'clinicId requerido' });
       await sql`DELETE FROM clinic_oauth_tokens WHERE clinic_id = ${clinicId}`;
+      await sendDeveloperAlert('Gmail desconectado', { Clínica: clinicId, Acción: 'oauthRevoke' })
+        .catch(e => console.error('[oauth] developer alert error:', e.message));
       return res.status(200).json({ success: true, message: 'Conexión OAuth revocada' });
     }
 
@@ -2417,6 +2455,8 @@ export default async function handler(req, res) {
         } catch { /* non-fatal — borramos de DB de todas formas */ }
       }
       await sql`DELETE FROM clinic_oauth_tokens WHERE clinic_id = ${clinicId}`;
+      await sendDeveloperAlert('Gmail desconectado', { Clínica: clinicId, Acción: 'disconnectClinicOAuth' })
+        .catch(e => console.error('[oauth] developer alert error:', e.message));
       return res.status(200).json({ success: true, message: 'Cuenta desconectada y acceso revocado en Google' });
     }
 

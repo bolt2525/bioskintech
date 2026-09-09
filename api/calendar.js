@@ -2,6 +2,7 @@ import { google } from 'googleapis';
 import sendEmailHandler from './sendEmail.js';
 import { sql } from '@vercel/postgres';
 import { authenticateRequest } from '../lib/admin-auth.js';
+import { sendDeveloperAlert } from './admin-auth.js';
 
 const isGoogleAuthError = (error) => error?.code === 401 || error?.response?.status === 401 || /invalid_grant|invalid authentication credentials/i.test(error?.message || '');
 
@@ -73,6 +74,11 @@ export default async function handler(req, res) {
           email = ${email},
           updated_at = NOW()
       `;
+      await sendDeveloperAlert('Gmail conectado', {
+        Clínica: clinicId,
+        Cuenta: email,
+        Acción: 'oauthCallback',
+      }).catch(e => console.error('[oauth] developer alert error:', e.message));
 
       // Redirigir a la página que inició el flujo OAuth
       const dest = returnPath || '/gestionestetica/admin/master';
@@ -89,7 +95,7 @@ export default async function handler(req, res) {
   }
 
   // ── Helper: obtener cliente de calendario ──────────────────────────────
-  // Intenta OAuth de clínica primero; fallback a service account
+  // Agenda disponible únicamente con OAuth válido de la clínica.
   let clinicId = req.body?.clinicId || req.query?.clinicId || null;
   if (!clinicId) {
     const sessionUser = await authenticateRequest(req);
@@ -102,19 +108,13 @@ export default async function handler(req, res) {
     if (oauthClient) {
       return { calendar: google.calendar({ version: 'v3', auth: oauthClient }), calendarId: 'primary', credentials: null };
     }
-    // 2. Service account legacy
-    const b64 = process.env.GOOGLE_CREDENTIALS_BASE64;
-    if (!b64) throw new Error('No hay cuenta Gmail conectada para esta clínica. Conecta Gmail desde el Master Admin.');
-    const creds = JSON.parse(Buffer.from(b64, 'base64').toString('utf8'));
-    if (!creds.client_email || !creds.private_key) throw new Error('Credenciales de Google incompletas');
-    const auth = new google.auth.GoogleAuth({ credentials: { client_email: creds.client_email, private_key: creds.private_key }, scopes: ['https://www.googleapis.com/auth/calendar'] });
-    return { calendar: google.calendar({ version: 'v3', auth }), calendarId: creds.calendar_id, credentials: creds };
+    throw new Error('No hay cuenta Gmail conectada para esta clínica. Conecta Gmail desde los ajustes de la clínica.');
   }
 
   try {
     switch (action) {
       case 'health':
-        return res.status(200).json({ success: true, message: 'API Calendar funcionando', hasOAuth: !!(await getClinicOAuth2Client(clinicId)), hasServiceAccount: !!process.env.GOOGLE_CREDENTIALS_BASE64 });
+        return res.status(200).json({ success: true, message: 'API Calendar funcionando', hasOAuth: !!(await getClinicOAuth2Client(clinicId)), hasServiceAccount: false });
 
       case 'getEvents': {
         const { calendar, calendarId, credentials } = await getCalendarClient();

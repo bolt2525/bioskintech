@@ -3,6 +3,7 @@ import nodemailer from 'nodemailer';
 import { google } from 'googleapis';
 import { sql } from '@vercel/postgres';
 import { authenticateRequest } from '../lib/admin-auth.js';
+import { sendDeveloperAlert } from './admin-auth.js';
 
 const isGoogleAuthError = (error) => error?.code === 401 || error?.response?.status === 401 || /invalid_grant|invalid authentication credentials/i.test(error?.message || '');
 
@@ -423,29 +424,8 @@ export default async function handler(req, res) {
       emailSuccess = true;
       console.log('✅ Correos enviados vía Gmail API');
 
-    } else if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
-      // Fallback: SMTP legacy
-      console.log('📧 Enviando vía SMTP');
-      const transporter = nodemailer.createTransport({
-        service: 'gmail',
-        auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-      });
-      if (staffTo) await transporter.sendMail({ from: process.env.EMAIL_USER, to: staffTo, subject: `🗓️ Nueva cita - ${paciente}`, html: staffEmailHtml });
-      if (selected_staff_email && selected_staff_email !== staffTo) {
-        await transporter.sendMail({ from: process.env.EMAIL_USER, to: selected_staff_email, subject: `🗓️ [Tu cita] ${paciente}`, html: doctorEmailHtml });
-      }
-      // CC a staff personal del usuario
-      if (Array.isArray(additional_notify_emails)) {
-        for (const ccEmail of additional_notify_emails) {
-          if (ccEmail && ccEmail !== staffTo && ccEmail !== selected_staff_email) {
-            await transporter.sendMail({ from: process.env.EMAIL_USER, to: ccEmail, subject: `🗓️ Copia: cita ${paciente}`, html: staffEmailHtml });
-          }
-        }
-      }
-      await transporter.sendMail({ from: process.env.EMAIL_USER, to: email, subject: `¡Hemos recibido tu cita en ${clinic.name}!`, html: patientEmailHtml });
-      emailSuccess = true;
     } else {
-      throw new Error('No hay cuenta Gmail conectada ni SMTP configurado. Ve a Master Admin → Ajustes de Clínica → Conectar Gmail.');
+      throw new Error('No hay cuenta Gmail conectada para esta clínica. Conecta Gmail desde los ajustes de la clínica.');
     }
 
   } catch (emailErr) {
@@ -469,6 +449,11 @@ export default async function handler(req, res) {
       });
   } else {
     // Si NADA funciona, entonces error 500
+    await sendDeveloperAlert('Fallo en agendamiento: Calendar y correo', {
+      Clínica: req.body?.clinicId || 'No identificada',
+      Paciente: paciente,
+      Errores: errorDetails.join(' | '),
+    }).catch(e => console.error('[appointment] developer alert error:', e.message));
     return res.status(500).json({ 
         success: false, 
         message: 'Error al procesar la solicitud',

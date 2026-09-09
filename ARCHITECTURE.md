@@ -61,7 +61,7 @@ La inicialización de `api/admin-auth.js` crea las tablas de clínicas, usuarios
 
 Las clínicas nuevas reciben deshabilitadas por defecto `treatment_notes_view`, `ai_consultation` y `clinical_3d`; el Master Admin debe activarlas explícitamente desde la configuración de módulos.
 
-Los avisos de registro esperan la finalización de SMTP antes de responder. Las conexiones Gmail/Calendar con credenciales OAuth inválidas se limpian al detectar `401` y se marcan para reconexión, conservando SMTP como fallback para notificaciones de citas.
+Los avisos administrativos al desarrollador cubren registro público, invitaciones, creación/edición de clínicas, conexión/desconexión Gmail y fallos completos de agendamiento; las citas exitosas no generan avisos al desarrollador. Calendar y correo de agendamiento requieren OAuth válido de la clínica, sin fallback a service account o SMTP global. Las conexiones OAuth inválidas se limpian al detectar `401` y se marcan para reconexión.
 
 ### Fichas clínicas
 
