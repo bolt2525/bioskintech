@@ -32,6 +32,7 @@
 - ✅ 2026-09-09 Rediseñado el campo "Equipo Utilizado" como lista (chips) que admite múltiples equipos por sesión; cada equipo se registra con botón "Añadir" que abre el modal de parámetros, y al guardar se inserta un resumen legible por equipo en "Notas" (editable). `equipment_used` ampliado de VARCHAR(100) a TEXT.
 - ✅ 2026-09-09 Fix de seguridad: `savePhysicalExam`, `saveDiagnosis`, `addTreatment`/`updateTreatment` ya no aceptan `clinic_id` del cliente en el whitelist genérico (causaba `column "clinic_id" specified more than once` al duplicar un tratamiento, y permitía sobreescribir el tenant vía update). `clinic_id` ahora lo fija siempre el servidor.
 - ✅ 2026-09-09 "Duplicar" en Tratamientos ahora guarda de inmediato la nueva sesión (POST real, nuevo id), la selecciona y la resalta unos segundos en el historial; grupos por procedimiento inician contraídos por defecto.
+- ✅ 2026-09-09 Resalte visual (anillo dorado con pulso, acorde al tema del proyecto) ahora también se aplica al presionar "Guardar" en Tratamientos, Examen Físico, Recetas e Inyectables — resalta el ítem guardado/creado en su historial. `savePhysicalExam` ahora retorna el `id` de la fila creada/actualizada para soportarlo.
 
 - ✅ 2026-09-09 Documentadas CLIs Vercel, Neon y Wrangler instaladas, autenticadas y configuradas.
 - ✅ 2026-09-09 Corregido layout responsive y scrollbar visible del listado de medicamentos.

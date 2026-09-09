@@ -141,16 +141,21 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
         body: JSON.stringify(body),
       });
 
-      if (response.ok) {
-        onSave();
-        if (!currentTreatment.id) {
-          handleNew();
-        }
-        setMessage({ type: 'success', text: 'Tratamiento guardado correctamente' });
-      } else {
-        const errBody = await response.json().catch(() => null);
-        throw new Error(errBody?.error || `Error al guardar (HTTP ${response.status})`);
+      const resBody = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(resBody?.error || `Error al guardar (HTTP ${response.status})`);
       }
+
+      onSave();
+      const savedId = currentTreatment.id ?? resBody?.id ?? null;
+      if (!currentTreatment.id) {
+        handleNew();
+      }
+      if (savedId != null) {
+        setHighlightedId(savedId);
+        setTimeout(() => setHighlightedId(null), 2500);
+      }
+      setMessage({ type: 'success', text: 'Tratamiento guardado correctamente' });
     } catch (error) {
       console.error('Error saving treatment:', error);
       setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Error al guardar el tratamiento' });
@@ -360,7 +365,7 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
                               onClick={() => handleSelect(t)}
                               className={`p-3 rounded-xl cursor-pointer border transition-all shadow-sm ${
                                 highlightedId === t.id
-                                  ? 'ring-2 ring-emerald-400 animate-pulse border-emerald-300'
+                                  ? 'ring-2 ring-[#b8944d] ring-offset-2 ring-offset-white animate-pulse'
                                   : ''
                               } ${
                                 currentTreatment.id === t.id
@@ -392,7 +397,7 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
                 onClick={() => t && handleSelect(t)}
                 className={`p-4 rounded-xl cursor-pointer border transition-all shadow-sm ${
                   highlightedId === t.id
-                    ? 'ring-2 ring-emerald-400 animate-pulse border-emerald-300'
+                    ? 'ring-2 ring-[#b8944d] ring-offset-2 ring-offset-white animate-pulse'
                     : ''
                 } ${
                   currentTreatment.id === t.id 

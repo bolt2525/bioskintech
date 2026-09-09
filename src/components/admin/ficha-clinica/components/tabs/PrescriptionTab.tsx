@@ -101,6 +101,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState('');
+  const [highlightedId, setHighlightedId] = useState<number | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [crossHistOpen, setCrossHistOpen] = useState(false);
   const messageRef = useRef<HTMLDivElement>(null);
@@ -190,6 +191,8 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
 
       if (res.ok) {
         await loadPrescriptions();
+        const resData = await res.json().catch(() => null);
+        const savedId = currentPrescription.id ?? resData?.id ?? null;
         if (action === 'createPrescription') {
           // Reset form if new
           setCurrentPrescription({
@@ -200,6 +203,10 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
           setMode('routine'); setValidityType('outpatient'); setManualAllergies(allergies || '');
           setManualCie10(''); setManualAcess(''); setManualMatricula('');
           setDateLocked(false);
+        }
+        if (savedId != null) {
+          setHighlightedId(savedId);
+          setTimeout(() => setHighlightedId(null), 2500);
         }
         setMessage({ type: 'success', text: 'Receta guardada correctamente' });
       } else {
@@ -570,6 +577,10 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
               whileTap={{ scale: 0.98 }}
               onClick={() => p.id && handleLoadPrescription(p.id)}
               className={`p-3 rounded-xl cursor-pointer border transition-all shadow-sm ${
+                highlightedId === p.id
+                  ? 'ring-2 ring-[#b8944d] ring-offset-2 ring-offset-white animate-pulse'
+                  : ''
+              } ${
                 isSelected
                   ? 'bg-[#deb887] text-white border-[#deb887] shadow-md'
                   : 'bg-white border-gray-100 hover:bg-gray-50 hover:border-[#deb887]/30'

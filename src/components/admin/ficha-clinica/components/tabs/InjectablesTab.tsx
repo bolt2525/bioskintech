@@ -195,6 +195,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   const [current, setCurrent] = useState<Injectable>({ ...EMPTY_INJECTABLE });
   const [dateLocked, setDateLocked] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [highlightedId, setHighlightedId] = useState<number | null>(null);
   const [show3D, setShow3D] = useState(false);
   const [markers3D, setMarkers3D] = useState<Marker3D[]>([]);
   const [injectionPoints, setInjectionPoints] = useState<InjectionPoint[]>([]);
@@ -703,9 +704,15 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
       });
 
       if (res.ok) {
+        const resData = await res.json().catch(() => null);
+        const savedId = current.id ?? resData?.id ?? null;
         setMessage({ type: 'success', text: current.id ? 'Inyectable actualizado' : 'Inyectable registrado correctamente' });
         onSave();
         if (!current.id) handleNew();
+        if (savedId != null) {
+          setHighlightedId(savedId);
+          setTimeout(() => setHighlightedId(null), 2500);
+        }
       } else {
         throw new Error('Error al guardar');
       }
@@ -1787,6 +1794,10 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                   whileTap={{ scale: 0.98 }}
                   onClick={() => handleSelect(inj)}
                   className={`p-4 rounded-xl cursor-pointer border transition-all shadow-sm ${
+                    highlightedId === inj.id
+                      ? 'ring-2 ring-[#b8944d] ring-offset-2 ring-offset-white animate-pulse'
+                      : ''
+                  } ${
                     isActive
                       ? 'bg-[#deb887] text-white border-[#deb887] shadow-md'
                       : 'bg-white border-gray-100 hover:bg-gray-50 hover:border-[#deb887]/30'

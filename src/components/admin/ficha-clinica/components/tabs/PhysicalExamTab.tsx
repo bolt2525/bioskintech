@@ -373,6 +373,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
   const messageRef = useRef<HTMLDivElement>(null);
   const [deleting, setDeleting] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [highlightedId, setHighlightedId] = useState<number | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const currentExams = physicalExams.filter(e => Number(e.consultation_id) === Number(consultationId));
   const otherExamCount = physicalExams.filter(e => Number(e.consultation_id) !== Number(consultationId)).length;
@@ -499,8 +500,14 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
         body: JSON.stringify(payload),
       });
       if (response.ok) {
+        const resData = await response.json().catch(() => null);
+        const savedId = currentExam.id ?? resData?.id ?? null;
         setMessage({ type: 'success', text: 'Examen físico guardado correctamente' });
         onSave();
+        if (savedId != null) {
+          setHighlightedId(savedId);
+          setTimeout(() => setHighlightedId(null), 2500);
+        }
       } else {
         const errData = await response.json();
         throw new Error(errData.error || 'Error al guardar');
@@ -759,6 +766,10 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
               whileTap={{ scale: 0.98 }}
               onClick={() => loadExam(exam)}
               className={`p-4 rounded-xl cursor-pointer border transition-all shadow-sm ${
+                highlightedId === exam.id
+                  ? 'ring-2 ring-[#b8944d] ring-offset-2 ring-offset-white animate-pulse'
+                  : ''
+              } ${
                 currentExam.id === exam.id 
                   ? 'bg-[#deb887]/10 border-[#deb887] ring-1 ring-[#deb887]' 
                   : 'bg-white border-gray-100 hover:border-[#deb887]/50'

@@ -1468,14 +1468,15 @@ export default async function handler(req, res) {
              const eSet = eFields.map((f, i) => `${f} = $${i + 2}`).join(', ');
              await pool.query(`UPDATE physical_exams SET ${eSet} WHERE id = $1`, [examId, ...eValues]);
            }
+           return res.status(200).json({ success: true, id: examId });
         } else {
            if (!pid_exam) return res.status(400).json({ error: 'Falta el ID del expediente (record_id)' });
            const eFields = ['record_id', 'clinic_id', ...Object.keys(safeExamData)];
            const eValues = [pid_exam, effectiveClinicId, ...Object.values(safeExamData)];
            const eParams = eFields.map((_, i) => `$${i + 1}`).join(', ');
-           await pool.query(`INSERT INTO physical_exams (${eFields.join(', ')}) VALUES (${eParams})`, eValues);
+           const newExam = await pool.query(`INSERT INTO physical_exams (${eFields.join(', ')}) VALUES (${eParams}) RETURNING id`, eValues);
+           return res.status(200).json({ success: true, id: newExam.rows[0].id });
         }
-        return res.status(200).json({ success: true });
       }
 
       case 'deletePhysicalExam': {
