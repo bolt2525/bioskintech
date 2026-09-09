@@ -18,8 +18,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
   LogOut, Building2, Users, Shield, RefreshCw, ChevronDown, ChevronUp,
-  Plus, Edit, Trash2, Eye, EyeOff, Key, X, Check, AlertCircle,
-  Activity, ClipboardList, ChevronRight, Sparkles, Lock, Mail, Unlink, Copy, ExternalLink, Settings2, LayoutDashboard, UserCheck, Calendar, Infinity, Clock, Bell,
+  Plus, Edit, Trash2, Eye, EyeOff, Key, X, Check, AlertCircle, Copy, Send,
+  Activity, ClipboardList, ChevronRight, Sparkles, Lock, Mail, Unlink, ExternalLink, Settings2, LayoutDashboard, UserCheck, Calendar, Infinity, Clock, Bell,
   Link2Off, Loader2, CheckCircle2,
 } from 'lucide-react';
 
@@ -988,7 +988,7 @@ export default function AdminMasterDashboard() {
   // ── Estado modales ───────────────────────────────────────────────────────
   const [userModal,   setUserModal]   = useState<{ open: boolean; userId?: number }>({ open: false });
   const [clinicModal, setClinicModal] = useState<{ open: boolean; clinicId?: number }>({ open: false });
-  const [pwdModal,    setPwdModal]    = useState<{ open: boolean; userId?: number }>({ open: false });
+  const [pwdModal, setPwdModal] = useState<{ open: boolean; userId?: number; username?: string; email?: string }>({ open: false });
 
   // Estado de conexión OAuth para el modal Editar Clínica
   const [clinicEmailConn, setClinicEmailConn] = useState<{ connected: boolean; email: string | null } | null>(null);
@@ -997,7 +997,10 @@ export default function AdminMasterDashboard() {
   // ── Formularios ──────────────────────────────────────────────────────────
   const [userForm, setUserForm]     = useState({ username: '', full_name: '', first_name: '', last_name: '', gentilicio: '', profession: '', email: '', role: 'clinic_user', access_scope: 'own', finance_scope: 'all', inventory_scope: 'all', clinic_id: '', password: '', password2: '', cedula_profesional: '', matricula_senescyt: '', especialidad: '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
   const [clinicForm, setClinicForm] = useState({ name: '', email: '', phone: '', address: '' });
-  const [pwdForm, setPwdForm]       = useState({ password: '', password2: '' });
+  const [resetCredentials, setResetCredentials] = useState<{ username: string; email: string; temporaryPassword: string } | null>(null);
+  const [resetBusy, setResetBusy] = useState(false);
+  const [credentialsSending, setCredentialsSending] = useState(false);
+  const [credentialsSent, setCredentialsSent] = useState(false);
   const [showPwd, setShowPwd]       = useState<Record<string, boolean>>({});
 
   // ── OAuth Google por clínica ──────────────────────────────────────────────
@@ -1494,15 +1497,33 @@ export default function AdminMasterDashboard() {
   };
 
   const doResetPwd = async () => {
-    if (pwdForm.password !== pwdForm.password2) return flash('Las contraseñas no coinciden', 'err');
-    const res  = await fetch('/api/admin-auth?action=resetPassword', {
-      method: 'POST', headers: authHeader(),
-      body:   JSON.stringify({ id: pwdModal.userId, newPassword: pwdForm.password }),
-    });
-    const data = await res.json();
-    if (data.error) return flash(data.error, 'err');
-    flash('Contraseña restablecida');
-    setPwdModal({ open: false });
+    setResetBusy(true);
+    try {
+      const res = await fetch('/api/admin-auth?action=resetPassword', {
+        method: 'POST', headers: authHeader(), body: JSON.stringify({ id: pwdModal.userId }),
+      });
+      const data = await res.json();
+      if (data.error) return flash(data.error, 'err');
+      setResetCredentials(data.credentials);
+      flash('Clave temporal generada; la anterior quedó invalidada');
+    } catch { flash('No se pudo generar la clave temporal', 'err');
+    } finally { setResetBusy(false); }
+  };
+
+  const sendResetCredentials = async () => {
+    if (!resetCredentials) return;
+    setCredentialsSending(true);
+    try {
+      const res = await fetch('/api/admin-auth?action=sendResetCredentials', {
+        method: 'POST', headers: authHeader(),
+        body: JSON.stringify({ id: pwdModal.userId, temporaryPassword: resetCredentials.temporaryPassword }),
+      });
+      const data = await res.json();
+      if (data.error) return flash(data.error, 'err');
+      setCredentialsSent(true);
+      flash(data.message || 'Credenciales enviadas');
+    } catch { flash('No se pudieron enviar las credenciales', 'err');
+    } finally { setCredentialsSending(false); }
   };
 
   // ─── CRUD Clínicas ────────────────────────────────────────────────────────
@@ -1993,7 +2014,7 @@ export default function AdminMasterDashboard() {
                                 <button onClick={() => openEditUser(u)} className="p-1.5 text-[#c5a075] hover:bg-[#deb887]/10 rounded" title="Editar">
                                   <Edit className="w-3.5 h-3.5" />
                                 </button>
-                                <button onClick={() => { setPwdForm({ password: '', password2: '' }); setPwdModal({ open: true, userId: u.id }); }} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded" title="Cambiar contraseña">
+                                <button onClick={() => { setResetCredentials(null); setCredentialsSent(false); setPwdModal({ open: true, userId: u.id, username: u.username, email: u.email }); }} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded" title="Generar clave temporal">
                                   <Key className="w-3.5 h-3.5" />
                                 </button>
                                 {u.is_demo && (
@@ -2634,20 +2655,40 @@ export default function AdminMasterDashboard() {
 
       {/* ── Modal: Reset Password ──────────────────────────────────────── */}
       {pwdModal.open && (
-        <Modal title="Restablecer Contraseña" onClose={() => setPwdModal({ open: false })}>
+        <Modal title="Generar clave temporal" onClose={() => { setResetCredentials(null); setPwdModal({ open: false }); }}>
           <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Nueva contraseña</label>
-                <input type="password" value={pwdForm.password} onChange={e => setPwdForm(p => ({ ...p, password: e.target.value }))} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] focus:outline-none" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Confirmar contraseña</label>
-              <input type="password" value={pwdForm.password2} onChange={e => setPwdForm(p => ({ ...p, password2: e.target.value }))} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] focus:outline-none" />
-            </div>
-            <div className="flex justify-end gap-3 pt-2">
-              <button onClick={() => setPwdModal({ open: false })} className="px-4 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cancelar</button>
-              <button onClick={doResetPwd} className="px-4 py-2 bg-amber-500 text-white rounded-lg text-sm font-medium hover:bg-amber-600">Restablecer</button>
-            </div>
+            {!resetCredentials ? (
+              <>
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                  Se generará una clave segura para <strong>{pwdModal.username}</strong>. La contraseña anterior y todas sus sesiones quedarán invalidadas inmediatamente.
+                </div>
+                <p className="text-sm text-gray-600">Al ingresar, el usuario verá un aviso para reemplazarla desde Panel principal → Ajustes → Cambiar contraseña.</p>
+                <div className="flex justify-end gap-3 pt-2">
+                  <button onClick={() => setPwdModal({ open: false })} className="px-4 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cancelar</button>
+                  <button onClick={doResetPwd} disabled={resetBusy} className="px-4 py-2 bg-amber-500 text-white rounded-lg text-sm font-medium hover:bg-amber-600 disabled:opacity-50">
+                    {resetBusy ? 'Generando…' : 'Generar clave temporal'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="space-y-2 rounded-lg border bg-gray-50 p-4 text-sm">
+                  <p><span className="text-gray-500">Usuario:</span> <strong>{resetCredentials.username}</strong></p>
+                  <p><span className="text-gray-500">Correo:</span> <strong>{resetCredentials.email || 'Sin correo registrado'}</strong></p>
+                  <p><span className="text-gray-500">Clave temporal:</span> <code className="rounded bg-white px-2 py-1 font-semibold text-gray-900">{resetCredentials.temporaryPassword}</code></p>
+                </div>
+                <p className="text-xs text-gray-500">Esta clave solo se muestra durante esta operación. El usuario puede iniciar sesión con su username o correo registrado.</p>
+                <div className="flex flex-wrap justify-end gap-2 pt-2">
+                  <button onClick={() => navigator.clipboard.writeText(`Usuario: ${resetCredentials.username}\nCorreo: ${resetCredentials.email || 'Sin correo'}\nContraseña temporal: ${resetCredentials.temporaryPassword}\n\nCámbiala desde Panel principal → Ajustes → Cambiar contraseña.`).then(() => flash('Credenciales copiadas')).catch(() => flash('No se pudieron copiar', 'err'))} className="flex items-center gap-2 px-4 py-2 border rounded-lg text-sm text-gray-700 hover:bg-gray-50">
+                    <Copy className="w-4 h-4" /> Copiar
+                  </button>
+                  <button onClick={sendResetCredentials} disabled={!resetCredentials.email || credentialsSending || credentialsSent} className="flex items-center gap-2 px-4 py-2 bg-amber-500 text-white rounded-lg text-sm font-medium hover:bg-amber-600 disabled:opacity-50" title={!resetCredentials.email ? 'El usuario no tiene correo registrado' : undefined}>
+                    <Send className="w-4 h-4" /> {credentialsSent ? 'Enviadas' : credentialsSending ? 'Enviando…' : 'Enviar credenciales'}
+                  </button>
+                  <button onClick={() => { setResetCredentials(null); setPwdModal({ open: false }); }} className="px-4 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cerrar</button>
+                </div>
+              </>
+            )}
           </div>
         </Modal>
       )}

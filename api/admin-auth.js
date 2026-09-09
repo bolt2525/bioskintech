@@ -116,6 +116,7 @@ async function ensureNewColumns() {
     "ALTER TABLE invite_links ADD COLUMN IF NOT EXISTS clinic_id UUID REFERENCES clinics(id) ON DELETE CASCADE",
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS pwd_change_token VARCHAR(128)",
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS pwd_change_expires TIMESTAMPTZ",
+    "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT false",
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS personal_staff_emails JSONB DEFAULT '[]'::jsonb",
   ];
   for (const stmt of migrations) {
@@ -177,6 +178,18 @@ function generateToken() {
   return crypto.randomBytes(32).toString('hex');
 }
 
+export function generateTemporaryPassword() {
+  const groups = ['ABCDEFGHJKLMNPQRSTUVWXYZ', 'abcdefghijkmnopqrstuvwxyz', '23456789', '!@#$%'];
+  const password = groups.map(chars => chars[crypto.randomInt(chars.length)]);
+  const allChars = groups.join('');
+  while (password.length < 14) password.push(allChars[crypto.randomInt(allChars.length)]);
+  for (let index = password.length - 1; index > 0; index--) {
+    const swapIndex = crypto.randomInt(index + 1);
+    [password[index], password[swapIndex]] = [password[swapIndex], password[index]];
+  }
+  return password.join('');
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Inicialización del esquema multi-tenant
 // ─────────────────────────────────────────────────────────────────────────────
@@ -218,6 +231,7 @@ export async function initMultiTenantSchema() {
       locked_until    TIMESTAMP,
       is_active       BOOLEAN DEFAULT true,
       last_login      TIMESTAMP,
+      must_change_password BOOLEAN NOT NULL DEFAULT false,
       created_at      TIMESTAMP DEFAULT NOW()
     )
   `;
@@ -686,10 +700,11 @@ async function loginUser(username, password, ip, ua, req) {
            cu.finance_scope, cu.inventory_scope,
            cu.failed_attempts, cu.locked_until, cu.is_active, cu.full_name, cu.email,
            cu.cedula_profesional, cu.matricula_senescyt, cu.registro_acess, cu.especialidad, cu.gentilicio, cu.profession, cu.first_name, cu.last_name,
-           cu.is_demo, cu.demo_expires_at, c.slug AS clinic_slug, c.name AS clinic_name
+           cu.is_demo, cu.demo_expires_at, cu.must_change_password,
+           c.slug AS clinic_slug, c.name AS clinic_name
     FROM clinic_users cu
     LEFT JOIN clinics c ON c.id = cu.clinic_id
-    WHERE (cu.username = ${username} OR cu.email = ${username})
+    WHERE (cu.username = ${username} OR LOWER(cu.email) = LOWER(${username}))
   `;
   if (!r.rows.length) return { success: false, error: 'Credenciales inválidas' };
 
@@ -758,7 +773,7 @@ async function loginUser(username, password, ip, ua, req) {
     INSERT INTO admin_sessions
       (session_token, username, expires_at, ip_address, user_agent, clinic_user_id, role, clinic_id, access_scope)
     VALUES
-      (${token}, ${username}, ${exp}, ${ip}, ${ua}, ${u.id}, ${u.role}, ${u.clinic_id}, ${u.access_scope})
+      (${token}, ${u.username}, ${exp}, ${ip}, ${ua}, ${u.id}, ${u.role}, ${u.clinic_id}, ${u.access_scope})
   `;
 
   // Check if device is already trusted → skip OTP entirely
@@ -776,7 +791,8 @@ async function loginUser(username, password, ip, ua, req) {
           cedula_profesional: u.cedula_profesional || null, matricula_senescyt: u.matricula_senescyt || null, registro_acess: u.registro_acess || null, especialidad: u.especialidad || null,
           gentilicio: u.gentilicio || null, profession: u.profession || null,
           first_name: u.first_name || null, last_name: u.last_name || null,
-          is_demo: u.is_demo || false, demo_expires_at: u.demo_expires_at || null },
+          is_demo: u.is_demo || false, demo_expires_at: u.demo_expires_at || null,
+          must_change_password: u.must_change_password || false },
         features: await getFeatures(u.clinic_id),
         user_module_overrides: await (async () => {
           try { const o = await sql`SELECT feature, enabled FROM user_module_overrides WHERE clinic_user_id = ${u.id}`; return o.rows; }
@@ -837,6 +853,7 @@ async function loginUser(username, password, ip, ua, req) {
       gentilicio: u.gentilicio || null, profession: u.profession || null,
       first_name: u.first_name || null, last_name: u.last_name || null,
       is_demo: u.is_demo || false, demo_expires_at: u.demo_expires_at || null,
+      must_change_password: u.must_change_password || false,
     },
     features: await getFeatures(u.clinic_id),
     user_module_overrides: await (async () => {
@@ -852,7 +869,7 @@ async function verifySession(token) {
   try {
     const r = await sql`
       SELECT s.username, s.expires_at, s.role, s.clinic_id, s.access_scope, s.clinic_user_id,
-             cu.full_name, cu.email, cu.is_demo, cu.demo_expires_at,
+             cu.full_name, cu.email, cu.is_demo, cu.demo_expires_at, cu.must_change_password,
              cu.cedula_profesional, cu.matricula_senescyt, cu.registro_acess, cu.especialidad, cu.gentilicio, cu.profession, cu.first_name, cu.last_name,
              c.name as clinic_name, c.slug as clinic_slug,
              c.subscription_expires_at
@@ -887,6 +904,7 @@ async function verifySession(token) {
         first_name: s.first_name || null, last_name: s.last_name || null,
         is_demo: s.is_demo || false,
         demo_expires_at: s.demo_expires_at || null,
+        must_change_password: s.must_change_password || false,
       },
       expiresAt: s.expires_at,
       subscriptionWarningDays: (() => {
@@ -1177,27 +1195,78 @@ async function updateUser(requestUser, body) {
 }
 
 async function resetPassword(requestUser, body) {
-  const { id, newPassword } = body;
-  if (!id || !newPassword) return { error: 'id y newPassword son requeridos' };
-  if (newPassword.length < 8) return { error: 'Mínimo 8 caracteres' };
+  const { id } = body;
+  if (!id) return { error: 'id requerido' };
+  if (String(id) === String(requestUser.id)) return { error: 'No puedes generar una clave temporal para tu propia sesión' };
 
+  let target;
   if (requestUser.role === 'clinic_admin') {
-    const t = await sql`SELECT clinic_id FROM clinic_users WHERE id = ${id}`;
+    const t = await sql`SELECT id, clinic_id, username, email FROM clinic_users WHERE id = ${id}`;
     if (!t.rows.length || t.rows[0].clinic_id !== requestUser.clinic_id) return { error: 'Sin permiso' };
+    target = t.rows[0];
   } else if (requestUser.role !== 'master_admin') {
     return { error: 'Sin permiso' };
+  } else {
+    const t = await sql`SELECT id, clinic_id, username, email FROM clinic_users WHERE id = ${id}`;
+    if (!t.rows.length) return { error: 'Usuario no encontrado' };
+    target = t.rows[0];
   }
 
-  const { hash, salt } = hashPassword(newPassword);
+  const temporaryPassword = generateTemporaryPassword();
+  const { hash, salt } = hashPassword(temporaryPassword);
+  await sql`DELETE FROM login_otp WHERE user_id = ${id}`;
   await sql`
     UPDATE clinic_users
     SET password_hash = ${hash}, salt = ${salt}, hash_algo = 'pbkdf2',
-        failed_attempts = 0, locked_until = NULL
+        failed_attempts = 0, locked_until = NULL, must_change_password = true,
+        pwd_change_token = NULL, pwd_change_expires = NULL
     WHERE id = ${id}
   `;
-  // Invalidar todas las sesiones activas del usuario cuya contraseña fue reseteada
   await sql`UPDATE admin_sessions SET is_active = false WHERE clinic_user_id = ${id}`;
-  return { success: true };
+  return {
+    success: true,
+    credentials: { username: target.username, email: target.email || '', temporaryPassword },
+  };
+}
+
+async function sendResetCredentials(requestUser, body) {
+  const { id, temporaryPassword } = body;
+  if (!id || typeof temporaryPassword !== 'string' || temporaryPassword.length > 128)
+    return { error: 'Credenciales temporales inválidas' };
+
+  const targetResult = await sql`
+    SELECT id, clinic_id, username, full_name, email, password_hash, salt, hash_algo, must_change_password
+    FROM clinic_users WHERE id = ${id}
+  `;
+  if (!targetResult.rows.length) return { error: 'Usuario no encontrado' };
+  const target = targetResult.rows[0];
+  if (requestUser.role === 'clinic_admin' && target.clinic_id !== requestUser.clinic_id) return { error: 'Sin permiso' };
+  if (!requireRole(requestUser, 'master_admin', 'clinic_admin')) return { error: 'Sin permiso' };
+  if (!target.email?.trim()) return { error: 'El usuario no tiene un correo registrado' };
+  if (!target.must_change_password || !verifyPassword(temporaryPassword, target.password_hash, target.salt, target.hash_algo))
+    return { error: 'La clave temporal ya no está vigente' };
+
+  const escapeHtml = value => String(value ?? '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  const appUrl = (process.env.APP_URL || 'https://bioskintechapp.com').replace(/\/$/, '');
+  await sendAuthEmail(target.email.trim(), 'Credenciales temporales de acceso — BioskinTech', `
+    <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;color:#333">
+      <div style="background:#17130f;padding:22px;border-radius:8px 8px 0 0"><h2 style="color:#deb887;margin:0">BioskinTech</h2></div>
+      <div style="padding:24px;border:1px solid #eee;border-top:0">
+        <p>Hola <strong>${escapeHtml(target.full_name || target.username)}</strong>,</p>
+        <p>El administrador restableció tu contraseña a solicitud tuya. Tu contraseña anterior ya no funciona.</p>
+        <div style="background:#f8f5f0;border:1px solid #deb887;padding:16px;border-radius:8px;margin:18px 0">
+          <p style="margin:5px 0"><strong>Usuario:</strong> ${escapeHtml(target.username)}</p>
+          <p style="margin:5px 0"><strong>Correo:</strong> ${escapeHtml(target.email)}</p>
+          <p style="margin:5px 0"><strong>Contraseña temporal:</strong> <code>${escapeHtml(temporaryPassword)}</code></p>
+        </div>
+        <p>Puedes iniciar sesión con tu usuario o con tu correo registrado.</p>
+        <p><strong>Por seguridad, cambia esta contraseña después de ingresar desde Panel principal → Ajustes → Cambiar contraseña.</strong></p>
+        <p><a href="${escapeHtml(appUrl)}/gestionestetica/admin/login" style="color:#99652f">Abrir BioskinTech</a></p>
+      </div>
+    </div>`);
+  return { success: true, message: `Credenciales enviadas a ${target.email}` };
 }
 
 async function deleteUser(requestUser, userId) {
@@ -1857,7 +1926,8 @@ async function verifyOTP(otpToken, code, ip, ua) {
     SELECT lo.id, lo.code, lo.attempts, lo.user_id,
            cu.username, cu.full_name, cu.email, cu.role, cu.clinic_id, cu.access_scope,
            cu.cedula_profesional, cu.matricula_senescyt, cu.registro_acess, cu.especialidad, cu.gentilicio, cu.profession, cu.first_name, cu.last_name,
-           cu.is_demo, cu.demo_expires_at, c.slug AS clinic_slug, c.name AS clinic_name
+           cu.is_demo, cu.demo_expires_at, cu.must_change_password,
+           c.slug AS clinic_slug, c.name AS clinic_name
     FROM login_otp lo
     JOIN clinic_users cu ON cu.id = lo.user_id
     LEFT JOIN clinics c ON c.id = cu.clinic_id
@@ -1905,6 +1975,7 @@ async function verifyOTP(otpToken, code, ip, ua) {
       gentilicio: row.gentilicio, profession: row.profession,
       first_name: row.first_name, last_name: row.last_name,
       is_demo: row.is_demo || false, demo_expires_at: row.demo_expires_at || null,
+      must_change_password: row.must_change_password || false,
     },
     features: await getFeatures(row.clinic_id),
   };
@@ -2279,7 +2350,16 @@ export default async function handler(req, res) {
     }
     if (action === 'resetPassword') {
       if (!requireRole(user, 'master_admin', 'clinic_admin')) return res.status(403).json({ error: 'Sin permiso' });
+      res.setHeader('Cache-Control', 'no-store, private');
+      res.setHeader('Pragma', 'no-cache');
       const result = await resetPassword(user, req.body || {});
+      return res.status(result.error ? 400 : 200).json(result);
+    }
+    if (action === 'sendResetCredentials') {
+      if (!requireRole(user, 'master_admin', 'clinic_admin')) return res.status(403).json({ error: 'Sin permiso' });
+      res.setHeader('Cache-Control', 'no-store, private');
+      res.setHeader('Pragma', 'no-cache');
+      const result = await sendResetCredentials(user, req.body || {});
       return res.status(result.error ? 400 : 200).json(result);
     }
 
@@ -2294,7 +2374,7 @@ export default async function handler(req, res) {
       if (!verifyPassword(currentPassword, row.password_hash, row.salt, row.hash_algo))
         return res.status(401).json({ error: 'Contraseña actual incorrecta' });
       const { hash, salt } = hashPassword(newPassword);
-      await sql`UPDATE clinic_users SET password_hash = ${hash}, salt = ${salt}, hash_algo = 'pbkdf2' WHERE id = ${user.id}`;
+      await sql`UPDATE clinic_users SET password_hash = ${hash}, salt = ${salt}, hash_algo = 'pbkdf2', must_change_password = false WHERE id = ${user.id}`;
       // Invalidar todas las sesiones activas del usuario salvo la actual
       const currentToken = (req.headers.authorization || '').replace('Bearer ', '').trim() || req.body?.sessionToken;
       await sql`UPDATE admin_sessions SET is_active = false WHERE clinic_user_id = ${user.id} AND session_token != ${currentToken}`;
@@ -3100,7 +3180,7 @@ export default async function handler(req, res) {
       await sql`
         UPDATE clinic_users SET
           password_hash = ${hash}, salt = ${salt}, hash_algo = 'pbkdf2',
-          pwd_change_token = NULL, pwd_change_expires = NULL
+          pwd_change_token = NULL, pwd_change_expires = NULL, must_change_password = false
         WHERE id = ${user.id}
       `;
       // Invalidate ALL sessions (frontend will redirect to login)

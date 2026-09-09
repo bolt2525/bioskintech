@@ -57,3 +57,17 @@ test('R2 upload signing rejects sizes above the clinical photo limit', async () 
     /contentLength debe estar entre 1 y 4 MB/
   );
 });
+
+test('temporary passwords are strong and unique', async () => {
+  const { generateTemporaryPassword } = await import('../api/admin-auth.js');
+  const passwords = Array.from({ length: 100 }, () => generateTemporaryPassword());
+
+  assert.equal(new Set(passwords).size, passwords.length);
+  for (const password of passwords) {
+    assert.equal(password.length, 14);
+    assert.match(password, /[A-Z]/);
+    assert.match(password, /[a-z]/);
+    assert.match(password, /[2-9]/);
+    assert.match(password, /[!@#$%]/);
+  }
+});

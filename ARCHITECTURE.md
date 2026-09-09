@@ -59,6 +59,8 @@ El repositorio contiene 9 archivos de función bajo `/api/`. El límite efectivo
 
 La inicialización de `api/admin-auth.js` crea las tablas de clínicas, usuarios, sesiones, features, configuración, OAuth, OTP, dispositivos confiables, invitaciones, suscripciones y notificaciones. Los roles principales son `master_admin`, `clinic_admin` y `clinic_user`, con scopes de acceso que pueden limitarse a datos propios.
 
+El restablecimiento administrativo genera una clave temporal criptográfica en el servidor, reemplaza inmediatamente el hash anterior, elimina OTP de login pendientes y revoca todas las sesiones del usuario. `clinic_users.must_change_password` mantiene un aviso en el panel principal hasta que el usuario completa su cambio personal con verificación OTP. La clave temporal solo se devuelve en la respuesta no-cache del reset y puede enviarse al correo registrado mediante `sendResetCredentials`, que vuelve a verificar que la clave siga vigente antes de enviarla.
+
 Las clínicas nuevas reciben deshabilitadas por defecto `treatment_notes_view`, `ai_consultation` y `clinical_3d`; el Master Admin debe activarlas explícitamente desde la configuración de módulos.
 
 Los avisos administrativos al desarrollador cubren registro público, invitaciones, creación/edición de clínicas, conexión/desconexión Gmail y fallos completos de agendamiento; las citas exitosas no generan avisos al desarrollador. Calendar y correo de agendamiento requieren OAuth válido de la clínica, sin fallback a service account o SMTP global. Las conexiones OAuth inválidas se limpian al detectar `401` y se marcan para reconexión.
@@ -107,6 +109,7 @@ Las operaciones de fotos también validan que el expediente pertenezca al tenant
 ## 6. Seguridad confirmada en código
 
 - Contraseñas con PBKDF2 y salt usando Node crypto.
+- Claves temporales generadas con `crypto.randomInt`, sesiones revocadas y aviso persistente de reemplazo.
 - Sesiones Bearer persistidas en `admin_sessions` con expiración.
 - Bloqueo de login después de intentos fallidos según la lógica de auth.
 - Consultas SQL parametrizadas en las superficies revisadas.

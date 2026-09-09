@@ -49,6 +49,7 @@ export interface AuthUser {
   especialidad?: string | null;
   is_demo?: boolean;
   demo_expires_at?: string | null;
+  must_change_password?: boolean;
   subscriptionWarningDays?: number | null;
 }
 
