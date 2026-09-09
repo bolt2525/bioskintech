@@ -82,7 +82,6 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
   const [notesModalOpen, setNotesModalOpen] = useState(false);
   const [paramsModalOpen, setParamsModalOpen] = useState(false);
   const [editingEquipmentName, setEditingEquipmentName] = useState('');
-  const [equipmentInput, setEquipmentInput] = useState('');
   // ponytail: string state to allow empty field and comma-as-decimal-separator
   const [costInput, setCostInput] = useState('');
   const messageRef = useRef<HTMLDivElement>(null);
@@ -104,7 +103,6 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
   const handleNew = () => {
     setCurrentTreatment({ ...EMPTY_TREATMENT, date: getLocalDate() });
     setCostInput('');
-    setEquipmentInput('');
     setDateLocked(false);
     setMessage(null);
   };
@@ -112,7 +110,6 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
   const handleSelect = (treatment: Treatment) => {
     setCurrentTreatment({ ...treatment, date: toDateOnly(treatment.date) });
     setCostInput(treatment.cost > 0 ? String(treatment.cost) : '');
-    setEquipmentInput('');
     setDateLocked(true);
     setMessage(null);
   };
@@ -178,16 +175,15 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
     const { id, ...rest } = currentTreatment;
     setCurrentTreatment({ ...rest, date: getLocalDate() });
     setCostInput(rest.cost > 0 ? String(rest.cost) : '');
-    setEquipmentInput('');
     setDateLocked(false);
     setMessage({ type: 'success', text: 'Tratamiento duplicado. Guarde para crear uno nuevo.' });
   };
 
   const equipmentNames = parseEquipmentNames(currentTreatment.equipment_used);
 
-  /** Abre el modal para registrar parámetros de un equipo nuevo (desde el input) */
+  /** Abre el modal de parámetros para el último equipo escrito en el campo (no bloquea el guardado normal del tratamiento) */
   const handleAddEquipment = () => {
-    const name = equipmentInput.trim();
+    const name = equipmentNames[equipmentNames.length - 1];
     if (!name) return;
     setEditingEquipmentName(name);
     setParamsModalOpen(true);
@@ -232,7 +228,6 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
         notes: newNotes,
       };
     });
-    setEquipmentInput('');
   };
 
   return (
@@ -537,16 +532,15 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
                   type="text"
                   list="equipment-list"
                   className="flex-1 p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
-                  value={equipmentInput}
-                  onChange={e => setEquipmentInput(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddEquipment(); } }}
+                  value={currentTreatment.equipment_used}
+                  onChange={e => setCurrentTreatment({ ...currentTreatment, equipment_used: e.target.value })}
                   placeholder="Ej: Nd:YAG 1064nm, Hydrafacial..."
                 />
-                <Tooltip content="Registrar parámetros de este equipo">
+                <Tooltip content="Registrar parámetros del último equipo escrito (opcional)">
                   <button
                     type="button"
                     onClick={handleAddEquipment}
-                    disabled={!equipmentInput.trim()}
+                    disabled={equipmentNames.length === 0}
                     className="px-3 rounded-lg bg-[#deb887] text-white hover:bg-[#c5a075] disabled:opacity-40 disabled:cursor-not-allowed shrink-0 flex items-center gap-1 text-sm font-medium"
                   >
                     <Plus className="w-4 h-4" /> Añadir
@@ -558,7 +552,7 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
                   <option key={i} value={e} />
                 ))}
               </datalist>
-              <p className="text-[11px] text-gray-400">Puedes registrar varios equipos en la misma sesión; los parámetros se agregan a "Notas".</p>
+              <p className="text-[11px] text-gray-400">Puedes escribir varios equipos separados por coma. El botón "Añadir" es opcional y solo registra parámetros detallados en "Notas".</p>
             </div>
             <div className="space-y-2">
               <label className="block text-sm font-medium text-gray-700">Zona Tratada<FieldHelp text={HELP.treatment.area_treated} /></label>
