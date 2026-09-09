@@ -28,6 +28,8 @@
 - ✅ 2026-09-09 Verificado proyecto Neon BIOSKINTECH, RLS y migración real de recetas/ACESS.
 - ✅ 2026-09-09 Actualizadas dependencias runtime; `npm audit --omit=dev` quedó en 0 vulnerabilidades.
 - ✅ 2026-09-09 Migrado middleware Vercel a runtime Node.js y verificado deployment Production Ready.
+- ✅ 2026-09-09 Tab Tratamientos: agrupación por procedimiento activa por defecto; nuevo modal de parámetros estructurados (equipo/sesión) usando la columna `parameters JSONB` ya existente en `treatments`, con plantillas por tipo de aparatología (láser, RF, HIFU, peeling, corporal) y plantilla "manual/sin aparatología" + campos libres para casos sin equipo.
+
 - ✅ 2026-09-09 Documentadas CLIs Vercel, Neon y Wrangler instaladas, autenticadas y configuradas.
 - ✅ 2026-09-09 Corregido layout responsive y scrollbar visible del listado de medicamentos.
 - ✅ 2026-09-09 Corregido envío de alertas de registro y reconexión OAuth inválida.

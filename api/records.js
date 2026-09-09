@@ -1519,6 +1519,9 @@ export default async function handler(req, res) {
         const { record_id: tid, ...treatData } = body;
         // Whitelist: solo identificadores SQL válidos — previene SQL injection por nombres de columna
         const safeTreatData = Object.fromEntries(Object.entries(treatData).filter(([k]) => /^\w+$/.test(k)));
+        if (safeTreatData.parameters && typeof safeTreatData.parameters === 'object') {
+          safeTreatData.parameters = JSON.stringify(safeTreatData.parameters);
+        }
         const tFields = ['record_id', 'clinic_id', ...Object.keys(safeTreatData)];
         const tValues = [tid, effectiveClinicId, ...Object.values(safeTreatData)];
         const tParams = tFields.map((_, i) => `$${i + 1}`).join(', ');
@@ -1531,6 +1534,9 @@ export default async function handler(req, res) {
         const { id: upTreatId, ...upTreatData } = body;
         // Whitelist: solo identificadores SQL válidos — previene SQL injection por nombres de columna
         const safeUpTreat = Object.fromEntries(Object.entries(upTreatData).filter(([k]) => /^\w+$/.test(k)));
+        if (safeUpTreat.parameters && typeof safeUpTreat.parameters === 'object') {
+          safeUpTreat.parameters = JSON.stringify(safeUpTreat.parameters);
+        }
         const upTFields = Object.keys(safeUpTreat);
         const upTValues = Object.values(safeUpTreat);
         if (upTFields.length > 0) {

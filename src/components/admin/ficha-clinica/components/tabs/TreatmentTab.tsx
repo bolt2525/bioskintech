@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Calendar, DollarSign, Clock, Save, Trash2, Copy, Check, AlertCircle, FileText, Pencil, Layers, History, Eye, X, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, Calendar, DollarSign, Clock, Save, Trash2, Copy, Check, AlertCircle, FileText, Pencil, Layers, History, Eye, X, ChevronDown, ChevronRight, Sparkles } from 'lucide-react';
 import CrossConsultHistoryModal, { type ConsultationRef } from '../CrossConsultHistoryModal';
+import TreatmentParametersModal, { type TreatmentParameters } from './TreatmentParametersModal';
 import { useAuth } from '../../../../../context/AuthContext';
 import treatmentOptions from '../../data/treatment_options.json';
 import { Tooltip } from '../../../../ui/Tooltip';
@@ -29,6 +30,7 @@ interface Treatment {
   date: string;
   procedure_name: string;
   equipment_used: string;
+  parameters?: TreatmentParameters | null;
   area_treated: string;
   duration_minutes: number;
   cost: number;
@@ -48,6 +50,7 @@ const EMPTY_TREATMENT: Treatment = {
   date: new Date().toISOString().split('T')[0],
   procedure_name: '',
   equipment_used: '',
+  parameters: null,
   area_treated: '',
   duration_minutes: 30,
   cost: 0,
@@ -61,10 +64,11 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
-  const [groupByProcedure, setGroupByProcedure] = useState(false);
+  const [groupByProcedure, setGroupByProcedure] = useState(true);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [crossHistOpen, setCrossHistOpen] = useState(false);
   const [notesModalOpen, setNotesModalOpen] = useState(false);
+  const [paramsModalOpen, setParamsModalOpen] = useState(false);
   // ponytail: string state to allow empty field and comma-as-decimal-separator
   const [costInput, setCostInput] = useState('');
   const messageRef = useRef<HTMLDivElement>(null);
@@ -161,6 +165,8 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
     setDateLocked(false);
     setMessage({ type: 'success', text: 'Tratamiento duplicado. Guarde para crear uno nuevo.' });
   };
+
+  const paramCount = currentTreatment.parameters ? Object.keys(currentTreatment.parameters).length : 0;
 
   return (
     <>
@@ -354,6 +360,26 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
                 </motion.button>
               </Tooltip>
             )}
+
+            <Tooltip content="Parámetros del equipo / sesión (JSON)">
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setParamsModalOpen(true)}
+                className={`relative p-2 rounded-lg border transition-colors ${
+                  paramCount > 0
+                    ? 'bg-[#deb887]/15 border-[#deb887]/40 text-[#b8944d]'
+                    : 'hover:bg-gray-100 text-gray-600 border-gray-200'
+                }`}
+              >
+                <Sparkles className="w-5 h-5" />
+                {paramCount > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-[#b8944d] text-white text-[9px] rounded-full flex items-center justify-center font-bold">
+                    {paramCount}
+                  </span>
+                )}
+              </motion.button>
+            </Tooltip>
           </div>
         </div>
 
@@ -567,6 +593,14 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
         </div>
       </div>
     )}
+    <TreatmentParametersModal
+      isOpen={paramsModalOpen}
+      onClose={() => setParamsModalOpen(false)}
+      equipmentUsed={currentTreatment.equipment_used}
+      procedureName={currentTreatment.procedure_name}
+      value={currentTreatment.parameters}
+      onSave={params => setCurrentTreatment(prev => ({ ...prev, parameters: Object.keys(params).length > 0 ? params : null }))}
+    />
     </>
   );
 }
