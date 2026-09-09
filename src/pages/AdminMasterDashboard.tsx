@@ -93,6 +93,11 @@ function formatTimeLeft(ms: number): string {
   return `${minutes}m restantes`;
 }
 
+function isClinicFeatureEnabled(featureMap: Record<string, boolean> | undefined, feature: string) {
+  if (featureMap && Object.prototype.hasOwnProperty.call(featureMap, feature)) return featureMap[feature] === true;
+  return !OPT_IN_FEATURES.includes(feature);
+}
+
 /**
  * Panel desplegable de features por clínica.
  * Muestra toggles para cada feature de ALL_FEATURES.
@@ -114,7 +119,7 @@ function ClinicFeaturesPanel({
         className="flex items-center gap-1 text-sm text-indigo-600 font-medium hover:underline"
       >
         <Shield className="w-3.5 h-3.5" />
-        Módulos ({ALL_FEATURES.filter(f => featMap[f] !== false).length}/{ALL_FEATURES.length})
+        Módulos ({ALL_FEATURES.filter(f => isClinicFeatureEnabled(featMap, f)).length}/{ALL_FEATURES.length})
         {open ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
       </button>
       {open && (
@@ -122,8 +127,7 @@ function ClinicFeaturesPanel({
           {ALL_FEATURES.map(feat => {
             const meta    = FEATURE_META[feat];
             const Icon    = meta.icon;
-            // opt-in features default to OFF if no explicit enabled=true row
-            const enabled = OPT_IN_FEATURES.includes(feat) ? featMap[feat] === true : featMap[feat] !== false;
+            const enabled = isClinicFeatureEnabled(featMap, feat);
             return (
               <div key={feat} className="flex items-center justify-between p-2 rounded-lg bg-gray-50 border border-gray-100">
                 <div className="flex items-center gap-1.5 min-w-0">
@@ -236,7 +240,7 @@ function UserModuleOverridesPanel({
   };
 
   // ponytail: ALL_FEATURES como base, no featMap (evita mostrar vacío cuando la clínica no tiene rows en clinic_features)
-  const clinicFeats = ALL_FEATURES.filter(f => (featMap[clinicId] || {})[f] !== false);
+  const clinicFeats = ALL_FEATURES.filter(f => isClinicFeatureEnabled(featMap[clinicId], f));
   // finanzas_visible: si no hay override con false → visible (true)
   const financeVisible = overrides['finanzas_visible'] !== false;
 
@@ -1191,9 +1195,11 @@ export default function AdminMasterDashboard() {
       if (Array.isArray(uData))  setAllUsers(uData);
       else if (uData.users)      setAllUsers(uData.users);
 
+      if (!fRes.ok) throw new Error(fData.error || 'No se pudo verificar la configuración de módulos');
       if (fData.data) setFeatData(fData.data);
     } catch (e) {
       console.error('loadAll error:', e);
+      setMsg({ text: e instanceof Error ? e.message : 'Error al cargar datos', type: 'err' });
     } finally {
       setLoading(false);
     }
@@ -1235,13 +1241,17 @@ export default function AdminMasterDashboard() {
       return [...prev, { clinic_id: clinicId, feature, enabled, clinic_name: '' }];
     });
     try {
-      await fetch('/api/admin-auth?action=setFeature', {
+      const response = await fetch('/api/admin-auth?action=setFeature', {
         method: 'POST', headers: authHeader(),
         body:   JSON.stringify({ clinicId, feature, enabled }),
       });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'No se pudo actualizar el módulo');
+      }
     } catch {
       flash('Error al actualizar feature', 'err');
-      loadAll();
+      await loadAll();
     }
   };
 
@@ -1814,7 +1824,7 @@ export default function AdminMasterDashboard() {
                         {[
                           { label: 'Usuarios',  value: clinic.user_count || 0 },
                           { label: 'Pacientes', value: clinic.patient_count || 0 },
-                          { label: 'Módulos',   value: ALL_FEATURES.filter(f => (featMap[clinic.id] || {})[f] !== false).length },
+                          { label: 'Módulos',   value: ALL_FEATURES.filter(f => isClinicFeatureEnabled(featMap[clinic.id], f)).length },
                         ].map(s => (
                           <div key={s.label} className="text-center p-2 bg-gray-50 rounded-lg">
                             <div className="text-lg font-bold text-gray-900">{s.value}</div>
@@ -2111,7 +2121,7 @@ export default function AdminMasterDashboard() {
                 <Shield className="w-4 h-4 flex-shrink-0" />
                 <span>
                   Clínica: <strong>{clinics.find(c => c.id === selectedModuleClinic)?.name}</strong>
-                  {' '}— {ALL_FEATURES.filter(f => (featMap[selectedModuleClinic] || {})[f] !== false).length}/{ALL_FEATURES.length} módulos activos
+                  {' '}— {ALL_FEATURES.filter(f => isClinicFeatureEnabled(featMap[selectedModuleClinic], f)).length}/{ALL_FEATURES.length} módulos activos
                 </span>
               </div>
             )}
@@ -2120,7 +2130,7 @@ export default function AdminMasterDashboard() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {MODULE_LIST.map((item, idx) => {
                 const Icon      = item.icon;
-                const isEnabled = !selectedModuleClinic || (featMap[selectedModuleClinic] || {})[item.feat] !== false;
+                const isEnabled = !selectedModuleClinic || isClinicFeatureEnabled(featMap[selectedModuleClinic], item.feat);
                 return (
                   <button
                     key={`${item.feat}-${idx}`}
@@ -2176,7 +2186,7 @@ export default function AdminMasterDashboard() {
                           <span
                             key={f}
                             title={FEATURE_META[f]?.label}
-                            className={`w-2 h-2 rounded-full ${(featMap[c.id] || {})[f] !== false ? 'bg-[#deb887]' : 'bg-gray-200'}`}
+                            className={`w-2 h-2 rounded-full ${isClinicFeatureEnabled(featMap[c.id], f) ? 'bg-[#deb887]' : 'bg-gray-200'}`}
                           />
                         ))}
                       </div>
@@ -3122,7 +3132,7 @@ export default function AdminMasterDashboard() {
                         <p className="text-xs text-gray-400 mb-2">Habilita/deshabilita módulos y configura ajustes específicos. Solo se muestran los módulos activos para esta clínica.</p>
 
                         {/* Fichas Clínicas */}
-                        {(featMap[settingsModal.clinicId] || {})['clinical_records'] !== false && (
+                        {isClinicFeatureEnabled(featMap[settingsModal.clinicId], 'clinical_records') && (
                           <div className="border border-gray-200 rounded-xl overflow-hidden">
                             <button onClick={()=>setOpenModuleSection(p=>p==='clinical_records'?null:'clinical_records')}
                               className="w-full flex items-center justify-between p-3 bg-gray-50 hover:bg-gray-100 text-left">
@@ -3168,10 +3178,7 @@ export default function AdminMasterDashboard() {
                         {/* Otros módulos — con toggles reales */}
                         {ALL_FEATURES.filter(f => f !== 'clinical_records').map(feat => {
                           const meta = FEATURE_META[feat]; const Icon = meta.icon;
-                          // opt-in features default to OFF if no explicit enabled=true row
-                          const enabled = OPT_IN_FEATURES.includes(feat)
-                            ? (featMap[settingsModal.clinicId]||{})[feat] === true
-                            : (featMap[settingsModal.clinicId]||{})[feat] !== false;
+                          const enabled = isClinicFeatureEnabled(featMap[settingsModal.clinicId], feat);
                           return (
                             <div key={feat} className="flex items-center gap-3 p-3 border border-gray-100 rounded-xl bg-gray-50">
                               <Icon className={`w-4 h-4 ${enabled ? meta.color : 'text-gray-300'}`} />

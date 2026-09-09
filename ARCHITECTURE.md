@@ -63,6 +63,8 @@ El restablecimiento administrativo genera una clave temporal criptográfica en e
 
 Las clínicas nuevas reciben deshabilitadas por defecto `treatment_notes_view`, `ai_consultation` y `clinical_3d`; el Master Admin debe activarlas explícitamente desde la configuración de módulos.
 
+Estas tres features son opt-in: una fila ausente en `clinic_features` también equivale a deshabilitada y solo `enabled=true` concede acceso. Los contadores, tarjetas y toggles del Master Admin aplican la misma regla efectiva que `getFeatures()`; las features normales permanecen activas salvo un `enabled=false` explícito.
+
 Los avisos administrativos al desarrollador cubren registro público, invitaciones, creación/edición de clínicas, conexión/desconexión Gmail y fallos completos de agendamiento; las citas exitosas no generan avisos al desarrollador. Calendar y correo de agendamiento requieren OAuth válido de la clínica, sin fallback a service account o SMTP global. Las conexiones OAuth inválidas se limpian al detectar `401` y se marcan para reconexión.
 
 ### Fichas clínicas
