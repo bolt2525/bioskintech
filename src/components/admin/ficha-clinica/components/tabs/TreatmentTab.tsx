@@ -18,9 +18,17 @@ const EQUIPMENT_SUGGESTIONS: string[] = [
   ...treatmentOptions.equipment,
 ];
 
-/** Divide el string "equipment_used" (separado por comas) en una lista de nombres limpios */
-const parseEquipmentNames = (equipmentUsed: string): string[] =>
-  (equipmentUsed || '').split(',').map(s => s.trim()).filter(Boolean);
+/** Divide el string "equipment_used" (separado por comas) en una lista de nombres limpios y sin duplicados */
+const parseEquipmentNames = (equipmentUsed: string): string[] => {
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const raw of (equipmentUsed || '').split(',')) {
+    const name = raw.trim();
+    const key = name.toLowerCase();
+    if (name && !seen.has(key)) { seen.add(key); names.push(name); }
+  }
+  return names;
+};
 
 /** Extrae solo YYYY-MM-DD de un ISO timestamp o string de PG para evitar desfase de zona horaria */
 const toDateOnly = (d: string | null | undefined): string => {
@@ -138,11 +146,12 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
         }
         setMessage({ type: 'success', text: 'Tratamiento guardado correctamente' });
       } else {
-        throw new Error('Error al guardar');
+        const errBody = await response.json().catch(() => null);
+        throw new Error(errBody?.error || `Error al guardar (HTTP ${response.status})`);
       }
     } catch (error) {
       console.error('Error saving treatment:', error);
-      setMessage({ type: 'error', text: 'Error al guardar el tratamiento' });
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Error al guardar el tratamiento' });
     } finally {
       setSaving(false);
     }
