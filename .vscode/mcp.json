@@ -14,9 +14,6 @@
     },
     "cloudflare-observability": {
       "url": "https://observability.mcp.cloudflare.com/mcp"
-    },
-    "meta-social-technologies": {
-      "url": "https://mcp.facebook.com/devtools"
     }
   }
 }
