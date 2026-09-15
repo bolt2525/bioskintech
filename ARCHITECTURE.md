@@ -49,9 +49,10 @@ Navegador React/Vite
 - `payments.js`: flujo PayPhone.
 - `records.js`: pacientes, expedientes, módulos clínicos, inventario y fotografías.
 - `sendEmail.js`: correo y notificaciones.
+- `whatsapp-chatbot.js`: verificación y recepción inicial de webhooks de WhatsApp Cloud API; el envío transaccional y los recordatorios aún no están activados.
 - `system-status.js`: diagnósticos de servicios.
 
-El repositorio contiene 9 archivos de función bajo `/api/`. El límite efectivo de Vercel debe confirmarse contra el plan activo antes de crear nuevas rutas.
+El repositorio contiene 10 archivos de función bajo `/api/`. El límite efectivo de Vercel debe confirmarse contra el plan activo antes de crear nuevas rutas.
 
 ## 4. Capas de datos
 
@@ -120,6 +121,7 @@ Las operaciones de fotos también validan que el expediente pertenezca al tenant
 - Headers de seguridad en `vercel.json`.
 - Auditoría de operaciones clínicas mediante `patient_audit_log`, aunque algunos fallos de auditoría se silencian.
 - Variables privadas sin prefijo `VITE_` en la configuración revisada.
+- El webhook de WhatsApp valida `hub.verify_token`, no expone el token y responde sin registrar el payload recibido.
 
 ## 7. Riesgos abiertos
 

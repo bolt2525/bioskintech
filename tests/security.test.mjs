@@ -71,3 +71,16 @@ test('temporary passwords are strong and unique', async () => {
     assert.match(password, /[!@#$%]/);
   }
 });
+
+test('WhatsApp webhook only accepts the configured verification token', async () => {
+  const { verifyWhatsAppWebhook } = await import('../api/whatsapp-chatbot.js');
+
+  assert.equal(
+    verifyWhatsAppWebhook({ 'hub.mode': 'subscribe', 'hub.verify_token': 'test-token', 'hub.challenge': 'challenge' }, 'test-token'),
+    'challenge'
+  );
+  assert.equal(
+    verifyWhatsAppWebhook({ 'hub.mode': 'subscribe', 'hub.verify_token': 'wrong-token', 'hub.challenge': 'challenge' }, 'test-token'),
+    null
+  );
+});
