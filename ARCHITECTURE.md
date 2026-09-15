@@ -49,7 +49,7 @@ Navegador React/Vite
 - `payments.js`: flujo PayPhone.
 - `records.js`: pacientes, expedientes, módulos clínicos, inventario y fotografías.
 - `sendEmail.js`: correo y notificaciones.
-- `whatsapp-chatbot.js`: verificación y recepción inicial de webhooks de WhatsApp Cloud API; el envío transaccional y los recordatorios aún no están activados.
+- `whatsapp-chatbot.js`: verificación y recepción inicial de webhooks de WhatsApp Cloud API; los recordatorios automáticos aún no están activados.
 - `system-status.js`: diagnósticos de servicios.
 
 El repositorio contiene 10 archivos de función bajo `/api/`. El límite efectivo de Vercel debe confirmarse contra el plan activo antes de crear nuevas rutas.
@@ -122,6 +122,7 @@ Las operaciones de fotos también validan que el expediente pertenezca al tenant
 - Auditoría de operaciones clínicas mediante `patient_audit_log`, aunque algunos fallos de auditoría se silencian.
 - Variables privadas sin prefijo `VITE_` en la configuración revisada.
 - El webhook de WhatsApp valida `hub.verify_token`, no expone el token y responde sin registrar el payload recibido.
+- `lib/whatsapp-service.js` envía mensajes vía WhatsApp Cloud API (Graph API) y falla cerrado si `WHATSAPP_TOKEN`/`WHATSAPP_PHONE_NUMBER_ID` no están configuradas; `api/sendEmail.js` lo invoca en el agendamiento solo si `clinic_settings.notificaciones.whatsapp_enabled` es `true`, sin bloquear el flujo de calendario/correo si falla.
 
 ## 7. Riesgos abiertos
 

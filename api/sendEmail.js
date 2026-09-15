@@ -4,6 +4,7 @@ import { google } from 'googleapis';
 import { sql } from '@vercel/postgres';
 import { authenticateRequest } from '../lib/admin-auth.js';
 import { sendDeveloperAlert } from './admin-auth.js';
+import { sendWhatsAppText } from '../lib/whatsapp-service.js';
 
 const isGoogleAuthError = (error) => error?.code === 401 || error?.response?.status === 401 || /invalid_grant|invalid authentication credentials/i.test(error?.message || '');
 
@@ -41,14 +42,15 @@ async function getClinicConfig(clinicId) {
     logo_url: 'https://bioskintech.vercel.app/favicon.ico',
     staff_email: process.env.EMAIL_TO || '',
     from_name: 'BIOSKIN Cuenca', signature: 'El equipo de BIOSKIN',
-    whatsapp_number: ''
+    whatsapp_number: '', whatsapp_enabled: false
   };
   if (!clinicId) return defaults;
   try {
-    const r = await sql`SELECT general, email FROM clinic_settings WHERE clinic_id = ${clinicId}`;
+    const r = await sql`SELECT general, email, notificaciones FROM clinic_settings WHERE clinic_id = ${clinicId}`;
     if (!r.rows.length) return defaults;
     const g = r.rows[0].general || {};
     const e = r.rows[0].email   || {};
+    const n = r.rows[0].notificaciones || {};
     return {
       name:         g.name       || defaults.name,
       city:         g.city       || defaults.city,
@@ -58,6 +60,7 @@ async function getClinicConfig(clinicId) {
       from_name:    e.from_name  || `${g.name || defaults.name} ${g.city || defaults.city}`.trim(),
       signature:    e.signature  || `El equipo de ${g.name || defaults.name}`,
       whatsapp_number: e.whatsapp_number || defaults.whatsapp_number,
+      whatsapp_enabled: n.whatsapp_enabled === true,
       staff_members: e.staff_members || [],
     };
   } catch {
@@ -283,7 +286,19 @@ export default async function handler(req, res) {
 
   let calendarSuccess = false;
   let emailSuccess = false;
+  let whatsappSuccess = false;
   let errorDetails = [];
+
+  // --- 0. ENVÍO AUTOMÁTICO DE CONFIRMACIÓN POR WHATSAPP (Cloud API) ---
+  if (clinic.whatsapp_enabled && phoneClean) {
+    try {
+      await sendWhatsAppText(`593${phoneClean}`, whatsappMessage);
+      whatsappSuccess = true;
+    } catch (waErr) {
+      console.error('❌ Error en WhatsApp:', waErr.message);
+      errorDetails.push(`WhatsApp: ${waErr.message}`);
+    }
+  }
 
   // --- 1. CREAR EVENTO EN GOOGLE CALENDAR ---
   // Intenta OAuth de la clínica primero; fallback a service account si existe
@@ -445,7 +460,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ 
           success: true, 
           message: 'Solicitud procesada',
-          details: { calendar: calendarSuccess, email: emailSuccess }
+          details: { calendar: calendarSuccess, email: emailSuccess, whatsapp: whatsappSuccess }
       });
   } else {
     // Si NADA funciona, entonces error 500

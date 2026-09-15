@@ -42,6 +42,7 @@
 - ✅ 2026-09-09 Implementadas claves temporales y envío seguro de credenciales.
 - ✅ 2026-09-09 Corregidos conteos visuales de módulos opt-in.
 - ✅ 2026-09-15 Añadido webhook inicial de WhatsApp Cloud API con verificación de token.
+- ✅ 2026-09-15 Conectado envío real de confirmación de cita por WhatsApp Cloud API (opt-in por clínica vía `notificaciones.whatsapp_enabled`).
 
 ## Pendientes verificables
 

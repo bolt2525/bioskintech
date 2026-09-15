@@ -84,3 +84,14 @@ test('WhatsApp webhook only accepts the configured verification token', async ()
     null
   );
 });
+
+test('WhatsApp message sending fails closed without credentials', async () => {
+  delete process.env.WHATSAPP_TOKEN;
+  delete process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const { sendWhatsAppText } = await import('../lib/whatsapp-service.js');
+
+  await assert.rejects(
+    () => sendWhatsAppText('593987654321', 'hola'),
+    /WHATSAPP_TOKEN \/ WHATSAPP_PHONE_NUMBER_ID no configuradas/
+  );
+});
