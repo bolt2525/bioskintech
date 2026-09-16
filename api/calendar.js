@@ -6,8 +6,8 @@ import { sendDeveloperAlert } from './admin-auth.js';
 
 const isGoogleAuthError = (error) => error?.code === 401 || error?.response?.status === 401 || /invalid_grant|invalid authentication credentials/i.test(error?.message || '');
 
-// ── Helper: obtener OAuth2 client con tokens de clínica ──────────────────────
-async function getClinicOAuth2Client(clinicId) {
+// ── Helper: obtener OAuth2 client con tokens del usuario ─────────────────────
+async function getUserOAuth2Client(userId) {
   const clientId     = (process.env.GOOGLE_CLIENT_ID     || '').trim();
   const clientSecret = (process.env.GOOGLE_CLIENT_SECRET || '').trim();
   if (!clientId || !clientSecret) return null;
@@ -17,7 +17,7 @@ async function getClinicOAuth2Client(clinicId) {
   const oAuth2      = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
 
   try {
-    const r = await sql`SELECT access_token, refresh_token, token_expiry FROM clinic_oauth_tokens WHERE clinic_id = ${clinicId}`;
+    const r = await sql`SELECT access_token, refresh_token, token_expiry FROM clinic_oauth_tokens WHERE clinic_user_id = ${userId}`;
     if (!r.rows.length) return null;
     const { access_token, refresh_token, token_expiry } = r.rows[0];
     oAuth2.setCredentials({ access_token, refresh_token, expiry_date: token_expiry ? new Date(token_expiry).getTime() : null });
@@ -25,7 +25,7 @@ async function getClinicOAuth2Client(clinicId) {
     oAuth2.on('tokens', async (tokens) => {
       await sql`
         UPDATE clinic_oauth_tokens SET access_token = ${tokens.access_token}, token_expiry = ${tokens.expiry_date ? new Date(tokens.expiry_date) : null}, updated_at = NOW()
-        WHERE clinic_id = ${clinicId}
+        WHERE clinic_user_id = ${userId}
       `;
     });
     return oAuth2;
@@ -51,7 +51,16 @@ export default async function handler(req, res) {
   // ── Callback OAuth de Google ────────────────────────────────────────────
   if (code && state && !action) {
     try {
-      const { clinicId, returnPath } = JSON.parse(Buffer.from(state, 'base64url').toString());
+      const stateRow = await sql`
+        DELETE FROM oauth_states
+        WHERE state = ${state} AND purpose = 'google_integration' AND expires_at > NOW()
+        RETURNING clinic_user_id, return_path
+      `;
+      if (!stateRow.rows.length) throw new Error('Estado OAuth inválido o expirado');
+      const { clinic_user_id: userId, return_path: returnPath } = stateRow.rows[0];
+      const targetUser = await sql`SELECT clinic_id FROM clinic_users WHERE id = ${userId} AND is_active = true`;
+      if (!targetUser.rows.length) throw new Error('Usuario no disponible');
+      const clinicId = targetUser.rows[0].clinic_id;
       const clientId     = (process.env.GOOGLE_CLIENT_ID     || '').trim();
       const clientSecret = (process.env.GOOGLE_CLIENT_SECRET || '').trim();
       const redirectUri  = (process.env.APP_URL || `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app'}`).replace(/\/$/, '').trim() + '/api/calendar';
@@ -65,9 +74,9 @@ export default async function handler(req, res) {
       const email     = userInfo.data.email;
 
       await sql`
-        INSERT INTO clinic_oauth_tokens (clinic_id, access_token, refresh_token, token_expiry, email)
-        VALUES (${clinicId}, ${tokens.access_token}, ${tokens.refresh_token}, ${tokens.expiry_date ? new Date(tokens.expiry_date) : null}, ${email})
-        ON CONFLICT (clinic_id) DO UPDATE SET
+        INSERT INTO clinic_oauth_tokens (clinic_id, clinic_user_id, access_token, refresh_token, token_expiry, email)
+        VALUES (${clinicId}, ${userId}, ${tokens.access_token}, ${tokens.refresh_token}, ${tokens.expiry_date ? new Date(tokens.expiry_date) : null}, ${email})
+        ON CONFLICT (clinic_user_id) WHERE clinic_user_id IS NOT NULL DO UPDATE SET
           access_token = ${tokens.access_token},
           refresh_token = COALESCE(${tokens.refresh_token}, clinic_oauth_tokens.refresh_token),
           token_expiry = ${tokens.expiry_date ? new Date(tokens.expiry_date) : null},
@@ -76,13 +85,14 @@ export default async function handler(req, res) {
       `;
       await sendDeveloperAlert('Gmail conectado', {
         Clínica: clinicId,
+        Usuario: userId,
         Cuenta: email,
         Acción: 'oauthCallback',
       }).catch(e => console.error('[oauth] developer alert error:', e.message));
 
       // Redirigir a la página que inició el flujo OAuth
       const dest = returnPath || '/gestionestetica/admin/master';
-      return res.redirect(302, dest + '?oauth=success&clinic=' + clinicId);
+      return res.redirect(302, dest + '?oauth=success');
     } catch (e) {
       console.error('❌ OAuth callback error:', e.message);
       return res.redirect(302, '/admin?oauth=error&msg=' + encodeURIComponent(e.message));
@@ -95,26 +105,25 @@ export default async function handler(req, res) {
   }
 
   // ── Helper: obtener cliente de calendario ──────────────────────────────
-  // Agenda disponible únicamente con OAuth válido de la clínica.
-  let clinicId = req.body?.clinicId || req.query?.clinicId || null;
-  if (!clinicId) {
-    const sessionUser = await authenticateRequest(req);
-    if (sessionUser?.valid) clinicId = sessionUser.effective_clinic_id ?? sessionUser.clinic_id ?? null;
-  }  // Propaga clinicId a req.body para que los mockReqs internos de notificaciones lo incluyan
+  // Agenda disponible únicamente con OAuth válido del usuario autenticado.
+  const sessionUser = await authenticateRequest(req);
+  if (!sessionUser?.valid || !sessionUser.id) return res.status(401).json({ success: false, message: 'No autenticado' });
+  const userId = sessionUser.id;
+  const clinicId = sessionUser.effective_clinic_id ?? sessionUser.clinic_id ?? null;
+  // Propaga clinicId a req.body para que los mockReqs internos de notificaciones lo incluyan
   if (clinicId && req.body && !req.body.clinicId) req.body.clinicId = clinicId;
   async function getCalendarClient() {
-    // 1. OAuth de la clínica
-    const oauthClient = await getClinicOAuth2Client(clinicId);
+    const oauthClient = await getUserOAuth2Client(userId);
     if (oauthClient) {
       return { calendar: google.calendar({ version: 'v3', auth: oauthClient }), calendarId: 'primary', credentials: null };
     }
-    throw new Error('No hay cuenta Gmail conectada para esta clínica. Conecta Gmail desde los ajustes de la clínica.');
+    throw new Error('No tienes una cuenta Gmail conectada. Conecta tu cuenta desde Estado del Sistema.');
   }
 
   try {
     switch (action) {
       case 'health':
-        return res.status(200).json({ success: true, message: 'API Calendar funcionando', hasOAuth: !!(await getClinicOAuth2Client(clinicId)), hasServiceAccount: false });
+        return res.status(200).json({ success: true, message: 'API Calendar funcionando', hasOAuth: !!(await getUserOAuth2Client(userId)), hasServiceAccount: false });
 
       case 'getEvents': {
         const { calendar, calendarId, credentials } = await getCalendarClient();
@@ -148,12 +157,12 @@ export default async function handler(req, res) {
         return res.status(400).json({ success: false, message: 'Acción no válida' });
     }
   } catch (error) {
-    if (isGoogleAuthError(error) && clinicId) {
-      await sql`DELETE FROM clinic_oauth_tokens WHERE clinic_id = ${clinicId}`;
+    if (isGoogleAuthError(error) && userId) {
+      await sql`DELETE FROM clinic_oauth_tokens WHERE clinic_user_id = ${userId}`;
       return res.status(200).json({ success: false, calendarNotConfigured: true, requiresReconnect: true, message: 'La conexión de Google expiró o fue revocada. Vuelve a conectar Gmail desde los ajustes de la clínica.' });
     }
     // Calendario no configurado → no es un crash, es un estado esperado
-    if (error.message?.includes('No hay cuenta Gmail') || error.message?.includes('Credenciales de Google')) {
+    if (error.message?.includes('No hay cuenta Gmail') || error.message?.includes('No tienes una cuenta Gmail') || error.message?.includes('Credenciales de Google')) {
       return res.status(200).json({ success: false, calendarNotConfigured: true, message: error.message });
     }
     console.error('❌ Error en calendario:', error.message);
@@ -404,6 +413,7 @@ async function blockSchedule(req, res, calendar, credentials) {
   try {
     const mockReq = {
       method: 'POST',
+      headers: req.headers,
       body: {
         notificationType: 'admin_block_created',
         date,
@@ -419,6 +429,7 @@ async function blockSchedule(req, res, calendar, credentials) {
 
     const mockRes = {
       status: (code) => ({
+        headers: req.headers,
         json: (data) => {
           console.log(`📧 SendEmail handler respondió con status ${code}:`, data);
           return data;
@@ -559,6 +570,7 @@ async function deleteBlockedSchedule(req, res, calendar, credentials) {
       // Crear objetos mock de request y response para llamar al sendEmail handler directamente
       const mockReq = {
         method: 'POST',
+        headers: req.headers,
         body: emailBody
       };
       
@@ -663,6 +675,7 @@ async function deleteEvent(req, res, calendar, credentials) {
     // Crear objetos mock de request y response para llamar al sendEmail handler directamente
     const mockReq = {
       method: 'POST',
+      headers: req.headers,
       body: emailBody
     };
     

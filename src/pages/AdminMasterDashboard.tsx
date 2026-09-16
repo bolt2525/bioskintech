@@ -994,12 +994,8 @@ export default function AdminMasterDashboard() {
   const [clinicModal, setClinicModal] = useState<{ open: boolean; clinicId?: number }>({ open: false });
   const [pwdModal, setPwdModal] = useState<{ open: boolean; userId?: number; username?: string; email?: string }>({ open: false });
 
-  // Estado de conexión OAuth para el modal Editar Clínica
-  const [clinicEmailConn, setClinicEmailConn] = useState<{ connected: boolean; email: string | null } | null>(null);
-  const [disconnecting, setDisconnecting] = useState(false);
-
   // ── Formularios ──────────────────────────────────────────────────────────
-  const [userForm, setUserForm]     = useState({ username: '', full_name: '', first_name: '', last_name: '', gentilicio: '', profession: '', email: '', phone: '', role: 'clinic_user', access_scope: 'own', finance_scope: 'all', inventory_scope: 'all', clinic_id: '', password: '', password2: '', cedula_profesional: '', matricula_senescyt: '', especialidad: '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
+  const [userForm, setUserForm]     = useState({ username: '', full_name: '', first_name: '', last_name: '', gentilicio: '', profession: '', email: '', phone: '', role: 'clinic_user', access_scope: 'own', finance_scope: 'all', inventory_scope: 'all', calendar_scope: 'own', clinic_id: '', password: '', password2: '', cedula_profesional: '', matricula_senescyt: '', especialidad: '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
   const [clinicForm, setClinicForm] = useState({ name: '', email: '', phone: '', address: '' });
   const [resetCredentials, setResetCredentials] = useState<{ username: string; email: string; temporaryPassword: string } | null>(null);
   const [resetBusy, setResetBusy] = useState(false);
@@ -1132,33 +1128,35 @@ export default function AdminMasterDashboard() {
       const data = await res.json();
       if (data.data) {
         const map: Record<number, { email: string; connected_at: string }> = {};
-        data.data.forEach((r: { clinic_id: number; email: string; connected_at: string }) => { map[r.clinic_id] = r; });
+        data.data.forEach((r: { clinic_user_id: number; email: string; connected_at: string }) => {
+          if (r.clinic_user_id) map[r.clinic_user_id] = r;
+        });
         setOauthStatus(map);
       }
     } catch { /* silencioso */ }
   };
 
-  const handleOauthConnect = async (clinicId: number) => {
-    const res  = await fetch('/api/admin-auth?action=oauthStart', { method: 'POST', headers: authHeader(), body: JSON.stringify({ clinicId }) });
+  const handleOauthConnect = async (userId: number) => {
+    const res  = await fetch('/api/admin-auth?action=oauthStart', { method: 'POST', headers: authHeader(), body: JSON.stringify({ userId }) });
     const data = await res.json();
     if (data.error) { flash(data.error, 'err'); return; }
-    setOauthLinks(prev => ({ ...prev, [clinicId]: data.url }));
+    setOauthLinks(prev => ({ ...prev, [userId]: data.url }));
     window.open(data.url, '_blank', 'width=500,height=600');
     flash('Completa la autorización en la ventana de Google', 'ok');
     setTimeout(() => loadOauthStatus(), 10000);
   };
 
-  const copyOauthLink = async (clinicId: number, clinicName: string) => {
-    const res  = await fetch('/api/admin-auth?action=oauthStart', { method: 'POST', headers: authHeader(), body: JSON.stringify({ clinicId }) });
+  const copyOauthLink = async (userId: number, clinicName: string) => {
+    const res  = await fetch('/api/admin-auth?action=oauthStart', { method: 'POST', headers: authHeader(), body: JSON.stringify({ userId }) });
     const data = await res.json();
     if (data.error) { flash(data.error, 'err'); return; }
     // Mostrar modal con el enlace — clipboard async falla en móvil por pérdida del user gesture
     setOauthLinkModal({ open: true, url: data.url, clinicName });
   };
 
-  const handleOauthRevoke = async (clinicId: number) => {
-    if (!confirm('¿Desconectar la cuenta de Google de esta clínica?')) return;
-    await fetch('/api/admin-auth?action=oauthRevoke', { method: 'POST', headers: authHeader(), body: JSON.stringify({ clinicId }) });
+  const handleOauthRevoke = async (userId: number) => {
+    if (!confirm('¿Desconectar la cuenta de Google de este usuario?')) return;
+    await fetch('/api/admin-auth?action=oauthRevoke', { method: 'POST', headers: authHeader(), body: JSON.stringify({ userId }) });
     flash('Cuenta desconectada');
     loadOauthStatus();
   };
@@ -1447,12 +1445,12 @@ export default function AdminMasterDashboard() {
 
   const openCreateUser = () => {
     setUsernameSuggestion(''); setUsernameStatus('idle');
-    setUserForm({ username: '', full_name: '', first_name: '', last_name: '', gentilicio: '', profession: '', email: '', phone: '', role: 'clinic_user', access_scope: 'own', finance_scope: 'all', inventory_scope: 'all', clinic_id: String(clinics[0]?.id || ''), password: '', password2: '', cedula_profesional: '', matricula_senescyt: '', especialidad: '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
+    setUserForm({ username: '', full_name: '', first_name: '', last_name: '', gentilicio: '', profession: '', email: '', phone: '', role: 'clinic_user', access_scope: 'own', finance_scope: 'all', inventory_scope: 'all', calendar_scope: 'own', clinic_id: String(clinics[0]?.id || ''), password: '', password2: '', cedula_profesional: '', matricula_senescyt: '', especialidad: '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
     setUserModal({ open: true });
   };
 
   const openEditUser = (u: ClinicUser) => {
-    setUserForm({ username: u.username, full_name: u.full_name || '', first_name: u.first_name || '', last_name: u.last_name || '', gentilicio: u.gentilicio || '', profession: u.profession || '', email: u.email || '', phone: u.phone || '', role: u.role, access_scope: u.access_scope, finance_scope: u.finance_scope || 'all', inventory_scope: u.inventory_scope || 'all', clinic_id: String(u.clinic_id || ''), password: '', password2: '', cedula_profesional: u.cedula_profesional || '', matricula_senescyt: (u as any).matricula_senescyt || '', especialidad: u.especialidad || '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
+    setUserForm({ username: u.username, full_name: u.full_name || '', first_name: u.first_name || '', last_name: u.last_name || '', gentilicio: u.gentilicio || '', profession: u.profession || '', email: u.email || '', phone: u.phone || '', role: u.role, access_scope: u.access_scope, finance_scope: u.finance_scope || 'all', inventory_scope: u.inventory_scope || 'all', calendar_scope: u.calendar_scope || 'own', clinic_id: String(u.clinic_id || ''), password: '', password2: '', cedula_profesional: u.cedula_profesional || '', matricula_senescyt: (u as any).matricula_senescyt || '', especialidad: u.especialidad || '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
     setUserModal({ open: true, userId: u.id });
   };
 
@@ -1542,35 +1540,11 @@ export default function AdminMasterDashboard() {
   const openCreateClinic = () => {
     setClinicForm({ name: '', email: '', phone: '', address: '' });
     setClinicModal({ open: true });
-    setClinicEmailConn(null);
   };
 
   const openEditClinic = (c: Clinic) => {
     setClinicForm({ name: c.name, email: c.email || '', phone: c.phone || '', address: c.address || '' });
     setClinicModal({ open: true, clinicId: c.id });
-    setClinicEmailConn(null); // reset mientras carga
-    fetch(`/api/admin-auth?action=getEmailConnectionStatus&clinicId=${c.id}`, { headers: authHeader() })
-      .then(r => r.json())
-      .then(d => { if (d.success) setClinicEmailConn({ connected: d.connected, email: d.email }); })
-      .catch(() => {});
-  };
-
-  const handleDisconnectAndChange = async () => {
-    const clinicId = clinicModal.clinicId;
-    if (!clinicId) return;
-    if (!confirm('¿Revocar el acceso de Google y desconectar este correo?\n\nLa clínica deberá reconectar con el nuevo correo desde Estado del Sistema.')) return;
-    setDisconnecting(true);
-    try {
-      const res = await fetch('/api/admin-auth?action=disconnectClinicOAuth', {
-        method: 'POST', headers: authHeader(), body: JSON.stringify({ clinicId }),
-      });
-      const d = await res.json();
-      if (d.error) { flash(d.error, 'err'); return; }
-      setClinicEmailConn({ connected: false, email: null });
-      flash('Cuenta desconectada. Ya puedes cambiar el correo.');
-      loadOauthStatus();
-    } catch { flash('Error al desconectar', 'err'); }
-    finally { setDisconnecting(false); }
   };
 
   const saveClinic = async () => {
@@ -1585,7 +1559,7 @@ export default function AdminMasterDashboard() {
     // Si es nueva clínica, abrir modal de usuario pre-asignado a ella
     if (!clinicModal.clinicId && data.clinic) {
       await loadAll();
-      setUserForm({ username: '', full_name: '', first_name: '', last_name: '', gentilicio: '', profession: '', email: '', phone: '', role: 'clinic_admin', access_scope: 'all', finance_scope: 'all', inventory_scope: 'all', clinic_id: String(data.clinic.id), password: '', password2: '', cedula_profesional: '', matricula_senescyt: '', especialidad: '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
+      setUserForm({ username: '', full_name: '', first_name: '', last_name: '', gentilicio: '', profession: '', email: '', phone: '', role: 'clinic_admin', access_scope: 'all', finance_scope: 'all', inventory_scope: 'all', calendar_scope: 'own', clinic_id: String(data.clinic.id), password: '', password2: '', cedula_profesional: '', matricula_senescyt: '', especialidad: '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
       setUserModal({ open: true });
     }
     loadAll();
@@ -1863,41 +1837,7 @@ export default function AdminMasterDashboard() {
                         onToggle={handleToggleFeature}
                       />
 
-                      {/* Conexión Google OAuth */}
-                      <div className="mt-3 pt-3 border-t border-gray-50">
-                        {oauthStatus[clinic.id] ? (
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-1.5 text-xs text-emerald-600">
-                              <Mail className="w-3.5 h-3.5" />
-                              <span className="truncate max-w-[160px]" title={oauthStatus[clinic.id].email}>
-                                {oauthStatus[clinic.id].email}
-                              </span>
-                            </div>
-                            <button onClick={() => handleOauthRevoke(clinic.id)} className="flex items-center gap-1 text-xs text-red-400 hover:text-red-600 transition-colors">
-                              <Unlink className="w-3 h-3" /> Desconectar
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="space-y-1.5">
-                            <div className="flex gap-1.5">
-                              <button
-                                onClick={() => handleOauthConnect(clinic.id)}
-                                className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium text-gray-500 border border-dashed border-gray-200 rounded-lg hover:border-[#deb887]/50 hover:text-[#c5a075] transition-colors"
-                              >
-                                <ExternalLink className="w-3.5 h-3.5" /> Conectar aquí
-                              </button>
-                              <button
-                                onClick={() => copyOauthLink(clinic.id, clinic.name)}
-                                title="Copiar enlace y enviarlo al admin de la clínica"
-                                className="px-3 flex items-center justify-center border border-dashed border-gray-200 rounded-lg hover:border-[#deb887]/50 hover:text-[#c5a075] text-gray-400 transition-colors"
-                              >
-                                <Copy className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                            <p className="text-[10px] text-gray-400 text-center leading-tight">O copia el enlace <Copy className="w-2.5 h-2.5 inline" /> y envíalo al admin de la clínica para que lo abra desde su Gmail</p>
-                          </div>
-                        )}
-                      </div>
+                      <p className="mt-3 pt-3 border-t border-gray-50 text-[10px] text-gray-400 text-center">Google Calendar se conecta por usuario desde la pestaña Usuarios.</p>
 
                       {/* Acciones de la clínica */}
                       <div className="flex gap-2 mt-4 pt-4 border-t">
@@ -2025,6 +1965,11 @@ export default function AdminMasterDashboard() {
                                 <button onClick={() => openEditUser(u)} className="p-1.5 text-[#c5a075] hover:bg-[#deb887]/10 rounded" title="Editar">
                                   <Edit className="w-3.5 h-3.5" />
                                 </button>
+                                {u.role !== 'master_admin' && oauthStatus[u.id] && (
+                                  <button onClick={() => handleOauthRevoke(u.id)} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded" title={`Google conectado: ${oauthStatus[u.id].email}`}>
+                                    <Unlink className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
                                 <button onClick={() => { setResetCredentials(null); setCredentialsSent(false); setPwdModal({ open: true, userId: u.id, username: u.username, email: u.email }); }} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded" title="Generar clave temporal">
                                   <Key className="w-3.5 h-3.5" />
                                 </button>
@@ -2544,7 +2489,7 @@ export default function AdminMasterDashboard() {
             {userForm.role !== 'master_admin' && (
               <div className="border border-gray-100 rounded-xl p-3 space-y-2.5">
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Control de acceso</p>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1 flex items-center gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-pink-400 inline-block" /> Pacientes
@@ -2570,6 +2515,14 @@ export default function AdminMasterDashboard() {
                     <select value={userForm.inventory_scope} onChange={e => setUserForm(p => ({ ...p, inventory_scope: e.target.value }))} className="w-full px-2 py-1.5 border rounded-lg text-xs focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] focus:outline-none">
                       <option value="all">Todo</option>
                       <option value="own">Solo propio</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" /> Calendario
+                    </label>
+                    <select value={userForm.calendar_scope} disabled className="w-full px-2 py-1.5 border rounded-lg text-xs bg-gray-50 text-gray-600">
+                      <option value="own">Cuenta propia</option>
                     </select>
                   </div>
                 </div>
@@ -3376,31 +3329,15 @@ export default function AdminMasterDashboard() {
                 />
               </div>
             ))}
-            {/* Email de contacto — con badge de conexión OAuth */}
+            {/* Email de contacto de la clínica; Google se conecta por usuario */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Email de contacto</label>
               <input
                 type="email"
                 value={clinicForm.email}
                 onChange={e => setClinicForm(p => ({ ...p, email: e.target.value }))}
-                disabled={clinicEmailConn?.connected === true}
-                className={`w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-amber-300 focus:outline-none ${clinicEmailConn?.connected ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}`}
+                className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-amber-300 focus:outline-none"
               />
-              {clinicEmailConn === null && clinicModal.clinicId && (
-                <p className="mt-1 text-xs text-gray-400 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Verificando estado...</p>
-              )}
-              {clinicEmailConn?.connected && (
-                <div className="mt-1.5 flex items-center justify-between gap-2">
-                  <span className="flex items-center gap-1 text-xs text-emerald-600 font-medium">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Esta cuenta está conectada con la clínica
-                  </span>
-                  <button onClick={handleDisconnectAndChange} disabled={disconnecting}
-                    className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700 disabled:opacity-50 font-medium transition-colors">
-                    {disconnecting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Link2Off className="w-3 h-3" />}
-                    Desconectar y cambiar
-                  </button>
-                </div>
-              )}
             </div>
             {!clinicModal.clinicId && (
               <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">

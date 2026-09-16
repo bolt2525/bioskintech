@@ -190,16 +190,25 @@ export default function AdminInventory() {
       const matchSearch = !search
         || item.name.toLowerCase().includes(search.toLowerCase())
         || (item.sku || '').toLowerCase().includes(search.toLowerCase());
-      const matchCat = categoryFilter === 'all' || item.category === categoryFilter;
+      const matchCat = categoryFilter === 'all' || item.category?.trim() === categoryFilter;
       return matchSearch && matchCat;
     });
   }, [items, search, categoryFilter]);
 
   const categories = useMemo(() => {
     const DEFAULT_CATS = ['Consumibles', 'Equipamiento', 'Inyectable', 'Venta'];
-    const fromItems = Array.from(new Set(items.map(i => i.category).filter(Boolean)));
+    const fromItems = Array.from(new Set(items.map(i => i.category?.trim()).filter(Boolean)));
     return Array.from(new Set([...DEFAULT_CATS, ...settingsCategories, ...fromItems])).sort();
   }, [items, settingsCategories]);
+
+  const groupedItems = useMemo(() => {
+    const groups = new Map<string, any[]>();
+    filteredItems.forEach(item => {
+      const category = item.category?.trim() || 'Sin categoría';
+      groups.set(category, [...(groups.get(category) || []), item]);
+    });
+    return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b, 'es'));
+  }, [filteredItems]);
 
   const suggestedSku = useMemo(() => {
     const numericSkus = items
@@ -270,38 +279,64 @@ export default function AdminInventory() {
           ) : null}
 
           {/* Toolbar */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-            {/* Filtro por profesional — solo admins */}
-            {isAdmin && clinicUsers.length > 0 && (
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <span className="text-xs text-gray-500">Profesional:</span>
-                <select
-                  value={filterUserId}
-                  onChange={e => setFilterUserId(e.target.value ? Number(e.target.value) : '')}
-                  className="text-sm border border-gray-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none"
-                >
-                  <option value="">Todos</option>
-                  {clinicUsers.map(u => (
-                    <option key={u.id} value={u.id}>{u.full_name || u.username}</option>
-                  ))}
-                </select>
+          <div className="space-y-3">
+            <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-3">
+              {/* Filtro por profesional — solo admins */}
+              {isAdmin && clinicUsers.length > 0 && (
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <label htmlFor="inventory-professional" className="text-xs text-gray-500">Profesional:</label>
+                  <select
+                    id="inventory-professional"
+                    value={filterUserId}
+                    onChange={e => setFilterUserId(e.target.value ? Number(e.target.value) : '')}
+                    className="min-w-0 flex-1 lg:flex-none text-sm border border-gray-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none"
+                  >
+                    <option value="">Todos</option>
+                    {clinicUsers.map(u => (
+                      <option key={u.id} value={u.id}>{u.full_name || u.username}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {/* Search */}
+              <div className="relative min-w-0 flex-1">
+                <label htmlFor="inventory-search" className="sr-only">Buscar productos</label>
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none" />
+                <input
+                  id="inventory-search"
+                  type="search"
+                  placeholder="Buscar por nombre o SKU..."
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#deb887] focus:border-[#deb887] outline-none bg-white"
+                />
               </div>
-            )}
-            {/* Search */}
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none" />
-              <input
-                type="text"
-                placeholder="Buscar por nombre o SKU..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#deb887] focus:border-[#deb887] outline-none bg-white"
-              />
+              {/* Actions */}
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <motion.button
+                  whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
+                  onClick={refresh}
+                  className="p-2.5 rounded-xl text-gray-400 hover:text-[#b8905a] hover:bg-[#deb887]/10 transition-colors border border-gray-200"
+                  title="Actualizar"
+                  aria-label="Actualizar inventario"
+                >
+                  <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                </motion.button>
+                <motion.button
+                  whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+                  onClick={() => { setSelectedItem(null); setShowForm(true); }}
+                  className="flex-1 lg:flex-none justify-center flex items-center gap-2 bg-[#deb887] text-white px-4 py-2.5 rounded-xl hover:bg-[#c5a075] transition-colors text-sm font-semibold shadow-sm shadow-[#deb887]/30"
+                >
+                  <Plus className="w-4 h-4" />
+                  Nuevo Producto
+                </motion.button>
+              </div>
             </div>
             {/* Category filter chips */}
-            <div className="flex items-center gap-1.5 flex-wrap">
+            <div className="flex w-full items-center gap-1.5 flex-wrap" aria-label="Filtrar por categoría">
               <button
                 onClick={() => setCategoryFilter('all')}
+                aria-pressed={categoryFilter === 'all'}
                 className={`px-3 py-2 rounded-xl text-xs font-medium transition-all ${
                   categoryFilter === 'all'
                     ? 'bg-[#deb887] text-white shadow-sm'
@@ -314,6 +349,7 @@ export default function AdminInventory() {
                 <button
                   key={cat}
                   onClick={() => setCategoryFilter(cat)}
+                  aria-pressed={categoryFilter === cat}
                   className={`px-3 py-2 rounded-xl text-xs font-medium transition-all ${
                     categoryFilter === cat
                       ? 'bg-[#deb887] text-white shadow-sm'
@@ -323,25 +359,6 @@ export default function AdminInventory() {
                   {cat}
                 </button>
               ))}
-            </div>
-            {/* Actions */}
-            <div className="flex items-center gap-2 flex-shrink-0">
-              <motion.button
-                whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
-                onClick={refresh}
-                className="p-2.5 rounded-xl text-gray-400 hover:text-[#b8905a] hover:bg-[#deb887]/10 transition-colors border border-gray-200"
-                title="Actualizar"
-              >
-                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-              </motion.button>
-              <motion.button
-                whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-                onClick={() => { setSelectedItem(null); setShowForm(true); }}
-                className="flex items-center gap-2 bg-[#deb887] text-white px-4 py-2.5 rounded-xl hover:bg-[#c5a075] transition-colors text-sm font-semibold shadow-sm shadow-[#deb887]/30"
-              >
-                <Plus className="w-4 h-4" />
-                Nuevo Producto
-              </motion.button>
             </div>
           </div>
 
@@ -359,31 +376,40 @@ export default function AdminInventory() {
               {search && <p className="text-sm mt-1">Prueba con otro término de búsqueda</p>}
             </div>
           ) : (
-            <motion.div
-              layout
-              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"
-            >
-              <AnimatePresence>
-                {filteredItems.map((item, idx) => (
-                  <div key={item.id} className="relative">
-                    {isAdmin && item.created_by_user_name && (
-                      <div className="absolute top-2 right-2 z-10 px-2 py-0.5 bg-purple-50 text-purple-700 text-xs font-medium rounded-full border border-purple-100">
-                        {item.created_by_user_name}
-                      </div>
-                    )}
-                    <InventoryProductCard
-                      item={item}
-                      index={idx}
-                      onSelect={(i) => setDrawerItem(i)}
-                      onAddStock={(i) => { setSelectedItem(i); setShowStockModal(true); }}
-                      onConsume={(i) => { setSelectedItem(i); setShowConsumeModal(true); }}
-                      onEdit={(i) => { setSelectedItem(i); setShowForm(true); }}
-                      onDelete={handleDeleteItem}
-                    />
+            <div className="space-y-7">
+              {groupedItems.map(([category, categoryItems]) => (
+                <section key={category} aria-labelledby={`inventory-category-${category.replace(/\W+/g, '-').toLowerCase()}`}>
+                  <div className="mb-3 flex items-center gap-2 border-b border-gray-200 pb-2">
+                    <h2 id={`inventory-category-${category.replace(/\W+/g, '-').toLowerCase()}`} className="text-sm font-semibold text-gray-800">
+                      {category}
+                    </h2>
+                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">{categoryItems.length}</span>
                   </div>
-                ))}
-              </AnimatePresence>
-            </motion.div>
+                  <motion.div layout className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    <AnimatePresence>
+                      {categoryItems.map((item, idx) => (
+                        <div key={item.id} className="relative">
+                          {isAdmin && item.created_by_user_name && (
+                            <div className="absolute top-2 right-2 z-10 px-2 py-0.5 bg-purple-50 text-purple-700 text-xs font-medium rounded-full border border-purple-100">
+                              {item.created_by_user_name}
+                            </div>
+                          )}
+                          <InventoryProductCard
+                            item={item}
+                            index={idx}
+                            onSelect={(i) => setDrawerItem(i)}
+                            onAddStock={(i) => { setSelectedItem(i); setShowStockModal(true); }}
+                            onConsume={(i) => { setSelectedItem(i); setShowConsumeModal(true); }}
+                            onEdit={(i) => { setSelectedItem(i); setShowForm(true); }}
+                            onDelete={handleDeleteItem}
+                          />
+                        </div>
+                      ))}
+                    </AnimatePresence>
+                  </motion.div>
+                </section>
+              ))}
+            </div>
           )}
         </div>
       )}

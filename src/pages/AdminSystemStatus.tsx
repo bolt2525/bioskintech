@@ -80,7 +80,7 @@ const ServiceCard = ({
 };
 
 // ── Vista de usuario (suscripción + Gmail) ────────────────────────────────────
-function UserStatusView({ isClinicAdmin, user }: { isClinicAdmin: boolean; user: any }) {
+function UserStatusView({ user }: { user: any }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [userStatus, setUserStatus] = useState<UserStatus | null>(null);
@@ -103,7 +103,7 @@ function UserStatusView({ isClinicAdmin, user }: { isClinicAdmin: boolean; user:
     if (!user?.clinic_id) return;
     setLoadingEmailConn(true);
     try {
-      const res = await fetch$(`/api/admin-auth?action=getEmailConnectionStatus&clinicId=${user.clinic_id}`);
+      const res = await fetch$(`/api/admin-auth?action=getEmailConnectionStatus&userId=${user.id}`);
       const data = await res.json();
       if (data.success) setEmailConn(data);
     } catch { /* non-fatal */ }
@@ -116,7 +116,7 @@ function UserStatusView({ isClinicAdmin, user }: { isClinicAdmin: boolean; user:
       const res = await fetch('/api/admin-auth?action=oauthStart', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken') || ''}` },
-        body: JSON.stringify({ clinicId: user.clinic_id, returnPath: '/gestionestetica/admin' }),
+        body: JSON.stringify({ userId: user.id, returnPath: '/gestionestetica/admin' }),
       });
       const d = await res.json();
       if (d.url) window.location.href = d.url;
@@ -125,18 +125,18 @@ function UserStatusView({ isClinicAdmin, user }: { isClinicAdmin: boolean; user:
     finally { setLoadingEmailConn(false); }
   };
 
-  const handleResendLink = async () => {
+  const handleDisconnectEmail = async () => {
     setLoadingEmailConn(true);
     try {
-      const res = await fetch('/api/admin-auth?action=sendEmailConnectionLink', {
+      const res = await fetch('/api/admin-auth?action=disconnectClinicOAuth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken') || ''}` },
-        body: JSON.stringify({ clinicId: user.clinic_id }),
+        body: JSON.stringify({ userId: user.id }),
       });
-      const d = await res.json();
-      setEmailConnMsg(d.success ? '✓ Enlace enviado a tu correo' : (d.error || 'Error al enviar'));
-    } catch { setEmailConnMsg('Error de conexión'); }
-    finally { setLoadingEmailConn(false); }
+      const data = await res.json();
+      setEmailConnMsg(data.success ? 'Cuenta Google desconectada' : (data.error || 'Error al desconectar'));
+      if (data.success) fetchEmailConn();
+    } finally { setLoadingEmailConn(false); }
   };
 
   useEffect(() => {
@@ -208,7 +208,7 @@ function UserStatusView({ isClinicAdmin, user }: { isClinicAdmin: boolean; user:
         )}
       </motion.div>
 
-      {/* Card Gmail de la clínica */}
+      {/* Cuenta Google personal */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
         className={`bg-white rounded-2xl border p-5 shadow-sm ${
           emailConn === null ? 'border-gray-200' : emailConn.connected ? 'border-emerald-200' : 'border-amber-200'
@@ -220,7 +220,7 @@ function UserStatusView({ isClinicAdmin, user }: { isClinicAdmin: boolean; user:
               {emailConn?.connected ? <Link2 className="w-5 h-5" /> : <Link2Off className="w-5 h-5" />}
             </div>
             <div>
-              <p className="font-semibold text-gray-800">Email de la clínica</p>
+              <p className="font-semibold text-gray-800">Mi cuenta Google</p>
               {emailConn?.email && <p className="text-xs text-gray-400">{emailConn.email}</p>}
               {!emailConn?.connected && emailConn?.clinic_email && <p className="text-xs text-gray-400">Registrado: {emailConn.clinic_email}</p>}
             </div>
@@ -239,18 +239,19 @@ function UserStatusView({ isClinicAdmin, user }: { isClinicAdmin: boolean; user:
             </button>
           </div>
         </div>
-        {/* Solo clinic_admin puede conectar; clinic_user ve estado de solo lectura */}
-        {isClinicAdmin && emailConn !== null && !emailConn.connected && (
-          <div className="flex gap-2 mt-2">
+        {emailConn !== null && !emailConn.connected && (
+          <div className="flex mt-2">
             <button onClick={handleConnectEmail} disabled={loadingEmailConn}
               className="flex-1 py-2 bg-[#deb887] text-white rounded-lg text-xs font-semibold hover:bg-[#c9a876] disabled:opacity-50 flex items-center justify-center gap-1.5">
               <Link2 className="w-3.5 h-3.5" /> Conectar ahora
             </button>
-            <button onClick={handleResendLink} disabled={loadingEmailConn}
-              className="flex-1 py-2 border border-gray-200 text-gray-600 rounded-lg text-xs font-medium hover:bg-gray-50 disabled:opacity-50 flex items-center justify-center gap-1.5">
-              <Send className="w-3.5 h-3.5" /> Reenviar link por correo
-            </button>
           </div>
+        )}
+        {emailConn?.connected && (
+          <button onClick={handleDisconnectEmail} disabled={loadingEmailConn}
+            className="mt-2 w-full py-2 border border-red-200 text-red-600 rounded-lg text-xs font-medium hover:bg-red-50 disabled:opacity-50 flex items-center justify-center gap-1.5">
+            <Link2Off className="w-3.5 h-3.5" /> Desconectar mi cuenta
+          </button>
         )}
         {emailConnMsg && <p className="mt-2 text-xs text-gray-500">{emailConnMsg}</p>}
       </motion.div>
@@ -338,7 +339,7 @@ export default function AdminSystemStatus() {
               <p className="text-sm text-gray-400">Estado de tu cuenta y servicios de la clínica</p>
             </div>
           </div>
-          <UserStatusView isClinicAdmin={isClinicAdmin} user={user} />
+          <UserStatusView user={user} />
         </div>
       </AdminLayout>
     );

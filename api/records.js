@@ -24,6 +24,9 @@ function buildSu(auth) {
     effective_clinic_id: auth.effective_clinic_id, // UUID string (may differ for master)
     user_id:             auth.id,
     access_scope:        auth.access_scope || 'all',
+    finance_scope:       auth.finance_scope || 'all',
+    inventory_scope:     auth.inventory_scope || 'all',
+    calendar_scope:      auth.calendar_scope || 'own',
     username:            auth.username,
   };
 }
@@ -65,6 +68,61 @@ async function recordBelongsToClinic(pool, recordId, clinicId) {
   return result.rows.length > 0;
 }
 
+async function canAccessPatient(pool, sessionUser, patientId) {
+  if (!patientId || !sessionUser) return false;
+  const clinicId = sessionUser.effective_clinic_id ?? sessionUser.clinic_id;
+  const result = await pool.query(
+    `SELECT 1 FROM patients p
+     WHERE p.id = $1 AND ($2::uuid IS NULL OR p.clinic_id = $2)
+       AND ($3::boolean = false OR p.created_by_user_id = $4 OR EXISTS (
+         SELECT 1 FROM patient_assignments pa WHERE pa.patient_id = p.id AND pa.clinic_user_id = $4
+       )) LIMIT 1`,
+    [patientId, clinicId, sessionUser.role !== 'master_admin' && sessionUser.access_scope === 'own', sessionUser.user_id]
+  );
+  return result.rows.length > 0;
+}
+
+async function canAccessRecord(pool, sessionUser, recordId) {
+  if (!recordId || !sessionUser) return false;
+  const clinicId = sessionUser.effective_clinic_id ?? sessionUser.clinic_id;
+  const result = await pool.query(
+    `SELECT 1 FROM clinical_records cr
+     WHERE cr.id = $1 AND ($2::uuid IS NULL OR cr.clinic_id = $2)
+       AND ($3::boolean = false OR cr.created_by_user_id = $4) LIMIT 1`,
+    [recordId, clinicId, sessionUser.role !== 'master_admin' && sessionUser.access_scope === 'own', sessionUser.user_id]
+  );
+  return result.rows.length > 0;
+}
+
+async function canAccessFinanceRecord(pool, sessionUser, recordId) {
+  if (!recordId || !sessionUser) return false;
+  const clinicId = sessionUser.effective_clinic_id ?? sessionUser.clinic_id;
+  const result = await pool.query(
+    `SELECT 1 FROM financial_records fr
+     WHERE fr.id = $1 AND ($2::uuid IS NULL OR fr.clinic_id = $2)
+       AND ($3::boolean = false OR fr.created_by_user_id = $4 OR fr.created_by_user_id IN (
+         SELECT sgm2.clinic_user_id FROM sharing_group_members sgm1
+         JOIN sharing_group_members sgm2 ON sgm1.group_id = sgm2.group_id
+         WHERE sgm1.clinic_user_id = $4
+       )) LIMIT 1`,
+    [recordId, clinicId, sessionUser.role !== 'master_admin' && sessionUser.finance_scope === 'own', sessionUser.user_id]
+  );
+  return result.rows.length > 0;
+}
+
+function inventoryOwnerClause(alias, parameterIndex) {
+  return `(
+    ${alias}.created_by_user_id = $${parameterIndex}
+    OR ${alias}.created_by_user_id IS NULL
+    OR ${alias}.created_by_user_id IN (
+      SELECT sgm2.clinic_user_id
+      FROM sharing_group_members sgm1
+      JOIN sharing_group_members sgm2 ON sgm1.group_id = sgm2.group_id
+      WHERE sgm1.clinic_user_id = $${parameterIndex}
+    )
+  )`;
+}
+
 export function isOwnedPhotoKey(key, clinicId, recordId) {
   const prefix = `clinics/${clinicId}/records/${recordId}/photos/`;
   return typeof key === 'string' && key.startsWith(prefix) &&
@@ -75,13 +133,13 @@ export function isOwnedPhotoKey(key, clinicId, recordId) {
 // Envío de reportes financieros (CSV por correo)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** OAuth2 client de Gmail con los tokens guardados para la clínica. Retorna null si no hay conexión. */
-async function getClinicGmailClient(clinicId) {
+/** OAuth2 client de Gmail con los tokens guardados para un usuario. */
+async function getUserGmailClient(userId) {
   const clientId     = (process.env.GOOGLE_CLIENT_ID     || '').trim();
   const clientSecret = (process.env.GOOGLE_CLIENT_SECRET || '').trim();
   if (!clientId || !clientSecret) return null;
   const appUrl = (process.env.APP_URL || `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app'}`).replace(/\/$/, '').trim();
-  const r = await sql`SELECT access_token, refresh_token, token_expiry, email FROM clinic_oauth_tokens WHERE clinic_id = ${clinicId}`;
+  const r = await sql`SELECT access_token, refresh_token, token_expiry, email FROM clinic_oauth_tokens WHERE clinic_user_id = ${userId}`;
   if (!r.rows.length) return null;
   const { access_token, refresh_token, token_expiry, email } = r.rows[0];
   const oAuth2 = new google.auth.OAuth2(clientId, clientSecret, `${appUrl}/api/calendar`);
@@ -118,20 +176,30 @@ function buildRawEmailWithCsvAttachment({ from, to, subject, html, attachmentNam
 }
 
 /** Genera el CSV del rango pedido y lo envía por Gmail al correo de administración financiera configurado. */
-async function sendFinanceCsvToAdmin({ pool, clinicId, startDate, endDate, periodLabel }) {
+async function sendFinanceCsvToAdmin({ pool, clinicId, userId, financeScope = 'all', startDate, endDate, periodLabel }) {
   const settingsRes = await sql`SELECT finanzas, general FROM clinic_settings WHERE clinic_id = ${clinicId}`;
   const finanzas   = settingsRes.rows[0]?.finanzas || {};
   const clinicName = settingsRes.rows[0]?.general?.name || 'la clínica';
   const adminEmail = (finanzas.admin_email || '').trim();
   if (!adminEmail) throw new Error('No hay correo de administrador financiero configurado');
 
-  const oauth = await getClinicGmailClient(clinicId);
-  if (!oauth) throw new Error('No hay cuenta Gmail conectada para esta clínica');
+  const oauth = await getUserGmailClient(userId);
+  if (!oauth) throw new Error('El usuario no tiene una cuenta Gmail conectada');
 
-  const recordsRes = await pool.query(
-    `SELECT * FROM financial_records WHERE (clinic_id = $1 OR clinic_id IS NULL) AND date >= $2 AND date <= $3 ORDER BY date ASC`,
-    [clinicId, startDate, endDate]
-  );
+  const recordsRes = financeScope === 'own'
+    ? await pool.query(
+      `SELECT * FROM financial_records WHERE clinic_id = $1 AND date >= $2 AND date <= $3
+       AND (created_by_user_id = $4 OR created_by_user_id IN (
+         SELECT sgm2.clinic_user_id FROM sharing_group_members sgm1
+         JOIN sharing_group_members sgm2 ON sgm1.group_id = sgm2.group_id
+         WHERE sgm1.clinic_user_id = $4
+       )) ORDER BY date ASC`,
+      [clinicId, startDate, endDate, userId]
+    )
+    : await pool.query(
+      'SELECT * FROM financial_records WHERE clinic_id = $1 AND date >= $2 AND date <= $3 ORDER BY date ASC',
+      [clinicId, startDate, endDate]
+    );
   const csv = buildFinanceCsv(recordsRes.rows);
   const gmail = google.gmail({ version: 'v1', auth: oauth.client });
   const raw = buildRawEmailWithCsvAttachment({
@@ -175,10 +243,17 @@ async function sendScheduledFinanceCsvs() {
 
   const today = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Guayaquil' }));
   const clinics = await sql`
-    SELECT clinic_id, finanzas
-    FROM clinic_settings
-    WHERE finanzas->>'csv_schedule' IN ('daily','weekly','monthly')
-      AND COALESCE(finanzas->>'admin_email','') != ''
+    SELECT DISTINCT ON (cs.clinic_id) cs.clinic_id, cs.finanzas, t.clinic_user_id, cu.finance_scope
+    FROM clinic_settings cs
+    JOIN clinic_oauth_tokens t ON t.clinic_id = cs.clinic_id AND t.clinic_user_id IS NOT NULL
+    JOIN clinic_users cu ON cu.id = t.clinic_user_id AND cu.is_active = true
+    LEFT JOIN clinic_features cf ON cf.clinic_id = cs.clinic_id AND cf.feature = 'finance'
+    LEFT JOIN user_module_overrides umo ON umo.clinic_user_id = cu.id AND umo.feature = 'finance'
+    WHERE cs.finanzas->>'csv_schedule' IN ('daily','weekly','monthly')
+      AND COALESCE(cs.finanzas->>'admin_email','') != ''
+      AND COALESCE(cf.enabled, true) = true
+      AND COALESCE(umo.enabled, true) = true
+    ORDER BY cs.clinic_id, (cu.role = 'clinic_admin') DESC, cu.id
   `;
 
   let sent = 0;
@@ -191,7 +266,7 @@ async function sendScheduledFinanceCsvs() {
     try {
       await client.query("SELECT set_config('app.current_tenant', $1, false)", [String(row.clinic_id)]);
       const tenantPool = { query: (...a) => client.query(...a) };
-      await sendFinanceCsvToAdmin({ pool: tenantPool, clinicId: row.clinic_id, ...range });
+      await sendFinanceCsvToAdmin({ pool: tenantPool, clinicId: row.clinic_id, userId: row.clinic_user_id, financeScope: row.finance_scope, ...range });
       sent++;
     } catch (err) {
       errors.push(`clinic ${row.clinic_id}: ${err.message}`);
@@ -328,6 +403,75 @@ export default async function handler(req, res) {
       // ponytail: pool alias para los pocos handlers que usan pool.connect() internamente
       const pool = { query: (...a) => client.query(...a), connect: () => appPool.connect() };
 
+      const patientIdByAction = {
+        getPatient: req.query.id,
+        listRecords: req.query.patient_id,
+        createRecord: body.patient_id,
+        updatePatient: body.id,
+        deletePatient: req.query.id,
+        listConsents: req.query.patient_id,
+        listAuditLog: req.query.patient_id,
+      };
+      const directRecordIdByAction = {
+        getRecordData: req.query.recordId,
+        listConsultations: req.query.record_id,
+        createConsultation: body.record_id,
+        listHistorySnapshots: req.query.record_id,
+        saveConsultation: body.recordId,
+        saveHistory: body.record_id,
+        savePhysicalExam: body.id ? null : body.record_id,
+        saveDiagnosis: body.id ? null : body.record_id,
+        addTreatment: body.record_id,
+        getInjectablesByRecord: req.query.record_id,
+        addInjectable: body.record_id,
+        listPrescriptions: req.query.record_id,
+        createPrescription: body.ficha_id,
+        uploadPhotoProxy: body.record_id,
+        getPhotoUploadUrl: body.record_id,
+        confirmPhotoUpload: body.record_id,
+        listPhotos: req.query.record_id,
+        deleteRecord: req.query.id,
+        listConsents: req.query.record_id,
+        listAuditLog: req.query.record_id,
+        saveConsent: body.id ? null : body.record_id,
+      };
+      const childRecordTables = {
+        updateConsultation: ['consultations', body.id],
+        deleteConsultation: ['consultations', req.query.id],
+        deleteConsultationHistory: ['consultation_history', req.query.id],
+        savePhysicalExam: ['physical_exams', body.id],
+        deletePhysicalExam: ['physical_exams', req.query.id],
+        saveDiagnosis: ['diagnoses', body.id],
+        deleteDiagnosis: ['diagnoses', req.query.id],
+        updateTreatment: ['treatments', body.id],
+        deleteTreatment: ['treatments', req.query.id],
+        getInjectablesByTreatment: ['treatments', req.query.treatment_id],
+        updateInjectable: ['injectables', body.id],
+        deleteInjectable: ['injectables', req.query.id],
+        getPrescription: ['prescriptions', req.query.id],
+        updatePrescription: ['prescriptions', body.id],
+        deletePrescription: ['prescriptions', req.query.id],
+        getConsent: ['consent_forms', req.query.id],
+        generateSigningToken: ['consent_forms', body.id],
+        deleteConsent: ['consent_forms', req.query.id],
+        saveConsent: ['consent_forms', body.id],
+      };
+
+      if (su?.role !== 'master_admin' && su?.access_scope === 'own') {
+        const patientId = patientIdByAction[action];
+        if (patientId && !(await canAccessPatient(pool, su, patientId)))
+          return res.status(403).json({ error: 'Acceso no autorizado a este paciente' });
+
+        let recordId = directRecordIdByAction[action];
+        const child = childRecordTables[action];
+        if (!recordId && child?.[1]) {
+          const childRecord = await pool.query(`SELECT record_id FROM ${child[0]} WHERE id = $1 LIMIT 1`, [child[1]]);
+          recordId = childRecord.rows[0]?.record_id;
+        }
+        if (recordId && !(await canAccessRecord(pool, su, recordId)))
+          return res.status(403).json({ error: 'Acceso no autorizado a este expediente' });
+      }
+
       switch (action) {
       case 'init':
       case 'initClinical':
@@ -360,6 +504,11 @@ export default async function handler(req, res) {
             params.push(invClinicId);
             paramCount++;
           }
+          if (su.inventory_scope === 'own') {
+            query += ` AND ${inventoryOwnerClause('i', paramCount)}`;
+            params.push(su.user_id);
+            paramCount++;
+          }
           if (type && type !== 'all') {
             if (type === 'IN')  query += ` AND m.quantity_change > 0`;
             if (type === 'OUT') query += ` AND m.quantity_change < 0`;
@@ -383,7 +532,17 @@ export default async function handler(req, res) {
           if (!['clinic_admin', 'master_admin'].includes(su.role))
             return res.status(403).json({ error: 'Sin permiso' });
           const { id } = req.query;
-          await pool.query('DELETE FROM inventory_movements WHERE id = $1', [id]);
+          const deleteParams = [id];
+          let deleteQuery = `DELETE FROM inventory_movements m WHERE m.id = $1 AND EXISTS (
+            SELECT 1 FROM inventory_batches b JOIN inventory_items i ON i.id = b.item_id
+            WHERE b.id = m.batch_id`;
+          if (su.inventory_scope === 'own') {
+            deleteQuery += ` AND ${inventoryOwnerClause('i', 2)}`;
+            deleteParams.push(su.user_id);
+          }
+          deleteQuery += ') RETURNING m.id';
+          const deleted = await pool.query(deleteQuery, deleteParams);
+          if (!deleted.rows.length) return res.status(403).json({ error: 'Sin acceso al movimiento' });
           return res.status(200).json({ success: true });
         } catch (err) {
           console.error('Error deleting movement:', err);
@@ -418,6 +577,11 @@ export default async function handler(req, res) {
             whereClause += ` AND (i.clinic_id = $1 OR i.clinic_id IS NULL)`;
             params.push(invClinicId);
           }
+          if (su.inventory_scope === 'own') {
+            const ownerParam = params.length + 1;
+            whereClause += ` AND ${inventoryOwnerClause('i', ownerParam)}`;
+            params.push(su.user_id);
+          }
           const batches = await pool.query(`
             SELECT b.*, i.name as item_name, i.sku, i.category, i.unit_of_measure
             FROM inventory_batches b
@@ -436,7 +600,7 @@ export default async function handler(req, res) {
           const su = await getSessionUserOnce();
           if (!su) return res.status(401).json({ error: 'No autenticado' });
           const invClinicId = su?.effective_clinic_id ?? su?.clinic_id ?? null;
-          const filterByUserId = ['clinic_admin','master_admin'].includes(su?.role) && req.query.filterByUserId
+          const filterByUserId = su.inventory_scope === 'all' && ['clinic_admin','master_admin'].includes(su?.role) && req.query.filterByUserId
             ? parseInt(req.query.filterByUserId, 10) : null;
 
           const params = [];
@@ -456,18 +620,8 @@ export default async function handler(req, res) {
               params.push(filterByUserId);
               pCount++;
             }
-          } else if (su.access_scope === 'own') {
-            // Usuario scope propio: ve sus ítems + ítems de compañeros del mismo grupo + ítems compartidos sin dueño
-            wheres.push(`(
-              i.created_by_user_id = $${pCount}
-              OR i.created_by_user_id IS NULL
-              OR i.created_by_user_id IN (
-                SELECT sgm2.clinic_user_id
-                FROM sharing_group_members sgm1
-                JOIN sharing_group_members sgm2 ON sgm1.group_id = sgm2.group_id
-                WHERE sgm1.clinic_user_id = $${pCount}
-              )
-            )`);
+          } else if (su.inventory_scope === 'own') {
+            wheres.push(inventoryOwnerClause('i', pCount));
             params.push(su.user_id);
             pCount++;
           }
@@ -517,6 +671,10 @@ export default async function handler(req, res) {
           const iWhere = invClinicId ? `AND (i.clinic_id = $1 OR i.clinic_id IS NULL)` : '';
           const bWhere = invClinicId ? `JOIN inventory_items ii ON ii.id = b.item_id AND (ii.clinic_id = $1 OR ii.clinic_id IS NULL)` : '';
           const alertWhere = invClinicId ? `AND (i.clinic_id = $1 OR i.clinic_id IS NULL)` : '';
+          const ownerParam = clinicParam.length + 1;
+          const ownerWhere = su.inventory_scope === 'own' ? ` AND ${inventoryOwnerClause('i', ownerParam)}` : '';
+          const batchOwnerWhere = su.inventory_scope === 'own' ? ` AND ${inventoryOwnerClause('ii', ownerParam)}` : '';
+          if (su.inventory_scope === 'own') clinicParam.push(su.user_id);
 
           const statsResult = await pool.query(`
             SELECT
@@ -529,7 +687,7 @@ export default async function handler(req, res) {
               FROM inventory_batches WHERE status = 'active'
               GROUP BY item_id
             ) stock ON stock.item_id = i.id
-            WHERE 1=1 ${iWhere}
+            WHERE 1=1 ${iWhere}${ownerWhere}
           `, clinicParam);
 
           const batchStats = await pool.query(`
@@ -537,14 +695,17 @@ export default async function handler(req, res) {
               COUNT(CASE WHEN b.expiration_date < CURRENT_DATE THEN 1 END)::int AS expired_count,
               COUNT(CASE WHEN b.expiration_date >= CURRENT_DATE AND b.expiration_date <= CURRENT_DATE + INTERVAL '${expiryAlertDays} days' THEN 1 END)::int AS expiring_soon_count
             FROM inventory_batches b ${bWhere}
-            WHERE b.status = 'active'
+            WHERE b.status = 'active'${batchOwnerWhere}
           `, clinicParam);
 
           const movementsStats = await pool.query(`
             SELECT COUNT(*)::int AS movements_this_month
-            FROM inventory_movements
-            WHERE created_at >= DATE_TRUNC('month', CURRENT_DATE)
-          `);
+            FROM inventory_movements m
+            JOIN inventory_batches b ON b.id = m.batch_id
+            JOIN inventory_items i ON i.id = b.item_id
+            WHERE m.created_at >= DATE_TRUNC('month', CURRENT_DATE)
+              ${iWhere}${ownerWhere}
+          `, clinicParam);
 
           const alertBatches = await pool.query(`
             SELECT b.id, b.batch_number, b.expiration_date, b.quantity_current,
@@ -556,7 +717,7 @@ export default async function handler(req, res) {
             JOIN inventory_items i ON b.item_id = i.id
             WHERE b.status = 'active'
               AND (b.expiration_date < CURRENT_DATE OR b.expiration_date <= CURRENT_DATE + INTERVAL '${expiryAlertDays} days')
-              ${alertWhere}
+              ${alertWhere}${ownerWhere}
             ORDER BY b.expiration_date ASC LIMIT 20
           `, clinicParam);
 
@@ -577,9 +738,14 @@ export default async function handler(req, res) {
           const su = await getSessionUserOnce();
           const cid = su?.effective_clinic_id ?? su?.clinic_id;
           // Tenant check: restrict item visibility to the user's clinic (A-1 fix)
-          const itemResult = cid
-            ? await pool.query('SELECT * FROM inventory_items WHERE id = $1 AND (clinic_id = $2 OR clinic_id IS NULL)', [itemId, cid])
-            : await pool.query('SELECT * FROM inventory_items WHERE id = $1', [itemId]);
+          const itemParams = [itemId];
+          let itemQuery = 'SELECT * FROM inventory_items i WHERE i.id = $1';
+          if (cid) { itemQuery += ' AND (i.clinic_id = $2 OR i.clinic_id IS NULL)'; itemParams.push(cid); }
+          if (su?.inventory_scope === 'own') {
+            itemQuery += ` AND ${inventoryOwnerClause('i', itemParams.length + 1)}`;
+            itemParams.push(su.user_id);
+          }
+          const itemResult = await pool.query(itemQuery, itemParams);
           
           if (itemResult.rows.length === 0) {
             return res.status(404).json({ error: 'Item not found' });
@@ -650,13 +816,17 @@ export default async function handler(req, res) {
           const invClinicId = su?.effective_clinic_id ?? su?.clinic_id ?? null;
           // Verificar que el item pertenece a la clínica del usuario
           const clinicCheck = invClinicId
-            ? ` AND (clinic_id = $13 OR clinic_id IS NULL)`
+            ? ` AND (clinic_id = $14 OR clinic_id IS NULL)`
             : '';
           const params = [cleanSku, name, cleanBrand, cleanDescription, category, cleanGroupName, unit_of_measure, min_stock_level, requires_cold_chain, cleanSanitaryRegistration,
             normalizeOptionalNumber(cost_price), normalizeOptionalNumber(sale_price), id];
           if (invClinicId) params.push(invClinicId);
+          const ownerCheck = su.inventory_scope === 'own'
+            ? ` AND ${inventoryOwnerClause('inventory_items', params.length + 1)}`
+            : '';
+          if (su.inventory_scope === 'own') params.push(su.user_id);
           const updatedItem = await pool.query(
-            `UPDATE inventory_items SET sku=$1, name=$2, brand=$3, description=$4, category=$5, group_name=$6, unit_of_measure=$7, min_stock_level=$8, requires_cold_chain=$9, sanitary_registration=$10, cost_price=$11, sale_price=$12 WHERE id=$13${clinicCheck} RETURNING *`,
+            `UPDATE inventory_items SET sku=$1, name=$2, brand=$3, description=$4, category=$5, group_name=$6, unit_of_measure=$7, min_stock_level=$8, requires_cold_chain=$9, sanitary_registration=$10, cost_price=$11, sale_price=$12 WHERE id=$13${clinicCheck}${ownerCheck} RETURNING *`,
             params
           );
           if (updatedItem.rows.length === 0) return res.status(404).json({ error: 'Item not found or not in your clinic' });
@@ -676,7 +846,13 @@ export default async function handler(req, res) {
           const { id } = req.query;
           const invClinicId = su?.effective_clinic_id ?? su?.clinic_id ?? null;
           if (invClinicId) {
-            const check = await pool.query('SELECT id FROM inventory_items WHERE id = $1 AND (clinic_id = $2 OR clinic_id IS NULL)', [id, invClinicId]);
+            const checkParams = [id, invClinicId];
+            let checkQuery = 'SELECT id FROM inventory_items i WHERE id = $1 AND (i.clinic_id = $2 OR i.clinic_id IS NULL)';
+            if (su.inventory_scope === 'own') {
+              checkQuery += ` AND ${inventoryOwnerClause('i', 3)}`;
+              checkParams.push(su.user_id);
+            }
+            const check = await pool.query(checkQuery, checkParams);
             if (check.rows.length === 0) return res.status(403).json({ error: 'Producto no encontrado en tu clínica' });
           }
           // Use pool.query (tenant-scoped client) — not pool.connect() which would skip set_config tenant
@@ -707,6 +883,14 @@ export default async function handler(req, res) {
           if (!['clinic_admin', 'master_admin'].includes(su.role))
             return res.status(403).json({ error: 'Solo administradores pueden eliminar lotes' });
           const { id } = req.query;
+          if (su.inventory_scope === 'own') {
+            const owner = await pool.query(
+              `SELECT 1 FROM inventory_batches b JOIN inventory_items i ON i.id = b.item_id
+               WHERE b.id = $1 AND ${inventoryOwnerClause('i', 2)}`,
+              [id, su.user_id]
+            );
+            if (!owner.rows.length) return res.status(403).json({ error: 'Sin acceso al lote' });
+          }
           // Tenant check: verify batch belongs to user's clinic (A-1 fix)
           const cid = su?.effective_clinic_id ?? su?.clinic_id;
           if (cid != null && su.role !== 'master_admin') {
@@ -727,7 +911,7 @@ export default async function handler(req, res) {
 
       case 'inventoryAddBatch':
         try {
-          const { item_id, batch_number, expiration_date, quantity, cost_per_unit, user_id } = body;
+          const { item_id, batch_number, expiration_date, quantity, cost_per_unit } = body;
           // Tenant check: verify item belongs to user's clinic before adding stock (A-1 fix)
           const suBatch = await getSessionUserOnce();
           const batchCid = suBatch?.effective_clinic_id ?? suBatch?.clinic_id;
@@ -737,7 +921,14 @@ export default async function handler(req, res) {
               return res.status(403).json({ error: 'Ítem no pertenece a esta clínica' });
           }
           // Resolve clinic_id for insertion (use item's clinic_id as source of truth)
-          const itemRow = await pool.query('SELECT clinic_id FROM inventory_items WHERE id = $1', [item_id]);
+          const itemParams = [item_id];
+          let itemQuery = 'SELECT clinic_id FROM inventory_items i WHERE id = $1';
+          if (suBatch?.inventory_scope === 'own') {
+            itemQuery += ` AND ${inventoryOwnerClause('i', 2)}`;
+            itemParams.push(suBatch.user_id);
+          }
+          const itemRow = await pool.query(itemQuery, itemParams);
+          if (!itemRow.rows.length) return res.status(403).json({ error: 'Sin acceso al producto' });
           const resolvedClinicId = itemRow.rows[0]?.clinic_id ?? batchCid ?? null;
           // Use the outer tenant-scoped client via pool.query — avoids creating a new connection without app.current_tenant
           await pool.query('BEGIN');
@@ -751,7 +942,7 @@ export default async function handler(req, res) {
             await pool.query(`
               INSERT INTO inventory_movements (batch_id, clinic_id, movement_type, quantity_change, reason, user_id)
               VALUES ($1, $2, 'PURCHASE', $3, 'Ingreso inicial de lote', $4)
-            `, [newBatch.rows[0].id, resolvedClinicId, quantity, user_id]);
+            `, [newBatch.rows[0].id, resolvedClinicId, quantity, suBatch?.user_id ?? null]);
 
             await pool.query('COMMIT');
             return res.status(201).json(newBatch.rows[0]);
@@ -766,10 +957,18 @@ export default async function handler(req, res) {
 
       case 'inventoryConsume':
         try {
-          const { batch_id, quantity, reason, user_id, reference_id, preferred_display_unit } = body;
+          const { batch_id, quantity, reason, reference_id, preferred_display_unit } = body;
           // Tenant check: verify batch belongs to user's clinic before consuming (A-1 fix)
           const suCons = await getSessionUserOnce();
           const consCid = suCons?.effective_clinic_id ?? suCons?.clinic_id;
+          if (suCons?.inventory_scope === 'own') {
+            const access = await pool.query(
+              `SELECT 1 FROM inventory_batches b JOIN inventory_items i ON i.id = b.item_id
+               WHERE b.id = $1 AND ${inventoryOwnerClause('i', 2)}`,
+              [batch_id, suCons.user_id]
+            );
+            if (!access.rows.length) return res.status(403).json({ error: 'Sin acceso al producto' });
+          }
           if (consCid != null && suCons?.role !== 'master_admin') {
             const tenantChk = await pool.query(
               'SELECT i.clinic_id FROM inventory_batches b JOIN inventory_items i ON i.id = b.item_id WHERE b.id = $1',
@@ -820,7 +1019,7 @@ export default async function handler(req, res) {
               await client.query(`
                 INSERT INTO inventory_movements (batch_id, clinic_id, movement_type, quantity_change, reason, reference_id, user_id)
                 VALUES ($1, $2, 'CONSUMPTION', $3, $4, $5, $6)
-              `, [batch_id, batchClinicId, -quantity, reason, reference_id, user_id]);
+              `, [batch_id, batchClinicId, -quantity, reason, reference_id, suCons?.user_id ?? null]);
             }
 
             await client.query('COMMIT');
@@ -842,7 +1041,7 @@ export default async function handler(req, res) {
         // viewAsUserId: master_admin navegando AS un usuario específico → ver exactamente lo que ve ese usuario
         const viewAsUserId  = su?.role === 'master_admin' && req.query.viewAsUserId  ? parseInt(req.query.viewAsUserId,  10) : null;
         // filterByUserId: admin filtrando la vista clínica por profesional (no impersonación)
-        const filterByUserId = ['master_admin','clinic_admin'].includes(su?.role) && req.query.filterByUserId ? parseInt(req.query.filterByUserId, 10) : null;
+        const filterByUserId = su?.access_scope === 'all' && ['master_admin','clinic_admin'].includes(su?.role) && req.query.filterByUserId ? parseInt(req.query.filterByUserId, 10) : null;
 
         let pq, pp = [];
         const effectiveClinicId = su?.effective_clinic_id ?? su?.clinic_id;
@@ -2129,14 +2328,18 @@ export default async function handler(req, res) {
       case 'listAuditLog': {
         const { patient_id: auditPid, record_id: auditRid, limit: auditLimit } = req.query;
         if (!auditPid && !auditRid) return res.status(400).json({ error: 'patient_id o record_id requerido' });
+        const ownAudit = su?.role !== 'master_admin' && su?.access_scope === 'own';
         const q = auditPid
-          ? `SELECT * FROM patient_audit_log WHERE patient_id = $1 ORDER BY created_at DESC LIMIT $2`
+          ? `SELECT l.* FROM patient_audit_log l
+             WHERE l.patient_id = $1
+               AND ($3::boolean = false OR l.clinic_user_id = $4 OR l.record_id IN (
+                 SELECT id FROM clinical_records WHERE patient_id = $1 AND created_by_user_id = $4
+               )) ORDER BY l.created_at DESC LIMIT $2`
           : `SELECT l.* FROM patient_audit_log l
-             JOIN clinical_records cr ON cr.id = l.record_id
-             WHERE cr.patient_id = (SELECT patient_id FROM clinical_records WHERE id = $1)
-               OR l.record_id = $1
+             WHERE l.record_id = $1
+               AND ($3::boolean = false OR l.clinic_user_id = $4)
              ORDER BY l.created_at DESC LIMIT $2`;
-        const logs = await pool.query(q, [auditPid || auditRid, parseInt(auditLimit || '50')]);
+        const logs = await pool.query(q, [auditPid || auditRid, parseInt(auditLimit || '50'), ownAudit, su?.user_id]);
         return res.status(200).json(logs.rows);
       }
 
@@ -2321,12 +2524,7 @@ export default async function handler(req, res) {
         if (!record_id) return res.status(400).json({ error: 'record_id requerido' });
         const su = await getSessionUserOnce();
         if (!su) return res.status(401).json({ error: 'No autenticado' });
-        // Verificar que el record pertenece a la clínica
-        const clinicId = su.effective_clinic_id ?? su.clinic_id ?? null;
-        if (clinicId) {
-          const chk = await pool.query('SELECT id FROM financial_records WHERE id = $1 AND (clinic_id = $2 OR clinic_id IS NULL)', [record_id, clinicId]);
-          if (!chk.rows.length) return res.status(403).json({ error: 'Sin acceso' });
-        }
+        if (!(await canAccessFinanceRecord(pool, su, record_id))) return res.status(403).json({ error: 'Sin acceso' });
         try {
           const items = await pool.query(
             'SELECT * FROM financial_items WHERE record_id = $1 ORDER BY sort_order, id ASC',
@@ -2348,11 +2546,7 @@ export default async function handler(req, res) {
         if (!Array.isArray(items)) return res.status(400).json({ error: 'items debe ser un array' });
 
         const clinicId = su.effective_clinic_id ?? su.clinic_id ?? null;
-        // Verificar ownership
-        if (clinicId) {
-          const chk = await pool.query('SELECT id FROM financial_records WHERE id = $1 AND (clinic_id = $2 OR clinic_id IS NULL)', [record_id, clinicId]);
-          if (!chk.rows.length) return res.status(403).json({ error: 'Sin acceso' });
-        }
+        if (!(await canAccessFinanceRecord(pool, su, record_id))) return res.status(403).json({ error: 'Sin acceso' });
 
         const client = await pool.connect();
         try {
@@ -2418,20 +2612,19 @@ export default async function handler(req, res) {
           paramCount++;
         }
 
-        // Respetar access_scope: 'own' restringe al usuario actual + grupo; 'all' permite ver toda la clínica
-        if (su?.access_scope === 'own') {
+        // Respetar finance_scope: 'own' restringe al usuario actual + grupo; 'all' permite ver toda la clínica
+        if (su?.finance_scope === 'own') {
           query += ` AND (
-            registered_by = $${paramCount}
-            OR registered_by IN (
-              SELECT cu2.username
+            created_by_user_id = $${paramCount}
+            OR created_by_user_id IN (
+              SELECT sgm2.clinic_user_id
               FROM sharing_group_members sgm1
               JOIN sharing_group_members sgm2 ON sgm1.group_id = sgm2.group_id
-              JOIN clinic_users cu2 ON cu2.id = sgm2.clinic_user_id
-              WHERE sgm1.clinic_user_id = $${paramCount + 1}
+              WHERE sgm1.clinic_user_id = $${paramCount}
             )
           )`;
-          params.push(su.username, su.user_id);
-          paramCount += 2;
+          params.push(su.user_id);
+          paramCount++;
         } else if (registered_by && registered_by !== 'all' && registered_by !== 'null' && registered_by !== 'undefined') {
           // Soporta lista separada por comas: "user1,user2,user3"
           const users = String(registered_by).split(',').map(u => u.trim()).filter(Boolean);
@@ -2476,6 +2669,7 @@ export default async function handler(req, res) {
           return res.status(403).json({ error: 'Solo administradores pueden eliminar registros' });
         const { id } = body;
         if (!id) return res.status(400).json({ error: 'Missing ID' });
+        if (!(await canAccessFinanceRecord(pool, su, id))) return res.status(403).json({ error: 'Sin acceso' });
         try {
           const clinicId = su.effective_clinic_id ?? su.clinic_id ?? null;
           if (su.role === 'master_admin') {
@@ -2491,7 +2685,9 @@ export default async function handler(req, res) {
 
       case 'financeStats': {
         // Stats generales y por usuario
+        const su = await getSessionUserOnce();
         const { startDate, endDate } = req.query;
+        const clinicId = su?.effective_clinic_id ?? su?.clinic_id ?? null;
         let query = `
           SELECT 
             type, 
@@ -2503,6 +2699,21 @@ export default async function handler(req, res) {
         `;
         const params = [];
         let paramCount = 1;
+
+        if (clinicId) {
+          query += ` AND clinic_id = $${paramCount}`;
+          params.push(clinicId);
+          paramCount++;
+        }
+        if (su?.finance_scope === 'own') {
+          query += ` AND (created_by_user_id = $${paramCount} OR created_by_user_id IN (
+            SELECT sgm2.clinic_user_id FROM sharing_group_members sgm1
+            JOIN sharing_group_members sgm2 ON sgm1.group_id = sgm2.group_id
+            WHERE sgm1.clinic_user_id = $${paramCount}
+          ))`;
+          params.push(su.user_id);
+          paramCount++;
+        }
 
         if (startDate && startDate !== 'null') {
           query += ` AND date >= $${paramCount}`;
@@ -2534,6 +2745,7 @@ export default async function handler(req, res) {
         if (!id) return res.status(400).json({ error: 'Missing ID' });
         if (!['ingreso', 'egreso'].includes(type))
           return res.status(400).json({ error: 'Tipo inválido. Use ingreso o egreso' });
+        if (!(await canAccessFinanceRecord(pool, su, id))) return res.status(403).json({ error: 'Sin acceso' });
 
         try {
           const clinicId = su.effective_clinic_id ?? su.clinic_id ?? null;
@@ -2695,7 +2907,7 @@ export default async function handler(req, res) {
         const { startDate, endDate } = body;
         if (!startDate || !endDate) return res.status(400).json({ error: 'startDate y endDate requeridos' });
         try {
-          const result = await sendFinanceCsvToAdmin({ pool, clinicId, startDate, endDate, periodLabel: 'manual' });
+          const result = await sendFinanceCsvToAdmin({ pool, clinicId, userId: su.user_id, financeScope: su.finance_scope, startDate, endDate, periodLabel: 'manual' });
           return res.status(200).json({ success: true, ...result });
         } catch (err) {
           return res.status(400).json({ success: false, error: err.message });

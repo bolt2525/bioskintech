@@ -29,6 +29,10 @@ const migrations = [
   "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS registro_acess VARCHAR(100)",
   "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS google_id VARCHAR(255)",
   "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS avatar_url TEXT",
+  "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS finance_scope VARCHAR(20) DEFAULT 'all'",
+  "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS inventory_scope VARCHAR(20) DEFAULT 'all'",
+  "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS calendar_scope VARCHAR(20) DEFAULT 'own'",
+  "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS phone VARCHAR(20)",
   // Columnas en clinics
   "ALTER TABLE clinics ADD COLUMN IF NOT EXISTS logo_url TEXT",
   "ALTER TABLE clinics ADD COLUMN IF NOT EXISTS ruc VARCHAR(20)",
@@ -120,6 +124,18 @@ const newTables = [
   )`,
 ];
 
+const oauthMigrations = [
+  "ALTER TABLE clinic_oauth_tokens DROP CONSTRAINT IF EXISTS clinic_oauth_tokens_clinic_id_key",
+  "ALTER TABLE clinic_oauth_tokens ADD COLUMN IF NOT EXISTS clinic_user_id INTEGER REFERENCES clinic_users(id) ON DELETE CASCADE",
+  "ALTER TABLE oauth_states ADD COLUMN IF NOT EXISTS clinic_user_id INTEGER REFERENCES clinic_users(id) ON DELETE CASCADE",
+  "ALTER TABLE oauth_states ADD COLUMN IF NOT EXISTS return_path TEXT",
+  `UPDATE clinic_oauth_tokens t SET clinic_user_id = single_user.user_id
+   FROM (SELECT clinic_id, MIN(id) AS user_id FROM clinic_users
+         WHERE is_active = true AND clinic_id IS NOT NULL GROUP BY clinic_id HAVING COUNT(*) = 1) single_user
+   WHERE t.clinic_id = single_user.clinic_id AND t.clinic_user_id IS NULL`,
+  "CREATE UNIQUE INDEX IF NOT EXISTS clinic_oauth_tokens_user_unique ON clinic_oauth_tokens(clinic_user_id) WHERE clinic_user_id IS NOT NULL",
+];
+
 async function run() {
   console.log('🔧 Aplicando migraciones a Neon PostgreSQL...\n');
 
@@ -141,6 +157,16 @@ async function run() {
     } catch (e) {
       console.log(`⚠️  ${col}: ${e.message}`);
     }
+  }
+
+  await sql.query('BEGIN');
+  try {
+    for (const query of oauthMigrations) await sql.query(query);
+    await sql.query('COMMIT');
+    console.log('✅ OAuth por usuario migrado de forma atómica');
+  } catch (error) {
+    await sql.query('ROLLBACK');
+    throw error;
   }
 
   await client.end();

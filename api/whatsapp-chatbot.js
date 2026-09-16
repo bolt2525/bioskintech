@@ -6,6 +6,14 @@ import { buildFinanceCsv } from '../lib/finance-csv.js';
 
 const getQueryValue = (value) => Array.isArray(value) ? value[0] : value;
 
+export const config = { api: { bodyParser: false } };
+
+async function readRawBody(req) {
+  const chunks = [];
+  for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  return Buffer.concat(chunks);
+}
+
 export function verifyWhatsAppWebhook(query, verifyToken = process.env.WHATSAPP_VERIFY_TOKEN) {
   const mode = getQueryValue(query?.['hub.mode']);
   const token = getQueryValue(query?.['hub.verify_token']);
@@ -26,13 +34,13 @@ export function verifyWhatsAppSignature(signature, rawBody, appSecret = process.
   return received.length === calculated.length && crypto.timingSafeEqual(received, calculated);
 }
 
-/** OAuth2 client con los tokens de Google guardados para la clínica. Retorna null si no hay conexión. */
-async function getClinicOAuth2Client(clinicId) {
+/** OAuth2 client con los tokens de Google guardados para el usuario. */
+async function getUserOAuth2Client(userId) {
   const clientId     = (process.env.GOOGLE_CLIENT_ID     || '').trim();
   const clientSecret = (process.env.GOOGLE_CLIENT_SECRET || '').trim();
   if (!clientId || !clientSecret) return null;
   const appUrl = (process.env.APP_URL || `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app'}`).replace(/\/$/, '').trim();
-  const r = await sql`SELECT access_token, refresh_token, token_expiry FROM clinic_oauth_tokens WHERE clinic_id = ${clinicId}`;
+  const r = await sql`SELECT access_token, refresh_token, token_expiry FROM clinic_oauth_tokens WHERE clinic_user_id = ${userId}`;
   if (!r.rows.length) return null;
   const { access_token, refresh_token, token_expiry } = r.rows[0];
   const oAuth2 = new google.auth.OAuth2(clientId, clientSecret, `${appUrl}/api/calendar`);
@@ -75,10 +83,10 @@ export function extractIncomingMessages(body) {
   return messages;
 }
 
-/** Lista en texto plano las citas de hoy de la clínica, para responder al staff autorizado. */
-async function listTodayAppointments(clinicId) {
-  const auth = await getClinicOAuth2Client(clinicId);
-  if (!auth) return 'No hay Google Calendar conectado para tu clínica.';
+/** Lista en texto plano las citas de hoy del usuario autorizado. */
+async function listTodayAppointments(userId) {
+  const auth = await getUserOAuth2Client(userId);
+  if (!auth) return 'No tienes Google Calendar conectado a tu cuenta.';
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Guayaquil' });
   const calendar = google.calendar({ version: 'v3', auth });
   const { data } = await calendar.events.list({
@@ -158,12 +166,12 @@ function buildRawEmailWithCsvAttachment({ from, to, subject, html, attachmentNam
   return Buffer.from(msg).toString('base64url');
 }
 
-async function getClinicGmailClient(clinicId) {
+async function getUserGmailClient(userId) {
   const clientId = (process.env.GOOGLE_CLIENT_ID || '').trim();
   const clientSecret = (process.env.GOOGLE_CLIENT_SECRET || '').trim();
   if (!clientId || !clientSecret) return null;
   const appUrl = (process.env.APP_URL || `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app'}`).replace(/\/$/, '').trim();
-  const r = await sql`SELECT access_token, refresh_token, token_expiry, email FROM clinic_oauth_tokens WHERE clinic_id = ${clinicId}`;
+  const r = await sql`SELECT access_token, refresh_token, token_expiry, email FROM clinic_oauth_tokens WHERE clinic_user_id = ${userId}`;
   if (!r.rows.length) return null;
   const { access_token, refresh_token, token_expiry, email } = r.rows[0];
   const oAuth2 = new google.auth.OAuth2(clientId, clientSecret, `${appUrl}/api/calendar`);
@@ -171,20 +179,21 @@ async function getClinicGmailClient(clinicId) {
   return { client: oAuth2, email };
 }
 
-async function sendFinanceReportToAdmin(clinicId, period, from) {
+async function sendFinanceReportToUser(clinicUser, period, from) {
+  const clinicId = clinicUser.clinic_id;
   const settingsRes = await sql`SELECT finanzas, general FROM clinic_settings WHERE clinic_id = ${clinicId}`;
   const row = settingsRes.rows[0] || {};
   const finanzas = row.finanzas || {};
   const clinicName = row.general?.name || 'la clínica';
-  const adminEmail = (finanzas.admin_email || '').trim();
-  if (!adminEmail) {
-    await sendWhatsAppText(from, '⚠️ Aún no está configurado el correo del administrador financiero de la clínica.');
+  const recipientEmail = (clinicUser.email || finanzas.admin_email || '').trim();
+  if (!recipientEmail) {
+    await sendWhatsAppText(from, '⚠️ Tu usuario no tiene un correo configurado para recibir el reporte.');
     return;
   }
 
-  const oauth = await getClinicGmailClient(clinicId);
+  const oauth = await getUserGmailClient(clinicUser.id);
   if (!oauth) {
-    await sendWhatsAppText(from, '⚠️ No hay una cuenta de Gmail conectada para enviar el reporte financiero.');
+    await sendWhatsAppText(from, '⚠️ No tienes una cuenta Gmail conectada para enviar el reporte financiero.');
     return;
   }
 
@@ -194,20 +203,21 @@ async function sendFinanceReportToAdmin(clinicId, period, from) {
     return;
   }
 
-  const recordsRes = await sql`
-    SELECT *
-    FROM financial_records
-    WHERE clinic_id = ${clinicId}
-      AND date >= ${range.startDate}
-      AND date <= ${range.endDate}
-    ORDER BY date ASC
-  `;
+  const recordsRes = clinicUser.finance_scope === 'own'
+    ? await sql`SELECT * FROM financial_records WHERE clinic_id = ${clinicId}
+        AND (created_by_user_id = ${clinicUser.id} OR created_by_user_id IN (
+          SELECT sgm2.clinic_user_id FROM sharing_group_members sgm1
+          JOIN sharing_group_members sgm2 ON sgm1.group_id = sgm2.group_id
+          WHERE sgm1.clinic_user_id = ${clinicUser.id}
+        )) AND date >= ${range.startDate} AND date <= ${range.endDate} ORDER BY date ASC`
+    : await sql`SELECT * FROM financial_records WHERE clinic_id = ${clinicId}
+        AND date >= ${range.startDate} AND date <= ${range.endDate} ORDER BY date ASC`;
 
   const csv = buildFinanceCsv(recordsRes.rows);
   const gmail = google.gmail({ version: 'v1', auth: oauth.client });
   const raw = buildRawEmailWithCsvAttachment({
     from: `${clinicName} <${oauth.email}>`,
-    to: adminEmail,
+    to: recipientEmail,
     subject: `Reporte financiero (${range.periodLabel}) — ${clinicName}`,
     html: `<p>Adjunto el reporte financiero de <strong>${clinicName}</strong> (${range.periodLabel}, ${range.startDate} a ${range.endDate}).</p><p>Registros incluidos: ${recordsRes.rows.length}</p>`,
     attachmentName: `finanzas_${range.startDate}_${range.endDate}.csv`,
@@ -215,7 +225,7 @@ async function sendFinanceReportToAdmin(clinicId, period, from) {
   });
 
   await gmail.users.messages.send({ userId: 'me', requestBody: { raw } });
-  await sendWhatsAppText(from, `✅ Reporte financiero ${range.periodLabel} enviado al correo ${adminEmail} (${recordsRes.rows.length} registros).`);
+  await sendWhatsAppText(from, `✅ Reporte financiero ${range.periodLabel} enviado a ${recipientEmail} (${recordsRes.rows.length} registros).`);
 }
 
 /** Procesa mensajes entrantes: solo responde a números registrados como staff activo (clinic_users.phone). */
@@ -224,7 +234,18 @@ async function handleIncomingMessages(body) {
     if (!from) continue;
     const normalizedText = String(text || '').trim().toLowerCase();
     if (!normalizedText) continue;
-    const staff = await sql`SELECT id, clinic_id, full_name, phone FROM clinic_users WHERE phone IS NOT NULL AND is_active = true`;
+    const staff = await sql`
+      SELECT cu.id, cu.clinic_id, cu.full_name, cu.email, cu.phone, cu.finance_scope,
+              COALESCE(cf.enabled, true) AND COALESCE(umo.enabled, true) AND COALESCE(vis.enabled, true) AS finance_enabled,
+              COALESCE(calendar_feature.enabled, true) AND COALESCE(calendar_override.enabled, true) AS calendar_enabled
+      FROM clinic_users cu
+            LEFT JOIN clinic_features cf ON cf.clinic_id = cu.clinic_id AND cf.feature = 'finance'
+            LEFT JOIN clinic_features calendar_feature ON calendar_feature.clinic_id = cu.clinic_id AND calendar_feature.feature = 'calendar'
+            LEFT JOIN user_module_overrides umo ON umo.clinic_user_id = cu.id AND umo.feature = 'finance'
+            LEFT JOIN user_module_overrides vis ON vis.clinic_user_id = cu.id AND vis.feature = 'finanzas_visible'
+            LEFT JOIN user_module_overrides calendar_override ON calendar_override.clinic_user_id = cu.id AND calendar_override.feature = 'calendar'
+      WHERE cu.phone IS NOT NULL AND cu.is_active = true
+    `;
     const matches = staff.rows.filter(row => normalizeEcuadorPhone(row.phone) === from);
     if (matches.length !== 1) continue; // desconocido o ambiguo: no se revela información
     const clinicUser = matches[0];
@@ -235,7 +256,8 @@ async function handleIncomingMessages(body) {
     try {
       if (state?.stage === 'awaitingFinanceChoice' && financeChoice) {
         financeStateByPhone.delete(from);
-        await sendFinanceReportToAdmin(clinicUser.clinic_id, financeChoice, from);
+        if (!clinicUser.finance_enabled) { await sendWhatsAppText(from, 'No tienes acceso al módulo de Finanzas.'); continue; }
+        await sendFinanceReportToUser(clinicUser, financeChoice, from);
         continue;
       }
 
@@ -245,18 +267,21 @@ async function handleIncomingMessages(body) {
       }
 
       if (text === '2' || normalizedText === 'reporte' || normalizedText === 'finance') {
+        if (!clinicUser.finance_enabled) { await sendWhatsAppText(from, 'No tienes acceso al módulo de Finanzas.'); continue; }
         financeStateByPhone.set(from, { stage: 'awaitingFinanceChoice', clinicId: clinicUser.clinic_id });
         await sendWhatsAppText(from, FINANCE_REPORT_MENU_TEXT);
         continue;
       }
 
       if (text === '1') {
-        await sendWhatsAppText(from, await listTodayAppointments(clinicUser.clinic_id));
+        if (!clinicUser.calendar_enabled) { await sendWhatsAppText(from, 'No tienes acceso al módulo de Agenda.'); continue; }
+        await sendWhatsAppText(from, await listTodayAppointments(clinicUser.id));
         continue;
       }
 
       if (financeChoice) {
-        await sendFinanceReportToAdmin(clinicUser.clinic_id, financeChoice, from);
+        if (!clinicUser.finance_enabled) { await sendWhatsAppText(from, 'No tienes acceso al módulo de Finanzas.'); continue; }
+        await sendFinanceReportToUser(clinicUser, financeChoice, from);
         continue;
       }
 
@@ -275,27 +300,26 @@ async function sendAppointmentSummaries(dayOffset = 0) {
   const timeMin = `${targetDate}T00:00:00-05:00`;
   const timeMax = `${targetDate}T23:59:59-05:00`;
 
-  const clinics = await sql`
-    SELECT cs.clinic_id, cs.general, cs.email, cu.phone AS staff_phone, cu.full_name AS staff_name
-    FROM clinic_settings cs
-    JOIN clinic_oauth_tokens t ON t.clinic_id = cs.clinic_id
-    JOIN clinic_users cu ON cu.clinic_id = cs.clinic_id AND cu.is_active = true AND NULLIF(cu.phone, '') IS NOT NULL
+  const users = await sql`
+    SELECT cs.clinic_id, cs.general, cs.email, cu.id AS user_id,
+           cu.phone AS staff_phone, cu.full_name AS staff_name
+    FROM clinic_oauth_tokens t
+    JOIN clinic_users cu ON cu.id = t.clinic_user_id AND cu.is_active = true AND NULLIF(cu.phone, '') IS NOT NULL
+    JOIN clinic_settings cs ON cs.clinic_id = cu.clinic_id
+    LEFT JOIN clinic_features cf ON cf.clinic_id = cu.clinic_id AND cf.feature = 'calendar'
+    LEFT JOIN user_module_overrides umo ON umo.clinic_user_id = cu.id AND umo.feature = 'calendar'
     WHERE (cs.agenda->>'daily_reminder_whatsapp')::boolean IS TRUE
+      AND COALESCE(cf.enabled, true) = true
+      AND COALESCE(umo.enabled, true) = true
   `;
 
   let remindersSent = 0;
   const errors = [];
-  const groupedClinics = new Map();
-  for (const row of clinics.rows) {
-    if (!groupedClinics.has(row.clinic_id)) groupedClinics.set(row.clinic_id, { ...row, staff: [] });
-    groupedClinics.get(row.clinic_id).staff.push({ phone: normalizeEcuadorPhone(row.staff_phone), name: row.staff_name || 'equipo' });
-  }
-
-  for (const row of groupedClinics.values()) {
+  for (const row of users.rows) {
     const clinicName = row.general?.name || 'la clínica';
     const clinicNumber = normalizeEcuadorPhone(row.email?.whatsapp_number || row.general?.phone || '');
     try {
-      const auth = await getClinicOAuth2Client(row.clinic_id);
+      const auth = await getUserOAuth2Client(row.user_id);
       if (!auth) continue;
       const calendar = google.calendar({ version: 'v3', auth });
       const { data } = await calendar.events.list({
@@ -326,20 +350,19 @@ async function sendAppointmentSummaries(dayOffset = 0) {
       });
       const summary = `📅 ${clinicName}: citas de ${label} (${targetDate})\n\n${lines.join('\n\n')}` +
         '\n\nResponde 1 para consultar citas de hoy o 2 para reportes financieros.';
-      for (const staff of row.staff) {
-        try {
-          await sendWhatsAppText(staff.phone, summary);
-          remindersSent++;
-        } catch (sendErr) {
-          errors.push(`clinic ${row.clinic_id}, staff ${staff.phone}: ${sendErr.message}`);
-        }
+      const staffPhone = normalizeEcuadorPhone(row.staff_phone);
+      try {
+        await sendWhatsAppText(staffPhone, summary);
+        remindersSent++;
+      } catch (sendErr) {
+        errors.push(`user ${row.user_id}, staff ${staffPhone}: ${sendErr.message}`);
       }
     } catch (clinicErr) {
       errors.push(`clinic ${row.clinic_id}: ${clinicErr.message}`);
     }
   }
 
-  return { clinicsChecked: clinics.rows.length, remindersSent, errors };
+  return { usersChecked: users.rows.length, remindersSent, errors };
 }
 
 export default async function handler(req, res) {
@@ -364,15 +387,19 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
-    if (req.body?.object && req.body.object !== 'whatsapp_business_account') {
-      return res.status(400).json({ success: false });
-    }
-    if (!verifyWhatsAppSignature(req.headers['x-hub-signature-256'], req.rawBody)) {
+    const rawBody = await readRawBody(req);
+    if (!verifyWhatsAppSignature(req.headers['x-hub-signature-256'], rawBody)) {
       return res.status(401).json({ success: false });
+    }
+    let body;
+    try { body = JSON.parse(rawBody.toString('utf8')); }
+    catch { return res.status(400).json({ success: false }); }
+    if (body?.object && body.object !== 'whatsapp_business_account') {
+      return res.status(400).json({ success: false });
     }
 
     try {
-      await handleIncomingMessages(req.body);
+      await handleIncomingMessages(body);
     } catch (err) {
       console.error('❌ Error procesando mensaje WhatsApp:', err.message);
     }

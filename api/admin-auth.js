@@ -104,6 +104,7 @@ async function ensureNewColumns() {
   const migrations = [
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS finance_scope VARCHAR(20) DEFAULT 'all'",
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS inventory_scope VARCHAR(20) DEFAULT 'all'",
+    "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS calendar_scope VARCHAR(20) DEFAULT 'own'",
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS cedula_profesional VARCHAR(50)",
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS matricula_senescyt VARCHAR(100)",
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS registro_acess VARCHAR(100)",
@@ -119,6 +120,11 @@ async function ensureNewColumns() {
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT false",
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS personal_staff_emails JSONB DEFAULT '[]'::jsonb",
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS phone VARCHAR(20)",
+    "ALTER TABLE clinic_oauth_tokens DROP CONSTRAINT IF EXISTS clinic_oauth_tokens_clinic_id_key",
+    "ALTER TABLE clinic_oauth_tokens ADD COLUMN IF NOT EXISTS clinic_user_id INTEGER REFERENCES clinic_users(id) ON DELETE CASCADE",
+    "ALTER TABLE oauth_states ADD COLUMN IF NOT EXISTS clinic_user_id INTEGER REFERENCES clinic_users(id) ON DELETE CASCADE",
+    "ALTER TABLE oauth_states ADD COLUMN IF NOT EXISTS return_path TEXT",
+    "CREATE UNIQUE INDEX IF NOT EXISTS clinic_oauth_tokens_user_unique ON clinic_oauth_tokens(clinic_user_id) WHERE clinic_user_id IS NOT NULL",
   ];
   for (const stmt of migrations) {
     try { await sql.query(stmt); } catch { /* column already exists — safe to ignore */ }
@@ -140,6 +146,12 @@ async function ensureNewColumns() {
       PRIMARY KEY (clinic_id, template_id)
     )`);
   } catch { /* silencioso — si clinics no existe aún, fallará en la primera petición no-init */ }
+  try {
+    await sql.query(`UPDATE clinic_oauth_tokens t SET clinic_user_id = single_user.user_id
+      FROM (SELECT clinic_id, MIN(id) AS user_id FROM clinic_users
+            WHERE is_active = true AND clinic_id IS NOT NULL GROUP BY clinic_id HAVING COUNT(*) = 1) single_user
+      WHERE t.clinic_id = single_user.clinic_id AND t.clinic_user_id IS NULL`);
+  } catch { /* la tabla OAuth puede no existir todavía */ }
   _newColumnsMigrated = true;
 }
 
@@ -177,6 +189,22 @@ function verifyPassword(password, storedHash, salt, algo) {
 /** Genera un token de sesión de 32 bytes aleatorios */
 function generateToken() {
   return crypto.randomBytes(32).toString('hex');
+}
+
+export function normalizeUserPhone(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (!digits) return null;
+  if (digits.startsWith('593')) return `593${digits.slice(3).replace(/^0/, '')}`;
+  if (digits.startsWith('0')) return `593${digits.slice(1)}`;
+  return `593${digits}`;
+}
+
+async function isPhoneAvailable(phone, excludedUserId = null) {
+  if (!phone) return true;
+  const users = excludedUserId
+    ? await sql`SELECT id, phone FROM clinic_users WHERE phone IS NOT NULL AND id != ${excludedUserId}`
+    : await sql`SELECT id, phone FROM clinic_users WHERE phone IS NOT NULL`;
+  return !users.rows.some(row => normalizeUserPhone(row.phone) === phone);
 }
 
 export function generateTemporaryPassword() {
@@ -265,11 +293,12 @@ export async function initMultiTenantSchema() {
     )
   `;
 
-  // Tokens OAuth de Google por clínica (Calendar + Gmail)
+  // Tokens OAuth de Google por usuario (Calendar + Gmail)
   await sql`
     CREATE TABLE IF NOT EXISTS clinic_oauth_tokens (
       id            SERIAL PRIMARY KEY,
-      clinic_id     UUID NOT NULL REFERENCES clinics(id) ON DELETE CASCADE UNIQUE,
+      clinic_id     UUID NOT NULL REFERENCES clinics(id) ON DELETE CASCADE,
+      clinic_user_id INTEGER REFERENCES clinic_users(id) ON DELETE CASCADE,
       access_token  TEXT,
       refresh_token TEXT NOT NULL,
       token_expiry  TIMESTAMP,
@@ -278,6 +307,21 @@ export async function initMultiTenantSchema() {
       updated_at    TIMESTAMP DEFAULT NOW()
     )
   `;
+  await sql`ALTER TABLE clinic_oauth_tokens DROP CONSTRAINT IF EXISTS clinic_oauth_tokens_clinic_id_key`;
+  await sql`ALTER TABLE clinic_oauth_tokens ADD COLUMN IF NOT EXISTS clinic_user_id INTEGER REFERENCES clinic_users(id) ON DELETE CASCADE`;
+  await sql`
+    UPDATE clinic_oauth_tokens t
+    SET clinic_user_id = single_user.user_id
+    FROM (
+      SELECT clinic_id, MIN(id) AS user_id
+      FROM clinic_users
+      WHERE is_active = true AND clinic_id IS NOT NULL
+      GROUP BY clinic_id
+      HAVING COUNT(*) = 1
+    ) single_user
+    WHERE t.clinic_id = single_user.clinic_id AND t.clinic_user_id IS NULL
+  `;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS clinic_oauth_tokens_user_unique ON clinic_oauth_tokens(clinic_user_id) WHERE clinic_user_id IS NOT NULL`;
 
   // Configuración personalizable por clínica (JSONB para evitar migraciones futuras)
   await sql`
@@ -398,6 +442,8 @@ export async function initMultiTenantSchema() {
       created_at TIMESTAMP DEFAULT NOW()
     )
   `;
+  await sql`ALTER TABLE oauth_states ADD COLUMN IF NOT EXISTS clinic_user_id INTEGER REFERENCES clinic_users(id) ON DELETE CASCADE`;
+  await sql`ALTER TABLE oauth_states ADD COLUMN IF NOT EXISTS return_path TEXT`;
 
   // OTP de verificación en dos pasos (2FA por email)
   await sql`
@@ -478,6 +524,11 @@ export async function initMultiTenantSchema() {
     "ALTER TABLE invite_links ADD COLUMN IF NOT EXISTS access_scope VARCHAR(20) DEFAULT 'own'",
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS finance_scope VARCHAR(20) DEFAULT 'all'",
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS inventory_scope VARCHAR(20) DEFAULT 'all'",
+    "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS calendar_scope VARCHAR(20) DEFAULT 'own'",
+    "ALTER TABLE clinic_oauth_tokens DROP CONSTRAINT IF EXISTS clinic_oauth_tokens_clinic_id_key",
+    "ALTER TABLE clinic_oauth_tokens ADD COLUMN IF NOT EXISTS clinic_user_id INTEGER REFERENCES clinic_users(id) ON DELETE CASCADE",
+    "ALTER TABLE oauth_states ADD COLUMN IF NOT EXISTS clinic_user_id INTEGER REFERENCES clinic_users(id) ON DELETE CASCADE",
+    "ALTER TABLE oauth_states ADD COLUMN IF NOT EXISTS return_path TEXT",
   ]) {
     try { await sql.query(col); } catch { /* ya existe */ }
   }
@@ -698,7 +749,7 @@ async function loginUser(username, password, ip, ua, req) {
   // SECURITY: antes de verificar password, validar master_key si el usuario es master_admin
   const r = await sql`
     SELECT cu.id, cu.username, cu.password_hash, cu.salt, cu.hash_algo, cu.role, cu.clinic_id, cu.access_scope,
-           cu.finance_scope, cu.inventory_scope,
+           cu.finance_scope, cu.inventory_scope, cu.calendar_scope,
            cu.failed_attempts, cu.locked_until, cu.is_active, cu.full_name, cu.email,
            cu.cedula_profesional, cu.matricula_senescyt, cu.registro_acess, cu.especialidad, cu.gentilicio, cu.profession, cu.first_name, cu.last_name,
            cu.is_demo, cu.demo_expires_at, cu.must_change_password,
@@ -787,7 +838,7 @@ async function loginUser(username, password, ip, ua, req) {
         success: true, sessionToken: token, expiresAt: exp,
         user: { id: u.id, username: u.username, full_name: u.full_name,
           email: u.email, phone: u.phone || null, role: u.role, clinic_id: u.clinic_id, access_scope: u.access_scope,
-          finance_scope: u.finance_scope || 'all', inventory_scope: u.inventory_scope || 'all',
+          finance_scope: u.finance_scope || 'all', inventory_scope: u.inventory_scope || 'all', calendar_scope: u.calendar_scope || 'own',
           clinic_slug: u.clinic_slug || null, clinic_name: u.clinic_name || null,
           cedula_profesional: u.cedula_profesional || null, matricula_senescyt: u.matricula_senescyt || null, registro_acess: u.registro_acess || null, especialidad: u.especialidad || null,
           gentilicio: u.gentilicio || null, profession: u.profession || null,
@@ -848,7 +899,7 @@ async function loginUser(username, password, ip, ua, req) {
     user: {
       id: u.id, username: u.username, full_name: u.full_name,
       email: u.email, phone: u.phone || null, role: u.role, clinic_id: u.clinic_id, access_scope: u.access_scope,
-      finance_scope: u.finance_scope || 'all', inventory_scope: u.inventory_scope || 'all',
+      finance_scope: u.finance_scope || 'all', inventory_scope: u.inventory_scope || 'all', calendar_scope: u.calendar_scope || 'own',
       clinic_slug: u.clinic_slug || null, clinic_name: u.clinic_name || null,
           cedula_profesional: u.cedula_profesional || null, matricula_senescyt: u.matricula_senescyt || null, registro_acess: u.registro_acess || null, especialidad: u.especialidad || null,
       gentilicio: u.gentilicio || null, profession: u.profession || null,
@@ -870,7 +921,8 @@ async function verifySession(token) {
   try {
     const r = await sql`
       SELECT s.username, s.expires_at, s.role, s.clinic_id, s.access_scope, s.clinic_user_id,
-             cu.full_name, cu.email, cu.phone, cu.is_demo, cu.demo_expires_at, cu.must_change_password,
+             cu.full_name, cu.email, cu.phone, cu.finance_scope, cu.inventory_scope, cu.calendar_scope,
+             cu.is_demo, cu.demo_expires_at, cu.must_change_password,
              cu.cedula_profesional, cu.matricula_senescyt, cu.registro_acess, cu.especialidad, cu.gentilicio, cu.profession, cu.first_name, cu.last_name,
              c.name as clinic_name, c.slug as clinic_slug,
              c.subscription_expires_at
@@ -900,6 +952,7 @@ async function verifySession(token) {
         id: s.clinic_user_id, username: s.username, full_name: s.full_name,
         email: s.email, role: s.role || 'clinic_admin', clinic_id: s.clinic_id,
         clinic_name: s.clinic_name, clinic_slug: s.clinic_slug, access_scope: s.access_scope || 'all',
+        finance_scope: s.finance_scope || 'all', inventory_scope: s.inventory_scope || 'all', calendar_scope: s.calendar_scope || 'own',
         phone: s.phone || null,
         cedula_profesional: s.cedula_profesional || null, matricula_senescyt: s.matricula_senescyt || null, registro_acess: s.registro_acess || null, especialidad: s.especialidad || null,
         gentilicio: s.gentilicio || null, profession: s.profession || null,
@@ -1065,7 +1118,7 @@ async function listUsers(requestUser, clinicIdFilter) {
     if (clinicIdFilter) {
       return (await sql`
         SELECT cu.id, cu.username, cu.full_name, cu.email, cu.role, cu.access_scope,
-               cu.finance_scope, cu.inventory_scope,
+               cu.finance_scope, cu.inventory_scope, cu.calendar_scope,
                cu.is_active, cu.last_login, cu.clinic_id, c.name as clinic_name, c.slug as clinic_slug,
                cu.cedula_profesional, cu.matricula_senescyt, cu.especialidad, cu.is_demo, cu.demo_expires_at,
                cu.first_name, cu.last_name, cu.gentilicio, cu.profession
@@ -1076,7 +1129,7 @@ async function listUsers(requestUser, clinicIdFilter) {
     }
     return (await sql`
       SELECT cu.id, cu.username, cu.full_name, cu.email, cu.role, cu.access_scope,
-             cu.finance_scope, cu.inventory_scope,
+             cu.finance_scope, cu.inventory_scope, cu.calendar_scope,
              cu.is_active, cu.last_login, cu.clinic_id, cu.phone, c.name as clinic_name, c.slug as clinic_slug,
              cu.cedula_profesional, cu.matricula_senescyt, cu.especialidad, cu.is_demo, cu.demo_expires_at,
              cu.first_name, cu.last_name, cu.gentilicio, cu.profession
@@ -1086,7 +1139,7 @@ async function listUsers(requestUser, clinicIdFilter) {
   }
   // clinic_admin: solo su clínica
   return (await sql`
-    SELECT id, username, full_name, email, role, access_scope, finance_scope, inventory_scope,
+    SELECT id, username, full_name, email, role, access_scope, finance_scope, inventory_scope, calendar_scope,
            is_active, last_login, clinic_id, phone,
            is_demo, demo_expires_at, first_name, last_name, gentilicio, profession,
            cedula_profesional, matricula_senescyt, especialidad
@@ -1097,7 +1150,7 @@ async function listUsers(requestUser, clinicIdFilter) {
 
 async function createUser(requestUser, body) {
   const { username, password, full_name, first_name, last_name, gentilicio, profession,
-          email, phone, role, access_scope, finance_scope, inventory_scope,
+          email, phone, role, access_scope, finance_scope, inventory_scope, calendar_scope,
           clinic_id, cedula_profesional, matricula_senescyt, especialidad,
           is_demo, demo_expires_at, send_setup_link } = body;
   if (!username?.trim() || !role)
@@ -1113,6 +1166,10 @@ async function createUser(requestUser, body) {
   if (requestUser.role === 'clinic_admin' && !['clinic_admin', 'clinic_user'].includes(role))
     return { error: 'Solo puedes crear usuarios de tipo clinic_admin o clinic_user' };
 
+  const validScopes = new Set(['own', 'all']);
+  if (![access_scope, finance_scope, inventory_scope].every(scope => scope == null || validScopes.has(scope)))
+    return { error: 'Control de acceso inválido' };
+
   const targetClinicId = requestUser.role === 'master_admin'
     ? (role === 'master_admin' ? null : (clinic_id ?? null))
     : requestUser.clinic_id;
@@ -1121,21 +1178,24 @@ async function createUser(requestUser, body) {
   const effectiveScope = isDemo ? 'own' : (access_scope || 'own');
   const effectiveFinanceScope   = isDemo ? 'own' : (finance_scope   || 'all');
   const effectiveInventoryScope = isDemo ? 'own' : (inventory_scope || 'all');
+  const effectiveCalendarScope  = 'own';
+  const normalizedPhone = normalizeUserPhone(phone);
+  if (!(await isPhoneAvailable(normalizedPhone))) return { error: 'Este WhatsApp ya está asignado a otro usuario' };
 
   try {
     const r = await sql`
       INSERT INTO clinic_users
         (clinic_id, username, password_hash, salt, hash_algo, full_name, first_name, last_name,
-         gentilicio, profession, email, phone, role, access_scope, finance_scope, inventory_scope,
+         gentilicio, profession, email, phone, role, access_scope, finance_scope, inventory_scope, calendar_scope,
          cedula_profesional, matricula_senescyt, especialidad, is_demo, demo_expires_at)
       VALUES
         (${targetClinicId}, ${username.trim()}, ${hash}, ${salt}, 'pbkdf2',
          ${full_name || null}, ${first_name || null}, ${last_name || null},
-         ${gentilicio || null}, ${profession || null}, ${email || null}, ${phone || null},
-         ${role}, ${effectiveScope}, ${effectiveFinanceScope}, ${effectiveInventoryScope},
+         ${gentilicio || null}, ${profession || null}, ${email || null}, ${normalizedPhone},
+         ${role}, ${effectiveScope}, ${effectiveFinanceScope}, ${effectiveInventoryScope}, ${effectiveCalendarScope},
          ${cedula_profesional || null}, ${matricula_senescyt || null}, ${especialidad || null},
          ${isDemo}, ${demo_expires_at || null})
-      RETURNING id, username, full_name, email, phone, role, access_scope, finance_scope, inventory_scope,
+      RETURNING id, username, full_name, email, phone, role, access_scope, finance_scope, inventory_scope, calendar_scope,
                 clinic_id, is_active, is_demo, demo_expires_at
     `;
     const user = r.rows[0];
@@ -1156,6 +1216,11 @@ async function updateUser(requestUser, body) {
           email, role, access_scope, finance_scope, inventory_scope,
           is_active, cedula_profesional, matricula_senescyt, registro_acess, especialidad } = body;
   if (!id) return { error: 'id requerido' };
+  const validScopes = new Set(['own', 'all']);
+  if (![access_scope, finance_scope, inventory_scope].every(scope => scope == null || scope === '' || validScopes.has(scope)))
+    return { error: 'Control de acceso inválido' };
+  const normalizedPhone = normalizeUserPhone(phone);
+  if (!(await isPhoneAvailable(normalizedPhone, id))) return { error: 'Este WhatsApp ya está asignado a otro usuario' };
 
   if (requestUser.role === 'clinic_admin') {
     const t = await sql`SELECT clinic_id, role FROM clinic_users WHERE id = ${id}`;
@@ -1173,7 +1238,7 @@ async function updateUser(requestUser, body) {
       gentilicio          = COALESCE(NULLIF(${gentilicio          ?? ''}, ''), gentilicio),
       profession          = COALESCE(NULLIF(${profession          ?? ''}, ''), profession),
       email               = COALESCE(NULLIF(${email               ?? ''}, ''), email),
-      phone               = NULLIF(${phone ?? ''}, ''),
+      phone               = ${normalizedPhone},
       access_scope        = COALESCE(NULLIF(${access_scope        ?? ''}, ''), access_scope),
       finance_scope       = COALESCE(NULLIF(${finance_scope       ?? ''}, ''), finance_scope),
       inventory_scope     = COALESCE(NULLIF(${inventory_scope     ?? ''}, ''), inventory_scope),
@@ -1189,8 +1254,8 @@ async function updateUser(requestUser, body) {
   }
 
   const updated = await sql`
-    SELECT id, username, full_name, first_name, last_name, gentilicio, profession,
-           email, phone, role, access_scope, finance_scope, inventory_scope,
+        SELECT id, username, full_name, first_name, last_name, gentilicio, profession,
+          email, phone, role, access_scope, finance_scope, inventory_scope, calendar_scope,
            is_active, clinic_id, cedula_profesional, matricula_senescyt, registro_acess, especialidad
     FROM clinic_users WHERE id = ${id}
   `;
@@ -2474,24 +2539,25 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, message: `Features inicializados para ${clinics.rows.length} clínica(s)` });
     }
 
-    // ── OAuth Google por clínica ───────────────────────────────────────────
+    // ── OAuth Google por usuario ───────────────────────────────────────────
     if (action === 'oauthStart') {
-      const { clinicId } = req.body || {};
-      if (!clinicId) return res.status(400).json({ error: 'clinicId requerido' });
-      // clinic_admin puede conectar solo su propia clínica; master_admin puede conectar cualquiera
-      if (user.role === 'clinic_admin' && String(user.clinic_id) !== String(clinicId))
-        return res.status(403).json({ error: 'Solo puedes conectar tu propia clínica' });
-      if (!requireRole(user, 'master_admin', 'clinic_admin'))
-        return res.status(403).json({ error: 'Sin permiso' });
+      const targetUserId = user.id;
+      if (!targetUserId) return res.status(400).json({ error: 'Selecciona el usuario que conectará su cuenta Google' });
+      const target = await sql`SELECT id, clinic_id, email FROM clinic_users WHERE id = ${targetUserId} AND is_active = true`;
+      if (!target.rows.length) return res.status(404).json({ error: 'Usuario no encontrado' });
+      const targetUser = target.rows[0];
       const clientId = (process.env.GOOGLE_CLIENT_ID || '').trim();
       if (!clientId) return res.status(503).json({ error: 'GOOGLE_CLIENT_ID no configurado' });
       const appBase = (process.env.APP_URL || `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app'}`).replace(/\/$/, '').trim();
       const redirectUri = `${appBase}/api/calendar`;
       const { returnPath } = req.body || {};
-      const state = Buffer.from(JSON.stringify({ clinicId, ts: Date.now(), returnPath: returnPath || '/gestionestetica/admin/master' })).toString('base64url');
-      // Obtener el correo registrado de la clínica para pre-seleccionarlo en Google
-      const clinicEmailRow = await sql`SELECT email FROM clinics WHERE id = ${clinicId}`;
-      const loginHint = clinicEmailRow.rows[0]?.email || '';
+      const safeReturnPath = typeof returnPath === 'string' && returnPath.startsWith('/') && !returnPath.startsWith('//')
+        ? returnPath : '/gestionestetica/admin/system-status';
+      const state = crypto.randomBytes(32).toString('hex');
+      const stateExpiry = new Date(Date.now() + 10 * 60 * 1000);
+      await sql`INSERT INTO oauth_states (state, purpose, clinic_user_id, return_path, expires_at)
+                VALUES (${state}, 'google_integration', ${targetUser.id}, ${safeReturnPath}, ${stateExpiry})`;
+      const loginHint = targetUser.email || '';
       const params = new URLSearchParams({
         response_type: 'code',
         client_id:     clientId,
@@ -2508,52 +2574,51 @@ export default async function handler(req, res) {
 
     if (action === 'oauthStatus') {
       if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master_admin' });
-      const rows = await sql`SELECT clinic_id, email, connected_at, updated_at FROM clinic_oauth_tokens`;
+      const rows = await sql`SELECT clinic_id, clinic_user_id, email, connected_at, updated_at FROM clinic_oauth_tokens`;
       return res.status(200).json({ success: true, data: rows.rows });
     }
 
     if (action === 'oauthRevoke') {
       if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master_admin' });
-      const { clinicId } = req.body || {};
-      if (!clinicId) return res.status(400).json({ error: 'clinicId requerido' });
-      await sql`DELETE FROM clinic_oauth_tokens WHERE clinic_id = ${clinicId}`;
-      await sendDeveloperAlert('Gmail desconectado', { Clínica: clinicId, Acción: 'oauthRevoke' })
+      const { userId } = req.body || {};
+      if (!userId) return res.status(400).json({ error: 'userId requerido' });
+      await sql`DELETE FROM clinic_oauth_tokens WHERE clinic_user_id = ${userId}`;
+      await sendDeveloperAlert('Gmail desconectado', { Usuario: userId, Acción: 'oauthRevoke' })
         .catch(e => console.error('[oauth] developer alert error:', e.message));
       return res.status(200).json({ success: true, message: 'Conexión OAuth revocada' });
     }
 
     // Desconectar OAuth con revocación real en Google (master_admin o clinic_admin propia clínica)
     if (action === 'disconnectClinicOAuth') {
-      const clinicId = req.body?.clinicId || (user.role === 'clinic_admin' ? user.clinic_id : null);
-      if (!clinicId) return res.status(400).json({ error: 'clinicId requerido' });
-      if (user.role === 'clinic_admin' && String(clinicId) !== String(user.clinic_id))
-        return res.status(403).json({ error: 'Solo puedes desconectar tu propia clínica' });
-      if (!requireRole(user, 'master_admin', 'clinic_admin'))
-        return res.status(403).json({ error: 'Sin permiso' });
+      const targetUserId = user.id;
+      if (!targetUserId) return res.status(400).json({ error: 'userId requerido' });
+      const target = await sql`SELECT clinic_id FROM clinic_users WHERE id = ${targetUserId}`;
+      if (!target.rows.length) return res.status(404).json({ error: 'Usuario no encontrado' });
       // Revocar el token con Google antes de borrar de la DB
-      const tok = await sql`SELECT refresh_token FROM clinic_oauth_tokens WHERE clinic_id = ${clinicId}`;
+      const tok = await sql`SELECT refresh_token FROM clinic_oauth_tokens WHERE clinic_user_id = ${targetUserId}`;
       if (tok.rows.length && tok.rows[0].refresh_token) {
         try {
           await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(tok.rows[0].refresh_token)}`, { method: 'POST' });
         } catch { /* non-fatal — borramos de DB de todas formas */ }
       }
-      await sql`DELETE FROM clinic_oauth_tokens WHERE clinic_id = ${clinicId}`;
-      await sendDeveloperAlert('Gmail desconectado', { Clínica: clinicId, Acción: 'disconnectClinicOAuth' })
+      await sql`DELETE FROM clinic_oauth_tokens WHERE clinic_user_id = ${targetUserId}`;
+      await sendDeveloperAlert('Gmail desconectado', { Usuario: targetUserId, Acción: 'disconnectClinicOAuth' })
         .catch(e => console.error('[oauth] developer alert error:', e.message));
       return res.status(200).json({ success: true, message: 'Cuenta desconectada y acceso revocado en Google' });
     }
 
     // Estado de conexión del email de la clínica (clinic_admin propia clínica o master_admin)
     if (action === 'getEmailConnectionStatus') {
-      const clinicId = req.query.clinicId || user.clinic_id || null; // UUID — no parseInt
-      if (!clinicId) return res.status(400).json({ error: 'clinicId requerido' });
-      if (user.role === 'clinic_admin' && String(clinicId) !== String(user.clinic_id))
-        return res.status(403).json({ error: 'Sin permiso' });
-      if (!requireRole(user, 'master_admin', 'clinic_admin'))
-        return res.status(403).json({ error: 'Sin permiso' });
+      const targetUserId = req.query.userId || user.id;
+      if (!targetUserId) return res.status(400).json({ error: 'userId requerido' });
+      const target = await sql`SELECT clinic_id, email FROM clinic_users WHERE id = ${targetUserId}`;
+      if (!target.rows.length) return res.status(404).json({ error: 'Usuario no encontrado' });
+      const canViewTarget = String(user.id) === String(targetUserId) || user.role === 'master_admin'
+        || (user.role === 'clinic_admin' && String(user.clinic_id) === String(target.rows[0].clinic_id));
+      if (!canViewTarget) return res.status(403).json({ error: 'Sin permiso' });
       const [tokRow, clinicRow] = await Promise.all([
-        sql`SELECT email, connected_at FROM clinic_oauth_tokens WHERE clinic_id = ${clinicId}`,
-        sql`SELECT email as clinic_email FROM clinics WHERE id = ${clinicId}`,
+        sql`SELECT email, connected_at FROM clinic_oauth_tokens WHERE clinic_user_id = ${targetUserId}`,
+        sql`SELECT email as clinic_email FROM clinics WHERE id = ${target.rows[0].clinic_id}`,
       ]);
       return res.status(200).json({
         success: true,
@@ -2867,6 +2932,10 @@ export default async function handler(req, res) {
       if (!userId) return res.status(400).json({ error: 'userId requerido' });
       // Solo master_admin o clinic_admin de la misma clínica puede ver esto
       if (!requireRole(user, 'master_admin', 'clinic_admin')) return res.status(403).json({ error: 'Sin permiso' });
+      if (user.role === 'clinic_admin') {
+        const target = await sql`SELECT 1 FROM clinic_users WHERE id = ${userId} AND clinic_id = ${user.clinic_id}`;
+        if (!target.rows.length) return res.status(403).json({ error: 'Sin permiso' });
+      }
       const ovr = await sql`SELECT feature, enabled FROM user_module_overrides WHERE clinic_user_id = ${userId}`;
       return res.status(200).json({ overrides: ovr.rows });
     }
@@ -2875,15 +2944,14 @@ export default async function handler(req, res) {
       if (!requireRole(user, 'master_admin', 'clinic_admin')) return res.status(403).json({ error: 'Sin permiso' });
       const { userId, feature, enabled } = req.body || {};
       if (!userId || !feature) return res.status(400).json({ error: 'userId y feature requeridos' });
-      if (enabled) {
-        // enabled: false significa "quitado para este usuario"
-        await sql`INSERT INTO user_module_overrides (clinic_user_id, feature, enabled)
-          VALUES (${userId}, ${feature}, ${enabled}) ON CONFLICT (clinic_user_id, feature)
-          DO UPDATE SET enabled = ${enabled}`;
-      } else {
-        // Si se vuelve a habilitar (sin override), se elimina el override para que herede clínica
-        await sql`DELETE FROM user_module_overrides WHERE clinic_user_id = ${userId} AND feature = ${feature}`;
+      if (![...ALL_FEATURES, 'finanzas_visible'].includes(feature)) return res.status(400).json({ error: 'Módulo inválido' });
+      if (user.role === 'clinic_admin') {
+        const target = await sql`SELECT 1 FROM clinic_users WHERE id = ${userId} AND clinic_id = ${user.clinic_id}`;
+        if (!target.rows.length) return res.status(403).json({ error: 'Sin permiso' });
       }
+      await sql`INSERT INTO user_module_overrides (clinic_user_id, feature, enabled)
+        VALUES (${userId}, ${feature}, ${!!enabled}) ON CONFLICT (clinic_user_id, feature)
+        DO UPDATE SET enabled = ${!!enabled}`;
       return res.status(200).json({ success: true });
     }
 

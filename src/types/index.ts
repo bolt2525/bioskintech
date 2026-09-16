@@ -41,6 +41,7 @@ export interface AuthUser {
   access_scope: AccessScope;
   finance_scope?: string;
   inventory_scope?: string;
+  calendar_scope?: 'own';
   phone?: string | null;
   gentilicio?: string | null;
   profession?: string | null;
@@ -98,6 +99,7 @@ export interface ClinicUser {
   access_scope: AccessScope;
   finance_scope?: AccessScope;
   inventory_scope?: AccessScope;
+  calendar_scope?: 'own';
   is_active: boolean;
   last_login: string;
   clinic_id: number | null;

@@ -101,12 +101,22 @@ test('WhatsApp message sending fails closed without credentials', async () => {
 });
 
 test('WhatsApp bot normalizes Ecuadorian phone numbers consistently', async () => {
-  const { normalizeEcuadorPhone } = await import('../api/whatsapp-chatbot.js');
+  const { config, normalizeEcuadorPhone } = await import('../api/whatsapp-chatbot.js');
 
+  assert.equal(config.api.bodyParser, false);
   assert.equal(normalizeEcuadorPhone('0987654321'), '593987654321');
   assert.equal(normalizeEcuadorPhone('593987654321'), '593987654321');
   assert.equal(normalizeEcuadorPhone('987654321'), '593987654321');
   assert.equal(normalizeEcuadorPhone(''), '');
+});
+
+test('user WhatsApp numbers are stored in one canonical format', async () => {
+  const { normalizeUserPhone } = await import('../api/admin-auth.js');
+
+  assert.equal(normalizeUserPhone('098 765 4321'), '593987654321');
+  assert.equal(normalizeUserPhone('+593 098 765 4321'), '593987654321');
+  assert.equal(normalizeUserPhone('987654321'), '593987654321');
+  assert.equal(normalizeUserPhone(''), null);
 });
 
 test('WhatsApp bot only extracts messages with a sender number', async () => {

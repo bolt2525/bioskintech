@@ -48,6 +48,9 @@
 - ✅ 2026-09-16 Implementado menú de finanzas en el bot de WhatsApp: selección diaria/semanal/mensual y envío de CSV por Gmail al correo financiero configurado de la clínica; `external_finance_records` queda como flujo legado y no se usa en esta fase.
 - ✅ 2026-09-16 Recordatorios WhatsApp reorganizados: resúmenes al staff autorizado a las 07:00 (citas del día) y 19:00 (citas del día siguiente), con enlaces manuales por paciente; teléfonos de usuarios visibles y editables desde gestión de usuarios.
 - ✅ 2026-09-16 Endurecido WhatsApp: firma Meta obligatoria, agendamiento autenticado por clínica y autorización del bot con teléfonos normalizados sin coincidencias ambiguas.
+- ✅ 2026-09-16 Inventario agrupado por categorías con buscador responsive y sugerencias reutilizables.
+- ✅ 2026-09-16 Aplicados scopes independientes de pacientes, finanzas e inventario en listados, IDs, estadísticas, exportaciones y mutaciones.
+- ✅ 2026-09-16 Migrado Google Calendar/Gmail y bot WhatsApp a identidad por usuario; Neon verificado y suite 13/13.
 
 ## Pendientes verificables
 

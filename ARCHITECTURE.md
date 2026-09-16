@@ -49,7 +49,7 @@ Navegador React/Vite
 - `payments.js`: flujo PayPhone.
 - `records.js`: pacientes, expedientes, módulos clínicos, inventario y fotografías.
 - `sendEmail.js`: correo y notificaciones.
-- `whatsapp-chatbot.js`: verificación y recepción de webhooks de WhatsApp Cloud API; bot interno con autorización por número (solo `clinic_users.phone` activos) que responde consultas de citas del día y ofrece un submenú de finanzas para reportes diarios/semanales/mensuales, generando CSV y enviándolo por Gmail al correo financiero configurado de la clínica; cron `?action=sendReminders` (protegido por `CRON_SECRET`) que envía resúmenes al staff autorizado a las 07:00 para citas del día y a las 19:00 para citas del día siguiente, incluyendo enlaces `wa.me` para recordatorios manuales.
+- `whatsapp-chatbot.js`: verifica webhooks de WhatsApp Cloud API sobre el cuerpo crudo y autoriza por el teléfono canónico de un usuario activo. Consultas, reportes y recordatorios usan el OAuth, calendario y scopes del usuario identificado, no una cuenta compartida de clínica.
 - `system-status.js`: diagnósticos de servicios.
 
 La línea base histórica de `external_finance_records` y el flujo `external-finance.js` se conserva como legado para implementaciones futuras; en esta fase el bot y los reportes usan el conjunto operativo `financial_records` y el correo configurado en `finanzas.admin_email`.
@@ -60,7 +60,7 @@ El repositorio contiene 10 archivos de función bajo `/api/`. El límite efectiv
 
 ### Auth y tenancy
 
-La inicialización de `api/admin-auth.js` crea las tablas de clínicas, usuarios, sesiones, features, configuración, OAuth, OTP, dispositivos confiables, invitaciones, suscripciones y notificaciones. Los roles principales son `master_admin`, `clinic_admin` y `clinic_user`, con scopes de acceso que pueden limitarse a datos propios. `clinic_users.phone` (opcional, editable en Mi Información) identifica al staff autorizado a usar el bot interno de WhatsApp.
+La inicialización de `api/admin-auth.js` crea las tablas de clínicas, usuarios, sesiones, features, configuración, OAuth, OTP, dispositivos confiables, invitaciones, suscripciones y notificaciones. Los roles principales son `master_admin`, `clinic_admin` y `clinic_user`. Cada usuario tiene scopes independientes para pacientes (`access_scope`), finanzas (`finance_scope`) e inventario (`inventory_scope`); `calendar_scope` queda en `own` porque Google Calendar/Gmail siempre pertenece a la cuenta individual. Los valores válidos son `own` y `all`, y el servidor los aplica también a accesos directos por ID, estadísticas, exportaciones y mutaciones. `clinic_users.phone` se normaliza a formato Ecuador `593...`, debe ser inequívoco y autoriza al bot interno.
 
 El restablecimiento administrativo genera una clave temporal criptográfica en el servidor, reemplaza inmediatamente el hash anterior, elimina OTP de login pendientes y revoca todas las sesiones del usuario. `clinic_users.must_change_password` mantiene un aviso en el panel principal hasta que el usuario completa su cambio personal con verificación OTP. La clave temporal solo se devuelve en la respuesta no-cache del reset y puede enviarse al correo registrado mediante `sendResetCredentials`, que vuelve a verificar que la clave siga vigente antes de enviarla.
 
@@ -68,7 +68,7 @@ Las clínicas nuevas reciben deshabilitadas por defecto `treatment_notes_view`, 
 
 Estas tres features son opt-in: una fila ausente en `clinic_features` también equivale a deshabilitada y solo `enabled=true` concede acceso. Los contadores, tarjetas y toggles del Master Admin aplican la misma regla efectiva que `getFeatures()`; las features normales permanecen activas salvo un `enabled=false` explícito.
 
-Los avisos administrativos al desarrollador cubren registro público, invitaciones, creación/edición de clínicas, conexión/desconexión Gmail y fallos completos de agendamiento; las citas exitosas no generan avisos al desarrollador. Calendar y correo de agendamiento requieren OAuth válido de la clínica, sin fallback a service account o SMTP global. Las conexiones OAuth inválidas se limpian al detectar `401` y se marcan para reconexión.
+Los avisos administrativos al desarrollador cubren registro público, invitaciones, creación/edición de clínicas, conexión/desconexión Gmail y fallos completos de agendamiento; las citas exitosas no generan avisos al desarrollador. Calendar y correo requieren OAuth válido del usuario, sin fallback a service account o SMTP global. `clinic_oauth_tokens` conserva `clinic_id` para pertenencia, pero su identidad única es `clinic_user_id`; el estado OAuth es aleatorio, expira, se consume una sola vez y solo cada usuario puede vincular o desconectar su propia cuenta. La migración aplicada el 2026-09-16 asignó el único token legado inequívoco al usuario correspondiente.
 
 ### Fichas clínicas
 
@@ -85,6 +85,8 @@ Los avisos administrativos al desarrollador cubren registro público, invitacion
 - auditoría, asignaciones y grupos;
 - catálogos globales;
 - `clinical_photos` con `r2_key` y metadatos.
+
+Inventario agrupa visualmente los productos por el valor normalizado de `category`. El formulario permite escribir categorías nuevas y sugiere las categorías ya registradas o configuradas mediante `datalist`; búsqueda y filtros operan antes de la agrupación.
 
 Las recetas mantienen compatibilidad con la tabla `prescriptions` existente y agregan columnas idempotentes para `prescription_mode`, vigencia y `regulatory_snapshot`. El modo `routine` es el predeterminado; `prescription` exige confirmación explícita antes de imprimir, muestra campos faltantes y reserva firma/sello manual. El registro profesional ACESS se almacena opcionalmente en `clinic_users.registro_acess` y se puede editar desde Mi Información. La migración oficial está en `scripts/apply-migrations.mjs` y fue aplicada en Neon el 2026-09-09.
 
@@ -123,12 +125,12 @@ Las operaciones de fotos también validan que el expediente pertenezca al tenant
 - Headers de seguridad en `vercel.json`.
 - Auditoría de operaciones clínicas mediante `patient_audit_log`, aunque algunos fallos de auditoría se silencian.
 - Variables privadas sin prefijo `VITE_` en la configuración revisada.
-- El webhook de WhatsApp valida `hub.verify_token` en el challenge y `X-Hub-Signature-256` con `WHATSAPP_APP_SECRET` en cada POST; no expone secretos ni registra el payload recibido.
-- El cron de recordatorios exige `Authorization: Bearer $CRON_SECRET` (lo envía Vercel Cron automáticamente) y solo procesa clínicas con conexión OAuth de Google real (`clinic_oauth_tokens`).
-- El bot de WhatsApp solo responde a números que coincidan con `clinic_users.phone` de un usuario activo; los números no reconocidos se ignoran sin respuesta (no se revela información del sistema).
-- El menú del bot financiero acepta `1/2/3` o palabras `diario/semanal/mensual` y genera un CSV de `financial_records` para el rango correspondiente; el archivo se envía por Gmail desde la cuenta OAuth conectada de la clínica a `finanzas.admin_email` para el administrador financiero.
+- El webhook de WhatsApp deshabilita el body parser, valida `hub.verify_token` en el challenge y verifica `X-Hub-Signature-256` sobre los bytes originales con `WHATSAPP_APP_SECRET` antes de parsear JSON.
+- El cron de recordatorios exige `Authorization: Bearer $CRON_SECRET` y procesa cada usuario con OAuth propio; cada teléfono recibe solo el resumen de su calendario.
+- El bot solo responde a un `clinic_users.phone` activo con coincidencia única. Los números se almacenan canónicos y los desconocidos o ambiguos se ignoran sin revelar información.
+- El menú financiero respeta `finanzas_visible`, `finance_scope` y grupos de compartición. Genera CSV de `financial_records` para el rango permitido y lo envía desde/al correo OAuth del usuario.
 - `lib/whatsapp-service.js` envía mensajes vía WhatsApp Cloud API (Graph API) y falla cerrado si `WHATSAPP_TOKEN`/`WHATSAPP_PHONE_NUMBER_ID` no están configuradas; `api/sendEmail.js` lo invoca en el agendamiento solo si `clinic_settings.notificaciones.whatsapp_enabled` es `true`, sin bloquear el flujo de calendario/correo si falla.
-- `api/sendEmail.js` exige una sesión administrativa y rechaza `clinicId` ajeno a la clínica autenticada; `WHATSAPP_APP_SECRET` debe existir en Production para aceptar eventos reales de Meta.
+- `api/sendEmail.js` exige sesión administrativa y deriva clínica, usuario OAuth y teléfono de notificación desde esa sesión; no confía en esos identificadores enviados por el cliente. `WHATSAPP_APP_SECRET` debe existir en Production para aceptar eventos reales de Meta.
 
 ## 7. Riesgos abiertos
 

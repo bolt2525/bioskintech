@@ -185,7 +185,7 @@ export default function InventoryForm({ initialData, suggestedSku, categories, o
                     </div>
                   )}
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className={labelCls}>SKU / Código</label>
                       <input type="text" className={inputCls} value={formData.sku}
@@ -217,16 +217,24 @@ export default function InventoryForm({ initialData, suggestedSku, categories, o
                       onChange={e => f('sanitary_registration', e.target.value)} placeholder="Ej. ISP-12345" />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className={labelCls}>Categoría</label>
-                      <select className={inputCls} value={formData.category} onChange={e => f('category', e.target.value)}>
-                        <option value="">Seleccionar categoría...</option>
+                      <label htmlFor="inventory-category" className={labelCls}>Categoría</label>
+                      <input
+                        id="inventory-category"
+                        list="inventory-category-suggestions"
+                        type="text"
+                        className={inputCls}
+                        value={formData.category}
+                        onChange={e => f('category', e.target.value)}
+                        placeholder="Escribe o selecciona"
+                      />
+                      <datalist id="inventory-category-suggestions">
                         {(categories && categories.length > 0
                           ? categories
                           : ['Inyectable','Consumibles','Venta','Equipamiento']
-                        ).map(c => <option key={c}>{c}</option>)}
-                      </select>
+                        ).map(c => <option key={c} value={c} />)}
+                      </datalist>
                     </div>
                     <div>
                       <label className={labelCls}>Grupo / Subcategoría</label>
@@ -239,7 +247,7 @@ export default function InventoryForm({ initialData, suggestedSku, categories, o
                   {formData.category === 'Venta' && (
                     <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100 space-y-3">
                       <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wide">Precios de referencia</p>
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
                           <label className={labelCls}>Costo de adquisición <span className="normal-case font-normal text-gray-400">(opcional)</span></label>
                           <div className="relative">
@@ -284,7 +292,7 @@ export default function InventoryForm({ initialData, suggestedSku, categories, o
                     </div>
                   )}
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className={labelCls}>Unidad de Medida</label>
                       <select className={inputCls} value={formData.unit_of_measure} onChange={e => f('unit_of_measure', e.target.value)}>

@@ -31,15 +31,15 @@ export function buildAppointmentWhatsAppRecipients({ patientPhone, bookingUserPh
   return recipients;
 }
 
-/** Obtiene un OAuth2 client con los tokens guardados para la clínica. Retorna null si no hay tokens. */
-async function getClinicOAuth2Client(clinicId) {
-  if (!clinicId) return null;
+/** Obtiene un OAuth2 client con los tokens guardados para el usuario. */
+async function getUserOAuth2Client(userId) {
+  if (!userId) return null;
   const clientId     = (process.env.GOOGLE_CLIENT_ID     || '').trim();
   const clientSecret = (process.env.GOOGLE_CLIENT_SECRET || '').trim();
   if (!clientId || !clientSecret) return null;
   const appUrl = (process.env.APP_URL || `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app'}`).replace(/\/$/, '').trim();
   try {
-    const r = await sql`SELECT access_token, refresh_token, token_expiry, email FROM clinic_oauth_tokens WHERE clinic_id = ${clinicId}`;
+    const r = await sql`SELECT access_token, refresh_token, token_expiry, email FROM clinic_oauth_tokens WHERE clinic_user_id = ${userId}`;
     if (!r.rows.length) return null;
     const { access_token, refresh_token, token_expiry, email: connectedEmail } = r.rows[0];
     const oAuth2 = new google.auth.OAuth2(clientId, clientSecret, `${appUrl}/api/calendar`);
@@ -52,7 +52,7 @@ async function getClinicOAuth2Client(clinicId) {
     oAuth2.on('tokens', async (tokens) => {
       await sql`UPDATE clinic_oauth_tokens SET access_token = ${tokens.access_token},
         token_expiry = ${tokens.expiry_date ? new Date(tokens.expiry_date) : null}, updated_at = NOW()
-        WHERE clinic_id = ${clinicId}`;
+        WHERE clinic_user_id = ${userId}`;
     });
     return { client: oAuth2, email: connectedEmail };
   } catch { return null; }
@@ -97,10 +97,8 @@ export default async function handler(req, res) {
   }
   const auth = await authenticateRequest(req);
   if (!auth.valid) return res.status(401).json({ success: false, message: 'No autenticado' });
-  const requestedClinicId = req.body?.clinicId || auth.effective_clinic_id || auth.clinic_id;
-  if (auth.role !== 'master_admin' && String(requestedClinicId) !== String(auth.clinic_id)) {
-    return res.status(403).json({ success: false, message: 'Clínica no autorizada' });
-  }
+  const requestedClinicId = auth.effective_clinic_id || auth.clinic_id;
+  const currentUser = auth.id ? await sql`SELECT phone FROM clinic_users WHERE id = ${auth.id}` : { rows: [] };
 
   const escapeHtml = (value = '') => String(value)
     .replace(/&/g, '&amp;')
@@ -321,7 +319,7 @@ export default async function handler(req, res) {
   // --- 0. ENVÍO AUTOMÁTICO DE CONFIRMACIÓN POR WHATSAPP (Cloud API) ---
   const appointmentRecipients = buildAppointmentWhatsAppRecipients({
     patientPhone: phoneClean,
-    bookingUserPhone: req.body?.bookingUserPhone || req.body?.booking_user_phone || '',
+    bookingUserPhone: currentUser.rows[0]?.phone || '',
   });
   if (clinic.whatsapp_enabled && appointmentRecipients.length) {
     try {
@@ -336,31 +334,14 @@ export default async function handler(req, res) {
   }
 
   // --- 1. CREAR EVENTO EN GOOGLE CALENDAR ---
-  // Intenta OAuth de la clínica primero; fallback a service account si existe
   try {
     if (start && end) {
-      const clinicOAuth = await getClinicOAuth2Client(requestedClinicId);
-      let auth, calendarId;
+      const userOAuth = await getUserOAuth2Client(auth.id);
+      if (!userOAuth) throw new Error('No tienes una cuenta Google conectada. Conéctala desde Estado del Sistema.');
 
-      if (clinicOAuth) {
-        // ✅ Usa OAuth de la clínica conectada
-        auth       = clinicOAuth.client;
-        calendarId = 'primary'; // El calendario principal de la cuenta OAuth conectada
-        console.log('📅 Usando OAuth de clínica para Calendar:', clinicOAuth.email);
-      } else if (process.env.GOOGLE_CREDENTIALS_BASE64) {
-        // Fallback: service account legacy
-        const creds = JSON.parse(Buffer.from(process.env.GOOGLE_CREDENTIALS_BASE64, 'base64').toString('utf8'));
-        auth = new google.auth.JWT(creds.client_email, undefined, creds.private_key,
-          ['https://www.googleapis.com/auth/calendar']);
-        calendarId = creds.calendar_id;
-        console.log('📅 Usando service account para Calendar');
-      } else {
-        throw new Error('No hay credenciales de Google configuradas. Conecta la cuenta Gmail de la clínica desde el Master Admin.');
-      }
-
-      const calendar = google.calendar({ version: 'v3', auth });
+      const calendar = google.calendar({ version: 'v3', auth: userOAuth.client });
       await calendar.events.insert({
-        calendarId,
+        calendarId: 'primary',
         requestBody: {
           summary:     `Cita: ${paciente} - ${email}`,
           description: message,
@@ -373,8 +354,8 @@ export default async function handler(req, res) {
     }
   } catch (calErr) {
     console.error('❌ Error en Calendar:', calErr.message);
-    if (isGoogleAuthError(calErr) && req.body?.clinicId) {
-      await sql`DELETE FROM clinic_oauth_tokens WHERE clinic_id = ${req.body.clinicId}`;
+    if (isGoogleAuthError(calErr) && auth.id) {
+      await sql`DELETE FROM clinic_oauth_tokens WHERE clinic_user_id = ${auth.id}`;
       errorDetails.push('Calendar: conexión de Google inválida; requiere reconexión');
     }
     errorDetails.push(`Calendar: ${calErr.message}`);
@@ -382,7 +363,7 @@ export default async function handler(req, res) {
 
   // --- 2. ENVÍO DE CORREOS: Gmail API OAuth (si hay token) o SMTP fallback ---
   try {
-    const clinicOAuth = await getClinicOAuth2Client(req.body?.clinicId);
+    const clinicOAuth = await getUserOAuth2Client(auth.id);
 
     const staffEmailHtml = `
       <h2 style="color:#ba9256;margin-bottom:4px;">Nueva cita registrada</h2>
@@ -428,7 +409,7 @@ export default async function handler(req, res) {
       : staffEmailHtml;
 
     if (clinicOAuth) {
-      // ✅ Gmail API con OAuth de la clínica
+      // Gmail API con OAuth del usuario autenticado
       console.log('📧 Enviando vía Gmail API OAuth:', clinicOAuth.email);
       const gmail = google.gmail({ version: 'v1', auth: clinicOAuth.client });
       const fromAddr = `${clinic.from_name} <${clinicOAuth.email}>`;
@@ -475,13 +456,13 @@ export default async function handler(req, res) {
       console.log('✅ Correos enviados vía Gmail API');
 
     } else {
-      throw new Error('No hay cuenta Gmail conectada para esta clínica. Conecta Gmail desde los ajustes de la clínica.');
+      throw new Error('No tienes una cuenta Gmail conectada. Conéctala desde Estado del Sistema.');
     }
 
   } catch (emailErr) {
     console.error('❌ Error enviando correos:', emailErr.message);
-    if (isGoogleAuthError(emailErr) && req.body?.clinicId) {
-      await sql`DELETE FROM clinic_oauth_tokens WHERE clinic_id = ${req.body.clinicId}`;
+    if (isGoogleAuthError(emailErr) && auth.id) {
+      await sql`DELETE FROM clinic_oauth_tokens WHERE clinic_user_id = ${auth.id}`;
       errorDetails.push('Email: conexión de Google inválida; requiere reconexión');
     }
     errorDetails.push(`Email: ${emailErr.message}`);
