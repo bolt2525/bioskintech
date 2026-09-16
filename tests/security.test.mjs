@@ -119,17 +119,37 @@ test('user WhatsApp numbers are stored in one canonical format', async () => {
   assert.equal(normalizeUserPhone(''), null);
 });
 
-test('WhatsApp bot only extracts messages with a sender number', async () => {
-  const { extractIncomingMessages } = await import('../api/whatsapp-chatbot.js');
+test('WhatsApp bot extracts auditable messages only when a sender exists', async () => {
+  const { extractIncomingMessages, extractMessageStatuses } = await import('../api/whatsapp-chatbot.js');
 
   const messages = extractIncomingMessages({
-    entry: [{ changes: [{ value: { messages: [
-      { from: '0987654321', text: { body: '1' } },
+    entry: [{ changes: [{ value: {
+      contacts: [{ wa_id: '0987654321', profile: { name: 'Ana' } }],
+      messages: [
+      { id: 'wamid.incoming', from: '0987654321', timestamp: '1700000000', type: 'text', text: { body: '1' } },
+      { from: '0987654321', text: { body: 'sin id de Meta' } },
       { text: { body: 'sin remitente' } },
     ] } }] }],
   });
 
-  assert.deepEqual(messages, [{ from: '593987654321', text: '1' }]);
+  assert.deepEqual(messages, [{
+    from: '593987654321',
+    text: '1',
+    mediaType: 'texto',
+    providerMessageId: 'wamid.incoming',
+    timestamp: new Date(1700000000000),
+    name: 'Ana',
+  }]);
+
+  assert.deepEqual(extractMessageStatuses({
+    entry: [{ changes: [{ value: { statuses: [
+      { id: 'wamid.outgoing', status: 'read' },
+      { id: 'wamid.failed', status: 'failed', errors: [{ title: 'No entregado' }] },
+    ] } }] }],
+  }), [
+    { providerMessageId: 'wamid.outgoing', status: 'leido', errorDetail: null },
+    { providerMessageId: 'wamid.failed', status: 'fallido', errorDetail: 'No entregado' },
+  ]);
 });
 
 test('WhatsApp finance report selection maps menu choices to report periods', async () => {

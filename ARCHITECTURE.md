@@ -49,7 +49,7 @@ Navegador React/Vite
 - `payments.js`: flujo PayPhone.
 - `records.js`: pacientes, expedientes, módulos clínicos, inventario y fotografías.
 - `sendEmail.js`: correo y notificaciones.
-- `whatsapp-chatbot.js`: verifica webhooks de WhatsApp Cloud API sobre el cuerpo crudo y autoriza por el teléfono canónico de un usuario activo. Consultas, reportes y recordatorios usan el OAuth, calendario y scopes del usuario identificado, no una cuenta compartida de clínica.
+- `whatsapp-chatbot.js`: verifica webhooks de WhatsApp Cloud API sobre el cuerpo crudo, autoriza por el teléfono canónico de un usuario activo y expone al `master_admin` el historial CRM. Consultas, reportes y recordatorios usan el OAuth, calendario y scopes del usuario identificado, no una cuenta compartida de clínica.
 - `system-status.js`: diagnósticos de servicios.
 
 La línea base histórica de `external_finance_records` y el flujo `external-finance.js` se conserva como legado para implementaciones futuras; en esta fase el bot y los reportes usan el conjunto operativo `financial_records` y el correo configurado en `finanzas.admin_email`.
@@ -61,6 +61,8 @@ El repositorio contiene 10 archivos de función bajo `/api/`. El límite efectiv
 ### Auth y tenancy
 
 La inicialización de `api/admin-auth.js` crea las tablas de clínicas, usuarios, sesiones, features, configuración, OAuth, OTP, dispositivos confiables, invitaciones, suscripciones y notificaciones. Los roles principales son `master_admin`, `clinic_admin` y `clinic_user`. Cada usuario tiene scopes independientes para pacientes (`access_scope`), finanzas (`finance_scope`) e inventario (`inventory_scope`); `calendar_scope` queda en `own` porque Google Calendar/Gmail siempre pertenece a la cuenta individual. Los valores válidos son `own` y `all`, y el servidor los aplica también a accesos directos por ID, estadísticas, exportaciones y mutaciones. `clinic_users.phone` se normaliza a formato Ecuador `593...`, debe ser inequívoco y autoriza al bot interno.
+
+El CRM global de WhatsApp usa `whatsapp_contacts` (teléfono único, nombre opcional, clínica y último mensaje) y `whatsapp_messages` (dirección, contenido, medio, timestamp, estado e ID de Meta). `lib/whatsapp-service.js` persiste cada salida antes de llamar a Meta; el webhook registra entradas, evita repetir efectos ante reintentos y actualiza estados sin retroceder desde leído o fallido. La migración fuente está en `scripts/whatsapp-crm.sql`, también forma parte de `scripts/apply-migrations.mjs`, y la consulta cronológica solo se expone a `master_admin` en `/admin/master/whatsapp`.
 
 El restablecimiento administrativo genera una clave temporal criptográfica en el servidor, reemplaza inmediatamente el hash anterior, elimina OTP de login pendientes y revoca todas las sesiones del usuario. `clinic_users.must_change_password` mantiene un aviso en el panel principal hasta que el usuario completa su cambio personal con verificación OTP. La clave temporal solo se devuelve en la respuesta no-cache del reset y puede enviarse al correo registrado mediante `sendResetCredentials`, que vuelve a verificar que la clave siga vigente antes de enviarla.
 
@@ -126,6 +128,7 @@ Las operaciones de fotos también validan que el expediente pertenezca al tenant
 - Auditoría de operaciones clínicas mediante `patient_audit_log`, aunque algunos fallos de auditoría se silencian.
 - Variables privadas sin prefijo `VITE_` en la configuración revisada.
 - El webhook de WhatsApp deshabilita el body parser, valida `hub.verify_token` en el challenge y verifica `X-Hub-Signature-256` sobre los bytes originales con `WHATSAPP_APP_SECRET` antes de parsear JSON.
+- Las consultas del CRM de WhatsApp exigen una sesión Bearer vigente y rol `master_admin`; las entradas se parametrizan, los teléfonos y enums se validan y las respuestas usan `Cache-Control: private, no-store`.
 - El cron de recordatorios exige `Authorization: Bearer $CRON_SECRET` y procesa cada usuario con OAuth propio; cada teléfono recibe solo el resumen de su calendario.
 - El bot solo responde a un `clinic_users.phone` activo con coincidencia única. Los números se almacenan canónicos y los desconocidos o ambiguos se ignoran sin revelar información.
 - El menú financiero respeta `finanzas_visible`, `finance_scope` y grupos de compartición. Genera CSV de `financial_records` para el rango permitido y lo envía desde/al correo OAuth del usuario.
@@ -150,7 +153,9 @@ Las operaciones de fotos también validan que el expediente pertenezca al tenant
 - `node --check lib/neon-clinical-db.js` — pasa.
 - `node --check lib/r2-service.js` — pasa.
 - `npx eslint api/records.js lib/neon-clinical-db.js lib/r2-service.js` — pasa.
-- `npm run test:security` — 5 pruebas pasan.
+- `npm run test:security` — 13 pruebas pasan tras integrar la auditoría de WhatsApp.
+- `npm run build` — pasa con la vista CRM de WhatsApp y su ruta master.
+- `node scripts/apply-migrations.mjs` — creó las tablas e índices CRM en Neon; consulta posterior confirmó `whatsapp_contacts`, `whatsapp_messages` y sus índices.
 - Prueba negativa sin `NEON_APP_URL` — pasa; no hay fallback a `neondb_owner`.
 - Generación local de URLs R2 con credenciales sintéticas — pasa; endpoint, clave, algoritmo y TTL esperados.
 - Prueba RLS conectada con dos clínicas — pasa; 7 filas propias para una clínica, 0 para la otra y 0 sin contexto.

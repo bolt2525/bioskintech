@@ -20,7 +20,7 @@ import {
   LogOut, Building2, Users, Shield, RefreshCw, ChevronDown, ChevronUp,
   Plus, Edit, Trash2, Eye, EyeOff, Key, X, Check, AlertCircle, Copy, Send,
   Activity, ClipboardList, ChevronRight, Sparkles, Lock, Mail, Unlink, ExternalLink, Settings2, LayoutDashboard, UserCheck, Calendar, Infinity, Clock, Bell,
-  Link2Off, Loader2, CheckCircle2,
+  Link2Off, Loader2, CheckCircle2, MessageCircle,
 } from 'lucide-react';
 
 // Constantes centralizadas — no duplicar aquí
@@ -2156,6 +2156,13 @@ export default function AdminMasterDashboard() {
                   >
                     <span className="font-medium text-gray-700">Re-inicializar features de todas las clínicas</span>
                     <RefreshCw className="w-4 h-4 text-gray-400" />
+                  </button>
+                  <button
+                    onClick={() => navigate('/admin/master/whatsapp')}
+                    className="w-full flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50 text-sm text-left"
+                  >
+                    <span className="font-medium text-gray-700">Revisar conversaciones de WhatsApp</span>
+                    <MessageCircle className="w-4 h-4 text-emerald-600" />
                   </button>
                   <button
                     onClick={() => navigate('/admin')}

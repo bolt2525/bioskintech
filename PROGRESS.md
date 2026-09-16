@@ -51,6 +51,8 @@
 - ✅ 2026-09-16 Inventario agrupado por categorías con buscador responsive y sugerencias reutilizables.
 - ✅ 2026-09-16 Aplicados scopes independientes de pacientes, finanzas e inventario en listados, IDs, estadísticas, exportaciones y mutaciones.
 - ✅ 2026-09-16 Migrado Google Calendar/Gmail y bot WhatsApp a identidad por usuario; Neon verificado y suite 13/13.
+- ✅ 2026-09-16 Añadido CRM WhatsApp master con historial auditable en Neon.
+- ✅ 2026-09-16 Endurecidos reintentos, estados y límite del webhook WhatsApp.
 
 ## Pendientes verificables
 

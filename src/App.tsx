@@ -43,6 +43,7 @@ import Clinical3D        from './pages/Clinical3D';
 import AdminSystemStatus from './pages/AdminSystemStatus';
 import AdminBackup       from './pages/AdminBackup';
 import AdminAgendaHub    from './pages/AdminAgendaHub';
+import AdminWhatsAppCRM  from './pages/AdminWhatsAppCRM';
 import MasterClinicWrapper   from './pages/MasterClinicWrapper';
 import ExternalMedicalFinance from './pages/ExternalMedicalFinance';
 import SkinExplorerPage from './skin-explorer/SkinExplorerPage';
@@ -68,6 +69,7 @@ function AdminRoutes() {
           <Route path="/admin/setup-password"   element={<AdminSetupPassword />} />
           <Route path="/admin/recover"          element={<AdminSetupPassword />} />
           <Route path="/admin/master"   element={<AdminMasterDashboard />} />
+          <Route path="/admin/master/whatsapp" element={<AdminWhatsAppCRM />} />
 
           <Route path="/admin/master/:clinicSlug/:username" element={<MasterClinicWrapper />}>
             <Route index element={<AdminDashboard />} />

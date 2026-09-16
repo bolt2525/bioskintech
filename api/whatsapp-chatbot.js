@@ -3,6 +3,13 @@ import { google } from 'googleapis';
 import { sql } from '@vercel/postgres';
 import { sendWhatsAppText } from '../lib/whatsapp-service.js';
 import { buildFinanceCsv } from '../lib/finance-csv.js';
+import { requireAuth, requireRole } from '../lib/admin-auth.js';
+import {
+  listWhatsAppContacts,
+  listWhatsAppMessages,
+  recordWhatsAppMessage,
+  updateWhatsAppMessageStatus,
+} from '../lib/whatsapp-crm.js';
 
 const getQueryValue = (value) => Array.isArray(value) ? value[0] : value;
 
@@ -10,7 +17,17 @@ export const config = { api: { bodyParser: false } };
 
 async function readRawBody(req) {
   const chunks = [];
-  for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  let size = 0;
+  for await (const chunk of req) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    size += buffer.length;
+    if (size > 1024 * 1024) {
+      const error = new Error('Payload demasiado grande');
+      error.statusCode = 413;
+      throw error;
+    }
+    chunks.push(buffer);
+  }
   return Buffer.concat(chunks);
 }
 
@@ -69,18 +86,52 @@ function parseAppointmentEvent(event) {
   return { phone, patientName, professional };
 }
 
-/** Extrae mensajes entrantes { from, text } del payload del webhook de WhatsApp Cloud API. */
+/** Extrae mensajes entrantes normalizados del payload de WhatsApp Cloud API. */
 export function extractIncomingMessages(body) {
   const messages = [];
   for (const entry of body?.entry || []) {
     for (const change of entry?.changes || []) {
+      const contacts = new Map((change?.value?.contacts || []).map(contact => [
+        normalizeEcuadorPhone(contact?.wa_id),
+        String(contact?.profile?.name || '').trim() || null,
+      ]));
       for (const msg of change?.value?.messages || []) {
-        if (!msg?.from) continue;
-        messages.push({ from: normalizeEcuadorPhone(msg.from), text: (msg.text?.body || '').trim() });
+        if (!msg?.from || !msg?.id) continue;
+        const from = normalizeEcuadorPhone(msg.from);
+        const mediaType = msg.type === 'image' ? 'imagen' : msg.type === 'audio' ? 'audio' : 'texto';
+        const text = (msg.text?.body || msg.image?.caption || (mediaType === 'imagen' ? '[Imagen]' : mediaType === 'audio' ? '[Audio]' : '')).trim();
+        messages.push({
+          from,
+          text,
+          mediaType,
+          providerMessageId: msg.id || null,
+          timestamp: msg.timestamp ? new Date(Number(msg.timestamp) * 1000) : new Date(),
+          name: contacts.get(from) || null,
+        });
       }
     }
   }
   return messages;
+}
+
+export function extractMessageStatuses(body) {
+  const statuses = [];
+  const statusMap = { sent: 'enviado', delivered: 'enviado', read: 'leido', failed: 'fallido' };
+  for (const entry of body?.entry || []) {
+    for (const change of entry?.changes || []) {
+      for (const event of change?.value?.statuses || []) {
+        const status = statusMap[event?.status];
+        if (event?.id && status) {
+          statuses.push({
+            providerMessageId: event.id,
+            status,
+            errorDetail: event.errors?.[0]?.title || event.errors?.[0]?.message || null,
+          });
+        }
+      }
+    }
+  }
+  return statuses;
 }
 
 /** Lista en texto plano las citas de hoy del usuario autorizado. */
@@ -230,8 +281,23 @@ async function sendFinanceReportToUser(clinicUser, period, from) {
 
 /** Procesa mensajes entrantes: solo responde a números registrados como staff activo (clinic_users.phone). */
 async function handleIncomingMessages(body) {
-  for (const { from, text } of extractIncomingMessages(body)) {
+  for (const event of extractMessageStatuses(body)) {
+    await updateWhatsAppMessageStatus(event.providerMessageId, event.status, event.errorDetail);
+  }
+
+  for (const { from, text, mediaType, providerMessageId, timestamp, name } of extractIncomingMessages(body)) {
     if (!from) continue;
+    const audit = await recordWhatsAppMessage({
+      phone: from,
+      name,
+      direction: 'entrante',
+      content: text,
+      mediaType,
+      timestamp,
+      status: 'leido',
+      providerMessageId,
+    });
+    if (!audit.rows.length) continue;
     const normalizedText = String(text || '').trim().toLowerCase();
     if (!normalizedText) continue;
     const staff = await sql`
@@ -366,6 +432,24 @@ async function sendAppointmentSummaries(dayOffset = 0) {
 }
 
 export default async function handler(req, res) {
+  const action = getQueryValue(req.query?.action);
+
+  if (req.method === 'GET' && (action === 'crmContacts' || action === 'crmMessages')) {
+    const user = await requireAuth(req, res);
+    if (!user || !requireRole(user, res, 'master_admin')) return;
+    res.setHeader('Cache-Control', 'private, no-store');
+    try {
+      const data = action === 'crmContacts'
+        ? await listWhatsAppContacts(getQueryValue(req.query?.search), getQueryValue(req.query?.limit))
+        : await listWhatsAppMessages(getQueryValue(req.query?.contactId), getQueryValue(req.query?.limit));
+      return res.status(200).json({ success: true, data });
+    } catch (error) {
+      const status = error.message === 'Contacto inválido' ? 400 : 500;
+      console.error('Error consultando CRM de WhatsApp:', error.message);
+      return res.status(status).json({ success: false, error: status === 400 ? error.message : 'No se pudo consultar el historial' });
+    }
+  }
+
   if (req.method === 'GET' && getQueryValue(req.query?.action) === 'sendReminders') {
     const cronSecret = (process.env.CRON_SECRET || '').trim();
     if (!cronSecret || req.headers.authorization !== `Bearer ${cronSecret}`) {
@@ -387,7 +471,12 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
-    const rawBody = await readRawBody(req);
+    let rawBody;
+    try {
+      rawBody = await readRawBody(req);
+    } catch (error) {
+      return res.status(error.statusCode || 400).json({ success: false });
+    }
     if (!verifyWhatsAppSignature(req.headers['x-hub-signature-256'], rawBody)) {
       return res.status(401).json({ success: false });
     }
@@ -402,6 +491,7 @@ export default async function handler(req, res) {
       await handleIncomingMessages(body);
     } catch (err) {
       console.error('❌ Error procesando mensaje WhatsApp:', err.message);
+      return res.status(500).json({ success: false });
     }
     return res.status(200).send('EVENT_RECEIVED');
   }
