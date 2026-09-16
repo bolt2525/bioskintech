@@ -1624,7 +1624,7 @@ async function registerClinic(body) {
     logo_url: '', phone: clinic_phone || '', address: clinic_address || '', tax_id: clinic_ruc || '',
   });
   const initialEmail = JSON.stringify({ staff_email: clinicContactEmail || '', from_name: clinic_name.trim(), signature: `El equipo de ${clinic_name.trim()}`, whatsapp_number: '' });
-  const initialAgenda = JSON.stringify({ start_hour: '08:00', end_hour: '19:00', slot_minutes: 60, calendar_prefix: clinic_name.trim() });
+  const initialAgenda = JSON.stringify({ start_hour: '08:00', end_hour: '19:00', slot_minutes: 60, calendar_prefix: clinic_name.trim(), daily_reminder_whatsapp: false });
   await sql`INSERT INTO clinic_settings (clinic_id, general, treatments, email, agenda, finanzas, inventario, notificaciones)
     VALUES (${clinicId}, ${initialGeneral}::jsonb, ${JSON.stringify(DEFAULT_TREATMENTS)}::jsonb, ${initialEmail}::jsonb, ${initialAgenda}::jsonb, ${JSON.stringify(DEFAULT_FINANZAS)}::jsonb, ${JSON.stringify(DEFAULT_INVENTARIO)}::jsonb, ${JSON.stringify(DEFAULT_NOTIFICACIONES)}::jsonb)
     ON CONFLICT (clinic_id) DO UPDATE SET general = ${initialGeneral}::jsonb`;
@@ -2616,7 +2616,7 @@ export default async function handler(req, res) {
           general:    { name: clinic.name || '', city: clinic.city || '', tagline: '', establishment_type: '', logo_url: clinic.logo_url || '', phone: clinic.phone || '', address: clinic.address || '', tax_id: clinic.ruc || '' },
           treatments: DEFAULT_TREATMENTS,
           email:      { staff_email: clinic.email || '', from_name: clinic.name || '', signature: `El equipo de ${clinic.name || 'la clínica'}`, whatsapp_number: '' },
-          agenda:     { start_hour: '08:00', end_hour: '19:00', slot_minutes: 60, calendar_prefix: clinic.name || 'CLINICA' },
+          agenda:     { start_hour: '08:00', end_hour: '19:00', slot_minutes: 60, calendar_prefix: clinic.name || 'CLINICA', daily_reminder_whatsapp: false },
           finanzas:         DEFAULT_FINANZAS,
           inventario:       DEFAULT_INVENTARIO,
           notificaciones:   DEFAULT_NOTIFICACIONES,

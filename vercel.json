@@ -21,5 +21,8 @@
     "api/admin-auth.js": {
       "includeFiles": "data/**"
     }
-  }
+  },
+  "crons": [
+    { "path": "/api/whatsapp-chatbot?action=sendReminders", "schedule": "0 12 * * *" }
+  ]
 }

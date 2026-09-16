@@ -1033,7 +1033,7 @@ export default function AdminMasterDashboard() {
     general:        { name: string; city: string; tagline: string; establishment_type: string; logo_url: string; phone: string; address: string; tax_id: string };
     treatments:     string[];
     email:          { staff_email: string; from_name: string; signature: string; whatsapp_number: string; staff_members?: Array<{ name: string; email: string }> };
-    agenda:         { start_hour: string; end_hour: string; slot_minutes: number; calendar_prefix: string };
+    agenda:         { start_hour: string; end_hour: string; slot_minutes: number; calendar_prefix: string; daily_reminder_whatsapp: boolean };
     finanzas:       { currency: string; currency_symbol: string; tax_percent: number; invoice_prefix: string; payment_methods: string[]; invoice_notes: string };
     inventario:     { expiry_alert_days: number; low_stock_alert: boolean; require_batch: boolean; categories: string[] };
     notificaciones: { appointment_confirmation: boolean; appointment_reminder: boolean; low_stock_notification: boolean; whatsapp_enabled: boolean; reminder_hours_before: number };
@@ -1099,6 +1099,7 @@ export default function AdminMasterDashboard() {
         const s = data.settings;
         setSettingsData({
           ...s,
+          agenda:         { start_hour:'08:00', end_hour:'19:00', slot_minutes:60, calendar_prefix:'', daily_reminder_whatsapp:false, ...(s.agenda||{}) },
           finanzas:       { currency:'USD', currency_symbol:'$', tax_percent:15, invoice_prefix:'INV', payment_methods:['Efectivo','Transferencia','Tarjeta de crédito','Tarjeta de débito'], invoice_notes:'', ...(s.finanzas||{}) },
           inventario:     { expiry_alert_days:30, low_stock_alert:true, require_batch:true, categories:['Toxinas','Rellenos','Skincare','Equipos','Consumibles','Medicamentos','Otros'], ...(s.inventario||{}) },
           notificaciones: { appointment_confirmation:true, appointment_reminder:true, low_stock_notification:false, whatsapp_enabled:false, reminder_hours_before:24, ...(s.notificaciones||{}) },
@@ -2955,6 +2956,16 @@ export default function AdminMasterDashboard() {
                             onChange={e => setSettingsData(s => s?({...s,agenda:{...s.agenda,calendar_prefix:e.target.value}}):s)}
                             className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
                           <p className="text-xs text-gray-400 mt-1">Prefijo para eventos en Google Calendar, p.ej. "{settingsData.agenda.calendar_prefix} - BLOQUEO"</p>
+                        </div>
+                        <div className="col-span-3 flex items-center justify-between p-3 border rounded-lg bg-gray-50">
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-700">📅⏰ Recordatorios diarios por WhatsApp</label>
+                            <p className="text-xs text-gray-400">Cada mañana, envía por WhatsApp un recordatorio a los pacientes con cita ese día (requiere Google Calendar conectado).</p>
+                          </div>
+                          <button type="button" onClick={() => setSettingsData(s => s?({...s,agenda:{...s.agenda,daily_reminder_whatsapp:!s.agenda.daily_reminder_whatsapp}}):s)}
+                            className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${settingsData.agenda.daily_reminder_whatsapp ? 'bg-[#deb887]' : 'bg-gray-300'}`}>
+                            <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${settingsData.agenda.daily_reminder_whatsapp ? 'translate-x-5' : ''}`} />
+                          </button>
                         </div>
                       </div>
                       <div>
