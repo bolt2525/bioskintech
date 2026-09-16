@@ -33,6 +33,7 @@ export interface ClinicAgendaSettings {
   slot_minutes:      number;
   calendar_prefix:   string;
   daily_reminder_whatsapp: boolean;
+  finance_admin_phone:     string;
 }
 
 export interface ClinicSettings {
@@ -46,7 +47,7 @@ const DEFAULTS: ClinicSettings = {
   general:    { name: '', city: '', tagline: '', establishment_type: '', logo_url: '', phone: '', address: '', tax_id: '' },
   treatments: [],
   email:      { staff_email: '', from_name: '', signature: '', whatsapp_number: '' },
-  agenda:     { start_hour: '08:00', end_hour: '19:00', slot_minutes: 60, calendar_prefix: '', daily_reminder_whatsapp: false },
+  agenda:     { start_hour: '08:00', end_hour: '19:00', slot_minutes: 60, calendar_prefix: '', daily_reminder_whatsapp: false, finance_admin_phone: '' },
 };
 
 /**

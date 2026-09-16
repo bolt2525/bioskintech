@@ -118,6 +118,7 @@ async function ensureNewColumns() {
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS pwd_change_expires TIMESTAMPTZ",
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT false",
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS personal_staff_emails JSONB DEFAULT '[]'::jsonb",
+    "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS phone VARCHAR(20)",
   ];
   for (const stmt of migrations) {
     try { await sql.query(stmt); } catch { /* column already exists — safe to ignore */ }
@@ -869,7 +870,7 @@ async function verifySession(token) {
   try {
     const r = await sql`
       SELECT s.username, s.expires_at, s.role, s.clinic_id, s.access_scope, s.clinic_user_id,
-             cu.full_name, cu.email, cu.is_demo, cu.demo_expires_at, cu.must_change_password,
+             cu.full_name, cu.email, cu.phone, cu.is_demo, cu.demo_expires_at, cu.must_change_password,
              cu.cedula_profesional, cu.matricula_senescyt, cu.registro_acess, cu.especialidad, cu.gentilicio, cu.profession, cu.first_name, cu.last_name,
              c.name as clinic_name, c.slug as clinic_slug,
              c.subscription_expires_at
@@ -899,6 +900,7 @@ async function verifySession(token) {
         id: s.clinic_user_id, username: s.username, full_name: s.full_name,
         email: s.email, role: s.role || 'clinic_admin', clinic_id: s.clinic_id,
         clinic_name: s.clinic_name, clinic_slug: s.clinic_slug, access_scope: s.access_scope || 'all',
+        phone: s.phone || null,
         cedula_profesional: s.cedula_profesional || null, matricula_senescyt: s.matricula_senescyt || null, registro_acess: s.registro_acess || null, especialidad: s.especialidad || null,
         gentilicio: s.gentilicio || null, profession: s.profession || null,
         first_name: s.first_name || null, last_name: s.last_name || null,
@@ -1624,7 +1626,7 @@ async function registerClinic(body) {
     logo_url: '', phone: clinic_phone || '', address: clinic_address || '', tax_id: clinic_ruc || '',
   });
   const initialEmail = JSON.stringify({ staff_email: clinicContactEmail || '', from_name: clinic_name.trim(), signature: `El equipo de ${clinic_name.trim()}`, whatsapp_number: '' });
-  const initialAgenda = JSON.stringify({ start_hour: '08:00', end_hour: '19:00', slot_minutes: 60, calendar_prefix: clinic_name.trim(), daily_reminder_whatsapp: false });
+  const initialAgenda = JSON.stringify({ start_hour: '08:00', end_hour: '19:00', slot_minutes: 60, calendar_prefix: clinic_name.trim(), daily_reminder_whatsapp: false, finance_admin_phone: '' });
   await sql`INSERT INTO clinic_settings (clinic_id, general, treatments, email, agenda, finanzas, inventario, notificaciones)
     VALUES (${clinicId}, ${initialGeneral}::jsonb, ${JSON.stringify(DEFAULT_TREATMENTS)}::jsonb, ${initialEmail}::jsonb, ${initialAgenda}::jsonb, ${JSON.stringify(DEFAULT_FINANZAS)}::jsonb, ${JSON.stringify(DEFAULT_INVENTARIO)}::jsonb, ${JSON.stringify(DEFAULT_NOTIFICACIONES)}::jsonb)
     ON CONFLICT (clinic_id) DO UPDATE SET general = ${initialGeneral}::jsonb`;
@@ -2616,7 +2618,7 @@ export default async function handler(req, res) {
           general:    { name: clinic.name || '', city: clinic.city || '', tagline: '', establishment_type: '', logo_url: clinic.logo_url || '', phone: clinic.phone || '', address: clinic.address || '', tax_id: clinic.ruc || '' },
           treatments: DEFAULT_TREATMENTS,
           email:      { staff_email: clinic.email || '', from_name: clinic.name || '', signature: `El equipo de ${clinic.name || 'la clínica'}`, whatsapp_number: '' },
-          agenda:     { start_hour: '08:00', end_hour: '19:00', slot_minutes: 60, calendar_prefix: clinic.name || 'CLINICA', daily_reminder_whatsapp: false },
+          agenda:     { start_hour: '08:00', end_hour: '19:00', slot_minutes: 60, calendar_prefix: clinic.name || 'CLINICA', daily_reminder_whatsapp: false, finance_admin_phone: '' },
           finanzas:         DEFAULT_FINANZAS,
           inventario:       DEFAULT_INVENTARIO,
           notificaciones:   DEFAULT_NOTIFICACIONES,
@@ -3054,6 +3056,7 @@ export default async function handler(req, res) {
       const rawEsp    = (req.body?.especialidad       || '').trim();
       const rawGent   = (req.body?.gentilicio         || '').trim();
       const rawProf   = (req.body?.profession         || '').trim();
+      const rawPhone  = (req.body?.phone              || '').replace(/\D/g, '');
       if (rawEmail) {
         // Email format validation
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail))
@@ -3075,10 +3078,11 @@ export default async function handler(req, res) {
           registro_acess     = CASE WHEN ${rawAcess} != '' THEN ${rawAcess} ELSE registro_acess END,
           especialidad       = CASE WHEN ${rawEsp}   != '' THEN ${rawEsp}   ELSE especialidad       END,
           gentilicio         = CASE WHEN ${rawGent}  != '' THEN ${rawGent}  ELSE gentilicio         END,
-          profession         = CASE WHEN ${rawProf}  != '' THEN ${rawProf}  ELSE profession         END
+          profession         = CASE WHEN ${rawProf}  != '' THEN ${rawProf}  ELSE profession         END,
+          phone              = CASE WHEN ${rawPhone} != '' THEN ${rawPhone} ELSE phone              END
         WHERE id = ${user.id}
       `;
-      const upd = await sql`SELECT id,username,full_name,first_name,last_name,email,gentilicio,profession,cedula_profesional,matricula_senescyt,registro_acess,especialidad FROM clinic_users WHERE id = ${user.id}`;
+      const upd = await sql`SELECT id,username,full_name,first_name,last_name,email,gentilicio,profession,cedula_profesional,matricula_senescyt,registro_acess,especialidad,phone FROM clinic_users WHERE id = ${user.id}`;
       return res.status(200).json({ success: true, user: upd.rows[0] });
     }
 

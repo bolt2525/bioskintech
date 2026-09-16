@@ -30,15 +30,82 @@ async function getClinicOAuth2Client(clinicId) {
   return oAuth2;
 }
 
+/** Normaliza un número a formato Ecuador (593...) a partir de dígitos crudos. */
+export function normalizeEcuadorPhone(raw) {
+  const digits = String(raw || '').replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.startsWith('0')) return `593${digits.substring(1)}`;
+  if (digits.startsWith('593')) return digits;
+  return `593${digits}`;
+}
+
 /** Extrae teléfono y nombre de paciente del evento de Google Calendar, igual que CalendarManager.tsx. */
 function parseAppointmentEvent(event) {
   if (!event.summary?.startsWith('Cita: ')) return null;
   const phoneMatch = event.description?.match(/Teléfono:\s*([\d+\-\s]+)/);
-  const digits = phoneMatch ? phoneMatch[1].replace(/\D/g, '') : '';
-  if (!digits) return null;
-  const phone = digits.startsWith('0') ? `593${digits.substring(1)}` : (digits.startsWith('593') ? digits : `593${digits}`);
+  if (!phoneMatch) return null;
+  const phone = normalizeEcuadorPhone(phoneMatch[1]);
+  if (!phone) return null;
   const patientName = event.summary.substring(6).split(' - ')[0] || 'Paciente';
   return { phone, patientName };
+}
+
+/** Extrae mensajes entrantes { from, text } del payload del webhook de WhatsApp Cloud API. */
+export function extractIncomingMessages(body) {
+  const messages = [];
+  for (const entry of body?.entry || []) {
+    for (const change of entry?.changes || []) {
+      for (const msg of change?.value?.messages || []) {
+        if (!msg?.from) continue;
+        messages.push({ from: normalizeEcuadorPhone(msg.from), text: (msg.text?.body || '').trim() });
+      }
+    }
+  }
+  return messages;
+}
+
+/** Lista en texto plano las citas de hoy de la clínica, para responder al staff autorizado. */
+async function listTodayAppointments(clinicId) {
+  const auth = await getClinicOAuth2Client(clinicId);
+  if (!auth) return 'No hay Google Calendar conectado para tu clínica.';
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Guayaquil' });
+  const calendar = google.calendar({ version: 'v3', auth });
+  const { data } = await calendar.events.list({
+    calendarId: 'primary', timeMin: `${today}T00:00:00-05:00`, timeMax: `${today}T23:59:59-05:00`,
+    singleEvents: true, orderBy: 'startTime',
+  });
+  const appointments = (data.items || []).filter(e => e.summary?.startsWith('Cita: '));
+  if (!appointments.length) return 'No tienes citas agendadas para hoy.';
+  const lines = appointments.map(e => {
+    const start = new Date(e.start?.dateTime || e.start?.date);
+    const hora = e.start?.dateTime
+      ? start.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'America/Guayaquil' })
+      : '';
+    const name = e.summary.substring(6).split(' - ')[0];
+    return `• ${hora} — ${name}`;
+  });
+  return `📅 Citas de hoy:\n\n${lines.join('\n')}`;
+}
+
+const MENU_TEXT = '1) Consultar mis citas de hoy\n\nResponde con el número de la opción.';
+
+/** Procesa mensajes entrantes: solo responde a números registrados como staff activo (clinic_users.phone). */
+async function handleIncomingMessages(body) {
+  for (const { from, text } of extractIncomingMessages(body)) {
+    if (!from) continue;
+    const staff = await sql`SELECT id, clinic_id, full_name FROM clinic_users WHERE phone = ${from} AND is_active = true LIMIT 1`;
+    if (!staff.rows.length) continue; // número no reconocido — se ignora sin responder, no se revela nada
+    const clinicUser = staff.rows[0];
+    try {
+      if (text === '1') {
+        await sendWhatsAppText(from, await listTodayAppointments(clinicUser.clinic_id));
+      } else {
+        await sendWhatsAppText(from, `Hola ${clinicUser.full_name || ''} 👋\n\n${MENU_TEXT}`);
+      }
+    } catch (err) {
+      console.error('❌ Error respondiendo por WhatsApp:', err.message);
+    }
+  }
 }
 
 /** Envía el recordatorio diario de citas por WhatsApp a las clínicas que lo activaron en Agenda. */
@@ -117,6 +184,11 @@ export default async function handler(req, res) {
       return res.status(400).json({ success: false });
     }
 
+    try {
+      await handleIncomingMessages(req.body);
+    } catch (err) {
+      console.error('❌ Error procesando mensaje WhatsApp:', err.message);
+    }
     return res.status(200).send('EVENT_RECEIVED');
   }
 

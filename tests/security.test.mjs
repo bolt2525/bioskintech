@@ -95,3 +95,25 @@ test('WhatsApp message sending fails closed without credentials', async () => {
     /WHATSAPP_TOKEN \/ WHATSAPP_PHONE_NUMBER_ID no configuradas/
   );
 });
+
+test('WhatsApp bot normalizes Ecuadorian phone numbers consistently', async () => {
+  const { normalizeEcuadorPhone } = await import('../api/whatsapp-chatbot.js');
+
+  assert.equal(normalizeEcuadorPhone('0987654321'), '593987654321');
+  assert.equal(normalizeEcuadorPhone('593987654321'), '593987654321');
+  assert.equal(normalizeEcuadorPhone('987654321'), '593987654321');
+  assert.equal(normalizeEcuadorPhone(''), '');
+});
+
+test('WhatsApp bot only extracts messages with a sender number', async () => {
+  const { extractIncomingMessages } = await import('../api/whatsapp-chatbot.js');
+
+  const messages = extractIncomingMessages({
+    entry: [{ changes: [{ value: { messages: [
+      { from: '0987654321', text: { body: '1' } },
+      { text: { body: 'sin remitente' } },
+    ] } }] }],
+  });
+
+  assert.deepEqual(messages, [{ from: '593987654321', text: '1' }]);
+});

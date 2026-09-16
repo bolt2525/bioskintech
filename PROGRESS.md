@@ -44,6 +44,7 @@
 - ✅ 2026-09-15 Añadido webhook inicial de WhatsApp Cloud API con verificación de token.
 - ✅ 2026-09-15 Conectado envío real de confirmación de cita por WhatsApp Cloud API (opt-in por clínica vía `notificaciones.whatsapp_enabled`).
 - ✅ 2026-09-15 Añadido cron diario (Vercel Cron, 7am Ecuador) de recordatorios de cita por WhatsApp; opt-in independiente `agenda.daily_reminder_whatsapp`, requiere Google Calendar conectado.
+- ✅ 2026-09-15 Añadida columna `clinic_users.phone` (Mi Información) y campo `agenda.finance_admin_phone`; bot de WhatsApp ahora autoriza por número y responde consultas de citas del día al staff reconocido (base para el módulo de finanzas por chat, pendiente).
 
 ## Pendientes verificables
 

@@ -49,7 +49,7 @@ Navegador React/Vite
 - `payments.js`: flujo PayPhone.
 - `records.js`: pacientes, expedientes, módulos clínicos, inventario y fotografías.
 - `sendEmail.js`: correo y notificaciones.
-- `whatsapp-chatbot.js`: verificación y recepción de webhooks de WhatsApp Cloud API, más el cron diario `?action=sendReminders` (protegido por `CRON_SECRET`) que envía recordatorios de citas del día a las clínicas con `agenda.daily_reminder_whatsapp` activo y Google Calendar conectado.
+- `whatsapp-chatbot.js`: verificación y recepción de webhooks de WhatsApp Cloud API; bot interno con autorización por número (solo `clinic_users.phone` activos) que responde consultas de citas del día; cron diario `?action=sendReminders` (protegido por `CRON_SECRET`) que envía recordatorios de citas a las clínicas con `agenda.daily_reminder_whatsapp` activo y Google Calendar conectado.
 - `system-status.js`: diagnósticos de servicios.
 
 El repositorio contiene 10 archivos de función bajo `/api/`. El límite efectivo de Vercel debe confirmarse contra el plan activo antes de crear nuevas rutas.
@@ -58,7 +58,7 @@ El repositorio contiene 10 archivos de función bajo `/api/`. El límite efectiv
 
 ### Auth y tenancy
 
-La inicialización de `api/admin-auth.js` crea las tablas de clínicas, usuarios, sesiones, features, configuración, OAuth, OTP, dispositivos confiables, invitaciones, suscripciones y notificaciones. Los roles principales son `master_admin`, `clinic_admin` y `clinic_user`, con scopes de acceso que pueden limitarse a datos propios.
+La inicialización de `api/admin-auth.js` crea las tablas de clínicas, usuarios, sesiones, features, configuración, OAuth, OTP, dispositivos confiables, invitaciones, suscripciones y notificaciones. Los roles principales son `master_admin`, `clinic_admin` y `clinic_user`, con scopes de acceso que pueden limitarse a datos propios. `clinic_users.phone` (opcional, editable en Mi Información) identifica al staff autorizado a usar el bot interno de WhatsApp.
 
 El restablecimiento administrativo genera una clave temporal criptográfica en el servidor, reemplaza inmediatamente el hash anterior, elimina OTP de login pendientes y revoca todas las sesiones del usuario. `clinic_users.must_change_password` mantiene un aviso en el panel principal hasta que el usuario completa su cambio personal con verificación OTP. La clave temporal solo se devuelve en la respuesta no-cache del reset y puede enviarse al correo registrado mediante `sendResetCredentials`, que vuelve a verificar que la clave siga vigente antes de enviarla.
 
@@ -123,6 +123,7 @@ Las operaciones de fotos también validan que el expediente pertenezca al tenant
 - Variables privadas sin prefijo `VITE_` en la configuración revisada.
 - El webhook de WhatsApp valida `hub.verify_token`, no expone el token y responde sin registrar el payload recibido.
 - El cron de recordatorios exige `Authorization: Bearer $CRON_SECRET` (lo envía Vercel Cron automáticamente) y solo procesa clínicas con conexión OAuth de Google real (`clinic_oauth_tokens`).
+- El bot de WhatsApp solo responde a números que coincidan con `clinic_users.phone` de un usuario activo; los números no reconocidos se ignoran sin respuesta (no se revela información del sistema).
 - `lib/whatsapp-service.js` envía mensajes vía WhatsApp Cloud API (Graph API) y falla cerrado si `WHATSAPP_TOKEN`/`WHATSAPP_PHONE_NUMBER_ID` no están configuradas; `api/sendEmail.js` lo invoca en el agendamiento solo si `clinic_settings.notificaciones.whatsapp_enabled` es `true`, sin bloquear el flujo de calendario/correo si falla.
 
 ## 7. Riesgos abiertos

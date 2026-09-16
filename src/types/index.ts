@@ -41,6 +41,7 @@ export interface AuthUser {
   access_scope: AccessScope;
   finance_scope?: string;
   inventory_scope?: string;
+  phone?: string | null;
   gentilicio?: string | null;
   profession?: string | null;
   cedula_profesional?: string | null;

@@ -37,6 +37,7 @@ type ProfileForm = {
   cedula_profesional: string; matricula_senescyt: string;
   registro_acess: string;
   especialidad: string; gentilicio: string; profession: string;
+  phone: string;
 };
 
 type ClinicForm = {
@@ -103,7 +104,7 @@ export default function AdminDashboard() {
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
 
   // Profile tab
-  const [profileForm, setProfileForm]     = useState<ProfileForm>({ full_name: '', first_name: '', last_name: '', email: '', cedula_profesional: '', matricula_senescyt: '', registro_acess: '', especialidad: '', gentilicio: '', profession: '' });
+  const [profileForm, setProfileForm]     = useState<ProfileForm>({ full_name: '', first_name: '', last_name: '', email: '', cedula_profesional: '', matricula_senescyt: '', registro_acess: '', especialidad: '', gentilicio: '', profession: '', phone: '' });
   const [editingField, setEditingField]   = useState<string | null>(null);
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileMsg, setProfileMsg]       = useState<{ text: string; ok: boolean } | null>(null);
@@ -122,7 +123,7 @@ export default function AdminDashboard() {
   const [newTreatment, setNewTreatment]     = useState('');
   const [personalEmails, setPersonalEmails] = useState<string[]>([]);
   const [newPersonalEmail, setNewPersonalEmail] = useState('');
-  const [agendaSettings, setAgendaSettings] = useState({ start_hour: '08:00', end_hour: '19:00', slot_minutes: 60, calendar_prefix: '' });
+  const [agendaSettings, setAgendaSettings] = useState({ start_hour: '08:00', end_hour: '19:00', slot_minutes: 60, calendar_prefix: '', daily_reminder_whatsapp: false, finance_admin_phone: '' });
   const [agendaSaving, setAgendaSaving]     = useState(false);
   const [agendaMsg, setAgendaMsg]           = useState<{ text: string; ok: boolean } | null>(null);
 
@@ -215,6 +216,7 @@ export default function AdminDashboard() {
         last_name: user.last_name || '', email: user.email || '',
         cedula_profesional: user.cedula_profesional || '', matricula_senescyt: user.matricula_senescyt || '', registro_acess: user.registro_acess || '',
         especialidad: user.especialidad || '', gentilicio: user.gentilicio || '', profession: user.profession || '',
+        phone: user.phone || '',
       });
     }
     setShowSettings(true);
@@ -229,7 +231,10 @@ export default function AdminDashboard() {
         if (staffRes.emails) setPersonalEmails(staffRes.emails);
         if (settingsRes.settings?.agenda) {
           const a = settingsRes.settings.agenda;
-          setAgendaSettings({ start_hour: a.start_hour || '08:00', end_hour: a.end_hour || '19:00', slot_minutes: a.slot_minutes || 60, calendar_prefix: a.calendar_prefix || '' });
+          setAgendaSettings({
+            start_hour: a.start_hour || '08:00', end_hour: a.end_hour || '19:00', slot_minutes: a.slot_minutes || 60, calendar_prefix: a.calendar_prefix || '',
+            daily_reminder_whatsapp: a.daily_reminder_whatsapp === true, finance_admin_phone: a.finance_admin_phone || '',
+          });
         }
         // Pre-fill clinic form for clinic_admin
         if (user.role === 'clinic_admin') {
@@ -679,6 +684,7 @@ export default function AdminDashboard() {
                           ['cedula_profesional', 'Cédula profesional', 'text',  ''],
                           ['matricula_senescyt', 'Matrícula',          'text',  ''],
                           ['registro_acess',      'Registro ACESS',      'text',  ''],
+                          ['phone',              'Teléfono (WhatsApp)', 'tel',   ''],
                         ] as [keyof ProfileForm, string, string, string][]).map(([k, label, type, span]) => {
                           const isEditing = editingField === k;
                           return (
@@ -824,6 +830,32 @@ export default function AdminDashboard() {
                               ))}
                             </select>
                           </div>
+                        </div>
+                      </div>
+
+                      <div className="border-t border-gray-100 pt-3">
+                        <div className="flex items-center justify-between p-3 border rounded-lg bg-gray-50">
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-700">📅⏰ Recordatorios diarios por WhatsApp</label>
+                            <p className="text-xs text-gray-400">Cada mañana, envía por WhatsApp un recordatorio a los pacientes con cita ese día (requiere Google Calendar conectado).</p>
+                          </div>
+                          <button type="button" disabled={user?.role !== 'clinic_admin'}
+                            onClick={() => setAgendaSettings(p => ({ ...p, daily_reminder_whatsapp: !p.daily_reminder_whatsapp }))}
+                            className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${agendaSettings.daily_reminder_whatsapp ? 'bg-[#deb887]' : 'bg-gray-300'}`}>
+                            <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${agendaSettings.daily_reminder_whatsapp ? 'translate-x-5' : ''}`} />
+                          </button>
+                        </div>
+                        <div className="mt-2">
+                          <label className="block text-xs font-medium text-gray-500 mb-1">Número del administrador financiero (WhatsApp)</label>
+                          <input value={agendaSettings.finance_admin_phone} disabled={user?.role !== 'clinic_admin'}
+                            onChange={e => setAgendaSettings(p => ({ ...p, finance_admin_phone: e.target.value }))}
+                            placeholder={profileForm.phone || 'Ej: 593987654321'}
+                            className={`w-full px-3 py-2 border rounded-lg text-sm outline-none ${
+                              user?.role === 'clinic_admin'
+                                ? 'focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] bg-white'
+                                : 'bg-gray-50 text-gray-500'
+                            }`} />
+                          <p className="text-xs text-gray-400 mt-1">Recibe por WhatsApp los reportes/CSV de finanzas del bot interno. Déjalo vacío para usar tu propio teléfono ({profileForm.phone || 'sin configurar en Mi Información'}).</p>
                         </div>
                       </div>
 
