@@ -786,7 +786,7 @@ async function loginUser(username, password, ip, ua, req) {
       return {
         success: true, sessionToken: token, expiresAt: exp,
         user: { id: u.id, username: u.username, full_name: u.full_name,
-          email: u.email, role: u.role, clinic_id: u.clinic_id, access_scope: u.access_scope,
+          email: u.email, phone: u.phone || null, role: u.role, clinic_id: u.clinic_id, access_scope: u.access_scope,
           finance_scope: u.finance_scope || 'all', inventory_scope: u.inventory_scope || 'all',
           clinic_slug: u.clinic_slug || null, clinic_name: u.clinic_name || null,
           cedula_profesional: u.cedula_profesional || null, matricula_senescyt: u.matricula_senescyt || null, registro_acess: u.registro_acess || null, especialidad: u.especialidad || null,
@@ -847,7 +847,7 @@ async function loginUser(username, password, ip, ua, req) {
     expiresAt: exp,
     user: {
       id: u.id, username: u.username, full_name: u.full_name,
-      email: u.email, role: u.role, clinic_id: u.clinic_id, access_scope: u.access_scope,
+      email: u.email, phone: u.phone || null, role: u.role, clinic_id: u.clinic_id, access_scope: u.access_scope,
       finance_scope: u.finance_scope || 'all', inventory_scope: u.inventory_scope || 'all',
       clinic_slug: u.clinic_slug || null, clinic_name: u.clinic_name || null,
           cedula_profesional: u.cedula_profesional || null, matricula_senescyt: u.matricula_senescyt || null, registro_acess: u.registro_acess || null, especialidad: u.especialidad || null,
@@ -1077,7 +1077,7 @@ async function listUsers(requestUser, clinicIdFilter) {
     return (await sql`
       SELECT cu.id, cu.username, cu.full_name, cu.email, cu.role, cu.access_scope,
              cu.finance_scope, cu.inventory_scope,
-             cu.is_active, cu.last_login, cu.clinic_id, c.name as clinic_name, c.slug as clinic_slug,
+             cu.is_active, cu.last_login, cu.clinic_id, cu.phone, c.name as clinic_name, c.slug as clinic_slug,
              cu.cedula_profesional, cu.matricula_senescyt, cu.especialidad, cu.is_demo, cu.demo_expires_at,
              cu.first_name, cu.last_name, cu.gentilicio, cu.profession
       FROM clinic_users cu LEFT JOIN clinics c ON cu.clinic_id = c.id
@@ -1087,7 +1087,7 @@ async function listUsers(requestUser, clinicIdFilter) {
   // clinic_admin: solo su clínica
   return (await sql`
     SELECT id, username, full_name, email, role, access_scope, finance_scope, inventory_scope,
-           is_active, last_login, clinic_id,
+           is_active, last_login, clinic_id, phone,
            is_demo, demo_expires_at, first_name, last_name, gentilicio, profession,
            cedula_profesional, matricula_senescyt, especialidad
     FROM clinic_users WHERE clinic_id = ${requestUser.clinic_id}
@@ -1097,7 +1097,7 @@ async function listUsers(requestUser, clinicIdFilter) {
 
 async function createUser(requestUser, body) {
   const { username, password, full_name, first_name, last_name, gentilicio, profession,
-          email, role, access_scope, finance_scope, inventory_scope,
+          email, phone, role, access_scope, finance_scope, inventory_scope,
           clinic_id, cedula_profesional, matricula_senescyt, especialidad,
           is_demo, demo_expires_at, send_setup_link } = body;
   if (!username?.trim() || !role)
@@ -1126,16 +1126,16 @@ async function createUser(requestUser, body) {
     const r = await sql`
       INSERT INTO clinic_users
         (clinic_id, username, password_hash, salt, hash_algo, full_name, first_name, last_name,
-         gentilicio, profession, email, role, access_scope, finance_scope, inventory_scope,
+         gentilicio, profession, email, phone, role, access_scope, finance_scope, inventory_scope,
          cedula_profesional, matricula_senescyt, especialidad, is_demo, demo_expires_at)
       VALUES
         (${targetClinicId}, ${username.trim()}, ${hash}, ${salt}, 'pbkdf2',
          ${full_name || null}, ${first_name || null}, ${last_name || null},
-         ${gentilicio || null}, ${profession || null}, ${email || null},
+         ${gentilicio || null}, ${profession || null}, ${email || null}, ${phone || null},
          ${role}, ${effectiveScope}, ${effectiveFinanceScope}, ${effectiveInventoryScope},
          ${cedula_profesional || null}, ${matricula_senescyt || null}, ${especialidad || null},
          ${isDemo}, ${demo_expires_at || null})
-      RETURNING id, username, full_name, email, role, access_scope, finance_scope, inventory_scope,
+      RETURNING id, username, full_name, email, phone, role, access_scope, finance_scope, inventory_scope,
                 clinic_id, is_active, is_demo, demo_expires_at
     `;
     const user = r.rows[0];
@@ -1152,7 +1152,7 @@ async function createUser(requestUser, body) {
 }
 
 async function updateUser(requestUser, body) {
-  const { id, full_name, first_name, last_name, gentilicio, profession,
+  const { id, full_name, first_name, last_name, gentilicio, profession, phone,
           email, role, access_scope, finance_scope, inventory_scope,
           is_active, cedula_profesional, matricula_senescyt, registro_acess, especialidad } = body;
   if (!id) return { error: 'id requerido' };
@@ -1173,6 +1173,7 @@ async function updateUser(requestUser, body) {
       gentilicio          = COALESCE(NULLIF(${gentilicio          ?? ''}, ''), gentilicio),
       profession          = COALESCE(NULLIF(${profession          ?? ''}, ''), profession),
       email               = COALESCE(NULLIF(${email               ?? ''}, ''), email),
+      phone               = NULLIF(${phone ?? ''}, ''),
       access_scope        = COALESCE(NULLIF(${access_scope        ?? ''}, ''), access_scope),
       finance_scope       = COALESCE(NULLIF(${finance_scope       ?? ''}, ''), finance_scope),
       inventory_scope     = COALESCE(NULLIF(${inventory_scope     ?? ''}, ''), inventory_scope),
@@ -1189,7 +1190,7 @@ async function updateUser(requestUser, body) {
 
   const updated = await sql`
     SELECT id, username, full_name, first_name, last_name, gentilicio, profession,
-           email, role, access_scope, finance_scope, inventory_scope,
+           email, phone, role, access_scope, finance_scope, inventory_scope,
            is_active, clinic_id, cedula_profesional, matricula_senescyt, registro_acess, especialidad
     FROM clinic_users WHERE id = ${id}
   `;

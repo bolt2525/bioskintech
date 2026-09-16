@@ -836,8 +836,8 @@ export default function AdminDashboard() {
                       <div className="border-t border-gray-100 pt-3">
                         <div className="flex items-center justify-between p-3 border rounded-lg bg-gray-50">
                           <div>
-                            <label className="block text-xs font-semibold text-gray-700">📅⏰ Recordatorios diarios por WhatsApp</label>
-                            <p className="text-xs text-gray-400">Cada mañana, envía por WhatsApp un recordatorio a los pacientes con cita ese día (requiere Google Calendar conectado).</p>
+                            <label className="block text-xs font-semibold text-gray-700">📅⏰ Resúmenes de agenda por WhatsApp</label>
+                            <p className="text-xs text-gray-400">Envía al staff autorizado las citas de hoy a las 07:00 y las de mañana a las 19:00, con enlaces para enviar recordatorios manuales.</p>
                           </div>
                           <button type="button" disabled={user?.role !== 'clinic_admin'}
                             onClick={() => setAgendaSettings(p => ({ ...p, daily_reminder_whatsapp: !p.daily_reminder_whatsapp }))}
@@ -846,7 +846,7 @@ export default function AdminDashboard() {
                           </button>
                         </div>
                         <div className="mt-2">
-                          <label className="block text-xs font-medium text-gray-500 mb-1">Número del administrador financiero (WhatsApp)</label>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">Número financiero alternativo</label>
                           <input value={agendaSettings.finance_admin_phone} disabled={user?.role !== 'clinic_admin'}
                             onChange={e => setAgendaSettings(p => ({ ...p, finance_admin_phone: e.target.value }))}
                             placeholder={profileForm.phone || 'Ej: 593987654321'}
@@ -855,7 +855,7 @@ export default function AdminDashboard() {
                                 ? 'focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] bg-white'
                                 : 'bg-gray-50 text-gray-500'
                             }`} />
-                          <p className="text-xs text-gray-400 mt-1">Recibe por WhatsApp los reportes/CSV de finanzas del bot interno. Déjalo vacío para usar tu propio teléfono ({profileForm.phone || 'sin configurar en Mi Información'}).</p>
+                          <p className="text-xs text-gray-400 mt-1">El bot solo autoriza teléfonos registrados en usuarios activos. Déjalo vacío para documentar que finanzas usa tu teléfono ({profileForm.phone || 'sin configurar en Mi Información'}).</p>
                         </div>
                       </div>
 

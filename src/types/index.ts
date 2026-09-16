@@ -93,6 +93,7 @@ export interface ClinicUser {
   cedula_profesional?: string;
   especialidad?: string;
   email: string;
+  phone?: string | null;
   role: UserRole;
   access_scope: AccessScope;
   finance_scope?: AccessScope;

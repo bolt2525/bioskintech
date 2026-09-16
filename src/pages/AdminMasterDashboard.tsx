@@ -999,7 +999,7 @@ export default function AdminMasterDashboard() {
   const [disconnecting, setDisconnecting] = useState(false);
 
   // ── Formularios ──────────────────────────────────────────────────────────
-  const [userForm, setUserForm]     = useState({ username: '', full_name: '', first_name: '', last_name: '', gentilicio: '', profession: '', email: '', role: 'clinic_user', access_scope: 'own', finance_scope: 'all', inventory_scope: 'all', clinic_id: '', password: '', password2: '', cedula_profesional: '', matricula_senescyt: '', especialidad: '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
+  const [userForm, setUserForm]     = useState({ username: '', full_name: '', first_name: '', last_name: '', gentilicio: '', profession: '', email: '', phone: '', role: 'clinic_user', access_scope: 'own', finance_scope: 'all', inventory_scope: 'all', clinic_id: '', password: '', password2: '', cedula_profesional: '', matricula_senescyt: '', especialidad: '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
   const [clinicForm, setClinicForm] = useState({ name: '', email: '', phone: '', address: '' });
   const [resetCredentials, setResetCredentials] = useState<{ username: string; email: string; temporaryPassword: string } | null>(null);
   const [resetBusy, setResetBusy] = useState(false);
@@ -1447,12 +1447,12 @@ export default function AdminMasterDashboard() {
 
   const openCreateUser = () => {
     setUsernameSuggestion(''); setUsernameStatus('idle');
-    setUserForm({ username: '', full_name: '', first_name: '', last_name: '', gentilicio: '', profession: '', email: '', role: 'clinic_user', access_scope: 'own', finance_scope: 'all', inventory_scope: 'all', clinic_id: String(clinics[0]?.id || ''), password: '', password2: '', cedula_profesional: '', matricula_senescyt: '', especialidad: '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
+    setUserForm({ username: '', full_name: '', first_name: '', last_name: '', gentilicio: '', profession: '', email: '', phone: '', role: 'clinic_user', access_scope: 'own', finance_scope: 'all', inventory_scope: 'all', clinic_id: String(clinics[0]?.id || ''), password: '', password2: '', cedula_profesional: '', matricula_senescyt: '', especialidad: '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
     setUserModal({ open: true });
   };
 
   const openEditUser = (u: ClinicUser) => {
-    setUserForm({ username: u.username, full_name: u.full_name || '', first_name: u.first_name || '', last_name: u.last_name || '', gentilicio: u.gentilicio || '', profession: u.profession || '', email: u.email || '', role: u.role, access_scope: u.access_scope, finance_scope: u.finance_scope || 'all', inventory_scope: u.inventory_scope || 'all', clinic_id: String(u.clinic_id || ''), password: '', password2: '', cedula_profesional: u.cedula_profesional || '', matricula_senescyt: (u as any).matricula_senescyt || '', especialidad: u.especialidad || '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
+    setUserForm({ username: u.username, full_name: u.full_name || '', first_name: u.first_name || '', last_name: u.last_name || '', gentilicio: u.gentilicio || '', profession: u.profession || '', email: u.email || '', phone: u.phone || '', role: u.role, access_scope: u.access_scope, finance_scope: u.finance_scope || 'all', inventory_scope: u.inventory_scope || 'all', clinic_id: String(u.clinic_id || ''), password: '', password2: '', cedula_profesional: u.cedula_profesional || '', matricula_senescyt: (u as any).matricula_senescyt || '', especialidad: u.especialidad || '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
     setUserModal({ open: true, userId: u.id });
   };
 
@@ -1585,7 +1585,7 @@ export default function AdminMasterDashboard() {
     // Si es nueva clínica, abrir modal de usuario pre-asignado a ella
     if (!clinicModal.clinicId && data.clinic) {
       await loadAll();
-      setUserForm({ username: '', full_name: '', first_name: '', last_name: '', gentilicio: '', profession: '', email: '', role: 'clinic_admin', access_scope: 'all', finance_scope: 'all', inventory_scope: 'all', clinic_id: String(data.clinic.id), password: '', password2: '', cedula_profesional: '', matricula_senescyt: '', especialidad: '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
+      setUserForm({ username: '', full_name: '', first_name: '', last_name: '', gentilicio: '', profession: '', email: '', phone: '', role: 'clinic_admin', access_scope: 'all', finance_scope: 'all', inventory_scope: 'all', clinic_id: String(data.clinic.id), password: '', password2: '', cedula_profesional: '', matricula_senescyt: '', especialidad: '', is_demo: false, demo_value: 1, demo_unit: 'days', send_setup_link: false });
       setUserModal({ open: true });
     }
     loadAll();
@@ -2510,6 +2510,14 @@ export default function AdminMasterDashboard() {
                 className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] focus:outline-none" />
             </div>
 
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">WhatsApp del usuario</label>
+              <input type="tel" value={userForm.phone} onChange={e => setUserForm(p => ({ ...p, phone: e.target.value }))}
+                placeholder="Ej: 098 814 8890"
+                className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] focus:outline-none" />
+              <p className="mt-1 text-xs text-gray-400">Este número autoriza el bot interno y recibe los resúmenes de agenda.</p>
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Rol *</label>
@@ -2928,7 +2936,7 @@ export default function AdminMasterDashboard() {
 
                     {/* ── AGENDA ── */}
                     {settingsTab === 'agenda' && (<>
-                      <p className="text-xs text-gray-400">Horarios de atención, duración de citas y lista de tratamientos disponibles.</p>
+                      <p className="text-xs text-gray-400">Horarios de atención, destinatarios del bot y lista de tratamientos disponibles.</p>
                       <div className="grid grid-cols-3 gap-3">
                         <div>
                           <label className="block text-xs font-medium text-gray-600 mb-1">Hora inicio</label>
@@ -2957,10 +2965,10 @@ export default function AdminMasterDashboard() {
                             className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
                           <p className="text-xs text-gray-400 mt-1">Prefijo para eventos en Google Calendar, p.ej. "{settingsData.agenda.calendar_prefix} - BLOQUEO"</p>
                         </div>
-                        <div className="col-span-3 flex items-center justify-between p-3 border rounded-lg bg-gray-50">
+                        <div className="col-span-3 flex items-center justify-between p-3 border rounded-lg bg-amber-50 border-amber-100">
                           <div>
-                            <label className="block text-xs font-semibold text-gray-700">📅⏰ Recordatorios diarios por WhatsApp</label>
-                            <p className="text-xs text-gray-400">Cada mañana, envía por WhatsApp un recordatorio a los pacientes con cita ese día (requiere Google Calendar conectado).</p>
+                            <label className="block text-xs font-semibold text-gray-700">📅⏰ Resúmenes de agenda por WhatsApp</label>
+                            <p className="text-xs text-gray-500">Envía al staff autorizado las citas de hoy a las 07:00 y las de mañana a las 19:00, con enlaces para enviar recordatorios manuales.</p>
                           </div>
                           <button type="button" onClick={() => setSettingsData(s => s?({...s,agenda:{...s.agenda,daily_reminder_whatsapp:!s.agenda.daily_reminder_whatsapp}}):s)}
                             className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${settingsData.agenda.daily_reminder_whatsapp ? 'bg-[#deb887]' : 'bg-gray-300'}`}>
@@ -2968,12 +2976,26 @@ export default function AdminMasterDashboard() {
                           </button>
                         </div>
                         <div className="col-span-3">
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Número del administrador financiero (WhatsApp)</label>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Número financiero alternativo</label>
                           <input value={settingsData.agenda.finance_admin_phone}
                             onChange={e => setSettingsData(s => s?({...s,agenda:{...s.agenda,finance_admin_phone:e.target.value}}):s)}
                             placeholder="Ej: 593987654321"
                             className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
-                          <p className="text-xs text-gray-400 mt-1">Recibe por WhatsApp los reportes/CSV de finanzas del bot interno.</p>
+                          <p className="text-xs text-gray-400 mt-1">Opcional. El bot identifica al usuario por su teléfono registrado; usa este campo solo para dejar documentado un contacto financiero alternativo.</p>
+                        </div>
+                        <div className="col-span-3 border border-gray-200 rounded-lg p-3 bg-white">
+                          <p className="text-xs font-semibold text-gray-700 mb-2">Destinatarios registrados para el bot</p>
+                          <div className="space-y-1.5">
+                            {allUsers.filter(u => u.clinic_id === settingsModal?.clinicId && u.is_active).map(u => (
+                              <div key={u.id} className="flex items-center gap-2 text-xs">
+                                <span className="flex-1 text-gray-700">{u.full_name || u.username}</span>
+                                <span className={u.phone ? 'text-emerald-700' : 'text-gray-400'}>{u.phone || 'Sin teléfono'}</span>
+                              </div>
+                            ))}
+                            {!allUsers.some(u => u.clinic_id === settingsModal?.clinicId && u.is_active && u.phone) && (
+                              <p className="text-xs text-amber-700">Agrega el WhatsApp de al menos un usuario activo para recibir estos resúmenes.</p>
+                            )}
+                          </div>
                         </div>
                       </div>
                       <div>

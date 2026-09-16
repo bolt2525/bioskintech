@@ -49,7 +49,7 @@ Navegador React/Vite
 - `payments.js`: flujo PayPhone.
 - `records.js`: pacientes, expedientes, módulos clínicos, inventario y fotografías.
 - `sendEmail.js`: correo y notificaciones.
-- `whatsapp-chatbot.js`: verificación y recepción de webhooks de WhatsApp Cloud API; bot interno con autorización por número (solo `clinic_users.phone` activos) que responde consultas de citas del día y ofrece un submenú de finanzas para reportes diarios/semanales/mensuales, generando CSV y enviándolo por Gmail al correo financiero configurado de la clínica; cron diario `?action=sendReminders` (protegido por `CRON_SECRET`) que envía recordatorios de citas a las clínicas con `agenda.daily_reminder_whatsapp` activo y Google Calendar conectado.
+- `whatsapp-chatbot.js`: verificación y recepción de webhooks de WhatsApp Cloud API; bot interno con autorización por número (solo `clinic_users.phone` activos) que responde consultas de citas del día y ofrece un submenú de finanzas para reportes diarios/semanales/mensuales, generando CSV y enviándolo por Gmail al correo financiero configurado de la clínica; cron `?action=sendReminders` (protegido por `CRON_SECRET`) que envía resúmenes al staff autorizado a las 07:00 para citas del día y a las 19:00 para citas del día siguiente, incluyendo enlaces `wa.me` para recordatorios manuales.
 - `system-status.js`: diagnósticos de servicios.
 
 La línea base histórica de `external_finance_records` y el flujo `external-finance.js` se conserva como legado para implementaciones futuras; en esta fase el bot y los reportes usan el conjunto operativo `financial_records` y el correo configurado en `finanzas.admin_email`.
