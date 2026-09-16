@@ -73,7 +73,7 @@ test('temporary passwords are strong and unique', async () => {
 });
 
 test('WhatsApp webhook only accepts the configured verification token', async () => {
-  const { verifyWhatsAppWebhook } = await import('../api/whatsapp-chatbot.js');
+  const { verifyWhatsAppWebhook, verifyWhatsAppSignature } = await import('../api/whatsapp-chatbot.js');
 
   assert.equal(
     verifyWhatsAppWebhook({ 'hub.mode': 'subscribe', 'hub.verify_token': 'test-token', 'hub.challenge': 'challenge' }, 'test-token'),
@@ -83,6 +83,10 @@ test('WhatsApp webhook only accepts the configured verification token', async ()
     verifyWhatsAppWebhook({ 'hub.mode': 'subscribe', 'hub.verify_token': 'wrong-token', 'hub.challenge': 'challenge' }, 'test-token'),
     null
   );
+  const crypto = await import('node:crypto');
+  const signature = `sha256=${crypto.createHmac('sha256', 'app-secret').update('{"object":"whatsapp_business_account"}').digest('hex')}`;
+  assert.equal(verifyWhatsAppSignature(signature, '{"object":"whatsapp_business_account"}', 'app-secret'), true);
+  assert.equal(verifyWhatsAppSignature(signature, '{"object":"tampered"}', 'app-secret'), false);
 });
 
 test('WhatsApp message sending fails closed without credentials', async () => {

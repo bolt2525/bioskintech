@@ -123,11 +123,12 @@ Las operaciones de fotos también validan que el expediente pertenezca al tenant
 - Headers de seguridad en `vercel.json`.
 - Auditoría de operaciones clínicas mediante `patient_audit_log`, aunque algunos fallos de auditoría se silencian.
 - Variables privadas sin prefijo `VITE_` en la configuración revisada.
-- El webhook de WhatsApp valida `hub.verify_token`, no expone el token y responde sin registrar el payload recibido.
+- El webhook de WhatsApp valida `hub.verify_token` en el challenge y `X-Hub-Signature-256` con `WHATSAPP_APP_SECRET` en cada POST; no expone secretos ni registra el payload recibido.
 - El cron de recordatorios exige `Authorization: Bearer $CRON_SECRET` (lo envía Vercel Cron automáticamente) y solo procesa clínicas con conexión OAuth de Google real (`clinic_oauth_tokens`).
 - El bot de WhatsApp solo responde a números que coincidan con `clinic_users.phone` de un usuario activo; los números no reconocidos se ignoran sin respuesta (no se revela información del sistema).
 - El menú del bot financiero acepta `1/2/3` o palabras `diario/semanal/mensual` y genera un CSV de `financial_records` para el rango correspondiente; el archivo se envía por Gmail desde la cuenta OAuth conectada de la clínica a `finanzas.admin_email` para el administrador financiero.
 - `lib/whatsapp-service.js` envía mensajes vía WhatsApp Cloud API (Graph API) y falla cerrado si `WHATSAPP_TOKEN`/`WHATSAPP_PHONE_NUMBER_ID` no están configuradas; `api/sendEmail.js` lo invoca en el agendamiento solo si `clinic_settings.notificaciones.whatsapp_enabled` es `true`, sin bloquear el flujo de calendario/correo si falla.
+- `api/sendEmail.js` exige una sesión administrativa y rechaza `clinicId` ajeno a la clínica autenticada; `WHATSAPP_APP_SECRET` debe existir en Production para aceptar eventos reales de Meta.
 
 ## 7. Riesgos abiertos
 

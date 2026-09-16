@@ -95,6 +95,12 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ message: 'Método no permitido' });
   }
+  const auth = await authenticateRequest(req);
+  if (!auth.valid) return res.status(401).json({ success: false, message: 'No autenticado' });
+  const requestedClinicId = req.body?.clinicId || auth.effective_clinic_id || auth.clinic_id;
+  if (auth.role !== 'master_admin' && String(requestedClinicId) !== String(auth.clinic_id)) {
+    return res.status(403).json({ success: false, message: 'Clínica no autorizada' });
+  }
 
   const escapeHtml = (value = '') => String(value)
     .replace(/&/g, '&amp;')
@@ -292,7 +298,7 @@ export default async function handler(req, res) {
   const hora = (message.match(/Hora:\s*([^\n]+)/)?.[1] || "");
 
   // Cargar config de la clínica (usa clinicId del body si existe, o defaults)
-  const clinic = await getClinicConfig(req.body?.clinicId || null);
+  const clinic = await getClinicConfig(requestedClinicId || null);
 
   // --- Mensaje cordial para WhatsApp (dinamizado por clínica) ---
   const whatsappMessage =
@@ -333,7 +339,7 @@ export default async function handler(req, res) {
   // Intenta OAuth de la clínica primero; fallback a service account si existe
   try {
     if (start && end) {
-      const clinicOAuth = await getClinicOAuth2Client(req.body?.clinicId);
+      const clinicOAuth = await getClinicOAuth2Client(requestedClinicId);
       let auth, calendarId;
 
       if (clinicOAuth) {

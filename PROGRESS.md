@@ -47,6 +47,7 @@
 - ✅ 2026-09-15 Añadida columna `clinic_users.phone` (Mi Información) y campo `agenda.finance_admin_phone`; bot de WhatsApp ahora autoriza por número y responde consultas de citas del día al staff reconocido (base para el módulo de finanzas por chat, pendiente).
 - ✅ 2026-09-16 Implementado menú de finanzas en el bot de WhatsApp: selección diaria/semanal/mensual y envío de CSV por Gmail al correo financiero configurado de la clínica; `external_finance_records` queda como flujo legado y no se usa en esta fase.
 - ✅ 2026-09-16 Recordatorios WhatsApp reorganizados: resúmenes al staff autorizado a las 07:00 (citas del día) y 19:00 (citas del día siguiente), con enlaces manuales por paciente; teléfonos de usuarios visibles y editables desde gestión de usuarios.
+- ✅ 2026-09-16 Endurecido WhatsApp: firma Meta obligatoria, agendamiento autenticado por clínica y autorización del bot con teléfonos normalizados sin coincidencias ambiguas.
 
 ## Pendientes verificables
 

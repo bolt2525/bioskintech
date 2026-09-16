@@ -18,6 +18,14 @@ export function verifyWhatsAppWebhook(query, verifyToken = process.env.WHATSAPP_
   return String(challenge);
 }
 
+export function verifyWhatsAppSignature(signature, rawBody, appSecret = process.env.WHATSAPP_APP_SECRET) {
+  if (!signature || !rawBody || !appSecret) return false;
+  const expected = `sha256=${crypto.createHmac('sha256', appSecret).update(rawBody).digest('hex')}`;
+  const received = Buffer.from(String(signature));
+  const calculated = Buffer.from(expected);
+  return received.length === calculated.length && crypto.timingSafeEqual(received, calculated);
+}
+
 /** OAuth2 client con los tokens de Google guardados para la clínica. Retorna null si no hay conexión. */
 async function getClinicOAuth2Client(clinicId) {
   const clientId     = (process.env.GOOGLE_CLIENT_ID     || '').trim();
@@ -216,9 +224,10 @@ async function handleIncomingMessages(body) {
     if (!from) continue;
     const normalizedText = String(text || '').trim().toLowerCase();
     if (!normalizedText) continue;
-    const staff = await sql`SELECT id, clinic_id, full_name, phone FROM clinic_users WHERE phone = ${from} AND is_active = true LIMIT 1`;
-    if (!staff.rows.length) continue; // número no reconocido — se ignora sin responder, no se revela nada
-    const clinicUser = staff.rows[0];
+    const staff = await sql`SELECT id, clinic_id, full_name, phone FROM clinic_users WHERE phone IS NOT NULL AND is_active = true`;
+    const matches = staff.rows.filter(row => normalizeEcuadorPhone(row.phone) === from);
+    if (matches.length !== 1) continue; // desconocido o ambiguo: no se revela información
+    const clinicUser = matches[0];
     const state = financeStateByPhone.get(from);
     const financeChoice = resolveFinancePeriodChoice(normalizedText);
     const isAllowedAction = ALLOWED_BOT_ACTIONS.has(normalizedText) || ALLOWED_BOT_ACTIONS.has(text?.trim() || '');
@@ -357,6 +366,9 @@ export default async function handler(req, res) {
   if (req.method === 'POST') {
     if (req.body?.object && req.body.object !== 'whatsapp_business_account') {
       return res.status(400).json({ success: false });
+    }
+    if (!verifyWhatsAppSignature(req.headers['x-hub-signature-256'], req.rawBody)) {
+      return res.status(401).json({ success: false });
     }
 
     try {
