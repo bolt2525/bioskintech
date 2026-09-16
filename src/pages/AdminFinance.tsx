@@ -114,6 +114,11 @@ const AdminFinance = () => {
   const [desgModal, setDesgModal] = useState<{ open: boolean; record: FinanceRecord | null; items: FinanceItem[]; loading: boolean; updateRecord: boolean }>({ open: false, record: null, items: [], loading: false, updateRecord: false });
 
   // Cargar settings de finanzas de la clínica
+  const [financeSettingsRaw, setFinanceSettingsRaw] = useState<Record<string, unknown>>({});
+  const [csvSettings, setCsvSettings] = useState({ admin_email: '', csv_schedule: 'manual' as 'manual' | 'daily' | 'weekly' | 'monthly', csv_weekday: 1, csv_month_day: 1 });
+  const [csvSettingsSaving, setCsvSettingsSaving] = useState(false);
+  const [csvSendingNow, setCsvSendingNow] = useState(false);
+  const [csvMsg, setCsvMsg] = useState<{ text: string; ok: boolean } | null>(null);
   useEffect(() => {
     const cid = user?.clinic_id;
     if (!cid) return;
@@ -121,12 +126,49 @@ const AdminFinance = () => {
       headers: { Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken') || ''}` }
     }).then(r => r.json()).then(d => {
       const fin = d.settings?.finanzas ?? {};
+      setFinanceSettingsRaw(fin);
       const taxPct = parseFloat(String(fin.tax_percent ?? 15));
       if (!isNaN(taxPct)) { setTaxRate(taxPct); setClinicTaxRate(taxPct); }
       setCurrencySymbol(fin.currency_symbol || '$');
       setInvoicePrefix(fin.invoice_prefix || 'FAC');
+      setCsvSettings({
+        admin_email: fin.admin_email || '', csv_schedule: fin.csv_schedule || 'manual',
+        csv_weekday: fin.csv_weekday ?? 1, csv_month_day: fin.csv_month_day ?? 1,
+      });
     }).catch(() => {});
   }, [user?.clinic_id]);
+
+  const handleSaveCsvSettings = async () => {
+    if (!user?.clinic_id) return;
+    setCsvSettingsSaving(true); setCsvMsg(null);
+    try {
+      const res = await fetch('/api/admin-auth?action=saveClinicSettings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken') || ''}` },
+        body: JSON.stringify({ clinicId: user.clinic_id, section: 'finanzas', data: { ...financeSettingsRaw, ...csvSettings } }),
+      });
+      const d = await res.json();
+      setCsvMsg({ text: d.error || '¡Configuración guardada!', ok: !!d.success });
+      if (d.success) setFinanceSettingsRaw(p => ({ ...p, ...csvSettings }));
+    } finally { setCsvSettingsSaving(false); }
+  };
+
+  const handleSendCsvNow = async () => {
+    if (!user?.clinic_id) return;
+    setCsvSendingNow(true); setCsvMsg(null);
+    try {
+      const now = new Date();
+      const defaultStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+      const defaultEnd = now.toISOString().split('T')[0];
+      const res = await recordsFetch('/api/records?action=sendFinanceCsv', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ startDate: dateRange.start || defaultStart, endDate: dateRange.end || defaultEnd }),
+      });
+      const d = await res.json();
+      setCsvMsg({ text: d.error || `CSV enviado a ${d.adminEmail} (${d.recordCount} registros)`, ok: !!d.success });
+    } finally { setCsvSendingNow(false); }
+  };
   
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'ingreso' | 'egreso'>('all');
@@ -517,6 +559,62 @@ const AdminFinance = () => {
             <Download size={15} /> Exportar CSV ({filteredRecords.length})
           </button>
         </div>
+
+        {/* ── Reporte por correo: config + envío manual ── */}
+        {(user?.role === 'clinic_admin' || user?.role === 'master_admin') && (
+          <div className="bg-white border border-gray-200 rounded-xl p-4 mb-4 shadow-sm">
+            <p className="text-xs font-semibold text-gray-700 mb-2">📧 Reporte financiero por correo</p>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+              <div className="md:col-span-2">
+                <label className="block text-xs font-medium text-gray-500 mb-1">Correo del administrador financiero</label>
+                <input type="email" value={csvSettings.admin_email}
+                  onChange={e => setCsvSettings(p => ({ ...p, admin_email: e.target.value }))}
+                  placeholder="admin@clinica.com"
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Envío automático</label>
+                <select value={csvSettings.csv_schedule}
+                  onChange={e => setCsvSettings(p => ({ ...p, csv_schedule: e.target.value as typeof p.csv_schedule }))}
+                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none">
+                  <option value="manual">Manual (solo con el botón)</option>
+                  <option value="daily">Diario</option>
+                  <option value="weekly">Semanal</option>
+                  <option value="monthly">Mensual</option>
+                </select>
+              </div>
+              {csvSettings.csv_schedule === 'weekly' && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Día de la semana</label>
+                  <select value={csvSettings.csv_weekday}
+                    onChange={e => setCsvSettings(p => ({ ...p, csv_weekday: parseInt(e.target.value) }))}
+                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none">
+                    {['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'].map((d, i) => <option key={i} value={i}>{d}</option>)}
+                  </select>
+                </div>
+              )}
+              {csvSettings.csv_schedule === 'monthly' && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Día del mes</label>
+                  <input type="number" min={1} max={28} value={csvSettings.csv_month_day}
+                    onChange={e => setCsvSettings(p => ({ ...p, csv_month_day: parseInt(e.target.value) || 1 }))}
+                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-2 mt-3">
+              <button onClick={handleSaveCsvSettings} disabled={csvSettingsSaving}
+                className="px-3 py-1.5 bg-[#deb887] hover:bg-[#c9a876] text-white text-xs font-semibold rounded-lg disabled:opacity-50">
+                {csvSettingsSaving ? 'Guardando…' : 'Guardar configuración'}
+              </button>
+              <button onClick={handleSendCsvNow} disabled={csvSendingNow || !csvSettings.admin_email}
+                className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-xs font-semibold rounded-lg disabled:opacity-40">
+                {csvSendingNow ? 'Enviando…' : 'Enviar CSV por correo ahora'}
+              </button>
+              {csvMsg && <span className={`text-xs ${csvMsg.ok ? 'text-emerald-600' : 'text-red-500'}`}>{csvMsg.text}</span>}
+            </div>
+          </div>
+        )}
 
         {/* ── Formulario de nuevo registro ── */}
         <AnimatePresence>

@@ -23,6 +23,7 @@
     }
   },
   "crons": [
-    { "path": "/api/whatsapp-chatbot?action=sendReminders", "schedule": "0 12 * * *" }
+    { "path": "/api/whatsapp-chatbot?action=sendReminders", "schedule": "0 12 * * *" },
+    { "path": "/api/records?action=sendScheduledFinanceCsv", "schedule": "0 11 * * *" }
   ]
 }

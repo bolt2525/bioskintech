@@ -1,7 +1,10 @@
 import crypto from 'crypto';
+import { google } from 'googleapis';
+import { sql } from '@vercel/postgres';
 import { initClinicalDatabase, getPool, getAppPool } from '../lib/neon-clinical-db.js';
 import { authenticateRequest } from '../lib/admin-auth.js';
 import { generateUploadUrl, generateReadUrl, deleteR2Object, putR2Object } from '../lib/r2-service.js';
+import { buildFinanceCsv } from '../lib/finance-csv.js';
 
 console.log('✅ [API] records.js loaded');
 
@@ -68,6 +71,138 @@ export function isOwnedPhotoKey(key, clinicId, recordId) {
     /^[a-f0-9-]{36}\.(?:jpg|jpeg|png|webp|heic)$/i.test(key.slice(prefix.length));
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Envío de reportes financieros (CSV por correo)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** OAuth2 client de Gmail con los tokens guardados para la clínica. Retorna null si no hay conexión. */
+async function getClinicGmailClient(clinicId) {
+  const clientId     = (process.env.GOOGLE_CLIENT_ID     || '').trim();
+  const clientSecret = (process.env.GOOGLE_CLIENT_SECRET || '').trim();
+  if (!clientId || !clientSecret) return null;
+  const appUrl = (process.env.APP_URL || `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app'}`).replace(/\/$/, '').trim();
+  const r = await sql`SELECT access_token, refresh_token, token_expiry, email FROM clinic_oauth_tokens WHERE clinic_id = ${clinicId}`;
+  if (!r.rows.length) return null;
+  const { access_token, refresh_token, token_expiry, email } = r.rows[0];
+  const oAuth2 = new google.auth.OAuth2(clientId, clientSecret, `${appUrl}/api/calendar`);
+  oAuth2.setCredentials({ access_token, refresh_token, expiry_date: token_expiry ? new Date(token_expiry).getTime() : null });
+  return { client: oAuth2, email };
+}
+
+/** Arma un mensaje MIME multipart (HTML + adjunto CSV) codificado para la Gmail API. */
+function buildRawEmailWithCsvAttachment({ from, to, subject, html, attachmentName, attachmentContent }) {
+  const boundary = `bioskin_${crypto.randomBytes(8).toString('hex')}`;
+  const attachmentB64 = Buffer.from(attachmentContent, 'utf8').toString('base64').replace(/(.{76})/g, '$1\r\n');
+  const msg = [
+    `From: ${from}`,
+    `To: ${to}`,
+    `Subject: =?UTF-8?B?${Buffer.from(subject).toString('base64')}?=`,
+    'MIME-Version: 1.0',
+    `Content-Type: multipart/mixed; boundary="${boundary}"`,
+    '',
+    `--${boundary}`,
+    'Content-Type: text/html; charset=UTF-8',
+    '',
+    html,
+    '',
+    `--${boundary}`,
+    `Content-Type: text/csv; name="${attachmentName}"`,
+    'Content-Transfer-Encoding: base64',
+    `Content-Disposition: attachment; filename="${attachmentName}"`,
+    '',
+    attachmentB64,
+    '',
+    `--${boundary}--`,
+  ].join('\r\n');
+  return Buffer.from(msg).toString('base64url');
+}
+
+/** Genera el CSV del rango pedido y lo envía por Gmail al correo de administración financiera configurado. */
+async function sendFinanceCsvToAdmin({ pool, clinicId, startDate, endDate, periodLabel }) {
+  const settingsRes = await sql`SELECT finanzas, general FROM clinic_settings WHERE clinic_id = ${clinicId}`;
+  const finanzas   = settingsRes.rows[0]?.finanzas || {};
+  const clinicName = settingsRes.rows[0]?.general?.name || 'la clínica';
+  const adminEmail = (finanzas.admin_email || '').trim();
+  if (!adminEmail) throw new Error('No hay correo de administrador financiero configurado');
+
+  const oauth = await getClinicGmailClient(clinicId);
+  if (!oauth) throw new Error('No hay cuenta Gmail conectada para esta clínica');
+
+  const recordsRes = await pool.query(
+    `SELECT * FROM financial_records WHERE (clinic_id = $1 OR clinic_id IS NULL) AND date >= $2 AND date <= $3 ORDER BY date ASC`,
+    [clinicId, startDate, endDate]
+  );
+  const csv = buildFinanceCsv(recordsRes.rows);
+  const gmail = google.gmail({ version: 'v1', auth: oauth.client });
+  const raw = buildRawEmailWithCsvAttachment({
+    from: `${clinicName} <${oauth.email}>`,
+    to: adminEmail,
+    subject: `Reporte financiero (${periodLabel}) — ${clinicName}`,
+    html: `<p>Adjunto el reporte financiero de <strong>${clinicName}</strong> (${periodLabel}, ${startDate} a ${endDate}).</p><p>Registros incluidos: ${recordsRes.rows.length}</p>`,
+    attachmentName: `finanzas_${startDate}_${endDate}.csv`,
+    attachmentContent: csv,
+  });
+  await gmail.users.messages.send({ userId: 'me', requestBody: { raw } });
+  return { recordCount: recordsRes.rows.length, adminEmail };
+}
+
+/** Decide si hoy corresponde enviar el reporte programado y qué rango de fechas cubre. Retorna null si no toca hoy. */
+export function resolveScheduledRange(schedule, weekday, monthDay, today = new Date()) {
+  const fmt = (d) => d.toISOString().split('T')[0];
+  if (schedule === 'daily') {
+    const y = new Date(today); y.setDate(y.getDate() - 1);
+    return { startDate: fmt(y), endDate: fmt(y), periodLabel: 'diario' };
+  }
+  if (schedule === 'weekly') {
+    if (Number(weekday) !== today.getDay()) return null;
+    const start = new Date(today); start.setDate(start.getDate() - 7);
+    const end = new Date(today); end.setDate(end.getDate() - 1);
+    return { startDate: fmt(start), endDate: fmt(end), periodLabel: 'semanal' };
+  }
+  if (schedule === 'monthly') {
+    if (Number(monthDay) !== today.getDate()) return null;
+    const start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    const end   = new Date(today.getFullYear(), today.getMonth(), 0);
+    return { startDate: fmt(start), endDate: fmt(end), periodLabel: 'mensual' };
+  }
+  return null;
+}
+
+/** Recorre las clínicas con envío programado activo y despacha el CSV correspondiente a cada una. */
+async function sendScheduledFinanceCsvs() {
+  const appPool = getAppPool();
+  if (!appPool) return { clinicsChecked: 0, sent: 0, errors: ['NEON_APP_URL no configurada'] };
+
+  const today = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Guayaquil' }));
+  const clinics = await sql`
+    SELECT clinic_id, finanzas
+    FROM clinic_settings
+    WHERE finanzas->>'csv_schedule' IN ('daily','weekly','monthly')
+      AND COALESCE(finanzas->>'admin_email','') != ''
+  `;
+
+  let sent = 0;
+  const errors = [];
+  for (const row of clinics.rows) {
+    const f = row.finanzas || {};
+    const range = resolveScheduledRange(f.csv_schedule, f.csv_weekday, f.csv_month_day, today);
+    if (!range) continue;
+    const client = await appPool.connect();
+    try {
+      await client.query("SELECT set_config('app.current_tenant', $1, false)", [String(row.clinic_id)]);
+      const tenantPool = { query: (...a) => client.query(...a) };
+      await sendFinanceCsvToAdmin({ pool: tenantPool, clinicId: row.clinic_id, ...range });
+      sent++;
+    } catch (err) {
+      errors.push(`clinic ${row.clinic_id}: ${err.message}`);
+    } finally {
+      try { await client.query("SELECT set_config('app.current_tenant', '', false)"); } catch { /* ignore */ }
+      client.release();
+    }
+  }
+  return { clinicsChecked: clinics.rows.length, sent, errors };
+}
+
 async function ownedByClinic(pool, table, itemId, clinicId) {
   if (!clinicId || !CLINICAL_TABLES.has(table)) return true;
   const r = await pool.query(
@@ -92,6 +227,21 @@ export default async function handler(req, res) {
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
+  }
+
+  // ── Cron: reportes financieros programados (diario/semanal/mensual) ──────
+  if (req.method === 'GET' && req.query.action === 'sendScheduledFinanceCsv') {
+    const cronSecret = (process.env.CRON_SECRET || '').trim();
+    if (!cronSecret || req.headers.authorization !== `Bearer ${cronSecret}`) {
+      return res.status(401).json({ success: false, message: 'No autorizado' });
+    }
+    try {
+      const result = await sendScheduledFinanceCsvs();
+      return res.status(200).json({ success: true, ...result });
+    } catch (err) {
+      console.error('❌ Error en CSV programado de finanzas:', err.message);
+      return res.status(500).json({ success: false, message: err.message });
+    }
   }
 
   try {
@@ -2535,6 +2685,20 @@ export default async function handler(req, res) {
           return res.status(200).json({ success: true });
         } catch (err) {
           return res.status(500).json({ error: err.message });
+        }
+      }
+
+      case 'sendFinanceCsv': {
+        const su = await getSessionUserOnce();
+        const clinicId = su?.effective_clinic_id ?? su?.clinic_id;
+        if (!clinicId) return res.status(400).json({ error: 'Clínica no identificada' });
+        const { startDate, endDate } = body;
+        if (!startDate || !endDate) return res.status(400).json({ error: 'startDate y endDate requeridos' });
+        try {
+          const result = await sendFinanceCsvToAdmin({ pool, clinicId, startDate, endDate, periodLabel: 'manual' });
+          return res.status(200).json({ success: true, ...result });
+        } catch (err) {
+          return res.status(400).json({ success: false, error: err.message });
         }
       }
 

@@ -49,8 +49,10 @@ Navegador React/Vite
 - `payments.js`: flujo PayPhone.
 - `records.js`: pacientes, expedientes, módulos clínicos, inventario y fotografías.
 - `sendEmail.js`: correo y notificaciones.
-- `whatsapp-chatbot.js`: verificación y recepción de webhooks de WhatsApp Cloud API; bot interno con autorización por número (solo `clinic_users.phone` activos) que responde consultas de citas del día; cron diario `?action=sendReminders` (protegido por `CRON_SECRET`) que envía recordatorios de citas a las clínicas con `agenda.daily_reminder_whatsapp` activo y Google Calendar conectado.
+- `whatsapp-chatbot.js`: verificación y recepción de webhooks de WhatsApp Cloud API; bot interno con autorización por número (solo `clinic_users.phone` activos) que responde consultas de citas del día y ofrece un submenú de finanzas para reportes diarios/semanales/mensuales, generando CSV y enviándolo por Gmail al correo financiero configurado de la clínica; cron diario `?action=sendReminders` (protegido por `CRON_SECRET`) que envía recordatorios de citas a las clínicas con `agenda.daily_reminder_whatsapp` activo y Google Calendar conectado.
 - `system-status.js`: diagnósticos de servicios.
+
+La línea base histórica de `external_finance_records` y el flujo `external-finance.js` se conserva como legado para implementaciones futuras; en esta fase el bot y los reportes usan el conjunto operativo `financial_records` y el correo configurado en `finanzas.admin_email`.
 
 El repositorio contiene 10 archivos de función bajo `/api/`. El límite efectivo de Vercel debe confirmarse contra el plan activo antes de crear nuevas rutas.
 
@@ -124,6 +126,7 @@ Las operaciones de fotos también validan que el expediente pertenezca al tenant
 - El webhook de WhatsApp valida `hub.verify_token`, no expone el token y responde sin registrar el payload recibido.
 - El cron de recordatorios exige `Authorization: Bearer $CRON_SECRET` (lo envía Vercel Cron automáticamente) y solo procesa clínicas con conexión OAuth de Google real (`clinic_oauth_tokens`).
 - El bot de WhatsApp solo responde a números que coincidan con `clinic_users.phone` de un usuario activo; los números no reconocidos se ignoran sin respuesta (no se revela información del sistema).
+- El menú del bot financiero acepta `1/2/3` o palabras `diario/semanal/mensual` y genera un CSV de `financial_records` para el rango correspondiente; el archivo se envía por Gmail desde la cuenta OAuth conectada de la clínica a `finanzas.admin_email` para el administrador financiero.
 - `lib/whatsapp-service.js` envía mensajes vía WhatsApp Cloud API (Graph API) y falla cerrado si `WHATSAPP_TOKEN`/`WHATSAPP_PHONE_NUMBER_ID` no están configuradas; `api/sendEmail.js` lo invoca en el agendamiento solo si `clinic_settings.notificaciones.whatsapp_enabled` es `true`, sin bloquear el flujo de calendario/correo si falla.
 
 ## 7. Riesgos abiertos

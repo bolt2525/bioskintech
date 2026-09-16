@@ -39,7 +39,7 @@ const DEFAULT_TREATMENTS = [
   'Radiofrecuencia','Hidratación Profunda','Depilación Láser',
   'Tratamiento Anti-Acné','Carboxiterapia','Otro'
 ];
-const DEFAULT_FINANZAS = { currency: 'USD', currency_symbol: '$', tax_percent: 15, invoice_prefix: 'INV', payment_methods: ['Efectivo','Transferencia','Tarjeta de crédito','Tarjeta de débito'], invoice_notes: '' };
+const DEFAULT_FINANZAS = { currency: 'USD', currency_symbol: '$', tax_percent: 15, invoice_prefix: 'INV', payment_methods: ['Efectivo','Transferencia','Tarjeta de crédito','Tarjeta de débito'], invoice_notes: '', admin_email: '', csv_schedule: 'manual', csv_weekday: 1, csv_month_day: 1 };
 const DEFAULT_INVENTARIO = { expiry_alert_days: 30, low_stock_alert: true, require_batch: true, categories: ['Inyectable','Consumibles','Venta','Toxinas','Rellenos','Skincare','Equipos','Medicamentos','Otros'] };
 const DEFAULT_NOTIFICACIONES = { appointment_confirmation: true, appointment_reminder: true, low_stock_notification: false, whatsapp_enabled: false, reminder_hours_before: 24 };
 

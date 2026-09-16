@@ -1,6 +1,8 @@
+import crypto from 'crypto';
 import { google } from 'googleapis';
 import { sql } from '@vercel/postgres';
 import { sendWhatsAppText } from '../lib/whatsapp-service.js';
+import { buildFinanceCsv } from '../lib/finance-csv.js';
 
 const getQueryValue = (value) => Array.isArray(value) ? value[0] : value;
 
@@ -87,21 +89,159 @@ async function listTodayAppointments(clinicId) {
   return `📅 Citas de hoy:\n\n${lines.join('\n')}`;
 }
 
-const MENU_TEXT = '1) Consultar mis citas de hoy\n\nResponde con el número de la opción.';
+const MENU_TEXT = '1) Consultar mis citas de hoy\n2) Reporte financiero\n\nResponde con el número de la opción.';
+const FINANCE_REPORT_MENU_TEXT = '📊 Reporte financiero\n\n1) Diario\n2) Semanal\n3) Mensual\n\nResponde con el número o la palabra del período.';
+const financeStateByPhone = new Map();
+
+function buildFinanceRange(period, today = new Date()) {
+  const fmt = (d) => d.toISOString().split('T')[0];
+  if (period === 'daily') {
+    const y = new Date(today); y.setDate(y.getDate() - 1);
+    return { startDate: fmt(y), endDate: fmt(y), periodLabel: 'diario' };
+  }
+  if (period === 'weekly') {
+    const start = new Date(today); start.setDate(start.getDate() - 7);
+    const end = new Date(today); end.setDate(end.getDate() - 1);
+    return { startDate: fmt(start), endDate: fmt(end), periodLabel: 'semanal' };
+  }
+  if (period === 'monthly') {
+    const start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    const end = new Date(today.getFullYear(), today.getMonth(), 0);
+    return { startDate: fmt(start), endDate: fmt(end), periodLabel: 'mensual' };
+  }
+  return null;
+}
+
+export function resolveFinancePeriodChoice(value) {
+  const raw = String(value ?? '').trim().toLowerCase();
+  if (!raw) return null;
+  if (['1', 'diario', 'daily'].includes(raw)) return 'daily';
+  if (['2', 'semanal', 'weekly'].includes(raw)) return 'weekly';
+  if (['3', 'mensual', 'monthly'].includes(raw)) return 'monthly';
+  return null;
+}
+
+function buildRawEmailWithCsvAttachment({ from, to, subject, html, attachmentName, attachmentContent }) {
+  const boundary = `bioskin_${crypto.randomBytes(8).toString('hex')}`;
+  const attachmentB64 = Buffer.from(attachmentContent, 'utf8').toString('base64').replace(/(.{76})/g, '$1\r\n');
+  const msg = [
+    `From: ${from}`,
+    `To: ${to}`,
+    `Subject: =?UTF-8?B?${Buffer.from(subject).toString('base64')}?=`,
+    'MIME-Version: 1.0',
+    `Content-Type: multipart/mixed; boundary="${boundary}"`,
+    '',
+    `--${boundary}`,
+    'Content-Type: text/html; charset=UTF-8',
+    '',
+    html,
+    '',
+    `--${boundary}`,
+    `Content-Type: text/csv; name="${attachmentName}"`,
+    'Content-Transfer-Encoding: base64',
+    `Content-Disposition: attachment; filename="${attachmentName}"`,
+    '',
+    attachmentB64,
+    '',
+    `--${boundary}--`,
+  ].join('\r\n');
+  return Buffer.from(msg).toString('base64url');
+}
+
+async function getClinicGmailClient(clinicId) {
+  const clientId = (process.env.GOOGLE_CLIENT_ID || '').trim();
+  const clientSecret = (process.env.GOOGLE_CLIENT_SECRET || '').trim();
+  if (!clientId || !clientSecret) return null;
+  const appUrl = (process.env.APP_URL || `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app'}`).replace(/\/$/, '').trim();
+  const r = await sql`SELECT access_token, refresh_token, token_expiry, email FROM clinic_oauth_tokens WHERE clinic_id = ${clinicId}`;
+  if (!r.rows.length) return null;
+  const { access_token, refresh_token, token_expiry, email } = r.rows[0];
+  const oAuth2 = new google.auth.OAuth2(clientId, clientSecret, `${appUrl}/api/calendar`);
+  oAuth2.setCredentials({ access_token, refresh_token, expiry_date: token_expiry ? new Date(token_expiry).getTime() : null });
+  return { client: oAuth2, email };
+}
+
+async function sendFinanceReportToAdmin(clinicId, period, from) {
+  const settingsRes = await sql`SELECT finanzas, general FROM clinic_settings WHERE clinic_id = ${clinicId}`;
+  const row = settingsRes.rows[0] || {};
+  const finanzas = row.finanzas || {};
+  const clinicName = row.general?.name || 'la clínica';
+  const adminEmail = (finanzas.admin_email || '').trim();
+  if (!adminEmail) {
+    await sendWhatsAppText(from, '⚠️ Aún no está configurado el correo del administrador financiero de la clínica.');
+    return;
+  }
+
+  const oauth = await getClinicGmailClient(clinicId);
+  if (!oauth) {
+    await sendWhatsAppText(from, '⚠️ No hay una cuenta de Gmail conectada para enviar el reporte financiero.');
+    return;
+  }
+
+  const range = buildFinanceRange(period);
+  if (!range) {
+    await sendWhatsAppText(from, '❌ Período no válido para el reporte financiero.');
+    return;
+  }
+
+  const recordsRes = await sql`
+    SELECT *
+    FROM financial_records
+    WHERE clinic_id = ${clinicId}
+      AND date >= ${range.startDate}
+      AND date <= ${range.endDate}
+    ORDER BY date ASC
+  `;
+
+  const csv = buildFinanceCsv(recordsRes.rows);
+  const gmail = google.gmail({ version: 'v1', auth: oauth.client });
+  const raw = buildRawEmailWithCsvAttachment({
+    from: `${clinicName} <${oauth.email}>`,
+    to: adminEmail,
+    subject: `Reporte financiero (${range.periodLabel}) — ${clinicName}`,
+    html: `<p>Adjunto el reporte financiero de <strong>${clinicName}</strong> (${range.periodLabel}, ${range.startDate} a ${range.endDate}).</p><p>Registros incluidos: ${recordsRes.rows.length}</p>`,
+    attachmentName: `finanzas_${range.startDate}_${range.endDate}.csv`,
+    attachmentContent: csv,
+  });
+
+  await gmail.users.messages.send({ userId: 'me', requestBody: { raw } });
+  await sendWhatsAppText(from, `✅ Reporte financiero ${range.periodLabel} enviado al correo ${adminEmail} (${recordsRes.rows.length} registros).`);
+}
 
 /** Procesa mensajes entrantes: solo responde a números registrados como staff activo (clinic_users.phone). */
 async function handleIncomingMessages(body) {
   for (const { from, text } of extractIncomingMessages(body)) {
     if (!from) continue;
-    const staff = await sql`SELECT id, clinic_id, full_name FROM clinic_users WHERE phone = ${from} AND is_active = true LIMIT 1`;
+    const staff = await sql`SELECT id, clinic_id, full_name, phone FROM clinic_users WHERE phone = ${from} AND is_active = true LIMIT 1`;
     if (!staff.rows.length) continue; // número no reconocido — se ignora sin responder, no se revela nada
     const clinicUser = staff.rows[0];
+    const state = financeStateByPhone.get(from);
+    const financeChoice = resolveFinancePeriodChoice(text);
+
     try {
+      if (state?.stage === 'awaitingFinanceChoice' && financeChoice) {
+        financeStateByPhone.delete(from);
+        await sendFinanceReportToAdmin(clinicUser.clinic_id, financeChoice, from);
+        continue;
+      }
+
+      if (text === '2' || /reporte|finance/i.test(text)) {
+        financeStateByPhone.set(from, { stage: 'awaitingFinanceChoice', clinicId: clinicUser.clinic_id });
+        await sendWhatsAppText(from, FINANCE_REPORT_MENU_TEXT);
+        continue;
+      }
+
       if (text === '1') {
         await sendWhatsAppText(from, await listTodayAppointments(clinicUser.clinic_id));
-      } else {
-        await sendWhatsAppText(from, `Hola ${clinicUser.full_name || ''} 👋\n\n${MENU_TEXT}`);
+        continue;
       }
+
+      if (financeChoice) {
+        await sendFinanceReportToAdmin(clinicUser.clinic_id, financeChoice, from);
+        continue;
+      }
+
+      await sendWhatsAppText(from, `Hola ${clinicUser.full_name || ''} 👋\n\n${MENU_TEXT}`);
     } catch (err) {
       console.error('❌ Error respondiendo por WhatsApp:', err.message);
     }

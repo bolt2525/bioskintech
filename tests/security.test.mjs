@@ -117,3 +117,15 @@ test('WhatsApp bot only extracts messages with a sender number', async () => {
 
   assert.deepEqual(messages, [{ from: '593987654321', text: '1' }]);
 });
+
+test('WhatsApp finance report selection maps menu choices to report periods', async () => {
+  const { resolveFinancePeriodChoice } = await import('../api/whatsapp-chatbot.js');
+
+  assert.equal(resolveFinancePeriodChoice('1'), 'daily');
+  assert.equal(resolveFinancePeriodChoice('2'), 'weekly');
+  assert.equal(resolveFinancePeriodChoice('3'), 'monthly');
+  assert.equal(resolveFinancePeriodChoice('diario'), 'daily');
+  assert.equal(resolveFinancePeriodChoice('semanal'), 'weekly');
+  assert.equal(resolveFinancePeriodChoice('mensual'), 'monthly');
+  assert.equal(resolveFinancePeriodChoice('otro'), null);
+});
