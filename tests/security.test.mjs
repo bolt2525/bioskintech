@@ -129,3 +129,17 @@ test('WhatsApp finance report selection maps menu choices to report periods', as
   assert.equal(resolveFinancePeriodChoice('mensual'), 'monthly');
   assert.equal(resolveFinancePeriodChoice('otro'), null);
 });
+
+test('appointment notifications target normalized patient and booking-user numbers', async () => {
+  const { normalizeWhatsAppNumber, buildAppointmentWhatsAppRecipients } = await import('../api/sendEmail.js');
+
+  assert.equal(normalizeWhatsAppNumber('0987654321'), '593987654321');
+  assert.deepEqual(
+    buildAppointmentWhatsAppRecipients({ patientPhone: '0987654321', bookingUserPhone: '0991234567' }),
+    ['593987654321', '593991234567']
+  );
+  assert.deepEqual(
+    buildAppointmentWhatsAppRecipients({ patientPhone: '', bookingUserPhone: '5930991234567' }),
+    ['593991234567']
+  );
+});

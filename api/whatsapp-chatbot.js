@@ -92,6 +92,7 @@ async function listTodayAppointments(clinicId) {
 const MENU_TEXT = '1) Consultar mis citas de hoy\n2) Reporte financiero\n\nResponde con el número de la opción.';
 const FINANCE_REPORT_MENU_TEXT = '📊 Reporte financiero\n\n1) Diario\n2) Semanal\n3) Mensual\n\nResponde con el número o la palabra del período.';
 const financeStateByPhone = new Map();
+const ALLOWED_BOT_ACTIONS = new Set(['1', '2', 'diario', 'daily', 'semanal', 'weekly', 'mensual', 'monthly']);
 
 function buildFinanceRange(period, today = new Date()) {
   const fmt = (d) => d.toISOString().split('T')[0];
@@ -212,11 +213,14 @@ async function sendFinanceReportToAdmin(clinicId, period, from) {
 async function handleIncomingMessages(body) {
   for (const { from, text } of extractIncomingMessages(body)) {
     if (!from) continue;
+    const normalizedText = String(text || '').trim().toLowerCase();
+    if (!normalizedText) continue;
     const staff = await sql`SELECT id, clinic_id, full_name, phone FROM clinic_users WHERE phone = ${from} AND is_active = true LIMIT 1`;
     if (!staff.rows.length) continue; // número no reconocido — se ignora sin responder, no se revela nada
     const clinicUser = staff.rows[0];
     const state = financeStateByPhone.get(from);
-    const financeChoice = resolveFinancePeriodChoice(text);
+    const financeChoice = resolveFinancePeriodChoice(normalizedText);
+    const isAllowedAction = ALLOWED_BOT_ACTIONS.has(normalizedText) || ALLOWED_BOT_ACTIONS.has(text?.trim() || '');
 
     try {
       if (state?.stage === 'awaitingFinanceChoice' && financeChoice) {
@@ -225,7 +229,12 @@ async function handleIncomingMessages(body) {
         continue;
       }
 
-      if (text === '2' || /reporte|finance/i.test(text)) {
+      if (!isAllowedAction && !state?.stage) {
+        await sendWhatsAppText(from, `Hola ${clinicUser.full_name || ''} 👋\n\n${MENU_TEXT}`);
+        continue;
+      }
+
+      if (text === '2' || normalizedText === 'reporte' || normalizedText === 'finance') {
         financeStateByPhone.set(from, { stage: 'awaitingFinanceChoice', clinicId: clinicUser.clinic_id });
         await sendWhatsAppText(from, FINANCE_REPORT_MENU_TEXT);
         continue;

@@ -8,6 +8,29 @@ import { sendWhatsAppText } from '../lib/whatsapp-service.js';
 
 const isGoogleAuthError = (error) => error?.code === 401 || error?.response?.status === 401 || /invalid_grant|invalid authentication credentials/i.test(error?.message || '');
 
+export function normalizeWhatsAppNumber(raw) {
+  const digits = String(raw || '').replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.startsWith('593')) {
+    const rest = digits.slice(3);
+    return `593${rest.startsWith('0') ? rest.slice(1) : rest}`;
+  }
+  if (digits.startsWith('0')) return `593${digits.substring(1)}`;
+  return `593${digits}`;
+}
+
+export function buildAppointmentWhatsAppRecipients({ patientPhone, bookingUserPhone }) {
+  const seen = new Set();
+  const recipients = [];
+  for (const raw of [patientPhone, bookingUserPhone]) {
+    const normalized = normalizeWhatsAppNumber(raw);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    recipients.push(normalized);
+  }
+  return recipients;
+}
+
 /** Obtiene un OAuth2 client con los tokens guardados para la clínica. Retorna null si no hay tokens. */
 async function getClinicOAuth2Client(clinicId) {
   if (!clinicId) return null;
@@ -290,9 +313,15 @@ export default async function handler(req, res) {
   let errorDetails = [];
 
   // --- 0. ENVÍO AUTOMÁTICO DE CONFIRMACIÓN POR WHATSAPP (Cloud API) ---
-  if (clinic.whatsapp_enabled && phoneClean) {
+  const appointmentRecipients = buildAppointmentWhatsAppRecipients({
+    patientPhone: phoneClean,
+    bookingUserPhone: req.body?.bookingUserPhone || req.body?.booking_user_phone || '',
+  });
+  if (clinic.whatsapp_enabled && appointmentRecipients.length) {
     try {
-      await sendWhatsAppText(`593${phoneClean}`, whatsappMessage);
+      for (const recipient of appointmentRecipients) {
+        await sendWhatsAppText(recipient, whatsappMessage);
+      }
       whatsappSuccess = true;
     } catch (waErr) {
       console.error('❌ Error en WhatsApp:', waErr.message);

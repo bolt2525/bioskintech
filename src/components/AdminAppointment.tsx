@@ -301,6 +301,7 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
           selected_staff_email: formData.selected_doctor_email || undefined,
           selected_staff_name:  formData.selected_doctor       || undefined,
           additional_notify_emails: additionalEmails.length ? additionalEmails : undefined,
+          bookingUserPhone: user?.phone || '',
         }),
       });
       const result = await res.json();
