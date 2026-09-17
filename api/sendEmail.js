@@ -99,7 +99,7 @@ export default async function handler(req, res) {
   const auth = await authenticateRequest(req);
   if (!auth.valid) return res.status(401).json({ success: false, message: 'No autenticado' });
   const requestedClinicId = auth.effective_clinic_id || auth.clinic_id;
-  const currentUser = auth.id ? await sql`SELECT phone, full_name FROM clinic_users WHERE id = ${auth.id}` : { rows: [] };
+  const currentUser = auth.id ? await sql`SELECT phone, full_name, gentilicio, whatsapp_bot_enabled, whatsapp_confirm_enabled FROM clinic_users WHERE id = ${auth.id}` : { rows: [] };
 
   const escapeHtml = (value = '') => String(value)
     .replace(/&/g, '&amp;')
@@ -298,11 +298,12 @@ export default async function handler(req, res) {
 
   // Cargar config de la clínica (usa clinicId del body si existe, o defaults)
   const clinic = await getClinicConfig(requestedClinicId || null);
+  const staffName = [currentUser.rows[0]?.gentilicio, currentUser.rows[0]?.full_name].filter(Boolean).join(' ') || clinic.name;
 
   // --- Mensaje cordial para WhatsApp (dinamizado por clínica) ---
   const whatsappMessage =
     `Hola ${paciente}, ¡gracias por agendar tu cita en ${clinic.name}! 🧴✨\n` +
-    `Hemos recibido tu solicitud para el servicio "${tratamiento}".\n` +
+    `Hemos recibido tu solicitud para el servicio "${tratamiento}" con ${staffName}.\n` +
     (fecha && hora ? `Tu cita está programada para el ${fecha} a las ${hora} en ${clinic.city ? clinic.name + ' ' + clinic.city : 'nuestro consultorio'}.\n` : "") +
     `Si tienes alguna consulta, no dudes en responder este mensaje.\n` +
     `¡Nos vemos pronto!\n\n` +
@@ -322,7 +323,8 @@ export default async function handler(req, res) {
     patientPhone: phoneClean,
     bookingUserPhone: currentUser.rows[0]?.phone || '',
   });
-  if (clinic.whatsapp_enabled && appointmentRecipients.length) {
+  const bookingBotEnabled = currentUser.rows[0]?.whatsapp_bot_enabled === true && currentUser.rows[0]?.whatsapp_confirm_enabled === true;
+  if (bookingBotEnabled && appointmentRecipients.length) {
     // Meta exige plantilla aprobada para mensajes iniciados por el negocio fuera de la
     // ventana de servicio al cliente de 24h (el paciente no le ha escrito antes al número).
     const templateName = (process.env.WHATSAPP_TEMPLATE_APPOINTMENT || '').trim();
@@ -333,7 +335,6 @@ export default async function handler(req, res) {
         if (withinWindow) {
           await sendWhatsAppText(recipient, whatsappMessage);
         } else if (templateName) {
-          const staffName = currentUser.rows[0]?.full_name || clinic.name;
           await sendWhatsAppTemplate(recipient, templateName, templateLang, {
             nombre_paciente: paciente,
             nombre_clinica: clinic.name,

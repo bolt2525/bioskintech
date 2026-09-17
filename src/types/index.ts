@@ -107,6 +107,7 @@ export interface ClinicUser {
   clinic_slug?: string;
   is_demo?: boolean;
   demo_expires_at?: string | null;
+  whatsapp_bot_enabled?: boolean;
 }
 
 /** Feature habilitada/deshabilitada para una clínica */

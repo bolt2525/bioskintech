@@ -33,6 +33,12 @@ const migrations = [
   "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS inventory_scope VARCHAR(20) DEFAULT 'all'",
   "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS calendar_scope VARCHAR(20) DEFAULT 'own'",
   "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS phone VARCHAR(20)",
+  "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS whatsapp_bot_enabled BOOLEAN NOT NULL DEFAULT false",
+  "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS whatsapp_confirm_enabled BOOLEAN NOT NULL DEFAULT false",
+  "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS whatsapp_summary_7am BOOLEAN NOT NULL DEFAULT false",
+  "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS whatsapp_summary_7pm BOOLEAN NOT NULL DEFAULT false",
+  "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS whatsapp_staff_phone VARCHAR(20)",
+  "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS whatsapp_finance_phone VARCHAR(20)",
   // Columnas en clinics
   "ALTER TABLE clinics ADD COLUMN IF NOT EXISTS logo_url TEXT",
   "ALTER TABLE clinics ADD COLUMN IF NOT EXISTS ruc VARCHAR(20)",

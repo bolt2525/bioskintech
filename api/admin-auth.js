@@ -120,6 +120,13 @@ async function ensureNewColumns() {
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT false",
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS personal_staff_emails JSONB DEFAULT '[]'::jsonb",
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS phone VARCHAR(20)",
+    // Bot de WhatsApp — control por usuario, deshabilitado por defecto hasta que master_admin lo autorice
+    "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS whatsapp_bot_enabled BOOLEAN NOT NULL DEFAULT false",
+    "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS whatsapp_confirm_enabled BOOLEAN NOT NULL DEFAULT false",
+    "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS whatsapp_summary_7am BOOLEAN NOT NULL DEFAULT false",
+    "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS whatsapp_summary_7pm BOOLEAN NOT NULL DEFAULT false",
+    "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS whatsapp_staff_phone VARCHAR(20)",
+    "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS whatsapp_finance_phone VARCHAR(20)",
     "ALTER TABLE clinic_oauth_tokens DROP CONSTRAINT IF EXISTS clinic_oauth_tokens_clinic_id_key",
     "ALTER TABLE clinic_oauth_tokens ADD COLUMN IF NOT EXISTS clinic_user_id INTEGER REFERENCES clinic_users(id) ON DELETE CASCADE",
     "ALTER TABLE oauth_states ADD COLUMN IF NOT EXISTS clinic_user_id INTEGER REFERENCES clinic_users(id) ON DELETE CASCADE",
@@ -1150,7 +1157,7 @@ async function listUsers(requestUser, clinicIdFilter) {
                cu.finance_scope, cu.inventory_scope, cu.calendar_scope,
                cu.is_active, cu.last_login, cu.clinic_id, c.name as clinic_name, c.slug as clinic_slug,
                cu.cedula_profesional, cu.matricula_senescyt, cu.especialidad, cu.is_demo, cu.demo_expires_at,
-               cu.first_name, cu.last_name, cu.gentilicio, cu.profession
+               cu.first_name, cu.last_name, cu.gentilicio, cu.profession, cu.whatsapp_bot_enabled
         FROM clinic_users cu LEFT JOIN clinics c ON cu.clinic_id = c.id
         WHERE cu.clinic_id = ${clinicIdFilter}
         ORDER BY cu.role, cu.username
@@ -1161,7 +1168,7 @@ async function listUsers(requestUser, clinicIdFilter) {
              cu.finance_scope, cu.inventory_scope, cu.calendar_scope,
              cu.is_active, cu.last_login, cu.clinic_id, cu.phone, c.name as clinic_name, c.slug as clinic_slug,
              cu.cedula_profesional, cu.matricula_senescyt, cu.especialidad, cu.is_demo, cu.demo_expires_at,
-             cu.first_name, cu.last_name, cu.gentilicio, cu.profession
+             cu.first_name, cu.last_name, cu.gentilicio, cu.profession, cu.whatsapp_bot_enabled
       FROM clinic_users cu LEFT JOIN clinics c ON cu.clinic_id = c.id
       ORDER BY c.name NULLS LAST, cu.role, cu.username
     `).rows;
@@ -1171,7 +1178,7 @@ async function listUsers(requestUser, clinicIdFilter) {
     SELECT id, username, full_name, email, role, access_scope, finance_scope, inventory_scope, calendar_scope,
            is_active, last_login, clinic_id, phone,
            is_demo, demo_expires_at, first_name, last_name, gentilicio, profession,
-           cedula_profesional, matricula_senescyt, especialidad
+           cedula_profesional, matricula_senescyt, especialidad, whatsapp_bot_enabled
     FROM clinic_users WHERE clinic_id = ${requestUser.clinic_id}
     ORDER BY role, username
   `).rows;
@@ -3182,6 +3189,56 @@ export default async function handler(req, res) {
       `;
       const upd = await sql`SELECT id,username,full_name,first_name,last_name,email,gentilicio,profession,cedula_profesional,matricula_senescyt,registro_acess,especialidad,phone FROM clinic_users WHERE id = ${user.id}`;
       return res.status(200).json({ success: true, user: upd.rows[0] });
+    }
+
+    // ── Bot de WhatsApp — config propia del usuario (lectura/edición limitada por whatsapp_bot_enabled) ──
+    if (action === 'getWhatsAppBotConfig') {
+      const r = await sql`
+        SELECT phone, whatsapp_bot_enabled, whatsapp_confirm_enabled, whatsapp_summary_7am, whatsapp_summary_7pm,
+               whatsapp_staff_phone, whatsapp_finance_phone
+        FROM clinic_users WHERE id = ${user.id}
+      `;
+      const row = r.rows[0] || {};
+      return res.status(200).json({ success: true, config: {
+        bot_enabled:     row.whatsapp_bot_enabled === true,
+        confirm_enabled: row.whatsapp_confirm_enabled === true,
+        summary_7am:     row.whatsapp_summary_7am === true,
+        summary_7pm:     row.whatsapp_summary_7pm === true,
+        registered_phone: row.phone || '',
+        staff_phone:     row.whatsapp_staff_phone || row.phone || '',
+        finance_phone:   row.whatsapp_finance_phone || row.phone || '',
+      } });
+    }
+
+    if (action === 'saveWhatsAppBotConfig') {
+      const current = await sql`SELECT whatsapp_bot_enabled FROM clinic_users WHERE id = ${user.id}`;
+      if (current.rows[0]?.whatsapp_bot_enabled !== true)
+        return res.status(403).json({ error: 'El bot de WhatsApp no está habilitado para tu usuario. Contacta a tu administrador.' });
+      const confirmEnabled = req.body?.confirm_enabled === true;
+      const summary7am     = req.body?.summary_7am === true;
+      const summary7pm     = req.body?.summary_7pm === true;
+      const staffPhone     = normalizeUserPhone(req.body?.staff_phone || '');
+      const financePhone   = normalizeUserPhone(req.body?.finance_phone || '');
+      await sql`
+        UPDATE clinic_users SET
+          whatsapp_confirm_enabled = ${confirmEnabled},
+          whatsapp_summary_7am     = ${summary7am},
+          whatsapp_summary_7pm     = ${summary7pm},
+          whatsapp_staff_phone     = ${staffPhone},
+          whatsapp_finance_phone   = ${financePhone}
+        WHERE id = ${user.id}
+      `;
+      return res.status(200).json({ success: true });
+    }
+
+    // ── Bot de WhatsApp — habilitación por usuario (solo master_admin) ────────
+    if (action === 'setWhatsAppBotEnabled') {
+      if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master admin' });
+      const targetId = req.body?.id;
+      if (!targetId) return res.status(400).json({ error: 'id requerido' });
+      const enabled = req.body?.enabled === true;
+      await sql`UPDATE clinic_users SET whatsapp_bot_enabled = ${enabled} WHERE id = ${targetId}`;
+      return res.status(200).json({ success: true, enabled });
     }
 
     // ── Info básica de clínica (solo clinic_admin o master_admin) ────────────

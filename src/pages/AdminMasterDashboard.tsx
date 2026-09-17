@@ -1485,6 +1485,14 @@ export default function AdminMasterDashboard() {
     loadAll();
   };
 
+  const toggleWhatsAppBot = async (u: ClinicUser) => {
+    await fetch('/api/admin-auth?action=setWhatsAppBotEnabled', {
+      method: 'POST', headers: authHeader(),
+      body:   JSON.stringify({ id: u.id, enabled: !u.whatsapp_bot_enabled }),
+    });
+    loadAll();
+  };
+
   const deleteUser = async (u: ClinicUser) => {
     if (!confirm(`¿Eliminar permanentemente a "${u.username}"?\n\nEsta acción no se puede deshacer. El usuario podrá volver a registrarse con el mismo email.`)) return;
     const res = await fetch(`/api/admin-auth?action=deleteUser&id=${u.id}`, { method: 'DELETE', headers: authHeader() });
@@ -1965,6 +1973,15 @@ export default function AdminMasterDashboard() {
                                 <button onClick={() => openEditUser(u)} className="p-1.5 text-[#c5a075] hover:bg-[#deb887]/10 rounded" title="Editar">
                                   <Edit className="w-3.5 h-3.5" />
                                 </button>
+                                {u.role !== 'master_admin' && (
+                                  <button
+                                    onClick={() => toggleWhatsAppBot(u)}
+                                    className={`p-1.5 rounded ${u.whatsapp_bot_enabled ? 'text-green-600 hover:bg-green-50' : 'text-gray-400 hover:bg-gray-50'}`}
+                                    title={u.whatsapp_bot_enabled ? 'Bot de WhatsApp habilitado — clic para deshabilitar' : 'Bot de WhatsApp deshabilitado — clic para habilitar'}
+                                  >
+                                    <MessageCircle className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
                                 {u.role !== 'master_admin' && oauthStatus[u.id] && (
                                   <button onClick={() => handleOauthRevoke(u.id)} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded" title={`Google conectado: ${oauthStatus[u.id].email}`}>
                                     <Unlink className="w-3.5 h-3.5" />

@@ -19,7 +19,7 @@ import { useAdminNav } from '../hooks/useAdminNav';
 import {
   LogOut, Calendar, Bell, X, AlertCircle, ChevronRight, Sparkles,
   Users, Shield, Settings, Lock, Eye, EyeOff, Pencil, Check,
-  UserCircle, CalendarDays, Building2, KeyRound, Plus, Trash2, UserCheck,
+  UserCircle, CalendarDays, Building2, KeyRound, Plus, Trash2, UserCheck, MessageCircle,
 } from 'lucide-react';
 import { useEffect, useState, useRef } from 'react';
 import { Fragment } from 'react';
@@ -30,7 +30,7 @@ import { MODULE_LIST } from '../constants/features';
 import type { UpcomingAppointment } from '../types';
 import recordsFetch from '../utils/recordsFetch';
 
-type SettingsTab = 'profile' | 'password' | 'agenda' | 'clinic';
+type SettingsTab = 'profile' | 'password' | 'agenda' | 'whatsapp_bot' | 'clinic';
 
 type ProfileForm = {
   full_name: string; first_name: string; last_name: string; email: string;
@@ -123,10 +123,19 @@ export default function AdminDashboard() {
   const [newTreatment, setNewTreatment]     = useState('');
   const [personalEmails, setPersonalEmails] = useState<string[]>([]);
   const [newPersonalEmail, setNewPersonalEmail] = useState('');
-  const [agendaSettings, setAgendaSettings] = useState({ start_hour: '08:00', end_hour: '19:00', slot_minutes: 60, calendar_prefix: '', daily_reminder_whatsapp: false, finance_admin_phone: '' });
-  const [notifSettings, setNotifSettings]   = useState({ whatsapp_enabled: false });
+  const [agendaSettings, setAgendaSettings] = useState({ start_hour: '08:00', end_hour: '19:00', slot_minutes: 60, calendar_prefix: '' });
   const [agendaSaving, setAgendaSaving]     = useState(false);
   const [agendaMsg, setAgendaMsg]           = useState<{ text: string; ok: boolean } | null>(null);
+
+  // WhatsApp bot tab (habilitado por master_admin, config propia del usuario)
+  const [whatsappBot, setWhatsappBot] = useState({
+    bot_enabled: false, confirm_enabled: false, summary_7am: false, summary_7pm: false,
+    registered_phone: '', staff_phone: '', finance_phone: '',
+  });
+  const [editingStaffPhone, setEditingStaffPhone]     = useState(false);
+  const [editingFinancePhone, setEditingFinancePhone] = useState(false);
+  const [whatsappBotSaving, setWhatsappBotSaving]     = useState(false);
+  const [whatsappBotMsg, setWhatsappBotMsg]           = useState<{ text: string; ok: boolean } | null>(null);
 
   // Clinic tab (clinic_admin only)
   const [clinicForm, setClinicForm]         = useState<ClinicForm>({ name: '', phone: '', address: '', city: '', website: '', description: '' });
@@ -208,7 +217,8 @@ export default function AdminDashboard() {
     setPwdStep(1);
     setPwdForm({ current: '', next: '', confirm: '' });
     setOtpCode('');
-    setPwdMsg(null); setProfileMsg(null); setAgendaMsg(null); setClinicMsg(null);
+    setPwdMsg(null); setProfileMsg(null); setAgendaMsg(null); setClinicMsg(null); setWhatsappBotMsg(null);
+    setEditingStaffPhone(false); setEditingFinancePhone(false);
     setShowSettingsMenu(false);
     // Pre-fill profile from auth context
     if (user) {
@@ -221,6 +231,11 @@ export default function AdminDashboard() {
       });
     }
     setShowSettings(true);
+    // Bot de WhatsApp — config propia (habilitación la controla master_admin)
+    fetch('/api/admin-auth?action=getWhatsAppBotConfig', { headers: { Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken')}` } })
+      .then(r => r.json())
+      .then(d => { if (d.config) setWhatsappBot(d.config); })
+      .catch(() => {});
     // Load agenda data
     if (user?.clinic_id) {
       try {
@@ -234,12 +249,7 @@ export default function AdminDashboard() {
           const a = settingsRes.settings.agenda;
           setAgendaSettings({
             start_hour: a.start_hour || '08:00', end_hour: a.end_hour || '19:00', slot_minutes: a.slot_minutes || 60, calendar_prefix: a.calendar_prefix || '',
-            // Si no hay un número financiero explícito guardado, usar el teléfono registrado del admin (editable)
-            daily_reminder_whatsapp: a.daily_reminder_whatsapp === true, finance_admin_phone: a.finance_admin_phone || user.phone || '',
           });
-        }
-        if (settingsRes.settings?.notificaciones) {
-          setNotifSettings({ whatsapp_enabled: settingsRes.settings.notificaciones.whatsapp_enabled === true });
         }
         // Pre-fill clinic form for clinic_admin
         if (user.role === 'clinic_admin') {
@@ -317,21 +327,32 @@ export default function AdminDashboard() {
     setAgendaSaving(true); setAgendaMsg(null);
     try {
       const token = sessionStorage.getItem('adminSessionToken');
-      const [res] = await Promise.all([
-        fetch('/api/admin-auth?action=saveClinicSettings', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ clinicId: user.clinic_id, section: 'agenda', data: agendaSettings }),
-        }),
-        fetch('/api/admin-auth?action=saveClinicSettings', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ clinicId: user.clinic_id, section: 'notificaciones', data: notifSettings }),
-        }),
-      ]);
+      const res = await fetch('/api/admin-auth?action=saveClinicSettings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ clinicId: user.clinic_id, section: 'agenda', data: agendaSettings }),
+      });
       const d = await res.json();
       setAgendaMsg({ text: d.error || '¡Horario guardado!', ok: !!d.success });
     } finally { setAgendaSaving(false); }
+  };
+
+  // ─── Guardar configuración del bot de WhatsApp (propia del usuario) ────────
+  const handleSaveWhatsAppBot = async () => {
+    setWhatsappBotSaving(true); setWhatsappBotMsg(null);
+    try {
+      const res = await fetch('/api/admin-auth?action=saveWhatsAppBotConfig', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken')}` },
+        body: JSON.stringify({
+          confirm_enabled: whatsappBot.confirm_enabled, summary_7am: whatsappBot.summary_7am, summary_7pm: whatsappBot.summary_7pm,
+          staff_phone: whatsappBot.staff_phone, finance_phone: whatsappBot.finance_phone,
+        }),
+      });
+      const d = await res.json();
+      setWhatsappBotMsg({ text: d.error || '¡Configuración guardada!', ok: !!d.success });
+      if (d.success) { setEditingStaffPhone(false); setEditingFinancePhone(false); }
+    } finally { setWhatsappBotSaving(false); }
   };
 
   // ─── Guardar tratamientos de clínica ────────────────────────────────────
@@ -662,9 +683,10 @@ export default function AdminDashboard() {
                   ['profile',  <UserCircle  className="w-4 h-4" />, 'Mi Perfil'],
                   ['password', <KeyRound    className="w-4 h-4" />, 'Contraseña'],
                   ['agenda',   <CalendarDays className="w-4 h-4" />, 'Agenda'],
+                  ['whatsapp_bot', <MessageCircle className="w-4 h-4" />, 'Bot de WhatsApp'],
                   ...(user?.role === 'clinic_admin' ? [['clinic', <Building2 className="w-4 h-4" />, 'Mi Clínica']] : []),
                 ] as [SettingsTab, React.ReactNode, string][]).map(([key, icon, label]) => (
-                  <button key={key} onClick={() => { setSettingsTab(key); setPwdMsg(null); setProfileMsg(null); setAgendaMsg(null); setClinicMsg(null); }}
+                  <button key={key} onClick={() => { setSettingsTab(key); setPwdMsg(null); setProfileMsg(null); setAgendaMsg(null); setClinicMsg(null); setWhatsappBotMsg(null); }}
                     className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-left transition-colors ${
                       settingsTab === key
                         ? 'bg-gradient-to-r from-[#deb887]/20 to-[#c5a075]/10 text-[#99652f] font-semibold border border-[#deb887]/30'
@@ -847,52 +869,6 @@ export default function AdminDashboard() {
                       </div>
 
                       <div className="border-t border-gray-100 pt-3">
-                        <div className="flex items-center justify-between p-3 border rounded-lg bg-gray-50">
-                          <div>
-                            <label className="block text-xs font-semibold text-gray-700">✅📲 Confirmación de cita por WhatsApp al paciente</label>
-                            <p className="text-xs text-gray-400">Al agendar, intenta enviar un WhatsApp de confirmación al teléfono del paciente (requiere plantilla de Meta aprobada si el paciente no ha escrito antes al número).</p>
-                          </div>
-                          <button type="button" disabled={user?.role !== 'clinic_admin'}
-                            onClick={() => setNotifSettings(p => ({ ...p, whatsapp_enabled: !p.whatsapp_enabled }))}
-                            className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${notifSettings.whatsapp_enabled ? 'bg-[#deb887]' : 'bg-gray-300'}`}>
-                            <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${notifSettings.whatsapp_enabled ? 'translate-x-5' : ''}`} />
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="border-t border-gray-100 pt-3">
-                        <div className="flex items-center justify-between p-3 border rounded-lg bg-gray-50">
-                          <div>
-                            <label className="block text-xs font-semibold text-gray-700">📅⏰ Resúmenes de agenda por WhatsApp</label>
-                            <p className="text-xs text-gray-400">Envía al staff autorizado las citas de hoy a las 07:00 y las de mañana a las 19:00, con enlaces para enviar recordatorios manuales.</p>
-                          </div>
-                          <button type="button" disabled={user?.role !== 'clinic_admin'}
-                            onClick={() => setAgendaSettings(p => ({ ...p, daily_reminder_whatsapp: !p.daily_reminder_whatsapp }))}
-                            className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${agendaSettings.daily_reminder_whatsapp ? 'bg-[#deb887]' : 'bg-gray-300'}`}>
-                            <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${agendaSettings.daily_reminder_whatsapp ? 'translate-x-5' : ''}`} />
-                          </button>
-                        </div>
-                        <div className="mt-2">
-                          <label className="block text-xs font-medium text-gray-500 mb-1">Número financiero alternativo</label>
-                          <input value={agendaSettings.finance_admin_phone} disabled={user?.role !== 'clinic_admin'}
-                            onChange={e => setAgendaSettings(p => ({ ...p, finance_admin_phone: e.target.value }))}
-                            placeholder="Ej: 593987654321"
-                            className={`w-full px-3 py-2 border rounded-lg text-sm outline-none ${
-                              user?.role === 'clinic_admin'
-                                ? 'focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] bg-white'
-                                : 'bg-gray-50 text-gray-500'
-                            }`} />
-                          {user?.role === 'clinic_admin' && profileForm.phone && (
-                            <button type="button" onClick={() => setAgendaSettings(p => ({ ...p, finance_admin_phone: profileForm.phone }))}
-                              className="text-xs text-[#8a6b3f] hover:underline mt-1">
-                              Usar mi teléfono registrado ({profileForm.phone})
-                            </button>
-                          )}
-                          <p className="text-xs text-gray-400 mt-1">El bot solo autoriza teléfonos registrados en usuarios activos. Se precargó automáticamente con tu teléfono registrado en "Mi Información" — puedes cambiarlo por otro número autorizado.</p>
-                        </div>
-                      </div>
-
-                      <div className="border-t border-gray-100 pt-3">
                       {/* Tratamientos */}
                       <div>
                         <div className="flex items-center justify-between mb-2">
@@ -952,6 +928,80 @@ export default function AdminDashboard() {
                       </div>
 
                       {agendaMsg && <p className={`text-sm ${agendaMsg.ok ? 'text-emerald-600' : 'text-red-500'}`}>{agendaMsg.text}</p>}
+                    </>
+                  )}
+
+                  {/* ── BOT DE WHATSAPP ── */}
+                  {settingsTab === 'whatsapp_bot' && (
+                    <>
+                      {!whatsappBot.bot_enabled && (
+                        <div className="p-4 border rounded-lg bg-gray-50 text-center">
+                          <Lock className="w-6 h-6 text-gray-400 mx-auto mb-2" />
+                          <p className="text-sm font-semibold text-gray-700">Bot de WhatsApp no habilitado</p>
+                          <p className="text-xs text-gray-500 mt-1">Solicita a tu administrador que active esta función para tu usuario.</p>
+                        </div>
+                      )}
+
+                      <div className={whatsappBot.bot_enabled ? '' : 'opacity-50 pointer-events-none'}>
+                        <div className="border-t border-gray-100 pt-3">
+                          <div className="flex items-center justify-between p-3 border rounded-lg bg-gray-50">
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-700">Confirmación de cita al paciente</label>
+                              <p className="text-xs text-gray-400">Envía un mensaje de WhatsApp al paciente confirmando su cita apenas se agenda.</p>
+                            </div>
+                            <button type="button" disabled={!whatsappBot.bot_enabled}
+                              onClick={() => setWhatsappBot(p => ({ ...p, confirm_enabled: !p.confirm_enabled }))}
+                              className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${whatsappBot.confirm_enabled ? 'bg-[#deb887]' : 'bg-gray-300'}`}>
+                              <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${whatsappBot.confirm_enabled ? 'translate-x-5' : ''}`} />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="border-t border-gray-100 pt-3">
+                          <p className="text-xs font-semibold text-gray-700 mb-2">Resumen de citas por WhatsApp</p>
+                          <div className="flex items-center justify-between p-3 border rounded-lg bg-gray-50 mb-2">
+                            <label className="text-xs text-gray-600">Recibir a las 7:00 a.m. (citas de hoy)</label>
+                            <button type="button" disabled={!whatsappBot.bot_enabled}
+                              onClick={() => setWhatsappBot(p => ({ ...p, summary_7am: !p.summary_7am }))}
+                              className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${whatsappBot.summary_7am ? 'bg-[#deb887]' : 'bg-gray-300'}`}>
+                              <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${whatsappBot.summary_7am ? 'translate-x-5' : ''}`} />
+                            </button>
+                          </div>
+                          <div className="flex items-center justify-between p-3 border rounded-lg bg-gray-50">
+                            <label className="text-xs text-gray-600">Recibir a las 7:00 p.m. (citas de mañana)</label>
+                            <button type="button" disabled={!whatsappBot.bot_enabled}
+                              onClick={() => setWhatsappBot(p => ({ ...p, summary_7pm: !p.summary_7pm }))}
+                              className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${whatsappBot.summary_7pm ? 'bg-[#deb887]' : 'bg-gray-300'}`}>
+                              <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${whatsappBot.summary_7pm ? 'translate-x-5' : ''}`} />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="border-t border-gray-100 pt-3">
+                          <label className="block text-xs font-medium text-gray-500 mb-1">Número de staff (para el bot)</label>
+                          <div className="flex gap-2">
+                            <input value={whatsappBot.staff_phone} disabled={!editingStaffPhone}
+                              onChange={e => setWhatsappBot(p => ({ ...p, staff_phone: e.target.value }))}
+                              className={`flex-1 px-3 py-2 border rounded-lg text-sm outline-none ${editingStaffPhone ? 'bg-white focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887]' : 'bg-gray-100 text-gray-500'}`} />
+                            <button type="button" disabled={!whatsappBot.bot_enabled} onClick={() => setEditingStaffPhone(e => !e)}
+                              className="p-2 border rounded-lg text-gray-500 hover:bg-gray-50"><Pencil className="w-4 h-4" /></button>
+                          </div>
+                          <p className="text-xs text-gray-400 mt-1">Precargado con tu número registrado{whatsappBot.registered_phone ? ` (${whatsappBot.registered_phone})` : ''}.</p>
+                        </div>
+
+                        <div className="border-t border-gray-100 pt-3">
+                          <label className="block text-xs font-medium text-gray-500 mb-1">Número de finanzas</label>
+                          <div className="flex gap-2">
+                            <input value={whatsappBot.finance_phone} disabled={!editingFinancePhone}
+                              onChange={e => setWhatsappBot(p => ({ ...p, finance_phone: e.target.value }))}
+                              className={`flex-1 px-3 py-2 border rounded-lg text-sm outline-none ${editingFinancePhone ? 'bg-white focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887]' : 'bg-gray-100 text-gray-500'}`} />
+                            <button type="button" disabled={!whatsappBot.bot_enabled} onClick={() => setEditingFinancePhone(e => !e)}
+                              className="p-2 border rounded-lg text-gray-500 hover:bg-gray-50"><Pencil className="w-4 h-4" /></button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {whatsappBotMsg && <p className={`text-sm ${whatsappBotMsg.ok ? 'text-emerald-600' : 'text-red-500'}`}>{whatsappBotMsg.text}</p>}
                     </>
                   )}
 
@@ -1055,6 +1105,13 @@ export default function AdminDashboard() {
                         {agendaSaving ? 'Guardando...' : 'Guardar mis correos'}
                       </button>
                     </>
+                  )}
+                  {settingsTab === 'whatsapp_bot' && whatsappBot.bot_enabled && (
+                    <button onClick={handleSaveWhatsAppBot} disabled={whatsappBotSaving}
+                      className="flex items-center gap-2 px-5 py-2 rounded-lg text-white text-sm font-medium disabled:opacity-60"
+                      style={{ background: 'linear-gradient(135deg,#deb887,#c5a075)' }}>
+                      {whatsappBotSaving ? 'Guardando...' : 'Guardar bot de WhatsApp'}
+                    </button>
                   )}
                   {settingsTab === 'clinic' && user?.role === 'clinic_admin' && (
                     <button onClick={handleSaveClinic} disabled={clinicSaving}
