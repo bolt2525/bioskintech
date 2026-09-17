@@ -124,6 +124,7 @@ export default function AdminDashboard() {
   const [personalEmails, setPersonalEmails] = useState<string[]>([]);
   const [newPersonalEmail, setNewPersonalEmail] = useState('');
   const [agendaSettings, setAgendaSettings] = useState({ start_hour: '08:00', end_hour: '19:00', slot_minutes: 60, calendar_prefix: '', daily_reminder_whatsapp: false, finance_admin_phone: '' });
+  const [notifSettings, setNotifSettings]   = useState({ whatsapp_enabled: false });
   const [agendaSaving, setAgendaSaving]     = useState(false);
   const [agendaMsg, setAgendaMsg]           = useState<{ text: string; ok: boolean } | null>(null);
 
@@ -237,6 +238,9 @@ export default function AdminDashboard() {
             daily_reminder_whatsapp: a.daily_reminder_whatsapp === true, finance_admin_phone: a.finance_admin_phone || user.phone || '',
           });
         }
+        if (settingsRes.settings?.notificaciones) {
+          setNotifSettings({ whatsapp_enabled: settingsRes.settings.notificaciones.whatsapp_enabled === true });
+        }
         // Pre-fill clinic form for clinic_admin
         if (user.role === 'clinic_admin') {
           const g = settingsRes.settings?.general || {};
@@ -312,11 +316,19 @@ export default function AdminDashboard() {
     if (!user?.clinic_id) return;
     setAgendaSaving(true); setAgendaMsg(null);
     try {
-      const res = await fetch('/api/admin-auth?action=saveClinicSettings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken')}` },
-        body: JSON.stringify({ clinicId: user.clinic_id, section: 'agenda', data: agendaSettings }),
-      });
+      const token = sessionStorage.getItem('adminSessionToken');
+      const [res] = await Promise.all([
+        fetch('/api/admin-auth?action=saveClinicSettings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ clinicId: user.clinic_id, section: 'agenda', data: agendaSettings }),
+        }),
+        fetch('/api/admin-auth?action=saveClinicSettings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ clinicId: user.clinic_id, section: 'notificaciones', data: notifSettings }),
+        }),
+      ]);
       const d = await res.json();
       setAgendaMsg({ text: d.error || '¡Horario guardado!', ok: !!d.success });
     } finally { setAgendaSaving(false); }
@@ -831,6 +843,20 @@ export default function AdminDashboard() {
                               ))}
                             </select>
                           </div>
+                        </div>
+                      </div>
+
+                      <div className="border-t border-gray-100 pt-3">
+                        <div className="flex items-center justify-between p-3 border rounded-lg bg-gray-50">
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-700">✅📲 Confirmación de cita por WhatsApp al paciente</label>
+                            <p className="text-xs text-gray-400">Al agendar, intenta enviar un WhatsApp de confirmación al teléfono del paciente (requiere plantilla de Meta aprobada si el paciente no ha escrito antes al número).</p>
+                          </div>
+                          <button type="button" disabled={user?.role !== 'clinic_admin'}
+                            onClick={() => setNotifSettings(p => ({ ...p, whatsapp_enabled: !p.whatsapp_enabled }))}
+                            className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${notifSettings.whatsapp_enabled ? 'bg-[#deb887]' : 'bg-gray-300'}`}>
+                            <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${notifSettings.whatsapp_enabled ? 'translate-x-5' : ''}`} />
+                          </button>
                         </div>
                       </div>
 

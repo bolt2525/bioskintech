@@ -1,13 +1,14 @@
 import crypto from 'crypto';
 import { google } from 'googleapis';
 import { sql } from '@vercel/postgres';
-import { sendWhatsAppText } from '../lib/whatsapp-service.js';
+import { sendWhatsAppText, sendWhatsAppTemplate } from '../lib/whatsapp-service.js';
 import { buildFinanceCsv } from '../lib/finance-csv.js';
 import { requireAuth, requireRole } from '../lib/admin-auth.js';
 import {
   listWhatsAppContacts,
   listWhatsAppMessages,
   recordWhatsAppMessage,
+  isWithinCustomerServiceWindow,
   updateWhatsAppMessageStatus,
 } from '../lib/whatsapp-crm.js';
 
@@ -418,7 +419,17 @@ async function sendAppointmentSummaries(dayOffset = 0) {
         '\n\nResponde 1 para consultar citas de hoy o 2 para reportes financieros.';
       const staffPhone = normalizeEcuadorPhone(row.staff_phone);
       try {
-        await sendWhatsAppText(staffPhone, summary);
+        // El staff no necesariamente escribió hoy: fuera de la ventana de 24h se requiere plantilla aprobada
+        const withinWindow = await isWithinCustomerServiceWindow(staffPhone);
+        const templateName = (process.env.WHATSAPP_TEMPLATE_DAILY_SUMMARY || '').trim();
+        const templateLang = (process.env.WHATSAPP_TEMPLATE_DAILY_SUMMARY_LANG || 'es_MX').trim();
+        if (withinWindow) {
+          await sendWhatsAppText(staffPhone, summary);
+        } else if (templateName) {
+          await sendWhatsAppTemplate(staffPhone, templateName, templateLang, [summary]);
+        } else {
+          throw new Error('Fuera de ventana de 24h y no hay WHATSAPP_TEMPLATE_DAILY_SUMMARY configurada');
+        }
         remindersSent++;
       } catch (sendErr) {
         errors.push(`user ${row.user_id}, staff ${staffPhone}: ${sendErr.message}`);
