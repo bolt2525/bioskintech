@@ -78,10 +78,9 @@ export function normalizeEcuadorPhone(raw) {
 /** Extrae teléfono y nombre de paciente del evento de Google Calendar, igual que CalendarManager.tsx. */
 function parseAppointmentEvent(event) {
   if (!event.summary?.startsWith('Cita: ')) return null;
+  // Sin teléfono la cita igual debe listarse; solo se omite el link de recordatorio manual
   const phoneMatch = event.description?.match(/Teléfono:\s*([\d+\-\s]+)/);
-  if (!phoneMatch) return null;
-  const phone = normalizeEcuadorPhone(phoneMatch[1]);
-  if (!phone) return null;
+  const phone = phoneMatch ? normalizeEcuadorPhone(phoneMatch[1]) : '';
   const patientName = event.summary.substring(6).split(' - ')[0] || 'Paciente';
   const professional = event.description?.match(/Profesional:\s*([^\n]+)/)?.[1]?.trim() || '';
   return { phone, patientName, professional };
@@ -414,7 +413,7 @@ async function sendAppointmentSummaries(dayOffset = 0) {
       const label = dayOffset === 0 ? 'hoy' : 'mañana';
       const lines = appointments.map((appointment, index) => {
         const professional = appointment.professional ? `\nProfesional: ${appointment.professional}` : '';
-        const link = appointment.link ? `\nEnviar recordatorio: ${appointment.link}` : '\nConfigura el WhatsApp de la clínica para habilitar el enlace.';
+        const link = appointment.link ? `\nEnviar recordatorio: ${appointment.link}` : '\nSin teléfono de paciente registrado — no se puede generar el enlace.';
         return `${index + 1}. ${appointment.hora || 'Hora pendiente'} — ${appointment.patientName}${professional}${link}`;
       });
       const summary = `📅 ${clinicName}: citas de ${label} (${targetDate})\n\n${lines.join('\n\n')}` +
