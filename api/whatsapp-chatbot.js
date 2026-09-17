@@ -100,7 +100,9 @@ export function extractIncomingMessages(body) {
         if (!msg?.from || !msg?.id) continue;
         const from = normalizeEcuadorPhone(msg.from);
         const mediaType = msg.type === 'image' ? 'imagen' : msg.type === 'audio' ? 'audio' : 'texto';
-        const text = (msg.text?.body || msg.image?.caption || (mediaType === 'imagen' ? '[Imagen]' : mediaType === 'audio' ? '[Audio]' : '')).trim();
+        // Respuesta a botón de plantilla (quick reply) llega como msg.button, no msg.text
+        const buttonText = msg.button?.text || msg.interactive?.button_reply?.title || '';
+        const text = (msg.text?.body || buttonText || msg.image?.caption || (mediaType === 'imagen' ? '[Imagen]' : mediaType === 'audio' ? '[Audio]' : '')).trim();
         messages.push({
           from,
           text,
