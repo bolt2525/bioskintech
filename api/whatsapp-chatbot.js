@@ -416,7 +416,7 @@ async function sendAppointmentSummaries(dayOffset = 0) {
         const link = appointment.link ? `\nEnviar recordatorio: ${appointment.link}` : '\nSin teléfono de paciente registrado — no se puede generar el enlace.';
         return `${index + 1}. ${appointment.hora || 'Hora pendiente'} — ${appointment.patientName}${professional}${link}`;
       });
-      const summary = `📅 ${clinicName}: citas de ${label} (${targetDate})\n\n${lines.join('\n\n')}` +
+      const summary = `Hola ${row.staff_name || 'equipo'}, este es el resumen de citas de ${clinicName} de ${label} (${targetDate}):\n\n${lines.join('\n\n')}` +
         '\n\nResponde 1 para consultar citas de hoy o 2 para reportes financieros.';
       const staffPhone = normalizeEcuadorPhone(row.staff_phone);
       try {
@@ -429,7 +429,12 @@ async function sendAppointmentSummaries(dayOffset = 0) {
         } else if (templateName) {
           // Meta rechaza parámetros de plantilla con saltos de línea; se aplana a una sola línea
           const summaryFlat = summary.replace(/\s*\n+\s*/g, ' · ').trim();
-          await sendWhatsAppTemplate(staffPhone, templateName, templateLang, { fecha: targetDate, resumen: summaryFlat });
+          await sendWhatsAppTemplate(staffPhone, templateName, templateLang, {
+            nombre_usuario: row.staff_name || 'equipo',
+            nombre_clinica: clinicName,
+            fecha: targetDate,
+            resumen: summaryFlat,
+          });
         } else {
           throw new Error('Fuera de ventana de 24h y no hay WHATSAPP_TEMPLATE_DAILY_SUMMARY configurada');
         }
