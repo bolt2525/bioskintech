@@ -83,6 +83,13 @@ const newTables = [
     error_detail        VARCHAR(500),
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
+  // Estado de conversación del bot por teléfono — persistente (evita perder el flujo entre invocaciones serverless)
+  `CREATE TABLE IF NOT EXISTS whatsapp_bot_state (
+    phone      VARCHAR(20) PRIMARY KEY,
+    flow       VARCHAR(30) NOT NULL,
+    data       JSONB NOT NULL DEFAULT '{}',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
   // Códigos de registro
   `CREATE TABLE IF NOT EXISTS registration_codes (
     id           SERIAL PRIMARY KEY,

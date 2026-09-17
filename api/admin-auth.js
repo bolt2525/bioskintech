@@ -358,6 +358,15 @@ export async function initMultiTenantSchema() {
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS uq_whatsapp_messages_provider_id ON whatsapp_messages(provider_message_id) WHERE provider_message_id IS NOT NULL`;
   await sql`CREATE INDEX IF NOT EXISTS idx_whatsapp_contacts_last_message ON whatsapp_contacts(last_message_at DESC)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_contact_time ON whatsapp_messages(contact_id, occurred_at, id)`;
+  // Estado de conversación del bot por teléfono — persistente (evita perder el flujo entre invocaciones serverless)
+  await sql`
+    CREATE TABLE IF NOT EXISTS whatsapp_bot_state (
+      phone      VARCHAR(20) PRIMARY KEY,
+      flow       VARCHAR(30) NOT NULL,
+      data       JSONB NOT NULL DEFAULT '{}',
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
 
   // Configuración personalizable por clínica (JSONB para evitar migraciones futuras)
   await sql`
