@@ -572,6 +572,9 @@ export default function AdminDashboard() {
                       <button onClick={() => openSettings('agenda')} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-[#deb887]/8 transition-colors">
                         <CalendarDays className="w-4 h-4 text-[#deb887]" /> Ajustes de Agenda
                       </button>
+                      <button onClick={() => openSettings('whatsapp_bot')} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-[#deb887]/8 transition-colors">
+                        <MessageCircle className="w-4 h-4 text-[#deb887]" /> Bot de WhatsApp
+                      </button>
                     </div>
                   </div>
                 )}
