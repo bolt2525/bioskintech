@@ -16,6 +16,16 @@ const getQueryValue = (value) => Array.isArray(value) ? value[0] : value;
 
 export const config = { api: { bodyParser: false } };
 
+/** Números de staff interno del sistema (no clínicas/pacientes) — soporte técnico vía WhatsApp. */
+function getSystemStaffPhones() {
+  return new Set(
+    (process.env.WHATSAPP_SYSTEM_STAFF_PHONES || '')
+      .split(',')
+      .map((p) => normalizeEcuadorPhone(p.trim()))
+      .filter(Boolean)
+  );
+}
+
 async function readRawBody(req) {
   const chunks = [];
   let size = 0;
@@ -138,16 +148,55 @@ export function extractMessageStatuses(body) {
 
 /** Lista en texto plano las citas de hoy del usuario autorizado. */
 async function listTodayAppointments(userId) {
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Guayaquil' });
+  return listAppointmentsForDate(userId, today, 'Citas de hoy');
+}
+
+/** Valida y normaliza fechas escritas por el staff (hoy/mañana/DD-MM-AAAA/DD/MM/AAAA/AAAA-MM-DD) a 'YYYY-MM-DD'. */
+function parseFlexibleDate(text) {
+  const raw = String(text || '').trim().toLowerCase();
+  if (!raw) return null;
+  const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Guayaquil' });
+  if (['hoy', 'today'].includes(raw)) return today();
+  if (['mañana', 'manana', 'tomorrow'].includes(raw)) {
+    const d = new Date(`${today()}T00:00:00-05:00`);
+    d.setDate(d.getDate() + 1);
+    return d.toLocaleDateString('en-CA', { timeZone: 'America/Guayaquil' });
+  }
+  // ISO: AAAA-MM-DD
+  let m = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  // DD/MM/AAAA o DD-MM-AAAA
+  if (!m) {
+    const alt = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+    if (alt) m = [alt[0], alt[3], alt[2], alt[1]];
+  }
+  // DD/MM (año actual)
+  if (!m) {
+    const alt = raw.match(/^(\d{1,2})[/-](\d{1,2})$/);
+    if (alt) m = [alt[0], String(new Date().getFullYear()), alt[2], alt[1]];
+  }
+  if (!m) return null;
+  const [, y, mo, d] = m;
+  const year = Number(y), month = Number(mo), day = Number(d);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const iso = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  const check = new Date(`${iso}T00:00:00-05:00`);
+  // Rechaza fechas inválidas tipo 31/02 (JS las "normaliza" a marzo)
+  if (check.getUTCFullYear() !== year || check.getUTCMonth() + 1 !== month || check.getUTCDate() !== day) return null;
+  return iso;
+}
+
+async function listAppointmentsForDate(userId, isoDate, label) {
   const auth = await getUserOAuth2Client(userId);
   if (!auth) return 'No tienes Google Calendar conectado a tu cuenta.';
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Guayaquil' });
   const calendar = google.calendar({ version: 'v3', auth });
   const { data } = await calendar.events.list({
-    calendarId: 'primary', timeMin: `${today}T00:00:00-05:00`, timeMax: `${today}T23:59:59-05:00`,
+    calendarId: 'primary', timeMin: `${isoDate}T00:00:00-05:00`, timeMax: `${isoDate}T23:59:59-05:00`,
     singleEvents: true, orderBy: 'startTime',
   });
   const appointments = (data.items || []).filter(e => e.summary?.startsWith('Cita: '));
-  if (!appointments.length) return 'No tienes citas agendadas para hoy.';
+  const dateLabel = new Date(`${isoDate}T00:00:00-05:00`).toLocaleDateString('es-ES', { timeZone: 'America/Guayaquil', day: '2-digit', month: '2-digit', year: 'numeric' });
+  if (!appointments.length) return `${label} (${dateLabel}): no hay citas agendadas.`;
   const lines = appointments.map(e => {
     const start = new Date(e.start?.dateTime || e.start?.date);
     const hora = e.start?.dateTime
@@ -156,13 +205,16 @@ async function listTodayAppointments(userId) {
     const name = e.summary.substring(6).split(' - ')[0];
     return `• ${hora} — ${name}`;
   });
-  return `📅 Citas de hoy:\n\n${lines.join('\n')}`;
+  return `📅 ${label} (${dateLabel}):\n\n${lines.join('\n')}`;
 }
 
-const MENU_TEXT = '1) Consultar mis citas de hoy\n2) Reporte financiero\n\nResponde con el número de la opción.';
+
+const MENU_TEXT = '1) Consultar mis citas de hoy\n2) Reporte financiero\n3) Consultar agenda de otro día\n\nResponde con el número de la opción.';
 const FINANCE_REPORT_MENU_TEXT = '📊 Reporte financiero\n\n1) Diario\n2) Semanal\n3) Mensual\n\nResponde con el número o la palabra del período.';
+const AGENDA_DATE_PROMPT = '📅 Escribe la fecha que quieres consultar.\nFormatos válidos: "hoy", "mañana", 31/12/2026 o 2026-12-31.';
 const financeStateByPhone = new Map();
-const ALLOWED_BOT_ACTIONS = new Set(['1', '2', 'diario', 'daily', 'semanal', 'weekly', 'mensual', 'monthly']);
+const agendaDateStateByPhone = new Map();
+const ALLOWED_BOT_ACTIONS = new Set(['1', '2', '3', 'diario', 'daily', 'semanal', 'weekly', 'mensual', 'monthly']);
 
 function buildFinanceRange(period, today = new Date()) {
   const fmt = (d) => d.toISOString().split('T')[0];
@@ -281,6 +333,121 @@ async function sendFinanceReportToUser(clinicUser, period, from) {
   await sendWhatsAppText(from, `✅ Reporte financiero ${range.periodLabel} enviado a ${recipientEmail} (${recordsRes.rows.length} registros).`);
 }
 
+// ── Panel de staff interno del sistema (soporte técnico, no clínicas/pacientes) ──
+
+const systemStateByPhone = new Map();
+const SYSTEM_MENU_TEXT = '🛠️ Panel de sistema BIOSKIN\n\n1) Estado de servicios (DB / Email / WhatsApp)\n2) Clínicas y usuarios activos\n3) Conexiones Google (OAuth) por clínica\n4) Mensajes de WhatsApp fallidos (24h)\n5) Pregunta libre (IA)\n\nResponde con el número.';
+
+async function getServiceStatusText() {
+  const parts = [];
+  try {
+    const t0 = Date.now();
+    await sql`SELECT 1`;
+    parts.push(`✅ Base de datos: OK (${Date.now() - t0}ms)`);
+  } catch (e) {
+    parts.push(`❌ Base de datos: ${e.message}`);
+  }
+  parts.push((process.env.EMAIL_USER && process.env.EMAIL_PASS && process.env.EMAIL_HOST)
+    ? '✅ Email SMTP: configurado' : '⚠️ Email SMTP: no configurado');
+  parts.push((process.env.WHATSAPP_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID)
+    ? '✅ WhatsApp Cloud API: credenciales configuradas' : '❌ WhatsApp Cloud API: faltan credenciales');
+  return parts.join('\n');
+}
+
+async function getClinicsUsersSummaryText() {
+  const [clinics, users] = await Promise.all([
+    sql`SELECT count(*) FILTER (WHERE is_active) AS active, count(*) AS total FROM clinics`,
+    sql`SELECT count(*) FILTER (WHERE is_active) AS active, count(*) AS total FROM clinic_users`,
+  ]);
+  const c = clinics.rows[0]; const u = users.rows[0];
+  return `🏥 Clínicas: ${c.active} activas / ${c.total} total\n👤 Usuarios: ${u.active} activos / ${u.total} total`;
+}
+
+async function getOAuthConnectionsText() {
+  const r = await sql`
+    SELECT c.name AS clinic_name, count(t.*) AS conectados,
+           count(*) FILTER (WHERE t.token_expiry IS NOT NULL AND t.token_expiry < NOW()) AS expirados
+    FROM clinics c
+    LEFT JOIN clinic_users cu ON cu.clinic_id = c.id
+    LEFT JOIN clinic_oauth_tokens t ON t.clinic_user_id = cu.id
+    WHERE c.is_active = true
+    GROUP BY c.name
+    ORDER BY c.name
+  `;
+  if (!r.rows.length) return 'Sin clínicas activas.';
+  return r.rows.map(row => `${row.clinic_name}: ${row.conectados} conectados${Number(row.expirados) > 0 ? ` (⚠️ ${row.expirados} con token vencido)` : ''}`).join('\n');
+}
+
+async function getRecentFailedMessagesText() {
+  const r = await sql`
+    SELECT c.phone, m.error_detail, m.occurred_at
+    FROM whatsapp_messages m
+    JOIN whatsapp_contacts c ON c.id = m.contact_id
+    WHERE m.status = 'fallido' AND m.occurred_at > NOW() - INTERVAL '24 hours'
+    ORDER BY m.occurred_at DESC
+    LIMIT 10
+  `;
+  if (!r.rows.length) return '✅ Sin mensajes fallidos en las últimas 24h.';
+  return r.rows.map(row => `• ${row.phone}: ${row.error_detail || 'sin detalle'} (${new Date(row.occurred_at).toLocaleString('es-EC', { timeZone: 'America/Guayaquil' })})`).join('\n');
+}
+
+/** Responde una pregunta libre usando Gemini, con contexto real del sistema (solo lectura, sin acceso directo a la BD desde la IA). */
+async function askSystemAI(question) {
+  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+  if (!apiKey) return '⚠️ IA no configurada (falta GEMINI_API_KEY en Vercel).';
+  const [status, counts, oauth, failed] = await Promise.all([
+    getServiceStatusText(), getClinicsUsersSummaryText(), getOAuthConnectionsText(), getRecentFailedMessagesText(),
+  ]);
+  const context = `Estado de servicios:\n${status}\n\nClínicas y usuarios:\n${counts}\n\nConexiones Google por clínica:\n${oauth}\n\nMensajes de WhatsApp fallidos (24h):\n${failed}`;
+  try {
+    const { GoogleGenerativeAI } = await import('@google/generative-ai');
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    const prompt = 'Eres un asistente técnico interno del sistema BIOSKIN_2.0. Responde ÚNICAMENTE con base en los datos reales listados abajo, en español, breve y directo (máximo 6 líneas). ' +
+      'Si la pregunta no se puede responder con estos datos, dilo claramente en vez de inventar.\n\n' +
+      `DATOS DEL SISTEMA:\n${context}\n\nPREGUNTA: ${question}`;
+    const result = await model.generateContent(prompt);
+    return result.response.text().trim().slice(0, 3500) || '⚠️ La IA no devolvió respuesta.';
+  } catch (e) {
+    return `⚠️ Error consultando IA: ${e.message}`;
+  }
+}
+
+/** Menú y consultas para el staff interno del sistema (soporte técnico), separado del bot de clínicas. */
+async function handleSystemStaffMessage(from, text, normalizedText) {
+  const state = systemStateByPhone.get(from);
+
+  if (state?.stage === 'awaitingQuestion') {
+    systemStateByPhone.delete(from);
+    await sendWhatsAppText(from, await askSystemAI(text));
+    return;
+  }
+
+  if (normalizedText === '1') {
+    await sendWhatsAppText(from, `🛠️ Estado de servicios:\n\n${await getServiceStatusText()}`);
+    return;
+  }
+  if (normalizedText === '2') {
+    await sendWhatsAppText(from, await getClinicsUsersSummaryText());
+    return;
+  }
+  if (normalizedText === '3') {
+    await sendWhatsAppText(from, `🔗 Conexiones Google por clínica:\n\n${await getOAuthConnectionsText()}`);
+    return;
+  }
+  if (normalizedText === '4') {
+    await sendWhatsAppText(from, `⚠️ Mensajes fallidos (24h):\n\n${await getRecentFailedMessagesText()}`);
+    return;
+  }
+  if (normalizedText === '5') {
+    systemStateByPhone.set(from, { stage: 'awaitingQuestion' });
+    await sendWhatsAppText(from, '🤖 Escribe tu pregunta sobre el estado del sistema.');
+    return;
+  }
+
+  await sendWhatsAppText(from, SYSTEM_MENU_TEXT);
+}
+
 /** Procesa mensajes entrantes: solo responde a números registrados como staff activo (clinic_users.phone). */
 async function handleIncomingMessages(body) {
   for (const event of extractMessageStatuses(body)) {
@@ -302,6 +469,17 @@ async function handleIncomingMessages(body) {
     if (!audit.rows.length) continue;
     const normalizedText = String(text || '').trim().toLowerCase();
     if (!normalizedText) continue;
+
+    // Staff interno del sistema (soporte técnico) — flujo totalmente separado de clinic_users
+    if (getSystemStaffPhones().has(from)) {
+      try {
+        await handleSystemStaffMessage(from, text, normalizedText);
+      } catch (err) {
+        console.error('❌ Error en panel de sistema WhatsApp:', err.message);
+      }
+      continue;
+    }
+
     const staff = await sql`
       SELECT cu.id, cu.clinic_id, cu.full_name, cu.email, cu.phone, cu.finance_scope,
               COALESCE(cf.enabled, true) AND COALESCE(umo.enabled, true) AND COALESCE(vis.enabled, true) AS finance_enabled,
@@ -318,10 +496,24 @@ async function handleIncomingMessages(body) {
     if (matches.length !== 1) continue; // desconocido o ambiguo: no se revela información
     const clinicUser = matches[0];
     const state = financeStateByPhone.get(from);
+    const agendaDateState = agendaDateStateByPhone.get(from);
     const financeChoice = resolveFinancePeriodChoice(normalizedText);
     const isAllowedAction = ALLOWED_BOT_ACTIONS.has(normalizedText) || ALLOWED_BOT_ACTIONS.has(text?.trim() || '');
 
     try {
+      if (agendaDateState?.stage === 'awaitingDate') {
+        agendaDateStateByPhone.delete(from);
+        if (!clinicUser.calendar_enabled) { await sendWhatsAppText(from, 'No tienes acceso al módulo de Agenda.'); continue; }
+        const isoDate = parseFlexibleDate(normalizedText);
+        if (!isoDate) {
+          agendaDateStateByPhone.set(from, { stage: 'awaitingDate' });
+          await sendWhatsAppText(from, `No reconocí esa fecha.\n\n${AGENDA_DATE_PROMPT}`);
+          continue;
+        }
+        await sendWhatsAppText(from, await listAppointmentsForDate(clinicUser.id, isoDate, 'Citas'));
+        continue;
+      }
+
       if (state?.stage === 'awaitingFinanceChoice' && financeChoice) {
         financeStateByPhone.delete(from);
         if (!clinicUser.finance_enabled) { await sendWhatsAppText(from, 'No tienes acceso al módulo de Finanzas.'); continue; }
@@ -344,6 +536,13 @@ async function handleIncomingMessages(body) {
       if (text === '1') {
         if (!clinicUser.calendar_enabled) { await sendWhatsAppText(from, 'No tienes acceso al módulo de Agenda.'); continue; }
         await sendWhatsAppText(from, await listTodayAppointments(clinicUser.id));
+        continue;
+      }
+
+      if (text === '3') {
+        if (!clinicUser.calendar_enabled) { await sendWhatsAppText(from, 'No tienes acceso al módulo de Agenda.'); continue; }
+        agendaDateStateByPhone.set(from, { stage: 'awaitingDate' });
+        await sendWhatsAppText(from, AGENDA_DATE_PROMPT);
         continue;
       }
 
