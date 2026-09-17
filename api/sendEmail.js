@@ -4,7 +4,8 @@ import { google } from 'googleapis';
 import { sql } from '@vercel/postgres';
 import { authenticateRequest } from '../lib/admin-auth.js';
 import { sendDeveloperAlert } from './admin-auth.js';
-import { sendWhatsAppText } from '../lib/whatsapp-service.js';
+import { sendWhatsAppText, sendWhatsAppTemplate } from '../lib/whatsapp-service.js';
+import { isWithinCustomerServiceWindow } from '../lib/whatsapp-crm.js';
 
 const isGoogleAuthError = (error) => error?.code === 401 || error?.response?.status === 401 || /invalid_grant|invalid authentication credentials/i.test(error?.message || '');
 
@@ -322,9 +323,20 @@ export default async function handler(req, res) {
     bookingUserPhone: currentUser.rows[0]?.phone || '',
   });
   if (clinic.whatsapp_enabled && appointmentRecipients.length) {
+    // Meta exige plantilla aprobada para mensajes iniciados por el negocio fuera de la
+    // ventana de servicio al cliente de 24h (el paciente no le ha escrito antes al número).
+    const templateName = (process.env.WHATSAPP_TEMPLATE_APPOINTMENT || '').trim();
+    const templateLang = (process.env.WHATSAPP_TEMPLATE_APPOINTMENT_LANG || 'es_MX').trim();
     try {
       for (const recipient of appointmentRecipients) {
-        await sendWhatsAppText(recipient, whatsappMessage);
+        const withinWindow = await isWithinCustomerServiceWindow(recipient);
+        if (withinWindow) {
+          await sendWhatsAppText(recipient, whatsappMessage);
+        } else if (templateName) {
+          await sendWhatsAppTemplate(recipient, templateName, templateLang, [paciente, tratamiento, fecha && hora ? `${fecha} ${hora}` : 'por confirmar']);
+        } else {
+          throw new Error('Fuera de la ventana de 24h y no hay WHATSAPP_TEMPLATE_APPOINTMENT configurada (se requiere plantilla aprobada por Meta para notificar a un número que no ha escrito antes)');
+        }
       }
       whatsappSuccess = true;
     } catch (waErr) {

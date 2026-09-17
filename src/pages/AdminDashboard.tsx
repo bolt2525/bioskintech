@@ -233,7 +233,8 @@ export default function AdminDashboard() {
           const a = settingsRes.settings.agenda;
           setAgendaSettings({
             start_hour: a.start_hour || '08:00', end_hour: a.end_hour || '19:00', slot_minutes: a.slot_minutes || 60, calendar_prefix: a.calendar_prefix || '',
-            daily_reminder_whatsapp: a.daily_reminder_whatsapp === true, finance_admin_phone: a.finance_admin_phone || '',
+            // Si no hay un número financiero explícito guardado, usar el teléfono registrado del admin (editable)
+            daily_reminder_whatsapp: a.daily_reminder_whatsapp === true, finance_admin_phone: a.finance_admin_phone || user.phone || '',
           });
         }
         // Pre-fill clinic form for clinic_admin
@@ -849,13 +850,19 @@ export default function AdminDashboard() {
                           <label className="block text-xs font-medium text-gray-500 mb-1">Número financiero alternativo</label>
                           <input value={agendaSettings.finance_admin_phone} disabled={user?.role !== 'clinic_admin'}
                             onChange={e => setAgendaSettings(p => ({ ...p, finance_admin_phone: e.target.value }))}
-                            placeholder={profileForm.phone || 'Ej: 593987654321'}
+                            placeholder="Ej: 593987654321"
                             className={`w-full px-3 py-2 border rounded-lg text-sm outline-none ${
                               user?.role === 'clinic_admin'
                                 ? 'focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] bg-white'
                                 : 'bg-gray-50 text-gray-500'
                             }`} />
-                          <p className="text-xs text-gray-400 mt-1">El bot solo autoriza teléfonos registrados en usuarios activos. Déjalo vacío para documentar que finanzas usa tu teléfono ({profileForm.phone || 'sin configurar en Mi Información'}).</p>
+                          {user?.role === 'clinic_admin' && profileForm.phone && (
+                            <button type="button" onClick={() => setAgendaSettings(p => ({ ...p, finance_admin_phone: profileForm.phone }))}
+                              className="text-xs text-[#8a6b3f] hover:underline mt-1">
+                              Usar mi teléfono registrado ({profileForm.phone})
+                            </button>
+                          )}
+                          <p className="text-xs text-gray-400 mt-1">El bot solo autoriza teléfonos registrados en usuarios activos. Se precargó automáticamente con tu teléfono registrado en "Mi Información" — puedes cambiarlo por otro número autorizado.</p>
                         </div>
                       </div>
 
