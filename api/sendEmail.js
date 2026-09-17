@@ -334,7 +334,13 @@ export default async function handler(req, res) {
           await sendWhatsAppText(recipient, whatsappMessage);
         } else if (templateName) {
           const staffName = currentUser.rows[0]?.full_name || clinic.name;
-          await sendWhatsAppTemplate(recipient, templateName, templateLang, [paciente, clinic.name, staffName, tratamiento, fecha && hora ? `${fecha} ${hora}` : 'por confirmar']);
+          await sendWhatsAppTemplate(recipient, templateName, templateLang, {
+            nombre_paciente: paciente,
+            nombre_clinica: clinic.name,
+            nombre_usuario: staffName,
+            servicio: tratamiento,
+            fecha_hora: fecha && hora ? `${fecha} ${hora}` : 'por confirmar',
+          });
         } else {
           throw new Error('Fuera de la ventana de 24h y no hay WHATSAPP_TEMPLATE_APPOINTMENT configurada (se requiere plantilla aprobada por Meta para notificar a un número que no ha escrito antes)');
         }

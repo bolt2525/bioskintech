@@ -426,7 +426,7 @@ async function sendAppointmentSummaries(dayOffset = 0) {
         if (withinWindow) {
           await sendWhatsAppText(staffPhone, summary);
         } else if (templateName) {
-          await sendWhatsAppTemplate(staffPhone, templateName, templateLang, [summary]);
+          await sendWhatsAppTemplate(staffPhone, templateName, templateLang, { resumen: summary });
         } else {
           throw new Error('Fuera de ventana de 24h y no hay WHATSAPP_TEMPLATE_DAILY_SUMMARY configurada');
         }
