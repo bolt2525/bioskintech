@@ -99,7 +99,7 @@ export default async function handler(req, res) {
   const auth = await authenticateRequest(req);
   if (!auth.valid) return res.status(401).json({ success: false, message: 'No autenticado' });
   const requestedClinicId = auth.effective_clinic_id || auth.clinic_id;
-  const currentUser = auth.id ? await sql`SELECT phone FROM clinic_users WHERE id = ${auth.id}` : { rows: [] };
+  const currentUser = auth.id ? await sql`SELECT phone, full_name FROM clinic_users WHERE id = ${auth.id}` : { rows: [] };
 
   const escapeHtml = (value = '') => String(value)
     .replace(/&/g, '&amp;')
@@ -333,7 +333,8 @@ export default async function handler(req, res) {
         if (withinWindow) {
           await sendWhatsAppText(recipient, whatsappMessage);
         } else if (templateName) {
-          await sendWhatsAppTemplate(recipient, templateName, templateLang, [paciente, tratamiento, fecha && hora ? `${fecha} ${hora}` : 'por confirmar']);
+          const staffName = currentUser.rows[0]?.full_name || clinic.name;
+          await sendWhatsAppTemplate(recipient, templateName, templateLang, [paciente, clinic.name, staffName, tratamiento, fecha && hora ? `${fecha} ${hora}` : 'por confirmar']);
         } else {
           throw new Error('Fuera de la ventana de 24h y no hay WHATSAPP_TEMPLATE_APPOINTMENT configurada (se requiere plantilla aprobada por Meta para notificar a un número que no ha escrito antes)');
         }

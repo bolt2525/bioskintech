@@ -384,7 +384,6 @@ async function sendAppointmentSummaries(dayOffset = 0) {
   const errors = [];
   for (const row of users.rows) {
     const clinicName = row.general?.name || 'la clínica';
-    const clinicNumber = normalizeEcuadorPhone(row.email?.whatsapp_number || row.general?.phone || '');
     try {
       const auth = await getUserOAuth2Client(row.user_id);
       if (!auth) continue;
@@ -404,7 +403,8 @@ async function sendAppointmentSummaries(dayOffset = 0) {
         const patientMessage = `Hola ${appointment.patientName}, te escribimos de ${clinicName}. ` +
           `Te recordamos tu cita para el ${targetDate}${hora ? ` a las ${hora}` : ''}. ` +
           'Por favor confirma tu asistencia respondiendo a este mensaje o comunícate con la clínica.';
-        const link = clinicNumber ? `https://wa.me/${clinicNumber}?text=${encodeURIComponent(patientMessage)}` : '';
+        // Enlace abre WhatsApp del staff con el chat del PACIENTE, no del número de la clínica
+        const link = appointment.phone ? `https://wa.me/${appointment.phone}?text=${encodeURIComponent(patientMessage)}` : '';
         appointments.push({ ...appointment, hora, link });
       }
       if (!appointments.length) continue;
