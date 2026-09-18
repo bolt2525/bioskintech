@@ -131,8 +131,8 @@ export default function AdminWhatsAppCRM() {
       <div className="mx-auto flex min-h-[calc(100vh-13rem)] max-w-7xl flex-col">
         {error && <div className="mb-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"><AlertTriangle className="h-4 w-4" />{error}</div>}
 
-        <div className="grid min-h-0 flex-1 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-xl md:grid-cols-[350px_1fr]">
-          <aside className={`${selected ? 'hidden md:flex' : 'flex'} min-h-0 flex-col border-r border-gray-200`}>
+        <div className="grid min-h-0 min-w-0 flex-1 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-xl md:grid-cols-[350px_minmax(0,1fr)]">
+          <aside className={`${selected ? 'hidden md:flex' : 'flex'} min-h-0 min-w-0 flex-col border-r border-gray-200`}>
             <div className="shrink-0 border-b border-gray-200 bg-white">
               <form onSubmit={submitSearch} className="flex gap-2 p-3">
               <label className="relative flex-1">
@@ -173,7 +173,7 @@ export default function AdminWhatsAppCRM() {
             </div>
           </aside>
 
-          <section className={`${selected ? 'flex' : 'hidden md:flex'} min-h-0 flex-col bg-[#f6f3ee]`}>
+          <section className={`${selected ? 'flex' : 'hidden md:flex'} min-h-0 min-w-0 flex-col overflow-hidden bg-[#f6f3ee]`}>
             {!selected ? (
               <div className="grid flex-1 place-items-center p-8 text-center text-gray-400"><div><MessageCircle className="mx-auto mb-3 h-10 w-10" /><p className="text-sm">Selecciona una conversación para revisar su historial.</p></div></div>
             ) : (
@@ -183,10 +183,10 @@ export default function AdminWhatsAppCRM() {
                   <div className="min-w-0"><h2 className="truncate font-semibold text-gray-900">{selected.name || selected.phone}</h2><p className="text-xs text-gray-500">{selected.phone} · {selected.category_label}</p></div>
                   <button title="Actualizar conversación" onClick={() => loadMessages(selected.id)} className="ml-auto grid h-9 w-9 place-items-center rounded-lg text-gray-500 hover:bg-gray-100"><RefreshCw className="h-4 w-4" /></button>
                 </header>
-                <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4 md:p-6">
+                <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto p-4 md:p-6 [scrollbar-gutter:stable]">
                   {loadingMessages ? <div className="grid flex-1 place-items-center text-gray-400"><Loader2 className="h-5 w-5 animate-spin" /></div> : messages.map(message => (
-                    <article key={message.id} className={`max-w-[85%] rounded-lg px-3 py-2 shadow-sm ${message.direction === 'saliente' ? 'ml-auto bg-[#fff1dc]' : 'mr-auto bg-white'}`}>
-                      <div className="flex items-start gap-2 text-sm text-gray-800"><MediaIcon type={message.media_type} /><p className="whitespace-pre-wrap break-words">{message.content || `[${message.media_type}]`}</p></div>
+                    <article key={message.id} className={`w-fit min-w-0 max-w-[85%] rounded-lg px-3 py-2 shadow-sm ${message.direction === 'saliente' ? 'ml-auto bg-[#fff1dc]' : 'mr-auto bg-white'}`}>
+                      <div className="flex min-w-0 items-start gap-2 text-sm text-gray-800"><MediaIcon type={message.media_type} /><p className="min-w-0 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{message.content || `[${message.media_type}]`}</p></div>
                       <div className="mt-1 flex items-center justify-end gap-1 text-[10px] text-gray-400">
                         <time>{formatTime(message.occurred_at)}</time>
                         {message.status === 'fallido' ? <AlertTriangle className="h-3 w-3 text-red-500" aria-label="Fallido" /> : message.status === 'leido' ? <CheckCheck className="h-3 w-3 text-sky-500" aria-label="Leído" /> : <Check className="h-3 w-3" aria-label="Enviado" />}

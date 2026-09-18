@@ -74,6 +74,7 @@
 - ✅ 2026-09-18 Excluidos los números de `WHATSAPP_SYSTEM_STAFF_PHONES` de confirmaciones y resúmenes clínicos de WhatsApp; se cubrió la colisión entre staff del sistema y teléfono de paciente con pruebas de seguridad.
 - ✅ 2026-09-18 Mejorado CRM WhatsApp master: scroll independiente, categorías de contactos y apertura en el mensaje más reciente.
 - ✅ 2026-09-18 Corregido enlace CRM por teléfono canónico: usuarios clínicos y pacientes ahora muestran su clínica real aunque el contacto histórico no tenga `clinic_id`.
+- ✅ 2026-09-18 Corregida UI del historial CRM para mensajes largos y añadida clínica de origen a nuevas auditorías salientes.
 
 ## Pendientes verificables
 

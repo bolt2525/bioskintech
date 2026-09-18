@@ -871,7 +871,7 @@ async function sendAppointmentSummaries(dayOffset = 0, slot = 'morning') {
         const templateName = (process.env.WHATSAPP_TEMPLATE_DAILY_SUMMARY || '').trim();
         const templateLang = (process.env.WHATSAPP_TEMPLATE_DAILY_SUMMARY_LANG || 'es_MX').trim();
         if (withinWindow) {
-          await sendWhatsAppText(staffPhone, summary);
+          await sendWhatsAppText(staffPhone, summary, { clinicId: row.clinic_id });
         } else if (templateName) {
           // Meta rechaza parámetros de plantilla con saltos de línea; se aplana a una sola línea
           const summaryFlat = summary.replace(/\s*\n+\s*/g, ' · ').trim();
@@ -880,7 +880,7 @@ async function sendAppointmentSummaries(dayOffset = 0, slot = 'morning') {
             nombre_clinica: clinicName,
             fecha: targetDate,
             resumen: summaryFlat,
-          });
+          }, { clinicId: row.clinic_id });
         } else {
           throw new Error('Fuera de ventana de 24h y no hay WHATSAPP_TEMPLATE_DAILY_SUMMARY configurada');
         }
