@@ -90,6 +90,12 @@ const newTables = [
     data       JSONB NOT NULL DEFAULT '{}',
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
+  // Links cortos propios que redirigen a wa.me (evita URLs kilométricas en los listados del bot)
+  `CREATE TABLE IF NOT EXISTS wa_short_links (
+    code       VARCHAR(16) PRIMARY KEY,
+    target_url TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
   // Códigos de registro
   `CREATE TABLE IF NOT EXISTS registration_codes (
     id           SERIAL PRIMARY KEY,

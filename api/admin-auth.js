@@ -367,6 +367,14 @@ export async function initMultiTenantSchema() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `;
+  // Links cortos propios que redirigen a wa.me (evita URLs kilométricas en los listados del bot)
+  await sql`
+    CREATE TABLE IF NOT EXISTS wa_short_links (
+      code       VARCHAR(16) PRIMARY KEY,
+      target_url TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
 
   // Configuración personalizable por clínica (JSONB para evitar migraciones futuras)
   await sql`

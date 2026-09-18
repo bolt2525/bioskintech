@@ -12,6 +12,7 @@ import {
   updateWhatsAppMessageStatus,
 } from '../lib/whatsapp-crm.js';
 import { getBotState, setBotState, clearBotState } from '../lib/whatsapp-bot-state.js';
+import { createShortWaLink, resolveShortWaLink } from '../lib/wa-short-link.js';
 
 const getQueryValue = (value) => Array.isArray(value) ? value[0] : value;
 
@@ -221,9 +222,9 @@ async function getAppointmentsForDate(userId, isoDate) {
     calendarId: 'primary', timeMin: `${isoDate}T00:00:00-05:00`, timeMax: `${isoDate}T23:59:59-05:00`,
     singleEvents: true, orderBy: 'startTime',
   });
-  const appointments = (data.items || [])
+  const appointments = await Promise.all((data.items || [])
     .filter(e => e.summary?.startsWith('Cita: '))
-    .map(e => {
+    .map(async e => {
       const parsed = parseAppointmentEvent(e) || {};
       const start = new Date(e.start?.dateTime || e.start?.date);
       const end = new Date(e.end?.dateTime || e.end?.date);
@@ -234,10 +235,10 @@ async function getAppointmentsForDate(userId, isoDate) {
       const reminderMessage = `Hola ${patientName}, te escribimos para confirmar/actualizar tu cita del ${isoDate}${hora ? ` a las ${hora}` : ''}. Por favor responde a este mensaje si tienes alguna consulta.`;
       return {
         id: e.id, hora, patientName, phone: parsed.phone || '', professional: parsed.professional || '',
-        link: parsed.phone ? `https://wa.me/${parsed.phone}?text=${encodeURIComponent(reminderMessage)}` : '',
+        link: parsed.phone ? await createShortWaLink(parsed.phone, reminderMessage) : '',
         durationMs: (!Number.isNaN(end.getTime()) && !Number.isNaN(start.getTime()) && end > start) ? end - start : 60 * 60 * 1000,
       };
-    });
+    }));
   return { appointments };
 }
 
@@ -680,7 +681,7 @@ async function handleIncomingMessages(body) {
             const horaLabel = startDate.toLocaleString('es-ES', { timeZone: 'America/Guayaquil', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
             const patientPhone = botState.selected.phone;
             const patientMessage = `Hola ${botState.selected.patientName}, tu cita fue reprogramada para el ${horaLabel}. Por favor responde a este mensaje si tienes alguna consulta.`;
-            const link = patientPhone ? `\n\nAvisa al paciente: https://wa.me/${patientPhone}?text=${encodeURIComponent(patientMessage)}` : '';
+            const link = patientPhone ? `\n\nAvisa al paciente: ${await createShortWaLink(patientPhone, patientMessage)}` : '';
             await sendWhatsAppText(from, `✅ Cita de ${botState.selected.patientName} reprogramada para el ${horaLabel} (${botState.durationMinutes} min).${link}\n\nEscribe *menu* para ver las opciones.`);
           } catch (err) {
             await sendWhatsAppText(from, `❌ No se pudo reprogramar la cita: ${err.message}\n\nEscribe *menu* para ver las opciones.`);
@@ -848,7 +849,7 @@ async function sendAppointmentSummaries(dayOffset = 0, slot = 'morning') {
           `Te recordamos tu cita para el ${targetDate}${hora ? ` a las ${hora}` : ''}. ` +
           'Por favor confirma tu asistencia respondiendo a este mensaje o comunícate con la clínica.';
         // Enlace abre WhatsApp del staff con el chat del PACIENTE, no del número de la clínica
-        const link = appointment.phone ? `https://wa.me/${appointment.phone}?text=${encodeURIComponent(patientMessage)}` : '';
+        const link = appointment.phone ? await createShortWaLink(appointment.phone, patientMessage) : '';
         appointments.push({ ...appointment, hora, link });
       }
       if (!appointments.length) continue;
@@ -895,6 +896,14 @@ async function sendAppointmentSummaries(dayOffset = 0, slot = 'morning') {
 
 export default async function handler(req, res) {
   const action = getQueryValue(req.query?.action);
+
+  // Redirección de links cortos wa.me generados por el bot (públicos: solo apuntan a un chat de WhatsApp ya conocido)
+  if (req.method === 'GET' && action === 'r') {
+    const code = (getQueryValue(req.query?.c) || '').trim();
+    const target = code ? await resolveShortWaLink(code) : null;
+    if (!target) return res.status(404).send('Enlace no encontrado o expirado');
+    return res.redirect(302, target);
+  }
 
   if (req.method === 'GET' && (action === 'crmContacts' || action === 'crmMessages')) {
     const user = await requireAuth(req, res);
