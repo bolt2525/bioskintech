@@ -156,6 +156,7 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
   const [patientQuery, setPatientQuery] = useState('');
   const [patientResults, setPatientResults] = useState<PatientSearchResult[]>([]);
   const [loadingPatients, setLoadingPatients] = useState(false);
+  const [patientSearchError, setPatientSearchError] = useState('');
   const [selectedPatientId, setSelectedPatientId] = useState<number | null>(null);
   const [whatsappConfig, setWhatsappConfig] = useState({ botEnabled: false, confirmEnabled: false });
 
@@ -192,15 +193,20 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
 
   const searchPatients = useCallback(async (query: string) => {
     const normalized = query.trim();
-    if (normalized.length < 2) { setPatientResults([]); return; }
+    if (normalized.length < 1) { setPatientResults([]); setPatientSearchError(''); return; }
     setLoadingPatients(true);
+    setPatientSearchError('');
     try {
       const response = await recordsFetch(`/api/records?action=listPatients&search=${encodeURIComponent(normalized)}&limit=8`);
-      if (!response.ok) throw new Error('No se pudieron buscar pacientes');
+      if (!response.ok) {
+        const detail = await response.json().catch(() => ({}));
+        throw new Error(detail.error || 'No se pudieron buscar pacientes');
+      }
       const data = await response.json();
       setPatientResults(data.patients || data || []);
-    } catch {
+    } catch (searchError) {
       setPatientResults([]);
+      setPatientSearchError(searchError instanceof Error ? searchError.message : 'No se pudieron buscar pacientes');
     } finally {
       setLoadingPatients(false);
     }
@@ -661,6 +667,8 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
                       ))}
                     </div>
                   )}
+                  {patientSearchError && <p className="mt-2 text-xs text-red-600">{patientSearchError}</p>}
+                  {!loadingPatients && !patientSearchError && patientQuery.trim() && patientResults.length === 0 && <p className="mt-2 text-xs text-gray-500">No encontramos pacientes con ese nombre en tu clínica.</p>}
                   <p className="mt-2 text-xs text-gray-500">La búsqueda se limita a los pacientes de la clínica de tu sesión. Los datos seleccionados siguen siendo editables.</p>
                 </div>
                 

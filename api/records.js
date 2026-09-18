@@ -1096,10 +1096,10 @@ export default async function handler(req, res) {
         const searchTerm = req.query.search?.trim();
         if (searchTerm && pp.length > 0) {
           const idx = pp.length + 1;
-          pq = pq.replace('ORDER BY', `AND (p.first_name ILIKE $${idx} OR p.last_name ILIKE $${idx} OR p.rut ILIKE $${idx}) ORDER BY`);
+          pq = pq.replace('ORDER BY', `AND (CONCAT_WS(' ', p.first_name, p.last_name) ILIKE $${idx} OR p.first_name ILIKE $${idx} OR p.last_name ILIKE $${idx} OR p.rut ILIKE $${idx}) ORDER BY`);
           pp.push(`%${searchTerm}%`);
         } else if (searchTerm) {
-          pq = `${selOwner} ${fromOwner} WHERE (p.first_name ILIKE $1 OR p.last_name ILIKE $1 OR p.rut ILIKE $1) ORDER BY p.last_name, p.first_name`;
+          pq = `${selOwner} ${fromOwner} WHERE (CONCAT_WS(' ', p.first_name, p.last_name) ILIKE $1 OR p.first_name ILIKE $1 OR p.last_name ILIKE $1 OR p.rut ILIKE $1) ORDER BY p.last_name, p.first_name`;
           pp = [`%${searchTerm}%`];
         }
 
