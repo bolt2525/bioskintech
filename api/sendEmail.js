@@ -20,10 +20,10 @@ export function normalizeWhatsAppNumber(raw) {
   return `593${digits}`;
 }
 
-export function buildAppointmentWhatsAppRecipients({ patientPhone, bookingUserPhone }) {
+export function buildAppointmentWhatsAppRecipients({ patientPhone }) {
   const seen = new Set();
   const recipients = [];
-  for (const raw of [patientPhone, bookingUserPhone]) {
+  for (const raw of [patientPhone]) {
     const normalized = normalizeWhatsAppNumber(raw);
     if (!normalized || seen.has(normalized) || isSystemStaffPhone(normalized)) continue;
     seen.add(normalized);
@@ -321,7 +321,6 @@ export default async function handler(req, res) {
   // --- 0. ENVÍO AUTOMÁTICO DE CONFIRMACIÓN POR WHATSAPP (Cloud API) ---
   const appointmentRecipients = buildAppointmentWhatsAppRecipients({
     patientPhone: phoneClean,
-    bookingUserPhone: currentUser.rows[0]?.phone || '',
   });
   const bookingBotEnabled = currentUser.rows[0]?.whatsapp_bot_enabled === true && currentUser.rows[0]?.whatsapp_confirm_enabled === true;
   if (bookingBotEnabled && appointmentRecipients.length) {

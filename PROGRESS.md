@@ -78,6 +78,7 @@
 - ✅ 2026-09-18 Agendada búsqueda inteligente de pacientes por clínica y confirmación explícita del destinatario WhatsApp según permisos del bot.
 - ✅ 2026-09-18 Corregida búsqueda inteligente: coincidencias parciales y nombres completos, con errores visibles y aislamiento por clínica.
 - ✅ 2026-09-18 Corregido error SQL del buscador: el filtro ya no altera el `ORDER BY` interno de `ROW_NUMBER`.
+- ✅ 2026-09-18 Corregida confirmación WhatsApp: solo se envía al paciente, no al usuario que agenda.
 
 ## Pendientes verificables
 
