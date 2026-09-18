@@ -79,6 +79,7 @@
 - ✅ 2026-09-18 Corregida búsqueda inteligente: coincidencias parciales y nombres completos, con errores visibles y aislamiento por clínica.
 - ✅ 2026-09-18 Corregido error SQL del buscador: el filtro ya no altera el `ORDER BY` interno de `ROW_NUMBER`.
 - ✅ 2026-09-18 Corregida confirmación WhatsApp: solo se envía al paciente, no al usuario que agenda.
+- ✅ 2026-09-18 Corregida zona horaria del CRM y aclarados horarios Ecuador del bot.
 
 ## Pendientes verificables
 

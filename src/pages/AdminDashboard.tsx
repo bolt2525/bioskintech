@@ -963,7 +963,7 @@ export default function AdminDashboard() {
                         <div className="border-t border-gray-100 pt-3">
                           <p className="text-xs font-semibold text-gray-700 mb-2">Resumen de citas por WhatsApp</p>
                           <div className="flex items-center justify-between p-3 border rounded-lg bg-gray-50 mb-2">
-                            <label className="text-xs text-gray-600">Recibir a las 7:00 a.m. (citas de hoy)</label>
+                            <label className="text-xs text-gray-600">Recibir a las 7:00 a.m. (Ecuador, citas de hoy)</label>
                             <button type="button" disabled={!whatsappBot.bot_enabled}
                               onClick={() => setWhatsappBot(p => ({ ...p, summary_7am: !p.summary_7am }))}
                               className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${whatsappBot.summary_7am ? 'bg-[#deb887]' : 'bg-gray-300'}`}>
@@ -971,7 +971,7 @@ export default function AdminDashboard() {
                             </button>
                           </div>
                           <div className="flex items-center justify-between p-3 border rounded-lg bg-gray-50">
-                            <label className="text-xs text-gray-600">Recibir a las 7:00 p.m. (citas de mañana)</label>
+                            <label className="text-xs text-gray-600">Recibir a las 7:00 p.m. (Ecuador, citas de mañana)</label>
                             <button type="button" disabled={!whatsappBot.bot_enabled}
                               onClick={() => setWhatsappBot(p => ({ ...p, summary_7pm: !p.summary_7pm }))}
                               className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${whatsappBot.summary_7pm ? 'bg-[#deb887]' : 'bg-gray-300'}`}>

@@ -31,7 +31,11 @@ type Message = {
 };
 
 const authHeaders = () => ({ Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken') || ''}` });
-const formatTime = (value: string) => new Intl.DateTimeFormat('es-EC', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value));
+const formatTime = (value: string) => new Intl.DateTimeFormat('es-EC', {
+  dateStyle: 'short',
+  timeStyle: 'short',
+  timeZone: 'America/Guayaquil',
+}).format(new Date(value));
 
 function MediaIcon({ type }: { type: Message['media_type'] }) {
   if (type === 'imagen') return <Image className="h-4 w-4" aria-label="Imagen" />;
