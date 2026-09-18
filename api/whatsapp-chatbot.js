@@ -10,6 +10,7 @@ import {
   recordWhatsAppMessage,
   isWithinCustomerServiceWindow,
   updateWhatsAppMessageStatus,
+  isSystemStaffPhone,
 } from '../lib/whatsapp-crm.js';
 import { getBotState, setBotState, clearBotState } from '../lib/whatsapp-bot-state.js';
 import { createShortWaLink, resolveShortWaLink } from '../lib/wa-short-link.js';
@@ -828,6 +829,7 @@ async function sendAppointmentSummaries(dayOffset = 0, slot = 'morning') {
   let remindersSent = 0;
   const errors = [];
   for (const row of users.rows) {
+    if (isSystemStaffPhone(row.staff_phone)) continue;
     const clinicName = row.general?.name || 'la clínica';
     try {
       const auth = await getUserOAuth2Client(row.user_id);

@@ -5,7 +5,7 @@ import { sql } from '@vercel/postgres';
 import { authenticateRequest } from '../lib/admin-auth.js';
 import { sendDeveloperAlert } from './admin-auth.js';
 import { sendWhatsAppText, sendWhatsAppTemplate } from '../lib/whatsapp-service.js';
-import { isWithinCustomerServiceWindow } from '../lib/whatsapp-crm.js';
+import { isWithinCustomerServiceWindow, isSystemStaffPhone } from '../lib/whatsapp-crm.js';
 
 const isGoogleAuthError = (error) => error?.code === 401 || error?.response?.status === 401 || /invalid_grant|invalid authentication credentials/i.test(error?.message || '');
 
@@ -25,7 +25,7 @@ export function buildAppointmentWhatsAppRecipients({ patientPhone, bookingUserPh
   const recipients = [];
   for (const raw of [patientPhone, bookingUserPhone]) {
     const normalized = normalizeWhatsAppNumber(raw);
-    if (!normalized || seen.has(normalized)) continue;
+    if (!normalized || seen.has(normalized) || isSystemStaffPhone(normalized)) continue;
     seen.add(normalized);
     recipients.push(normalized);
   }

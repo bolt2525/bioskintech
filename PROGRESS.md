@@ -71,6 +71,8 @@
 - ✅ 2026-09-16 Añadido CRM WhatsApp master con historial auditable en Neon.
 - ✅ 2026-09-16 Endurecidos reintentos, estados y límite del webhook WhatsApp.
 
+- ✅ 2026-09-18 Excluidos los números de `WHATSAPP_SYSTEM_STAFF_PHONES` de confirmaciones y resúmenes clínicos de WhatsApp; se cubrió la colisión entre staff del sistema y teléfono de paciente con pruebas de seguridad.
+
 ## Pendientes verificables
 
 - ⏳ Resolver o registrar la deuda de lint global: 471 errores y 54 warnings en la línea base.

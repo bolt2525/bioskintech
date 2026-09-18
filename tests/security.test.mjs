@@ -176,4 +176,24 @@ test('appointment notifications target normalized patient and booking-user numbe
     buildAppointmentWhatsAppRecipients({ patientPhone: '', bookingUserPhone: '5930991234567' }),
     ['593991234567']
   );
+
+  const previousStaffPhones = process.env.WHATSAPP_SYSTEM_STAFF_PHONES;
+  process.env.WHATSAPP_SYSTEM_STAFF_PHONES = '0997061321';
+  try {
+    assert.deepEqual(
+      buildAppointmentWhatsAppRecipients({ patientPhone: '0997061321', bookingUserPhone: '0991234567' }),
+      ['593991234567']
+    );
+    assert.deepEqual(
+      buildAppointmentWhatsAppRecipients({ patientPhone: '0987654321', bookingUserPhone: '0997061321' }),
+      ['593987654321']
+    );
+    assert.deepEqual(
+      buildAppointmentWhatsAppRecipients({ patientPhone: '0997061321', bookingUserPhone: '' }),
+      []
+    );
+  } finally {
+    if (previousStaffPhones === undefined) delete process.env.WHATSAPP_SYSTEM_STAFF_PHONES;
+    else process.env.WHATSAPP_SYSTEM_STAFF_PHONES = previousStaffPhones;
+  }
 });

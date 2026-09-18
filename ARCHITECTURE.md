@@ -142,6 +142,8 @@ Las operaciones de fotos también validan que el expediente pertenezca al tenant
 - Todos los enlaces `wa.me` que genera el bot (recordatorios, reprogramación) se acortan primero: `lib/wa-short-link.js#createShortWaLink()` guarda la URL real (con el mensaje precargado) en `wa_short_links` y devuelve `https://<dominio>/r/<código>`; `vercel.json` reescribe `/r/:code` a `/api/whatsapp-chatbot?action=r&c=:code`, que resuelve el código y hace `res.redirect(302, ...)`. Sin esto, un listado con varias citas quedaba ilegible por URLs de 200+ caracteres con el mensaje codificado en la query string.
 - `api/sendEmail.js` exige sesión administrativa y deriva clínica, usuario OAuth y teléfono de notificación desde esa sesión; no confía en esos identificadores enviados por el cliente. `WHATSAPP_APP_SECRET` debe existir en Production para aceptar eventos reales de Meta.
 
+Los números de `WHATSAPP_SYSTEM_STAFF_PHONES` quedan excluidos de toda notificación clínica saliente, tanto confirmaciones de citas como resúmenes automáticos de agenda, aunque coincidan con el teléfono de un paciente o usuario clínico.
+
 ## 7. Riesgos abiertos
 
 1. El lint global falla y mantiene deuda previa del frontend.
