@@ -1,8 +1,8 @@
 ﻿// src/components/AdminAppointment.tsx
 // Componente de agendamiento avanzado para administradores
 
-import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, User, Phone, Mail, MessageSquare, Save, ArrowLeft, ChevronLeft, ChevronRight, UserCheck, MessageCircle, X, CheckSquare, Square, AlertTriangle } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Clock, User, Phone, Mail, MessageSquare, Save, ArrowLeft, ChevronLeft, ChevronRight, UserCheck, MessageCircle, X, CheckSquare, Square, AlertTriangle } from 'lucide-react';
 import recordsFetch from '../utils/recordsFetch';
 import { services } from '../data/services';
 import { useAuth } from '../context/AuthContext';
@@ -48,6 +48,13 @@ function generateTimeSlots(startHour: string, endHour: string, slotMinutes: numb
 }
 
 type EventType = { start: string; end: string };
+type PatientSearchResult = {
+  id: number;
+  first_name: string;
+  last_name: string;
+  email?: string | null;
+  phone?: string | null;
+};
 // ponytail: endHour param blocks slots that would overflow business hours
 function isHourOccupied(selectedDay: string, hour: string, events: EventType[], slotMinutes: number): boolean {
   if (!selectedDay) return true;
@@ -77,8 +84,6 @@ function isHourPast(selectedDay: string, hour: string): boolean {
   
   // CORREGIDO: usar fechas locales en lugar de UTC para evitar problemas de zona horaria
   const todayLocal = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const selectedDate = new Date(selectedDay);
-  
   // Formatear fechas como strings locales YYYY-MM-DD
   const todayString = `${todayLocal.getFullYear()}-${(todayLocal.getMonth() + 1).toString().padStart(2, '0')}-${todayLocal.getDate().toString().padStart(2, '0')}`;
   const selectedString = selectedDay; // Ya está en formato YYYY-MM-DD
@@ -142,13 +147,17 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
   const [showProfessionalModal, setShowProfessionalModal] = useState(false);
   const [showStaffEmailModal, setShowStaffEmailModal]     = useState(false);
   // Agenda settings from clinic config
-  const [agendaSlotMinutes, setAgendaSlotMinutes] = useState(60);
   const [agendaStartHour, setAgendaStartHour]     = useState('07:00');
   const [agendaEndHour, setAgendaEndHour]         = useState('20:00');
   // Duration selected for this specific appointment (independent of display interval)
   const [appointmentDuration, setAppointmentDuration] = useState(30);
   const [hourClearedMsg, setHourClearedMsg]           = useState('');
   const [gmailNotConfigured, setGmailNotConfigured]   = useState(false);
+  const [patientQuery, setPatientQuery] = useState('');
+  const [patientResults, setPatientResults] = useState<PatientSearchResult[]>([]);
+  const [loadingPatients, setLoadingPatients] = useState(false);
+  const [selectedPatientId, setSelectedPatientId] = useState<number | null>(null);
+  const [whatsappConfig, setWhatsappConfig] = useState({ botEnabled: false, confirmEnabled: false });
 
   useEffect(() => {
     if (!user?.clinic_id) return;
@@ -167,19 +176,40 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
       fetch('/api/admin-auth?action=getPersonalStaffEmails', {
         headers: { 'Authorization': `Bearer ${sessionStorage.getItem('adminSessionToken')}` }
       }).then(r => r.json()),
-    ]).then(([settings, professionals, staffEmails]) => {
+      fetch('/api/admin-auth?action=getWhatsAppBotConfig', {
+        headers: { 'Authorization': `Bearer ${sessionStorage.getItem('adminSessionToken')}` }
+      }).then(r => r.json()),
+    ]).then(([settings, professionals, staffEmails, botConfig]) => {
       if (settings.settings?.treatments?.length) setClinicTreatments(settings.settings.treatments);
       if (settings.settings?.email?.staff_members?.length) setExternalStaff(settings.settings.email.staff_members);
-      if (settings.settings?.agenda?.slot_minutes) {
-        setAgendaSlotMinutes(settings.settings.agenda.slot_minutes);
-        // ponytail: keep duration default at 30 regardless of clinic slot setting
-      }
       if (settings.settings?.agenda?.start_hour)   setAgendaStartHour(settings.settings.agenda.start_hour);
       if (settings.settings?.agenda?.end_hour)     setAgendaEndHour(settings.settings.agenda.end_hour);
       if (professionals.professionals) setClinicProfessionals(professionals.professionals);
       if (staffEmails.emails?.length)  { setPersonalEmails(staffEmails.emails); setSelectedPersonalEmails(staffEmails.emails); setNotifyPersonalStaff(true); }
+      setWhatsappConfig({ botEnabled: botConfig.config?.bot_enabled === true, confirmEnabled: botConfig.config?.confirm_enabled === true });
     }).catch(() => {});
   }, [user?.clinic_id]);
+
+  const searchPatients = useCallback(async (query: string) => {
+    const normalized = query.trim();
+    if (normalized.length < 2) { setPatientResults([]); return; }
+    setLoadingPatients(true);
+    try {
+      const response = await recordsFetch(`/api/records?action=listPatients&search=${encodeURIComponent(normalized)}&limit=8`);
+      if (!response.ok) throw new Error('No se pudieron buscar pacientes');
+      const data = await response.json();
+      setPatientResults(data.patients || data || []);
+    } catch {
+      setPatientResults([]);
+    } finally {
+      setLoadingPatients(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => searchPatients(patientQuery), 300);
+    return () => clearTimeout(timer);
+  }, [patientQuery, searchPatients]);
   // Display slots always every 30 min; occupancy check uses the selected appointment duration
   const availableTimes = generateTimeSlots(agendaStartHour, agendaEndHour, 30);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
@@ -314,8 +344,10 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
       } else {
         setSubmitted(true);
         setFormData({ name: '', email: '', phone: '', service: '', message: '', adminNotes: '', selected_doctor: '', selected_doctor_email: '' });
+        setPatientQuery('');
+        setSelectedPatientId(null);
       }
-    } catch (e) {
+    } catch {
       setError('Error al enviar');
     }
     setSubmitting(false);
@@ -328,6 +360,9 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
     setFormData({ name: '', email: '', phone: '', service: '', message: '', adminNotes: '',
       selected_doctor: user?.full_name || user?.username || '',
       selected_doctor_email: user?.email || '' });
+    setPatientQuery('');
+    setPatientResults([]);
+    setSelectedPatientId(null);
     setSubmitted(false);
     setError('');
     setConfirming(false);
@@ -586,6 +621,48 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
                 e.preventDefault();
                 setConfirming(true);
               }} className="space-y-4 max-w-2xl mx-auto">
+                <div className="rounded-lg border border-[#d9c2a0] bg-[#fffaf3] p-4">
+                  <label className="mb-2 block text-sm font-semibold text-[#7e5629]">Buscar paciente registrado en esta clínica</label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
+                    <input
+                      value={patientQuery}
+                      onChange={e => setPatientQuery(e.target.value)}
+                      placeholder="Nombre o apellido"
+                      className="w-full rounded border border-[#e6d7c3] bg-white p-3 pl-10 focus:border-[#deb887] focus:ring-2 focus:ring-[#deb887] focus:ring-opacity-20"
+                    />
+                    {loadingPatients && <span className="absolute right-3 top-3 text-xs text-gray-400">Buscando...</span>}
+                  </div>
+                  {patientResults.length > 0 && (
+                    <div className="mt-2 max-h-48 overflow-y-auto rounded border border-gray-200 bg-white shadow-sm">
+                      {patientResults.map(patient => (
+                        <button
+                          key={patient.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedPatientId(patient.id);
+                            setPatientQuery(`${patient.first_name} ${patient.last_name}`.trim());
+                            setFormData(current => ({
+                              ...current,
+                              name: `${patient.first_name} ${patient.last_name}`.trim(),
+                              email: patient.email || '',
+                              phone: patient.phone || '',
+                            }));
+                            setPatientResults([]);
+                          }}
+                          className="flex w-full items-center justify-between border-b border-gray-100 px-3 py-2 text-left last:border-0 hover:bg-[#fffaf3]"
+                        >
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm font-medium text-gray-800">{patient.first_name} {patient.last_name}</span>
+                            <span className="block truncate text-xs text-gray-500">{patient.email || 'Sin correo'} · {patient.phone || 'Sin teléfono'}</span>
+                          </span>
+                          <UserCheck className="ml-3 h-4 w-4 shrink-0 text-[#deb887]" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <p className="mt-2 text-xs text-gray-500">La búsqueda se limita a los pacientes de la clínica de tu sesión. Los datos seleccionados siguen siendo editables.</p>
+                </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="relative">
@@ -777,7 +854,7 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
                   <div className="space-y-3">
                     <div>
                       <span className="font-semibold text-gray-700">Paciente:</span>
-                      <p className="text-gray-900">{formData.name}</p>
+                      <p className="text-gray-900">{formData.name}{selectedPatientId && <span className="ml-2 text-xs font-normal text-emerald-700">Paciente vinculado</span>}</p>
                     </div>
                     
                     <div>
@@ -803,6 +880,18 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
                   <div className="mb-4">
                     <span className="font-semibold text-yellow-700">Notas del administrador:</span>
                     <p className="text-yellow-900 bg-yellow-100 p-3 rounded border border-yellow-300">{formData.adminNotes}</p>
+                  </div>
+                )}
+
+                {whatsappConfig.botEnabled && whatsappConfig.confirmEnabled && formData.phone ? (
+                  <div className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+                    <MessageCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <p>Se enviará una notificación de WhatsApp al paciente al número <strong>{formData.phone}</strong>.</p>
+                  </div>
+                ) : (
+                  <div className="flex items-start gap-2 rounded-lg border border-gray-200 bg-gray-100 p-3 text-sm text-gray-600">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <p>No se enviará notificación de WhatsApp: el bot no está habilitado para este usuario o la confirmación está desactivada.</p>
                   </div>
                 )}
                 
