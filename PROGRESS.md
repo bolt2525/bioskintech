@@ -72,6 +72,7 @@
 - ✅ 2026-09-16 Endurecidos reintentos, estados y límite del webhook WhatsApp.
 
 - ✅ 2026-09-18 Excluidos los números de `WHATSAPP_SYSTEM_STAFF_PHONES` de confirmaciones y resúmenes clínicos de WhatsApp; se cubrió la colisión entre staff del sistema y teléfono de paciente con pruebas de seguridad.
+- ✅ 2026-09-18 Mejorado CRM WhatsApp master: scroll independiente, categorías de contactos y apertura en el mensaje más reciente.
 
 ## Pendientes verificables
 
