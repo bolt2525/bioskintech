@@ -313,7 +313,9 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
       const professionalLine = formData.selected_doctor ? `\nProfesional: ${formData.selected_doctor}` : '';
       const additionalEmails = notifyPersonalStaff ? selectedPersonalEmails : [];
 
-      const res = await fetch('/api/sendEmail', {
+      // recordsFetch agrega Authorization + X-Target-Clinic-Id (necesario cuando master_admin
+      // agenda impersonando una clínica; con fetch plano el WhatsApp quedaba "sin clasificar").
+      const res = await recordsFetch('/api/sendEmail', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

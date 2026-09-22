@@ -11,6 +11,7 @@ import {
   isWithinCustomerServiceWindow,
   updateWhatsAppMessageStatus,
   isSystemStaffPhone,
+  setWhatsAppContactClinic,
 } from '../lib/whatsapp-crm.js';
 import { getBotState, setBotState, clearBotState } from '../lib/whatsapp-bot-state.js';
 import { createShortWaLink, resolveShortWaLink } from '../lib/wa-short-link.js';
@@ -920,6 +921,23 @@ export default async function handler(req, res) {
       const status = error.message === 'Contacto inválido' ? 400 : 500;
       console.error('Error consultando CRM de WhatsApp:', error.message);
       return res.status(status).json({ success: false, error: status === 400 ? error.message : 'No se pudo consultar el historial' });
+    }
+  }
+
+  if (req.method === 'POST' && action === 'crmSetContactClinic') {
+    const user = await requireAuth(req, res);
+    if (!user || !requireRole(user, res, 'master_admin')) return;
+    res.setHeader('Cache-Control', 'private, no-store');
+    let body;
+    try { body = JSON.parse((await readRawBody(req)).toString('utf8') || '{}'); }
+    catch { return res.status(400).json({ success: false, error: 'JSON inválido' }); }
+    try {
+      await setWhatsAppContactClinic(body.contactId, body.clinicId ?? null);
+      return res.status(200).json({ success: true });
+    } catch (error) {
+      const status = error.message === 'Contacto inválido' || error.message === 'Clínica inválida' || error.message === 'Contacto no encontrado' ? 400 : 500;
+      console.error('Error reasignando clínica de contacto WhatsApp:', error.message);
+      return res.status(status).json({ success: false, error: status === 400 ? error.message : 'No se pudo actualizar el contacto' });
     }
   }
 

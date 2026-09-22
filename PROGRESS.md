@@ -80,6 +80,8 @@
 - ✅ 2026-09-18 Corregido error SQL del buscador: el filtro ya no altera el `ORDER BY` interno de `ROW_NUMBER`.
 - ✅ 2026-09-18 Corregida confirmación WhatsApp: solo se envía al paciente, no al usuario que agenda.
 - ✅ 2026-09-18 Corregida zona horaria del CRM y aclarados horarios Ecuador del bot.
+- ✅ 2026-09-22 Corregido bug real: al agendar desde `AdminAppointment.tsx` con `fetch` plano (sin `recordsFetch`), el header `X-Target-Clinic-Id` no viajaba cuando master_admin impersonaba una clínica, dejando el WhatsApp de confirmación con `clinic_id` nulo (contacto "sin clasificar" en el CRM aunque la cita sí perteneciera a la clínica correcta). Cambiado a `recordsFetch`.
+- ✅ 2026-09-22 Añadida reasignación manual de clínica por contacto en el CRM de WhatsApp (`setWhatsAppContactClinic` en `lib/whatsapp-crm.js`, acción `crmSetContactClinic` en `api/whatsapp-chatbot.js`, solo master_admin) y filtro por clínica + selector de reclasificación en `AdminWhatsAppCRM.tsx`.
 
 ## Pendientes verificables
 

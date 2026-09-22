@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { AlertTriangle, Check, CheckCheck, Image, Loader2, MessageCircle, Music2, RefreshCw, Search, Users } from 'lucide-react';
 import AdminLayout from '../components/layout/AdminLayout';
 import { useAuth } from '../context/AuthContext';
+import recordsFetch from '../utils/recordsFetch';
 
 type Contact = {
   id: number;
@@ -30,6 +31,8 @@ type Message = {
   error_detail: string | null;
 };
 
+type ClinicOption = { id: string; name: string };
+
 const authHeaders = () => ({ Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken') || ''}` });
 const formatTime = (value: string) => new Intl.DateTimeFormat('es-EC', {
   dateStyle: 'short',
@@ -54,6 +57,9 @@ export default function AdminWhatsAppCRM() {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [error, setError] = useState('');
   const [category, setCategory] = useState<Contact['category'] | 'todos'>('todos');
+  const [clinicFilter, setClinicFilter] = useState('');
+  const [clinics, setClinics] = useState<ClinicOption[]>([]);
+  const [reassigning, setReassigning] = useState(false);
   const latestRequest = useRef({ contactId: null as number | null, sequence: 0 });
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -99,9 +105,43 @@ export default function AdminWhatsAppCRM() {
       const stored = sessionStorage.getItem('adminUser');
       const role = stored ? JSON.parse(stored).role : user?.role;
       if (!valid || role !== 'master_admin') navigate('/admin/login', { replace: true });
-      else loadContacts();
+      else {
+        loadContacts();
+        recordsFetch('/api/admin-auth?action=listClinics')
+          .then(res => res.json())
+          .then(rows => setClinics(Array.isArray(rows) ? rows.map((c: { id: string; name: string }) => ({ id: c.id, name: c.name })) : []))
+          .catch(() => {});
+      }
     });
   }, [checkAuth, loadContacts, navigate, user?.role]);
+
+  const reassignClinic = async (contactId: number, clinicId: string | null) => {
+    setReassigning(true);
+    try {
+      const response = await recordsFetch('/api/whatsapp-chatbot?action=crmSetContactClinic', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contactId, clinicId }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'No se pudo reasignar la clínica');
+      const clinicName = clinics.find(c => c.id === clinicId)?.name || null;
+      const patch = (c: Contact) => c.id === contactId ? {
+        ...c,
+        clinic_id: clinicId,
+        clinic_name: clinicName,
+        category: clinicId ? (c.category === 'sin_clasificar' ? 'paciente_clinica' : c.category) : 'sin_clasificar',
+        category_label: clinicId ? `Paciente · ${clinicName || 'Sin clínica'}` : 'Sin clasificar',
+      } as Contact : c;
+      setContacts(prev => prev.map(patch));
+      setSelected(prev => prev ? (patch(prev) as Contact) : prev);
+      setError('');
+    } catch (reassignError) {
+      setError(reassignError instanceof Error ? reassignError.message : 'No se pudo reasignar la clínica');
+    } finally {
+      setReassigning(false);
+    }
+  };
 
   useEffect(() => {
     if (selected) loadMessages(selected.id);
@@ -124,7 +164,9 @@ export default function AdminWhatsAppCRM() {
     setMessages([]);
   };
 
-  const visibleContacts = category === 'todos' ? contacts : contacts.filter(contact => contact.category === category);
+  const visibleContacts = contacts
+    .filter(contact => category === 'todos' || contact.category === category)
+    .filter(contact => !clinicFilter || contact.clinic_id === clinicFilter);
   const categoryCounts = contacts.reduce<Record<string, number>>((counts, contact) => {
     counts[contact.category] = (counts[contact.category] || 0) + 1;
     return counts;
@@ -145,7 +187,7 @@ export default function AdminWhatsAppCRM() {
               </label>
               <button type="button" title="Actualizar" onClick={() => loadContacts(search)} className="grid h-9 w-9 place-items-center rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50"><RefreshCw className="h-4 w-4" /></button>
               </form>
-              <div className="flex items-center gap-2 overflow-x-auto px-3 pb-3">
+              <div className="flex items-center gap-2 overflow-x-auto px-3 pb-2">
                 {([
                   ['todos', 'Todos'],
                   ['staff_sistema', 'Staff'],
@@ -157,6 +199,12 @@ export default function AdminWhatsAppCRM() {
                     {label}{value !== 'todos' && <span className="ml-1 opacity-70">{categoryCounts[value] || 0}</span>}
                   </button>
                 ))}
+              </div>
+              <div className="px-3 pb-3">
+                <select value={clinicFilter} onChange={event => setClinicFilter(event.target.value)} className="w-full rounded-lg border border-gray-200 py-1.5 px-2 text-xs text-gray-600 outline-none focus:border-[#deb887]">
+                  <option value="">Todas las clínicas</option>
+                  {clinics.map(clinic => <option key={clinic.id} value={clinic.id}>{clinic.name}</option>)}
+                </select>
               </div>
             </div>
 
@@ -182,10 +230,22 @@ export default function AdminWhatsAppCRM() {
               <div className="grid flex-1 place-items-center p-8 text-center text-gray-400"><div><MessageCircle className="mx-auto mb-3 h-10 w-10" /><p className="text-sm">Selecciona una conversación para revisar su historial.</p></div></div>
             ) : (
               <>
-                <header className="flex items-center gap-3 border-b border-gray-200 bg-white px-4 py-3">
+                <header className="flex flex-wrap items-center gap-3 border-b border-gray-200 bg-white px-4 py-3">
                   <button onClick={closeConversation} className="text-sm font-medium text-[#99652f] md:hidden">Contactos</button>
                   <div className="min-w-0"><h2 className="truncate font-semibold text-gray-900">{selected.name || selected.phone}</h2><p className="text-xs text-gray-500">{selected.phone} · {selected.category_label}</p></div>
-                  <button title="Actualizar conversación" onClick={() => loadMessages(selected.id)} className="ml-auto grid h-9 w-9 place-items-center rounded-lg text-gray-500 hover:bg-gray-100"><RefreshCw className="h-4 w-4" /></button>
+                  <label className="ml-auto flex items-center gap-2 text-xs text-gray-500">
+                    Clínica:
+                    <select
+                      value={selected.clinic_id || ''}
+                      disabled={reassigning}
+                      onChange={event => reassignClinic(selected.id, event.target.value || null)}
+                      className="rounded-lg border border-gray-200 py-1 px-2 text-xs text-gray-700 outline-none focus:border-[#deb887] disabled:opacity-50"
+                    >
+                      <option value="">Sin clínica</option>
+                      {clinics.map(clinic => <option key={clinic.id} value={clinic.id}>{clinic.name}</option>)}
+                    </select>
+                  </label>
+                  <button title="Actualizar conversación" onClick={() => loadMessages(selected.id)} className="grid h-9 w-9 place-items-center rounded-lg text-gray-500 hover:bg-gray-100"><RefreshCw className="h-4 w-4" /></button>
                 </header>
                 <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto p-4 md:p-6 [scrollbar-gutter:stable]">
                   {loadingMessages ? <div className="grid flex-1 place-items-center text-gray-400"><Loader2 className="h-5 w-5 animate-spin" /></div> : messages.map(message => (
