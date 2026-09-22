@@ -4,6 +4,7 @@
 
 - ✅ 2026-09-22 Corregidas marcaciones zonales 3D faciales/corporales: adhesión visual a superficie, color diferenciado, pulso, etiquetas y tamaño ajustable persistente con mouse o tacto.
 - ✅ 2026-09-22 Compactadas y redistribuidas las etiquetas 3D para evitar solapamientos entre lesiones y líneas anatómicas.
+- ✅ 2026-09-22 Recalibradas las etiquetas 3D para recuperar legibilidad y mantenerlas próximas a cada marcación.
 - ✅ 2026-09-07 Confirmado stack real: React/Vite, Vercel, Neon y Cloudflare R2.
 - ✅ 2026-09-07 Corregido inventario documental de APIs y eliminado referencias SQLite/legacy.
 - ✅ 2026-09-07 Neon falla cerrado sin `NEON_APP_URL`; no usa el pool administrador como fallback.

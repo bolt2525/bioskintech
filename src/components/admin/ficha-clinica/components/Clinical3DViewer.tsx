@@ -2405,26 +2405,27 @@ const ThreeEngine: React.FC<{
 
     const createLabelSprite = (text: string) => {
       const canvas = document.createElement('canvas');
+      const label = text.trim().slice(0, 24) || 'Marcación';
+      const measureContext = canvas.getContext('2d');
+      if (!measureContext) return null;
+      measureContext.font = '600 24px Poppins, sans-serif';
+      canvas.width = Math.min(384, Math.max(120, Math.ceil(measureContext.measureText(label).width) + 36));
+      canvas.height = 64;
       const context = canvas.getContext('2d');
       if (!context) return null;
-      const label = text.trim().slice(0, 24) || 'Marcación';
-      canvas.width = 384;
-      canvas.height = 72;
       context.font = '600 24px Poppins, sans-serif';
       context.textAlign = 'center';
       context.textBaseline = 'middle';
-      const measuredWidth = Math.min(344, Math.ceil(context.measureText(label).width) + 36);
-      const left = (canvas.width - measuredWidth) / 2;
-      context.fillStyle = 'rgba(15, 23, 42, 0.58)';
-      context.roundRect(left, 10, measuredWidth, 52, 14);
+      context.fillStyle = 'rgba(15, 23, 42, 0.68)';
+      context.roundRect(2, 6, canvas.width - 4, 52, 14);
       context.fill();
-      context.fillStyle = 'rgba(255, 255, 255, 0.9)';
-      context.fillText(label, canvas.width / 2, 37, measuredWidth - 20);
+      context.fillStyle = 'rgba(255, 255, 255, 0.95)';
+      context.fillText(label, canvas.width / 2, 33, canvas.width - 20);
       const texture = new THREE.CanvasTexture(canvas);
       texture.colorSpace = THREE.SRGBColorSpace;
       const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: true }));
-      const worldWidth = THREE.MathUtils.clamp(measuredWidth / canvas.width * 0.42, 0.2, 0.38);
-      sprite.scale.set(worldWidth, 0.071, 1);
+      const worldWidth = THREE.MathUtils.clamp(canvas.width / 384 * 0.58, 0.3, 0.58);
+      sprite.scale.set(worldWidth, 0.105, 1);
       sprite.userData.baseScale = sprite.scale.clone();
       return sprite;
     };
@@ -2436,12 +2437,10 @@ const ThreeEngine: React.FC<{
       markerRadius: number,
       type: MarkerType,
     ) => {
-      const side = position.x < -0.04 ? -1 : position.x > 0.04 ? 1 : 0;
-      const halfLabelWidth = sprite.scale.x / 2;
-      const horizontalOffset = side * (markerRadius + halfLabelWidth + 0.035);
-      const verticalOffset = type === 'Zonal' ? markerRadius * 0.58 : markerRadius + 0.055;
+      const sideNudge = position.x < -0.04 ? -0.025 : position.x > 0.04 ? 0.025 : 0;
+      const verticalOffset = markerRadius + sprite.scale.y * 0.42 + (type === 'Zonal' ? 0.012 : 0.02);
       sprite.position.copy(normal).multiplyScalar(0.035);
-      sprite.position.x += horizontalOffset;
+      sprite.position.x += sideNudge;
       sprite.position.y += verticalOffset;
     };
 
