@@ -2407,23 +2407,42 @@ const ThreeEngine: React.FC<{
       const canvas = document.createElement('canvas');
       const context = canvas.getContext('2d');
       if (!context) return null;
-      const label = text.trim().slice(0, 32) || 'Marcación';
-      canvas.width = 512;
-      canvas.height = 96;
-      context.font = '600 30px Poppins, sans-serif';
+      const label = text.trim().slice(0, 24) || 'Marcación';
+      canvas.width = 384;
+      canvas.height = 72;
+      context.font = '600 24px Poppins, sans-serif';
       context.textAlign = 'center';
       context.textBaseline = 'middle';
-      context.fillStyle = 'rgba(15, 23, 42, 0.72)';
-      context.roundRect(8, 8, 496, 80, 18);
+      const measuredWidth = Math.min(344, Math.ceil(context.measureText(label).width) + 36);
+      const left = (canvas.width - measuredWidth) / 2;
+      context.fillStyle = 'rgba(15, 23, 42, 0.58)';
+      context.roundRect(left, 10, measuredWidth, 52, 14);
       context.fill();
-      context.fillStyle = 'rgba(255, 255, 255, 0.92)';
-      context.fillText(label, 256, 49, 470);
+      context.fillStyle = 'rgba(255, 255, 255, 0.9)';
+      context.fillText(label, canvas.width / 2, 37, measuredWidth - 20);
       const texture = new THREE.CanvasTexture(canvas);
       texture.colorSpace = THREE.SRGBColorSpace;
       const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: true }));
-      sprite.scale.set(0.72, 0.135, 1);
+      const worldWidth = THREE.MathUtils.clamp(measuredWidth / canvas.width * 0.42, 0.2, 0.38);
+      sprite.scale.set(worldWidth, 0.071, 1);
       sprite.userData.baseScale = sprite.scale.clone();
       return sprite;
+    };
+
+    const positionMarkerLabel = (
+      sprite: THREE.Sprite,
+      position: THREE.Vector3,
+      normal: THREE.Vector3,
+      markerRadius: number,
+      type: MarkerType,
+    ) => {
+      const side = position.x < -0.04 ? -1 : position.x > 0.04 ? 1 : 0;
+      const halfLabelWidth = sprite.scale.x / 2;
+      const horizontalOffset = side * (markerRadius + halfLabelWidth + 0.035);
+      const verticalOffset = type === 'Zonal' ? markerRadius * 0.58 : markerRadius + 0.055;
+      sprite.position.copy(normal).multiplyScalar(0.035);
+      sprite.position.x += horizontalOffset;
+      sprite.position.y += verticalOffset;
     };
 
     const createSurfacePatch = (center: THREE.Vector3, normal: THREE.Vector3, radius: number) => {
@@ -2495,7 +2514,7 @@ const ThreeEngine: React.FC<{
         markerGroup.add(new THREE.Mesh(outerGeo, outerMat));
         const label = createLabelSprite(marker.label || marker.zone);
         if (label) {
-          label.position.set(0, 0.19 * pointMarkerScale, 0.03);
+          positionMarkerLabel(label, pos, new THREE.Vector3(0, 0, 1), 0.12 * pointMarkerScale, 'Puntual');
           markerGroup.add(label);
         }
         group.add(markerGroup);
@@ -2503,7 +2522,6 @@ const ThreeEngine: React.FC<{
       } else if (marker.type === 'Zonal') {
         const markerGroup = new THREE.Group();
         const normal = new THREE.Vector3(marker.normal.x, marker.normal.y, marker.normal.z).normalize();
-        const labelDirection = Math.abs(normal.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
         markerGroup.position.copy(pos);
         markerGroup.userData.markerId = marker.id ?? `m-${Date.now()}`;
         markerGroup.userData.isZonalMarker = true;
@@ -2544,7 +2562,7 @@ const ThreeEngine: React.FC<{
 
         const label = createLabelSprite(marker.label || marker.zone);
         if (label) {
-          label.position.copy(normal).multiplyScalar(0.03).addScaledVector(labelDirection, radius * 1.35);
+          positionMarkerLabel(label, pos, normal, radius, 'Zonal');
           markerGroup.userData.labelSprite = label;
           markerGroup.add(label);
         }
