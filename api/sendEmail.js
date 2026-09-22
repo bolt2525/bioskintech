@@ -5,7 +5,7 @@ import { sql } from '@vercel/postgres';
 import { authenticateRequest } from '../lib/admin-auth.js';
 import { sendDeveloperAlert } from './admin-auth.js';
 import { sendWhatsAppText, sendWhatsAppTemplate } from '../lib/whatsapp-service.js';
-import { isWithinCustomerServiceWindow, isSystemStaffPhone } from '../lib/whatsapp-crm.js';
+import { isWithinCustomerServiceWindow, isSystemStaffPhone, ensureWhatsAppContactClinic } from '../lib/whatsapp-crm.js';
 
 const isGoogleAuthError = (error) => error?.code === 401 || error?.response?.status === 401 || /invalid_grant|invalid authentication credentials/i.test(error?.message || '');
 
@@ -322,6 +322,11 @@ export default async function handler(req, res) {
   const appointmentRecipients = buildAppointmentWhatsAppRecipients({
     patientPhone: phoneClean,
   });
+  // Se etiqueta la clínica siempre, aunque el bot de confirmación esté desactivado — evita que el
+  // contacto quede "sin clasificar" cuando el paciente no está en la BD de pacientes de la clínica.
+  for (const recipient of appointmentRecipients) {
+    await ensureWhatsAppContactClinic(recipient, requestedClinicId).catch(() => {});
+  }
   const bookingBotEnabled = currentUser.rows[0]?.whatsapp_bot_enabled === true && currentUser.rows[0]?.whatsapp_confirm_enabled === true;
   if (bookingBotEnabled && appointmentRecipients.length) {
     // Meta exige plantilla aprobada para mensajes iniciados por el negocio fuera de la

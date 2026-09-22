@@ -82,6 +82,7 @@
 - ✅ 2026-09-18 Corregida zona horaria del CRM y aclarados horarios Ecuador del bot.
 - ✅ 2026-09-22 Corregido bug real: al agendar desde `AdminAppointment.tsx` con `fetch` plano (sin `recordsFetch`), el header `X-Target-Clinic-Id` no viajaba cuando master_admin impersonaba una clínica, dejando el WhatsApp de confirmación con `clinic_id` nulo (contacto "sin clasificar" en el CRM aunque la cita sí perteneciera a la clínica correcta). Cambiado a `recordsFetch`.
 - ✅ 2026-09-22 Añadida reasignación manual de clínica por contacto en el CRM de WhatsApp (`setWhatsAppContactClinic` en `lib/whatsapp-crm.js`, acción `crmSetContactClinic` en `api/whatsapp-chatbot.js`, solo master_admin) y filtro por clínica + selector de reclasificación en `AdminWhatsAppCRM.tsx`.
+- ✅ 2026-09-22 Corregida la causa raíz real (verificada con un caso real de un usuario de clínica, no master_admin): `api/sendEmail.js` solo etiquetaba `whatsapp_contacts.clinic_id` cuando el bot de confirmación estaba habilitado (`whatsapp_bot_enabled` + `whatsapp_confirm_enabled`); si estaba apagado, el contacto solo se creaba después vía `handleIncomingMessages()` (que nunca pasa `clinicId`), quedando "sin clasificar" para siempre cuando el paciente tampoco está en `patients`. Nueva función `ensureWhatsAppContactClinic()` etiqueta la clínica al agendar SIEMPRE, sin depender del toggle de confirmación.
 
 ## Pendientes verificables
 
