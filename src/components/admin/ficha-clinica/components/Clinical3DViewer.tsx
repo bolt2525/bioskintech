@@ -38,6 +38,7 @@ export interface Marker3D {
   id?: string;
   type: MarkerType;
   pathologyId: string;
+  label?: string;
   position: { x: number; y: number; z: number };
   rotation: number[];
   normal: { x: number; y: number; z: number };
@@ -276,6 +277,8 @@ interface Clinical3DViewerProps {
   selectedPathology?: string;
   /** Callback cuando se hace click en la malla */
   onMarkerPlaced?: (data: any) => void;
+  /** Persiste el radio ajustado de una marcación zonal */
+  onMarkerRadiusChange?: (id: string, radius: number) => void;
   /** Altura CSS del contenedor (default: 400px) */
   height?: string;
   /** URL del modelo GLB (default: /models/clinical/male_head.glb) */
@@ -342,6 +345,7 @@ const ThreeEngine: React.FC<{
   markers: Marker3D[];
   zones: Zone[];
   onMeshClick: (data: any) => void;
+  onMarkerRadiusChange?: (id: string, radius: number) => void;
   onLoaded: () => void;
   onError: (msg: string) => void;
   pointMarkerScale?: number;
@@ -380,7 +384,7 @@ const ThreeEngine: React.FC<{
   onEditablePointHovered?: (id: string | null) => void;
   onBackgroundClick?: () => void;
 }> = ({
-  modelSource, markers, zones, onMeshClick, onLoaded, onError, readOnly,
+  modelSource, markers, zones, onMeshClick, onMarkerRadiusChange, onLoaded, onError, readOnly,
   referenceLines = [], lineDrawingMode, onLinePointAnchored,
   editablePoints = [], showEditablePoints = true, pointMode = 'none',
   onEditablePointMoved, onEditablePointDeleted, onEditablePointClicked,
@@ -420,7 +424,7 @@ const ThreeEngine: React.FC<{
   const twoPointStepRef = useRef<0 | 1>(0);
 
   const callbacks = useRef({
-    onMeshClick, onLoaded, onError, zones, readOnly, lineDrawingMode, onLinePointAnchored,
+    onMeshClick, onMarkerRadiusChange, onLoaded, onError, zones, readOnly, lineDrawingMode, onLinePointAnchored,
     pointMode, onEditablePointMoved, onEditablePointDeleted, onEditablePointClicked, onProjectedPositions,
     activeTool, selectedElementId, pendingBrushColor, pendingBrushThickness,
     onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onSurfaceShapeUpdated, onGridStepChange, onSnapPointChange,
@@ -428,7 +432,7 @@ const ThreeEngine: React.FC<{
   });
   useEffect(() => {
     callbacks.current = {
-      onMeshClick, onLoaded, onError, zones, readOnly, lineDrawingMode, onLinePointAnchored,
+      onMeshClick, onMarkerRadiusChange, onLoaded, onError, zones, readOnly, lineDrawingMode, onLinePointAnchored,
       pointMode, onEditablePointMoved, onEditablePointDeleted, onEditablePointClicked, onProjectedPositions,
       activeTool, selectedElementId, pendingBrushColor, pendingBrushThickness,
       onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onSurfaceShapeUpdated, onGridStepChange, onSnapPointChange,
@@ -528,6 +532,15 @@ const ThreeEngine: React.FC<{
     const mouse = new THREE.Vector2();
     let isDragging = false;
     let startPos = { x: 0, y: 0 };
+
+    // ── Redimensionado directo de marcaciones zonales ─────────────────────
+    let resizingZonalId: string | null = null;
+    let resizingZonalGroup: THREE.Group | null = null;
+    let resizingZonalStartRadius = 0;
+    let resizingZonalStartDistancePx = 0;
+    let resizingZonalUnitsPerPx = 0;
+    let resizingZonalRadius = 0;
+    let resizingZonalPointerId: number | null = null;
 
     // ── Estado drag de puntos editables ────────────────────────────────────
     let draggedEditableId: string | null = null;
@@ -861,6 +874,46 @@ const ThreeEngine: React.FC<{
         isDragging = false;
         return;
       }
+      if (!callbacks.current.readOnly && tool === 'none' && markersGroupRef.current && cameraRef.current) {
+        const rect = renderer.domElement.getBoundingClientRect();
+        mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(mouse, cameraRef.current);
+        const zonalMeshes: THREE.Object3D[] = [];
+        markersGroupRef.current.children.forEach(markerGroup => {
+          if (markerGroup.userData.isZonalMarker) {
+            markerGroup.traverse(child => { if ((child as THREE.Mesh).isMesh) zonalMeshes.push(child); });
+          }
+        });
+        const zonalHits = raycaster.intersectObjects(zonalMeshes, false);
+        const surfaceHits = faceMeshRef.current ? raycaster.intersectObject(faceMeshRef.current, true) : [];
+        const markerIsVisible = zonalHits.length > 0
+          && (surfaceHits.length === 0 || zonalHits[0].distance <= surfaceHits[0].distance + 0.03);
+        if (markerIsVisible) {
+          let markerObject: THREE.Object3D | null = zonalHits[0].object;
+          while (markerObject && !markerObject.userData.isZonalMarker) markerObject = markerObject.parent;
+          if (markerObject?.userData.markerId) {
+            const markerGroup = markerObject as THREE.Group;
+            const centerNdc = markerGroup.position.clone().project(cameraRef.current);
+            const centerX = rect.left + (centerNdc.x * 0.5 + 0.5) * rect.width;
+            const centerY = rect.top + (-centerNdc.y * 0.5 + 0.5) * rect.height;
+            const cameraDistance = cameraRef.current.position.distanceTo(markerGroup.position);
+            const fovRadians = (cameraRef.current.fov * Math.PI) / 180;
+            resizingZonalId = markerGroup.userData.markerId;
+            resizingZonalGroup = markerGroup;
+            resizingZonalStartRadius = markerGroup.userData.markerRadius;
+            resizingZonalRadius = resizingZonalStartRadius;
+            resizingZonalStartDistancePx = Math.hypot(e.clientX - centerX, e.clientY - centerY);
+            resizingZonalUnitsPerPx = (2 * cameraDistance * Math.tan(fovRadians / 2)) / rect.height;
+            resizingZonalPointerId = (e as PointerEvent).pointerId;
+            markerGroup.userData.resizeCenterScreen = { x: centerX, y: centerY };
+            if (controlsRef.current) controlsRef.current.enabled = false;
+            renderer.domElement.setPointerCapture?.((e as PointerEvent).pointerId);
+            isDragging = false;
+            return;
+          }
+        }
+      }
       // En readOnly (p.ej. modal de capturas), no iniciar drag de puntos:
       if (callbacks.current.readOnly) {
         isDragging = false;
@@ -900,6 +953,19 @@ const ThreeEngine: React.FC<{
     };
 
     const onPointerMove = (e: MouseEvent) => {
+      if (resizingZonalGroup && resizingZonalId) {
+        if ((e as PointerEvent).pointerId !== resizingZonalPointerId) return;
+        const center = resizingZonalGroup.userData.resizeCenterScreen as { x: number; y: number };
+        const currentDistancePx = Math.hypot(e.clientX - center.x, e.clientY - center.y);
+        const radiusDelta = (currentDistancePx - resizingZonalStartDistancePx) * resizingZonalUnitsPerPx;
+        resizingZonalRadius = THREE.MathUtils.clamp(resizingZonalStartRadius + radiusDelta, 0.06, 1.5);
+        const scale = resizingZonalRadius / resizingZonalStartRadius;
+        resizingZonalGroup.scale.setScalar(scale);
+        const labelSprite = resizingZonalGroup.userData.labelSprite as THREE.Sprite | undefined;
+        if (labelSprite) labelSprite.scale.copy(labelSprite.userData.baseScale).divideScalar(scale);
+        isDragging = true;
+        return;
+      }
       // ── Grid 3-step: preview en tiempo real ───────────────────────────────
       if (gridStep > 0 && faceMeshRef.current && cameraRef.current) {
         const rect = renderer.domElement.getBoundingClientRect();
@@ -1362,6 +1428,19 @@ const ThreeEngine: React.FC<{
     };
 
     const onPointerUp = (e: MouseEvent) => {
+      if (resizingZonalGroup && resizingZonalId) {
+        if ((e as PointerEvent).pointerId !== resizingZonalPointerId) return;
+        const markerId = resizingZonalId;
+        const nextRadius = resizingZonalRadius;
+        resizingZonalId = null;
+        resizingZonalGroup = null;
+        resizingZonalPointerId = null;
+        if (controlsRef.current) controlsRef.current.enabled = true;
+        renderer.domElement.releasePointerCapture?.((e as PointerEvent).pointerId);
+        callbacks.current.onMarkerRadiusChange?.(markerId, nextRadius);
+        isDragging = true;
+        return;
+      }
       // ── Finalizar handle drag ──────────────────────────────────────────────
       if (handleDragRole && handleDragLineId) {
         const role = handleDragRole;
@@ -1967,6 +2046,7 @@ const ThreeEngine: React.FC<{
     renderer.domElement.addEventListener('pointerdown', onPointerDown);
     renderer.domElement.addEventListener('pointermove', onPointerMove);
     renderer.domElement.addEventListener('pointerup', onPointerUp);
+    renderer.domElement.addEventListener('pointercancel', onPointerUp);
     renderer.domElement.addEventListener('click', onClick);
 
     // Hover mouse tracking (sin pointerEvents pesados — solo posición)
@@ -1999,6 +2079,13 @@ const ThreeEngine: React.FC<{
       animationFrameId = requestAnimationFrame(animate);
       if (controlsRef.current) controlsRef.current.update();
       if (rendererRef.current && sceneRef.current && cameraRef.current) {
+        const pulseOpacity = 0.25 + Math.sin(performance.now() * 0.0045) * 0.07;
+        markersGroupRef.current?.children.forEach(markerGroup => {
+          const materials = markerGroup.userData.pulseMaterials as THREE.MeshBasicMaterial[] | undefined;
+          materials?.forEach((material, index) => {
+            material.opacity = index === 0 ? pulseOpacity : 0.65 + pulseOpacity * 0.35;
+          });
+        });
         // ── Hover detection cada 2 frames (sin overhead significativo) ─────
         hoverFrameCount++;
         if (hoverFrameCount % 2 === 0 && !brushActive && !shapeAnchor) {
@@ -2195,6 +2282,7 @@ const ThreeEngine: React.FC<{
         dom.removeEventListener('pointerdown', onPointerDown);
         dom.removeEventListener('pointermove', onPointerMove);
         dom.removeEventListener('pointerup', onPointerUp);
+        dom.removeEventListener('pointercancel', onPointerUp);
         dom.removeEventListener('click', onClick);
         dom.removeEventListener('mousemove', onHoverMouseMove);
         dom.removeEventListener('mouseleave', onHoverMouseLeave);
@@ -2203,7 +2291,19 @@ const ThreeEngine: React.FC<{
       if (mountRef.current && rendererRef.current) {
         try { mountRef.current.removeChild(rendererRef.current.domElement); } catch (_) {}
       }
-      if (rendererRef.current) rendererRef.current.dispose();
+      controlsRef.current?.dispose();
+      sceneRef.current?.traverse((object: any) => {
+        object.geometry?.dispose();
+        const materials = object.material ? (Array.isArray(object.material) ? object.material : [object.material]) : [];
+        materials.forEach((material: any) => {
+          Object.values(material).forEach(value => {
+            if (value instanceof THREE.Texture) value.dispose();
+          });
+          material.dispose();
+        });
+      });
+      rendererRef.current?.renderLists.dispose();
+      rendererRef.current?.dispose();
     };
   }, []);
 
@@ -2293,16 +2393,85 @@ const ThreeEngine: React.FC<{
     while (group.children.length > 0) {
       const child = group.children[0];
       group.remove(child);
-      // @ts-ignore
-      if (child.geometry) child.geometry.dispose();
-      // @ts-ignore
-      if (child.material) {
-        // @ts-ignore
-        if (Array.isArray(child.material)) child.material.forEach((m: any) => m.dispose());
-        // @ts-ignore
-        else child.material.dispose();
-      }
+      child.traverse((object: any) => {
+        object.geometry?.dispose();
+        const materials = object.material ? (Array.isArray(object.material) ? object.material : [object.material]) : [];
+        materials.forEach((material: any) => {
+          material.map?.dispose();
+          material.dispose();
+        });
+      });
     }
+
+    const createLabelSprite = (text: string) => {
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      if (!context) return null;
+      const label = text.trim().slice(0, 32) || 'Marcación';
+      canvas.width = 512;
+      canvas.height = 96;
+      context.font = '600 30px Poppins, sans-serif';
+      context.textAlign = 'center';
+      context.textBaseline = 'middle';
+      context.fillStyle = 'rgba(15, 23, 42, 0.72)';
+      context.roundRect(8, 8, 496, 80, 18);
+      context.fill();
+      context.fillStyle = 'rgba(255, 255, 255, 0.92)';
+      context.fillText(label, 256, 49, 470);
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: true }));
+      sprite.scale.set(0.72, 0.135, 1);
+      sprite.userData.baseScale = sprite.scale.clone();
+      return sprite;
+    };
+
+    const createSurfacePatch = (center: THREE.Vector3, normal: THREE.Vector3, radius: number) => {
+      const radialSegments = 32;
+      const rings = 4;
+      const vertices: number[] = [normal.x * 0.008, normal.y * 0.008, normal.z * 0.008];
+      const indices: number[] = [];
+      const raycaster = new THREE.Raycaster();
+      const up = Math.abs(normal.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+      const tangent = new THREE.Vector3().crossVectors(up, normal).normalize();
+      const bitangent = new THREE.Vector3().crossVectors(normal, tangent).normalize();
+
+      for (let ring = 1; ring <= rings; ring++) {
+        const ringRadius = radius * (ring / rings);
+        for (let segment = 0; segment < radialSegments; segment++) {
+          const angle = (segment / radialSegments) * Math.PI * 2;
+          const candidate = center.clone()
+            .addScaledVector(tangent, Math.cos(angle) * ringRadius)
+            .addScaledVector(bitangent, Math.sin(angle) * ringRadius);
+          raycaster.set(candidate.clone().addScaledVector(normal, radius + 0.5), normal.clone().negate());
+          const hits = faceMesh ? raycaster.intersectObject(faceMesh, true) : [];
+          const projected = hits.length > 0
+            ? hits[0].point.clone().addScaledVector(normal, 0.008)
+            : candidate.addScaledVector(normal, 0.008);
+          projected.sub(center);
+          vertices.push(projected.x, projected.y, projected.z);
+        }
+      }
+
+      for (let segment = 0; segment < radialSegments; segment++) {
+        indices.push(0, 1 + segment, 1 + ((segment + 1) % radialSegments));
+      }
+      for (let ring = 1; ring < rings; ring++) {
+        const innerStart = 1 + (ring - 1) * radialSegments;
+        const outerStart = 1 + ring * radialSegments;
+        for (let segment = 0; segment < radialSegments; segment++) {
+          const next = (segment + 1) % radialSegments;
+          indices.push(innerStart + segment, outerStart + segment, outerStart + next);
+          indices.push(innerStart + segment, outerStart + next, innerStart + next);
+        }
+      }
+
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+      geometry.setIndex(indices);
+      geometry.computeVertexNormals();
+      return geometry;
+    };
 
     markers.forEach((marker) => {
       const pathology = PATHOLOGIES.find(p => p.id === marker.pathologyId);
@@ -2324,29 +2493,62 @@ const ThreeEngine: React.FC<{
           transparent: true, opacity: 0.8, roughness: 0, transmission: 0.9, thickness: 0.5,
         });
         markerGroup.add(new THREE.Mesh(outerGeo, outerMat));
+        const label = createLabelSprite(marker.label || marker.zone);
+        if (label) {
+          label.position.set(0, 0.19 * pointMarkerScale, 0.03);
+          markerGroup.add(label);
+        }
         group.add(markerGroup);
 
       } else if (marker.type === 'Zonal') {
-        // Esfera grande semi-transparente — más robusta que DecalGeometry para cualquier modelo
         const markerGroup = new THREE.Group();
+        const normal = new THREE.Vector3(marker.normal.x, marker.normal.y, marker.normal.z).normalize();
+        const labelDirection = Math.abs(normal.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
         markerGroup.position.copy(pos);
         markerGroup.userData.markerId = marker.id ?? `m-${Date.now()}`;
+        markerGroup.userData.isZonalMarker = true;
 
-        const radius = marker.radius || 0.22;
+        const radius = marker.radius || 0.16;
+        markerGroup.userData.markerRadius = radius;
+        const zonalColor = new THREE.Color('#14b8a6');
 
-        const haloGeo = new THREE.SphereGeometry(radius, 18, 18);
+        const haloGeo = createSurfacePatch(pos, normal, radius);
         const haloMat = new THREE.MeshBasicMaterial({
-          color, transparent: true, opacity: 0.28, depthWrite: false, depthTest: false,
+          color: zonalColor, transparent: true, opacity: 0.25, depthWrite: false,
+          depthTest: true, side: THREE.DoubleSide,
         });
         markerGroup.add(new THREE.Mesh(haloGeo, haloMat));
 
-        const ringGeo = new THREE.TorusGeometry(radius, radius * 0.06, 8, 32);
-        const ringMat = new THREE.MeshBasicMaterial({ color, depthWrite: false, depthTest: false });
-        markerGroup.add(new THREE.Mesh(ringGeo, ringMat));
+        const ringGeo = new THREE.RingGeometry(radius * 0.94, radius, 48);
+        const ringMat = new THREE.MeshBasicMaterial({
+          color: zonalColor, transparent: true, opacity: 0.75, depthWrite: false,
+          depthTest: true,
+        });
+        const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+        ringMesh.position.copy(normal).multiplyScalar(0.012);
+        ringMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
+        markerGroup.add(ringMesh);
 
         const coreGeo = new THREE.SphereGeometry(radius * 0.18, 8, 8);
-        const coreMat = new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false });
-        markerGroup.add(new THREE.Mesh(coreGeo, coreMat));
+        const coreMat = new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: true });
+        const coreMesh = new THREE.Mesh(coreGeo, coreMat);
+        coreMesh.position.copy(normal).multiplyScalar(radius * 0.12);
+        markerGroup.add(coreMesh);
+
+        const hitGeo = createSurfacePatch(pos, normal, radius * 1.15);
+        const hitMat = new THREE.MeshBasicMaterial({
+          transparent: true, opacity: 0, depthWrite: false, depthTest: true,
+          side: THREE.DoubleSide,
+        });
+        markerGroup.add(new THREE.Mesh(hitGeo, hitMat));
+
+        const label = createLabelSprite(marker.label || marker.zone);
+        if (label) {
+          label.position.copy(normal).multiplyScalar(0.03).addScaledVector(labelDirection, radius * 1.35);
+          markerGroup.userData.labelSprite = label;
+          markerGroup.add(label);
+        }
+        markerGroup.userData.pulseMaterials = [haloMat, ringMat];
 
         group.add(markerGroup);
       }
@@ -2889,6 +3091,7 @@ export default function Clinical3DViewer({
   zones = [],
   selectedPathology = 'botox',
   onMarkerPlaced,
+  onMarkerRadiusChange,
   height = '400px',
   modelUrl = '/models/clinical/male_head.glb',
   readOnly = false,
@@ -2984,6 +3187,7 @@ export default function Clinical3DViewer({
             zones={zones}
             readOnly={readOnly}
             onMeshClick={handleMeshClick}
+            onMarkerRadiusChange={onMarkerRadiusChange}
             onLoaded={() => { setModelLoaded(true); setModelError(false); }}
             onError={() => setModelError(true)}
             referenceLines={referenceLines}

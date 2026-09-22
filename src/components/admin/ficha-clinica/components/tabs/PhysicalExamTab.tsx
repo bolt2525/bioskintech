@@ -570,6 +570,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
       position3D: marker3D.position,
       normal3D: marker3D.normal,
       rotation3D: marker3D.rotation,
+      radius3D: 0.16,
       tercio: region.tercio,
       notes: '',
     };
@@ -621,12 +622,13 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
     .map(m => ({
       id: m.id,
       pathologyId: 'lesion',
+      label: m.category,
       type: (m.distribution === 'zonal' ? 'Zonal' : 'Puntual') as 'Puntual' | 'Zonal',
       position: m.position3D!,
       normal: m.normal3D || { x: 0, y: 0, z: 1 },
       rotation: m.rotation3D || [0, 0, 0],
       zone: m.notes || m.tercio || '',
-      radius: 0.1,
+      radius: m.radius3D ?? 0.16,
     }));
 
   // Body 3D markers (no zone detection)
@@ -635,12 +637,13 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
     .map(m => ({
       id: m.id,
       pathologyId: 'lesion',
+      label: m.category,
       type: (m.distribution === 'zonal' ? 'Zonal' : 'Puntual') as 'Puntual' | 'Zonal',
       position: m.position3D!,
       normal: m.normal3D || { x: 0, y: 0, z: 1 },
       rotation: m.rotation3D || [0, 0, 0],
       zone: m.notes || '',
-      radius: 0.1,
+      radius: m.radius3D ?? 0.16,
     }));
 
   const handleBody3DMarkerPlaced = (marker3D: Marker3D) => {
@@ -659,6 +662,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
       position3D: marker3D.position,
       normal3D: marker3D.normal,
       rotation3D: marker3D.rotation,
+      radius3D: 0.16,
       tercio: 'Corporal',
       notes: '',
     };
@@ -942,6 +946,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
                     referenceLines={showReferenceLines ? FACE_REFERENCE_LINES : []}
                     skipConfirmation={true}
                     onMarkerPlaced={handle3DMarkerPlaced}
+                    onMarkerRadiusChange={(id, radius) => setFaceMarks(prev => prev.map(mark => mark.id === id ? { ...mark, radius3D: radius } : mark))}
                     height="420px"
                     pointMarkerScale={0.5}
                   />
@@ -954,6 +959,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
                     modelUrl="/models/clinical/male_body.glb"
                     skipConfirmation={true}
                     onMarkerPlaced={handleBody3DMarkerPlaced}
+                    onMarkerRadiusChange={(id, radius) => setBodyMarks(prev => prev.map(mark => mark.id === id ? { ...mark, radius3D: radius } : mark))}
                     height="420px"
                     pointMarkerScale={0.5}
                   />

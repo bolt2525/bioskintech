@@ -19,6 +19,7 @@ export interface Mark {
   position3D?: { x: number; y: number; z: number };
   normal3D?: { x: number; y: number; z: number };
   rotation3D?: number[];
+  radius3D?: number;
   tercio?: string;
 }
 
