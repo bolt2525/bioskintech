@@ -99,7 +99,7 @@ export default async function handler(req, res) {
   const auth = await authenticateRequest(req);
   if (!auth.valid) return res.status(401).json({ success: false, message: 'No autenticado' });
   const requestedClinicId = auth.effective_clinic_id || auth.clinic_id;
-  const currentUser = auth.id ? await sql`SELECT phone, full_name, gentilicio, whatsapp_bot_enabled, whatsapp_confirm_enabled FROM clinic_users WHERE id = ${auth.id}` : { rows: [] };
+  const currentUser = auth.id ? await sql`SELECT phone, whatsapp_staff_phone, full_name, gentilicio, whatsapp_bot_enabled, whatsapp_confirm_enabled FROM clinic_users WHERE id = ${auth.id}` : { rows: [] };
 
   const escapeHtml = (value = '') => String(value)
     .replace(/&/g, '&amp;')
@@ -337,7 +337,7 @@ export default async function handler(req, res) {
       for (const recipient of appointmentRecipients) {
         const withinWindow = await isWithinCustomerServiceWindow(recipient);
         if (withinWindow) {
-          await sendWhatsAppText(recipient, whatsappMessage, { clinicId: requestedClinicId });
+          await sendWhatsAppText(recipient, whatsappMessage, { clinicId: requestedClinicId, bookedByUserId: auth.id });
         } else if (templateName) {
           await sendWhatsAppTemplate(recipient, templateName, templateLang, {
             nombre_paciente: paciente,
@@ -345,7 +345,7 @@ export default async function handler(req, res) {
             nombre_usuario: staffName,
             servicio: tratamiento,
             fecha_hora: fecha && hora ? `${fecha} ${hora}` : 'por confirmar',
-          }, { clinicId: requestedClinicId });
+          }, { clinicId: requestedClinicId, bookedByUserId: auth.id });
         } else {
           throw new Error('Fuera de la ventana de 24h y no hay WHATSAPP_TEMPLATE_APPOINTMENT configurada (se requiere plantilla aprobada por Meta para notificar a un número que no ha escrito antes)');
         }
@@ -355,6 +355,18 @@ export default async function handler(req, res) {
       console.error('❌ Error en WhatsApp:', waErr.message);
       errorDetails.push(`WhatsApp: ${waErr.message}`);
     }
+
+    // Aviso inmediato al staff que agendó: el email lo ve en su propia bandeja de enviados,
+    // pero el WhatsApp al paciente sale por la cuenta del negocio y el staff nunca sabía si llegó.
+    try {
+      const staffPhone = normalizeWhatsAppNumber(currentUser.rows[0]?.whatsapp_staff_phone || currentUser.rows[0]?.phone);
+      if (staffPhone && await isWithinCustomerServiceWindow(staffPhone)) {
+        const statusMessage = whatsappSuccess
+          ? `✅ Confirmación de WhatsApp enviada a ${paciente}. Te aviso por aquí en cuanto la lea — si necesitas algo más, contesta este chat o escribe *menu*.`
+          : `⚠️ No se pudo enviar la confirmación de WhatsApp a ${paciente}: ${errorDetails[errorDetails.length - 1] || 'error desconocido'}. Verifica su número o avísale por otro medio.\n\nEscribe *menu* para ver las opciones.`;
+        await sendWhatsAppText(staffPhone, statusMessage, { clinicId: requestedClinicId });
+      }
+    } catch { /* aviso best-effort — nunca debe romper el agendamiento */ }
   }
 
   // --- 1. CREAR EVENTO EN GOOGLE CALENDAR ---

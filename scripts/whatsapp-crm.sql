@@ -19,6 +19,8 @@ CREATE TABLE IF NOT EXISTS whatsapp_messages (
   status              VARCHAR(10) NOT NULL CHECK (status IN ('leido', 'enviado', 'fallido')),
   provider_message_id VARCHAR(255),
   error_detail        VARCHAR(500),
+  booked_by_user_id   INTEGER,
+  read_notified       BOOLEAN NOT NULL DEFAULT false,
   created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

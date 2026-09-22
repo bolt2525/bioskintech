@@ -12,6 +12,9 @@ import {
   updateWhatsAppMessageStatus,
   isSystemStaffPhone,
   setWhatsAppContactClinic,
+  markMessageReadNotified,
+  getContactById,
+  ensureWhatsAppContactClinic,
 } from '../lib/whatsapp-crm.js';
 import { getBotState, setBotState, clearBotState } from '../lib/whatsapp-bot-state.js';
 import { createShortWaLink, resolveShortWaLink } from '../lib/wa-short-link.js';
@@ -313,10 +316,30 @@ async function deleteAppointment(userId, eventId) {
   await calendar.events.delete({ calendarId: 'primary', eventId });
 }
 
+/** Crea una cita nueva en el calendario del staff, con el mismo formato que lee `parseAppointmentEvent`. */
+async function createAppointmentEvent(userId, patientName, patientPhone, professional, startDate, durationMs) {
+  const auth = await getUserOAuth2Client(userId);
+  if (!auth) throw new Error('No tienes Google Calendar conectado a tu cuenta.');
+  const calendar = google.calendar({ version: 'v3', auth });
+  const endDate = new Date(startDate.getTime() + durationMs);
+  const description = `Teléfono: ${patientPhone || 'No proporcionado'}` +
+    (professional ? `\nProfesional: ${professional}` : '') +
+    '\n[AGENDADO POR WHATSAPP]';
+  await calendar.events.insert({
+    calendarId: 'primary',
+    requestBody: {
+      summary: `Cita: ${patientName}`,
+      description,
+      start: { dateTime: startDate.toISOString(), timeZone: 'America/Guayaquil' },
+      end: { dateTime: endDate.toISOString(), timeZone: 'America/Guayaquil' },
+    },
+  });
+}
+
 
 const CANCEL_HINT = '\n\n(Escribe *cancelar* para salir de este proceso o *menu* para volver al inicio)';
 const MENU_TEXT = '1) Agenda\n2) Reporte financiero\n\nResponde con el número de la opción.';
-const AGENDA_MENU_TEXT = '📅 Agenda\n\n1) Ver citas de hoy\n2) Ver citas de otro día\n3) Reprogramar una cita\n4) Eliminar una cita\n\nResponde con el número de la opción.' + CANCEL_HINT;
+const AGENDA_MENU_TEXT = '📅 Agenda\n\n1) Ver citas de hoy\n2) Ver citas de otro día\n3) Reprogramar una cita\n4) Eliminar una cita\n5) Agendar una cita nueva\n\nResponde con el número de la opción.' + CANCEL_HINT;
 const FINANCE_REPORT_MENU_TEXT = '📊 Reporte financiero\n\n1) Diario\n2) Semanal\n3) Mensual\n\nResponde con el número o la palabra del período.' + CANCEL_HINT;
 const AGENDA_DATE_PROMPT = '📅 Escribe la fecha que quieres consultar.\nFormatos válidos: "hoy", "mañana", 31/12/2026 o 2026-12-31.' + CANCEL_HINT;
 const RESCHEDULE_DATE_PROMPT = '📅 ¿Qué día está la cita que quieres reprogramar?\nFormatos válidos: "hoy", "mañana", 31/12/2026 o 2026-12-31.' + CANCEL_HINT;
@@ -324,6 +347,9 @@ const DELETE_DATE_PROMPT = '📅 ¿Qué día está la cita que quieres eliminar?
 const NEW_DATE_PROMPT = '📅 Escribe la nueva fecha para la cita.\nFormatos válidos: "hoy", "mañana", 31/12/2026 o 2026-12-31.' + CANCEL_HINT;
 const NEW_DURATION_PROMPT = '⏱️ ¿Cuánto dura la cita? Responde en minutos (ej: 30, 60, 90).' + CANCEL_HINT;
 const NEW_PERIOD_PROMPT = '🌤️ ¿Prefieres la cita en la mañana o en la tarde? Responde "mañana" o "tarde".' + CANCEL_HINT;
+const BOOKING_NAME_PROMPT = '🧑‍⚕️ Vamos a agendar una cita nueva.\n\n¿Cuál es el nombre completo del paciente?' + CANCEL_HINT;
+const BOOKING_PHONE_PROMPT = '📱 ¿Cuál es el número de WhatsApp del paciente? (ej: 0991234567)' + CANCEL_HINT;
+const BOOKING_DATE_PROMPT = '📅 ¿Para qué día es la cita?\nFormatos válidos: "hoy", "mañana", 31/12/2026 o 2026-12-31.' + CANCEL_HINT;
 const ALLOWED_BOT_ACTIONS = new Set(['1', '2', 'diario', 'daily', 'semanal', 'weekly', 'mensual', 'monthly']);
 
 function buildFinanceRange(period, today = new Date()) {
@@ -558,9 +584,33 @@ async function handleSystemStaffMessage(from, text, normalizedText) {
 }
 
 /** Procesa mensajes entrantes: solo responde a números registrados como staff activo (clinic_users.phone). */
+/** Avisa al staff que agendó la cita cuando el paciente lee (o falla) la confirmación — así no queda "a ciegas" como con el correo. */
+async function notifyBookingUserOfDeliveryStatus({ bookedByUserId, contactId, status }) {
+  if (!bookedByUserId || (status !== 'leido' && status !== 'fallido')) return;
+  try {
+    const [staffRes, contact] = await Promise.all([
+      sql`SELECT phone, whatsapp_staff_phone FROM clinic_users WHERE id = ${bookedByUserId} AND is_active = true AND whatsapp_bot_enabled = true`,
+      getContactById(contactId),
+    ]);
+    const staffPhone = normalizeEcuadorPhone(staffRes.rows[0]?.whatsapp_staff_phone || staffRes.rows[0]?.phone || '');
+    if (!staffPhone || !(await isWithinCustomerServiceWindow(staffPhone))) return;
+    const patientLabel = contact?.name || contact?.phone || 'el paciente';
+    const message = status === 'leido'
+      ? `👀 ${patientLabel} ya leyó la confirmación de su cita.\n\n¿Necesitas algo más? Contesta este chat o escribe *menu* para ver las opciones.`
+      : `⚠️ No se pudo entregar la confirmación de WhatsApp a ${patientLabel}. Verifica el número o avísale por otro medio.\n\nEscribe *menu* para ver las opciones.`;
+    await sendWhatsAppText(staffPhone, message);
+  } catch (err) {
+    console.error('❌ Error notificando estado de entrega al staff:', err.message);
+  }
+}
+
 async function handleIncomingMessages(body) {
   for (const event of extractMessageStatuses(body)) {
-    await updateWhatsAppMessageStatus(event.providerMessageId, event.status, event.errorDetail);
+    const updated = await updateWhatsAppMessageStatus(event.providerMessageId, event.status, event.errorDetail);
+    if (updated && !updated.read_notified && (updated.status === 'leido' || updated.status === 'fallido')) {
+      await notifyBookingUserOfDeliveryStatus({ bookedByUserId: updated.booked_by_user_id, contactId: updated.contact_id, status: updated.status });
+      await markMessageReadNotified(updated.id);
+    }
   }
 
   for (const { from, text, mediaType, providerMessageId, timestamp, name } of extractIncomingMessages(body)) {
@@ -731,6 +781,96 @@ async function handleIncomingMessages(body) {
         }
       }
 
+      // ── Agendar cita nueva ────────────────────────────────────────────
+      if (botState?.flow === 'booking') {
+        if (!clinicUser.calendar_enabled) { await clearBotState(from); await sendWhatsAppText(from, 'No tienes acceso al módulo de Agenda.'); continue; }
+
+        if (botState.stage === 'awaitingPatientName') {
+          const patientName = text.trim().slice(0, 150);
+          if (patientName.length < 2) { await sendWhatsAppText(from, `Ese nombre no parece válido.\n\n${BOOKING_NAME_PROMPT}`); continue; }
+          await setBotState(from, 'booking', { stage: 'awaitingPatientPhone', patientName });
+          await sendWhatsAppText(from, BOOKING_PHONE_PROMPT);
+          continue;
+        }
+        if (botState.stage === 'awaitingPatientPhone') {
+          const patientPhone = normalizeEcuadorPhone(normalizedText);
+          if (patientPhone.length < 11 || patientPhone.length > 13) { await sendWhatsAppText(from, `Ese número no parece válido.\n\n${BOOKING_PHONE_PROMPT}`); continue; }
+          await setBotState(from, 'booking', { ...botState, stage: 'awaitingDate', patientPhone });
+          await sendWhatsAppText(from, BOOKING_DATE_PROMPT);
+          continue;
+        }
+        if (botState.stage === 'awaitingDate') {
+          const isoDate = parseFlexibleDate(normalizedText);
+          if (!isoDate) { await sendWhatsAppText(from, `No reconocí esa fecha.\n\n${BOOKING_DATE_PROMPT}`); continue; }
+          await setBotState(from, 'booking', { ...botState, stage: 'awaitingDuration', isoDate });
+          await sendWhatsAppText(from, NEW_DURATION_PROMPT);
+          continue;
+        }
+        if (botState.stage === 'awaitingDuration') {
+          const durationMinutes = parseDurationMinutes(normalizedText);
+          if (!durationMinutes) { await sendWhatsAppText(from, `No reconocí esa duración.\n\n${NEW_DURATION_PROMPT}`); continue; }
+          await setBotState(from, 'booking', { ...botState, stage: 'awaitingPeriod', durationMinutes });
+          await sendWhatsAppText(from, NEW_PERIOD_PROMPT);
+          continue;
+        }
+        if (botState.stage === 'awaitingPeriod') {
+          const period = parsePeriod(normalizedText);
+          if (!period) { await sendWhatsAppText(from, `No reconocí esa opción.\n\n${NEW_PERIOD_PROMPT}`); continue; }
+          const { error, slots } = await getAvailableSlots(clinicUser.id, clinicUser.clinic_id, botState.isoDate, period, botState.durationMinutes);
+          if (error) { await clearBotState(from); await sendWhatsAppText(from, error); continue; }
+          if (!slots.length) {
+            await sendWhatsAppText(from, `No hay horarios disponibles esa ${period === 'tarde' ? 'tarde' : 'mañana'} para ${botState.durationMinutes} min.\n\n${NEW_PERIOD_PROMPT}`);
+            continue;
+          }
+          await setBotState(from, 'booking', { ...botState, stage: 'awaitingSlotChoice', slots: slots.map(d => d.toISOString()) });
+          const list = slots.map((d, i) => `${i + 1}. ${d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'America/Guayaquil' })}`).join('\n');
+          await sendWhatsAppText(from, `Horarios disponibles:\n\n${list}\n\nResponde con el número del horario que prefieres.${CANCEL_HINT}`);
+          continue;
+        }
+        if (botState.stage === 'awaitingSlotChoice') {
+          const chosenIso = botState.slots[Number(normalizedText) - 1];
+          if (!chosenIso) { await sendWhatsAppText(from, `Número inválido. Responde con el número de la lista.${CANCEL_HINT}`); continue; }
+          await clearBotState(from);
+          try {
+            const startDate = new Date(chosenIso);
+            await createAppointmentEvent(clinicUser.id, botState.patientName, botState.patientPhone, clinicUser.full_name, startDate, botState.durationMinutes * 60000);
+            await ensureWhatsAppContactClinic(botState.patientPhone, clinicUser.clinic_id);
+            const horaLabel = startDate.toLocaleString('es-ES', { timeZone: 'America/Guayaquil', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+            let patientNotified = false;
+            try {
+              const clinicRow = await sql`SELECT general FROM clinic_settings WHERE clinic_id = ${clinicUser.clinic_id}`;
+              const clinicName = clinicRow.rows[0]?.general?.name || 'la clínica';
+              const patientMessage = `Hola ${botState.patientName}, tu cita en ${clinicName} fue agendada para el ${horaLabel}. Por favor responde a este mensaje si tienes alguna consulta.`;
+              const withinWindow = await isWithinCustomerServiceWindow(botState.patientPhone);
+              const templateName = (process.env.WHATSAPP_TEMPLATE_APPOINTMENT || '').trim();
+              const templateLang = (process.env.WHATSAPP_TEMPLATE_APPOINTMENT_LANG || 'es_MX').trim();
+              if (withinWindow) {
+                await sendWhatsAppText(botState.patientPhone, patientMessage, { clinicId: clinicUser.clinic_id, bookedByUserId: clinicUser.id });
+                patientNotified = true;
+              } else if (templateName) {
+                await sendWhatsAppTemplate(botState.patientPhone, templateName, templateLang, {
+                  nombre_paciente: botState.patientName,
+                  nombre_clinica: clinicName,
+                  nombre_usuario: clinicUser.full_name || clinicName,
+                  servicio: 'Consulta',
+                  fecha_hora: horaLabel,
+                }, { clinicId: clinicUser.clinic_id, bookedByUserId: clinicUser.id });
+                patientNotified = true;
+              }
+            } catch (notifyErr) {
+              console.error('❌ No se pudo notificar al paciente:', notifyErr.message);
+            }
+            const notifyNote = patientNotified
+              ? 'Se le envió la confirmación por WhatsApp — te aviso por aquí cuando la lea.'
+              : '⚠️ No se le pudo enviar confirmación por WhatsApp (verifica el número o contáctalo por otro medio).';
+            await sendWhatsAppText(from, `✅ Cita de ${botState.patientName} agendada para el ${horaLabel} (${botState.durationMinutes} min).\n${notifyNote}\n\nEscribe *menu* para ver las opciones.`);
+          } catch (err) {
+            await sendWhatsAppText(from, `❌ No se pudo agendar la cita: ${err.message}\n\nEscribe *menu* para ver las opciones.`);
+          }
+          continue;
+        }
+      }
+
       if (botState?.flow === 'agendaDate' && botState.stage === 'awaitingDate') {
         await clearBotState(from);
         if (!clinicUser.calendar_enabled) { await sendWhatsAppText(from, 'No tienes acceso al módulo de Agenda.'); continue; }
@@ -750,6 +890,7 @@ async function handleIncomingMessages(body) {
         if (normalizedText === '2') { await setBotState(from, 'agendaDate', { stage: 'awaitingDate' }); await sendWhatsAppText(from, AGENDA_DATE_PROMPT); continue; }
         if (normalizedText === '3') { await setBotState(from, 'reschedule', { stage: 'awaitingDate' }); await sendWhatsAppText(from, RESCHEDULE_DATE_PROMPT); continue; }
         if (normalizedText === '4') { await setBotState(from, 'delete', { stage: 'awaitingDate' }); await sendWhatsAppText(from, DELETE_DATE_PROMPT); continue; }
+        if (normalizedText === '5') { await setBotState(from, 'booking', { stage: 'awaitingPatientName' }); await sendWhatsAppText(from, BOOKING_NAME_PROMPT); continue; }
         await sendWhatsAppText(from, `No reconocí esa opción.\n\n${AGENDA_MENU_TEXT}`);
         continue;
       }
