@@ -2079,11 +2079,13 @@ const ThreeEngine: React.FC<{
       animationFrameId = requestAnimationFrame(animate);
       if (controlsRef.current) controlsRef.current.update();
       if (rendererRef.current && sceneRef.current && cameraRef.current) {
-        const pulseOpacity = 0.25 + Math.sin(performance.now() * 0.0045) * 0.07;
+        const pulse = (Math.sin(performance.now() * 0.0035) + 1) / 2;
         markersGroupRef.current?.children.forEach(markerGroup => {
           const materials = markerGroup.userData.pulseMaterials as THREE.MeshBasicMaterial[] | undefined;
           materials?.forEach((material, index) => {
-            material.opacity = index === 0 ? pulseOpacity : 0.65 + pulseOpacity * 0.35;
+            material.opacity = index === 0
+              ? THREE.MathUtils.lerp(0.16, 0.46, pulse)
+              : THREE.MathUtils.lerp(0.48, 0.95, pulse);
           });
         });
         // ── Hover detection cada 2 frames (sin overhead significativo) ─────
@@ -2409,22 +2411,28 @@ const ThreeEngine: React.FC<{
       const measureContext = canvas.getContext('2d');
       if (!measureContext) return null;
       measureContext.font = '600 24px Poppins, sans-serif';
-      canvas.width = Math.min(384, Math.max(120, Math.ceil(measureContext.measureText(label).width) + 36));
-      canvas.height = 64;
+      const logicalWidth = Math.min(384, Math.max(120, Math.ceil(measureContext.measureText(label).width) + 36));
+      const pixelRatio = 2;
+      canvas.width = logicalWidth * pixelRatio;
+      canvas.height = 64 * pixelRatio;
       const context = canvas.getContext('2d');
       if (!context) return null;
+      context.scale(pixelRatio, pixelRatio);
       context.font = '600 24px Poppins, sans-serif';
       context.textAlign = 'center';
       context.textBaseline = 'middle';
       context.fillStyle = 'rgba(15, 23, 42, 0.68)';
-      context.roundRect(2, 6, canvas.width - 4, 52, 14);
+      context.roundRect(2, 6, logicalWidth - 4, 52, 14);
       context.fill();
       context.fillStyle = 'rgba(255, 255, 255, 0.95)';
-      context.fillText(label, canvas.width / 2, 33, canvas.width - 20);
+      context.fillText(label, logicalWidth / 2, 33, logicalWidth - 20);
       const texture = new THREE.CanvasTexture(canvas);
       texture.colorSpace = THREE.SRGBColorSpace;
+      texture.anisotropy = rendererRef.current?.capabilities.getMaxAnisotropy() ?? 1;
+      texture.minFilter = THREE.LinearMipmapLinearFilter;
+      texture.magFilter = THREE.LinearFilter;
       const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: true }));
-      const worldWidth = THREE.MathUtils.clamp(canvas.width / 384 * 0.58, 0.3, 0.58);
+      const worldWidth = THREE.MathUtils.clamp(logicalWidth / 384 * 0.58, 0.3, 0.58);
       sprite.scale.set(worldWidth, 0.105, 1);
       sprite.userData.baseScale = sprite.scale.clone();
       return sprite;
