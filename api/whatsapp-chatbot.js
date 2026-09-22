@@ -583,7 +583,6 @@ async function handleSystemStaffMessage(from, text, normalizedText) {
   await sendWhatsAppText(from, SYSTEM_MENU_TEXT);
 }
 
-/** Procesa mensajes entrantes: solo responde a números registrados como staff activo (clinic_users.phone). */
 /** Avisa al staff que agendó la cita cuando el paciente lee (o falla) la confirmación — así no queda "a ciegas" como con el correo. */
 async function notifyBookingUserOfDeliveryStatus({ bookedByUserId, contactId, status }) {
   if (!bookedByUserId || (status !== 'leido' && status !== 'fallido')) return;
@@ -604,6 +603,7 @@ async function notifyBookingUserOfDeliveryStatus({ bookedByUserId, contactId, st
   }
 }
 
+/** Procesa mensajes entrantes: solo responde a números registrados como staff activo (clinic_users.phone). */
 async function handleIncomingMessages(body) {
   for (const event of extractMessageStatuses(body)) {
     const updated = await updateWhatsAppMessageStatus(event.providerMessageId, event.status, event.errorDetail);
