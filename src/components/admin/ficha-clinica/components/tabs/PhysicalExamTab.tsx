@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
@@ -617,7 +617,9 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
   };
 
   // Convert face marks to Marker3D[] for the 3D viewer (only 3D marks)
-  const face3DMarkers: Marker3D[] = faceMarks
+  // Memoized: solo recalcula cuando cambian las marcas, no en cada tecla de selectedCategory
+  // (una nueva referencia de array forzaba al visor 3D a reconstruir toda la escena Three.js)
+  const face3DMarkers: Marker3D[] = useMemo(() => faceMarks
     .filter(m => m.is3D && m.position3D)
     .map(m => ({
       id: m.id,
@@ -629,10 +631,10 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
       rotation: m.rotation3D || [0, 0, 0],
       zone: m.notes || m.tercio || '',
       radius: m.radius3D ?? 0.16,
-    }));
+    })), [faceMarks]);
 
   // Body 3D markers (no zone detection)
-  const body3DMarkers: Marker3D[] = bodyMarks
+  const body3DMarkers: Marker3D[] = useMemo(() => bodyMarks
     .filter(m => m.is3D && m.position3D)
     .map(m => ({
       id: m.id,
@@ -644,7 +646,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
       rotation: m.rotation3D || [0, 0, 0],
       zone: m.notes || '',
       radius: m.radius3D ?? 0.16,
-    }));
+    })), [bodyMarks]);
 
   const handleBody3DMarkerPlaced = (marker3D: Marker3D) => {
     if (!selectedCategory) {
