@@ -6,6 +6,7 @@
 - ✅ 2026-09-22 Compactadas y redistribuidas las etiquetas 3D para evitar solapamientos entre lesiones y líneas anatómicas.
 - ✅ 2026-09-22 Recalibradas las etiquetas 3D para recuperar legibilidad y mantenerlas próximas a cada marcación.
 - ✅ 2026-09-22 Mejorada nitidez 2x de etiquetas 3D y reforzado el pulso visible de las marcaciones zonales.
+- ✅ 2026-09-23 Corregido lag de escritura en Examen Físico: `face3DMarkers`/`body3DMarkers` generaban un array nuevo en cada render (incluida cada tecla del campo de lesión), forzando al visor 3D a reconstruir toda la escena Three.js por keystroke. Memoizados con `useMemo` sobre `faceMarks`/`bodyMarks`.
 - ✅ 2026-09-07 Confirmado stack real: React/Vite, Vercel, Neon y Cloudflare R2.
 - ✅ 2026-09-07 Corregido inventario documental de APIs y eliminado referencias SQLite/legacy.
 - ✅ 2026-09-07 Neon falla cerrado sin `NEON_APP_URL`; no usa el pool administrador como fallback.
