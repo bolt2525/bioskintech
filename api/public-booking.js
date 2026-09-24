@@ -32,6 +32,11 @@ function isRateLimited(req, clinicSlug, username) {
   return false;
 }
 
+function parseClock(value) {
+  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(String(value || ''));
+  return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+}
+
 function getTurnstileAllowedHosts() {
   const rawHosts = `${process.env.TURNSTILE_HOSTNAMES || ''},${process.env.APP_URL || ''}`;
   const hosts = rawHosts
@@ -127,6 +132,86 @@ async function findResourceConflict(oauthClient, userId, resourceId, start, end)
   return null;
 }
 
+async function getPublicAvailability(req, res) {
+  const clinicSlug = sanitizeText(req.query?.clinicSlug, 120);
+  const username = sanitizeText(req.query?.username, 80);
+  const date = sanitizeText(req.query?.date, 20);
+  const service = sanitizeText(req.query?.service, 200);
+  const requestedResource = sanitizeText(req.query?.resource_id, 40);
+  if (!clinicSlug || !username || !date || !service) {
+    return res.status(400).json({ success: false, error: 'Selecciona fecha y tratamiento para ver horarios.' });
+  }
+
+  const userRow = await sql`
+    SELECT cu.id, cu.clinic_id, cu.full_name, cu.username, cu.public_booking_enabled,
+      cu.multi_resource_enabled, c.name AS clinic_name, c.slug AS clinic_slug
+    FROM clinic_users cu
+    JOIN clinics c ON c.id = cu.clinic_id
+    WHERE c.slug = ${clinicSlug} AND cu.username = ${username} AND cu.is_active = true
+    LIMIT 1
+  `;
+  if (!userRow.rows.length) return res.status(404).json({ success: false, error: 'El enlace de agendamiento no existe o no está activo.' });
+  const professional = userRow.rows[0];
+  if (!professional.public_booking_enabled) return res.status(403).json({ success: false, error: 'Este profesional no tiene habilitado el agendamiento público.' });
+
+  const settingsRows = await sql`SELECT treatments, agenda FROM clinic_settings WHERE clinic_id = ${professional.clinic_id} LIMIT 1`;
+  const settings = settingsRows.rows[0] || {};
+  const treatments = Array.isArray(settings.treatments) ? settings.treatments : [];
+  const durations = settings.agenda && typeof settings.agenda === 'object' ? settings.agenda.treatment_durations || {} : {};
+  const treatment = treatments
+    .map((name) => ({ name: String(name || '').trim(), durationMinutes: Number(durations[name] || 0) }))
+    .find((item) => item.name === service && Number.isFinite(item.durationMinutes) && item.durationMinutes >= 30 && item.durationMinutes <= 180);
+  if (!treatment) return res.status(400).json({ success: false, error: 'Selecciona un tratamiento disponible para reservar.' });
+  if (!isValidFutureLocalDateTime(date, '23:59')) return res.status(400).json({ success: false, error: 'Selecciona una fecha futura válida.' });
+  if (requestedResource && requestedResource.startsWith('staff:') && !professional.multi_resource_enabled) {
+    return res.status(400).json({ success: false, error: 'El agendamiento multiusuario no está habilitado.' });
+  }
+
+  const resourceId = await resolveResourceId(professional.id, requestedResource || undefined);
+  if (!resourceId) return res.status(400).json({ success: false, error: 'Recurso de agenda inválido.' });
+  const resourceRow = resourceId.startsWith('staff:')
+    ? await sql`SELECT work_hours FROM clinic_staff_resources WHERE id = ${parseInt(resourceId.replace('staff:', ''), 10)} AND owner_user_id = ${professional.id} AND active = true`
+    : { rows: [{ work_hours: {} }] };
+  const workHours = resourceRow.rows[0]?.work_hours || {};
+  const workStart = workHours.start_hour || settings.agenda?.start_hour || '08:00';
+  const workEnd = workHours.end_hour || settings.agenda?.end_hour || '19:00';
+  const startMinutes = parseClock(workStart);
+  const endMinutes = parseClock(workEnd);
+  const configuredStep = Number(settings.agenda?.slot_minutes);
+  const step = configuredStep >= 15 && configuredStep <= 120 ? configuredStep : 30;
+  if (startMinutes === null || endMinutes === null || endMinutes <= startMinutes) {
+    return res.status(200).json({ success: true, slots: [], message: 'No hay una jornada válida configurada.' });
+  }
+
+  const oauth = await getUserOAuth2Client(professional.id);
+  if (!oauth) return res.status(503).json({ success: false, error: 'Este profesional aún no tiene agenda conectada.' });
+  const calendar = google.calendar({ version: 'v3', auth: oauth.client });
+  const dayStart = new Date(`${date}T00:00:00-05:00`);
+  const dayEnd = new Date(`${date}T23:59:59-05:00`);
+  const { data } = await calendar.events.list({
+    calendarId: 'primary',
+    timeMin: dayStart.toISOString(),
+    timeMax: dayEnd.toISOString(),
+    singleEvents: true,
+  });
+  const busy = (data.items || [])
+    .filter((event) => event.status !== 'cancelled' && eventResourceId(event, professional.id) === resourceId)
+    .map((event) => ({
+      start: new Date(event.start?.dateTime || event.start?.date).getTime(),
+      end: new Date(event.end?.dateTime || event.end?.date).getTime(),
+    }))
+    .filter((event) => Number.isFinite(event.start) && Number.isFinite(event.end));
+  const slots = [];
+  for (let minutes = startMinutes; minutes + treatment.durationMinutes <= endMinutes; minutes += step) {
+    const hour = `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+    if (!isValidFutureLocalDateTime(date, hour)) continue;
+    const start = new Date(`${date}T${hour}:00-05:00`).getTime();
+    const end = start + treatment.durationMinutes * 60_000;
+    if (!busy.some((event) => rangesOverlap(start, end, event.start, event.end))) slots.push(hour);
+  }
+  return res.status(200).json({ success: true, slots, durationMinutes: treatment.durationMinutes });
+}
+
 function emailHtml({ clinicName, patientName, service, date, time, professionalName, resourceName }) {
   return `
     <div style="font-family:Arial,sans-serif;max-width:620px;margin:0 auto;border:1px solid #f0e7db;border-radius:12px;overflow:hidden;">
@@ -149,6 +234,7 @@ function emailHtml({ clinicName, patientName, service, date, time, professionalN
 }
 
 export default async function handler(req, res) {
+  if (req.method === 'GET') return getPublicAvailability(req, res);
   if (req.method !== 'POST') return res.status(405).json({ success: false, message: 'Método no permitido' });
 
   const body = req.body || {};
