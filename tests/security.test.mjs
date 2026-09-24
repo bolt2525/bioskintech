@@ -179,9 +179,9 @@ test('appointment replies classify only explicit confirmations as confirmed', as
   assert.equal(classifyAppointmentReply('No podré ir'), 'needs_contact');
   assert.equal(classifyAppointmentReply('Llegaré tarde'), 'needs_contact');
   assert.equal(classifyAppointmentReply('Deseo cambiar la cita'), 'needs_contact');
-  assert.equal(formatAppointmentReplyStatus('confirmed'), '✅ Confirmó asistencia');
-  assert.equal(formatAppointmentReplyStatus('needs_contact'), '⚠️ Solicitó atención');
-  assert.equal(formatAppointmentReplyStatus(null), '⚠️ No confirmó');
+  assert.equal(formatAppointmentReplyStatus('confirmed'), '✅ Confirmó su asistencia mediante el sistema automático.');
+  assert.equal(formatAppointmentReplyStatus('needs_contact'), '⚠️ Respondió al sistema y necesita atención. Sugerencia: revisa su mensaje y contáctalo directamente.');
+  assert.equal(formatAppointmentReplyStatus(null), '⚠️ Aún no ha confirmado en el sistema. Sugerencia: escríbele directamente usando el enlace de abajo.');
 });
 
 test('WhatsApp finance report selection maps menu choices to report periods', async () => {

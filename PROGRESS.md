@@ -2,6 +2,7 @@
 
 ## Auditoría integral
 
+- ✅ 2026-09-24 Humanizados avisos automáticos al staff: se identifica el bot, se explica cada estado y se sugiere la acción para pacientes sin confirmación.
 - ✅ 2026-09-24 Separado recordatorio de pacientes a las 14:00 Ecuador; los resúmenes internos permanecen a las 07:00 y 19:00.
 - ✅ 2026-09-24 Endurecida desconexión Google desde Estado del sistema: revoca ante Google antes de borrar el token local y conserva la conexión si la revocación remota falla.
 - ✅ 2026-09-24 Añadida interacción segura de recordatorios: botón Confirmar, respuestas deterministas del paciente, enlace directo multi-clínica y aviso al profesional por WhatsApp o correo.

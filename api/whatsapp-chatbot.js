@@ -150,9 +150,9 @@ export function classifyAppointmentReply(text, buttonPayload = '') {
 }
 
 export function formatAppointmentReplyStatus(status) {
-  if (status === 'confirmed') return '✅ Confirmó asistencia';
-  if (status === 'needs_contact') return '⚠️ Solicitó atención';
-  return '⚠️ No confirmó';
+  if (status === 'confirmed') return '✅ Confirmó su asistencia mediante el sistema automático.';
+  if (status === 'needs_contact') return '⚠️ Respondió al sistema y necesita atención. Sugerencia: revisa su mensaje y contáctalo directamente.';
+  return '⚠️ Aún no ha confirmado en el sistema. Sugerencia: escríbele directamente usando el enlace de abajo.';
 }
 
 function normalizeContactPhone(value) {
@@ -171,8 +171,12 @@ async function notifyStaffOfPatientReply(appointment, patientText, intent) {
   const appointmentDate = appointment.appointment_start
     ? new Date(appointment.appointment_start).toLocaleString('es-EC', { timeZone: 'America/Guayaquil', dateStyle: 'short', timeStyle: 'short' })
     : 'la cita programada';
-  const intentLabel = intent === 'confirmed' ? 'confirmó su asistencia' : 'solicitó comunicarse con la clínica';
-  const message = `📅 ${patient} ${intentLabel}.
+  const intentLabel = intent === 'confirmed'
+    ? 'confirmó su asistencia mediante el recordatorio automático'
+    : 'respondió al recordatorio automático y necesita atención directa';
+  const message = `🤖 Aviso automático del sistema de agenda.
+
+${patient} ${intentLabel}.
 Cita: ${appointmentDate}
 Mensaje: ${patientText || '(botón Confirmar)'}`;
   const staffPhone = normalizeContactPhone(appointment.professional_phone);
@@ -1256,7 +1260,7 @@ async function sendAppointmentSummaries(dayOffset = 0, slot = 'morning') {
         const replyStatus = `\nEstado: ${formatAppointmentReplyStatus(replyStatuses[appointment.eventId])}`;
         return `${index + 1}. ${appointment.hora || 'Hora pendiente'} — ${appointment.patientName}${professional}${resource}${replyStatus}${link}`;
       });
-      const summary = `Hola ${row.staff_name || 'equipo'}, este es el resumen de citas de ${clinicName} de ${label} (${targetDate}):\n\n${lines.join('\n\n')}` +
+      const summary = `Hola ${row.staff_name || 'equipo'}, este es un resumen automático del sistema de agenda de ${clinicName} para ${label} (${targetDate}). No es un mensaje enviado desde tu WhatsApp personal.\n\n${lines.join('\n\n')}` +
         '\n\nResponde 1 para Agenda o 2 para Reporte financiero.';
       const staffPhone = normalizeEcuadorPhone(row.staff_phone);
       try {
