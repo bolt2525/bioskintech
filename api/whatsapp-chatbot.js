@@ -19,6 +19,8 @@ import {
   getRecentAppointmentNotificationContext,
   hasRecentAppointmentSystemReply,
   getPendingAppointmentReplyContext,
+  setAppointmentReplyStatus,
+  getAppointmentReplyStatuses,
 } from '../lib/whatsapp-crm.js';
 import { getBotState, setBotState, clearBotState } from '../lib/whatsapp-bot-state.js';
 import { createShortWaLink, resolveShortWaLink } from '../lib/wa-short-link.js';
@@ -147,6 +149,12 @@ export function classifyAppointmentReply(text, buttonPayload = '') {
   return 'needs_contact';
 }
 
+export function formatAppointmentReplyStatus(status) {
+  if (status === 'confirmed') return '✅ Confirmó asistencia';
+  if (status === 'needs_contact') return '⚠️ Solicitó atención';
+  return '⚠️ No confirmó';
+}
+
 function normalizeContactPhone(value) {
   return normalizeEcuadorPhone(value);
 }
@@ -205,6 +213,7 @@ async function handlePatientAppointmentReply({ from, text, buttonPayload }) {
       : '';
     await sendWhatsAppText(from, buildClinicContactMessage({ ...appointment, contactLink }), { clinicId: appointment.clinic_id });
   }
+  await setAppointmentReplyStatus(from, appointment.appointment_event_id, intent);
   await notifyStaffOfPatientReply(appointment, text, intent);
   return true;
 }
@@ -1234,16 +1243,18 @@ async function sendAppointmentSummaries(dayOffset = 0, slot = 'morning') {
           'Por favor confirma tu asistencia respondiendo a este mensaje o comunícate con la clínica.';
         // Enlace abre WhatsApp del staff con el chat del PACIENTE, no del número de la clínica
         const link = appointment.phone ? await createShortWaLink(appointment.phone, patientMessage) : '';
-        appointments.push({ ...appointment, hora, link });
+        appointments.push({ ...appointment, eventId: event.id, hora, link });
       }
       if (!appointments.length) continue;
 
+      const replyStatuses = await getAppointmentReplyStatuses(appointments.map(appointment => appointment.eventId));
       const label = dayOffset === 0 ? 'hoy' : 'mañana';
       const lines = appointments.map((appointment, index) => {
         const professional = appointment.professional ? `\nProfesional: ${appointment.professional}` : '';
         const resource = appointment.resource ? `\nAtiende: ${appointment.resource}` : '';
         const link = appointment.link ? `\nEnviar recordatorio: ${appointment.link}` : '\nSin teléfono de paciente registrado — no se puede generar el enlace.';
-        return `${index + 1}. ${appointment.hora || 'Hora pendiente'} — ${appointment.patientName}${professional}${resource}${link}`;
+        const replyStatus = `\nEstado: ${formatAppointmentReplyStatus(replyStatuses[appointment.eventId])}`;
+        return `${index + 1}. ${appointment.hora || 'Hora pendiente'} — ${appointment.patientName}${professional}${resource}${replyStatus}${link}`;
       });
       const summary = `Hola ${row.staff_name || 'equipo'}, este es el resumen de citas de ${clinicName} de ${label} (${targetDate}):\n\n${lines.join('\n\n')}` +
         '\n\nResponde 1 para Agenda o 2 para Reporte financiero.';
@@ -1330,8 +1341,13 @@ export default async function handler(req, res) {
     }
     try {
       const slot = getQueryValue(req.query?.slot);
-      const summaryResult = await sendAppointmentSummaries(slot === 'evening' ? 1 : 0, slot === 'evening' ? 'evening' : 'morning');
-      const patientResult = await sendPatientAppointmentReminders(1);
+      const isAfternoon = slot === 'afternoon';
+      const summaryResult = isAfternoon
+        ? { usersChecked: 0, remindersSent: 0, errors: [] }
+        : await sendAppointmentSummaries(slot === 'evening' ? 1 : 0, slot === 'evening' ? 'evening' : 'morning');
+      const patientResult = isAfternoon
+        ? await sendPatientAppointmentReminders(1)
+        : { patientsChecked: 0, sent: 0, errors: [] };
       return res.status(200).json({ success: true, ...summaryResult, patientReminder: patientResult });
     } catch (err) {
       console.error('❌ Error en recordatorios WhatsApp:', err.message);

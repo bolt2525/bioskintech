@@ -65,6 +65,7 @@ const migrations = [
   "ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS read_notified BOOLEAN NOT NULL DEFAULT false",
   "ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS appointment_event_id VARCHAR(255)",
   "ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS appointment_start TIMESTAMPTZ",
+  "ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS appointment_reply_status VARCHAR(30)",
 ];
 
 const newTables = [

@@ -172,13 +172,16 @@ test('WhatsApp bot extracts auditable messages only when a sender exists', async
 });
 
 test('appointment replies classify only explicit confirmations as confirmed', async () => {
-  const { classifyAppointmentReply } = await import('../api/whatsapp-chatbot.js');
+  const { classifyAppointmentReply, formatAppointmentReplyStatus } = await import('../api/whatsapp-chatbot.js');
 
   assert.equal(classifyAppointmentReply('Confirmar', 'appointment_confirm:event-1'), 'confirmed');
   assert.equal(classifyAppointmentReply('Sí, asistiré'), 'confirmed');
   assert.equal(classifyAppointmentReply('No podré ir'), 'needs_contact');
   assert.equal(classifyAppointmentReply('Llegaré tarde'), 'needs_contact');
   assert.equal(classifyAppointmentReply('Deseo cambiar la cita'), 'needs_contact');
+  assert.equal(formatAppointmentReplyStatus('confirmed'), '✅ Confirmó asistencia');
+  assert.equal(formatAppointmentReplyStatus('needs_contact'), '⚠️ Solicitó atención');
+  assert.equal(formatAppointmentReplyStatus(null), '⚠️ No confirmó');
 });
 
 test('WhatsApp finance report selection maps menu choices to report periods', async () => {

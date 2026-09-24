@@ -380,6 +380,7 @@ export async function initMultiTenantSchema() {
       read_notified       BOOLEAN NOT NULL DEFAULT false,
       appointment_event_id VARCHAR(255),
       appointment_start   TIMESTAMPTZ,
+      appointment_reply_status VARCHAR(30),
       created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `;

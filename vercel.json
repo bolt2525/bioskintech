@@ -26,6 +26,7 @@
   "crons": [
     { "path": "/api/whatsapp-chatbot?action=sendReminders&slot=morning", "schedule": "0 12 * * *" },
     { "path": "/api/whatsapp-chatbot?action=sendReminders&slot=evening", "schedule": "0 0 * * *" },
+    { "path": "/api/whatsapp-chatbot?action=sendReminders&slot=afternoon", "schedule": "0 19 * * *" },
     { "path": "/api/records?action=sendScheduledFinanceCsv", "schedule": "0 11 * * *" }
   ]
 }
