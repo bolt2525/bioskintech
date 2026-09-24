@@ -174,7 +174,7 @@ async function notifyStaffOfPatientReply(appointment, patientText, intent) {
   const intentLabel = intent === 'confirmed'
     ? 'confirmó su asistencia mediante el recordatorio automático'
     : 'respondió al recordatorio automático y necesita atención directa';
-  const message = `🤖 Aviso automático del sistema de agenda.
+  const message = `🤖 Mensaje generado automáticamente por el chatbot del sistema.
 
 ${patient} ${intentLabel}.
 Cita: ${appointmentDate}
@@ -1258,7 +1258,7 @@ async function sendAppointmentSummaries(dayOffset = 0, slot = 'morning') {
         const action = appointment.link ? ` · Escribir: ${appointment.link}` : ' · Sin enlace de paciente';
         return `${index + 1}) ${appointment.hora || 'Hora pendiente'} ${appointment.patientName} · ${formatAppointmentReplyStatus(replyStatuses[appointment.eventId])}${action}`;
       });
-      const summary = `Hola ${row.staff_name || 'equipo'}, este es un resumen automático del sistema de agenda de ${clinicName} para ${label} (${targetDate}). No es un mensaje enviado desde tu WhatsApp personal.\n\n${lines.join('\n\n')}` +
+      const summary = `Hola ${row.staff_name || 'equipo'}, este mensaje fue generado automáticamente por el chatbot del sistema para ${clinicName} (${label}, ${targetDate}). Los recordatorios de pacientes también son gestionados automáticamente por el chatbot.\n\n${lines.join('\n\n')}` +
         '\n\nResponde 1 para Agenda o 2 para Reporte financiero.';
       const staffPhone = normalizeEcuadorPhone(row.staff_phone);
       try {

@@ -2,6 +2,7 @@
 
 ## Auditoría integral
 
+- ✅ 2026-09-24 Simplificado aviso de origen: se identifica brevemente al chatbot del sistema como generador del resumen y gestor de recordatorios.
 - ✅ 2026-09-24 Compactado resumen multi-cita de WhatsApp: una línea por paciente con hora, estado y acción.
 - ✅ 2026-09-24 Humanizados avisos automáticos al staff: se identifica el bot, se explica cada estado y se sugiere la acción para pacientes sin confirmación.
 - ✅ 2026-09-24 Separado recordatorio de pacientes a las 14:00 Ecuador; los resúmenes internos permanecen a las 07:00 y 19:00.
