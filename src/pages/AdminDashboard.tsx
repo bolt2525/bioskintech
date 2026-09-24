@@ -340,12 +340,13 @@ export default function AdminDashboard() {
   };
 
   // ─── Guardar horario de agenda (clinic_admin) ──────────────────────────────
-  const handleSaveAgendaSettings = async () => {
-    if (!user?.clinic_id) return;
+  const handleSaveAgendaSettings = async (publicBookingOverride?: boolean) => {
+    if (!user?.clinic_id) return false;
     setAgendaSaving(true); setAgendaMsg(null);
     try {
       const token = sessionStorage.getItem('adminSessionToken');
       const agendaPayload = { ...agendaSettings, treatment_durations: agendaSettings.treatment_durations || {} };
+      const targetPublicBookingEnabled = publicBookingOverride ?? publicBookingEnabled;
       const tasks = [
         fetch('/api/admin-auth?action=saveClinicSettings', {
           method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -363,25 +364,35 @@ export default function AdminDashboard() {
           method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({ enabled: multiResource }),
         }),
-        fetch('/api/admin-auth?action=setPublicBookingConfig', {
-          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ enabled: publicBookingEnabled }),
-        }),
       ];
-      const [agendaRes, treatmentsRes, emailsRes, multiRes, publicRes] = await Promise.all(tasks);
-      const [agendaData, treatmentsData, emailsData, multiData, publicData] = await Promise.all([
-        agendaRes.json(), treatmentsRes.json(), emailsRes.json(), multiRes.json(), publicRes.json(),
+      const [agendaRes, treatmentsRes, emailsRes, multiRes] = await Promise.all(tasks);
+      const [agendaData, treatmentsData, emailsData, multiData] = await Promise.all([
+        agendaRes.json(), treatmentsRes.json(), emailsRes.json(), multiRes.json(),
       ]);
-      const anyError = [agendaData, treatmentsData, emailsData, multiData, publicData].find(d => d && d.error);
+      const settingsError = [agendaData, treatmentsData, emailsData, multiData].find(d => d && d.error);
+      if (settingsError) {
+        setAgendaMsg({ text: settingsError.error, ok: false });
+        return false;
+      }
+      const publicRes = await fetch('/api/admin-auth?action=setPublicBookingConfig', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ enabled: targetPublicBookingEnabled }),
+      });
+      const publicData = await publicRes.json();
+      const anyError = publicData?.error ? publicData : null;
       setAgendaMsg({ text: anyError?.error || '¡Ajustes de agenda guardados!', ok: !anyError });
-      if (!publicBookingEnabled && publicData?.success) setPublicBookingEnabled(false);
-      if (publicBookingEnabled && !hasPublicBookingTreatments) {
+      if (publicData?.success) setPublicBookingEnabled(targetPublicBookingEnabled);
+      if (targetPublicBookingEnabled && !hasPublicBookingTreatments) {
         setPublicBookingEnabled(false);
         setAgendaMsg({ text: 'Debes definir la duración de al menos un tratamiento antes de habilitar reservas públicas.', ok: false });
       }
-      if (publicBookingEnabled && !publicData?.success) {
+      if (targetPublicBookingEnabled && !publicData?.success) {
         setAgendaMsg({ text: publicData?.error || 'No se pudo habilitar la reserva pública.', ok: false });
       }
+      return !anyError;
+    } catch {
+      setAgendaMsg({ text: 'No se pudieron guardar los ajustes. Inténtalo de nuevo.', ok: false });
+      return false;
     } finally { setAgendaSaving(false); }
   };
 
@@ -1266,29 +1277,34 @@ export default function AdminDashboard() {
                 </div>
 
                 {showPublicBookingModal && (
-                  <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-[60]">
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+                  <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 z-[60]" role="dialog" aria-modal="true" aria-labelledby="public-booking-title">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col">
                       <div className="h-0.5 bg-gradient-to-r from-[#deb887] to-[#c5a075]" />
-                      <div className="p-6">
-                        <div className="flex items-center gap-3 mb-3">
+                      <div className="p-4 sm:p-5 border-b border-gray-100 flex-shrink-0">
+                        <div className="flex items-start gap-3">
                           <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center">
                             <AlertCircle className="w-5 h-5" />
                           </div>
-                          <div>
+                          <div className="flex-1 min-w-0">
                             <p className="text-[10px] uppercase tracking-[0.2em] text-amber-700 font-semibold">Reservas públicas</p>
-                            <h3 className="text-lg font-bold text-gray-900">Falta la duración de tratamientos</h3>
+                            <h3 id="public-booking-title" className="text-lg font-bold text-gray-900">Elige qué tratamientos publicar</h3>
                           </div>
+                          <button type="button" onClick={() => setShowPublicBookingModal(false)} className="p-1.5 text-gray-400 hover:text-gray-700" aria-label="Cerrar">
+                            <X className="w-5 h-5" />
+                          </button>
                         </div>
-                        <p className="text-sm text-gray-600">Configura la duración de los tratamientos que deseas ofrecer en el enlace público. Los tratamientos sin duración quedarán ocultos para los pacientes.</p>
-                        <div className="mt-4 space-y-2">
+                        <p className="mt-3 text-sm text-gray-600">La duración permite calcular hasta qué hora estará ocupado el profesional y evita que otro paciente reserve durante esa cita.</p>
+                        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                          Pon tiempo solo a los tratamientos que quieres mostrar. Los que queden en 0 no aparecerán en el enlace público.
+                        </div>
+                      </div>
+                      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 sm:p-4">
+                        <div className="space-y-2">
                           {clinicTreatments.map((t) => (
-                            <div key={t} className="flex items-center justify-between gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
-                              <span className="text-sm text-gray-700 truncate">{t}</span>
-                              <div className="flex items-center gap-2">
-                                <input
-                                  type="number"
-                                  min={30}
-                                  step={15}
+                            <div key={t} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                              <span className="text-sm text-gray-700 leading-tight">{t}</span>
+                              <div className="flex items-center gap-1.5">
+                                <select
                                   value={Number(agendaSettings.treatment_durations?.[t] || 0)}
                                   onChange={(e) => setAgendaSettings((prev) => ({
                                     ...prev,
@@ -1297,20 +1313,27 @@ export default function AdminDashboard() {
                                       [t]: Number(e.target.value) || 0,
                                     },
                                   }))}
-                                  className="w-20 px-2 py-1.5 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none"
-                                />
-                                <span className="text-xs text-gray-500">min</span>
+                                  aria-label={`Duración de ${t} en minutos`}
+                                  className="w-28 px-2 py-1.5 border rounded-lg bg-white text-xs focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none"
+                                >
+                                  <option value={0}>No publicar</option>
+                                  {[30, 45, 60, 75, 90, 105, 120, 150, 180].map((minutes) => (
+                                    <option key={minutes} value={minutes}>{minutes} min</option>
+                                  ))}
+                                </select>
                               </div>
                             </div>
                           ))}
                         </div>
-                        <div className="mt-5 flex justify-end gap-2">
-                          <button onClick={() => setShowPublicBookingModal(false)} className="px-4 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-100">Cerrar</button>
-                          <button onClick={() => {
-                            setShowPublicBookingModal(false);
-                            setAgendaMsg({ text: 'Guarda los tiempos de tratamiento para activar la reserva pública.', ok: false });
-                          }} className="px-4 py-2 rounded-lg text-white text-sm font-medium" style={{ background: 'linear-gradient(135deg,#deb887,#c5a075)' }}>Entendido</button>
-                        </div>
+                      </div>
+                      <div className="flex-shrink-0 border-t border-gray-100 bg-white p-3 sm:p-4 flex justify-end">
+                        {agendaMsg && !agendaMsg.ok && <p className="mr-auto pr-3 text-xs text-red-600 self-center">{agendaMsg.text}</p>}
+                        <button onClick={async () => {
+                          if (await handleSaveAgendaSettings(true)) setShowPublicBookingModal(false);
+                        }} disabled={agendaSaving || !hasPublicBookingTreatments}
+                          className="px-4 py-2 rounded-lg text-white text-sm font-medium disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#deb887,#c5a075)' }}>
+                          {agendaSaving ? 'Guardando...' : 'Guardar y activar'}
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -1341,7 +1364,7 @@ export default function AdminDashboard() {
                     </button>
                   )}
                   {settingsTab === 'agenda' && (
-                    <button onClick={handleSaveAgendaSettings} disabled={agendaSaving || (publicBookingEnabled && !hasPublicBookingTreatments)}
+                    <button onClick={() => handleSaveAgendaSettings()} disabled={agendaSaving || (publicBookingEnabled && !hasPublicBookingTreatments)}
                       className="flex items-center gap-2 px-5 py-2 rounded-lg text-white text-sm font-medium disabled:opacity-60"
                       style={{ background: 'linear-gradient(135deg,#deb887,#c5a075)' }}>
                       {agendaSaving ? 'Guardando...' : 'Guardar todo'}

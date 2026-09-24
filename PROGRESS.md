@@ -97,6 +97,7 @@
 - ✅ 2026-09-23 Añadida respuesta automática única a pacientes que contestan una confirmación reciente, con enlace de contacto y uso de la ventana gratuita de 24 horas; las confirmaciones originales permanecen intactas.
 - ✅ 2026-09-23 Corregido enlace público de agendamiento: la consulta de perfil público ya no queda bloqueada por la sesión administrativa y el toggle de reservas públicas exige duración válida por tratamiento antes de habilitarlo.
 - ✅ 2026-09-23 Ajustada publicación de tratamientos: la reserva pública muestra solo servicios con duración configurada, fija esa duración en el formulario y permite mantener otros tratamientos internos sin tiempo.
+- ✅ 2026-09-23 Rediseñado el modal de activación pública con altura limitada, lista desplazable, explicación de disponibilidad y acción única para guardar y activar.
 
 ## Pendientes verificables
 
