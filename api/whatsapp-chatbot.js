@@ -150,9 +150,9 @@ export function classifyAppointmentReply(text, buttonPayload = '') {
 }
 
 export function formatAppointmentReplyStatus(status) {
-  if (status === 'confirmed') return '✅ Confirmó su asistencia mediante el sistema automático.';
-  if (status === 'needs_contact') return '⚠️ Respondió al sistema y necesita atención. Sugerencia: revisa su mensaje y contáctalo directamente.';
-  return '⚠️ Aún no ha confirmado en el sistema. Sugerencia: escríbele directamente usando el enlace de abajo.';
+  if (status === 'confirmed') return '✅ Confirmado';
+  if (status === 'needs_contact') return '⚠️ Requiere atención';
+  return '⚠️ Sin confirmar · escribir';
 }
 
 function normalizeContactPhone(value) {
@@ -1254,11 +1254,9 @@ async function sendAppointmentSummaries(dayOffset = 0, slot = 'morning') {
       const replyStatuses = await getAppointmentReplyStatuses(appointments.map(appointment => appointment.eventId));
       const label = dayOffset === 0 ? 'hoy' : 'mañana';
       const lines = appointments.map((appointment, index) => {
-        const professional = appointment.professional ? `\nProfesional: ${appointment.professional}` : '';
-        const resource = appointment.resource ? `\nAtiende: ${appointment.resource}` : '';
-        const link = appointment.link ? `\nEnviar recordatorio: ${appointment.link}` : '\nSin teléfono de paciente registrado — no se puede generar el enlace.';
         const replyStatus = `\nEstado: ${formatAppointmentReplyStatus(replyStatuses[appointment.eventId])}`;
-        return `${index + 1}. ${appointment.hora || 'Hora pendiente'} — ${appointment.patientName}${professional}${resource}${replyStatus}${link}`;
+        const action = appointment.link ? ` · Escribir: ${appointment.link}` : ' · Sin enlace de paciente';
+        return `${index + 1}) ${appointment.hora || 'Hora pendiente'} ${appointment.patientName} · ${formatAppointmentReplyStatus(replyStatuses[appointment.eventId])}${action}`;
       });
       const summary = `Hola ${row.staff_name || 'equipo'}, este es un resumen automático del sistema de agenda de ${clinicName} para ${label} (${targetDate}). No es un mensaje enviado desde tu WhatsApp personal.\n\n${lines.join('\n\n')}` +
         '\n\nResponde 1 para Agenda o 2 para Reporte financiero.';
