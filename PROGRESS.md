@@ -98,6 +98,7 @@
 - ✅ 2026-09-23 Corregido enlace público de agendamiento: la consulta de perfil público ya no queda bloqueada por la sesión administrativa y el toggle de reservas públicas exige duración válida por tratamiento antes de habilitarlo.
 - ✅ 2026-09-23 Ajustada publicación de tratamientos: la reserva pública muestra solo servicios con duración configurada, fija esa duración en el formulario y permite mantener otros tratamientos internos sin tiempo.
 - ✅ 2026-09-23 Rediseñado el modal de activación pública con altura limitada, lista desplazable, explicación de disponibilidad y acción única para guardar y activar.
+- ✅ 2026-09-23 Añadido acceso permanente para editar tratamientos públicos sin desactivar el enlace de reservas.
 
 ## Pendientes verificables
 

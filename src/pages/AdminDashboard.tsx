@@ -1071,6 +1071,10 @@ export default function AdminDashboard() {
                             <a href={`${window.location.origin}/reservar/${user.clinic_slug}/${user.username}`} target="_blank" rel="noreferrer" className="mt-2 block text-xs text-amber-800 break-all underline decoration-amber-600">
                               {`${window.location.origin}/reservar/${user.clinic_slug}/${user.username}`}
                             </a>
+                            <button type="button" onClick={() => { setAgendaMsg(null); setShowPublicBookingModal(true); }}
+                              className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100">
+                              <Pencil className="w-3.5 h-3.5" /> Configurar tratamientos públicos
+                            </button>
                           </div>
                         )}
 
@@ -1287,7 +1291,7 @@ export default function AdminDashboard() {
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-[10px] uppercase tracking-[0.2em] text-amber-700 font-semibold">Reservas públicas</p>
-                            <h3 id="public-booking-title" className="text-lg font-bold text-gray-900">Elige qué tratamientos publicar</h3>
+                            <h3 id="public-booking-title" className="text-lg font-bold text-gray-900">{publicBookingEnabled ? 'Configura los tratamientos públicos' : 'Elige qué tratamientos publicar'}</h3>
                           </div>
                           <button type="button" onClick={() => setShowPublicBookingModal(false)} className="p-1.5 text-gray-400 hover:text-gray-700" aria-label="Cerrar">
                             <X className="w-5 h-5" />
@@ -1332,7 +1336,7 @@ export default function AdminDashboard() {
                           if (await handleSaveAgendaSettings(true)) setShowPublicBookingModal(false);
                         }} disabled={agendaSaving || !hasPublicBookingTreatments}
                           className="px-4 py-2 rounded-lg text-white text-sm font-medium disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#deb887,#c5a075)' }}>
-                          {agendaSaving ? 'Guardando...' : 'Guardar y activar'}
+                          {agendaSaving ? 'Guardando...' : publicBookingEnabled ? 'Guardar cambios' : 'Guardar y activar'}
                         </button>
                       </div>
                     </div>
