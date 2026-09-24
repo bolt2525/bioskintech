@@ -63,6 +63,8 @@ const migrations = [
   // Notificar al staff que agendó cuando el paciente lee (o falla) la confirmación de WhatsApp
   "ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS booked_by_user_id INTEGER",
   "ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS read_notified BOOLEAN NOT NULL DEFAULT false",
+  "ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS appointment_event_id VARCHAR(255)",
+  "ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS appointment_start TIMESTAMPTZ",
 ];
 
 const newTables = [
@@ -183,6 +185,7 @@ const whatsappIndexes = [
     ON whatsapp_messages(provider_message_id) WHERE provider_message_id IS NOT NULL`,
   'CREATE INDEX IF NOT EXISTS idx_whatsapp_contacts_last_message ON whatsapp_contacts(last_message_at DESC)',
   'CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_contact_time ON whatsapp_messages(contact_id, occurred_at, id)',
+  'CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_appointment ON whatsapp_messages(appointment_event_id, appointment_start) WHERE appointment_event_id IS NOT NULL',
 ];
 
 async function run() {

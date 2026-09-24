@@ -2,6 +2,7 @@
 
 ## Auditoría integral
 
+- ✅ 2026-09-24 Añadida interacción segura de recordatorios: botón Confirmar, respuestas deterministas del paciente, enlace directo multi-clínica y aviso al profesional por WhatsApp o correo.
 - ✅ 2026-09-24 Reordenado flujo de WhatsApp de citas: el email mantiene la confirmación inmediata al agendar, y el paciente recibe el recordatorio del día anterior leyendo los eventos del calendario, extrayendo el teléfono del evento y marcando el envío para evitar duplicados.
 - ✅ 2026-09-23 Reforzado agendamiento público: rate limit por IP, validación de host, honeypot y verificación Turnstile cuando `TURNSTILE_SECRET`/`VITE_TURNSTILE_SITE_KEY` están configurados; la reserva solo continúa si pasa la validación anti-bot.
 - ✅ 2026-09-23 Consolidado agendamiento público en `/reservar/:clinicSlug`: el paciente selecciona primero al titular o ayudante activo y luego completa la reserva con validación server-side de recurso, duración, horario y conflictos.

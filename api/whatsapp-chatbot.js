@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import nodemailer from 'nodemailer';
 import { google } from 'googleapis';
 import { sql } from '@vercel/postgres';
 import { buildAppointmentSystemNote, sendWhatsAppText, sendWhatsAppTemplate } from '../lib/whatsapp-service.js';
@@ -17,6 +18,7 @@ import {
   ensureWhatsAppContactClinic,
   getRecentAppointmentNotificationContext,
   hasRecentAppointmentSystemReply,
+  getPendingAppointmentReplyContext,
 } from '../lib/whatsapp-crm.js';
 import { getBotState, setBotState, clearBotState } from '../lib/whatsapp-bot-state.js';
 import { createShortWaLink, resolveShortWaLink } from '../lib/wa-short-link.js';
@@ -133,7 +135,77 @@ export function shouldSendAppointmentReminder(event, now = new Date()) {
 
 function buildPatientReminderMessage({ patientName, clinicName, dateLabel, professionalName }) {
   const professionalText = professionalName ? ` con ${professionalName}` : '';
-  return `Hola ${patientName}, te recordamos tu cita en ${clinicName}${professionalText} para el ${dateLabel}. Por favor responde a este mensaje si necesitas cambiarla o consultar algo.`;
+  return `Hola ${patientName}, te recordamos tu cita en ${clinicName}${professionalText} para el ${dateLabel}.`;
+}
+
+
+export function classifyAppointmentReply(text, buttonPayload = '') {
+  const value = `${buttonPayload} ${text}`.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ' ');
+  if (/appointment_confirm|\b(confirmo|confirmar|confirmada|confirmado|si|sí)\b/.test(value)) return 'confirmed';
+  if (/\b(no|cambiar|reprogramar|reprogramacion|reprogramación|tarde|podre|podré|cancelar|cancelado)\b/.test(value)) return 'needs_contact';
+  return 'needs_contact';
+}
+
+function normalizeContactPhone(value) {
+  return normalizeEcuadorPhone(value);
+}
+
+function buildClinicContactMessage({ clinicName, contactLink, professionalName }) {
+  const clinic = String(clinicName || 'la clínica').trim();
+  return contactLink
+    ? `ℹ️ Este es un mensaje automático del sistema de agenda. Para confirmar, cambiar o consultar tu cita, comunícate directamente con ${clinic}: ${contactLink}`
+    : `ℹ️ Este es un mensaje automático del sistema de agenda. Para confirmar, cambiar o consultar tu cita, comunícate directamente con ${professionalName || clinic} por sus canales habituales.`;
+}
+
+async function notifyStaffOfPatientReply(appointment, patientText, intent) {
+  const patient = appointment.patient_name || 'El paciente';
+  const appointmentDate = appointment.appointment_start
+    ? new Date(appointment.appointment_start).toLocaleString('es-EC', { timeZone: 'America/Guayaquil', dateStyle: 'short', timeStyle: 'short' })
+    : 'la cita programada';
+  const intentLabel = intent === 'confirmed' ? 'confirmó su asistencia' : 'solicitó comunicarse con la clínica';
+  const message = `📅 ${patient} ${intentLabel}.
+Cita: ${appointmentDate}
+Mensaje: ${patientText || '(botón Confirmar)'}`;
+  const staffPhone = normalizeContactPhone(appointment.professional_phone);
+  if (staffPhone && await isWithinCustomerServiceWindow(staffPhone)) {
+    await sendWhatsAppText(staffPhone, message, { clinicId: appointment.clinic_id });
+    return 'whatsapp';
+  }
+  if (appointment.professional_email && process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+    });
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: appointment.professional_email,
+      subject: `Respuesta de ${patient} sobre su cita`,
+      text: `${message}\nClínica: ${appointment.clinic_name}`,
+    });
+    return 'email';
+  }
+  return 'none';
+}
+
+async function handlePatientAppointmentReply({ from, text, buttonPayload }) {
+  const eventId = String(buttonPayload || '').startsWith('appointment_confirm:')
+    ? String(buttonPayload).substring('appointment_confirm:'.length)
+    : null;
+  const appointment = await getPendingAppointmentReplyContext(from, eventId);
+  if (!appointment) return false;
+
+  const intent = classifyAppointmentReply(text, buttonPayload);
+  if (intent === 'confirmed') {
+    await sendWhatsAppText(from, `✅ Gracias. Hemos registrado tu confirmación para la cita del ${new Date(appointment.appointment_start).toLocaleString('es-EC', { timeZone: 'America/Guayaquil', dateStyle: 'short', timeStyle: 'short' })}.`, { clinicId: appointment.clinic_id });
+  } else {
+    const contactPhone = normalizeContactPhone(appointment.clinic_phone) || normalizeContactPhone(appointment.professional_phone);
+    const contactLink = contactPhone
+      ? await createShortWaLink(contactPhone, `Hola, necesito comunicarme sobre mi cita del ${new Date(appointment.appointment_start).toLocaleString('es-EC', { timeZone: 'America/Guayaquil', dateStyle: 'short', timeStyle: 'short' })}.`)
+      : '';
+    await sendWhatsAppText(from, buildClinicContactMessage({ ...appointment, contactLink }), { clinicId: appointment.clinic_id });
+  }
+  await notifyStaffOfPatientReply(appointment, text, intent);
+  return true;
 }
 
 async function markAppointmentReminderSent(auth, event, dateKey) {
@@ -157,10 +229,12 @@ async function sendPatientAppointmentReminders(dayOffset = 1) {
   const timeMax = `${dateKey}T23:59:59-05:00`;
 
   const users = await sql`
-    SELECT cu.id AS user_id, cu.clinic_id, cu.full_name, cu.phone, cu.whatsapp_staff_phone, cs.general
+        SELECT cu.id AS user_id, cu.clinic_id, cu.full_name, cu.phone, cu.whatsapp_staff_phone, cs.general,
+          cl.name AS clinic_name, cl.phone AS clinic_phone
     FROM clinic_oauth_tokens t
     JOIN clinic_users cu ON cu.id = t.clinic_user_id AND cu.is_active = true
     JOIN clinic_settings cs ON cs.clinic_id = cu.clinic_id
+        JOIN clinics cl ON cl.id = cu.clinic_id
   `;
 
   let sent = 0;
@@ -192,8 +266,12 @@ async function sendPatientAppointmentReminders(dayOffset = 1) {
           hour: '2-digit',
           minute: '2-digit',
         });
-        const clinicName = row.general?.name || 'BIOSKIN';
+        const clinicName = row.clinic_name || row.general?.name || 'la clínica';
         const professionalName = parsed.professional || row.full_name || clinicName;
+        const contactPhone = normalizeContactPhone(row.clinic_phone) || normalizeContactPhone(row.phone);
+        const contactLink = contactPhone
+          ? await createShortWaLink(contactPhone, `Hola, necesito comunicarme sobre mi cita del ${dateLabel}.`)
+          : 'los canales habituales de la clínica';
         const patientMessage = buildPatientReminderMessage({
           patientName: parsed.patientName,
           clinicName,
@@ -206,7 +284,7 @@ async function sendPatientAppointmentReminders(dayOffset = 1) {
           const templateName = (process.env.WHATSAPP_TEMPLATE_APPOINTMENT || '').trim();
           const templateLang = (process.env.WHATSAPP_TEMPLATE_APPOINTMENT_LANG || 'es_MX').trim();
           if (withinWindow) {
-            await sendWhatsAppText(parsed.phone, patientMessage, { clinicId: row.clinic_id, bookedByUserId: row.user_id });
+            await sendWhatsAppText(parsed.phone, `${patientMessage}\n\nPara confirmar, cambiar o consultar tu cita, comunícate directamente con tu clínica: ${contactLink}`, { clinicId: row.clinic_id, bookedByUserId: row.user_id, appointmentEventId: event.id, appointmentStart: start });
           } else if (templateName) {
             await sendWhatsAppTemplate(parsed.phone, templateName, templateLang, {
               nombre_paciente: parsed.patientName,
@@ -214,7 +292,8 @@ async function sendPatientAppointmentReminders(dayOffset = 1) {
               nombre_usuario: professionalName,
               servicio: 'Consulta',
               fecha_hora: dateLabel,
-            }, { clinicId: row.clinic_id, bookedByUserId: row.user_id });
+              enlace_contacto: contactLink,
+            }, { clinicId: row.clinic_id, bookedByUserId: row.user_id, appointmentEventId: event.id, appointmentStart: start, buttonPayloads: [`appointment_confirm:${event.id}`] });
           } else {
             throw new Error('WHATSAPP_TEMPLATE_APPOINTMENT no configurada para recordatorio del día anterior');
           }
@@ -258,10 +337,12 @@ export function extractIncomingMessages(body) {
         const mediaType = msg.type === 'image' ? 'imagen' : msg.type === 'audio' ? 'audio' : 'texto';
         // Respuesta a botón de plantilla (quick reply) llega como msg.button, no msg.text
         const buttonText = msg.button?.text || msg.interactive?.button_reply?.title || '';
+        const buttonPayload = msg.button?.payload || msg.interactive?.button_reply?.id || '';
         const text = (msg.text?.body || buttonText || msg.image?.caption || (mediaType === 'imagen' ? '[Imagen]' : mediaType === 'audio' ? '[Audio]' : '')).trim();
         messages.push({
           from,
           text,
+          buttonPayload: String(buttonPayload || '').trim(),
           mediaType,
           providerMessageId: msg.id || null,
           timestamp: msg.timestamp ? new Date(Number(msg.timestamp) * 1000) : new Date(),
@@ -763,7 +844,7 @@ async function handleIncomingMessages(body) {
     }
   }
 
-  for (const { from, text, mediaType, providerMessageId, timestamp, name } of extractIncomingMessages(body)) {
+  for (const { from, text, buttonPayload, mediaType, providerMessageId, timestamp, name } of extractIncomingMessages(body)) {
     if (!from) continue;
     const audit = await recordWhatsAppMessage({
       phone: from,
@@ -787,6 +868,12 @@ async function handleIncomingMessages(body) {
         console.error('❌ Error en panel de sistema WhatsApp:', err.message);
       }
       continue;
+    }
+
+    try {
+      if (await handlePatientAppointmentReply({ from, text, buttonPayload })) continue;
+    } catch (err) {
+      console.error('❌ Error procesando respuesta de cita del paciente:', err.message);
     }
 
     const staff = await sql`

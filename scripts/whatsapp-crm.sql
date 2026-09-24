@@ -21,6 +21,8 @@ CREATE TABLE IF NOT EXISTS whatsapp_messages (
   error_detail        VARCHAR(500),
   booked_by_user_id   INTEGER,
   read_notified       BOOLEAN NOT NULL DEFAULT false,
+  appointment_event_id VARCHAR(255),
+  appointment_start   TIMESTAMPTZ,
   created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -31,5 +33,8 @@ CREATE INDEX IF NOT EXISTS idx_whatsapp_contacts_last_message
   ON whatsapp_contacts(last_message_at DESC);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_contact_time
   ON whatsapp_messages(contact_id, occurred_at, id);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_appointment
+  ON whatsapp_messages(appointment_event_id, appointment_start)
+  WHERE appointment_event_id IS NOT NULL;
 
 COMMIT;

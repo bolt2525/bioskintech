@@ -153,6 +153,7 @@ test('WhatsApp bot extracts auditable messages only when a sender exists', async
   assert.deepEqual(messages, [{
     from: '593987654321',
     text: '1',
+    buttonPayload: '',
     mediaType: 'texto',
     providerMessageId: 'wamid.incoming',
     timestamp: new Date(1700000000000),
@@ -168,6 +169,16 @@ test('WhatsApp bot extracts auditable messages only when a sender exists', async
     { providerMessageId: 'wamid.outgoing', status: 'leido', errorDetail: null },
     { providerMessageId: 'wamid.failed', status: 'fallido', errorDetail: 'No entregado' },
   ]);
+});
+
+test('appointment replies classify only explicit confirmations as confirmed', async () => {
+  const { classifyAppointmentReply } = await import('../api/whatsapp-chatbot.js');
+
+  assert.equal(classifyAppointmentReply('Confirmar', 'appointment_confirm:event-1'), 'confirmed');
+  assert.equal(classifyAppointmentReply('Sí, asistiré'), 'confirmed');
+  assert.equal(classifyAppointmentReply('No podré ir'), 'needs_contact');
+  assert.equal(classifyAppointmentReply('Llegaré tarde'), 'needs_contact');
+  assert.equal(classifyAppointmentReply('Deseo cambiar la cita'), 'needs_contact');
 });
 
 test('WhatsApp finance report selection maps menu choices to report periods', async () => {
