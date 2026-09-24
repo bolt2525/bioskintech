@@ -105,8 +105,9 @@ function parseAppointmentEvent(event) {
   const phone = phoneMatch ? normalizeEcuadorPhone(phoneMatch[1]) : '';
   const patientName = event.summary.substring(6).split(' - ')[0] || 'Paciente';
   const professional = event.description?.match(/Profesional:\s*([^\n]+)/)?.[1]?.trim() || '';
+  const service = event.description?.match(/Servicio:\s*([^\n]+)/)?.[1]?.trim() || '';
   const resource = event.description?.match(/Recurso:\s*([^\n]+)/)?.[1]?.trim() || '';
-  return { phone, patientName, professional, resource };
+  return { phone, patientName, professional, service, resource };
 }
 
 function formatLocalDateKey(date, timeZone = 'America/Guayaquil') {
@@ -290,7 +291,7 @@ async function sendPatientAppointmentReminders(dayOffset = 1) {
               nombre_paciente: parsed.patientName,
               nombre_clinica: clinicName,
               nombre_usuario: professionalName,
-              servicio: 'Consulta',
+              servicio: parsed.service || 'Consulta',
               fecha_hora: dateLabel,
               enlace_contacto: contactLink,
             }, { clinicId: row.clinic_id, bookedByUserId: row.user_id, appointmentEventId: event.id, appointmentStart: start, buttonPayloads: [`appointment_confirm:${event.id}`] });

@@ -200,7 +200,7 @@ test('appointment reminders are sent only one day before the event and never dup
     summary: 'Cita: Ana García',
     start: { dateTime: '2026-09-25T10:30:00-05:00' },
     end: { dateTime: '2026-09-25T11:00:00-05:00' },
-    description: 'Teléfono: 0987654321\nProfesional: Dra. María\n[AGENDADO POR WEB]',
+    description: 'Teléfono: 0987654321\nServicio: Limpieza facial\nProfesional: Dra. María\nEnlace público: clinica/dra-maria',
     extendedProperties: { private: {} },
   };
 
