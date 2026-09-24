@@ -138,6 +138,7 @@ async function getPublicAvailability(req, res) {
   const date = sanitizeText(req.query?.date, 20);
   const service = sanitizeText(req.query?.service, 200);
   const requestedResource = sanitizeText(req.query?.resource_id, 40);
+  const resourceRequest = requestedResource === 'owner' ? '' : requestedResource;
   if (!clinicSlug || !username || !date || !service) {
     return res.status(400).json({ success: false, error: 'Selecciona fecha y tratamiento para ver horarios.' });
   }
@@ -163,11 +164,11 @@ async function getPublicAvailability(req, res) {
     .find((item) => item.name === service && Number.isFinite(item.durationMinutes) && item.durationMinutes >= 30 && item.durationMinutes <= 180);
   if (!treatment) return res.status(400).json({ success: false, error: 'Selecciona un tratamiento disponible para reservar.' });
   if (!isValidFutureLocalDateTime(date, '23:59')) return res.status(400).json({ success: false, error: 'Selecciona una fecha futura válida.' });
-  if (requestedResource && requestedResource.startsWith('staff:') && !professional.multi_resource_enabled) {
+  if (resourceRequest && resourceRequest.startsWith('staff:') && !professional.multi_resource_enabled) {
     return res.status(400).json({ success: false, error: 'El agendamiento multiusuario no está habilitado.' });
   }
 
-  const resourceId = await resolveResourceId(professional.id, requestedResource || undefined);
+  const resourceId = await resolveResourceId(professional.id, resourceRequest || undefined);
   if (!resourceId) return res.status(400).json({ success: false, error: 'Recurso de agenda inválido.' });
   const resourceRow = resourceId.startsWith('staff:')
     ? await sql`SELECT work_hours FROM clinic_staff_resources WHERE id = ${parseInt(resourceId.replace('staff:', ''), 10)} AND owner_user_id = ${professional.id} AND active = true`
@@ -255,15 +256,15 @@ export default async function handler(req, res) {
   const time = sanitizeText(body.time, 15);
   const resource_id = body.resource_id;
 
-  if (!clinicSlug || !username || !name || !email || !service || !date || !time) {
-    return res.status(400).json({ success: false, error: 'Faltan datos básicos para reservar la cita.' });
+  if (!clinicSlug || !username || !name || !email || !phone || !service || !date || !time) {
+    return res.status(400).json({ success: false, error: 'Nombre, correo, teléfono, tratamiento, fecha y hora son obligatorios.' });
   }
 
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return res.status(400).json({ success: false, error: 'El correo no es válido.' });
   }
 
-  if (phone && !/^[0-9+()\-\s]{7,20}$/.test(phone)) {
+  if (!/^[0-9+()\-\s]{7,20}$/.test(phone)) {
     return res.status(400).json({ success: false, error: 'El teléfono no es válido.' });
   }
 

@@ -177,8 +177,8 @@ export default function PublicBookingPage() {
 
   const submitBooking = async () => {
     if (!clinicSlug || !username || !profile?.professional) return;
-    if (!form.name.trim() || !form.email.trim() || !form.service.trim() || !form.date || !form.time) {
-      setError('Completa nombre, correo, servicio, fecha y selecciona un horario.');
+    if (!form.name.trim() || !form.email.trim() || !form.phone.trim() || !form.service.trim() || !form.date || !form.time) {
+      setError('Completa nombre, correo, teléfono, tratamiento, fecha y selecciona un horario.');
       return;
     }
     if (!availableSlots.includes(form.time)) {
@@ -327,6 +327,21 @@ export default function PublicBookingPage() {
                   <input type="date" min={today} value={form.date} onChange={(e) => setForm((prev) => ({ ...prev, date: e.target.value, time: '' }))} className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2.5 outline-none focus:border-[#deb887] focus:ring-2 focus:ring-[#deb887]/20" />
                 </label>
               </div>
+              {profile.resources && profile.resources.length > 0 && (
+                <div>
+                  <p className="mb-2 text-sm font-medium text-gray-700">Profesional o recurso</p>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={() => setForm((prev) => ({ ...prev, resourceId: 'owner', time: '' }))} className={`rounded-full border px-4 py-2 text-sm font-semibold transition-colors ${form.resourceId === 'owner' ? 'border-[#a57b4a] bg-[#a57b4a] text-white' : 'border-gray-200 bg-white text-gray-700 hover:border-[#deb887]'}`}>
+                      {profile.professional.full_name}
+                    </button>
+                    {profile.resources.map((resource) => (
+                      <button key={resource.id} type="button" onClick={() => setForm((prev) => ({ ...prev, resourceId: `staff:${resource.id}`, time: '' }))} className={`rounded-full border px-4 py-2 text-sm font-semibold transition-colors ${form.resourceId === `staff:${resource.id}` ? 'border-[#a57b4a] bg-[#a57b4a] text-white' : 'border-gray-200 bg-white text-gray-700 hover:border-[#deb887]'}`}>
+                        {resource.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="rounded-2xl border border-[#eadcc9] bg-[#fffaf4] p-4"><div className="flex items-center justify-between gap-3"><p className="text-sm font-semibold text-gray-900"><Clock3 className="mr-2 inline h-4 w-4 text-[#a57b4a]" />Horarios disponibles</p><span className="text-xs text-gray-500">{dateLabel}</span></div>
                 {loadingSlots && <p className="mt-4 text-sm text-gray-500">Consultando disponibilidad...</p>}
                 {!loadingSlots && form.date && !availableSlots.length && <p className="mt-4 text-sm text-gray-600">No hay horarios disponibles para este día. Prueba con otra fecha.</p>}
@@ -335,8 +350,8 @@ export default function PublicBookingPage() {
               </div>
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="block text-sm font-medium text-gray-700">Nombre completo<input value={form.name} onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))} className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2.5 outline-none focus:border-[#deb887] focus:ring-2 focus:ring-[#deb887]/20" placeholder="Tu nombre" /></label>
-                <label className="block text-sm font-medium text-gray-700">Correo<input type="email" value={form.email} onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))} className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2.5 outline-none focus:border-[#deb887] focus:ring-2 focus:ring-[#deb887]/20" placeholder="nombre@correo.com" /></label>
-                <label className="block text-sm font-medium text-gray-700">Teléfono (opcional)<input value={form.phone} onChange={(e) => setForm((prev) => ({ ...prev, phone: e.target.value }))} className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2.5 outline-none focus:border-[#deb887] focus:ring-2 focus:ring-[#deb887]/20" placeholder="0999999999" /></label>
+                <label className="block text-sm font-medium text-gray-700">Correo<input required type="email" value={form.email} onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))} className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2.5 outline-none focus:border-[#deb887] focus:ring-2 focus:ring-[#deb887]/20" placeholder="nombre@correo.com" /></label>
+                <label className="block text-sm font-medium text-gray-700">Teléfono<input required type="tel" value={form.phone} onChange={(e) => setForm((prev) => ({ ...prev, phone: e.target.value }))} className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2.5 outline-none focus:border-[#deb887] focus:ring-2 focus:ring-[#deb887]/20" placeholder="0999999999" /></label>
                 <div className="text-sm font-medium text-gray-700">Tiempo configurado por la clínica<div className="mt-1 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-gray-600">{form.durationMinutes} minutos</div></div>
               </div>
               {turnstileSiteKey && <div><div id="turnstile-widget" className="flex justify-start" /></div>}
