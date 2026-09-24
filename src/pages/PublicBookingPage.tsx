@@ -293,7 +293,7 @@ export default function PublicBookingPage() {
             <p className="mt-3 max-w-xl text-sm leading-6 text-[#e8ddd0]">Selecciona un horario real de la agenda. La disponibilidad se actualiza antes de confirmar tu cita.</p>
           </div>
           <div className="p-6 md:p-10">
-            {error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
+            {error && !showBookingModal && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
             {success && <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700"><Check className="mr-2 inline h-4 w-4" />{success}</div>}
             <div className="flex flex-col items-start justify-between gap-5 rounded-2xl border border-[#eadcc9] bg-[#fffaf4] p-5 md:flex-row md:items-center">
               <div>
@@ -316,6 +316,7 @@ export default function PublicBookingPage() {
               <div><p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#a57b4a]">Nueva cita</p><h2 id="public-booking-title" className="mt-2 text-2xl font-bold text-gray-900">Elige tu horario</h2></div>
               <button type="button" onClick={() => setShowBookingModal(false)} aria-label="Cerrar agendamiento" className="rounded-full p-2 text-gray-500 hover:bg-gray-100"><X className="h-5 w-5" /></button>
             </div>
+            {error && <div role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
             <div className="mt-6 space-y-4">
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="block text-sm font-medium text-gray-700">Tratamiento publicado
