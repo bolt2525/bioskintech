@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { google } from 'googleapis';
 import { sql } from '@vercel/postgres';
-import { sendWhatsAppText, sendWhatsAppTemplate } from '../lib/whatsapp-service.js';
+import { buildAppointmentSystemNote, sendWhatsAppText, sendWhatsAppTemplate } from '../lib/whatsapp-service.js';
 import { buildFinanceCsv } from '../lib/finance-csv.js';
 import { requireAuth, requireRole } from '../lib/admin-auth.js';
 import {
@@ -15,9 +15,12 @@ import {
   markMessageReadNotified,
   getContactById,
   ensureWhatsAppContactClinic,
+  getRecentAppointmentNotificationContext,
+  hasRecentAppointmentSystemReply,
 } from '../lib/whatsapp-crm.js';
 import { getBotState, setBotState, clearBotState } from '../lib/whatsapp-bot-state.js';
 import { createShortWaLink, resolveShortWaLink } from '../lib/wa-short-link.js';
+import { ownerResourceId, eventResourceId, resourceExtendedProperties } from '../lib/agenda-resources.js';
 
 const getQueryValue = (value) => Array.isArray(value) ? value[0] : value;
 
@@ -100,7 +103,19 @@ function parseAppointmentEvent(event) {
   const phone = phoneMatch ? normalizeEcuadorPhone(phoneMatch[1]) : '';
   const patientName = event.summary.substring(6).split(' - ')[0] || 'Paciente';
   const professional = event.description?.match(/Profesional:\s*([^\n]+)/)?.[1]?.trim() || '';
-  return { phone, patientName, professional };
+  const resource = event.description?.match(/Recurso:\s*([^\n]+)/)?.[1]?.trim() || '';
+  return { phone, patientName, professional, resource };
+}
+
+/** Ayudantes activos del usuario. Vacío si no tiene el multi-recurso activado. */
+async function listActiveResources(userId) {
+  const u = await sql`SELECT multi_resource_enabled FROM clinic_users WHERE id = ${userId}`;
+  if (u.rows[0]?.multi_resource_enabled !== true) return [];
+  const r = await sql`
+    SELECT id, name, work_hours FROM clinic_staff_resources
+    WHERE owner_user_id = ${userId} AND active = true ORDER BY name
+  `;
+  return r.rows;
 }
 
 /** Extrae mensajes entrantes normalizados del payload de WhatsApp Cloud API. */
@@ -239,7 +254,8 @@ async function getAppointmentsForDate(userId, isoDate) {
       const patientName = parsed.patientName || e.summary.substring(6).split(' - ')[0] || 'Paciente';
       const reminderMessage = `Hola ${patientName}, te escribimos para confirmar/actualizar tu cita del ${isoDate}${hora ? ` a las ${hora}` : ''}. Por favor responde a este mensaje si tienes alguna consulta.`;
       return {
-        id: e.id, hora, patientName, phone: parsed.phone || '', professional: parsed.professional || '',
+        id: e.id, hora, patientName, phone: parsed.phone || '', professional: parsed.professional || '', resource: parsed.resource || '',
+        resourceId: eventResourceId(e, userId),
         link: parsed.phone ? await createShortWaLink(parsed.phone, reminderMessage) : '',
         durationMs: (!Number.isNaN(end.getTime()) && !Number.isNaN(start.getTime()) && end > start) ? end - start : 60 * 60 * 1000,
       };
@@ -256,20 +272,25 @@ async function listAppointmentsForDate(userId, isoDate, label) {
   if (error) return error;
   const dateLabel = new Date(`${isoDate}T00:00:00-05:00`).toLocaleDateString('es-ES', { timeZone: 'America/Guayaquil', day: '2-digit', month: '2-digit', year: 'numeric' });
   if (!appointments.length) return `${label} (${dateLabel}): no hay citas agendadas.`;
-  const lines = appointments.map((a, i) => `${i + 1}. ${a.hora || 'Hora pendiente'} — ${a.patientName}${a.link ? `\n   Enviar recordatorio: ${a.link}` : ''}`);
+  const lines = appointments.map((a, i) => `${i + 1}. ${a.hora || 'Hora pendiente'} — ${a.patientName}${a.resource ? ` (${a.resource})` : ''}${a.link ? `\n   Enviar recordatorio: ${a.link}` : ''}`);
   return `📅 ${label} (${dateLabel}):\n\n${lines.join('\n\n')}`;
 }
 
 /** Busca horarios libres de `durationMinutes` en un período del día, evitando choques con eventos existentes. */
-async function getAvailableSlots(userId, clinicId, isoDate, period, durationMinutes, excludeEventId) {
+async function getAvailableSlots(userId, clinicId, isoDate, period, durationMinutes, excludeEventId, resourceId) {
   const auth = await getUserOAuth2Client(userId);
   if (!auth) return { error: 'No tienes Google Calendar conectado a tu cuenta.' };
   const calendar = google.calendar({ version: 'v3', auth });
 
   const agendaRes = clinicId ? await sql`SELECT agenda FROM clinic_settings WHERE clinic_id = ${clinicId}` : { rows: [] };
   const agenda = agendaRes.rows[0]?.agenda || {};
-  const dayStartHour = agenda.start_hour || '08:00';
-  const dayEndHour = agenda.end_hour || '19:00';
+  let dayStartHour = agenda.start_hour || '08:00';
+  let dayEndHour = agenda.end_hour || '19:00';
+  if (resourceId?.startsWith('staff:')) {
+    const wh = await sql`SELECT work_hours FROM clinic_staff_resources WHERE id = ${parseInt(resourceId.slice(6), 10)} AND owner_user_id = ${userId}`;
+    dayStartHour = wh.rows[0]?.work_hours?.start_hour || dayStartHour;
+    dayEndHour   = wh.rows[0]?.work_hours?.end_hour   || dayEndHour;
+  }
   const midday = '13:00';
   const [rangeStart, rangeEnd] = period === 'tarde' ? [midday, dayEndHour] : [dayStartHour, midday];
 
@@ -277,8 +298,10 @@ async function getAvailableSlots(userId, clinicId, isoDate, period, durationMinu
     calendarId: 'primary', timeMin: `${isoDate}T00:00:00-05:00`, timeMax: `${isoDate}T23:59:59-05:00`,
     singleEvents: true, orderBy: 'startTime',
   });
+  const targetResource = resourceId || ownerResourceId(userId);
   const busy = (data.items || [])
     .filter(e => e.id !== excludeEventId && e.start?.dateTime && e.end?.dateTime)
+    .filter(e => eventResourceId(e, userId) === targetResource)
     .map(e => ({ start: new Date(e.start.dateTime), end: new Date(e.end.dateTime) }));
 
   const durationMs = durationMinutes * 60000;
@@ -317,13 +340,14 @@ async function deleteAppointment(userId, eventId) {
 }
 
 /** Crea una cita nueva en el calendario del staff, con el mismo formato que lee `parseAppointmentEvent`. */
-async function createAppointmentEvent(userId, patientName, patientPhone, professional, startDate, durationMs) {
+async function createAppointmentEvent(userId, patientName, patientPhone, professional, startDate, durationMs, resourceId, resourceName) {
   const auth = await getUserOAuth2Client(userId);
   if (!auth) throw new Error('No tienes Google Calendar conectado a tu cuenta.');
   const calendar = google.calendar({ version: 'v3', auth });
   const endDate = new Date(startDate.getTime() + durationMs);
   const description = `Teléfono: ${patientPhone || 'No proporcionado'}` +
     (professional ? `\nProfesional: ${professional}` : '') +
+    (resourceName ? `\nRecurso: ${resourceName}` : '') +
     '\n[AGENDADO POR WHATSAPP]';
   await calendar.events.insert({
     calendarId: 'primary',
@@ -332,6 +356,7 @@ async function createAppointmentEvent(userId, patientName, patientPhone, profess
       description,
       start: { dateTime: startDate.toISOString(), timeZone: 'America/Guayaquil' },
       end: { dateTime: endDate.toISOString(), timeZone: 'America/Guayaquil' },
+      extendedProperties: resourceExtendedProperties(resourceId, userId),
     },
   });
 }
@@ -654,7 +679,19 @@ async function handleIncomingMessages(body) {
     `;
     // El bot solo responde a números con whatsapp_bot_enabled = true (autorizado por master_admin)
     const matches = staff.rows.filter(row => normalizeEcuadorPhone(row.whatsapp_staff_phone || row.phone) === from);
-    if (matches.length !== 1) continue; // desconocido, ambiguo o bot no habilitado: no se revela información
+    if (matches.length !== 1) {
+      const notification = await getRecentAppointmentNotificationContext(from).catch(() => null);
+      if (notification && !(await hasRecentAppointmentSystemReply(from).catch(() => true))) {
+        const systemNote = buildAppointmentSystemNote({
+          clinicName: notification.clinic_name,
+          clinicPhone: notification.clinic_phone,
+          professionalName: notification.professional_name,
+          professionalPhone: notification.professional_phone,
+        });
+        await sendWhatsAppText(from, systemNote, { clinicId: notification.clinic_id });
+      }
+      continue; // desconocido, ambiguo o bot no habilitado: no se revela información
+    }
     const clinicUser = matches[0];
     const botState = await getBotState(from); // { flow, stage, ...datos } | null — persistente entre invocaciones serverless
     const financeChoice = resolveFinancePeriodChoice(normalizedText);
@@ -712,7 +749,7 @@ async function handleIncomingMessages(body) {
         if (botState.stage === 'awaitingPeriod') {
           const period = parsePeriod(normalizedText);
           if (!period) { await sendWhatsAppText(from, `No reconocí esa opción.\n\n${NEW_PERIOD_PROMPT}`); continue; }
-          const { error, slots } = await getAvailableSlots(clinicUser.id, clinicUser.clinic_id, botState.newIsoDate, period, botState.durationMinutes, botState.selected.id);
+          const { error, slots } = await getAvailableSlots(clinicUser.id, clinicUser.clinic_id, botState.newIsoDate, period, botState.durationMinutes, botState.selected.id, botState.selected.resourceId);
           if (error) { await clearBotState(from); await sendWhatsAppText(from, error); continue; }
           if (!slots.length) {
             await sendWhatsAppText(from, `No hay horarios disponibles esa ${period === 'tarde' ? 'tarde' : 'mañana'} para ${botState.durationMinutes} min.\n\n${NEW_PERIOD_PROMPT}`);
@@ -795,7 +832,23 @@ async function handleIncomingMessages(body) {
         if (botState.stage === 'awaitingPatientPhone') {
           const patientPhone = normalizeEcuadorPhone(normalizedText);
           if (patientPhone.length < 11 || patientPhone.length > 13) { await sendWhatsAppText(from, `Ese número no parece válido.\n\n${BOOKING_PHONE_PROMPT}`); continue; }
+          const resources = await listActiveResources(clinicUser.id);
+          if (resources.length) {
+            const options = [{ id: ownerResourceId(clinicUser.id), name: clinicUser.full_name || 'Yo' },
+                             ...resources.map(r => ({ id: `staff:${r.id}`, name: r.name }))];
+            await setBotState(from, 'booking', { ...botState, stage: 'awaitingResource', patientPhone, resourceOptions: options });
+            const list = options.map((o, i) => `${i + 1}. ${o.name}`).join('\n');
+            await sendWhatsAppText(from, `¿Quién atiende esta cita?\n\n${list}\n\nResponde con el número.${CANCEL_HINT}`);
+            continue;
+          }
           await setBotState(from, 'booking', { ...botState, stage: 'awaitingDate', patientPhone });
+          await sendWhatsAppText(from, BOOKING_DATE_PROMPT);
+          continue;
+        }
+        if (botState.stage === 'awaitingResource') {
+          const chosen = botState.resourceOptions?.[Number(normalizedText) - 1];
+          if (!chosen) { await sendWhatsAppText(from, `Número inválido. Responde con el número de la lista.${CANCEL_HINT}`); continue; }
+          await setBotState(from, 'booking', { ...botState, stage: 'awaitingDate', resourceId: chosen.id, resourceName: chosen.name });
           await sendWhatsAppText(from, BOOKING_DATE_PROMPT);
           continue;
         }
@@ -816,7 +869,7 @@ async function handleIncomingMessages(body) {
         if (botState.stage === 'awaitingPeriod') {
           const period = parsePeriod(normalizedText);
           if (!period) { await sendWhatsAppText(from, `No reconocí esa opción.\n\n${NEW_PERIOD_PROMPT}`); continue; }
-          const { error, slots } = await getAvailableSlots(clinicUser.id, clinicUser.clinic_id, botState.isoDate, period, botState.durationMinutes);
+          const { error, slots } = await getAvailableSlots(clinicUser.id, clinicUser.clinic_id, botState.isoDate, period, botState.durationMinutes, undefined, botState.resourceId);
           if (error) { await clearBotState(from); await sendWhatsAppText(from, error); continue; }
           if (!slots.length) {
             await sendWhatsAppText(from, `No hay horarios disponibles esa ${period === 'tarde' ? 'tarde' : 'mañana'} para ${botState.durationMinutes} min.\n\n${NEW_PERIOD_PROMPT}`);
@@ -833,14 +886,15 @@ async function handleIncomingMessages(body) {
           await clearBotState(from);
           try {
             const startDate = new Date(chosenIso);
-            await createAppointmentEvent(clinicUser.id, botState.patientName, botState.patientPhone, clinicUser.full_name, startDate, botState.durationMinutes * 60000);
+            const staffResourceName = botState.resourceId?.startsWith('staff:') ? botState.resourceName : '';
+            await createAppointmentEvent(clinicUser.id, botState.patientName, botState.patientPhone, clinicUser.full_name, startDate, botState.durationMinutes * 60000, botState.resourceId, staffResourceName);
             await ensureWhatsAppContactClinic(botState.patientPhone, clinicUser.clinic_id);
             const horaLabel = startDate.toLocaleString('es-ES', { timeZone: 'America/Guayaquil', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
             let patientNotified = false;
             try {
               const clinicRow = await sql`SELECT general FROM clinic_settings WHERE clinic_id = ${clinicUser.clinic_id}`;
               const clinicName = clinicRow.rows[0]?.general?.name || 'la clínica';
-              const patientMessage = `Hola ${botState.patientName}, tu cita en ${clinicName} fue agendada para el ${horaLabel}. Por favor responde a este mensaje si tienes alguna consulta.`;
+              const patientMessage = `Hola ${botState.patientName}, tu cita en ${clinicName} fue agendada para el ${horaLabel}${staffResourceName ? ` con ${staffResourceName}` : ''}. Por favor responde a este mensaje si tienes alguna consulta.`;
               const withinWindow = await isWithinCustomerServiceWindow(botState.patientPhone);
               const templateName = (process.env.WHATSAPP_TEMPLATE_APPOINTMENT || '').trim();
               const templateLang = (process.env.WHATSAPP_TEMPLATE_APPOINTMENT_LANG || 'es_MX').trim();
@@ -851,7 +905,7 @@ async function handleIncomingMessages(body) {
                 await sendWhatsAppTemplate(botState.patientPhone, templateName, templateLang, {
                   nombre_paciente: botState.patientName,
                   nombre_clinica: clinicName,
-                  nombre_usuario: clinicUser.full_name || clinicName,
+                  nombre_usuario: staffResourceName || clinicUser.full_name || clinicName,
                   servicio: 'Consulta',
                   fecha_hora: horaLabel,
                 }, { clinicId: clinicUser.clinic_id, bookedByUserId: clinicUser.id });
@@ -1001,8 +1055,9 @@ async function sendAppointmentSummaries(dayOffset = 0, slot = 'morning') {
       const label = dayOffset === 0 ? 'hoy' : 'mañana';
       const lines = appointments.map((appointment, index) => {
         const professional = appointment.professional ? `\nProfesional: ${appointment.professional}` : '';
+        const resource = appointment.resource ? `\nAtiende: ${appointment.resource}` : '';
         const link = appointment.link ? `\nEnviar recordatorio: ${appointment.link}` : '\nSin teléfono de paciente registrado — no se puede generar el enlace.';
-        return `${index + 1}. ${appointment.hora || 'Hora pendiente'} — ${appointment.patientName}${professional}${link}`;
+        return `${index + 1}. ${appointment.hora || 'Hora pendiente'} — ${appointment.patientName}${professional}${resource}${link}`;
       });
       const summary = `Hola ${row.staff_name || 'equipo'}, este es el resumen de citas de ${clinicName} de ${label} (${targetDate}):\n\n${lines.join('\n\n')}` +
         '\n\nResponde 1 para Agenda o 2 para Reporte financiero.';

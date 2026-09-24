@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import recordsFetch from '../utils/recordsFetch';
 import { useClinicSettings } from '../hooks/useClinicSettings';
 import { useAuth } from '../context/AuthContext';
+import type { StaffResource } from '../types';
 import { 
   Calendar,
   Trash2,
@@ -51,6 +52,7 @@ interface CalendarEvent {
   status?: string;
   eventType: 'appointment' | 'block';
   isBlockEvent: boolean;
+  resourceId?: string;
   created?: string;
   updated?: string;
 }
@@ -69,6 +71,22 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
   const [messageType, setMessageType] = useState<'success' | 'error' | ''>('');
   const [dateRange, setDateRange] = useState(30); // días hacia adelante
   const [deletingEvents, setDeletingEvents] = useState<Set<string>>(new Set());
+  const [staffResources, setStaffResources] = useState<StaffResource[]>([]);
+
+  useEffect(() => {
+    fetch('/api/admin-auth?action=listStaffResources', {
+      headers: { Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken')}` },
+    })
+      .then(r => r.json())
+      .then(d => { if (d.enabled) setStaffResources(d.resources || []); })
+      .catch(() => {});
+  }, []);
+
+  /** Devuelve el ayudante de un evento, o null si lo atiende el titular. */
+  const resourceOf = (event: CalendarEvent) => {
+    const m = /^staff:(\d+)$/.exec(event.resourceId || '');
+    return m ? staffResources.find(r => r.id === parseInt(m[1], 10)) || null : null;
+  };
 
   // Cargar eventos del calendario
   const loadCalendarEvents = async () => {
@@ -440,6 +458,12 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
                                 <p className="text-sm font-semibold text-gray-900 truncate">{patientName}</p>
                               )}
                               <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                {resourceOf(event) && (
+                                  <span className="inline-flex items-center gap-1 text-xs font-medium px-1.5 py-0.5 rounded-full text-white"
+                                    style={{ background: resourceOf(event)!.color }}>
+                                    {resourceOf(event)!.name}
+                                  </span>
+                                )}
                                 {service && (
                                   <span className="text-xs text-[#deb887] font-medium truncate">{service}</span>
                                 )}

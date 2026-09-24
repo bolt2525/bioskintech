@@ -14,6 +14,8 @@ import {
   CheckCircle,
   Ban
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import type { StaffResource, AgendaResourceOption } from '../types';
 
 interface BlockScheduleProps {
   onBack: () => void;
@@ -136,6 +138,33 @@ const AdminBlockSchedule: React.FC<BlockScheduleProps> = ({ onBack }) => {
   const [dayEvents, setDayEvents] = useState<any[]>([]);
   const [loadingDayEvents, setLoadingDayEvents] = useState(false);
   const [showDayEvents, setShowDayEvents] = useState(false);
+
+  // Agenda multi-recurso: un bloqueo debe poder aplicarse al titular, a un ayudante o a todos
+  const { user } = useAuth();
+  const [multiResource, setMultiResource] = useState(false);
+  const [staffResources, setStaffResources] = useState<StaffResource[]>([]);
+  const [blockResourceIds, setBlockResourceIds] = useState<string[]>([]);
+
+  const ownerResourceId = `owner:${user?.id}`;
+  const resourceOptions: AgendaResourceOption[] = [
+    { id: ownerResourceId, name: user?.full_name || user?.username || 'Yo', color: '#deb887', work_hours: {} },
+    ...staffResources.filter(r => r.active).map(r => ({ id: `staff:${r.id}`, name: r.name, color: r.color, work_hours: r.work_hours || {} })),
+  ];
+
+  useEffect(() => {
+    fetch('/api/admin-auth?action=listStaffResources', {
+      headers: { Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken')}` },
+    })
+      .then(r => r.json())
+      .then(d => {
+        setMultiResource(d.enabled === true);
+        const list: StaffResource[] = d.resources || [];
+        setStaffResources(list);
+        // Por defecto un bloqueo cubre a todo el equipo: es lo que el usuario espera de "cerrado"
+        setBlockResourceIds([`owner:${user?.id}`, ...list.filter(r => r.active).map(r => `staff:${r.id}`)]);
+      })
+      .catch(() => {});
+  }, [user?.id]);
 
   const days = getNextDays(30); // 30 días para admin
 
@@ -322,6 +351,12 @@ const AdminBlockSchedule: React.FC<BlockScheduleProps> = ({ onBack }) => {
       return;
     }
 
+    if (multiResource && blockResourceIds.length === 0) {
+      setMessage('Selecciona al menos a una persona para el bloqueo');
+      setMessageType('error');
+      return;
+    }
+
     setIsSubmitting(true);
     setMessage('');
 
@@ -335,7 +370,8 @@ const AdminBlockSchedule: React.FC<BlockScheduleProps> = ({ onBack }) => {
           date: selectedDay,
           hours: selectedHours,
           reason: reason.trim(),
-          adminName: 'Administrador BioSkinTech'
+          adminName: 'Administrador BioSkinTech',
+          resourceIds: multiResource ? blockResourceIds : undefined
         }),
       });
 
@@ -748,6 +784,33 @@ const AdminBlockSchedule: React.FC<BlockScheduleProps> = ({ onBack }) => {
                   <h4 className="text-lg font-semibold mb-5 text-[#0d5c6c] text-center">3. Especifica el motivo</h4>
                   
                   <div className="max-w-md mx-auto space-y-4">
+                    {multiResource && resourceOptions.length > 1 && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">¿A quién afecta el bloqueo?</label>
+                        <div className="flex flex-wrap gap-2">
+                          {resourceOptions.map(r => {
+                            const checked = blockResourceIds.includes(r.id);
+                            return (
+                              <button
+                                key={r.id}
+                                type="button"
+                                onClick={() => setBlockResourceIds(p => checked ? p.filter(x => x !== r.id) : [...p, r.id])}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium border-2 transition-all ${
+                                  checked ? 'border-transparent text-white shadow' : 'bg-white border-gray-200 text-gray-600'
+                                }`}
+                                style={checked ? { background: r.color } : undefined}
+                              >
+                                <span className="w-2 h-2 rounded-full" style={{ background: checked ? '#fff' : r.color }} />
+                                {r.name}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {blockResourceIds.length === 0 && (
+                          <p className="text-xs text-red-500 mt-1">Selecciona al menos a una persona.</p>
+                        )}
+                      </div>
+                    )}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Motivo del bloqueo

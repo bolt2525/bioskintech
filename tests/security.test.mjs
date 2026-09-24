@@ -100,6 +100,24 @@ test('WhatsApp message sending fails closed without credentials', async () => {
   );
 });
 
+test('appointment system note prefers clinic contact and falls back to professional', async () => {
+  const { buildAppointmentSystemNote } = await import('../lib/whatsapp-service.js');
+
+  assert.match(
+    buildAppointmentSystemNote({
+      clinicName: 'Clínica BIOSKIN',
+      clinicPhone: '099 123 4567',
+      professionalName: 'Dra. Ana',
+      professionalPhone: '098 765 4321',
+    }),
+    /Clínica BIOSKIN: https:\/\/wa\.me\/593991234567/
+  );
+  assert.match(
+    buildAppointmentSystemNote({ clinicName: 'Clínica BIOSKIN', professionalName: 'Dra. Ana', professionalPhone: '098 765 4321' }),
+    /Dra\. Ana: https:\/\/wa\.me\/593987654321/
+  );
+});
+
 test('WhatsApp bot normalizes Ecuadorian phone numbers consistently', async () => {
   const { config, normalizeEcuadorPhone } = await import('../api/whatsapp-chatbot.js');
 

@@ -132,6 +132,21 @@ async function ensureNewColumns() {
     "ALTER TABLE oauth_states ADD COLUMN IF NOT EXISTS clinic_user_id INTEGER REFERENCES clinic_users(id) ON DELETE CASCADE",
     "ALTER TABLE oauth_states ADD COLUMN IF NOT EXISTS return_path TEXT",
     "CREATE UNIQUE INDEX IF NOT EXISTS clinic_oauth_tokens_user_unique ON clinic_oauth_tokens(clinic_user_id) WHERE clinic_user_id IS NOT NULL",
+    // Agenda multi-recurso — ayudantes sin login que ocupan horarios en paralelo al titular
+    "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS multi_resource_enabled BOOLEAN NOT NULL DEFAULT false",
+    "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS public_booking_enabled BOOLEAN NOT NULL DEFAULT false",
+    `CREATE TABLE IF NOT EXISTS clinic_staff_resources (
+      id            SERIAL PRIMARY KEY,
+      clinic_id     UUID NOT NULL REFERENCES clinics(id) ON DELETE CASCADE,
+      owner_user_id INTEGER NOT NULL REFERENCES clinic_users(id) ON DELETE CASCADE,
+      name          VARCHAR(120) NOT NULL,
+      color         VARCHAR(7) NOT NULL DEFAULT '#deb887',
+      work_hours    JSONB NOT NULL DEFAULT '{}'::jsonb,
+      active        BOOLEAN NOT NULL DEFAULT true,
+      created_at    TIMESTAMP DEFAULT NOW()
+    )`,
+    "CREATE UNIQUE INDEX IF NOT EXISTS clinic_staff_resources_owner_name ON clinic_staff_resources(owner_user_id, lower(name))",
+    "CREATE INDEX IF NOT EXISTS clinic_staff_resources_owner ON clinic_staff_resources(owner_user_id)",
   ];
   for (const stmt of migrations) {
     try { await sql.query(stmt); } catch { /* column already exists — safe to ignore */ }
@@ -1160,6 +1175,43 @@ async function getRequestUser(req) {
 /** Verifica que el usuario tenga al menos uno de los roles indicados */
 function requireRole(user, ...roles) {
   return user && roles.includes(user.role);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Agenda multi-recurso
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MAX_STAFF_RESOURCES = 10;
+const HHMM_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
+/** Valida y normaliza el payload de un ayudante. Devuelve { error } o los campos limpios. */
+function parseStaffResourceInput(body) {
+  const rawId = body.id;
+  let id = null;
+  if (rawId !== undefined && rawId !== null && rawId !== '') {
+    id = parseInt(rawId, 10);
+    if (!Number.isInteger(id) || id <= 0) return { error: 'id inválido' };
+  }
+
+  const name = String(body.name ?? '').trim();
+  if (name.length < 2 || name.length > 120) return { error: 'El nombre debe tener entre 2 y 120 caracteres' };
+
+  const color = String(body.color ?? '#deb887').trim();
+  if (!/^#[0-9a-fA-F]{6}$/.test(color)) return { error: 'Color inválido' };
+
+  const wh = body.workHours && typeof body.workHours === 'object' ? body.workHours : {};
+  const workHours = {};
+  for (const key of ['start_hour', 'end_hour']) {
+    const v = wh[key];
+    if (v === undefined || v === null || v === '') continue;
+    if (!HHMM_RE.test(String(v))) return { error: `Hora inválida en ${key}` };
+    workHours[key] = String(v);
+  }
+  if (workHours.start_hour && workHours.end_hour && workHours.start_hour >= workHours.end_hour) {
+    return { error: 'La hora de inicio debe ser anterior a la de fin' };
+  }
+
+  return { id, name, color, workHours, active: body.active !== false };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3376,6 +3428,69 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, professionals: rows.rows });
     }
 
+    if (action === 'getPublicBookingConfig') {
+      const r = await sql`SELECT public_booking_enabled FROM clinic_users WHERE id = ${user.id}`;
+      return res.status(200).json({ success: true, enabled: r.rows[0]?.public_booking_enabled === true });
+    }
+
+    if (action === 'setPublicBookingConfig') {
+      const { enabled } = req.body || {};
+      if (typeof enabled !== 'boolean') return res.status(400).json({ error: 'enabled debe ser booleano' });
+      await sql`UPDATE clinic_users SET public_booking_enabled = ${enabled} WHERE id = ${user.id}`;
+      return res.status(200).json({ success: true, enabled });
+    }
+
+    if (action === 'getPublicBookingProfile') {
+      const clinicSlug = String(req.query?.clinicSlug || req.body?.clinicSlug || '').trim();
+      const username = String(req.query?.username || req.body?.username || '').trim();
+      if (!clinicSlug || !username) return res.status(400).json({ success: false, error: 'clinicSlug y username son requeridos' });
+      const rows = await sql`
+        SELECT cu.id, cu.username, cu.full_name, cu.gentilicio, cu.phone, c.name AS clinic_name, c.slug AS clinic_slug,
+               cu.public_booking_enabled, cu.multi_resource_enabled
+        FROM clinic_users cu
+        JOIN clinics c ON c.id = cu.clinic_id
+        WHERE c.slug = ${clinicSlug} AND cu.username = ${username} AND cu.is_active = true
+        LIMIT 1
+      `;
+      if (!rows.rows.length) return res.status(404).json({ success: false, error: 'Profesional no encontrado' });
+      const professional = rows.rows[0];
+      if (!professional.public_booking_enabled) return res.status(403).json({ success: false, error: 'Este enlace no está habilitado' });
+      const resources = await sql`
+        SELECT id, name, color, work_hours, active
+        FROM clinic_staff_resources
+        WHERE owner_user_id = ${professional.id} AND active = true
+        ORDER BY name
+      `;
+      return res.status(200).json({
+        success: true,
+        professional: {
+          id: professional.id,
+          username: professional.username,
+          full_name: professional.full_name || professional.username,
+          gentilicio: professional.gentilicio || 'Dr.',
+          clinic_name: professional.clinic_name,
+          clinic_slug: professional.clinic_slug,
+          phone: professional.phone,
+        },
+        resources: resources.rows,
+        enabled: true,
+        publicUrl: `${process.env.APP_URL || 'https://bioskintech.vercel.app'}/reservar/${professional.clinic_slug}/${professional.username}`,
+      });
+    }
+
+    if (action === 'getPublicBookingProfiles') {
+      const clinicSlug = String(req.query?.clinicSlug || req.body?.clinicSlug || '').trim();
+      if (!clinicSlug) return res.status(400).json({ success: false, error: 'clinicSlug es requerido' });
+      const rows = await sql`
+        SELECT cu.id, cu.username, cu.full_name, cu.gentilicio, c.name AS clinic_name, c.slug AS clinic_slug
+        FROM clinic_users cu
+        JOIN clinics c ON c.id = cu.clinic_id
+        WHERE c.slug = ${clinicSlug} AND cu.is_active = true AND cu.public_booking_enabled = true
+        ORDER BY cu.full_name, cu.username
+      `;
+      return res.status(200).json({ success: true, professionals: rows.rows });
+    }
+
     // ── Correos CC personales del usuario ────────────────────────────────────
     if (action === 'getPersonalStaffEmails') {
       const r = await sql`SELECT personal_staff_emails FROM clinic_users WHERE id = ${user.id}`;
@@ -3392,6 +3507,69 @@ export default async function handler(req, res) {
       const cleaned = emails.map(e => e.trim().toLowerCase());
       await sql`UPDATE clinic_users SET personal_staff_emails = ${JSON.stringify(cleaned)}::jsonb WHERE id = ${user.id}`;
       return res.status(200).json({ success: true, emails: cleaned });
+    }
+
+    // ── Agenda multi-recurso: ayudantes del usuario ──────────────────────────
+    if (action === 'listStaffResources') {
+      const r = await sql`
+        SELECT id, name, color, work_hours, active
+        FROM clinic_staff_resources
+        WHERE owner_user_id = ${user.id}
+        ORDER BY name
+      `;
+      const u = await sql`SELECT multi_resource_enabled FROM clinic_users WHERE id = ${user.id}`;
+      return res.status(200).json({
+        success: true,
+        enabled: u.rows[0]?.multi_resource_enabled === true,
+        resources: r.rows,
+      });
+    }
+
+    if (action === 'setMultiResourceEnabled') {
+      const { enabled } = req.body || {};
+      if (typeof enabled !== 'boolean') return res.status(400).json({ error: 'enabled debe ser booleano' });
+      await sql`UPDATE clinic_users SET multi_resource_enabled = ${enabled} WHERE id = ${user.id}`;
+      return res.status(200).json({ success: true, enabled });
+    }
+
+    if (action === 'saveStaffResource') {
+      if (!user.clinic_id) return res.status(400).json({ error: 'Sin clínica asignada' });
+      const parsed = parseStaffResourceInput(req.body || {});
+      if (parsed.error) return res.status(400).json({ error: parsed.error });
+      const { id, name, color, workHours, active } = parsed;
+      try {
+        if (id) {
+          const upd = await sql`
+            UPDATE clinic_staff_resources
+            SET name = ${name}, color = ${color}, work_hours = ${JSON.stringify(workHours)}::jsonb, active = ${active}
+            WHERE id = ${id} AND owner_user_id = ${user.id}
+            RETURNING id, name, color, work_hours, active
+          `;
+          if (!upd.rows.length) return res.status(404).json({ error: 'Ayudante no encontrado' });
+          return res.status(200).json({ success: true, resource: upd.rows[0] });
+        }
+        const count = await sql`SELECT COUNT(*)::int AS n FROM clinic_staff_resources WHERE owner_user_id = ${user.id}`;
+        if (count.rows[0].n >= MAX_STAFF_RESOURCES) {
+          return res.status(400).json({ error: `Máximo ${MAX_STAFF_RESOURCES} ayudantes` });
+        }
+        const ins = await sql`
+          INSERT INTO clinic_staff_resources (clinic_id, owner_user_id, name, color, work_hours, active)
+          VALUES (${user.clinic_id}, ${user.id}, ${name}, ${color}, ${JSON.stringify(workHours)}::jsonb, ${active})
+          RETURNING id, name, color, work_hours, active
+        `;
+        return res.status(201).json({ success: true, resource: ins.rows[0] });
+      } catch (e) {
+        if (e?.code === '23505') return res.status(400).json({ error: 'Ya tienes un ayudante con ese nombre' });
+        throw e;
+      }
+    }
+
+    if (action === 'deleteStaffResource') {
+      const id = parseInt(req.body?.id ?? req.query.id, 10);
+      if (!Number.isInteger(id)) return res.status(400).json({ error: 'id inválido' });
+      const del = await sql`DELETE FROM clinic_staff_resources WHERE id = ${id} AND owner_user_id = ${user.id} RETURNING id`;
+      if (!del.rows.length) return res.status(404).json({ error: 'Ayudante no encontrado' });
+      return res.status(200).json({ success: true });
     }
 
     return res.status(400).json({ success: false, error: 'Acción no válida' });

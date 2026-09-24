@@ -6,8 +6,33 @@ import { authenticateRequest } from '../lib/admin-auth.js';
 import { sendDeveloperAlert } from './admin-auth.js';
 import { sendWhatsAppText, sendWhatsAppTemplate } from '../lib/whatsapp-service.js';
 import { isWithinCustomerServiceWindow, isSystemStaffPhone, ensureWhatsAppContactClinic } from '../lib/whatsapp-crm.js';
+import { eventResourceId, resolveResourceId, resourceExtendedProperties, rangesOverlap } from '../lib/agenda-resources.js';
 
 const isGoogleAuthError = (error) => error?.code === 401 || error?.response?.status === 401 || /invalid_grant|invalid authentication credentials/i.test(error?.message || '');
+
+/** Devuelve el resumen del evento que choca con el rango pedido para ese recurso, o null. */
+async function findResourceConflict(oauthClient, userId, resourceId, start, end) {
+  const calendar = google.calendar({ version: 'v3', auth: oauthClient });
+  const startMs = new Date(start).getTime();
+  const endMs   = new Date(end).getTime();
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
+    throw new Error('Rango de fechas inválido');
+  }
+  const { data } = await calendar.events.list({
+    calendarId: 'primary',
+    timeMin: new Date(startMs).toISOString(),
+    timeMax: new Date(endMs).toISOString(),
+    singleEvents: true,
+  });
+  for (const ev of data.items || []) {
+    if (ev.status === 'cancelled') continue;
+    if (eventResourceId(ev, userId) !== resourceId) continue;
+    const evStart = new Date(ev.start?.dateTime || ev.start?.date).getTime();
+    const evEnd   = new Date(ev.end?.dateTime   || ev.end?.date).getTime();
+    if (rangesOverlap(startMs, endMs, evStart, evEnd)) return ev.summary || 'evento existente';
+  }
+  return null;
+}
 
 export function normalizeWhatsAppNumber(raw) {
   const digits = String(raw || '').replace(/\D/g, '');
@@ -154,6 +179,8 @@ export default async function handler(req, res) {
     selected_staff_name,
     // Correos CC adicionales del staff personal del usuario
     additional_notify_emails,
+    // Agenda multi-recurso: titular (por defecto) o ayudante del usuario
+    resource_id,
   } = req.body;
 
   // ============================================
@@ -298,7 +325,38 @@ export default async function handler(req, res) {
 
   // Cargar config de la clínica (usa clinicId del body si existe, o defaults)
   const clinic = await getClinicConfig(requestedClinicId || null);
-  const staffName = [currentUser.rows[0]?.gentilicio, currentUser.rows[0]?.full_name].filter(Boolean).join(' ') || clinic.name;
+
+  // El cliente no es fuente de verdad sobre la disponibilidad: se revalida antes de notificar a nadie.
+  let bookingResourceId = null;
+  let bookingResourceName = '';
+  let bookingOAuth = null;
+  if (start && end) {
+    bookingResourceId = await resolveResourceId(auth.id, resource_id);
+    if (!bookingResourceId) return res.status(400).json({ success: false, error: 'Recurso de agenda inválido' });
+    if (bookingResourceId.startsWith('staff:')) {
+      const r = await sql`SELECT name FROM clinic_staff_resources WHERE id = ${parseInt(bookingResourceId.slice(6), 10)}`;
+      bookingResourceName = r.rows[0]?.name || '';
+    }
+    bookingOAuth = await getUserOAuth2Client(auth.id);
+    if (bookingOAuth) {
+      try {
+        const conflict = await findResourceConflict(bookingOAuth.client, auth.id, bookingResourceId, start, end);
+        if (conflict) {
+          return res.status(409).json({ success: false, error: `Ese horario ya está ocupado: ${conflict}` });
+        }
+      } catch (checkErr) {
+        if (isGoogleAuthError(checkErr)) {
+          await sql`DELETE FROM clinic_oauth_tokens WHERE clinic_user_id = ${auth.id}`;
+          return res.status(409).json({ success: false, error: 'La conexión de Google expiró. Vuelve a conectarla e intenta de nuevo.' });
+        }
+        return res.status(503).json({ success: false, error: 'No se pudo verificar la disponibilidad. Intenta de nuevo.' });
+      }
+    }
+  }
+
+  const staffName = bookingResourceName
+    || [currentUser.rows[0]?.gentilicio, currentUser.rows[0]?.full_name].filter(Boolean).join(' ')
+    || clinic.name;
 
   // --- Mensaje cordial para WhatsApp (dinamizado por clínica) ---
   const whatsappMessage =
@@ -372,7 +430,7 @@ export default async function handler(req, res) {
   // --- 1. CREAR EVENTO EN GOOGLE CALENDAR ---
   try {
     if (start && end) {
-      const userOAuth = await getUserOAuth2Client(auth.id);
+      const userOAuth = bookingOAuth;
       if (!userOAuth) throw new Error('No tienes una cuenta Google conectada. Conéctala desde Estado del Sistema.');
 
       const calendar = google.calendar({ version: 'v3', auth: userOAuth.client });
@@ -383,6 +441,7 @@ export default async function handler(req, res) {
           description: message,
           start: { dateTime: start, timeZone: 'America/Guayaquil' },
           end:   { dateTime: end,   timeZone: 'America/Guayaquil' },
+          extendedProperties: resourceExtendedProperties(bookingResourceId, auth.id),
         },
       });
       console.log('✅ Evento creado en Google Calendar');

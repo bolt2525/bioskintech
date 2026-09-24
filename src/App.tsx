@@ -47,6 +47,7 @@ import AdminWhatsAppCRM  from './pages/AdminWhatsAppCRM';
 import MasterClinicWrapper   from './pages/MasterClinicWrapper';
 import ExternalMedicalFinance from './pages/ExternalMedicalFinance';
 import SkinExplorerPage from './skin-explorer/SkinExplorerPage';
+import PublicBookingPage from './pages/PublicBookingPage';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Rutas reutilizadas dentro del panel admin
@@ -166,6 +167,8 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/"                        element={<LandingPage />} />
+        <Route path="/reservar/:clinicSlug/:username" element={<PublicBookingPage />} />
+        <Route path="/reservar/:clinicSlug" element={<PublicBookingPage />} />
         <Route path="/consent-signing/:token"   element={<ConsentSigning />} />
         <Route path="/politica-de-privacidad"   element={<PrivacyPolicy />} />
         <Route path="/condiciones-de-servicio"   element={<TermsOfService />} />

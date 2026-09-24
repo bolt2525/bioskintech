@@ -6,6 +6,7 @@ import { Clock, User, Phone, Mail, MessageSquare, Save, ArrowLeft, ChevronLeft, 
 import recordsFetch from '../utils/recordsFetch';
 import { services } from '../data/services';
 import { useAuth } from '../context/AuthContext';
+import type { StaffResource, AgendaResourceOption } from '../types';
 
 // Helpers para español
 const daysOfWeek = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
@@ -159,6 +160,17 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
   const [patientSearchError, setPatientSearchError] = useState('');
   const [selectedPatientId, setSelectedPatientId] = useState<number | null>(null);
   const [whatsappConfig, setWhatsappConfig] = useState({ botEnabled: false, confirmEnabled: false });
+  // Agenda multi-recurso: el titular y sus ayudantes comparten calendario pero no disponibilidad
+  const [staffResources, setStaffResources] = useState<StaffResource[]>([]);
+  const [multiResource, setMultiResource]   = useState(false);
+  const [selectedResource, setSelectedResource] = useState('');
+
+  const ownerResourceId = `owner:${user?.id}`;
+  const resourceOptions: AgendaResourceOption[] = [
+    { id: ownerResourceId, name: user?.full_name || user?.username || 'Yo', color: '#deb887', work_hours: {} },
+    ...staffResources.filter(r => r.active).map(r => ({ id: `staff:${r.id}`, name: r.name, color: r.color, work_hours: r.work_hours || {} })),
+  ];
+  const activeResource = resourceOptions.find(r => r.id === selectedResource) || resourceOptions[0];
 
   useEffect(() => {
     if (!user?.clinic_id) return;
@@ -180,7 +192,10 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
       fetch('/api/admin-auth?action=getWhatsAppBotConfig', {
         headers: { 'Authorization': `Bearer ${sessionStorage.getItem('adminSessionToken')}` }
       }).then(r => r.json()),
-    ]).then(([settings, professionals, staffEmails, botConfig]) => {
+      fetch('/api/admin-auth?action=listStaffResources', {
+        headers: { 'Authorization': `Bearer ${sessionStorage.getItem('adminSessionToken')}` }
+      }).then(r => r.json()),
+    ]).then(([settings, professionals, staffEmails, botConfig, resources]) => {
       if (settings.settings?.treatments?.length) setClinicTreatments(settings.settings.treatments);
       if (settings.settings?.email?.staff_members?.length) setExternalStaff(settings.settings.email.staff_members);
       if (settings.settings?.agenda?.start_hour)   setAgendaStartHour(settings.settings.agenda.start_hour);
@@ -188,6 +203,8 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
       if (professionals.professionals) setClinicProfessionals(professionals.professionals);
       if (staffEmails.emails?.length)  { setPersonalEmails(staffEmails.emails); setSelectedPersonalEmails(staffEmails.emails); setNotifyPersonalStaff(true); }
       setWhatsappConfig({ botEnabled: botConfig.config?.bot_enabled === true, confirmEnabled: botConfig.config?.confirm_enabled === true });
+      setMultiResource(resources.enabled === true);
+      setStaffResources(resources.resources || []);
     }).catch(() => {});
   }, [user?.clinic_id]);
 
@@ -217,7 +234,11 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
     return () => clearTimeout(timer);
   }, [patientQuery, searchPatients]);
   // Display slots always every 30 min; occupancy check uses the selected appointment duration
-  const availableTimes = generateTimeSlots(agendaStartHour, agendaEndHour, 30);
+  const availableTimes = generateTimeSlots(
+    activeResource?.work_hours?.start_hour || agendaStartHour,
+    activeResource?.work_hours?.end_hour   || agendaEndHour,
+    30,
+  );
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   
@@ -266,6 +287,7 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
         action: 'getEvents',
         date: selectedDay,
         clinicId: user?.clinic_id,
+        resourceId: multiResource ? (selectedResource || ownerResourceId) : undefined,
       }),
     })
       .then(res => res.json())
@@ -274,9 +296,9 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
       })
       .catch(() => setEvents([]))
       .finally(() => setLoadingHours(false));
-  }, [selectedDay]);
+  }, [selectedDay, selectedResource, multiResource]);
 
-  useEffect(() => { setSelectedHour(''); setHourClearedMsg(''); }, [selectedDay]);
+  useEffect(() => { setSelectedHour(''); setHourClearedMsg(''); }, [selectedDay, selectedResource]);
 
   // When duration changes: clear hour if now occupied by events; show reason message
   useEffect(() => {
@@ -311,6 +333,8 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
         `\n--- NOTAS DEL ADMINISTRADOR ---\n${formData.adminNotes}\n--- FIN NOTAS ---\n` : '';
       // Include professional name in calendar event description so notification bell can parse it
       const professionalLine = formData.selected_doctor ? `\nProfesional: ${formData.selected_doctor}` : '';
+      const resourceLine = multiResource && activeResource && activeResource.id !== ownerResourceId
+        ? `\nRecurso: ${activeResource.name}` : '';
       const additionalEmails = notifyPersonalStaff ? selectedPersonalEmails : [];
 
       // recordsFetch agrega Authorization + X-Target-Clinic-Id (necesario cuando master_admin
@@ -330,12 +354,13 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
             'Fecha: ' + selectedDay + '\n' +
             'Hora: ' + selectedHour + ` (${durationLabel})` + '\n' +
             'Comentario del paciente: ' + formData.message + 
-            adminMessage + professionalLine +
+            adminMessage + professionalLine + resourceLine +
             '\n[AGENDADO POR ADMINISTRADOR]',
           start,
           end,
           service: formData.service,
           phone: formData.phone,
+          resource_id: multiResource ? (selectedResource || ownerResourceId) : undefined,
           selected_staff_email: formData.selected_doctor_email || undefined,
           selected_staff_name:  formData.selected_doctor       || undefined,
           additional_notify_emails: additionalEmails.length ? additionalEmails : undefined,
@@ -511,6 +536,29 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
       {step === 2 && (
         <>
           <h4 className="text-lg font-semibold mb-3 text-[#0d5c6c] text-center">2. Selecciona hora y duración</h4>
+
+          {/* Selector de recurso — solo si el usuario activó el multi-recurso y tiene ayudantes */}
+          {multiResource && resourceOptions.length > 1 && (
+            <div className="flex items-center justify-center gap-2 mb-4 flex-wrap">
+              <span className="text-sm text-gray-500 mr-1">Atiende:</span>
+              {resourceOptions.map(r => (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => setSelectedResource(r.id)}
+                  className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-semibold border-2 transition-all ${
+                    activeResource?.id === r.id
+                      ? 'border-transparent text-white shadow'
+                      : 'bg-white border-[#dde7eb] text-[#0d5c6c] hover:border-[#deb887]'
+                  }`}
+                  style={activeResource?.id === r.id ? { background: r.color } : undefined}
+                >
+                  <span className="w-2 h-2 rounded-full" style={{ background: activeResource?.id === r.id ? '#fff' : r.color }} />
+                  {r.name}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Duration selector */}
           <div className="flex items-center justify-center gap-2 mb-4 flex-wrap">

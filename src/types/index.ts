@@ -122,6 +122,23 @@ export interface FeatureRow {
 // Agenda / Citas
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Ayudante del usuario: ocupa horarios en paralelo dentro del mismo calendario */
+export interface StaffResource {
+  id: number;
+  name: string;
+  color: string;
+  work_hours: { start_hour?: string; end_hour?: string };
+  active: boolean;
+}
+
+/** Recurso seleccionable al agendar: el titular o uno de sus ayudantes */
+export interface AgendaResourceOption {
+  id: string;
+  name: string;
+  color: string;
+  work_hours: { start_hour?: string; end_hour?: string };
+}
+
 /** Cita próxima (para notificaciones del dashboard) */
 export interface UpcomingAppointment {
   id: string;

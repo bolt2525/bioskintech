@@ -3,6 +3,7 @@ import sendEmailHandler from './sendEmail.js';
 import { sql } from '@vercel/postgres';
 import { authenticateRequest } from '../lib/admin-auth.js';
 import { sendDeveloperAlert } from './admin-auth.js';
+import { eventResourceId, resolveResourceId, resourceExtendedProperties } from '../lib/agenda-resources.js';
 
 const isGoogleAuthError = (error) => error?.code === 401 || error?.response?.status === 401 || /invalid_grant|invalid authentication credentials/i.test(error?.message || '');
 
@@ -115,7 +116,7 @@ export default async function handler(req, res) {
   async function getCalendarClient() {
     const oauthClient = await getUserOAuth2Client(userId);
     if (oauthClient) {
-      return { calendar: google.calendar({ version: 'v3', auth: oauthClient }), calendarId: 'primary', credentials: null };
+      return { calendar: google.calendar({ version: 'v3', auth: oauthClient }), calendarId: 'primary', credentials: { user_id: userId } };
     }
     throw new Error('No tienes una cuenta Gmail conectada. Conecta tu cuenta desde Estado del Sistema.');
   }
@@ -172,7 +173,7 @@ export default async function handler(req, res) {
 
 // Función para obtener eventos ocupados (original getEvents.js)
 async function getEvents(req, res, calendar, credentials) {
-  const { date } = req.body;
+  const { date, resourceId } = req.body;
   if (!date) return res.status(400).json({ error: "Fecha requerida" });
 
   const start = `${date}T00:00:00-05:00`;
@@ -186,22 +187,31 @@ async function getEvents(req, res, calendar, credentials) {
     orderBy: "startTime",
   });
 
-  const occupied = events.data.items.map((e) => ({
-    start: e.start.dateTime,
-    end: e.end.dateTime,
-  }));
+  const items = events.data.items || [];
+  const occupiedByResource = {};
+  for (const e of items) {
+    const rid = eventResourceId(e, credentials.user_id);
+    (occupiedByResource[rid] ||= []).push({ start: e.start.dateTime, end: e.end.dateTime });
+  }
 
-  const fullEvents = events.data.items.map((e) => ({
+  // Sin resourceId el comportamiento es el histórico: toda la agenda ocupa
+  const occupied = resourceId
+    ? (occupiedByResource[resourceId] || [])
+    : items.map((e) => ({ start: e.start.dateTime, end: e.end.dateTime }));
+
+  const fullEvents = items.map((e) => ({
     id: e.id,
     summary: e.summary,
     description: e.description,
     start: e.start.dateTime,
     end: e.end.dateTime,
     location: e.location,
+    resourceId: eventResourceId(e, credentials.user_id),
   }));
 
   res.status(200).json({ 
     occupiedTimes: occupied,
+    occupiedByResource,
     events: fullEvents 
   });
 }
@@ -246,6 +256,7 @@ async function getDayEvents(req, res, calendar, credentials) {
       location: event.location || '',
       eventType: isBlockEvent ? 'block' : 'appointment',
       isBlockEvent,
+      resourceId: eventResourceId(event, credentials.user_id),
       created: event.created,
       updated: event.updated,
       startDateTime: event.start.dateTime || event.start.date,
@@ -301,6 +312,7 @@ async function getCalendarEvents(req, res, calendar, credentials) {
       location: event.location || '',
       eventType: isBlockEvent ? 'block' : 'appointment',
       isBlockEvent,
+      resourceId: eventResourceId(event, credentials.user_id),
       created: event.created,
       updated: event.updated,
       startDateTime: event.start.dateTime || event.start.date,
@@ -328,7 +340,7 @@ async function getCalendarEvents(req, res, calendar, credentials) {
 
 // Función para bloquear horarios (original blockSchedule.js)
 async function blockSchedule(req, res, calendar, credentials) {
-  const { date, hours, reason, adminName = 'Administrador BIOSKIN' } = req.body;
+  const { date, hours, reason, adminName = 'Administrador BIOSKIN', resourceIds } = req.body;
 
   if (!date || !hours || !Array.isArray(hours) || hours.length === 0 || !reason) {
     return res.status(400).json({ 
@@ -347,10 +359,21 @@ async function blockSchedule(req, res, calendar, credentials) {
     });
   }
 
+  // Sin resourceIds se bloquea solo al titular, igual que antes
+  const requested = Array.isArray(resourceIds) && resourceIds.length ? resourceIds : [null];
+  const targets = [];
+  for (const rid of requested) {
+    const resolved = await resolveResourceId(credentials.user_id, rid);
+    if (!resolved) return res.status(400).json({ success: false, message: 'Recurso inválido' });
+    if (!targets.includes(resolved)) targets.push(resolved);
+  }
+
   const createdEvents = [];
   const errors = [];
 
-  for (const hour of hours) {
+  const jobs = hours.flatMap(hour => targets.map(target => ({ hour, target })));
+
+  for (const { hour, target } of jobs) {
     try {
       const [h, m] = hour.split(':').map(Number);
       
@@ -379,13 +402,15 @@ async function blockSchedule(req, res, calendar, credentials) {
           },
           status: 'confirmed',
           visibility: 'public',
-          transparency: 'opaque'
+          transparency: 'opaque',
+          extendedProperties: resourceExtendedProperties(target, credentials.user_id)
         }
       });
 
       createdEvents.push({
         eventId: response.data.id,
         hour: hour,
+        resourceId: target,
         summary: response.data.summary,
         htmlLink: response.data.htmlLink
       });
@@ -501,6 +526,7 @@ async function getBlockedSchedules(req, res, calendar, credentials) {
       hour: hour,
       summary: event.summary,
       description: event.description,
+      resourceId: eventResourceId(event, credentials.user_id),
       htmlLink: event.htmlLink
     });
   });

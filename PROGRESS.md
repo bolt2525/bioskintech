@@ -2,6 +2,9 @@
 
 ## Auditoría integral
 
+- ✅ 2026-09-23 Reforzado agendamiento público: rate limit por IP, validación de host, honeypot y verificación Turnstile cuando `TURNSTILE_SECRET`/`VITE_TURNSTILE_SITE_KEY` están configurados; la reserva solo continúa si pasa la validación anti-bot.
+- ✅ 2026-09-23 Añadido agendamiento público por profesional con enlace directo `/reservar/:clinicSlug/:username` y toggle de activación desde Ajustes → Agenda; valida `public_booking_enabled`, evita conflictos server-side y reusa el mismo calendario OAuth.
+- ✅ 2026-09-23 Añadido soporte multi-recurso por usuario con `clinic_staff_resources`, conflict resolution por `resourceId`, y selector de ayudante para la agenda compartida sin crear otra cuenta OAuth.
 - ✅ 2026-09-22 Corregidas marcaciones zonales 3D faciales/corporales: adhesión visual a superficie, color diferenciado, pulso, etiquetas y tamaño ajustable persistente con mouse o tacto.
 - ✅ 2026-09-22 Compactadas y redistribuidas las etiquetas 3D para evitar solapamientos entre lesiones y líneas anatómicas.
 - ✅ 2026-09-22 Recalibradas las etiquetas 3D para recuperar legibilidad y mantenerlas próximas a cada marcación.
@@ -90,6 +93,8 @@
 - ✅ 2026-09-22 Corregida la causa raíz real (verificada con un caso real de un usuario de clínica, no master_admin): `api/sendEmail.js` solo etiquetaba `whatsapp_contacts.clinic_id` cuando el bot de confirmación estaba habilitado (`whatsapp_bot_enabled` + `whatsapp_confirm_enabled`); si estaba apagado, el contacto solo se creaba después vía `handleIncomingMessages()` (que nunca pasa `clinicId`), quedando "sin clasificar" para siempre cuando el paciente tampoco está en `patients`. Nueva función `ensureWhatsAppContactClinic()` etiqueta la clínica al agendar SIEMPRE, sin depender del toggle de confirmación.
 - ✅ 2026-09-22 Nuevas columnas `whatsapp_messages.booked_by_user_id`/`read_notified` (migración idempotente + auto-ensure en runtime) para saber qué usuario de qué clínica agendó cada confirmación. El staff que agenda ahora recibe aviso inmediato por WhatsApp (si está dentro de la ventana de 24h) de si la confirmación al paciente se envió o falló —antes solo lo sabía del correo, nunca del WhatsApp— y un segundo aviso automático cuando el webhook confirma que el paciente leyó el mensaje (o que falló la entrega), con una invitación a responder para mantener la conversación activa.
 - ✅ 2026-09-22 Nueva opción "5) Agendar una cita nueva" en el menú de Agenda del bot de WhatsApp: flujo multi-paso (nombre, teléfono, fecha, duración, período, horario disponible) que crea el evento en Google Calendar, etiqueta la clínica del contacto y envía confirmación al paciente (texto libre o plantilla según ventana de 24h), igual que el agendamiento desde el dashboard. Revisada la máquina de estados completa (reprogramar/eliminar/consultar/agendar): todos los flujos soportan `menu`/`cancelar` en cualquier paso y reintentan sin perder el progreso ante una respuesta inválida.
+
+- ✅ 2026-09-23 Añadida respuesta automática única a pacientes que contestan una confirmación reciente, con enlace de contacto y uso de la ventana gratuita de 24 horas; las confirmaciones originales permanecen intactas.
 
 ## Pendientes verificables
 

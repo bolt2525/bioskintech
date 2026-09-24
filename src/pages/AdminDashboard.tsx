@@ -27,7 +27,7 @@ import AppFooter from '../components/layout/AppFooter';
 
 // Módulos y tipos de constants centralizados
 import { MODULE_LIST } from '../constants/features';
-import type { UpcomingAppointment } from '../types';
+import type { UpcomingAppointment, StaffResource } from '../types';
 import recordsFetch from '../utils/recordsFetch';
 
 type SettingsTab = 'profile' | 'password' | 'agenda' | 'whatsapp_bot' | 'clinic';
@@ -126,6 +126,12 @@ export default function AdminDashboard() {
   const [agendaSettings, setAgendaSettings] = useState({ start_hour: '08:00', end_hour: '19:00', slot_minutes: 60, calendar_prefix: '' });
   const [agendaSaving, setAgendaSaving]     = useState(false);
   const [agendaMsg, setAgendaMsg]           = useState<{ text: string; ok: boolean } | null>(null);
+
+  // Agenda multi-recurso (ayudantes sin cuenta propia)
+  const [multiResource, setMultiResource]   = useState(false);
+  const [publicBookingEnabled, setPublicBookingEnabled] = useState(false);
+  const [staffResources, setStaffResources] = useState<StaffResource[]>([]);
+  const [resourceDraft, setResourceDraft]   = useState<Partial<StaffResource> | null>(null);
 
   // WhatsApp bot tab (habilitado por master_admin, config propia del usuario)
   const [whatsappBot, setWhatsappBot] = useState({
@@ -239,12 +245,17 @@ export default function AdminDashboard() {
     // Load agenda data
     if (user?.clinic_id) {
       try {
-        const [settingsRes, staffRes] = await Promise.all([
+        const [settingsRes, staffRes, resourcesRes, publicBookingRes] = await Promise.all([
           fetch(`/api/admin-auth?action=getClinicSettings&clinicId=${user.clinic_id}`, { headers: { Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken')}` } }).then(r => r.json()),
           fetch('/api/admin-auth?action=getPersonalStaffEmails', { headers: { Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken')}` } }).then(r => r.json()),
+          fetch('/api/admin-auth?action=listStaffResources', { headers: { Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken')}` } }).then(r => r.json()),
+          fetch('/api/admin-auth?action=getPublicBookingConfig', { headers: { Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken')}` } }).then(r => r.json()),
         ]);
         if (settingsRes.settings?.treatments?.length) setClinicTreatments(settingsRes.settings.treatments);
         if (staffRes.emails) setPersonalEmails(staffRes.emails);
+        setMultiResource(resourcesRes.enabled === true);
+        setPublicBookingEnabled(publicBookingRes.enabled === true);
+        setStaffResources(resourcesRes.resources || []);
         if (settingsRes.settings?.agenda) {
           const a = settingsRes.settings.agenda;
           setAgendaSettings({
@@ -382,6 +393,62 @@ export default function AdminDashboard() {
       const d = await res.json();
       setAgendaMsg({ text: d.error || '¡Correos guardados!', ok: !!d.success });
     } finally { setAgendaSaving(false); }
+  };
+
+  // ─── Agenda multi-recurso: ayudantes ────────────────────────────────────
+  const agendaAuthHeaders = () => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken')}` });
+
+  const handleToggleMultiResource = async () => {
+    const next = !multiResource;
+    setMultiResource(next);
+    setAgendaMsg(null);
+    const res = await fetch('/api/admin-auth?action=setMultiResourceEnabled', {
+      method: 'POST', headers: agendaAuthHeaders(), body: JSON.stringify({ enabled: next }),
+    });
+    const d = await res.json();
+    if (!d.success) { setMultiResource(!next); setAgendaMsg({ text: d.error || 'No se pudo cambiar', ok: false }); }
+  };
+
+  const handleTogglePublicBooking = async () => {
+    const next = !publicBookingEnabled;
+    setPublicBookingEnabled(next);
+    setAgendaMsg(null);
+    const res = await fetch('/api/admin-auth?action=setPublicBookingConfig', {
+      method: 'POST', headers: agendaAuthHeaders(), body: JSON.stringify({ enabled: next }),
+    });
+    const d = await res.json();
+    if (!d.success) { setPublicBookingEnabled(!next); setAgendaMsg({ text: d.error || 'No se pudo cambiar', ok: false }); }
+  };
+
+  const handleSaveResource = async () => {
+    if (!resourceDraft?.name?.trim()) return;
+    setAgendaSaving(true); setAgendaMsg(null);
+    try {
+      const res = await fetch('/api/admin-auth?action=saveStaffResource', {
+        method: 'POST', headers: agendaAuthHeaders(),
+        body: JSON.stringify({
+          id: resourceDraft.id, name: resourceDraft.name.trim(),
+          color: resourceDraft.color || '#deb887',
+          workHours: resourceDraft.work_hours || {},
+          active: resourceDraft.active !== false,
+        }),
+      });
+      const d = await res.json();
+      if (!d.success) { setAgendaMsg({ text: d.error || 'No se pudo guardar', ok: false }); return; }
+      setStaffResources(p => resourceDraft.id ? p.map(r => r.id === d.resource.id ? d.resource : r) : [...p, d.resource]);
+      setResourceDraft(null);
+      setAgendaMsg({ text: '¡Ayudante guardado!', ok: true });
+    } finally { setAgendaSaving(false); }
+  };
+
+  const handleDeleteResource = async (id: number) => {
+    if (!window.confirm('¿Eliminar este ayudante? Las citas ya creadas no se borran.')) return;
+    const res = await fetch('/api/admin-auth?action=deleteStaffResource', {
+      method: 'POST', headers: agendaAuthHeaders(), body: JSON.stringify({ id }),
+    });
+    const d = await res.json();
+    if (d.success) setStaffResources(p => p.filter(r => r.id !== id));
+    else setAgendaMsg({ text: d.error || 'No se pudo eliminar', ok: false });
   };
 
   // ─── Guardar info básica de clínica (clinic_admin) ──────────────────────
@@ -926,6 +993,105 @@ export default function AdminDashboard() {
                               className="px-3 py-2 rounded-lg text-white" style={{ background: 'linear-gradient(135deg,#deb887,#c5a075)' }}>
                               <Plus className="w-4 h-4" />
                             </button>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="border-t border-gray-100 pt-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-xs font-semibold text-gray-700">Agendamiento multi-recurso</p>
+                            <p className="text-xs text-gray-400 mt-0.5">Permite que tus ayudantes atiendan en la misma hora que tú, sin necesidad de otra cuenta.</p>
+                          </div>
+                          <button type="button" onClick={handleToggleMultiResource}
+                            className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${multiResource ? 'bg-[#deb887]' : 'bg-gray-300'}`}>
+                            <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${multiResource ? 'translate-x-5' : ''}`} />
+                          </button>
+                        </div>
+
+                        <div className="mt-4 flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-xs font-semibold text-gray-700">Reservas públicas</p>
+                            <p className="text-xs text-gray-400 mt-0.5">Activa un enlace para que tus pacientes puedan reservar directamente desde la web.</p>
+                          </div>
+                          <button type="button" onClick={handleTogglePublicBooking}
+                            className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${publicBookingEnabled ? 'bg-[#deb887]' : 'bg-gray-300'}`}>
+                            <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${publicBookingEnabled ? 'translate-x-5' : ''}`} />
+                          </button>
+                        </div>
+                        {publicBookingEnabled && user?.clinic_slug && user?.username && (
+                          <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                            <p className="text-[10px] uppercase tracking-[0.2em] text-amber-700 font-semibold">Enlace directo</p>
+                            <a href={`${window.location.origin}/reservar/${user.clinic_slug}/${user.username}`} target="_blank" rel="noreferrer" className="mt-2 block text-xs text-amber-800 break-all underline decoration-amber-600">
+                              {`${window.location.origin}/reservar/${user.clinic_slug}/${user.username}`}
+                            </a>
+                          </div>
+                        )}
+
+                        {multiResource && (
+                          <div className="mt-3 space-y-2">
+                            {staffResources.map(r => (
+                              <div key={r.id} className="flex items-center gap-2 p-2 border rounded-lg bg-gray-50">
+                                <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: r.color }} />
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs font-medium text-gray-700 truncate">{r.name}</p>
+                                  <p className="text-[10px] text-gray-400">
+                                    {r.work_hours?.start_hour && r.work_hours?.end_hour
+                                      ? `${r.work_hours.start_hour} – ${r.work_hours.end_hour}`
+                                      : 'Mismo horario de la clínica'}
+                                    {!r.active && ' · inactivo'}
+                                  </p>
+                                </div>
+                                <button onClick={() => setResourceDraft(r)} className="text-[10px] text-gray-500 hover:text-[#deb887] px-2">Editar</button>
+                                <button onClick={() => handleDeleteResource(r.id)} className="text-gray-400 hover:text-red-500"><X className="w-3.5 h-3.5" /></button>
+                              </div>
+                            ))}
+                            {staffResources.length === 0 && !resourceDraft && (
+                              <p className="text-xs text-gray-400 italic">Sin ayudantes registrados</p>
+                            )}
+
+                            {resourceDraft ? (
+                              <div className="p-3 border rounded-lg space-y-2 bg-white">
+                                <input value={resourceDraft.name || ''} onChange={e => setResourceDraft(p => ({ ...p, name: e.target.value }))}
+                                  placeholder="Nombre del ayudante"
+                                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
+                                <div className="grid grid-cols-3 gap-2">
+                                  <div>
+                                    <label className="block text-[10px] text-gray-500 mb-1">Desde</label>
+                                    <input type="time" value={resourceDraft.work_hours?.start_hour || ''}
+                                      onChange={e => setResourceDraft(p => ({ ...p, work_hours: { ...p?.work_hours, start_hour: e.target.value } }))}
+                                      className="w-full px-2 py-1.5 border rounded-lg text-sm outline-none" />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] text-gray-500 mb-1">Hasta</label>
+                                    <input type="time" value={resourceDraft.work_hours?.end_hour || ''}
+                                      onChange={e => setResourceDraft(p => ({ ...p, work_hours: { ...p?.work_hours, end_hour: e.target.value } }))}
+                                      className="w-full px-2 py-1.5 border rounded-lg text-sm outline-none" />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] text-gray-500 mb-1">Color</label>
+                                    <input type="color" value={resourceDraft.color || '#deb887'}
+                                      onChange={e => setResourceDraft(p => ({ ...p, color: e.target.value }))}
+                                      className="w-full h-[34px] border rounded-lg" />
+                                  </div>
+                                </div>
+                                <p className="text-[10px] text-gray-400">Deja las horas vacías para usar el horario general de la clínica.</p>
+                                <div className="flex gap-2">
+                                  <button onClick={handleSaveResource} disabled={agendaSaving || !resourceDraft.name?.trim()}
+                                    className="px-3 py-1.5 rounded-lg text-white text-xs disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#deb887,#c5a075)' }}>
+                                    {agendaSaving ? 'Guardando…' : 'Guardar'}
+                                  </button>
+                                  <button onClick={() => setResourceDraft(null)} className="px-3 py-1.5 rounded-lg border text-xs text-gray-600">Cancelar</button>
+                                </div>
+                              </div>
+                            ) : (
+                              staffResources.length < 10 && (
+                                <button onClick={() => setResourceDraft({ name: '', color: '#deb887', work_hours: {}, active: true })}
+                                  className="flex items-center gap-1 text-xs text-[#c5a075] hover:text-[#deb887]">
+                                  <Plus className="w-3.5 h-3.5" /> Agregar ayudante
+                                </button>
+                              )
+                            )}
                           </div>
                         )}
                       </div>
