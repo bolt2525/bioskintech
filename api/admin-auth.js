@@ -31,6 +31,15 @@ const LOCK_ATTEMPTS     = 5;                    // intentos antes de bloquear
 const LOCK_MS           = 15 * 60 * 1000;       // 15 minutos de bloqueo
 const DEVELOPER_EMAIL   = 'bolt2525@gmail.com';
 
+async function revokeGoogleRefreshToken(refreshToken) {
+  const token = String(refreshToken || '').trim();
+  if (!token) return;
+  const response = await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(token)}`, { method: 'POST' });
+  if (!response.ok && response.status !== 400) {
+    throw new Error(`Google no confirmó la revocación (HTTP ${response.status})`);
+  }
+}
+
 // Defaults para nuevas clínicas — usados en creación y en getClinicSettings lazy-init
 const DEFAULT_TREATMENTS = [
   'Consulta + Escáner Facial','Botox / Toxina Botulínica','Relleno de Labios',
@@ -2811,6 +2820,9 @@ export default async function handler(req, res) {
       if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master_admin' });
       const { userId } = req.body || {};
       if (!userId) return res.status(400).json({ error: 'userId requerido' });
+      const tok = await sql`SELECT refresh_token FROM clinic_oauth_tokens WHERE clinic_user_id = ${userId}`;
+      try { await revokeGoogleRefreshToken(tok.rows[0]?.refresh_token); }
+      catch (error) { return res.status(502).json({ error: error.message }); }
       await sql`DELETE FROM clinic_oauth_tokens WHERE clinic_user_id = ${userId}`;
       await sendDeveloperAlert('Gmail desconectado', { Usuario: userId, Acción: 'oauthRevoke' })
         .catch(e => console.error('[oauth] developer alert error:', e.message));
@@ -2825,11 +2837,8 @@ export default async function handler(req, res) {
       if (!target.rows.length) return res.status(404).json({ error: 'Usuario no encontrado' });
       // Revocar el token con Google antes de borrar de la DB
       const tok = await sql`SELECT refresh_token FROM clinic_oauth_tokens WHERE clinic_user_id = ${targetUserId}`;
-      if (tok.rows.length && tok.rows[0].refresh_token) {
-        try {
-          await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(tok.rows[0].refresh_token)}`, { method: 'POST' });
-        } catch { /* non-fatal — borramos de DB de todas formas */ }
-      }
+      try { await revokeGoogleRefreshToken(tok.rows[0]?.refresh_token); }
+      catch (error) { return res.status(502).json({ error: error.message }); }
       await sql`DELETE FROM clinic_oauth_tokens WHERE clinic_user_id = ${targetUserId}`;
       await sendDeveloperAlert('Gmail desconectado', { Usuario: targetUserId, Acción: 'disconnectClinicOAuth' })
         .catch(e => console.error('[oauth] developer alert error:', e.message));

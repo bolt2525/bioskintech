@@ -2,6 +2,7 @@
 
 ## Auditoría integral
 
+- ✅ 2026-09-24 Endurecida desconexión Google desde Estado del sistema: revoca ante Google antes de borrar el token local y conserva la conexión si la revocación remota falla.
 - ✅ 2026-09-24 Añadida interacción segura de recordatorios: botón Confirmar, respuestas deterministas del paciente, enlace directo multi-clínica y aviso al profesional por WhatsApp o correo.
 - ✅ 2026-09-24 Reordenado flujo de WhatsApp de citas: el email mantiene la confirmación inmediata al agendar, y el paciente recibe el recordatorio del día anterior leyendo los eventos del calendario, extrayendo el teléfono del evento y marcando el envío para evitar duplicados.
 - ✅ 2026-09-23 Reforzado agendamiento público: rate limit por IP, validación de host, honeypot y verificación Turnstile cuando `TURNSTILE_SECRET`/`VITE_TURNSTILE_SITE_KEY` están configurados; la reserva solo continúa si pasa la validación anti-bot.
