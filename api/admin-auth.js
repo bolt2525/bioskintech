@@ -2501,6 +2501,58 @@ export default async function handler(req, res) {
       return res.status(200).json({ plans: SUBSCRIPTION_PLANS });
     }
 
+    // ── Acciones públicas de perfil/agendamiento ─────────────────────────
+    if (action === 'getPublicBookingProfile') {
+      const clinicSlug = String(req.query?.clinicSlug || req.body?.clinicSlug || '').trim();
+      const username = String(req.query?.username || req.body?.username || '').trim();
+      if (!clinicSlug || !username) return res.status(400).json({ success: false, error: 'clinicSlug y username son requeridos' });
+      const rows = await sql`
+        SELECT cu.id, cu.username, cu.full_name, cu.gentilicio, cu.phone, c.name AS clinic_name, c.slug AS clinic_slug,
+               cu.public_booking_enabled, cu.multi_resource_enabled
+        FROM clinic_users cu
+        JOIN clinics c ON c.id = cu.clinic_id
+        WHERE c.slug = ${clinicSlug} AND cu.username = ${username} AND cu.is_active = true
+        LIMIT 1
+      `;
+      if (!rows.rows.length) return res.status(404).json({ success: false, error: 'Profesional no encontrado' });
+      const professional = rows.rows[0];
+      if (!professional.public_booking_enabled) return res.status(403).json({ success: false, error: 'Este enlace no está habilitado' });
+      const resources = await sql`
+        SELECT id, name, color, work_hours, active
+        FROM clinic_staff_resources
+        WHERE owner_user_id = ${professional.id} AND active = true
+        ORDER BY name
+      `;
+      return res.status(200).json({
+        success: true,
+        professional: {
+          id: professional.id,
+          username: professional.username,
+          full_name: professional.full_name || professional.username,
+          gentilicio: professional.gentilicio || 'Dr.',
+          clinic_name: professional.clinic_name,
+          clinic_slug: professional.clinic_slug,
+          phone: professional.phone,
+        },
+        resources: resources.rows,
+        enabled: true,
+        publicUrl: `${process.env.APP_URL || 'https://bioskintech.vercel.app'}/reservar/${professional.clinic_slug}/${professional.username}`,
+      });
+    }
+
+    if (action === 'getPublicBookingProfiles') {
+      const clinicSlug = String(req.query?.clinicSlug || req.body?.clinicSlug || '').trim();
+      if (!clinicSlug) return res.status(400).json({ success: false, error: 'clinicSlug es requerido' });
+      const rows = await sql`
+        SELECT cu.id, cu.username, cu.full_name, cu.gentilicio, c.name AS clinic_name, c.slug AS clinic_slug
+        FROM clinic_users cu
+        JOIN clinics c ON c.id = cu.clinic_id
+        WHERE c.slug = ${clinicSlug} AND cu.is_active = true AND cu.public_booking_enabled = true
+        ORDER BY cu.full_name, cu.username
+      `;
+      return res.status(200).json({ success: true, professionals: rows.rows });
+    }
+
     // ── Acciones autenticadas ──────────────────────────────────────────────
     const user = await getRequestUser(req);
     if (!user) return res.status(401).json({ success: false, error: 'No autenticado o sesión expirada' });
@@ -3436,59 +3488,22 @@ export default async function handler(req, res) {
     if (action === 'setPublicBookingConfig') {
       const { enabled } = req.body || {};
       if (typeof enabled !== 'boolean') return res.status(400).json({ error: 'enabled debe ser booleano' });
+      if (enabled) {
+        const settingsRes = await sql`SELECT treatments, agenda FROM clinic_settings WHERE clinic_id = ${user.clinic_id}`;
+        const settings = settingsRes.rows[0] || {};
+        const treatments = Array.isArray(settings.treatments) ? settings.treatments : [];
+        const durations = settings.agenda && typeof settings.agenda === 'object' ? settings.agenda.treatment_durations || {} : {};
+        const missing = treatments.filter(name => !name || Number(durations[name] || 0) <= 0);
+        if (missing.length) {
+          return res.status(400).json({
+            success: false,
+            error: 'Debes definir una duración válida para cada tratamiento antes de habilitar la reserva pública.',
+            missing: missing.slice(0, 5),
+          });
+        }
+      }
       await sql`UPDATE clinic_users SET public_booking_enabled = ${enabled} WHERE id = ${user.id}`;
       return res.status(200).json({ success: true, enabled });
-    }
-
-    if (action === 'getPublicBookingProfile') {
-      const clinicSlug = String(req.query?.clinicSlug || req.body?.clinicSlug || '').trim();
-      const username = String(req.query?.username || req.body?.username || '').trim();
-      if (!clinicSlug || !username) return res.status(400).json({ success: false, error: 'clinicSlug y username son requeridos' });
-      const rows = await sql`
-        SELECT cu.id, cu.username, cu.full_name, cu.gentilicio, cu.phone, c.name AS clinic_name, c.slug AS clinic_slug,
-               cu.public_booking_enabled, cu.multi_resource_enabled
-        FROM clinic_users cu
-        JOIN clinics c ON c.id = cu.clinic_id
-        WHERE c.slug = ${clinicSlug} AND cu.username = ${username} AND cu.is_active = true
-        LIMIT 1
-      `;
-      if (!rows.rows.length) return res.status(404).json({ success: false, error: 'Profesional no encontrado' });
-      const professional = rows.rows[0];
-      if (!professional.public_booking_enabled) return res.status(403).json({ success: false, error: 'Este enlace no está habilitado' });
-      const resources = await sql`
-        SELECT id, name, color, work_hours, active
-        FROM clinic_staff_resources
-        WHERE owner_user_id = ${professional.id} AND active = true
-        ORDER BY name
-      `;
-      return res.status(200).json({
-        success: true,
-        professional: {
-          id: professional.id,
-          username: professional.username,
-          full_name: professional.full_name || professional.username,
-          gentilicio: professional.gentilicio || 'Dr.',
-          clinic_name: professional.clinic_name,
-          clinic_slug: professional.clinic_slug,
-          phone: professional.phone,
-        },
-        resources: resources.rows,
-        enabled: true,
-        publicUrl: `${process.env.APP_URL || 'https://bioskintech.vercel.app'}/reservar/${professional.clinic_slug}/${professional.username}`,
-      });
-    }
-
-    if (action === 'getPublicBookingProfiles') {
-      const clinicSlug = String(req.query?.clinicSlug || req.body?.clinicSlug || '').trim();
-      if (!clinicSlug) return res.status(400).json({ success: false, error: 'clinicSlug es requerido' });
-      const rows = await sql`
-        SELECT cu.id, cu.username, cu.full_name, cu.gentilicio, c.name AS clinic_name, c.slug AS clinic_slug
-        FROM clinic_users cu
-        JOIN clinics c ON c.id = cu.clinic_id
-        WHERE c.slug = ${clinicSlug} AND cu.is_active = true AND cu.public_booking_enabled = true
-        ORDER BY cu.full_name, cu.username
-      `;
-      return res.status(200).json({ success: true, professionals: rows.rows });
     }
 
     // ── Correos CC personales del usuario ────────────────────────────────────

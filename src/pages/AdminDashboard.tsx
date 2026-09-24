@@ -123,15 +123,18 @@ export default function AdminDashboard() {
   const [newTreatment, setNewTreatment]     = useState('');
   const [personalEmails, setPersonalEmails] = useState<string[]>([]);
   const [newPersonalEmail, setNewPersonalEmail] = useState('');
-  const [agendaSettings, setAgendaSettings] = useState({ start_hour: '08:00', end_hour: '19:00', slot_minutes: 60, calendar_prefix: '' });
+  const [agendaSettings, setAgendaSettings] = useState({ start_hour: '08:00', end_hour: '19:00', slot_minutes: 60, calendar_prefix: '', treatment_durations: {} as Record<string, number> });
   const [agendaSaving, setAgendaSaving]     = useState(false);
   const [agendaMsg, setAgendaMsg]           = useState<{ text: string; ok: boolean } | null>(null);
 
   // Agenda multi-recurso (ayudantes sin cuenta propia)
   const [multiResource, setMultiResource]   = useState(false);
   const [publicBookingEnabled, setPublicBookingEnabled] = useState(false);
+  const [showPublicBookingModal, setShowPublicBookingModal] = useState(false);
   const [staffResources, setStaffResources] = useState<StaffResource[]>([]);
   const [resourceDraft, setResourceDraft]   = useState<Partial<StaffResource> | null>(null);
+
+  const hasRequiredTreatmentDurations = clinicTreatments.length > 0 && clinicTreatments.every(t => Number(agendaSettings.treatment_durations?.[t] || 0) > 0);
 
   // WhatsApp bot tab (habilitado por master_admin, config propia del usuario)
   const [whatsappBot, setWhatsappBot] = useState({
@@ -258,8 +261,9 @@ export default function AdminDashboard() {
         setStaffResources(resourcesRes.resources || []);
         if (settingsRes.settings?.agenda) {
           const a = settingsRes.settings.agenda;
+          const treatmentDurations = typeof a.treatment_durations === 'object' && a.treatment_durations ? a.treatment_durations : {};
           setAgendaSettings({
-            start_hour: a.start_hour || '08:00', end_hour: a.end_hour || '19:00', slot_minutes: a.slot_minutes || 60, calendar_prefix: a.calendar_prefix || '',
+            start_hour: a.start_hour || '08:00', end_hour: a.end_hour || '19:00', slot_minutes: a.slot_minutes || 60, calendar_prefix: a.calendar_prefix || '', treatment_durations: treatmentDurations,
           });
         }
         // Pre-fill clinic form for clinic_admin
@@ -338,13 +342,43 @@ export default function AdminDashboard() {
     setAgendaSaving(true); setAgendaMsg(null);
     try {
       const token = sessionStorage.getItem('adminSessionToken');
-      const res = await fetch('/api/admin-auth?action=saveClinicSettings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ clinicId: user.clinic_id, section: 'agenda', data: agendaSettings }),
-      });
-      const d = await res.json();
-      setAgendaMsg({ text: d.error || '¡Horario guardado!', ok: !!d.success });
+      const agendaPayload = { ...agendaSettings, treatment_durations: agendaSettings.treatment_durations || {} };
+      const tasks = [
+        fetch('/api/admin-auth?action=saveClinicSettings', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ clinicId: user.clinic_id, section: 'agenda', data: agendaPayload }),
+        }),
+        fetch('/api/admin-auth?action=saveClinicSettings', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ clinicId: user.clinic_id, section: 'treatments', data: clinicTreatments }),
+        }),
+        fetch('/api/admin-auth?action=updatePersonalStaffEmails', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ emails: personalEmails }),
+        }),
+        fetch('/api/admin-auth?action=setMultiResourceEnabled', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ enabled: multiResource }),
+        }),
+        fetch('/api/admin-auth?action=setPublicBookingConfig', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ enabled: publicBookingEnabled }),
+        }),
+      ];
+      const [agendaRes, treatmentsRes, emailsRes, multiRes, publicRes] = await Promise.all(tasks);
+      const [agendaData, treatmentsData, emailsData, multiData, publicData] = await Promise.all([
+        agendaRes.json(), treatmentsRes.json(), emailsRes.json(), multiRes.json(), publicRes.json(),
+      ]);
+      const anyError = [agendaData, treatmentsData, emailsData, multiData, publicData].find(d => d && d.error);
+      setAgendaMsg({ text: anyError?.error || '¡Ajustes de agenda guardados!', ok: !anyError });
+      if (!publicBookingEnabled && publicData?.success) setPublicBookingEnabled(false);
+      if (publicBookingEnabled && !hasRequiredTreatmentDurations) {
+        setPublicBookingEnabled(false);
+        setAgendaMsg({ text: 'Debes definir una duración válida para cada tratamiento antes de habilitar reservas públicas.', ok: false });
+      }
+      if (publicBookingEnabled && !publicData?.success) {
+        setAgendaMsg({ text: publicData?.error || 'No se pudo habilitar la reserva pública.', ok: false });
+      }
     } finally { setAgendaSaving(false); }
   };
 
@@ -399,25 +433,18 @@ export default function AdminDashboard() {
   const agendaAuthHeaders = () => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken')}` });
 
   const handleToggleMultiResource = async () => {
-    const next = !multiResource;
-    setMultiResource(next);
+    setMultiResource(v => !v);
     setAgendaMsg(null);
-    const res = await fetch('/api/admin-auth?action=setMultiResourceEnabled', {
-      method: 'POST', headers: agendaAuthHeaders(), body: JSON.stringify({ enabled: next }),
-    });
-    const d = await res.json();
-    if (!d.success) { setMultiResource(!next); setAgendaMsg({ text: d.error || 'No se pudo cambiar', ok: false }); }
   };
 
   const handleTogglePublicBooking = async () => {
     const next = !publicBookingEnabled;
+    if (next && !hasRequiredTreatmentDurations) {
+      setShowPublicBookingModal(true);
+      return;
+    }
     setPublicBookingEnabled(next);
     setAgendaMsg(null);
-    const res = await fetch('/api/admin-auth?action=setPublicBookingConfig', {
-      method: 'POST', headers: agendaAuthHeaders(), body: JSON.stringify({ enabled: next }),
-    });
-    const d = await res.json();
-    if (!d.success) { setPublicBookingEnabled(!next); setAgendaMsg({ text: d.error || 'No se pudo cambiar', ok: false }); }
   };
 
   const handleSaveResource = async () => {
@@ -1230,6 +1257,57 @@ export default function AdminDashboard() {
 
                 </div>
 
+                {showPublicBookingModal && (
+                  <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-[60]">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+                      <div className="h-0.5 bg-gradient-to-r from-[#deb887] to-[#c5a075]" />
+                      <div className="p-6">
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center">
+                            <AlertCircle className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase tracking-[0.2em] text-amber-700 font-semibold">Reservas públicas</p>
+                            <h3 className="text-lg font-bold text-gray-900">Falta la duración de tratamientos</h3>
+                          </div>
+                        </div>
+                        <p className="text-sm text-gray-600">Para habilitar el enlace público, cada tratamiento debe tener una duración en minutos. Luego de guardar, podrás activar la reserva pública en un clic.</p>
+                        <div className="mt-4 space-y-2">
+                          {clinicTreatments.map((t) => (
+                            <div key={t} className="flex items-center justify-between gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
+                              <span className="text-sm text-gray-700 truncate">{t}</span>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="number"
+                                  min={15}
+                                  step={15}
+                                  value={Number(agendaSettings.treatment_durations?.[t] || 0)}
+                                  onChange={(e) => setAgendaSettings((prev) => ({
+                                    ...prev,
+                                    treatment_durations: {
+                                      ...prev.treatment_durations,
+                                      [t]: Number(e.target.value) || 0,
+                                    },
+                                  }))}
+                                  className="w-20 px-2 py-1.5 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none"
+                                />
+                                <span className="text-xs text-gray-500">min</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="mt-5 flex justify-end gap-2">
+                          <button onClick={() => setShowPublicBookingModal(false)} className="px-4 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-100">Cerrar</button>
+                          <button onClick={() => {
+                            setShowPublicBookingModal(false);
+                            setAgendaMsg({ text: 'Guarda los tiempos de tratamiento para activar la reserva pública.', ok: false });
+                          }} className="px-4 py-2 rounded-lg text-white text-sm font-medium" style={{ background: 'linear-gradient(135deg,#deb887,#c5a075)' }}>Entendido</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Footer save */}
                 <div className="px-5 py-3 border-t bg-gray-50 flex justify-end gap-2">
                   <button onClick={() => setShowSettings(false)} className="px-4 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-100">Cancelar</button>
@@ -1255,25 +1333,11 @@ export default function AdminDashboard() {
                     </button>
                   )}
                   {settingsTab === 'agenda' && (
-                    <>
-                      {user?.role === 'clinic_admin' && (
-                        <button onClick={handleSaveAgendaSettings} disabled={agendaSaving}
-                          className="px-4 py-2 rounded-lg text-sm font-medium border border-[#deb887] text-[#99652f] hover:bg-[#deb887]/10 disabled:opacity-60">
-                          {agendaSaving ? '...' : 'Guardar horario'}
-                        </button>
-                      )}
-                      {user?.role === 'clinic_admin' && (
-                        <button onClick={handleSaveTreatments} disabled={agendaSaving}
-                          className="px-4 py-2 rounded-lg text-sm font-medium border border-[#deb887] text-[#99652f] hover:bg-[#deb887]/10 disabled:opacity-60">
-                          {agendaSaving ? '...' : 'Guardar tratamientos'}
-                        </button>
-                      )}
-                      <button onClick={handleSavePersonalEmails} disabled={agendaSaving}
-                        className="flex items-center gap-2 px-5 py-2 rounded-lg text-white text-sm font-medium disabled:opacity-60"
-                        style={{ background: 'linear-gradient(135deg,#deb887,#c5a075)' }}>
-                        {agendaSaving ? 'Guardando...' : 'Guardar mis correos'}
-                      </button>
-                    </>
+                    <button onClick={handleSaveAgendaSettings} disabled={agendaSaving || (publicBookingEnabled && !hasRequiredTreatmentDurations)}
+                      className="flex items-center gap-2 px-5 py-2 rounded-lg text-white text-sm font-medium disabled:opacity-60"
+                      style={{ background: 'linear-gradient(135deg,#deb887,#c5a075)' }}>
+                      {agendaSaving ? 'Guardando...' : 'Guardar todo'}
+                    </button>
                   )}
                   {settingsTab === 'whatsapp_bot' && whatsappBot.bot_enabled && (
                     <button onClick={handleSaveWhatsAppBot} disabled={whatsappBotSaving}
