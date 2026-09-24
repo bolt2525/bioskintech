@@ -1,28 +1,27 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
 type PublicProfile = {
   success: boolean;
   enabled: boolean;
   publicUrl?: string;
   professional?: {
-    id: number;
     username: string;
     full_name: string;
     gentilicio?: string;
     clinic_name?: string;
     clinic_slug?: string;
-    phone?: string | null;
   };
-  resources?: Array<{ id: number; name: string; color?: string; active?: boolean; work_hours?: Record<string, string> }>;
+  resources?: Array<{ id: number; name: string }>;
   treatments?: Array<{ name: string; durationMinutes: number }>;
 };
 
 export default function PublicBookingPage() {
   const { clinicSlug, username } = useParams<{ clinicSlug: string; username?: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [profile, setProfile] = useState<PublicProfile | null>(null);
-  const [professionals, setProfessionals] = useState<Array<{ id: number; username: string; full_name: string; clinic_name?: string }>>([]);
+  const [professionals, setProfessionals] = useState<Array<{ id: string; username: string; full_name: string; clinic_name?: string; resourceId: string; resourceType: 'owner' | 'staff'; ownerName?: string }>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -62,11 +61,12 @@ export default function PublicBookingPage() {
             setProfile(null);
           } else {
             setProfile(data);
-            const defaultResource = data.resources?.find((r: any) => r.active !== false)?.id ?? '';
             const defaultTreatment = data.treatments?.[0];
+            const requestedResource = searchParams.get('resource') || 'owner';
+            const validResource = requestedResource === 'owner' || data.resources?.some((resource: { id: number }) => `staff:${resource.id}` === requestedResource);
             setForm((prev) => ({
               ...prev,
-              resourceId: defaultResource ? `staff:${defaultResource}` : 'owner',
+              resourceId: validResource ? requestedResource : 'owner',
               service: defaultTreatment?.name || '',
               durationMinutes: defaultTreatment?.durationMinutes || 60,
             }));
@@ -87,7 +87,7 @@ export default function PublicBookingPage() {
     };
 
     load();
-  }, [clinicSlug, username]);
+  }, [clinicSlug, username, searchParams]);
 
   useEffect(() => {
     if (!turnstileSiteKey || !document.getElementById('cf-turnstile-script')) {
@@ -124,10 +124,10 @@ export default function PublicBookingPage() {
     }
   }, [turnstileReady, turnstileSiteKey]);
 
-  const resourceOptions = useMemo(() => {
-    if (!profile?.resources?.length) return [] as Array<{ id: string; name: string; color?: string }>;
-    return [{ id: 'owner', name: profile.professional?.full_name || 'Profesional principal', color: '#deb887' }, ...profile.resources.map((r) => ({ id: `staff:${r.id}`, name: r.name, color: r.color || '#deb887' }))];
-  }, [profile]);
+  const selectedProfessionalName = useMemo(() => {
+    if (form.resourceId === 'owner') return profile?.professional?.full_name || '';
+    return profile?.resources?.find((resource) => `staff:${resource.id}` === form.resourceId)?.name || profile?.professional?.full_name || '';
+  }, [form.resourceId, profile]);
 
   const submitBooking = async () => {
     if (!clinicSlug || !username || !profile?.professional) return;
@@ -202,12 +202,12 @@ export default function PublicBookingPage() {
               <button
                 key={p.id}
                 type="button"
-                onClick={() => navigate(`/reservar/${clinicSlug}/${p.username}`)}
+                onClick={() => navigate(`/reservar/${clinicSlug}/${p.username}?resource=${encodeURIComponent(p.resourceId)}`)}
                 className="flex items-center justify-between rounded-2xl border border-gray-200 p-4 text-left hover:border-[#deb887] hover:bg-[#fffaf2] transition-colors"
               >
                 <div>
                   <p className="font-semibold text-gray-900">{p.full_name}</p>
-                  <p className="text-xs text-gray-500">{p.clinic_name || clinicSlug}</p>
+                  <p className="text-xs text-gray-500">{p.resourceType === 'staff' ? `Equipo de ${p.ownerName}` : p.clinic_name || clinicSlug}</p>
                 </div>
                 <span className="text-sm font-medium text-[#a57b4a]">Agendar →</span>
               </button>
@@ -235,7 +235,7 @@ export default function PublicBookingPage() {
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-[#a57b4a] font-semibold">Reservar cita</p>
-            <h1 className="mt-2 text-3xl font-bold text-gray-900">{profile.professional.full_name}</h1>
+            <h1 className="mt-2 text-3xl font-bold text-gray-900">{selectedProfessionalName}</h1>
           </div>
           <div className="rounded-full bg-[#fff4e4] px-3 py-1 text-xs font-semibold text-[#a57b4a]">{profile.professional.clinic_name || clinicSlug}</div>
         </div>
@@ -274,7 +274,7 @@ export default function PublicBookingPage() {
           <div className="grid md:grid-cols-3 gap-4">
             <label className="block text-sm font-medium text-gray-700">
               Fecha
-              <input type="date" value={form.date} onChange={(e) => setForm((prev) => ({ ...prev, date: e.target.value }))} className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2.5 outline-none focus:border-[#deb887] focus:ring-2 focus:ring-[#deb887]/20" />
+              <input type="date" min={new Date().toLocaleDateString('en-CA', { timeZone: 'America/Guayaquil' })} value={form.date} onChange={(e) => setForm((prev) => ({ ...prev, date: e.target.value }))} className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2.5 outline-none focus:border-[#deb887] focus:ring-2 focus:ring-[#deb887]/20" />
             </label>
             <label className="block text-sm font-medium text-gray-700">
               Hora
@@ -285,17 +285,6 @@ export default function PublicBookingPage() {
               <div className="mt-1 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-gray-600">{form.durationMinutes} minutos</div>
             </div>
           </div>
-
-          {resourceOptions.length > 0 && (
-            <label className="block text-sm font-medium text-gray-700">
-              Profesional / recurso
-              <select value={form.resourceId} onChange={(e) => setForm((prev) => ({ ...prev, resourceId: e.target.value }))} className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2.5 outline-none focus:border-[#deb887] focus:ring-2 focus:ring-[#deb887]/20">
-                {resourceOptions.map((r) => (
-                  <option key={r.id} value={r.id}>{r.name}</option>
-                ))}
-              </select>
-            </label>
-          )}
 
           {turnstileSiteKey && (
             <div className="mt-2">

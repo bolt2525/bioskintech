@@ -1,7 +1,7 @@
 import nodemailer from 'nodemailer';
 import { google } from 'googleapis';
 import { sql } from '@vercel/postgres';
-import { resolveResourceId, resourceExtendedProperties, rangesOverlap, eventResourceId } from '../lib/agenda-resources.js';
+import { resolveResourceId, resourceExtendedProperties, rangesOverlap, eventResourceId, isWithinWorkHours, isValidFutureLocalDateTime } from '../lib/agenda-resources.js';
 
 const isGoogleAuthError = (error) => error?.code === 401 || error?.response?.status === 401 || /invalid_grant|invalid authentication credentials/i.test(error?.message || '');
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
@@ -50,7 +50,11 @@ function getTurnstileAllowedHosts() {
 
 async function verifyTurnstileToken(req, token) {
   const secret = (process.env.TURNSTILE_SECRET || '').trim();
-  if (!secret) return { ok: true };
+  if (!secret) {
+    return process.env.NODE_ENV === 'production'
+      ? { ok: false, error: 'La verificación de seguridad no está disponible.' }
+      : { ok: true };
+  }
 
   if (typeof token !== 'string' || !token.trim()) {
     return { ok: false, error: 'Confirma que no eres un robot para reservar.' };
@@ -163,7 +167,6 @@ export default async function handler(req, res) {
   const service = sanitizeText(body.service, 200);
   const date = sanitizeText(body.date, 20);
   const time = sanitizeText(body.time, 15);
-  const durationMinutes = Number(body.durationMinutes || 60);
   const resource_id = body.resource_id;
 
   if (!clinicSlug || !username || !name || !email || !service || !date || !time) {
@@ -178,8 +181,8 @@ export default async function handler(req, res) {
     return res.status(400).json({ success: false, error: 'El teléfono no es válido.' });
   }
 
-  if (!Number.isFinite(durationMinutes) || durationMinutes < 30 || durationMinutes > 180) {
-    return res.status(400).json({ success: false, error: 'La duración debe estar entre 30 y 180 minutos.' });
+  if (!isValidFutureLocalDateTime(date, time)) {
+    return res.status(400).json({ success: false, error: 'Selecciona una fecha y hora futuras válidas.' });
   }
 
   if (isRateLimited(req, clinicSlug, username)) {
@@ -192,7 +195,8 @@ export default async function handler(req, res) {
   }
 
   const userRow = await sql`
-    SELECT cu.id, cu.clinic_id, cu.full_name, cu.username, cu.phone, cu.public_booking_enabled, c.name AS clinic_name, c.slug AS clinic_slug
+        SELECT cu.id, cu.clinic_id, cu.full_name, cu.username, cu.phone, cu.public_booking_enabled,
+          cu.multi_resource_enabled, c.name AS clinic_name, c.slug AS clinic_slug
     FROM clinic_users cu
     JOIN clinics c ON c.id = cu.clinic_id
     WHERE c.slug = ${clinicSlug} AND cu.username = ${username} AND cu.is_active = true
@@ -224,14 +228,24 @@ export default async function handler(req, res) {
     return res.status(400).json({ success: false, error: 'Selecciona un tratamiento disponible para reservar.' });
   }
 
+  if (resource_id && String(resource_id).startsWith('staff:') && !professional.multi_resource_enabled) {
+    return res.status(400).json({ success: false, error: 'El agendamiento multiusuario no está habilitado.' });
+  }
+
   const bookingResourceId = await resolveResourceId(professional.id, resource_id);
   if (!bookingResourceId) {
     return res.status(400).json({ success: false, error: 'Recurso de agenda inválido' });
   }
 
   const resourceNameRow = bookingResourceId.startsWith('staff:')
-    ? await sql`SELECT name FROM clinic_staff_resources WHERE id = ${parseInt(bookingResourceId.replace('staff:', ''), 10)} AND owner_user_id = ${professional.id}`
-    : { rows: [{ name: professional.full_name || professional.username }] };
+    ? await sql`SELECT name, work_hours FROM clinic_staff_resources WHERE id = ${parseInt(bookingResourceId.replace('staff:', ''), 10)} AND owner_user_id = ${professional.id} AND active = true`
+    : { rows: [{ name: professional.full_name || professional.username, work_hours: {} }] };
+  const resourceWorkHours = resourceNameRow.rows[0]?.work_hours || {};
+  const workStart = resourceWorkHours.start_hour || settings.agenda?.start_hour || '08:00';
+  const workEnd = resourceWorkHours.end_hour || settings.agenda?.end_hour || '19:00';
+  if (!isWithinWorkHours(time, publishedTreatment.durationMinutes, workStart, workEnd)) {
+    return res.status(400).json({ success: false, error: `El horario debe permitir completar el tratamiento entre ${workStart} y ${workEnd}.` });
+  }
 
   const oauth = await getUserOAuth2Client(professional.id);
   if (!oauth) {
@@ -272,7 +286,8 @@ export default async function handler(req, res) {
       await sql`DELETE FROM clinic_oauth_tokens WHERE clinic_user_id = ${professional.id}`;
       return res.status(409).json({ success: false, error: 'La conexión de Google expiró. Pide al profesional que la reconecte.' });
     }
-    return res.status(500).json({ success: false, error: `No se pudo crear la cita: ${error.message}` });
+    console.error('[public-booking] calendar insert error:', error.message);
+    return res.status(500).json({ success: false, error: 'No se pudo crear la cita. Inténtalo de nuevo.' });
   }
 
   const html = emailHtml({

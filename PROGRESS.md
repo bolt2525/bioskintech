@@ -3,7 +3,8 @@
 ## Auditoría integral
 
 - ✅ 2026-09-23 Reforzado agendamiento público: rate limit por IP, validación de host, honeypot y verificación Turnstile cuando `TURNSTILE_SECRET`/`VITE_TURNSTILE_SITE_KEY` están configurados; la reserva solo continúa si pasa la validación anti-bot.
-- ✅ 2026-09-23 Añadido agendamiento público por profesional con enlace directo `/reservar/:clinicSlug/:username` y toggle de activación desde Ajustes → Agenda; valida `public_booking_enabled`, evita conflictos server-side y reusa el mismo calendario OAuth.
+- ✅ 2026-09-23 Consolidado agendamiento público en `/reservar/:clinicSlug`: el paciente selecciona primero al titular o ayudante activo y luego completa la reserva con validación server-side de recurso, duración, horario y conflictos.
+- ✅ 2026-09-23 Corregida CSP de Turnstile y endurecidas las reservas públicas con fechas futuras válidas, minimización de datos y fallo cerrado anti-bot en producción.
 - ✅ 2026-09-23 Añadido soporte multi-recurso por usuario con `clinic_staff_resources`, conflict resolution por `resourceId`, y selector de ayudante para la agenda compartida sin crear otra cuenta OAuth.
 - ✅ 2026-09-22 Corregidas marcaciones zonales 3D faciales/corporales: adhesión visual a superficie, color diferenciado, pulso, etiquetas y tamaño ajustable persistente con mouse o tacto.
 - ✅ 2026-09-22 Compactadas y redistribuidas las etiquetas 3D para evitar solapamientos entre lesiones y líneas anatómicas.

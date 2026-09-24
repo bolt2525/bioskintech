@@ -1065,11 +1065,12 @@ export default function AdminDashboard() {
                             Define la duración de al menos un tratamiento para activar la reserva pública. Solo los tratamientos con duración configurada aparecerán en el enlace del paciente.
                           </div>
                         )}
-                        {publicBookingEnabled && user?.clinic_slug && user?.username && (
+                        {publicBookingEnabled && user?.clinic_slug && (
                           <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
-                            <p className="text-[10px] uppercase tracking-[0.2em] text-amber-700 font-semibold">Enlace directo</p>
-                            <a href={`${window.location.origin}/reservar/${user.clinic_slug}/${user.username}`} target="_blank" rel="noreferrer" className="mt-2 block text-xs text-amber-800 break-all underline decoration-amber-600">
-                              {`${window.location.origin}/reservar/${user.clinic_slug}/${user.username}`}
+                            <p className="text-[10px] uppercase tracking-[0.2em] text-amber-700 font-semibold">Enlace público de la clínica</p>
+                            <p className="mt-1 text-xs text-amber-800">El paciente seleccionará primero al profesional o ayudante disponible.</p>
+                            <a href={`${window.location.origin}/reservar/${user.clinic_slug}`} target="_blank" rel="noreferrer" className="mt-2 block text-xs text-amber-800 break-all underline decoration-amber-600">
+                              {`${window.location.origin}/reservar/${user.clinic_slug}`}
                             </a>
                             <button type="button" onClick={() => { setAgendaMsg(null); setShowPublicBookingModal(true); }}
                               className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100">

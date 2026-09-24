@@ -211,3 +211,16 @@ test('appointment notifications target only the normalized patient number', asyn
     else process.env.WHATSAPP_SYSTEM_STAFF_PHONES = previousStaffPhones;
   }
 });
+
+test('public bookings must fit completely inside resource work hours', async () => {
+  const { isWithinWorkHours, isValidFutureLocalDateTime } = await import('../lib/agenda-resources.js');
+
+  assert.equal(isWithinWorkHours('09:00', 60, '08:00', '17:00'), true);
+  assert.equal(isWithinWorkHours('16:00', 60, '08:00', '17:00'), true);
+  assert.equal(isWithinWorkHours('16:15', 60, '08:00', '17:00'), false);
+  assert.equal(isWithinWorkHours('07:45', 30, '08:00', '17:00'), false);
+  assert.equal(isWithinWorkHours('invalid', 60, '08:00', '17:00'), false);
+  assert.equal(isValidFutureLocalDateTime('2030-02-28', '09:00', Date.parse('2030-02-27T09:00:00-05:00')), true);
+  assert.equal(isValidFutureLocalDateTime('2030-02-30', '09:00', 0), false);
+  assert.equal(isValidFutureLocalDateTime('2020-02-20', '09:00', Date.parse('2030-02-20T09:00:00-05:00')), false);
+});

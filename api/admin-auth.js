@@ -2530,12 +2530,14 @@ export default async function handler(req, res) {
         .map((name) => ({ name: String(name || '').trim(), durationMinutes: Number(durations[name] || 0) }))
         .filter((t) => t.name && Number.isFinite(t.durationMinutes) && t.durationMinutes >= 30 && t.durationMinutes <= 180);
       if (!publicTreatments.length) return res.status(403).json({ success: false, error: 'Este enlace aún no tiene tratamientos disponibles para reservar.' });
-      const resources = await sql`
-        SELECT id, name, color, work_hours, active
-        FROM clinic_staff_resources
-        WHERE owner_user_id = ${professional.id} AND active = true
-        ORDER BY name
-      `;
+      const resources = professional.multi_resource_enabled
+        ? await sql`
+          SELECT id, name
+          FROM clinic_staff_resources
+          WHERE owner_user_id = ${professional.id} AND active = true
+          ORDER BY name
+        `
+        : { rows: [] };
       return res.status(200).json({
         success: true,
         professional: {
@@ -2545,32 +2547,78 @@ export default async function handler(req, res) {
           gentilicio: professional.gentilicio || 'Dr.',
           clinic_name: professional.clinic_name,
           clinic_slug: professional.clinic_slug,
-          phone: professional.phone,
         },
         resources: resources.rows,
         treatments: publicTreatments,
         enabled: true,
-        publicUrl: `${process.env.APP_URL || 'https://bioskintech.vercel.app'}/reservar/${professional.clinic_slug}/${professional.username}`,
+        publicUrl: `${process.env.APP_URL || 'https://bioskintech.vercel.app'}/reservar/${professional.clinic_slug}`,
       });
     }
 
     if (action === 'getPublicBookingProfiles') {
       const clinicSlug = String(req.query?.clinicSlug || req.body?.clinicSlug || '').trim();
       if (!clinicSlug) return res.status(400).json({ success: false, error: 'clinicSlug es requerido' });
+      const settingsRows = await sql`
+        SELECT cs.treatments, cs.agenda
+        FROM clinic_settings cs
+        JOIN clinics c ON c.id = cs.clinic_id
+        WHERE c.slug = ${clinicSlug}
+        LIMIT 1
+      `;
+      const settings = settingsRows.rows[0] || {};
+      const treatments = Array.isArray(settings.treatments) ? settings.treatments : [];
+      const durations = settings.agenda && typeof settings.agenda === 'object' ? settings.agenda.treatment_durations || {} : {};
+      const hasPublicTreatments = treatments.some((name) => {
+        const duration = Number(durations[name] || 0);
+        return duration >= 30 && duration <= 180;
+      });
+      if (!hasPublicTreatments) return res.status(200).json({ success: true, professionals: [] });
       const rows = await sql`
-        SELECT cu.id, cu.username, cu.full_name, cu.gentilicio, c.name AS clinic_name, c.slug AS clinic_slug
+        SELECT cu.id, cu.username, cu.full_name, cu.gentilicio, cu.multi_resource_enabled,
+               c.name AS clinic_name, c.slug AS clinic_slug
         FROM clinic_users cu
         JOIN clinics c ON c.id = cu.clinic_id
-        JOIN clinic_settings cs ON cs.clinic_id = c.id
         WHERE c.slug = ${clinicSlug} AND cu.is_active = true AND cu.public_booking_enabled = true
-          AND EXISTS (
-            SELECT 1
-            FROM jsonb_array_elements_text(COALESCE(cs.treatments, '[]'::jsonb)) AS treatment(name)
-            WHERE COALESCE((cs.agenda->'treatment_durations'->>treatment.name)::numeric, 0) BETWEEN 30 AND 180
-          )
         ORDER BY cu.full_name, cu.username
       `;
-      return res.status(200).json({ success: true, professionals: rows.rows });
+      const ownerIds = rows.rows.filter((row) => row.multi_resource_enabled).map((row) => row.id);
+      const staffRows = ownerIds.length
+        ? { rows: (await Promise.all(ownerIds.map(async (ownerId) => {
+          const result = await sql`
+            SELECT id, owner_user_id, name
+            FROM clinic_staff_resources
+            WHERE owner_user_id = ${ownerId} AND active = true
+            ORDER BY name
+          `;
+          return result.rows;
+        }))).flat() }
+        : { rows: [] };
+      const staffByOwner = new Map();
+      for (const resource of staffRows.rows) {
+        const list = staffByOwner.get(resource.owner_user_id) || [];
+        list.push(resource);
+        staffByOwner.set(resource.owner_user_id, list);
+      }
+      const professionals = rows.rows.flatMap((owner) => [
+        {
+          id: `owner:${owner.id}`,
+          username: owner.username,
+          full_name: owner.full_name || owner.username,
+          clinic_name: owner.clinic_name,
+          resourceId: 'owner',
+          resourceType: 'owner',
+        },
+        ...(staffByOwner.get(owner.id) || []).map((resource) => ({
+          id: `staff:${resource.id}`,
+          username: owner.username,
+          full_name: resource.name,
+          clinic_name: owner.clinic_name,
+          resourceId: `staff:${resource.id}`,
+          resourceType: 'staff',
+          ownerName: owner.full_name || owner.username,
+        })),
+      ]);
+      return res.status(200).json({ success: true, professionals });
     }
 
     // ── Acciones autenticadas ──────────────────────────────────────────────
