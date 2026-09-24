@@ -107,6 +107,131 @@ function parseAppointmentEvent(event) {
   return { phone, patientName, professional, resource };
 }
 
+function formatLocalDateKey(date, timeZone = 'America/Guayaquil') {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const map = Object.fromEntries(parts.filter(p => p.type !== 'literal').map(p => [p.type, p.value]));
+  return `${map.year}-${map.month}-${map.day}`;
+}
+
+export function shouldSendAppointmentReminder(event, now = new Date()) {
+  if (!event?.summary?.startsWith('Cita: ')) return false;
+  const parsed = parseAppointmentEvent(event);
+  if (!parsed?.phone) return false;
+  const start = event?.start?.dateTime ? new Date(event.start.dateTime) : event?.start?.date ? new Date(`${event.start.date}T12:00:00-05:00`) : null;
+  if (!start || !Number.isFinite(start.getTime())) return false;
+  const diffHours = (start.getTime() - now.getTime()) / (60 * 60 * 1000);
+  if (diffHours < 12 || diffHours > 36) return false;
+  const sentDateKey = String(event?.extendedProperties?.private?.bioskinReminderSent || '').trim();
+  const currentDateKey = formatLocalDateKey(start);
+  return sentDateKey !== currentDateKey;
+}
+
+function buildPatientReminderMessage({ patientName, clinicName, dateLabel, professionalName }) {
+  const professionalText = professionalName ? ` con ${professionalName}` : '';
+  return `Hola ${patientName}, te recordamos tu cita en ${clinicName}${professionalText} para el ${dateLabel}. Por favor responde a este mensaje si necesitas cambiarla o consultar algo.`;
+}
+
+async function markAppointmentReminderSent(auth, event, dateKey) {
+  const calendar = google.calendar({ version: 'v3', auth });
+  const privateProps = { ...(event.extendedProperties?.private || {}) };
+  privateProps.bioskinReminderSent = dateKey;
+  await calendar.events.patch({
+    calendarId: 'primary',
+    eventId: event.id,
+    requestBody: {
+      extendedProperties: { private: privateProps },
+    },
+  });
+}
+
+async function sendPatientAppointmentReminders(dayOffset = 1) {
+  const targetDate = new Date();
+  targetDate.setDate(targetDate.getDate() + dayOffset);
+  const dateKey = targetDate.toLocaleDateString('en-CA', { timeZone: 'America/Guayaquil' });
+  const timeMin = `${dateKey}T00:00:00-05:00`;
+  const timeMax = `${dateKey}T23:59:59-05:00`;
+
+  const users = await sql`
+    SELECT cu.id AS user_id, cu.clinic_id, cu.full_name, cu.phone, cu.whatsapp_staff_phone, cs.general
+    FROM clinic_oauth_tokens t
+    JOIN clinic_users cu ON cu.id = t.clinic_user_id AND cu.is_active = true
+    JOIN clinic_settings cs ON cs.clinic_id = cu.clinic_id
+  `;
+
+  let sent = 0;
+  const errors = [];
+
+  for (const row of users.rows) {
+    try {
+      const auth = await getUserOAuth2Client(row.user_id);
+      if (!auth) continue;
+      const calendar = google.calendar({ version: 'v3', auth });
+      const { data } = await calendar.events.list({
+        calendarId: 'primary',
+        timeMin,
+        timeMax,
+        singleEvents: true,
+        orderBy: 'startTime',
+      });
+
+      for (const event of data.items || []) {
+        if (!shouldSendAppointmentReminder(event, new Date())) continue;
+        const parsed = parseAppointmentEvent(event);
+        if (!parsed?.phone) continue;
+        const start = new Date(event.start?.dateTime || `${event.start?.date}T12:00:00-05:00`);
+        const dateLabel = start.toLocaleString('es-ES', {
+          timeZone: 'America/Guayaquil',
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+        const clinicName = row.general?.name || 'BIOSKIN';
+        const professionalName = parsed.professional || row.full_name || clinicName;
+        const patientMessage = buildPatientReminderMessage({
+          patientName: parsed.patientName,
+          clinicName,
+          dateLabel,
+          professionalName,
+        });
+
+        try {
+          const withinWindow = await isWithinCustomerServiceWindow(parsed.phone);
+          const templateName = (process.env.WHATSAPP_TEMPLATE_APPOINTMENT || '').trim();
+          const templateLang = (process.env.WHATSAPP_TEMPLATE_APPOINTMENT_LANG || 'es_MX').trim();
+          if (withinWindow) {
+            await sendWhatsAppText(parsed.phone, patientMessage, { clinicId: row.clinic_id, bookedByUserId: row.user_id });
+          } else if (templateName) {
+            await sendWhatsAppTemplate(parsed.phone, templateName, templateLang, {
+              nombre_paciente: parsed.patientName,
+              nombre_clinica: clinicName,
+              nombre_usuario: professionalName,
+              servicio: 'Consulta',
+              fecha_hora: dateLabel,
+            }, { clinicId: row.clinic_id, bookedByUserId: row.user_id });
+          } else {
+            throw new Error('WHATSAPP_TEMPLATE_APPOINTMENT no configurada para recordatorio del día anterior');
+          }
+          await markAppointmentReminderSent(auth, event, formatLocalDateKey(start));
+          sent++;
+        } catch (sendErr) {
+          errors.push(`${parsed.patientName}: ${sendErr.message}`);
+        }
+      }
+    } catch (err) {
+      errors.push(`usuario ${row.user_id}: ${err.message}`);
+    }
+  }
+
+  return { patientsChecked: users.rows.length, sent, errors };
+}
+
 /** Ayudantes activos del usuario. Vacío si no tiene el multi-recurso activado. */
 async function listActiveResources(userId) {
   const u = await sql`SELECT multi_resource_enabled FROM clinic_users WHERE id = ${userId}`;
@@ -890,34 +1015,7 @@ async function handleIncomingMessages(body) {
             await createAppointmentEvent(clinicUser.id, botState.patientName, botState.patientPhone, clinicUser.full_name, startDate, botState.durationMinutes * 60000, botState.resourceId, staffResourceName);
             await ensureWhatsAppContactClinic(botState.patientPhone, clinicUser.clinic_id);
             const horaLabel = startDate.toLocaleString('es-ES', { timeZone: 'America/Guayaquil', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-            let patientNotified = false;
-            try {
-              const clinicRow = await sql`SELECT general FROM clinic_settings WHERE clinic_id = ${clinicUser.clinic_id}`;
-              const clinicName = clinicRow.rows[0]?.general?.name || 'la clínica';
-              const patientMessage = `Hola ${botState.patientName}, tu cita en ${clinicName} fue agendada para el ${horaLabel}${staffResourceName ? ` con ${staffResourceName}` : ''}. Por favor responde a este mensaje si tienes alguna consulta.`;
-              const withinWindow = await isWithinCustomerServiceWindow(botState.patientPhone);
-              const templateName = (process.env.WHATSAPP_TEMPLATE_APPOINTMENT || '').trim();
-              const templateLang = (process.env.WHATSAPP_TEMPLATE_APPOINTMENT_LANG || 'es_MX').trim();
-              if (withinWindow) {
-                await sendWhatsAppText(botState.patientPhone, patientMessage, { clinicId: clinicUser.clinic_id, bookedByUserId: clinicUser.id });
-                patientNotified = true;
-              } else if (templateName) {
-                await sendWhatsAppTemplate(botState.patientPhone, templateName, templateLang, {
-                  nombre_paciente: botState.patientName,
-                  nombre_clinica: clinicName,
-                  nombre_usuario: staffResourceName || clinicUser.full_name || clinicName,
-                  servicio: 'Consulta',
-                  fecha_hora: horaLabel,
-                }, { clinicId: clinicUser.clinic_id, bookedByUserId: clinicUser.id });
-                patientNotified = true;
-              }
-            } catch (notifyErr) {
-              console.error('❌ No se pudo notificar al paciente:', notifyErr.message);
-            }
-            const notifyNote = patientNotified
-              ? 'Se le envió la confirmación por WhatsApp — te aviso por aquí cuando la lea.'
-              : '⚠️ No se le pudo enviar confirmación por WhatsApp (verifica el número o contáctalo por otro medio).';
-            await sendWhatsAppText(from, `✅ Cita de ${botState.patientName} agendada para el ${horaLabel} (${botState.durationMinutes} min).\n${notifyNote}\n\nEscribe *menu* para ver las opciones.`);
+            await sendWhatsAppText(from, `✅ Cita de ${botState.patientName} agendada para el ${horaLabel} (${botState.durationMinutes} min).\nLa confirmación por WhatsApp se enviará automáticamente el día anterior a la cita, y el correo sigue siendo la confirmación inmediata al agendar.\n\nEscribe *menu* para ver las opciones.`);
           } catch (err) {
             await sendWhatsAppText(from, `❌ No se pudo agendar la cita: ${err.message}\n\nEscribe *menu* para ver las opciones.`);
           }
@@ -1144,8 +1242,9 @@ export default async function handler(req, res) {
     }
     try {
       const slot = getQueryValue(req.query?.slot);
-      const result = await sendAppointmentSummaries(slot === 'evening' ? 1 : 0, slot === 'evening' ? 'evening' : 'morning');
-      return res.status(200).json({ success: true, ...result });
+      const summaryResult = await sendAppointmentSummaries(slot === 'evening' ? 1 : 0, slot === 'evening' ? 'evening' : 'morning');
+      const patientResult = await sendPatientAppointmentReminders(1);
+      return res.status(200).json({ success: true, ...summaryResult, patientReminder: patientResult });
     } catch (err) {
       console.error('❌ Error en recordatorios WhatsApp:', err.message);
       return res.status(500).json({ success: false, message: err.message });

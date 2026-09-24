@@ -376,56 +376,10 @@ export default async function handler(req, res) {
   let whatsappSuccess = false;
   let errorDetails = [];
 
-  // --- 0. ENVÍO AUTOMÁTICO DE CONFIRMACIÓN POR WHATSAPP (Cloud API) ---
-  const appointmentRecipients = buildAppointmentWhatsAppRecipients({
-    patientPhone: phoneClean,
-  });
-  // Se etiqueta la clínica siempre, aunque el bot de confirmación esté desactivado — evita que el
-  // contacto quede "sin clasificar" cuando el paciente no está en la BD de pacientes de la clínica.
-  for (const recipient of appointmentRecipients) {
-    await ensureWhatsAppContactClinic(recipient, requestedClinicId).catch(() => {});
-  }
-  const bookingBotEnabled = currentUser.rows[0]?.whatsapp_bot_enabled === true && currentUser.rows[0]?.whatsapp_confirm_enabled === true;
-  if (bookingBotEnabled && appointmentRecipients.length) {
-    // Meta exige plantilla aprobada para mensajes iniciados por el negocio fuera de la
-    // ventana de servicio al cliente de 24h (el paciente no le ha escrito antes al número).
-    const templateName = (process.env.WHATSAPP_TEMPLATE_APPOINTMENT || '').trim();
-    const templateLang = (process.env.WHATSAPP_TEMPLATE_APPOINTMENT_LANG || 'es_MX').trim();
-    try {
-      for (const recipient of appointmentRecipients) {
-        const withinWindow = await isWithinCustomerServiceWindow(recipient);
-        if (withinWindow) {
-          await sendWhatsAppText(recipient, whatsappMessage, { clinicId: requestedClinicId, bookedByUserId: auth.id });
-        } else if (templateName) {
-          await sendWhatsAppTemplate(recipient, templateName, templateLang, {
-            nombre_paciente: paciente,
-            nombre_clinica: clinic.name,
-            nombre_usuario: staffName,
-            servicio: tratamiento,
-            fecha_hora: fecha && hora ? `${fecha} ${hora}` : 'por confirmar',
-          }, { clinicId: requestedClinicId, bookedByUserId: auth.id });
-        } else {
-          throw new Error('Fuera de la ventana de 24h y no hay WHATSAPP_TEMPLATE_APPOINTMENT configurada (se requiere plantilla aprobada por Meta para notificar a un número que no ha escrito antes)');
-        }
-      }
-      whatsappSuccess = true;
-    } catch (waErr) {
-      console.error('❌ Error en WhatsApp:', waErr.message);
-      errorDetails.push(`WhatsApp: ${waErr.message}`);
-    }
-
-    // Aviso inmediato al staff que agendó: el email lo ve en su propia bandeja de enviados,
-    // pero el WhatsApp al paciente sale por la cuenta del negocio y el staff nunca sabía si llegó.
-    try {
-      const staffPhone = normalizeWhatsAppNumber(currentUser.rows[0]?.whatsapp_staff_phone || currentUser.rows[0]?.phone);
-      if (staffPhone && await isWithinCustomerServiceWindow(staffPhone)) {
-        const statusMessage = whatsappSuccess
-          ? `✅ Confirmación de WhatsApp enviada a ${paciente}. Te aviso por aquí en cuanto la lea — si necesitas algo más, contesta este chat o escribe *menu*.`
-          : `⚠️ No se pudo enviar la confirmación de WhatsApp a ${paciente}: ${errorDetails[errorDetails.length - 1] || 'error desconocido'}. Verifica su número o avísale por otro medio.\n\nEscribe *menu* para ver las opciones.`;
-        await sendWhatsAppText(staffPhone, statusMessage, { clinicId: requestedClinicId });
-      }
-    } catch { /* aviso best-effort — nunca debe romper el agendamiento */ }
-  }
+  // La confirmación por WhatsApp ya no se dispara al agendar. La notificación al paciente
+  // se programa automáticamente con el cron de recordatorios para el día anterior a la cita,
+  // y la confirmación inmediata del booking queda en correo electrónico.
+  whatsappSuccess = false;
 
   // --- 1. CREAR EVENTO EN GOOGLE CALENDAR ---
   try {

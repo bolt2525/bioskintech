@@ -182,6 +182,22 @@ test('WhatsApp finance report selection maps menu choices to report periods', as
   assert.equal(resolveFinancePeriodChoice('otro'), null);
 });
 
+test('appointment reminders are sent only one day before the event and never duplicated', async () => {
+  const { shouldSendAppointmentReminder } = await import('../api/whatsapp-chatbot.js');
+
+  const event = {
+    summary: 'Cita: Ana García',
+    start: { dateTime: '2026-09-25T10:30:00-05:00' },
+    end: { dateTime: '2026-09-25T11:00:00-05:00' },
+    description: 'Teléfono: 0987654321\nProfesional: Dra. María\n[AGENDADO POR WEB]',
+    extendedProperties: { private: {} },
+  };
+
+  assert.equal(shouldSendAppointmentReminder(event, new Date('2026-09-24T18:00:00-05:00')), true);
+  assert.equal(shouldSendAppointmentReminder({ ...event, extendedProperties: { private: { bioskinReminderSent: '2026-09-25' } } }, new Date('2026-09-24T18:00:00-05:00')), false);
+  assert.equal(shouldSendAppointmentReminder({ ...event, start: { dateTime: '2026-09-26T10:30:00-05:00' } }, new Date('2026-09-24T18:00:00-05:00')), false);
+});
+
 test('appointment notifications target only the normalized patient number', async () => {
   const { normalizeWhatsAppNumber, buildAppointmentWhatsAppRecipients } = await import('../api/sendEmail.js');
 
