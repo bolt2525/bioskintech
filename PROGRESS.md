@@ -95,7 +95,8 @@
 - ✅ 2026-09-22 Nueva opción "5) Agendar una cita nueva" en el menú de Agenda del bot de WhatsApp: flujo multi-paso (nombre, teléfono, fecha, duración, período, horario disponible) que crea el evento en Google Calendar, etiqueta la clínica del contacto y envía confirmación al paciente (texto libre o plantilla según ventana de 24h), igual que el agendamiento desde el dashboard. Revisada la máquina de estados completa (reprogramar/eliminar/consultar/agendar): todos los flujos soportan `menu`/`cancelar` en cualquier paso y reintentan sin perder el progreso ante una respuesta inválida.
 
 - ✅ 2026-09-23 Añadida respuesta automática única a pacientes que contestan una confirmación reciente, con enlace de contacto y uso de la ventana gratuita de 24 horas; las confirmaciones originales permanecen intactas.
-- ✅ 2026-09-24 Corregido enlace público de agendamiento: la consulta de perfil público ya no queda bloqueada por la sesión administrativa y el toggle de reservas públicas exige duración válida por tratamiento antes de habilitarlo.
+- ✅ 2026-09-23 Corregido enlace público de agendamiento: la consulta de perfil público ya no queda bloqueada por la sesión administrativa y el toggle de reservas públicas exige duración válida por tratamiento antes de habilitarlo.
+- ✅ 2026-09-23 Ajustada publicación de tratamientos: la reserva pública muestra solo servicios con duración configurada, fija esa duración en el formulario y permite mantener otros tratamientos internos sin tiempo.
 
 ## Pendientes verificables
 

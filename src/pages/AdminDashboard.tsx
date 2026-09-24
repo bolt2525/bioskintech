@@ -134,7 +134,10 @@ export default function AdminDashboard() {
   const [staffResources, setStaffResources] = useState<StaffResource[]>([]);
   const [resourceDraft, setResourceDraft]   = useState<Partial<StaffResource> | null>(null);
 
-  const hasRequiredTreatmentDurations = clinicTreatments.length > 0 && clinicTreatments.every(t => Number(agendaSettings.treatment_durations?.[t] || 0) > 0);
+  const hasPublicBookingTreatments = clinicTreatments.some(t => {
+    const duration = Number(agendaSettings.treatment_durations?.[t] || 0);
+    return duration >= 30 && duration <= 180;
+  });
 
   // WhatsApp bot tab (habilitado por master_admin, config propia del usuario)
   const [whatsappBot, setWhatsappBot] = useState({
@@ -372,9 +375,9 @@ export default function AdminDashboard() {
       const anyError = [agendaData, treatmentsData, emailsData, multiData, publicData].find(d => d && d.error);
       setAgendaMsg({ text: anyError?.error || '¡Ajustes de agenda guardados!', ok: !anyError });
       if (!publicBookingEnabled && publicData?.success) setPublicBookingEnabled(false);
-      if (publicBookingEnabled && !hasRequiredTreatmentDurations) {
+      if (publicBookingEnabled && !hasPublicBookingTreatments) {
         setPublicBookingEnabled(false);
-        setAgendaMsg({ text: 'Debes definir una duración válida para cada tratamiento antes de habilitar reservas públicas.', ok: false });
+        setAgendaMsg({ text: 'Debes definir la duración de al menos un tratamiento antes de habilitar reservas públicas.', ok: false });
       }
       if (publicBookingEnabled && !publicData?.success) {
         setAgendaMsg({ text: publicData?.error || 'No se pudo habilitar la reserva pública.', ok: false });
@@ -439,7 +442,7 @@ export default function AdminDashboard() {
 
   const handleTogglePublicBooking = async () => {
     const next = !publicBookingEnabled;
-    if (next && !hasRequiredTreatmentDurations) {
+    if (next && !hasPublicBookingTreatments) {
       setShowPublicBookingModal(true);
       return;
     }
@@ -1046,6 +1049,11 @@ export default function AdminDashboard() {
                             <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${publicBookingEnabled ? 'translate-x-5' : ''}`} />
                           </button>
                         </div>
+                        {!hasPublicBookingTreatments && clinicTreatments.length > 0 && (
+                          <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                            Define la duración de al menos un tratamiento para activar la reserva pública. Solo los tratamientos con duración configurada aparecerán en el enlace del paciente.
+                          </div>
+                        )}
                         {publicBookingEnabled && user?.clinic_slug && user?.username && (
                           <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
                             <p className="text-[10px] uppercase tracking-[0.2em] text-amber-700 font-semibold">Enlace directo</p>
@@ -1271,7 +1279,7 @@ export default function AdminDashboard() {
                             <h3 className="text-lg font-bold text-gray-900">Falta la duración de tratamientos</h3>
                           </div>
                         </div>
-                        <p className="text-sm text-gray-600">Para habilitar el enlace público, cada tratamiento debe tener una duración en minutos. Luego de guardar, podrás activar la reserva pública en un clic.</p>
+                        <p className="text-sm text-gray-600">Configura la duración de los tratamientos que deseas ofrecer en el enlace público. Los tratamientos sin duración quedarán ocultos para los pacientes.</p>
                         <div className="mt-4 space-y-2">
                           {clinicTreatments.map((t) => (
                             <div key={t} className="flex items-center justify-between gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
@@ -1279,7 +1287,7 @@ export default function AdminDashboard() {
                               <div className="flex items-center gap-2">
                                 <input
                                   type="number"
-                                  min={15}
+                                  min={30}
                                   step={15}
                                   value={Number(agendaSettings.treatment_durations?.[t] || 0)}
                                   onChange={(e) => setAgendaSettings((prev) => ({
@@ -1333,7 +1341,7 @@ export default function AdminDashboard() {
                     </button>
                   )}
                   {settingsTab === 'agenda' && (
-                    <button onClick={handleSaveAgendaSettings} disabled={agendaSaving || (publicBookingEnabled && !hasRequiredTreatmentDurations)}
+                    <button onClick={handleSaveAgendaSettings} disabled={agendaSaving || (publicBookingEnabled && !hasPublicBookingTreatments)}
                       className="flex items-center gap-2 px-5 py-2 rounded-lg text-white text-sm font-medium disabled:opacity-60"
                       style={{ background: 'linear-gradient(135deg,#deb887,#c5a075)' }}>
                       {agendaSaving ? 'Guardando...' : 'Guardar todo'}

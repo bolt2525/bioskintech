@@ -2507,7 +2507,7 @@ export default async function handler(req, res) {
       const username = String(req.query?.username || req.body?.username || '').trim();
       if (!clinicSlug || !username) return res.status(400).json({ success: false, error: 'clinicSlug y username son requeridos' });
       const rows = await sql`
-        SELECT cu.id, cu.username, cu.full_name, cu.gentilicio, cu.phone, c.name AS clinic_name, c.slug AS clinic_slug,
+        SELECT cu.id, cu.clinic_id, cu.username, cu.full_name, cu.gentilicio, cu.phone, c.name AS clinic_name, c.slug AS clinic_slug,
                cu.public_booking_enabled, cu.multi_resource_enabled
         FROM clinic_users cu
         JOIN clinics c ON c.id = cu.clinic_id
@@ -2517,6 +2517,19 @@ export default async function handler(req, res) {
       if (!rows.rows.length) return res.status(404).json({ success: false, error: 'Profesional no encontrado' });
       const professional = rows.rows[0];
       if (!professional.public_booking_enabled) return res.status(403).json({ success: false, error: 'Este enlace no está habilitado' });
+      const settingsRows = await sql`
+        SELECT treatments, agenda
+        FROM clinic_settings
+        WHERE clinic_id = ${professional.clinic_id}
+        LIMIT 1
+      `;
+      const settings = settingsRows.rows[0] || {};
+      const treatments = Array.isArray(settings.treatments) ? settings.treatments : [];
+      const durations = settings.agenda && typeof settings.agenda === 'object' ? settings.agenda.treatment_durations || {} : {};
+      const publicTreatments = treatments
+        .map((name) => ({ name: String(name || '').trim(), durationMinutes: Number(durations[name] || 0) }))
+        .filter((t) => t.name && Number.isFinite(t.durationMinutes) && t.durationMinutes >= 30 && t.durationMinutes <= 180);
+      if (!publicTreatments.length) return res.status(403).json({ success: false, error: 'Este enlace aún no tiene tratamientos disponibles para reservar.' });
       const resources = await sql`
         SELECT id, name, color, work_hours, active
         FROM clinic_staff_resources
@@ -2535,6 +2548,7 @@ export default async function handler(req, res) {
           phone: professional.phone,
         },
         resources: resources.rows,
+        treatments: publicTreatments,
         enabled: true,
         publicUrl: `${process.env.APP_URL || 'https://bioskintech.vercel.app'}/reservar/${professional.clinic_slug}/${professional.username}`,
       });
@@ -2547,7 +2561,13 @@ export default async function handler(req, res) {
         SELECT cu.id, cu.username, cu.full_name, cu.gentilicio, c.name AS clinic_name, c.slug AS clinic_slug
         FROM clinic_users cu
         JOIN clinics c ON c.id = cu.clinic_id
+        JOIN clinic_settings cs ON cs.clinic_id = c.id
         WHERE c.slug = ${clinicSlug} AND cu.is_active = true AND cu.public_booking_enabled = true
+          AND EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements_text(COALESCE(cs.treatments, '[]'::jsonb)) AS treatment(name)
+            WHERE COALESCE((cs.agenda->'treatment_durations'->>treatment.name)::numeric, 0) BETWEEN 30 AND 180
+          )
         ORDER BY cu.full_name, cu.username
       `;
       return res.status(200).json({ success: true, professionals: rows.rows });
@@ -3493,12 +3513,11 @@ export default async function handler(req, res) {
         const settings = settingsRes.rows[0] || {};
         const treatments = Array.isArray(settings.treatments) ? settings.treatments : [];
         const durations = settings.agenda && typeof settings.agenda === 'object' ? settings.agenda.treatment_durations || {} : {};
-        const missing = treatments.filter(name => !name || Number(durations[name] || 0) <= 0);
-        if (missing.length) {
+        const publishable = treatments.filter((name) => Number(durations[name] || 0) >= 30 && Number(durations[name] || 0) <= 180);
+        if (!publishable.length) {
           return res.status(400).json({
             success: false,
-            error: 'Debes definir una duración válida para cada tratamiento antes de habilitar la reserva pública.',
-            missing: missing.slice(0, 5),
+            error: 'Define la duración de al menos un tratamiento antes de habilitar la reserva pública.',
           });
         }
       }

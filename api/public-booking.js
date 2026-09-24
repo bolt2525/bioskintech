@@ -192,7 +192,7 @@ export default async function handler(req, res) {
   }
 
   const userRow = await sql`
-    SELECT cu.id, cu.full_name, cu.username, cu.phone, cu.public_booking_enabled, c.name AS clinic_name, c.slug AS clinic_slug
+    SELECT cu.id, cu.clinic_id, cu.full_name, cu.username, cu.phone, cu.public_booking_enabled, c.name AS clinic_name, c.slug AS clinic_slug
     FROM clinic_users cu
     JOIN clinics c ON c.id = cu.clinic_id
     WHERE c.slug = ${clinicSlug} AND cu.username = ${username} AND cu.is_active = true
@@ -206,6 +206,22 @@ export default async function handler(req, res) {
   const professional = userRow.rows[0];
   if (!professional.public_booking_enabled) {
     return res.status(403).json({ success: false, error: 'Este profesional no tiene habilitado el agendamiento público.' });
+  }
+
+  const settingsRows = await sql`
+    SELECT treatments, agenda
+    FROM clinic_settings
+    WHERE clinic_id = ${professional.clinic_id}
+    LIMIT 1
+  `;
+  const settings = settingsRows.rows[0] || {};
+  const treatments = Array.isArray(settings.treatments) ? settings.treatments : [];
+  const durations = settings.agenda && typeof settings.agenda === 'object' ? settings.agenda.treatment_durations || {} : {};
+  const publishedTreatment = treatments
+    .map((name) => ({ name: String(name || '').trim(), durationMinutes: Number(durations[name] || 0) }))
+    .find((t) => t.name === service && Number.isFinite(t.durationMinutes) && t.durationMinutes >= 30 && t.durationMinutes <= 180);
+  if (!publishedTreatment) {
+    return res.status(400).json({ success: false, error: 'Selecciona un tratamiento disponible para reservar.' });
   }
 
   const bookingResourceId = await resolveResourceId(professional.id, resource_id);
@@ -223,7 +239,7 @@ export default async function handler(req, res) {
   }
 
   const startDate = new Date(`${date}T${time}:00-05:00`);
-  const endDate = new Date(startDate.getTime() + Number(durationMinutes || 60) * 60_000);
+  const endDate = new Date(startDate.getTime() + publishedTreatment.durationMinutes * 60_000);
   if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
     return res.status(400).json({ success: false, error: 'La fecha y la hora no son válidas.' });
   }

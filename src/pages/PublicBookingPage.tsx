@@ -15,6 +15,7 @@ type PublicProfile = {
     phone?: string | null;
   };
   resources?: Array<{ id: number; name: string; color?: string; active?: boolean; work_hours?: Record<string, string> }>;
+  treatments?: Array<{ name: string; durationMinutes: number }>;
 };
 
 export default function PublicBookingPage() {
@@ -62,7 +63,13 @@ export default function PublicBookingPage() {
           } else {
             setProfile(data);
             const defaultResource = data.resources?.find((r: any) => r.active !== false)?.id ?? '';
-            setForm((prev) => ({ ...prev, resourceId: defaultResource ? `staff:${defaultResource}` : 'owner' }));
+            const defaultTreatment = data.treatments?.[0];
+            setForm((prev) => ({
+              ...prev,
+              resourceId: defaultResource ? `staff:${defaultResource}` : 'owner',
+              service: defaultTreatment?.name || '',
+              durationMinutes: defaultTreatment?.durationMinutes || 60,
+            }));
           }
         } else {
           const res = await fetch(`/api/admin-auth?action=getPublicBookingProfiles&clinicSlug=${encodeURIComponent(clinicSlug)}`);
@@ -255,7 +262,12 @@ export default function PublicBookingPage() {
             </label>
             <label className="block text-sm font-medium text-gray-700">
               Servicio
-              <input value={form.service} onChange={(e) => setForm((prev) => ({ ...prev, service: e.target.value }))} className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2.5 outline-none focus:border-[#deb887] focus:ring-2 focus:ring-[#deb887]/20" placeholder="Lifting facial, relleno..." />
+              <select value={form.service} onChange={(e) => {
+                const treatment = profile.treatments?.find((item) => item.name === e.target.value);
+                setForm((prev) => ({ ...prev, service: e.target.value, durationMinutes: treatment?.durationMinutes || 60 }));
+              }} className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2.5 outline-none focus:border-[#deb887] focus:ring-2 focus:ring-[#deb887]/20">
+                {profile.treatments?.map((treatment) => <option key={treatment.name} value={treatment.name}>{treatment.name} · {treatment.durationMinutes} min</option>)}
+              </select>
             </label>
           </div>
 
@@ -268,15 +280,10 @@ export default function PublicBookingPage() {
               Hora
               <input type="time" value={form.time} onChange={(e) => setForm((prev) => ({ ...prev, time: e.target.value }))} className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2.5 outline-none focus:border-[#deb887] focus:ring-2 focus:ring-[#deb887]/20" />
             </label>
-            <label className="block text-sm font-medium text-gray-700">
-              Duración
-              <select value={form.durationMinutes} onChange={(e) => setForm((prev) => ({ ...prev, durationMinutes: Number(e.target.value) }))} className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2.5 outline-none focus:border-[#deb887] focus:ring-2 focus:ring-[#deb887]/20">
-                <option value={30}>30 min</option>
-                <option value={45}>45 min</option>
-                <option value={60}>60 min</option>
-                <option value={90}>90 min</option>
-              </select>
-            </label>
+            <div className="block text-sm font-medium text-gray-700">
+              Duración estimada
+              <div className="mt-1 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-gray-600">{form.durationMinutes} minutos</div>
+            </div>
           </div>
 
           {resourceOptions.length > 0 && (
