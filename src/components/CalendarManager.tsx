@@ -15,7 +15,11 @@ import {
   Ban,
   MessageCircle,
   List,
-  Search
+  Search,
+  X,
+  Edit3,
+  Clock,
+  Save
 } from 'lucide-react';
 
 interface CalendarManagerProps {
@@ -71,12 +75,22 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState<'success' | 'error' | ''>('');
   const [dateRange, setDateRange] = useState(30); // días hacia adelante
+  const [startDate, setStartDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState(() => {
+    const date = new Date();
+    date.setDate(date.getDate() + 30);
+    return date.toISOString().split('T')[0];
+  });
   const [deletingEvents, setDeletingEvents] = useState<Set<string>>(new Set());
+  const [updatingEvents, setUpdatingEvents] = useState<Set<string>>(new Set());
   const [staffResources, setStaffResources] = useState<StaffResource[]>([]);
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
   const [eventFilter, setEventFilter] = useState<'all' | 'appointment' | 'block'>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [resourceFilter, setResourceFilter] = useState('all');
+  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  const [editMode, setEditMode] = useState<'reschedule' | 'details' | null>(null);
+  const [editForm, setEditForm] = useState({ summary: '', description: '', date: '', start: '', end: '' });
 
   useEffect(() => {
     fetch('/api/admin-auth?action=listStaffResources', {
@@ -99,14 +113,15 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
     setMessage('');
     
     try {
-      console.log(`🔍 Cargando eventos del calendario para los próximos ${dateRange} días...`);
+      console.log(`🔍 Cargando eventos del calendario desde ${startDate} hasta ${endDate}...`);
       
       const response = await recordsFetch('/api/calendar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           action: 'getCalendarEvents',
-          days: dateRange
+          startDate,
+          endDate
         }),
       });
 
@@ -183,6 +198,63 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
         const newSet = new Set(prev);
         newSet.delete(event.id);
         return newSet;
+      });
+    }
+  };
+
+  const openEventDetails = (event: CalendarEvent) => {
+    const start = event.start.dateTime ? new Date(event.start.dateTime) : null;
+    const end = event.end.dateTime ? new Date(event.end.dateTime) : null;
+    setSelectedEvent(event);
+    setEditMode(null);
+    setEditForm({
+      summary: event.summary,
+      description: event.description || '',
+      date: (event.start.dateTime || event.start.date || '').split('T')[0],
+      start: start ? `${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}` : '',
+      end: end ? `${String(end.getHours()).padStart(2, '0')}:${String(end.getMinutes()).padStart(2, '0')}` : '',
+    });
+  };
+
+  const updateEvent = async () => {
+    if (!selectedEvent || !editForm.date) return;
+    if (editMode === 'reschedule' && (!editForm.start || !editForm.end)) {
+      setMessage('Indica la hora de inicio y fin para reprogramar la cita.');
+      setMessageType('error');
+      return;
+    }
+    const eventId = selectedEvent.id;
+    setUpdatingEvents(prev => new Set(prev).add(eventId));
+    try {
+      const response = await recordsFetch('/api/calendar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'updateEvent',
+          eventId,
+          eventType: selectedEvent.eventType,
+          summary: editMode === 'reschedule' ? undefined : editForm.summary,
+          description: editMode === 'reschedule' ? undefined : editForm.description,
+          date: editForm.date,
+          startTime: editForm.start,
+          endTime: editForm.end,
+        }),
+      });
+      const data = await response.json();
+      if (!data.success) throw new Error(data.message || 'No se pudo actualizar el evento');
+      setEvents(prev => prev.map(event => event.id === eventId ? { ...event, ...data.event } : event));
+      setSelectedEvent(null);
+      setEditMode(null);
+      setMessage(`✅ ${selectedEvent.eventType === 'appointment' ? 'Cita actualizada' : 'Bloqueo actualizado'} exitosamente`);
+      setMessageType('success');
+    } catch (error) {
+      setMessage(`❌ ${error instanceof Error ? error.message : 'Error al actualizar el evento'}`);
+      setMessageType('error');
+    } finally {
+      setUpdatingEvents(prev => {
+        const next = new Set(prev);
+        next.delete(eventId);
+        return next;
       });
     }
   };
@@ -267,9 +339,8 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
     return `${event.summary} ${event.description || ''}`.toLowerCase().includes(normalizedSearch);
   });
 
-  const calendarDays = Array.from({ length: dateRange }, (_, index) => {
-    const date = new Date();
-    date.setHours(12, 0, 0, 0);
+  const calendarDays = Array.from({ length: Math.max(1, Math.floor((new Date(`${endDate}T12:00:00`).getTime() - new Date(`${startDate}T12:00:00`).getTime()) / 86400000) + 1) }, (_, index) => {
+    const date = new Date(`${startDate}T12:00:00`);
     date.setDate(date.getDate() + index);
     return date;
   });
@@ -292,6 +363,10 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
 
     return (
       <div key={event.id}
+        onClick={() => openEventDetails(event)}
+        onKeyDown={(keyboardEvent) => { if (keyboardEvent.key === 'Enter' || keyboardEvent.key === ' ') openEventDetails(event); }}
+        role="button"
+        tabIndex={0}
         className={`flex items-center gap-3 p-3 rounded-xl border transition-all hover:shadow-sm ${
           isBlock ? 'border-red-200 bg-red-50/60' : 'border-gray-200 bg-white hover:border-[#deb887]/40'
         }`}
@@ -318,8 +393,9 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
           </div>
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
-          {getWhatsAppLink(event) && <a href={getWhatsAppLink(event)!} target="_blank" rel="noopener noreferrer" className="p-2 rounded-lg bg-green-50 text-green-600 hover:bg-green-100 transition-colors" title="Enviar recordatorio por WhatsApp"><MessageCircle className="w-4 h-4" /></a>}
-          <button onClick={() => deleteEvent(event)} disabled={deletingEvents.has(event.id)} className="p-2 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-40" title={isBlock ? 'Eliminar bloqueo' : 'Cancelar cita'}>
+          {getWhatsAppLink(event) && <a onClick={(clickEvent) => clickEvent.stopPropagation()} href={getWhatsAppLink(event)!} target="_blank" rel="noopener noreferrer" className="p-2 rounded-lg bg-green-50 text-green-600 hover:bg-green-100 transition-colors" title="Enviar recordatorio por WhatsApp"><MessageCircle className="w-4 h-4" /></a>}
+          <button onClick={(clickEvent) => { clickEvent.stopPropagation(); openEventDetails(event); }} className="p-2 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors" title="Ver detalles"><Edit3 className="w-4 h-4" /></button>
+          <button onClick={(clickEvent) => { clickEvent.stopPropagation(); deleteEvent(event); }} disabled={deletingEvents.has(event.id)} className="p-2 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-40" title={isBlock ? 'Eliminar bloqueo' : 'Cancelar cita'}>
             {deletingEvents.has(event.id) ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
           </button>
         </div>
@@ -330,7 +406,7 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
   // Cargar eventos al montar el componente
   useEffect(() => {
     loadCalendarEvents();
-  }, [dateRange]);
+  }, [startDate, endDate]);
 
   if (calendarNotConfigured) {
     return (
@@ -386,7 +462,13 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
             </label>
             <select
               value={dateRange}
-              onChange={(e) => setDateRange(Number(e.target.value))}
+              onChange={(e) => {
+                const days = Number(e.target.value);
+                setDateRange(days);
+                const nextDate = new Date(`${startDate}T12:00:00`);
+                nextDate.setDate(nextDate.getDate() + days);
+                setEndDate(nextDate.toISOString().split('T')[0]);
+              }}
               className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#deb887] focus:border-transparent"
             >
               <option value={7}>Próximos 7 días</option>
@@ -395,6 +477,14 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
               <option value={60}>Próximos 60 días</option>
               <option value={90}>Próximos 90 días</option>
             </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Desde</label>
+            <input type="date" value={startDate} max={endDate} onChange={(e) => setStartDate(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#deb887] focus:border-transparent" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Hasta</label>
+            <input type="date" value={endDate} min={startDate} onChange={(e) => setEndDate(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#deb887] focus:border-transparent" />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Filtrar eventos</label>
@@ -493,7 +583,7 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
                   const dayEvents = filteredEvents.filter(event => eventDateKey(event) === dateKey);
                   return <div key={dateKey} className={`min-h-28 p-2 border-r border-b border-gray-200 align-top ${day.toDateString() === new Date().toDateString() ? 'bg-[#deb887]/10' : 'bg-white'}`}>
                     <div className="flex items-center justify-between mb-1"><span className={`text-sm font-semibold ${day.toDateString() === new Date().toDateString() ? 'text-[#99652f]' : 'text-gray-700'}`}>{day.getDate()}</span>{dayEvents.length > 0 && <span className="text-[10px] text-gray-400">{dayEvents.length}</span>}</div>
-                    <div className="space-y-1">{dayEvents.map(event => <button key={event.id} onClick={() => deleteEvent(event)} disabled={deletingEvents.has(event.id)} title={`${event.summary} · ${event.start.dateTime ? new Date(event.start.dateTime).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : 'Todo el día'}`} className={`w-full text-left truncate rounded px-1.5 py-1 text-[11px] font-medium ${event.eventType === 'block' ? 'bg-red-100 text-red-700' : 'bg-[#deb887]/20 text-[#7c5326]'}`}>{event.start.dateTime ? new Date(event.start.dateTime).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: false }) : 'Todo el día'} · {event.eventType === 'block' ? 'Bloqueo' : event.summary.replace(/^Cita:\s*/, '')}</button>)}</div>
+                    <div className="space-y-1">{dayEvents.map(event => <button key={event.id} onClick={() => openEventDetails(event)} title={`${event.summary} · ${event.start.dateTime ? new Date(event.start.dateTime).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : 'Todo el día'}`} className={`w-full text-left truncate rounded px-1.5 py-1 text-[11px] font-medium hover:ring-2 hover:ring-[#deb887]/50 ${event.eventType === 'block' ? 'bg-red-100 text-red-700' : 'bg-[#deb887]/20 text-[#7c5326]'}`}>{event.start.dateTime ? new Date(event.start.dateTime).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: false }) : 'Todo el día'} · {event.eventType === 'block' ? 'Bloqueo' : event.summary.replace(/^Cita:\s*/, '')}</button>)}</div>
                   </div>;
                 })}
               </div>
@@ -538,6 +628,42 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
           );
         })()}
       </div>
+      {selectedEvent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) { setSelectedEvent(null); setEditMode(null); } }}>
+          <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="event-details-title">
+            <div className="flex items-start justify-between border-b border-gray-100 px-6 py-5">
+              <div>
+                <p className={`text-xs font-semibold uppercase tracking-wide ${selectedEvent.eventType === 'block' ? 'text-red-600' : 'text-[#99652f]'}`}>{selectedEvent.eventType === 'block' ? 'Bloqueo de horario' : 'Cita programada'}</p>
+                <h3 id="event-details-title" className="mt-1 text-xl font-semibold text-gray-900">{selectedEvent.summary.replace(/^Cita:\s*/, '')}</h3>
+              </div>
+              <button onClick={() => { setSelectedEvent(null); setEditMode(null); }} className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700" title="Cerrar"><X className="h-5 w-5" /></button>
+            </div>
+            <div className="space-y-4 px-6 py-5">
+              {editMode ? (
+                <>
+                  {editMode === 'details' && <>
+                    <label className="block text-sm font-medium text-gray-700">Título<input value={editForm.summary} onChange={(e) => setEditForm({ ...editForm, summary: e.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" /></label>
+                    <label className="block text-sm font-medium text-gray-700">Descripción<textarea value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} rows={3} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" /></label>
+                  </>}
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <label className="text-sm font-medium text-gray-700 sm:col-span-1">Fecha<input type="date" value={editForm.date} onChange={(e) => setEditForm({ ...editForm, date: e.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" /></label>
+                    <label className="text-sm font-medium text-gray-700">Inicio<input type="time" value={editForm.start} onChange={(e) => setEditForm({ ...editForm, start: e.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" /></label>
+                    <label className="text-sm font-medium text-gray-700">Fin<input type="time" value={editForm.end} onChange={(e) => setEditForm({ ...editForm, end: e.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" /></label>
+                  </div>
+                  <div className="flex justify-end gap-2"><button onClick={() => setEditMode(null)} className="rounded-lg px-4 py-2 text-sm text-gray-600 hover:bg-gray-100">Cancelar</button><button onClick={updateEvent} disabled={updatingEvents.has(selectedEvent.id)} className="inline-flex items-center gap-2 rounded-lg bg-[#deb887] px-4 py-2 text-sm font-medium text-white hover:bg-[#d4a574] disabled:opacity-50"><Save className="h-4 w-4" />{updatingEvents.has(selectedEvent.id) ? 'Guardando...' : 'Guardar cambios'}</button></div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center gap-3 rounded-xl bg-gray-50 p-4"><Clock className="h-5 w-5 text-[#deb887]" /><span className="capitalize text-sm text-gray-700">{formatEventDateTime(selectedEvent)}</span></div>
+                  {selectedEvent.description && <p className="whitespace-pre-line text-sm leading-6 text-gray-600">{selectedEvent.description}</p>}
+                  {selectedEvent.location && <p className="text-sm text-gray-600">Ubicación: {selectedEvent.location}</p>}
+                  <div className="flex flex-wrap justify-end gap-2 border-t border-gray-100 pt-4"><button onClick={() => setEditMode('reschedule')} className="rounded-lg border border-[#deb887] px-4 py-2 text-sm font-medium text-[#99652f] hover:bg-[#deb887]/10">Reprogramar</button><button onClick={() => setEditMode('details')} className="rounded-lg bg-[#deb887] px-4 py-2 text-sm font-medium text-white hover:bg-[#d4a574]">Editar</button><button onClick={() => { setSelectedEvent(null); deleteEvent(selectedEvent); }} className="rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50">Eliminar</button></div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 };

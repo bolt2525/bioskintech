@@ -44,8 +44,8 @@ Navegador React/Vite
 - `admin-auth.js`: autenticación, sesiones, clínicas, usuarios, configuración y OAuth. También expone `getPublicBookingConfig`, `setPublicBookingConfig`, `getPublicBookingProfile` y `getPublicBookingProfiles` para activar un enlace público seguro por profesional.
 - `ai-consultation.js`: consultas y generación asistida por IA.
 - `backup.js`: exportación y restauración.
-- `calendar.js`: eventos y agenda de Google Calendar con soporte de multi-recurso por `resourceId` en el mismo calendario OAuth.
-- `src/components/CalendarManager.tsx`: presenta esos eventos en lista o cuadrícula diaria, con filtros compartidos por tipo, búsqueda y recurso sin duplicar la carga de Google Calendar.
+- `calendar.js`: eventos y agenda de Google Calendar con soporte de multi-recurso por `resourceId` en el mismo calendario OAuth; `getCalendarEvents` acepta rangos explícitos y `updateEvent` permite editar o reprogramar eventos del calendario autenticado.
+- `src/components/CalendarManager.tsx`: presenta esos eventos en lista o cuadrícula diaria, con rango de fechas y filtros compartidos por tipo, búsqueda y recurso; el clic abre un modal con detalle, edición, reprogramación y eliminación.
 - `external-finance.js`: finanzas externas.
 - `payments.js`: flujo PayPhone.
 - `public-booking.js`: agendamiento público sin sesión, validado por `public_booking_enabled`, `resourceId`, `rate limit`, honeypot y Turnstile. Antes de insertar cada cita se valida conflicto real en Google Calendar y se exige un sitio seguro y autorizado por `TURNSTILE_HOSTNAMES`/`APP_URL`.

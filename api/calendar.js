@@ -154,6 +154,10 @@ export default async function handler(req, res) {
         const { calendar, calendarId, credentials } = await getCalendarClient();
         return await deleteEvent(req, res, calendar, { ...credentials, calendar_id: calendarId });
       }
+      case 'updateEvent': {
+        const { calendar, calendarId, credentials } = await getCalendarClient();
+        return await updateEvent(req, res, calendar, { ...credentials, calendar_id: calendarId });
+      }
       default:
         return res.status(400).json({ success: false, message: 'Acción no válida' });
     }
@@ -276,10 +280,14 @@ async function getDayEvents(req, res, calendar, credentials) {
 // Función para obtener todos los eventos del calendario (original getCalendarEvents.js)
 async function getCalendarEvents(req, res, calendar, credentials) {
   const { days = 30 } = req.body;
-
-  const startDate = new Date();
-  const endDate = new Date();
-  endDate.setDate(startDate.getDate() + days);
+  const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+  const hasDateRange = datePattern.test(req.body.startDate || '') && datePattern.test(req.body.endDate || '');
+  const startDate = hasDateRange ? new Date(`${req.body.startDate}T00:00:00-05:00`) : new Date();
+  const endDate = hasDateRange ? new Date(`${req.body.endDate}T23:59:59-05:00`) : new Date();
+  if (!hasDateRange) endDate.setDate(startDate.getDate() + Number(days));
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) || startDate > endDate) {
+    return res.status(400).json({ success: false, message: 'Rango de fechas inválido' });
+  }
 
   const timeMin = startDate.toISOString();
   const timeMax = endDate.toISOString();
@@ -733,4 +741,50 @@ async function deleteEvent(req, res, calendar, credentials) {
     eventType,
     date
   });
+}
+
+async function updateEvent(req, res, calendar, credentials) {
+  const { eventId, eventType, summary, description, date, startTime, endTime } = req.body;
+  if (!eventId || !date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return res.status(400).json({ success: false, message: 'Evento y fecha válidos son requeridos' });
+  }
+  const parsedDate = new Date(`${date}T12:00:00Z`);
+  if (Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== date) {
+    return res.status(400).json({ success: false, message: 'Fecha inválida' });
+  }
+  if (eventType !== 'appointment' && eventType !== 'block') {
+    return res.status(400).json({ success: false, message: 'Tipo de evento inválido' });
+  }
+  if ((startTime && !/^\d{2}:\d{2}$/.test(startTime)) || (endTime && !/^\d{2}:\d{2}$/.test(endTime))) {
+    return res.status(400).json({ success: false, message: 'Formato de hora inválido' });
+  }
+  if ((startTime && !endTime) || (!startTime && endTime) || (startTime && endTime && startTime >= endTime)) {
+    return res.status(400).json({ success: false, message: 'El horario del evento no es válido' });
+  }
+
+  const requestBody = {};
+  if (summary !== undefined) {
+    const normalizedSummary = String(summary).trim().slice(0, 300);
+    requestBody.summary = eventType === 'appointment' && !/^Cita:\s*/i.test(normalizedSummary)
+      ? `Cita: ${normalizedSummary}`
+      : normalizedSummary;
+  }
+  if (description !== undefined) requestBody.description = String(description).slice(0, 5000);
+  if (startTime && endTime) {
+    requestBody.start = { dateTime: `${date}T${startTime}:00-05:00`, timeZone: 'America/Guayaquil' };
+    requestBody.end = { dateTime: `${date}T${endTime}:00-05:00`, timeZone: 'America/Guayaquil' };
+  }
+  const response = await calendar.events.patch({ calendarId: credentials.calendar_id, eventId, requestBody });
+  const event = response.data;
+  return res.status(200).json({ success: true, event: {
+    id: event.id,
+    summary: event.summary || 'Sin título',
+    description: event.description || '',
+    start: event.start,
+    end: event.end,
+    location: event.location || '',
+    eventType,
+    isBlockEvent: eventType === 'block',
+    resourceId: eventResourceId(event, credentials.user_id),
+  }});
 }
