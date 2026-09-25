@@ -1,4 +1,3 @@
-import nodemailer from 'nodemailer';
 import { google } from 'googleapis';
 import { sql } from '@vercel/postgres';
 import { resolveResourceId, resourceExtendedProperties, rangesOverlap, eventResourceId, isWithinWorkHours, isValidFutureLocalDateTime } from '../lib/agenda-resources.js';
@@ -234,6 +233,19 @@ function emailHtml({ clinicName, patientName, service, date, time, professionalN
   `;
 }
 
+function buildRawEmail({ from, to, subject, html }) {
+  const message = [
+    `From: ${from}`,
+    `To: ${to}`,
+    `Subject: =?UTF-8?B?${Buffer.from(subject).toString('base64')}?=`,
+    'MIME-Version: 1.0',
+    'Content-Type: text/html; charset=UTF-8',
+    '',
+    html,
+  ].join('\r\n');
+  return Buffer.from(message).toString('base64url');
+}
+
 export default async function handler(req, res) {
   if (req.method === 'GET') return getPublicAvailability(req, res);
   if (req.method !== 'POST') return res.status(405).json({ success: false, message: 'Método no permitido' });
@@ -387,14 +399,30 @@ export default async function handler(req, res) {
     resourceName: resourceNameRow.rows[0]?.name || 'Principal',
   });
 
-  if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
-    const transporter = nodemailer.createTransport({ service: 'gmail', auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS } });
-    await transporter.sendMail({
-      from: `BIOSKIN <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: `Confirmación de cita en ${professional.clinic_name}`,
-      html,
-    }).catch(() => {});
+  try {
+    const gmail = google.gmail({ version: 'v1', auth: oauth.client });
+    await gmail.users.messages.send({
+      userId: 'me',
+      requestBody: {
+        raw: buildRawEmail({
+          from: `${professional.clinic_name} <${oauth.email}>`,
+          to: email,
+          subject: `Confirmación de cita en ${professional.clinic_name}`,
+          html,
+        }),
+      },
+    });
+  } catch (error) {
+    if (isGoogleAuthError(error)) {
+      await sql`DELETE FROM clinic_oauth_tokens WHERE clinic_user_id = ${professional.id}`;
+      return res.status(409).json({ success: false, error: 'La conexión de Gmail expiró. Pide al profesional que la reconecte antes de reservar.' });
+    }
+    console.error('[public-booking] confirmation email error:', error.message);
+    return res.status(200).json({
+      success: true,
+      message: 'Cita agendada, pero no se pudo enviar el correo de confirmación. La clínica debe revisar su conexión de Gmail.',
+      data: { clinicSlug: professional.clinic_slug, username: professional.username, resourceId: bookingResourceId, start: startDate.toISOString(), end: endDate.toISOString() },
+    });
   }
 
   return res.status(200).json({
