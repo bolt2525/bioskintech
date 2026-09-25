@@ -233,6 +233,23 @@ function emailHtml({ clinicName, patientName, service, date, time, professionalN
   `;
 }
 
+function clinicNotificationHtml({ clinicName, patientName, patientEmail, phone, service, date, time, professionalName, resourceName }) {
+  return `
+    <div style="font-family:Arial,sans-serif;max-width:620px;margin:0 auto;color:#333;">
+      <h2 style="color:#8a6b3f;">Nueva cita desde la agenda pública</h2>
+      <p>Se recibió una nueva solicitud para <strong>${service}</strong> en <strong>${clinicName}</strong>.</p>
+      <table style="width:100%;border-collapse:collapse;">
+        <tr><td style="padding:7px 0;color:#666;width:35%;">Paciente</td><td style="padding:7px 0;font-weight:600;">${patientName}</td></tr>
+        <tr><td style="padding:7px 0;color:#666;">Correo</td><td style="padding:7px 0;font-weight:600;">${patientEmail}</td></tr>
+        <tr><td style="padding:7px 0;color:#666;">Teléfono</td><td style="padding:7px 0;font-weight:600;">${phone}</td></tr>
+        <tr><td style="padding:7px 0;color:#666;">Profesional</td><td style="padding:7px 0;font-weight:600;">${professionalName}</td></tr>
+        <tr><td style="padding:7px 0;color:#666;">Recurso</td><td style="padding:7px 0;font-weight:600;">${resourceName || 'Principal'}</td></tr>
+        <tr><td style="padding:7px 0;color:#666;">Fecha y hora</td><td style="padding:7px 0;font-weight:600;">${date}, ${time}</td></tr>
+      </table>
+    </div>
+  `;
+}
+
 function buildRawEmail({ from, to, subject, html }) {
   const message = [
     `From: ${from}`,
@@ -398,20 +415,31 @@ export default async function handler(req, res) {
     professionalName: professional.full_name || professional.username,
     resourceName: resourceNameRow.rows[0]?.name || 'Principal',
   });
+  const clinicHtml = clinicNotificationHtml({
+    clinicName: professional.clinic_name,
+    patientName: name,
+    patientEmail: email,
+    phone,
+    service,
+    date: new Date(startDate).toLocaleDateString('es-ES', { timeZone: 'America/Guayaquil', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
+    time: new Date(startDate).toLocaleTimeString('es-ES', { timeZone: 'America/Guayaquil', hour: '2-digit', minute: '2-digit', hour12: false }),
+    professionalName: professional.full_name || professional.username,
+    resourceName: resourceNameRow.rows[0]?.name || 'Principal',
+  });
 
   try {
     const gmail = google.gmail({ version: 'v1', auth: oauth.client });
-    await gmail.users.messages.send({
-      userId: 'me',
-      requestBody: {
-        raw: buildRawEmail({
-          from: `${professional.clinic_name} <${oauth.email}>`,
-          to: email,
-          subject: `Confirmación de cita en ${professional.clinic_name}`,
-          html,
-        }),
-      },
-    });
+    const from = `${professional.clinic_name} <${oauth.email}>`;
+    await Promise.all([
+      gmail.users.messages.send({
+        userId: 'me',
+        requestBody: { raw: buildRawEmail({ from, to: email, subject: `Confirmación de cita en ${professional.clinic_name}`, html }) },
+      }),
+      gmail.users.messages.send({
+        userId: 'me',
+        requestBody: { raw: buildRawEmail({ from, to: oauth.email, subject: `Nueva cita pública: ${name} - ${service}`, html: clinicHtml }) },
+      }),
+    ]);
   } catch (error) {
     if (isGoogleAuthError(error)) {
       await sql`DELETE FROM clinic_oauth_tokens WHERE clinic_user_id = ${professional.id}`;

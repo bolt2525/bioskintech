@@ -219,7 +219,10 @@ export default function PublicBookingPage() {
         setError(data?.error || 'No se pudo crear la cita.');
         return;
       }
-      setSuccess(`Tu cita quedó agendada correctamente para ${new Date(form.date + 'T' + form.time + ':00-05:00').toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'long' })}.`);
+      const appointmentDate = new Date(`${form.date}T${form.time}:00-05:00`);
+      const appointmentDay = appointmentDate.toLocaleDateString('es-EC', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'America/Guayaquil' });
+      const appointmentTime = appointmentDate.toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Guayaquil' });
+      setSuccess(`¡Cita confirmada! Te esperamos el ${appointmentDay} a las ${appointmentTime}.`);
       setShowBookingModal(false);
       setAvailableSlots([]);
       setForm((prev) => ({ ...prev, name: '', email: '', phone: '', service: profile.treatments?.[0]?.name || '', date: '', time: '', durationMinutes: profile.treatments?.[0]?.durationMinutes || 60, turnstileToken: '', website: '' }));

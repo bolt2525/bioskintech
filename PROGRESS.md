@@ -7,6 +7,8 @@
 - ✅ 2026-09-24 Humanizados avisos automáticos al staff: se identifica el bot, se explica cada estado y se sugiere la acción para pacientes sin confirmación.
 - ✅ 2026-09-24 Separado recordatorio de pacientes a las 14:00 Ecuador; los resúmenes internos permanecen a las 07:00 y 19:00.
 - ✅ 2026-09-24 Endurecida desconexión Google desde Estado del sistema: revoca ante Google antes de borrar el token local y conserva la conexión si la revocación remota falla.
+- ✅ 2026-09-24 Agenda pública notifica al paciente y al remitente clínico por Gmail OAuth.
+- ✅ 2026-09-24 Confirmación visual incluye fecha y hora de la cita.
 - ✅ 2026-09-24 Confirmación pública enviada desde Gmail OAuth de la clínica, sin SMTP global.
 - ✅ 2026-09-24 Alertas de agenda visibles dentro del modal público.
 - ✅ 2026-09-24 Selector público de multiagenda por recurso activo y disponibilidad independiente.
