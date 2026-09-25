@@ -115,6 +115,15 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
     return m ? staffResources.find(r => r.id === parseInt(m[1], 10)) || null : null;
   };
 
+  const resourceDetails = (event: CalendarEvent) => {
+    const staffResource = resourceOf(event);
+    if (staffResource) return { name: staffResource.name, color: staffResource.color };
+    if (event.resourceId === `owner:${user?.id}`) {
+      return { name: user?.full_name || user?.username || 'Titular', color: '#deb887' };
+    }
+    return null;
+  };
+
   // Cargar eventos del calendario
   const loadCalendarEvents = async () => {
     setLoading(true);
@@ -393,7 +402,7 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
             </div>
           ) : <p className="text-sm font-semibold text-gray-900 truncate">{patientName}</p>}
           <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-            {resourceOf(event) && <span className="inline-flex items-center gap-1 text-xs font-medium px-1.5 py-0.5 rounded-full text-white" style={{ background: resourceOf(event)!.color }}>{resourceOf(event)!.name}</span>}
+            {resourceDetails(event) && <span className="inline-flex items-center gap-1 text-xs font-medium px-1.5 py-0.5 rounded-full text-white" style={{ background: resourceDetails(event)!.color }}><span className="h-1.5 w-1.5 rounded-full bg-white/80" />{resourceDetails(event)!.name}</span>}
             {service && <span className="text-xs text-[#deb887] font-medium truncate">{service}</span>}
             {professional && <span className="text-xs text-gray-400 truncate">· {professional}</span>}
             {phone && !isBlock && <span className="text-xs text-gray-400 truncate">· {phone}</span>}
@@ -527,6 +536,7 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
             <label className="block text-sm font-medium text-gray-700 mb-1">Profesional o recurso</label>
             <select value={resourceFilter} onChange={(e) => setResourceFilter(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#deb887] focus:border-transparent">
               <option value="all">Todos</option>
+              {user?.id && <option value={`owner:${user.id}`}>Titular · {user.full_name || user.username || 'Yo'}</option>}
               {staffResources.map(resource => <option key={resource.id} value={`staff:${resource.id}`}>{resource.name}</option>)}
             </select>
           </div>
@@ -612,7 +622,12 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
                   const dayEvents = filteredEvents.filter(event => eventDateKey(event) === dateKey);
                   return <div key={dateKey} className={`min-h-28 p-2 border-r border-b border-gray-200 align-top ${day.toDateString() === new Date().toDateString() ? 'bg-[#deb887]/10' : 'bg-white'}`}>
                     <div className="flex items-center justify-between mb-1"><span className={`text-sm font-semibold ${day.toDateString() === new Date().toDateString() ? 'text-[#99652f]' : 'text-gray-700'}`}>{day.getDate()}</span>{dayEvents.length > 0 && <span className="text-[10px] text-gray-400">{dayEvents.length}</span>}</div>
-                    <div className="space-y-1">{dayEvents.map(event => <button key={event.id} onClick={() => openEventDetails(event)} title={`${event.summary} · ${event.start.dateTime ? new Date(event.start.dateTime).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : 'Todo el día'}`} className={`w-full text-left truncate rounded px-1.5 py-1 text-[11px] font-medium hover:ring-2 hover:ring-[#deb887]/50 ${event.eventType === 'block' ? 'bg-red-100 text-red-700' : 'bg-[#deb887]/20 text-[#7c5326]'}`}>{event.start.dateTime ? new Date(event.start.dateTime).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: false }) : 'Todo el día'} · {event.eventType === 'block' ? 'Bloqueo' : event.summary.replace(/^Cita:\s*/, '')}</button>)}</div>
+                    <div className="space-y-1">{dayEvents.map(event => {
+                      const resource = resourceDetails(event);
+                      const eventColor = event.eventType === 'block' ? '#fee2e2' : resource?.color || '#deb887';
+                      const eventTextColor = event.eventType === 'block' ? '#b91c1c' : '#ffffff';
+                      return <button key={event.id} onClick={() => openEventDetails(event)} title={`${event.summary} · ${event.start.dateTime ? new Date(event.start.dateTime).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : 'Todo el día'}`} style={{ backgroundColor: eventColor, color: eventTextColor }} className={`w-full text-left truncate rounded px-1.5 py-1 text-[11px] font-medium hover:brightness-95 hover:ring-2 hover:ring-[#deb887]/50 ${event.eventType === 'block' ? '' : 'shadow-sm'}`}>{event.start.dateTime ? new Date(event.start.dateTime).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: false }) : 'Todo el día'} · {event.eventType === 'block' ? 'Bloqueo' : event.summary.replace(/^Cita:\s*/, '')}</button>;
+                    })}</div>
                   </div>;
                 })}
               </div>

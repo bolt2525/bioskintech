@@ -3,6 +3,7 @@
 - ✅ 2026-09-24 Agenda: vista calendario y filtros compartidos.
 - ✅ 2026-09-24 Agenda: rango de fechas y modal para editar, reprogramar o eliminar eventos.
 - ✅ 2026-09-24 Agenda: presets Hoy, Mañana y rango personalizado.
+- ✅ 2026-09-24 Agenda: colores multi-recurso sincronizados en lista y calendario.
 
 ## Auditoría integral
 
