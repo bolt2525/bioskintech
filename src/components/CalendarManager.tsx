@@ -5,16 +5,17 @@ import { useAuth } from '../context/AuthContext';
 import type { StaffResource } from '../types';
 import { 
   Calendar,
+  CalendarDays,
   Trash2,
   RefreshCw,
   AlertTriangle,
   CheckCircle,
   ArrowLeft,
   User,
-  MapPin,
-  FileText,
   Ban,
-  MessageCircle
+  MessageCircle,
+  List,
+  Search
 } from 'lucide-react';
 
 interface CalendarManagerProps {
@@ -72,6 +73,10 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
   const [dateRange, setDateRange] = useState(30); // días hacia adelante
   const [deletingEvents, setDeletingEvents] = useState<Set<string>>(new Set());
   const [staffResources, setStaffResources] = useState<StaffResource[]>([]);
+  const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
+  const [eventFilter, setEventFilter] = useState<'all' | 'appointment' | 'block'>('all');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [resourceFilter, setResourceFilter] = useState('all');
 
   useEffect(() => {
     fetch('/api/admin-auth?action=listStaffResources', {
@@ -223,7 +228,7 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
 
     // Intentar extraer teléfono de la descripción
     // Formato esperado en descripción: "Teléfono: 09..."
-    const phoneMatch = event.description?.match(/Teléfono:\s*([\d\+\-\s]+)/);
+    const phoneMatch = event.description?.match(/Teléfono:\s*([\d+\s-]+)/);
     let phone = phoneMatch ? phoneMatch[1].replace(/\D/g, '') : '';
     
     if (!phone) return null;
@@ -254,8 +259,73 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
   };
 
   // Filtrar eventos por tipo
-  const appointmentEvents = events.filter(e => e.eventType === 'appointment');
-  const blockEvents = events.filter(e => e.eventType === 'block');
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+  const filteredEvents = events.filter(event => {
+    if (eventFilter !== 'all' && event.eventType !== eventFilter) return false;
+    if (resourceFilter !== 'all' && event.resourceId !== resourceFilter) return false;
+    if (!normalizedSearch) return true;
+    return `${event.summary} ${event.description || ''}`.toLowerCase().includes(normalizedSearch);
+  });
+
+  const calendarDays = Array.from({ length: dateRange }, (_, index) => {
+    const date = new Date();
+    date.setHours(12, 0, 0, 0);
+    date.setDate(date.getDate() + index);
+    return date;
+  });
+  const calendarStartOffset = calendarDays[0]?.getDay() || 0;
+
+  const eventDateKey = (event: CalendarEvent) =>
+    (event.start.dateTime || event.start.date || '').split('T')[0];
+
+  const renderEvent = (event: CalendarEvent) => {
+    const isBlock = event.eventType === 'block';
+    const startDt = event.start.dateTime;
+    const endDt = event.end.dateTime;
+    const timeStart = startDt ? new Date(startDt).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—';
+    const timeEnd = endDt ? new Date(endDt).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true }) : '';
+    let patientName = event.summary;
+    if (event.summary.startsWith('Cita: ')) patientName = event.summary.substring(6).split(' - ')[0];
+    const service = event.description?.match(/Servicio:\s*([^\n]+)/)?.[1]?.trim() || '';
+    const phone = event.description?.match(/Teléfono:\s*([\d+\s-]+)/)?.[1]?.trim() || '';
+    const professional = event.description?.match(/Profesional:\s*([^\n]+)/)?.[1]?.trim() || '';
+
+    return (
+      <div key={event.id}
+        className={`flex items-center gap-3 p-3 rounded-xl border transition-all hover:shadow-sm ${
+          isBlock ? 'border-red-200 bg-red-50/60' : 'border-gray-200 bg-white hover:border-[#deb887]/40'
+        }`}
+      >
+        <div className={`flex-shrink-0 text-center px-3 py-2 rounded-lg min-w-[72px] ${
+          isBlock ? 'bg-red-100 text-red-700' : 'bg-[#deb887]/15 text-[#99652f]'
+        }`}>
+          <p className="text-xs font-bold leading-tight">{timeStart}</p>
+          {timeEnd && <p className="text-[10px] leading-tight opacity-70">{timeEnd}</p>}
+        </div>
+        <div className="flex-1 min-w-0">
+          {isBlock ? (
+            <div className="flex items-center gap-1.5">
+              <Ban className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
+              <p className="text-sm font-semibold text-red-700 truncate">Horario bloqueado</p>
+            </div>
+          ) : <p className="text-sm font-semibold text-gray-900 truncate">{patientName}</p>}
+          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+            {resourceOf(event) && <span className="inline-flex items-center gap-1 text-xs font-medium px-1.5 py-0.5 rounded-full text-white" style={{ background: resourceOf(event)!.color }}>{resourceOf(event)!.name}</span>}
+            {service && <span className="text-xs text-[#deb887] font-medium truncate">{service}</span>}
+            {professional && <span className="text-xs text-gray-400 truncate">· {professional}</span>}
+            {phone && !isBlock && <span className="text-xs text-gray-400 truncate">· {phone}</span>}
+            {!service && !professional && !phone && <span className="text-xs text-gray-400 truncate">{event.summary}</span>}
+          </div>
+        </div>
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {getWhatsAppLink(event) && <a href={getWhatsAppLink(event)!} target="_blank" rel="noopener noreferrer" className="p-2 rounded-lg bg-green-50 text-green-600 hover:bg-green-100 transition-colors" title="Enviar recordatorio por WhatsApp"><MessageCircle className="w-4 h-4" /></a>}
+          <button onClick={() => deleteEvent(event)} disabled={deletingEvents.has(event.id)} className="p-2 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-40" title={isBlock ? 'Eliminar bloqueo' : 'Cancelar cita'}>
+            {deletingEvents.has(event.id) ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   // Cargar eventos al montar el componente
   useEffect(() => {
@@ -326,6 +396,31 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
               <option value={90}>Próximos 90 días</option>
             </select>
           </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Filtrar eventos</label>
+            <select value={eventFilter} onChange={(e) => setEventFilter(e.target.value as typeof eventFilter)} className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#deb887] focus:border-transparent">
+              <option value="all">Citas y bloqueos</option>
+              <option value="appointment">Solo citas</option>
+              <option value="block">Solo bloqueos</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Profesional o recurso</label>
+            <select value={resourceFilter} onChange={(e) => setResourceFilter(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#deb887] focus:border-transparent">
+              <option value="all">Todos</option>
+              {staffResources.map(resource => <option key={resource.id} value={`staff:${resource.id}`}>{resource.name}</option>)}
+            </select>
+          </div>
+          <label className="flex items-end relative">
+            <Search className="w-4 h-4 text-gray-400 absolute left-3 bottom-3" />
+            <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Buscar paciente o servicio" className="w-full md:w-64 pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#deb887] focus:border-transparent" />
+          </label>
+          <div className="flex items-end ml-auto">
+            <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1" role="group" aria-label="Vista del calendario">
+              <button onClick={() => setViewMode('list')} aria-pressed={viewMode === 'list'} className={`inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${viewMode === 'list' ? 'bg-white text-[#99652f] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}><List className="w-4 h-4" /> Lista</button>
+              <button onClick={() => setViewMode('calendar')} aria-pressed={viewMode === 'calendar'} className={`inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${viewMode === 'calendar' ? 'bg-white text-[#99652f] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}><CalendarDays className="w-4 h-4" /> Calendario</button>
+            </div>
+          </div>
         </div>
 
         {/* Mensaje de estado */}
@@ -351,7 +446,7 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
               <User className="w-8 h-8 text-blue-600" />
               <div>
                 <p className="text-sm text-blue-600 font-medium">Citas Programadas</p>
-                <p className="text-2xl font-bold text-blue-800">{appointmentEvents.length}</p>
+                <p className="text-2xl font-bold text-blue-800">{filteredEvents.filter(e => e.eventType === 'appointment').length}</p>
               </div>
             </div>
           </div>
@@ -360,7 +455,7 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
               <Ban className="w-8 h-8 text-red-600" />
               <div>
                 <p className="text-sm text-red-600 font-medium">Horarios Bloqueados</p>
-                <p className="text-2xl font-bold text-red-800">{blockEvents.length}</p>
+                <p className="text-2xl font-bold text-red-800">{filteredEvents.filter(e => e.eventType === 'block').length}</p>
               </div>
             </div>
           </div>
@@ -369,7 +464,7 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
               <Calendar className="w-8 h-8 text-gray-600" />
               <div>
                 <p className="text-sm text-gray-600 font-medium">Total Eventos</p>
-                <p className="text-2xl font-bold text-gray-800">{events.length}</p>
+                <p className="text-2xl font-bold text-gray-800">{filteredEvents.length}</p>
               </div>
             </div>
           </div>
@@ -381,16 +476,33 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
             <div className="inline-block w-12 h-12 border-4 border-[#deb887] border-t-transparent rounded-full animate-spin mb-4"></div>
             <p className="text-gray-600">Cargando eventos del calendario...</p>
           </div>
-        ) : events.length === 0 ? (
+        ) : filteredEvents.length === 0 ? (
           <div className="text-center py-12 text-gray-500">
             <Calendar className="w-16 h-16 mx-auto mb-4 opacity-50" />
             <h3 className="text-lg font-semibold mb-2">No hay eventos programados</h3>
             <p className="text-sm">No se encontraron citas ni bloqueos en el rango seleccionado</p>
           </div>
+        ) : viewMode === 'calendar' ? (
+          <div className="overflow-x-auto">
+            <div className="min-w-[680px]">
+              <div className="grid grid-cols-7 border-l border-t border-gray-200 rounded-t-lg overflow-hidden">
+                {['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'].map(day => <div key={day} className="bg-gray-50 p-2 text-center text-xs font-semibold text-gray-500 border-r border-b border-gray-200">{day}</div>)}
+                {Array.from({ length: calendarStartOffset }).map((_, index) => <div key={`empty-${index}`} className="min-h-28 bg-gray-50/50 border-r border-b border-gray-200" />)}
+                {calendarDays.map(day => {
+                  const dateKey = day.toISOString().split('T')[0];
+                  const dayEvents = filteredEvents.filter(event => eventDateKey(event) === dateKey);
+                  return <div key={dateKey} className={`min-h-28 p-2 border-r border-b border-gray-200 align-top ${day.toDateString() === new Date().toDateString() ? 'bg-[#deb887]/10' : 'bg-white'}`}>
+                    <div className="flex items-center justify-between mb-1"><span className={`text-sm font-semibold ${day.toDateString() === new Date().toDateString() ? 'text-[#99652f]' : 'text-gray-700'}`}>{day.getDate()}</span>{dayEvents.length > 0 && <span className="text-[10px] text-gray-400">{dayEvents.length}</span>}</div>
+                    <div className="space-y-1">{dayEvents.map(event => <button key={event.id} onClick={() => deleteEvent(event)} disabled={deletingEvents.has(event.id)} title={`${event.summary} · ${event.start.dateTime ? new Date(event.start.dateTime).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : 'Todo el día'}`} className={`w-full text-left truncate rounded px-1.5 py-1 text-[11px] font-medium ${event.eventType === 'block' ? 'bg-red-100 text-red-700' : 'bg-[#deb887]/20 text-[#7c5326]'}`}>{event.start.dateTime ? new Date(event.start.dateTime).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: false }) : 'Todo el día'} · {event.eventType === 'block' ? 'Bloqueo' : event.summary.replace(/^Cita:\s*/, '')}</button>)}</div>
+                  </div>;
+                })}
+              </div>
+            </div>
+          </div>
         ) : (() => {
           // Group events by date
           const grouped = new Map<string, CalendarEvent[]>();
-          [...events]
+          [...filteredEvents]
             .sort((a, b) => new Date(a.start.dateTime || a.start.date || 0).getTime() - new Date(b.start.dateTime || b.start.date || 0).getTime())
             .forEach(ev => {
               const dateKey = (ev.start.dateTime || ev.start.date || '').split('T')[0];
@@ -416,88 +528,7 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
                     {/* Event cards for this day */}
                     <div className="space-y-2">
                       {dayEvents.map(event => {
-                        const isBlock = event.eventType === 'block';
-                        const startDt = event.start.dateTime;
-                        const endDt = event.end.dateTime;
-                        const timeStart = startDt ? new Date(startDt).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—';
-                        const timeEnd = endDt ? new Date(endDt).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true }) : '';
-
-                        // Parse patient info from summary + description
-                        let patientName = event.summary;
-                        if (event.summary.startsWith('Cita: ')) {
-                          patientName = event.summary.substring(6).split(' - ')[0];
-                        }
-                        const service = event.description?.match(/Servicio:\s*([^\n]+)/)?.[1]?.trim() || '';
-                        const phone = event.description?.match(/Teléfono:\s*([\d\+\-\s]+)/)?.[1]?.trim() || '';
-                        const professional = event.description?.match(/Profesional:\s*([^\n]+)/)?.[1]?.trim() || '';
-
-                        return (
-                          <div key={event.id}
-                            className={`flex items-center gap-3 p-3 rounded-xl border transition-all hover:shadow-sm ${
-                              isBlock
-                                ? 'border-red-200 bg-red-50/60'
-                                : 'border-gray-200 bg-white hover:border-[#deb887]/40'
-                            }`}
-                          >
-                            {/* Time badge */}
-                            <div className={`flex-shrink-0 text-center px-3 py-2 rounded-lg min-w-[72px] ${
-                              isBlock ? 'bg-red-100 text-red-700' : 'bg-[#deb887]/15 text-[#99652f]'
-                            }`}>
-                              <p className="text-xs font-bold leading-tight">{timeStart}</p>
-                              {timeEnd && <p className="text-[10px] leading-tight opacity-70">{timeEnd}</p>}
-                            </div>
-
-                            {/* Main info */}
-                            <div className="flex-1 min-w-0">
-                              {isBlock ? (
-                                <div className="flex items-center gap-1.5">
-                                  <Ban className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
-                                  <p className="text-sm font-semibold text-red-700 truncate">Horario bloqueado</p>
-                                </div>
-                              ) : (
-                                <p className="text-sm font-semibold text-gray-900 truncate">{patientName}</p>
-                              )}
-                              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                                {resourceOf(event) && (
-                                  <span className="inline-flex items-center gap-1 text-xs font-medium px-1.5 py-0.5 rounded-full text-white"
-                                    style={{ background: resourceOf(event)!.color }}>
-                                    {resourceOf(event)!.name}
-                                  </span>
-                                )}
-                                {service && (
-                                  <span className="text-xs text-[#deb887] font-medium truncate">{service}</span>
-                                )}
-                                {professional && (
-                                  <span className="text-xs text-gray-400 truncate">· {professional}</span>
-                                )}
-                                {phone && !isBlock && (
-                                  <span className="text-xs text-gray-400 truncate">· {phone}</span>
-                                )}
-                                {!service && !professional && !phone && (
-                                  <span className="text-xs text-gray-400 truncate">{event.summary}</span>
-                                )}
-                              </div>
-                            </div>
-
-                            {/* Actions */}
-                            <div className="flex items-center gap-1 flex-shrink-0">
-                              {getWhatsAppLink(event) && (
-                                <a href={getWhatsAppLink(event)!} target="_blank" rel="noopener noreferrer"
-                                  className="p-2 rounded-lg bg-green-50 text-green-600 hover:bg-green-100 transition-colors"
-                                  title="Enviar recordatorio por WhatsApp">
-                                  <MessageCircle className="w-4 h-4" />
-                                </a>
-                              )}
-                              <button onClick={() => deleteEvent(event)} disabled={deletingEvents.has(event.id)}
-                                className="p-2 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-40"
-                                title={isBlock ? 'Eliminar bloqueo' : 'Cancelar cita'}>
-                                {deletingEvents.has(event.id)
-                                  ? <RefreshCw className="w-4 h-4 animate-spin" />
-                                  : <Trash2 className="w-4 h-4" />}
-                              </button>
-                            </div>
-                          </div>
-                        );
+                        return renderEvent(event);
                       })}
                     </div>
                   </div>

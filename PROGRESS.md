@@ -1,5 +1,7 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-09-24 Agenda: vista calendario y filtros compartidos.
+
 ## Auditoría integral
 
 - ✅ 2026-09-24 Simplificado aviso de origen: se identifica brevemente al chatbot del sistema como generador del resumen y gestor de recordatorios.
