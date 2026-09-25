@@ -212,40 +212,95 @@ async function getPublicAvailability(req, res) {
   return res.status(200).json({ success: true, slots, durationMinutes: treatment.durationMinutes });
 }
 
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[character]));
+}
+
 function emailHtml({ clinicName, patientName, service, date, time, professionalName, resourceName }) {
+  const values = {
+    clinicName: escapeHtml(clinicName),
+    patientName: escapeHtml(patientName),
+    service: escapeHtml(service),
+    date: escapeHtml(date),
+    time: escapeHtml(time),
+    professionalName: escapeHtml(professionalName),
+    resourceName: escapeHtml(resourceName || 'Principal'),
+  };
   return `
-    <div style="font-family:Arial,sans-serif;max-width:620px;margin:0 auto;border:1px solid #f0e7db;border-radius:12px;overflow:hidden;">
-      <div style="background:linear-gradient(135deg,#8a6b3f 0%,#ba9256 100%);padding:20px;color:#fff;">
-        <h2 style="margin:0;font-size:24px;">¡Solicitud de cita recibida!</h2>
-      </div>
-      <div style="padding:22px;background:#fff; color:#333;">
-        <p>Hola <strong>${patientName}</strong>,</p>
-        <p>Hemos recibido tu solicitud para <strong>${service}</strong> en <strong>${clinicName}</strong>.</p>
-        <table style="width:100%;border-collapse:collapse;margin-top:12px;">
-          <tr><td style="padding:8px 0;color:#666;width:35%;">Profesional</td><td style="padding:8px 0;font-weight:600;">${professionalName}</td></tr>
-          <tr><td style="padding:8px 0;color:#666;">Recurso</td><td style="padding:8px 0;font-weight:600;">${resourceName || 'Principal'}</td></tr>
-          <tr><td style="padding:8px 0;color:#666;">Fecha</td><td style="padding:8px 0;font-weight:600;">${date}</td></tr>
-          <tr><td style="padding:8px 0;color:#666;">Hora</td><td style="padding:8px 0;font-weight:600;">${time}</td></tr>
-        </table>
-        <p style="margin-top:16px;">Pronto recibirás la confirmación definitiva por correo o WhatsApp.</p>
+    <div style="margin:0;background:#f8f4ef;padding:28px 16px;font-family:'Segoe UI',Arial,sans-serif;color:#3b3028;">
+      <div style="max-width:640px;margin:0 auto;background:#fff;border:1px solid #eadfD2;border-radius:18px;overflow:hidden;box-shadow:0 8px 24px rgba(88,63,36,.08);">
+        <div style="background:linear-gradient(135deg,#3e3026 0%,#6f5338 100%);padding:28px 30px;color:#fff;">
+          <div style="font-size:11px;letter-spacing:3px;text-transform:uppercase;color:#e8c995;font-weight:700;">AGENDA DE CITAS</div>
+          <h1 style="margin:12px 0 6px;font-size:26px;line-height:1.2;">${values.clinicName}</h1>
+          <p style="margin:0;color:#f4e9dc;font-size:14px;">¡Cita agendada correctamente!</p>
+        </div>
+        <div style="padding:28px 30px;">
+          <p style="margin:0 0 20px;font-size:16px;line-height:1.55;">Hola <strong>${values.patientName}</strong>, tu cita ha sido registrada correctamente.</p>
+          <div style="border:1px solid #eadfD2;border-radius:14px;overflow:hidden;">
+            <div style="padding:16px 18px;background:#fff8ef;border-bottom:1px solid #eadfD2;">
+              <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#a57b4a;font-weight:700;">Tu reserva</div>
+              <div style="margin-top:6px;font-size:18px;font-weight:700;color:#3e3026;">${values.service}</div>
+            </div>
+            <table style="width:100%;border-collapse:collapse;font-size:14px;">
+              <tr><td style="padding:12px 18px;color:#806f60;width:38%;">Fecha</td><td style="padding:12px 18px;font-weight:700;color:#3e3026;">${values.date}</td></tr>
+              <tr style="background:#fcfaf7;"><td style="padding:12px 18px;color:#806f60;">Hora</td><td style="padding:12px 18px;font-weight:700;color:#3e3026;">${values.time}</td></tr>
+              <tr><td style="padding:12px 18px;color:#806f60;">Profesional</td><td style="padding:12px 18px;font-weight:600;color:#3e3026;">${values.professionalName}</td></tr>
+              <tr style="background:#fcfaf7;"><td style="padding:12px 18px;color:#806f60;">Recurso</td><td style="padding:12px 18px;font-weight:600;color:#3e3026;">${values.resourceName}</td></tr>
+            </table>
+          </div>
+          <p style="margin:22px 0 0;color:#66584d;font-size:13px;line-height:1.6;">Conserva este correo como referencia. Si necesitas cambiar tu cita, responde a este mensaje o contacta directamente con la clínica.</p>
+        </div>
+        <div style="padding:16px 30px;background:#faf7f2;border-top:1px solid #eee4d9;color:#9a8b7d;font-size:11px;line-height:1.5;">Este mensaje fue enviado automáticamente desde la agenda de ${values.clinicName}.</div>
+        <div style="padding:18px 30px;text-align:center;background:#3e3026;color:#eadfD2;font-size:11px;line-height:1.6;"><strong style="display:block;color:#e8c995;letter-spacing:2px;font-size:12px;">BIOSKINTECH</strong><span>Plataforma de gestión para clínicas de estética médica</span><br><a href="https://bioskintechapp.com" style="color:#fff;text-decoration:none;">bioskintechapp.com</a></div>
       </div>
     </div>
   `;
 }
 
 function clinicNotificationHtml({ clinicName, patientName, patientEmail, phone, service, date, time, professionalName, resourceName }) {
+  const values = {
+    clinicName: escapeHtml(clinicName),
+    patientName: escapeHtml(patientName),
+    patientEmail: escapeHtml(patientEmail),
+    phone: escapeHtml(phone),
+    service: escapeHtml(service),
+    date: escapeHtml(date),
+    time: escapeHtml(time),
+    professionalName: escapeHtml(professionalName),
+    resourceName: escapeHtml(resourceName || 'Principal'),
+  };
   return `
-    <div style="font-family:Arial,sans-serif;max-width:620px;margin:0 auto;color:#333;">
-      <h2 style="color:#8a6b3f;">Nueva cita desde la agenda pública</h2>
-      <p>Se recibió una nueva solicitud para <strong>${service}</strong> en <strong>${clinicName}</strong>.</p>
-      <table style="width:100%;border-collapse:collapse;">
-        <tr><td style="padding:7px 0;color:#666;width:35%;">Paciente</td><td style="padding:7px 0;font-weight:600;">${patientName}</td></tr>
-        <tr><td style="padding:7px 0;color:#666;">Correo</td><td style="padding:7px 0;font-weight:600;">${patientEmail}</td></tr>
-        <tr><td style="padding:7px 0;color:#666;">Teléfono</td><td style="padding:7px 0;font-weight:600;">${phone}</td></tr>
-        <tr><td style="padding:7px 0;color:#666;">Profesional</td><td style="padding:7px 0;font-weight:600;">${professionalName}</td></tr>
-        <tr><td style="padding:7px 0;color:#666;">Recurso</td><td style="padding:7px 0;font-weight:600;">${resourceName || 'Principal'}</td></tr>
-        <tr><td style="padding:7px 0;color:#666;">Fecha y hora</td><td style="padding:7px 0;font-weight:600;">${date}, ${time}</td></tr>
-      </table>
+    <div style="margin:0;background:#f8f4ef;padding:28px 16px;font-family:'Segoe UI',Arial,sans-serif;color:#3b3028;">
+      <div style="max-width:640px;margin:0 auto;background:#fff;border:1px solid #eadfd2;border-radius:18px;overflow:hidden;box-shadow:0 8px 24px rgba(88,63,36,.08);">
+        <div style="background:linear-gradient(135deg,#3e3026 0%,#6f5338 100%);padding:26px 30px;color:#fff;">
+          <div style="font-size:11px;letter-spacing:3px;text-transform:uppercase;color:#e8c995;font-weight:700;">AGENDA PÚBLICA</div>
+          <h1 style="margin:12px 0 6px;font-size:25px;line-height:1.2;">${values.clinicName}</h1>
+          <p style="margin:0;color:#f4e9dc;font-size:14px;">Nueva cita recibida</p>
+        </div>
+        <div style="padding:28px 30px;">
+          <div style="display:inline-block;padding:6px 10px;border-radius:999px;background:#eaf7ef;color:#277449;font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;">Reserva registrada</div>
+          <p style="margin:16px 0 20px;font-size:15px;line-height:1.55;">Un paciente agendó <strong>${values.service}</strong> desde el enlace público.</p>
+          <div style="border:1px solid #eadfd2;border-radius:14px;overflow:hidden;">
+            <table style="width:100%;border-collapse:collapse;font-size:14px;">
+              <tr style="background:#fff8ef;"><td style="padding:13px 18px;color:#806f60;width:38%;">Paciente</td><td style="padding:13px 18px;font-weight:700;color:#3e3026;">${values.patientName}</td></tr>
+              <tr><td style="padding:13px 18px;color:#806f60;">Correo</td><td style="padding:13px 18px;font-weight:600;color:#3e3026;">${values.patientEmail}</td></tr>
+              <tr style="background:#fcfaf7;"><td style="padding:13px 18px;color:#806f60;">Teléfono</td><td style="padding:13px 18px;font-weight:600;color:#3e3026;">${values.phone}</td></tr>
+              <tr><td style="padding:13px 18px;color:#806f60;">Fecha</td><td style="padding:13px 18px;font-weight:700;color:#3e3026;">${values.date}</td></tr>
+              <tr style="background:#fcfaf7;"><td style="padding:13px 18px;color:#806f60;">Hora</td><td style="padding:13px 18px;font-weight:700;color:#3e3026;">${values.time}</td></tr>
+              <tr><td style="padding:13px 18px;color:#806f60;">Profesional</td><td style="padding:13px 18px;font-weight:600;color:#3e3026;">${values.professionalName}</td></tr>
+              <tr style="background:#fcfaf7;"><td style="padding:13px 18px;color:#806f60;">Recurso</td><td style="padding:13px 18px;font-weight:600;color:#3e3026;">${values.resourceName}</td></tr>
+            </table>
+          </div>
+        </div>
+        <div style="padding:16px 30px;background:#faf7f2;border-top:1px solid #eee4d9;color:#9a8b7d;font-size:11px;line-height:1.5;">Notificación automática de la agenda pública de ${values.clinicName}.</div>
+        <div style="padding:18px 30px;text-align:center;background:#3e3026;color:#eadfd2;font-size:11px;line-height:1.6;"><strong style="display:block;color:#e8c995;letter-spacing:2px;font-size:12px;">BIOSKINTECH</strong><span>Plataforma de gestión para clínicas de estética médica</span><br><a href="https://bioskintechapp.com" style="color:#fff;text-decoration:none;">bioskintechapp.com</a></div>
+      </div>
     </div>
   `;
 }

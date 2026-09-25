@@ -448,6 +448,16 @@ export default async function handler(req, res) {
       </div>
     `;
 
+    const platformFooterHtml = `
+      <div style="margin-top:18px;padding:18px 24px;text-align:center;background:#3e3026;color:#eadfd2;font-size:11px;line-height:1.6;border-radius:0 0 12px 12px;">
+        <strong style="display:block;color:#e8c995;letter-spacing:2px;font-size:12px;">BIOSKINTECH</strong>
+        <span>Plataforma de gestión para clínicas de estética médica</span><br>
+        <a href="https://bioskintechapp.com" style="color:#fff;text-decoration:none;">bioskintechapp.com</a>
+      </div>
+    `;
+    const staffEmailWithFooter = `${staffEmailHtml}${platformFooterHtml}`;
+    const patientEmailWithFooter = `${patientEmailHtml}${platformFooterHtml}`;
+
     // Construir lista de destinatarios del staff: email principal + médico seleccionado (si hay)
     const staffTo = clinic.staff_email || process.env.EMAIL_TO || '';
     const doctorEmailHtml = selected_staff_name
@@ -478,13 +488,13 @@ export default async function handler(req, res) {
 
       if (staffTo) {
         await gmail.users.messages.send({ userId: 'me', requestBody: {
-          raw: makeRaw(staffTo, `🗓️ Nueva cita - ${paciente}${fecha ? ` (${fecha})` : ''}`, staffEmailHtml, fromAddr)
+          raw: makeRaw(staffTo, `🗓️ Nueva cita - ${paciente}${fecha ? ` (${fecha})` : ''}`, staffEmailWithFooter, fromAddr)
         }});
       }
       // Enviar también al médico/staff seleccionado si es diferente del staff_email general
       if (selected_staff_email && selected_staff_email !== staffTo) {
         await gmail.users.messages.send({ userId: 'me', requestBody: {
-          raw: makeRaw(selected_staff_email, `🗓️ [Tu cita] ${paciente}${fecha ? ` — ${fecha}` : ''}`, doctorEmailHtml, fromAddr)
+          raw: makeRaw(selected_staff_email, `🗓️ [Tu cita] ${paciente}${fecha ? ` — ${fecha}` : ''}`, `${doctorEmailHtml}${platformFooterHtml}`, fromAddr)
         }});
         console.log('📧 Copia enviada al médico seleccionado:', selected_staff_email);
       }
@@ -493,13 +503,13 @@ export default async function handler(req, res) {
         for (const ccEmail of additional_notify_emails) {
           if (ccEmail && ccEmail !== staffTo && ccEmail !== selected_staff_email) {
             await gmail.users.messages.send({ userId: 'me', requestBody: {
-              raw: makeRaw(ccEmail, `🗓️ Copia: cita ${paciente}${fecha ? ` (${fecha})` : ''}`, staffEmailHtml, fromAddr)
+              raw: makeRaw(ccEmail, `🗓️ Copia: cita ${paciente}${fecha ? ` (${fecha})` : ''}`, staffEmailWithFooter, fromAddr)
             }});
           }
         }
       }
       await gmail.users.messages.send({ userId: 'me', requestBody: {
-        raw: makeRaw(email, `¡Hemos recibido tu cita en ${clinic.name}!`, patientEmailHtml, fromAddr)
+        raw: makeRaw(email, `¡Hemos recibido tu cita en ${clinic.name}!`, patientEmailWithFooter, fromAddr)
       }});
       emailSuccess = true;
       console.log('✅ Correos enviados vía Gmail API');
