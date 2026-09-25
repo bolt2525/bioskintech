@@ -257,7 +257,7 @@ function emailHtml({ clinicName, patientName, service, date, time, professionalN
           <p style="margin:22px 0 0;color:#66584d;font-size:13px;line-height:1.6;">Conserva este correo como referencia. Si necesitas cambiar tu cita, responde a este mensaje o contacta directamente con la clínica.</p>
         </div>
         <div style="padding:16px 30px;background:#faf7f2;border-top:1px solid #eee4d9;color:#9a8b7d;font-size:11px;line-height:1.5;">Este mensaje fue enviado automáticamente desde la agenda de ${values.clinicName}.</div>
-        <div style="padding:18px 30px;text-align:center;background:#3e3026;color:#eadfD2;font-size:11px;line-height:1.6;"><strong style="display:block;color:#e8c995;letter-spacing:2px;font-size:12px;">BIOSKINTECH</strong><span>Plataforma de gestión para clínicas de estética médica</span><br><a href="https://bioskintechapp.com" style="color:#fff;text-decoration:none;">bioskintechapp.com</a></div>
+        <div style="padding:18px 30px;text-align:center;background:#3e3026;color:#eadfD2;font-size:11px;line-height:1.6;"><strong style="display:block;color:#e8c995;letter-spacing:2px;font-size:12px;">BIOSKINTECH · GESTIÓN CLÍNICA</strong><a href="https://bioskintechapp.com" style="color:#fff;text-decoration:none;">bioskintechapp.com</a></div>
       </div>
     </div>
   `;
@@ -299,7 +299,7 @@ function clinicNotificationHtml({ clinicName, patientName, patientEmail, phone, 
           </div>
         </div>
         <div style="padding:16px 30px;background:#faf7f2;border-top:1px solid #eee4d9;color:#9a8b7d;font-size:11px;line-height:1.5;">Notificación automática de la agenda pública de ${values.clinicName}.</div>
-        <div style="padding:18px 30px;text-align:center;background:#3e3026;color:#eadfd2;font-size:11px;line-height:1.6;"><strong style="display:block;color:#e8c995;letter-spacing:2px;font-size:12px;">BIOSKINTECH</strong><span>Plataforma de gestión para clínicas de estética médica</span><br><a href="https://bioskintechapp.com" style="color:#fff;text-decoration:none;">bioskintechapp.com</a></div>
+        <div style="padding:18px 30px;text-align:center;background:#3e3026;color:#eadfd2;font-size:11px;line-height:1.6;"><strong style="display:block;color:#e8c995;letter-spacing:2px;font-size:12px;">BIOSKINTECH · GESTIÓN CLÍNICA</strong><a href="https://bioskintechapp.com" style="color:#fff;text-decoration:none;">bioskintechapp.com</a></div>
       </div>
     </div>
   `;

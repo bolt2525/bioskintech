@@ -450,8 +450,8 @@ export default async function handler(req, res) {
 
     const platformFooterHtml = `
       <div style="margin-top:18px;padding:18px 24px;text-align:center;background:#3e3026;color:#eadfd2;font-size:11px;line-height:1.6;border-radius:0 0 12px 12px;">
-        <strong style="display:block;color:#e8c995;letter-spacing:2px;font-size:12px;">BIOSKINTECH</strong>
-        <span>Plataforma de gestión para clínicas de estética médica</span><br>
+        <strong style="display:block;color:#e8c995;letter-spacing:2px;font-size:12px;">BIOSKINTECH · GESTIÓN CLÍNICA</strong>
+        <br>
         <a href="https://bioskintechapp.com" style="color:#fff;text-decoration:none;">bioskintechapp.com</a>
       </div>
     `;

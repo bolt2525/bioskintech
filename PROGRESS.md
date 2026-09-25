@@ -7,6 +7,7 @@
 - ✅ 2026-09-24 Humanizados avisos automáticos al staff: se identifica el bot, se explica cada estado y se sugiere la acción para pacientes sin confirmación.
 - ✅ 2026-09-24 Separado recordatorio de pacientes a las 14:00 Ecuador; los resúmenes internos permanecen a las 07:00 y 19:00.
 - ✅ 2026-09-24 Endurecida desconexión Google desde Estado del sistema: revoca ante Google antes de borrar el token local y conserva la conexión si la revocación remota falla.
+- ✅ 2026-09-24 Footer de correos ajustado a BIOSKINTECH Gestión Clínica.
 - ✅ 2026-09-24 Footer BIOSKINTECH unificado en correos de agenda pública e interna.
 - ✅ 2026-09-24 Correos públicos usan encabezado propio de cada clínica.
 - ✅ 2026-09-24 Agenda pública notifica al paciente y al remitente clínico por Gmail OAuth.
