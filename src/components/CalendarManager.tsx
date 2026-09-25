@@ -62,6 +62,13 @@ interface CalendarEvent {
   updated?: string;
 }
 
+const getLocalDateString = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
   const { settings: clinicSettings } = useClinicSettings();
   const { user } = useAuth();
@@ -74,12 +81,13 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
   const [calendarNotConfigured, setCalendarNotConfigured] = useState(false);
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState<'success' | 'error' | ''>('');
-  const [dateRange, setDateRange] = useState(30); // días hacia adelante
-  const [startDate, setStartDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [dateRange, setDateRange] = useState(30); // cantidad exacta de días; 0 = personalizado
+  const [rangePreset, setRangePreset] = useState('30');
+  const [startDate, setStartDate] = useState(() => getLocalDateString(new Date()));
   const [endDate, setEndDate] = useState(() => {
     const date = new Date();
-    date.setDate(date.getDate() + 30);
-    return date.toISOString().split('T')[0];
+    date.setDate(date.getDate() + 29);
+    return getLocalDateString(date);
   });
   const [deletingEvents, setDeletingEvents] = useState<Set<string>>(new Set());
   const [updatingEvents, setUpdatingEvents] = useState<Set<string>>(new Set());
@@ -461,31 +469,52 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
               Días a mostrar
             </label>
             <select
-              value={dateRange}
+              value={rangePreset}
               onChange={(e) => {
-                const days = Number(e.target.value);
+                const preset = e.target.value;
+                setRangePreset(preset);
+                if (preset === 'custom') {
+                  setDateRange(0);
+                  return;
+                }
+                if (preset === 'today' || preset === 'tomorrow') {
+                  const targetDate = new Date();
+                  if (preset === 'tomorrow') targetDate.setDate(targetDate.getDate() + 1);
+                  const targetDateString = getLocalDateString(targetDate);
+                  setDateRange(1);
+                  setStartDate(targetDateString);
+                  setEndDate(targetDateString);
+                  return;
+                }
+                const days = Number(preset);
                 setDateRange(days);
-                const nextDate = new Date(`${startDate}T12:00:00`);
-                nextDate.setDate(nextDate.getDate() + days);
-                setEndDate(nextDate.toISOString().split('T')[0]);
+                const today = new Date();
+                const todayString = getLocalDateString(today);
+                setStartDate(todayString);
+                const nextDate = new Date(`${todayString}T12:00:00`);
+                nextDate.setDate(nextDate.getDate() + Math.max(0, days - 1));
+                setEndDate(getLocalDateString(nextDate));
               }}
               className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#deb887] focus:border-transparent"
             >
+              <option value="today">Hoy</option>
+              <option value="tomorrow">Mañana</option>
               <option value={7}>Próximos 7 días</option>
               <option value={15}>Próximos 15 días</option>
               <option value={30}>Próximos 30 días</option>
               <option value={60}>Próximos 60 días</option>
               <option value={90}>Próximos 90 días</option>
+              <option value="custom">Personalizado</option>
             </select>
           </div>
-          <div>
+          {dateRange === 0 && <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Desde</label>
             <input type="date" value={startDate} max={endDate} onChange={(e) => setStartDate(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#deb887] focus:border-transparent" />
-          </div>
-          <div>
+          </div>}
+          {dateRange === 0 && <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Hasta</label>
             <input type="date" value={endDate} min={startDate} onChange={(e) => setEndDate(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#deb887] focus:border-transparent" />
-          </div>
+          </div>}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Filtrar eventos</label>
             <select value={eventFilter} onChange={(e) => setEventFilter(e.target.value as typeof eventFilter)} className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#deb887] focus:border-transparent">
