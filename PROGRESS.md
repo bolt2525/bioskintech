@@ -8,6 +8,7 @@
 - ✅ 2026-09-28 Añadida firma presencial asistida sin correo y bloqueado el cierre manual de consentimientos.
 - ✅ 2026-09-28 Vinculados consentimientos a paciente/expediente y auditados con tenant RLS.
 - ✅ 2026-09-28 Migración idempotente de identificación y firma aplicada en Neon Production.
+- ✅ 2026-09-28 Endurecida restauración de backups: tenant, referencias, tablas completas y exclusión de secretos/errores SQL.
 
 ## Auditoría integral
 

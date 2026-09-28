@@ -43,7 +43,7 @@ Navegador React/Vite
 
 - `admin-auth.js`: autenticación, sesiones, clínicas, usuarios, configuración y OAuth. También expone `getPublicBookingConfig`, `setPublicBookingConfig`, `getPublicBookingProfile` y `getPublicBookingProfiles` para activar un enlace público seguro por profesional.
 - `ai-consultation.js`: consultas y generación asistida por IA.
-- `backup.js`: exportación y restauración.
+- `backup.js`: exportación y restauración; el restore restringe tablas/columnas al esquema, fuerza el tenant efectivo (incluida la clínica objetivo de `master_admin`), valida referencias padre/hijo/usuario y revierte la transacción completa ante referencias inválidas. Export/import incluye consultas, líneas financieras y movimientos; `source_table` distingue `financial_records` del esquema legacy `external_finance_records`, y los JSON antiguos solo se infieren cuando sus columnas no son ambiguas. Las credenciales operativas de firma (enlace, OTP, sesión y correo del reto) nunca salen en el JSON de backup. Errores de DB se registran solo por código/tipo y no se devuelven al cliente.
 - `calendar.js`: eventos y agenda de Google Calendar con soporte de multi-recurso por `resourceId` en el mismo calendario OAuth; `getCalendarEvents` acepta rangos explícitos y `updateEvent` permite editar o reprogramar eventos del calendario autenticado.
 - `src/components/CalendarManager.tsx`: presenta esos eventos en lista o cuadrícula diaria, con presets de rango `Hoy`, `Mañana`, próximos días y modo personalizado, además de filtros compartidos por tipo, búsqueda y recurso; muestra el color del titular/ayudante en ambas vistas y el clic abre un modal con detalle, edición, reprogramación y eliminación.
 - `external-finance.js`: finanzas externas.

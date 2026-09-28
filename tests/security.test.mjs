@@ -278,3 +278,133 @@ test('own-scope record access honors patient assignments', async () => {
   assert.deepEqual(values, [42, sessionUser.effective_clinic_id, true, 7]);
   assert.equal(await canAccessRecord({ query: async () => ({ rows: [] }) }, sessionUser, 42), false);
 });
+
+test('backup imports whitelist tables and schema-backed columns', async () => {
+  const { buildBackupInsertStatement, buildClinicFilter, resolveFinanceSourceTable } = await import('../api/backup.js');
+  const statement = buildBackupInsertStatement('patients', {
+    id: 9,
+    first_name: 'Ana',
+    'id) VALUES (NULL); DROP TABLE patients; --': 'injected',
+    unrecognized: 'ignored',
+  }, new Set(['id', 'first_name']));
+
+  assert.match(statement.query, /^INSERT INTO patients \("id","first_name"\)/);
+  assert.doesNotMatch(statement.query, /DROP TABLE|unrecognized/);
+  assert.deepEqual(statement.values, [9, 'Ana']);
+  assert.throws(() => buildBackupInsertStatement('clinics', { id: 1 }, new Set(['id'])), /Tabla o fila/);
+  const consent = buildBackupInsertStatement('consent_forms', {
+    id: 12,
+    signing_token: 'secret-link-token',
+    signing_otp_hash: 'secret-otp-hash',
+    signing_session_hash: 'secret-session-hash',
+    signing_hash: 'signed-evidence-hash',
+  }, new Set(['id', 'signing_token', 'signing_otp_hash', 'signing_session_hash', 'signing_hash']));
+  assert.doesNotMatch(consent.query, /signing_token|signing_otp_hash|signing_session_hash/);
+  assert.match(consent.query, /signing_hash/);
+
+  const clinicId = '11111111-1111-4111-8111-111111111111';
+  assert.deepEqual(
+    buildClinicFilter('patients', 'SELECT * FROM patients', [], true, clinicId),
+    { query: 'SELECT * FROM patients WHERE clinic_id = $1', params: [clinicId] }
+  );
+  assert.deepEqual(
+    buildClinicFilter('patients', 'SELECT * FROM patients', [], true, null),
+    { query: 'SELECT * FROM patients', params: [] }
+  );
+  assert.deepEqual(
+    buildClinicFilter('financial_items', 'SELECT * FROM financial_items WHERE record_id = ANY($1::int[]) ORDER BY id LIMIT 50000', [[4, 5]], true, clinicId),
+    { query: 'SELECT * FROM financial_items WHERE record_id = ANY($1::int[]) AND clinic_id = $2 ORDER BY id LIMIT 50000', params: [[4, 5], clinicId] }
+  );
+  assert.equal(resolveFinanceSourceTable({ source_table: 'external_finance_records', records: [] }), 'external_finance_records');
+  assert.equal(resolveFinanceSourceTable({ records: [{ patient_name: 'Ana', raw_note: 'legacy' }] }), 'external_finance_records');
+  assert.equal(resolveFinanceSourceTable({ records: [{ entity: 'Farmacia', date: '2026-01-01', type: 'expense' }] }), 'financial_records');
+  assert.throws(() => resolveFinanceSourceTable({ records: [{ id: 1, clinic_id: clinicId }] }), /ambiguo/);
+});
+
+test('backup restore forces clinic_id and rejects foreign patient references', async () => {
+  const { insertBackupRow } = await import('../api/backup.js');
+  const clinicId = '11111111-1111-4111-8111-111111111111';
+  let insertedValues = [];
+  const patientPool = {
+    query: async (statement, params) => {
+      if (statement.includes('information_schema.columns'))
+        return { rows: ['id', 'first_name', 'clinic_id'].map(column_name => ({ column_name })) };
+      if (statement.startsWith('SELECT clinic_id FROM patients')) return { rows: [] };
+      if (statement.startsWith('INSERT INTO patients')) {
+        insertedValues = params;
+        return { rowCount: 1 };
+      }
+      throw new Error('Unexpected query');
+    },
+  };
+
+  assert.equal(await insertBackupRow(patientPool, 'patients', { id: 42, first_name: 'Ana', clinic_id: 'foreign' }, clinicId, true), 1);
+  assert.equal(insertedValues[2], clinicId);
+
+  const recordPool = {
+    query: async statement => {
+      if (statement.includes('information_schema.columns'))
+        return { rows: ['id', 'patient_id', 'clinic_id'].map(column_name => ({ column_name })) };
+      if (statement.startsWith('SELECT 1 FROM patients')) return { rows: [] };
+      throw new Error('Unexpected query');
+    },
+  };
+  await assert.rejects(
+    () => insertBackupRow(recordPool, 'clinical_records', { id: 7, patient_id: 999, clinic_id: 'foreign' }, clinicId, true),
+    /fuera de la clínica destino/
+  );
+});
+
+test('backup finance items validate against the selected legacy table', async () => {
+  const { insertBackupRow } = await import('../api/backup.js');
+  const clinicId = '11111111-1111-4111-8111-111111111111';
+  let parentQuery = '';
+  const pool = {
+    query: async (statement) => {
+      if (statement.includes('information_schema.columns'))
+        return { rows: ['id', 'record_id', 'clinic_id', 'description'].map(column_name => ({ column_name })) };
+      if (statement.startsWith('SELECT 1 FROM external_finance_records')) {
+        parentQuery = statement;
+        return { rows: [{}] };
+      }
+      if (statement.startsWith('INSERT INTO financial_items')) return { rowCount: 1 };
+      throw new Error('Unexpected query');
+    },
+  };
+  assert.equal(await insertBackupRow(pool, 'financial_items', { id: 8, record_id: 4 }, clinicId, false, { financialRecordTable: 'external_finance_records' }), 1);
+  assert.match(parentQuery, /external_finance_records/);
+});
+
+test('backup restore rejects foreign consultations and clears foreign movement users', async () => {
+  const { insertBackupRow } = await import('../api/backup.js');
+  const clinicId = '11111111-1111-4111-8111-111111111111';
+  const foreignConsultationPool = {
+    query: async statement => {
+      if (statement.includes('information_schema.columns'))
+        return { rows: ['id', 'record_id', 'clinic_id'].map(column_name => ({ column_name })) };
+      if (statement.startsWith('SELECT 1 FROM clinical_records')) return { rows: [] };
+      throw new Error('Unexpected query');
+    },
+  };
+  await assert.rejects(
+    () => insertBackupRow(foreignConsultationPool, 'consultations', { id: 3, record_id: 44 }, clinicId, true),
+    /fuera de la clínica destino/
+  );
+
+  let insertedValues = [];
+  const movementPool = {
+    query: async (statement, params) => {
+      if (statement.includes('information_schema.columns'))
+        return { rows: ['id', 'batch_id', 'clinic_id', 'user_id'].map(column_name => ({ column_name })) };
+      if (statement.startsWith('SELECT 1 FROM inventory_batches')) return { rows: [{}] };
+      if (statement.startsWith('SELECT 1 FROM clinic_users')) return { rows: [] };
+      if (statement.startsWith('INSERT INTO inventory_movements')) {
+        insertedValues = params;
+        return { rowCount: 1 };
+      }
+      throw new Error('Unexpected query');
+    },
+  };
+  assert.equal(await insertBackupRow(movementPool, 'inventory_movements', { id: 8, batch_id: 2, user_id: 999 }, clinicId, false), 1);
+  assert.equal(insertedValues[2], null);
+});
