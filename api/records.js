@@ -68,9 +68,35 @@ function escapeConsentHtml(value) {
   })[char]);
 }
 
-function consentValueText(value) {
+function consentValueText(value, label) {
   if (value == null || value === '') return 'No especificado';
-  return typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value);
+  const choice = item => item === true ? 'Sí' : item === false ? 'No' : 'No especificado';
+  if (Array.isArray(value)) return value.map(item => `• ${String(item)}`).join('\n');
+  if (label === 'Antecedentes críticos' && typeof value === 'object') {
+    return [
+      `Alergias: ${value.allergies || 'Niega'}`,
+      `Medicación: ${value.medications || 'Niega'}`,
+      `Embarazo/lactancia: ${choice(value.pregnancy)}`,
+      `Herpes recurrente: ${choice(value.herpes)}`,
+      ...(Array.isArray(value.others) && value.others.length ? [`Otros: ${value.others.join(', ')}`] : []),
+    ].join('\n');
+  }
+  if (label === 'Declaraciones aceptadas' || label === 'Autorizaciones') {
+    const names = {
+      understanding: 'Información clara recibida', questions: 'Dudas resueltas',
+      results: 'Variabilidad de resultados comprendida', authorization: 'Tratamiento autorizado',
+      revocation: 'Derecho de revocación informado', alternatives: 'Alternativas informadas',
+      privacy_policy: 'Política de privacidad aceptada', image_use: 'Uso educativo/promocional de imágenes',
+      photo_video: 'Fotografías/videos para registro clínico',
+    };
+    return Object.entries(value).map(([key, accepted]) => `${names[key] || key}: ${choice(accepted)}`).join('\n');
+  }
+  if (typeof value === 'object') {
+    return Object.entries(value).map(([key, item]) =>
+      `${key.replace(/_/g, ' ')}: ${typeof item === 'boolean' ? choice(item) : Array.isArray(item) ? item.join(', ') : String(item ?? '')}`
+    ).join('\n');
+  }
+  return String(value);
 }
 
 function createSigningTransport() {
@@ -102,7 +128,7 @@ function buildSignedConsentEmail(snapshot, signatures, declarations, authorizati
     ['Huella SHA-256 del documento firmado', evidenceHash],
   ];
   const htmlRows = rows.map(([label, value]) =>
-    `<tr><th style="text-align:left;vertical-align:top;padding:8px;border-bottom:1px solid #ddd">${escapeConsentHtml(label)}</th><td style="padding:8px;border-bottom:1px solid #ddd;white-space:pre-wrap">${escapeConsentHtml(consentValueText(value))}</td></tr>`
+    `<tr><th style="text-align:left;vertical-align:top;padding:8px;border-bottom:1px solid #ddd">${escapeConsentHtml(label)}</th><td style="padding:8px;border-bottom:1px solid #ddd;white-space:pre-wrap">${escapeConsentHtml(consentValueText(value, label))}</td></tr>`
   ).join('');
   const signature = String(signatures.patient_sig_data || '');
   const signatureImage = signature.startsWith('data:image/png;base64,')
@@ -110,7 +136,7 @@ function buildSignedConsentEmail(snapshot, signatures, declarations, authorizati
     : '';
   return {
     html: `<main style="font-family:Arial,sans-serif;color:#222;max-width:760px;margin:auto"><h1>Consentimiento informado firmado</h1><table style="border-collapse:collapse;width:100%">${htmlRows}</table>${signatureImage}<p style="font-size:12px;color:#555">Conserve este correo como copia del documento aceptado. La huella permite detectar cambios si se compara con el registro original.</p></main>`,
-    text: rows.map(([label, value]) => `${label}: ${consentValueText(value)}`).join('\n\n'),
+    text: rows.map(([label, value]) => `${label}: ${consentValueText(value, label)}`).join('\n\n'),
     signature,
   };
 }

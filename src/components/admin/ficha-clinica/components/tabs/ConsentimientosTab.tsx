@@ -9,6 +9,7 @@ import {
 import CrossConsultHistoryModal, { type ConsultationRef } from '../CrossConsultHistoryModal';
 import { QRCodeSVG } from 'qrcode.react';
 import SignatureCanvas from 'react-signature-canvas';
+import ConsentDocumentSections from '../ConsentDocumentSections';
 import { Tooltip } from '../../../../ui/Tooltip';
 import { useClinicSettings } from '../../../../../hooks/useClinicSettings';
 import { useAuth } from '../../../../../context/AuthContext';
@@ -184,7 +185,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
   useEffect(() => {
     if (message) {
       messageRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      const timer = setTimeout(() => setMessage(null), 3000);
+      const timer = setTimeout(() => setMessage(null), 7000);
       return () => clearTimeout(timer);
     }
   }, [message]);
@@ -364,8 +365,9 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
         setCurrentConsent(data);
         if (data.signatures?.patient_sig_data) {
           setShowQr(false);
+          setView('preview');
           loadConsents(); // refresh list so signed state reflects in the list
-          setMessage({ type: 'success', text: '¡Firma recibida correctamente!' });
+          setMessage({ type: 'success', text: 'Firma verificada. El consentimiento ya quedó guardado; no necesita volver a guardarlo.' });
         } else {
           setMessage({ type: 'error', text: 'Aún no se ha recibido la firma' });
         }
@@ -610,6 +612,11 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
 
   const handleSave = async () => {
     if (!currentConsent) return;
+    if (isSignedConsent(currentConsent)) {
+      setView('preview');
+      setMessage({ type: 'success', text: 'Este consentimiento ya fue firmado y guardado. No necesita volver a guardarlo.' });
+      return;
+    }
     setLoading(true);
     setMessage(null);
     try {
@@ -708,27 +715,6 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
           </Tooltip>
         </div>
       </div>
-
-      <AnimatePresence>
-        {message && (
-          <motion.div 
-            ref={messageRef}
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className={`p-4 rounded-xl flex items-center gap-3 shadow-sm ${
-              message.type === 'success' 
-                ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' 
-                : 'bg-red-50 text-red-700 border border-red-100'
-            }`}
-          >
-            <div className={`p-1.5 rounded-full ${message.type === 'success' ? 'bg-emerald-100' : 'bg-red-100'}`}>
-              {message.type === 'success' ? <Check className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
-            </div>
-            <span className="font-medium text-sm">{message.text}</span>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <table className="min-w-full divide-y divide-gray-100">
@@ -1756,6 +1742,26 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
 
   return (
     <div className="p-4">
+      <AnimatePresence>
+        {message && (
+          <motion.div
+            ref={messageRef}
+            role="status"
+            aria-live="polite"
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className={`mb-4 p-4 rounded-xl flex items-center gap-3 shadow-sm ${message.type === 'success'
+              ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+              : 'bg-red-50 text-red-700 border border-red-100'}`}
+          >
+            <div className={`p-1.5 rounded-full ${message.type === 'success' ? 'bg-emerald-100' : 'bg-red-100'}`}>
+              {message.type === 'success' ? <Check className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+            </div>
+            <span className="font-medium text-sm">{message.text}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {view === 'list' && renderList()}
       {view === 'form' && renderForm()}
       {view === 'preview' && renderPreview()}
@@ -1780,21 +1786,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                 {currentConsent.zone && <p className="text-sm text-gray-700"><strong>Zona:</strong> {currentConsent.zone}</p>}
                 <p className="text-sm text-gray-700 mt-2 whitespace-pre-wrap">{currentConsent.description || 'Sin descripción adicional.'}</p>
               </section>
-              {([
-                ['Objetivos', currentConsent.objectives],
-                ['Riesgos', currentConsent.risks],
-                ['Beneficios', currentConsent.benefits],
-                ['Alternativas', currentConsent.alternatives],
-                ['Cuidados previos', currentConsent.pre_care],
-                ['Cuidados posteriores', currentConsent.post_care],
-                ['Contraindicaciones', currentConsent.contraindications],
-                ['Antecedentes relevantes', currentConsent.critical_antecedents],
-              ] as const).map(([label, value]) => value ? (
-                <section key={label as string} className="space-y-1">
-                  <h3 className="font-semibold text-gray-800">{label}</h3>
-                  <p className="text-sm text-gray-700 whitespace-pre-wrap">{Array.isArray(value) ? value.join('\n') : typeof value === 'string' ? value : JSON.stringify(value, null, 2)}</p>
-                </section>
-              ) : null)}
+              <ConsentDocumentSections consent={currentConsent} showAcceptanceState={false} />
               <section className="space-y-3">
                 <h3 className="font-semibold text-gray-900">Declaraciones del paciente</h3>
                 {[

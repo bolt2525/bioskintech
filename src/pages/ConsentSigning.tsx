@@ -4,6 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import SignatureCanvas from 'react-signature-canvas';
 import { CheckCircle, AlertTriangle, PenTool, Eraser, Save, X, Printer } from 'lucide-react';
 import BrandLogo from '../components/ui/BrandLogo';
+import ConsentDocumentSections from '../components/admin/ficha-clinica/components/ConsentDocumentSections';
 
 interface ConsentSession {
   id: number;
@@ -26,6 +27,8 @@ interface ConsentSession {
   status: string;
   signing_status: string;
   signing_snapshot_hash?: string;
+  signing_hash?: string;
+  signing_signed_at?: string;
   // Added fields for full document view
   objectives?: string[];
   risks?: any;
@@ -43,6 +46,7 @@ interface ConsentSession {
   authorizations?: {
     image_use: boolean;
     photo_video: boolean;
+    privacy_policy?: boolean;
   };
   patient?: {
     first_name: string;
@@ -221,7 +225,15 @@ export default function ConsentSigning() {
         setCopyEmailed(result.copyEmailed === true);
         setSignedAt(result.signedAt || new Date().toISOString());
         setSigningHash(result.signingHash || '');
-        setSession(prev => prev ? { ...prev, signing_status: 'signed' } : null);
+        setSession(prev => prev ? {
+          ...prev,
+          signing_status: 'signed',
+          declarations: finalDeclarations,
+          authorizations: finalAuthorizations,
+          signing_signed_at: result.signedAt || new Date().toISOString(),
+          signing_hash: result.signingHash || '',
+          signatures: { ...prev.signatures, patient_sig_data: signatureData, patient_signed_at: result.signedAt || new Date().toISOString() },
+        } : null);
       } else {
         throw new Error('Error al guardar la firma');
       }
@@ -266,16 +278,10 @@ export default function ConsentSigning() {
           <p><strong>{session.patient?.identification_type === 'ruc' ? 'RUC' : session.patient?.identification_type === 'cedula' ? 'Cédula' : 'Identificación'}:</strong> {session.patient?.identification_number || 'N/A'}</p>
           <p><strong>Procedimiento:</strong> {session.procedure_type}</p>
           <p className="mt-4"><strong>Descripción:</strong><br />{session.description}</p>
-          {(['objectives', 'risks', 'benefits', 'alternatives', 'pre_care', 'post_care', 'contraindications', 'critical_antecedents'] as const).map(key => session[key] ? (
-            <section key={key} className="mt-4">
-              <h2 className="font-bold">{key.replace(/_/g, ' ')}</h2>
-              <pre className="whitespace-pre-wrap font-sans">{typeof session[key] === 'string' ? session[key] : JSON.stringify(session[key], null, 2)}</pre>
-            </section>
-          ) : null)}
-          <section className="mt-4"><strong>Declaraciones aceptadas:</strong><pre className="whitespace-pre-wrap font-sans">{JSON.stringify(declarations, null, 2)}</pre></section>
+          <ConsentDocumentSections consent={session} />
           {signatureData && <section className="mt-5"><strong>Firma del paciente</strong><br /><img src={signatureData} alt="Firma del paciente" className="max-h-32 mt-2" /></section>}
-          <p className="mt-5 text-sm">Firmado: {signedAt || new Date().toISOString()}</p>
-          {signingHash && <p className="mt-2 text-xs break-all">Huella SHA-256: {signingHash}</p>}
+          <p className="mt-5 text-sm">Firmado: {signedAt || session.signing_signed_at || new Date().toISOString()}</p>
+          {(signingHash || session.signing_hash) && <p className="mt-2 text-xs break-all">Huella SHA-256: {signingHash || session.signing_hash}</p>}
         </article>
       </div>
     );
