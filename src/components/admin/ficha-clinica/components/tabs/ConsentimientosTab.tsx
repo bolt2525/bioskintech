@@ -90,6 +90,9 @@ const API_URL = '/api/records';
 const isSignedConsent = (consent: ConsentForm) =>
   consent.status === 'signed' || consent.status === 'finalized' || consent.signing_status === 'signed' ||
   Boolean(consent.signatures?.patient_sig_data || consent.signatures?.patient_signed_at);
+const hasProfessionalSignature = (consent?: ConsentForm | null) =>
+  Boolean(consent?.signatures?.professional_name?.trim() &&
+    /^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(consent.signatures.professional_sig_data || ''));
 
 export default function ConsentimientosTab({ patientId, recordId, patient, consultationId, consultations = [] }: Props) {
   const { settings: clinic } = useClinicSettings();
@@ -320,6 +323,11 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
 
   const generateSigningLink = async () => {
     if (!currentConsent) return;
+    if (!hasProfessionalSignature(currentConsent)) {
+      setMessage({ type: 'error', text: 'Antes de solicitar la firma del paciente, cargue una firma profesional guardada o firme como profesional.' });
+      setActiveTab(3);
+      return;
+    }
     if (!patient?.email?.trim()) {
       setMessage({ type: 'error', text: 'Este paciente no tiene correo registrado. Use Firma presencial asistida.' });
       return;
@@ -396,6 +404,11 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
 
   const openInPersonSigning = async () => {
     if (!currentConsent) return;
+    if (!hasProfessionalSignature(currentConsent)) {
+      setMessage({ type: 'error', text: 'Antes de continuar, cargue una firma profesional guardada o firme como profesional y guarde los cambios.' });
+      setActiveTab(3);
+      return;
+    }
     try {
       setLoading(true);
       const saved = await persistConsentDraft(currentConsent);
@@ -1217,11 +1230,16 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                               {!showQr ? (
                                 <div className="flex flex-col items-center gap-3">
                                   <span className="text-gray-400 text-sm">Sin firma registrada</span>
+                                  {!hasProfessionalSignature(currentConsent) && (
+                                    <p role="status" className="max-w-md text-center text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-3">
+                                      Primero registre la firma del profesional: cargue una firma guardada o dibújela en la pestaña Firmas. El paciente podrá firmar después.
+                                    </p>
+                                  )}
                                   <div className="flex flex-col sm:flex-row gap-2 w-full">
                                     <button
                                       type="button"
                                       onClick={generateSigningLink}
-                                      disabled={!patient?.email?.trim() || loading}
+                                      disabled={!patient?.email?.trim() || !hasProfessionalSignature(currentConsent) || loading}
                                       className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-[#deb887] text-white rounded-lg hover:bg-[#c5a075] disabled:opacity-50 disabled:cursor-not-allowed font-medium"
                                     >
                                       <QrCode className="w-5 h-5" /> Firma remota por correo
@@ -1229,7 +1247,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                                     <button
                                       type="button"
                                       onClick={openInPersonSigning}
-                                      disabled={loading}
+                                      disabled={!hasProfessionalSignature(currentConsent) || loading}
                                       className="flex-1 flex items-center justify-center gap-2 px-4 py-3 border border-[#b8944d] text-[#725b2d] rounded-lg hover:bg-amber-50 disabled:opacity-50 font-medium"
                                     >
                                       <Edit className="w-5 h-5" /> Firma presencial

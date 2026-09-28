@@ -59,7 +59,16 @@ function createConsentSnapshot(consent, patient) {
     post_care: consent.post_care,
     contraindications: consent.contraindications,
     critical_antecedents: consent.critical_antecedents,
+    professional: {
+      name: consent.signatures?.professional_name || null,
+      signature_data: consent.signatures?.professional_sig_data || null,
+    },
   };
+}
+
+export function hasProfessionalSignature(signatures) {
+  return typeof signatures?.professional_name === 'string' && signatures.professional_name.trim().length > 0 &&
+    isValidSignatureDataUrl(signatures.professional_sig_data);
 }
 
 function escapeConsentHtml(value) {
@@ -123,7 +132,7 @@ async function resolveConsentSenderUserId(req, sessionUser, clinicId) {
   return target && String(target.clinic_id) === String(clinicId) ? target.id : null;
 }
 
-async function sendConsentGmail({ oauth, fromName, to, subject, text, html, signatureDataUrl }) {
+async function sendConsentGmail({ oauth, fromName, to, subject, text, html, signatureDataUrl, professionalSignatureDataUrl }) {
   if (!oauth?.client || !oauth.email) return false;
   const signaturePngBase64 = signatureDataUrl?.startsWith('data:image/png;base64,')
     ? signatureDataUrl.slice('data:image/png;base64,'.length)
@@ -136,28 +145,39 @@ async function sendConsentGmail({ oauth, fromName, to, subject, text, html, sign
     text,
     html,
     signaturePngBase64,
+    professionalSignaturePngBase64: professionalSignatureDataUrl?.startsWith('data:image/png;base64,')
+      ? professionalSignatureDataUrl.slice('data:image/png;base64,'.length)
+      : null,
   });
   const gmail = google.gmail({ version: 'v1', auth: oauth.client });
   await gmail.users.messages.send({ userId: 'me', requestBody: { raw } });
   return true;
 }
 
-async function sendConsentEmail({ oauth, fromName, to, subject, text, html, signatureDataUrl }) {
+async function sendConsentEmail({ oauth, fromName, to, subject, text, html, signatureDataUrl, professionalSignatureDataUrl }) {
   if (oauth?.client && oauth.email) {
     try {
-      await sendConsentGmail({ oauth, fromName, to, subject, text, html, signatureDataUrl });
+      await sendConsentGmail({ oauth, fromName, to, subject, text, html, signatureDataUrl, professionalSignatureDataUrl });
       return { senderEmail: oauth.email, senderType: 'oauth' };
     } catch (error) {
       console.error('[consent-email] Gmail OAuth failed:', error?.code || error?.name || 'UnknownError');
     }
   }
   if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
-    const attachments = signatureDataUrl?.startsWith('data:image/png;base64,') ? [{
+    const attachments = [
+      ...(signatureDataUrl?.startsWith('data:image/png;base64,') ? [{
       filename: 'firma-paciente.png',
       content: signatureDataUrl.slice('data:image/png;base64,'.length),
       encoding: 'base64',
       cid: 'patient-signature',
-    }] : [];
+      }] : []),
+      ...(professionalSignatureDataUrl?.startsWith('data:image/png;base64,') ? [{
+        filename: 'firma-profesional.png',
+        content: professionalSignatureDataUrl.slice('data:image/png;base64,'.length),
+        encoding: 'base64',
+        cid: 'professional-signature',
+      }] : []),
+    ];
     const transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
@@ -179,7 +199,9 @@ function buildSignedConsentEmail(snapshot, signatures, declarations, authorizati
   const rows = [
     ['Paciente', `${snapshot.patient.first_name} ${snapshot.patient.last_name}`],
     [snapshot.patient.identification_type === 'ruc' ? 'RUC' : 'Cédula', snapshot.patient.identification_number],
+    ['Profesional responsable', snapshot.professional?.name],
     ['Procedimiento', snapshot.procedure_type],
+    ['Profesional responsable', snapshot.professional?.name],
     ['Zona', snapshot.zone],
     ['Sesiones', snapshot.sessions],
     ['Descripción', snapshot.description],
@@ -200,13 +222,18 @@ function buildSignedConsentEmail(snapshot, signatures, declarations, authorizati
     `<tr><th style="text-align:left;vertical-align:top;padding:8px;border-bottom:1px solid #ddd">${escapeConsentHtml(label)}</th><td style="padding:8px;border-bottom:1px solid #ddd;white-space:pre-wrap">${escapeConsentHtml(consentValueText(value, label))}</td></tr>`
   ).join('');
   const signature = String(signatures.patient_sig_data || '');
+  const professionalSignature = String(snapshot.professional?.signature_data || '');
   const signatureImage = signature.startsWith('data:image/png;base64,')
     ? '<p><strong>Firma del paciente</strong></p><img alt="Firma del paciente" src="cid:patient-signature" style="max-width:320px;max-height:140px">'
     : '';
+  const professionalSignatureImage = professionalSignature.startsWith('data:image/png;base64,')
+    ? '<p><strong>Firma del profesional</strong></p><img alt="Firma del profesional" src="cid:professional-signature" style="max-width:320px;max-height:140px">'
+    : '';
   return {
-    html: `<main style="font-family:Arial,sans-serif;color:#222;max-width:760px;margin:auto"><h1>Consentimiento informado firmado</h1><table style="border-collapse:collapse;width:100%">${htmlRows}</table>${signatureImage}<p style="font-size:12px;color:#555">Conserve este correo como copia del documento aceptado. La huella permite detectar cambios si se compara con el registro original.</p></main>`,
+    html: `<main style="font-family:Arial,sans-serif;color:#222;max-width:760px;margin:auto"><h1>Consentimiento informado firmado</h1><table style="border-collapse:collapse;width:100%">${htmlRows}</table>${professionalSignatureImage}${signatureImage}<p style="font-size:12px;color:#555">Conserve este correo como copia del documento aceptado. La huella permite detectar cambios si se compara con el registro original.</p></main>`,
     text: rows.map(([label, value]) => `${label}: ${consentValueText(value, label)}`).join('\n\n'),
     signature,
+    professionalSignature,
   };
 }
 
@@ -2508,6 +2535,8 @@ export default async function handler(req, res) {
               record.signature_data || record.signed_at || record.signing_signed_at ||
               record.signatures?.patient_sig_data || record.signatures?.patient_signed_at)
             return res.status(409).json({ error: 'El consentimiento ya está firmado. Use la acción explícita para solicitar una nueva firma.' });
+          if (!hasProfessionalSignature(record.signatures))
+            return res.status(409).json({ error: 'Antes de solicitar la firma del paciente, cargue una firma profesional guardada o firme como profesional y guarde los cambios.' });
           if (!record.patient_email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(record.patient_email))
             return res.status(400).json({ error: 'El paciente necesita un correo válido registrado para verificar la firma remota.' });
           const senderUserId = await resolveConsentSenderUserId(req, su, effectiveClinicId);
@@ -2601,6 +2630,10 @@ export default async function handler(req, res) {
             await client.query('ROLLBACK');
             return res.status(409).json({ error: 'El consentimiento está anulado. Reactive el borrador antes de firmar.' });
           }
+          if (!hasProfessionalSignature(record.signatures)) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: 'Antes de firmar con el paciente, el profesional debe cargar o registrar su firma y guardar los cambios.' });
+          }
           const alreadySigned = record.signing_status === 'signed' || ['signed', 'finalized'].includes(record.status) ||
             record.signature_data || record.signed_at || record.signing_signed_at ||
             record.signatures?.patient_sig_data || record.signatures?.patient_signed_at;
@@ -2675,6 +2708,7 @@ export default async function handler(req, res) {
                 text: email.text,
                 html: email.html,
                 signatureDataUrl: signature,
+                professionalSignatureDataUrl: snapshot.professional?.signature_data,
               });
               copyEmailed = Boolean(copySender.senderEmail);
               if (copyEmailed) await pool.query('UPDATE consent_forms SET signing_copy_sent_at = NOW() WHERE id = $1', [consentId]);
@@ -2795,6 +2829,8 @@ export default async function handler(req, res) {
             !matchesSigningSession(req, session.signing_session_hash))
           return res.status(401).json({ error: 'La sesión de firma venció o no pertenece a este navegador. Solicite un nuevo enlace a la clínica.' });
         const currentSigs = session.signatures || {};
+        if (!hasProfessionalSignature(currentSigs))
+          return res.status(409).json({ error: 'Este consentimiento no tiene firma profesional registrada. Contacte a la clínica para corregirlo.' });
         const signedAt = new Date().toISOString();
         const newSigs = {
           ...currentSigs,
@@ -2845,6 +2881,7 @@ export default async function handler(req, res) {
             text: email.text,
             html: email.html,
             signatureDataUrl: email.signature,
+            professionalSignatureDataUrl: signedRecord.signing_snapshot.professional?.signature_data,
           });
           copyEmailed = Boolean(copySender.senderEmail);
         } catch {

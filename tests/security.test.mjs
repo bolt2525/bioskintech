@@ -409,3 +409,12 @@ test('backup restore rejects foreign consultations and clears foreign movement u
   assert.equal(await insertBackupRow(movementPool, 'inventory_movements', { id: 8, batch_id: 2, user_id: 999 }, clinicId, false), 1);
   assert.equal(insertedValues[2], null);
 });
+
+test('patient signing requires a professional name and valid saved PNG signature', async () => {
+  const { hasProfessionalSignature } = await import('../api/records.js');
+  const validPng = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4////fwAJ+wP9KobjigAAAABJRU5ErkJggg==';
+
+  assert.equal(hasProfessionalSignature({ professional_name: 'Dra. Ana', professional_sig_data: validPng }), true);
+  assert.equal(hasProfessionalSignature({ professional_name: '', professional_sig_data: validPng }), false);
+  assert.equal(hasProfessionalSignature({ professional_name: 'Dra. Ana', professional_sig_data: '' }), false);
+});

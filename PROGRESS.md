@@ -13,6 +13,7 @@
 - ✅ 2026-09-28 Unificado formato legible en PDF remoto/presencial y aclarado estado de guardado.
 - ✅ 2026-09-28 OTP/copias usan Gmail OAuth del profesional o target master; Bolt queda como fallback visible.
 - ✅ 2026-09-28 Verificado RLS de consent_forms: filas propias por clínica y cero sin contexto.
+- ✅ 2026-09-28 Exigida firma profesional previa y añadida al snapshot/PDF/email del paciente.
 
 ## Auditoría integral
 

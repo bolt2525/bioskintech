@@ -61,12 +61,14 @@ test('consent email MIME uses the authenticated mailbox and inline signature', (
     text: 'Código 123456',
     html: '<p>Código 123456</p><img src="cid:patient-signature">',
     signaturePngBase64: 'aW1hZ2U=',
+    professionalSignaturePngBase64: 'c2lnbmF0dXJl',
   });
   const message = Buffer.from(raw, 'base64url').toString('utf8');
   assert.match(message, /From: =\?UTF-8\?B\?.*<dra@clinic\.example>/);
   assert.match(message, /Content-Type: multipart\/related/);
   assert.match(message, /Content-Type: multipart\/alternative/);
   assert.match(message, /Content-ID: <patient-signature>/);
+  assert.match(message, /Content-ID: <professional-signature>/);
   assert.doesNotMatch(message, /bolt2525@gmail\.com/);
   assert.throws(() => buildConsentGmailRaw({ fromEmail: 'bad\r\nBcc:x@y.com', to: 'a@b.com', subject: 'x', text: 'x', html: 'x' }), /Invalid Gmail/);
 });

@@ -29,6 +29,10 @@ interface ConsentSession {
   signing_snapshot_hash?: string;
   signing_hash?: string;
   signing_signed_at?: string;
+  professional?: {
+    name?: string | null;
+    signature_data?: string | null;
+  };
   // Added fields for full document view
   objectives?: string[];
   risks?: any;
@@ -281,6 +285,12 @@ export default function ConsentSigning() {
           <p><strong>Procedimiento:</strong> {session.procedure_type}</p>
           <p className="mt-4"><strong>Descripción:</strong><br />{session.description}</p>
           <ConsentDocumentSections consent={session} />
+          {session.professional?.name && (
+            <section className="mt-5">
+              <strong>Profesional responsable:</strong> {session.professional.name}
+              {session.professional.signature_data && <div><img src={session.professional.signature_data} alt="Firma del profesional" className="max-h-24 mt-2" /></div>}
+            </section>
+          )}
           {signatureData && <section className="mt-5"><strong>Firma del paciente</strong><br /><img src={signatureData} alt="Firma del paciente" className="max-h-32 mt-2" /></section>}
           <p className="mt-5 text-sm">Firmado: {signedAt || session.signing_signed_at || new Date().toISOString()}</p>
           {(signingHash || session.signing_hash) && <p className="mt-2 text-xs break-all">Huella SHA-256: {signingHash || session.signing_hash}</p>}
@@ -388,6 +398,14 @@ export default function ConsentSigning() {
             </div>
           </div>
         </section>
+
+        {session.professional?.name && (
+          <section className="bg-white p-4 rounded-lg shadow-sm space-y-2">
+            <h2 className="font-semibold text-gray-700 border-b pb-2">Profesional responsable</h2>
+            <p className="text-sm text-gray-700">{session.professional.name}</p>
+            {session.professional.signature_data && <img src={session.professional.signature_data} alt="Firma del profesional" className="max-h-24" />}
+          </section>
+        )}
 
         <section className="bg-white p-4 rounded-lg shadow-sm space-y-4">
           <h2 className="font-semibold text-gray-700 border-b pb-2">Declaraciones y Autorizaciones</h2>
