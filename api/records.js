@@ -12,6 +12,7 @@ console.log('✅ [API] records.js loaded');
 
 const SIGNING_TOKEN_PATTERN = /^[a-f0-9]{64}$/i;
 const SIGNING_SESSION_COOKIE = 'bioskin_consent_session';
+const CONSULTATION_CHILD_TABLES = ['physical_exams', 'diagnoses', 'treatments', 'prescriptions', 'consent_forms', 'injectables'];
 const CONSENT_SAFE_COLUMNS = `id, record_id, patient_id, clinic_id, consultation_id, status, created_at, updated_at,
   created_by, procedure_type, zone, sessions, objectives, description, risks, benefits, alternatives,
   pre_care, post_care, contraindications, critical_antecedents, authorizations, declarations, signatures,
@@ -359,6 +360,15 @@ export function isOwnedPhotoKey(key, clinicId, recordId) {
   const prefix = `clinics/${clinicId}/records/${recordId}/photos/`;
   return typeof key === 'string' && key.startsWith(prefix) &&
     /^[a-f0-9-]{36}\.(?:jpg|jpeg|png|webp|heic)$/i.test(key.slice(prefix.length));
+}
+
+export async function detachConsultationChildren(pool, consultationId) {
+  let detachedRows = 0;
+  for (const table of CONSULTATION_CHILD_TABLES) {
+    const result = await pool.query(`UPDATE ${table} SET consultation_id = NULL WHERE consultation_id = $1`, [consultationId]);
+    detachedRows += result.rowCount || 0;
+  }
+  return detachedRows;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1993,6 +2003,14 @@ export default async function handler(req, res) {
         if (!dcId) return res.status(400).json({ error: 'id required' });
         await client.query('BEGIN');
         try {
+          const consultation = await pool.query(
+            'SELECT id, record_id, clinic_id FROM consultations WHERE id = $1 FOR UPDATE',
+            [dcId]
+          );
+          if (!consultation.rows.length) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'La consulta ya no existe.' });
+          }
           const consents = await pool.query(
             'SELECT id, signing_status, status, signature_data, signed_at, signing_signed_at, signatures FROM consent_forms WHERE consultation_id = $1 FOR UPDATE',
             [dcId]
@@ -2003,17 +2021,22 @@ export default async function handler(req, res) {
             await client.query('ROLLBACK');
             return res.status(409).json({ error: 'No se puede eliminar una consulta con consentimientos firmados.' });
           }
-          await Promise.all([
-            pool.query('DELETE FROM physical_exams   WHERE consultation_id = $1', [dcId]),
-            pool.query('DELETE FROM diagnoses         WHERE consultation_id = $1', [dcId]),
-            pool.query('DELETE FROM treatments        WHERE consultation_id = $1', [dcId]),
-            pool.query('DELETE FROM prescriptions     WHERE consultation_id = $1', [dcId]),
-            pool.query('DELETE FROM consent_forms     WHERE consultation_id = $1', [dcId]),
-            pool.query('DELETE FROM injectables       WHERE consultation_id = $1', [dcId]),
-          ]);
+          const detachedRows = await detachConsultationChildren(pool, dcId);
           await pool.query('DELETE FROM consultations WHERE id = $1', [dcId]);
+          await logAudit(pool, {
+            recordId: consultation.rows[0].record_id,
+            clinicId: consultation.rows[0].clinic_id,
+            sessionUser: await getSessionUserOnce(),
+            actionType: 'delete',
+            module: 'consultation',
+            summary: `Eliminó la consulta ${dcId}; se conservaron ${detachedRows} registros clínicos desasociados`,
+          });
           await client.query('COMMIT');
-          return res.status(200).json({ success: true });
+          return res.status(200).json({
+            success: true,
+            detachedRows,
+            message: `Consulta eliminada. Se conservaron ${detachedRows} registros clínicos en el expediente.`,
+          });
         } catch (err) {
           await client.query('ROLLBACK').catch(() => {});
           throw err;

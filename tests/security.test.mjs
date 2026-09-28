@@ -418,3 +418,20 @@ test('patient signing requires a professional name and valid saved PNG signature
   assert.equal(hasProfessionalSignature({ professional_name: '', professional_sig_data: validPng }), false);
   assert.equal(hasProfessionalSignature({ professional_name: 'Dra. Ana', professional_sig_data: '' }), false);
 });
+
+test('deleting a consultation detaches clinical records without deleting them', async () => {
+  const { detachConsultationChildren } = await import('../api/records.js');
+  const statements = [];
+  const detached = await detachConsultationChildren({
+    query: async (statement, values) => {
+      statements.push({ statement, values });
+      return { rowCount: 1 };
+    },
+  }, 31);
+
+  assert.equal(detached, 6);
+  assert.equal(statements.length, 6);
+  assert.ok(statements.every(({ statement, values }) => statement.includes('UPDATE ') &&
+    statement.includes('SET consultation_id = NULL') && values[0] === 31));
+  assert.ok(statements.every(({ statement }) => !statement.includes('DELETE FROM')));
+});

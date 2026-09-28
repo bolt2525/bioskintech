@@ -111,14 +111,18 @@ export default function ConsultationTab({
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm('Eliminar esta consulta? Los registros vinculados perderan la asociacion.')) return;
+    if (!confirm('¿Eliminar esta consulta? Los exámenes, tratamientos, recetas, inyectables y consentimientos no firmados se conservarán en el expediente, pero quedarán sin consulta asociada. Si hay un consentimiento firmado, no se permitirá eliminarla.')) return;
     setDeleting(id);
     try {
-      await recordsFetch('/api/records?action=deleteConsultation&id=' + id, { method: 'DELETE' });
+      const response = await recordsFetch('/api/records?action=deleteConsultation&id=' + id, { method: 'DELETE' });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'No se pudo eliminar la consulta.');
       onSave();
       if (activeConsultation?.id === id) onSelectConsultation(null);
-      setMessage({ type: 'success', text: 'Consulta eliminada' });
-    } catch { setMessage({ type: 'error', text: 'Error al eliminar' }); }
+      setMessage({ type: 'success', text: result.message || 'Consulta eliminada; los registros clínicos se conservaron.' });
+    } catch (error) {
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Error al eliminar la consulta.' });
+    }
     finally { setDeleting(null); }
   };
 

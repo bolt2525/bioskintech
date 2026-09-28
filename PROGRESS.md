@@ -14,6 +14,7 @@
 - ✅ 2026-09-28 OTP/copias usan Gmail OAuth del profesional o target master; Bolt queda como fallback visible.
 - ✅ 2026-09-28 Verificado RLS de consent_forms: filas propias por clínica y cero sin contexto.
 - ✅ 2026-09-28 Exigida firma profesional previa y añadida al snapshot/PDF/email del paciente.
+- ✅ 2026-09-28 Eliminación de consulta conserva y desasocia registros; firmados bloquean el borrado.
 
 ## Auditoría integral
 

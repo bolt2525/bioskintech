@@ -124,6 +124,8 @@ Al generar el enlace se congela en `consent_forms.signing_snapshot` la versión 
 
 Estos controles aportan evidencia y reducen suplantación casual, pero el OTP demuestra control del correo, no identidad oficial; el hash reside en la misma base y no es un sello de tiempo independiente. No se afirma que el flujo equivalga a una firma electrónica certificada ni que cumpla por sí solo todos los requisitos legales ecuatorianos.
 
+Al eliminar una consulta, el backend conserva exámenes, diagnósticos, tratamientos, recetas, inyectables y consentimientos no firmados, y solo pone `consultation_id` en `NULL` dentro de una transacción. Si la consulta contiene un consentimiento firmado, se revierte y se devuelve `409`; la UI informa el rechazo y solo confirma después de una respuesta HTTP exitosa.
+
 Inventario agrupa visualmente los productos por el valor normalizado de `category`. El formulario permite escribir categorías nuevas y sugiere las categorías ya registradas o configuradas mediante `datalist`; búsqueda y filtros operan antes de la agrupación.
 
 Las recetas mantienen compatibilidad con la tabla `prescriptions` existente y agregan columnas idempotentes para `prescription_mode`, vigencia y `regulatory_snapshot`. El modo `routine` es el predeterminado; `prescription` exige confirmación explícita antes de imprimir, muestra campos faltantes y reserva firma/sello manual. El registro profesional ACESS se almacena opcionalmente en `clinic_users.registro_acess` y se puede editar desde Mi Información. La migración oficial está en `scripts/apply-migrations.mjs` y fue aplicada en Neon el 2026-09-09.
