@@ -305,7 +305,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
         const url = `${window.location.origin}${data.url}`;
         setSigningUrl(url);
         setShowQr(true);
-        setMessage({ type: 'success', text: `Código enviado al paciente desde ${data.senderEmail || 'el Gmail conectado'}.` });
+        setMessage({ type: 'success', text: `Código enviado desde ${data.senderType === 'oauth' ? 'Gmail conectado' : 'Gmail de respaldo'}: ${data.senderEmail}.` });
       } else {
         const result = await res.json().catch(() => ({}));
         throw new Error(result.error || 'Error al generar nuevo enlace');
@@ -343,7 +343,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
         const url = `${window.location.origin}${data.url}`;
         setSigningUrl(url);
         setShowQr(true);
-        setMessage({ type: 'success', text: `Código enviado al paciente desde ${data.senderEmail || 'el Gmail conectado'}.` });
+        setMessage({ type: 'success', text: `Código enviado desde ${data.senderType === 'oauth' ? 'Gmail conectado' : 'Gmail de respaldo'}: ${data.senderEmail}.` });
       } else {
         const result = await res.json().catch(() => ({}));
         throw new Error(result.error || 'Error al generar enlace');
@@ -474,7 +474,9 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
       await loadConsents();
       setMessage({
         type: 'success',
-        text: result.copyEmailed ? 'Firma registrada. Enviamos una copia al correo del paciente.' : 'Firma registrada. Imprima o guarde una copia desde la vista previa.',
+        text: result.copyEmailed
+          ? `Firma registrada. Copia enviada desde ${result.copySenderType === 'oauth' ? 'Gmail conectado' : 'Gmail de respaldo'}: ${result.copySenderEmail}.`
+          : 'Firma registrada. Imprima o guarde una copia desde la vista previa.',
       });
     } catch (error) {
       setInPersonError(error instanceof Error ? error.message : 'No se pudo registrar la firma presencial.');

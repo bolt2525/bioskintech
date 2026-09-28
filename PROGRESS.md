@@ -11,8 +11,8 @@
 - ✅ 2026-09-28 Endurecida restauración de backups: tenant, referencias, tablas completas y exclusión de secretos/errores SQL.
 - ✅ 2026-09-28 Normalizadas copias impresas y presenciales; se confirma guardado al verificar firma.
 - ✅ 2026-09-28 Unificado formato legible en PDF remoto/presencial y aclarado estado de guardado.
-- ✅ 2026-09-28 OTP y copias de consentimientos enviados desde Gmail OAuth conectado, sin SMTP global.
-- ✅ 2026-09-28 OTP y copias firmadas migrados a Gmail OAuth del usuario; sin fallback al correo global.
+- ✅ 2026-09-28 OTP/copias usan Gmail OAuth del profesional o target master; Bolt queda como fallback visible.
+- ✅ 2026-09-28 Verificado RLS de consent_forms: filas propias por clínica y cero sin contexto.
 
 ## Auditoría integral
 

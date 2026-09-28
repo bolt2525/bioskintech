@@ -297,9 +297,10 @@ test('backup imports whitelist tables and schema-backed columns', async () => {
     signing_token: 'secret-link-token',
     signing_otp_hash: 'secret-otp-hash',
     signing_session_hash: 'secret-session-hash',
+    signing_sender_user_id: 42,
     signing_hash: 'signed-evidence-hash',
-  }, new Set(['id', 'signing_token', 'signing_otp_hash', 'signing_session_hash', 'signing_hash']));
-  assert.doesNotMatch(consent.query, /signing_token|signing_otp_hash|signing_session_hash/);
+  }, new Set(['id', 'signing_token', 'signing_otp_hash', 'signing_session_hash', 'signing_sender_user_id', 'signing_hash']));
+  assert.doesNotMatch(consent.query, /signing_token|signing_otp_hash|signing_session_hash|signing_sender_user_id/);
   assert.match(consent.query, /signing_hash/);
 
   const clinicId = '11111111-1111-4111-8111-111111111111';

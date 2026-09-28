@@ -28,7 +28,7 @@ const IMPORTABLE_TABLES = new Set([
   'financial_records', 'external_finance_records', 'financial_items', 'inventory_items', 'inventory_batches', 'inventory_movements',
 ]);
 const EXCLUDED_CONSENT_BACKUP_COLUMNS = new Set([
-  'signing_token', 'signing_email', 'signing_otp_hash', 'signing_otp_attempts',
+  'signing_token', 'signing_email', 'signing_sender_user_id', 'signing_otp_hash', 'signing_otp_attempts',
   'signing_expires_at', 'signing_verified_at', 'signing_session_hash', 'signing_session_expires_at',
 ]);
 const LEGACY_FINANCE_COLUMNS = new Set([

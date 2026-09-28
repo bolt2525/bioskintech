@@ -13,7 +13,7 @@
  */
 
 import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
-import { setMasterTargetClinicId } from '../utils/recordsFetch';
+import { setMasterTargetClinicId, setMasterTargetUserId } from '../utils/recordsFetch';
 
 interface MasterViewState {
   isActive: boolean;
@@ -57,15 +57,17 @@ export function MasterViewProvider({ children }: { children: ReactNode }) {
   ) => {
     setState({ isActive: true, clinicId, clinicSlug, clinicName, targetUsername: username, targetUserId: userId, features });
     setMasterTargetClinicId(clinicId);
+    setMasterTargetUserId(userId);
   }, []);
 
   const exitClinicView = useCallback(() => {
     setState(EMPTY);
     setMasterTargetClinicId(null);
+    setMasterTargetUserId(null);
   }, []);
 
   // Limpiar al desmontar
-  useEffect(() => () => { setMasterTargetClinicId(null); }, []);
+  useEffect(() => () => { setMasterTargetClinicId(null); setMasterTargetUserId(null); }, []);
 
   const hasFeatureInContext = useCallback((feature: string) => {
     if (!state.isActive) return true; // master_admin has all features normally

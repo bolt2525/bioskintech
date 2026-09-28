@@ -67,6 +67,7 @@ export default function ConsentSigning() {
   const [emailHint, setEmailHint] = useState('');
   const [verificationCode, setVerificationCode] = useState('');
   const [copyEmailed, setCopyEmailed] = useState(false);
+  const [copySenderEmail, setCopySenderEmail] = useState('');
   const [signedAt, setSignedAt] = useState('');
   const [signingHash, setSigningHash] = useState('');
   const [declarations, setDeclarations] = useState<any>({});
@@ -223,6 +224,7 @@ export default function ConsentSigning() {
       if (res.ok) {
         const result = await res.json();
         setCopyEmailed(result.copyEmailed === true);
+        setCopySenderEmail(result.copySenderEmail || '');
         setSignedAt(result.signedAt || new Date().toISOString());
         setSigningHash(result.signingHash || '');
         setSession(prev => prev ? {
@@ -267,7 +269,7 @@ export default function ConsentSigning() {
         <div className="print:hidden flex min-h-[60vh] flex-col items-center justify-center">
           <CheckCircle className="w-16 h-16 text-green-500 mb-4" />
           <h1 className="text-2xl font-bold text-gray-800">Documento Firmado</h1>
-          <p className="text-gray-600 mt-2">{copyEmailed ? `Enviamos una copia a ${emailHint}.` : 'No pudimos enviar el correo. Puedes imprimir o guardar una copia desde aquí.'}</p>
+          <p className="text-gray-600 mt-2">{copyEmailed ? `Enviamos una copia a ${emailHint}${copySenderEmail ? ` desde ${copySenderEmail}` : ''}.` : 'No pudimos enviar el correo. Puedes imprimir o guardar una copia desde aquí.'}</p>
           <button type="button" onClick={() => window.print()} className="mt-5 px-4 py-2 bg-[#deb887] text-white rounded-md font-semibold inline-flex items-center gap-2">
             <Printer className="w-4 h-4" /> Imprimir o guardar copia
           </button>

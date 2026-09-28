@@ -16,10 +16,12 @@ try {
     try {
       await client.query('BEGIN');
       await client.query("SELECT set_config('app.current_tenant', $1, true)", [String(id)]);
-      const result = await client.query('SELECT clinic_id FROM patients LIMIT 100');
-      assertTenant(result.rows, id);
+      for (const table of ['patients', 'consent_forms']) {
+        const result = await client.query(`SELECT clinic_id FROM ${table} LIMIT 100`);
+        assertTenant(result.rows, id);
+        console.log(`PASS: ${table} tenant ${id} solo ve ${result.rows.length} filas propias`);
+      }
       await client.query('ROLLBACK');
-      console.log(`PASS: tenant ${id} solo ve ${result.rows.length} filas propias`);
     } finally {
       client.release();
     }
@@ -28,10 +30,12 @@ try {
   const client = await app.connect();
   try {
     await client.query('BEGIN');
-    const result = await client.query('SELECT clinic_id FROM patients LIMIT 100');
-    if (result.rows.length) throw new Error('RLS devolvió filas sin contexto tenant');
+    for (const table of ['patients', 'consent_forms']) {
+      const result = await client.query(`SELECT clinic_id FROM ${table} LIMIT 100`);
+      if (result.rows.length) throw new Error(`RLS devolvió filas de ${table} sin contexto tenant`);
+      console.log(`PASS: ${table} sin contexto tenant no devuelve filas`);
+    }
     await client.query('ROLLBACK');
-    console.log('PASS: sin contexto tenant no hay filas clínicas');
   } finally {
     client.release();
   }
