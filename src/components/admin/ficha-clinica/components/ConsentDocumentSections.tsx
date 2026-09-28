@@ -65,10 +65,12 @@ function ChoiceList<Key extends string>({
   title,
   statements,
   values,
+  blank = false,
 }: {
   title: string;
   statements: readonly (readonly [Key, string])[];
   values?: Partial<Record<Key, ConsentBoolean>>;
+  blank?: boolean;
 }) {
   return (
     <section className="mt-5 border-t border-gray-200 pt-4">
@@ -77,7 +79,9 @@ function ChoiceList<Key extends string>({
         {statements.map(([key, label]) => (
           <p key={key} className="flex items-start justify-between gap-4 text-sm text-gray-700">
             <span>{label}</span>
-            <strong className="shrink-0">{displayChoice(values?.[key])}</strong>
+            {blank
+              ? <span aria-hidden="true" className="w-4 h-4 shrink-0 border border-gray-700 print:border-black" />
+              : <strong className="shrink-0">{displayChoice(values?.[key])}</strong>}
           </p>
         ))}
       </div>
@@ -88,16 +92,20 @@ function ChoiceList<Key extends string>({
 export default function ConsentDocumentSections({
   consent,
   showAcceptanceState = true,
+  blankAcceptanceState = false,
+  showClinicalDetails = true,
 }: {
   consent: ConsentDocumentData;
   showAcceptanceState?: boolean;
+  blankAcceptanceState?: boolean;
+  showClinicalDetails?: boolean;
 }) {
   const antecedentes = consent.critical_antecedents;
   const otrosAntecedentes = displayLines(antecedentes?.others);
 
   return (
     <div className="text-sm text-gray-800 space-y-4">
-      {sectionDefinitions.map(([key, title]) => {
+      {showClinicalDetails && sectionDefinitions.map(([key, title]) => {
         const lines = displayLines(consent[key]);
         if (!lines.length) return null;
         return (
@@ -112,7 +120,7 @@ export default function ConsentDocumentSections({
         );
       })}
 
-      {antecedentes && (
+      {showClinicalDetails && antecedentes && (
         <section className="border-b border-gray-100 pb-3">
           <h2 className="font-bold text-gray-900">Antecedentes críticos</h2>
           <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
@@ -125,11 +133,11 @@ export default function ConsentDocumentSections({
         </section>
       )}
 
-      {showAcceptanceState && consent.declarations && (
-        <ChoiceList title="Declaraciones del paciente" statements={consentStatements} values={consent.declarations} />
+      {(showAcceptanceState || blankAcceptanceState) && (
+        <ChoiceList title="Declaraciones del paciente" statements={consentStatements} values={blankAcceptanceState ? undefined : consent.declarations} blank={blankAcceptanceState} />
       )}
-      {showAcceptanceState && consent.authorizations && (
-        <ChoiceList title="Autorizaciones" statements={authorizationStatements} values={consent.authorizations} />
+      {(showAcceptanceState || blankAcceptanceState) && (
+        <ChoiceList title="Autorizaciones" statements={authorizationStatements} values={blankAcceptanceState ? undefined : consent.authorizations} blank={blankAcceptanceState} />
       )}
     </div>
   );

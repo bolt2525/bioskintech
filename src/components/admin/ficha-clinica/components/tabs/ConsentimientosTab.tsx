@@ -29,6 +29,11 @@ interface ConsentForm {
   status: 'draft' | 'finalized' | 'signed' | 'annulled';
   signing_status?: string;
   signing_hash?: string;
+  annulled_at?: string | null;
+  annulled_by_user_id?: number | null;
+  annulled_by_name?: string | null;
+  annulment_reason?: string | null;
+  replaces_consent_id?: number | null;
   created_at?: string;
   created_by?: string;
   procedure_type: string;
@@ -90,6 +95,7 @@ const API_URL = '/api/records';
 const isSignedConsent = (consent: ConsentForm) =>
   consent.status === 'signed' || consent.status === 'finalized' || consent.signing_status === 'signed' ||
   Boolean(consent.signatures?.patient_sig_data || consent.signatures?.patient_signed_at);
+const isAnnulledConsent = (consent: ConsentForm) => consent.status === 'annulled' || Boolean(consent.annulled_at);
 const hasProfessionalSignature = (consent?: ConsentForm | null) =>
   Boolean(consent?.signatures?.professional_name?.trim() &&
     /^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(consent.signatures.professional_sig_data || ''));
@@ -106,6 +112,11 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
   const [dbTemplates, setDbTemplates] = useState<any[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [view, setView] = useState<'list' | 'form' | 'preview'>('list');
+  const [isPaperConsent, setIsPaperConsent] = useState(false);
+  const [annulTarget, setAnnulTarget] = useState<ConsentForm | null>(null);
+  const [annulReason, setAnnulReason] = useState('');
+  const [createReplacementOnAnnul, setCreateReplacementOnAnnul] = useState(false);
+  const [annulling, setAnnulling] = useState(false);
   const [loading, setLoading] = useState(false);
   const [currentConsent, setCurrentConsent] = useState<ConsentForm | null>(null);
   const [activeTab, setActiveTab] = useState(0);
@@ -402,26 +413,17 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
     return await res.json() as ConsentForm;
   };
 
-  const openInPersonSigning = async () => {
-    if (!currentConsent) return;
-    if (!hasProfessionalSignature(currentConsent)) {
-      setMessage({ type: 'error', text: 'Antes de continuar, cargue una firma profesional guardada o firme como profesional y guarde los cambios.' });
-      setActiveTab(3);
-      return;
-    }
+  const preparePaperConsent = async () => {
+    if (!currentConsent || isSignedConsent(currentConsent)) return;
     try {
       setLoading(true);
       const saved = await persistConsentDraft(currentConsent);
       setCurrentConsent(saved);
-      setInPersonDeclarations({
-        understanding: false, questions: false, results: false, authorization: false,
-        revocation: false, alternatives: false, privacy_policy: false, image_use: false, photo_video: false,
-      });
-      setInPersonError('');
-      patientSigCanvas.current?.clear();
-      setIsInPersonSigning(true);
+      setIsPaperConsent(true);
+      setView('preview');
+      setMessage({ type: 'success', text: 'Formato listo para imprimir. Marque las casillas y recoja ambas firmas con esfero; el consentimiento sigue como borrador hasta registrar el documento firmado.' });
     } catch (error) {
-      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'No se pudo guardar el consentimiento.' });
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'No se pudo preparar el formato para imprimir.' });
     } finally {
       setLoading(false);
     }
@@ -544,6 +546,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
   };
 
   const handleNew = () => {
+    setIsPaperConsent(false);
     setCurrentConsent({
       record_id: recordId,
       patient_id: patientId,
@@ -592,10 +595,34 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
 
   const handleEdit = (consent: ConsentForm) => {
     setCurrentConsent(consent);
+    setIsPaperConsent(false);
     // Finalized consents are immutable — open in preview only
-    setView(isSignedConsent(consent) ? 'preview' : 'form');
+    setView(isSignedConsent(consent) || isAnnulledConsent(consent) ? 'preview' : 'form');
     setActiveTab(0);
     setMessage(null);
+  };
+
+  const handleAnnul = async () => {
+    if (!annulTarget?.id || annulling) return;
+    setAnnulling(true);
+    try {
+      const res = await recordsFetch(`${API_URL}?action=annulConsent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: annulTarget.id, reason: annulReason.trim(), createReplacement: createReplacementOnAnnul }),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(result.error || 'No se pudo anular el consentimiento.');
+      setAnnulTarget(null);
+      setAnnulReason('');
+      setCreateReplacementOnAnnul(false);
+      await loadConsents();
+      setMessage({ type: 'success', text: result.message });
+    } catch (error) {
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'No se pudo anular el consentimiento.' });
+    } finally {
+      setAnnulling(false);
+    }
   };
 
   const handleDelete = async (id: number) => {
@@ -760,16 +787,17 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full 
-                    ${isSignedConsent(consent) ? 'bg-emerald-100 text-emerald-800' :
-                      consent.status === 'annulled' ? 'bg-red-100 text-red-800' : 
+                    ${isAnnulledConsent(consent) ? 'bg-red-100 text-red-800' :
+                      isSignedConsent(consent) ? 'bg-emerald-100 text-emerald-800' :
                       'bg-amber-100 text-amber-800'}`}>
-                    {isSignedConsent(consent) ? 'Firmado' :
-                     consent.status === 'annulled' ? 'Anulado' : 'Borrador'}
+                    {isAnnulledConsent(consent) ? 'Anulado' : isSignedConsent(consent) ? 'Firmado' : 'Borrador'}
                   </span>
+                  {consent.replaces_consent_id && <span className="block text-xs text-gray-500 mt-1">Reemplaza #{consent.replaces_consent_id}</span>}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                   <div className="flex justify-end gap-2">
-                    {isSignedConsent(consent) ? (
+                    {isSignedConsent(consent) || isAnnulledConsent(consent) ? (
+                      <>
                       <Tooltip content="Vista Previa">
                         <motion.button
                           whileHover={{ scale: 1.1 }}
@@ -780,6 +808,14 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                           <Eye size={18} />
                         </motion.button>
                       </Tooltip>
+                      {!isAnnulledConsent(consent) && (
+                        <Tooltip content="Anular consentimiento">
+                          <button type="button" onClick={() => { setAnnulTarget(consent); setAnnulReason(''); setCreateReplacementOnAnnul(false); }} className="text-red-700 hover:bg-red-50 p-2 rounded-lg" aria-label="Anular consentimiento">
+                            <XCircle size={18} />
+                          </button>
+                        </Tooltip>
+                      )}
+                      </>
                     ) : (
                       <>
                         <Tooltip content="Editar">
@@ -848,6 +884,14 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
             </h2>
           </div>
           <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={preparePaperConsent}
+              disabled={loading}
+              className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 font-medium"
+            >
+              <Printer size={18} /> Imprimir para firma en papel
+            </button>
             <Tooltip content="Vista Previa">
               <motion.button
                 whileHover={{ scale: 1.05 }}
@@ -1230,11 +1274,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                               {!showQr ? (
                                 <div className="flex flex-col items-center gap-3">
                                   <span className="text-gray-400 text-sm">Sin firma registrada</span>
-                                  {!hasProfessionalSignature(currentConsent) && (
-                                    <p role="status" className="max-w-md text-center text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-3">
-                                      Primero registre la firma del profesional: cargue una firma guardada o dibújela en la pestaña Firmas. El paciente podrá firmar después.
-                                    </p>
-                                  )}
+                                  {!hasProfessionalSignature(currentConsent) && <p role="status" className="max-w-md text-center text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-3">Para la firma electrónica remota primero cargue o registre la firma digital del profesional. Para firma en papel, use “Imprimir para firma en papel”.</p>}
                                   <div className="flex flex-col sm:flex-row gap-2 w-full">
                                     <button
                                       type="button"
@@ -1246,11 +1286,11 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                                     </button>
                                     <button
                                       type="button"
-                                      onClick={openInPersonSigning}
-                                      disabled={!hasProfessionalSignature(currentConsent) || loading}
+                                      onClick={preparePaperConsent}
+                                      disabled={loading}
                                       className="flex-1 flex items-center justify-center gap-2 px-4 py-3 border border-[#b8944d] text-[#725b2d] rounded-lg hover:bg-amber-50 disabled:opacity-50 font-medium"
                                     >
-                                      <Edit className="w-5 h-5" /> Firma presencial
+                                      <Printer className="w-5 h-5" /> Firma presencial en papel
                                     </button>
                                   </div>
                                   {!patient?.email?.trim() && <p className="max-w-sm text-center text-xs text-gray-500">Sin correo registrado: el paciente puede revisar y firmar aquí con apoyo del profesional.</p>}
@@ -1496,6 +1536,11 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
         animate={{ opacity: 1, scale: 1 }}
         className="space-y-6"
       >
+        {isPaperConsent && (
+          <div className="no-print p-4 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-900">
+            Formato para firma manuscrita. Imprima el documento; el paciente y el profesional completan las casillas y firman con esfero. Este borrador aún no queda registrado como firmado.
+          </div>
+        )}
         <style>{`
           @media print {
             @page {
@@ -1523,19 +1568,29 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
           }
         `}</style>
         <div className="flex justify-between items-center border-b pb-4 no-print">
-          <button onClick={() => setView(currentConsent && isSignedConsent(currentConsent) ? 'list' : 'form')} className="text-gray-500 hover:text-gray-700 transition-colors font-medium">
-            &larr; {currentConsent && isSignedConsent(currentConsent) ? 'Volver a Consentimientos' : 'Volver a Edición'}
+          <button onClick={() => {
+            if (isPaperConsent) setIsPaperConsent(false);
+            setView(currentConsent && (isSignedConsent(currentConsent) || isAnnulledConsent(currentConsent)) ? 'list' : 'form');
+          }} className="text-gray-500 hover:text-gray-700 transition-colors font-medium">
+            &larr; {isPaperConsent ? 'Volver al borrador' : currentConsent && (isSignedConsent(currentConsent) || isAnnulledConsent(currentConsent)) ? 'Volver a Consentimientos' : 'Volver a Edición'}
           </button>
           <button
             onClick={() => window.print()}
             className="flex items-center gap-2 px-6 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors shadow-lg font-medium"
           >
             <Printer size={18} />
-            Imprimir
+            {isPaperConsent ? 'Imprimir formato sin firmas' : 'Imprimir'}
           </button>
         </div>
 
         <div id="printable-consent" className="bg-white p-6 md:p-8 max-w-4xl mx-auto shadow-xl print:shadow-none print:p-0 rounded-xl">
+          {isAnnulledConsent(currentConsent) && (
+            <div className="p-4 bg-red-50 border-2 border-red-700 text-red-900 text-sm print:break-inside-avoid">
+              <strong>CONSENTIMIENTO ANULADO</strong>
+              <p>Fecha: {currentConsent.annulled_at ? new Date(currentConsent.annulled_at).toLocaleString('es-EC', { timeZone: 'America/Guayaquil' }) : 'No registrada'} · Responsable: {currentConsent.annulled_by_name || 'No registrado'}</p>
+              <p className="whitespace-pre-wrap">Motivo: {currentConsent.annulment_reason || 'No registrado'}</p>
+            </div>
+          )}
           <table className="w-full">
             <thead className="hidden print:table-header-group"><tr><td className="h-[1cm]"></td></tr></thead>
             <tfoot className="hidden print:table-footer-group"><tr><td className="h-[1cm]"></td></tr></tfoot>
@@ -1669,49 +1724,36 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
 
             <section>
               <h3 className="font-bold border-b border-[#deb887] mb-2 text-sm text-gray-900 pb-1">6. DECLARACIONES Y AUTORIZACIONES</h3>
-              <div className="space-y-2 bg-gray-50 p-4 rounded border border-gray-100">
-                <p className="flex gap-2">
-                  <span className={`font-bold text-base leading-none flex-shrink-0 ${currentConsent.declarations?.understanding ? 'text-emerald-600' : 'text-gray-300'}`}>{currentConsent.declarations?.understanding ? '✓' : '✗'}</span>
-                  Declaro haber recibido información clara y completa del tratamiento.
-                </p>
-                <p className="flex gap-2">
-                  <span className={`font-bold text-base leading-none flex-shrink-0 ${currentConsent.declarations?.questions ? 'text-emerald-600' : 'text-gray-300'}`}>{currentConsent.declarations?.questions ? '✓' : '✗'}</span>
-                  He tenido oportunidad de resolver todas mis dudas.
-                </p>
-                <p className="flex gap-2">
-                  <span className={`font-bold text-base leading-none flex-shrink-0 ${currentConsent.declarations?.results ? 'text-emerald-600' : 'text-gray-300'}`}>{currentConsent.declarations?.results ? '✓' : '✗'}</span>
-                  Entiendo que los resultados pueden variar y no se garantizan resultados específicos.
-                </p>
-                <p className="flex gap-2">
-                  <span className={`font-bold text-base leading-none flex-shrink-0 ${currentConsent.declarations?.authorization ? 'text-emerald-600' : 'text-gray-300'}`}>{currentConsent.declarations?.authorization ? '✓' : '✗'}</span>
-                  Autorizo voluntariamente la realización del tratamiento.
-                </p>
-                <p className="flex gap-2">
-                  <span className={`font-bold text-base leading-none flex-shrink-0 ${currentConsent.declarations?.revocation ? 'text-emerald-600' : 'text-gray-300'}`}>{currentConsent.declarations?.revocation ? '✓' : '✗'}</span>
-                  Sé que puedo revocar este consentimiento en cualquier momento antes del procedimiento.
-                </p>
-                <p className="flex gap-2">
-                  <span className={`font-bold text-base leading-none flex-shrink-0 ${currentConsent.declarations?.alternatives ? 'text-emerald-600' : 'text-gray-300'}`}>{currentConsent.declarations?.alternatives ? '✓' : '✗'}</span>
-                  Me han explicado las alternativas de tratamiento, incluyendo la opción de no tratarme.
-                </p>
-                <div className="mt-3 pt-3 border-t border-gray-200">
-                  <p className="flex gap-2 mb-1.5">
-                    <span className={`font-bold text-base leading-none flex-shrink-0 ${currentConsent.authorizations?.privacy_policy ? 'text-emerald-600' : 'text-gray-300'}`}>{currentConsent.authorizations?.privacy_policy ? '✓' : '✗'}</span>
-                    Acepto el uso y almacenamiento de mis datos según la Política de Privacidad.
-                  </p>
-                  <p className="flex gap-2 mb-1.5">
-                    <span className={`font-bold text-base leading-none flex-shrink-0 ${currentConsent.authorizations?.image_use ? 'text-emerald-600' : 'text-gray-300'}`}>{currentConsent.authorizations?.image_use ? '✓' : '✗'}</span>
-                    Autorizo el uso de mis imágenes con fines educativos y/o promocionales.
-                  </p>
-                  <p className="flex gap-2">
-                    <span className={`font-bold text-base leading-none flex-shrink-0 ${currentConsent.authorizations?.photo_video ? 'text-emerald-600' : 'text-gray-300'}`}>{currentConsent.authorizations?.photo_video ? '✓' : '✗'}</span>
-                    Autorizo la toma de fotografías y/o videos del procedimiento para registro clínico.
-                  </p>
-                </div>
+              <div className="bg-gray-50 p-4 rounded border border-gray-100">
+                <ConsentDocumentSections
+                  consent={currentConsent}
+                  showClinicalDetails={false}
+                  showAcceptanceState={!isPaperConsent}
+                  blankAcceptanceState={isPaperConsent}
+                />
               </div>
             </section>
 
-            <div className="mt-10 grid grid-cols-1 sm:grid-cols-2 gap-10 pt-5 page-break-inside-avoid">
+            {isPaperConsent ? (
+              <div className="mt-12 grid grid-cols-1 sm:grid-cols-2 gap-12 pt-6 page-break-inside-avoid">
+                <div className="pt-16 text-center">
+                  <div className="border-t border-gray-700 pt-2">
+                    <p className="font-semibold text-gray-900">Firma manuscrita del paciente</p>
+                    <p className="mt-1 text-xs text-gray-600">Nombre: {patient?.first_name} {patient?.last_name}</p>
+                    <p className="text-xs text-gray-600">Cédula/RUC: {patient?.identification_number || '________________________'}</p>
+                    <p className="mt-1 text-xs text-gray-600">Fecha: ____________________</p>
+                  </div>
+                </div>
+                <div className="pt-16 text-center">
+                  <div className="border-t border-gray-700 pt-2">
+                    <p className="font-semibold text-gray-900">Firma manuscrita del profesional</p>
+                    <p className="mt-1 text-xs text-gray-600">Nombre: __________________________</p>
+                    <p className="text-xs text-gray-600">Cédula profesional: __________________</p>
+                    <p className="mt-1 text-xs text-gray-600">Fecha: ____________________</p>
+                  </div>
+                </div>
+              </div>
+            ) : <div className="mt-10 grid grid-cols-1 sm:grid-cols-2 gap-10 pt-5 page-break-inside-avoid">
               <div className="flex flex-col items-center">
                 {currentConsent.signatures?.patient_sig_data && (
                   <img 
@@ -1746,7 +1788,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                   <p className="text-sm text-gray-500 uppercase tracking-wider mt-1">Firma del Profesional</p>
                 </div>
               </div>
-            </div>
+            </div>}
             
             <div className="text-center text-xs text-gray-400 mt-12 border-t border-gray-100 pt-4 space-y-0.5">
               <p className="font-medium text-gray-500">{clinicDisplayName}{clinic.general.city ? ` — ${clinic.general.city}` : ''}{clinic.general.phone ? ` — Tel: ${clinic.general.phone}` : ''}</p>
@@ -1787,6 +1829,24 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
       {view === 'list' && renderList()}
       {view === 'form' && renderForm()}
       {view === 'preview' && renderPreview()}
+      {annulTarget && (
+        <div className="fixed inset-0 z-[80] bg-black/60 p-4 flex items-center justify-center no-print" role="presentation">
+          <section role="dialog" aria-modal="true" aria-labelledby="annul-consent-title" className="w-full max-w-lg bg-white rounded-lg shadow-xl p-6 space-y-4">
+            <h2 id="annul-consent-title" className="text-lg font-bold text-gray-900">Anular consentimiento #{annulTarget.id}</h2>
+            <p className="text-sm text-gray-700">La anulación conserva las firmas y la evidencia original. El documento dejará de estar vigente; no podrá volver a editarse ni firmarse.</p>
+            <label className="block text-sm font-medium text-gray-800" htmlFor="annul-consent-reason">Motivo de anulación (obligatorio)</label>
+            <textarea id="annul-consent-reason" value={annulReason} onChange={event => setAnnulReason(event.target.value)} maxLength={500} rows={3} className="w-full border border-gray-300 rounded-md p-2 text-sm" placeholder="Describa el motivo de anulación" />
+            <label className="flex items-start gap-2 text-sm text-gray-800">
+              <input type="checkbox" checked={createReplacementOnAnnul} onChange={event => setCreateReplacementOnAnnul(event.target.checked)} className="mt-1" />
+              Crear un borrador de reemplazo vinculado, sin firmas ni autorizaciones previas
+            </label>
+            <div className="flex justify-end gap-3">
+              <button type="button" disabled={annulling} onClick={() => setAnnulTarget(null)} className="px-4 py-2 border border-gray-300 rounded-md">Volver</button>
+              <button type="button" disabled={annulling || annulReason.trim().length < 8} onClick={handleAnnul} className="px-4 py-2 bg-red-700 text-white rounded-md disabled:opacity-50">{annulling ? 'Anulando...' : 'Confirmar anulación'}</button>
+            </div>
+          </section>
+        </div>
+      )}
       {isInPersonSigning && currentConsent && (
         <div className="fixed inset-0 z-[70] bg-black/60 p-3 sm:p-6 flex items-center justify-center">
           <section className="w-full max-w-3xl max-h-[94vh] bg-white rounded-lg shadow-2xl flex flex-col overflow-hidden">

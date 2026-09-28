@@ -1,5 +1,7 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-09-28 Impresión presencial sin firmas digitales; anulación auditada y reemplazo vinculado.
+- ✅ 2026-09-28 Migración Neon de anulación aplicada; 23 columnas verificadas.
 - ✅ 2026-09-24 Agenda: vista calendario y filtros compartidos.
 - ✅ 2026-09-24 Agenda: rango de fechas y modal para editar, reprogramar o eliminar eventos.
 - ✅ 2026-09-24 Agenda: presets Hoy, Mañana y rango personalizado.

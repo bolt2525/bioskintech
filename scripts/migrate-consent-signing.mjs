@@ -28,6 +28,11 @@ const migrations = [
   'ALTER TABLE consent_forms ADD COLUMN IF NOT EXISTS signing_hash VARCHAR(64)',
   'ALTER TABLE consent_forms ADD COLUMN IF NOT EXISTS signing_signed_at TIMESTAMPTZ',
   'ALTER TABLE consent_forms ADD COLUMN IF NOT EXISTS signing_copy_sent_at TIMESTAMPTZ',
+  'ALTER TABLE consent_forms ADD COLUMN IF NOT EXISTS annulled_at TIMESTAMPTZ',
+  'ALTER TABLE consent_forms ADD COLUMN IF NOT EXISTS annulled_by_user_id INTEGER',
+  'ALTER TABLE consent_forms ADD COLUMN IF NOT EXISTS annulled_by_name VARCHAR(255)',
+  'ALTER TABLE consent_forms ADD COLUMN IF NOT EXISTS annulment_reason TEXT',
+  'ALTER TABLE consent_forms ADD COLUMN IF NOT EXISTS replaces_consent_id INTEGER',
   `UPDATE consent_forms SET signing_status = 'signed'
    WHERE (status IN ('signed', 'finalized') OR signature_data IS NOT NULL OR signed_at IS NOT NULL
      OR signing_signed_at IS NOT NULL OR NULLIF(signatures->>'patient_sig_data', '') IS NOT NULL
@@ -60,7 +65,8 @@ try {
          'signing_token', 'signing_status', 'signing_expires_at', 'signing_sender_user_id', 'signing_email',
          'signing_otp_hash', 'signing_otp_attempts', 'signing_verified_at',
          'signing_session_hash', 'signing_session_expires_at', 'signing_snapshot',
-         'signing_snapshot_hash', 'signing_hash', 'signing_signed_at', 'signing_copy_sent_at'
+         'signing_snapshot_hash', 'signing_hash', 'signing_signed_at', 'signing_copy_sent_at',
+         'annulled_at', 'annulled_by_user_id', 'annulled_by_name', 'annulment_reason', 'replaces_consent_id'
        ))
      ) ORDER BY table_name, column_name`
   );

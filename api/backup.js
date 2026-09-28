@@ -125,6 +125,17 @@ export async function insertBackupRow(pool, table, inputRow, clinicId, isMaster,
     if (!record.rows.length) throw new Error(`La fila de ${table} referencia un expediente fuera de la clínica destino`);
     if (table === 'consent_forms' && Number(record.rows[0].patient_id) !== Number(row.patient_id))
       throw new Error('El consentimiento referencia un paciente distinto al expediente');
+    if (table === 'consent_forms') {
+      await clearForeignOwner('annulled_by_user_id');
+      if (row.replaces_consent_id != null) {
+        const original = await pool.query(
+          'SELECT 1 FROM consent_forms WHERE id = $1 AND patient_id = $2 AND record_id = $3 AND clinic_id IS NOT DISTINCT FROM $4 AND status = $5',
+          [row.replaces_consent_id, row.patient_id, row.record_id, tenantId, 'annulled']
+        );
+        if (!original.rows.length || Number(row.replaces_consent_id) === Number(row.id))
+          throw new Error('El reemplazo referencia un consentimiento anulado distinto o fuera de la clínica destino');
+      }
+    }
     if (row.consultation_id != null) {
       const consultation = await pool.query('SELECT 1 FROM consultations WHERE id = $1 AND record_id = $2 AND clinic_id IS NOT DISTINCT FROM $3', [row.consultation_id, row.record_id, tenantId]);
       if (!consultation.rows.length) throw new Error(`La fila de ${table} referencia una consulta fuera del expediente o la clínica destino`);
@@ -341,7 +352,8 @@ export default async function handler(req, res) {
                created_at, updated_at, created_by, procedure_type, zone, sessions, objectives, description, risks, benefits,
                alternatives, pre_care, post_care, contraindications, critical_antecedents, authorizations, declarations,
                signatures, attachments, signing_status, signing_snapshot, signing_snapshot_hash, signing_hash,
-               signing_signed_at, signing_copy_sent_at`
+               signing_signed_at, signing_copy_sent_at, annulled_at, annulled_by_user_id,
+               annulled_by_name, annulment_reason, replaces_consent_id`
             : '*';
           const { query, params } = withClinicFilter(t, `SELECT ${columns} FROM ${t} ORDER BY id LIMIT 10000`, []);
           const r = await pool.query(query, params);

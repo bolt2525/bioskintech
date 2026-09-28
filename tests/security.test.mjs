@@ -302,6 +302,11 @@ test('backup imports whitelist tables and schema-backed columns', async () => {
   }, new Set(['id', 'signing_token', 'signing_otp_hash', 'signing_session_hash', 'signing_sender_user_id', 'signing_hash']));
   assert.doesNotMatch(consent.query, /signing_token|signing_otp_hash|signing_session_hash|signing_sender_user_id/);
   assert.match(consent.query, /signing_hash/);
+  const annulled = buildBackupInsertStatement('consent_forms', {
+    id: 13, status: 'draft', replaces_consent_id: 12, annulment_reason: null, signing_token: 'secret',
+  }, new Set(['id', 'status', 'replaces_consent_id', 'annulment_reason', 'signing_token']));
+  assert.match(annulled.query, /replaces_consent_id/);
+  assert.doesNotMatch(annulled.query, /signing_token/);
 
   const clinicId = '11111111-1111-4111-8111-111111111111';
   assert.deepEqual(
@@ -434,4 +439,28 @@ test('deleting a consultation detaches clinical records without deleting them', 
   assert.ok(statements.every(({ statement, values }) => statement.includes('UPDATE ') &&
     statement.includes('SET consultation_id = NULL') && values[0] === 31));
   assert.ok(statements.every(({ statement }) => !statement.includes('DELETE FROM')));
+});
+
+test('backup replacement cannot refer to a consent from another patient or clinic', async () => {
+  const { insertBackupRow } = await import('../api/backup.js');
+  const clinicId = '11111111-1111-4111-8111-111111111111';
+  let samePatient = false;
+  const pool = {
+    query: async (statement, params) => {
+      if (statement.includes('information_schema.columns')) return {
+        rows: ['id', 'patient_id', 'record_id', 'clinic_id', 'replaces_consent_id'].map(column_name => ({ column_name })),
+      };
+      if (statement.startsWith('SELECT patient_id FROM clinical_records')) return { rows: [{ patient_id: 8 }] };
+      if (statement.startsWith('SELECT 1 FROM consent_forms')) {
+        assert.deepEqual(params, [4, 8, 9, clinicId, 'annulled']);
+        return { rows: samePatient ? [{ '?column?': 1 }] : [] };
+      }
+      if (statement.startsWith('INSERT INTO consent_forms')) return { rowCount: 1 };
+      throw new Error('Unexpected query');
+    },
+  };
+  const row = { id: 10, patient_id: 8, record_id: 9, replaces_consent_id: 4 };
+  await assert.rejects(() => insertBackupRow(pool, 'consent_forms', row, clinicId, false), /reemplazo referencia/);
+  samePatient = true;
+  assert.equal(await insertBackupRow(pool, 'consent_forms', row, clinicId, false), 1);
 });

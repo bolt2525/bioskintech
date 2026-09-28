@@ -16,7 +16,8 @@ const CONSULTATION_CHILD_TABLES = ['physical_exams', 'diagnoses', 'treatments', 
 const CONSENT_SAFE_COLUMNS = `id, record_id, patient_id, clinic_id, consultation_id, status, created_at, updated_at,
   created_by, procedure_type, zone, sessions, objectives, description, risks, benefits, alternatives,
   pre_care, post_care, contraindications, critical_antecedents, authorizations, declarations, signatures,
-  attachments, signing_status, signing_signed_at, signing_hash, signing_copy_sent_at`;
+  attachments, signing_status, signing_signed_at, signing_hash, signing_copy_sent_at,
+  annulled_at, annulled_by_user_id, annulled_by_name, annulment_reason, replaces_consent_id`;
 
 function getSigningSessionCookie(req) {
   const prefix = `${SIGNING_SESSION_COOKIE}=`;
@@ -704,6 +705,7 @@ export default async function handler(req, res) {
         getConsent: ['consent_forms', req.query.id],
         generateSigningToken: ['consent_forms', body.id],
         signConsentInPerson: ['consent_forms', body.id],
+        annulConsent: ['consent_forms', body.id],
         deleteConsent: ['consent_forms', req.query.id],
         saveConsent: ['consent_forms', body.id],
       };
@@ -2601,7 +2603,7 @@ export default async function handler(req, res) {
                signing_signed_at = NULL, signing_copy_sent_at = NULL,
                updated_at = NOW()
              WHERE id = $7 AND COALESCE(signing_status, 'pending') <> 'signed'
-               AND status NOT IN ('signed', 'finalized')
+               AND status NOT IN ('signed', 'finalized', 'annulled') AND annulled_at IS NULL
                AND signature_data IS NULL AND signed_at IS NULL AND signing_signed_at IS NULL
                AND NULLIF(signatures->>'patient_sig_data', '') IS NULL
                AND NULLIF(signatures->>'patient_signed_at', '') IS NULL
@@ -2987,7 +2989,8 @@ export default async function handler(req, res) {
           signatures,
           attachments
         } = body;
-        const safeStatus = status === 'annulled' ? 'annulled' : 'draft';
+        if (status === 'annulled') return res.status(400).json({ error: 'Use la acción de anulación para registrar motivo y responsable.' });
+        const safeStatus = 'draft';
         if (signatures?.patient_sig_data || signatures?.patient_signed_at)
           return res.status(400).json({ error: 'La firma del paciente debe registrarse mediante firma remota verificada o firma presencial asistida.' });
         const safeSignatures = { ...(signatures || {}) };
@@ -3059,7 +3062,8 @@ export default async function handler(req, res) {
               signing_signed_at = NULL,
               signing_copy_sent_at = NULL
             WHERE id = $19 AND COALESCE(signing_status, 'pending') <> 'signed'
-              AND status NOT IN ('signed', 'finalized')
+              AND annulled_at IS NULL
+              AND status NOT IN ('signed', 'finalized', 'annulled')
               AND signature_data IS NULL AND signed_at IS NULL AND signing_signed_at IS NULL
               AND NULLIF(signatures->>'patient_sig_data', '') IS NULL
               AND NULLIF(signatures->>'patient_signed_at', '') IS NULL
@@ -3128,13 +3132,142 @@ export default async function handler(req, res) {
         }
       }
 
+      case 'annulConsent': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'Método no permitido' });
+        const consentId = Number(body.id);
+        const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+        const createReplacement = body.createReplacement === true;
+        if (!Number.isSafeInteger(consentId) || consentId <= 0 || consentId > 2147483647)
+          return res.status(400).json({ error: 'ID de consentimiento inválido.' });
+        if (reason.length < 8 || reason.length > 500)
+          return res.status(400).json({ error: 'Explique el motivo de anulación (8 a 500 caracteres).' });
+        if (!(await ownedByClinic(pool, 'consent_forms', consentId, effectiveClinicId)))
+          return res.status(403).json({ error: 'Sin permiso para anular este consentimiento.' });
+
+        await client.query('BEGIN');
+        try {
+          const sourceResult = await pool.query('SELECT * FROM consent_forms WHERE id = $1 FOR UPDATE', [consentId]);
+          if (!sourceResult.rows.length) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Consentimiento no encontrado.' });
+          }
+          const source = sourceResult.rows[0];
+          if (source.annulled_at || source.status === 'annulled') {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: 'Este consentimiento ya está anulado.' });
+          }
+          if (createReplacement) {
+            const activeReplacement = await pool.query(
+              "SELECT id FROM consent_forms WHERE replaces_consent_id = $1 AND status <> 'annulled' LIMIT 1",
+              [consentId]
+            );
+            if (activeReplacement.rows.length) {
+              await client.query('ROLLBACK');
+              return res.status(409).json({ error: 'Ya existe un reemplazo activo para este consentimiento.' });
+            }
+          }
+
+          const sessionUser = await getSessionUserOnce();
+          const hasSignedEvidence = source.signing_status === 'signed' || ['signed', 'finalized'].includes(source.status) ||
+            source.signature_data || source.signed_at || source.signing_signed_at ||
+            source.signatures?.patient_sig_data || source.signatures?.patient_signed_at;
+          if (!hasSignedEvidence) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: 'Solo puede anular consentimientos firmados. Los borradores pueden editarse o eliminarse.' });
+          }
+          const annulledResult = await pool.query(
+            `UPDATE consent_forms SET status = 'annulled', annulled_at = NOW(),
+               annulled_by_user_id = $1, annulled_by_name = $2, annulment_reason = $3,
+               signing_status = 'signed', signing_token = NULL, signing_expires_at = NULL,
+               signing_otp_hash = NULL, signing_verified_at = NULL, signing_session_hash = NULL,
+               signing_session_expires_at = NULL,
+               updated_at = NOW()
+             WHERE id = $4 AND annulled_at IS NULL
+             RETURNING ${CONSENT_SAFE_COLUMNS}`,
+            [sessionUser?.user_id ?? null, sessionUser?.full_name || sessionUser?.username || 'Sistema', reason, consentId]
+          );
+          if (!annulledResult.rows.length) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: 'El consentimiento cambió mientras se procesaba. Actualice la pantalla e intente de nuevo.' });
+          }
+
+          let replacement = null;
+          if (createReplacement) {
+            const patientResult = await pool.query(
+              'SELECT first_name, last_name FROM patients WHERE id = $1 AND clinic_id = $2',
+              [source.patient_id, effectiveClinicId]
+            );
+            if (!patientResult.rows.length) throw new Error('No se pudo validar el paciente del reemplazo');
+            const patientName = `${patientResult.rows[0].first_name} ${patientResult.rows[0].last_name}`.trim();
+            const replacementSignatures = {
+              patient_name: patientName,
+              professional_name: source.signatures?.professional_name || '',
+              sig_scale: source.signatures?.sig_scale || 'md',
+            };
+            const inserted = await pool.query(
+              `INSERT INTO consent_forms (
+                 record_id, patient_id, clinic_id, consultation_id, status, created_by,
+                 procedure_type, zone, sessions, objectives, description, risks, benefits, alternatives,
+                 pre_care, post_care, contraindications, critical_antecedents, authorizations,
+                 declarations, signatures, attachments, replaces_consent_id
+               ) VALUES (
+                 $1, $2, $3, $4, 'draft', $5, $6, $7, $8, $9::jsonb, $10, $11::jsonb, $12::jsonb, $13::jsonb,
+                 $14::jsonb, $15::jsonb, $16::jsonb, $17::jsonb, $18::jsonb, $19::jsonb, $20::jsonb, '[]'::jsonb, $21
+               ) RETURNING ${CONSENT_SAFE_COLUMNS}`,
+              [
+                source.record_id, source.patient_id, source.clinic_id || effectiveClinicId, source.consultation_id,
+                sessionUser?.username || 'Sistema', source.procedure_type, source.zone, source.sessions,
+                JSON.stringify(source.objectives || []), source.description || '', JSON.stringify(source.risks || []),
+                JSON.stringify(source.benefits || []), JSON.stringify(source.alternatives || []),
+                JSON.stringify(source.pre_care || []), JSON.stringify(source.post_care || []),
+                JSON.stringify(source.contraindications || []), JSON.stringify(source.critical_antecedents || {}),
+                JSON.stringify({ image_use: false, photo_video: false, privacy_policy: false }),
+                JSON.stringify({ understanding: false, questions: false, results: false, authorization: false, revocation: false, alternatives: false }),
+                JSON.stringify(replacementSignatures), consentId,
+              ]
+            );
+            replacement = inserted.rows[0];
+            await logAudit(pool, {
+              patientId: source.patient_id,
+              recordId: source.record_id,
+              clinicId: source.clinic_id || effectiveClinicId,
+              sessionUser,
+              actionType: 'create',
+              module: 'consent',
+              summary: `Creó el reemplazo del consentimiento anulado ${consentId}`,
+            });
+          }
+
+          await logAudit(pool, {
+            patientId: source.patient_id,
+            recordId: source.record_id,
+            clinicId: source.clinic_id || effectiveClinicId,
+            sessionUser,
+            actionType: 'annul',
+            module: 'consent',
+            summary: `Anuló el consentimiento ${consentId}`,
+          });
+          await client.query('COMMIT');
+          return res.status(200).json({
+            success: true,
+            consent: annulledResult.rows[0],
+            replacement,
+            message: replacement ? 'Consentimiento anulado. Se creó un borrador de reemplazo; ambas versiones quedaron vinculadas.' : 'Consentimiento anulado. La evidencia original se conservó íntegra.',
+          });
+        } catch (error) {
+          await client.query('ROLLBACK').catch(() => {});
+          throw error;
+        }
+      }
+
       case 'deleteConsent': {
         const { id: delCid } = req.query;
         if (!(await ownedByClinic(pool, 'consent_forms', delCid, effectiveClinicId)))
           return res.status(403).json({ error: 'Sin permiso' });
         const deleted = await pool.query(
           `DELETE FROM consent_forms WHERE id = $1 AND COALESCE(signing_status, 'pending') <> 'signed'
-            AND status NOT IN ('signed', 'finalized') AND signature_data IS NULL AND signed_at IS NULL AND signing_signed_at IS NULL
+            AND annulled_at IS NULL AND status NOT IN ('signed', 'finalized', 'annulled')
+            AND signature_data IS NULL AND signed_at IS NULL AND signing_signed_at IS NULL
             AND NULLIF(signatures->>'patient_sig_data', '') IS NULL
             AND NULLIF(signatures->>'patient_signed_at', '') IS NULL
            RETURNING id`,
