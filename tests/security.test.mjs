@@ -254,3 +254,27 @@ test('public bookings must fit completely inside resource work hours', async () 
   assert.equal(isValidFutureLocalDateTime('2030-02-30', '09:00', 0), false);
   assert.equal(isValidFutureLocalDateTime('2020-02-20', '09:00', Date.parse('2030-02-20T09:00:00-05:00')), false);
 });
+
+test('own-scope record access honors patient assignments', async () => {
+  const { canAccessRecord } = await import('../api/records.js');
+  let query = '';
+  let values = [];
+  const sessionUser = {
+    effective_clinic_id: '11111111-1111-4111-8111-111111111111',
+    role: 'clinic_user',
+    access_scope: 'own',
+    user_id: 7,
+  };
+  const pool = {
+    query: async (statement, params) => {
+      query = statement;
+      values = params;
+      return { rows: [{}] };
+    },
+  };
+
+  assert.equal(await canAccessRecord(pool, sessionUser, 42), true);
+  assert.match(query, /patient_assignments/);
+  assert.deepEqual(values, [42, sessionUser.effective_clinic_id, true, 7]);
+  assert.equal(await canAccessRecord({ query: async () => ({ rows: [] }) }, sessionUser, 42), false);
+});

@@ -4,6 +4,10 @@
 - ✅ 2026-09-24 Agenda: rango de fechas y modal para editar, reprogramar o eliminar eventos.
 - ✅ 2026-09-24 Agenda: presets Hoy, Mañana y rango personalizado.
 - ✅ 2026-09-24 Agenda: colores multi-recurso sincronizados en lista y calendario.
+- ✅ 2026-09-25 Firma de consentimientos con OTP, expiración, evidencia y copia; identificación Cédula/RUC.
+- ✅ 2026-09-28 Añadida firma presencial asistida sin correo y bloqueado el cierre manual de consentimientos.
+- ✅ 2026-09-28 Vinculados consentimientos a paciente/expediente y auditados con tenant RLS.
+- ✅ 2026-09-28 Migración idempotente de identificación y firma aplicada en Neon Production.
 
 ## Auditoría integral
 

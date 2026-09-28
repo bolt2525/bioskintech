@@ -54,6 +54,7 @@ node --env-file=.env.local scripts/<nombre>.mjs
 | `setup-bioskin-role.mjs` | Crea rol `bioskin_app` + FORCE RLS + 4 políticas por tabla clínica. Requiere `BIOSKIN_APP_PASSWORD`. |
 | `seed-data.mjs` | Crea clínica BIOSKIN + master_admin + clinic_admin desde env vars. |
 | `apply-migrations.mjs` | Aplica migraciones idempotentes de auth, clínica, recetas y ACESS. |
+| `migrate-consent-signing.mjs` | Migración transaccional de Cédula/RUC, OTP, sesiones, evidencia y backfill de firmas legacy. |
 
 **Ejemplo: secuencia completa de reset + reinit:**
 ```powershell

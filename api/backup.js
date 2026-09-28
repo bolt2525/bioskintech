@@ -83,10 +83,10 @@ export default async function handler(req, res) {
         for (const p of (t.patients || [])) {
           try {
             await pool.query(
-              `INSERT INTO patients (id, first_name, last_name, rut, email, phone, birth_date, gender, address, occupation, clinic_id, created_at, updated_at)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+              `INSERT INTO patients (id, first_name, last_name, rut, identification_type, identification_number, email, phone, birth_date, gender, address, occupation, clinic_id, created_at, updated_at)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
                ON CONFLICT (id) DO NOTHING`,
-              [p.id, p.first_name, p.last_name, p.rut, p.email, p.phone, p.birth_date, p.gender, p.address, p.occupation, clinicId || p.clinic_id, p.created_at, p.updated_at]
+              [p.id, p.first_name, p.last_name, p.rut || p.identification_number, p.identification_type || null, p.identification_number || p.rut, p.email, p.phone, p.birth_date, p.gender, p.address, p.occupation, clinicId || p.clinic_id, p.created_at, p.updated_at]
             );
             pCount++;
           } catch { /* skip */ }

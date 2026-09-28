@@ -207,7 +207,7 @@ export default function ClinicalRecordManager() {
   return (
     <AdminLayout 
       title={patient ? `${patient.first_name} ${patient.last_name}` : 'Cargando...'} 
-      subtitle={`Expediente #${recordId} • ${patient?.rut || 'Sin RUT'}`}
+      subtitle={`Expediente #${recordId} • ${patient?.identification_type === 'ruc' ? 'RUC' : patient?.identification_type === 'cedula' ? 'Cédula' : 'Identificación'} ${patient?.identification_number || 'no registrada'}`}
       backPath={patient ? `/admin/ficha-clinica/paciente/${patient.id}` : '/admin/clinical-records'}
     >
       <div className="space-y-6">
@@ -357,7 +357,7 @@ export default function ClinicalRecordManager() {
                     recordId={recordData?.recordId}
                     patientName={patient ? `${patient.first_name} ${patient.last_name}` : ''}
                     patientAge={patient?.birth_date ? calculateAge(patient.birth_date) : ''}
-                    patientRut={patient?.rut || ''}
+                    patientIdentification={patient?.identification_number || ''}
                     consultationId={activeConsultation?.id}
                     consultations={recordData?.consultations || []}
                     diagnoses={recordData?.diagnoses || []}

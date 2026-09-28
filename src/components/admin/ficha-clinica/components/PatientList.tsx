@@ -22,7 +22,8 @@ interface Patient {
   created_at?: string;
   first_name: string;
   last_name: string;
-  rut: string;
+  identification_type: string;
+  identification_number: string;
   email: string;
   phone: string;
   active_record_id?: number;
@@ -188,7 +189,7 @@ export default function PatientList() {
 
   const filteredPatients = patients.filter(p => 
     `${p.first_name} ${p.last_name}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.rut?.includes(searchTerm)
+    p.identification_number?.includes(searchTerm)
   );
 
   return (
@@ -228,7 +229,7 @@ export default function PatientList() {
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
           <input
             type="text"
-            placeholder="Buscar por nombre o RUT..."
+            placeholder="Buscar por nombre, cédula o RUC..."
             className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#deb887] focus:border-transparent outline-none shadow-sm"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -293,7 +294,7 @@ export default function PatientList() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-gray-600">{patient.rut || '-'}</td>
+                      <td className="px-6 py-4 text-gray-600">{patient.identification_number ? `${patient.identification_type === 'ruc' ? 'RUC' : patient.identification_type === 'cedula' ? 'Cédula' : 'ID pendiente'} · ${patient.identification_number}` : '-'}</td>
                       <td className="px-6 py-4">
                         <div className="text-sm text-gray-600">{patient.email}</div>
                         <div className="text-sm text-gray-500">{patient.phone}</div>
@@ -408,7 +409,7 @@ export default function PatientList() {
                     <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
                       {[
                         ['Nombre completo', `${patientModal.full.first_name} ${patientModal.full.last_name}`],
-                        ['Cédula / RUC', patientModal.full.rut || '—'],
+                        [patientModal.full.identification_type === 'ruc' ? 'RUC' : patientModal.full.identification_type === 'cedula' ? 'Cédula' : 'Identificación', patientModal.full.identification_number || '—'],
                         ['Correo', patientModal.full.email || '—'],
                         ['Teléfono', patientModal.full.phone || '—'],
                         ['Fecha de nacimiento', patientModal.full.birth_date ? new Date(patientModal.full.birth_date).toLocaleDateString('es-EC') : '—'],

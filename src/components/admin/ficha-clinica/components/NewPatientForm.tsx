@@ -5,7 +5,7 @@ import { Save, ArrowLeft, AlertCircle, Users, X } from 'lucide-react';
 import AdminLayout from '../../../layout/AdminLayout';
 import { useAdminNav } from '../../../../hooks/useAdminNav';
 
-interface DuplicatePatient { id: number; first_name: string; last_name: string; rut: string; sameUser?: boolean; }
+interface DuplicatePatient { id: number; first_name: string; last_name: string; identification_type: string; identification_number: string; sameUser?: boolean; }
 
 export default function NewPatientForm() {
   const navigate = useNavigate();
@@ -16,7 +16,8 @@ export default function NewPatientForm() {
   const [formData, setFormData] = useState({
     first_name: '',
     last_name: '',
-    rut: '',
+    identification_type: '',
+    identification_number: '',
     email: '',
     phone: '',
     birth_date: '',
@@ -50,7 +51,8 @@ export default function NewPatientForm() {
         setFormData({
           first_name: data.first_name || '',
           last_name: data.last_name || '',
-          rut: data.rut || '',
+          identification_type: data.identification_type || '',
+          identification_number: data.identification_number || '',
           email: data.email || '',
           phone: data.phone || '',
           birth_date: formattedDate,
@@ -184,7 +186,7 @@ export default function NewPatientForm() {
                   </p>
                   <div className="bg-[#deb887]/10 border border-[#deb887]/20 rounded-xl p-3">
                     <p className="font-semibold text-gray-900">{duplicate.first_name} {duplicate.last_name}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">Cédula / RUC / RUT: {duplicate.rut}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">{duplicate.identification_type === 'ruc' ? 'RUC' : duplicate.identification_type === 'cedula' ? 'Cédula' : 'Identificación'}: {duplicate.identification_number}</p>
                   </div>
                   {duplicate.sameUser ? (
                     <div className="flex gap-2 pt-2">
@@ -257,12 +259,31 @@ export default function NewPatientForm() {
             </div>
 
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">Identificación / Cédula / RUC</label>
+              <label className="block text-sm font-medium text-gray-700">Tipo de identificación *</label>
+              <select
+                name="identification_type"
+                required
+                className="w-full p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none"
+                value={formData.identification_type}
+                onChange={handleChange}
+              >
+                <option value="">Seleccionar...</option>
+                <option value="cedula">Cédula</option>
+                <option value="ruc">RUC</option>
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-gray-700">Número de {formData.identification_type === 'ruc' ? 'RUC' : 'cédula'} *</label>
               <input
                 type="text"
-                name="rut"
+                name="identification_number"
+                required
+                inputMode="numeric"
+                maxLength={formData.identification_type === 'ruc' ? 13 : 10}
+                pattern={formData.identification_type === 'ruc' ? "[0-9]{13}" : "[0-9]{10}"}
                 className="w-full p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none"
-                value={formData.rut}
+                value={formData.identification_number}
                 onChange={handleChange}
               />
             </div>

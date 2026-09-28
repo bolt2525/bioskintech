@@ -18,7 +18,8 @@ interface Patient {
   id: number;
   first_name: string;
   last_name: string;
-  rut: string;
+  identification_type: string;
+  identification_number: string;
   email: string;
   phone: string;
   birth_date: string;
@@ -200,8 +201,8 @@ export default function PatientDetail() {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div>
-              <label className="text-sm text-gray-500">Identificación / Cédula / RUC</label>
-              <p className="font-medium text-gray-900">{patient.rut || 'No registrado'}</p>
+              <label className="text-sm text-gray-500">{patient.identification_type === 'ruc' ? 'RUC' : patient.identification_type === 'cedula' ? 'Cédula' : 'Identificación'}</label>
+              <p className="font-medium text-gray-900">{patient.identification_number || 'No registrada'}</p>
             </div>
             <div>
               <label className="text-sm text-gray-500">Email</label>

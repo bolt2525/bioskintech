@@ -54,7 +54,7 @@ interface PrescriptionTabProps {
   recordId: number;
   patientName: string;
   patientAge?: number | string;
-  patientRut?: string;
+  patientIdentification?: string;
   consultationId?: number;
   consultations?: ConsultationRef[];
   diagnoses?: { consultation_id?: number; diagnosis_text: string; cie10_code?: string }[];
@@ -75,7 +75,7 @@ const EMPTY_ITEM: PrescriptionItem = {
   rutina: ''
 };
 
-export default function PrescriptionTab({ recordId, patientName, patientAge, patientRut, consultationId, consultations = [], diagnoses = [], allergies = '' }: PrescriptionTabProps) {
+export default function PrescriptionTab({ recordId, patientName, patientAge, patientIdentification, consultationId, consultations = [], diagnoses = [], allergies = '' }: PrescriptionTabProps) {
   const { settings: clinic } = useClinicSettings();
   const { user } = useAuth();
   const clinicDisplayName = clinic.general.name || user?.clinic_name || 'Clínica';
@@ -441,7 +441,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
                     <span><strong>Paciente:</strong> ${patientName.toUpperCase()}</span>
                     <span><strong>EDAD:</strong> ${patientAge || ''} AÑOS</span>
                  </div>
-                 ${patientRut ? `<div style="font-size:9px;margin-top:3px;"><strong>Cédula/RUC:</strong> ${patientRut}</div>` : ''}
+                 ${patientIdentification ? `<div style="font-size:9px;margin-top:3px;"><strong>Identificación:</strong> ${patientIdentification}</div>` : ''}
                  ${currentPrescription.diagnostico ? `<div style="font-size:9px;margin-top:4px;"><strong>Diagnóstico:</strong> ${currentPrescription.diagnostico}${activeCie10 ? ' &nbsp;<span style="color:#555">(CIE-10: ' + activeCie10 + ')</span>' : ''}</div>` : ''}
                  ${mode === 'prescription' ? `<div style="font-size:9px;margin-top:4px;"><strong>Receta:</strong> REC-${new Date().getFullYear()}-${String(currentPrescription.id || 'NUEVA').padStart(6, '0')} &nbsp; <strong>Vigencia:</strong> ${validityLabel} hasta ${validUntil}</div><div style="font-size:9px;margin-top:3px;"><strong>Alergias:</strong> ${manualAllergies || 'No registrado'}</div>` : ''}
                </div>
@@ -477,7 +477,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
                     <span><strong>Paciente:</strong> ${patientName.toUpperCase()}</span>
                     <span><strong>EDAD:</strong> ${patientAge || ''} AÑOS</span>
                  </div>
-                 ${patientRut ? `<div style="font-size:9px;margin-top:3px;"><strong>Cédula/RUC:</strong> ${patientRut}</div>` : ''}
+                 ${patientIdentification ? `<div style="font-size:9px;margin-top:3px;"><strong>Identificación:</strong> ${patientIdentification}</div>` : ''}
                  ${currentPrescription.diagnostico ? `<div style="font-size:9px;margin-top:4px;"><strong>Diagnóstico:</strong> ${currentPrescription.diagnostico}${activeCie10 ? ' &nbsp;<span style="color:#555">(CIE-10: ' + activeCie10 + ')</span>' : ''}</div>` : ''}
                  ${mode === 'prescription' ? `<div style="font-size:9px;margin-top:4px;"><strong>Receta:</strong> REC-${new Date().getFullYear()}-${String(currentPrescription.id || 'NUEVA').padStart(6, '0')} &nbsp; <strong>Vigencia:</strong> ${validityLabel} hasta ${validUntil}</div><div style="font-size:9px;margin-top:3px;"><strong>Alergias:</strong> ${manualAllergies || 'No registrado'}</div>` : ''}
                </div>

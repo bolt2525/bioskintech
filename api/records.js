@@ -1,12 +1,119 @@
 import crypto from 'crypto';
+import nodemailer from 'nodemailer';
 import { google } from 'googleapis';
 import { sql } from '@vercel/postgres';
 import { initClinicalDatabase, getPool, getAppPool } from '../lib/neon-clinical-db.js';
 import { authenticateRequest } from '../lib/admin-auth.js';
 import { generateUploadUrl, generateReadUrl, deleteR2Object, putR2Object } from '../lib/r2-service.js';
 import { buildFinanceCsv } from '../lib/finance-csv.js';
+import { normalizeEcuadorIdentification, hashConsentEvidence, hashSigningCode, hashConsentSession, isValidSignatureDataUrl, maskEmail } from '../lib/consent-signing.js';
 
 console.log('✅ [API] records.js loaded');
+
+const SIGNING_TOKEN_PATTERN = /^[a-f0-9]{64}$/i;
+const SIGNING_SESSION_COOKIE = 'bioskin_consent_session';
+const CONSENT_SAFE_COLUMNS = `id, record_id, patient_id, clinic_id, consultation_id, status, created_at, updated_at,
+  created_by, procedure_type, zone, sessions, objectives, description, risks, benefits, alternatives,
+  pre_care, post_care, contraindications, critical_antecedents, authorizations, declarations, signatures,
+  attachments, signing_status, signing_signed_at, signing_hash, signing_copy_sent_at`;
+
+function getSigningSessionCookie(req) {
+  const prefix = `${SIGNING_SESSION_COOKIE}=`;
+  const item = String(req.headers.cookie || '').split(';').map(value => value.trim()).find(value => value.startsWith(prefix));
+  const value = item?.slice(prefix.length) || '';
+  return /^[a-f0-9]{64}$/i.test(value) ? value : null;
+}
+
+function matchesSigningSession(req, storedHash) {
+  const session = getSigningSessionCookie(req);
+  if (!session || !process.env.ADMIN_SETUP_SECRET || !/^[a-f0-9]{64}$/i.test(String(storedHash || ''))) return false;
+  const expected = Buffer.from(String(storedHash), 'hex');
+  const actual = Buffer.from(hashConsentSession(session, process.env.ADMIN_SETUP_SECRET), 'hex');
+  return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
+}
+
+function setSigningSessionCookie(res, session, maxAge) {
+  res.setHeader('Set-Cookie', `${SIGNING_SESSION_COOKIE}=${session}; Max-Age=${maxAge}; Path=/api/records; HttpOnly; Secure; SameSite=Strict`);
+}
+
+function createConsentSnapshot(consent, patient) {
+  return {
+    version: 1,
+    captured_at: new Date().toISOString(),
+    patient: {
+      first_name: patient.first_name,
+      last_name: patient.last_name,
+      identification_type: patient.identification_type || null,
+      identification_number: patient.identification_number || patient.rut || null,
+      birth_date: patient.birth_date,
+    },
+    procedure_type: consent.procedure_type,
+    zone: consent.zone,
+    sessions: consent.sessions,
+    objectives: consent.objectives,
+    description: consent.description,
+    risks: consent.risks,
+    benefits: consent.benefits,
+    alternatives: consent.alternatives,
+    pre_care: consent.pre_care,
+    post_care: consent.post_care,
+    contraindications: consent.contraindications,
+    critical_antecedents: consent.critical_antecedents,
+  };
+}
+
+function escapeConsentHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, char => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[char]);
+}
+
+function consentValueText(value) {
+  if (value == null || value === '') return 'No especificado';
+  return typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value);
+}
+
+function createSigningTransport() {
+  return nodemailer.createTransport({
+    service: 'gmail',
+    auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+  });
+}
+
+function buildSignedConsentEmail(snapshot, signatures, declarations, authorizations, signedAt, evidenceHash) {
+  const rows = [
+    ['Paciente', `${snapshot.patient.first_name} ${snapshot.patient.last_name}`],
+    [snapshot.patient.identification_type === 'ruc' ? 'RUC' : 'Cédula', snapshot.patient.identification_number],
+    ['Procedimiento', snapshot.procedure_type],
+    ['Zona', snapshot.zone],
+    ['Sesiones', snapshot.sessions],
+    ['Descripción', snapshot.description],
+    ['Objetivos', snapshot.objectives],
+    ['Riesgos', snapshot.risks],
+    ['Beneficios', snapshot.benefits],
+    ['Alternativas', snapshot.alternatives],
+    ['Cuidados previos', snapshot.pre_care],
+    ['Cuidados posteriores', snapshot.post_care],
+    ['Contraindicaciones', snapshot.contraindications],
+    ['Antecedentes críticos', snapshot.critical_antecedents],
+    ['Declaraciones aceptadas', declarations],
+    ['Autorizaciones', authorizations],
+    ['Firmado en', signedAt],
+    ['Huella SHA-256 del documento firmado', evidenceHash],
+  ];
+  const htmlRows = rows.map(([label, value]) =>
+    `<tr><th style="text-align:left;vertical-align:top;padding:8px;border-bottom:1px solid #ddd">${escapeConsentHtml(label)}</th><td style="padding:8px;border-bottom:1px solid #ddd;white-space:pre-wrap">${escapeConsentHtml(consentValueText(value))}</td></tr>`
+  ).join('');
+  const signature = String(signatures.patient_sig_data || '');
+  const signatureImage = signature.startsWith('data:image/png;base64,')
+    ? '<p><strong>Firma del paciente</strong></p><img alt="Firma del paciente" src="cid:patient-signature" style="max-width:320px;max-height:140px">'
+    : '';
+  return {
+    html: `<main style="font-family:Arial,sans-serif;color:#222;max-width:760px;margin:auto"><h1>Consentimiento informado firmado</h1><table style="border-collapse:collapse;width:100%">${htmlRows}</table>${signatureImage}<p style="font-size:12px;color:#555">Conserve este correo como copia del documento aceptado. La huella permite detectar cambios si se compara con el registro original.</p></main>`,
+    text: rows.map(([label, value]) => `${label}: ${consentValueText(value)}`).join('\n\n'),
+    signature,
+  };
+}
 
 // Global flag to track initialization in the current container instance
 let dbInitialized = false;
@@ -35,14 +142,15 @@ function buildSu(auth) {
  * Registra un evento de auditoría en patient_audit_log.
  * Silencioso si falla — la auditoría nunca debe interrumpir la operación principal.
  */
-async function logAudit(client, { patientId, recordId, sessionUser, actionType, module, summary, fieldChanges }) {
+async function logAudit(client, { patientId, recordId, clinicId, sessionUser, actionType, module, summary, fieldChanges }) {
   try {
     await client.query(
-      `INSERT INTO patient_audit_log (patient_id, record_id, clinic_user_id, user_display_name, action_type, module, summary, field_changes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      `INSERT INTO patient_audit_log (patient_id, record_id, clinic_id, clinic_user_id, user_display_name, action_type, module, summary, field_changes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [
         patientId || null,
         recordId  || null,
+        clinicId ?? sessionUser?.effective_clinic_id ?? sessionUser?.clinic_id ?? null,
         sessionUser?.user_id  || null,
         sessionUser?.username || 'Sistema',
         actionType,
@@ -82,13 +190,15 @@ async function canAccessPatient(pool, sessionUser, patientId) {
   return result.rows.length > 0;
 }
 
-async function canAccessRecord(pool, sessionUser, recordId) {
+export async function canAccessRecord(pool, sessionUser, recordId) {
   if (!recordId || !sessionUser) return false;
   const clinicId = sessionUser.effective_clinic_id ?? sessionUser.clinic_id;
   const result = await pool.query(
     `SELECT 1 FROM clinical_records cr
      WHERE cr.id = $1 AND ($2::uuid IS NULL OR cr.clinic_id = $2)
-       AND ($3::boolean = false OR cr.created_by_user_id = $4) LIMIT 1`,
+       AND ($3::boolean = false OR cr.created_by_user_id = $4 OR EXISTS (
+         SELECT 1 FROM patient_assignments pa WHERE pa.patient_id = cr.patient_id AND pa.clinic_user_id = $4
+       )) LIMIT 1`,
     [recordId, clinicId, sessionUser.role !== 'master_admin' && sessionUser.access_scope === 'own', sessionUser.user_id]
   );
   return result.rows.length > 0;
@@ -291,7 +401,7 @@ async function ownedByClinic(pool, table, itemId, clinicId) {
 }
 
 export default async function handler(req, res) {
-  console.log(`[Clinical Records API] Request received: ${req.method} ${req.url}`);
+  console.log(`[Clinical Records API] Request received: ${req.method} /api/records`);
 
   // CORS headers
   const requestOrigin = req.headers.origin || '';
@@ -330,7 +440,7 @@ export default async function handler(req, res) {
 
     // ── Auth ──────────────────────────────────────────────────────────────
     // ponytail: whitelist mínima pública; cualquier acción nueva requiere auth por defecto
-    const PUBLIC_ACTIONS = new Set(['health', 'submitSignature', 'getSigningSession']);
+    const PUBLIC_ACTIONS = new Set(['health', 'getSigningSession', 'verifySigningCode', 'submitSignature']);
     let auth = null;
     if (!PUBLIC_ACTIONS.has(action)) {
       auth = await authenticateRequest(req);
@@ -410,6 +520,7 @@ export default async function handler(req, res) {
         updatePatient: body.id,
         deletePatient: req.query.id,
         listConsents: req.query.patient_id,
+        saveConsent: body.patient_id,
         listAuditLog: req.query.patient_id,
       };
       const directRecordIdByAction = {
@@ -453,6 +564,7 @@ export default async function handler(req, res) {
         deletePrescription: ['prescriptions', req.query.id],
         getConsent: ['consent_forms', req.query.id],
         generateSigningToken: ['consent_forms', body.id],
+        signConsentInPerson: ['consent_forms', body.id],
         deleteConsent: ['consent_forms', req.query.id],
         saveConsent: ['consent_forms', body.id],
       };
@@ -1097,10 +1209,10 @@ export default async function handler(req, res) {
         if (searchTerm && pp.length > 0) {
           const idx = pp.length + 1;
           const orderMarker = 'ORDER BY p.last_name, p.first_name';
-          pq = pq.replace(orderMarker, `AND (CONCAT_WS(' ', p.first_name, p.last_name) ILIKE $${idx} OR p.first_name ILIKE $${idx} OR p.last_name ILIKE $${idx} OR p.rut ILIKE $${idx}) ${orderMarker}`);
+          pq = pq.replace(orderMarker, `AND (CONCAT_WS(' ', p.first_name, p.last_name) ILIKE $${idx} OR p.first_name ILIKE $${idx} OR p.last_name ILIKE $${idx} OR p.identification_number ILIKE $${idx}) ${orderMarker}`);
           pp.push(`%${searchTerm}%`);
         } else if (searchTerm) {
-          pq = `${selOwner} ${fromOwner} WHERE (CONCAT_WS(' ', p.first_name, p.last_name) ILIKE $1 OR p.first_name ILIKE $1 OR p.last_name ILIKE $1 OR p.rut ILIKE $1) ORDER BY p.last_name, p.first_name`;
+          pq = `${selOwner} ${fromOwner} WHERE (CONCAT_WS(' ', p.first_name, p.last_name) ILIKE $1 OR p.first_name ILIKE $1 OR p.last_name ILIKE $1 OR p.identification_number ILIKE $1) ORDER BY p.last_name, p.first_name`;
           pp = [`%${searchTerm}%`];
         }
 
@@ -1195,12 +1307,12 @@ export default async function handler(req, res) {
 
       case 'createPatient':
         try {
-          const { first_name, last_name, rut, email, phone, birth_date, gender, address, occupation, tipo_sangre, estado_civil } = body;
+          const { first_name, last_name, identification_type, identification_number, email, phone, birth_date, gender, address, occupation, tipo_sangre, estado_civil } = body;
           
-          console.log('📝 Creating patient:', { first_name, last_name, rut, email });
+          console.log('📝 Creating patient:', { first_name, last_name, identification_type, email });
 
-          // Handle empty strings as null for optional fields
-          const cleanRut = rut && rut.trim() !== '' ? rut.trim() : null;
+          const cleanIdentification = normalizeEcuadorIdentification(identification_type, identification_number);
+          if (!cleanIdentification) return res.status(400).json({ error: 'Ingrese una cédula de 10 dígitos o un RUC de 13 dígitos.' });
           const cleanBirthDate = birth_date && birth_date.trim() !== '' ? birth_date : null;
 
           // Obtener clinic_id y created_by_user_id desde sesión (post-migración)
@@ -1210,10 +1322,15 @@ export default async function handler(req, res) {
           const patientCreatedBy = suCreate?.user_id ?? null;
 
           // Verificar duplicado dentro de la misma clínica antes de insertar
-          if (cleanRut && patientClinicId != null) {
+          if (patientClinicId != null) {
             const dup = await pool.query(
-              'SELECT id, first_name, last_name, rut, created_by_user_id FROM patients WHERE rut = $1 AND clinic_id = $2',
-              [cleanRut, patientClinicId]
+              `SELECT id, first_name, last_name, identification_type,
+                COALESCE(identification_number, rut) AS identification_number, created_by_user_id
+               FROM patients WHERE clinic_id = $1 AND (
+                 (identification_type = $2 AND identification_number = $3) OR
+                 (identification_type IS NULL AND regexp_replace(COALESCE(identification_number, rut), '[^0-9]', '', 'g') = $3)
+               )`,
+              [patientClinicId, identification_type, cleanIdentification]
             );
             if (dup.rows.length > 0) {
               const conflictType = dup.rows[0].created_by_user_id === patientCreatedBy ? 'same_user' : 'same_clinic';
@@ -1225,15 +1342,15 @@ export default async function handler(req, res) {
           let newPatient;
           if (patientClinicId != null) {
             newPatient = await pool.query(
-              `INSERT INTO patients (first_name, last_name, rut, email, phone, birth_date, gender, address, occupation, tipo_sangre, estado_civil, clinic_id, created_by_user_id)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`,
-              [first_name, last_name, cleanRut, email, phone, cleanBirthDate, gender, address, occupation, tipo_sangre || null, estado_civil || null, patientClinicId, patientCreatedBy]
+              `INSERT INTO patients (first_name, last_name, rut, identification_type, identification_number, email, phone, birth_date, gender, address, occupation, tipo_sangre, estado_civil, clinic_id, created_by_user_id)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING *`,
+              [first_name, last_name, cleanIdentification, identification_type, cleanIdentification, email, phone, cleanBirthDate, gender, address, occupation, tipo_sangre || null, estado_civil || null, patientClinicId, patientCreatedBy]
             );
           } else {
             newPatient = await pool.query(
-              `INSERT INTO patients (first_name, last_name, rut, email, phone, birth_date, gender, address, occupation, tipo_sangre, estado_civil)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
-              [first_name, last_name, cleanRut, email, phone, cleanBirthDate, gender, address, occupation, tipo_sangre || null, estado_civil || null]
+              `INSERT INTO patients (first_name, last_name, rut, identification_type, identification_number, email, phone, birth_date, gender, address, occupation, tipo_sangre, estado_civil)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`,
+              [first_name, last_name, cleanIdentification, identification_type, cleanIdentification, email, phone, cleanBirthDate, gender, address, occupation, tipo_sangre || null, estado_civil || null]
             );
           }
           // Create an initial clinical record for the patient — with user ownership
@@ -1247,14 +1364,7 @@ export default async function handler(req, res) {
         } catch (err) {
           console.error('❌ Error creating patient:', err);
           
-          if (err.code === '23505') {
-            if (err.detail.includes('rut')) {
-              return res.status(400).json({ error: 'El RUT ya está registrado en el sistema.' });
-            }
-            if (err.detail.includes('email')) {
-              return res.status(400).json({ error: 'El correo electrónico ya está registrado.' });
-            }
-          }
+          if (err.code === '23505') return res.status(400).json({ error: 'La identificación o el correo ya están registrados en la clínica.' });
           
           if (err.code === '22007') {
              return res.status(400).json({ error: 'Formato de fecha inválido.' });
@@ -1267,10 +1377,24 @@ export default async function handler(req, res) {
         const { id: pid, ...updates } = body;
         // Whitelist de campos permitidos (previene SQL injection por nombres de columna)
         const suUpd = await getSessionUser(pool, req);
-        const ALLOWED_PATIENT_FIELDS = ['first_name', 'last_name', 'rut', 'email', 'phone', 'birth_date', 'gender', 'address', 'occupation', 'tipo_sangre', 'estado_civil'];
+        const ALLOWED_PATIENT_FIELDS = ['first_name', 'last_name', 'identification_type', 'identification_number', 'email', 'phone', 'birth_date', 'gender', 'address', 'occupation', 'tipo_sangre', 'estado_civil'];
         // master_admin puede reasignar clinic_id (para corregir pacientes huérfanos)
         if (suUpd?.role === 'master_admin') ALLOWED_PATIENT_FIELDS.push('clinic_id');
         const safe = Object.fromEntries(Object.entries(updates).filter(([k]) => ALLOWED_PATIENT_FIELDS.includes(k)));
+        if ('identification_type' in safe || 'identification_number' in safe) {
+          const normalized = normalizeEcuadorIdentification(safe.identification_type, safe.identification_number);
+          if (!normalized) return res.status(400).json({ error: 'Ingrese una cédula de 10 dígitos o un RUC de 13 dígitos.' });
+          const duplicate = await pool.query(
+            `SELECT id FROM patients WHERE id <> $1 AND clinic_id = (SELECT clinic_id FROM patients WHERE id = $1) AND (
+               (identification_type = $2 AND identification_number = $3) OR
+               (identification_type IS NULL AND regexp_replace(COALESCE(identification_number, rut), '[^0-9]', '', 'g') = $3)
+             ) LIMIT 1`,
+            [pid, safe.identification_type, normalized]
+          );
+          if (duplicate.rows.length) return res.status(409).json({ error: 'La identificación ya está registrada en la clínica.' });
+          safe.identification_number = normalized;
+          safe.rut = normalized;
+        }
         if (suUpd?.clinic_id != null) {
           const chk = await pool.query('SELECT clinic_id FROM patients WHERE id = $1', [pid]);
           if (chk.rows.length && chk.rows[0].clinic_id != null && chk.rows[0].clinic_id !== suUpd.clinic_id && suUpd.role !== 'master_admin') {
@@ -1369,9 +1493,22 @@ export default async function handler(req, res) {
           }
         }
         try {
+          await client.query('BEGIN');
+          const consents = await pool.query(
+            'SELECT id, signing_status, status, signature_data, signed_at, signing_signed_at, signatures FROM consent_forms WHERE patient_id = $1 FOR UPDATE',
+            [delPid]
+          );
+          const hasSignedConsent = consents.rows.some(row => row.signing_status === 'signed' ||
+            ['signed', 'finalized'].includes(row.status) || row.signature_data || row.signed_at || row.signing_signed_at || row.signatures?.patient_sig_data || row.signatures?.patient_signed_at);
+          if (hasSignedConsent) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: 'No se puede eliminar un paciente con consentimientos firmados.' });
+          }
           await pool.query('DELETE FROM patients WHERE id = $1', [delPid]);
+          await client.query('COMMIT');
           return res.status(200).json({ success: true });
         } catch (err) {
+          await client.query('ROLLBACK').catch(() => {});
           console.error('Error deleting patient:', err);
           return res.status(500).json({ error: 'Error al eliminar paciente. Puede tener registros asociados.' });
         }
@@ -1535,9 +1672,22 @@ export default async function handler(req, res) {
             return res.status(403).json({ error: 'Acceso no autorizado' });
         }
         try {
+          await client.query('BEGIN');
+          const consents = await pool.query(
+            'SELECT id, signing_status, status, signature_data, signed_at, signing_signed_at, signatures FROM consent_forms WHERE record_id = $1 FOR UPDATE',
+            [delRecordId]
+          );
+          const hasSignedConsent = consents.rows.some(row => row.signing_status === 'signed' ||
+            ['signed', 'finalized'].includes(row.status) || row.signature_data || row.signed_at || row.signing_signed_at || row.signatures?.patient_sig_data || row.signatures?.patient_signed_at);
+          if (hasSignedConsent) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: 'No se puede eliminar un expediente con consentimientos firmados.' });
+          }
           await pool.query('DELETE FROM clinical_records WHERE id = $1', [delRecordId]);
+          await client.query('COMMIT');
           return res.status(200).json({ success: true });
         } catch (err) {
+          await client.query('ROLLBACK').catch(() => {});
           console.error('Error deleting record:', err);
           return res.status(500).json({ error: 'Error al eliminar expediente.' });
         }
@@ -1642,7 +1792,7 @@ export default async function handler(req, res) {
           safeQuery('SELECT * FROM diagnoses WHERE record_id = $1 ORDER BY date DESC', [targetRecordId]),
           safeQuery('SELECT * FROM treatments WHERE record_id = $1 ORDER BY date DESC', [targetRecordId]),
           safeQuery('SELECT * FROM prescriptions WHERE record_id = $1 ORDER BY date DESC', [targetRecordId]),
-          safeQuery('SELECT * FROM consent_forms WHERE record_id = $1 ORDER BY id DESC', [targetRecordId]),
+          safeQuery(`SELECT ${CONSENT_SAFE_COLUMNS} FROM consent_forms WHERE record_id = $1 ORDER BY id DESC`, [targetRecordId]),
           safeQuery('SELECT * FROM injectables WHERE record_id = $1 ORDER BY date DESC', [targetRecordId]),
           safeQuery('SELECT * FROM consultation_info WHERE record_id = $1', [targetRecordId]),
           safeQuery('SELECT * FROM consultations WHERE record_id = $1 ORDER BY created_at DESC', [targetRecordId])
@@ -1712,17 +1862,33 @@ export default async function handler(req, res) {
       case 'deleteConsultation': {
         const { id: dcId } = req.query;
         if (!dcId) return res.status(400).json({ error: 'id required' });
-        // Cascade: delete all records linked to this consultation before removing it
-        await Promise.all([
-          pool.query('DELETE FROM physical_exams   WHERE consultation_id = $1', [dcId]),
-          pool.query('DELETE FROM diagnoses         WHERE consultation_id = $1', [dcId]),
-          pool.query('DELETE FROM treatments        WHERE consultation_id = $1', [dcId]),
-          pool.query('DELETE FROM prescriptions     WHERE consultation_id = $1', [dcId]),
-          pool.query('DELETE FROM consent_forms     WHERE consultation_id = $1', [dcId]),
-          pool.query('DELETE FROM injectables       WHERE consultation_id = $1', [dcId]),
-        ]);
-        await pool.query('DELETE FROM consultations WHERE id = $1', [dcId]);
-        return res.status(200).json({ success: true });
+        await client.query('BEGIN');
+        try {
+          const consents = await pool.query(
+            'SELECT id, signing_status, status, signature_data, signed_at, signing_signed_at, signatures FROM consent_forms WHERE consultation_id = $1 FOR UPDATE',
+            [dcId]
+          );
+          const hasSignedConsent = consents.rows.some(row => row.signing_status === 'signed' ||
+            ['signed', 'finalized'].includes(row.status) || row.signature_data || row.signed_at || row.signing_signed_at || row.signatures?.patient_sig_data || row.signatures?.patient_signed_at);
+          if (hasSignedConsent) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: 'No se puede eliminar una consulta con consentimientos firmados.' });
+          }
+          await Promise.all([
+            pool.query('DELETE FROM physical_exams   WHERE consultation_id = $1', [dcId]),
+            pool.query('DELETE FROM diagnoses         WHERE consultation_id = $1', [dcId]),
+            pool.query('DELETE FROM treatments        WHERE consultation_id = $1', [dcId]),
+            pool.query('DELETE FROM prescriptions     WHERE consultation_id = $1', [dcId]),
+            pool.query('DELETE FROM consent_forms     WHERE consultation_id = $1', [dcId]),
+            pool.query('DELETE FROM injectables       WHERE consultation_id = $1', [dcId]),
+          ]);
+          await pool.query('DELETE FROM consultations WHERE id = $1', [dcId]);
+          await client.query('COMMIT');
+          return res.status(200).json({ success: true });
+        } catch (err) {
+          await client.query('ROLLBACK').catch(() => {});
+          throw err;
+        }
       }
 
       case 'listHistorySnapshots': {
@@ -2169,41 +2335,9 @@ export default async function handler(req, res) {
         }
 
       case 'initConsents':
-        // WARNING: This drops the table! Use with caution.
-        await pool.query(`
-          DROP TABLE IF EXISTS consent_forms;
-          CREATE TABLE consent_forms (
-              id SERIAL PRIMARY KEY,
-              record_id INTEGER REFERENCES clinical_records(id) ON DELETE CASCADE,
-              patient_id INTEGER REFERENCES patients(id) ON DELETE CASCADE,
-              status VARCHAR(20) DEFAULT 'draft',
-              created_at TIMESTAMP DEFAULT NOW(),
-              updated_at TIMESTAMP DEFAULT NOW(),
-              created_by VARCHAR(100),
-              procedure_type VARCHAR(150),
-              zone VARCHAR(150),
-              sessions INTEGER,
-              objectives JSONB,
-              description TEXT,
-              risks JSONB,
-              benefits JSONB,
-              alternatives JSONB,
-              pre_care JSONB,
-              post_care JSONB,
-              contraindications JSONB,
-              critical_antecedents JSONB,
-              authorizations JSONB,
-              declarations JSONB,
-              signatures JSONB,
-              attachments JSONB,
-              signing_token VARCHAR(100),
-              signing_status VARCHAR(20) DEFAULT 'pending'
-          );
-          CREATE INDEX idx_consent_forms_record_id ON consent_forms(record_id);
-          CREATE INDEX idx_consent_forms_patient_id ON consent_forms(patient_id);
-          CREATE INDEX idx_consent_forms_signing_token ON consent_forms(signing_token);
-        `);
-        return res.status(200).json({ message: 'Consent forms table initialized' });
+        await initClinicalDatabase();
+        dbInitialized = true;
+        return res.status(200).json({ message: 'Clinical schema initialized idempotently' });
 
       case 'initProfessionalSignatures':
         // La tabla se crea en initClinicalDatabase() — solo confirmar existencia
@@ -2247,70 +2381,380 @@ export default async function handler(req, res) {
 
       case 'generateSigningToken': {
         const { id: signId } = body;
-        if (!signId) return res.status(400).json({ error: 'Consent ID required' });
-        // ponytail: Math.random() es predecible — usar randomBytes para tokens de firma médica
-        const token = crypto.randomBytes(32).toString('hex');
-        
-        await pool.query(
-          'UPDATE consent_forms SET signing_token = $1, signing_status = $2 WHERE id = $3',
-          [token, 'pending', signId]
-        );
-        
-        return res.status(200).json({ token, url: `/consent-signing/${token}` });
+        const consentId = Number(signId);
+        if (!Number.isSafeInteger(consentId) || consentId <= 0 || consentId > 2147483647)
+          return res.status(400).json({ error: 'Consent ID required' });
+        if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS || !process.env.ADMIN_SETUP_SECRET)
+          return res.status(503).json({ error: 'El servicio de correo no está disponible para verificar la firma.' });
+
+        await client.query('SELECT pg_advisory_lock(68420, $1::int)', [consentId]);
+        try {
+          const signingRecord = await pool.query(
+            `SELECT cf.*, p.first_name AS patient_first_name, p.last_name AS patient_last_name,
+               p.identification_type, p.identification_number, p.rut AS legacy_rut,
+               p.birth_date, p.email AS patient_email
+             FROM consent_forms cf
+             JOIN patients p ON p.id = cf.patient_id
+             JOIN clinical_records cr ON cr.id = cf.record_id AND cr.patient_id = cf.patient_id
+             WHERE cf.id = $1 LIMIT 1`,
+            [consentId]
+          );
+          if (!signingRecord.rows.length) return res.status(404).json({ error: 'Consent not found' });
+          const record = signingRecord.rows[0];
+          if (record.status === 'annulled') return res.status(409).json({ error: 'El consentimiento está anulado. Cree o reactive un borrador antes de solicitar la firma.' });
+          if (record.signing_status === 'signed' || ['signed', 'finalized'].includes(record.status) ||
+              record.signature_data || record.signed_at || record.signing_signed_at ||
+              record.signatures?.patient_sig_data || record.signatures?.patient_signed_at)
+            return res.status(409).json({ error: 'El consentimiento ya está firmado. Use la acción explícita para solicitar una nueva firma.' });
+          if (!record.patient_email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(record.patient_email))
+            return res.status(400).json({ error: 'El paciente necesita un correo válido registrado para verificar la firma remota.' });
+
+          const token = crypto.randomBytes(32).toString('hex');
+          const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
+          const snapshot = createConsentSnapshot(record, {
+            first_name: record.patient_first_name,
+            last_name: record.patient_last_name,
+            identification_type: record.identification_type,
+            identification_number: record.identification_number,
+            rut: record.legacy_rut,
+            birth_date: record.birth_date,
+          });
+          const snapshotHash = hashConsentEvidence(snapshot);
+          try {
+            await createSigningTransport().sendMail({
+              from: `BIOSKIN <${process.env.EMAIL_USER}>`,
+              to: record.patient_email,
+              subject: 'Código para verificar tu consentimiento informado',
+              text: `Tu código de verificación es ${code}. Vence junto con el enlace de firma en 30 minutos. Si no solicitaste este código, ignora este mensaje.`,
+              html: `<p>Tu código para verificar el consentimiento informado es:</p><p style="font-size:28px;font-weight:bold;letter-spacing:4px">${code}</p><p>El código y el enlace vencen en 30 minutos. Si no solicitaste este código, ignora este mensaje.</p>`,
+            });
+          } catch {
+            console.error('No se pudo entregar el código de verificación de consentimiento.');
+            return res.status(503).json({ error: 'No se pudo enviar el código al correo registrado. No se generó el enlace.' });
+          }
+
+          const updated = await pool.query(
+            `UPDATE consent_forms SET signing_token = $1, signing_status = 'pending',
+               signing_expires_at = NOW() + INTERVAL '30 minutes', signing_email = $2,
+               signing_otp_hash = $3, signing_otp_attempts = 0, signing_verified_at = NULL,
+               signing_session_hash = NULL, signing_session_expires_at = NULL,
+               signing_snapshot = $4::jsonb, signing_snapshot_hash = $5, signing_hash = NULL,
+               signing_signed_at = NULL, signing_copy_sent_at = NULL,
+               updated_at = NOW()
+             WHERE id = $6 AND COALESCE(signing_status, 'pending') <> 'signed'
+               AND status NOT IN ('signed', 'finalized')
+               AND signature_data IS NULL AND signed_at IS NULL AND signing_signed_at IS NULL
+               AND NULLIF(signatures->>'patient_sig_data', '') IS NULL
+               AND NULLIF(signatures->>'patient_signed_at', '') IS NULL
+             RETURNING id`,
+            [token, record.patient_email, hashSigningCode(token, code, process.env.ADMIN_SETUP_SECRET), JSON.stringify(snapshot), snapshotHash, consentId]
+          );
+          if (!updated.rows.length) return res.status(409).json({ error: 'El consentimiento ya fue firmado o ya no se puede modificar.' });
+          res.setHeader('Cache-Control', 'no-store, private');
+          return res.status(200).json({ token, url: `/consent-signing/${token}` });
+        } finally {
+          await client.query('SELECT pg_advisory_unlock(68420, $1::int)', [consentId]);
+        }
+      }
+
+      case 'signConsentInPerson': {
+        const consentId = Number(body.id);
+        const { signature, declarations, authorizations } = body;
+        if (req.method !== 'POST') return res.status(405).json({ error: 'Método no permitido' });
+        if (!Number.isSafeInteger(consentId) || consentId <= 0 || consentId > 2147483647 || !isValidSignatureDataUrl(signature))
+          return res.status(400).json({ error: 'Seleccione un consentimiento y capture una firma PNG válida.' });
+        const declarationKeys = ['understanding', 'questions', 'results', 'authorization', 'revocation', 'alternatives'];
+        const authorizationKeys = ['image_use', 'photo_video', 'privacy_policy'];
+        if (!declarations || declarationKeys.some(key => typeof declarations[key] !== 'boolean') ||
+            declarations.understanding !== true || declarations.authorization !== true ||
+            !authorizations || authorizationKeys.some(key => typeof authorizations[key] !== 'boolean') ||
+            authorizations.privacy_policy !== true)
+          return res.status(400).json({ error: 'El paciente debe revisar y aceptar la información y la política de privacidad antes de firmar.' });
+
+        if (!(await ownedByClinic(pool, 'consent_forms', consentId, effectiveClinicId)))
+          return res.status(403).json({ error: 'Sin permiso para firmar este consentimiento.' });
+        await client.query('BEGIN');
+        try {
+          const current = await pool.query(
+            `SELECT cf.*, p.first_name AS patient_first_name, p.last_name AS patient_last_name,
+               p.identification_type, p.identification_number, p.rut AS legacy_rut,
+               p.birth_date, p.email AS patient_email
+             FROM consent_forms cf
+             JOIN patients p ON p.id = cf.patient_id
+             JOIN clinical_records cr ON cr.id = cf.record_id AND cr.patient_id = cf.patient_id
+             WHERE cf.id = $1 FOR UPDATE OF cf`,
+            [consentId]
+          );
+          if (!current.rows.length) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Consentimiento no encontrado.' });
+          }
+          const record = current.rows[0];
+          if (record.status === 'annulled') {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: 'El consentimiento está anulado. Reactive el borrador antes de firmar.' });
+          }
+          const alreadySigned = record.signing_status === 'signed' || ['signed', 'finalized'].includes(record.status) ||
+            record.signature_data || record.signed_at || record.signing_signed_at ||
+            record.signatures?.patient_sig_data || record.signatures?.patient_signed_at;
+          if (alreadySigned) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: 'Este consentimiento ya tiene una firma registrada.' });
+          }
+          const patientName = `${record.patient_first_name} ${record.patient_last_name}`.trim();
+          const snapshot = createConsentSnapshot(record, {
+            first_name: record.patient_first_name,
+            last_name: record.patient_last_name,
+            identification_type: record.identification_type,
+            identification_number: record.identification_number,
+            rut: record.legacy_rut,
+            birth_date: record.birth_date,
+          });
+          const snapshotHash = hashConsentEvidence(snapshot);
+          const signedAt = new Date().toISOString();
+          const sessionUser = await getSessionUserOnce();
+          const signatures = {
+            ...(record.signatures || {}),
+            patient_name: patientName,
+            patient_sig_data: signature,
+            patient_signed_at: signedAt,
+            signature_method: 'in_person_assisted',
+            witness_user_id: sessionUser?.user_id ?? null,
+            witness_name: sessionUser?.full_name || sessionUser?.username || 'Personal autorizado',
+          };
+          const signingHash = hashConsentEvidence({ snapshot, snapshotHash, signature, declarations, authorizations, signedAt, signatureMethod: 'in_person_assisted', witnessUserId: sessionUser?.user_id ?? null });
+          const signed = await pool.query(
+            `UPDATE consent_forms SET signatures = $1::jsonb, declarations = $2::jsonb,
+               authorizations = $3::jsonb, status = 'finalized', signing_status = 'signed',
+               signing_snapshot = $4::jsonb, signing_snapshot_hash = $5, signing_hash = $6,
+               signing_signed_at = $7, signing_token = NULL, signing_expires_at = NULL,
+               signing_otp_hash = NULL, signing_verified_at = NULL, signing_session_hash = NULL,
+               signing_session_expires_at = NULL, updated_at = NOW()
+             WHERE id = $8 AND COALESCE(signing_status, 'pending') <> 'signed'
+               AND status NOT IN ('signed', 'finalized')
+               AND signature_data IS NULL AND signed_at IS NULL AND signing_signed_at IS NULL
+               AND NULLIF(signatures->>'patient_sig_data', '') IS NULL
+               AND NULLIF(signatures->>'patient_signed_at', '') IS NULL
+             RETURNING id, patient_id, record_id`,
+            [JSON.stringify(signatures), JSON.stringify(declarations), JSON.stringify(authorizations), JSON.stringify(snapshot), snapshotHash, signingHash, signedAt, consentId]
+          );
+          if (!signed.rows.length) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: 'El consentimiento ya fue firmado. No se modificó su evidencia.' });
+          }
+          await logAudit(pool, {
+            patientId: signed.rows[0].patient_id,
+            recordId: signed.rows[0].record_id,
+            clinicId: effectiveClinicId,
+            sessionUser,
+            actionType: 'sign',
+            module: 'consent',
+            summary: 'Consentimiento firmado presencialmente con asistencia del profesional',
+          });
+          await client.query('COMMIT');
+
+          let copyEmailed = false;
+          if (record.patient_email && process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+            try {
+              const email = buildSignedConsentEmail(snapshot, signatures, declarations, authorizations, signedAt, signingHash);
+              await createSigningTransport().sendMail({
+                from: `BIOSKIN <${process.env.EMAIL_USER}>`,
+                to: record.patient_email,
+                subject: 'Copia de tu consentimiento informado firmado',
+                text: email.text,
+                html: email.html,
+                attachments: [{ filename: 'firma-paciente.png', content: signature.slice('data:image/png;base64,'.length), encoding: 'base64', cid: 'patient-signature' }],
+              });
+              copyEmailed = true;
+              await pool.query('UPDATE consent_forms SET signing_copy_sent_at = NOW() WHERE id = $1', [consentId]);
+            } catch {
+              console.error('No se pudo enviar la copia del consentimiento firmado.');
+            }
+          }
+          return res.status(200).json({ success: true, copyEmailed, signedAt, signingHash });
+        } catch (err) {
+          await client.query('ROLLBACK').catch(() => {});
+          throw err;
+        }
       }
 
       case 'getSigningSession': {
         const { token } = req.query;
-        if (!token) return res.status(400).json({ error: 'Token required' });
-        // Use owner pool (bypasses RLS) — public action, no tenant context
+        if (typeof token !== 'string' || !SIGNING_TOKEN_PATTERN.test(token)) return res.status(404).json({ error: 'Session not found or expired' });
         const ownerPool = getPool();
         const session = await ownerPool.query(
-          'SELECT * FROM consent_forms WHERE signing_token = $1',
+          `SELECT signing_status, signing_expires_at, signing_verified_at,
+             signing_email, signing_snapshot, signing_snapshot_hash,
+             signing_session_hash, signing_session_expires_at
+           FROM consent_forms WHERE signing_token = $1 AND signing_status = 'pending'
+             AND signing_expires_at > NOW()`,
           [token]
         );
-        
-        if (session.rows.length === 0) return res.status(404).json({ error: 'Session not found' });
-        
+        res.setHeader('Cache-Control', 'no-store, private');
+        res.setHeader('Referrer-Policy', 'no-referrer');
+        if (session.rows.length === 0) return res.status(404).json({ error: 'Session not found or expired' });
         const data = session.rows[0];
-        
-        // Fetch patient details
-        const patient = await ownerPool.query(
-          'SELECT first_name, last_name, rut, phone, birth_date FROM patients WHERE id = $1',
-          [data.patient_id]
-        );
-        
+        if (!data.signing_verified_at) {
+          return res.status(200).json({ requiresVerification: true, emailHint: maskEmail(data.signing_email) });
+        }
+        if (!data.signing_session_expires_at || new Date(data.signing_session_expires_at).getTime() <= Date.now() ||
+            !matchesSigningSession(req, data.signing_session_hash))
+          return res.status(401).json({ error: 'La sesión de firma venció o no pertenece a este navegador. Solicite un nuevo enlace a la clínica.' });
         return res.status(200).json({
-          ...data,
-          patient: patient.rows[0] || {}
+          ...data.signing_snapshot,
+          signing_status: 'pending',
+          signing_snapshot_hash: data.signing_snapshot_hash,
         });
+      }
+
+      case 'verifySigningCode': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'Método no permitido' });
+        const { token, code } = body;
+        if (typeof token !== 'string' || !SIGNING_TOKEN_PATTERN.test(token) || !/^\d{6}$/.test(String(code || '')))
+          return res.status(400).json({ error: 'Código o enlace inválido' });
+        if (!process.env.ADMIN_SETUP_SECRET) return res.status(503).json({ error: 'Servicio de verificación no disponible' });
+        const ownerPool = getPool();
+        const result = await ownerPool.query(
+          `SELECT signing_otp_hash, signing_otp_attempts, signing_verified_at,
+             signing_session_hash, signing_session_expires_at
+           FROM consent_forms WHERE signing_token = $1 AND signing_status = 'pending'
+             AND signing_expires_at > NOW()`,
+          [token]
+        );
+        res.setHeader('Cache-Control', 'no-store, private');
+        if (!result.rows.length) return res.status(404).json({ error: 'Código o enlace inválido o vencido' });
+        const row = result.rows[0];
+        if (row.signing_verified_at) {
+          if (row.signing_session_expires_at && new Date(row.signing_session_expires_at).getTime() > Date.now() &&
+              matchesSigningSession(req, row.signing_session_hash))
+            return res.status(200).json({ success: true });
+          return res.status(409).json({ error: 'La verificación ya fue consumida. Solicite un nuevo enlace a la clínica.' });
+        }
+        if (Number(row.signing_otp_attempts) >= 5) return res.status(429).json({ error: 'Se alcanzó el máximo de intentos. Solicite un nuevo enlace a la clínica.' });
+        const expectedHash = Buffer.from(String(row.signing_otp_hash || ''), 'hex');
+        const actualHash = Buffer.from(hashSigningCode(token, code, process.env.ADMIN_SETUP_SECRET), 'hex');
+        if (expectedHash.length !== actualHash.length || !crypto.timingSafeEqual(expectedHash, actualHash)) {
+          await ownerPool.query(
+            `UPDATE consent_forms SET signing_otp_attempts = signing_otp_attempts + 1
+             WHERE signing_token = $1 AND signing_status = 'pending' AND signing_expires_at > NOW()
+               AND signing_verified_at IS NULL AND signing_otp_attempts < 5`,
+            [token]
+          );
+          return res.status(401).json({ error: 'Código o enlace inválido' });
+        }
+        const browserSession = crypto.randomBytes(32).toString('hex');
+        const verified = await ownerPool.query(
+          `UPDATE consent_forms SET signing_verified_at = NOW(), signing_otp_hash = NULL,
+             signing_session_hash = $2, signing_session_expires_at = NOW() + INTERVAL '15 minutes'
+           WHERE signing_token = $1 AND signing_status = 'pending' AND signing_expires_at > NOW()
+             AND signing_verified_at IS NULL AND signing_otp_attempts < 5
+             AND signing_otp_hash = $3 RETURNING id`,
+          [token, hashConsentSession(browserSession, process.env.ADMIN_SETUP_SECRET), row.signing_otp_hash]
+        );
+        if (!verified.rows.length) return res.status(409).json({ error: 'Código o enlace inválido o vencido' });
+        setSigningSessionCookie(res, browserSession, 900);
+        return res.status(200).json({ success: true });
       }
 
       case 'submitSignature': {
         const { token, signature, declarations, authorizations } = body;
-        if (!token || !signature) return res.status(400).json({ error: 'Token and signature required' });
-        // Use owner pool (bypasses RLS) — public action, no tenant context
+        if (req.method !== 'POST') return res.status(405).json({ error: 'Método no permitido' });
+        if (typeof token !== 'string' || !SIGNING_TOKEN_PATTERN.test(token) || !isValidSignatureDataUrl(signature))
+          return res.status(400).json({ error: 'Enlace o firma inválidos. La firma debe ser una imagen PNG válida de hasta 500 KB.' });
+        const declarationKeys = ['understanding', 'questions', 'results', 'authorization', 'revocation', 'alternatives'];
+        const authorizationKeys = ['image_use', 'photo_video', 'privacy_policy'];
+        if (!declarations || declarationKeys.some(key => typeof declarations[key] !== 'boolean') ||
+          declarations.understanding !== true || declarations.authorization !== true ||
+          !authorizations || authorizationKeys.some(key => typeof authorizations[key] !== 'boolean') ||
+          authorizations.privacy_policy !== true)
+          return res.status(400).json({ error: 'Debe aceptar la información del tratamiento, la autorización y la política de privacidad.' });
         const ownerPool = getPool();
-        const current = await ownerPool.query('SELECT signatures FROM consent_forms WHERE signing_token = $1', [token]);
-        if (current.rows.length === 0) return res.status(404).json({ error: 'Session not found' });
-        
-        const currentSigs = current.rows[0].signatures || {};
+        const current = await ownerPool.query(
+           `SELECT signatures, signing_snapshot, signing_snapshot_hash, signing_email,
+             signing_session_hash, signing_session_expires_at
+           FROM consent_forms WHERE signing_token = $1 AND signing_status = 'pending'
+             AND signing_expires_at > NOW() AND signing_verified_at IS NOT NULL
+             AND signing_otp_attempts < 5`,
+          [token]
+        );
+        res.setHeader('Cache-Control', 'no-store, private');
+        if (!current.rows.length) return res.status(409).json({ error: 'Enlace vencido, no verificado o ya utilizado. Solicite uno nuevo a la clínica.' });
+        const session = current.rows[0];
+        if (!session.signing_session_expires_at || new Date(session.signing_session_expires_at).getTime() <= Date.now() ||
+            !matchesSigningSession(req, session.signing_session_hash))
+          return res.status(401).json({ error: 'La sesión de firma venció o no pertenece a este navegador. Solicite un nuevo enlace a la clínica.' });
+        const currentSigs = session.signatures || {};
+        const signedAt = new Date().toISOString();
         const newSigs = {
           ...currentSigs,
           patient_sig_data: signature,
-          patient_signed_at: new Date().toISOString()
+          patient_signed_at: signedAt,
         };
-        
-        await ownerPool.query(
-          'UPDATE consent_forms SET signatures = $1, declarations = $2, authorizations = $3, signing_status = $4, status = $5, updated_at = NOW() WHERE signing_token = $6',
-          [JSON.stringify(newSigs), JSON.stringify(declarations), JSON.stringify(authorizations || {}), 'signed', 'finalized', token]
+        const signingHash = hashConsentEvidence({
+          snapshot: session.signing_snapshot,
+          snapshotHash: session.signing_snapshot_hash,
+          signature,
+          declarations,
+          authorizations,
+          signedAt,
+        });
+        const signed = await ownerPool.query(
+          `UPDATE consent_forms SET signatures = $1::jsonb, declarations = $2::jsonb,
+             authorizations = $3::jsonb, signing_status = 'signed', status = 'finalized',
+             signing_signed_at = $4, signing_hash = $5, signing_token = NULL,
+             signing_otp_hash = NULL, signing_session_hash = NULL,
+             signing_session_expires_at = NULL, updated_at = NOW()
+           WHERE signing_token = $6 AND signing_status = 'pending' AND signing_verified_at IS NOT NULL
+             AND signing_expires_at > NOW() AND signing_otp_attempts < 5
+             AND signing_session_hash = $7 AND signing_session_expires_at > NOW()
+           RETURNING id, patient_id, record_id, clinic_id, signing_email, signing_snapshot, signing_hash`,
+          [JSON.stringify(newSigs), JSON.stringify(declarations), JSON.stringify(authorizations), signedAt, signingHash, token, session.signing_session_hash]
         );
-        
-        return res.status(200).json({ success: true });
+        if (!signed.rows.length) return res.status(409).json({ error: 'Enlace vencido o ya utilizado. Solicite uno nuevo a la clínica.' });
+        setSigningSessionCookie(res, '', 0);
+        const signedRecord = signed.rows[0];
+        await logAudit(ownerPool, {
+          patientId: signedRecord.patient_id,
+          recordId: signedRecord.record_id,
+          clinicId: signedRecord.clinic_id,
+          actionType: 'sign_remote',
+          module: 'consent',
+          summary: 'Consentimiento firmado por el paciente mediante enlace OTP',
+        });
+        let copyEmailed = false;
+        try {
+          const email = buildSignedConsentEmail(signedRecord.signing_snapshot, newSigs, declarations, authorizations, signedAt, signingHash);
+          const attachments = email.signature.startsWith('data:image/png;base64,') ? [{
+            filename: 'firma-paciente.png',
+            content: email.signature.slice('data:image/png;base64,'.length),
+            encoding: 'base64',
+            cid: 'patient-signature',
+          }] : [];
+          await createSigningTransport().sendMail({
+            from: `BIOSKIN <${process.env.EMAIL_USER}>`,
+            to: signedRecord.signing_email,
+            subject: 'Copia de tu consentimiento informado firmado',
+            text: email.text,
+            html: email.html,
+            attachments,
+          });
+          copyEmailed = true;
+        } catch {
+          console.error('No se pudo enviar la copia del consentimiento firmado.');
+        }
+        if (copyEmailed) {
+          try {
+            await ownerPool.query('UPDATE consent_forms SET signing_copy_sent_at = NOW() WHERE id = $1', [signedRecord.id]);
+          } catch {
+            console.error('No se pudo registrar el envío de la copia del consentimiento firmado.');
+          }
+        }
+        return res.status(200).json({ success: true, copyEmailed, emailHint: maskEmail(signedRecord.signing_email), signedAt, signingHash });
       }
 
       case 'listConsents': {
         const { patient_id: pid, record_id: rid } = req.query;
-        let query = 'SELECT * FROM consent_forms WHERE ';
+        let query = `SELECT ${CONSENT_SAFE_COLUMNS} FROM consent_forms WHERE `;
         let params = [];
         if (rid) {
           query += 'record_id = $1';
@@ -2346,7 +2790,7 @@ export default async function handler(req, res) {
 
       case 'getConsent':
         const { id: cid } = req.query;
-        const consent = await pool.query('SELECT * FROM consent_forms WHERE id = $1', [cid]);
+        const consent = await pool.query(`SELECT ${CONSENT_SAFE_COLUMNS} FROM consent_forms WHERE id = $1`, [cid]);
         if (consent.rows.length === 0) return res.status(404).json({ error: 'Consent not found' });
         return res.status(200).json(consent.rows[0]);
 
@@ -2375,8 +2819,41 @@ export default async function handler(req, res) {
           signatures,
           attachments
         } = body;
+        const safeStatus = status === 'annulled' ? 'annulled' : 'draft';
+        if (signatures?.patient_sig_data || signatures?.patient_signed_at)
+          return res.status(400).json({ error: 'La firma del paciente debe registrarse mediante firma remota verificada o firma presencial asistida.' });
+        const safeSignatures = { ...(signatures || {}) };
+        delete safeSignatures.patient_sig_data;
+        delete safeSignatures.patient_signed_at;
+        delete safeSignatures.signature_method;
+        delete safeSignatures.witness_user_id;
+        delete safeSignatures.witness_name;
 
+        const consentPatientId = Number(savePid);
+        const consentRecordId = Number(saveRid);
+        if (!Number.isSafeInteger(consentPatientId) || consentPatientId <= 0 ||
+            !Number.isSafeInteger(consentRecordId) || consentRecordId <= 0)
+          return res.status(400).json({ error: 'Paciente y expediente son obligatorios para el consentimiento.' });
+        const recordOwner = await pool.query(
+          `SELECT p.clinic_id FROM clinical_records cr JOIN patients p ON p.id = cr.patient_id
+           WHERE cr.id = $1 AND cr.patient_id = $2 LIMIT 1`,
+          [consentRecordId, consentPatientId]
+        );
+        if (!recordOwner.rows.length) return res.status(400).json({ error: 'El paciente no corresponde al expediente seleccionado.' });
+        if (effectiveClinicId && String(recordOwner.rows[0].clinic_id) !== String(effectiveClinicId))
+          return res.status(403).json({ error: 'El paciente no pertenece a la clínica activa.' });
         if (saveCid) {
+          if (!Number.isSafeInteger(Number(saveCid)) || Number(saveCid) <= 0)
+            return res.status(400).json({ error: 'ID de consentimiento inválido.' });
+          const existingConsent = await pool.query('SELECT patient_id, record_id, consultation_id FROM consent_forms WHERE id = $1 LIMIT 1', [saveCid]);
+          if (!existingConsent.rows.length) return res.status(404).json({ error: 'Consentimiento no encontrado.' });
+          if (Number(existingConsent.rows[0].patient_id) !== consentPatientId || Number(existingConsent.rows[0].record_id) !== consentRecordId)
+            return res.status(403).json({ error: 'No se puede reasignar un consentimiento a otro paciente o expediente.' });
+          const targetConsultationId = consId ?? existingConsent.rows[0].consultation_id;
+          if (targetConsultationId != null) {
+            const consultation = await pool.query('SELECT id FROM consultations WHERE id = $1 AND record_id = $2 LIMIT 1', [targetConsultationId, consentRecordId]);
+            if (!consultation.rows.length) return res.status(400).json({ error: 'La consulta no corresponde al expediente seleccionado.' });
+          }
           // Update
           const updateQuery = `
             UPDATE consent_forms SET
@@ -2398,19 +2875,51 @@ export default async function handler(req, res) {
               authorizations = COALESCE($15, authorizations),
               declarations = COALESCE($16, declarations),
               signatures = COALESCE($17, signatures),
-              attachments = COALESCE($18, attachments)
-            WHERE id = $19 RETURNING *
+              attachments = COALESCE($18, attachments),
+              signing_token = NULL,
+              signing_expires_at = NULL,
+              signing_email = NULL,
+              signing_otp_hash = NULL,
+              signing_otp_attempts = 0,
+              signing_verified_at = NULL,
+              signing_session_hash = NULL,
+              signing_session_expires_at = NULL,
+              signing_snapshot = NULL,
+              signing_snapshot_hash = NULL,
+              signing_hash = NULL,
+              signing_signed_at = NULL,
+              signing_copy_sent_at = NULL
+            WHERE id = $19 AND COALESCE(signing_status, 'pending') <> 'signed'
+              AND status NOT IN ('signed', 'finalized')
+              AND signature_data IS NULL AND signed_at IS NULL AND signing_signed_at IS NULL
+              AND NULLIF(signatures->>'patient_sig_data', '') IS NULL
+              AND NULLIF(signatures->>'patient_signed_at', '') IS NULL
+            RETURNING ${CONSENT_SAFE_COLUMNS}
           `;
           const updated = await pool.query(updateQuery, [
-            status, consId, procedure_type, zone, sessions, 
+            safeStatus, consId, procedure_type, zone, sessions,
             JSON.stringify(objectives), description, JSON.stringify(risks), JSON.stringify(benefits), JSON.stringify(alternatives),
             JSON.stringify(pre_care), JSON.stringify(post_care), JSON.stringify(contraindications),
             JSON.stringify(critical_antecedents), JSON.stringify(authorizations), JSON.stringify(declarations),
-            JSON.stringify(signatures), JSON.stringify(attachments),
+            JSON.stringify(safeSignatures), JSON.stringify(attachments),
             saveCid
           ]);
+          if (!updated.rows.length) return res.status(409).json({ error: 'Un consentimiento firmado no se puede editar. Cree un nuevo consentimiento.' });
+          await logAudit(pool, {
+            patientId: updated.rows[0].patient_id,
+            recordId: updated.rows[0].record_id,
+            clinicId: effectiveClinicId,
+            sessionUser: su,
+            actionType: 'update',
+            module: 'consent',
+            summary: 'Actualizó un consentimiento informado no firmado',
+          });
           return res.status(200).json(updated.rows[0]);
         } else {
+          if (consId != null) {
+            const consultation = await pool.query('SELECT id FROM consultations WHERE id = $1 AND record_id = $2 LIMIT 1', [consId, consentRecordId]);
+            if (!consultation.rows.length) return res.status(400).json({ error: 'La consulta no corresponde al expediente seleccionado.' });
+          }
           // Create
           const insertQuery = `
             INSERT INTO consent_forms (
@@ -2427,16 +2936,25 @@ export default async function handler(req, res) {
               $15, $16, $17,
               $18, $19, $20,
               $21, $22
-            ) RETURNING *
+            ) RETURNING ${CONSENT_SAFE_COLUMNS}
           `;
           const created = await pool.query(insertQuery, [
-            saveRid, savePid, effectiveClinicId, consId, status || 'draft', created_by,
+            saveRid, savePid, effectiveClinicId, consId, safeStatus, created_by,
             procedure_type, zone, sessions,
             JSON.stringify(objectives || []), description || '', JSON.stringify(risks || []), JSON.stringify(benefits || []), JSON.stringify(alternatives || []),
             JSON.stringify(pre_care || []), JSON.stringify(post_care || []), JSON.stringify(contraindications || []),
             JSON.stringify(critical_antecedents || {}), JSON.stringify(authorizations || {}), JSON.stringify(declarations || {}),
-            JSON.stringify(signatures || {}), JSON.stringify(attachments || [])
+            JSON.stringify(safeSignatures), JSON.stringify(attachments || [])
           ]);
+          await logAudit(pool, {
+            patientId: created.rows[0].patient_id,
+            recordId: created.rows[0].record_id,
+            clinicId: effectiveClinicId,
+            sessionUser: su,
+            actionType: 'create',
+            module: 'consent',
+            summary: 'Creó un consentimiento informado',
+          });
           return res.status(200).json(created.rows[0]);
         }
       }
@@ -2445,7 +2963,15 @@ export default async function handler(req, res) {
         const { id: delCid } = req.query;
         if (!(await ownedByClinic(pool, 'consent_forms', delCid, effectiveClinicId)))
           return res.status(403).json({ error: 'Sin permiso' });
-        await pool.query('DELETE FROM consent_forms WHERE id = $1', [delCid]);
+        const deleted = await pool.query(
+          `DELETE FROM consent_forms WHERE id = $1 AND COALESCE(signing_status, 'pending') <> 'signed'
+            AND status NOT IN ('signed', 'finalized') AND signature_data IS NULL AND signed_at IS NULL AND signing_signed_at IS NULL
+            AND NULLIF(signatures->>'patient_sig_data', '') IS NULL
+            AND NULLIF(signatures->>'patient_signed_at', '') IS NULL
+           RETURNING id`,
+          [delCid]
+        );
+        if (!deleted.rows.length) return res.status(409).json({ error: 'Un consentimiento firmado no se puede eliminar desde el panel.' });
         return res.status(200).json({ message: 'Consent deleted' });
       }
 

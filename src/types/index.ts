@@ -170,7 +170,8 @@ export interface Patient {
   id: number;
   first_name: string;
   last_name: string;
-  rut?: string;
+  identification_type?: 'cedula' | 'ruc' | null;
+  identification_number?: string;
   email?: string;
   phone?: string;
   birth_date?: string;

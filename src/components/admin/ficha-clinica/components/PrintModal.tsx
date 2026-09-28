@@ -441,7 +441,7 @@ export default function PrintModal({ patient, recordId, recordData, activeConsul
     <div>
       <div class="patient-name">${esc(patient?.first_name || '')} ${esc(patient?.last_name || '')}</div>
       <div class="patient-sub">
-        ${patient?.rut ? `<strong>C\u00e9dula/ID:</strong> ${esc(patient.rut)} &nbsp;&nbsp;` : ''}
+        ${patient?.identification_number ? `<strong>Identificación:</strong> ${esc(patient.identification_number)} &nbsp;&nbsp;` : ''}
         ${patient?.birth_date ? `<strong>Nac:</strong> ${formatDateShort(patient.birth_date)} &nbsp;&nbsp;` : ''}
         ${patientAge !== null ? `<strong>Edad:</strong> ${patientAge} a\u00f1os &nbsp;&nbsp;` : ''}
         ${patient?.gender ? `<strong>Sexo:</strong> ${esc(patient.gender)}` : ''}

@@ -19,7 +19,7 @@ El build de producción pasa. El lint global no está limpio: en la línea base 
 | Cloudflare R2 | Bucket `bioskin-fotos`, creado 2026-08-04, región ENAM, clase Standard | Confirmado por MCP y Wrangler |
 | R2 CORS | Orígenes BIOSKIN y localhost; métodos GET/PUT/DELETE/HEAD; headers restringidos | Confirmado en bucket |
 | R2 credenciales | `R2_ACCESS_KEY_ID` (32 chars hex) y `R2_SECRET_ACCESS_KEY` (64 chars hex, SHA-256 del token) rotadas en Production y Preview el 2026-09-07; verificadas con round-trip real PUT→GET→DELETE contra el bucket | Confirmado funcional end-to-end |
-| Neon | Diagnósticos ejecutados mediante `vercel env run`; host Neon, tipos, tablas y políticas consultados sin exponer secretos | Confirmado en entorno conectado |
+| Neon | Diagnóstico de solo lectura y migración transaccional ejecutados el 2026-09-28 en la única rama `production`; se verificaron 17 columnas de identificación, firma y auditoría sin leer datos de pacientes | Confirmado mediante CLI y `information_schema` |
 
 La existencia de una variable en Vercel no demuestra por sí sola que su valor sea válido ni que el flujo de producción haya sido ejercitado.
 
@@ -99,6 +99,7 @@ Los avisos administrativos al desarrollador cubren registro público, invitacion
 `lib/neon-clinical-db.js` crea tablas para:
 
 - pacientes y expedientes;
+- identificación de pacientes mediante `identification_type` (`cedula`/`ruc`) e `identification_number`; `rut` se conserva únicamente como columna espejo de compatibilidad y los registros antiguos quedan sin tipo hasta clasificarse;
 - antecedentes, consultas e historial;
 - exámenes físicos y mapas JSONB;
 - marcaciones 3D faciales y corporales dentro de esos mapas JSONB, incluida posición, normal, distribución y radio zonal ajustable; el visor orienta cada zona a la superficie del modelo y conserva el tamaño al guardar;
@@ -110,6 +111,16 @@ Los avisos administrativos al desarrollador cubren registro público, invitacion
 - auditoría, asignaciones y grupos;
 - catálogos globales;
 - `clinical_photos` con `r2_key` y metadatos.
+
+La firma remota de consentimientos se mantiene dentro de `api/records.js`, sin agregar una función serverless. Un usuario autenticado genera un token aleatorio de 256 bits y un código OTP de seis dígitos enviado al correo registrado del paciente. El OTP se almacena como HMAC con `ADMIN_SETUP_SECRET`, permite cinco intentos y vence junto con el enlace a los 30 minutos. Tras verificarlo, el servidor consume el OTP y emite una sesión aleatoria ligada a una cookie `HttpOnly`, `Secure`, `SameSite=Strict`, con vencimiento de 15 minutos; esa cookie también es obligatoria para consultar el contenido clínico y firmar. Las generaciones simultáneas se serializan por consentimiento.
+
+Para pacientes sin correo o que necesitan ayuda con tecnología, el panel ofrece firma presencial asistida en el dispositivo de la clínica: el profesional autenticado confirma visualmente el documento de identidad, acompaña la lectura, recoge declaraciones y acepta una firma táctil. La API valida el mismo PNG y las aceptaciones obligatorias, registra al usuario autenticado como testigo, guarda la hora/hash y genera auditoría; el correo es opcional para esta ruta. El guardado ordinario solo permite borrador/anulación, nunca marca firmado ni acepta una firma de paciente. La firma remota requiere correo registrado. Al crear, actualizar o firmar, el backend comprueba que paciente, expediente y consulta estén vinculados y correspondan a la clínica/alcance de acceso activo.
+
+Ambas rutas requieren PNG RGBA8 no interlazado de hasta 500 KB, CRC válidos y filas descomprimidas coherentes; las aceptaciones obligatorias se validan en servidor. La migración clasifica como firmados registros históricos que tengan estado cerrado o timestamps/imagen en columnas legacy; las consultas de UI no exponen OTP, token ni sesión. Los eventos de consentimiento escriben `patient_audit_log` con `clinic_id` para cumplir RLS.
+
+Al generar el enlace se congela en `consent_forms.signing_snapshot` la versión del consentimiento que verá el paciente y se calcula su SHA-256. Al firmar, una actualización condicional guarda firma, declaraciones, hora de verificación/firma y hash de evidencia, consume el token y finaliza el consentimiento. Las acciones ordinarias del API impiden editar/borrar un consentimiento firmado; solicitar una nueva firma crea otro consentimiento y conserva el anterior. También se bloquean con transacción los borrados por consulta, expediente o paciente que pudieran eliminarlo por cascada. Se envía una copia al correo verificado con la firma adjunta cuando está disponible y la vista previa permite imprimir/guardar como PDF. La ruta del token usa `no-store` y `no-referrer`.
+
+Estos controles aportan evidencia y reducen suplantación casual, pero el OTP demuestra control del correo, no identidad oficial; el hash reside en la misma base y no es un sello de tiempo independiente. No se afirma que el flujo equivalga a una firma electrónica certificada ni que cumpla por sí solo todos los requisitos legales ecuatorianos.
 
 Inventario agrupa visualmente los productos por el valor normalizado de `category`. El formulario permite escribir categorías nuevas y sugiere las categorías ya registradas o configuradas mediante `datalist`; búsqueda y filtros operan antes de la agrupación.
 
@@ -174,7 +185,7 @@ Los números de `WHATSAPP_SYSTEM_STAFF_PHONES` quedan excluidos de toda notifica
 3. La CSP permite `unsafe-inline` y `unsafe-eval`; debe revisarse contra el bundle y una estrategia de nonce/hash antes de endurecerla.
 4. La validación de magic bytes y dimensiones reales de imágenes todavía no está implementada (solo se valida `Content-Type` declarado y tamaño).
 5. No debe prometerse object versioning, cifrado en reposo, backups automáticos, alta disponibilidad o cumplimiento legal específico sin evidencia de proveedor/configuración.
-6. La firma digital está implementada como captura y persistencia de firma/declaraciones; su validez jurídica depende del marco legal y del procedimiento de la clínica.
+6. La firma remota prueba control temporal del correo mediante OTP; la presencial registra al profesional autenticado como asistente y requiere que este revise el documento original. Ninguna ruta certifica por sí sola la identidad oficial del firmante; el hash reside en Neon y no es un sello de tiempo independiente. La validez jurídica depende del marco ecuatoriano y del procedimiento de la clínica.
 7. El bucket `bioskin-fotos` quedó vacío tras el reset del 2026-09-07; cualquier foto clínica anterior a esa fecha debe volver a subirse.
 
 ## 8. Comandos de validación ejecutados
@@ -182,6 +193,7 @@ Los números de `WHATSAPP_SYSTEM_STAFF_PHONES` quedan excluidos de toda notifica
 - `npm run build` — pasa; Vite genera `dist/` con advertencia de chunks grandes.
 - `npm run lint` — falla en línea base con 471 errores y 54 warnings.
 - `node --check api/records.js` — pasa.
+- `node --env-file=.env.local scripts/migrate-consent-signing.mjs` — migración transaccional aplicada y verificada en Neon Production; 17 columnas confirmadas, sin extraer filas clínicas.
 - `node --check lib/neon-clinical-db.js` — pasa.
 - `node --check lib/r2-service.js` — pasa.
 - `npx eslint api/records.js lib/neon-clinical-db.js lib/r2-service.js` — pasa.

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import recordsFetch from "../utils/recordsFetch";
 import { useParams, useNavigate } from 'react-router-dom';
 import SignatureCanvas from 'react-signature-canvas';
-import { CheckCircle, AlertTriangle, PenTool, Eraser, Save, X } from 'lucide-react';
+import { CheckCircle, AlertTriangle, PenTool, Eraser, Save, X, Printer } from 'lucide-react';
 import BrandLogo from '../components/ui/BrandLogo';
 
 interface ConsentSession {
@@ -25,6 +25,7 @@ interface ConsentSession {
   };
   status: string;
   signing_status: string;
+  signing_snapshot_hash?: string;
   // Added fields for full document view
   objectives?: string[];
   risks?: any;
@@ -46,8 +47,8 @@ interface ConsentSession {
   patient?: {
     first_name: string;
     last_name: string;
-    rut: string;
-    phone: string;
+    identification_type: 'cedula' | 'ruc' | null;
+    identification_number: string;
     birth_date: string;
   };
 }
@@ -58,6 +59,12 @@ export default function ConsentSigning() {
   const [session, setSession] = useState<ConsentSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [verificationRequired, setVerificationRequired] = useState(false);
+  const [emailHint, setEmailHint] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [copyEmailed, setCopyEmailed] = useState(false);
+  const [signedAt, setSignedAt] = useState('');
+  const [signingHash, setSigningHash] = useState('');
   const [declarations, setDeclarations] = useState<any>({});
   const [isSigning, setIsSigning] = useState(false);
   const [signatureData, setSignatureData] = useState<string | null>(null);
@@ -86,6 +93,13 @@ export default function ConsentSigning() {
       const res = await recordsFetch(`/api/records?action=getSigningSession&token=${token}`);
       if (!res.ok) throw new Error('Sesión no encontrada o expirada');
       const data = await res.json();
+      if (data.requiresVerification) {
+        setSession(null);
+        setEmailHint(data.emailHint || '');
+        setVerificationRequired(true);
+        return;
+      }
+      setVerificationRequired(false);
       setSession(data);
       const isPending = data.signing_status !== 'signed';
       setDeclarations({
@@ -102,6 +116,29 @@ export default function ConsentSigning() {
       if (data.signing_status === 'signed') {
         setSignatureData(data.signatures?.patient_sig_data || null);
       }
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const verifyCode = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await recordsFetch('/api/records', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'verifySigningCode', token, code: verificationCode }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'No se pudo verificar el código.');
+      }
+      setVerificationCode('');
+      await fetchSession();
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -180,8 +217,10 @@ export default function ConsentSigning() {
       });
 
       if (res.ok) {
-        alert('Documento firmado correctamente');
-        window.close(); // Try to close, or show success message
+        const result = await res.json();
+        setCopyEmailed(result.copyEmailed === true);
+        setSignedAt(result.signedAt || new Date().toISOString());
+        setSigningHash(result.signingHash || '');
         setSession(prev => prev ? { ...prev, signing_status: 'signed' } : null);
       } else {
         throw new Error('Error al guardar la firma');
@@ -194,15 +233,50 @@ export default function ConsentSigning() {
   };
 
   if (loading) return <div className="flex items-center justify-center min-h-screen"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#deb887]"></div></div>;
-  if (error) return <div className="flex items-center justify-center min-h-screen text-red-500">{error}</div>;
+  if (error && !verificationRequired) return <div className="flex items-center justify-center min-h-screen text-red-500">{error}</div>;
+  if (verificationRequired) return (
+    <div className="min-h-screen bg-gray-50 p-4 flex items-center justify-center">
+      <form onSubmit={verifyCode} className="w-full max-w-md bg-white p-6 rounded-lg shadow-sm space-y-4">
+        <h1 className="text-xl font-bold text-gray-900">Verifica tu correo</h1>
+        <p className="text-sm text-gray-600">Enviamos un código a {emailHint}. Ingresa el código para consultar y firmar el consentimiento.</p>
+        <label className="block text-sm font-medium text-gray-700" htmlFor="verification-code">Código de 6 dígitos</label>
+        <input id="verification-code" name="verification-code" type="text" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required value={verificationCode} onChange={event => setVerificationCode(event.target.value.replace(/\D/g, '').slice(0, 6))} className="w-full p-3 border border-gray-300 rounded-md text-center text-2xl tracking-[0.25em]" />
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        <button type="submit" disabled={verificationCode.length !== 6} className="w-full py-3 bg-[#deb887] text-white rounded-md font-semibold disabled:opacity-50">Verificar y continuar</button>
+        <p className="text-xs text-gray-500">El código vence junto con el enlace. Si no lo solicitaste o venció, contacta a la clínica para generar otro enlace.</p>
+      </form>
+    </div>
+  );
   if (!session) return null;
 
   if (session.signing_status === 'signed') {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 p-4">
-        <CheckCircle className="w-16 h-16 text-green-500 mb-4" />
-        <h1 className="text-2xl font-bold text-gray-800">Documento Firmado</h1>
-        <p className="text-gray-600 mt-2">Gracias, su consentimiento ha sido registrado.</p>
+      <div className="min-h-screen bg-gray-50 p-4">
+        <div className="print:hidden flex min-h-[60vh] flex-col items-center justify-center">
+          <CheckCircle className="w-16 h-16 text-green-500 mb-4" />
+          <h1 className="text-2xl font-bold text-gray-800">Documento Firmado</h1>
+          <p className="text-gray-600 mt-2">{copyEmailed ? `Enviamos una copia a ${emailHint}.` : 'No pudimos enviar el correo. Puedes imprimir o guardar una copia desde aquí.'}</p>
+          <button type="button" onClick={() => window.print()} className="mt-5 px-4 py-2 bg-[#deb887] text-white rounded-md font-semibold inline-flex items-center gap-2">
+            <Printer className="w-4 h-4" /> Imprimir o guardar copia
+          </button>
+        </div>
+        <article className="hidden print:block max-w-3xl mx-auto bg-white p-8 text-gray-900">
+          <h1 className="text-2xl font-bold">Consentimiento informado firmado</h1>
+          <p className="mt-4"><strong>Paciente:</strong> {session.patient?.first_name} {session.patient?.last_name}</p>
+          <p><strong>{session.patient?.identification_type === 'ruc' ? 'RUC' : session.patient?.identification_type === 'cedula' ? 'Cédula' : 'Identificación'}:</strong> {session.patient?.identification_number || 'N/A'}</p>
+          <p><strong>Procedimiento:</strong> {session.procedure_type}</p>
+          <p className="mt-4"><strong>Descripción:</strong><br />{session.description}</p>
+          {(['objectives', 'risks', 'benefits', 'alternatives', 'pre_care', 'post_care', 'contraindications', 'critical_antecedents'] as const).map(key => session[key] ? (
+            <section key={key} className="mt-4">
+              <h2 className="font-bold">{key.replace(/_/g, ' ')}</h2>
+              <pre className="whitespace-pre-wrap font-sans">{typeof session[key] === 'string' ? session[key] : JSON.stringify(session[key], null, 2)}</pre>
+            </section>
+          ) : null)}
+          <section className="mt-4"><strong>Declaraciones aceptadas:</strong><pre className="whitespace-pre-wrap font-sans">{JSON.stringify(declarations, null, 2)}</pre></section>
+          {signatureData && <section className="mt-5"><strong>Firma del paciente</strong><br /><img src={signatureData} alt="Firma del paciente" className="max-h-32 mt-2" /></section>}
+          <p className="mt-5 text-sm">Firmado: {signedAt || new Date().toISOString()}</p>
+          {signingHash && <p className="mt-2 text-xs break-all">Huella SHA-256: {signingHash}</p>}
+        </article>
       </div>
     );
   }
@@ -231,9 +305,8 @@ export default function ConsentSigning() {
           <h3 className="font-bold text-gray-900 mb-3 border-b pb-2">INFORMACIÓN DEL PACIENTE</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <p><strong className="text-gray-600">Nombre:</strong> {session.patient?.first_name} {session.patient?.last_name}</p>
-            <p><strong className="text-gray-600">Identificación:</strong> {session.patient?.rut || 'N/A'}</p>
+            <p><strong className="text-gray-600">{session.patient?.identification_type === 'ruc' ? 'RUC' : session.patient?.identification_type === 'cedula' ? 'Cédula' : 'Identificación'}:</strong> {session.patient?.identification_number || 'N/A'}</p>
             <p><strong className="text-gray-600">Edad:</strong> {session.patient?.birth_date ? calculateAge(session.patient.birth_date) : 'N/A'} años</p>
-            <p><strong className="text-gray-600">Teléfono:</strong> {session.patient?.phone || 'N/A'}</p>
           </div>
         </section>
 
