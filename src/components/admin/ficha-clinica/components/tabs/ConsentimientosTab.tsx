@@ -305,13 +305,14 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
         const url = `${window.location.origin}${data.url}`;
         setSigningUrl(url);
         setShowQr(true);
-        setMessage({ type: 'success', text: 'Nuevo enlace generado; código enviado al correo del paciente' });
+        setMessage({ type: 'success', text: `Código enviado al paciente desde ${data.senderEmail || 'el Gmail conectado'}.` });
       } else {
-        throw new Error('Error al generar nuevo enlace');
+        const result = await res.json().catch(() => ({}));
+        throw new Error(result.error || 'Error al generar nuevo enlace');
       }
     } catch (error) {
       console.error('Error resetting signature:', error);
-      setMessage({ type: 'error', text: 'Error al restablecer firma' });
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Error al restablecer firma' });
     } finally {
       setLoading(false);
     }
@@ -342,13 +343,14 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
         const url = `${window.location.origin}${data.url}`;
         setSigningUrl(url);
         setShowQr(true);
-        setMessage({ type: 'success', text: 'Enlace generado; código enviado al correo del paciente' });
+        setMessage({ type: 'success', text: `Código enviado al paciente desde ${data.senderEmail || 'el Gmail conectado'}.` });
       } else {
-        throw new Error('Error al generar enlace');
+        const result = await res.json().catch(() => ({}));
+        throw new Error(result.error || 'Error al generar enlace');
       }
     } catch (error) {
       console.error('Error generating signing link:', error);
-      setMessage({ type: 'error', text: 'Error al generar enlace de firma' });
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Error al generar enlace de firma' });
     } finally {
       setLoading(false);
     }

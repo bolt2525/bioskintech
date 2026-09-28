@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   canonicalJson,
+  buildConsentGmailRaw,
   hashConsentEvidence,
   hashConsentSession,
   hashSigningCode,
@@ -49,4 +50,23 @@ test('signature submissions accept only bounded PNG data URLs', () => {
 test('email hints mask most of the mailbox name', () => {
   assert.equal(maskEmail('ana@example.com'), 'a***@example.com');
   assert.equal(maskEmail('invalid'), '');
+});
+
+test('consent email MIME uses the authenticated mailbox and inline signature', () => {
+  const raw = buildConsentGmailRaw({
+    fromEmail: 'dra@clinic.example',
+    fromName: 'Clínica BIOSKIN · Dra. Ana',
+    to: 'paciente@example.com',
+    subject: 'Código para firmar',
+    text: 'Código 123456',
+    html: '<p>Código 123456</p><img src="cid:patient-signature">',
+    signaturePngBase64: 'aW1hZ2U=',
+  });
+  const message = Buffer.from(raw, 'base64url').toString('utf8');
+  assert.match(message, /From: =\?UTF-8\?B\?.*<dra@clinic\.example>/);
+  assert.match(message, /Content-Type: multipart\/related/);
+  assert.match(message, /Content-Type: multipart\/alternative/);
+  assert.match(message, /Content-ID: <patient-signature>/);
+  assert.doesNotMatch(message, /bolt2525@gmail\.com/);
+  assert.throws(() => buildConsentGmailRaw({ fromEmail: 'bad\r\nBcc:x@y.com', to: 'a@b.com', subject: 'x', text: 'x', html: 'x' }), /Invalid Gmail/);
 });

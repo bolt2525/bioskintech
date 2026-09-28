@@ -16,6 +16,7 @@ const migrations = [
      WHERE identification_type IS NOT NULL AND identification_number IS NOT NULL AND clinic_id IS NOT NULL`,
   'ALTER TABLE patient_audit_log ADD COLUMN IF NOT EXISTS clinic_id UUID',
   'ALTER TABLE consent_forms ADD COLUMN IF NOT EXISTS signing_expires_at TIMESTAMPTZ',
+  'ALTER TABLE consent_forms ADD COLUMN IF NOT EXISTS signing_sender_user_id INTEGER',
   'ALTER TABLE consent_forms ADD COLUMN IF NOT EXISTS signing_email VARCHAR(254)',
   'ALTER TABLE consent_forms ADD COLUMN IF NOT EXISTS signing_otp_hash VARCHAR(64)',
   'ALTER TABLE consent_forms ADD COLUMN IF NOT EXISTS signing_otp_attempts INTEGER NOT NULL DEFAULT 0',
@@ -56,7 +57,7 @@ try {
        (table_name = 'patients' AND column_name IN ('identification_type', 'identification_number')) OR
        (table_name = 'patient_audit_log' AND column_name = 'clinic_id') OR
        (table_name = 'consent_forms' AND column_name IN (
-         'signing_token', 'signing_status', 'signing_expires_at', 'signing_email',
+         'signing_token', 'signing_status', 'signing_expires_at', 'signing_sender_user_id', 'signing_email',
          'signing_otp_hash', 'signing_otp_attempts', 'signing_verified_at',
          'signing_session_hash', 'signing_session_expires_at', 'signing_snapshot',
          'signing_snapshot_hash', 'signing_hash', 'signing_signed_at', 'signing_copy_sent_at'

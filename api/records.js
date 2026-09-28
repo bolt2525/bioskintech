@@ -1,12 +1,11 @@
 import crypto from 'crypto';
-import nodemailer from 'nodemailer';
 import { google } from 'googleapis';
 import { sql } from '@vercel/postgres';
 import { initClinicalDatabase, getPool, getAppPool } from '../lib/neon-clinical-db.js';
 import { authenticateRequest } from '../lib/admin-auth.js';
 import { generateUploadUrl, generateReadUrl, deleteR2Object, putR2Object } from '../lib/r2-service.js';
 import { buildFinanceCsv } from '../lib/finance-csv.js';
-import { normalizeEcuadorIdentification, hashConsentEvidence, hashSigningCode, hashConsentSession, isValidSignatureDataUrl, maskEmail } from '../lib/consent-signing.js';
+import { normalizeEcuadorIdentification, hashConsentEvidence, hashSigningCode, hashConsentSession, isValidSignatureDataUrl, maskEmail, buildConsentGmailRaw } from '../lib/consent-signing.js';
 
 console.log('✅ [API] records.js loaded');
 
@@ -99,11 +98,37 @@ function consentValueText(value, label) {
   return String(value);
 }
 
-function createSigningTransport() {
-  return nodemailer.createTransport({
-    service: 'gmail',
-    auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+async function getConsentSenderName(clinicId, userId) {
+  try {
+    const [clinicResult, userResult] = await Promise.all([
+      clinicId ? sql`SELECT general FROM clinic_settings WHERE clinic_id = ${clinicId}` : Promise.resolve({ rows: [] }),
+      userId ? sql`SELECT full_name, gentilicio FROM clinic_users WHERE id = ${userId}` : Promise.resolve({ rows: [] }),
+    ]);
+    const clinicName = clinicResult.rows[0]?.general?.name || 'BIOSKIN';
+    const professional = [userResult.rows[0]?.gentilicio, userResult.rows[0]?.full_name].filter(Boolean).join(' ');
+    return [clinicName, professional].filter(Boolean).join(' · ');
+  } catch {
+    return 'BIOSKIN';
+  }
+}
+
+async function sendConsentGmail({ oauth, fromName, to, subject, text, html, signatureDataUrl }) {
+  if (!oauth?.client || !oauth.email) return false;
+  const signaturePngBase64 = signatureDataUrl?.startsWith('data:image/png;base64,')
+    ? signatureDataUrl.slice('data:image/png;base64,'.length)
+    : null;
+  const raw = buildConsentGmailRaw({
+    fromEmail: oauth.email,
+    fromName,
+    to,
+    subject,
+    text,
+    html,
+    signaturePngBase64,
   });
+  const gmail = google.gmail({ version: 'v1', auth: oauth.client });
+  await gmail.users.messages.send({ userId: 'me', requestBody: { raw } });
+  return true;
 }
 
 function buildSignedConsentEmail(snapshot, signatures, declarations, authorizations, signedAt, evidenceHash) {
@@ -271,6 +296,7 @@ export function isOwnedPhotoKey(key, clinicId, recordId) {
 
 /** OAuth2 client de Gmail con los tokens guardados para un usuario. */
 async function getUserGmailClient(userId) {
+  if (!userId) return null;
   const clientId     = (process.env.GOOGLE_CLIENT_ID     || '').trim();
   const clientSecret = (process.env.GOOGLE_CLIENT_SECRET || '').trim();
   if (!clientId || !clientSecret) return null;
@@ -280,6 +306,12 @@ async function getUserGmailClient(userId) {
   const { access_token, refresh_token, token_expiry, email } = r.rows[0];
   const oAuth2 = new google.auth.OAuth2(clientId, clientSecret, `${appUrl}/api/calendar`);
   oAuth2.setCredentials({ access_token, refresh_token, expiry_date: token_expiry ? new Date(token_expiry).getTime() : null });
+  oAuth2.on('tokens', async tokens => {
+    if (!tokens.access_token) return;
+    await sql`UPDATE clinic_oauth_tokens SET access_token = ${tokens.access_token},
+      token_expiry = ${tokens.expiry_date ? new Date(tokens.expiry_date) : null}, updated_at = NOW()
+      WHERE clinic_user_id = ${userId}`;
+  });
   return { client: oAuth2, email };
 }
 
@@ -2410,8 +2442,8 @@ export default async function handler(req, res) {
         const consentId = Number(signId);
         if (!Number.isSafeInteger(consentId) || consentId <= 0 || consentId > 2147483647)
           return res.status(400).json({ error: 'Consent ID required' });
-        if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS || !process.env.ADMIN_SETUP_SECRET)
-          return res.status(503).json({ error: 'El servicio de correo no está disponible para verificar la firma.' });
+        if (!process.env.ADMIN_SETUP_SECRET)
+          return res.status(503).json({ error: 'El servicio de verificación no está disponible.' });
 
         await client.query('SELECT pg_advisory_lock(68420, $1::int)', [consentId]);
         try {
@@ -2434,6 +2466,11 @@ export default async function handler(req, res) {
             return res.status(409).json({ error: 'El consentimiento ya está firmado. Use la acción explícita para solicitar una nueva firma.' });
           if (!record.patient_email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(record.patient_email))
             return res.status(400).json({ error: 'El paciente necesita un correo válido registrado para verificar la firma remota.' });
+          const senderUserId = su?.user_id;
+          const senderOAuth = await getUserGmailClient(senderUserId);
+          if (!senderOAuth)
+            return res.status(409).json({ error: 'Conecte el Gmail de la clínica en Estado del Sistema o utilice firma presencial.' });
+          const senderName = await getConsentSenderName(effectiveClinicId, senderUserId);
 
           const token = crypto.randomBytes(32).toString('hex');
           const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
@@ -2447,8 +2484,9 @@ export default async function handler(req, res) {
           });
           const snapshotHash = hashConsentEvidence(snapshot);
           try {
-            await createSigningTransport().sendMail({
-              from: `BIOSKIN <${process.env.EMAIL_USER}>`,
+            await sendConsentGmail({
+              oauth: senderOAuth,
+              fromName: senderName,
               to: record.patient_email,
               subject: 'Código para verificar tu consentimiento informado',
               text: `Tu código de verificación es ${code}. Vence junto con el enlace de firma en 30 minutos. Si no solicitaste este código, ignora este mensaje.`,
@@ -2460,24 +2498,24 @@ export default async function handler(req, res) {
           }
 
           const updated = await pool.query(
-            `UPDATE consent_forms SET signing_token = $1, signing_status = 'pending',
-               signing_expires_at = NOW() + INTERVAL '30 minutes', signing_email = $2,
-               signing_otp_hash = $3, signing_otp_attempts = 0, signing_verified_at = NULL,
+            `UPDATE consent_forms SET signing_token = $1, signing_sender_user_id = $2, signing_status = 'pending',
+               signing_expires_at = NOW() + INTERVAL '30 minutes', signing_email = $3,
+               signing_otp_hash = $4, signing_otp_attempts = 0, signing_verified_at = NULL,
                signing_session_hash = NULL, signing_session_expires_at = NULL,
-               signing_snapshot = $4::jsonb, signing_snapshot_hash = $5, signing_hash = NULL,
+               signing_snapshot = $5::jsonb, signing_snapshot_hash = $6, signing_hash = NULL,
                signing_signed_at = NULL, signing_copy_sent_at = NULL,
                updated_at = NOW()
-             WHERE id = $6 AND COALESCE(signing_status, 'pending') <> 'signed'
+             WHERE id = $7 AND COALESCE(signing_status, 'pending') <> 'signed'
                AND status NOT IN ('signed', 'finalized')
                AND signature_data IS NULL AND signed_at IS NULL AND signing_signed_at IS NULL
                AND NULLIF(signatures->>'patient_sig_data', '') IS NULL
                AND NULLIF(signatures->>'patient_signed_at', '') IS NULL
              RETURNING id`,
-            [token, record.patient_email, hashSigningCode(token, code, process.env.ADMIN_SETUP_SECRET), JSON.stringify(snapshot), snapshotHash, consentId]
+            [token, senderUserId, record.patient_email, hashSigningCode(token, code, process.env.ADMIN_SETUP_SECRET), JSON.stringify(snapshot), snapshotHash, consentId]
           );
           if (!updated.rows.length) return res.status(409).json({ error: 'El consentimiento ya fue firmado o ya no se puede modificar.' });
           res.setHeader('Cache-Control', 'no-store, private');
-          return res.status(200).json({ token, url: `/consent-signing/${token}` });
+          return res.status(200).json({ token, url: `/consent-signing/${token}`, senderEmail: senderOAuth.email });
         } finally {
           await client.query('SELECT pg_advisory_unlock(68420, $1::int)', [consentId]);
         }
@@ -2553,7 +2591,7 @@ export default async function handler(req, res) {
             `UPDATE consent_forms SET signatures = $1::jsonb, declarations = $2::jsonb,
                authorizations = $3::jsonb, status = 'finalized', signing_status = 'signed',
                signing_snapshot = $4::jsonb, signing_snapshot_hash = $5, signing_hash = $6,
-               signing_signed_at = $7, signing_token = NULL, signing_expires_at = NULL,
+               signing_signed_at = $7, signing_token = NULL, signing_sender_user_id = NULL, signing_expires_at = NULL,
                signing_otp_hash = NULL, signing_verified_at = NULL, signing_session_hash = NULL,
                signing_session_expires_at = NULL, updated_at = NOW()
              WHERE id = $8 AND COALESCE(signing_status, 'pending') <> 'signed'
@@ -2580,19 +2618,20 @@ export default async function handler(req, res) {
           await client.query('COMMIT');
 
           let copyEmailed = false;
-          if (record.patient_email && process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+          const copyOAuth = await getUserGmailClient(sessionUser?.user_id);
+          if (record.patient_email && copyOAuth) {
             try {
               const email = buildSignedConsentEmail(snapshot, signatures, declarations, authorizations, signedAt, signingHash);
-              await createSigningTransport().sendMail({
-                from: `BIOSKIN <${process.env.EMAIL_USER}>`,
+              copyEmailed = await sendConsentGmail({
+                oauth: copyOAuth,
+                fromName: await getConsentSenderName(effectiveClinicId, sessionUser?.user_id),
                 to: record.patient_email,
                 subject: 'Copia de tu consentimiento informado firmado',
                 text: email.text,
                 html: email.html,
-                attachments: [{ filename: 'firma-paciente.png', content: signature.slice('data:image/png;base64,'.length), encoding: 'base64', cid: 'patient-signature' }],
+                signatureDataUrl: signature,
               });
-              copyEmailed = true;
-              await pool.query('UPDATE consent_forms SET signing_copy_sent_at = NOW() WHERE id = $1', [consentId]);
+              if (copyEmailed) await pool.query('UPDATE consent_forms SET signing_copy_sent_at = NOW() WHERE id = $1', [consentId]);
             } catch {
               console.error('No se pudo enviar la copia del consentimiento firmado.');
             }
@@ -2696,7 +2735,7 @@ export default async function handler(req, res) {
           return res.status(400).json({ error: 'Debe aceptar la información del tratamiento, la autorización y la política de privacidad.' });
         const ownerPool = getPool();
         const current = await ownerPool.query(
-           `SELECT signatures, signing_snapshot, signing_snapshot_hash, signing_email,
+           `SELECT signatures, signing_snapshot, signing_snapshot_hash, signing_email, signing_sender_user_id,
              signing_session_hash, signing_session_expires_at
            FROM consent_forms WHERE signing_token = $1 AND signing_status = 'pending'
              AND signing_expires_at > NOW() AND signing_verified_at IS NOT NULL
@@ -2733,7 +2772,7 @@ export default async function handler(req, res) {
            WHERE signing_token = $6 AND signing_status = 'pending' AND signing_verified_at IS NOT NULL
              AND signing_expires_at > NOW() AND signing_otp_attempts < 5
              AND signing_session_hash = $7 AND signing_session_expires_at > NOW()
-           RETURNING id, patient_id, record_id, clinic_id, signing_email, signing_snapshot, signing_hash`,
+           RETURNING id, patient_id, record_id, clinic_id, signing_email, signing_sender_user_id, signing_snapshot, signing_hash`,
           [JSON.stringify(newSigs), JSON.stringify(declarations), JSON.stringify(authorizations), signedAt, signingHash, token, session.signing_session_hash]
         );
         if (!signed.rows.length) return res.status(409).json({ error: 'Enlace vencido o ya utilizado. Solicite uno nuevo a la clínica.' });
@@ -2750,21 +2789,16 @@ export default async function handler(req, res) {
         let copyEmailed = false;
         try {
           const email = buildSignedConsentEmail(signedRecord.signing_snapshot, newSigs, declarations, authorizations, signedAt, signingHash);
-          const attachments = email.signature.startsWith('data:image/png;base64,') ? [{
-            filename: 'firma-paciente.png',
-            content: email.signature.slice('data:image/png;base64,'.length),
-            encoding: 'base64',
-            cid: 'patient-signature',
-          }] : [];
-          await createSigningTransport().sendMail({
-            from: `BIOSKIN <${process.env.EMAIL_USER}>`,
+          const copyOAuth = await getUserGmailClient(signedRecord.signing_sender_user_id);
+          copyEmailed = await sendConsentGmail({
+            oauth: copyOAuth,
+            fromName: await getConsentSenderName(signedRecord.clinic_id, signedRecord.signing_sender_user_id),
             to: signedRecord.signing_email,
             subject: 'Copia de tu consentimiento informado firmado',
             text: email.text,
             html: email.html,
-            attachments,
+            signatureDataUrl: email.signature,
           });
-          copyEmailed = true;
         } catch {
           console.error('No se pudo enviar la copia del consentimiento firmado.');
         }
@@ -2903,6 +2937,7 @@ export default async function handler(req, res) {
               signatures = COALESCE($17, signatures),
               attachments = COALESCE($18, attachments),
               signing_token = NULL,
+              signing_sender_user_id = NULL,
               signing_expires_at = NULL,
               signing_email = NULL,
               signing_otp_hash = NULL,
