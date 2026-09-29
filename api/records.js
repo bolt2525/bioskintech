@@ -1877,20 +1877,26 @@ export default async function handler(req, res) {
           return res.status(404).json({ error: 'Record not found' });
         }
 
-        const recordDetails = await pool.query('SELECT * FROM clinical_records WHERE id = $1', [targetRecordId]);
+        const recordDetails = await pool.query(
+          `SELECT cr.*, to_jsonb(p) AS patient
+           FROM clinical_records cr
+           LEFT JOIN patients p ON p.id = cr.patient_id
+           WHERE cr.id = $1`,
+          [targetRecordId]
+        );
         
         if (recordDetails.rows.length === 0) {
            return res.status(404).json({ error: 'Record ID not found in database' });
         }
 
         const patientIdFromRecord = recordDetails.rows[0]?.patient_id;
+        const patientDetails = recordDetails.rows[0]?.patient || null;
 
         // Tenant check: verify the record's patient belongs to the authenticated user's clinic (C-1 fix)
         const suGrd = await getSessionUserOnce();
         const grdCid = suGrd?.effective_clinic_id ?? suGrd?.clinic_id;
         if (grdCid != null && suGrd?.role !== 'master_admin') {
-          const pChk = await pool.query('SELECT clinic_id FROM patients WHERE id = $1', [patientIdFromRecord]);
-          if (pChk.rows.length && pChk.rows[0].clinic_id !== grdCid)
+          if (patientDetails?.clinic_id != null && patientDetails.clinic_id !== grdCid)
             return res.status(403).json({ error: 'Acceso no autorizado' });
         }
         // own-scope: verify this record belongs to the current user
@@ -1942,6 +1948,7 @@ export default async function handler(req, res) {
         return res.status(200).json({
           recordId: targetRecordId,
           patientId: patientIdFromRecord,
+          patient: patientDetails,
           history: history.rows[0] || {},
           physicalExams: physical.rows,
           diagnoses: diagnoses.rows,

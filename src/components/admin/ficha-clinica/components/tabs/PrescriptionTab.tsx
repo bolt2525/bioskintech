@@ -50,6 +50,12 @@ interface Prescription {
   regulatory_snapshot?: Record<string, string>;
 }
 
+type PrescriptionSeed = Partial<Prescription> & {
+  date?: string;
+  diagnosis?: string;
+  prescription_mode?: Prescription['mode'];
+};
+
 interface PrescriptionTabProps {
   recordId: number;
   patientName: string;
@@ -59,6 +65,7 @@ interface PrescriptionTabProps {
   consultations?: ConsultationRef[];
   diagnoses?: { consultation_id?: number; diagnosis_text: string; cie10_code?: string }[];
   allergies?: string;
+  initialPrescriptions?: PrescriptionSeed[];
 }
 
 const EMPTY_ITEM: PrescriptionItem = {
@@ -75,11 +82,22 @@ const EMPTY_ITEM: PrescriptionItem = {
   rutina: ''
 };
 
-export default function PrescriptionTab({ recordId, patientName, patientAge, patientIdentification, consultationId, consultations = [], diagnoses = [], allergies = '' }: PrescriptionTabProps) {
+const normalizePrescription = (prescription: PrescriptionSeed): Prescription => ({
+  ...prescription,
+  fecha: prescription.fecha || prescription.date || '',
+  diagnostico: prescription.diagnostico || prescription.diagnosis || '',
+  items: prescription.items || [],
+  mode: prescription.mode || prescription.prescription_mode || 'routine',
+  validity_type: prescription.validity_type || undefined,
+  valid_until: prescription.valid_until || null,
+  regulatory_snapshot: prescription.regulatory_snapshot || {},
+});
+
+export default function PrescriptionTab({ recordId, patientName, patientAge, patientIdentification, consultationId, consultations = [], diagnoses = [], allergies = '', initialPrescriptions = [] }: PrescriptionTabProps) {
   const { settings: clinic } = useClinicSettings();
   const { user } = useAuth();
   const clinicDisplayName = clinic.general.name || user?.clinic_name || 'Clínica';
-  const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
+  const [prescriptions, setPrescriptions] = useState<Prescription[]>(() => initialPrescriptions.map(normalizePrescription));
   const [currentPrescription, setCurrentPrescription] = useState<Prescription>({
     fecha: getLocalDate(),
     diagnostico: '',
@@ -110,9 +128,12 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
   const otherPrescCount = prescriptions.filter(p => Number(p.consultation_id) !== Number(consultationId)).length;
 
   useEffect(() => {
-    loadPrescriptions();
     loadTemplates();
   }, [recordId]);
+
+  useEffect(() => {
+    setPrescriptions(initialPrescriptions.map(normalizePrescription));
+  }, [initialPrescriptions]);
 
   // Auto-fill diagnosis from DiagnosisTab when active consultation changes
   useEffect(() => {

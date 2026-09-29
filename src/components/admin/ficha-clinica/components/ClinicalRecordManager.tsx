@@ -21,15 +21,16 @@ import ConsultationActivatedModal from './ConsultationActivatedModal';
 import PrintModal from './PrintModal';
 import AdminLayout from '../../../layout/AdminLayout';
 import ConsultationTab from './tabs/ConsultationTab';
-import HistoryTab from './tabs/HistoryTab';
-import PhysicalExamTab from './tabs/PhysicalExamTab';
-import DiagnosisTab from './tabs/DiagnosisTab';
-import TreatmentTab from './tabs/TreatmentTab';
-import PrescriptionTab from './tabs/PrescriptionTab';
-import ConsentimientosTab from './tabs/ConsentimientosTab';
-import InjectablesTab from './tabs/InjectablesTab';
-import PhotosTab from './tabs/PhotosTab';
 import { Skeleton } from '../../../ui/Skeleton';
+
+const HistoryTab = React.lazy(() => import('./tabs/HistoryTab'));
+const PhysicalExamTab = React.lazy(() => import('./tabs/PhysicalExamTab'));
+const DiagnosisTab = React.lazy(() => import('./tabs/DiagnosisTab'));
+const TreatmentTab = React.lazy(() => import('./tabs/TreatmentTab'));
+const PrescriptionTab = React.lazy(() => import('./tabs/PrescriptionTab'));
+const ConsentimientosTab = React.lazy(() => import('./tabs/ConsentimientosTab'));
+const InjectablesTab = React.lazy(() => import('./tabs/InjectablesTab'));
+const PhotosTab = React.lazy(() => import('./tabs/PhotosTab'));
 
 interface TabButtonProps {
   id: string;
@@ -100,15 +101,7 @@ export default function ClinicalRecordManager() {
       if (recordRes.ok) {
         const rData = await recordRes.json();
         setRecordData(rData);
-
-        // Fetch patient info using patientId from record
-        if (rData.patientId) {
-          const patientRes = await recordsFetch(`/api/records?action=getPatient&id=${rData.patientId}`);
-          if (patientRes.ok) {
-            const pData = await patientRes.json();
-            setPatient(pData);
-          }
-        }
+        setPatient(rData.patient || null);
       } else {
         const errData = await recordRes.json().catch(() => ({ error: 'Error desconocido' }));
         setError(errData.error || 'Error al cargar el expediente');
@@ -297,6 +290,7 @@ export default function ClinicalRecordManager() {
                 <span>Selecciona o crea una consulta en el tab <strong>Consulta</strong> para habilitar este tab.</span>
               </motion.div>
             )}
+            <React.Suspense fallback={<div className="min-h-40 flex items-center justify-center text-sm text-gray-500" role="status">Cargando sección clínica...</div>}>
             <AnimatePresence mode="wait">
               <motion.div
                 key={activeTab}
@@ -362,6 +356,7 @@ export default function ClinicalRecordManager() {
                     consultations={recordData?.consultations || []}
                     diagnoses={recordData?.diagnoses || []}
                     allergies={recordData?.history?.allergies || ''}
+                    initialPrescriptions={recordData?.prescriptions || []}
                   />
                 )}
                 {activeTab === 'consent' && activeConsultation && enabledOptional.consents && (
@@ -371,6 +366,7 @@ export default function ClinicalRecordManager() {
                     patient={patient}
                     consultationId={activeConsultation?.id}
                     consultations={recordData?.consultations || []}
+                    initialConsents={recordData?.consentForms || []}
                   />
                 )}
                 {activeTab === 'injectables' && activeConsultation && enabledOptional.injectables && (
@@ -392,6 +388,7 @@ export default function ClinicalRecordManager() {
                 )}
               </motion.div>
             </AnimatePresence>
+            </React.Suspense>
           </div>
         </div>
         {/* Modal de consulta activada */}

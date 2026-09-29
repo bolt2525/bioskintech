@@ -89,6 +89,7 @@ interface Props {
   patient?: any;
   consultationId?: number;
   consultations?: ConsultationRef[];
+  initialConsents?: ConsentForm[];
 }
 
 const API_URL = '/api/records';
@@ -100,7 +101,7 @@ const hasProfessionalSignature = (consent?: ConsentForm | null) =>
   Boolean(consent?.signatures?.professional_name?.trim() &&
     /^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(consent.signatures.professional_sig_data || ''));
 
-export default function ConsentimientosTab({ patientId, recordId, patient, consultationId, consultations = [] }: Props) {
+export default function ConsentimientosTab({ patientId, recordId, patient, consultationId, consultations = [], initialConsents = [] }: Props) {
   const { settings: clinic } = useClinicSettings();
   const { user } = useAuth();
   const { clinicId: masterViewClinicId } = useMasterView();
@@ -108,7 +109,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
   const effectiveClinicId = user?.clinic_id || (masterViewClinicId ? String(masterViewClinicId) : null);
   const clinicDisplayName = clinic.general.name || user?.clinic_name || 'Clínica';
   const professionalName = [user?.gentilicio, user?.full_name].filter(Boolean).join(' ');
-  const [consents, setConsents] = useState<ConsentForm[]>([]);
+  const [consents, setConsents] = useState<ConsentForm[]>(initialConsents);
   const [dbTemplates, setDbTemplates] = useState<any[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [view, setView] = useState<'list' | 'form' | 'preview'>('list');
@@ -189,12 +190,6 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
   useEffect(() => {
     loadDbTemplates();
   }, [effectiveClinicId]);
-
-  useEffect(() => {
-    loadConsents();
-    // Initialize professional signatures table
-    recordsFetch('/api/records?action=initProfessionalSignatures').catch(console.error);
-  }, [patientId, recordId, effectiveClinicId]);
 
   useEffect(() => {
     if (message) {
@@ -844,7 +839,12 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                 </td>
               </motion.tr>
             ))}
-            {consents.length === 0 && (
+            {loading && consents.length === 0 && (
+              <tr>
+                <td colSpan={4} className="px-6 py-12 text-center text-gray-400">Cargando consentimientos...</td>
+              </tr>
+            )}
+            {!loading && consents.length === 0 && (
               <tr>
                 <td colSpan={4} className="px-6 py-12 text-center text-gray-400 flex flex-col items-center gap-2">
                   <FileText className="w-8 h-8 opacity-20" />
