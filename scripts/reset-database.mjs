@@ -37,6 +37,7 @@ const DROP_ORDER = [
   'inventory_movements',
   'inventory_batches',
   'inventory_items',
+  'inventory_groups',
   'financial_items',
   'financial_records',
   'sharing_groups',

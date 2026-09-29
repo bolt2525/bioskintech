@@ -1,19 +1,20 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Save, AlertCircle, ChevronRight, ChevronLeft, Package, Plus, Calendar, CheckCircle, Loader2 } from 'lucide-react';
+import { X, Save, AlertCircle, ChevronRight, ChevronLeft, ChevronDown, Package, Plus, Calendar, CheckCircle, Loader2 } from 'lucide-react';
 
 interface InventoryFormProps {
   initialData?: any;
   suggestedSku?: string;
   categories?: string[];  // from clinic inventario settings
   groupNames?: { category: string; name: string }[];
+  groupLoadError?: boolean;
   onClose: () => void;
   onSave: (data: any) => Promise<void>;
   /** Called only on new products, with initial stock data */
   onSaveWithStock?: (itemData: any, stockData: any) => Promise<void>;
 }
 
-export default function InventoryForm({ initialData, suggestedSku, categories, groupNames = [], onClose, onSave, onSaveWithStock }: InventoryFormProps) {
+export default function InventoryForm({ initialData, suggestedSku, categories, groupNames = [], groupLoadError, onClose, onSave, onSaveWithStock }: InventoryFormProps) {
   const isEditing = !!initialData?.id;
   const [step, setStep] = useState<1 | 2>(1);
 
@@ -43,6 +44,8 @@ export default function InventoryForm({ initialData, suggestedSku, categories, g
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const [groupOpen, setGroupOpen] = useState(false);
+  const [activeGroupIndex, setActiveGroupIndex] = useState(0);
 
   const f = (field: string, value: any) => setFormData(p => ({ ...p, [field]: value }));
 
@@ -50,6 +53,17 @@ export default function InventoryForm({ initialData, suggestedSku, categories, g
     .filter(group => group.category === formData.category.trim())
     .map(group => [group.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es').replace(/\s+/g, ' ').trim(), group.name] as const)
   ).values()).sort((a, b) => a.localeCompare(b, 'es'));
+  const normalizeGroup = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es').trim();
+  const searchGroup = normalizeGroup(formData.group_name);
+  const matchingGroups = groupSuggestions
+    .filter(group => searchGroup.split(/\s+/).every(word => normalizeGroup(group).includes(word)))
+    .sort((a, b) => Number(normalizeGroup(b).startsWith(searchGroup)) - Number(normalizeGroup(a).startsWith(searchGroup)))
+    .slice(0, 8);
+
+  const chooseGroup = (name: string) => {
+    f('group_name', name);
+    setGroupOpen(false);
+  };
 
   const getPayloadFormData = () => {
     const typedSku = String(formData.sku || '').trim();
@@ -232,7 +246,7 @@ export default function InventoryForm({ initialData, suggestedSku, categories, g
                         type="text"
                         className={inputCls}
                         value={formData.category}
-                        onChange={e => setFormData(p => ({ ...p, category: e.target.value, group_name: p.category === e.target.value ? p.group_name : '' }))}
+                        onChange={e => { setFormData(p => ({ ...p, category: e.target.value, group_name: p.category === e.target.value ? p.group_name : '' })); setActiveGroupIndex(0); setGroupOpen(false); }}
                         placeholder="Escribe o selecciona"
                       />
                       <datalist id="inventory-category-suggestions">
@@ -244,11 +258,45 @@ export default function InventoryForm({ initialData, suggestedSku, categories, g
                     </div>
                     <div>
                       <label htmlFor="inventory-group" className={labelCls}>Grupo / Subcategoría</label>
-                      <input id="inventory-group" list="inventory-group-suggestions" type="text" maxLength={100} className={inputCls} value={formData.group_name}
-                        onChange={e => f('group_name', e.target.value)} placeholder="Escribe o selecciona" />
-                      <datalist id="inventory-group-suggestions">
-                        {groupSuggestions.map(group => <option key={group} value={group} />)}
-                      </datalist>
+                      <div className="relative">
+                        <input id="inventory-group" type="text" maxLength={100} className={`${inputCls} pr-10`} value={formData.group_name}
+                          role="combobox" aria-autocomplete="list" aria-expanded={groupOpen} aria-controls="inventory-group-options"
+                          aria-activedescendant={groupOpen && matchingGroups.length ? `inventory-group-option-${activeGroupIndex}` : undefined}
+                          onFocus={() => setGroupOpen(true)} onBlur={() => setGroupOpen(false)}
+                          onChange={e => { f('group_name', e.target.value); setActiveGroupIndex(0); setGroupOpen(true); }}
+                          onKeyDown={e => {
+                            if (e.key === 'Escape') { setGroupOpen(false); return; }
+                            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                              e.preventDefault();
+                              setGroupOpen(true);
+                              setActiveGroupIndex(index => (index + (e.key === 'ArrowDown' ? 1 : -1) + matchingGroups.length) % (matchingGroups.length || 1));
+                            }
+                            if (e.key === 'Enter' && groupOpen && matchingGroups.length) {
+                              e.preventDefault();
+                              chooseGroup(matchingGroups[activeGroupIndex] || matchingGroups[0]);
+                            }
+                          }}
+                          placeholder="Buscar o escribir grupo" />
+                        <button type="button" title="Mostrar subcategorías" aria-label="Mostrar subcategorías"
+                          onMouseDown={e => e.preventDefault()} onClick={() => setGroupOpen(open => !open)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-500 hover:text-gray-800">
+                          <ChevronDown className="w-4 h-4" />
+                        </button>
+                        {groupOpen && (
+                          <div id="inventory-group-options" role="listbox" aria-label="Subcategorías disponibles"
+                            className="absolute z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white p-1 shadow-lg">
+                            {matchingGroups.length ? matchingGroups.map((group, index) => (
+                              <button key={group} id={`inventory-group-option-${index}`} role="option"
+                                aria-selected={index === activeGroupIndex} type="button"
+                                onPointerDown={e => e.preventDefault()} onClick={() => chooseGroup(group)}
+                                className={`block w-full rounded px-2 py-2 text-left text-sm ${index === activeGroupIndex ? 'bg-amber-50 text-gray-900' : 'text-gray-700 hover:bg-gray-50'}`}>
+                                {group}
+                              </button>
+                            )) : <p className="px-2 py-2 text-xs text-gray-500">{groupLoadError ? 'Opciones no disponibles.' : 'Sin coincidencias. Se guardará como grupo nuevo.'}</p>}
+                          </div>
+                        )}
+                      </div>
+                      {groupLoadError && <p className="mt-1 text-xs text-red-600">No se pudieron cargar las subcategorías.</p>}
                     </div>
                   </div>
 

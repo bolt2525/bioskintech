@@ -1,28 +1,56 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-test('inventory groups reuse names without accents or case and respect clinic/owner scope', async () => {
+test('inventory groups persist per clinic/category without products or accent/case duplicates', async () => {
   const { resolveInventoryGroup } = await import('../api/records.js');
   const queries = [];
+  const groups = new Map();
   const pool = {
     query: async (sql, params) => {
       queries.push({ sql, params });
-      return { rows: [{ group_name: 'Rellenos' }, { group_name: 'Tóxinas' }] };
+      const [clinicId, category, name, nameKey] = params;
+      const key = `${clinicId}:${category}:${nameKey}`;
+      if (!groups.has(key)) groups.set(key, name);
+      return { rows: [{ name: groups.get(key) }] };
     },
   };
   const sessionUser = { inventory_scope: 'own', user_id: 42 };
 
+  assert.equal(await resolveInventoryGroup('Rellenos', 'Inyectable', 'clinic-a', sessionUser, pool), 'Rellenos');
   assert.equal(await resolveInventoryGroup('  rellénos  ', 'Inyectable', 'clinic-a', sessionUser, pool), 'Rellenos');
-  assert.equal(await resolveInventoryGroup('toxinas', 'Inyectable', 'clinic-a', sessionUser, pool), 'Tóxinas');
+  assert.equal(await resolveInventoryGroup('Rellenos', 'Venta', 'clinic-a', sessionUser, pool), 'Rellenos');
+  assert.equal(await resolveInventoryGroup('rellenos', 'Inyectable', 'clinic-b', sessionUser, pool), 'rellenos');
   assert.equal(await resolveInventoryGroup('  Ácido  Hialurónico  ', 'Inyectable', 'clinic-a', sessionUser, pool), 'Ácido Hialurónico');
-  assert.deepEqual(queries[0].params, ['clinic-a', 'Inyectable', 42]);
-  assert.match(queries[0].sql, /i\.clinic_id = \$1/);
-  assert.match(queries[0].sql, /i\.category IS NOT DISTINCT FROM \$2/);
-  assert.match(queries[0].sql, /created_by_user_id/);
+  assert.deepEqual(queries[1].params, ['clinic-a', 'Inyectable', 'rellénos', 'rellenos']);
+  assert.match(queries[0].sql, /ON CONFLICT \(clinic_id, category, name_key\)/);
+  assert.equal(groups.size, 4);
   assert.equal(await resolveInventoryGroup('  ', 'Inyectable', 'clinic-a', sessionUser, pool), null);
   await assert.rejects(() => resolveInventoryGroup(12, 'Inyectable', 'clinic-a', sessionUser, pool), TypeError);
   await assert.rejects(() => resolveInventoryGroup('x'.repeat(101), 'Inyectable', 'clinic-a', sessionUser, pool), RangeError);
-  assert.equal(queries.length, 3);
+  await assert.rejects(() => resolveInventoryGroup('Rellenos', 'Inyectable', null, sessionUser, pool), TypeError);
+  assert.equal(queries.length, 5);
+});
+
+test('inventory group backup restores without products and forces the target clinic', async () => {
+  const { restoreInventoryGroups } = await import('../api/backup.js');
+  const saved = new Set();
+  const pool = { query: async (_sql, params) => {
+    const key = `${params[0]}:${params[1]}:${params[3]}`;
+    const rowCount = saved.has(key) ? 0 : 1;
+    saved.add(key);
+    assert.equal(params[0], 'target-clinic');
+    return { rowCount };
+  } };
+  const rows = [
+    { clinic_id: 'foreign-clinic', category: 'Inyectable', name: 'Rellenos' },
+    { clinic_id: 'foreign-clinic', category: 'Inyectable', name: '  rellénos ' },
+  ];
+  assert.equal(await restoreInventoryGroups(pool, rows, 'target-clinic', false), 1);
+  assert.equal(await restoreInventoryGroups(pool, rows, 'target-clinic', false), 0);
+  assert.equal(saved.size, 1);
+  await assert.rejects(() => restoreInventoryGroups(pool, [{ category: 'Venta', name: 'Grupo' }], null, false), /inválida/);
+  await assert.rejects(() => restoreInventoryGroups(pool, [{ category: 'Venta', name: ' ' }], 'target-clinic', false), /inválida/);
+  await assert.rejects(() => restoreInventoryGroups(pool, 'no es un arreglo', 'target-clinic', false), /inválido/);
 });
 
 test('R2 photo keys stay inside the clinic and record prefix', async () => {

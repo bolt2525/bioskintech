@@ -546,20 +546,19 @@ export async function resolveInventoryGroup(value, category, clinicId, sessionUs
   const name = value.trim().replace(/\s+/g, ' ');
   if (!name) return null;
   if (name.length > 100) throw new RangeError('Grupo demasiado largo');
-  const params = [clinicId, category];
-  let ownerCheck = '';
-  if (sessionUser.inventory_scope === 'own') {
-    ownerCheck = ` AND ${inventoryOwnerClause('i', 3)}`;
-    params.push(sessionUser.user_id);
-  }
-  const existing = await pool.query(
-    `SELECT DISTINCT i.group_name FROM inventory_items i
-     WHERE (i.clinic_id = $1 OR i.clinic_id IS NULL) AND i.category IS NOT DISTINCT FROM $2
-       AND i.group_name IS NOT NULL${ownerCheck}
-     ORDER BY i.group_name`, params
-  );
-  const key = (text) => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es').replace(/\s+/g, ' ').trim();
-  return existing.rows.find(row => key(row.group_name) === key(name))?.group_name || name;
+  if (!sessionUser || !clinicId) throw new TypeError('Selecciona una clínica para registrar el grupo');
+  if (category != null && typeof category !== 'string') throw new TypeError('Categoría inválida');
+  const cleanCategory = (category || '').trim();
+  if (cleanCategory.length > 100) throw new RangeError('Categoría demasiado larga');
+  const nameKey = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es');
+  const saved = await pool.query(`
+    INSERT INTO inventory_groups (clinic_id, category, name, name_key)
+    VALUES ($1, $2, $3, $4)
+    ON CONFLICT (clinic_id, category, name_key)
+    DO UPDATE SET name = inventory_groups.name
+    RETURNING name
+  `, [clinicId, cleanCategory, name, nameKey]);
+  return saved.rows[0].name;
 }
 
 export default async function handler(req, res) {
@@ -870,6 +869,20 @@ export default async function handler(req, res) {
           return res.status(500).json({ error: err.message });
         }
 
+      case 'inventoryListGroups':
+        try {
+          const clinicId = su?.effective_clinic_id ?? su?.clinic_id;
+          if (!clinicId) return res.status(400).json({ error: 'Selecciona una clínica' });
+          const groups = await pool.query(
+            'SELECT category, name FROM inventory_groups WHERE clinic_id = $1 ORDER BY category, name',
+            [clinicId]
+          );
+          return res.status(200).json(groups.rows);
+        } catch (err) {
+          console.error('Error listing inventory groups:', err);
+          return res.status(500).json({ error: 'Error al cargar subcategorías.' });
+        }
+
       case 'inventoryListItems':
         try {
           const su = await getSessionUserOnce();
@@ -1052,6 +1065,7 @@ export default async function handler(req, res) {
         }
 
       case 'inventoryCreateItem':
+        let creatingItem = false;
         try {
           const { sku, name, brand, description, category, group_name, unit_of_measure, min_stock_level, requires_cold_chain, sanitary_registration, cost_price, sale_price } = body;
           const cleanSku = normalizeOptionalText(sku);
@@ -1060,6 +1074,8 @@ export default async function handler(req, res) {
           const cleanSanitaryRegistration = normalizeOptionalText(sanitary_registration);
           const suInv = await getSessionUserOnce();
           const invClinicId = suInv?.effective_clinic_id ?? suInv?.clinic_id ?? null;
+          await pool.query('BEGIN');
+          creatingItem = true;
           const cleanGroupName = await resolveInventoryGroup(group_name, category, invClinicId, suInv, pool);
           const newItem = await pool.query(`
             INSERT INTO inventory_items (clinic_id, sku, name, brand, description, category, group_name, unit_of_measure, min_stock_level, requires_cold_chain, sanitary_registration, cost_price, sale_price, created_by_user_id)
@@ -1069,10 +1085,13 @@ export default async function handler(req, res) {
               normalizeOptionalNumber(cost_price),
               normalizeOptionalNumber(sale_price),
               suInv?.user_id ?? null]);
+          await pool.query('COMMIT');
+          creatingItem = false;
           return res.status(201).json(newItem.rows[0]);
         } catch (err) {
+          if (creatingItem) await pool.query('ROLLBACK').catch(() => {});
           console.error('Error creating inventory item:', err);
-          if (['Grupo inválido', 'Grupo demasiado largo'].includes(err.message)) return res.status(400).json({ error: err.message });
+          if (['Grupo inválido', 'Grupo demasiado largo', 'Categoría inválida', 'Categoría demasiado larga', 'Selecciona una clínica para registrar el grupo'].includes(err.message)) return res.status(400).json({ error: err.message });
           if (err.code === '23505') {
             return res.status(409).json({ error: 'El SKU ya existe en esta clínica. Usa otro código o deja el campo vacío.' });
           }
@@ -1080,6 +1099,7 @@ export default async function handler(req, res) {
         }
 
       case 'inventoryUpdateItem':
+        let updatingItem = false;
         try {
           const su = await getSessionUserOnce();
           if (!su) return res.status(401).json({ error: 'No autenticado' });
@@ -1089,6 +1109,8 @@ export default async function handler(req, res) {
           const cleanDescription = normalizeOptionalText(description);
           const cleanSanitaryRegistration = normalizeOptionalText(sanitary_registration);
           const invClinicId = su?.effective_clinic_id ?? su?.clinic_id ?? null;
+          await pool.query('BEGIN');
+          updatingItem = true;
           const cleanGroupName = await resolveInventoryGroup(group_name, category, invClinicId, su, pool);
           // Verificar que el item pertenece a la clínica del usuario
           const clinicCheck = invClinicId
@@ -1105,11 +1127,18 @@ export default async function handler(req, res) {
             `UPDATE inventory_items SET sku=$1, name=$2, brand=$3, description=$4, category=$5, group_name=$6, unit_of_measure=$7, min_stock_level=$8, requires_cold_chain=$9, sanitary_registration=$10, cost_price=$11, sale_price=$12 WHERE id=$13${clinicCheck}${ownerCheck} RETURNING *`,
             params
           );
-          if (updatedItem.rows.length === 0) return res.status(404).json({ error: 'Item not found or not in your clinic' });
+          if (updatedItem.rows.length === 0) {
+            await pool.query('ROLLBACK');
+            updatingItem = false;
+            return res.status(404).json({ error: 'Item not found or not in your clinic' });
+          }
+          await pool.query('COMMIT');
+          updatingItem = false;
           return res.status(200).json(updatedItem.rows[0]);
         } catch (err) {
+          if (updatingItem) await pool.query('ROLLBACK').catch(() => {});
           console.error('Error updating inventory item:', err);
-          if (['Grupo inválido', 'Grupo demasiado largo'].includes(err.message)) return res.status(400).json({ error: err.message });
+          if (['Grupo inválido', 'Grupo demasiado largo', 'Categoría inválida', 'Categoría demasiado larga', 'Selecciona una clínica para registrar el grupo'].includes(err.message)) return res.status(400).json({ error: err.message });
           if (err.code === '23505') return res.status(409).json({ error: 'El SKU ya existe. Usa otro código o deja el campo vacío.' });
           return res.status(500).json({ error: 'Error al actualizar producto de inventario.' });
         }

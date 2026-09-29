@@ -34,6 +34,7 @@ const TENANT_TABLES = [
   'consent_forms',
   'medical_history_snapshots',
   'inventory_items',
+  'inventory_groups',
   'inventory_batches',
   'inventory_movements',
   'financial_records',

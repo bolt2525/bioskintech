@@ -19,7 +19,7 @@ const CLINIC_SCOPED_TABLES = new Set([
   'consultation_info', 'consultation_history', 'physical_exams',
   'diagnoses', 'treatments', 'injectables', 'prescriptions', 'consent_forms',
   'external_finance_records', 'financial_records',
-  'financial_items', 'inventory_items', 'inventory_batches', 'inventory_movements',
+  'financial_items', 'inventory_items', 'inventory_groups', 'inventory_batches', 'inventory_movements',
 ]);
 
 const IMPORTABLE_TABLES = new Set([
@@ -168,6 +168,25 @@ export async function insertBackupRow(pool, table, inputRow, clinicId, isMaster,
   return result.rowCount;
 }
 
+export async function restoreInventoryGroups(pool, rows, clinicId, isMaster) {
+  if (!Array.isArray(rows) || rows.length > 5000) throw new Error('Catálogo de backup inválido');
+  let count = 0;
+  for (const row of rows) {
+    const targetClinic = clinicId || (isMaster ? row?.clinic_id : null);
+    if (!targetClinic || typeof row?.category !== 'string' || row.category.length > 100 || typeof row?.name !== 'string')
+      throw new Error('Subcategoría de backup inválida');
+    const name = row.name.trim().replace(/\s+/g, ' ');
+    if (!name || name.length > 100) throw new Error('Subcategoría de backup inválida');
+    const nameKey = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es');
+    const result = await pool.query(`
+      INSERT INTO inventory_groups (clinic_id, category, name, name_key)
+      VALUES ($1, $2, $3, $4) ON CONFLICT (clinic_id, category, name_key) DO NOTHING
+    `, [targetClinic, row.category.trim(), name, nameKey]);
+    count += result.rowCount;
+  }
+  return count;
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'GET' && req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
@@ -259,9 +278,10 @@ export default async function handler(req, res) {
       }
 
       // Inventario
-      if (importData.modules.inventory?.items?.data) {
+      if (importData.modules.inventory?.items?.data || importData.modules.inventory?.groups?.data) {
         let itemCnt = 0, batchCnt = 0;
-        for (const row of importData.modules.inventory.items.data) {
+        const groupCnt = await restoreInventoryGroups(pool, importData.modules.inventory.groups?.data || [], clinicId, isMaster);
+        for (const row of (importData.modules.inventory.items?.data || [])) {
           itemCnt += await insertBackupRow(pool, 'inventory_items', row, clinicId, isMaster);
         }
         for (const row of (importData.modules.inventory.batches?.data || [])) {
@@ -272,6 +292,7 @@ export default async function handler(req, res) {
           movementCount += await insertBackupRow(pool, 'inventory_movements', row, clinicId, isMaster);
         }
         importResults.inventory_items = itemCnt;
+        importResults.inventory_groups = groupCnt;
         importResults.inventory_batches = batchCnt;
         importResults.inventory_movements = movementCount;
       }
@@ -401,8 +422,12 @@ export default async function handler(req, res) {
         const batches = (await tableExists('inventory_batches'))
           ? await pool.query(...Object.values(withClinicFilter('inventory_batches', 'SELECT * FROM inventory_batches ORDER BY id LIMIT 5000')))
           : { rows: [] };
+        const groups = (await tableExists('inventory_groups'))
+          ? await pool.query(...Object.values(withClinicFilter('inventory_groups', 'SELECT * FROM inventory_groups ORDER BY id LIMIT 5000')))
+          : { rows: [] };
         backupData.modules.inventory = {
           items: { count: items.rows.length, data: items.rows },
+          groups: { count: groups.rows.length, data: groups.rows },
           batches: { count: batches.rows.length, data: batches.rows },
         };
         // Incluir movimientos si existen

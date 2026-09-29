@@ -1,5 +1,6 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-09-28 Catálogo persistente de subcategorías migrado con RLS, búsqueda seleccionable y backup.
 - ✅ 2026-09-28 Inventario agrupa subcategorías y reutiliza nombres normalizados.
 - ✅ 2026-09-28 Ripgrep instalado y documentado para búsqueda de código.
 - ✅ 2026-09-28 Optimizada carga inicial de fichas clínicas.

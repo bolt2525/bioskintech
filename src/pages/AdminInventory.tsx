@@ -13,9 +13,11 @@ import InventoryMovements from '../components/admin/inventory/InventoryMovements
 import InventoryBatches from '../components/admin/inventory/InventoryBatches';
 import InventoryOverview from '../components/admin/inventory/InventoryOverview';
 import { useAuth } from '../context/AuthContext';
+import { useMasterView } from '../context/MasterViewContext';
 
 export default function AdminInventory() {
   const { user, username } = useAuth();
+  const masterView = useMasterView();
   const isAdmin = user?.role === 'clinic_admin' || user?.role === 'master_admin';
   const [activeTab, setActiveTab] = useState<'inventory' | 'batches' | 'movements'>('inventory');
   const [items, setItems] = useState<any[]>([]);
@@ -24,6 +26,8 @@ export default function AdminInventory() {
   const [loading, setLoading] = useState(true);
   // Categories from clinic settings (fallback to categories from existing items)
   const [settingsCategories, setSettingsCategories] = useState<string[]>([]);
+  const [groupNames, setGroupNames] = useState<{ category: string; name: string }[]>([]);
+  const [groupLoadError, setGroupLoadError] = useState(false);
 
   // Search & filter state
   const [search, setSearch] = useState('');
@@ -42,7 +46,7 @@ export default function AdminInventory() {
   const [filterUserId, setFilterUserId] = useState<number | ''>('');
   const [clinicUsers, setClinicUsers] = useState<{ id: number; username: string; full_name: string }[]>([]);
 
-  useEffect(() => { fetchInventory(); fetchStats(); }, [filterUserId]);
+  useEffect(() => { fetchInventory(); fetchStats(); fetchGroups(); }, [filterUserId, user?.clinic_id, masterView.clinicId]);
 
   // Cargar categorías y settings de inventario desde configuración de clínica
   useEffect(() => {
@@ -85,6 +89,19 @@ export default function AdminInventory() {
     finally { setLoading(false); }
   };
 
+  const fetchGroups = async () => {
+    setGroupNames([]);
+    try {
+      const res = await recordsFetch('/api/records?action=inventoryListGroups');
+      if (!res.ok) throw new Error('Error al cargar subcategorías');
+      setGroupNames(await res.json());
+      setGroupLoadError(false);
+    } catch {
+      setGroupNames([]);
+      setGroupLoadError(true);
+    }
+  };
+
   const fetchStats = async () => {
     setStatsLoading(true);
     try {
@@ -94,7 +111,7 @@ export default function AdminInventory() {
     finally { setStatsLoading(false); }
   };
 
-  const refresh = () => { fetchInventory(); fetchStats(); };
+  const refresh = () => { fetchInventory(); fetchStats(); fetchGroups(); };
 
   const getApiErrorMessage = async (res: Response, fallback: string) => {
     try {
@@ -201,9 +218,9 @@ export default function AdminInventory() {
     return Array.from(new Set([...DEFAULT_CATS, ...settingsCategories, ...fromItems])).sort();
   }, [items, settingsCategories]);
 
-  const groupNames = useMemo(() => items
-    .filter(item => item.group_name?.trim())
-    .map(item => ({ category: item.category?.trim() || '', name: item.group_name.trim() })), [items]);
+  const formCategories = useMemo(() => Array.from(new Set([
+    ...categories, ...groupNames.map(group => group.category).filter(Boolean)
+  ])).sort(), [categories, groupNames]);
 
   const groupedItems = useMemo(() => {
     const groups = new Map<string, Map<string, { name: string; items: any[] }>>();
@@ -461,8 +478,9 @@ export default function AdminInventory() {
         <InventoryForm
           initialData={selectedItem}
           suggestedSku={selectedItem?.id ? undefined : suggestedSku}
-          categories={categories.length > 0 ? categories : undefined}
+          categories={formCategories.length > 0 ? formCategories : undefined}
           groupNames={groupNames}
+          groupLoadError={groupLoadError}
           onClose={() => { setShowForm(false); setSelectedItem(null); }}
           onSave={handleCreateItem}
           onSaveWithStock={selectedItem?.id ? undefined : handleCreateWithStock}
