@@ -5,9 +5,9 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import recordsFetch from '../../../utils/recordsFetch';
 
 interface SalesReport {
-  summary: { sales_count: number; total: string; known_margin: string; sales_without_cost: number; units: string };
+  summary: { sales_count: number; total: string; known_margin: string; sales_without_cost: number; products_count: number };
   daily: { day: string; total: string; sales_count: number }[];
-  products: { id: number; name: string; sku: string; units: string; total: string }[];
+  products: { id: number; name: string; sku: string; unit_of_measure: string; units: string; total: string }[];
   recent: { id: number; created_at: string; item_name: string; category: string; batch_number: string;
     quantity_change: string; unit_of_measure: string; unit_sale_price: string; sale_total: string; reason: string }[];
 }
@@ -115,7 +115,7 @@ export default function InventorySales({ categories, filterUserId, clinicKey }: 
             <div className="grid grid-cols-2 gap-4 border-b border-gray-200 pb-5 lg:grid-cols-4">
               <div><p className="text-xs font-medium text-gray-600">Importe registrado</p><p className="text-xl font-bold">{currency.format(Number(report.summary.total))}</p></div>
               <div><p className="text-xs font-medium text-gray-600">Salidas por venta</p><p className="text-xl font-bold">{report.summary.sales_count}</p></div>
-              <div><p className="text-xs font-medium text-gray-600">Unidades</p><p className="text-xl font-bold">{Number(report.summary.units)}</p></div>
+              <div><p className="text-xs font-medium text-gray-600">Productos vendidos</p><p className="text-xl font-bold">{report.summary.products_count}</p></div>
               <div><p className="text-xs font-medium text-gray-600">Margen conocido</p><p className="text-xl font-bold">{currency.format(Number(report.summary.known_margin))}</p>
                 {report.summary.sales_without_cost > 0 && <p className="text-xs text-amber-800">{report.summary.sales_without_cost} ventas sin costo; margen parcial</p>}
               </div>
@@ -145,7 +145,7 @@ export default function InventorySales({ categories, filterUserId, clinicKey }: 
                         <div className="flex justify-between gap-2 text-xs"><span className="truncate font-medium" title={product.name}>{product.name}</span>
                           <span className="shrink-0">{currency.format(Number(product.total))}</span></div>
                         <div className="mt-1 h-1.5 bg-gray-100"><div className="h-full bg-emerald-600" style={{ width: `${Number(product.total) / maxProductTotal * 100}%` }} /></div>
-                        <p className="mt-0.5 text-xs text-gray-600">{Number(product.units)} unidades</p>
+                        <p className="mt-0.5 text-xs text-gray-600">{Number(product.units)} {product.unit_of_measure || 'unidades'}</p>
                       </div>
                     ))}
                   </div>

@@ -917,15 +917,15 @@ export default async function handler(req, res) {
             COALESCE(SUM(m.sale_total), 0) AS total,
             COALESCE(SUM(CASE WHEN m.cost_total IS NOT NULL THEN m.sale_total - m.cost_total END), 0) AS known_margin,
             COUNT(*) FILTER (WHERE m.cost_total IS NULL)::int AS sales_without_cost,
-            COALESCE(SUM(-m.quantity_change), 0) AS units
+            COUNT(DISTINCT i.id)::int AS products_count
             ${from}`, params);
           const localDay = `(m.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Guayaquil')::date`;
           const daily = await pool.query(`SELECT TO_CHAR(${localDay}, 'YYYY-MM-DD') AS day,
             COUNT(*)::int AS sales_count, SUM(m.sale_total) AS total
             ${from} GROUP BY ${localDay} ORDER BY ${localDay}`, params);
-          const products = await pool.query(`SELECT i.id, i.name, i.sku, SUM(-m.quantity_change) AS units,
+          const products = await pool.query(`SELECT i.id, i.name, i.sku, i.unit_of_measure, SUM(-m.quantity_change) AS units,
             SUM(m.sale_total) AS total
-            ${from} GROUP BY i.id, i.name, i.sku ORDER BY total DESC LIMIT 8`, params);
+            ${from} GROUP BY i.id, i.name, i.sku, i.unit_of_measure ORDER BY total DESC LIMIT 8`, params);
           const recent = await pool.query(`SELECT m.id, m.created_at, m.reason, m.quantity_change,
             m.unit_sale_price, m.sale_total, m.cost_total, i.name AS item_name,
             i.category, i.unit_of_measure, b.batch_number
