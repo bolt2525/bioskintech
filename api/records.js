@@ -561,6 +561,42 @@ export async function resolveInventoryGroup(value, category, clinicId, sessionUs
   return saved.rows[0].name;
 }
 
+export function validateInventoryBatchInput(quantity, costPerUnit) {
+  const units = Number(quantity);
+  if (!Number.isFinite(units) || units <= 0 || units > 999999999.99 || Math.round(units * 100) / 100 !== units)
+    throw new RangeError('La cantidad debe ser positiva y tener hasta dos decimales.');
+  if (costPerUnit == null || (typeof costPerUnit === 'string' && !costPerUnit.trim())) return { units, cost: null };
+  const cost = Number(costPerUnit);
+  if (!Number.isFinite(cost) || cost < 0 || cost > 99999999 || Math.round(cost * 10000) / 10000 !== cost)
+    throw new RangeError('El costo unitario debe ser positivo o cero y tener hasta cuatro decimales.');
+  return { units, cost };
+}
+
+export function normalizeInventoryPrice(value) {
+  if (value == null || (typeof value === 'string' && !value.trim())) return null;
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount < 0 || amount > 9999999999.99 || Math.round(amount * 100) / 100 !== amount)
+    throw new RangeError('Costo o precio inválido: usa un valor positivo con hasta dos decimales.');
+  return amount;
+}
+
+export function normalizeInventoryCategory(value) {
+  if (typeof value !== 'string' || !value.trim() || value.trim().length > 100)
+    throw new TypeError('Selecciona una categoría válida.');
+  return value.trim().replace(/\s+/g, ' ');
+}
+
+export async function decrementInventoryBatch(client, batchId, quantity, reason) {
+  return client.query(`
+    UPDATE inventory_batches
+    SET quantity_current = quantity_current - $2,
+        status = CASE WHEN quantity_current = $2 THEN 'depleted' ELSE 'active' END
+    WHERE id = $1 AND status = 'active' AND quantity_current >= $2
+      AND (expiration_date IS NULL OR expiration_date >= CURRENT_DATE OR $3 = 'Vencimiento')
+    RETURNING quantity_current, item_id, clinic_id
+  `, [batchId, quantity, reason]);
+}
+
 export default async function handler(req, res) {
   console.log(`[Clinical Records API] Request received: ${req.method} /api/records`);
 
@@ -641,12 +677,6 @@ export default async function handler(req, res) {
       if (typeof value !== 'string') return value;
       const trimmed = value.trim();
       return trimmed === '' ? null : trimmed;
-    };
-
-    const normalizeOptionalNumber = (value) => {
-      if (value == null || value === '') return null;
-      const parsed = Number(value);
-      return Number.isFinite(parsed) ? parsed : null;
     };
 
     // Auto-inicializar el schema clínico en el primer uso del contenedor
@@ -918,7 +948,8 @@ export default async function handler(req, res) {
           const items = await pool.query(`
             SELECT i.*,
               cu.full_name AS created_by_user_name, cu.username AS created_by_username,
-              COALESCE(SUM(b.quantity_current), 0) as total_stock,
+              COALESCE(SUM(CASE WHEN b.expiration_date IS NULL OR b.expiration_date >= CURRENT_DATE THEN b.quantity_current ELSE 0 END), 0) as total_stock,
+              COALESCE(SUM(CASE WHEN b.expiration_date < CURRENT_DATE THEN b.quantity_current ELSE 0 END), 0) as expired_stock,
               COALESCE(SUM(b.quantity_initial), 0) as total_initial,
               COUNT(b.id) as batch_count,
               MIN(b.expiration_date) as next_expiry
@@ -971,7 +1002,7 @@ export default async function handler(req, res) {
               COUNT(DISTINCT CASE WHEN COALESCE(stock.total_stock, 0) > 0 AND COALESCE(stock.total_stock, 0) <= i.min_stock_level THEN i.id END)::int AS low_stock_count
             FROM inventory_items i
             LEFT JOIN (
-              SELECT item_id, SUM(quantity_current) AS total_stock
+              SELECT item_id, SUM(CASE WHEN expiration_date IS NULL OR expiration_date >= CURRENT_DATE THEN quantity_current ELSE 0 END) AS total_stock
               FROM inventory_batches WHERE status = 'active'
               GROUP BY item_id
             ) stock ON stock.item_id = i.id
@@ -995,6 +1026,24 @@ export default async function handler(req, res) {
               ${iWhere}${ownerWhere}
           `, clinicParam);
 
+          const valueStats = await pool.query(`
+            SELECT
+              COALESCE(SUM(b.quantity_current * COALESCE(NULLIF(b.cost_per_unit, 0), NULLIF(i.cost_price, 0))), 0) AS stock_value,
+              COALESCE(SUM(CASE WHEN i.category = 'Venta' AND i.sale_price > 0
+                                AND COALESCE(NULLIF(b.cost_per_unit, 0), NULLIF(i.cost_price, 0)) IS NOT NULL
+                THEN b.quantity_current * (i.sale_price - COALESCE(NULLIF(b.cost_per_unit, 0), NULLIF(i.cost_price, 0)))
+                ELSE 0 END), 0) AS potential_margin,
+              COALESCE(SUM(CASE WHEN COALESCE(NULLIF(b.cost_per_unit, 0), NULLIF(i.cost_price, 0)) IS NULL
+                THEN b.quantity_current ELSE 0 END), 0) AS units_without_cost,
+              COALESCE(SUM(CASE WHEN i.category = 'Venta' AND (i.sale_price IS NULL OR i.sale_price <= 0)
+                THEN b.quantity_current ELSE 0 END), 0) AS units_without_sale_price
+            FROM inventory_batches b
+            JOIN inventory_items i ON i.id = b.item_id
+            WHERE b.status = 'active' AND b.quantity_current > 0
+              AND (b.expiration_date IS NULL OR b.expiration_date >= CURRENT_DATE)
+              ${iWhere}${ownerWhere}
+          `, clinicParam);
+
           const alertBatches = await pool.query(`
             SELECT b.id, b.batch_number, b.expiration_date, b.quantity_current,
               i.name AS item_name, i.sku, i.unit_of_measure,
@@ -1013,6 +1062,7 @@ export default async function handler(req, res) {
             ...statsResult.rows[0],
             ...batchStats.rows[0],
             ...movementsStats.rows[0],
+            ...valueStats.rows[0],
             alert_batches: alertBatches.rows
           });
         } catch (err) {
@@ -1074,16 +1124,17 @@ export default async function handler(req, res) {
           const cleanSanitaryRegistration = normalizeOptionalText(sanitary_registration);
           const suInv = await getSessionUserOnce();
           const invClinicId = suInv?.effective_clinic_id ?? suInv?.clinic_id ?? null;
+          const cleanCategory = normalizeInventoryCategory(category);
           await pool.query('BEGIN');
           creatingItem = true;
-          const cleanGroupName = await resolveInventoryGroup(group_name, category, invClinicId, suInv, pool);
+          const cleanGroupName = await resolveInventoryGroup(group_name, cleanCategory, invClinicId, suInv, pool);
           const newItem = await pool.query(`
             INSERT INTO inventory_items (clinic_id, sku, name, brand, description, category, group_name, unit_of_measure, min_stock_level, requires_cold_chain, sanitary_registration, cost_price, sale_price, created_by_user_id)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
             RETURNING *
-          `, [invClinicId, cleanSku, name, cleanBrand, cleanDescription, category, cleanGroupName, unit_of_measure, min_stock_level, requires_cold_chain, cleanSanitaryRegistration,
-              normalizeOptionalNumber(cost_price),
-              normalizeOptionalNumber(sale_price),
+          `, [invClinicId, cleanSku, name, cleanBrand, cleanDescription, cleanCategory, cleanGroupName, unit_of_measure, min_stock_level, requires_cold_chain, cleanSanitaryRegistration,
+              normalizeInventoryPrice(cost_price),
+              normalizeInventoryPrice(sale_price),
               suInv?.user_id ?? null]);
           await pool.query('COMMIT');
           creatingItem = false;
@@ -1091,7 +1142,7 @@ export default async function handler(req, res) {
         } catch (err) {
           if (creatingItem) await pool.query('ROLLBACK').catch(() => {});
           console.error('Error creating inventory item:', err);
-          if (['Grupo inválido', 'Grupo demasiado largo', 'Categoría inválida', 'Categoría demasiado larga', 'Selecciona una clínica para registrar el grupo'].includes(err.message)) return res.status(400).json({ error: err.message });
+          if (err instanceof RangeError || ['Grupo inválido', 'Categoría inválida', 'Selecciona una categoría válida.', 'Selecciona una clínica para registrar el grupo'].includes(err.message)) return res.status(400).json({ error: err.message });
           if (err.code === '23505') {
             return res.status(409).json({ error: 'El SKU ya existe en esta clínica. Usa otro código o deja el campo vacío.' });
           }
@@ -1109,15 +1160,16 @@ export default async function handler(req, res) {
           const cleanDescription = normalizeOptionalText(description);
           const cleanSanitaryRegistration = normalizeOptionalText(sanitary_registration);
           const invClinicId = su?.effective_clinic_id ?? su?.clinic_id ?? null;
+          const cleanCategory = normalizeInventoryCategory(category);
           await pool.query('BEGIN');
           updatingItem = true;
-          const cleanGroupName = await resolveInventoryGroup(group_name, category, invClinicId, su, pool);
+          const cleanGroupName = await resolveInventoryGroup(group_name, cleanCategory, invClinicId, su, pool);
           // Verificar que el item pertenece a la clínica del usuario
           const clinicCheck = invClinicId
             ? ` AND (clinic_id = $14 OR clinic_id IS NULL)`
             : '';
-          const params = [cleanSku, name, cleanBrand, cleanDescription, category, cleanGroupName, unit_of_measure, min_stock_level, requires_cold_chain, cleanSanitaryRegistration,
-            normalizeOptionalNumber(cost_price), normalizeOptionalNumber(sale_price), id];
+          const params = [cleanSku, name, cleanBrand, cleanDescription, cleanCategory, cleanGroupName, unit_of_measure, min_stock_level, requires_cold_chain, cleanSanitaryRegistration,
+            normalizeInventoryPrice(cost_price), normalizeInventoryPrice(sale_price), id];
           if (invClinicId) params.push(invClinicId);
           const ownerCheck = su.inventory_scope === 'own'
             ? ` AND ${inventoryOwnerClause('inventory_items', params.length + 1)}`
@@ -1138,7 +1190,7 @@ export default async function handler(req, res) {
         } catch (err) {
           if (updatingItem) await pool.query('ROLLBACK').catch(() => {});
           console.error('Error updating inventory item:', err);
-          if (['Grupo inválido', 'Grupo demasiado largo', 'Categoría inválida', 'Categoría demasiado larga', 'Selecciona una clínica para registrar el grupo'].includes(err.message)) return res.status(400).json({ error: err.message });
+          if (err instanceof RangeError || ['Grupo inválido', 'Categoría inválida', 'Selecciona una categoría válida.', 'Selecciona una clínica para registrar el grupo'].includes(err.message)) return res.status(400).json({ error: err.message });
           if (err.code === '23505') return res.status(409).json({ error: 'El SKU ya existe. Usa otro código o deja el campo vacío.' });
           return res.status(500).json({ error: 'Error al actualizar producto de inventario.' });
         }
@@ -1218,6 +1270,7 @@ export default async function handler(req, res) {
       case 'inventoryAddBatch':
         try {
           const { item_id, batch_number, expiration_date, quantity, cost_per_unit } = body;
+          const { units, cost } = validateInventoryBatchInput(quantity, cost_per_unit);
           // Tenant check: verify item belongs to user's clinic before adding stock (A-1 fix)
           const suBatch = await getSessionUserOnce();
           const batchCid = suBatch?.effective_clinic_id ?? suBatch?.clinic_id;
@@ -1243,12 +1296,12 @@ export default async function handler(req, res) {
               INSERT INTO inventory_batches (item_id, clinic_id, batch_number, expiration_date, quantity_initial, quantity_current, cost_per_unit, status)
               VALUES ($1, $2, $3, $4, $5, $5, $6, 'active')
               RETURNING *
-            `, [item_id, resolvedClinicId, batch_number, expiration_date, quantity, cost_per_unit]);
+            `, [item_id, resolvedClinicId, batch_number, expiration_date, units, cost]);
 
             await pool.query(`
               INSERT INTO inventory_movements (batch_id, clinic_id, movement_type, quantity_change, reason, user_id)
               VALUES ($1, $2, 'PURCHASE', $3, 'Ingreso inicial de lote', $4)
-            `, [newBatch.rows[0].id, resolvedClinicId, quantity, suBatch?.user_id ?? null]);
+            `, [newBatch.rows[0].id, resolvedClinicId, units, suBatch?.user_id ?? null]);
 
             await pool.query('COMMIT');
             return res.status(201).json(newBatch.rows[0]);
@@ -1258,12 +1311,21 @@ export default async function handler(req, res) {
           }
         } catch (err) {
           console.error('Error adding batch:', err);
-          return res.status(500).json({ error: err.message });
+          if (err instanceof RangeError) return res.status(400).json({ error: err.message });
+          return res.status(500).json({ error: 'Error al registrar el lote.' });
         }
 
       case 'inventoryConsume':
         try {
           const { batch_id, quantity, reason, reference_id, preferred_display_unit } = body;
+          const consumedQuantity = Number(quantity);
+          if (!Number.isSafeInteger(Number(batch_id)) || Number(batch_id) <= 0 ||
+              !Number.isFinite(consumedQuantity) || consumedQuantity <= 0 || consumedQuantity > 999999999.99 ||
+              Math.round(consumedQuantity * 100) / 100 !== consumedQuantity ||
+              typeof reason !== 'string' || !reason.trim() || reason.length > 200 ||
+              (preferred_display_unit && !['absolute', 'percentage'].includes(preferred_display_unit))) {
+            return res.status(400).json({ error: 'Lote, cantidad o motivo inválido.' });
+          }
           // Tenant check: verify batch belongs to user's clinic before consuming (A-1 fix)
           const suCons = await getSessionUserOnce();
           const consCid = suCons?.effective_clinic_id ?? suCons?.clinic_id;
@@ -1289,27 +1351,12 @@ export default async function handler(req, res) {
             await client.query("SELECT set_config('app.current_tenant', $1, false)", [consCid ? String(consCid) : '']);
             await client.query('BEGIN');
             
-            // Check current stock
-            const batchRes = await client.query('SELECT quantity_current, item_id, clinic_id FROM inventory_batches WHERE id = $1', [batch_id]);
-            if (batchRes.rows.length === 0) throw new Error('Batch not found');
-            
-            const currentQty = parseFloat(batchRes.rows[0].quantity_current);
-            const itemId = batchRes.rows[0].item_id;
-            const batchClinicId = batchRes.rows[0].clinic_id;
-
-            if (currentQty < quantity) throw new Error('Insufficient stock in this batch');
-
-            const newQty = currentQty - quantity;
-            const newStatus = newQty <= 0 ? 'depleted' : 'active';
-
-            // Update Batch only if quantity > 0
-            if (quantity > 0) {
-              await client.query(`
-                UPDATE inventory_batches 
-                SET quantity_current = $1, status = $2 
-                WHERE id = $3
-              `, [newQty, newStatus, batch_id]);
+            const updated = await decrementInventoryBatch(client, batch_id, consumedQuantity, reason.trim());
+            if (!updated.rows.length) {
+              await client.query('ROLLBACK');
+              return res.status(409).json({ error: 'Lote sin stock suficiente o vencido. Actualiza el inventario; para descartarlo usa Vencimiento.' });
             }
+            const { item_id: itemId, clinic_id: batchClinicId, quantity_current: newQty } = updated.rows[0];
 
             // Update Item Preference if provided
             if (preferred_display_unit) {
@@ -1320,13 +1367,10 @@ export default async function handler(req, res) {
               `, [preferred_display_unit, itemId]);
             }
 
-            // Record Movement only if quantity > 0
-            if (quantity > 0) {
-              await client.query(`
-                INSERT INTO inventory_movements (batch_id, clinic_id, movement_type, quantity_change, reason, reference_id, user_id)
-                VALUES ($1, $2, 'CONSUMPTION', $3, $4, $5, $6)
-              `, [batch_id, batchClinicId, -quantity, reason, reference_id, suCons?.user_id ?? null]);
-            }
+            await client.query(`
+              INSERT INTO inventory_movements (batch_id, clinic_id, movement_type, quantity_change, reason, reference_id, user_id)
+              VALUES ($1, $2, 'CONSUMPTION', $3, $4, $5, $6)
+            `, [batch_id, batchClinicId, -consumedQuantity, reason.trim(), reference_id, suCons?.user_id ?? null]);
 
             await client.query('COMMIT');
             return res.status(200).json({ success: true, new_quantity: newQty });
@@ -1338,7 +1382,7 @@ export default async function handler(req, res) {
           }
         } catch (err) {
           console.error('Error consuming inventory:', err);
-          return res.status(500).json({ error: err.message });
+          return res.status(500).json({ error: 'Error al registrar consumo.' });
         }
 
       case 'listPatients': {

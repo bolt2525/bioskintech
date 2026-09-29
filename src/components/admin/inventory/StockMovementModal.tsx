@@ -12,7 +12,7 @@ export default function StockMovementModal({ item, onClose, onSave }: StockMovem
     batch_number: '',
     expiration_date: '',
     quantity: 1,
-    cost_per_unit: 0
+    cost_per_unit: ''
   });
   const [noExpiry, setNoExpiry] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -107,11 +107,12 @@ export default function StockMovementModal({ item, onClose, onSave }: StockMovem
               <label className="block text-sm font-medium text-gray-700 mb-1">Cantidad ({item.unit_of_measure}) *</label>
               <input
                 type="number"
-                min="1"
+                min="0.01"
+                step="0.01"
                 required
                 className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none"
                 value={formData.quantity}
-                onChange={e => setFormData({...formData, quantity: parseInt(e.target.value)})}
+                onChange={e => setFormData({...formData, quantity: parseFloat(e.target.value)})}
               />
             </div>
             <div>
@@ -122,7 +123,7 @@ export default function StockMovementModal({ item, onClose, onSave }: StockMovem
                 step="0.01"
                 className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none"
                 value={formData.cost_per_unit}
-                onChange={e => setFormData({...formData, cost_per_unit: parseFloat(e.target.value)})}
+                onChange={e => setFormData({...formData, cost_per_unit: e.target.value})}
               />
             </div>
           </div>

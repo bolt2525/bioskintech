@@ -37,7 +37,7 @@ export default function InventoryForm({ initialData, suggestedSku, categories, g
     batch_number: '',
     expiration_date: '',
     quantity: 1,
-    cost_per_unit: 0
+    cost_per_unit: ''
   });
   const [noExpiry, setNoExpiry] = useState(false);
 
@@ -50,18 +50,18 @@ export default function InventoryForm({ initialData, suggestedSku, categories, g
   const f = (field: string, value: any) => setFormData(p => ({ ...p, [field]: value }));
 
   const groupSuggestions = Array.from(new Map(groupNames
-    .filter(group => group.category === formData.category.trim())
-    .map(group => [group.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es').replace(/\s+/g, ' ').trim(), group.name] as const)
-  ).values()).sort((a, b) => a.localeCompare(b, 'es'));
+    .filter(group => !formData.category.trim() || group.category === formData.category.trim())
+    .map(group => [`${group.category}:${group.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es').replace(/\s+/g, ' ').trim()}`, group] as const)
+  ).values()).sort((a, b) => a.name.localeCompare(b.name, 'es'));
   const normalizeGroup = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es').trim();
   const searchGroup = normalizeGroup(formData.group_name);
   const matchingGroups = groupSuggestions
-    .filter(group => searchGroup.split(/\s+/).every(word => normalizeGroup(group).includes(word)))
-    .sort((a, b) => Number(normalizeGroup(b).startsWith(searchGroup)) - Number(normalizeGroup(a).startsWith(searchGroup)))
+    .filter(group => searchGroup.split(/\s+/).every(word => normalizeGroup(group.name).includes(word)))
+    .sort((a, b) => Number(normalizeGroup(b.name).startsWith(searchGroup)) - Number(normalizeGroup(a.name).startsWith(searchGroup)))
     .slice(0, 8);
 
-  const chooseGroup = (name: string) => {
-    f('group_name', name);
+  const chooseGroup = (group: { category: string; name: string }) => {
+    setFormData(previous => ({ ...previous, group_name: group.name, category: previous.category.trim() || group.category }));
     setGroupOpen(false);
   };
 
@@ -77,6 +77,7 @@ export default function InventoryForm({ initialData, suggestedSku, categories, g
   const handleStep1Next = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name.trim()) { setError('El nombre es obligatorio'); return; }
+    if (!formData.category.trim()) { setError('Selecciona una categoría'); return; }
     setError(null);
     if (isEditing) {
       handleFinalSave();
@@ -239,11 +240,13 @@ export default function InventoryForm({ initialData, suggestedSku, categories, g
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label htmlFor="inventory-category" className={labelCls}>Categoría</label>
+                      <label htmlFor="inventory-category" className={labelCls}>Categoría *</label>
                       <input
                         id="inventory-category"
                         list="inventory-category-suggestions"
                         type="text"
+                        required
+                        maxLength={100}
                         className={inputCls}
                         value={formData.category}
                         onChange={e => { setFormData(p => ({ ...p, category: e.target.value, group_name: p.category === e.target.value ? p.group_name : '' })); setActiveGroupIndex(0); setGroupOpen(false); }}
@@ -284,13 +287,13 @@ export default function InventoryForm({ initialData, suggestedSku, categories, g
                         </button>
                         {groupOpen && (
                           <div id="inventory-group-options" role="listbox" aria-label="Subcategorías disponibles"
-                            className="absolute z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white p-1 shadow-lg">
+                            className="absolute bottom-full z-20 mb-1 max-h-40 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white p-1 shadow-lg sm:max-h-48">
                             {matchingGroups.length ? matchingGroups.map((group, index) => (
-                              <button key={group} id={`inventory-group-option-${index}`} role="option"
+                              <button key={`${group.category}:${group.name}`} id={`inventory-group-option-${index}`} role="option"
                                 aria-selected={index === activeGroupIndex} type="button"
                                 onPointerDown={e => e.preventDefault()} onClick={() => chooseGroup(group)}
                                 className={`block w-full rounded px-2 py-2 text-left text-sm ${index === activeGroupIndex ? 'bg-amber-50 text-gray-900' : 'text-gray-700 hover:bg-gray-50'}`}>
-                                {group}
+                                {group.name}{!formData.category.trim() && <span className="ml-2 text-xs text-gray-500">{group.category}</span>}
                               </button>
                             )) : <p className="px-2 py-2 text-xs text-gray-500">{groupLoadError ? 'Opciones no disponibles.' : 'Sin coincidencias. Se guardará como grupo nuevo.'}</p>}
                           </div>
@@ -300,11 +303,9 @@ export default function InventoryForm({ initialData, suggestedSku, categories, g
                     </div>
                   </div>
 
-                  {/* Precios — solo para categoría Venta */}
-                  {formData.category === 'Venta' && (
-                    <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100 space-y-3">
-                      <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wide">Precios de referencia</p>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100 space-y-3">
+                      <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wide">{formData.category === 'Venta' ? 'Precios de referencia' : 'Costo de referencia'}</p>
+                      <div className={`grid grid-cols-1 ${formData.category === 'Venta' ? 'sm:grid-cols-2' : ''} gap-3`}>
                         <div>
                           <label className={labelCls}>Costo de adquisición <span className="normal-case font-normal text-gray-400">(opcional)</span></label>
                           <div className="relative">
@@ -317,7 +318,7 @@ export default function InventoryForm({ initialData, suggestedSku, categories, g
                             />
                           </div>
                         </div>
-                        <div>
+                        {formData.category === 'Venta' && <div>
                           <label className={labelCls}>Precio de venta</label>
                           <div className="relative">
                             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
@@ -328,9 +329,9 @@ export default function InventoryForm({ initialData, suggestedSku, categories, g
                               onChange={e => f('sale_price', e.target.value)}
                             />
                           </div>
-                        </div>
+                        </div>}
                       </div>
-                      {formData.cost_price && formData.sale_price && parseFloat(formData.sale_price as string) > 0 && (
+                      {formData.category === 'Venta' && formData.cost_price && formData.sale_price && parseFloat(formData.sale_price as string) > 0 && (
                         <div className="flex justify-between items-center text-xs text-gray-600 border-t border-emerald-100 pt-2">
                           <span>Margen estimado:</span>
                           <span className={`font-semibold ${
@@ -346,8 +347,7 @@ export default function InventoryForm({ initialData, suggestedSku, categories, g
                           </span>
                         </div>
                       )}
-                    </div>
-                  )}
+                  </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
@@ -442,15 +442,15 @@ export default function InventoryForm({ initialData, suggestedSku, categories, g
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className={labelCls}>Cantidad ({formData.unit_of_measure})</label>
-                      <input type="number" min="1" required className={inputCls}
+                      <input type="number" min="0.01" step="0.01" required className={inputCls}
                         value={stockData.quantity}
-                        onChange={e => setStockData(p => ({ ...p, quantity: parseInt(e.target.value) || 1 }))} />
+                        onChange={e => setStockData(p => ({ ...p, quantity: parseFloat(e.target.value) || 0 }))} />
                     </div>
                     <div>
                       <label className={labelCls}>Costo Unitario ($)</label>
                       <input type="number" min="0" step="0.01" className={inputCls}
                         value={stockData.cost_per_unit}
-                        onChange={e => setStockData(p => ({ ...p, cost_per_unit: parseFloat(e.target.value) || 0 }))} />
+                        onChange={e => setStockData(p => ({ ...p, cost_per_unit: e.target.value }))} />
                     </div>
                   </div>
 

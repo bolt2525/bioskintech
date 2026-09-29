@@ -1,5 +1,7 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-09-29 Inventario: categorías activas, buscador de grupos sin categoría y filtros de riesgo.
+- ✅ 2026-09-29 Stock vigente, egreso atómico y valoración parcial con margen potencial.
 - ✅ 2026-09-28 Catálogo persistente de subcategorías migrado con RLS, búsqueda seleccionable y backup.
 - ✅ 2026-09-28 Inventario agrupa subcategorías y reutiliza nombres normalizados.
 - ✅ 2026-09-28 Ripgrep instalado y documentado para búsqueda de código.

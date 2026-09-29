@@ -32,6 +32,7 @@ export default function AdminInventory() {
   // Search & filter state
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const [stockFilter, setStockFilter] = useState<'all' | 'out' | 'low' | 'expired'>('all');
 
   // Modal / drawer state
   const [showForm, setShowForm] = useState(false);
@@ -158,7 +159,7 @@ export default function AdminInventory() {
     });
     if (!batchRes.ok) {
       refresh(); // el item ya fue creado aunque el batch falle
-      throw new Error('Producto creado pero error al registrar stock inicial');
+      throw new Error(`Producto creado, pero no se registró el stock inicial: ${await getApiErrorMessage(batchRes, 'Error de lote')}`);
     }
     setSuccessMessage('Producto creado con stock inicial');
     refresh();
@@ -183,7 +184,7 @@ export default function AdminInventory() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...data, user_id: user?.id })
     });
-    if (!res.ok) throw new Error('Error al agregar stock');
+    if (!res.ok) throw new Error(await getApiErrorMessage(res, 'Error al agregar stock'));
     setSuccessMessage('Stock ingresado');
     refresh();
     setShowStockModal(false);
@@ -195,7 +196,7 @@ export default function AdminInventory() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...data, user_id: user?.id })
     });
-    if (!res.ok) throw new Error('Error al registrar consumo');
+    if (!res.ok) throw new Error(await getApiErrorMessage(res, 'Error al registrar consumo'));
     setSuccessMessage('Consumo registrado');
     refresh();
     setShowConsumeModal(false);
@@ -203,24 +204,34 @@ export default function AdminInventory() {
 
   // â”€â”€ Filtered items â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const filteredItems = useMemo(() => {
+    const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es');
+    const terms = normalize(search.trim()).split(/\s+/).filter(Boolean);
     return items.filter(item => {
-      const matchSearch = !search
-        || item.name.toLowerCase().includes(search.toLowerCase())
-        || (item.sku || '').toLowerCase().includes(search.toLowerCase());
+      const searchable = normalize([item.name, item.sku, item.brand, item.category, item.group_name].filter(Boolean).join(' '));
+      const matchSearch = terms.every(term => searchable.includes(term));
       const matchCat = categoryFilter === 'all' || item.category?.trim() === categoryFilter;
-      return matchSearch && matchCat;
+      const stock = Number(item.total_stock);
+      const matchStock = stockFilter === 'all' || (stockFilter === 'out' && stock === 0)
+        || (stockFilter === 'low' && stock > 0 && stock <= Number(item.min_stock_level))
+        || (stockFilter === 'expired' && Number(item.expired_stock) > 0);
+      return matchSearch && matchCat && matchStock;
     });
-  }, [items, search, categoryFilter]);
+  }, [items, search, categoryFilter, stockFilter]);
+
+  const stockCounts = useMemo(() => ({
+    out: items.filter(item => Number(item.total_stock) === 0).length,
+    low: items.filter(item => Number(item.total_stock) > 0 && Number(item.total_stock) <= Number(item.min_stock_level)).length,
+    expired: items.filter(item => Number(item.expired_stock) > 0).length,
+  }), [items]);
 
   const categories = useMemo(() => {
-    const DEFAULT_CATS = ['Consumibles', 'Equipamiento', 'Inyectable', 'Venta'];
-    const fromItems = Array.from(new Set(items.map(i => i.category?.trim()).filter(Boolean)));
-    return Array.from(new Set([...DEFAULT_CATS, ...settingsCategories, ...fromItems])).sort();
-  }, [items, settingsCategories]);
+    return Array.from(new Set(items.map(item => item.category?.trim()).filter(Boolean))).sort() as string[];
+  }, [items]);
 
   const formCategories = useMemo(() => Array.from(new Set([
-    ...categories, ...groupNames.map(group => group.category).filter(Boolean)
-  ])).sort(), [categories, groupNames]);
+    'Consumibles', 'Inyectable', 'Equipamiento', 'Venta',
+    ...settingsCategories, ...categories, ...groupNames.map(group => group.category).filter(Boolean)
+  ])).sort(), [categories, settingsCategories, groupNames]);
 
   const groupedItems = useMemo(() => {
     const groups = new Map<string, Map<string, { name: string; items: any[] }>>();
@@ -333,7 +344,7 @@ export default function AdminInventory() {
                 <input
                   id="inventory-search"
                   type="search"
-                  placeholder="Buscar por nombre o SKU..."
+                  placeholder="Buscar producto, marca, grupo o SKU..."
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                   className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#deb887] focus:border-[#deb887] outline-none bg-white"
@@ -385,6 +396,19 @@ export default function AdminInventory() {
                   }`}
                 >
                   {cat}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-1.5" aria-label="Filtrar por estado de stock">
+              {([
+                ['all', 'Todo el stock', items.length],
+                ['out', 'Agotados', stockCounts.out],
+                ['low', 'Bajo stock', stockCounts.low],
+                ['expired', 'Con vencidos', stockCounts.expired],
+              ] as const).map(([key, label, count]) => (
+                <button key={key} type="button" onClick={() => setStockFilter(key)} aria-pressed={stockFilter === key}
+                  className={`px-3 py-1.5 border-b-2 text-xs font-medium transition-colors ${stockFilter === key ? 'border-amber-600 text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-900'}`}>
+                  {label} <span className="text-gray-400">{count}</span>
                 </button>
               ))}
             </div>

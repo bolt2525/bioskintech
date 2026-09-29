@@ -15,6 +15,7 @@ interface InventoryItem {
   group_name?: string;
   unit_of_measure: string;
   total_stock: number;
+  expired_stock?: number;
   total_initial?: number;
   batch_count?: number;
   preferred_display_unit?: 'absolute' | 'percentage';
@@ -195,7 +196,7 @@ export default function InventoryProductCard({
       {/* Stock level */}
       <div className="px-4 pb-3">
         <div className="flex items-end justify-between mb-1.5">
-          <span className="text-xs text-gray-500">Stock actual</span>
+          <span className="text-xs text-gray-500">Stock disponible</span>
           <div className="text-right">
             {displayUnit ? (
               <>
@@ -237,20 +238,25 @@ export default function InventoryProductCard({
             </span>
           )}
         </div>
+        {Number(item.expired_stock) > 0 && (
+          <p className="mt-2 text-xs font-medium text-red-700">
+            Vencido: {item.expired_stock} {item.unit_of_measure} · no disponible
+          </p>
+        )}
       </div>
 
-      {/* Precios — solo categoría Venta */}
-      {item.category === 'Venta' && (item.sale_price || item.cost_price) && (
+      {/* Precios de referencia */}
+      {(item.cost_price != null || (item.category === 'Venta' && item.sale_price != null)) && (
         <div className="px-4 pb-2">
           <div className="flex items-center gap-2 text-[11px] text-gray-500">
-            {item.cost_price ? (
-              <span>Costo: <span className="font-semibold text-gray-700">${Number(item.cost_price).toFixed(2)}</span></span>
+            {item.cost_price != null ? (
+              <span>Costo ref.: <span className="font-semibold text-gray-700">${Number(item.cost_price).toFixed(2)}</span></span>
             ) : null}
-            {item.cost_price && item.sale_price ? <span className="text-gray-300">|</span> : null}
-            {item.sale_price ? (
-              <span>Venta: <span className="font-semibold text-emerald-600">${Number(item.sale_price).toFixed(2)}</span></span>
+            {item.category === 'Venta' && item.cost_price != null && item.sale_price != null ? <span className="text-gray-300">|</span> : null}
+            {item.category === 'Venta' && item.sale_price != null ? (
+              <span>Venta ref.: <span className="font-semibold text-emerald-600">${Number(item.sale_price).toFixed(2)}</span></span>
             ) : null}
-            {item.cost_price && item.sale_price && Number(item.cost_price) > 0 ? (
+            {item.category === 'Venta' && item.cost_price && item.sale_price && Number(item.cost_price) > 0 ? (
               <span className="ml-auto text-[10px] text-emerald-500 font-medium">
                 {(((Number(item.sale_price) - Number(item.cost_price)) / Number(item.cost_price)) * 100).toFixed(0)}% margen
               </span>

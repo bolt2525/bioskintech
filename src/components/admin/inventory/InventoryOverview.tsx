@@ -9,6 +9,10 @@ interface Stats {
   expiring_soon_count: number;
   expired_count: number;
   movements_this_month: number;
+  stock_value: string | number;
+  potential_margin: string | number;
+  units_without_cost: string | number;
+  units_without_sale_price: string | number;
 }
 
 interface Props {
@@ -60,9 +64,11 @@ const KPI_CARDS = [
 ];
 
 export default function InventoryOverview({ stats, loading }: Props) {
+  const money = new Intl.NumberFormat('es-EC', { style: 'currency', currency: 'USD' });
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-      {KPI_CARDS.map((card, i) => {
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {KPI_CARDS.map((card, i) => {
         const value = stats ? stats[card.key] : 0;
         const subValue = stats && 'subKey' in card ? stats[card.subKey as keyof Stats] : null;
 
@@ -94,7 +100,25 @@ export default function InventoryOverview({ stats, loading }: Props) {
             </div>
           </motion.div>
         );
-      })}
+        })}
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-y border-gray-200 py-3">
+        <div className="px-2">
+          <p className="text-xs font-medium text-gray-500">Valor del stock vigente</p>
+          <p className="text-lg font-semibold text-gray-900">{loading ? '—' : money.format(Number(stats?.stock_value || 0))}</p>
+          {!loading && Number(stats?.units_without_cost || 0) > 0 && (
+            <p className="text-xs text-amber-700">{stats?.units_without_cost} unidades con costo pendiente o $0; valor parcial</p>
+          )}
+        </div>
+        <div className="px-2 sm:border-l sm:border-gray-200 sm:pl-5">
+          <p className="text-xs font-medium text-gray-500">Margen potencial · Venta</p>
+          <p className="text-lg font-semibold text-gray-900">{loading ? '—' : money.format(Number(stats?.potential_margin || 0))}</p>
+          <p className="text-xs text-gray-500">Estimación del stock, no ingresos realizados</p>
+          {!loading && Number(stats?.units_without_sale_price || 0) > 0 && (
+            <p className="text-xs text-amber-700">{stats?.units_without_sale_price} unidades de Venta sin precio; margen parcial</p>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

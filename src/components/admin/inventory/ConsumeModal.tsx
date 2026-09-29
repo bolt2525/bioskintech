@@ -21,24 +21,32 @@ export default function ConsumeModal({ item, onClose, onSave }: ConsumeModalProp
   useEffect(() => {
     setLoading(true);
     recordsFetch(`/api/records?action=inventoryGetItem&id=${item.id}`)
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) throw new Error('Error cargando lotes');
+        return res.json();
+      })
       .then(data => {
         if (data.batches) {
           setBatches(data.batches);
-          if (data.batches.length > 0) {
-            setSelectedBatchId(String(data.batches[0].id));
-          }
         }
       })
       .catch(() => setError('Error cargando lotes'))
       .finally(() => setLoading(false));
   }, [item.id]);
 
-  const selectedBatch = batches.find(b => String(b.id) === selectedBatchId);
+  const today = new Date().toISOString().slice(0, 10);
+  const availableBatches = batches.filter(batch => Number(batch.quantity_current) > 0 &&
+    (reason === 'Vencimiento'
+      ? !!batch.expiration_date && String(batch.expiration_date).slice(0, 10) < today
+      : !batch.expiration_date || String(batch.expiration_date).slice(0, 10) >= today));
+  const activeBatchId = availableBatches.some(batch => String(batch.id) === selectedBatchId)
+    ? selectedBatchId : String(availableBatches[0]?.id || '');
+  const selectedBatch = availableBatches.find(batch => String(batch.id) === activeBatchId);
+  const isSale = isVenta && reason !== 'Vencimiento';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedBatchId) {
+    if (!activeBatchId) {
       setError('Selecciona un lote con stock disponible');
       return;
     }
@@ -57,7 +65,7 @@ export default function ConsumeModal({ item, onClose, onSave }: ConsumeModalProp
     setLoading(true);
     setError(null);
     try {
-      await onSave({ batch_id: selectedBatchId, quantity: qty, reason });
+      await onSave({ batch_id: activeBatchId, quantity: qty, reason });
       onClose();
     } catch (err: any) {
       setError(err.message || 'Error al registrar');
@@ -74,17 +82,17 @@ export default function ConsumeModal({ item, onClose, onSave }: ConsumeModalProp
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
 
         {/* Encabezado */}
-        <div className={`px-6 py-5 border-b border-gray-100 flex justify-between items-start ${isVenta ? 'bg-emerald-50' : 'bg-orange-50'}`}>
+        <div className={`px-6 py-5 border-b border-gray-100 flex justify-between items-start ${isSale ? 'bg-emerald-50' : 'bg-orange-50'}`}>
           <div className="flex items-center gap-3">
-            <div className={`p-2.5 rounded-xl ${isVenta ? 'bg-emerald-100' : 'bg-orange-100'}`}>
-              {isVenta
+            <div className={`p-2.5 rounded-xl ${isSale ? 'bg-emerald-100' : 'bg-orange-100'}`}>
+              {isSale
                 ? <ShoppingCart className="w-5 h-5 text-emerald-600" />
                 : <Package className="w-5 h-5 text-orange-500" />
               }
             </div>
             <div>
               <h3 className="font-bold text-gray-900 text-base">
-                {isVenta ? 'Registrar Venta' : 'Registrar Consumo'}
+                {reason === 'Vencimiento' ? 'Descartar vencidos' : isSale ? 'Salida por venta' : 'Registrar Consumo'}
               </h3>
               <p className="text-xs text-gray-500 mt-0.5 max-w-[260px] truncate">{item.name}</p>
             </div>
@@ -98,6 +106,7 @@ export default function ConsumeModal({ item, onClose, onSave }: ConsumeModalProp
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
+          {isSale && <p className="text-xs text-gray-500">Esta salida descuenta stock; no registra cobros ni facturas.</p>}
 
           {/* Error */}
           {error && (
@@ -115,19 +124,21 @@ export default function ConsumeModal({ item, onClose, onSave }: ConsumeModalProp
             </label>
             {loading ? (
               <div className="h-10 bg-gray-100 rounded-xl animate-pulse" />
-            ) : batches.length === 0 ? (
+            ) : availableBatches.length === 0 ? (
               <div className="p-3 bg-red-50 border border-red-100 rounded-xl text-sm text-red-600">
-                No hay lotes con stock disponible para este producto.
+                {batches.some(batch => Number(batch.quantity_current) > 0) && reason !== 'Vencimiento'
+                  ? 'Solo hay lotes vencidos. Para retirarlos, selecciona el motivo Vencimiento.'
+                  : reason === 'Vencimiento' ? 'No hay lotes vencidos con saldo para retirar.' : 'No hay lotes con stock disponible para este producto.'}
               </div>
             ) : (
               <select
                 className={inputCls}
-                value={selectedBatchId}
+                value={activeBatchId}
                 onChange={e => setSelectedBatchId(e.target.value)}
               >
-                {batches.map(batch => (
+                {availableBatches.map(batch => (
                   <option key={batch.id} value={batch.id}>
-                    Lote {batch.batch_number} — Vence: {new Date(batch.expiration_date).toLocaleDateString('es-MX')} — Stock: {batch.quantity_current} {item.unit_of_measure}
+                    Lote {batch.batch_number} — {batch.expiration_date && !String(batch.expiration_date).startsWith('2099') ? `Vence: ${new Date(batch.expiration_date).toLocaleDateString('es-MX')}` : 'Sin vencimiento'} — Stock: {batch.quantity_current} {item.unit_of_measure}
                   </option>
                 ))}
               </select>
@@ -147,8 +158,8 @@ export default function ConsumeModal({ item, onClose, onSave }: ConsumeModalProp
             <div className="flex gap-2.5">
               <input
                 type="number"
-                step="1"
-                min="1"
+                step="0.01"
+                min="0.01"
                 max={selectedBatch ? selectedBatch.quantity_current : undefined}
                 required
                 className={`flex-1 ${inputCls}`}
@@ -174,6 +185,7 @@ export default function ConsumeModal({ item, onClose, onSave }: ConsumeModalProp
                   <option value="Venta directa">Venta directa</option>
                   <option value="Venta con descuento">Venta con descuento</option>
                   <option value="Muestra gratis">Muestra / Promocion</option>
+                  <option value="Vencimiento">Vencimiento / Descarte</option>
                 </>
               ) : (
                 <>
@@ -198,15 +210,15 @@ export default function ConsumeModal({ item, onClose, onSave }: ConsumeModalProp
             </button>
             <button
               type="submit"
-              disabled={loading || batches.length === 0}
+              disabled={loading || availableBatches.length === 0}
               className={`flex-1 px-4 py-2.5 text-white rounded-xl transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-semibold shadow-sm ${
-                isVenta
+                isSale
                   ? 'bg-emerald-500 hover:bg-emerald-600'
                   : 'bg-[#deb887] hover:bg-[#c5a075]'
               }`}
             >
               <Save className="w-4 h-4" />
-              {loading ? 'Registrando...' : isVenta ? 'Confirmar Venta' : 'Confirmar Consumo'}
+              {loading ? 'Registrando...' : reason === 'Vencimiento' ? 'Confirmar Descarte' : isSale ? 'Confirmar Salida' : 'Confirmar Consumo'}
             </button>
           </div>
         </form>

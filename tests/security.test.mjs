@@ -53,6 +53,41 @@ test('inventory group backup restores without products and forces the target cli
   await assert.rejects(() => restoreInventoryGroups(pool, 'no es un arreglo', 'target-clinic', false), /inválido/);
 });
 
+test('inventory receipts reject invalid quantities and preserve unknown cost', async () => {
+  const { validateInventoryBatchInput } = await import('../api/records.js');
+  assert.deepEqual(validateInventoryBatchInput('2.5', ''), { units: 2.5, cost: null });
+  assert.deepEqual(validateInventoryBatchInput(1, '  '), { units: 1, cost: null });
+  assert.deepEqual(validateInventoryBatchInput(2, '0'), { units: 2, cost: 0 });
+  assert.deepEqual(validateInventoryBatchInput(1, '12.3456'), { units: 1, cost: 12.3456 });
+  for (const quantity of [0, -1, 1.234, 'no-numérico', Infinity]) {
+    assert.throws(() => validateInventoryBatchInput(quantity, null), RangeError);
+  }
+  for (const cost of [-1, 'abc', Infinity, 1.12345]) {
+    assert.throws(() => validateInventoryBatchInput(1, cost), RangeError);
+  }
+});
+
+test('inventory price validation and consumption enforce monetary and stock boundaries', async () => {
+  const { normalizeInventoryPrice, normalizeInventoryCategory, decrementInventoryBatch } = await import('../api/records.js');
+  assert.equal(normalizeInventoryPrice(''), null);
+  assert.equal(normalizeInventoryPrice('12.50'), 12.5);
+  assert.equal(normalizeInventoryPrice(0), 0);
+  assert.equal(normalizeInventoryCategory('  Consumibles  '), 'Consumibles');
+  assert.throws(() => normalizeInventoryCategory('   '), TypeError);
+  assert.throws(() => normalizeInventoryCategory('x'.repeat(101)), TypeError);
+  for (const price of [-1, 'abc', 1.234, Infinity]) {
+    assert.throws(() => normalizeInventoryPrice(price), RangeError);
+  }
+  const client = { query: async (sql, params) => {
+    assert.match(sql, /quantity_current >= \$2/);
+    assert.match(sql, /status = 'active'/);
+    assert.match(sql, /expiration_date >= CURRENT_DATE OR \$3 = 'Vencimiento'/);
+    assert.deepEqual(params, [7, 2.5, 'Uso en cabina']);
+    return { rows: [] };
+  } };
+  assert.deepEqual((await decrementInventoryBatch(client, 7, 2.5, 'Uso en cabina')).rows, []);
+});
+
 test('R2 photo keys stay inside the clinic and record prefix', async () => {
   const { isOwnedPhotoKey } = await import('../api/records.js');
   const clinicId = '11111111-1111-4111-8111-111111111111';
