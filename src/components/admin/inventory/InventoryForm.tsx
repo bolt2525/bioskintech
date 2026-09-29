@@ -341,7 +341,7 @@ export default function InventoryForm({ initialData, suggestedSku, categories, g
                             ${(parseFloat(formData.sale_price as string) - parseFloat(formData.cost_price as string)).toFixed(2)}
                             {parseFloat(formData.cost_price as string) > 0 && (
                               <span className="text-gray-400 font-normal ml-1">
-                                ({(((parseFloat(formData.sale_price as string) - parseFloat(formData.cost_price as string)) / parseFloat(formData.cost_price as string)) * 100).toFixed(0)}%)
+                                ({(((parseFloat(formData.sale_price as string) - parseFloat(formData.cost_price as string)) / parseFloat(formData.sale_price as string)) * 100).toFixed(0)}%)
                               </span>
                             )}
                           </span>

@@ -258,7 +258,7 @@ export default function InventoryProductCard({
             ) : null}
             {item.category === 'Venta' && item.cost_price && item.sale_price && Number(item.cost_price) > 0 ? (
               <span className="ml-auto text-[10px] text-emerald-500 font-medium">
-                {(((Number(item.sale_price) - Number(item.cost_price)) / Number(item.cost_price)) * 100).toFixed(0)}% margen
+                {(((Number(item.sale_price) - Number(item.cost_price)) / Number(item.sale_price)) * 100).toFixed(0)}% margen ref.
               </span>
             ) : null}
           </div>
@@ -281,19 +281,19 @@ export default function InventoryProductCard({
           whileHover={{ scale: 1.04 }}
           whileTap={{ scale: 0.96 }}
           onClick={(e) => { e.stopPropagation(); onConsume(item); }}
-          disabled={isOutOfStock}
+          disabled={isOutOfStock && Number(item.expired_stock) <= 0}
           className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg transition-colors text-xs font-semibold
-            ${isOutOfStock
+            ${isOutOfStock && Number(item.expired_stock) <= 0
               ? 'bg-gray-50 text-gray-300 cursor-not-allowed'
               : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
             }`}
-          title={isOutOfStock ? 'Sin stock' : 'Registrar consumo'}
+          title={isOutOfStock && Number(item.expired_stock) > 0 ? 'Retirar stock vencido' : isOutOfStock ? 'Sin stock' : 'Registrar consumo'}
         >
           {item.category === 'Consumible'
             ? <Droplet className="w-3.5 h-3.5" />
             : <Minus className="w-3.5 h-3.5" />
           }
-          Consumir
+          {isOutOfStock && Number(item.expired_stock) > 0 ? 'Retirar vencido' : 'Consumir'}
         </motion.button>
       </div>
     </motion.div>

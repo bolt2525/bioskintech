@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format, differenceInDays } from 'date-fns';
 import { es } from 'date-fns/locale';
+import recordsFetch from '../../../utils/recordsFetch';
 import {
   X, Package, Edit2, Plus, Minus, Trash2, Calendar, Activity,
   ThermometerSnowflake, AlertTriangle, CheckCircle, AlertCircle,
@@ -16,6 +17,7 @@ interface Batch {
   quantity_initial: number;
   unit_of_measure?: string;
   status: string;
+  cost_per_unit?: string | null;
 }
 
 interface Movement {
@@ -36,6 +38,8 @@ interface InventoryItem {
   group_name?: string;
   unit_of_measure: string;
   total_stock: number;
+  expired_stock?: number;
+  cost_price?: number | null;
   min_stock_level: number;
   next_expiry: string;
   requires_cold_chain: boolean;
@@ -55,6 +59,7 @@ interface Props {
 export default function InventoryProductDrawer({ item, onClose, onEdit, onAddStock, onConsume, onDelete }: Props) {
   const [detail, setDetail] = useState<{ batches: Batch[]; movements: Movement[] } | null>(null);
   const [loading, setLoading] = useState(false);
+  const [detailError, setDetailError] = useState(false);
   const [activeSection, setActiveSection] = useState<'batches' | 'movements'>('batches');
 
   const formatSafeDate = (value: string, pattern: string) => {
@@ -67,15 +72,18 @@ export default function InventoryProductDrawer({ item, onClose, onEdit, onAddSto
 
   useEffect(() => {
     if (!item) return;
+    const controller = new AbortController();
     setDetail(null);
+    setDetailError(false);
     setLoading(true);
-    fetch(`/api/records?action=inventoryGetItem&id=${item.id}`)
-      .then(r => r.json())
+    recordsFetch(`/api/records?action=inventoryGetItem&id=${item.id}`, { signal: controller.signal })
+      .then(r => { if (!r.ok) throw new Error('Error al cargar producto'); return r.json(); })
       .then(data => {
-        setDetail({ batches: data.batches || [], movements: data.movements || [] });
+        if (!controller.signal.aborted) setDetail({ batches: data.batches || [], movements: data.movements || [] });
       })
-      .catch(() => setDetail({ batches: [], movements: [] }))
-      .finally(() => setLoading(false));
+      .catch(() => { if (!controller.signal.aborted) setDetailError(true); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
   }, [item?.id]);
 
   const getExpiryStatus = (date: string) => {
@@ -172,7 +180,7 @@ export default function InventoryProductDrawer({ item, onClose, onEdit, onAddSto
             <div className="px-5 py-4 bg-gray-50/60 border-b border-gray-100">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-gray-500 mb-0.5">Stock total</p>
+                  <p className="text-xs text-gray-500 mb-0.5">Stock disponible</p>
                   <p className="text-3xl font-bold text-gray-900">
                     {Number(item.total_stock) || 0}
                     <span className="text-sm font-normal text-gray-400 ml-1">{item.unit_of_measure}</span>
@@ -189,15 +197,15 @@ export default function InventoryProductDrawer({ item, onClose, onEdit, onAddSto
                   <motion.button
                     whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
                     onClick={() => onConsume(item)}
-                    disabled={Number(item.total_stock) === 0}
+                    disabled={Number(item.total_stock) === 0 && Number(item.expired_stock) <= 0}
                     className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold transition-colors ${
-                      Number(item.total_stock) === 0
+                      Number(item.total_stock) === 0 && Number(item.expired_stock) <= 0
                         ? 'bg-gray-100 text-gray-300 cursor-not-allowed'
                         : 'bg-gray-800 text-white hover:bg-gray-700 shadow-sm'
                     }`}
                   >
                     {item.category === 'Consumible' ? <Droplet className="w-4 h-4" /> : <Minus className="w-4 h-4" />}
-                    Consumir
+                    {Number(item.total_stock) === 0 && Number(item.expired_stock) > 0 ? 'Retirar vencido' : 'Consumir'}
                   </motion.button>
                 </div>
               </div>
@@ -234,6 +242,8 @@ export default function InventoryProductDrawer({ item, onClose, onEdit, onAddSto
                 </div>
               )}
 
+              {detailError && <p role="alert" className="py-8 text-center text-sm text-red-700">No se pudieron cargar los lotes y movimientos.</p>}
+
               {!loading && activeSection === 'batches' && (
                 <>
                   {detail?.batches.length === 0 && (
@@ -269,6 +279,7 @@ export default function InventoryProductDrawer({ item, onClose, onEdit, onAddSto
                           <span>{batch.quantity_current} / {batch.quantity_initial} {item.unit_of_measure}</span>
                           <span>{pct}%</span>
                         </div>
+                        <p className="mb-1.5 text-xs text-gray-700">Costo del lote: {batch.cost_per_unit == null ? 'No informado' : `$${Number(batch.cost_per_unit).toFixed(2)} / ${item.unit_of_measure}`}</p>
                         <div className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">
                           <div
                             className={`h-full rounded-full transition-all ${pct > 50 ? 'bg-emerald-500' : pct > 20 ? 'bg-yellow-400' : 'bg-red-500'}`}

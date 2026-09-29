@@ -1,5 +1,7 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-09-29 Costo por lote visible; referencia opcional con confirmación, RLS, concurrencia y margen bruto correcto.
+- ✅ 2026-09-29 Lotes y movimientos legibles, con detalle autenticado y acciones por rol.
 - ✅ 2026-09-29 Inventario: costo inicial único, contraste legible y análisis de ventas con filtros.
 - ✅ 2026-09-29 Neon: snapshot monetario por venta migrado; historial protegido y reporte por clínica.
 - ✅ 2026-09-29 Inventario: categorías activas, buscador de grupos sin categoría y filtros de riesgo.

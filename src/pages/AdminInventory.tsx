@@ -481,14 +481,14 @@ export default function AdminInventory() {
       {/* â”€â”€ BATCHES TAB â”€â”€ */}
       {activeTab === 'batches' && (
         <div className="animate-enter">
-          <InventoryBatches />
+          <InventoryBatches canDelete={isAdmin} />
         </div>
       )}
 
       {/* â”€â”€ MOVEMENTS TAB â”€â”€ */}
       {activeTab === 'movements' && (
         <div className="animate-enter">
-          <InventoryMovements />
+          <InventoryMovements canDelete={isAdmin} canClear={user?.role === 'master_admin'} />
         </div>
       )}
 

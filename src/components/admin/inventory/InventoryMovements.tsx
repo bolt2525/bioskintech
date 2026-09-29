@@ -14,10 +14,14 @@ interface Movement {
   quantity_change: number;
   reason: string;
   user_id: string;
+  user_name?: string;
   created_at: string;
+  unit_sale_price?: string | null;
+  sale_total?: string | null;
+  cost_total?: string | null;
 }
 
-export default function InventoryMovements() {
+export default function InventoryMovements({ canDelete = false, canClear = false }: { canDelete?: boolean; canClear?: boolean }) {
   const [movements, setMovements] = React.useState<Movement[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [searchTerm, setSearchTerm] = React.useState('');
@@ -67,7 +71,8 @@ export default function InventoryMovements() {
       if (res.ok) {
         fetchMovements();
       } else {
-        alert('Error al eliminar el movimiento');
+        const payload = await res.json().catch(() => ({}));
+        alert(payload.error || 'Error al eliminar el movimiento');
       }
     } catch (error) {
       console.error('Error deleting movement:', error);
@@ -148,14 +153,14 @@ export default function InventoryMovements() {
            </select>
 
            {/* Action Buttons */}
-           <button 
+           {canClear && <button
              onClick={handleCleanHistory}
              className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-100"
              title="Depurar historial antiguo"
            >
              <Eraser className="w-4 h-4" />
              <span className="hidden sm:inline">Limpiar</span>
-           </button>
+           </button>}
 
            <button 
              onClick={fetchMovements}
@@ -173,7 +178,7 @@ export default function InventoryMovements() {
         <input
           type="text"
           placeholder="Buscar por nombre, SKU, lote o razón..."
-          className="w-full pl-9 pr-4 py-3 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#deb887] outline-none shadow-sm"
+          className="w-full bg-white pl-9 pr-4 py-3 text-sm text-gray-900 placeholder:text-gray-500 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#deb887] outline-none shadow-sm"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
         />
@@ -191,13 +196,13 @@ export default function InventoryMovements() {
                 <th className="px-6 py-4">Tipo</th>
                 <th className="px-6 py-4 text-right">Cantidad</th>
                 <th className="px-6 py-4">Razón / Usuario</th>
-                <th className="px-6 py-4 text-center">Acciones</th>
+                {canDelete && <th className="px-6 py-4 text-center">Acciones</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-gray-400">
+                  <td colSpan={canDelete ? 7 : 6} className="px-6 py-12 text-center text-gray-600">
                     <div className="flex flex-col items-center justify-center gap-2">
                        <RefreshCw className="w-6 h-6 animate-spin text-[#deb887]" />
                        <span>Cargando auditoría...</span>
@@ -206,7 +211,7 @@ export default function InventoryMovements() {
                 </tr>
               ) : filteredMovements.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-gray-400">
+                  <td colSpan={canDelete ? 7 : 6} className="px-6 py-12 text-center text-gray-600">
                     No se encontraron movimientos con los filtros actuales
                   </td>
                 </tr>
@@ -245,25 +250,24 @@ export default function InventoryMovements() {
                     </td>
                     <td className="px-6 py-4">
                       <div className="text-gray-800">{move.reason}</div>
-                      <div className="text-xs text-gray-500">{move.user_id}</div>
-                      {(move.sale_price != null) && (
-                        <div className="text-xs text-emerald-600 font-medium mt-0.5">
-                          Venta: ${parseFloat(move.sale_price).toFixed(2)}
-                          {move.cost_price != null && (
-                            <span className="text-gray-400 font-normal ml-1">(costo: ${parseFloat(move.cost_price).toFixed(2)})</span>
-                          )}
+                      <div className="text-xs text-gray-600">{move.user_name || (move.user_id ? `Usuario #${move.user_id}` : 'Sin usuario')}</div>
+                      {move.sale_total != null ? (
+                        <div className="text-xs text-emerald-800 font-semibold mt-0.5">
+                          Importe registrado: ${Number(move.sale_total).toFixed(2)}
+                          {move.cost_total != null && <span className="ml-1 font-normal text-gray-600">(costo: ${Number(move.cost_total).toFixed(2)})</span>}
                         </div>
-                      )}
+                      ) : move.reason?.startsWith('Venta') ? <p className="mt-0.5 text-xs text-amber-800">Venta anterior sin importe registrado</p> : null}
                     </td>
-                    <td className="px-6 py-4 text-center">
-                      <button 
+                    {canDelete && <td className="px-6 py-4 text-center">
+                      {move.sale_total == null && !move.reason?.startsWith('Venta') && <button
                         onClick={() => handleDelete(move.id)}
-                        className="text-gray-300 hover:text-red-500 p-1 rounded hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100"
+                        className="text-gray-600 hover:text-red-700 p-1 rounded hover:bg-red-50 transition-colors"
                         title="Eliminar registro"
+                        aria-label="Eliminar movimiento"
                       >
                         <Trash2 className="w-4 h-4" />
-                      </button>
-                    </td>
+                      </button>}
+                    </td>}
                   </tr>
                 ))
               )}

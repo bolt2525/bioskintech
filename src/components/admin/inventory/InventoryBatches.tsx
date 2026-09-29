@@ -12,9 +12,11 @@ interface Batch {
   expiration_date: string;
   quantity_current: number;
   unit_of_measure: string;
+  cost_per_unit?: string | null;
+  reference_cost?: string | null;
 }
 
-export default function InventoryBatches() {
+export default function InventoryBatches({ canDelete = false }: { canDelete?: boolean }) {
   const [batches, setBatches] = React.useState<Batch[]>([]);
   const [loading, setLoading] = React.useState(true);
 
@@ -58,13 +60,13 @@ export default function InventoryBatches() {
 
   const getExpiryStatus = (date: string) => {
     // Check for dummy date (No Expiry)
-    if (date.startsWith('2099')) return { label: 'Permanente', color: 'bg-blue-100 text-blue-700', icon: CheckCircle };
+    if (!date || date.startsWith('2099')) return { label: 'Sin vencimiento', color: 'bg-blue-100 text-blue-700', text: 'text-blue-700', icon: CheckCircle };
 
     const days = differenceInDays(new Date(date), new Date());
-    if (days < 0) return { label: 'Vencido', color: 'bg-red-100 text-red-700', icon: AlertCircle };
-    if (days < 30) return { label: 'Por Vencer', color: 'bg-orange-100 text-orange-700', icon: AlertTriangle };
-    if (days < 90) return { label: 'Próximo', color: 'bg-yellow-100 text-yellow-700', icon: AlertTriangle };
-    return { label: 'Vigente', color: 'bg-green-100 text-green-700', icon: CheckCircle };
+    if (days < 0) return { label: 'Vencido', color: 'bg-red-100 text-red-700', text: 'text-red-700', icon: AlertCircle };
+    if (days < 30) return { label: 'Por Vencer', color: 'bg-orange-100 text-orange-700', text: 'text-orange-700', icon: AlertTriangle };
+    if (days < 90) return { label: 'Próximo', color: 'bg-yellow-100 text-yellow-700', text: 'text-yellow-700', icon: AlertTriangle };
+    return { label: 'Vigente', color: 'bg-green-100 text-green-700', text: 'text-green-700', icon: CheckCircle };
   };
 
   return (
@@ -83,7 +85,7 @@ export default function InventoryBatches() {
                 <div key={i} className="animate-pulse bg-white h-40 rounded-xl border border-gray-100"></div>
              ))
         ) : batches.length === 0 ? (
-             <div className="col-span-full py-12 text-center text-gray-400">No hay lotes activos</div>
+             <div className="col-span-full bg-white py-12 text-center text-gray-700">No hay lotes activos</div>
         ) : (
           batches.map((batch) => {
             const status = getExpiryStatus(batch.expiration_date);
@@ -96,13 +98,14 @@ export default function InventoryBatches() {
                   {status.label}
                 </div>
 
-                <button 
+                {canDelete && <button
                   onClick={() => handleDeleteBatch(batch.id, batch.batch_number)}
-                  className="absolute bottom-3 right-3 p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100 z-10"
+                  className="absolute bottom-3 right-3 p-2 text-gray-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-all z-10"
                   title="Eliminar lote"
+                  aria-label={`Eliminar lote ${batch.batch_number}`}
                 >
                   <Trash2 className="w-4 h-4" />
-                </button>
+                </button>}
                 
                 <div className="mb-4">
                   <h4 className="font-semibold text-gray-800 line-clamp-1" title={batch.item_name}>{batch.item_name}</h4>
@@ -120,10 +123,19 @@ export default function InventoryBatches() {
                   </div>
                   <div className="flex justify-between items-center text-gray-600">
                     <span>Vence:</span>
-                    <span className={`font-medium ${status.color.replace('bg-', 'text-').split(' ')[0]}`}>
-                      {batch.expiration_date.startsWith('2099') ? 'Sin Vencimiento' : format(new Date(batch.expiration_date), 'dd/MM/yyyy')}
+                    <span className={`font-medium ${status.text}`}>
+                      {!batch.expiration_date || batch.expiration_date.startsWith('2099') ? 'Sin Vencimiento' : format(new Date(batch.expiration_date), 'dd/MM/yyyy')}
                     </span>
                   </div>
+                  <div className="flex justify-between gap-2 border-t border-gray-100 pt-2 text-xs text-gray-700">
+                    <span>Costo de compra:</span>
+                    <span className="text-right font-semibold text-gray-900">
+                      {batch.cost_per_unit == null || Number(batch.cost_per_unit) === 0 ? 'Pendiente o $0 histórico' : `$${Number(batch.cost_per_unit).toFixed(2)} / ${batch.unit_of_measure}`}
+                    </span>
+                  </div>
+                  {batch.reference_cost != null && Number(batch.cost_per_unit) !== Number(batch.reference_cost) && (
+                    <p className="text-xs text-amber-800">Referencia del producto: ${Number(batch.reference_cost).toFixed(2)}</p>
+                  )}
                 </div>
               </div>
             );

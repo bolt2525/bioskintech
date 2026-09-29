@@ -67,6 +67,26 @@ test('inventory receipts reject invalid quantities and preserve unknown cost', a
   }
 });
 
+test('inventory purchase cost updates product reference only by explicit, current choice', async () => {
+  const { validateReferenceCostChange, updateInventoryReferenceCost } = await import('../api/records.js');
+  assert.equal(validateReferenceCostChange(false, 33, 30.01), null);
+  assert.equal(validateReferenceCostChange(true, 33, '30.01'), 30.01);
+  assert.throws(() => validateReferenceCostChange(true, null, 30.01), RangeError);
+  assert.throws(() => validateReferenceCostChange(true, 33.1234, 30.01), RangeError);
+  assert.equal(validateReferenceCostChange(false, 33.1234, 30.01), null);
+  assert.throws(() => validateReferenceCostChange('true', 33, 30.01), RangeError);
+  let referenceCost = 30.01;
+  const pool = { query: async (sql, params) => {
+    assert.match(sql, /clinic_id = \$3 AND cost_price IS NOT DISTINCT FROM \$4/);
+    assert.deepEqual(params.slice(0, 3), [33, 7, 'clinic-a']);
+    if (referenceCost !== params[3]) return { rows: [] };
+    referenceCost = params[0];
+    return { rows: [{ id: params[1] }] };
+  } };
+  assert.deepEqual((await updateInventoryReferenceCost(pool, { cost: 33, itemId: 7, clinicId: 'clinic-a', expectedCost: 30.01 })).rows, [{ id: 7 }]);
+  assert.deepEqual((await updateInventoryReferenceCost(pool, { cost: 33, itemId: 7, clinicId: 'clinic-a', expectedCost: 30.01 })).rows, []);
+});
+
 test('inventory price validation and consumption enforce monetary and stock boundaries', async () => {
   const { normalizeInventoryPrice, normalizeInventoryCategory, decrementInventoryBatch } = await import('../api/records.js');
   assert.equal(normalizeInventoryPrice(''), null);

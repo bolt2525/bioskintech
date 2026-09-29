@@ -572,6 +572,21 @@ export function validateInventoryBatchInput(quantity, costPerUnit) {
   return { units, cost };
 }
 
+export function validateReferenceCostChange(updateReferenceCost, cost, expectedCost) {
+  if (updateReferenceCost !== true && updateReferenceCost !== false && updateReferenceCost != null)
+    throw new RangeError('Decisión sobre costo de referencia inválida.');
+  if (updateReferenceCost !== true) return null;
+  if (cost == null) throw new RangeError('Indica el costo de este lote para actualizar la referencia.');
+  normalizeInventoryPrice(cost);
+  return normalizeInventoryPrice(expectedCost);
+}
+
+export function updateInventoryReferenceCost(pool, { cost, itemId, clinicId, expectedCost }) {
+  return pool.query(`UPDATE inventory_items SET cost_price = $1, updated_at = NOW()
+    WHERE id = $2 AND clinic_id = $3 AND cost_price IS NOT DISTINCT FROM $4 RETURNING id`,
+    [cost, itemId, clinicId, expectedCost]);
+}
+
 export function normalizeInventoryPrice(value) {
   if (value == null || (typeof value === 'string' && !value.trim())) return null;
   const amount = Number(value);
@@ -852,10 +867,11 @@ export default async function handler(req, res) {
           const params = [];
           let paramCount = 1;
           let query = `
-            SELECT m.*, i.name as item_name, i.sku, b.batch_number, b.expiration_date
+            SELECT m.*, i.name as item_name, i.sku, b.batch_number, b.expiration_date, cu.full_name AS user_name
             FROM inventory_movements m
             JOIN inventory_batches b ON m.batch_id = b.id
             JOIN inventory_items i ON b.item_id = i.id
+            LEFT JOIN clinic_users cu ON cu.id = m.user_id AND cu.clinic_id = i.clinic_id
             WHERE 1=1
           `;
           // Filtro tenant via JOIN
@@ -997,7 +1013,7 @@ export default async function handler(req, res) {
             params.push(su.user_id);
           }
           const batches = await pool.query(`
-            SELECT b.*, i.name as item_name, i.sku, i.category, i.unit_of_measure
+            SELECT b.*, i.name as item_name, i.sku, i.category, i.unit_of_measure, i.cost_price AS reference_cost
             FROM inventory_batches b
             JOIN inventory_items i ON b.item_id = i.id
             WHERE ${whereClause}
@@ -1404,8 +1420,9 @@ export default async function handler(req, res) {
 
       case 'inventoryAddBatch':
         try {
-          const { item_id, batch_number, expiration_date, quantity, cost_per_unit } = body;
+          const { item_id, batch_number, expiration_date, quantity, cost_per_unit, update_reference_cost, reference_cost } = body;
           const { units, cost } = validateInventoryBatchInput(quantity, cost_per_unit);
+          const expectedCost = validateReferenceCostChange(update_reference_cost, cost, reference_cost);
           // Tenant check: verify item belongs to user's clinic before adding stock (A-1 fix)
           const suBatch = await getSessionUserOnce();
           const batchCid = suBatch?.effective_clinic_id ?? suBatch?.clinic_id;
@@ -1427,6 +1444,15 @@ export default async function handler(req, res) {
           // Use the outer tenant-scoped client via pool.query — avoids creating a new connection without app.current_tenant
           await pool.query('BEGIN');
           try {
+            if (update_reference_cost === true) {
+              const updated = await updateInventoryReferenceCost(pool, {
+                cost, itemId: item_id, clinicId: resolvedClinicId, expectedCost
+              });
+              if (!updated.rows.length) {
+                await pool.query('ROLLBACK');
+                return res.status(409).json({ error: 'El costo de referencia cambió mientras registrabas esta entrada. Actualiza el producto y vuelve a intentarlo.' });
+              }
+            }
             const newBatch = await pool.query(`
               INSERT INTO inventory_batches (item_id, clinic_id, batch_number, expiration_date, quantity_initial, quantity_current, cost_per_unit, status)
               VALUES ($1, $2, $3, $4, $5, $5, $6, 'active')
