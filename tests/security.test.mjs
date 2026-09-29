@@ -88,6 +88,37 @@ test('inventory price validation and consumption enforce monetary and stock boun
   assert.deepEqual((await decrementInventoryBatch(client, 7, 2.5, 'Uso en cabina')).rows, []);
 });
 
+test('inventory sales require captured price and reports stay within clinic and date range', async () => {
+  const { validateInventorySalePrice, buildInventorySalesFilter, recordInventoryOutflow, INVENTORY_OUTFLOW_REASONS } = await import('../api/records.js');
+  assert.equal(validateInventorySalePrice('Uso en cabina', null, 2), null);
+  assert.equal(validateInventorySalePrice('Venta directa', '12.50', 2), 12.5);
+  assert.equal(INVENTORY_OUTFLOW_REASONS.has('Venta directa'), true);
+  assert.equal(INVENTORY_OUTFLOW_REASONS.has('venta directa'), false);
+  for (const price of [null, 0, -1, 'abc']) {
+    assert.throws(() => validateInventorySalePrice('Venta con descuento', price, 1), RangeError);
+  }
+  const filters = buildInventorySalesFilter({
+    clinicId: 'clinic-a', startDate: '2026-09-01', endDate: '2026-09-29',
+    ownerId: 7, userId: 7, category: 'Venta', search: "x%' OR TRUE--",
+  });
+  assert.match(filters.where, /m\.clinic_id = \$1 AND i\.clinic_id = \$1/);
+  assert.match(filters.where, /America\/Guayaquil/);
+  assert.match(filters.where, /created_by_user_id/);
+  assert.doesNotMatch(filters.where, /TRUE--/);
+  assert.deepEqual(filters.params, ['clinic-a', '2026-09-01', '2026-09-29', 7, 7, 'Venta', "%x%' OR TRUE--%"]);
+  assert.throws(() => buildInventorySalesFilter({ clinicId: 'a', startDate: '2026-02-31', endDate: '2026-03-01' }), RangeError);
+  assert.throws(() => buildInventorySalesFilter({ clinicId: 'a', startDate: '2024-01-01', endDate: '2026-01-01' }), RangeError);
+  const client = { query: async (sql, params) => {
+    assert.match(sql, /ROUND\(-\$3::numeric \* \$7::numeric, 2\)/);
+    assert.match(sql, /cost_total/);
+    assert.match(sql, /WHERE b\.id = \$1/);
+    return { rows: [{ id: 3, sale_total: params[6] == null ? null : '25.00' }] };
+  } };
+  const movement = { batchId: 3, clinicId: 'clinic-a', quantity: 2, reason: 'Venta directa', referenceId: null, userId: 7, saleUnitPrice: 12.5 };
+  assert.equal((await recordInventoryOutflow(client, movement)).rows[0].sale_total, '25.00');
+  assert.equal((await recordInventoryOutflow(client, { ...movement, reason: 'Vencimiento', saleUnitPrice: null })).rows[0].sale_total, null);
+});
+
 test('R2 photo keys stay inside the clinic and record prefix', async () => {
   const { isOwnedPhotoKey } = await import('../api/records.js');
   const clinicId = '11111111-1111-4111-8111-111111111111';

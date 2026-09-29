@@ -586,6 +586,62 @@ export function normalizeInventoryCategory(value) {
   return value.trim().replace(/\s+/g, ' ');
 }
 
+export function validateInventorySalePrice(reason, price, quantity) {
+  if (!['Venta directa', 'Venta con descuento'].includes(reason)) return null;
+  const unitPrice = normalizeInventoryPrice(price);
+  if (unitPrice == null || unitPrice <= 0 || unitPrice * quantity > 999999999999.99)
+    throw new RangeError('Indica un precio unitario de venta válido para esta salida.');
+  return unitPrice;
+}
+
+export const INVENTORY_OUTFLOW_REASONS = new Set([
+  'Venta directa', 'Venta con descuento', 'Muestra gratis', 'Uso en cabina',
+  'Mermas / Dano', 'Vencimiento', 'Ajuste de inventario'
+]);
+
+export function buildInventorySalesFilter({ clinicId, startDate, endDate, ownerId, userId, category, search }) {
+  const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+    !Number.isNaN(Date.parse(`${value}T00:00:00Z`)) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
+  if (!clinicId || !validDate(startDate) || !validDate(endDate) ||
+      Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`) > 366 * 86400000 || startDate > endDate) {
+    throw new RangeError('Elige un rango de fechas válido de hasta 366 días.');
+  }
+  const params = [clinicId, startDate, endDate];
+  let where = `m.clinic_id = $1 AND i.clinic_id = $1 AND m.sale_total IS NOT NULL
+    AND m.created_at >= ($2::date::timestamp AT TIME ZONE 'America/Guayaquil') AT TIME ZONE 'UTC'
+    AND m.created_at < (($3::date + INTERVAL '1 day') AT TIME ZONE 'America/Guayaquil') AT TIME ZONE 'UTC'`;
+  if (ownerId) {
+    where += ` AND ${inventoryOwnerClause('i', params.length + 1)}`;
+    params.push(ownerId);
+  }
+  if (userId) {
+    where += ` AND m.user_id = $${params.length + 1}`;
+    params.push(userId);
+  }
+  if (category) {
+    where += ` AND i.category = $${params.length + 1}`;
+    params.push(category);
+  }
+  if (search) {
+    where += ` AND (i.name ILIKE $${params.length + 1} OR i.sku ILIKE $${params.length + 1})`;
+    params.push(`%${search}%`);
+  }
+  return { where, params };
+}
+
+export async function recordInventoryOutflow(client, { batchId, clinicId, quantity, reason, referenceId, userId, saleUnitPrice }) {
+  return client.query(`
+    INSERT INTO inventory_movements
+      (batch_id, clinic_id, movement_type, quantity_change, reason, reference_id, user_id, unit_sale_price, sale_total, cost_total)
+    SELECT $1, $2, 'CONSUMPTION', $3, $4, $5, $6, $7::numeric,
+      CASE WHEN $7::numeric IS NOT NULL THEN ROUND(-$3::numeric * $7::numeric, 2) END,
+      CASE WHEN $7::numeric IS NOT NULL AND COALESCE(NULLIF(b.cost_per_unit, 0), NULLIF(i.cost_price, 0)) IS NOT NULL
+        THEN ROUND(-$3::numeric * COALESCE(NULLIF(b.cost_per_unit, 0), NULLIF(i.cost_price, 0)), 2) END
+    FROM inventory_batches b JOIN inventory_items i ON i.id = b.item_id WHERE b.id = $1
+    RETURNING id, sale_total, cost_total
+  `, [batchId, clinicId, -quantity, reason, referenceId, userId, saleUnitPrice]);
+}
+
 export async function decrementInventoryBatch(client, batchId, quantity, reason) {
   return client.query(`
     UPDATE inventory_batches
@@ -829,6 +885,58 @@ export default async function handler(req, res) {
           return res.status(500).json({ error: err.message });
         }
 
+      case 'inventorySalesReport':
+        try {
+          const sessionUser = await getSessionUserOnce();
+          const clinicId = sessionUser?.effective_clinic_id ?? sessionUser?.clinic_id;
+          if (!clinicId) return res.status(400).json({ error: 'Selecciona una clínica.' });
+          const rawUserId = req.query.filterByUserId;
+          let userId = null;
+          if (rawUserId) {
+            if (!['clinic_admin', 'master_admin'].includes(sessionUser.role) || sessionUser.inventory_scope === 'own')
+              return res.status(403).json({ error: 'Sin acceso al filtro profesional.' });
+            userId = Number(rawUserId);
+            if (!Number.isSafeInteger(userId) || userId <= 0)
+              return res.status(400).json({ error: 'Profesional inválido.' });
+            const member = await pool.query('SELECT 1 FROM clinic_users WHERE id = $1 AND clinic_id = $2', [userId, clinicId]);
+            if (!member.rows.length) return res.status(400).json({ error: 'Profesional fuera de la clínica.' });
+          }
+          const category = typeof req.query.category === 'string' ? req.query.category.trim() : '';
+          const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+          if (category.length > 100 || search.length > 100)
+            return res.status(400).json({ error: 'Filtro demasiado largo.' });
+          const { where, params } = buildInventorySalesFilter({
+            clinicId, startDate: req.query.startDate, endDate: req.query.endDate,
+            ownerId: sessionUser.inventory_scope === 'own' ? sessionUser.user_id : null,
+            userId, category, search
+          });
+          const from = `FROM inventory_movements m
+            JOIN inventory_batches b ON b.id = m.batch_id
+            JOIN inventory_items i ON i.id = b.item_id WHERE ${where}`;
+          const summary = await pool.query(`SELECT COUNT(*)::int AS sales_count,
+            COALESCE(SUM(m.sale_total), 0) AS total,
+            COALESCE(SUM(CASE WHEN m.cost_total IS NOT NULL THEN m.sale_total - m.cost_total END), 0) AS known_margin,
+            COUNT(*) FILTER (WHERE m.cost_total IS NULL)::int AS sales_without_cost,
+            COALESCE(SUM(-m.quantity_change), 0) AS units
+            ${from}`, params);
+          const localDay = `(m.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Guayaquil')::date`;
+          const daily = await pool.query(`SELECT TO_CHAR(${localDay}, 'YYYY-MM-DD') AS day,
+            COUNT(*)::int AS sales_count, SUM(m.sale_total) AS total
+            ${from} GROUP BY ${localDay} ORDER BY ${localDay}`, params);
+          const products = await pool.query(`SELECT i.id, i.name, i.sku, SUM(-m.quantity_change) AS units,
+            SUM(m.sale_total) AS total
+            ${from} GROUP BY i.id, i.name, i.sku ORDER BY total DESC LIMIT 8`, params);
+          const recent = await pool.query(`SELECT m.id, m.created_at, m.reason, m.quantity_change,
+            m.unit_sale_price, m.sale_total, m.cost_total, i.name AS item_name,
+            i.category, i.unit_of_measure, b.batch_number
+            ${from} ORDER BY m.created_at DESC LIMIT 100`, params);
+          return res.status(200).json({ summary: summary.rows[0], daily: daily.rows, products: products.rows, recent: recent.rows });
+        } catch (error) {
+          if (error instanceof RangeError) return res.status(400).json({ error: error.message });
+          console.error('Error fetching inventory sales:', error);
+          return res.status(500).json({ error: 'Error al consultar ventas de inventario.' });
+        }
+
       case 'inventoryDeleteMovement':
         try {
           const su = await getSessionUserOnce();
@@ -837,7 +945,8 @@ export default async function handler(req, res) {
             return res.status(403).json({ error: 'Sin permiso' });
           const { id } = req.query;
           const deleteParams = [id];
-          let deleteQuery = `DELETE FROM inventory_movements m WHERE m.id = $1 AND EXISTS (
+          let deleteQuery = `DELETE FROM inventory_movements m WHERE m.id = $1
+            AND m.sale_total IS NULL AND (m.reason IS NULL OR m.reason NOT ILIKE 'Venta%') AND EXISTS (
             SELECT 1 FROM inventory_batches b JOIN inventory_items i ON i.id = b.item_id
             WHERE b.id = m.batch_id`;
           if (su.inventory_scope === 'own') {
@@ -846,7 +955,7 @@ export default async function handler(req, res) {
           }
           deleteQuery += ') RETURNING m.id';
           const deleted = await pool.query(deleteQuery, deleteParams);
-          if (!deleted.rows.length) return res.status(403).json({ error: 'Sin acceso al movimiento' });
+          if (!deleted.rows.length) return res.status(409).json({ error: 'Movimiento no disponible o venta protegida. Las ventas no se eliminan del historial.' });
           return res.status(200).json({ success: true });
         } catch (err) {
           console.error('Error deleting movement:', err);
@@ -863,7 +972,8 @@ export default async function handler(req, res) {
           if (!Number.isFinite(daysInt) || daysInt <= 0)
             return res.status(400).json({ error: 'days debe ser un entero positivo' });
           // Usar parámetro — sin interpolación de string (previene inyección con días negativos)
-          await pool.query(`DELETE FROM inventory_movements WHERE created_at < NOW() - ($1 * INTERVAL '1 day')`, [daysInt]);
+          await pool.query(`DELETE FROM inventory_movements WHERE created_at < NOW() - ($1 * INTERVAL '1 day')
+            AND sale_total IS NULL AND (reason IS NULL OR reason NOT ILIKE 'Venta%')`, [daysInt]);
           return res.status(200).json({ success: true });
         } catch (err) {
           console.error('Error clearing movements:', err);
@@ -1216,9 +1326,15 @@ export default async function handler(req, res) {
           // Use pool.query (tenant-scoped client) — not pool.connect() which would skip set_config tenant
           await pool.query('BEGIN');
           try {
-            const batchesCheck = await pool.query('SELECT id FROM inventory_batches WHERE item_id = $1', [id]);
+            const batchesCheck = await pool.query('SELECT id FROM inventory_batches WHERE item_id = $1 FOR UPDATE', [id]);
             const batchIds = batchesCheck.rows.map(b => b.id);
             if (batchIds.length > 0) {
+              const sales = await pool.query(`SELECT 1 FROM inventory_movements
+                WHERE batch_id = ANY($1) AND (sale_total IS NOT NULL OR reason ILIKE 'Venta%') LIMIT 1`, [batchIds]);
+              if (sales.rows.length) {
+                await pool.query('ROLLBACK');
+                return res.status(409).json({ error: 'Este producto tiene ventas registradas y no puede eliminarse.' });
+              }
               await pool.query('DELETE FROM inventory_movements WHERE batch_id = ANY($1)', [batchIds]);
               await pool.query('DELETE FROM inventory_batches WHERE item_id = $1', [id]);
             }
@@ -1235,6 +1351,7 @@ export default async function handler(req, res) {
         }
 
       case 'inventoryDeleteBatch':
+        let deletingBatch = false;
         try {
           const su = await getSessionUserOnce();
           if (!su) return res.status(401).json({ error: 'No autenticado' });
@@ -1259,10 +1376,28 @@ export default async function handler(req, res) {
             if (chk.rows.length && chk.rows[0].clinic_id !== cid)
               return res.status(403).json({ error: 'Lote no pertenece a esta clínica' });
           }
+          await pool.query('BEGIN');
+          deletingBatch = true;
+          const locked = await pool.query('SELECT id FROM inventory_batches WHERE id = $1 FOR UPDATE', [id]);
+          if (!locked.rows.length) {
+            await pool.query('ROLLBACK');
+            deletingBatch = false;
+            return res.status(404).json({ error: 'Lote no encontrado.' });
+          }
+          const sales = await pool.query(`SELECT 1 FROM inventory_movements
+            WHERE batch_id = $1 AND (sale_total IS NOT NULL OR reason ILIKE 'Venta%') LIMIT 1`, [id]);
+          if (sales.rows.length) {
+            await pool.query('ROLLBACK');
+            deletingBatch = false;
+            return res.status(409).json({ error: 'Este lote tiene ventas registradas y no puede eliminarse.' });
+          }
           await pool.query('DELETE FROM inventory_movements WHERE batch_id = $1', [id]);
           await pool.query('DELETE FROM inventory_batches WHERE id = $1', [id]);
+          await pool.query('COMMIT');
+          deletingBatch = false;
           return res.status(200).json({ success: true });
         } catch (err) {
+          if (deletingBatch) await pool.query('ROLLBACK').catch(() => {});
           console.error('Error deleting batch:', err);
           return res.status(500).json({ error: err.message });
         }
@@ -1317,14 +1452,20 @@ export default async function handler(req, res) {
 
       case 'inventoryConsume':
         try {
-          const { batch_id, quantity, reason, reference_id, preferred_display_unit } = body;
+          const { batch_id, quantity, reason, reference_id, preferred_display_unit, unit_sale_price } = body;
           const consumedQuantity = Number(quantity);
           if (!Number.isSafeInteger(Number(batch_id)) || Number(batch_id) <= 0 ||
               !Number.isFinite(consumedQuantity) || consumedQuantity <= 0 || consumedQuantity > 999999999.99 ||
               Math.round(consumedQuantity * 100) / 100 !== consumedQuantity ||
-              typeof reason !== 'string' || !reason.trim() || reason.length > 200 ||
+              typeof reason !== 'string' || !INVENTORY_OUTFLOW_REASONS.has(reason.trim()) ||
               (preferred_display_unit && !['absolute', 'percentage'].includes(preferred_display_unit))) {
             return res.status(400).json({ error: 'Lote, cantidad o motivo inválido.' });
+          }
+          let saleUnitPrice;
+          try {
+            saleUnitPrice = validateInventorySalePrice(reason.trim(), unit_sale_price, consumedQuantity);
+          } catch (error) {
+            return res.status(400).json({ error: error.message });
           }
           // Tenant check: verify batch belongs to user's clinic before consuming (A-1 fix)
           const suCons = await getSessionUserOnce();
@@ -1367,10 +1508,11 @@ export default async function handler(req, res) {
               `, [preferred_display_unit, itemId]);
             }
 
-            await client.query(`
-              INSERT INTO inventory_movements (batch_id, clinic_id, movement_type, quantity_change, reason, reference_id, user_id)
-              VALUES ($1, $2, 'CONSUMPTION', $3, $4, $5, $6)
-            `, [batch_id, batchClinicId, -consumedQuantity, reason.trim(), reference_id, suCons?.user_id ?? null]);
+            const movement = await recordInventoryOutflow(client, {
+              batchId: batch_id, clinicId: batchClinicId, quantity: consumedQuantity,
+              reason: reason.trim(), referenceId: reference_id, userId: suCons?.user_id ?? null, saleUnitPrice
+            });
+            if (!movement.rows.length) throw new Error('No se pudo registrar el movimiento de stock');
 
             await client.query('COMMIT');
             return res.status(200).json({ success: true, new_quantity: newQty });

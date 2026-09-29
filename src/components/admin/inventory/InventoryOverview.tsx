@@ -102,7 +102,7 @@ export default function InventoryOverview({ stats, loading }: Props) {
         );
         })}
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-y border-gray-200 py-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-y border-white/25 bg-white px-4 py-3 text-gray-900">
         <div className="px-2">
           <p className="text-xs font-medium text-gray-500">Valor del stock vigente</p>
           <p className="text-lg font-semibold text-gray-900">{loading ? '—' : money.format(Number(stats?.stock_value || 0))}</p>

@@ -15,6 +15,7 @@ export default function ConsumeModal({ item, onClose, onSave }: ConsumeModalProp
   const [selectedBatchId, setSelectedBatchId] = useState<string>('');
   const [quantity, setQuantity] = useState<string>('1');
   const [reason, setReason] = useState(isVenta ? 'Venta directa' : 'Uso en cabina');
+  const [salePrice, setSalePrice] = useState<string>(item.sale_price == null ? '' : String(item.sale_price));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,7 +43,7 @@ export default function ConsumeModal({ item, onClose, onSave }: ConsumeModalProp
   const activeBatchId = availableBatches.some(batch => String(batch.id) === selectedBatchId)
     ? selectedBatchId : String(availableBatches[0]?.id || '');
   const selectedBatch = availableBatches.find(batch => String(batch.id) === activeBatchId);
-  const isSale = isVenta && reason !== 'Vencimiento';
+  const isSale = reason === 'Venta directa' || reason === 'Venta con descuento';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,11 +62,16 @@ export default function ConsumeModal({ item, onClose, onSave }: ConsumeModalProp
       setError(`Stock insuficiente en el lote seleccionado (Max: ${selectedBatch.quantity_current})`);
       return;
     }
+    if (isSale && (!Number.isFinite(Number(salePrice)) || Number(salePrice) <= 0 ||
+      Math.round(Number(salePrice) * 100) / 100 !== Number(salePrice))) {
+      setError('Indica el precio unitario cobrado para la venta');
+      return;
+    }
 
     setLoading(true);
     setError(null);
     try {
-      await onSave({ batch_id: activeBatchId, quantity: qty, reason });
+      await onSave({ batch_id: activeBatchId, quantity: qty, reason, unit_sale_price: isSale ? salePrice : null });
       onClose();
     } catch (err: any) {
       setError(err.message || 'Error al registrar');
@@ -171,6 +177,20 @@ export default function ConsumeModal({ item, onClose, onSave }: ConsumeModalProp
               </span>
             </div>
           </div>
+
+          {isSale && (
+            <div className="border-y border-emerald-100 bg-emerald-50 px-3 py-3">
+              <label htmlFor="sale-unit-price" className={labelCls}>Precio cobrado por {item.unit_of_measure || 'unidad'} *</label>
+              <div className="flex items-center gap-3">
+                <input id="sale-unit-price" type="number" min="0.01" step="0.01" required
+                  value={salePrice} onChange={e => setSalePrice(e.target.value)}
+                  className={`${inputCls} max-w-40`} placeholder="0.00" />
+                <span className="text-sm font-semibold text-emerald-800">
+                  Total: {new Intl.NumberFormat('es-EC', { style: 'currency', currency: 'USD' }).format(Number(salePrice || 0) * Number(quantity || 0))}
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* Motivo */}
           <div>

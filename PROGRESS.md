@@ -1,5 +1,7 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-09-29 Inventario: costo inicial único, contraste legible y análisis de ventas con filtros.
+- ✅ 2026-09-29 Neon: snapshot monetario por venta migrado; historial protegido y reporte por clínica.
 - ✅ 2026-09-29 Inventario: categorías activas, buscador de grupos sin categoría y filtros de riesgo.
 - ✅ 2026-09-29 Stock vigente, egreso atómico y valoración parcial con margen potencial.
 - ✅ 2026-09-28 Catálogo persistente de subcategorías migrado con RLS, búsqueda seleccionable y backup.

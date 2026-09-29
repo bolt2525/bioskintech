@@ -36,8 +36,7 @@ export default function InventoryForm({ initialData, suggestedSku, categories, g
   const [stockData, setStockData] = useState({
     batch_number: '',
     expiration_date: '',
-    quantity: 1,
-    cost_per_unit: ''
+    quantity: 1
   });
   const [noExpiry, setNoExpiry] = useState(false);
 
@@ -113,7 +112,8 @@ export default function InventoryForm({ initialData, suggestedSku, categories, g
         await onSaveWithStock(payloadFormData, {
           ...stockData,
           batch_number: finalBatch,
-          expiration_date: noExpiry ? '2099-12-31' : stockData.expiration_date
+          expiration_date: noExpiry ? '2099-12-31' : stockData.expiration_date,
+          cost_per_unit: formData.cost_price === '' ? null : formData.cost_price
         });
       }
       setDone(true);
@@ -439,19 +439,12 @@ export default function InventoryForm({ initialData, suggestedSku, categories, g
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
+                  <div>
                       <label className={labelCls}>Cantidad ({formData.unit_of_measure})</label>
                       <input type="number" min="0.01" step="0.01" required className={inputCls}
                         value={stockData.quantity}
                         onChange={e => setStockData(p => ({ ...p, quantity: parseFloat(e.target.value) || 0 }))} />
-                    </div>
-                    <div>
-                      <label className={labelCls}>Costo Unitario ($)</label>
-                      <input type="number" min="0" step="0.01" className={inputCls}
-                        value={stockData.cost_per_unit}
-                        onChange={e => setStockData(p => ({ ...p, cost_per_unit: e.target.value }))} />
-                    </div>
+                    <p className="mt-2 text-xs text-gray-600">Costo inicial por unidad: {formData.cost_price === '' ? 'sin registrar' : `$${Number(formData.cost_price).toFixed(2)}`}</p>
                   </div>
 
                   <div className="flex justify-between items-center gap-3 pt-2">

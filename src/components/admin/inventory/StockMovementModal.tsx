@@ -116,7 +116,7 @@ export default function StockMovementModal({ item, onClose, onSave }: StockMovem
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Costo Unitario ($)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Costo de esta compra por unidad ($)</label>
               <input
                 type="number"
                 min="0"
@@ -125,6 +125,7 @@ export default function StockMovementModal({ item, onClose, onSave }: StockMovem
                 value={formData.cost_per_unit}
                 onChange={e => setFormData({...formData, cost_per_unit: e.target.value})}
               />
+              {item.cost_price != null && <p className="mt-1 text-xs text-gray-600">Referencia del producto: ${Number(item.cost_price).toFixed(2)}</p>}
             </div>
           </div>
 

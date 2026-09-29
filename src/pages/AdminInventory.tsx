@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect, useMemo } from 'react';
-import { Package, Plus, CheckCircle, Activity, Calendar, Search, RefreshCw, LayoutGrid, List, Filter, Trash2, AlertTriangle } from 'lucide-react';
+import { Package, Plus, CheckCircle, Activity, Calendar, Search, RefreshCw, LayoutGrid, List, Filter, Trash2, AlertTriangle, BarChart3 } from 'lucide-react';
 import recordsFetch from "../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
 import AdminLayout from '../components/layout/AdminLayout';
@@ -12,6 +12,7 @@ import ConsumeModal from '../components/admin/inventory/ConsumeModal';
 import InventoryMovements from '../components/admin/inventory/InventoryMovements';
 import InventoryBatches from '../components/admin/inventory/InventoryBatches';
 import InventoryOverview from '../components/admin/inventory/InventoryOverview';
+import InventorySales from '../components/admin/inventory/InventorySales';
 import { useAuth } from '../context/AuthContext';
 import { useMasterView } from '../context/MasterViewContext';
 
@@ -19,7 +20,7 @@ export default function AdminInventory() {
   const { user, username } = useAuth();
   const masterView = useMasterView();
   const isAdmin = user?.role === 'clinic_admin' || user?.role === 'master_admin';
-  const [activeTab, setActiveTab] = useState<'inventory' | 'batches' | 'movements'>('inventory');
+  const [activeTab, setActiveTab] = useState<'inventory' | 'batches' | 'movements' | 'sales'>('inventory');
   const [items, setItems] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
   const [statsLoading, setStatsLoading] = useState(true);
@@ -64,12 +65,15 @@ export default function AdminInventory() {
   // Cargar usuarios de la clínica para el filtro (solo admins)
   useEffect(() => {
     if (isAdmin) {
+      setClinicUsers([]);
       recordsFetch('/api/records?action=listClinicUsers')
         .then(r => r.json())
         .then(d => Array.isArray(d) ? setClinicUsers(d) : null)
         .catch(() => null);
     }
-  }, [isAdmin]);
+  }, [isAdmin, masterView.clinicId, user?.clinic_id]);
+
+  useEffect(() => { setFilterUserId(''); setCategoryFilter('all'); }, [masterView.clinicId, user?.clinic_id]);
 
   useEffect(() => {
     if (successMessage) {
@@ -263,6 +267,7 @@ export default function AdminInventory() {
     { id: 'inventory' as const, label: 'Inventario', icon: Package },
     { id: 'batches' as const, label: 'Lotes', icon: Calendar },
     { id: 'movements' as const, label: 'Movimientos', icon: Activity },
+    { id: 'sales' as const, label: 'Ventas', icon: BarChart3 },
   ];
 
   // â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -285,12 +290,12 @@ export default function AdminInventory() {
       </AnimatePresence>
 
       {/* Tab bar */}
-      <div className="flex items-center gap-1 mb-6 p-1 bg-gray-100/80 rounded-2xl w-fit">
+      <div className="flex max-w-full items-center gap-1 mb-6 p-1 bg-gray-100/80 rounded-lg w-fit overflow-x-auto">
         {TABS.map(tab => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${
+            className={`flex shrink-0 items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${
               activeTab === tab.id
                 ? 'bg-white text-[#b8905a] shadow-sm ring-1 ring-gray-200'
                 : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'
@@ -321,9 +326,9 @@ export default function AdminInventory() {
           <div className="space-y-3">
             <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-3">
               {/* Filtro por profesional — solo admins */}
-              {isAdmin && clinicUsers.length > 0 && (
+              {isAdmin && user?.inventory_scope !== 'own' && clinicUsers.length > 0 && (
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  <label htmlFor="inventory-professional" className="text-xs text-gray-500">Profesional:</label>
+                  <label htmlFor="inventory-professional" className="text-xs font-medium text-gray-200">Profesional:</label>
                   <select
                     id="inventory-professional"
                     value={filterUserId}
@@ -407,8 +412,8 @@ export default function AdminInventory() {
                 ['expired', 'Con vencidos', stockCounts.expired],
               ] as const).map(([key, label, count]) => (
                 <button key={key} type="button" onClick={() => setStockFilter(key)} aria-pressed={stockFilter === key}
-                  className={`px-3 py-1.5 border-b-2 text-xs font-medium transition-colors ${stockFilter === key ? 'border-amber-600 text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-900'}`}>
-                  {label} <span className="text-gray-400">{count}</span>
+                  className={`px-3 py-1.5 border-b-2 text-xs font-medium transition-colors ${stockFilter === key ? 'border-amber-400 text-white' : 'border-transparent text-gray-300 hover:text-white'}`}>
+                  {label} <span className={stockFilter === key ? 'text-amber-300' : 'text-gray-400'}>{count}</span>
                 </button>
               ))}
             </div>
@@ -432,15 +437,15 @@ export default function AdminInventory() {
               {groupedItems.map(([category, subgroups]) => (
                 <section key={category} aria-labelledby={`inventory-category-${category.replace(/\W+/g, '-').toLowerCase()}`}>
                   <div className="mb-3 flex items-center gap-2 border-b border-gray-200 pb-2">
-                    <h2 id={`inventory-category-${category.replace(/\W+/g, '-').toLowerCase()}`} className="text-sm font-semibold text-gray-800">
+                    <h2 id={`inventory-category-${category.replace(/\W+/g, '-').toLowerCase()}`} className="text-sm font-semibold text-white">
                       {category}
                     </h2>
-                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">{subgroups.reduce((total, group) => total + group.items.length, 0)}</span>
+                    <span className="rounded-full bg-white/15 px-2 py-0.5 text-xs text-gray-100">{subgroups.reduce((total, group) => total + group.items.length, 0)}</span>
                   </div>
                   <div className="space-y-5">
                     {subgroups.map(group => (
                       <div key={group.name}>
-                        <h3 className="mb-2 text-xs font-semibold text-gray-600">{group.name} <span className="text-gray-400">({group.items.length})</span></h3>
+                        <h3 className="mb-2 text-xs font-semibold text-gray-200">{group.name} <span className="text-gray-300">({group.items.length})</span></h3>
                         <motion.div layout className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                           <AnimatePresence>
                             {group.items.map((item, idx) => (
@@ -485,6 +490,11 @@ export default function AdminInventory() {
         <div className="animate-enter">
           <InventoryMovements />
         </div>
+      )}
+
+      {activeTab === 'sales' && (
+        <InventorySales categories={categories} filterUserId={user?.inventory_scope === 'own' ? '' : filterUserId}
+          clinicKey={String(masterView.clinicId ?? user?.clinic_id ?? '')} />
       )}
 
       {/* â”€â”€ DRAWER â”€â”€ */}
