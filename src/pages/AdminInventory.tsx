@@ -201,13 +201,24 @@ export default function AdminInventory() {
     return Array.from(new Set([...DEFAULT_CATS, ...settingsCategories, ...fromItems])).sort();
   }, [items, settingsCategories]);
 
+  const groupNames = useMemo(() => items
+    .filter(item => item.group_name?.trim())
+    .map(item => ({ category: item.category?.trim() || '', name: item.group_name.trim() })), [items]);
+
   const groupedItems = useMemo(() => {
-    const groups = new Map<string, any[]>();
+    const groups = new Map<string, Map<string, { name: string; items: any[] }>>();
     filteredItems.forEach(item => {
       const category = item.category?.trim() || 'Sin categoría';
-      groups.set(category, [...(groups.get(category) || []), item]);
+      const name = item.group_name?.trim().replace(/\s+/g, ' ') || 'Otros';
+      const key = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es');
+      if (!groups.has(category)) groups.set(category, new Map());
+      const categoryGroups = groups.get(category)!;
+      if (!categoryGroups.has(key)) categoryGroups.set(key, { name, items: [] });
+      categoryGroups.get(key)!.items.push(item);
     });
-    return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b, 'es'));
+    return Array.from(groups.entries())
+      .sort(([a], [b]) => a.localeCompare(b, 'es'))
+      .map(([category, subgroups]) => [category, Array.from(subgroups.values()).sort((a, b) => a.name.localeCompare(b.name, 'es'))] as const);
   }, [filteredItems]);
 
   const suggestedSku = useMemo(() => {
@@ -377,36 +388,43 @@ export default function AdminInventory() {
             </div>
           ) : (
             <div className="space-y-7">
-              {groupedItems.map(([category, categoryItems]) => (
+              {groupedItems.map(([category, subgroups]) => (
                 <section key={category} aria-labelledby={`inventory-category-${category.replace(/\W+/g, '-').toLowerCase()}`}>
                   <div className="mb-3 flex items-center gap-2 border-b border-gray-200 pb-2">
                     <h2 id={`inventory-category-${category.replace(/\W+/g, '-').toLowerCase()}`} className="text-sm font-semibold text-gray-800">
                       {category}
                     </h2>
-                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">{categoryItems.length}</span>
+                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">{subgroups.reduce((total, group) => total + group.items.length, 0)}</span>
                   </div>
-                  <motion.div layout className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                    <AnimatePresence>
-                      {categoryItems.map((item, idx) => (
-                        <div key={item.id} className="relative">
-                          {isAdmin && item.created_by_user_name && (
-                            <div className="absolute top-2 right-2 z-10 px-2 py-0.5 bg-purple-50 text-purple-700 text-xs font-medium rounded-full border border-purple-100">
-                              {item.created_by_user_name}
-                            </div>
-                          )}
-                          <InventoryProductCard
-                            item={item}
-                            index={idx}
-                            onSelect={(i) => setDrawerItem(i)}
-                            onAddStock={(i) => { setSelectedItem(i); setShowStockModal(true); }}
-                            onConsume={(i) => { setSelectedItem(i); setShowConsumeModal(true); }}
-                            onEdit={(i) => { setSelectedItem(i); setShowForm(true); }}
-                            onDelete={handleDeleteItem}
-                          />
-                        </div>
-                      ))}
-                    </AnimatePresence>
-                  </motion.div>
+                  <div className="space-y-5">
+                    {subgroups.map(group => (
+                      <div key={group.name}>
+                        <h3 className="mb-2 text-xs font-semibold text-gray-600">{group.name} <span className="text-gray-400">({group.items.length})</span></h3>
+                        <motion.div layout className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                          <AnimatePresence>
+                            {group.items.map((item, idx) => (
+                              <div key={item.id} className="relative">
+                                {isAdmin && item.created_by_user_name && (
+                                  <div className="absolute top-2 right-2 z-10 px-2 py-0.5 bg-purple-50 text-purple-700 text-xs font-medium rounded-full border border-purple-100">
+                                    {item.created_by_user_name}
+                                  </div>
+                                )}
+                                <InventoryProductCard
+                                  item={item}
+                                  index={idx}
+                                  onSelect={(i) => setDrawerItem(i)}
+                                  onAddStock={(i) => { setSelectedItem(i); setShowStockModal(true); }}
+                                  onConsume={(i) => { setSelectedItem(i); setShowConsumeModal(true); }}
+                                  onEdit={(i) => { setSelectedItem(i); setShowForm(true); }}
+                                  onDelete={handleDeleteItem}
+                                />
+                              </div>
+                            ))}
+                          </AnimatePresence>
+                        </motion.div>
+                      </div>
+                    ))}
+                  </div>
                 </section>
               ))}
             </div>
@@ -444,6 +462,7 @@ export default function AdminInventory() {
           initialData={selectedItem}
           suggestedSku={selectedItem?.id ? undefined : suggestedSku}
           categories={categories.length > 0 ? categories : undefined}
+          groupNames={groupNames}
           onClose={() => { setShowForm(false); setSelectedItem(null); }}
           onSave={handleCreateItem}
           onSaveWithStock={selectedItem?.id ? undefined : handleCreateWithStock}

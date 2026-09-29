@@ -1,5 +1,7 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-09-28 Inventario agrupa subcategorías y reutiliza nombres normalizados.
+- ✅ 2026-09-28 Ripgrep instalado y documentado para búsqueda de código.
 - ✅ 2026-09-28 Optimizada carga inicial de fichas clínicas.
 - ✅ 2026-09-28 Impresión presencial sin firmas digitales; anulación auditada y reemplazo vinculado.
 - ✅ 2026-09-28 Migración Neon de anulación aplicada; 23 columnas verificadas.

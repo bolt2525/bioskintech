@@ -6,13 +6,14 @@ interface InventoryFormProps {
   initialData?: any;
   suggestedSku?: string;
   categories?: string[];  // from clinic inventario settings
+  groupNames?: { category: string; name: string }[];
   onClose: () => void;
   onSave: (data: any) => Promise<void>;
   /** Called only on new products, with initial stock data */
   onSaveWithStock?: (itemData: any, stockData: any) => Promise<void>;
 }
 
-export default function InventoryForm({ initialData, suggestedSku, categories, onClose, onSave, onSaveWithStock }: InventoryFormProps) {
+export default function InventoryForm({ initialData, suggestedSku, categories, groupNames = [], onClose, onSave, onSaveWithStock }: InventoryFormProps) {
   const isEditing = !!initialData?.id;
   const [step, setStep] = useState<1 | 2>(1);
 
@@ -44,6 +45,11 @@ export default function InventoryForm({ initialData, suggestedSku, categories, o
   const [done, setDone] = useState(false);
 
   const f = (field: string, value: any) => setFormData(p => ({ ...p, [field]: value }));
+
+  const groupSuggestions = Array.from(new Map(groupNames
+    .filter(group => group.category === formData.category.trim())
+    .map(group => [group.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es').replace(/\s+/g, ' ').trim(), group.name] as const)
+  ).values()).sort((a, b) => a.localeCompare(b, 'es'));
 
   const getPayloadFormData = () => {
     const typedSku = String(formData.sku || '').trim();
@@ -226,7 +232,7 @@ export default function InventoryForm({ initialData, suggestedSku, categories, o
                         type="text"
                         className={inputCls}
                         value={formData.category}
-                        onChange={e => f('category', e.target.value)}
+                        onChange={e => setFormData(p => ({ ...p, category: e.target.value, group_name: p.category === e.target.value ? p.group_name : '' }))}
                         placeholder="Escribe o selecciona"
                       />
                       <datalist id="inventory-category-suggestions">
@@ -237,9 +243,12 @@ export default function InventoryForm({ initialData, suggestedSku, categories, o
                       </datalist>
                     </div>
                     <div>
-                      <label className={labelCls}>Grupo / Subcategoría</label>
-                      <input type="text" className={inputCls} value={formData.group_name}
-                        onChange={e => f('group_name', e.target.value)} placeholder="Ej. Rellenos" />
+                      <label htmlFor="inventory-group" className={labelCls}>Grupo / Subcategoría</label>
+                      <input id="inventory-group" list="inventory-group-suggestions" type="text" maxLength={100} className={inputCls} value={formData.group_name}
+                        onChange={e => f('group_name', e.target.value)} placeholder="Escribe o selecciona" />
+                      <datalist id="inventory-group-suggestions">
+                        {groupSuggestions.map(group => <option key={group} value={group} />)}
+                      </datalist>
                     </div>
                   </div>
 

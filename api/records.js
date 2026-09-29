@@ -540,6 +540,28 @@ async function ownedByClinic(pool, table, itemId, clinicId) {
   return r.rows.length > 0 && String(r.rows[0].clinic_id) === String(clinicId);
 }
 
+export async function resolveInventoryGroup(value, category, clinicId, sessionUser, pool) {
+  if (value == null || value === '') return null;
+  if (typeof value !== 'string') throw new TypeError('Grupo inválido');
+  const name = value.trim().replace(/\s+/g, ' ');
+  if (!name) return null;
+  if (name.length > 100) throw new RangeError('Grupo demasiado largo');
+  const params = [clinicId, category];
+  let ownerCheck = '';
+  if (sessionUser.inventory_scope === 'own') {
+    ownerCheck = ` AND ${inventoryOwnerClause('i', 3)}`;
+    params.push(sessionUser.user_id);
+  }
+  const existing = await pool.query(
+    `SELECT DISTINCT i.group_name FROM inventory_items i
+     WHERE (i.clinic_id = $1 OR i.clinic_id IS NULL) AND i.category IS NOT DISTINCT FROM $2
+       AND i.group_name IS NOT NULL${ownerCheck}
+     ORDER BY i.group_name`, params
+  );
+  const key = (text) => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es').replace(/\s+/g, ' ').trim();
+  return existing.rows.find(row => key(row.group_name) === key(name))?.group_name || name;
+}
+
 export default async function handler(req, res) {
   console.log(`[Clinical Records API] Request received: ${req.method} /api/records`);
 
@@ -1035,10 +1057,10 @@ export default async function handler(req, res) {
           const cleanSku = normalizeOptionalText(sku);
           const cleanBrand = normalizeOptionalText(brand);
           const cleanDescription = normalizeOptionalText(description);
-          const cleanGroupName = normalizeOptionalText(group_name);
           const cleanSanitaryRegistration = normalizeOptionalText(sanitary_registration);
           const suInv = await getSessionUserOnce();
           const invClinicId = suInv?.effective_clinic_id ?? suInv?.clinic_id ?? null;
+          const cleanGroupName = await resolveInventoryGroup(group_name, category, invClinicId, suInv, pool);
           const newItem = await pool.query(`
             INSERT INTO inventory_items (clinic_id, sku, name, brand, description, category, group_name, unit_of_measure, min_stock_level, requires_cold_chain, sanitary_registration, cost_price, sale_price, created_by_user_id)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
@@ -1050,6 +1072,7 @@ export default async function handler(req, res) {
           return res.status(201).json(newItem.rows[0]);
         } catch (err) {
           console.error('Error creating inventory item:', err);
+          if (['Grupo inválido', 'Grupo demasiado largo'].includes(err.message)) return res.status(400).json({ error: err.message });
           if (err.code === '23505') {
             return res.status(409).json({ error: 'El SKU ya existe en esta clínica. Usa otro código o deja el campo vacío.' });
           }
@@ -1064,9 +1087,9 @@ export default async function handler(req, res) {
           const cleanSku = normalizeOptionalText(sku);
           const cleanBrand = normalizeOptionalText(brand);
           const cleanDescription = normalizeOptionalText(description);
-          const cleanGroupName = normalizeOptionalText(group_name);
           const cleanSanitaryRegistration = normalizeOptionalText(sanitary_registration);
           const invClinicId = su?.effective_clinic_id ?? su?.clinic_id ?? null;
+          const cleanGroupName = await resolveInventoryGroup(group_name, category, invClinicId, su, pool);
           // Verificar que el item pertenece a la clínica del usuario
           const clinicCheck = invClinicId
             ? ` AND (clinic_id = $14 OR clinic_id IS NULL)`
@@ -1086,6 +1109,7 @@ export default async function handler(req, res) {
           return res.status(200).json(updatedItem.rows[0]);
         } catch (err) {
           console.error('Error updating inventory item:', err);
+          if (['Grupo inválido', 'Grupo demasiado largo'].includes(err.message)) return res.status(400).json({ error: err.message });
           if (err.code === '23505') return res.status(409).json({ error: 'El SKU ya existe. Usa otro código o deja el campo vacío.' });
           return res.status(500).json({ error: 'Error al actualizar producto de inventario.' });
         }

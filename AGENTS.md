@@ -49,6 +49,11 @@ Usa el agente más especializado posible según el tipo de tarea:
 - Usa scripts o pruebas relevantes antes de afirmar que un fix funciona.
 - No declares éxito sin evidencia fresca.
 
+## Búsqueda de Código
+- Usa `rg --files -g '*.tsx'` para localizar archivos y `rg -n 'patrón' src api lib` para buscar texto con líneas; limita rutas y patrones para evitar resultados irrelevantes.
+- En Windows, instala Ripgrep con `winget install --id BurntSushi.ripgrep.MSVC --exact --scope user --accept-package-agreements --accept-source-agreements` si no está disponible; abre una terminal nueva para actualizar `PATH` y comprueba con `rg --version`.
+- Si `rg` no está instalado o no hay gestor disponible, usa la búsqueda de VS Code o `Select-String` en PowerShell; no bloquees la tarea por esta herramienta.
+
 ## Git Workflow (Obligatorio)
 - Después de CADA cambio en el código, ejecutar siempre: `git add .`, `git commit -m "..."`, `git push`.
 - **Repositorio**: `https://github.com/bolt2525/bioskintech.git` (cuenta bolt2525, privado).
