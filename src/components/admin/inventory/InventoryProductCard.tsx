@@ -1,8 +1,8 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import {
-  Package, AlertTriangle, AlertCircle, CheckCircle,
-  Droplet, Plus, Minus, MoreVertical, Edit2, Trash2,
+  AlertTriangle, AlertCircle, CheckCircle,
+  Droplet, Plus, Minus, MoreVertical, Edit2, Archive, RotateCcw,
   ThermometerSnowflake, Info
 } from 'lucide-react';
 
@@ -26,6 +26,8 @@ interface InventoryItem {
   description?: string;
   cost_price?: number | null;
   sale_price?: number | null;
+  is_archived?: boolean;
+  archive_reason?: string | null;
 }
 
 interface Props {
@@ -34,7 +36,9 @@ interface Props {
   onAddStock: (item: InventoryItem) => void;
   onConsume: (item: InventoryItem) => void;
   onEdit: (item: InventoryItem) => void;
-  onDelete: (item: InventoryItem) => void;
+  onArchive: (item: InventoryItem) => void;
+  onRestore: (item: InventoryItem) => void;
+  canArchive?: boolean;
   index?: number;
 }
 
@@ -51,7 +55,9 @@ export default function InventoryProductCard({
   onAddStock,
   onConsume,
   onEdit,
-  onDelete,
+  onArchive,
+  onRestore,
+  canArchive = false,
   index = 0,
 }: Props) {
   const [menuOpen, setMenuOpen] = React.useState(false);
@@ -86,6 +92,8 @@ export default function InventoryProductCard({
   };
 
   const getStatusBadge = () => {
+    if (item.is_archived)
+      return { label: 'Archivado', icon: Archive, cls: 'bg-gray-100 text-gray-700 border-gray-300' };
     if (isOutOfStock)
       return { label: 'Agotado', icon: AlertCircle, cls: 'bg-red-50 text-red-700 border-red-200' };
     if (isLowStock)
@@ -130,6 +138,7 @@ export default function InventoryProductCard({
               <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${categoryColor}`}>
                 {item.category}
               </span>
+              {item.is_archived && <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full border border-gray-300 bg-gray-100 text-gray-700">Archivado</span>}
               {item.requires_cold_chain && (
                 <span className="text-[10px] font-medium bg-sky-50 text-sky-600 border border-sky-100 px-2 py-0.5 rounded-full flex items-center gap-1">
                   <ThermometerSnowflake className="w-2.5 h-2.5" />
@@ -165,13 +174,13 @@ export default function InventoryProductCard({
                 exit={{ opacity: 0, scale: 0.9, y: -4 }}
                 className="absolute right-0 top-8 z-30 bg-white rounded-xl shadow-xl border border-gray-100 min-w-[160px] py-1 overflow-hidden"
               >
-                <button
+                {!item.is_archived && <button
                   onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onEdit(item); }}
                   className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                 >
                   <Edit2 className="w-3.5 h-3.5 text-gray-400" />
                   Editar producto
-                </button>
+                </button>}
                 <button
                   onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onSelect(item); }}
                   className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
@@ -180,13 +189,13 @@ export default function InventoryProductCard({
                   Ver detalle
                 </button>
                 <div className="h-px bg-gray-100 my-1" />
-                <button
-                  onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onDelete(item); }}
-                  className="flex items-center gap-2 w-full px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                {canArchive && <button
+                  onClick={(e) => { e.stopPropagation(); setMenuOpen(false); if (item.is_archived) onRestore(item); else onArchive(item); }}
+                  className={`flex items-center gap-2 w-full px-3 py-2 text-sm transition-colors ${item.is_archived ? 'text-emerald-800 hover:bg-emerald-50' : 'text-amber-900 hover:bg-amber-50'}`}
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  Eliminar
-                </button>
+                  {item.is_archived ? <RotateCcw className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
+                  {item.is_archived ? 'Restaurar producto' : 'Archivar producto'}
+                </button>}
               </motion.div>
             )}
           </div>
@@ -196,7 +205,7 @@ export default function InventoryProductCard({
       {/* Stock level */}
       <div className="px-4 pb-3">
         <div className="flex items-end justify-between mb-1.5">
-          <span className="text-xs text-gray-500">Stock disponible</span>
+          <span className="text-xs text-gray-600">{item.is_archived ? 'Saldo conservado' : 'Stock disponible'}</span>
           <div className="text-right">
             {displayUnit ? (
               <>
@@ -267,6 +276,12 @@ export default function InventoryProductCard({
 
       {/* Actions */}
       <div className="px-3 pb-3 pt-1 border-t border-gray-50 flex items-center gap-2">
+        {item.is_archived ? (canArchive ? (
+          <button type="button" onClick={event => { event.stopPropagation(); onRestore(item); }}
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-emerald-50 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100">
+            <RotateCcw className="h-3.5 w-3.5" /> Restaurar producto
+          </button>
+        ) : <span className="w-full py-2 text-center text-xs font-semibold text-gray-700">Producto archivado</span>) : <>
         <motion.button
           whileHover={{ scale: 1.04 }}
           whileTap={{ scale: 0.96 }}
@@ -295,6 +310,7 @@ export default function InventoryProductCard({
           }
           {isOutOfStock && Number(item.expired_stock) > 0 ? 'Retirar vencido' : 'Consumir'}
         </motion.button>
+        </>}
       </div>
     </motion.div>
   );

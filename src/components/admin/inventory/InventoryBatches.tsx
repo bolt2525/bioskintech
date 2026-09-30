@@ -14,6 +14,7 @@ interface Batch {
   unit_of_measure: string;
   cost_per_unit?: string | null;
   reference_cost?: string | null;
+  is_archived?: boolean;
 }
 
 export default function InventoryBatches({ canDelete = false }: { canDelete?: boolean }) {
@@ -39,7 +40,7 @@ export default function InventoryBatches({ canDelete = false }: { canDelete?: bo
   };
 
   const handleDeleteBatch = async (batchId: number, batchNumber: string) => {
-    if (!window.confirm(`¿Estás seguro de eliminar el lote "${batchNumber}"? Se eliminará todo el historial de movimientos asociado y esta acción no se puede deshacer.`)) return;
+    if (!window.confirm(`¿Eliminar el lote "${batchNumber}"? Se eliminarán sus movimientos no asociados a ventas. Los lotes archivados o con ventas no pueden eliminarse.`)) return;
 
     try {
       const res = await recordsFetch(`/api/records?action=inventoryDeleteBatch&id=${batchId}`, {
@@ -98,7 +99,7 @@ export default function InventoryBatches({ canDelete = false }: { canDelete?: bo
                   {status.label}
                 </div>
 
-                {canDelete && <button
+                {canDelete && !batch.is_archived && <button
                   onClick={() => handleDeleteBatch(batch.id, batch.batch_number)}
                   className="absolute bottom-3 right-3 p-2 text-gray-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-all z-10"
                   title="Eliminar lote"
@@ -110,6 +111,7 @@ export default function InventoryBatches({ canDelete = false }: { canDelete?: bo
                 <div className="mb-4">
                   <h4 className="font-semibold text-gray-800 line-clamp-1" title={batch.item_name}>{batch.item_name}</h4>
                   <div className="text-xs text-gray-400 font-mono mt-1">{batch.sku}</div>
+                  {batch.is_archived && <span className="mt-1 inline-flex border border-gray-300 bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-800">PRODUCTO ARCHIVADO · SOLO HISTORIAL</span>}
                 </div>
 
                 <div className="space-y-2 text-sm">

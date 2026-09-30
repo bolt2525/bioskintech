@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect, useMemo } from 'react';
-import { Package, Plus, CheckCircle, Activity, Calendar, Search, RefreshCw, LayoutGrid, List, Filter, Trash2, AlertTriangle, BarChart3 } from 'lucide-react';
+import { Package, Plus, CheckCircle, Activity, Calendar, Search, RefreshCw, LayoutGrid, List, Filter, Archive, AlertTriangle, BarChart3 } from 'lucide-react';
 import recordsFetch from "../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
 import AdminLayout from '../components/layout/AdminLayout';
@@ -21,6 +21,7 @@ export default function AdminInventory() {
   const masterView = useMasterView();
   const isAdmin = user?.role === 'clinic_admin' || user?.role === 'master_admin';
   const [activeTab, setActiveTab] = useState<'inventory' | 'batches' | 'movements' | 'sales'>('inventory');
+  const [productView, setProductView] = useState<'active' | 'archived'>('active');
   const [items, setItems] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
   const [statsLoading, setStatsLoading] = useState(true);
@@ -43,12 +44,14 @@ export default function AdminInventory() {
   const [drawerItem, setDrawerItem] = useState<any>(null);
 
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<any>(null);
+  const [archiveTarget, setArchiveTarget] = useState<any>(null);
+  const [archiveReason, setArchiveReason] = useState('');
+  const [archiveError, setArchiveError] = useState('');
   // Filtro por profesional (solo admins)
   const [filterUserId, setFilterUserId] = useState<number | ''>('');
   const [clinicUsers, setClinicUsers] = useState<{ id: number; username: string; full_name: string }[]>([]);
 
-  useEffect(() => { fetchInventory(); fetchStats(); fetchGroups(); }, [filterUserId, user?.clinic_id, masterView.clinicId]);
+  useEffect(() => { fetchInventory(); fetchStats(); fetchGroups(); }, [filterUserId, productView, user?.clinic_id, masterView.clinicId]);
 
   // Cargar categorías y settings de inventario desde configuración de clínica
   useEffect(() => {
@@ -73,7 +76,7 @@ export default function AdminInventory() {
     }
   }, [isAdmin, masterView.clinicId, user?.clinic_id]);
 
-  useEffect(() => { setFilterUserId(''); setCategoryFilter('all'); }, [masterView.clinicId, user?.clinic_id]);
+  useEffect(() => { setFilterUserId(''); setCategoryFilter('all'); setProductView('active'); }, [masterView.clinicId, user?.clinic_id]);
 
   useEffect(() => {
     if (successMessage) {
@@ -86,8 +89,8 @@ export default function AdminInventory() {
     setLoading(true);
     try {
       const url = filterUserId
-        ? `/api/records?action=inventoryListItems&filterByUserId=${filterUserId}`
-        : '/api/records?action=inventoryListItems';
+        ? `/api/records?action=inventoryListItems&status=${productView}&filterByUserId=${filterUserId}`
+        : `/api/records?action=inventoryListItems&status=${productView}`;
       const res = await recordsFetch(url);
       if (res.ok) setItems(await res.json());
     } catch (e) { console.error(e); }
@@ -169,17 +172,41 @@ export default function AdminInventory() {
     refresh();
   };
 
-  const handleDeleteItem = (item: any) => setDeleteTarget(item);
+  const handleArchiveItem = (item: any) => { setArchiveTarget(item); setArchiveReason(''); setArchiveError(''); };
 
-  const confirmDelete = async () => {
-    if (!deleteTarget) return;
-    const item = deleteTarget;
-    setDeleteTarget(null);
-    const res = await recordsFetch(`/api/records?action=inventoryDeleteItem&id=${item.id}`, { method: 'DELETE' });
-    if (!res.ok) { const e = await res.json(); alert(e.error || 'Error al eliminar'); return; }
-    setDrawerItem(null);
-    setSuccessMessage('Producto eliminado');
-    refresh();
+  const confirmArchive = async () => {
+    if (!archiveTarget || archiveReason.trim().length < 8) return;
+    try {
+      const res = await recordsFetch('/api/records?action=inventoryArchiveItem', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: archiveTarget.id, reason: archiveReason.trim() })
+      });
+      if (!res.ok) throw new Error(await getApiErrorMessage(res, 'No se pudo archivar el producto'));
+      setArchiveTarget(null);
+      setArchiveReason('');
+      setDrawerItem(null);
+      setProductView('active');
+      setSuccessMessage('Producto archivado; historial conservado');
+      refresh();
+    } catch (error) {
+      setArchiveError(error instanceof Error ? error.message : 'No se pudo archivar el producto');
+    }
+  };
+
+  const handleRestoreItem = async (item: any) => {
+    try {
+      const res = await recordsFetch('/api/records?action=inventoryRestoreItem', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: item.id })
+      });
+      if (!res.ok) throw new Error(await getApiErrorMessage(res, 'No se pudo restaurar el producto'));
+      setDrawerItem(null);
+      setProductView('active');
+      setSuccessMessage('Producto restaurado al inventario activo');
+      refresh();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'No se pudo restaurar el producto');
+    }
   };
 
   const handleAddStock = async (data: any) => {
@@ -311,10 +338,10 @@ export default function AdminInventory() {
       {activeTab === 'inventory' && (
         <div className="space-y-5">
           {/* KPI Overview */}
-          <InventoryOverview stats={stats} loading={statsLoading} />
+          {productView === 'active' && <InventoryOverview stats={stats} loading={statsLoading} />}
 
           {/* Alerts banner */}
-          {stats?.alert_batches?.length > 0 || stats?.out_of_stock_count > 0 || stats?.low_stock_count > 0 ? (
+          {productView === 'active' && (stats?.alert_batches?.length > 0 || stats?.out_of_stock_count > 0 || stats?.low_stock_count > 0) ? (
             <InventoryAlerts
               alertBatches={stats?.alert_batches || []}
               outOfStockCount={stats?.out_of_stock_count || 0}
@@ -369,13 +396,29 @@ export default function AdminInventory() {
                 <motion.button
                   whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
                   onClick={() => { setSelectedItem(null); setShowForm(true); }}
-                  className="flex-1 lg:flex-none justify-center flex items-center gap-2 bg-[#deb887] text-white px-4 py-2.5 rounded-xl hover:bg-[#c5a075] transition-colors text-sm font-semibold shadow-sm shadow-[#deb887]/30"
+                  disabled={productView === 'archived'}
+                  className="flex-1 lg:flex-none justify-center flex items-center gap-2 bg-[#deb887] text-white px-4 py-2.5 rounded-xl hover:bg-[#c5a075] transition-colors text-sm font-semibold shadow-sm shadow-[#deb887]/30 disabled:opacity-50"
                 >
                   <Plus className="w-4 h-4" />
                   Nuevo Producto
                 </motion.button>
               </div>
             </div>
+            {isAdmin && <div className="inline-flex max-w-full items-center gap-1 rounded-md border border-white/25 bg-white/10 p-1" aria-label="Estado de productos">
+              {([
+                ['active', 'Activos', stats?.total_items ?? 0],
+                ['archived', 'Archivados', stats?.archived_items_count ?? 0],
+              ] as const).map(([view, label, count]) => (
+                <button key={view} type="button" aria-pressed={productView === view}
+                  onClick={() => { setProductView(view); setCategoryFilter('all'); setStockFilter('all'); }}
+                  className={`px-3 py-2 text-xs font-semibold transition-colors ${productView === view ? 'bg-white text-gray-900 shadow-sm' : 'text-white hover:bg-white/10'}`}>
+                  {label} <span className={productView === view ? 'text-gray-600' : 'text-gray-300'}>{count}</span>
+                </button>
+              ))}
+            </div>}
+            {productView === 'archived' && <div className="border-l-2 border-amber-400 bg-white/10 px-3 py-2 text-sm text-gray-100">
+              Productos fuera del stock activo. Sus ventas y movimientos se conservan; restáuralos para volver a operar.
+            </div>}
             {/* Category filter chips */}
             <div className="flex w-full items-center gap-1.5 flex-wrap" aria-label="Filtrar por categoría">
               <button
@@ -404,7 +447,7 @@ export default function AdminInventory() {
                 </button>
               ))}
             </div>
-            <div className="flex flex-wrap gap-1.5" aria-label="Filtrar por estado de stock">
+            {productView === 'active' && <div className="flex flex-wrap gap-1.5" aria-label="Filtrar por estado de stock">
               {([
                 ['all', 'Todo el stock', items.length],
                 ['out', 'Agotados', stockCounts.out],
@@ -416,7 +459,7 @@ export default function AdminInventory() {
                   {label} <span className={stockFilter === key ? 'text-amber-300' : 'text-gray-400'}>{count}</span>
                 </button>
               ))}
-            </div>
+            </div>}
           </div>
 
           {/* Product grid */}
@@ -427,9 +470,9 @@ export default function AdminInventory() {
               ))}
             </div>
           ) : filteredItems.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 bg-white rounded-2xl border border-gray-100 text-gray-400">
+            <div className="flex flex-col items-center justify-center py-20 bg-white rounded-2xl border border-gray-100 text-gray-700">
               <Package className="w-12 h-12 mb-3 opacity-30" />
-              <p className="font-medium">No se encontraron productos</p>
+              <p className="font-medium">{productView === 'archived' ? 'No hay productos archivados' : 'No se encontraron productos'}</p>
               {search && <p className="text-sm mt-1">Prueba con otro término de búsqueda</p>}
             </div>
           ) : (
@@ -462,7 +505,9 @@ export default function AdminInventory() {
                                   onAddStock={(i) => { setSelectedItem(i); setShowStockModal(true); }}
                                   onConsume={(i) => { setSelectedItem(i); setShowConsumeModal(true); }}
                                   onEdit={(i) => { setSelectedItem(i); setShowForm(true); }}
-                                  onDelete={handleDeleteItem}
+                                  onArchive={handleArchiveItem}
+                                  onRestore={handleRestoreItem}
+                                  canArchive={isAdmin}
                                 />
                               </div>
                             ))}
@@ -504,7 +549,9 @@ export default function AdminInventory() {
         onEdit={(i) => { setDrawerItem(null); setSelectedItem(i); setShowForm(true); }}
         onAddStock={(i) => { setSelectedItem(i); setShowStockModal(true); }}
         onConsume={(i) => { setSelectedItem(i); setShowConsumeModal(true); }}
-        onDelete={handleDeleteItem}
+        onArchive={handleArchiveItem}
+        onRestore={handleRestoreItem}
+        canArchive={isAdmin}
       />
 
       {/* â”€â”€ MODALS â”€â”€ */}
@@ -535,15 +582,15 @@ export default function AdminInventory() {
         />
       )}
 
-      {/* ── CONFIRM DELETE MODAL ── */}
+      {/* ── CONFIRM ARCHIVE MODAL ── */}
       <AnimatePresence>
-        {deleteTarget && (
+        {archiveTarget && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-            onClick={() => setDeleteTarget(null)}
+            onClick={() => { setArchiveTarget(null); setArchiveError(''); }}
           >
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
@@ -553,28 +600,42 @@ export default function AdminInventory() {
               onClick={e => e.stopPropagation()}
             >
               <div className="flex flex-col items-center text-center gap-3">
-                <div className="w-14 h-14 bg-red-50 rounded-full flex items-center justify-center">
-                  <Trash2 className="w-7 h-7 text-red-500" />
+                <div className="w-14 h-14 bg-amber-50 rounded-full flex items-center justify-center">
+                  <Archive className="w-7 h-7 text-amber-800" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-gray-900">Eliminar producto</h3>
-                  <p className="text-sm text-gray-500 mt-1">
-                    ¿Eliminar <span className="font-semibold text-gray-800">"{deleteTarget.name}"</span>?
-                    Se borrarán también sus lotes y movimientos. Esta acción no se puede deshacer.
+                  <h3 className="text-lg font-bold text-gray-900">Archivar producto</h3>
+                  <p className="text-sm text-gray-700 mt-1">
+                    <span className="font-semibold text-gray-900">{archiveTarget.name}</span> dejará de aparecer en el inventario activo y no permitirá entradas ni salidas. Sus lotes y ventas se conservarán; puedes restaurarlo después.
                   </p>
                 </div>
-                <div className="flex gap-3 w-full mt-2">
+                {(Number(archiveTarget.total_stock) > 0 || Number(archiveTarget.expired_stock) > 0) && <p className="w-full border-l-2 border-amber-500 bg-amber-50 p-2 text-left text-xs text-amber-950">
+                  Se conservan {Number(archiveTarget.total_stock) || 0} {archiveTarget.unit_of_measure} disponibles y {Number(archiveTarget.expired_stock) || 0} vencidas. No se borran y no podrán moverse mientras esté archivado.
+                </p>}
+                <label htmlFor="inventory-archive-reason" className="w-full text-left text-xs font-semibold text-gray-700">
+                  Motivo del archivo (obligatorio)
+                  <textarea id="inventory-archive-reason" maxLength={300} rows={3} value={archiveReason}
+                    onChange={event => { setArchiveReason(event.target.value); setArchiveError(''); }}
+                    placeholder="Ej. Producto descontinuado por el proveedor"
+                    className="mt-1.5 w-full resize-y rounded-md border border-gray-300 p-2.5 text-sm font-normal text-gray-900 placeholder:text-gray-500 focus:border-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-700/25" />
+                  <span className="mt-1 block font-normal text-gray-600">{archiveReason.trim().length}/300 (mínimo 8 caracteres)</span>
+                </label>
+                {archiveError && <p role="alert" className="w-full text-left text-sm font-medium text-red-700">{archiveError}</p>}
+                <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end mt-2">
                   <button
-                    onClick={() => setDeleteTarget(null)}
-                    className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-gray-700 font-medium text-sm hover:bg-gray-50 transition-colors"
+                    type="button"
+                    onClick={() => { setArchiveTarget(null); setArchiveError(''); }}
+                    className="px-4 py-2.5 rounded-md border border-gray-300 text-gray-800 font-medium text-sm hover:bg-gray-50 transition-colors"
                   >
                     Cancelar
                   </button>
                   <button
-                    onClick={confirmDelete}
-                    className="flex-1 px-4 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white font-semibold text-sm transition-colors"
+                    type="button"
+                    onClick={confirmArchive}
+                    disabled={archiveReason.trim().length < 8}
+                    className="px-4 py-2.5 rounded-md bg-amber-800 hover:bg-amber-900 text-white font-semibold text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    Eliminar
+                    Archivar y conservar historial
                   </button>
                 </div>
               </div>

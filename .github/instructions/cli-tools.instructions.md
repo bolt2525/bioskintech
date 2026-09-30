@@ -55,6 +55,8 @@ node --env-file=.env.local scripts/<nombre>.mjs
 | `seed-data.mjs` | Crea clínica BIOSKIN + master_admin + clinic_admin desde env vars. |
 | `apply-migrations.mjs` | Aplica migraciones idempotentes de auth, clínica, recetas y ACESS. |
 | `migrate-consent-signing.mjs` | Migración transaccional de Cédula/RUC, OTP, sesiones, evidencia y backfill de firmas legacy. |
+| `migrate-inventory-archive.mjs` | Añade estado reversible de archivado y restauración a productos. |
+| `migrate-inventory-sales.mjs` | Añade importes históricos de ventas e índice por clínica/fecha. |
 
 **Ejemplo: secuencia completa de reset + reinit:**
 ```powershell

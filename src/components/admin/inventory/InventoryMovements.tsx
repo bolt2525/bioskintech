@@ -19,6 +19,7 @@ interface Movement {
   unit_sale_price?: string | null;
   sale_total?: string | null;
   cost_total?: string | null;
+  is_archived?: boolean;
 }
 
 export default function InventoryMovements({ canDelete = false, canClear = false }: { canDelete?: boolean; canClear?: boolean }) {
@@ -227,7 +228,7 @@ export default function InventoryMovements({ canDelete = false, canClear = false
                       })()}
                     </td>
                     <td className="px-6 py-4">
-                      <div className="font-medium text-gray-800">{move.item_name}</div>
+                      <div className="font-medium text-gray-800">{move.item_name}{move.is_archived && <span className="ml-2 text-[10px] font-semibold text-gray-600">ARCHIVADO · HISTÓRICO</span>}</div>
                       <div className="text-xs text-gray-400 font-mono">{move.sku}</div>
                     </td>
                     <td className="px-6 py-4 text-gray-600 font-mono text-xs">

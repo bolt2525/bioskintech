@@ -7,9 +7,9 @@ import recordsFetch from '../../../utils/recordsFetch';
 interface SalesReport {
   summary: { sales_count: number; total: string; known_margin: string; sales_without_cost: number; products_count: number };
   daily: { day: string; total: string; sales_count: number }[];
-  products: { id: number; name: string; sku: string; unit_of_measure: string; units: string; total: string }[];
+  products: { id: number; name: string; sku: string; unit_of_measure: string; units: string; total: string; is_archived: boolean }[];
   recent: { id: number; created_at: string; item_name: string; category: string; batch_number: string;
-    quantity_change: string; unit_of_measure: string; unit_sale_price: string; sale_total: string; reason: string }[];
+    quantity_change: string; unit_of_measure: string; unit_sale_price: string; sale_total: string; reason: string; is_archived: boolean }[];
 }
 
 interface Props {
@@ -142,7 +142,7 @@ export default function InventorySales({ categories, filterUserId, clinicKey }: 
                   <div className="space-y-3">
                     {report.products.map(product => (
                       <div key={product.id}>
-                        <div className="flex justify-between gap-2 text-xs"><span className="truncate font-medium" title={product.name}>{product.name}</span>
+                        <div className="flex justify-between gap-2 text-xs"><span className="truncate font-medium" title={product.name}>{product.name}{product.is_archived && <span className="ml-1 text-[10px] text-gray-600">(archivado)</span>}</span>
                           <span className="shrink-0">{currency.format(Number(product.total))}</span></div>
                         <div className="mt-1 h-1.5 bg-gray-100"><div className="h-full bg-emerald-600" style={{ width: `${Number(product.total) / maxProductTotal * 100}%` }} /></div>
                         <p className="mt-0.5 text-xs text-gray-600">{Number(product.units)} {product.unit_of_measure || 'unidades'}</p>
@@ -161,7 +161,7 @@ export default function InventorySales({ categories, filterUserId, clinicKey }: 
                     <tbody className="divide-y divide-gray-100">{report.recent.map(sale => (
                       <tr key={sale.id}>
                         <td className="py-2 pr-3 whitespace-nowrap">{new Date(sale.created_at).toLocaleDateString('es-EC')}</td>
-                        <td className="py-2 pr-3"><span className="font-medium">{sale.item_name}</span><br /><span className="text-xs text-gray-600">Lote {sale.batch_number}</span></td>
+                        <td className="py-2 pr-3"><span className="font-medium">{sale.item_name}</span>{sale.is_archived && <span className="ml-1 text-[10px] font-semibold text-gray-600">ARCHIVADO</span>}<br /><span className="text-xs text-gray-600">Lote {sale.batch_number}</span></td>
                         <td className="py-2 pr-3">{Number(-sale.quantity_change)} {sale.unit_of_measure}<br /><span className="text-xs text-gray-600">{sale.reason}</span></td>
                         <td className="py-2 text-right">{currency.format(Number(sale.unit_sale_price))}</td>
                         <td className="py-2 text-right font-semibold">{currency.format(Number(sale.sale_total))}</td>

@@ -10,6 +10,9 @@ interface Stats {
   expired_count: number;
   movements_this_month: number;
   stock_value: string | number;
+  archived_stock_value: string | number;
+  archived_items_count: string | number;
+  archived_units_without_cost: string | number;
   potential_margin: string | number;
   units_without_cost: string | number;
   units_without_sale_price: string | number;
@@ -108,6 +111,12 @@ export default function InventoryOverview({ stats, loading }: Props) {
           <p className="text-lg font-semibold text-gray-900">{loading ? '—' : money.format(Number(stats?.stock_value || 0))}</p>
           {!loading && Number(stats?.units_without_cost || 0) > 0 && (
             <p className="text-xs text-amber-700">{stats?.units_without_cost} unidades con costo pendiente o $0; valor parcial</p>
+          )}
+          {!loading && Number(stats?.archived_items_count || 0) > 0 && (
+            <p className="mt-1 border-t border-gray-200 pt-1 text-xs text-gray-700">
+              Existencias archivadas: {money.format(Number(stats?.archived_stock_value || 0))} · fuera del disponible
+              {Number(stats?.archived_units_without_cost || 0) > 0 && <span className="block text-amber-800">{stats?.archived_units_without_cost} unidades archivadas sin costo confirmado</span>}
+            </p>
           )}
         </div>
         <div className="px-2 sm:border-l sm:border-gray-200 sm:pl-5">

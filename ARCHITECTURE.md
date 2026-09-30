@@ -140,6 +140,10 @@ Las recetas mantienen compatibilidad con la tabla `prescriptions` existente y ag
 
 Hay migraciones idempotentes embebidas en la inicialización. El código conserva migraciones históricas que intentan agregar `clinic_id` como `INTEGER` en algunas tablas, mientras el esquema actual declara `UUID`; esta compatibilidad debe auditarse sobre la base real antes de eliminarla.
 
+### Productos archivados
+
+`inventory_items.is_archived` conserva fecha, usuario, motivo y última restauración. `inventoryListItems` omite archivados por defecto; `status=archived` requiere rol administrador y conserva filtros de clínica/owner. `inventoryArchiveItem` exige motivo de 8–300 caracteres; `inventoryRestoreItem` revierte el estado mediante comparación atómica. Los lotes, cantidades y ventas permanecen y siguen disponibles en el historial. Entradas, edición y consumo se bloquean mientras el producto está archivado; el listado global de lotes lo identifica y no permite borrarlo. El borrado definitivo solo acepta productos archivados sin saldo ni movimientos, y no elimina ventas. La migración `scripts/migrate-inventory-archive.mjs` se aplicó en Neon el 2026-09-29: 6 columnas verificadas, 19 productos activos y 0 archivados. La transición RLS de archivar, bloquear egreso y restaurar se probó con rollback.
+
 ### Fotos clínicas
 
 El flujo actual tiene dos caminos:

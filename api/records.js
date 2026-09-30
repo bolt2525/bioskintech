@@ -587,6 +587,49 @@ export function updateInventoryReferenceCost(pool, { cost, itemId, clinicId, exp
     [cost, itemId, clinicId, expectedCost]);
 }
 
+export function buildInventoryArchiveUpdate({ itemId, clinicId, userId, inventoryScope, archive, reason }) {
+  if (!Number.isSafeInteger(Number(itemId)) || Number(itemId) <= 0 || !clinicId ||
+      typeof archive !== 'boolean' || !Number.isSafeInteger(Number(userId)) || Number(userId) <= 0)
+    throw new TypeError('Producto o clínica inválidos.');
+  const cleanReason = typeof reason === 'string' ? reason.trim() : '';
+  if (archive && (cleanReason.length < 8 || cleanReason.length > 300))
+    throw new RangeError('El motivo de archivo debe tener entre 8 y 300 caracteres.');
+  const params = [archive, Number(itemId), clinicId, Number(userId), archive ? cleanReason : null, !archive];
+  let owner = '';
+  if (inventoryScope === 'own') {
+    owner = ` AND ${inventoryOwnerClause('inventory_items', 7)}`;
+    params.push(Number(userId));
+  }
+  return {
+    query: `UPDATE inventory_items SET
+      is_archived = $1,
+      archived_at = CASE WHEN $1 THEN NOW() ELSE archived_at END,
+      archived_by_user_id = CASE WHEN $1 THEN $4 ELSE archived_by_user_id END,
+      archive_reason = CASE WHEN $1 THEN $5 ELSE archive_reason END,
+      restored_at = CASE WHEN $1 THEN restored_at ELSE NOW() END,
+      restored_by_user_id = CASE WHEN $1 THEN restored_by_user_id ELSE $4 END,
+      updated_at = NOW()
+      WHERE id = $2 AND clinic_id = $3 AND is_archived = $6${owner}
+      RETURNING id, is_archived, archived_at, archive_reason`,
+    params,
+  };
+}
+
+export function validateInventoryListStatus(status, role) {
+  const value = status || 'active';
+  if (!['active', 'archived'].includes(value)) throw new RangeError('Estado de producto inválido.');
+  if (value === 'archived' && !['clinic_admin', 'master_admin'].includes(role))
+    throw new TypeError('Solo administradores pueden consultar productos archivados.');
+  return value;
+}
+
+export function getInventoryPermanentDeleteConflict({ isArchived, hasMovementHistory, hasRemainingStock }) {
+  if (!isArchived) return 'Archiva el producto antes de eliminarlo definitivamente.';
+  if (hasMovementHistory || hasRemainingStock)
+    return 'Este producto conserva saldo o historial de movimientos. Manténlo archivado para preservar la trazabilidad.';
+  return null;
+}
+
 export function normalizeInventoryPrice(value) {
   if (value == null || (typeof value === 'string' && !value.trim())) return null;
   const amount = Number(value);
@@ -663,6 +706,7 @@ export async function decrementInventoryBatch(client, batchId, quantity, reason)
     SET quantity_current = quantity_current - $2,
         status = CASE WHEN quantity_current = $2 THEN 'depleted' ELSE 'active' END
     WHERE id = $1 AND status = 'active' AND quantity_current >= $2
+      AND EXISTS (SELECT 1 FROM inventory_items i WHERE i.id = inventory_batches.item_id AND i.is_archived = false)
       AND (expiration_date IS NULL OR expiration_date >= CURRENT_DATE OR $3 = 'Vencimiento')
     RETURNING quantity_current, item_id, clinic_id
   `, [batchId, quantity, reason]);
@@ -867,7 +911,7 @@ export default async function handler(req, res) {
           const params = [];
           let paramCount = 1;
           let query = `
-            SELECT m.*, i.name as item_name, i.sku, b.batch_number, b.expiration_date, cu.full_name AS user_name
+            SELECT m.*, i.name as item_name, i.sku, i.is_archived, b.batch_number, b.expiration_date, cu.full_name AS user_name
             FROM inventory_movements m
             JOIN inventory_batches b ON m.batch_id = b.id
             JOIN inventory_items i ON b.item_id = i.id
@@ -939,12 +983,12 @@ export default async function handler(req, res) {
           const daily = await pool.query(`SELECT TO_CHAR(${localDay}, 'YYYY-MM-DD') AS day,
             COUNT(*)::int AS sales_count, SUM(m.sale_total) AS total
             ${from} GROUP BY ${localDay} ORDER BY ${localDay}`, params);
-          const products = await pool.query(`SELECT i.id, i.name, i.sku, i.unit_of_measure, SUM(-m.quantity_change) AS units,
+          const products = await pool.query(`SELECT i.id, i.name, i.sku, i.unit_of_measure, i.is_archived, SUM(-m.quantity_change) AS units,
             SUM(m.sale_total) AS total
-            ${from} GROUP BY i.id, i.name, i.sku, i.unit_of_measure ORDER BY total DESC LIMIT 8`, params);
+            ${from} GROUP BY i.id, i.name, i.sku, i.unit_of_measure, i.is_archived ORDER BY total DESC LIMIT 8`, params);
           const recent = await pool.query(`SELECT m.id, m.created_at, m.reason, m.quantity_change,
             m.unit_sale_price, m.sale_total, m.cost_total, i.name AS item_name,
-            i.category, i.unit_of_measure, b.batch_number
+            i.category, i.unit_of_measure, i.is_archived, b.batch_number
             ${from} ORDER BY m.created_at DESC LIMIT 100`, params);
           return res.status(200).json({ summary: summary.rows[0], daily: daily.rows, products: products.rows, recent: recent.rows });
         } catch (error) {
@@ -1013,7 +1057,7 @@ export default async function handler(req, res) {
             params.push(su.user_id);
           }
           const batches = await pool.query(`
-            SELECT b.*, i.name as item_name, i.sku, i.category, i.unit_of_measure, i.cost_price AS reference_cost
+            SELECT b.*, i.name as item_name, i.sku, i.category, i.unit_of_measure, i.cost_price AS reference_cost, i.is_archived
             FROM inventory_batches b
             JOIN inventory_items i ON b.item_id = i.id
             WHERE ${whereClause}
@@ -1043,13 +1087,19 @@ export default async function handler(req, res) {
         try {
           const su = await getSessionUserOnce();
           if (!su) return res.status(401).json({ error: 'No autenticado' });
+          let status;
+          try {
+            status = validateInventoryListStatus(req.query.status, su.role);
+          } catch (error) {
+            return res.status(error instanceof TypeError ? 403 : 400).json({ error: error.message });
+          }
           const invClinicId = su?.effective_clinic_id ?? su?.clinic_id ?? null;
           const filterByUserId = su.inventory_scope === 'all' && ['clinic_admin','master_admin'].includes(su?.role) && req.query.filterByUserId
             ? parseInt(req.query.filterByUserId, 10) : null;
 
           const params = [];
           let pCount = 1;
-          const wheres = [];
+          const wheres = [`i.is_archived = ${status === 'archived' ? 'true' : 'false'}`];
 
           if (invClinicId) {
             wheres.push(`(i.clinic_id = $${pCount} OR i.clinic_id IS NULL)`);
@@ -1132,7 +1182,12 @@ export default async function handler(req, res) {
               FROM inventory_batches WHERE status = 'active'
               GROUP BY item_id
             ) stock ON stock.item_id = i.id
-            WHERE 1=1 ${iWhere}${ownerWhere}
+            WHERE i.is_archived = false ${iWhere}${ownerWhere}
+          `, clinicParam);
+
+          const archivedItemsResult = await pool.query(`
+            SELECT COUNT(*)::int AS archived_items_count
+            FROM inventory_items i WHERE i.is_archived = true ${iWhere}${ownerWhere}
           `, clinicParam);
 
           const batchStats = await pool.query(`
@@ -1154,14 +1209,17 @@ export default async function handler(req, res) {
 
           const valueStats = await pool.query(`
             SELECT
-              COALESCE(SUM(b.quantity_current * COALESCE(NULLIF(b.cost_per_unit, 0), NULLIF(i.cost_price, 0))), 0) AS stock_value,
-              COALESCE(SUM(CASE WHEN i.category = 'Venta' AND i.sale_price > 0
+              COALESCE(SUM(CASE WHEN i.is_archived = false THEN b.quantity_current * COALESCE(NULLIF(b.cost_per_unit, 0), NULLIF(i.cost_price, 0)) ELSE 0 END), 0) AS stock_value,
+              COALESCE(SUM(CASE WHEN i.is_archived = true THEN b.quantity_current * COALESCE(NULLIF(b.cost_per_unit, 0), NULLIF(i.cost_price, 0)) ELSE 0 END), 0) AS archived_stock_value,
+              COALESCE(SUM(CASE WHEN i.is_archived = false AND i.category = 'Venta' AND i.sale_price > 0
                                 AND COALESCE(NULLIF(b.cost_per_unit, 0), NULLIF(i.cost_price, 0)) IS NOT NULL
                 THEN b.quantity_current * (i.sale_price - COALESCE(NULLIF(b.cost_per_unit, 0), NULLIF(i.cost_price, 0)))
                 ELSE 0 END), 0) AS potential_margin,
-              COALESCE(SUM(CASE WHEN COALESCE(NULLIF(b.cost_per_unit, 0), NULLIF(i.cost_price, 0)) IS NULL
+              COALESCE(SUM(CASE WHEN i.is_archived = false AND COALESCE(NULLIF(b.cost_per_unit, 0), NULLIF(i.cost_price, 0)) IS NULL
                 THEN b.quantity_current ELSE 0 END), 0) AS units_without_cost,
-              COALESCE(SUM(CASE WHEN i.category = 'Venta' AND (i.sale_price IS NULL OR i.sale_price <= 0)
+              COALESCE(SUM(CASE WHEN i.is_archived = true AND COALESCE(NULLIF(b.cost_per_unit, 0), NULLIF(i.cost_price, 0)) IS NULL
+                THEN b.quantity_current ELSE 0 END), 0) AS archived_units_without_cost,
+              COALESCE(SUM(CASE WHEN i.is_archived = false AND i.category = 'Venta' AND (i.sale_price IS NULL OR i.sale_price <= 0)
                 THEN b.quantity_current ELSE 0 END), 0) AS units_without_sale_price
             FROM inventory_batches b
             JOIN inventory_items i ON i.id = b.item_id
@@ -1172,7 +1230,7 @@ export default async function handler(req, res) {
 
           const alertBatches = await pool.query(`
             SELECT b.id, b.batch_number, b.expiration_date, b.quantity_current,
-              i.name AS item_name, i.sku, i.unit_of_measure,
+              i.name AS item_name, i.sku, i.unit_of_measure, i.is_archived,
               CASE WHEN b.expiration_date < CURRENT_DATE THEN 'expired'
                    WHEN b.expiration_date <= CURRENT_DATE + INTERVAL '${expiryAlertDays} days' THEN 'expiring_soon'
               END AS alert_type
@@ -1189,6 +1247,7 @@ export default async function handler(req, res) {
             ...batchStats.rows[0],
             ...movementsStats.rows[0],
             ...valueStats.rows[0],
+            ...archivedItemsResult.rows[0],
             alert_batches: alertBatches.rows
           });
         } catch (err) {
@@ -1302,7 +1361,7 @@ export default async function handler(req, res) {
             : '';
           if (su.inventory_scope === 'own') params.push(su.user_id);
           const updatedItem = await pool.query(
-            `UPDATE inventory_items SET sku=$1, name=$2, brand=$3, description=$4, category=$5, group_name=$6, unit_of_measure=$7, min_stock_level=$8, requires_cold_chain=$9, sanitary_registration=$10, cost_price=$11, sale_price=$12 WHERE id=$13${clinicCheck}${ownerCheck} RETURNING *`,
+            `UPDATE inventory_items SET sku=$1, name=$2, brand=$3, description=$4, category=$5, group_name=$6, unit_of_measure=$7, min_stock_level=$8, requires_cold_chain=$9, sanitary_registration=$10, cost_price=$11, sale_price=$12 WHERE id=$13 AND is_archived = false${clinicCheck}${ownerCheck} RETURNING *`,
             params
           );
           if (updatedItem.rows.length === 0) {
@@ -1321,52 +1380,83 @@ export default async function handler(req, res) {
           return res.status(500).json({ error: 'Error al actualizar producto de inventario.' });
         }
 
-      case 'inventoryDeleteItem':
+      case 'inventoryArchiveItem':
+      case 'inventoryRestoreItem':
+        try {
+          const su = await getSessionUserOnce();
+          if (!su) return res.status(401).json({ error: 'No autenticado' });
+          if (!['clinic_admin', 'master_admin'].includes(su.role))
+            return res.status(403).json({ error: 'Solo administradores pueden archivar o restaurar productos.' });
+          const clinicId = su?.effective_clinic_id ?? su?.clinic_id;
+          const archive = action === 'inventoryArchiveItem';
+          const statement = buildInventoryArchiveUpdate({
+            itemId: Number(body.id ?? req.query.id), clinicId, userId: su.user_id,
+            inventoryScope: su.inventory_scope, archive, reason: body.reason
+          });
+          const result = await pool.query(statement.query, statement.params);
+          if (!result.rows.length)
+            return res.status(409).json({ error: 'El producto ya cambió de estado o no pertenece a esta clínica. Actualiza el inventario e inténtalo de nuevo.' });
+          return res.status(200).json({ success: true, item: result.rows[0] });
+        } catch (error) {
+          if (error instanceof TypeError || error instanceof RangeError)
+            return res.status(400).json({ error: error.message });
+          console.error('Error updating archived inventory item:', error);
+          return res.status(500).json({ error: 'No se pudo actualizar el estado del producto.' });
+        }
+
+      case 'inventoryDeleteItem': {
+        let deletingItem = false;
         try {
           const su = await getSessionUserOnce();
           if (!su) return res.status(401).json({ error: 'No autenticado' });
           if (!['clinic_admin', 'master_admin'].includes(su.role))
             return res.status(403).json({ error: 'Solo administradores pueden eliminar productos' });
           const { id } = req.query;
-          const invClinicId = su?.effective_clinic_id ?? su?.clinic_id ?? null;
-          if (invClinicId) {
-            const checkParams = [id, invClinicId];
-            let checkQuery = 'SELECT id FROM inventory_items i WHERE id = $1 AND (i.clinic_id = $2 OR i.clinic_id IS NULL)';
-            if (su.inventory_scope === 'own') {
-              checkQuery += ` AND ${inventoryOwnerClause('i', 3)}`;
-              checkParams.push(su.user_id);
-            }
-            const check = await pool.query(checkQuery, checkParams);
-            if (check.rows.length === 0) return res.status(403).json({ error: 'Producto no encontrado en tu clínica' });
-          }
-          // Use pool.query (tenant-scoped client) — not pool.connect() which would skip set_config tenant
+          const clinicId = su?.effective_clinic_id ?? su?.clinic_id;
+          if (!clinicId) return res.status(400).json({ error: 'Selecciona una clínica para eliminar el producto.' });
           await pool.query('BEGIN');
-          try {
-            const batchesCheck = await pool.query('SELECT id FROM inventory_batches WHERE item_id = $1 FOR UPDATE', [id]);
-            const batchIds = batchesCheck.rows.map(b => b.id);
-            if (batchIds.length > 0) {
-              const sales = await pool.query(`SELECT 1 FROM inventory_movements
-                WHERE batch_id = ANY($1) AND (sale_total IS NOT NULL OR reason ILIKE 'Venta%') LIMIT 1`, [batchIds]);
-              if (sales.rows.length) {
-                await pool.query('ROLLBACK');
-                return res.status(409).json({ error: 'Este producto tiene ventas registradas y no puede eliminarse.' });
-              }
-              await pool.query('DELETE FROM inventory_movements WHERE batch_id = ANY($1)', [batchIds]);
-              await pool.query('DELETE FROM inventory_batches WHERE item_id = $1', [id]);
-            }
-            await pool.query('DELETE FROM inventory_items WHERE id = $1', [id]);
-            await pool.query('COMMIT');
-            return res.status(200).json({ success: true });
-          } catch (txError) {
-            await pool.query('ROLLBACK');
-            throw txError;
+          deletingItem = true;
+          const itemParams = [id, clinicId];
+          let itemQuery = 'SELECT i.id, i.is_archived FROM inventory_items i WHERE i.id = $1 AND i.clinic_id = $2';
+          if (su.inventory_scope === 'own') {
+            itemQuery += ` AND ${inventoryOwnerClause('i', 3)}`;
+            itemParams.push(su.user_id);
           }
+          itemQuery += ' FOR UPDATE';
+          const item = await pool.query(itemQuery, itemParams);
+          if (!item.rows.length) {
+            await pool.query('ROLLBACK');
+            deletingItem = false;
+            return res.status(404).json({ error: 'Producto no encontrado en esta clínica.' });
+          }
+          const batches = await pool.query('SELECT id, quantity_current FROM inventory_batches WHERE item_id = $1 FOR UPDATE', [id]);
+          const batchIds = batches.rows.map(batch => batch.id);
+          const history = batchIds.length
+            ? await pool.query('SELECT 1 FROM inventory_movements WHERE batch_id = ANY($1) LIMIT 1', [batchIds])
+            : { rows: [] };
+          const conflict = getInventoryPermanentDeleteConflict({
+            isArchived: item.rows[0].is_archived,
+            hasMovementHistory: history.rows.length > 0,
+            hasRemainingStock: batches.rows.some(batch => Number(batch.quantity_current) !== 0),
+          });
+          if (conflict) {
+            await pool.query('ROLLBACK');
+            deletingItem = false;
+            return res.status(409).json({ error: conflict });
+          }
+          if (batchIds.length) await pool.query('DELETE FROM inventory_batches WHERE item_id = $1', [id]);
+          await pool.query('DELETE FROM inventory_items WHERE id = $1', [id]);
+          await pool.query('COMMIT');
+          deletingItem = false;
+          return res.status(200).json({ success: true });
         } catch (err) {
+          if (deletingItem) await pool.query('ROLLBACK').catch(() => {});
           console.error('Error deleting inventory item:', err);
-          return res.status(500).json({ error: err.message });
+          return res.status(500).json({ error: 'No se pudo eliminar definitivamente el producto.' });
         }
+      }
 
-      case 'inventoryDeleteBatch':
+      case 'inventoryDeleteBatch': {
         let deletingBatch = false;
         try {
           const su = await getSessionUserOnce();
@@ -1374,6 +1464,7 @@ export default async function handler(req, res) {
           if (!['clinic_admin', 'master_admin'].includes(su.role))
             return res.status(403).json({ error: 'Solo administradores pueden eliminar lotes' });
           const { id } = req.query;
+          const clinicId = su?.effective_clinic_id ?? su?.clinic_id;
           if (su.inventory_scope === 'own') {
             const owner = await pool.query(
               `SELECT 1 FROM inventory_batches b JOIN inventory_items i ON i.id = b.item_id
@@ -1382,20 +1473,30 @@ export default async function handler(req, res) {
             );
             if (!owner.rows.length) return res.status(403).json({ error: 'Sin acceso al lote' });
           }
-          // Tenant check: verify batch belongs to user's clinic (A-1 fix)
-          const cid = su?.effective_clinic_id ?? su?.clinic_id;
-          if (cid != null && su.role !== 'master_admin') {
-            const chk = await pool.query(
-              'SELECT i.clinic_id FROM inventory_batches b JOIN inventory_items i ON i.id = b.item_id WHERE b.id = $1',
-              [id]
-            );
-            if (chk.rows.length && chk.rows[0].clinic_id !== cid)
-              return res.status(403).json({ error: 'Lote no pertenece a esta clínica' });
-          }
           await pool.query('BEGIN');
           deletingBatch = true;
-          const locked = await pool.query('SELECT id FROM inventory_batches WHERE id = $1 FOR UPDATE', [id]);
-          if (!locked.rows.length) {
+          const itemParams = [id, clinicId];
+          let itemQuery = `SELECT i.id, i.is_archived FROM inventory_items i
+            JOIN inventory_batches b ON b.item_id = i.id
+            WHERE b.id = $1 AND i.clinic_id IS NOT DISTINCT FROM $2`;
+          if (su.inventory_scope === 'own') {
+            itemQuery += ` AND ${inventoryOwnerClause('i', 3)}`;
+            itemParams.push(su.user_id);
+          }
+          itemQuery += ' FOR UPDATE OF i';
+          const product = await pool.query(itemQuery, itemParams);
+          if (!product.rows.length) {
+            await pool.query('ROLLBACK');
+            deletingBatch = false;
+            return res.status(404).json({ error: 'Lote no encontrado en esta clínica.' });
+          }
+          if (product.rows[0].is_archived) {
+            await pool.query('ROLLBACK');
+            deletingBatch = false;
+            return res.status(409).json({ error: 'El producto está archivado. Restáuralo antes de modificar sus lotes.' });
+          }
+          const lockedBatch = await pool.query('SELECT id FROM inventory_batches WHERE id = $1 FOR UPDATE', [id]);
+          if (!lockedBatch.rows.length) {
             await pool.query('ROLLBACK');
             deletingBatch = false;
             return res.status(404).json({ error: 'Lote no encontrado.' });
@@ -1415,8 +1516,9 @@ export default async function handler(req, res) {
         } catch (err) {
           if (deletingBatch) await pool.query('ROLLBACK').catch(() => {});
           console.error('Error deleting batch:', err);
-          return res.status(500).json({ error: err.message });
+          return res.status(500).json({ error: 'No se pudo eliminar el lote.' });
         }
+      }
 
       case 'inventoryAddBatch':
         try {
@@ -1433,7 +1535,7 @@ export default async function handler(req, res) {
           }
           // Resolve clinic_id for insertion (use item's clinic_id as source of truth)
           const itemParams = [item_id];
-          let itemQuery = 'SELECT clinic_id FROM inventory_items i WHERE id = $1';
+          let itemQuery = 'SELECT clinic_id, is_archived FROM inventory_items i WHERE id = $1';
           if (suBatch?.inventory_scope === 'own') {
             itemQuery += ` AND ${inventoryOwnerClause('i', 2)}`;
             itemParams.push(suBatch.user_id);
@@ -1441,9 +1543,16 @@ export default async function handler(req, res) {
           const itemRow = await pool.query(itemQuery, itemParams);
           if (!itemRow.rows.length) return res.status(403).json({ error: 'Sin acceso al producto' });
           const resolvedClinicId = itemRow.rows[0]?.clinic_id ?? batchCid ?? null;
+          if (itemRow.rows[0].is_archived) return res.status(409).json({ error: 'Este producto está archivado. Restáuralo antes de ingresar stock.' });
           // Use the outer tenant-scoped client via pool.query — avoids creating a new connection without app.current_tenant
           await pool.query('BEGIN');
           try {
+            const lockedItem = await pool.query(`SELECT is_archived FROM inventory_items
+              WHERE id = $1 AND clinic_id IS NOT DISTINCT FROM $2 FOR UPDATE`, [item_id, resolvedClinicId]);
+            if (!lockedItem.rows.length || lockedItem.rows[0].is_archived) {
+              await pool.query('ROLLBACK');
+              return res.status(409).json({ error: 'El producto fue archivado. Restáuralo antes de ingresar stock.' });
+            }
             if (update_reference_cost === true) {
               const updated = await updateInventoryReferenceCost(pool, {
                 cost, itemId: item_id, clinicId: resolvedClinicId, expectedCost
@@ -1517,6 +1626,13 @@ export default async function handler(req, res) {
             // Propagar tenant context al cliente interno (necesario para RLS)
             await client.query("SELECT set_config('app.current_tenant', $1, false)", [consCid ? String(consCid) : '']);
             await client.query('BEGIN');
+
+            const lockedItem = await client.query(`SELECT i.is_archived FROM inventory_items i
+              JOIN inventory_batches b ON b.item_id = i.id WHERE b.id = $1 FOR UPDATE OF i`, [batch_id]);
+            if (!lockedItem.rows.length || lockedItem.rows[0].is_archived) {
+              await client.query('ROLLBACK');
+              return res.status(409).json({ error: 'Este producto está archivado. Restáuralo antes de registrar movimientos.' });
+            }
             
             const updated = await decrementInventoryBatch(client, batch_id, consumedQuantity, reason.trim());
             if (!updated.rows.length) {

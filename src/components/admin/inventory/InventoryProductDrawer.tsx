@@ -4,7 +4,7 @@ import { format, differenceInDays } from 'date-fns';
 import { es } from 'date-fns/locale';
 import recordsFetch from '../../../utils/recordsFetch';
 import {
-  X, Package, Edit2, Plus, Minus, Trash2, Calendar, Activity,
+  X, Package, Edit2, Plus, Minus, Archive, RotateCcw, Calendar, Activity,
   ThermometerSnowflake, AlertTriangle, CheckCircle, AlertCircle,
   Tag, Layers, Droplet, RefreshCw
 } from 'lucide-react';
@@ -45,6 +45,9 @@ interface InventoryItem {
   requires_cold_chain: boolean;
   sanitary_registration?: string;
   description?: string;
+  is_archived?: boolean;
+  archived_at?: string | null;
+  archive_reason?: string | null;
 }
 
 interface Props {
@@ -53,10 +56,12 @@ interface Props {
   onEdit: (item: InventoryItem) => void;
   onAddStock: (item: InventoryItem) => void;
   onConsume: (item: InventoryItem) => void;
-  onDelete: (item: InventoryItem) => void;
+  onArchive: (item: InventoryItem) => void;
+  onRestore: (item: InventoryItem) => void;
+  canArchive?: boolean;
 }
 
-export default function InventoryProductDrawer({ item, onClose, onEdit, onAddStock, onConsume, onDelete }: Props) {
+export default function InventoryProductDrawer({ item, onClose, onEdit, onAddStock, onConsume, onArchive, onRestore, canArchive = false }: Props) {
   const [detail, setDetail] = useState<{ batches: Batch[]; movements: Movement[] } | null>(null);
   const [loading, setLoading] = useState(false);
   const [detailError, setDetailError] = useState(false);
@@ -132,6 +137,7 @@ export default function InventoryProductDrawer({ item, onClose, onEdit, onAddSto
                   <span className="text-xs font-semibold bg-[#deb887]/20 text-[#8a6530] px-2 py-0.5 rounded-full">
                     {item.category}
                   </span>
+                  {item.is_archived && <span className="text-xs font-semibold bg-gray-100 text-gray-800 border border-gray-300 px-2 py-0.5 rounded-full">Archivado</span>}
                   {item.requires_cold_chain && (
                     <span className="text-xs font-medium bg-sky-50 text-sky-600 px-2 py-0.5 rounded-full flex items-center gap-1">
                       <ThermometerSnowflake className="w-3 h-3" /> Frío
@@ -148,6 +154,12 @@ export default function InventoryProductDrawer({ item, onClose, onEdit, onAddSto
                 <X className="w-5 h-5" />
               </button>
             </div>
+            {item.is_archived && (
+              <p className="px-5 py-2 border-b border-gray-100 bg-amber-50 text-xs text-amber-950">
+                Producto archivado: no admite entradas ni salidas. Sus lotes y ventas se conservan.
+                {item.archive_reason && <span className="block mt-1">Motivo: {item.archive_reason}</span>}
+              </p>
+            )}
 
             {/* Info chips */}
             <div className="px-5 py-3 flex flex-wrap gap-2 border-b border-gray-100">
@@ -180,13 +192,13 @@ export default function InventoryProductDrawer({ item, onClose, onEdit, onAddSto
             <div className="px-5 py-4 bg-gray-50/60 border-b border-gray-100">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-gray-500 mb-0.5">Stock disponible</p>
+                  <p className="text-xs text-gray-600 mb-0.5">{item.is_archived ? 'Saldo conservado' : 'Stock disponible'}</p>
                   <p className="text-3xl font-bold text-gray-900">
                     {Number(item.total_stock) || 0}
                     <span className="text-sm font-normal text-gray-400 ml-1">{item.unit_of_measure}</span>
                   </p>
                 </div>
-                <div className="flex gap-2">
+                {!item.is_archived && <div className="flex gap-2">
                   <motion.button
                     whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
                     onClick={() => onAddStock(item)}
@@ -207,8 +219,9 @@ export default function InventoryProductDrawer({ item, onClose, onEdit, onAddSto
                     {item.category === 'Consumible' ? <Droplet className="w-4 h-4" /> : <Minus className="w-4 h-4" />}
                     {Number(item.total_stock) === 0 && Number(item.expired_stock) > 0 ? 'Retirar vencido' : 'Consumir'}
                   </motion.button>
-                </div>
+                </div>}
               </div>
+              {item.is_archived && <p className="mt-3 text-xs text-gray-600">El stock asociado queda conservado en el historial hasta que restaures el producto.</p>}
             </div>
 
             {/* Sub-tabs: Batches | Movements */}
@@ -339,21 +352,30 @@ export default function InventoryProductDrawer({ item, onClose, onEdit, onAddSto
 
             {/* Footer actions */}
             <div className="p-4 border-t border-gray-100 flex items-center gap-2 bg-white">
+              {item.is_archived ? canArchive ? <motion.button
+                whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
+                onClick={() => onRestore(item)}
+                className="flex w-full items-center justify-center gap-2 py-2.5 rounded-md bg-emerald-700 text-white hover:bg-emerald-800 transition-colors text-sm font-medium"
+              >
+                <RotateCcw className="w-4 h-4" /> Restaurar producto
+              </motion.button> : <p className="w-full text-center text-sm text-gray-700">Producto archivado</p> : <>
               <motion.button
                 whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
                 onClick={() => onEdit(item)}
-                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors text-sm font-medium"
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-md bg-gray-100 text-gray-800 hover:bg-gray-200 transition-colors text-sm font-medium"
               >
                 <Edit2 className="w-4 h-4" />
                 Editar
               </motion.button>
-              <motion.button
+              {canArchive && <motion.button
                 whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
-                onClick={() => onDelete(item)}
-                className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-red-50 text-red-600 hover:bg-red-100 transition-colors text-sm font-medium"
+                onClick={() => onArchive(item)}
+                className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-md bg-amber-50 text-amber-900 hover:bg-amber-100 transition-colors text-sm font-medium"
+                title="Archivar producto; conserva lotes y ventas"
               >
-                <Trash2 className="w-4 h-4" />
-              </motion.button>
+                <Archive className="w-4 h-4" /> Archivar
+              </motion.button>}
+              </>}
             </div>
           </motion.div>
         </>

@@ -87,6 +87,29 @@ test('inventory purchase cost updates product reference only by explicit, curren
   assert.deepEqual((await updateInventoryReferenceCost(pool, { cost: 33, itemId: 7, clinicId: 'clinic-a', expectedCost: 30.01 })).rows, []);
 });
 
+test('inventory archive transitions require clinic, reason and expected state', async () => {
+  const { buildInventoryArchiveUpdate, validateInventoryListStatus, getInventoryPermanentDeleteConflict } = await import('../api/records.js');
+  const archive = buildInventoryArchiveUpdate({
+    itemId: 12, clinicId: 'clinic-a', userId: 8, inventoryScope: 'own', archive: true,
+    reason: 'Producto discontinuado por el proveedor',
+  });
+  assert.match(archive.query, /clinic_id = \$3 AND is_archived = \$6/);
+  assert.match(archive.query, /created_by_user_id/);
+  assert.deepEqual(archive.params, [true, 12, 'clinic-a', 8, 'Producto discontinuado por el proveedor', false, 8]);
+  const restore = buildInventoryArchiveUpdate({
+    itemId: 12, clinicId: 'clinic-a', userId: 8, inventoryScope: 'all', archive: false,
+  });
+  assert.deepEqual(restore.params, [false, 12, 'clinic-a', 8, null, true]);
+  assert.throws(() => buildInventoryArchiveUpdate({ itemId: 12, clinicId: 'clinic-a', userId: 8, inventoryScope: 'all', archive: true, reason: 'cambio' }), RangeError);
+  assert.throws(() => buildInventoryArchiveUpdate({ itemId: 12, clinicId: null, userId: 8, inventoryScope: 'all', archive: true, reason: 'Producto fuera de clínica' }), TypeError);
+  assert.equal(validateInventoryListStatus(undefined, 'clinic_user'), 'active');
+  assert.equal(validateInventoryListStatus('archived', 'clinic_admin'), 'archived');
+  assert.throws(() => validateInventoryListStatus('archived', 'clinic_user'), TypeError);
+  assert.match(getInventoryPermanentDeleteConflict({ isArchived: false, hasMovementHistory: false, hasRemainingStock: false }), /Archiva/);
+  assert.match(getInventoryPermanentDeleteConflict({ isArchived: true, hasMovementHistory: true, hasRemainingStock: false }), /historial/);
+  assert.equal(getInventoryPermanentDeleteConflict({ isArchived: true, hasMovementHistory: false, hasRemainingStock: false }), null);
+});
+
 test('inventory price validation and consumption enforce monetary and stock boundaries', async () => {
   const { normalizeInventoryPrice, normalizeInventoryCategory, decrementInventoryBatch } = await import('../api/records.js');
   assert.equal(normalizeInventoryPrice(''), null);
@@ -101,6 +124,7 @@ test('inventory price validation and consumption enforce monetary and stock boun
   const client = { query: async (sql, params) => {
     assert.match(sql, /quantity_current >= \$2/);
     assert.match(sql, /status = 'active'/);
+    assert.match(sql, /i\.is_archived = false/);
     assert.match(sql, /expiration_date >= CURRENT_DATE OR \$3 = 'Vencimiento'/);
     assert.deepEqual(params, [7, 2.5, 'Uso en cabina']);
     return { rows: [] };

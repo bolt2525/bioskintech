@@ -13,6 +13,7 @@ interface AlertBatch {
   sku: string;
   unit_of_measure: string;
   alert_type: 'expired' | 'expiring_soon';
+  is_archived?: boolean;
 }
 
 interface Props {
@@ -114,6 +115,7 @@ export default function InventoryAlerts({ alertBatches, outOfStockCount, lowStoc
                     <p className="text-[11px] text-red-600">
                       Lote {b.batch_number} — vencido el {format(new Date(b.expiration_date), 'dd MMM yyyy', { locale: es })}
                     </p>
+                    {b.is_archived && <span className="text-[10px] font-semibold text-gray-700">Producto archivado</span>}
                   </div>
                   <span className="text-xs font-medium text-gray-500 flex-shrink-0">
                     {b.quantity_current} {b.unit_of_measure}
@@ -137,6 +139,7 @@ export default function InventoryAlerts({ alertBatches, outOfStockCount, lowStoc
                       <p className="text-[11px] text-orange-600">
                         Lote {b.batch_number} — vence en {days} día{days !== 1 ? 's' : ''}
                       </p>
+                      {b.is_archived && <span className="text-[10px] font-semibold text-gray-700">Producto archivado</span>}
                     </div>
                     <span className="text-xs font-medium text-gray-500 flex-shrink-0">
                       {b.quantity_current} {b.unit_of_measure}
