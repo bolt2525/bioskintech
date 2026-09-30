@@ -1,5 +1,6 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-09-30 Consentimientos legibles: firmas recortadas/reducidas al exportar (−90%: 7 docs 3 MB → 0,29 MB) y descarga por partes de 100.
 - ✅ 2026-09-30 Respaldo diario: lectura en transacción consistente de solo lectura, falla (no trunca) sobre 50.000 filas y alerta por correo ante fallos.
 - ✅ 2026-09-30 Base de Datos: estado del respaldo automático visible, consentimientos firmados en documento imprimible.
 - ✅ 2026-09-30 Importación de pacientes: plantilla guiada con `;`, validación de cédula, detección de tipo y antecedentes.

@@ -127,6 +127,24 @@ test('snapshot reads inside one read-only transaction and never saves a silently
   assert.ok(log.includes('ROLLBACK'));
 });
 
+test('signature images are cropped and downscaled for the readable export without losing strokes', async () => {
+  const { deflateSync, inflateSync } = await import('node:zlib');
+  const { crc32 } = await import('node:zlib');
+  const w = 1800, h = 2400;
+  const raw = Buffer.alloc((w * 4 + 1) * h);
+  for (let x = 400; x < 1400; x++) { const i = 1000 * (w * 4 + 1) + 1 + x * 4; raw[i + 3] = 255; }
+  const chunk = (type, data) => { const b = Buffer.alloc(12 + data.length); b.writeUInt32BE(data.length); b.write(type, 4); data.copy(b, 8); b.writeUInt32BE(crc32(b.subarray(4, 8 + data.length)), 8 + data.length); return b; };
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w); ihdr.writeUInt32BE(h, 4); ihdr.set([8, 6, 0, 0, 0], 8);
+  const png = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
+  const small = Buffer.from(svc.compactSignatureDataUrl(`data:image/png;base64,${png.toString('base64')}`).split(',')[1], 'base64');
+  const ow = small.readUInt32BE(16), oh = small.readUInt32BE(20);
+  assert.ok(ow <= 600 && oh < 20, `${ow}x${oh}`);
+  const out = inflateSync(small.subarray(41, 41 + small.readUInt32BE(33)));
+  const rowLen = ow * 4 + 1;
+  assert.ok(out.some((v, i) => i % rowLen !== 0 && (i % rowLen - 1) % 4 === 3 && v === 255), 'el trazo se conserva');
+  assert.equal(svc.compactSignatureDataUrl('data:image/png;base64,AAAA'), 'data:image/png;base64,AAAA');
+});
+
 test('snapshot and upload keys are scoped to the clinic', () => {
   assert.equal(api.isSnapshotKey(`backups/${CLINIC}/auto/2026-09-29T08-00-00-000Z-ab12cd34.json.gz.enc`, CLINIC), true);
   assert.equal(api.isSnapshotKey(`backups/${OTHER}/auto/x.json.gz.enc`, CLINIC), false);

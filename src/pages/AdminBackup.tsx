@@ -195,10 +195,13 @@ export default function AdminBackup() {
     setNotice('Respaldo descargado. Contiene datos sensibles de salud: guárdalo cifrado y fuera del computador de uso diario.');
   });
 
-  const exportConsents = (patientIds: number[] | null) => run('consents', async () => {
-    const { url, filename } = await api<{ url: string; filename: string }>('/api/backup?action=consentsHtml', patientIds ? { patientIds } : {});
-    await downloadGzip(url, filename, 'text/html');
-    setNotice('Consentimientos descargados. Ábrelos en el navegador y usa Imprimir → Guardar como PDF si necesitas archivarlos.');
+  const exportConsents = (groups: (number[] | null)[]) => run('consents', async () => {
+    for (const [index, patientIds] of groups.entries()) {
+      setNotice(groups.length > 1 ? `Generando parte ${index + 1} de ${groups.length}…` : null);
+      const { url, filename } = await api<{ url: string; filename: string }>('/api/backup?action=consentsHtml', patientIds ? { patientIds } : {});
+      await downloadGzip(url, groups.length > 1 ? filename.replace('.html.gz', `-parte-${index + 1}-de-${groups.length}.html.gz`) : filename, 'text/html');
+    }
+    setNotice(`Consentimientos descargados${groups.length > 1 ? ` en ${groups.length} archivos` : ''}. Ábrelos en el navegador y usa Imprimir → Guardar como PDF si necesitas archivarlos.`);
   });
 
   const openConsentPicker = () => {
@@ -213,10 +216,18 @@ export default function AdminBackup() {
     const all = picker.selected.size === 0 || picker.selected.size === picker.patients.length;
     const chosen = picker.patients.filter(p => all || picker.selected.has(p.id));
     const total = chosen.reduce((sum, p) => sum + p.consents, 0);
+    // El servidor acepta hasta 100 consentimientos por archivo; se agrupan pacientes completos.
+    const groups: number[][] = [];
+    let size = 0;
+    for (const p of chosen) {
+      if (!groups.length || size + p.consents > 100) { groups.push([]); size = 0; }
+      groups[groups.length - 1].push(p.id);
+      size += p.consents;
+    }
     setPicker(null);
     ask('Descargar consentimientos firmados',
-      <>Se descargarán <strong>{total} consentimientos</strong> de {all ? <strong>todos los pacientes ({chosen.length})</strong> : <strong>{chosen.length} paciente(s) seleccionado(s)</strong>}. {SENSITIVE}</>,
-      'Descargar', () => exportConsents(all ? null : chosen.map(p => p.id)));
+      <>Se descargarán <strong>{total} consentimientos</strong> de {all ? <strong>todos los pacientes ({chosen.length})</strong> : <strong>{chosen.length} paciente(s) seleccionado(s)</strong>}{groups.length > 1 ? <>, divididos en <strong>{groups.length} archivos</strong> de hasta 100 consentimientos</> : ''}. {SENSITIVE}</>,
+      'Descargar', () => exportConsents(all && groups.length === 1 ? [null] : groups));
   };
 
   const exportCsv = (dataset: string) => run(`csv-${dataset}`, async () => {
