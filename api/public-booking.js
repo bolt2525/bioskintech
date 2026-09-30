@@ -329,6 +329,9 @@ export default async function handler(req, res) {
   if (honeyPot) {
     return res.status(403).json({ success: false, error: 'Solicitud rechazada.' });
   }
+  if (body.privacy_accepted !== true) {
+    return res.status(400).json({ success: false, error: 'Debes autorizar el tratamiento de tus datos para agendar la cita.' });
+  }
 
   const clinicSlug = sanitizeText(body.clinicSlug, 120);
   const username = sanitizeText(body.username, 80);

@@ -1,293 +1,197 @@
-import { ArrowLeft, Shield, Users, Database, Globe, Clock, UserCheck, FileText, Bell, Cookie, BarChart2, AlertTriangle, Trash2 } from 'lucide-react';
-import BrandLogo from '../components/ui/BrandLogo';
+import { Shield, Users, Database, Globe, Clock, UserCheck, FileText, Bell, HardDrive, Lock, AlertTriangle, Trash2, Brain, Baby, Server } from 'lucide-react';
+import { LegalShell, LegalSection as Section, Note, Mail } from '../components/legal/LegalLayout';
 
-const CONTACT_EMAIL = 'soporte-tecnico@bioskintechapp.com';
-const LAST_UPDATED = '07 de agosto de 2026';
-
-interface SectionProps {
-  number: number;
-  title: string;
-  icon: React.ReactNode;
-  children: React.ReactNode;
-}
-
-function Section({ number, title, icon, children }: SectionProps) {
-  return (
-    <div className="bg-white rounded-2xl shadow-sm border border-[#deb887]/15 overflow-hidden">
-      <div className="flex items-center gap-3 px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-[#fdf8f0] to-white">
-        <div className="w-8 h-8 bg-[#deb887] rounded-lg flex items-center justify-center flex-shrink-0 text-white">
-          {icon}
-        </div>
-        <div className="flex items-baseline gap-2">
-          <span className="text-xs font-bold text-[#deb887] uppercase tracking-wider">Art. {number}</span>
-          <h2 className="font-semibold text-gray-800 text-sm sm:text-base">{title}</h2>
-        </div>
-      </div>
-      <div className="px-6 py-5 text-sm text-gray-700 leading-relaxed space-y-3">
-        {children}
-      </div>
-    </div>
-  );
-}
+const ul = 'list-disc list-inside space-y-1.5 pl-1';
 
 export default function PrivacyPolicy() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#fdf8f0] via-white to-[#faf4ea]">
-      {/* Blobs decorativos */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none" aria-hidden>
-        <div className="absolute -top-40 -right-40 w-96 h-96 bg-[#deb887]/8 rounded-full blur-3xl" />
-        <div className="absolute -bottom-20 -left-20 w-72 h-72 bg-[#deb887]/6 rounded-full blur-3xl" />
-      </div>
+    <LegalShell
+      title="Política de Privacidad y Tratamiento de Datos Personales"
+      icon={<Shield className="w-7 h-7" />}
+      intro={<>
+        <p>
+          Esta Política describe cómo la plataforma <strong className="text-gray-800">BIOSKINTECH</strong> (la "Plataforma") trata datos personales
+          conforme a la <strong>Ley Orgánica de Protección de Datos Personales (LOPDP)</strong> de la República del Ecuador y su normativa secundaria.
+          Aplica a las clínicas y profesionales que contratan la Plataforma (los "Clientes"), a sus colaboradores con acceso (los "Usuarios") y a los
+          pacientes y personas cuyos datos registran los Clientes (los "Titulares").
+        </p>
+        <p className="text-xs text-gray-500">
+          Esta Política forma parte integrante de las Condiciones de Servicio. Ante cualquier discrepancia sobre el tratamiento de datos de pacientes,
+          prevalecen las instrucciones documentadas del Cliente como Responsable del Tratamiento, siempre que sean lícitas.
+        </p>
+      </>}
+      footer={<p>Consultas y solicitudes: <Mail /></p>}
+    >
+      <Section number={1} title="Roles: quién es Responsable y quién es Encargado" icon={<UserCheck className="w-4 h-4" />}>
+        <ol className="list-decimal list-inside space-y-2 pl-1">
+          <li>
+            <strong>Cliente = Responsable del Tratamiento</strong> de los datos de sus pacientes. El Cliente decide qué datos recoge, con qué finalidad,
+            con qué base legal, durante cuánto tiempo los conserva y a quién los comunica. El Cliente es quien debe informar a sus pacientes y obtener
+            su consentimiento cuando la ley lo exija.
+          </li>
+          <li>
+            <strong>BIOSKINTECH = Encargado del Tratamiento</strong> de esos datos. Presta únicamente la infraestructura de software (SaaS) y trata
+            los datos por cuenta del Cliente y según sus instrucciones, que se entienden dadas por la configuración y el uso que el Cliente hace de la Plataforma.
+          </li>
+          <li>
+            <strong>BIOSKINTECH = Responsable</strong> únicamente de los datos de sus propios Clientes y Usuarios necesarios para prestar y cobrar el servicio
+            (datos de cuenta, facturación, registros de acceso y seguridad, soporte y evidencias de aceptación de estos documentos).
+          </li>
+        </ol>
+        <Note>
+          BIOSKINTECH no decide sobre la atención clínica, no accede a fichas clínicas salvo que sea técnicamente indispensable para soporte, seguridad
+          o una solicitud expresa del Cliente, y no utiliza los datos de pacientes para fines propios.
+        </Note>
+      </Section>
 
-      {/* Header pegajoso */}
-      <header className="sticky top-0 bg-white/90 backdrop-blur border-b border-[#deb887]/20 z-10 shadow-sm">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-4">
-          <button
-            onClick={() => window.history.back()}
-            className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-[#deb887] transition-colors font-medium"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            <span className="hidden sm:inline">Volver</span>
-          </button>
-          <div className="flex items-center gap-3 flex-1">
-            <BrandLogo className="h-10 w-auto object-contain" compact />
-          </div>
-          <span className="text-xs text-gray-400 hidden sm:block">Actualizado: {LAST_UPDATED}</span>
+      <Section number={2} title="Bases de legitimación" icon={<FileText className="w-4 h-4" />}>
+        <ul className={ul}>
+          <li><strong>Datos de pacientes:</strong> la base de legitimación la determina y acredita el Cliente (consentimiento del Titular, ejecución de la relación de atención sanitaria o estética, cumplimiento de obligaciones legales o interés vital). La Plataforma ofrece herramientas —formularios, casillas de aceptación, consentimientos digitales— que el Cliente debe utilizar y adaptar a su realidad.</li>
+          <li><strong>Datos de Clientes y Usuarios:</strong> ejecución del contrato de servicio, cumplimiento de obligaciones legales y tributarias, e interés legítimo en la seguridad de la Plataforma y la prevención del fraude.</li>
+          <li><strong>Reservas públicas:</strong> consentimiento expreso que la persona otorga en el formulario de agendamiento a favor de la clínica que reserva.</li>
+        </ul>
+      </Section>
+
+      <Section number={3} title="Categorías de datos tratados" icon={<Database className="w-4 h-4" />}>
+        <p className="font-semibold text-gray-800">A. Clientes y Usuarios</p>
+        <p>Nombres, cédula/RUC, registros profesionales (SENESCYT/ACESS), especialidad, correo, teléfono, datos de la clínica, credenciales (almacenadas solo como hash), dirección IP, navegador, dispositivos de confianza, sesiones, registros de auditoría y evidencias de aceptación de estos documentos.</p>
+        <p className="font-semibold text-gray-800 mt-2">B. Pacientes (datos sensibles de salud)</p>
+        <Note tone="amber">Los datos relativos a la salud son <strong>datos sensibles</strong> según la LOPDP y reciben el mayor nivel de protección disponible en la Plataforma.</Note>
+        <ul className={ul}>
+          <li>Identificación y contacto: nombres, tipo y número de identificación, fecha de nacimiento, género, estado civil, dirección, teléfono y correo.</li>
+          <li>Ficha clínica: antecedentes, alergias, medicación, motivo de consulta, examen físico, diagnósticos, tratamientos, inyectables y lotes, recetas, notas y su historial de versiones.</li>
+          <li>Marcaciones clínicas sobre mapas faciales/corporales 2D y modelos 3D (se almacenan como coordenadas y anotaciones, no como imágenes del paciente).</li>
+          <li>Fotografías clínicas de evolución. <strong>No se utilizan para identificación biométrica automatizada.</strong></li>
+          <li>Consentimientos informados: contenido aceptado, firma manuscrita digitalizada, fecha y hora, verificación por código enviado al correo (firma remota) y huellas de integridad (hash SHA-256).</li>
+          <li>Datos económicos de la atención (ingresos, egresos y facturas registradas por el Cliente).</li>
+          <li>Mensajes y recordatorios de citas por WhatsApp y correo, cuando el Cliente usa esas funciones.</li>
+        </ul>
+        <p className="font-semibold text-gray-800 mt-2">C. Personas que reservan en línea</p>
+        <p>Nombre, correo, teléfono, tratamiento, fecha y hora solicitados, y datos técnicos de la verificación anti-bot.</p>
+      </Section>
+
+      <Section number={4} title="Obligaciones de BIOSKINTECH como Encargado" icon={<Lock className="w-4 h-4" />}>
+        <ul className={ul}>
+          <li>Tratar los datos solo para prestar el servicio y según las instrucciones del Cliente.</li>
+          <li>Exigir confidencialidad a las personas autorizadas para acceder a la infraestructura.</li>
+          <li>Aplicar las medidas de seguridad descritas en el Art. 10.</li>
+          <li>Recurrir solo a los proveedores (subencargados) listados en el Art. 5, con obligaciones de protección equivalentes.</li>
+          <li>Asistir al Cliente, en la medida de lo técnicamente posible, para atender derechos de los Titulares e incidentes de seguridad.</li>
+          <li>Al terminar el servicio, poner los datos a disposición del Cliente y luego eliminarlos conforme al Art. 13.</li>
+        </ul>
+        <p className="text-xs text-gray-500">Al aceptar esta Política, el Cliente otorga autorización general para el uso de los subencargados del Art. 5. Los cambios relevantes de proveedores se informarán mediante la actualización de este documento.</p>
+      </Section>
+
+      <Section number={5} title="Proveedores tecnológicos y transferencias internacionales" icon={<Globe className="w-4 h-4" />}>
+        <p>Para operar, la Plataforma utiliza proveedores ubicados principalmente en <strong>Estados Unidos</strong>, lo que implica una transferencia internacional de datos:</p>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs border border-gray-100 rounded-xl overflow-hidden">
+            <thead className="bg-gray-50 text-gray-700"><tr><th className="text-left p-2">Proveedor</th><th className="text-left p-2">Uso</th><th className="text-left p-2">Cuándo</th></tr></thead>
+            <tbody className="divide-y divide-gray-100">
+              <tr><td className="p-2 font-medium">Neon (AWS us-east-1)</td><td className="p-2">Base de datos principal PostgreSQL</td><td className="p-2">Siempre</td></tr>
+              <tr><td className="p-2 font-medium">Vercel</td><td className="p-2">Alojamiento de la aplicación y funciones de servidor</td><td className="p-2">Siempre</td></tr>
+              <tr><td className="p-2 font-medium">Cloudflare</td><td className="p-2">Fotografías clínicas (R2), copias de seguridad cifradas y verificación anti-bot (Turnstile)</td><td className="p-2">Siempre / reserva pública</td></tr>
+              <tr><td className="p-2 font-medium">Google</td><td className="p-2">Google Calendar y envío de correos desde la cuenta Gmail del Usuario; Gemini (IA)</td><td className="p-2">Si el Cliente conecta su cuenta o activa módulos de IA</td></tr>
+              <tr><td className="p-2 font-medium">Meta (WhatsApp Business Platform)</td><td className="p-2">Recordatorios y avisos de citas</td><td className="p-2">Si el Cliente activa WhatsApp</td></tr>
+              <tr><td className="p-2 font-medium">PayPhone</td><td className="p-2">Cobro de la suscripción. BIOSKINTECH no almacena números de tarjeta.</td><td className="p-2">Al pagar</td></tr>
+            </tbody>
+          </table>
         </div>
-      </header>
+        <p className="text-xs text-gray-500">
+          Estos proveedores publican programas de seguridad y certificaciones reconocidas internacionalmente. Sus propias políticas rigen el tratamiento que
+          realizan. El Cliente, al aceptar esta Política, autoriza y declara conocer estas transferencias, y asume informarlas a sus pacientes cuando corresponda.
+        </p>
+      </Section>
 
-      {/* Contenido */}
-      <main className="relative max-w-4xl mx-auto px-4 sm:px-6 py-8 space-y-5 pb-16">
+      <Section number={6} title="Inteligencia artificial" icon={<Brain className="w-4 h-4" />}>
+        <ul className={ul}>
+          <li>Las funciones de IA son <strong>opcionales</strong>, están desactivadas por defecto y se habilitan por clínica.</li>
+          <li>Cuando se usan, se envía a Google (Gemini) únicamente el contenido que el profesional selecciona (por ejemplo, textos de la ficha y, si lo incluye, el nombre del paciente) o la imagen de la factura a analizar.</li>
+          <li>BIOSKINTECH no entrena modelos propios con datos de pacientes. El uso que el proveedor haga de la información se rige por sus términos de API.</li>
+          <li>Las respuestas de la IA son sugerencias de apoyo y pueden contener errores. <strong>No constituyen diagnóstico ni prescripción</strong>; el profesional debe validarlas.</li>
+          <li>Se recomienda al Cliente minimizar datos identificativos y obtener el consentimiento del paciente antes de usar IA con su información.</li>
+        </ul>
+      </Section>
 
-        {/* Hero */}
-        <div className="bg-white rounded-2xl shadow-sm border border-[#deb887]/20 p-6 sm:p-8">
-          <div className="flex items-start gap-4 mb-5">
-            <div className="w-14 h-14 bg-[#deb887] rounded-2xl flex items-center justify-center flex-shrink-0 shadow-md">
-              <Shield className="w-7 h-7 text-white" />
-            </div>
-            <div>
-              <h1 className="text-xl sm:text-2xl font-bold text-gray-900" style={{ fontFamily: 'Playfair Display, serif' }}>
-                Política de Privacidad y Tratamiento de Datos Personales
-              </h1>
-              <p className="text-gray-400 text-xs sm:text-sm mt-1.5">
-                Plataforma BIOSKINTECH · Última actualización: {LAST_UPDATED}
-              </p>
-            </div>
-          </div>
-          <p className="text-gray-600 leading-relaxed text-sm sm:text-base">
-            El presente documento constituye la Política de Privacidad y Acuerdo de Tratamiento de Datos de la plataforma web <strong className="text-gray-800">BIOSKINTECH</strong>{' '}
-            (en adelante, la "Plataforma"). De conformidad con la{' '}
-            <strong>Ley Orgánica de Protección de Datos Personales (LOPDP)</strong> de la República del Ecuador, se detallan las condiciones bajo las cuales se recopilan, almacenan, protegen y tratan los datos personales de las clínicas, profesionales de la salud afiliados (los "Usuarios/Clientes") y sus respectivos pacientes (los "Titulares").
-          </p>
-        </div>
+      <Section number={7} title="Finalidades" icon={<UserCheck className="w-4 h-4" />}>
+        <ul className={ul}>
+          <li>Gestionar fichas clínicas, agenda, consentimientos, inventario, finanzas y comunicaciones de la clínica.</li>
+          <li>Autenticar usuarios, proteger la Plataforma, auditar cambios y prevenir accesos indebidos.</li>
+          <li>Generar copias de seguridad y permitir la exportación y restauración de datos.</li>
+          <li>Prestar soporte, cobrar el servicio y cumplir obligaciones legales.</li>
+          <li>Elaborar métricas técnicas agregadas y anónimas de uso para mejorar el servicio, sin identificar a personas.</li>
+        </ul>
+        <Note tone="green">BIOSKINTECH <strong>no vende, alquila ni cede</strong> datos de Clientes o pacientes con fines publicitarios o ajenos al servicio.</Note>
+      </Section>
 
-        {/* 1. Identificación */}
-        <Section number={1} title="Identificación del Responsable y del Encargado" icon={<UserCheck className="w-4 h-4" />}>
-          <div className="bg-[#fdf8f0] rounded-xl p-4 space-y-1.5 border border-[#deb887]/20">
-            <p><strong>Plataforma:</strong> BIOSKINTECH</p>
-            <p><strong>País de operación:</strong> Ecuador</p>
-            <p><strong>Correo de contacto:</strong>{' '}
-              <a href={`mailto:${CONTACT_EMAIL}`} className="text-[#deb887] hover:underline">{CONTACT_EMAIL}</a>
-            </p>
-          </div>
-          <p className="font-semibold text-gray-800 mt-1">Definición de roles según la LOPDP:</p>
-          <ol className="list-decimal list-inside space-y-2 pl-1">
-            <li>
-              <strong>Responsable del Tratamiento:</strong> Las clínicas, centros estéticos, spas, médicos, cosmiátricas y profesionales de la salud que contratan la Plataforma. Ellos deciden qué datos solicitar y captar de sus pacientes.
-            </li>
-            <li>
-              <strong>Encargado del Tratamiento:</strong> La Plataforma actúa exclusivamente como proveedor de software (SaaS) que facilita la infraestructura técnica para el procesamiento, gestión y almacenamiento de información por cuenta de las clínicas.
-            </li>
-          </ol>
-        </Section>
+      <Section number={8} title="Almacenamiento en el navegador y cookies" icon={<HardDrive className="w-4 h-4" />}>
+        <ul className={ul}>
+          <li>La Plataforma <strong>no utiliza cookies publicitarias ni de analítica de terceros</strong>.</li>
+          <li>La sesión se guarda en el almacenamiento de la pestaña (<em>sessionStorage</em>) y expira como máximo a las 24 horas.</li>
+          <li>El identificador de "dispositivo de confianza" (hasta 90 días) y algunas preferencias se guardan en <em>localStorage</em>.</li>
+          <li>Componentes de terceros —inicio de sesión/conexión con Google y verificación Cloudflare Turnstile— pueden usar sus propias cookies técnicas.</li>
+        </ul>
+      </Section>
 
-        {/* 2. Base Legal */}
-        <Section number={2} title="Base Legal y Consentimiento Explícito" icon={<FileText className="w-4 h-4" />}>
-          <p>De acuerdo con los artículos 7 y 8 de la LOPDP, el tratamiento de datos personales en esta Plataforma es legítimo porque:</p>
-          <ul className="list-disc list-inside space-y-1.5 pl-1">
-            <li>Se cuenta con el <strong>consentimiento explícito, libre, específico e informado</strong> del Titular, manifestado mediante la aceptación digital en los formularios del sistema.</li>
-            <li>Es necesario para la ejecución de la relación de prestación de servicios de salud y bienestar entre el profesional y el paciente.</li>
-          </ul>
-          <p>La Plataforma implementa formularios digitales obligatorios con casillas de verificación independientes donde el paciente declara conocer, entender y aceptar:</p>
-          <ul className="list-disc list-inside space-y-1 pl-1">
-            <li>La naturaleza del tratamiento estético o médico a realizarse.</li>
-            <li>Las instrucciones de cuidados pre y post tratamiento.</li>
-            <li>Los riesgos, problemas y complicaciones informadas.</li>
-            <li>La autorización expresa para el almacenamiento de sus datos personales, clínicos y fotográficos.</li>
-          </ul>
-        </Section>
+      <Section number={9} title="Derechos de los Titulares" icon={<Users className="w-4 h-4" />}>
+        <p>Los Titulares pueden ejercer sus derechos de acceso, rectificación y actualización, eliminación, oposición, portabilidad, suspensión del tratamiento y a no ser objeto de decisiones basadas únicamente en valoraciones automatizadas, entre otros reconocidos por la LOPDP.</p>
+        <Note tone="blue">
+          <p className="font-semibold mb-1">Pacientes</p>
+          <p>Deben dirigirse <strong>primero a la clínica o profesional que los atendió</strong>, que es el Responsable. Si una solicitud llega a BIOSKINTECH, la remitiremos a la clínica correspondiente en un plazo máximo de 5 días hábiles y la asistiremos técnicamente; BIOSKINTECH no puede modificar ni eliminar historias clínicas sin instrucción del Responsable.</p>
+        </Note>
+        <p><strong>Clientes y Usuarios</strong> pueden ejercer sus derechos sobre sus datos de cuenta escribiendo a <Mail />, adjuntando documento de identidad. Si considera vulnerados sus derechos, puede acudir a la <strong>Superintendencia de Protección de Datos Personales</strong>.</p>
+      </Section>
 
-        {/* 3. Categorías de Datos */}
-        <Section number={3} title="Categorías de Datos Objeto de Tratamiento" icon={<Database className="w-4 h-4" />}>
-          <p className="font-semibold text-gray-800">A. Datos de las Clínicas y Profesionales (Usuarios):</p>
-          <p>Nombres, apellidos, número de cédula/RUC, registro del MSP/SENESCYT, correo electrónico, teléfono y demás datos de contacto profesional.</p>
-          <p className="font-semibold text-gray-800 mt-2">B. Datos de los Pacientes (Datos de Categoría Especial / Sensibles):</p>
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800">
-            Al amparo del artículo 25 de la LOPDP, los datos relativos a la salud tienen categoría de <strong>datos sensibles</strong> y reciben la máxima protección.
-          </div>
-          <ul className="list-disc list-inside space-y-1.5 pl-1">
-            <li><strong>Datos demográficos:</strong> Nombres, identificación, fecha de nacimiento, contacto.</li>
-            <li><strong>Fichas Clínicas Digitales:</strong> Antecedentes médicos, alergias, diagnósticos, historial de tratamientos, evoluciones y notas del profesional.</li>
-            <li><strong>Datos Biométricos y Gráficos:</strong> Fotografías médicas del antes y después, necesarias para el seguimiento de la evolución clínica.</li>
-          </ul>
-        </Section>
+      <Section number={10} title="Medidas de seguridad" icon={<Server className="w-4 h-4" />}>
+        <ul className={ul}>
+          <li>Comunicaciones cifradas (HTTPS/HSTS) y cifrado en reposo provisto por la infraestructura.</li>
+          <li>Contraseñas con PBKDF2 y sal; verificación en dos pasos por correo en dispositivos nuevos; bloqueo temporal tras 5 intentos fallidos.</li>
+          <li>Aislamiento de datos entre clínicas mediante controles de aplicación y políticas de seguridad a nivel de fila en la base de datos.</li>
+          <li>Roles y alcances de acceso por usuario; registro de auditoría de cambios en fichas.</li>
+          <li>Fotografías en almacenamiento privado con enlaces temporales firmados.</li>
+          <li>Copias de seguridad diarias cifradas (AES-256-GCM), inmutables durante 30 días (ver Art. 12).</li>
+        </ul>
+        <Note tone="amber">
+          Ningún sistema es invulnerable. BIOSKINTECH asume una <strong>obligación de medios</strong>: aplicar medidas razonables y proporcionales al riesgo,
+          no garantizar la ausencia absoluta de incidentes. La seguridad también depende de que el Cliente proteja sus credenciales, dispositivos y cuentas conectadas.
+        </Note>
+      </Section>
 
-        {/* 4. Infraestructura */}
-        <Section number={4} title="Infraestructura Técnica y Flujo Transfronterizo de Datos" icon={<Globe className="w-4 h-4" />}>
-          <p>Para garantizar la máxima disponibilidad, integridad y confidencialidad exigida por la normativa, la Plataforma utiliza infraestructura en la nube con transferencia internacional segura a proveedores de primer nivel tecnológico:</p>
-          <div className="space-y-3 mt-1">
-            <div className="flex gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
-              <span className="text-[#deb887] font-bold text-lg leading-none mt-0.5">1.</span>
-              <div>
-                <p className="font-semibold text-gray-800">Base de Datos General</p>
-                <p className="text-gray-600">Datos de texto y clínicos almacenados en <strong>Neon Postgres</strong>, con cifrado y aislamiento de datos por clínica (multi-tenant).</p>
-              </div>
-            </div>
-            <div className="flex gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
-              <span className="text-[#deb887] font-bold text-lg leading-none mt-0.5">2.</span>
-              <div>
-                <p className="font-semibold text-gray-800">Almacenamiento Multimedia</p>
-                <p className="text-gray-600">Imágenes y fotografías guardadas y distribuidas de forma encriptada mediante <strong>Cloudflare R2</strong>.</p>
-              </div>
-            </div>
-          </div>
-          <p className="text-xs text-gray-500 bg-gray-50 rounded-lg p-3 border border-gray-100">
-            Ambos proveedores cuentan con certificaciones internacionales de seguridad (ISO/IEC 27001 y SOC 2), garantizando un nivel de protección adecuado conforme a los requisitos de la LOPDP.
-          </p>
-        </Section>
+      <Section number={11} title="Incidentes de seguridad" icon={<AlertTriangle className="w-4 h-4" />}>
+        <ol className="list-decimal list-inside space-y-1.5 pl-1">
+          <li>BIOSKINTECH adoptará medidas para contener y mitigar el incidente.</li>
+          <li>Como Encargado, notificará al Cliente afectado sin dilación indebida desde que confirme el incidente, con la información disponible.</li>
+          <li>El Cliente, como Responsable de los datos de sus pacientes, notificará a la Superintendencia de Protección de Datos Personales y a los Titulares en los plazos de la LOPDP. BIOSKINTECH colaborará con la información técnica a su alcance.</li>
+          <li>Respecto de los datos de los que BIOSKINTECH es Responsable, realizará directamente las notificaciones legales.</li>
+        </ol>
+      </Section>
 
-        {/* 5. Finalidades */}
-        <Section number={5} title="Finalidades del Tratamiento" icon={<UserCheck className="w-4 h-4" />}>
-          <p>Los datos personales recabados serán utilizados únicamente para:</p>
-          <ul className="list-disc list-inside space-y-1.5 pl-1">
-            <li>Gestionar la agenda, citas, historiales médicos y fichas estéticas/clínicas dentro de la plataforma.</li>
-            <li>Registrar formalmente el entendimiento del paciente sobre los cuidados pre y post tratamiento, así como la aceptación de posibles complicaciones médicas.</li>
-            <li>Proveer al profesional herramientas de seguimiento administrativo y financiero interno de la clínica (a futuro, según los módulos habilitados).</li>
-            <li>Garantizar el soporte técnico, mantenimiento y correcto funcionamiento de la plataforma.</li>
-          </ul>
-          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-xs text-emerald-800">
-            La Plataforma <strong>NO vende, comercializa ni cede</strong> bajo ningún concepto los datos personales de clínicas o pacientes a terceros con fines publicitarios o ajenos al servicio.
-          </div>
-        </Section>
+      <Section number={12} title="Conservación y copias de seguridad" icon={<Clock className="w-4 h-4" />}>
+        <ul className={ul}>
+          <li>Los datos clínicos se conservan mientras el Cliente mantenga su cuenta y según sus instrucciones. <strong>El Cliente es responsable de cumplir los plazos legales de conservación de historias clínicas</strong> antes de eliminar información.</li>
+          <li>Las eliminaciones realizadas por el Cliente en la Plataforma son inmediatas en la base principal. Por protección de evidencia, no se permite eliminar pacientes con consentimientos firmados.</li>
+          <li>Pueden subsistir copias residuales: hasta <strong>6 horas</strong> en el historial de recuperación de la base de datos y hasta <strong>35 días</strong> en las copias de seguridad cifradas, que se eliminan automáticamente al vencer ese plazo.</li>
+          <li>Las exportaciones descargadas por el Cliente quedan bajo su exclusiva custodia y responsabilidad.</li>
+          <li>Las cuentas demo se eliminan automáticamente al vencer, sin posibilidad de recuperación salvo copias residuales.</li>
+        </ul>
+      </Section>
 
-        {/* 6. Conservación */}
-        <Section number={6} title="Plazo de Conservación de los Datos" icon={<Clock className="w-4 h-4" />}>
-          <p>Los datos personales e historias clínicas se conservarán durante el tiempo estrictamente necesario para:</p>
-          <ul className="list-disc list-inside space-y-1 pl-1">
-            <li>Cumplir con las finalidades de salud descritas en este documento.</li>
-            <li>Cumplir con las obligaciones legales de retención de registros médicos vigentes en el Ecuador.</li>
-            <li>Resolver cualquier controversia derivada del tratamiento.</li>
-          </ul>
-          <p>Lo anterior, salvo que el Titular revoque su consentimiento de forma legal conforme a los procedimientos establecidos.</p>
-        </Section>
+      <Section number={13} title="Fin del servicio" icon={<Trash2 className="w-4 h-4" />}>
+        <ul className={ul}>
+          <li>Durante la suscripción, el administrador de la clínica puede exportar sus datos en todo momento desde el módulo <strong>Base de Datos</strong> (JSON completo y CSV).</li>
+          <li>Tras el vencimiento o la cancelación, los datos se conservan <strong>30 días</strong> para renovación o para solicitar la exportación a <Mail />. Las fotografías podrán entregarse por el medio técnico razonable que BIOSKINTECH determine.</li>
+          <li>Vencido ese plazo, BIOSKINTECH podrá eliminar definitivamente los datos, sin obligación de conservarlos, salvo copias residuales del Art. 12 u obligación legal.</li>
+          <li>El Cliente puede solicitar la eliminación anticipada y certificada de sus datos, asumiendo la responsabilidad de haber resguardado la información que la ley le obligue a conservar.</li>
+        </ul>
+      </Section>
 
-        {/* 7. Derechos ARCO */}
-        <Section number={7} title="Derechos del Titular (Derechos ARCO)" icon={<Users className="w-4 h-4" />}>
-          <p>
-            De acuerdo con la LOPDP, los pacientes y usuarios tienen derecho a ejercer en cualquier momento sus derechos de{' '}
-            <strong>Acceso, Rectificación, Actualización, Cancelación/Eliminación, Oposición y Portabilidad</strong> de sus datos personales.
-          </p>
-          <div className="bg-[#fdf8f0] rounded-xl p-4 border border-[#deb887]/20">
-            <p className="font-semibold text-gray-800 mb-2">Para ejercer sus derechos:</p>
-            <p>Envíe una solicitud por escrito adjuntando copia de su documento de identidad al correo electrónico:</p>
-            <a
-              href={`mailto:${CONTACT_EMAIL}`}
-              className="inline-flex items-center gap-1.5 mt-2 text-[#deb887] hover:text-[#c9a96e] font-semibold hover:underline transition-colors"
-            >
-              {CONTACT_EMAIL}
-            </a>
-          </div>
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-800 mt-2">
-            <p className="font-semibold mb-1">📌 Nota de gestión de datos para Pacientes:</p>
-            <p>
-              Cuando la solicitud sea presentada por un <strong>Paciente</strong>, la Plataforma (en su rol de Encargado) notificará y coordinará de manera inmediata con la <strong>Clínica o Profesional de la salud</strong> correspondiente (Responsable del Tratamiento), a fin de validar la procedencia legal y médica de la solicitud antes de ejecutar cualquier modificación o eliminación técnica en las bases de datos.
-            </p>
-          </div>
-        </Section>
+      <Section number={14} title="Menores de edad y personas con capacidad limitada" icon={<Baby className="w-4 h-4" />}>
+        <p>Cuando el Cliente registre datos de niñas, niños, adolescentes o personas que requieran representación, es su responsabilidad obtener el consentimiento de su representante legal y verificar su identidad. La Plataforma no está dirigida a menores como usuarios.</p>
+      </Section>
 
-        {/* 8. Cookies y Herramientas de Análisis */}
-        <Section number={8} title="Cookies y Herramientas de Análisis" icon={<Cookie className="w-4 h-4" />}>
-          <p>
-            La Plataforma puede utilizar <strong>cookies técnicas</strong> necesarias para el correcto funcionamiento del sistema (gestión de sesión, autenticación, preferencias). El uso de estas cookies es imprescindible y no puede desactivarse sin comprometer la funcionalidad.
-          </p>
-          <p>
-            Adicionalmente, la Plataforma puede integrar herramientas de análisis de comportamiento anónimo e información estadística no identificable (como patrones de uso de módulos), con el único objetivo de mejorar la experiencia de usuario y la calidad del servicio.
-          </p>
-          <div className="bg-[#fdf8f0] border border-[#deb887]/20 rounded-xl p-3 text-xs text-gray-700">
-            <p className="font-semibold mb-1">Importante:</p>
-            <ul className="list-disc list-inside space-y-1 pl-1">
-              <li>Las cookies no contienen datos sensibles de pacientes.</li>
-              <li>Los datos estadísticos son agregados y no permiten identificar personas individuales.</li>
-              <li>No utilizamos cookies de terceros con fines publicitarios.</li>
-            </ul>
-          </div>
-        </Section>
-
-        {/* 9. Seguridad de Cuentas */}
-        <Section number={9} title="Seguridad de Cuentas y Contraseñas" icon={<BarChart2 className="w-4 h-4" />}>
-          <ul className="list-disc list-inside space-y-1.5 pl-1">
-            <li>Cada cuenta requiere usuario y contraseña únicos. Las contraseñas se almacenan de forma <strong>cifrada con PBKDF2</strong> — nunca en texto plano.</li>
-            <li>Se recomienda cerrar sesión después de cada uso, especialmente en dispositivos compartidos.</li>
-            <li>El sistema permite el restablecimiento seguro de contraseñas mediante código enviado al correo registrado. La Plataforma <strong>nunca reenvía contraseñas por correo</strong>.</li>
-            <li>La Plataforma implementa <strong>verificación en dos pasos (2FA)</strong> para proteger el acceso al panel administrativo.</li>
-            <li>Se aplica bloqueo automático de cuenta tras múltiples intentos fallidos de inicio de sesión.</li>
-          </ul>
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 mt-1">
-            El Cliente es responsable de mantener la confidencialidad de sus credenciales y de notificar de inmediato cualquier acceso no autorizado a{' '}
-            <a href={`mailto:${CONTACT_EMAIL}`} className="text-[#deb887] font-semibold hover:underline">{CONTACT_EMAIL}</a>.
-          </div>
-        </Section>
-
-        {/* 10. Incidentes de Seguridad */}
-        <Section number={10} title="Incidentes de Seguridad y Notificación" icon={<AlertTriangle className="w-4 h-4" />}>
-          <p>
-            En caso de detectar un incidente de seguridad que pudiera comprometer la confidencialidad, integridad o disponibilidad de los datos personales almacenados, la Plataforma:
-          </p>
-          <ol className="list-decimal list-inside space-y-1.5 pl-1">
-            <li>Tomará acciones inmediatas para contener y mitigar el incidente.</li>
-            <li>Notificará a las Clínicas y Usuarios afectados en el menor tiempo posible a través del correo registrado en el sistema.</li>
-            <li>Comunicará el incidente a la autoridad de control competente (Dirección Nacional de Registro de Datos Públicos - DINARDAP) dentro del plazo establecido por la LOPDP.</li>
-            <li>Documentará el incidente y las acciones correctivas aplicadas.</li>
-          </ol>
-        </Section>
-
-        {/* 11. Eliminación de Datos de Ex-Clientes */}
-        <Section number={11} title="Eliminación de Datos de Ex-Clientes" icon={<Trash2 className="w-4 h-4" />}>
-          <p>
-            Cuando una clínica o profesional de la salud cancele su suscripción o solicite la baja del servicio, los datos almacenados serán gestionados de la siguiente manera:
-          </p>
-          <ul className="list-disc list-inside space-y-1.5 pl-1">
-            <li>Se entregará al Cliente un respaldo completo de sus datos clínicos y administrativos antes de proceder a cualquier eliminación.</li>
-            <li>Los datos se conservarán en modo inactivo durante un periodo de <strong>30 días calendario</strong> adicionales tras la cancelación para permitir la recuperación ante cancelaciones involuntarias.</li>
-            <li>Transcurrido dicho plazo, los datos podrán ser eliminados de forma definitiva de los servidores de la Plataforma.</li>
-            <li>Los ex-clientes podrán solicitar la <strong>eliminación inmediata y certificada</strong> de todos sus datos enviando una solicitud por escrito a: <a href={`mailto:${CONTACT_EMAIL}`} className="text-[#deb887] font-semibold hover:underline">{CONTACT_EMAIL}</a>.</li>
-          </ul>
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-800">
-            La Plataforma no reutilizará ni transferirá los datos de clínicas que hayan dado de baja el servicio.
-          </div>
-        </Section>
-
-        {/* 12. Modificaciones */}
-        <Section number={12} title="Modificaciones a la Política de Privacidad" icon={<Bell className="w-4 h-4" />}>
-          <p>
-            La Plataforma se reserva el derecho de modificar esta política en cualquier momento para adaptarla a actualizaciones del sistema, nuevas especialidades médicas integradas o reformas legislativas en el Ecuador.
-          </p>
-          <p>
-            Toda modificación será notificada a las clínicas usuarias dentro del panel de control de la aplicación con un aviso de lectura obligatoria. Se recomienda revisar este documento periódicamente.
-          </p>
-          <p className="text-xs text-gray-500">
-            El uso continuo de la Plataforma tras la notificación de cambios implica la aceptación de los términos actualizados.
-          </p>
-        </Section>
-
-        {/* Footer de la página */}
-        <div className="text-center text-xs text-gray-400 pt-4">
-          <p>BioSkinTech © {new Date().getFullYear()} · Ecuador</p>
-          <p className="mt-1">
-            Este documento tiene validez legal conforme a la LOPDP (Ley Orgánica de Protección de Datos Personales del Ecuador).
-          </p>
-        </div>
-      </main>
-    </div>
+      <Section number={15} title="Cambios a esta Política" icon={<Bell className="w-4 h-4" />}>
+        <p>BIOSKINTECH podrá actualizar esta Política por cambios legales, técnicos o de proveedores. Cada versión se identifica con su fecha. Los Usuarios deberán aceptar la nueva versión en el panel antes de continuar usándolo; la aceptación queda registrada con fecha, versión, IP y navegador.</p>
+      </Section>
+    </LegalShell>
   );
 }

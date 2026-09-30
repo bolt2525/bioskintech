@@ -1,23 +1,27 @@
-﻿/**
+/**
  * @file api/backup.js
- * @description Respaldo y estadÃ­sticas de datos de la clÃ­nica.
+ * @description Respaldos por clínica: estadísticas, exportación (JSON restaurable / CSV), restauración con simulación,
+ * importación de pacientes por plantilla y copias automáticas cifradas en Cloudflare R2 (cron diario).
  *
- * SEGURIDAD: Las consultas se filtran por clinic_id cuando el usuario
- * es clinic_admin o clinic_user. master_admin puede ver todo.
- *
- * Acciones (query param `action`):
- *  - stats   â†’ devuelve conteos por tabla (no descarga)
- *  - backup  â†’ descarga JSON con los datos seleccionados (default)
+ * Seguridad: solo clinic_admin/master_admin; todo se filtra por clinic_id; las restauraciones corren en una
+ * transacción con SAVEPOINT por fila, validan pertenencia de cada referencia y generan un respaldo previo.
  */
 
+import crypto from 'node:crypto';
 import { getPool } from '../lib/neon-clinical-db.js';
 import { authenticateRequest } from '../lib/admin-auth.js';
+import { putR2Object, getR2ObjectBuffer, listR2Objects, generateDownloadUrl, generateUploadUrl, r2ObjectExists } from '../lib/r2-service.js';
+import {
+  BACKUP_MODULES, MAX_UPLOAD_BYTES, MAX_ROWS_PER_TABLE, EXCLUDED_CONSENT_COLUMNS,
+  buildBackupDocument, collectClinicData, compressBackup, decodeBackupBuffer, encryptBackup, hasBackupKey,
+  inspectBackupDocument, buildDatasetCsv, validatePatientImportRow,
+} from '../lib/backup-service.js';
 
-// Tablas con columna clinic_id â€” siempre filtradas por tenant
 const CLINIC_SCOPED_TABLES = new Set([
   'patients', 'clinical_records', 'consultations', 'medical_history',
   'consultation_info', 'consultation_history', 'physical_exams',
   'diagnoses', 'treatments', 'injectables', 'prescriptions', 'consent_forms',
+  'medical_history_snapshots', 'clinical_photos', 'patient_audit_log',
   'external_finance_records', 'financial_records',
   'financial_items', 'inventory_items', 'inventory_groups', 'inventory_batches', 'inventory_movements',
 ]);
@@ -25,16 +29,19 @@ const CLINIC_SCOPED_TABLES = new Set([
 const IMPORTABLE_TABLES = new Set([
   'patients', 'clinical_records', 'consultations', 'medical_history', 'consultation_info', 'consultation_history',
   'physical_exams', 'diagnoses', 'treatments', 'injectables', 'prescriptions', 'consent_forms',
+  'medical_history_snapshots', 'clinical_photos', 'patient_audit_log',
   'financial_records', 'external_finance_records', 'financial_items', 'inventory_items', 'inventory_batches', 'inventory_movements',
 ]);
-const EXCLUDED_CONSENT_BACKUP_COLUMNS = new Set([
-  'signing_token', 'signing_email', 'signing_sender_user_id', 'signing_otp_hash', 'signing_otp_attempts',
-  'signing_expires_at', 'signing_verified_at', 'signing_session_hash', 'signing_session_expires_at',
+const RECORD_CHILD_TABLES = new Set([
+  'medical_history', 'consultation_info', 'consultation_history', 'physical_exams', 'diagnoses', 'treatments',
+  'injectables', 'prescriptions', 'consent_forms', 'medical_history_snapshots', 'clinical_photos',
 ]);
 const LEGACY_FINANCE_COLUMNS = new Set([
   'patient_name', 'intervention_date', 'doctor_fees', 'raw_note', 'intervention_type', 'payment_method',
 ]);
 const CURRENT_FINANCE_COLUMNS = new Set(['date', 'entity', 'type', 'subtotal', 'tax', 'registered_by']);
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const SNAPSHOT_KINDS = ['auto', 'manual', 'pre-restore'];
 
 export function resolveFinanceSourceTable(financeModule) {
   const source = financeModule?.source_table;
@@ -54,43 +61,43 @@ export function buildClinicFilter(table, baseQuery, params = [], isMaster = fals
   const splitAt = suffixMatch?.index ?? baseQuery.length;
   const statement = baseQuery.slice(0, splitAt);
   const suffix = baseQuery.slice(splitAt);
-  const hasWhere = /\bWHERE\b/i.test(statement);
-  const op = hasWhere ? ' AND ' : ' WHERE ';
-  return {
-    query: statement + `${op}clinic_id = $${params.length + 1}` + suffix,
-    params: [...params, clinicId],
-  };
+  const op = /\bWHERE\b/i.test(statement) ? ' AND ' : ' WHERE ';
+  return { query: statement + `${op}clinic_id = $${params.length + 1}` + suffix, params: [...params, clinicId] };
 }
 
-export function buildBackupInsertStatement(table, row, tableColumns) {
+export function buildBackupInsertStatement(table, row, tableColumns, jsonColumns = new Set()) {
   if (!IMPORTABLE_TABLES.has(table) || !row || typeof row !== 'object' || Array.isArray(row))
     throw new Error('Tabla o fila de backup inválida');
   const valuesByColumn = Object.fromEntries(Object.entries(row).filter(([column]) =>
     /^[a-z_][a-z0-9_]*$/i.test(column) && tableColumns.has(column) &&
-    !(table === 'consent_forms' && EXCLUDED_CONSENT_BACKUP_COLUMNS.has(column))
+    !(table === 'consent_forms' && EXCLUDED_CONSENT_COLUMNS.has(column))
   ));
   if (!Object.hasOwn(valuesByColumn, 'id')) throw new Error(`La fila de ${table} no tiene id válido`);
   const columns = Object.keys(valuesByColumn);
   return {
     query: `INSERT INTO ${table} (${columns.map(column => `"${column}"`).join(',')}) VALUES (${columns.map((_, index) => `$${index + 1}`).join(',')}) ON CONFLICT (id) DO NOTHING`,
-    values: Object.values(valuesByColumn),
+    // node-pg convierte arrays JS a arrays Postgres; en columnas jsonb deben ir como JSON.
+    values: columns.map(column => jsonColumns.has(column) && valuesByColumn[column] != null && typeof valuesByColumn[column] === 'object'
+      ? JSON.stringify(valuesByColumn[column]) : valuesByColumn[column]),
   };
 }
 
 const tableColumnsCache = new Map();
+const jsonColumnsCache = new Map();
 async function getTableColumns(pool, table) {
   if (!IMPORTABLE_TABLES.has(table)) throw new Error('Tabla de backup no permitida');
   if (!tableColumnsCache.has(table)) {
     const result = await pool.query(
-      'SELECT column_name FROM information_schema.columns WHERE table_schema = $1 AND table_name = $2',
+      'SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = $1 AND table_name = $2',
       ['public', table]
     );
     tableColumnsCache.set(table, new Set(result.rows.map(row => row.column_name)));
+    jsonColumnsCache.set(table, new Set(result.rows.filter(row => /^jsonb?$/.test(row.data_type || '')).map(row => row.column_name)));
   }
   return tableColumnsCache.get(table);
 }
 
-export async function insertBackupRow(pool, table, inputRow, clinicId, isMaster, { financialRecordTable = 'financial_records' } = {}) {
+export async function insertBackupRow(pool, table, inputRow, clinicId, isMaster, { financialRecordTable = 'financial_records', photoExists = r2ObjectExists } = {}) {
   const tableColumns = await getTableColumns(pool, table);
   const row = { ...inputRow };
   const tenantId = clinicId || row.clinic_id || null;
@@ -112,7 +119,15 @@ export async function insertBackupRow(pool, table, inputRow, clinicId, isMaster,
     const existing = await pool.query('SELECT clinic_id FROM patients WHERE id = $1', [row.id]);
     if (existing.rows.length && String(existing.rows[0].clinic_id || '') !== String(tenantId || ''))
       throw new Error('El paciente del backup ya existe en otra clínica');
+    if (existing.rows.length) return 0;
     await clearForeignOwner('created_by_user_id');
+  } else if (Number.isSafeInteger(Number(row.id)) && tableColumns.has('clinic_id') &&
+      (await pool.query(`SELECT clinic_id FROM ${table} WHERE id = $1`, [row.id])).rows.some(r => {
+        if (String(r.clinic_id || '') !== String(tenantId || '')) throw new Error(`El registro de ${table} ya existe en otra clínica`);
+        return true;
+      })) {
+    // Ya existe en esta clínica: nunca se sobrescribe ni se revalida.
+    return 0;
   } else if (table === 'clinical_records') {
     const patient = await pool.query('SELECT 1 FROM patients WHERE id = $1 AND clinic_id IS NOT DISTINCT FROM $2', [row.patient_id, tenantId]);
     if (!patient.rows.length) throw new Error('El expediente referencia un paciente fuera de la clínica destino');
@@ -120,7 +135,7 @@ export async function insertBackupRow(pool, table, inputRow, clinicId, isMaster,
   } else if (table === 'consultations') {
     const record = await pool.query('SELECT 1 FROM clinical_records WHERE id = $1 AND clinic_id IS NOT DISTINCT FROM $2', [row.record_id, tenantId]);
     if (!record.rows.length) throw new Error('La consulta referencia un expediente fuera de la clínica destino');
-  } else if (['medical_history', 'consultation_info', 'consultation_history', 'physical_exams', 'diagnoses', 'treatments', 'injectables', 'prescriptions', 'consent_forms'].includes(table)) {
+  } else if (RECORD_CHILD_TABLES.has(table)) {
     const record = await pool.query('SELECT patient_id FROM clinical_records WHERE id = $1 AND clinic_id IS NOT DISTINCT FROM $2', [row.record_id, tenantId]);
     if (!record.rows.length) throw new Error(`La fila de ${table} referencia un expediente fuera de la clínica destino`);
     if (table === 'consent_forms' && Number(record.rows[0].patient_id) !== Number(row.patient_id))
@@ -136,6 +151,12 @@ export async function insertBackupRow(pool, table, inputRow, clinicId, isMaster,
           throw new Error('El reemplazo referencia un consentimiento anulado distinto o fuera de la clínica destino');
       }
     }
+    if (table === 'clinical_photos') {
+      const prefix = `clinics/${tenantId}/records/${row.record_id}/photos/`;
+      if (typeof row.r2_key !== 'string' || !row.r2_key.startsWith(prefix) || row.r2_key.includes('..'))
+        throw new Error('La foto referencia un archivo fuera de la clínica o expediente destino');
+      if (!(await photoExists(row.r2_key))) throw new Error('El archivo de la foto ya no existe en el almacenamiento; no se restaura su referencia');
+    }
     if (row.consultation_id != null) {
       const consultation = await pool.query('SELECT 1 FROM consultations WHERE id = $1 AND record_id = $2 AND clinic_id IS NOT DISTINCT FROM $3', [row.consultation_id, row.record_id, tenantId]);
       if (!consultation.rows.length) throw new Error(`La fila de ${table} referencia una consulta fuera del expediente o la clínica destino`);
@@ -147,6 +168,16 @@ export async function insertBackupRow(pool, table, inputRow, clinicId, isMaster,
       );
       if (!treatment.rows.length) throw new Error('El inyectable referencia un tratamiento fuera del expediente o la clínica destino');
     }
+  } else if (table === 'patient_audit_log') {
+    if (row.patient_id != null) {
+      const patient = await pool.query('SELECT 1 FROM patients WHERE id = $1 AND clinic_id IS NOT DISTINCT FROM $2', [row.patient_id, tenantId]);
+      if (!patient.rows.length) throw new Error('La auditoría referencia un paciente fuera de la clínica destino');
+    }
+    if (row.record_id != null) {
+      const record = await pool.query('SELECT 1 FROM clinical_records WHERE id = $1 AND clinic_id IS NOT DISTINCT FROM $2', [row.record_id, tenantId]);
+      if (!record.rows.length) throw new Error('La auditoría referencia un expediente fuera de la clínica destino');
+    }
+    await clearForeignOwner('clinic_user_id');
   } else if (table === 'inventory_batches') {
     const item = await pool.query('SELECT 1 FROM inventory_items WHERE id = $1 AND clinic_id IS NOT DISTINCT FROM $2', [row.item_id, tenantId]);
     if (!item.rows.length) throw new Error('El lote referencia un ítem fuera de la clínica destino');
@@ -163,7 +194,7 @@ export async function insertBackupRow(pool, table, inputRow, clinicId, isMaster,
 
   if (table === 'financial_records' || table === 'inventory_items') await clearForeignOwner('created_by_user_id');
 
-  const statement = buildBackupInsertStatement(table, row, tableColumns);
+  const statement = buildBackupInsertStatement(table, row, tableColumns, jsonColumnsCache.get(table));
   const result = await pool.query(statement.query, statement.values);
   return result.rowCount;
 }
@@ -187,274 +218,353 @@ export async function restoreInventoryGroups(pool, rows, clinicId, isMaster) {
   return count;
 }
 
+const PG_ERRORS = {
+  '23505': 'Ya existe otro registro con la misma identificación o clave única',
+  '23503': 'Referencia a un registro inexistente',
+  '23502': 'Falta un campo obligatorio',
+  '23514': 'Valor no permitido por las reglas de la base',
+  '22P02': 'Valor con formato inválido',
+  '22007': 'Fecha con formato inválido',
+  '22008': 'Fecha fuera de rango',
+  '22001': 'Texto más largo de lo permitido',
+  '22003': 'Número fuera de rango',
+};
+export const describeRestoreError = err =>
+  err?.code ? (PG_ERRORS[err.code] || `Error de base de datos (${err.code})`) : String(err?.message || 'Error desconocido').slice(0, 200);
+
+/** Restaura en una transacción; cada fila en su SAVEPOINT. Confirma solo si no es simulación y no hay errores (o se aceptan parciales). */
+export async function restoreBackupDocument(pool, doc, clinicId, { dryRun = true, allowPartial = false } = {}) {
+  const client = await pool.connect();
+  const report = { inserted: {}, existing: {}, errors: [], errorCount: 0, committed: false };
+  const touched = new Set();
+  const insertRows = async (table, rows, inserter) => {
+    if (rows == null) return;
+    if (!Array.isArray(rows) || rows.length > MAX_ROWS_PER_TABLE) throw new Error(`La sección ${table} es inválida o demasiado grande`);
+    for (const raw of rows) {
+      await client.query('SAVEPOINT backup_row');
+      try {
+        const n = await inserter(raw);
+        await client.query('RELEASE SAVEPOINT backup_row');
+        const bucket = n ? report.inserted : report.existing;
+        bucket[table] = (bucket[table] || 0) + 1;
+        if (n) touched.add(table);
+      } catch (err) {
+        await client.query('ROLLBACK TO SAVEPOINT backup_row');
+        report.errorCount++;
+        if (report.errors.length < 200) report.errors.push({ table, id: raw?.id ?? null, error: describeRestoreError(err) });
+      }
+    }
+  };
+  const rowsOf = (table, value) => {
+    if (value != null && !Array.isArray(value)) throw new Error(`La sección ${table} es inválida`);
+    return value;
+  };
+  const insert = (table, opts) => row => insertBackupRow(client, table, row, clinicId, false, opts);
+
+  try {
+    await client.query('BEGIN');
+    const modules = doc.modules;
+    const t = modules.patients?.tables;
+    if (t && typeof t === 'object') {
+      await insertRows('patients', rowsOf('patients', t.patients), row => insertBackupRow(client, 'patients',
+        { ...row, rut: row?.rut || row?.identification_number, identification_number: row?.identification_number || row?.rut }, clinicId, false));
+      for (const table of ['clinical_records', 'consultations', 'medical_history', 'consultation_info', 'consultation_history',
+        'physical_exams', 'diagnoses', 'treatments', 'injectables', 'prescriptions', 'consent_forms',
+        'medical_history_snapshots', 'clinical_photos', 'patient_audit_log']) {
+        const legacyWithoutConsultations = table !== 'consultations' && !Array.isArray(t.consultations);
+        await insertRows(table, rowsOf(table, t[table]), row => insertBackupRow(client, table,
+          legacyWithoutConsultations && row?.consultation_id != null ? { ...row, consultation_id: null } : row, clinicId, false));
+      }
+    }
+    if (modules.finance?.records) {
+      const finTable = resolveFinanceSourceTable(modules.finance);
+      const exists = await client.query("SELECT to_regclass($1) IS NOT NULL AS ok", [`public.${finTable}`]);
+      if (!exists.rows[0].ok) throw new Error('La tabla financiera del respaldo no existe en esta instalación');
+      if (finTable === 'external_finance_records' && modules.finance.items?.length)
+        throw new Error('El respaldo financiero legacy no puede restaurar partidas estructuradas');
+      await insertRows(finTable, rowsOf(finTable, modules.finance.records), insert(finTable));
+      await insertRows('financial_items', rowsOf('financial_items', modules.finance.items), insert('financial_items', { financialRecordTable: finTable }));
+    }
+    const inv = modules.inventory;
+    if (inv && typeof inv === 'object') {
+      await insertRows('inventory_groups', rowsOf('inventory_groups', inv.groups?.data), row => restoreInventoryGroups(client, [row], clinicId, false));
+      await insertRows('inventory_items', rowsOf('inventory_items', inv.items?.data), insert('inventory_items'));
+      await insertRows('inventory_batches', rowsOf('inventory_batches', inv.batches?.data), insert('inventory_batches'));
+      await insertRows('inventory_movements', rowsOf('inventory_movements', inv.movements?.data), insert('inventory_movements'));
+    }
+
+    const commit = !dryRun && (report.errorCount === 0 || allowPartial);
+    if (commit) {
+      // Con IDs explícitos las secuencias no avanzan; sin esto el próximo INSERT normal chocaría.
+      for (const table of touched) {
+        if (table === 'inventory_groups') continue;
+        await client.query(
+          `SELECT setval(s, GREATEST(COALESCE((SELECT MAX(id) FROM ${table}), 1), COALESCE(pg_sequence_last_value(s::regclass), 1)))
+           FROM (SELECT pg_get_serial_sequence($1, 'id') AS s) seq WHERE s IS NOT NULL`, [table]);
+      }
+      await client.query('COMMIT');
+    } else {
+      await client.query('ROLLBACK');
+    }
+    report.committed = commit;
+    return report;
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+// ── Copias en R2 ──────────────────────────────────────────────────────────────
+const stamp = () => new Date().toISOString().replace(/[:.]/g, '-');
+export const isSnapshotKey = (key, clinicId) =>
+  typeof key === 'string' && new RegExp(`^backups/${clinicId}/(${SNAPSHOT_KINDS.join('|')})/[\\w.-]+\\.json\\.gz\\.enc$`).test(key);
+export const isUploadKey = (key, clinicId) =>
+  typeof key === 'string' && new RegExp(`^backup-tmp/${clinicId}/uploads/[0-9a-f-]{36}$`).test(key);
+
+async function clinicName(pool, clinicId) {
+  return (await pool.query('SELECT name FROM clinics WHERE id = $1', [clinicId])).rows[0]?.name || null;
+}
+
+async function createSnapshot(pool, clinicId, kind, generatedBy) {
+  const modules = await collectClinicData(pool, clinicId, BACKUP_MODULES);
+  const doc = buildBackupDocument({ clinicId, clinicName: await clinicName(pool, clinicId), generatedBy, kind, modules });
+  const body = encryptBackup(compressBackup(doc));
+  const key = `backups/${clinicId}/${kind}/${stamp()}-${crypto.randomBytes(4).toString('hex')}.json.gz.enc`;
+  await putR2Object(key, body, 'application/octet-stream');
+  return { key, size: body.length, counts: doc.metadata.counts };
+}
+
+async function publishTemporaryDownload(clinicId, doc, filenameBase) {
+  const key = `backup-tmp/${clinicId}/exports/${crypto.randomUUID()}.json.gz`;
+  await putR2Object(key, compressBackup(doc), 'application/gzip');
+  const filename = `${filenameBase}-${new Date().toISOString().split('T')[0]}.json.gz`;
+  return { url: await generateDownloadUrl(key, filename), filename };
+}
+
+async function runCron(req, res, pool) {
+  const secret = (process.env.CRON_SECRET || '').trim();
+  const provided = String(req.headers.authorization || '');
+  const expected = `Bearer ${secret}`;
+  if (!secret || provided.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(expected)))
+    return res.status(401).json({ error: 'No autorizado' });
+  if (!hasBackupKey()) return res.status(503).json({ error: 'BACKUP_ENCRYPTION_KEY no configurada' });
+  const clinics = (await pool.query('SELECT id FROM clinics ORDER BY id')).rows;
+  let ok = 0;
+  const failed = [];
+  for (const { id } of clinics) {
+    try { await createSnapshot(pool, id, 'auto', 'cron'); ok++; }
+    catch (err) { failed.push(id); console.error('[backup:cron] snapshot failed', id, err?.code || err?.name || 'Error'); }
+  }
+  console.info('[backup:cron] done', { ok, failed: failed.length });
+  return res.status(failed.length ? 207 : 200).json({ ok, failed });
+}
+
+async function parseJsonBody(req) {
+  if (req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body)) return req.body;
+  if (typeof req.body === 'string') { try { return JSON.parse(req.body); } catch { return {}; } }
+  return {};
+}
+
+async function importPatients(pool, rows, clinicId, auth, dryRun) {
+  if (!Array.isArray(rows) || rows.length === 0 || rows.length > 5000) throw new Error('El archivo debe tener entre 1 y 5000 pacientes');
+  const report = { valid: 0, created: 0, duplicates: [], errors: [], committed: false };
+  const seen = new Set();
+  const candidates = [];
+  rows.forEach((raw, index) => {
+    const line = index + 2;
+    const { patient, error } = validatePatientImportRow(raw);
+    if (error) return report.errors.length < 500 && report.errors.push({ line, error });
+    const key = `${patient.identification_type}:${patient.identification_number}`;
+    if (seen.has(key)) return report.duplicates.push({ line, reason: 'Identificación repetida dentro del archivo' });
+    seen.add(key);
+    candidates.push({ line, patient });
+  });
+  if (candidates.length) {
+    const existing = await pool.query(
+      `SELECT identification_type, regexp_replace(COALESCE(identification_number, rut), '[^0-9]', '', 'g') AS num
+       FROM patients WHERE clinic_id = $1`, [clinicId]);
+    const taken = new Set(existing.rows.flatMap(r => [`${r.identification_type}:${r.num}`, `null:${r.num}`]));
+    for (let i = candidates.length - 1; i >= 0; i--) {
+      const { line, patient } = candidates[i];
+      if (taken.has(`${patient.identification_type}:${patient.identification_number}`) || taken.has(`null:${patient.identification_number}`)) {
+        report.duplicates.push({ line, reason: 'Ya existe un paciente con esa identificación en la clínica' });
+        candidates.splice(i, 1);
+      }
+    }
+  }
+  report.valid = candidates.length;
+  report.duplicates.sort((a, b) => a.line - b.line);
+  if (dryRun || report.errors.length || !candidates.length) return report;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (const { patient: p } of candidates) {
+      const created = await client.query(
+        `INSERT INTO patients (first_name, last_name, rut, identification_type, identification_number, email, phone, birth_date, gender,
+           address, occupation, tipo_sangre, estado_civil, clinic_id, created_by_user_id)
+         VALUES ($1,$2,$3,$4,$3,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
+        [p.first_name, p.last_name, p.identification_number, p.identification_type, p.email, p.phone, p.birth_date, p.gender,
+          p.address, p.occupation, p.tipo_sangre, p.estado_civil, clinicId, auth.id ?? null]);
+      const patientId = created.rows[0].id;
+      await client.query('INSERT INTO clinical_records (patient_id, clinic_id, created_by_user_id, status) VALUES ($1, $2, $3, $4)',
+        [patientId, clinicId, auth.id ?? null, 'active']);
+      await client.query(
+        `INSERT INTO patient_audit_log (patient_id, clinic_id, clinic_user_id, user_display_name, action_type, module, summary)
+         VALUES ($1, $2, $3, $4, 'create', 'patient', 'Paciente importado desde plantilla CSV')`,
+        [patientId, clinicId, auth.id ?? null, auth.username || null]);
+    }
+    await client.query('COMMIT');
+    report.created = candidates.length;
+    report.committed = true;
+    return report;
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw new Error(describeRestoreError(err));
+  } finally {
+    client.release();
+  }
+}
+
 export default async function handler(req, res) {
-  if (req.method !== 'GET' && req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  res.setHeader('Cache-Control', 'no-store');
+  const action = String(req.query.action || 'stats');
+  const pool = getPool();
+  if (!pool) return res.status(503).json({ error: 'Base de datos no disponible' });
+  if (action === 'cron') {
+    try { return await runCron(req, res, pool); }
+    catch (err) { console.error('[backup:cron] error', err?.code || err?.name); return res.status(500).json({ error: 'Cron de respaldo falló' }); }
+  }
 
   const auth = await authenticateRequest(req);
   if (!auth.valid) return res.status(401).json({ error: 'No autenticado' });
-
   const isMaster = auth.role === 'master_admin';
-  // Solo clinic_admin y master_admin pueden exportar/importar
-  if (!isMaster && auth.role !== 'clinic_admin') {
-    return res.status(403).json({ error: 'Solo el administrador de la clÃ­nica puede realizar respaldos' });
-  }
-
-  let pool = getPool();
-  if (!pool) return res.status(503).json({ error: 'Database no disponible' });
-
-  const { action = 'backup', modules } = req.query;
-  // effective_clinic_id: puede ser la clÃ­nica objetivo cuando master admin usa X-Target-Clinic-Id
-  const clinicId = auth.effective_clinic_id ?? auth.clinic_id;
-
-  // clinic_admin sin clinic_id es un error de configuraciÃ³n
-  if (!isMaster && !clinicId) {
-    return res.status(403).json({ error: 'ClÃ­nica no identificada' });
-  }
-
-  // Helper: agrega filtro de clinic_id cuando corresponde
-  const withClinicFilter = (table, baseQuery, params = []) => buildClinicFilter(table, baseQuery, params, isMaster, clinicId);
-
-  // Helper: verifica si una tabla existe
-  const tableExists = async (name) => {
-    const r = await pool.query(
-      `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = $1)`,
-      [name]
-    );
-    return r.rows[0].exists;
-  };
+  if (!isMaster && auth.role !== 'clinic_admin')
+    return res.status(403).json({ error: 'Solo el administrador de la clínica puede gestionar respaldos' });
+  const clinicId = auth.effective_clinic_id ?? auth.clinic_id ?? null;
+  if (!isMaster && !clinicId) return res.status(403).json({ error: 'Clínica no identificada' });
+  if (clinicId && !UUID_RE.test(String(clinicId))) return res.status(400).json({ error: 'Clínica inválida' });
+  const requireClinic = () => { if (!clinicId) { res.status(400).json({ error: 'Selecciona una clínica para operar sus respaldos' }); return false; } return true; };
+  const isPost = req.method === 'POST';
 
   try {
-    // â”€â”€ IMPORTACIÃ“N (POST) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    if (req.method === 'POST') {
-      const importData = req.body;
-      if (!importData?.metadata || !importData?.modules) {
-        return res.status(400).json({ error: 'Formato de backup invÃ¡lido' });
-      }
-      const originalPool = pool;
-      const importClient = await pool.connect();
-      pool = importClient;
-      try {
-      await pool.query('BEGIN');
-      const importResults = {};
-
-      // Pacientes y fichas clÃ­nicas
-      if (importData.modules.patients?.tables) {
-        const t = importData.modules.patients.tables;
-        let pCount = 0;
-        for (const p of (t.patients || [])) {
-          const patient = { ...p, rut: p.rut || p.identification_number, identification_number: p.identification_number || p.rut };
-          pCount += await insertBackupRow(pool, 'patients', patient, clinicId, isMaster);
-        }
-        importResults.patients = pCount;
-        const subTables = ['clinical_records','consultations','medical_history','consultation_info','consultation_history','physical_exams','diagnoses','treatments','injectables','prescriptions','consent_forms'];
-        for (const tbl of subTables) {
-          let cnt = 0;
-          for (const row of (t[tbl] || [])) {
-            const importRow = tbl !== 'consultations' && !Array.isArray(t.consultations) && row.consultation_id != null
-              ? { ...row, consultation_id: null }
-              : row;
-            cnt += await insertBackupRow(pool, tbl, importRow, clinicId, isMaster);
-          }
-          importResults[tbl] = cnt;
-        }
-      }
-
-      // Finanzas
-      if (importData.modules.finance?.records) {
-        let cnt = 0;
-        const finTable = resolveFinanceSourceTable(importData.modules.finance);
-        if (!(await tableExists(finTable))) throw new Error('Tabla financiera origen no disponible en esta instalación');
-        if (finTable === 'external_finance_records' && importData.modules.finance.items?.length)
-          throw new Error('El backup legacy no puede restaurar partidas financieras estructuradas en esta instalación');
-        for (const row of importData.modules.finance.records) {
-          cnt += await insertBackupRow(pool, finTable, row, clinicId, isMaster);
-        }
-        importResults.finance = cnt;
-        let itemCount = 0;
-        for (const row of (importData.modules.finance.items || [])) {
-          itemCount += await insertBackupRow(pool, 'financial_items', row, clinicId, isMaster, { financialRecordTable: finTable });
-        }
-        importResults.financial_items = itemCount;
-      }
-
-      // Inventario
-      if (importData.modules.inventory?.items?.data || importData.modules.inventory?.groups?.data) {
-        let itemCnt = 0, batchCnt = 0;
-        const groupCnt = await restoreInventoryGroups(pool, importData.modules.inventory.groups?.data || [], clinicId, isMaster);
-        for (const row of (importData.modules.inventory.items?.data || [])) {
-          itemCnt += await insertBackupRow(pool, 'inventory_items', row, clinicId, isMaster);
-        }
-        for (const row of (importData.modules.inventory.batches?.data || [])) {
-          batchCnt += await insertBackupRow(pool, 'inventory_batches', row, clinicId, isMaster);
-        }
-        let movementCount = 0;
-        for (const row of (importData.modules.inventory.movements?.data || [])) {
-          movementCount += await insertBackupRow(pool, 'inventory_movements', row, clinicId, isMaster);
-        }
-        importResults.inventory_items = itemCnt;
-        importResults.inventory_groups = groupCnt;
-        importResults.inventory_batches = batchCnt;
-        importResults.inventory_movements = movementCount;
-      }
-
-      await pool.query('COMMIT');
-      return res.status(200).json({ success: true, imported: importResults });
-      } catch (importError) {
-        await pool.query('ROLLBACK').catch(() => {});
-        throw importError;
-      } finally {
-        pool = originalPool;
-        importClient.release();
-      }
-    }
-
-    // â”€â”€ ESTADÃSTICAS (no descarga) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    if (action === 'stats') {
+    if (action === 'stats' && req.method === 'GET') {
+      const existing = new Set((await pool.query("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")).rows.map(r => r.table_name));
+      const finTable = existing.has('financial_records') ? 'financial_records' : 'external_finance_records';
       const statsMap = [
-        { key: 'patients',            table: 'patients',            label: 'Pacientes' },
-        { key: 'clinical_records',    table: 'clinical_records',    label: 'Expedientes' },
-        { key: 'diagnoses',           table: 'diagnoses',           label: 'DiagnÃ³sticos' },
-        { key: 'treatments',          table: 'treatments',          label: 'Tratamientos' },
-        { key: 'prescriptions',       table: 'prescriptions',       label: 'Recetas' },
-        { key: 'physical_exams',      table: 'physical_exams',      label: 'ExÃ¡menes FÃ­sicos' },
-        { key: 'injectables',         table: 'injectables',         label: 'Inyectables' },
-        { key: 'consent_forms',       table: 'consent_forms',       label: 'Consentimientos' },
-        { key: 'medical_history',     table: 'medical_history',     label: 'Antecedentes' },
-        { key: 'finance',             table: 'external_finance_records', label: 'Registros Finanzas' },
-        { key: 'inventory_items',     table: 'inventory_items',     label: 'Ãtems Inventario' },
-        { key: 'inventory_batches',   table: 'inventory_batches',   label: 'Lotes Inventario' },
+        ['patients', 'patients', 'Pacientes'], ['clinical_records', 'clinical_records', 'Expedientes'],
+        ['consultations', 'consultations', 'Consultas'], ['medical_history', 'medical_history', 'Antecedentes'],
+        ['physical_exams', 'physical_exams', 'Exámenes Físicos'], ['diagnoses', 'diagnoses', 'Diagnósticos'],
+        ['treatments', 'treatments', 'Tratamientos'], ['injectables', 'injectables', 'Inyectables'],
+        ['prescriptions', 'prescriptions', 'Recetas'], ['consent_forms', 'consent_forms', 'Consentimientos'],
+        ['medical_history_snapshots', 'medical_history_snapshots', 'Versiones de antecedentes'],
+        ['patient_audit_log', 'patient_audit_log', 'Auditoría'], ['clinical_photos', 'clinical_photos', 'Fotos (solo referencias)'],
+        ['finance', finTable, 'Registros Finanzas'], ['financial_items', 'financial_items', 'Partidas de facturas'],
+        ['inventory_items', 'inventory_items', 'Productos'], ['inventory_batches', 'inventory_batches', 'Lotes'],
+        ['inventory_movements', 'inventory_movements', 'Movimientos'], ['inventory_groups', 'inventory_groups', 'Subcategorías'],
       ];
-
       const stats = {};
-      for (const { key, table, label } of statsMap) {
-        try {
-          if (!(await tableExists(table))) { stats[key] = { label, count: 0, exists: false }; continue; }
-          const { query, params } = withClinicFilter(table, `SELECT COUNT(*)::int AS n FROM ${table}`, []);
-          const r = await pool.query(query, params);
-          stats[key] = { label, count: r.rows[0].n, exists: true };
-        } catch {
-          stats[key] = { label, count: 0, exists: false };
-        }
+      for (const [key, table, label] of statsMap) {
+        if (!existing.has(table)) { stats[key] = { label, count: 0, exists: false }; continue; }
+        const { query, params } = buildClinicFilter(table, `SELECT COUNT(*)::int AS n FROM ${table}`, [], isMaster, clinicId);
+        stats[key] = { label, count: (await pool.query(query, params)).rows[0].n, exists: true };
       }
-
-      const totalRecords = Object.values(stats).reduce((a, s) => a + (s.count || 0), 0);
-      return res.status(200).json({ stats, totalRecords, clinic_id: clinicId || 'master', is_master: isMaster });
+      const totalRecords = Object.entries(stats).filter(([k]) => k !== 'clinical_photos').reduce((a, [, s]) => a + s.count, 0);
+      return res.status(200).json({ stats, totalRecords, clinic_id: clinicId || 'master', is_master: isMaster && !clinicId, encryption_ready: hasBackupKey() });
     }
 
-    // â”€â”€ DESCARGA DE RESPALDO â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    const selectedModules = modules
-      ? modules.split(',').map(m => m.trim())
-      : ['patients', 'finance', 'inventory'];
-
-    const backupData = {
-      metadata: {
-        timestamp: new Date().toISOString(),
-        clinic_id: clinicId || 'master',
-        generated_by: auth.username,
-        modules: selectedModules,
-        version: '2.0',
-      },
-      modules: {},
-    };
-
-    // 1. Pacientes y fichas clÃ­nicas
-    if (selectedModules.includes('patients')) {
-      const tables = [
-        'patients', 'clinical_records', 'consultations', 'medical_history', 'consultation_info',
-        'consultation_history', 'physical_exams', 'diagnoses', 'treatments',
-        'injectables', 'prescriptions', 'consent_forms',
-      ];
-      const data = {};
-      for (const t of tables) {
-        try {
-          if (!(await tableExists(t))) { data[t] = []; continue; }
-          const columns = t === 'consent_forms'
-            ? `id, record_id, patient_id, clinic_id, consultation_id, form_type, content_text, signature_data, signed_at, status,
-               created_at, updated_at, created_by, procedure_type, zone, sessions, objectives, description, risks, benefits,
-               alternatives, pre_care, post_care, contraindications, critical_antecedents, authorizations, declarations,
-               signatures, attachments, signing_status, signing_snapshot, signing_snapshot_hash, signing_hash,
-               signing_signed_at, signing_copy_sent_at, annulled_at, annulled_by_user_id,
-               annulled_by_name, annulment_reason, replaces_consent_id`
-            : '*';
-          const { query, params } = withClinicFilter(t, `SELECT ${columns} FROM ${t} ORDER BY id LIMIT 10000`, []);
-          const r = await pool.query(query, params);
-          data[t] = r.rows;
-        } catch (e) {
-          console.error(`[backup] Clinical export failed for ${t}:`, e?.code || e?.name || 'UnknownError');
-          throw new Error('No se pudo completar la exportación de fichas clínicas.');
-        }
-      }
-      backupData.modules.patients = {
-        count: data.patients?.length || 0,
-        tables: data,
-      };
+    if (action === 'csv' && req.method === 'GET') {
+      if (!requireClinic()) return;
+      const { filename, csv } = await buildDatasetCsv(pool, String(req.query.dataset || ''), clinicId);
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      return res.status(200).send(csv);
     }
 
-    // 2. Finanzas
-    if (selectedModules.includes('finance')) {
-      try {
-        const finTable = (await tableExists('financial_records')) ? 'financial_records' : 'external_finance_records';
-        const { query, params } = withClinicFilter(finTable, `SELECT * FROM ${finTable} ORDER BY id LIMIT 10000`, []);
-        const r = await pool.query(query, params);
-        backupData.modules.finance = { source_table: finTable, count: r.rows.length, records: r.rows };
-        // Incluir items de facturas si existen
-        if (finTable === 'financial_records' && await tableExists('financial_items')) {
-          const recIds = r.rows.map(row => row.id);
-          if (recIds.length > 0) {
-            const itemQuery = withClinicFilter('financial_items',
-              'SELECT * FROM financial_items WHERE record_id = ANY($1::int[]) ORDER BY id LIMIT 50000', [recIds]);
-            const items = await pool.query(itemQuery.query, itemQuery.params);
-            backupData.modules.finance.items = items.rows;
-          }
-        }
-      } catch (e) {
-        console.error('[backup] Finance export failed:', e?.code || e?.name || 'UnknownError');
-        throw new Error('No se pudo completar la exportación financiera.');
-      }
+    if (action === 'snapshots' && req.method === 'GET') {
+      if (!requireClinic()) return;
+      const items = (await listR2Objects(`backups/${clinicId}/`, 500))
+        .filter(o => isSnapshotKey(o.key, clinicId))
+        .map(o => ({ key: o.key, kind: o.key.split('/')[2], size: o.size, created_at: o.lastModified }))
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      return res.status(200).json({ snapshots: items, encryption_ready: hasBackupKey(), retention_days: 35, immutable_days: 30 });
     }
 
-    // 3. Inventario
-    if (selectedModules.includes('inventory')) {
-      try {
-        const items = (await tableExists('inventory_items'))
-          ? await pool.query(...Object.values(withClinicFilter('inventory_items', 'SELECT * FROM inventory_items ORDER BY id LIMIT 5000')))
-          : { rows: [] };
-        const batches = (await tableExists('inventory_batches'))
-          ? await pool.query(...Object.values(withClinicFilter('inventory_batches', 'SELECT * FROM inventory_batches ORDER BY id LIMIT 5000')))
-          : { rows: [] };
-        const groups = (await tableExists('inventory_groups'))
-          ? await pool.query(...Object.values(withClinicFilter('inventory_groups', 'SELECT * FROM inventory_groups ORDER BY id LIMIT 5000')))
-          : { rows: [] };
-        backupData.modules.inventory = {
-          items: { count: items.rows.length, data: items.rows },
-          groups: { count: groups.rows.length, data: groups.rows },
-          batches: { count: batches.rows.length, data: batches.rows },
-        };
-        // Incluir movimientos si existen
-        if (await tableExists('inventory_movements')) {
-          const batchIds = batches.rows.map(b => b.id);
-          if (batchIds.length > 0) {
-            const movementQuery = withClinicFilter('inventory_movements',
-              'SELECT * FROM inventory_movements WHERE batch_id = ANY($1::int[]) ORDER BY id LIMIT 20000', [batchIds]);
-            const movements = await pool.query(movementQuery.query, movementQuery.params);
-            backupData.modules.inventory.movements = { count: movements.rows.length, data: movements.rows };
-          }
-        }
-      } catch (e) {
-        console.error('[backup] Inventory export failed:', e?.code || e?.name || 'UnknownError');
-        throw new Error('No se pudo completar la exportación de inventario.');
+    if (!isPost) return res.status(405).json({ error: 'Método no permitido' });
+    if (!requireClinic()) return;
+    const body = await parseJsonBody(req);
+
+    if (action === 'export') {
+      if (body.snapshotKey != null) {
+        if (!isSnapshotKey(body.snapshotKey, clinicId)) return res.status(400).json({ error: 'Respaldo no válido para esta clínica' });
+        const doc = decodeBackupBuffer(await getR2ObjectBuffer(body.snapshotKey, MAX_UPLOAD_BYTES * 2));
+        inspectBackupDocument(doc, clinicId);
+        return res.status(200).json(await publishTemporaryDownload(clinicId, doc, 'bioskintech-respaldo-nube'));
       }
+      const selected = Array.isArray(body.modules) ? body.modules.filter(m => BACKUP_MODULES.includes(m)) : [];
+      if (!selected.length) return res.status(400).json({ error: 'Selecciona al menos un módulo' });
+      const modules = await collectClinicData(pool, clinicId, selected);
+      const doc = buildBackupDocument({ clinicId, clinicName: await clinicName(pool, clinicId), generatedBy: auth.username, kind: 'download', modules });
+      console.info('[backup] export', { clinicId, user: auth.id, modules: selected });
+      return res.status(200).json({ ...(await publishTemporaryDownload(clinicId, doc, 'bioskintech-respaldo')), counts: doc.metadata.counts, signed: !!doc.signature });
     }
 
-    const safeClinicId = clinicId ? String(clinicId).replace(/[^a-zA-Z0-9]/g, '') : 'master';
-    const filename = `bioskin-backup-clinica${safeClinicId}-${new Date().toISOString().split('T')[0]}.json`;
-    res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    return res.status(200).json(backupData);
+    if (action === 'uploadUrl') {
+      const size = Number(body.size);
+      if (!Number.isInteger(size) || size < 2 || size > MAX_UPLOAD_BYTES)
+        return res.status(413).json({ error: `El archivo debe pesar menos de ${MAX_UPLOAD_BYTES / 1048576} MB` });
+      const key = `backup-tmp/${clinicId}/uploads/${crypto.randomUUID()}`;
+      const url = await generateUploadUrl(key, 'application/octet-stream', size, 300, MAX_UPLOAD_BYTES);
+      return res.status(200).json({ key, url });
+    }
 
+    if (action === 'snapshot') {
+      if (!hasBackupKey()) return res.status(503).json({ error: 'El cifrado de respaldos no está configurado. Contacta a soporte.' });
+      const recent = (await listR2Objects(`backups/${clinicId}/manual/`, 500))
+        .some(o => Date.now() - new Date(o.lastModified).getTime() < 10 * 60 * 1000);
+      if (recent) return res.status(429).json({ error: 'Ya se creó un respaldo manual hace menos de 10 minutos' });
+      const snap = await createSnapshot(pool, clinicId, 'manual', auth.username);
+      console.info('[backup] manual snapshot', { clinicId, user: auth.id });
+      return res.status(201).json(snap);
+    }
 
+    if (action === 'restore') {
+      const source = body.source === 'snapshot' ? 'snapshot' : 'upload';
+      const validKey = source === 'snapshot' ? isSnapshotKey(body.key, clinicId) : isUploadKey(body.key, clinicId);
+      if (!validKey) return res.status(400).json({ error: 'Archivo de respaldo no válido para esta clínica' });
+      const doc = decodeBackupBuffer(await getR2ObjectBuffer(body.key, MAX_UPLOAD_BYTES * 2));
+      const info = inspectBackupDocument(doc, clinicId);
+      const dryRun = body.dryRun !== false;
+      const confirmations = [];
+      if (info.signature !== 'valid') confirmations.push('unsigned');
+      if (!info.sameClinic) confirmations.push('foreignClinic');
+      if (!dryRun) {
+        if (confirmations.includes('unsigned') && body.acceptUnsigned !== true)
+          return res.status(409).json({ error: 'El archivo no tiene una firma válida de este sistema; confirma explícitamente para continuar', info });
+        if (confirmations.includes('foreignClinic') && body.confirmForeignClinic !== true)
+          return res.status(409).json({ error: 'El respaldo pertenece a otra clínica; confirma explícitamente para continuar', info });
+        if (!hasBackupKey()) return res.status(503).json({ error: 'No se puede restaurar sin generar antes un respaldo de seguridad (cifrado no configurado)' });
+      }
+      const preRestore = dryRun ? null : await createSnapshot(pool, clinicId, 'pre-restore', auth.username);
+      const report = await restoreBackupDocument(pool, doc, clinicId, { dryRun, allowPartial: body.allowPartial === true });
+      console.info('[backup] restore', { clinicId, user: auth.id, dryRun, committed: report.committed, errors: report.errorCount });
+      return res.status(200).json({ info, confirmations, report, preRestoreSnapshot: preRestore?.key || null });
+    }
+
+    if (action === 'importPatients') {
+      const report = await importPatients(pool, body.rows, clinicId, auth, body.dryRun !== false);
+      if (report.committed) console.info('[backup] patient import', { clinicId, user: auth.id, created: report.created });
+      return res.status(200).json(report);
+    }
+
+    return res.status(400).json({ error: 'Acción no válida' });
   } catch (error) {
-    console.error('[backup] Error:', error?.code || error?.name || 'UnknownError');
-    return res.status(500).json({ error: 'No se pudo procesar el respaldo.' });
+    if (error?.name === 'NoSuchKey') return res.status(404).json({ error: 'El archivo ya no está disponible; vuelve a subirlo' });
+    // Solo los Error propios (sin código de pg ni metadatos de AWS) llevan mensajes seguros para el usuario.
+    const known = error instanceof Error && error.name === 'Error' && !error.code && !error.$metadata;
+    console.error('[backup] error', action, error?.code || error?.name || 'Error');
+    return res.status(known ? 400 : 500).json({ error: known ? error.message : 'No se pudo procesar el respaldo.' });
   }
 }

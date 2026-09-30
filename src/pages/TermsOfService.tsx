@@ -1,308 +1,193 @@
-import { ArrowLeft, FileText, Users, Shield, AlertCircle, Clock, Ban, RefreshCw, Scale, Settings, HelpCircle } from 'lucide-react';
-import BrandLogo from '../components/ui/BrandLogo';
+import { FileText, Users, Shield, AlertCircle, Clock, Ban, RefreshCw, Scale, Settings, HelpCircle, PenLine, Brain, Database, Plug, Handshake, CloudLightning, Stethoscope, Mail as MailIcon } from 'lucide-react';
+import { LegalShell, LegalSection as Section, Note, Mail } from '../components/legal/LegalLayout';
 
-const CONTACT_EMAIL = 'soporte-tecnico@bioskintechapp.com';
-const LAST_UPDATED = '07 de agosto de 2026';
-const PLAN_PRICE = '$245 USD / año';
-
-interface SectionProps {
-  number: number;
-  title: string;
-  icon: React.ReactNode;
-  children: React.ReactNode;
-}
-
-function Section({ number, title, icon, children }: SectionProps) {
-  return (
-    <div className="bg-white rounded-2xl shadow-sm border border-[#deb887]/15 overflow-hidden">
-      <div className="flex items-center gap-3 px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-[#fdf8f0] to-white">
-        <div className="w-8 h-8 bg-[#deb887] rounded-lg flex items-center justify-center flex-shrink-0 text-white">
-          {icon}
-        </div>
-        <div className="flex items-baseline gap-2">
-          <span className="text-xs font-bold text-[#deb887] uppercase tracking-wider">Art. {number}</span>
-          <h2 className="font-semibold text-gray-800 text-sm sm:text-base">{title}</h2>
-        </div>
-      </div>
-      <div className="px-6 py-5 text-sm text-gray-700 leading-relaxed space-y-3">
-        {children}
-      </div>
-    </div>
-  );
-}
+const ul = 'list-disc list-inside space-y-1.5 pl-1';
 
 export default function TermsOfService() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#fdf8f0] via-white to-[#faf4ea]">
-      {/* Blobs decorativos */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none" aria-hidden>
-        <div className="absolute -top-40 -right-40 w-96 h-96 bg-[#deb887]/8 rounded-full blur-3xl" />
-        <div className="absolute -bottom-20 -left-20 w-72 h-72 bg-[#deb887]/6 rounded-full blur-3xl" />
-      </div>
+    <LegalShell
+      title="Condiciones de Servicio"
+      icon={<FileText className="w-7 h-7" />}
+      intro={<>
+        <p>
+          Estas Condiciones regulan el acceso y uso de la plataforma web <strong className="text-gray-800">BIOSKINTECH</strong> (la "Plataforma"), accesible en
+          bioskintechapp.com, por parte de clínicas, centros estéticos, spas y profesionales de la salud (el "Cliente") y de las personas que el Cliente autoriza (los "Usuarios").
+        </p>
+        <p>
+          Al registrarse, aceptar una invitación, pagar o usar la Plataforma, el Cliente celebra un contrato electrónico válido conforme a la
+          <strong> Ley de Comercio Electrónico, Firmas Electrónicas y Mensajes de Datos</strong> del Ecuador y acepta íntegramente estas Condiciones y la
+          <a href="/politica-de-privacidad" className="text-gold-dark font-semibold hover:underline"> Política de Privacidad</a>, que forma parte de ellas.
+          Si no está de acuerdo, no debe usar la Plataforma.
+        </p>
+      </>}
+      footer={<p>Al usar la Plataforma aceptas estas Condiciones y la <a href="/politica-de-privacidad" className="text-gold hover:underline">Política de Privacidad</a>.</p>}
+    >
+      <Section number={1} title="Objeto del servicio" icon={<FileText className="w-4 h-4" />}>
+        <p>BIOSKINTECH es un software de gestión bajo modelo SaaS (Software como Servicio) que, según el plan y los módulos habilitados, permite:</p>
+        <ul className={ul}>
+          <li>Fichas clínicas digitales, expedientes, fotografías y marcaciones 2D/3D.</li>
+          <li>Agenda integrada con Google Calendar, reservas en línea y recordatorios por correo o WhatsApp.</li>
+          <li>Consentimientos informados digitales con firma presencial o remota.</li>
+          <li>Inventario, finanzas, respaldos y, de forma opcional, herramientas de inteligencia artificial.</li>
+        </ul>
+        <p>BIOSKINTECH <strong>no presta servicios médicos, sanitarios, legales ni contables</strong>. Cualquier otro servicio de BIOSKINTECH (por ejemplo, servicio técnico de equipos) se rige por acuerdos separados.</p>
+      </Section>
 
-      {/* Header pegajoso */}
-      <header className="sticky top-0 bg-white/90 backdrop-blur border-b border-[#deb887]/20 z-10 shadow-sm">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-4">
-          <button
-            onClick={() => window.history.back()}
-            className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-[#deb887] transition-colors font-medium"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            <span className="hidden sm:inline">Volver</span>
-          </button>
-          <div className="flex items-center gap-3 flex-1">
-            <BrandLogo className="h-10 w-auto object-contain" compact />
-          </div>
-          <span className="text-xs text-gray-400 hidden sm:block">Actualizado: {LAST_UPDATED}</span>
+      <Section number={2} title="Definiciones" icon={<HelpCircle className="w-4 h-4" />}>
+        <div className="space-y-2">
+          <p><strong>Cliente:</strong> persona natural o jurídica que contrata la Plataforma para uso profesional.</p>
+          <p><strong>Usuarios:</strong> administradores y colaboradores a quienes el Cliente da acceso.</p>
+          <p><strong>Paciente / Titular:</strong> persona cuyos datos registra el Cliente.</p>
+          <p><strong>Contenido del Cliente:</strong> toda información, archivo o dato cargado en la Plataforma por el Cliente, sus Usuarios o sus pacientes.</p>
+          <p><strong>Responsable / Encargado del Tratamiento:</strong> según la LOPDP, el Cliente es Responsable de los datos de sus pacientes y BIOSKINTECH es Encargado.</p>
         </div>
-      </header>
+      </Section>
 
-      {/* Contenido */}
-      <main className="relative max-w-4xl mx-auto px-4 sm:px-6 py-8 space-y-5 pb-16">
+      <Section number={3} title="Capacidad, registro y cuentas" icon={<Users className="w-4 h-4" />}>
+        <ul className={ul}>
+          <li>El servicio es exclusivamente para <strong>uso profesional o empresarial</strong>. Quien acepta declara ser mayor de edad y tener facultades para obligar al Cliente.</li>
+          <li>La información de registro debe ser veraz y actualizada. Datos falsos permiten la suspensión inmediata.</li>
+          <li>Las credenciales son personales e intransferibles. El Cliente responde por toda actividad realizada con las cuentas de sus Usuarios y debe revocar de inmediato el acceso de quienes dejen de colaborar con él.</li>
+          <li>El Cliente debe notificar sin demora cualquier acceso no autorizado a <Mail />.</li>
+        </ul>
+      </Section>
 
-        {/* Hero */}
-        <div className="bg-white rounded-2xl shadow-sm border border-[#deb887]/20 p-6 sm:p-8">
-          <div className="flex items-start gap-4 mb-5">
-            <div className="w-14 h-14 bg-[#deb887] rounded-2xl flex items-center justify-center flex-shrink-0 shadow-md">
-              <FileText className="w-7 h-7 text-white" />
-            </div>
-            <div>
-              <h1 className="text-xl sm:text-2xl font-bold text-gray-900" style={{ fontFamily: 'Playfair Display, serif' }}>
-                Condiciones de Servicio
-              </h1>
-              <p className="text-gray-400 text-xs sm:text-sm mt-1.5">
-                Plataforma BIOSKINTECH · Última actualización: {LAST_UPDATED}
-              </p>
-            </div>
-          </div>
-          <p className="text-gray-600 leading-relaxed text-sm sm:text-base">
-            Las presentes Condiciones de Servicio regulan el acceso y uso de la plataforma web{' '}
-            <strong className="text-gray-800">BIOSKINTECH</strong> (en adelante, la "Plataforma") por parte de clínicas,
-            centros estéticos, spas y profesionales de la salud (en adelante, el "Cliente"). Al registrarse o utilizar
-            la Plataforma, el Cliente declara haber leído, comprendido y aceptado íntegramente estas condiciones.
-          </p>
-        </div>
+      <Section number={4} title="Precio, pago y renovación" icon={<Settings className="w-4 h-4" />}>
+        <ul className={ul}>
+          <li>El precio aplicable es el que se muestra al Cliente en el proceso de pago o en el código de registro entregado, con impuestos indicados. El pago es anual y anticipado, salvo acuerdo escrito distinto.</li>
+          <li>Los pagos se procesan a través de PayPhone; BIOSKINTECH no almacena datos de tarjetas.</li>
+          <li>No hay reembolsos totales ni proporcionales, salvo falla técnica grave imputable exclusivamente a BIOSKINTECH que impida el uso del servicio durante más de 15 días consecutivos.</li>
+          <li>BIOSKINTECH puede modificar precios para renovaciones futuras con al menos <strong>30 días de aviso</strong>.</li>
+        </ul>
+      </Section>
 
-        {/* 1. Objeto del Contrato */}
-        <Section number={1} title="Objeto del Contrato" icon={<FileText className="w-4 h-4" />}>
-          <p>
-            BIOSKINTECH es una plataforma de gestión clínica bajo el modelo Software como Servicio (SaaS), diseñada para profesionales de la estética médica, cosmiátricas, médicos y operadores de centros de bienestar. La Plataforma provee, entre otros:
-          </p>
-          <ul className="list-disc list-inside space-y-1 pl-1">
-            <li>Fichas clínicas digitales y expedientes de pacientes</li>
-            <li>Gestión de agenda y citas con integración Google Calendar</li>
-            <li>Consentimientos informados digitales con firma electrónica</li>
-            <li>Módulos de inventario, finanzas y reportes administrativos</li>
-            <li>Servicio técnico para equipos estéticos</li>
-          </ul>
-          <p>El acceso a estos módulos depende del plan contratado y de las funcionalidades habilitadas por el administrador de la Plataforma.</p>
-        </Section>
+      <Section number={5} title="Vencimiento, suspensión y cuentas demo" icon={<Clock className="w-4 h-4" />}>
+        <ul className={ul}>
+          <li>La Plataforma avisa desde <strong>21 días antes</strong> del vencimiento. Al vencer la suscripción, <strong>el acceso se suspende automáticamente</strong> hasta su renovación.</li>
+          <li>Los datos se conservan <strong>30 días</strong> después del vencimiento; luego pueden eliminarse según la Política de Privacidad.</li>
+          <li>Las cuentas demo son de prueba: no deben contener datos reales de pacientes y se eliminan automáticamente al vencer.</li>
+        </ul>
+      </Section>
 
-        {/* 2. Definiciones */}
-        <Section number={2} title="Definiciones" icon={<HelpCircle className="w-4 h-4" />}>
-          <div className="space-y-2">
-            <p><strong>Plataforma:</strong> La aplicación web BIOSKINTECH accesible en bioskintechapp.com.</p>
-            <p><strong>Cliente / Clínica:</strong> La persona natural o jurídica que contrata el servicio para uso profesional.</p>
-            <p><strong>Usuarios:</strong> Las personas autorizadas por el Cliente para acceder a la Plataforma (admin, colaboradores).</p>
-            <p><strong>Paciente / Titular:</strong> La persona cuya información es registrada y gestionada por el Cliente a través del sistema.</p>
-            <p><strong>Suscripción:</strong> El período de acceso activo al servicio, renovable anualmente.</p>
-          </div>
-        </Section>
+      <Section number={6} title="Uso aceptable" icon={<Shield className="w-4 h-4" />}>
+        <p className="font-semibold text-gray-800">Queda prohibido:</p>
+        <ul className={ul}>
+          <li>Acceder o intentar acceder a datos de otras clínicas, eludir controles de seguridad o realizar pruebas de intrusión o de carga sin autorización escrita.</li>
+          <li>Cargar malware, archivos manipulados o contenido ilícito, o usar la Plataforma para fines fraudulentos o contrarios a la normativa sanitaria.</li>
+          <li>Realizar ingeniería inversa, copiar, revender o sublicenciar la Plataforma, o usar scrapers/bots no autorizados.</li>
+          <li>Registrar datos de personas sin base legal o para fines distintos de la atención y gestión de la clínica.</li>
+        </ul>
+      </Section>
 
-        {/* 3. Acceso y Registro */}
-        <Section number={3} title="Acceso y Registro" icon={<Users className="w-4 h-4" />}>
-          <ul className="list-disc list-inside space-y-1.5 pl-1">
-            <li>El Cliente debe registrarse con información veraz, completa y actualizada. Datos falsos pueden resultar en la cancelación inmediata de la cuenta.</li>
-            <li>Las credenciales de acceso (usuario y contraseña) son personales e intransferibles. El Cliente es responsable de mantenerlas en confidencialidad.</li>
-            <li>El administrador del Cliente puede crear cuentas adicionales de usuario para su equipo dentro de la Plataforma.</li>
-            <li>El Cliente notificará de inmediato a BIOSKINTECH si detecta acceso no autorizado a su cuenta.</li>
-          </ul>
-        </Section>
+      <Section number={7} title="Obligaciones del Cliente como Responsable del Tratamiento" icon={<Stethoscope className="w-4 h-4" />}>
+        <ul className={ul}>
+          <li>Informar a sus pacientes y obtener los consentimientos que exija la ley, incluidos los de menores de edad a través de sus representantes.</li>
+          <li>Cumplir la normativa sanitaria, de historia clínica y de protección de datos, incluidos los plazos de conservación.</li>
+          <li>Verificar la exactitud del Contenido del Cliente y la idoneidad y habilitación de sus profesionales.</li>
+          <li>Contar con autorización de los pacientes para recibir recordatorios por WhatsApp o correo, y cumplir las políticas de Meta y Google.</li>
+          <li>Atender los derechos de sus pacientes, con la asistencia técnica razonable de BIOSKINTECH.</li>
+          <li>Descargar periódicamente respaldos de su información (ver Art. 11).</li>
+        </ul>
+      </Section>
 
-        {/* 4. Plan, Precio y Pagos */}
-        <Section number={4} title="Plan de Suscripción y Pagos" icon={<Settings className="w-4 h-4" />}>
-          <div className="bg-[#fdf8f0] border border-[#deb887]/30 rounded-xl p-4 space-y-1.5">
-            <p className="font-semibold text-gray-800">Plan Lanzamiento BioSkinTech</p>
-            <p className="text-2xl font-bold text-[#deb887]">{PLAN_PRICE}</p>
-            <p className="text-xs text-gray-500">Incluye acceso completo a todos los módulos activos durante el período de suscripción.</p>
-          </div>
-          <ul className="list-disc list-inside space-y-1.5 pl-1 mt-2">
-            <li>El pago es anual y se realiza por adelantado.</li>
-            <li>No se realizan reembolsos proporcionales salvo fallo técnico grave imputable exclusivamente a BIOSKINTECH.</li>
-            <li>Al vencer la suscripción, el acceso al sistema quedará suspendido hasta su renovación. Los datos se conservan por 30 días adicionales.</li>
-            <li>BIOSKINTECH se reserva el derecho de ajustar los precios con un mínimo de <strong>30 días de aviso previo</strong> mediante notificación en el panel de control.</li>
-          </ul>
-        </Section>
+      <Section number={8} title="Consentimientos, plantillas y firma" icon={<PenLine className="w-4 h-4" />}>
+        <ul className={ul}>
+          <li>Las plantillas de consentimientos, recetas y protocolos son <strong>modelos referenciales</strong>. No constituyen asesoría legal ni médica; el Cliente debe revisarlas y adaptarlas a cada procedimiento y paciente.</li>
+          <li>La firma de consentimientos se captura como firma manuscrita digitalizada en pantalla, con fecha y hora y, en la modalidad remota, verificación por código enviado al correo del paciente y huella de integridad SHA-256. Constituye una <strong>firma electrónica simple</strong> y evidencia digital; <strong>no es una firma electrónica certificada</strong> emitida por una entidad de certificación acreditada.</li>
+          <li>Corresponde al Cliente evaluar si ese mecanismo es suficiente para cada caso o si requiere firma certificada o documento físico adicional.</li>
+        </ul>
+      </Section>
 
-        {/* 5. Uso Aceptable */}
-        <Section number={5} title="Uso Aceptable" icon={<Shield className="w-4 h-4" />}>
-          <p className="font-semibold text-gray-800">El Cliente se compromete a:</p>
-          <ul className="list-disc list-inside space-y-1 pl-1">
-            <li>Utilizar la Plataforma exclusivamente para la gestión clínica o estética legítima de su práctica profesional.</li>
-            <li>Tratar los datos de los pacientes conforme a la <strong>Ley Orgánica de Protección de Datos Personales (LOPDP)</strong> del Ecuador, en su calidad de Responsable del Tratamiento.</li>
-            <li>No intentar acceder a datos de otras clínicas o usuarios no autorizados.</li>
-            <li>No compartir credenciales fuera de su equipo de trabajo autorizado.</li>
-          </ul>
-          <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-800 mt-2">
-            <p className="font-semibold mb-1">Queda expresamente prohibido:</p>
-            <ul className="list-disc list-inside space-y-1 pl-1">
-              <li>Realizar ingeniería inversa, descompilar o copiar el software.</li>
-              <li>Usar herramientas de automatización no autorizadas (scrapers, bots).</li>
-              <li>Transferir o revender el acceso a terceros sin autorización expresa de BIOSKINTECH.</li>
-              <li>Usar la Plataforma para actividades ilícitas, fraudulentas o que perjudiquen a terceros.</li>
-            </ul>
-          </div>
-        </Section>
+      <Section number={9} title="Inteligencia artificial" icon={<Brain className="w-4 h-4" />}>
+        <ul className={ul}>
+          <li>Las funciones de IA son opcionales y de apoyo. Sus resultados pueden ser incompletos o incorrectos y <strong>no sustituyen el juicio clínico</strong>.</li>
+          <li>La Plataforma no es un dispositivo médico ni emite diagnósticos. Toda decisión clínica es responsabilidad exclusiva del profesional.</li>
+          <li>Al activarlas, el Cliente autoriza el envío del contenido seleccionado al proveedor de IA indicado en la Política de Privacidad.</li>
+        </ul>
+      </Section>
 
-        {/* 6. Propiedad Intelectual */}
-        <Section number={6} title="Propiedad Intelectual" icon={<Shield className="w-4 h-4" />}>
-          <p>
-            El software, diseño, marca, logotipos y demás elementos de la Plataforma son propiedad exclusiva de{' '}
-            <strong>BIOSKINTECH</strong>. Todos los derechos reservados.
-          </p>
-          <p>
-            El Cliente recibe una <strong>licencia de uso limitada, no exclusiva y no transferible</strong> para acceder a la Plataforma durante el período de suscripción activa. Esta licencia no implica cesión de ningún derecho de propiedad intelectual.
-          </p>
-          <p>
-            Los datos generados por el Cliente y sus pacientes dentro del sistema son de su exclusiva propiedad. BIOSKINTECH no adquiere ningún derecho sobre dicha información.
-          </p>
-        </Section>
+      <Section number={10} title="Propiedad intelectual y titularidad de los datos" icon={<Shield className="w-4 h-4" />}>
+        <ul className={ul}>
+          <li>El software, diseño, marcas, modelos 3D, plantillas y demás elementos de la Plataforma pertenecen a BIOSKINTECH o a sus licenciantes. El Cliente recibe una licencia de uso limitada, no exclusiva, no transferible y revocable durante la suscripción.</li>
+          <li>El Contenido del Cliente es del Cliente. Este otorga a BIOSKINTECH una licencia limitada para almacenarlo y procesarlo solo con el fin de prestar, asegurar y respaldar el servicio.</li>
+          <li>BIOSKINTECH puede usar métricas técnicas agregadas y anónimas, que no identifican a personas ni clínicas, para mejorar el servicio.</li>
+          <li>Las sugerencias que el Cliente envíe pueden ser utilizadas libremente por BIOSKINTECH sin compensación.</li>
+        </ul>
+      </Section>
 
-        {/* 7. Titularidad y Portabilidad de Datos */}
-        <Section number={7} title="Titularidad y Portabilidad de los Datos" icon={<FileText className="w-4 h-4" />}>
-          <ul className="list-disc list-inside space-y-1.5 pl-1">
-            <li>Los datos de los pacientes son propiedad del Cliente, quien actúa como <strong>Responsable del Tratamiento</strong>. BIOSKINTECH actúa como <strong>Encargado del Tratamiento</strong> según la LOPDP.</li>
-            <li>Al cancelar la suscripción, el Cliente puede solicitar la exportación de todos sus datos dentro de los <strong>30 días posteriores</strong> a la fecha de cancelación.</li>
-            <li>Vencido ese plazo, BIOSKINTECH podrá eliminar los datos de manera permanente e irreversible, sin obligación de conservarlos.</li>
-            <li>La solicitud de exportación debe realizarse al correo:{' '}
-              <a href={`mailto:${CONTACT_EMAIL}`} className="text-[#deb887] hover:underline font-medium">{CONTACT_EMAIL}</a>
-            </li>
-          </ul>
-        </Section>
+      <Section number={11} title="Respaldos, exportación y continuidad" icon={<Database className="w-4 h-4" />}>
+        <ul className={ul}>
+          <li>BIOSKINTECH genera una copia de seguridad diaria cifrada de los datos de cada clínica, inmutable durante 30 días y eliminada automáticamente a los 35 días. La base de datos permite además recuperación a un punto en el tiempo dentro de las últimas 6 horas.</li>
+          <li>El administrador de la clínica puede exportar sus datos (JSON completo restaurable y CSV) e importar respaldos o pacientes desde el módulo Base de Datos.</li>
+          <li><strong>Las fotografías y archivos no se incluyen en las exportaciones descargables</strong> por su tamaño; permanecen en almacenamiento privado y solo se exportan sus referencias.</li>
+          <li>Los respaldos no garantizan recuperar información creada o modificada después de la última copia disponible (pérdida potencial de hasta 24 horas).</li>
+          <li>La restauración agrega registros faltantes y no sobrescribe los existentes. El Cliente es responsable de los archivos que importa y de validar el resultado; BIOSKINTECH puede apoyar en su recuperación sin garantía de resultado.</li>
+        </ul>
+        <Note tone="amber">Se recomienda que el Cliente descargue y guarde en lugar seguro una exportación al menos semanal. Las exportaciones contienen datos sensibles: su custodia es responsabilidad del Cliente.</Note>
+      </Section>
 
-        {/* 8. Disponibilidad */}
-        <Section number={8} title="Disponibilidad del Servicio" icon={<RefreshCw className="w-4 h-4" />}>
-          <p>
-            BIOSKINTECH procura mantener la Plataforma disponible de manera continua. Sin embargo, <strong>no se garantiza un nivel de disponibilidad (uptime) específico</strong>, dado que el servicio depende de infraestructura de terceros (Neon Postgres, Cloudflare, Vercel).
-          </p>
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-800">
-            <ul className="list-disc list-inside space-y-1 pl-1">
-              <li>Los mantenimientos planificados se comunicarán con anticipación a través del panel de control.</li>
-              <li>Las interrupciones por causas de fuerza mayor, desastres naturales o fallos de proveedores externos no son imputables a BIOSKINTECH.</li>
-            </ul>
-          </div>
-        </Section>
+      <Section number={12} title="Servicios de terceros" icon={<Plug className="w-4 h-4" />}>
+        <p>Las integraciones con Google (Calendar, Gmail, Gemini), Meta (WhatsApp), PayPhone y Cloudflare dependen de esos proveedores y de sus condiciones. BIOSKINTECH no responde por su disponibilidad, cambios, costos, bloqueos de cuentas ni por el tratamiento que realicen conforme a sus propias políticas.</p>
+      </Section>
 
-        {/* 9. Limitación de Responsabilidad */}
-        <Section number={9} title="Limitación de Responsabilidad" icon={<AlertCircle className="w-4 h-4" />}>
-          <p>BIOSKINTECH no será responsable por daños o perjuicios derivados de:</p>
-          <ul className="list-disc list-inside space-y-1 pl-1">
-            <li>Uso incorrecto o negligente de la Plataforma por parte del Cliente o sus usuarios.</li>
-            <li><strong>Procedimientos médicos, diagnósticos, tratamientos estéticos o recetas</strong> emitidos por los profesionales que utilizan la Plataforma. BIOSKINTECH provee herramientas de gestión, no servicios médicos directos.</li>
-            <li>Conducta inapropiada, negligencia o mala praxis del profesional de la salud. Ante una denuncia debidamente comprobada, BIOSKINTECH se reserva el derecho de suspender o no renovar la suscripción del profesional.</li>
-            <li>Información cargada en el sistema por el Cliente, su equipo médico, asistentes o secretarias.</li>
-            <li>Pérdida de datos atribuible a acciones u omisiones del propio Cliente.</li>
-            <li>Interrupciones del servicio por causas ajenas a BIOSKINTECH (proveedores de infraestructura, problemas de conectividad, fuerza mayor).</li>
-          </ul>
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 mt-1">
-            En ningún caso la responsabilidad total de BIOSKINTECH ante el Cliente excederá el valor de la suscripción anual efectivamente pagada por el período en disputa.
-          </div>
-        </Section>
+      <Section number={13} title="Disponibilidad y mantenimiento" icon={<RefreshCw className="w-4 h-4" />}>
+        <p>BIOSKINTECH procura mantener la Plataforma disponible, pero <strong>no garantiza un nivel de disponibilidad específico</strong> ni la ausencia de errores. Podrá realizar mantenimientos y actualizaciones, informando con anticipación los planificados cuando sea razonablemente posible, y aplicar cambios urgentes por seguridad sin aviso previo.</p>
+      </Section>
 
-        {/* 9b. Recomendación para Pacientes */}
-        <Section number={9} title="Recomendación a los Pacientes — Verificación Profesional" icon={<Users className="w-4 h-4" />}>
-          <p>
-            BIOSKINTECH insta a los pacientes a investigar y validar cuidadosamente la información del profesional o centro estético antes de someterse a cualquier procedimiento.
-          </p>
-          <div className="bg-[#fdf8f0] border border-[#deb887]/20 rounded-xl p-4 space-y-2 text-xs">
-            <p className="font-semibold text-gray-800">En Ecuador, puedes verificar:</p>
-            <ul className="list-disc list-inside space-y-1 pl-1 text-gray-700">
-              <li>Títulos profesionales registrados en la <strong>SENESCYT</strong> (senescyt.gob.ec)</li>
-              <li>Registros de profesionales de salud en el <strong>Ministerio de Salud Pública (MSP)</strong></li>
-              <li>Habilitación de establecimientos de salud en la plataforma del MSP</li>
-            </ul>
-          </div>
-          <p className="text-xs text-gray-500">
-            BIOSKINTECH no verifica ni certifica las credenciales de los profesionales registrados. La responsabilidad de la idoneidad profesional recae exclusivamente en el propio profesional o clínica contratante.
-          </p>
-        </Section>
+      <Section number={14} title="Limitación de responsabilidad" icon={<AlertCircle className="w-4 h-4" />}>
+        <p>En la máxima medida permitida por la ley, BIOSKINTECH no responde por:</p>
+        <ul className={ul}>
+          <li>Actos médicos, diagnósticos, tratamientos, recetas, resultados estéticos o mala praxis de los profesionales que usan la Plataforma.</li>
+          <li>Contenido del Cliente, su exactitud o su base legal, ni por resultados sugeridos por la IA.</li>
+          <li>Pérdidas causadas por acciones u omisiones del Cliente o sus Usuarios (eliminaciones, importaciones, credenciales comprometidas, dispositivos inseguros).</li>
+          <li>Fallas de proveedores externos, conectividad, fuerza mayor o ataques que superen medidas de seguridad razonables.</li>
+          <li>Daños indirectos, lucro cesante, pérdida de oportunidades, reputación o clientela.</li>
+        </ul>
+        <Note tone="amber">La responsabilidad total de BIOSKINTECH frente al Cliente, por cualquier causa, no excederá el valor efectivamente pagado por el Cliente en los 12 meses anteriores al hecho que la origine. Esta limitación no aplica en caso de dolo.</Note>
+      </Section>
 
-        {/* 10. Suspensión y Cancelación */}
-        <Section number={10} title="Suspensión y Cancelación" icon={<Ban className="w-4 h-4" />}>
-          <p className="font-semibold text-gray-800">BIOSKINTECH podrá suspender o cancelar el servicio en los siguientes casos:</p>
-          <ul className="list-disc list-inside space-y-1.5 pl-1">
-            <li><strong>Falta de pago:</strong> El acceso se suspende automáticamente 7 días después del vencimiento de la suscripción.</li>
-            <li><strong>Incumplimiento grave:</strong> Violación a las cláusulas de Uso Aceptable o a las presentes condiciones.</li>
-            <li><strong>Actividades ilícitas:</strong> Si se detecta uso fraudulento, el servicio puede cancelarse de forma inmediata y sin reembolso.</li>
-          </ul>
-          <p>El Cliente puede cancelar la suscripción en cualquier momento enviando una solicitud al correo{' '}
-            <a href={`mailto:${CONTACT_EMAIL}`} className="text-[#deb887] hover:underline font-medium">{CONTACT_EMAIL}</a>.
-            La cancelación voluntaria no genera reembolso proporcional.
-          </p>
-          <p>BIOSKINTECH puede discontinuar el servicio por razones de negocio, con un mínimo de <strong>30 días de aviso previo</strong>.</p>
-        </Section>
+      <Section number={15} title="Indemnidad" icon={<Handshake className="w-4 h-4" />}>
+        <p>El Cliente mantendrá indemne a BIOSKINTECH, sus titulares y colaboradores frente a reclamos, sanciones, multas, costas y honorarios razonables derivados de: (a) la atención prestada a sus pacientes; (b) el tratamiento de datos sin base legal o en incumplimiento de la LOPDP por parte del Cliente; (c) el Contenido del Cliente; o (d) el incumplimiento de estas Condiciones por el Cliente o sus Usuarios.</p>
+      </Section>
 
-        {/* 11. Modificaciones */}
-        <Section number={11} title="Modificaciones de las Condiciones" icon={<Clock className="w-4 h-4" />}>
-          <p>
-            BIOSKINTECH se reserva el derecho de modificar estas Condiciones de Servicio en cualquier momento para adaptarlas a cambios legales, técnicos o de negocio.
-          </p>
-          <ul className="list-disc list-inside space-y-1 pl-1">
-            <li>Los cambios serán notificados a través del panel de control con <strong>al menos 15 días de anticipación</strong>.</li>
-            <li>El uso continuado de la Plataforma tras la fecha de vigencia de las nuevas condiciones implica su aceptación.</li>
-            <li>Si el Cliente no acepta los cambios, podrá cancelar su suscripción antes de la fecha de entrada en vigor.</li>
-          </ul>
-        </Section>
+      <Section number={16} title="Recomendación a los pacientes" icon={<Users className="w-4 h-4" />}>
+        <p>BIOSKINTECH no verifica ni certifica las credenciales de los profesionales registrados. Recomendamos a los pacientes validar al profesional o centro antes de cualquier procedimiento, por ejemplo en la <strong>SENESCYT</strong> y en los registros del <strong>Ministerio de Salud Pública</strong> y de la <strong>ACESS</strong>.</p>
+      </Section>
 
-        {/* 12. Ley Aplicable */}
-        <Section number={12} title="Ley Aplicable y Jurisdicción" icon={<Scale className="w-4 h-4" />}>
-          <p>
-            Las presentes Condiciones de Servicio se rigen e interpretan de conformidad con las leyes de la{' '}
-            <strong>República del Ecuador</strong>.
-          </p>
-          <p>
-            Cualquier controversia, disputa o reclamación derivada de o relacionada con estas condiciones se someterá a la jurisdicción y competencia de los{' '}
-            <strong>jueces y tribunales competentes de la ciudad de Cuenca, Ecuador</strong>, renunciando las partes a cualquier otro fuero que pudiera corresponderles.
-          </p>
-          <div className="bg-[#fdf8f0] border border-[#deb887]/20 rounded-xl p-3">
-            <p className="text-xs text-gray-600">
-              Para consultas, reclamaciones o solicitudes relacionadas con estas Condiciones de Servicio, contactar a:{' '}
-              <a href={`mailto:${CONTACT_EMAIL}`} className="text-[#deb887] hover:underline font-medium">{CONTACT_EMAIL}</a>
-            </p>
-          </div>
-        </Section>
+      <Section number={17} title="Suspensión y terminación" icon={<Ban className="w-4 h-4" />}>
+        <ul className={ul}>
+          <li>BIOSKINTECH podrá suspender o terminar el servicio por falta de pago, incumplimiento grave, uso ilícito, riesgo para la seguridad de la Plataforma o de otros clientes, u orden de autoridad competente. En casos de riesgo inminente la suspensión puede ser inmediata.</li>
+          <li>Ante denuncias fundadas de mala praxis o uso indebido de datos, BIOSKINTECH podrá suspender o no renovar la cuenta.</li>
+          <li>El Cliente puede cancelar en cualquier momento escribiendo a <Mail />; la cancelación no genera reembolso.</li>
+          <li>BIOSKINTECH puede discontinuar el servicio con al menos 30 días de aviso, habilitando la exportación de datos durante ese plazo.</li>
+        </ul>
+      </Section>
 
-        {/* 13. Respaldo de Datos y Continuidad */}
-        <Section number={13} title="Respaldo de Datos y Continuidad del Servicio" icon={<RefreshCw className="w-4 h-4" />}>
-          <p>
-            BIOSKINTECH implementa mecanismos de respaldo automático de la información clínica y administrativa almacenada en la Plataforma, con el objetivo de garantizar la integridad y recuperabilidad de los datos ante incidentes técnicos.
-          </p>
-          <ul className="list-disc list-inside space-y-1.5 pl-1">
-            <li>Los respaldos se realizan de forma periódica en la infraestructura de Neon Postgres con replicación geográfica.</li>
-            <li>Los mantenimientos planificados se notificarán con anticipación en el panel de control.</li>
-            <li>Las interrupciones por mantenimiento, actualizaciones o ciberataques serán comunicadas oportunamente.</li>
-          </ul>
-        </Section>
+      <Section number={18} title="Fuerza mayor" icon={<CloudLightning className="w-4 h-4" />}>
+        <p>Ninguna parte responde por incumplimientos causados por hechos fuera de su control razonable: desastres naturales, cortes de energía o telecomunicaciones, fallas o decisiones de proveedores de infraestructura, actos de autoridad, conflictos o ciberataques que superen medidas de seguridad razonables.</p>
+      </Section>
 
-        {/* 14. Enlace a Terceros */}
-        <Section number={14} title="Enlaces a Sitios de Terceros" icon={<Settings className="w-4 h-4" />}>
-          <p>
-            La Plataforma puede incluir integraciones o referencias a servicios de terceros (Google Calendar, PayPhone, WhatsApp Business API, entre otros). BIOSKINTECH no asume responsabilidad alguna sobre el contenido, políticas de privacidad ni términos de dichos servicios externos.
-          </p>
-          <p className="text-xs text-gray-500">
-            Se recomienda al Cliente revisar los términos y condiciones de cada servicio integrado de forma independiente.
-          </p>
-        </Section>
+      <Section number={19} title="Modificaciones y notificaciones" icon={<MailIcon className="w-4 h-4" />}>
+        <ul className={ul}>
+          <li>BIOSKINTECH puede modificar estas Condiciones. Los cambios se informan en el panel y deben aceptarse antes de continuar usándolo; la aceptación queda registrada con fecha, versión, IP y navegador.</li>
+          <li>Si el Cliente no acepta una nueva versión, puede cancelar su suscripción conforme al Art. 17.</li>
+          <li>Las notificaciones se realizarán al correo registrado por el Cliente o mediante el panel, y se consideran recibidas desde su envío.</li>
+        </ul>
+      </Section>
 
-        {/* Footer de la página */}
-        <div className="text-center text-xs text-gray-400 pt-4">
-          <p>BioSkinTech © {new Date().getFullYear()} · Ecuador</p>
-          <p className="mt-1">
-            Al registrarte o usar la Plataforma aceptas estas Condiciones de Servicio y nuestra{' '}
-            <a href="/politica-de-privacidad" className="text-[#deb887] hover:underline">Política de Privacidad</a>.
-          </p>
-        </div>
-      </main>
-    </div>
+      <Section number={20} title="Disposiciones generales" icon={<FileText className="w-4 h-4" />}>
+        <ul className={ul}>
+          <li>Estas Condiciones, la Política de Privacidad y las condiciones comerciales aceptadas al pagar constituyen el acuerdo íntegro entre las partes.</li>
+          <li>Si alguna cláusula fuera declarada inválida, las demás seguirán vigentes.</li>
+          <li>La falta de ejercicio de un derecho no implica renuncia a él.</li>
+          <li>El Cliente no puede ceder este contrato sin autorización escrita. BIOSKINTECH puede cederlo en caso de reorganización, fusión o venta del negocio, notificándolo al Cliente.</li>
+        </ul>
+      </Section>
+
+      <Section number={21} title="Ley aplicable y jurisdicción" icon={<Scale className="w-4 h-4" />}>
+        <p>Estas Condiciones se rigen por las leyes de la <strong>República del Ecuador</strong>. Las partes intentarán resolver cualquier controversia de forma directa durante 30 días desde su notificación escrita; de no lograrlo, se someten a los <strong>jueces competentes de la ciudad de Cuenca, Ecuador</strong>.</p>
+        <Note>Consultas y reclamos: <Mail /></Note>
+      </Section>
+    </LegalShell>
   );
 }

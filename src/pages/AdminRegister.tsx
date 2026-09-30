@@ -291,6 +291,7 @@ export default function AdminRegister() {
         matricula_senescyt: matriculaSenescyt || undefined,
         registro_acess: registroAcess || undefined,
         especialidad: especialidad || undefined,
+        accepted_terms: acceptedTerms,
       };
 
       // Fuente de autorización: código, pago o invite
@@ -827,7 +828,7 @@ export default function AdminRegister() {
                     <a href="/condiciones-de-servicio" target="_blank" rel="noopener noreferrer" className="text-[#deb887] font-semibold hover:underline">Condiciones de Servicio</a>
                     {' '}y la{' '}
                     <a href="/politica-de-privacidad" target="_blank" rel="noopener noreferrer" className="text-[#deb887] font-semibold hover:underline">Política de Privacidad</a>
-                    {' '}de BioSkinTech. <span className="text-red-500">(Obligatorio)</span>
+                    {' '}de BioSkinTech, y declaro que actúo como Responsable del Tratamiento de los datos de mis pacientes. <span className="text-red-500">(Obligatorio)</span>
                   </span>
                 </label>
 

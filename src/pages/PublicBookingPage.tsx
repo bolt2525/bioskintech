@@ -51,6 +51,7 @@ export default function PublicBookingPage() {
     resourceId: '',
     turnstileToken: '',
     website: '',
+    privacyAccepted: false,
   });
 
   const turnstileSiteKey = (import.meta.env.VITE_TURNSTILE_SITE_KEY || '').trim();
@@ -193,6 +194,10 @@ export default function PublicBookingPage() {
       setError('Solicitud rechazada.');
       return;
     }
+    if (!form.privacyAccepted) {
+      setError('Debes autorizar el tratamiento de tus datos para agendar la cita.');
+      return;
+    }
 
     setSubmitting(true);
     setError('');
@@ -212,6 +217,7 @@ export default function PublicBookingPage() {
           resource_id: form.resourceId === 'owner' ? undefined : form.resourceId,
           turnstileToken: form.turnstileToken,
           website: form.website,
+          privacy_accepted: form.privacyAccepted,
         }),
       });
       const data = await res.json();
@@ -225,7 +231,7 @@ export default function PublicBookingPage() {
       setSuccess(`¡Cita confirmada! Te esperamos el ${appointmentDay} a las ${appointmentTime}.`);
       setShowBookingModal(false);
       setAvailableSlots([]);
-      setForm((prev) => ({ ...prev, name: '', email: '', phone: '', service: profile.treatments?.[0]?.name || '', date: '', time: '', durationMinutes: profile.treatments?.[0]?.durationMinutes || 60, turnstileToken: '', website: '' }));
+      setForm((prev) => ({ ...prev, name: '', email: '', phone: '', service: profile.treatments?.[0]?.name || '', date: '', time: '', durationMinutes: profile.treatments?.[0]?.durationMinutes || 60, turnstileToken: '', website: '', privacyAccepted: false }));
       if (window.turnstile && document.getElementById('turnstile-widget')) {
         window.turnstile.reset();
       }
@@ -361,7 +367,14 @@ export default function PublicBookingPage() {
               {turnstileSiteKey && <div><div id="turnstile-widget" className="flex justify-start" /></div>}
               {!turnstileSiteKey && <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">La verificación anti-bot no está configurada. La reserva pública requiere Turnstile en producción.</div>}
               <input type="text" value={form.website} onChange={(e) => setForm((prev) => ({ ...prev, website: e.target.value }))} className="hidden" tabIndex={-1} autoComplete="off" aria-hidden="true" />
-              <button type="button" onClick={submitBooking} disabled={submitting || loadingSlots || !form.time || (turnstileSiteKey && !form.turnstileToken)} className="w-full rounded-xl bg-[#deb887] px-4 py-3 font-semibold text-white transition-colors hover:bg-[#c79f6f] disabled:opacity-60">{submitting ? 'Agendando...' : 'Confirmar cita'}</button>
+              <label className="flex items-start gap-3 rounded-xl border border-gray-200 bg-gray-50 p-3 text-xs leading-relaxed text-gray-600">
+                <input type="checkbox" checked={form.privacyAccepted} onChange={(e) => setForm((prev) => ({ ...prev, privacyAccepted: e.target.checked }))} className="mt-0.5 h-4 w-4 flex-shrink-0 accent-[#deb887]" />
+                <span>
+                  Autorizo a {profile?.professional?.clinic_name || 'la clínica'} a tratar mi nombre, correo y teléfono para gestionar esta cita y enviarme confirmaciones y recordatorios por correo o WhatsApp. La clínica es responsable de mis datos; BioSkinTech los procesa por su cuenta según la{' '}
+                  <a href="/politica-de-privacidad" target="_blank" rel="noopener noreferrer" className="font-semibold text-[#a57b4a] hover:underline">Política de Privacidad</a>.
+                </span>
+              </label>
+              <button type="button" onClick={submitBooking} disabled={submitting || loadingSlots || !form.time || !form.privacyAccepted || (turnstileSiteKey && !form.turnstileToken)} className="w-full rounded-xl bg-[#deb887] px-4 py-3 font-semibold text-white transition-colors hover:bg-[#c79f6f] disabled:opacity-60">{submitting ? 'Agendando...' : 'Confirmar cita'}</button>
             </div>
           </div>
         </div>

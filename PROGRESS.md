@@ -1,5 +1,10 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-09-29 Respaldos v3: JSON firmado vía R2, CSV, simulación de restauración, importación de pacientes por plantilla.
+- ✅ 2026-09-29 Respaldo diario cifrado AES-256-GCM en R2, inmutable 30 días, retención 35 días, snapshot previo a restaurar.
+- ✅ 2026-09-29 Corregido export >4,5 MB, estadística de Finanzas en 0, secuencias tras restaurar y jsonb en restore.
+- ✅ 2026-09-29 Política de Privacidad y Condiciones reescritas y alineadas al sistema real (versión 2026-09-29).
+- ✅ 2026-09-29 Evidencia de aceptación legal (`legal_acceptances`), re-aceptación obligatoria y consentimiento en reserva pública.
 - ✅ 2026-09-29 Chatbot: corregido filtro que descartaba confirmaciones de pacientes ya leídas por Meta (`getPendingAppointmentReplyContext`).
 - ✅ 2026-09-29 Chatbot: avisos al staff muestran el nombre del paciente de la cita (nueva columna `whatsapp_messages.appointment_patient_name`) y ya no se duplican.
 - ✅ 2026-09-29 Chatbot: mensajes de estado inequívocos ("leído ≠ confirmado") y clasificación de intención que respeta negaciones.
@@ -157,5 +162,5 @@
 
 - ⏳ Resolver o registrar la deuda de lint global: 471 errores y 54 warnings en la línea base.
 - ⏳ Revisar vulnerabilidades restantes exclusivamente en herramientas dev/build; `npm audit --force` propone downgrades incompatibles.
-- ⏳ Ampliar pruebas automatizadas a auth y backup.
+- ✅ 2026-09-29 Pruebas automatizadas de backup ampliadas (`tests/backup.test.mjs`).
 - ⏳ Volver a subir fotos clínicas reales — el bucket quedó vacío tras el reset de pruebas.

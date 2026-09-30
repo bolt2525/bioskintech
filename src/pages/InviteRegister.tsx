@@ -141,6 +141,7 @@ export default function InviteRegister() {
           cedula_profesional: cedulaPro.trim() || undefined,
           matricula_senescyt: matriculaSenescyt.trim() || undefined,
           registro_acess: registroAcess.trim() || undefined,
+          accepted_terms: acceptedTerms,
         }),
       });
       const d = await r.json();
@@ -380,7 +381,7 @@ export default function InviteRegister() {
                 <a href="/condiciones-de-servicio" target="_blank" rel="noopener noreferrer" className="text-[#deb887] font-semibold hover:underline">Condiciones de Servicio</a>
                 {' '}y la{' '}
                 <a href="/politica-de-privacidad" target="_blank" rel="noopener noreferrer" className="text-[#deb887] font-semibold hover:underline">Política de Privacidad</a>
-                {' '}de BioSkinTech. <span className="text-red-500">(Obligatorio)</span>
+                {' '}de BioSkinTech, y me comprometo a tratar los datos de pacientes solo para los fines autorizados por la clínica. <span className="text-red-500">(Obligatorio)</span>
               </span>
             </label>
 

@@ -156,6 +156,17 @@ async function ensureNewColumns() {
     )`,
     "CREATE UNIQUE INDEX IF NOT EXISTS clinic_staff_resources_owner_name ON clinic_staff_resources(owner_user_id, lower(name))",
     "CREATE INDEX IF NOT EXISTS clinic_staff_resources_owner ON clinic_staff_resources(owner_user_id)",
+    // Evidencia append-only de aceptación de Condiciones de Servicio y Política de Privacidad
+    `CREATE TABLE IF NOT EXISTS legal_acceptances (
+      id               SERIAL PRIMARY KEY,
+      clinic_user_id   INTEGER NOT NULL REFERENCES clinic_users(id) ON DELETE CASCADE,
+      clinic_id        UUID,
+      document_version VARCHAR(20) NOT NULL,
+      ip_address       VARCHAR(100),
+      user_agent       TEXT,
+      accepted_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    "CREATE INDEX IF NOT EXISTS idx_legal_acceptances_user ON legal_acceptances(clinic_user_id, document_version)",
   ];
   for (const stmt of migrations) {
     try { await sql.query(stmt); } catch { /* column already exists — safe to ignore */ }
@@ -1180,6 +1191,21 @@ async function claimSetupTokenFn(token, newPassword) {
 }
 
 /** Extrae el usuario autenticado del header Authorization */
+// Cambiar esta fecha al publicar nuevas Condiciones/Política obliga a todos los usuarios a re-aceptar.
+export const LEGAL_VERSION = '2026-09-29';
+
+async function recordLegalAcceptance(userId, clinicId, req) {
+  const ip = String(req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || '').split(',')[0].trim().slice(0, 100) || null;
+  const ua = String(req.headers['user-agent'] || '').slice(0, 500) || null;
+  await sql`INSERT INTO legal_acceptances (clinic_user_id, clinic_id, document_version, ip_address, user_agent)
+            VALUES (${userId}, ${clinicId || null}, ${LEGAL_VERSION}, ${ip}, ${ua})`;
+}
+
+async function hasAcceptedCurrentLegal(userId) {
+  const r = await sql`SELECT 1 FROM legal_acceptances WHERE clinic_user_id = ${userId} AND document_version = ${LEGAL_VERSION} LIMIT 1`;
+  return r.rows.length > 0;
+}
+
 async function getRequestUser(req) {
   const token = (req.headers.authorization || '').replace('Bearer ', '').trim() || req.body?.sessionToken;
   if (!token) return null;
@@ -1837,7 +1863,7 @@ async function registerClinic(body) {
 
   return {
     success: true,
-    user: { username: usernameNorm, email: emailNorm, full_name: fullName, role: 'clinic_admin', clinic_id: clinicId },
+    user: { id: userId, username: usernameNorm, email: emailNorm, full_name: fullName, role: 'clinic_admin', clinic_id: clinicId },
     clinic: { id: clinicId, name: clinic_name.trim(), slug },
     features: planFeatures.filter(f => !OPT_IN_FEATURES.includes(f)),
   };
@@ -2401,7 +2427,10 @@ export default async function handler(req, res) {
 
     // Registro completo de nueva clínica
     if (action === 'register') {
+      if (req.body?.accepted_terms !== true)
+        return res.status(400).json({ error: 'Debes aceptar las Condiciones de Servicio y la Política de Privacidad' });
       const result = await registerClinic(req.body || {});
+      if (result.success) await recordLegalAcceptance(result.user.id, result.user.clinic_id, req).catch(e => console.error('[legal] acceptance log error:', e.code || e.message));
       return res.status(result.error ? 400 : 201).json(result);
     }
 
@@ -2414,9 +2443,24 @@ export default async function handler(req, res) {
 
     // Usar invite link para registro en clínica existente
     if (action === 'useInvite') {
+      if (req.body?.accepted_terms !== true)
+        return res.status(400).json({ error: 'Debes aceptar las Condiciones de Servicio y la Política de Privacidad' });
       const token = req.query.token || req.body?.token;
       const result = await useInviteLink(token, req.body || {});
+      if (result.success) await recordLegalAcceptance(result.user.id, result.user.clinic_id, req).catch(e => console.error('[legal] acceptance log error:', e.code || e.message));
       return res.status(result.error ? 400 : 201).json(result);
+    }
+
+    if (action === 'legalStatus' || action === 'acceptLegal') {
+      const legalUser = await getRequestUser(req);
+      if (!legalUser?.id) return res.status(401).json({ error: 'No autenticado' });
+      if (action === 'acceptLegal') {
+        if (req.method !== 'POST' || req.body?.version !== LEGAL_VERSION || req.body?.accepted !== true)
+          return res.status(400).json({ error: 'Aceptación inválida o versión desactualizada' });
+        await recordLegalAcceptance(legalUser.id, legalUser.clinic_id, req);
+      }
+      const required = legalUser.role !== 'master_admin' && !(await hasAcceptedCurrentLegal(legalUser.id));
+      return res.status(200).json({ success: true, version: LEGAL_VERSION, required });
     }
 
     // Planes de suscripción disponibles (público)

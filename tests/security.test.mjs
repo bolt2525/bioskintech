@@ -524,6 +524,7 @@ test('backup restore forces clinic_id and rejects foreign patient references', a
     query: async statement => {
       if (statement.includes('information_schema.columns'))
         return { rows: ['id', 'patient_id', 'clinic_id'].map(column_name => ({ column_name })) };
+      if (/^SELECT clinic_id FROM \w+ WHERE id = \$1$/.test(statement)) return { rows: [] };
       if (statement.startsWith('SELECT 1 FROM patients')) return { rows: [] };
       throw new Error('Unexpected query');
     },
@@ -542,6 +543,7 @@ test('backup finance items validate against the selected legacy table', async ()
     query: async (statement) => {
       if (statement.includes('information_schema.columns'))
         return { rows: ['id', 'record_id', 'clinic_id', 'description'].map(column_name => ({ column_name })) };
+      if (/^SELECT clinic_id FROM \w+ WHERE id = \$1$/.test(statement)) return { rows: [] };
       if (statement.startsWith('SELECT 1 FROM external_finance_records')) {
         parentQuery = statement;
         return { rows: [{}] };
@@ -561,6 +563,7 @@ test('backup restore rejects foreign consultations and clears foreign movement u
     query: async statement => {
       if (statement.includes('information_schema.columns'))
         return { rows: ['id', 'record_id', 'clinic_id'].map(column_name => ({ column_name })) };
+      if (/^SELECT clinic_id FROM \w+ WHERE id = \$1$/.test(statement)) return { rows: [] };
       if (statement.startsWith('SELECT 1 FROM clinical_records')) return { rows: [] };
       throw new Error('Unexpected query');
     },
@@ -575,6 +578,7 @@ test('backup restore rejects foreign consultations and clears foreign movement u
     query: async (statement, params) => {
       if (statement.includes('information_schema.columns'))
         return { rows: ['id', 'batch_id', 'clinic_id', 'user_id'].map(column_name => ({ column_name })) };
+      if (/^SELECT clinic_id FROM \w+ WHERE id = \$1$/.test(statement)) return { rows: [] };
       if (statement.startsWith('SELECT 1 FROM inventory_batches')) return { rows: [{}] };
       if (statement.startsWith('SELECT 1 FROM clinic_users')) return { rows: [] };
       if (statement.startsWith('INSERT INTO inventory_movements')) {
@@ -623,6 +627,7 @@ test('backup replacement cannot refer to a consent from another patient or clini
       if (statement.includes('information_schema.columns')) return {
         rows: ['id', 'patient_id', 'record_id', 'clinic_id', 'replaces_consent_id'].map(column_name => ({ column_name })),
       };
+      if (/^SELECT clinic_id FROM \w+ WHERE id = \$1$/.test(statement)) return { rows: [] };
       if (statement.startsWith('SELECT patient_id FROM clinical_records')) return { rows: [{ patient_id: 8 }] };
       if (statement.startsWith('SELECT 1 FROM consent_forms')) {
         assert.deepEqual(params, [4, 8, 9, clinicId, 'annulled']);
