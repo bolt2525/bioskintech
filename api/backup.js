@@ -364,6 +364,18 @@ export async function purgeExpiredClinicPhotos(pool, deleteObject = deleteR2Obje
   return deleted;
 }
 
+/**
+ * Basura efímera del bot de WhatsApp. No toca `whatsapp_messages`: Meta no conserva el contenido
+ * de los mensajes, así que esa tabla es el único registro de lo que se le comunicó a cada paciente.
+ */
+async function purgeEphemeralWhatsAppRows(pool) {
+  // Redirecciones de un solo uso hacia una cita que ya ocurrió; nadie vuelve a abrirlas.
+  const links = await pool.query("DELETE FROM wa_short_links WHERE created_at < NOW() - INTERVAL '30 days'");
+  // Conversaciones abandonadas a medio flujo; `getBotState()` ya las ignora tras 2 horas.
+  const states = await pool.query("DELETE FROM whatsapp_bot_state WHERE updated_at < NOW() - INTERVAL '1 day'");
+  return { shortLinks: links.rowCount, botStates: states.rowCount };
+}
+
 async function runCron(req, res, pool) {
   const secret = (process.env.CRON_SECRET || '').trim();
   const provided = String(req.headers.authorization || '');
@@ -386,7 +398,9 @@ async function runCron(req, res, pool) {
   }
   const photosPurged = await purgeExpiredClinicPhotos(pool).catch(err => { console.error('[backup:cron] purge error', err?.code || err?.name); return 0; });
   if (photosPurged) console.info('[backup:cron] expired photos purged', photosPurged);
-  return res.status(failed.length ? 207 : 200).json({ ok, failed, photosPurged });
+  const whatsappPurged = await purgeEphemeralWhatsAppRows(pool).catch(err => { console.error('[backup:cron] whatsapp purge error', err?.code || err?.name); return { shortLinks: 0, botStates: 0 }; });
+  if (whatsappPurged.shortLinks || whatsappPurged.botStates) console.info('[backup:cron] whatsapp ephemeral rows purged', whatsappPurged);
+  return res.status(failed.length ? 207 : 200).json({ ok, failed, photosPurged, whatsappPurged });
 }
 
 async function parseJsonBody(req) {
