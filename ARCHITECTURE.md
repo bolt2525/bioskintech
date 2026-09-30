@@ -183,6 +183,12 @@ RLS no sustituye a estos grants: `neondb_owner` tiene `rolbypassrls = true` y es
 
 `npm run test:rls` ejecuta las dos comprobaciones conectadas: `scripts/check-rls-isolation.mjs` (aislamiento por tenant y ausencia de escalamiento) y `scripts/check-app-role-queries.mjs` (las consultas reales de `records.js` siguen funcionando bajo el rol restringido).
 
+**Tablas compartidas migradas a tenant (2026-09-30).** `patient_assignments`, `sharing_group_members`, `professional_signatures` y `prescription_templates` nacieron sin `clinic_id` y sin RLS, de modo que el rol de aplicación las veía cruzadas entre clínicas. El caso grave era `professional_signatures`: se indexaba únicamente por `professional_name` con un `UNIQUE` global, así que cualquier clínica podía descargar la firma de un profesional ajeno y, al registrar un homónimo, el `UPDATE ... WHERE professional_name = $1` **sobrescribía la firma de otra clínica** — firmas que respaldan consentimientos informados. `scripts/migrate-tenant-shared-tables.mjs` añade `clinic_id`, rellena el valor desde el paciente, el grupo o el usuario correspondiente, sustituye el índice único por `UNIQUE (clinic_id, professional_name)` y activa RLS forzado con las mismas políticas por tenant.
+
+La columna lleva `DEFAULT NULLIF(current_setting('app.current_tenant', true),'')::uuid`: los `INSERT` del panel que no nombran `clinic_id` heredan el tenant de la sesión, así que no hace falta tocar cada consulta ni pueden crearse filas huérfanas. Las filas sin clínica derivable se conservan pero quedan invisibles bajo RLS hasta que un `master_admin` las reasigne; la migración las reporta y no borra nada.
+
+`injectable_catalog` sigue siendo un catálogo global sin tenant, pero el rol de aplicación solo puede leerlo: `saveInjectableSeed` y `deleteInjectableSeed` ya exigen `master_admin` y ahora escriben por `getPool()`.
+
 La comprobación conectada del 2026-09-07 confirmó RLS habilitado y forzado para `patients`, `clinical_photos`, `financial_records` y `external_finance_records`, con políticas separadas de `SELECT`, `INSERT`, `UPDATE` y `DELETE` para `bioskin_app`. Una prueba de solo lectura con dos clínicas confirmó que cada tenant solo ve sus propias filas y que sin contexto no se devuelven filas clínicas.
 
 Durante esta auditoría se corrigió un riesgo importante: `getAppPool()` ya no degrada silenciosamente a `neondb_owner` cuando falta `NEON_APP_URL`; devuelve `null` y obliga al endpoint a fallar cerrado. La prueba conectada con dos tenants confirmó el aislamiento real.

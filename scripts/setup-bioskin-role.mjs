@@ -43,22 +43,22 @@ const TENANT_TABLES = [
   'sharing_groups',
   'patient_audit_log',
   'clinical_photos',
-];
-
-// Tablas sin clinic_id que el camino clínico sí necesita escribir (asignaciones, catálogos compartidos).
-// No tienen RLS: su aislamiento depende del filtro por clínica en la consulta.
-const SHARED_RW_TABLES = [
+  // Migradas a tenant el 2026-09-30 por scripts/migrate-tenant-shared-tables.mjs
   'patient_assignments',
   'sharing_group_members',
-  'injectable_catalog',
-  'prescription_templates',
   'professional_signatures',
+  'prescription_templates',
 ];
+
+// Sin clinic_id y compartidas a propósito. Vacío hoy: todo lo que tenía datos de clínica
+// se migró a TENANT_TABLES; `injectable_catalog` es un catálogo global de solo lectura.
+const SHARED_RW_TABLES = [];
 
 // Solo lectura: el camino clínico las consulta, pero nunca las escribe (eso pasa por neondb_owner).
 const READONLY_TABLES = [
   'clinic_settings',
   'user_module_overrides',
+  'injectable_catalog',
 ];
 
 // `clinic_users` se concede por columna: el rol necesita identificar autores y permisos,

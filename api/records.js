@@ -2750,16 +2750,20 @@ export default async function handler(req, res) {
       case 'saveInjectableSeed': {
         const sess = await getSessionUserOnce();
         if (!sess || sess.role !== 'master_admin') return res.status(403).json({ error: 'Forbidden' });
+        // El catálogo es global y sin tenant: el rol de aplicación solo lo lee, y estas
+        // escrituras (ya restringidas a master_admin) pasan por el pool administrador.
+        const adminPool = getPool();
+        if (!adminPool) return res.status(503).json({ error: 'Base de datos no disponible' });
         const { id: seedId, categoria: seedCat, elemento: seedEl, descripcion: seedDesc } = body;
         if (!seedCat || !seedEl) return res.status(400).json({ error: 'categoria y elemento requeridos' });
         if (seedId) {
-          await pool.query(
+          await adminPool.query(
             'UPDATE injectable_catalog SET categoria=$2, elemento=$3, descripcion=$4 WHERE id=$1',
             [seedId, seedCat.trim(), seedEl.trim(), seedDesc || null]
           );
           return res.status(200).json({ success: true });
         }
-        const newSeed = await pool.query(
+        const newSeed = await adminPool.query(
           'INSERT INTO injectable_catalog(categoria, elemento, descripcion) VALUES($1,$2,$3) RETURNING id',
           [seedCat.trim(), seedEl.trim(), seedDesc || null]
         );
@@ -2769,9 +2773,11 @@ export default async function handler(req, res) {
       case 'deleteInjectableSeed': {
         const sess = await getSessionUserOnce();
         if (!sess || sess.role !== 'master_admin') return res.status(403).json({ error: 'Forbidden' });
+        const adminPool = getPool();
+        if (!adminPool) return res.status(503).json({ error: 'Base de datos no disponible' });
         const { id: delSeedId } = req.query;
         if (!delSeedId) return res.status(400).json({ error: 'id required' });
-        await pool.query('UPDATE injectable_catalog SET activo=0 WHERE id=$1', [delSeedId]);
+        await adminPool.query('UPDATE injectable_catalog SET activo=0 WHERE id=$1', [delSeedId]);
         return res.status(200).json({ success: true });
       }
 

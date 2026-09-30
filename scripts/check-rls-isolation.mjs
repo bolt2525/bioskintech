@@ -16,7 +16,8 @@ try {
     try {
       await client.query('BEGIN');
       await client.query("SELECT set_config('app.current_tenant', $1, true)", [String(id)]);
-      for (const table of ['patients', 'consent_forms']) {
+      for (const table of ['patients', 'consent_forms', 'professional_signatures', 'prescription_templates',
+        'patient_assignments', 'sharing_group_members']) {
         const result = await client.query(`SELECT clinic_id FROM ${table} LIMIT 100`);
         assertTenant(result.rows, id);
         console.log(`PASS: ${table} tenant ${id} solo ve ${result.rows.length} filas propias`);
@@ -30,7 +31,8 @@ try {
   const client = await app.connect();
   try {
     await client.query('BEGIN');
-    for (const table of ['patients', 'consent_forms']) {
+    for (const table of ['patients', 'consent_forms', 'professional_signatures', 'prescription_templates',
+      'patient_assignments', 'sharing_group_members']) {
       const result = await client.query(`SELECT clinic_id FROM ${table} LIMIT 100`);
       if (result.rows.length) throw new Error(`RLS devolvió filas de ${table} sin contexto tenant`);
       console.log(`PASS: ${table} sin contexto tenant no devuelve filas`);
@@ -52,6 +54,8 @@ try {
     await assertDenied(escalation, 'SELECT password_hash FROM clinic_users LIMIT 1', 'clinic_users.password_hash');
     await assertDenied(escalation, 'SELECT salt FROM clinic_users LIMIT 1', 'clinic_users.salt');
     await assertDenied(escalation, "UPDATE clinic_users SET role = 'master_admin'", 'clinic_users UPDATE');
+    // El catálogo de inyectables es global: se lee, pero solo master_admin lo edita vía neondb_owner.
+    await assertDenied(escalation, "UPDATE injectable_catalog SET activo = 0", 'injectable_catalog UPDATE');
 
     // Lo que el camino clínico sí necesita debe seguir funcionando.
     await escalation.query('SELECT id, full_name, role, access_scope FROM clinic_users LIMIT 1');

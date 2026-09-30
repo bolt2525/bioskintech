@@ -42,6 +42,11 @@ const QUERIES = [
   ['financeCsv (records.js:441)', `SELECT * FROM financial_records WHERE clinic_id = '${clinic}'
     AND created_by_user_id IN (SELECT sgm2.clinic_user_id FROM sharing_group_members sgm1
       JOIN sharing_group_members sgm2 ON sgm1.group_id = sgm2.group_id WHERE sgm1.clinic_user_id = 1) LIMIT 5`],
+  ['getTemplates (records.js:2841)', `SELECT * FROM prescription_templates ORDER BY name ASC`],
+  ['listProfessionalSignatures (records.js:2918)', `SELECT id, professional_name, cedula, created_at
+    FROM professional_signatures ORDER BY professional_name ASC`],
+  ['listInjectableCatalog (records.js:2744)', `SELECT id, categoria, elemento, descripcion
+    FROM injectable_catalog WHERE activo = 1 ORDER BY categoria, elemento`],
 ];
 
 let failed = 0;
@@ -51,6 +56,31 @@ for (const [label, q] of QUERIES) {
 }
 
 c.release();
+
+// Las escrituras del panel no pasan clinic_id: dependen del DEFAULT que toma el tenant de la sesión.
+// Si ese DEFAULT fallara, la política WITH CHECK rechazaría el INSERT y el panel daría error 500.
+const w = await app.connect();
+try {
+  await w.query('BEGIN');
+  await w.query("SELECT set_config('app.current_tenant', $1, true)", [String(clinic)]);
+  const ins = await w.query(
+    `INSERT INTO prescription_templates (name, items_json) VALUES ('__smoke__', '[]'::jsonb) RETURNING clinic_id`);
+  if (String(ins.rows[0].clinic_id) !== String(clinic)) throw new Error(`clinic_id quedó en ${ins.rows[0].clinic_id}`);
+  console.log('PASS: INSERT sin clinic_id explícito hereda el tenant de la sesión');
+
+  const sig = await w.query(
+    `INSERT INTO professional_signatures (professional_name, signature_data) VALUES ('__smoke__', 'x') RETURNING clinic_id`);
+  if (String(sig.rows[0].clinic_id) !== String(clinic)) throw new Error('firma sin tenant');
+  console.log('PASS: saveProfessionalSignature asigna la clínica automáticamente');
+  await w.query('ROLLBACK');
+} catch (e) {
+  await w.query('ROLLBACK');
+  failed++;
+  console.error(`FAIL: escritura del panel -> ${e.message.split('\n')[0]}`);
+} finally {
+  w.release();
+}
+
 await app.end();
 await owner.end();
 console.log(failed ? `\n${failed} consulta(s) rotas` : '\nTodas las consultas reales del panel siguen funcionando');
