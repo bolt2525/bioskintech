@@ -31,13 +31,14 @@ import { slugify } from '../utils/slugify';
 
 // Tipos centralizados
 import InjectableSeedsPanel from '../components/admin/InjectableSeedsPanel';
+import ContractGenerator from '../components/admin/ContractGenerator';
 import type { Clinic, ClinicUser, FeatureRow } from '../types';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tipos locales (solo usados en este archivo)
 // ─────────────────────────────────────────────────────────────────────────────
 
-type TabKey = 'clinics' | 'users' | 'modules' | 'system' | 'templates' | 'accesos' | 'vencimientos';
+type TabKey = 'clinics' | 'users' | 'modules' | 'system' | 'templates' | 'accesos' | 'vencimientos' | 'contrato';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Componentes pequeños reutilizables dentro de este módulo
@@ -1731,7 +1732,7 @@ export default function AdminMasterDashboard() {
           </div>
 
           {/* Tabs de navegación */}
-          <div className="flex gap-1 mt-5 bg-white/5 border border-white/10 rounded-xl p-1 w-fit">
+          <div className="flex max-w-full flex-wrap gap-1 mt-5 bg-white/5 border border-white/10 rounded-xl p-1 w-fit">
             {([
               ['clinics',   '🏥 Clínicas'],
               ['users',     '👥 Usuarios'],
@@ -1740,11 +1741,13 @@ export default function AdminMasterDashboard() {
               ['system',    '🔧 Sistema'],
               ['accesos',      '🔑 Accesos'],
               ['vencimientos', '📅 Vencimientos'],
+              ['contrato',     '📄 Contrato'],
             ] as [TabKey, string][]).map(([key, label]) => (
               <button
                 key={key}
                 onClick={() => setTab(key)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                aria-pressed={tab === key}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all focus:outline-none focus:ring-2 focus:ring-[#deb887] focus:ring-offset-2 focus:ring-offset-[#1a1209] ${
                   tab === key
                     ? 'bg-gradient-to-r from-[#deb887] to-[#c5a075] text-white shadow-md shadow-[#deb887]/20'
                     : 'text-white/50 hover:text-white/80'
@@ -2371,6 +2374,8 @@ export default function AdminMasterDashboard() {
             </div>
           </div>
         )}
+
+        {tab === 'contrato' && <ContractGenerator />}
 
       </div>
 
@@ -3636,4 +3641,3 @@ export default function AdminMasterDashboard() {
     </div>
   );
 }
-
