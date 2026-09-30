@@ -1,5 +1,6 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-09-30 Master Admin: acceso Contrato destacado; clínicas en lista adaptable con búsqueda y filtro.
 - ✅ 2026-09-30 Añadido al Master Admin un generador de vista previa contractual anual: captura cliente/clínica, módulos, chatbot opcional, fechas y pago; precios explícitos, comisión de tarjeta ingresada sin tasa ni IVA asumidos e impresión/Guardar como PDF nativos. No persiste contratos; módulo y distinción DermoAtlas/Clinical3D documentados en ARCHITECTURE.md.
 - ✅ 2026-09-30 Borrador contractual con evidencias.
 - ✅ 2026-09-30 Eliminado código muerto de firma presencial digital (modal y endpoint `signConsentInPerson`); la opción presencial es el formato en papel.
