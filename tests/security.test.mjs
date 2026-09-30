@@ -341,9 +341,20 @@ test('appointment replies classify only explicit confirmations as confirmed', as
   assert.equal(classifyAppointmentReply('No podré ir'), 'needs_contact');
   assert.equal(classifyAppointmentReply('Llegaré tarde'), 'needs_contact');
   assert.equal(classifyAppointmentReply('Deseo cambiar la cita'), 'needs_contact');
-  assert.equal(formatAppointmentReplyStatus('confirmed'), '✅ Confirmado');
-  assert.equal(formatAppointmentReplyStatus('needs_contact'), '⚠️ Requiere atención');
-  assert.equal(formatAppointmentReplyStatus(null), '⚠️ Sin confirmar · escribir');
+  // La negación debe primar sobre la palabra "confirmar" presente en la misma frase
+  assert.equal(classifyAppointmentReply('No voy a poder confirmar'), 'needs_contact');
+  assert.equal(classifyAppointmentReply('necesito cancelar, confirmo que no puedo'), 'needs_contact');
+  assert.equal(formatAppointmentReplyStatus('confirmed'), '✅ Confirmó asistencia');
+  assert.equal(formatAppointmentReplyStatus('needs_contact'), '🔴 Respondió — requiere que la clínica lo contacte');
+  assert.equal(formatAppointmentReplyStatus(null), '⏳ Aún no responde el recordatorio');
+});
+
+test('bot global commands ignore accents added by mobile autocorrect', async () => {
+  const { normalizeCommandText } = await import('../api/whatsapp-chatbot.js');
+
+  assert.equal(normalizeCommandText(' Menú '), 'menu');
+  assert.equal(normalizeCommandText('CANCELAR'), 'cancelar');
+  assert.equal(normalizeCommandText('Mañana'), 'manana');
 });
 
 test('WhatsApp finance report selection maps menu choices to report periods', async () => {

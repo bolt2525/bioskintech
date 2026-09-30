@@ -61,7 +61,7 @@ export default function AdminWhatsAppCRM() {
   const [clinics, setClinics] = useState<ClinicOption[]>([]);
   const [reassigning, setReassigning] = useState(false);
   const latestRequest = useRef({ contactId: null as number | null, sequence: 0 });
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesPaneRef = useRef<HTMLDivElement>(null);
 
   const loadContacts = useCallback(async (query = '') => {
     setLoadingContacts(true);
@@ -148,7 +148,10 @@ export default function AdminWhatsAppCRM() {
   }, [loadMessages, selected]);
 
   useEffect(() => {
-    if (!loadingMessages && messages.length) messagesEndRef.current?.scrollIntoView({ block: 'end' });
+    // `scrollIntoView` arrastraba también a la página, dejando la lista de contactos fuera de vista.
+    if (!loadingMessages && messagesPaneRef.current) {
+      messagesPaneRef.current.scrollTop = messagesPaneRef.current.scrollHeight;
+    }
   }, [loadingMessages, messages]);
 
   const submitSearch = (event: FormEvent) => {
@@ -174,7 +177,7 @@ export default function AdminWhatsAppCRM() {
 
   return (
     <AdminLayout title="Conversaciones de WhatsApp" subtitle="Historial global de mensajes" backPath="/admin/master">
-      <div className="mx-auto flex min-h-[calc(100vh-13rem)] max-w-7xl flex-col">
+      <div className="mx-auto flex h-[calc(100vh-13rem)] max-w-7xl flex-col">
         {error && <div className="mb-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"><AlertTriangle className="h-4 w-4" />{error}</div>}
 
         <div className="grid min-h-0 min-w-0 flex-1 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-xl md:grid-cols-[350px_minmax(0,1fr)]">
@@ -247,7 +250,7 @@ export default function AdminWhatsAppCRM() {
                   </label>
                   <button title="Actualizar conversación" onClick={() => loadMessages(selected.id)} className="grid h-9 w-9 place-items-center rounded-lg text-gray-500 hover:bg-gray-100"><RefreshCw className="h-4 w-4" /></button>
                 </header>
-                <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto p-4 md:p-6 [scrollbar-gutter:stable]">
+                <div ref={messagesPaneRef} className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto p-4 md:p-6 [scrollbar-gutter:stable]">
                   {loadingMessages ? <div className="grid flex-1 place-items-center text-gray-400"><Loader2 className="h-5 w-5 animate-spin" /></div> : messages.map(message => (
                     <article key={message.id} className={`w-fit min-w-0 max-w-[85%] rounded-lg px-3 py-2 shadow-sm ${message.direction === 'saliente' ? 'ml-auto bg-[#fff1dc]' : 'mr-auto bg-white'}`}>
                       <div className="flex min-w-0 items-start gap-2 text-sm text-gray-800"><MediaIcon type={message.media_type} /><p className="min-w-0 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{message.content || `[${message.media_type}]`}</p></div>
@@ -259,7 +262,6 @@ export default function AdminWhatsAppCRM() {
                     </article>
                   ))}
                   {!loadingMessages && messages.length === 0 && <div className="grid flex-1 place-items-center text-sm text-gray-400">No hay mensajes en esta conversación.</div>}
-                  <div ref={messagesEndRef} aria-hidden="true" />
                 </div>
               </>
             )}

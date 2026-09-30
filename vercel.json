@@ -28,6 +28,9 @@
   "functions": {
     "api/admin-auth.js": {
       "includeFiles": "data/**"
+    },
+    "api/whatsapp-chatbot.js": {
+      "maxDuration": 60
     }
   },
   "crons": [

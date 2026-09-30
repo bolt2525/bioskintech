@@ -1,5 +1,11 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-09-29 Chatbot: corregido filtro que descartaba confirmaciones de pacientes ya leídas por Meta (`getPendingAppointmentReplyContext`).
+- ✅ 2026-09-29 Chatbot: avisos al staff muestran el nombre del paciente de la cita (nueva columna `whatsapp_messages.appointment_patient_name`) y ya no se duplican.
+- ✅ 2026-09-29 Chatbot: mensajes de estado inequívocos ("leído ≠ confirmado") y clasificación de intención que respeta negaciones.
+- ✅ 2026-09-29 Chatbot: comandos globales insensibles a tildes y salida forzada del flujo al mostrar el menú.
+- ✅ 2026-09-29 Chatbot: envío masivo con presupuesto de tiempo, throttling, reanudación por cursor y `maxDuration` 60s.
+- ✅ 2026-09-29 CRM WhatsApp: scroll independiente entre lista de contactos e hilo de mensajes.
 - ✅ 2026-09-29 Productos con historial se archivan y restauran sin borrar lotes ni ventas.
 - ✅ 2026-09-29 Costo por lote visible; referencia opcional con confirmación, RLS, concurrencia y margen bruto correcto.
 - ✅ 2026-09-29 Lotes y movimientos legibles, con detalle autenticado y acciones por rol.

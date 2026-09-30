@@ -13,7 +13,7 @@ import {
   updateWhatsAppMessageStatus,
   isSystemStaffPhone,
   setWhatsAppContactClinic,
-  markMessageReadNotified,
+  claimMessageReadNotification,
   getContactById,
   ensureWhatsAppContactClinic,
   getRecentAppointmentNotificationContext,
@@ -138,21 +138,30 @@ export function shouldSendAppointmentReminder(event, now = new Date()) {
 
 function buildPatientReminderMessage({ patientName, clinicName, dateLabel, professionalName }) {
   const professionalText = professionalName ? ` con ${professionalName}` : '';
-  return `Hola ${patientName}, te recordamos tu cita en ${clinicName}${professionalText} para el ${dateLabel}.`;
+  return `Hola ${patientName}, te recordamos tu cita en ${clinicName}${professionalText} para el ${dateLabel}.\n\n✅ Responde *CONFIRMAR* si asistirás.\n🔄 Responde *CAMBIAR* si necesitas reprogramar o cancelar.`;
 }
 
 
+/** Quita tildes y mayúsculas: el teclado del móvil autocorrige “menu” → “Menú” y rompía los comandos globales. */
+export function normalizeCommandText(value) {
+  return String(value || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
 export function classifyAppointmentReply(text, buttonPayload = '') {
-  const value = `${buttonPayload} ${text}`.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ' ');
-  if (/appointment_confirm|\b(confirmo|confirmar|confirmada|confirmado|si|sí)\b/.test(value)) return 'confirmed';
-  if (/\b(no|cambiar|reprogramar|reprogramacion|reprogramación|tarde|podre|podré|cancelar|cancelado)\b/.test(value)) return 'needs_contact';
+  // El botón de la plantilla es una señal explícita: no se reinterpreta con heurísticas de texto.
+  if (String(buttonPayload || '').startsWith('appointment_confirm')) return 'confirmed';
+  const value = normalizeCommandText(`${buttonPayload} ${text}`).replace(/[^a-z0-9_:\s]/g, ' ');
+  // El rechazo se evalúa PRIMERO: “no voy a poder confirmar” contenía “confirmar” y se
+  // registraba como asistencia confirmada.
+  if (/\b(no|nel|cancelar|cancelo|cancela|cancelada|cancelado|anular|reprogramar|reprogramacion|cambiar|mover|posponer|otro dia|otra fecha|tarde|atrasar|imposible)\b/.test(value)) return 'needs_contact';
+  if (/\b(confirmo|confirmar|confirmada|confirmado|confirmamos|asistire|ahi estare|si|sip|claro|listo|ok|okay|dale|perfecto|de acuerdo)\b/.test(value)) return 'confirmed';
   return 'needs_contact';
 }
 
 export function formatAppointmentReplyStatus(status) {
-  if (status === 'confirmed') return '✅ Confirmado';
-  if (status === 'needs_contact') return '⚠️ Requiere atención';
-  return '⚠️ Sin confirmar · escribir';
+  if (status === 'confirmed') return '✅ Confirmó asistencia';
+  if (status === 'needs_contact') return '🔴 Respondió — requiere que la clínica lo contacte';
+  return '⏳ Aún no responde el recordatorio';
 }
 
 function normalizeContactPhone(value) {
@@ -171,14 +180,20 @@ async function notifyStaffOfPatientReply(appointment, patientText, intent) {
   const appointmentDate = appointment.appointment_start
     ? new Date(appointment.appointment_start).toLocaleString('es-EC', { timeZone: 'America/Guayaquil', dateStyle: 'short', timeStyle: 'short' })
     : 'la cita programada';
-  const intentLabel = intent === 'confirmed'
-    ? 'confirmó su asistencia mediante el recordatorio automático'
-    : 'respondió al recordatorio automático y necesita atención directa';
-  const message = `🤖 Mensaje generado automáticamente por el chatbot del sistema.
+  const header = intent === 'confirmed'
+    ? `✅ *${patient} CONFIRMÓ su cita*`
+    : `🔴 *${patient} necesita que lo contactes*`;
+  const footer = intent === 'confirmed'
+    ? 'No necesitas hacer nada más.'
+    : 'NO confirmó la cita. Comunícate con el paciente para reprogramar o aclarar.';
+  const message = `${header}
 
-${patient} ${intentLabel}.
 Cita: ${appointmentDate}
-Mensaje: ${patientText || '(botón Confirmar)'}`;
+Respondió: “${patientText || 'Confirmar asistencia (botón)'}”
+
+${footer}
+
+_Aviso automático del chatbot._`;
   const staffPhone = normalizeContactPhone(appointment.professional_phone);
   if (staffPhone && await isWithinCustomerServiceWindow(staffPhone)) {
     await sendWhatsAppText(staffPhone, message, { clinicId: appointment.clinic_id });
@@ -222,6 +237,39 @@ async function handlePatientAppointmentReply({ from, text, buttonPayload }) {
   return true;
 }
 
+// Presupuesto por invocación: al agotarse se reanuda en otra invocación en vez de morir por timeout
+// a mitad del envío. El throttle evita ráfagas que degradan el quality rating del número en Meta.
+const REMINDER_BUDGET_MS = 40_000;
+const SEND_THROTTLE_MS = 120;
+
+/** Reencola la continuación del lote en una invocación nueva (fire-and-forget). */
+async function resumeReminders(slot, cursor) {
+  const appUrl = (process.env.APP_URL || `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || ''}`).replace(/\/$/, '').trim();
+  const cronSecret = (process.env.CRON_SECRET || '').trim();
+  if (!appUrl.startsWith('https://') || !cronSecret) {
+    console.error('⚠️ Lote de recordatorios incompleto y sin APP_URL/CRON_SECRET para reanudar; quedó en el índice', cursor);
+    return;
+  }
+  try {
+    await fetch(`${appUrl}/api/whatsapp-chatbot?action=sendReminders&slot=${encodeURIComponent(slot || '')}&cursor=${cursor}`, {
+      headers: { Authorization: `Bearer ${cronSecret}` },
+    });
+  } catch (err) {
+    console.error('❌ No se pudo reanudar el lote de recordatorios:', err.message);
+  }
+}
+
+/** Avisa al staff cuando el recordatorio de un paciente no pudo entregarse. */
+async function notifyStaffOfReminderFailure(row, patientName, dateLabel, reason) {
+  try {
+    const staffPhone = normalizeContactPhone(row.whatsapp_staff_phone || row.phone);
+    if (!staffPhone || !(await isWithinCustomerServiceWindow(staffPhone))) return;
+    await sendWhatsAppText(staffPhone, `⚠️ *Recordatorio NO enviado*\n\nNo se pudo entregar el recordatorio de ${patientName} (cita del ${dateLabel}).\nMotivo: ${String(reason).slice(0, 200)}\n\nContáctalo por otro medio.`, { clinicId: row.clinic_id });
+  } catch (err) {
+    console.error('❌ Error avisando fallo de recordatorio:', err.message);
+  }
+}
+
 async function markAppointmentReminderSent(auth, event, dateKey) {
   const calendar = google.calendar({ version: 'v3', auth });
   const privateProps = { ...(event.extendedProperties?.private || {}) };
@@ -235,13 +283,14 @@ async function markAppointmentReminderSent(auth, event, dateKey) {
   });
 }
 
-async function sendPatientAppointmentReminders(dayOffset = 1) {
+async function sendPatientAppointmentReminders(dayOffset = 1, startIndex = 0, deadline = Number.POSITIVE_INFINITY) {
   const targetDate = new Date();
   targetDate.setDate(targetDate.getDate() + dayOffset);
   const dateKey = targetDate.toLocaleDateString('en-CA', { timeZone: 'America/Guayaquil' });
   const timeMin = `${dateKey}T00:00:00-05:00`;
   const timeMax = `${dateKey}T23:59:59-05:00`;
 
+  // ORDER BY fijo: el índice de reanudación solo es válido si el orden es estable entre invocaciones.
   const users = await sql`
         SELECT cu.id AS user_id, cu.clinic_id, cu.full_name, cu.phone, cu.whatsapp_staff_phone, cs.general,
           cl.name AS clinic_name, cl.phone AS clinic_phone
@@ -249,12 +298,16 @@ async function sendPatientAppointmentReminders(dayOffset = 1) {
     JOIN clinic_users cu ON cu.id = t.clinic_user_id AND cu.is_active = true
     JOIN clinic_settings cs ON cs.clinic_id = cu.clinic_id
         JOIN clinics cl ON cl.id = cu.clinic_id
+    ORDER BY cu.id
   `;
 
   let sent = 0;
+  let index = startIndex;
   const errors = [];
 
-  for (const row of users.rows) {
+  for (; index < users.rows.length; index++) {
+    if (Date.now() > deadline) return { patientsChecked: users.rows.length, sent, errors, nextIndex: index };
+    const row = users.rows[index];
     try {
       const auth = await getUserOAuth2Client(row.user_id);
       if (!auth) continue;
@@ -298,7 +351,7 @@ async function sendPatientAppointmentReminders(dayOffset = 1) {
           const templateName = (process.env.WHATSAPP_TEMPLATE_APPOINTMENT || '').trim();
           const templateLang = (process.env.WHATSAPP_TEMPLATE_APPOINTMENT_LANG || 'es_MX').trim();
           if (withinWindow) {
-            await sendWhatsAppText(parsed.phone, `${patientMessage}\n\nPara confirmar, cambiar o consultar tu cita, comunícate directamente con tu clínica: ${contactLink}`, { clinicId: row.clinic_id, bookedByUserId: row.user_id, appointmentEventId: event.id, appointmentStart: start });
+            await sendWhatsAppText(parsed.phone, `${patientMessage}\n\nSi prefieres hablar directamente con la clínica: ${contactLink}`, { clinicId: row.clinic_id, bookedByUserId: row.user_id, appointmentEventId: event.id, appointmentStart: start, appointmentPatientName: parsed.patientName, name: parsed.patientName });
           } else if (templateName) {
             await sendWhatsAppTemplate(parsed.phone, templateName, templateLang, {
               nombre_paciente: parsed.patientName,
@@ -307,14 +360,19 @@ async function sendPatientAppointmentReminders(dayOffset = 1) {
               servicio: parsed.service || 'Consulta',
               fecha_hora: dateLabel,
               enlace_contacto: contactLink,
-            }, { clinicId: row.clinic_id, bookedByUserId: row.user_id, appointmentEventId: event.id, appointmentStart: start, buttonPayloads: [`appointment_confirm:${event.id}`] });
+            }, { clinicId: row.clinic_id, bookedByUserId: row.user_id, appointmentEventId: event.id, appointmentStart: start, appointmentPatientName: parsed.patientName, name: parsed.patientName, buttonPayloads: [`appointment_confirm:${event.id}`] });
           } else {
             throw new Error('WHATSAPP_TEMPLATE_APPOINTMENT no configurada para recordatorio del día anterior');
           }
           await markAppointmentReminderSent(auth, event, formatLocalDateKey(start));
           sent++;
+          // Meta permite ~80 msg/s, pero ráfagas de plantillas degradan el quality rating del número.
+          await new Promise(resolve => setTimeout(resolve, SEND_THROTTLE_MS));
         } catch (sendErr) {
           errors.push(`${parsed.patientName}: ${sendErr.message}`);
+          // Antes los fallos de plantilla (ej. idioma inexistente en Meta) quedaban solo en la BD:
+          // el staff daba por enviado un recordatorio que el paciente nunca recibió.
+          await notifyStaffOfReminderFailure(row, parsed.patientName, dateLabel, sendErr.message);
         }
       }
     } catch (err) {
@@ -322,7 +380,7 @@ async function sendPatientAppointmentReminders(dayOffset = 1) {
     }
   }
 
-  return { patientsChecked: users.rows.length, sent, errors };
+  return { patientsChecked: users.rows.length, sent, errors, nextIndex: null };
 }
 
 /** Ayudantes activos del usuario. Vacío si no tiene el multi-recurso activado. */
@@ -828,8 +886,8 @@ async function handleSystemStaffMessage(from, text, normalizedText) {
   await sendWhatsAppText(from, SYSTEM_MENU_TEXT);
 }
 
-/** Avisa al staff que agendó la cita cuando el paciente lee (o falla) la confirmación — así no queda "a ciegas" como con el correo. */
-async function notifyBookingUserOfDeliveryStatus({ bookedByUserId, contactId, status }) {
+/** Avisa al staff que agendó la cita cuando el paciente lee (o falla) el recordatorio — así no queda "a ciegas" como con el correo. */
+async function notifyBookingUserOfDeliveryStatus({ bookedByUserId, contactId, status, patientName, appointmentStart }) {
   if (!bookedByUserId || (status !== 'leido' && status !== 'fallido')) return;
   try {
     const [staffRes, contact] = await Promise.all([
@@ -838,10 +896,14 @@ async function notifyBookingUserOfDeliveryStatus({ bookedByUserId, contactId, st
     ]);
     const staffPhone = normalizeEcuadorPhone(staffRes.rows[0]?.whatsapp_staff_phone || staffRes.rows[0]?.phone || '');
     if (!staffPhone || !(await isWithinCustomerServiceWindow(staffPhone))) return;
-    const patientLabel = contact?.name || contact?.phone || 'el paciente';
+    const patientLabel = patientName || contact?.name || contact?.phone || 'el paciente';
+    const phoneNote = contact?.phone && patientLabel !== contact.phone ? ` (${contact.phone})` : '';
+    const dateNote = appointmentStart
+      ? ` del ${new Date(appointmentStart).toLocaleString('es-EC', { timeZone: 'America/Guayaquil', dateStyle: 'short', timeStyle: 'short' })}`
+      : '';
     const message = status === 'leido'
-      ? `👀 ${patientLabel} ya leyó la confirmación de su cita.\n\n¿Necesitas algo más? Contesta este chat o escribe *menu* para ver las opciones.`
-      : `⚠️ No se pudo entregar la confirmación de WhatsApp a ${patientLabel}. Verifica el número o avísale por otro medio.\n\nEscribe *menu* para ver las opciones.`;
+      ? `👀 *Recordatorio leído, aún SIN confirmar*\n\n${patientLabel}${phoneNote} abrió el recordatorio de su cita${dateNote}, pero todavía no ha respondido.\n\nEsto no es una confirmación. Te avisaremos apenas responda.`
+      : `⚠️ *Recordatorio NO entregado*\n\nNo se pudo enviar el recordatorio de WhatsApp a ${patientLabel}${phoneNote} para su cita${dateNote}. Verifica el número o avísale por otro medio.\n\nEscribe *menu* para ver las opciones.`;
     await sendWhatsAppText(staffPhone, message);
   } catch (err) {
     console.error('❌ Error notificando estado de entrega al staff:', err.message);
@@ -852,10 +914,17 @@ async function notifyBookingUserOfDeliveryStatus({ bookedByUserId, contactId, st
 async function handleIncomingMessages(body) {
   for (const event of extractMessageStatuses(body)) {
     const updated = await updateWhatsAppMessageStatus(event.providerMessageId, event.status, event.errorDetail);
-    if (updated && !updated.read_notified && (updated.status === 'leido' || updated.status === 'fallido')) {
-      await notifyBookingUserOfDeliveryStatus({ bookedByUserId: updated.booked_by_user_id, contactId: updated.contact_id, status: updated.status });
-      await markMessageReadNotified(updated.id);
-    }
+    if (!updated || updated.read_notified) continue;
+    if (updated.status !== 'leido' && updated.status !== 'fallido') continue;
+    // Reservar ANTES de enviar: Meta reintenta el webhook y dos invocaciones en paralelo avisaban dos veces.
+    if (!(await claimMessageReadNotification(updated.id))) continue;
+    await notifyBookingUserOfDeliveryStatus({
+      bookedByUserId: updated.booked_by_user_id,
+      contactId: updated.contact_id,
+      status: updated.status,
+      patientName: updated.appointment_patient_name,
+      appointmentStart: updated.appointment_start,
+    });
   }
 
   for (const { from, text, buttonPayload, mediaType, providerMessageId, timestamp, name } of extractIncomingMessages(body)) {
@@ -871,7 +940,7 @@ async function handleIncomingMessages(body) {
       providerMessageId,
     });
     if (!audit.rows.length) continue;
-    const normalizedText = String(text || '').trim().toLowerCase();
+    const normalizedText = normalizeCommandText(text);
     if (!normalizedText) continue;
 
     // Staff interno del sistema (soporte técnico) — flujo totalmente separado de clinic_users
@@ -926,12 +995,12 @@ async function handleIncomingMessages(body) {
 
     try {
       // ── Comandos globales, disponibles en cualquier punto de cualquier flujo ──
-      if (normalizedText === 'cancelar' && hasActiveState) {
+      if (['cancelar', 'cancela', 'salir', 'cancelarlo'].includes(normalizedText) && hasActiveState) {
         await clearBotState(from);
         await sendWhatsAppText(from, '❌ Operación cancelada.\n\nEscribe *menu* para ver las opciones.');
         continue;
       }
-      if (normalizedText === 'menu') {
+      if (['menu', 'menu principal', 'inicio', 'opciones', 'hola'].includes(normalizedText)) {
         await clearBotState(from);
         await sendWhatsAppText(from, `Hola ${clinicUser.full_name || ''} 👋\n\n${MENU_TEXT}`);
         continue;
@@ -1148,7 +1217,8 @@ async function handleIncomingMessages(body) {
         continue;
       }
 
-      if (botState?.flow === 'finance' && botState.stage === 'awaitingFinanceChoice' && financeChoice) {
+      if (botState?.flow === 'finance' && botState.stage === 'awaitingFinanceChoice') {
+        if (!financeChoice) { await sendWhatsAppText(from, `No reconocí esa opción.\n\n${FINANCE_REPORT_MENU_TEXT}`); continue; }
         await clearBotState(from);
         if (!clinicUser.finance_enabled) { await sendWhatsAppText(from, 'No tienes acceso al módulo de Finanzas.'); continue; }
         await sendFinanceReportToUser(clinicUser, financeChoice, from);
@@ -1180,6 +1250,9 @@ async function handleIncomingMessages(body) {
         continue;
       }
 
+      // Mostrar el menú principal sin limpiar el estado dejaba al bot dentro del flujo anterior:
+      // el siguiente “1” se interpretaba como opción de ese flujo, no del menú recién mostrado.
+      if (hasActiveState) await clearBotState(from);
       await sendWhatsAppText(from, `Hola ${clinicUser.full_name || ''} 👋\n\n${MENU_TEXT}`);
     } catch (err) {
       console.error('❌ Error respondiendo por WhatsApp:', err.message);
@@ -1188,7 +1261,7 @@ async function handleIncomingMessages(body) {
 }
 
 /** Envía a cada usuario autorizado un resumen de citas con enlaces para recordar manualmente. */
-async function sendAppointmentSummaries(dayOffset = 0, slot = 'morning') {
+async function sendAppointmentSummaries(dayOffset = 0, slot = 'morning', startIndex = 0, deadline = Number.POSITIVE_INFINITY) {
   const baseDate = new Date();
   baseDate.setDate(baseDate.getDate() + dayOffset);
   const targetDate = baseDate.toLocaleDateString('en-CA', { timeZone: 'America/Guayaquil' });
@@ -1222,8 +1295,11 @@ async function sendAppointmentSummaries(dayOffset = 0, slot = 'morning') {
   `;
 
   let remindersSent = 0;
+  let index = startIndex;
   const errors = [];
-  for (const row of users.rows) {
+  for (; index < users.rows.length; index++) {
+    if (Date.now() > deadline) return { usersChecked: users.rows.length, remindersSent, errors, nextIndex: index };
+    const row = users.rows[index];
     if (isSystemStaffPhone(row.staff_phone)) continue;
     const clinicName = row.general?.name || 'la clínica';
     try {
@@ -1254,12 +1330,17 @@ async function sendAppointmentSummaries(dayOffset = 0, slot = 'morning') {
       const replyStatuses = await getAppointmentReplyStatuses(appointments.map(appointment => appointment.eventId));
       const label = dayOffset === 0 ? 'hoy' : 'mañana';
       const lines = appointments.map((appointment, index) => {
-        const replyStatus = `\nEstado: ${formatAppointmentReplyStatus(replyStatuses[appointment.eventId])}`;
-        const action = appointment.link ? ` · Escribir: ${appointment.link}` : ' · Sin enlace de paciente';
-        return `${index + 1}) ${appointment.hora || 'Hora pendiente'} ${appointment.patientName} · ${formatAppointmentReplyStatus(replyStatuses[appointment.eventId])}${action}`;
+        const contact = appointment.link
+          ? `\n   ✍️ Escribirle: ${appointment.link}`
+          : '\n   ⚠️ Sin número registrado — no se le puede escribir desde aquí';
+        return `${index + 1}) ${appointment.hora || 'Hora pendiente'} — ${appointment.patientName}\n   ${formatAppointmentReplyStatus(replyStatuses[appointment.eventId])}${contact}`;
       });
-      const summary = `Hola ${row.staff_name || 'equipo'}, este mensaje fue generado automáticamente por el chatbot del sistema para ${clinicName} (${label}, ${targetDate}). Los recordatorios de pacientes también son gestionados automáticamente por el chatbot.\n\n${lines.join('\n\n')}` +
-        '\n\nResponde 1 para Agenda o 2 para Reporte financiero.';
+      const pending = appointments.filter(a => replyStatuses[a.eventId] !== 'confirmed').length;
+      const header = `📅 *Agenda de ${label}* (${targetDate}) — ${clinicName}\n` +
+        `${appointments.length} cita(s) · ${appointments.length - pending} confirmada(s) · ${pending} sin confirmar`;
+      const summary = `Hola ${row.staff_name || 'equipo'} 👋\n\n${header}\n\n${lines.join('\n\n')}\n\n` +
+        'ℹ️ “Aún no responde” NO significa que el paciente vaya a faltar: solo que todavía no contestó el recordatorio automático.\n\n' +
+        'Responde *1* para Agenda o *2* para Reporte financiero.';
       const staffPhone = normalizeEcuadorPhone(row.staff_phone);
       try {
         // El staff no necesariamente escribió hoy: fuera de la ventana de 24h se requiere plantilla aprobada
@@ -1281,6 +1362,7 @@ async function sendAppointmentSummaries(dayOffset = 0, slot = 'morning') {
           throw new Error('Fuera de ventana de 24h y no hay WHATSAPP_TEMPLATE_DAILY_SUMMARY configurada');
         }
         remindersSent++;
+        await new Promise(resolve => setTimeout(resolve, SEND_THROTTLE_MS));
       } catch (sendErr) {
         errors.push(`user ${row.user_id}, staff ${staffPhone}: ${sendErr.message}`);
       }
@@ -1289,7 +1371,7 @@ async function sendAppointmentSummaries(dayOffset = 0, slot = 'morning') {
     }
   }
 
-  return { usersChecked: users.rows.length, remindersSent, errors };
+  return { usersChecked: users.rows.length, remindersSent, errors, nextIndex: null };
 }
 
 export default async function handler(req, res) {
@@ -1343,14 +1425,20 @@ export default async function handler(req, res) {
     }
     try {
       const slot = getQueryValue(req.query?.slot);
+      const cursor = Math.max(0, Number(getQueryValue(req.query?.cursor)) || 0);
+      const deadline = Date.now() + REMINDER_BUDGET_MS;
       const isAfternoon = slot === 'afternoon';
       const summaryResult = isAfternoon
-        ? { usersChecked: 0, remindersSent: 0, errors: [] }
-        : await sendAppointmentSummaries(slot === 'evening' ? 1 : 0, slot === 'evening' ? 'evening' : 'morning');
+        ? { usersChecked: 0, remindersSent: 0, errors: [], nextIndex: null }
+        : await sendAppointmentSummaries(slot === 'evening' ? 1 : 0, slot === 'evening' ? 'evening' : 'morning', cursor, deadline);
       const patientResult = isAfternoon
-        ? await sendPatientAppointmentReminders(1)
-        : { patientsChecked: 0, sent: 0, errors: [] };
-      return res.status(200).json({ success: true, ...summaryResult, patientReminder: patientResult });
+        ? await sendPatientAppointmentReminders(1, cursor, deadline)
+        : { patientsChecked: 0, sent: 0, errors: [], nextIndex: null };
+      const nextIndex = isAfternoon ? patientResult.nextIndex : summaryResult.nextIndex;
+      // Con muchas clínicas el lote no cabe en una sola invocación: se continúa donde quedó
+      // en vez de morir por timeout dejando pacientes sin avisar y sin ninguna señal.
+      if (nextIndex !== null) await resumeReminders(slot, nextIndex);
+      return res.status(200).json({ success: true, ...summaryResult, resumedFrom: cursor, nextIndex, patientReminder: patientResult });
     } catch (err) {
       console.error('❌ Error en recordatorios WhatsApp:', err.message);
       return res.status(500).json({ success: false, message: err.message });

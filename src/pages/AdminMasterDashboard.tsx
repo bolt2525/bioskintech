@@ -2945,7 +2945,7 @@ export default function AdminMasterDashboard() {
                         <div className="col-span-3 flex items-center justify-between p-3 border rounded-lg bg-amber-50 border-amber-100">
                           <div>
                             <label className="block text-xs font-semibold text-gray-700">📅⏰ Resúmenes de agenda por WhatsApp</label>
-                            <p className="text-xs text-gray-500">Envía al staff autorizado las citas de hoy a las 07:00 y las de mañana a las 19:00, con enlaces para enviar recordatorios manuales.</p>
+                            <p className="text-xs text-gray-500">Envía al staff autorizado las citas de hoy en la franja de las 07:00 y las de mañana en la franja de las 19:00 (hora garantizada, minuto no), con enlaces para enviar recordatorios manuales.</p>
                           </div>
                           <button type="button" onClick={() => setSettingsData(s => s?({...s,agenda:{...s.agenda,daily_reminder_whatsapp:!s.agenda.daily_reminder_whatsapp}}):s)}
                             className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${settingsData.agenda.daily_reminder_whatsapp ? 'bg-[#deb887]' : 'bg-gray-300'}`}>
