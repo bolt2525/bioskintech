@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import recordsFetch from "../utils/recordsFetch";
 import { useParams, useNavigate } from 'react-router-dom';
 import SignatureCanvas from 'react-signature-canvas';
+import { normalizeSignature, SIGNATURE_PEN } from '../utils/signatureImage';
 import { CheckCircle, AlertTriangle, PenTool, Eraser, Save, X, Printer } from 'lucide-react';
 import BrandLogo from '../components/ui/BrandLogo';
 import ConsentDocumentSections from '../components/admin/ficha-clinica/components/ConsentDocumentSections';
@@ -171,7 +172,7 @@ export default function ConsentSigning() {
       alert('Por favor firme antes de guardar');
       return;
     }
-    const dataUrl = sigCanvas.current?.getTrimmedCanvas().toDataURL('image/png');
+    const dataUrl = sigCanvas.current ? normalizeSignature(sigCanvas.current.getCanvas()) : null;
     setSignatureData(dataUrl || null);
     setIsSigning(false);
   };
@@ -523,6 +524,7 @@ export default function ConsentSigning() {
           
           <div className="flex-1 bg-white relative touch-none">
             <SignatureCanvas 
+              {...SIGNATURE_PEN}
               ref={sigCanvas}
               canvasProps={{
                 className: 'absolute inset-0 w-full h-full',

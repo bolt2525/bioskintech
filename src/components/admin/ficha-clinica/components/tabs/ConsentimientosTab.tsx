@@ -9,6 +9,7 @@ import {
 import CrossConsultHistoryModal, { type ConsultationRef } from '../CrossConsultHistoryModal';
 import { QRCodeSVG } from 'qrcode.react';
 import SignatureCanvas from 'react-signature-canvas';
+import { normalizeSignature, normalizeSignatureDataUrl, isNormalizedSignature, NORMALIZED_SIGNATURE_HEIGHT_PX, SIGNATURE_PEN } from '../../../../../utils/signatureImage';
 import ConsentDocumentSections from '../ConsentDocumentSections';
 import { Tooltip } from '../../../../ui/Tooltip';
 import { useClinicSettings } from '../../../../../hooks/useClinicSettings';
@@ -207,7 +208,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
         const data = await res.json();
         if (data.signature) {
           // If signature exists, update the current consent
-          updateNestedField('signatures', 'professional_sig_data', data.signature);
+          updateNestedField('signatures', 'professional_sig_data', await normalizeSignatureDataUrl(data.signature));
           setMessage({ type: 'success', text: 'Firma cargada correctamente' });
         }
       }
@@ -253,7 +254,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
 
   const handleProfSignatureEnd = () => {
     if (profSigCanvas.current) {
-      const dataUrl = profSigCanvas.current.getTrimmedCanvas().toDataURL('image/png');
+      const dataUrl = normalizeSignature(profSigCanvas.current.getCanvas());
       updateNestedField('signatures', 'professional_sig_data', dataUrl);
     }
   };
@@ -437,7 +438,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
     setInPersonSigningBusy(true);
     setInPersonError('');
     try {
-      const signature = patientSigCanvas.current.getTrimmedCanvas().toDataURL('image/png');
+      const signature = normalizeSignature(patientSigCanvas.current.getCanvas());
       const res = await recordsFetch(API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -635,18 +636,26 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
   // Signature size helpers — component scope, not inside handleSave
   const patientSigSize  = currentConsent?.signatures?.patient_sig_size  ?? 80;
   const profSigSize     = currentConsent?.signatures?.professional_sig_size ?? 120;
+  // Las firmas normalizadas tienen tamaño fijo; el control manual solo aplica a firmas antiguas.
+  const sigHeight = (dataUrl: string | undefined, legacyPx: number) =>
+    ({ height: `${isNormalizedSignature(dataUrl) ? NORMALIZED_SIGNATURE_HEIGHT_PX : legacyPx}px` });
+  const hasLegacySignature = [currentConsent?.signatures?.patient_sig_data, currentConsent?.signatures?.professional_sig_data]
+    .some(sig => sig && !isNormalizedSignature(sig));
 
-  const handleSigSizeChange = async (field: 'patient_sig_size' | 'professional_sig_size', px: number) => {
+  const sigSizeSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleSigSizeChange = (field: 'patient_sig_size' | 'professional_sig_size', px: number) => {
     if (!currentConsent) return;
     const updated = { ...currentConsent, signatures: { ...currentConsent.signatures, [field]: px } };
     setCurrentConsent(updated);
     if (!updated.id) return;
-    try {
-      await recordsFetch(`${API_URL}?action=saveConsent`, {
+    // Guarda una sola vez al soltar el control, no en cada paso del deslizador.
+    if (sigSizeSaveTimer.current) clearTimeout(sigSizeSaveTimer.current);
+    sigSizeSaveTimer.current = setTimeout(() => {
+      recordsFetch(`${API_URL}?action=saveConsent`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...updated, ...(consultationId ? { consultation_id: consultationId } : {}) })
-      });
-    } catch { /* silent — size is in state even if save fails */ }
+      }).catch(() => { /* el tamaño queda en pantalla aunque falle el guardado */ });
+    }, 600);
   };
 
   const handleSave = async () => {
@@ -1424,6 +1433,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                           <div className="flex-1 p-6 bg-gray-100 overflow-hidden relative flex flex-col">
                             <div className="flex-1 bg-white shadow-lg rounded-xl border border-gray-200 overflow-hidden relative">
                               <SignatureCanvas 
+                                {...SIGNATURE_PEN}
                                 ref={profSigCanvas}
                                 canvasProps={{
                                   className: 'w-full h-full cursor-crosshair',
@@ -1471,9 +1481,14 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                     )}
                   </AnimatePresence>
 
-                  {/* Signature print size sliders — individual per signature */}
+                  {/* Signature print size sliders — solo para firmas anteriores a la normalización */}
+                  {!hasLegacySignature ? (
+                    <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl p-3">
+                      Las firmas se normalizan automáticamente: se toma solo el trazo, se ajusta a un tamaño uniforme y se apoya sobre la línea de firma del documento.
+                    </p>
+                  ) : (
                   <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3">
-                    <p className="text-sm font-semibold text-amber-800">Tamaño de firma en impresión</p>
+                    <p className="text-sm font-semibold text-amber-800">Tamaño de firma en impresión (firmas anteriores)</p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <span className="text-xs text-amber-700 font-medium mb-1 block">Firma del Paciente</span>
@@ -1484,7 +1499,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                         {currentConsent.signatures?.patient_sig_data && (
                           <div className="mt-2 flex justify-center border border-dashed border-amber-200 rounded-lg p-2 bg-white">
                             <img src={currentConsent.signatures.patient_sig_data} alt="preview"
-                              style={{ height: `${patientSigSize}px` }} className="object-contain" />
+                              style={sigHeight(currentConsent.signatures.patient_sig_data, patientSigSize)} className="object-contain" />
                           </div>
                         )}
                       </div>
@@ -1497,13 +1512,14 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                         {currentConsent.signatures?.professional_sig_data && (
                           <div className="mt-2 flex justify-center border border-dashed border-amber-200 rounded-lg p-2 bg-white">
                             <img src={currentConsent.signatures.professional_sig_data} alt="preview"
-                              style={{ height: `${profSigSize}px` }} className="object-contain" />
+                              style={sigHeight(currentConsent.signatures.professional_sig_data, profSigSize)} className="object-contain" />
                           </div>
                         )}
                       </div>
                     </div>
                     <p className="text-xs text-amber-600">{!currentConsent.id ? '⚠ Se guarda con el botón Guardar' : '✓ Se guarda automáticamente al mover el control'}</p>
                   </div>
+                  )}
 
                   <div className="flex justify-end pt-6 border-t border-gray-100">
                     <div className="flex items-center gap-4 bg-gray-50 p-3 rounded-xl border border-gray-200">
@@ -1759,7 +1775,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                   <img 
                     src={currentConsent.signatures.patient_sig_data} 
                     alt="Firma Paciente" 
-                    style={{ height: `${patientSigSize}px` }}
+                    style={sigHeight(currentConsent.signatures.patient_sig_data, patientSigSize)}
                     className="object-contain mb-2"
                   />
                 )}
@@ -1777,7 +1793,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                   <img 
                     src={currentConsent.signatures.professional_sig_data} 
                     alt="Firma Profesional" 
-                    style={{ height: `${profSigSize}px` }}
+                    style={sigHeight(currentConsent.signatures.professional_sig_data, profSigSize)}
                     className="object-contain mb-2"
                   />
                 )}
@@ -1903,7 +1919,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                 <h3 className="font-semibold text-gray-900">Firma del paciente</h3>
                 <p className="text-sm text-gray-600">Pida al paciente que firme en el recuadro. Puede borrar y volver a intentarlo.</p>
                 <div className="h-44 border border-gray-300 rounded-md overflow-hidden touch-none">
-                  <SignatureCanvas ref={patientSigCanvas} backgroundColor="white" canvasProps={{ className: 'w-full h-full', style: { width: '100%', height: '176px' } }} />
+                  <SignatureCanvas ref={patientSigCanvas} {...SIGNATURE_PEN} backgroundColor="white" canvasProps={{ className: 'w-full h-full', style: { width: '100%', height: '176px' } }} />
                 </div>
               </section>
               {inPersonError && <p role="alert" className="p-3 bg-red-50 text-red-700 rounded-md text-sm">{inPersonError}</p>}
