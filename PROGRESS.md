@@ -1,5 +1,6 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-09-30 Respaldo diario: lectura en transacción consistente de solo lectura, falla (no trunca) sobre 50.000 filas y alerta por correo ante fallos.
 - ✅ 2026-09-30 Base de Datos: estado del respaldo automático visible, consentimientos firmados en documento imprimible.
 - ✅ 2026-09-30 Importación de pacientes: plantilla guiada con `;`, validación de cédula, detección de tipo y antecedentes.
 - ✅ 2026-09-30 Cron elimina fotos de clínicas vencidas hace más de 30 días; primer respaldo automático verificado (11 clínicas).

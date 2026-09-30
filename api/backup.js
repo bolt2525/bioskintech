@@ -379,6 +379,11 @@ async function runCron(req, res, pool) {
     catch (err) { failed.push(id); console.error('[backup:cron] snapshot failed', id, err?.code || err?.name || 'Error'); }
   }
   console.info('[backup:cron] done', { ok, failed: failed.length });
+  if (failed.length) {
+    const { sendDeveloperAlert } = await import('./admin-auth.js');
+    await sendDeveloperAlert('Respaldo automático con fallos', { Correctos: ok, Fallidos: failed.length, 'Clínicas': failed.join(', ') })
+      .catch(err => console.error('[backup:cron] alert error', err?.name || 'Error'));
+  }
   const photosPurged = await purgeExpiredClinicPhotos(pool).catch(err => { console.error('[backup:cron] purge error', err?.code || err?.name); return 0; });
   if (photosPurged) console.info('[backup:cron] expired photos purged', photosPurged);
   return res.status(failed.length ? 207 : 200).json({ ok, failed, photosPurged });

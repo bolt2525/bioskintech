@@ -107,6 +107,26 @@ test('photo purge deletes storage first and keeps rows whose object could not be
   assert.deepEqual(deletedRows, [1]);
 });
 
+test('snapshot reads inside one read-only transaction and never saves a silently truncated table', async () => {
+  const log = [];
+  const makePool = rowsForPatients => ({ connect: async () => ({
+    query: async sql => {
+      log.push(sql.split(/\s+/).slice(0, 2).join(' '));
+      if (sql.includes('information_schema.tables')) return { rows: [{ table_name: 'patients' }] };
+      if (sql.includes('FROM patients')) return { rows: rowsForPatients };
+      return { rows: [] };
+    },
+    release: () => log.push('RELEASE'),
+  }) });
+  const modules = await svc.collectClinicData(makePool([{ id: 1 }]), CLINIC, ['patients']);
+  assert.equal(modules.patients.count, 1);
+  assert.equal(log[0], 'BEGIN ISOLATION');
+  assert.ok(log.includes('COMMIT') && log.at(-1) === 'RELEASE');
+  const huge = Array.from({ length: svc.MAX_ROWS_PER_TABLE + 1 }, (_, id) => ({ id }));
+  await assert.rejects(() => svc.collectClinicData(makePool(huge), CLINIC, ['patients']), /supera/);
+  assert.ok(log.includes('ROLLBACK'));
+});
+
 test('snapshot and upload keys are scoped to the clinic', () => {
   assert.equal(api.isSnapshotKey(`backups/${CLINIC}/auto/2026-09-29T08-00-00-000Z-ab12cd34.json.gz.enc`, CLINIC), true);
   assert.equal(api.isSnapshotKey(`backups/${OTHER}/auto/x.json.gz.enc`, CLINIC), false);
