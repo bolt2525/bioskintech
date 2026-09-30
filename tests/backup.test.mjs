@@ -40,15 +40,22 @@ test('signature detects edited backups, foreign clinics and future versions', ()
 });
 
 test('patient template validation normalizes Excel artifacts and rejects bad data', () => {
-  const ok = svc.validatePatientImportRow({ nombres: ' Ana ', apellidos: 'Pérez', tipo_identificacion: 'CEDULA', numero_identificacion: '102345678',
-    email: 'ANA@MAIL.COM', telefono: "'+593 99 999 9999", fecha_nacimiento: '05/03/1990', genero: 'femenino' });
-  assert.equal(ok.patient.identification_number, '0102345678');
+  const ok = svc.validatePatientImportRow({ nombres: ' Ana ', apellidos: 'Pérez', tipo_identificacion: 'CÉDULA', numero_identificacion: '102345675',
+    email: 'ANA@MAIL.COM', telefono: "'+593 99 999 9999", fecha_nacimiento: '5/3/1990', genero: 'F', alergias: 'Penicilina', habitos: '' });
+  assert.equal(ok.patient.identification_number, '0102345675');
   assert.equal(ok.patient.birth_date, '1990-03-05');
   assert.equal(ok.patient.gender, 'Femenino');
   assert.equal(ok.patient.email, 'ana@mail.com');
   assert.equal(ok.patient.phone, '+593 99 999 9999');
-  const bad = r => svc.validatePatientImportRow({ nombres: 'A', apellidos: 'B', tipo_identificacion: 'cedula', numero_identificacion: '0102345678', ...r }).error;
-  assert.match(bad({ tipo_identificacion: 'pasaporte' }), /Identificación/);
+  assert.deepEqual(ok.history, { allergies: 'Penicilina' });
+  const auto = svc.validatePatientImportRow({ nombres: 'A', apellidos: 'B', numero_identificacion: '0102345675001' });
+  assert.equal(auto.patient.identification_type, 'ruc');
+  assert.equal(auto.history, null);
+  const bad = r => svc.validatePatientImportRow({ nombres: 'A', apellidos: 'B', tipo_identificacion: 'cedula', numero_identificacion: '0102345675', ...r }).error;
+  assert.equal(bad({}), undefined);
+  assert.match(bad({ numero_identificacion: '0102345678' }), /verificador/);
+  assert.match(bad({ tipo_identificacion: 'pasaporte' }), /Tipo de identificación/);
+  assert.match(bad({ antecedentes_patologicos: 'x'.repeat(2001) }), /2000/);
   assert.match(bad({ fecha_nacimiento: '2999-01-01' }), /Fecha/);
   assert.match(bad({ fecha_nacimiento: '1990-02-30' }), /Fecha/);
   assert.match(bad({ email: 'no-es-correo' }), /Correo/);
@@ -63,6 +70,41 @@ test('jsonb arrays and objects are serialized as JSON while dates stay native', 
     { id: 1, face_map_data: [{ zone: 'frente' }], body_map_data: { a: 1 }, created_at: when, skin_type: 'mixta' },
     new Set(['id', 'face_map_data', 'body_map_data', 'created_at', 'skin_type']), new Set(['face_map_data', 'body_map_data']));
   assert.deepEqual(values, [1, '[{"zone":"frente"}]', '{"a":1}', when, 'mixta']);
+});
+
+test('template uses semicolons, documents every column and marks example rows', () => {
+  const csv = svc.buildPatientTemplateCsv();
+  const [header, first] = csv.replace(/^\uFEFF/, '').split('\r\n');
+  assert.equal(header.split(';').length, svc.PATIENT_TEMPLATE_COLUMNS.length);
+  assert.ok(header.includes('alergias'));
+  assert.equal(svc.isTemplateExampleRow({ nombres: first.split(';')[0] }), true);
+  assert.equal(svc.isTemplateExampleRow({ nombres: 'Ana' }), false);
+});
+
+test('readable consents escape content and only embed safe PNG signatures', async () => {
+  const png = 'data:image/png;base64,iVBORw0KGgo=';
+  const pool = { query: async sql => sql.includes('FROM clinics') ? { rows: [{ name: 'Clínica <X>' }] } : { rows: [{
+    first_name: '<script>alert(1)</script>', last_name: 'P', patient_identification: '0102345675', procedure_type: 'Toxina',
+    risks: ['Edema', 'Hematoma'], declarations: { understanding: true }, signatures: { patient_sig_data: png, professional_sig_data: 'javascript:alert(1)' },
+    signing_hash: 'abc', created_at: new Date(), status: 'signed' }] } };
+  const html = await svc.buildConsentsHtml(pool, CLINIC);
+  assert.doesNotMatch(html, /<script>alert/);
+  assert.match(html, /&lt;script&gt;/);
+  assert.match(html, /Clínica &lt;X&gt;/);
+  assert.ok(html.includes(`src="${png}"`));
+  assert.doesNotMatch(html, /javascript:alert/);
+  assert.match(html, /Hematoma/);
+});
+
+test('photo purge deletes storage first and keeps rows whose object could not be deleted', async () => {
+  const deletedRows = [];
+  const pool = { query: async (sql, params) => {
+    if (sql.startsWith('SELECT f.id')) { assert.match(sql, /INTERVAL '30 days'/); return { rows: [{ id: 1, r2_key: 'a' }, { id: 2, r2_key: 'b' }] }; }
+    deletedRows.push(params[0]); return { rowCount: 1 };
+  } };
+  const removed = await api.purgeExpiredClinicPhotos(pool, async key => { if (key === 'b') throw new Error('R2 down'); });
+  assert.equal(removed, 1);
+  assert.deepEqual(deletedRows, [1]);
 });
 
 test('snapshot and upload keys are scoped to the clinic', () => {

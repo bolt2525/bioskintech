@@ -1192,7 +1192,7 @@ async function claimSetupTokenFn(token, newPassword) {
 
 /** Extrae el usuario autenticado del header Authorization */
 // Cambiar esta fecha al publicar nuevas Condiciones/Política obliga a todos los usuarios a re-aceptar.
-export const LEGAL_VERSION = '2026-09-29';
+export const LEGAL_VERSION = '2026-09-30';
 
 async function recordLegalAcceptance(userId, clinicId, req) {
   const ip = String(req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || '').split(',')[0].trim().slice(0, 100) || null;

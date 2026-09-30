@@ -8,13 +8,14 @@
  */
 
 import crypto from 'node:crypto';
+import { gzipSync } from 'node:zlib';
 import { getPool } from '../lib/neon-clinical-db.js';
 import { authenticateRequest } from '../lib/admin-auth.js';
-import { putR2Object, getR2ObjectBuffer, listR2Objects, generateDownloadUrl, generateUploadUrl, r2ObjectExists } from '../lib/r2-service.js';
+import { putR2Object, getR2ObjectBuffer, listR2Objects, generateDownloadUrl, generateUploadUrl, r2ObjectExists, deleteR2Object } from '../lib/r2-service.js';
 import {
-  BACKUP_MODULES, MAX_UPLOAD_BYTES, MAX_ROWS_PER_TABLE, EXCLUDED_CONSENT_COLUMNS,
+  BACKUP_MODULES, MAX_UPLOAD_BYTES, MAX_ROWS_PER_TABLE, EXCLUDED_CONSENT_COLUMNS, PATIENT_TEMPLATE_COLUMNS,
   buildBackupDocument, collectClinicData, compressBackup, decodeBackupBuffer, encryptBackup, hasBackupKey,
-  inspectBackupDocument, buildDatasetCsv, validatePatientImportRow,
+  inspectBackupDocument, buildDatasetCsv, validatePatientImportRow, buildPatientTemplateCsv, isTemplateExampleRow, buildConsentsHtml,
 } from '../lib/backup-service.js';
 
 const CLINIC_SCOPED_TABLES = new Set([
@@ -337,10 +338,30 @@ async function createSnapshot(pool, clinicId, kind, generatedBy) {
 }
 
 async function publishTemporaryDownload(clinicId, doc, filenameBase) {
-  const key = `backup-tmp/${clinicId}/exports/${crypto.randomUUID()}.json.gz`;
-  await putR2Object(key, compressBackup(doc), 'application/gzip');
-  const filename = `${filenameBase}-${new Date().toISOString().split('T')[0]}.json.gz`;
+  return publishTemporaryFile(clinicId, compressBackup(doc), `${filenameBase}-${new Date().toISOString().split('T')[0]}.json.gz`);
+}
+
+async function publishTemporaryFile(clinicId, gzBuffer, filename) {
+  const key = `backup-tmp/${clinicId}/exports/${crypto.randomUUID()}.gz`;
+  await putR2Object(key, gzBuffer, 'application/gzip');
   return { url: await generateDownloadUrl(key, filename), filename };
+}
+
+/** Política: las fotos se eliminan 30 días después de vencer la suscripción sin renovación; no se respaldan. */
+export async function purgeExpiredClinicPhotos(pool, deleteObject = deleteR2Object, limit = 500) {
+  const { rows } = await pool.query(
+    `SELECT f.id, f.r2_key FROM clinical_photos f JOIN clinics c ON c.id = f.clinic_id
+     WHERE c.subscription_expires_at IS NOT NULL AND c.subscription_expires_at < NOW() - INTERVAL '30 days'
+     ORDER BY f.id LIMIT ${Number(limit)}`);
+  let deleted = 0;
+  for (const photo of rows) {
+    try {
+      await deleteObject(photo.r2_key);
+      await pool.query('DELETE FROM clinical_photos WHERE id = $1', [photo.id]);
+      deleted++;
+    } catch (err) { console.error('[backup:cron] photo purge failed', photo.id, err?.name || 'Error'); }
+  }
+  return deleted;
 }
 
 async function runCron(req, res, pool) {
@@ -358,7 +379,9 @@ async function runCron(req, res, pool) {
     catch (err) { failed.push(id); console.error('[backup:cron] snapshot failed', id, err?.code || err?.name || 'Error'); }
   }
   console.info('[backup:cron] done', { ok, failed: failed.length });
-  return res.status(failed.length ? 207 : 200).json({ ok, failed });
+  const photosPurged = await purgeExpiredClinicPhotos(pool).catch(err => { console.error('[backup:cron] purge error', err?.code || err?.name); return 0; });
+  if (photosPurged) console.info('[backup:cron] expired photos purged', photosPurged);
+  return res.status(failed.length ? 207 : 200).json({ ok, failed, photosPurged });
 }
 
 async function parseJsonBody(req) {
@@ -369,17 +392,18 @@ async function parseJsonBody(req) {
 
 async function importPatients(pool, rows, clinicId, auth, dryRun) {
   if (!Array.isArray(rows) || rows.length === 0 || rows.length > 5000) throw new Error('El archivo debe tener entre 1 y 5000 pacientes');
-  const report = { valid: 0, created: 0, duplicates: [], errors: [], committed: false };
+  const report = { valid: 0, created: 0, withHistory: 0, examplesSkipped: 0, duplicates: [], errors: [], committed: false };
   const seen = new Set();
   const candidates = [];
   rows.forEach((raw, index) => {
     const line = index + 2;
-    const { patient, error } = validatePatientImportRow(raw);
+    if (isTemplateExampleRow(raw)) { report.examplesSkipped++; return; }
+    const { patient, history, error } = validatePatientImportRow(raw);
     if (error) return report.errors.length < 500 && report.errors.push({ line, error });
     const key = `${patient.identification_type}:${patient.identification_number}`;
     if (seen.has(key)) return report.duplicates.push({ line, reason: 'Identificación repetida dentro del archivo' });
     seen.add(key);
-    candidates.push({ line, patient });
+    candidates.push({ line, patient, history });
   });
   if (candidates.length) {
     const existing = await pool.query(
@@ -395,13 +419,14 @@ async function importPatients(pool, rows, clinicId, auth, dryRun) {
     }
   }
   report.valid = candidates.length;
+  report.withHistory = candidates.filter(c => c.history).length;
   report.duplicates.sort((a, b) => a.line - b.line);
   if (dryRun || report.errors.length || !candidates.length) return report;
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    for (const { patient: p } of candidates) {
+    for (const { patient: p, history } of candidates) {
       const created = await client.query(
         `INSERT INTO patients (first_name, last_name, rut, identification_type, identification_number, email, phone, birth_date, gender,
            address, occupation, tipo_sangre, estado_civil, clinic_id, created_by_user_id)
@@ -409,8 +434,16 @@ async function importPatients(pool, rows, clinicId, auth, dryRun) {
         [p.first_name, p.last_name, p.identification_number, p.identification_type, p.email, p.phone, p.birth_date, p.gender,
           p.address, p.occupation, p.tipo_sangre, p.estado_civil, clinicId, auth.id ?? null]);
       const patientId = created.rows[0].id;
-      await client.query('INSERT INTO clinical_records (patient_id, clinic_id, created_by_user_id, status) VALUES ($1, $2, $3, $4)',
+      const record = await client.query('INSERT INTO clinical_records (patient_id, clinic_id, created_by_user_id, status) VALUES ($1, $2, $3, $4) RETURNING id',
         [patientId, clinicId, auth.id ?? null, 'active']);
+      if (history) {
+        const fields = Object.keys(history);
+        await client.query(
+          `INSERT INTO medical_history (record_id, clinic_id, ${fields.join(', ')}) VALUES ($1, $2, ${fields.map((_, i) => `$${i + 3}`).join(', ')})`,
+          [record.rows[0].id, clinicId, ...Object.values(history)]);
+        await client.query('INSERT INTO medical_history_snapshots (record_id, clinic_id, snapshot_data, changed_by) VALUES ($1, $2, $3, $4)',
+          [record.rows[0].id, clinicId, JSON.stringify(history), `${auth.username || 'importación'} (CSV)`]);
+      }
       await client.query(
         `INSERT INTO patient_audit_log (patient_id, clinic_id, clinic_user_id, user_display_name, action_type, module, summary)
          VALUES ($1, $2, $3, $4, 'create', 'patient', 'Paciente importado desde plantilla CSV')`,
@@ -483,6 +516,16 @@ export default async function handler(req, res) {
       return res.status(200).send(csv);
     }
 
+    if (action === 'template' && req.method === 'GET') {
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', 'attachment; filename="plantilla-pacientes-bioskintech.csv"');
+      return res.status(200).send(buildPatientTemplateCsv());
+    }
+
+    if (action === 'templateInfo' && req.method === 'GET') {
+      return res.status(200).json({ columns: PATIENT_TEMPLATE_COLUMNS.map(([name, required, description, example]) => ({ name, required, description, example })) });
+    }
+
     if (action === 'snapshots' && req.method === 'GET') {
       if (!requireClinic()) return;
       const items = (await listR2Objects(`backups/${clinicId}/`, 500))
@@ -509,6 +552,13 @@ export default async function handler(req, res) {
       const doc = buildBackupDocument({ clinicId, clinicName: await clinicName(pool, clinicId), generatedBy: auth.username, kind: 'download', modules });
       console.info('[backup] export', { clinicId, user: auth.id, modules: selected });
       return res.status(200).json({ ...(await publishTemporaryDownload(clinicId, doc, 'bioskintech-respaldo')), counts: doc.metadata.counts, signed: !!doc.signature });
+    }
+
+    if (action === 'consentsHtml') {
+      const html = await buildConsentsHtml(pool, clinicId);
+      console.info('[backup] consents html', { clinicId, user: auth.id });
+      return res.status(200).json(await publishTemporaryFile(clinicId, gzipSync(Buffer.from(html, 'utf8')),
+        `consentimientos-firmados-${new Date().toISOString().split('T')[0]}.html.gz`));
     }
 
     if (action === 'uploadUrl') {

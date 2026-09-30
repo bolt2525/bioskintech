@@ -12,11 +12,11 @@ type Snapshot = { key: string; kind: string; size: number; created_at: string };
 type RestoreInfo = { signature: 'valid' | 'invalid' | 'unsigned'; sameClinic: boolean; timestamp: string | null; ageDays: number | null; modules: string[]; legacy: boolean };
 type RestoreReport = { inserted: Record<string, number>; existing: Record<string, number>; errors: { table: string; id: number | null; error: string }[]; errorCount: number; committed: boolean };
 type RestoreResult = { info: RestoreInfo; confirmations: string[]; report: RestoreReport; preRestoreSnapshot: string | null };
-type PatientReport = { valid: number; created: number; duplicates: { line: number; reason: string }[]; errors: { line: number; error: string }[]; committed: boolean };
+type PatientReport = { valid: number; created: number; withHistory: number; examplesSkipped: number; duplicates: { line: number; reason: string }[]; errors: { line: number; error: string }[]; committed: boolean };
+type TemplateColumn = { name: string; required: boolean; description: string; example: string };
 
 const MAX_UPLOAD_MB = 50;
-const TEMPLATE_HEADERS = ['nombres', 'apellidos', 'tipo_identificacion', 'numero_identificacion', 'email', 'telefono', 'fecha_nacimiento', 'genero', 'estado_civil', 'tipo_sangre', 'ocupacion', 'direccion'];
-const REQUIRED_HEADERS = TEMPLATE_HEADERS.slice(0, 4);
+const REQUIRED_HEADERS = ['nombres', 'apellidos', 'numero_identificacion'];
 
 const TABLE_LABELS: Record<string, string> = {
   patients: 'Pacientes', clinical_records: 'Expedientes', consultations: 'Consultas', medical_history: 'Antecedentes',
@@ -59,12 +59,13 @@ function saveBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-async function downloadGzipAsJson(url: string, filename: string) {
+async function downloadGzip(url: string, filename: string, type: string) {
   const res = await fetch(url);
   if (!res.ok) throw new Error('No se pudo descargar el archivo generado');
-  const json = await new Response((await res.blob()).stream().pipeThrough(new DecompressionStream('gzip'))).blob();
-  saveBlob(new Blob([json], { type: 'application/json' }), filename.replace(/\.gz$/, ''));
+  const body = await new Response((await res.blob()).stream().pipeThrough(new DecompressionStream('gzip'))).blob();
+  saveBlob(new Blob([body], { type }), filename.replace(/\.gz$/, ''));
 }
+const downloadGzipAsJson = (url: string, filename: string) => downloadGzip(url, filename, 'application/json');
 
 function parseCsv(text: string): string[][] {
   const src = text.replace(/^\uFEFF/, '');
@@ -136,6 +137,7 @@ export default function AdminBackup() {
   const [patientRows, setPatientRows] = useState<Record<string, string>[] | null>(null);
   const [patientFile, setPatientFile] = useState('');
   const [patientReport, setPatientReport] = useState<PatientReport | null>(null);
+  const [templateColumns, setTemplateColumns] = useState<TemplateColumn[]>([]);
   const backupInput = useRef<HTMLInputElement>(null);
   const csvInput = useRef<HTMLInputElement>(null);
 
@@ -156,8 +158,12 @@ export default function AdminBackup() {
     catch (e) { setSnapshots([]); setError(e instanceof Error ? e.message : 'No se pudo listar los respaldos en la nube'); }
   }, []);
 
-  useEffect(() => { loadStats(); }, [loadStats]);
-  useEffect(() => { if (tab === 'cloud' && snapshots === null) loadSnapshots(); }, [tab, snapshots, loadSnapshots]);
+  useEffect(() => { loadStats(); loadSnapshots(); }, [loadStats, loadSnapshots]);
+  useEffect(() => {
+    if (tab === 'import' && importMode === 'patients' && !templateColumns.length)
+      api<{ columns: TemplateColumn[] }>('/api/backup?action=templateInfo').then(d => setTemplateColumns(d.columns)).catch(() => {});
+  }, [tab, importMode, templateColumns.length]);
+  const lastAuto = snapshots?.find(s => s.kind === 'auto') || null;
 
   const count = (keys: string[]) => keys.reduce((sum, k) => sum + (stats?.stats[k]?.count || 0), 0);
 
@@ -165,6 +171,12 @@ export default function AdminBackup() {
     const { url, filename } = await api<{ url: string; filename: string }>('/api/backup?action=export', { modules: [...selected] });
     await downloadGzipAsJson(url, filename);
     setNotice('Respaldo descargado. Contiene datos sensibles de salud: guárdalo cifrado y fuera del computador de uso diario.');
+  });
+
+  const exportConsents = () => run('consents', async () => {
+    const { url, filename } = await api<{ url: string; filename: string }>('/api/backup?action=consentsHtml', {});
+    await downloadGzip(url, filename, 'text/html');
+    setNotice('Consentimientos descargados. Ábrelos en el navegador y usa Imprimir → Guardar como PDF si necesitas archivarlos.');
   });
 
   const exportCsv = (dataset: string) => run(`csv-${dataset}`, async () => {
@@ -215,7 +227,11 @@ export default function AdminBackup() {
     loadStats();
   });
 
-  const downloadTemplate = () => saveBlob(new Blob([`\uFEFF${TEMPLATE_HEADERS.join(',')}\r\n`], { type: 'text/csv' }), 'plantilla-pacientes-bioskintech.csv');
+  const downloadTemplate = () => run('template', async () => {
+    const res = await fetch('/api/backup?action=template', { headers: authHeaders() });
+    if (!res.ok) throw new Error('No se pudo descargar la plantilla');
+    saveBlob(await res.blob(), 'plantilla-pacientes-bioskintech.csv');
+  });
 
   const onPatientCsv = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -239,7 +255,7 @@ export default function AdminBackup() {
   const commitPatients = () => patientRows && run('patients', async () => {
     const report = await api<PatientReport>('/api/backup?action=importPatients', { rows: patientRows, dryRun: false });
     setPatientReport(null); setPatientRows(null);
-    setNotice(`${report.created} pacientes importados. Cada uno tiene su expediente creado y queda registrado en auditoría.`);
+    setNotice(`${report.created} pacientes importados${report.withHistory ? ` (${report.withHistory} con antecedentes)` : ''}. Cada uno ya tiene su expediente clínico listo y queda registrado en auditoría.`);
     loadStats();
   });
 
@@ -293,6 +309,18 @@ export default function AdminBackup() {
 
         {tab === 'export' && (
           <>
+            <div className="mb-6 bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex gap-3">
+              <ShieldCheck className="w-6 h-6 text-emerald-600 flex-shrink-0" />
+              <div className="text-sm text-emerald-900">
+                <p className="font-semibold">Tu información se respalda automáticamente todos los días</p>
+                <p className="text-xs mt-1 leading-relaxed">
+                  BioSkinTech guarda cada noche una copia cifrada de los datos de tu clínica en un proveedor independiente de la base de datos principal
+                  (Cloudflare, separado de Neon). Esa copia no puede borrarse ni alterarse durante 30 días. No necesitas hacer nada.
+                </p>
+                <p className="text-xs mt-1 font-medium">Última copia automática: {snapshots === null ? 'consultando…' : lastAuto ? fmtDate(lastAuto.created_at) : 'se generará esta noche'}</p>
+                <p className="text-xs mt-1 text-emerald-800">Las descargas de esta página son opcionales: sirven para tener tu propia copia o llevar tus datos a otro sistema.</p>
+              </div>
+            </div>
             {stats && (
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
                 {[
@@ -311,18 +339,26 @@ export default function AdminBackup() {
               </div>
             )}
 
-            <Card title="¿Qué incluye un respaldo?" subtitle="Léelo antes de depender de un archivo exportado">
+            <Card title="¿Qué incluyen los respaldos?" subtitle="Aplica tanto a la copia automática como a las descargas">
               <ul className="text-xs text-gray-700 space-y-1.5">
                 <li className="flex gap-2"><Check className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0 mt-0.5" />Toda la información escrita de fichas, consentimientos (con firmas digitalizadas y huellas de integridad), recetas, finanzas e inventario.</li>
-                <li className="flex gap-2"><Check className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0 mt-0.5" />Marcaciones de mapas faciales/corporales y del mapeo 3D de inyectables (son datos, no imágenes).</li>
-                <li className="flex gap-2"><XCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" /><span><strong>Fotografías clínicas:</strong> no se descargan por su tamaño; solo su referencia. Permanecen en almacenamiento privado mientras existan en el sistema.</span></li>
-                <li className="flex gap-2"><XCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" /><span><strong>Agenda:</strong> vive en el Google Calendar de cada profesional.</span></li>
-                <li className="flex gap-2"><XCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" /><span><strong>Modelos 3D y plantillas:</strong> son parte del software, no de tus datos.</span></li>
-                <li className="flex gap-2"><XCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" /><span><strong>Contraseñas, tokens y códigos de firma remota:</strong> nunca se exportan.</span></li>
+                <li className="flex gap-2"><Check className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0 mt-0.5" />Marcaciones de mapas faciales/corporales y del mapeo 3D de inyectables (se guardan como datos, no como imágenes).</li>
+                <li className="flex gap-2"><XCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" /><span><strong>Fotografías clínicas:</strong> no se respaldan ni se entregan copias por su tamaño; solo se conserva su referencia. Se eliminan 30 días después de terminar la suscripción sin renovación.</span></li>
+                <li className="flex gap-2"><XCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" /><span><strong>Agenda:</strong> se gestiona en el Google Calendar de cada profesional, no se almacena en BioSkinTech.</span></li>
+                <li className="flex gap-2"><XCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" /><span><strong>Modelos 3D y plantillas:</strong> forman parte del software, no son datos de la clínica.</span></li>
+                <li className="flex gap-2"><XCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" /><span><strong>Contraseñas, tokens y códigos de firma remota:</strong> nunca se exportan, por seguridad.</span></li>
               </ul>
             </Card>
 
-            <Card title="Respaldo completo (JSON)" subtitle="Formato oficial restaurable: conserva relaciones, historial y firma de integridad del sistema">
+            <Card title="Consentimientos firmados (documento legible)" subtitle="Todos los consentimientos con su contenido, firmas, fechas y huella de integridad, listos para leer o imprimir">
+              <p className="text-xs text-gray-600 mb-3">Se descarga un archivo que se abre en cualquier navegador; desde ahí puedes usar <strong>Imprimir → Guardar como PDF</strong> para archivarlo.</p>
+              <button onClick={exportConsents} disabled={!!busy}
+                className="w-full py-2.5 rounded-xl border border-gray-200 text-sm text-gray-700 hover:border-gold hover:bg-gold/5 flex items-center justify-center gap-2 disabled:opacity-50">
+                {busy === 'consents' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSignature className="w-4 h-4 text-gold-dark" />}Descargar consentimientos firmados
+              </button>
+            </Card>
+
+            <Card title="Respaldo técnico completo (JSON)" subtitle="Formato técnico para restaurar datos dentro de BioSkinTech. No está pensado para leerse ni editarse en Excel.">
               <div className="divide-y divide-gray-100 -mx-4 -mt-4 mb-4">
                 {MODULES.map(m => {
                   const on = selected.has(m.id);
@@ -346,7 +382,7 @@ export default function AdminBackup() {
               </button>
             </Card>
 
-            <Card title="Exportar para Excel / Google Sheets (CSV)" subtitle="Para consultar, filtrar o migrar a otro sistema. El CSV no es restaurable: pierde relaciones e historial.">
+            <Card title="Tablas para Excel / Google Sheets (CSV)" subtitle="Listados simples para consultar o filtrar. No son fichas clínicas completas ni se pueden restaurar.">
               <div className="grid grid-cols-2 gap-2">
                 {[['patients', 'Pacientes'], ['treatments', 'Tratamientos'], ['finance', 'Finanzas'], ['inventory', 'Inventario']].map(([id, label]) => (
                   <button key={id} onClick={() => exportCsv(id)} disabled={!!busy}
@@ -429,15 +465,34 @@ export default function AdminBackup() {
 
             {importMode === 'patients' && (
               <Card title="Importar pacientes desde plantilla" subtitle="Para migrar pacientes desde Excel u otro sistema">
-                <ol className="text-xs text-gray-700 space-y-1 mb-4 list-decimal list-inside">
-                  <li>Descarga la plantilla y llénala en Excel o Google Sheets (una fila por paciente).</li>
-                  <li>Obligatorios: <strong>nombres, apellidos, tipo_identificacion</strong> (cedula o ruc) y <strong>numero_identificacion</strong>.</li>
-                  <li>Formato de fecha: AAAA-MM-DD o DD/MM/AAAA. Género: Femenino, Masculino u Otro.</li>
-                  <li>Guarda como CSV (UTF-8). Si Excel quita el cero inicial de la cédula, el sistema lo corrige.</li>
-                  <li>Pacientes con identificación ya registrada se omiten; nunca se sobrescriben.</li>
+                <ol className="text-xs text-gray-700 space-y-1 mb-3 list-decimal list-inside">
+                  <li>Descarga la plantilla y ábrela en Excel o Google Sheets. Trae dos filas de <strong>EJEMPLO</strong> que el sistema ignora; puedes borrarlas.</li>
+                  <li>Llena una fila por paciente. Solo son obligatorios <strong>nombres, apellidos y número de identificación</strong>.</li>
+                  <li>Guarda como <strong>CSV UTF-8</strong> (Archivo → Guardar como → CSV UTF-8) y súbelo aquí.</li>
+                  <li>Verás una revisión previa con los errores por fila. No se importa nada hasta que confirmes.</li>
                 </ol>
+                <div className="mb-3 p-3 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-800 space-y-1">
+                  <p><strong>Expediente:</strong> cada paciente importado queda con su expediente clínico creado automáticamente; no necesitas crear otro.</p>
+                  <p><strong>Antecedentes:</strong> las columnas de alergias, medicación y antecedentes se cargan directo en la pestaña Antecedentes del expediente.</p>
+                  <p><strong>Identificación:</strong> el sistema valida la cédula ecuatoriana (dígito verificador) y detecta si es cédula o RUC por la cantidad de dígitos. Si ya existe un paciente con esa identificación, se omite y nunca se sobrescribe.</p>
+                </div>
+                {templateColumns.length > 0 && (
+                  <details className="mb-4 text-xs">
+                    <summary className="cursor-pointer font-medium text-gray-700">Ver guía de columnas ({templateColumns.length})</summary>
+                    <div className="mt-2 max-h-64 overflow-auto border border-gray-100 rounded-lg">
+                      <table className="w-full">
+                        <thead className="bg-gray-50 text-gray-500 sticky top-0"><tr><th className="text-left p-2">Columna</th><th className="text-left p-2">Cómo llenarla</th><th className="text-left p-2">Ejemplo</th></tr></thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {templateColumns.map(c => (
+                            <tr key={c.name}><td className="p-2 font-mono">{c.name}{c.required && <span className="text-red-500"> *</span>}</td><td className="p-2 text-gray-600">{c.description}</td><td className="p-2 text-gray-500">{c.example}</td></tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </details>
+                )}
                 <div className="flex gap-2 mb-4">
-                  <button onClick={downloadTemplate} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-700 hover:bg-gray-50 flex items-center justify-center gap-2"><Download className="w-4 h-4" />Plantilla CSV</button>
+                  <button onClick={downloadTemplate} disabled={!!busy} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-700 hover:bg-gray-50 flex items-center justify-center gap-2 disabled:opacity-50">{busy === 'template' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}Plantilla CSV</button>
                   <button onClick={() => csvInput.current?.click()} disabled={!!busy} className="flex-1 py-2.5 rounded-xl bg-gold text-white text-sm font-semibold hover:bg-gold-dark flex items-center justify-center gap-2 disabled:opacity-50">
                     {busy === 'csv-parse' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}Seleccionar CSV
                   </button>
@@ -445,7 +500,7 @@ export default function AdminBackup() {
                 </div>
                 {patientReport && (
                   <div className="space-y-3 text-xs">
-                    <p className="text-gray-700"><strong>{patientFile}</strong>: {patientReport.valid} listos para importar · {patientReport.duplicates.length} omitidos · {patientReport.errors.length} con errores</p>
+                    <p className="text-gray-700"><strong>{patientFile}</strong>: {patientReport.valid} listos para importar ({patientReport.withHistory} con antecedentes) · {patientReport.duplicates.length} omitidos · {patientReport.errors.length} con errores{patientReport.examplesSkipped ? ` · ${patientReport.examplesSkipped} filas de ejemplo ignoradas` : ''}</p>
                     {patientReport.errors.length > 0 && (
                       <div className="p-3 bg-red-50 border border-red-100 rounded-xl text-red-700 max-h-40 overflow-auto">
                         <p className="font-semibold mb-1">Corrige estas filas y vuelve a cargar el archivo (no se importa nada mientras existan errores):</p>
@@ -470,11 +525,11 @@ export default function AdminBackup() {
 
         {tab === 'cloud' && (
           <>
-            <Card title="Respaldo automático protegido" subtitle="Tu defensa ante borrados accidentales, ataques o ransomware">
+            <Card title="Respaldo automático protegido" subtitle="Protección ante borrados accidentales, ataques informáticos o secuestro de datos (ransomware)">
               <ul className="text-xs text-gray-700 space-y-1.5 mb-4">
-                <li className="flex gap-2"><ShieldCheck className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0 mt-0.5" />Copia diaria automática de toda la clínica, cifrada con AES-256-GCM antes de salir del servidor.</li>
-                <li className="flex gap-2"><ShieldCheck className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0 mt-0.5" />Almacenada fuera de la base de datos, en Cloudflare R2, <strong>inmutable durante 30 días</strong>: ni siquiera un atacante con acceso a la aplicación puede borrarla o alterarla.</li>
-                <li className="flex gap-2"><History className="w-3.5 h-3.5 text-blue-600 flex-shrink-0 mt-0.5" />Se eliminan automáticamente a los 35 días. Pérdida máxima ante un desastre: el último día.</li>
+                <li className="flex gap-2"><ShieldCheck className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0 mt-0.5" />Cada noche se genera una copia automática de toda la información de la clínica, cifrada con AES-256 antes de salir del servidor.</li>
+                <li className="flex gap-2"><ShieldCheck className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0 mt-0.5" />Se guarda en un proveedor distinto a la base de datos principal (Cloudflare R2, separado de Neon) y queda <strong>bloqueada contra borrado o modificación durante 30 días</strong>, incluso ante un atacante con acceso a la aplicación.</li>
+                <li className="flex gap-2"><History className="w-3.5 h-3.5 text-blue-600 flex-shrink-0 mt-0.5" />Cada copia se elimina automáticamente a los 35 días. Ante un desastre, como máximo se pierde lo registrado desde la última copia (un día).</li>
               </ul>
               {stats && !stats.encryption_ready && <p className="text-xs text-red-600 mb-3">El cifrado de respaldos no está configurado en el servidor. Contacta a soporte.</p>}
               <button onClick={createSnapshot} disabled={!!busy || (stats ? !stats.encryption_ready : false)}

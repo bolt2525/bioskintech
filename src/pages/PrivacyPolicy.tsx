@@ -1,5 +1,5 @@
 import { Shield, Users, Database, Globe, Clock, UserCheck, FileText, Bell, HardDrive, Lock, AlertTriangle, Trash2, Brain, Baby, Server } from 'lucide-react';
-import { LegalShell, LegalSection as Section, Note, Mail } from '../components/legal/LegalLayout';
+import { LegalShell, LegalSection as Section, Note, Mail, ContactChannels } from '../components/legal/LegalLayout';
 
 const ul = 'list-disc list-inside space-y-1.5 pl-1';
 
@@ -20,7 +20,7 @@ export default function PrivacyPolicy() {
           prevalecen las instrucciones documentadas del Cliente como Responsable del Tratamiento, siempre que sean lícitas.
         </p>
       </>}
-      footer={<p>Consultas y solicitudes: <Mail /></p>}
+      footer={<p>Consultas y solicitudes: <Mail /> · WhatsApp +593 984 232 889</p>}
     >
       <Section number={1} title="Roles: quién es Responsable y quién es Encargado" icon={<UserCheck className="w-4 h-4" />}>
         <ol className="list-decimal list-inside space-y-2 pl-1">
@@ -90,10 +90,10 @@ export default function PrivacyPolicy() {
             <tbody className="divide-y divide-gray-100">
               <tr><td className="p-2 font-medium">Neon (AWS us-east-1)</td><td className="p-2">Base de datos principal PostgreSQL</td><td className="p-2">Siempre</td></tr>
               <tr><td className="p-2 font-medium">Vercel</td><td className="p-2">Alojamiento de la aplicación y funciones de servidor</td><td className="p-2">Siempre</td></tr>
-              <tr><td className="p-2 font-medium">Cloudflare</td><td className="p-2">Fotografías clínicas (R2), copias de seguridad cifradas y verificación anti-bot (Turnstile)</td><td className="p-2">Siempre / reserva pública</td></tr>
+              <tr><td className="p-2 font-medium">Cloudflare</td><td className="p-2">Fotografías clínicas (R2), copias de seguridad diarias cifradas en un almacenamiento independiente de Neon y verificación anti-bot (Turnstile)</td><td className="p-2">Siempre / reserva pública</td></tr>
               <tr><td className="p-2 font-medium">Google</td><td className="p-2">Google Calendar y envío de correos desde la cuenta Gmail del Usuario; Gemini (IA)</td><td className="p-2">Si el Cliente conecta su cuenta o activa módulos de IA</td></tr>
               <tr><td className="p-2 font-medium">Meta (WhatsApp Business Platform)</td><td className="p-2">Recordatorios y avisos de citas</td><td className="p-2">Si el Cliente activa WhatsApp</td></tr>
-              <tr><td className="p-2 font-medium">PayPhone</td><td className="p-2">Cobro de la suscripción. BIOSKINTECH no almacena números de tarjeta.</td><td className="p-2">Al pagar</td></tr>
+              <tr><td className="p-2 font-medium">PayPhone u otras pasarelas</td><td className="p-2">Cobro de la suscripción con tarjeta. BIOSKINTECH no recibe ni almacena números de tarjeta. Los pagos por transferencia o efectivo no involucran a estos proveedores.</td><td className="p-2">Al pagar con tarjeta</td></tr>
             </tbody>
           </table>
         </div>
@@ -139,7 +139,9 @@ export default function PrivacyPolicy() {
           <p className="font-semibold mb-1">Pacientes</p>
           <p>Deben dirigirse <strong>primero a la clínica o profesional que los atendió</strong>, que es el Responsable. Si una solicitud llega a BIOSKINTECH, la remitiremos a la clínica correspondiente en un plazo máximo de 5 días hábiles y la asistiremos técnicamente; BIOSKINTECH no puede modificar ni eliminar historias clínicas sin instrucción del Responsable.</p>
         </Note>
-        <p><strong>Clientes y Usuarios</strong> pueden ejercer sus derechos sobre sus datos de cuenta escribiendo a <Mail />, adjuntando documento de identidad. Si considera vulnerados sus derechos, puede acudir a la <strong>Superintendencia de Protección de Datos Personales</strong>.</p>
+        <p><strong>Clientes y Usuarios</strong> pueden ejercer sus derechos sobre sus datos de cuenta por los canales oficiales, adjuntando documento de identidad:</p>
+        <ContactChannels />
+        <p>Si considera vulnerados sus derechos, puede acudir a la <strong>Superintendencia de Protección de Datos Personales</strong>.</p>
       </Section>
 
       <Section number={10} title="Medidas de seguridad" icon={<Server className="w-4 h-4" />}>
@@ -149,7 +151,7 @@ export default function PrivacyPolicy() {
           <li>Aislamiento de datos entre clínicas mediante controles de aplicación y políticas de seguridad a nivel de fila en la base de datos.</li>
           <li>Roles y alcances de acceso por usuario; registro de auditoría de cambios en fichas.</li>
           <li>Fotografías en almacenamiento privado con enlaces temporales firmados.</li>
-          <li>Copias de seguridad diarias cifradas (AES-256-GCM), inmutables durante 30 días (ver Art. 12).</li>
+          <li>Copia de seguridad diaria cifrada (AES-256) en un proveedor independiente de la base de datos principal, protegida contra borrado o modificación durante 30 días (ver Art. 12). Las fotografías no forman parte de estas copias.</li>
         </ul>
         <Note tone="amber">
           Ningún sistema es invulnerable. BIOSKINTECH asume una <strong>obligación de medios</strong>: aplicar medidas razonables y proporcionales al riesgo,
@@ -171,15 +173,17 @@ export default function PrivacyPolicy() {
           <li>Los datos clínicos se conservan mientras el Cliente mantenga su cuenta y según sus instrucciones. <strong>El Cliente es responsable de cumplir los plazos legales de conservación de historias clínicas</strong> antes de eliminar información.</li>
           <li>Las eliminaciones realizadas por el Cliente en la Plataforma son inmediatas en la base principal. Por protección de evidencia, no se permite eliminar pacientes con consentimientos firmados.</li>
           <li>Pueden subsistir copias residuales: hasta <strong>6 horas</strong> en el historial de recuperación de la base de datos y hasta <strong>35 días</strong> en las copias de seguridad cifradas, que se eliminan automáticamente al vencer ese plazo.</li>
+          <li><strong>Fotografías clínicas:</strong> no se respaldan ni se entregan copias; se eliminan definitivamente 30 días después de terminar la suscripción si no hay renovación.</li>
           <li>Las exportaciones descargadas por el Cliente quedan bajo su exclusiva custodia y responsabilidad.</li>
-          <li>Las cuentas demo se eliminan automáticamente al vencer, sin posibilidad de recuperación salvo copias residuales.</li>
+          <li>Cuentas de prueba: si no se contrata el servicio al finalizar la prueba (3 días, ampliable hasta 10), el usuario se desactiva o la cuenta se elimina con sus fotografías, sin obligación de conservar la información; si se contrata, los datos continúan durante el contrato.</li>
         </ul>
       </Section>
 
       <Section number={13} title="Fin del servicio" icon={<Trash2 className="w-4 h-4" />}>
         <ul className={ul}>
-          <li>Durante la suscripción, el administrador de la clínica puede exportar sus datos en todo momento desde el módulo <strong>Base de Datos</strong> (JSON completo y CSV).</li>
-          <li>Tras el vencimiento o la cancelación, los datos se conservan <strong>30 días</strong> para renovación o para solicitar la exportación a <Mail />. Las fotografías podrán entregarse por el medio técnico razonable que BIOSKINTECH determine.</li>
+          <li>Durante la suscripción, el administrador de la clínica puede exportar sus datos en todo momento desde el módulo <strong>Base de Datos</strong>: respaldo técnico completo en formato JSON (restaurable en la Plataforma), tablas CSV para Excel y consentimientos firmados en documento legible.</li>
+          <li>Estos formatos permiten la portabilidad de los datos; no constituyen fichas, formularios ni hojas de cálculo diseñadas para continuar la atención fuera de la Plataforma.</li>
+          <li>Tras el vencimiento o la cancelación, los datos se conservan <strong>30 días</strong> para renovación o para solicitar la exportación por los canales oficiales. Las fotografías no se entregan y se eliminan al cumplirse ese plazo.</li>
           <li>Vencido ese plazo, BIOSKINTECH podrá eliminar definitivamente los datos, sin obligación de conservarlos, salvo copias residuales del Art. 12 u obligación legal.</li>
           <li>El Cliente puede solicitar la eliminación anticipada y certificada de sus datos, asumiendo la responsabilidad de haber resguardado la información que la ley le obligue a conservar.</li>
         </ul>

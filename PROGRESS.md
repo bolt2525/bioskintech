@@ -1,5 +1,9 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-09-30 Base de Datos: estado del respaldo automático visible, consentimientos firmados en documento imprimible.
+- ✅ 2026-09-30 Importación de pacientes: plantilla guiada con `;`, validación de cédula, detección de tipo y antecedentes.
+- ✅ 2026-09-30 Cron elimina fotos de clínicas vencidas hace más de 30 días; primer respaldo automático verificado (11 clínicas).
+- ✅ 2026-09-30 Documentos legales v2026-09-30: pagos, pruebas 3–10 días, formato de respaldos, fotos, actualizaciones y canales oficiales.
 - ✅ 2026-09-29 Respaldos v3: JSON firmado vía R2, CSV, simulación de restauración, importación de pacientes por plantilla.
 - ✅ 2026-09-29 Respaldo diario cifrado AES-256-GCM en R2, inmutable 30 días, retención 35 días, snapshot previo a restaurar.
 - ✅ 2026-09-29 Corregido export >4,5 MB, estadística de Finanzas en 0, secuencias tras restaurar y jsonb en restore.

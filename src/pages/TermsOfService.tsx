@@ -1,5 +1,5 @@
 import { FileText, Users, Shield, AlertCircle, Clock, Ban, RefreshCw, Scale, Settings, HelpCircle, PenLine, Brain, Database, Plug, Handshake, CloudLightning, Stethoscope, Mail as MailIcon } from 'lucide-react';
-import { LegalShell, LegalSection as Section, Note, Mail } from '../components/legal/LegalLayout';
+import { LegalShell, LegalSection as Section, Note, Mail, ContactChannels } from '../components/legal/LegalLayout';
 
 const ul = 'list-disc list-inside space-y-1.5 pl-1';
 
@@ -54,18 +54,25 @@ export default function TermsOfService() {
 
       <Section number={4} title="Precio, pago y renovación" icon={<Settings className="w-4 h-4" />}>
         <ul className={ul}>
-          <li>El precio aplicable es el que se muestra al Cliente en el proceso de pago o en el código de registro entregado, con impuestos indicados. El pago es anual y anticipado, salvo acuerdo escrito distinto.</li>
-          <li>Los pagos se procesan a través de PayPhone; BIOSKINTECH no almacena datos de tarjetas.</li>
+          <li>El precio aplicable es el que se muestra al Cliente en el proceso de pago, en la cotización o en el código de registro entregado, con impuestos indicados. El pago es anual y anticipado, salvo acuerdo escrito distinto.</li>
+          <li>Medios de pago aceptados: <strong>tarjeta</strong> de crédito o débito a través de pasarelas o plataformas de pago, <strong>transferencia interbancaria</strong> o <strong>dinero en efectivo</strong>. Los pagos por transferencia o efectivo se activan una vez confirmados por BIOSKINTECH.</li>
+          <li>La Plataforma integra la API de la pasarela PayPhone para pagos con tarjeta. Los datos de la tarjeta son procesados directamente por la pasarela; <strong>BIOSKINTECH no recibe ni almacena números de tarjeta</strong>.</li>
           <li>No hay reembolsos totales ni proporcionales, salvo falla técnica grave imputable exclusivamente a BIOSKINTECH que impida el uso del servicio durante más de 15 días consecutivos.</li>
           <li>BIOSKINTECH puede modificar precios para renovaciones futuras con al menos <strong>30 días de aviso</strong>.</li>
         </ul>
       </Section>
 
-      <Section number={5} title="Vencimiento, suspensión y cuentas demo" icon={<Clock className="w-4 h-4" />}>
+      <Section number={5} title="Vencimiento, suspensión y período de prueba" icon={<Clock className="w-4 h-4" />}>
         <ul className={ul}>
           <li>La Plataforma avisa desde <strong>21 días antes</strong> del vencimiento. Al vencer la suscripción, <strong>el acceso se suspende automáticamente</strong> hasta su renovación.</li>
-          <li>Los datos se conservan <strong>30 días</strong> después del vencimiento; luego pueden eliminarse según la Política de Privacidad.</li>
-          <li>Las cuentas demo son de prueba: no deben contener datos reales de pacientes y se eliminan automáticamente al vencer.</li>
+          <li>Los datos se conservan <strong>30 días</strong> después del vencimiento; luego pueden eliminarse según la Política de Privacidad. Las fotografías clínicas se eliminan definitivamente al cumplirse ese plazo si no hay renovación.</li>
+        </ul>
+        <p className="font-semibold text-gray-800 mt-2">Cuentas de prueba (demo)</p>
+        <ul className={ul}>
+          <li>El período de prueba oficial es de <strong>3 días</strong>, ampliable a solicitud del interesado y a criterio de BIOSKINTECH hasta un <strong>máximo de 10 días</strong>.</li>
+          <li>Las cuentas de prueba pueden usar credenciales definitivas y datos reales. Quien las usa con datos reales de pacientes asume desde ese momento las obligaciones de Responsable del Tratamiento previstas en estas Condiciones.</li>
+          <li>Si se contrata el servicio, la cuenta y sus datos continúan habilitados por el tiempo del contrato.</li>
+          <li>Si no se contrata al terminar la prueba, el usuario se desactiva o la cuenta se elimina, junto con sus fotografías, sin obligación de conservar ni entregar la información cargada.</li>
         </ul>
       </Section>
 
@@ -86,7 +93,7 @@ export default function TermsOfService() {
           <li>Verificar la exactitud del Contenido del Cliente y la idoneidad y habilitación de sus profesionales.</li>
           <li>Contar con autorización de los pacientes para recibir recordatorios por WhatsApp o correo, y cumplir las políticas de Meta y Google.</li>
           <li>Atender los derechos de sus pacientes, con la asistencia técnica razonable de BIOSKINTECH.</li>
-          <li>Descargar periódicamente respaldos de su información (ver Art. 11).</li>
+          <li>Conservar fuera de la Plataforma las copias que la normativa le exija mantener por su cuenta, usando las exportaciones del módulo Base de Datos (ver Art. 11).</li>
         </ul>
       </Section>
 
@@ -116,22 +123,36 @@ export default function TermsOfService() {
       </Section>
 
       <Section number={11} title="Respaldos, exportación y continuidad" icon={<Database className="w-4 h-4" />}>
+        <p className="font-semibold text-gray-800">A. Respaldo automático a cargo de BIOSKINTECH</p>
         <ul className={ul}>
-          <li>BIOSKINTECH genera una copia de seguridad diaria cifrada de los datos de cada clínica, inmutable durante 30 días y eliminada automáticamente a los 35 días. La base de datos permite además recuperación a un punto en el tiempo dentro de las últimas 6 horas.</li>
-          <li>El administrador de la clínica puede exportar sus datos (JSON completo restaurable y CSV) e importar respaldos o pacientes desde el módulo Base de Datos.</li>
-          <li><strong>Las fotografías y archivos no se incluyen en las exportaciones descargables</strong> por su tamaño; permanecen en almacenamiento privado y solo se exportan sus referencias.</li>
-          <li>Los respaldos no garantizan recuperar información creada o modificada después de la última copia disponible (pérdida potencial de hasta 24 horas).</li>
-          <li>La restauración agrega registros faltantes y no sobrescribe los existentes. El Cliente es responsable de los archivos que importa y de validar el resultado; BIOSKINTECH puede apoyar en su recuperación sin garantía de resultado.</li>
+          <li>Los datos principales se almacenan en la base de datos Neon. Además, <strong>cada día BIOSKINTECH genera automáticamente una copia de seguridad</strong> de la información de cada clínica y la guarda cifrada en un proveedor distinto (Cloudflare R2).</li>
+          <li>Esa copia queda protegida contra borrado o modificación durante 30 días y se elimina automáticamente a los 35 días. La base de datos permite además recuperar su estado de las últimas 6 horas.</li>
+          <li>El Cliente no necesita realizar ninguna acción para que estas copias existan. Su finalidad es recuperar la Plataforma ante fallas, errores o ataques; la restauración se realiza por BIOSKINTECH o por el administrador de la clínica desde el módulo Base de Datos.</li>
+          <li>Los respaldos no garantizan recuperar lo registrado después de la última copia disponible (pérdida potencial de hasta 24 horas). La restauración agrega registros faltantes y no sobrescribe los existentes.</li>
         </ul>
-        <Note tone="amber">Se recomienda que el Cliente descargue y guarde en lugar seguro una exportación al menos semanal. Las exportaciones contienen datos sensibles: su custodia es responsabilidad del Cliente.</Note>
+        <p className="font-semibold text-gray-800 mt-2">B. Exportaciones y formato de entrega</p>
+        <ul className={ul}>
+          <li>El administrador puede descargar sus datos en cualquier momento desde el módulo Base de Datos: (i) un <strong>respaldo técnico en formato JSON</strong>, completo y diseñado para restaurarse dentro de BIOSKINTECH; (ii) <strong>tablas CSV</strong> de pacientes, tratamientos, finanzas e inventario, que se abren en Excel o Google Sheets; y (iii) los <strong>consentimientos firmados en un documento legible e imprimible</strong>.</li>
+          <li>El formato JSON es un formato técnico estándar, no un documento de lectura. Las tablas CSV son listados simples. <strong>BIOSKINTECH no entrega fichas clínicas, formularios ni hojas de Excel diseñadas o formateadas</strong> para continuar la atención fuera de la Plataforma, ni se obliga a adaptar los datos al formato de otro sistema.</li>
+          <li>Las exportaciones contienen datos sensibles; una vez descargadas, su custodia es responsabilidad exclusiva del Cliente.</li>
+        </ul>
+        <p className="font-semibold text-gray-800 mt-2">C. Fotografías clínicas</p>
+        <Note tone="amber">
+          Por su tipo y tamaño, <strong>las fotografías no forman parte de los respaldos ni se entregan copias</strong>; solo se conserva su referencia. Se eliminan de forma definitiva <strong>30 días después de terminar el tiempo de uso</strong> contratado si no existe renovación. Si el Cliente desea conservarlas, debe guardarlas desde cada expediente mientras su suscripción esté activa.
+        </Note>
       </Section>
 
       <Section number={12} title="Servicios de terceros" icon={<Plug className="w-4 h-4" />}>
-        <p>Las integraciones con Google (Calendar, Gmail, Gemini), Meta (WhatsApp), PayPhone y Cloudflare dependen de esos proveedores y de sus condiciones. BIOSKINTECH no responde por su disponibilidad, cambios, costos, bloqueos de cuentas ni por el tratamiento que realicen conforme a sus propias políticas.</p>
+        <p>La Plataforma funciona sobre servicios de terceros: Neon (base de datos), Vercel (alojamiento), Cloudflare (almacenamiento de fotografías, copias de seguridad y verificación anti-bot), Google (Calendar, Gmail y Gemini), Meta (WhatsApp) y pasarelas de pago como PayPhone. Estos servicios dependen de sus proveedores y de sus condiciones. BIOSKINTECH no responde por su disponibilidad, cambios, costos, bloqueos de cuentas ni por el tratamiento que realicen conforme a sus propias políticas.</p>
       </Section>
 
-      <Section number={13} title="Disponibilidad y mantenimiento" icon={<RefreshCw className="w-4 h-4" />}>
-        <p>BIOSKINTECH procura mantener la Plataforma disponible, pero <strong>no garantiza un nivel de disponibilidad específico</strong> ni la ausencia de errores. Podrá realizar mantenimientos y actualizaciones, informando con anticipación los planificados cuando sea razonablemente posible, y aplicar cambios urgentes por seguridad sin aviso previo.</p>
+      <Section number={13} title="Disponibilidad, mantenimiento y actualizaciones" icon={<RefreshCw className="w-4 h-4" />}>
+        <p>BIOSKINTECH procura mantener la Plataforma disponible, pero <strong>no garantiza un nivel de disponibilidad específico</strong> ni la ausencia de errores.</p>
+        <ul className={ul}>
+          <li>BIOSKINTECH puede implementar en cualquier momento actualizaciones, mejoras y modificaciones en el servidor (backend), en la aplicación (frontend) y en la interfaz de usuario, incluyendo agregar, cambiar, reorganizar o retirar funcionalidades, pantallas o integraciones.</li>
+          <li>Los mantenimientos planificados se informarán con anticipación cuando sea razonablemente posible; los cambios urgentes por seguridad o estabilidad pueden aplicarse sin aviso previo.</li>
+          <li>Si una modificación elimina una funcionalidad principal del plan contratado sin reemplazo equivalente, el Cliente podrá cancelar conforme al Art. 17.</li>
+        </ul>
       </Section>
 
       <Section number={14} title="Limitación de responsabilidad" icon={<AlertCircle className="w-4 h-4" />}>
@@ -167,12 +188,15 @@ export default function TermsOfService() {
         <p>Ninguna parte responde por incumplimientos causados por hechos fuera de su control razonable: desastres naturales, cortes de energía o telecomunicaciones, fallas o decisiones de proveedores de infraestructura, actos de autoridad, conflictos o ciberataques que superen medidas de seguridad razonables.</p>
       </Section>
 
-      <Section number={19} title="Modificaciones y notificaciones" icon={<MailIcon className="w-4 h-4" />}>
+      <Section number={19} title="Modificaciones, notificaciones y canales oficiales" icon={<MailIcon className="w-4 h-4" />}>
         <ul className={ul}>
           <li>BIOSKINTECH puede modificar estas Condiciones. Los cambios se informan en el panel y deben aceptarse antes de continuar usándolo; la aceptación queda registrada con fecha, versión, IP y navegador.</li>
           <li>Si el Cliente no acepta una nueva versión, puede cancelar su suscripción conforme al Art. 17.</li>
-          <li>Las notificaciones se realizarán al correo registrado por el Cliente o mediante el panel, y se consideran recibidas desde su envío.</li>
+          <li>Las notificaciones de BIOSKINTECH se realizarán al correo registrado por el Cliente, por WhatsApp o mediante el panel, y se consideran recibidas desde su envío.</li>
         </ul>
+        <p className="font-semibold text-gray-800 mt-2">Canales oficiales de comunicación</p>
+        <ContactChannels />
+        <p className="text-xs text-gray-500">Si una solicitud enviada por correo no recibe respuesta en 5 días hábiles, el Cliente puede reiterarla por WhatsApp oficial. BIOSKINTECH nunca solicitará contraseñas ni códigos de verificación por ningún canal.</p>
       </Section>
 
       <Section number={20} title="Disposiciones generales" icon={<FileText className="w-4 h-4" />}>
@@ -186,7 +210,7 @@ export default function TermsOfService() {
 
       <Section number={21} title="Ley aplicable y jurisdicción" icon={<Scale className="w-4 h-4" />}>
         <p>Estas Condiciones se rigen por las leyes de la <strong>República del Ecuador</strong>. Las partes intentarán resolver cualquier controversia de forma directa durante 30 días desde su notificación escrita; de no lograrlo, se someten a los <strong>jueces competentes de la ciudad de Cuenca, Ecuador</strong>.</p>
-        <Note>Consultas y reclamos: <Mail /></Note>
+        <Note>Consultas y reclamos: ver canales oficiales del Art. 19.</Note>
       </Section>
     </LegalShell>
   );

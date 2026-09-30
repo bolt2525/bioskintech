@@ -3,9 +3,10 @@ import { ArrowLeft } from 'lucide-react';
 import BrandLogo from '../ui/BrandLogo';
 
 export const LEGAL_CONTACT_EMAIL = 'soporte-tecnico@bioskintechapp.com';
+export const LEGAL_WHATSAPP = '+593 984 232 889';
 // Debe coincidir con LEGAL_VERSION de api/admin-auth.js; cambiarla obliga a todos los usuarios a re-aceptar.
-export const LEGAL_VERSION = '2026-09-29';
-export const LEGAL_UPDATED_LABEL = '29 de septiembre de 2026';
+export const LEGAL_VERSION = '2026-09-30';
+export const LEGAL_UPDATED_LABEL = '30 de septiembre de 2026';
 
 export function LegalSection({ number, title, icon, children }: { number: number; title: string; icon: ReactNode; children: ReactNode }) {
   return (
@@ -56,6 +57,16 @@ export function LegalShell({ title, icon, intro, children, footer }: { title: st
 }
 
 export const Mail = () => <a href={`mailto:${LEGAL_CONTACT_EMAIL}`} className="text-gold-dark font-semibold hover:underline">{LEGAL_CONTACT_EMAIL}</a>;
+
+export function ContactChannels() {
+  return (
+    <ul className="list-disc list-inside space-y-1 pl-1">
+      <li>Correo de soporte: <Mail /></li>
+      <li>WhatsApp oficial: <a href={`https://wa.me/${LEGAL_WHATSAPP.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer" className="text-gold-dark font-semibold hover:underline">{LEGAL_WHATSAPP}</a></li>
+      <li>Sitio web: <a href="https://bioskintechapp.com" className="text-gold-dark font-semibold hover:underline">bioskintechapp.com</a> y avisos dentro del panel</li>
+    </ul>
+  );
+}
 
 export function Note({ tone = 'gold', children }: { tone?: 'gold' | 'amber' | 'blue' | 'green' | 'red'; children: ReactNode }) {
   const styles = {
