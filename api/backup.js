@@ -15,7 +15,7 @@ import { putR2Object, getR2ObjectBuffer, listR2Objects, generateDownloadUrl, gen
 import {
   BACKUP_MODULES, MAX_UPLOAD_BYTES, MAX_ROWS_PER_TABLE, EXCLUDED_CONSENT_COLUMNS, PATIENT_TEMPLATE_COLUMNS,
   buildBackupDocument, collectClinicData, compressBackup, decodeBackupBuffer, encryptBackup, hasBackupKey,
-  inspectBackupDocument, buildDatasetCsv, validatePatientImportRow, buildPatientTemplateCsv, isTemplateExampleRow, buildConsentsHtml,
+  inspectBackupDocument, buildDatasetCsv, validatePatientImportRow, buildPatientTemplateCsv, isTemplateExampleRow, buildConsentsHtml, listConsentPatients,
 } from '../lib/backup-service.js';
 
 const CLINIC_SCOPED_TABLES = new Set([
@@ -531,6 +531,11 @@ export default async function handler(req, res) {
       return res.status(200).json({ columns: PATIENT_TEMPLATE_COLUMNS.map(([name, required, description, example]) => ({ name, required, description, example })) });
     }
 
+    if (action === 'consentPatients' && req.method === 'GET') {
+      if (!requireClinic()) return;
+      return res.status(200).json({ patients: await listConsentPatients(pool, clinicId) });
+    }
+
     if (action === 'snapshots' && req.method === 'GET') {
       if (!requireClinic()) return;
       const items = (await listR2Objects(`backups/${clinicId}/`, 500))
@@ -560,8 +565,15 @@ export default async function handler(req, res) {
     }
 
     if (action === 'consentsHtml') {
-      const html = await buildConsentsHtml(pool, clinicId);
-      console.info('[backup] consents html', { clinicId, user: auth.id });
+      let patientIds = null;
+      if (body.patientIds != null) {
+        if (!Array.isArray(body.patientIds) || body.patientIds.length === 0 || body.patientIds.length > 5000 ||
+            !body.patientIds.every(id => Number.isSafeInteger(id) && id > 0))
+          return res.status(400).json({ error: 'Selección de pacientes inválida' });
+        patientIds = body.patientIds;
+      }
+      const html = await buildConsentsHtml(pool, clinicId, patientIds);
+      console.info('[backup] consents html', { clinicId, user: auth.id, patients: patientIds?.length ?? 'all' });
       return res.status(200).json(await publishTemporaryFile(clinicId, gzipSync(Buffer.from(html, 'utf8')),
         `consentimientos-firmados-${new Date().toISOString().split('T')[0]}.html.gz`));
     }

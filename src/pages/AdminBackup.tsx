@@ -14,6 +14,23 @@ type RestoreReport = { inserted: Record<string, number>; existing: Record<string
 type RestoreResult = { info: RestoreInfo; confirmations: string[]; report: RestoreReport; preRestoreSnapshot: string | null };
 type PatientReport = { valid: number; created: number; withHistory: number; examplesSkipped: number; duplicates: { line: number; reason: string }[]; errors: { line: number; error: string }[]; committed: boolean };
 type TemplateColumn = { name: string; required: boolean; description: string; example: string };
+type ConsentPatient = { id: number; first_name: string; last_name: string; identification: string | null; consents: number };
+
+function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  return (
+    <div className="fixed inset-0 z-[90] bg-black/50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={title} onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-5" onClick={e => e.stopPropagation()}>
+        <h3 className="text-lg font-bold text-gray-900 mb-3">{title}</h3>
+        {children}
+      </div>
+    </div>
+  );
+}
 
 const MAX_UPLOAD_MB = 50;
 const REQUIRED_HEADERS = ['nombres', 'apellidos', 'numero_identificacion'];
@@ -121,6 +138,8 @@ function Confirm({ checked, onChange, children }: { checked: boolean; onChange: 
 export default function AdminBackup() {
   const { user } = useAuth();
   const canManage = user?.role === 'clinic_admin' || user?.role === 'master_admin';
+  const [pending, setPending] = useState<{ title: string; message: React.ReactNode; confirmLabel: string; onConfirm: () => void } | null>(null);
+  const [picker, setPicker] = useState<{ patients: ConsentPatient[] | null; selected: Set<number>; search: string } | null>(null);
   const [tab, setTab] = useState<'export' | 'import' | 'cloud'>('export');
   const [stats, setStats] = useState<StatsData | null>(null);
   const [loadingStats, setLoadingStats] = useState(false);
@@ -145,6 +164,9 @@ export default function AdminBackup() {
     setBusy(label); setError(null); setNotice(null);
     try { await fn(); } catch (e) { setError(e instanceof Error ? e.message : 'Ocurrió un error'); } finally { setBusy(null); }
   };
+  const ask = (title: string, message: React.ReactNode, confirmLabel: string, onConfirm: () => void) =>
+    setPending({ title, message, confirmLabel, onConfirm });
+  const SENSITIVE = 'El archivo contendrá datos sensibles de salud. Guárdalo en un lugar seguro y no lo compartas por correo o chats sin protección.';
 
   const loadStats = useCallback(async () => {
     setLoadingStats(true);
@@ -173,11 +195,29 @@ export default function AdminBackup() {
     setNotice('Respaldo descargado. Contiene datos sensibles de salud: guárdalo cifrado y fuera del computador de uso diario.');
   });
 
-  const exportConsents = () => run('consents', async () => {
-    const { url, filename } = await api<{ url: string; filename: string }>('/api/backup?action=consentsHtml', {});
+  const exportConsents = (patientIds: number[] | null) => run('consents', async () => {
+    const { url, filename } = await api<{ url: string; filename: string }>('/api/backup?action=consentsHtml', patientIds ? { patientIds } : {});
     await downloadGzip(url, filename, 'text/html');
     setNotice('Consentimientos descargados. Ábrelos en el navegador y usa Imprimir → Guardar como PDF si necesitas archivarlos.');
   });
+
+  const openConsentPicker = () => {
+    setPicker({ patients: null, selected: new Set(), search: '' });
+    api<{ patients: ConsentPatient[] }>('/api/backup?action=consentPatients')
+      .then(d => setPicker(p => p && { ...p, patients: d.patients }))
+      .catch(e => { setPicker(null); setError(e instanceof Error ? e.message : 'No se pudo cargar la lista de pacientes'); });
+  };
+
+  const confirmConsentDownload = () => {
+    if (!picker?.patients) return;
+    const all = picker.selected.size === 0 || picker.selected.size === picker.patients.length;
+    const chosen = picker.patients.filter(p => all || picker.selected.has(p.id));
+    const total = chosen.reduce((sum, p) => sum + p.consents, 0);
+    setPicker(null);
+    ask('Descargar consentimientos firmados',
+      <>Se descargarán <strong>{total} consentimientos</strong> de {all ? <strong>todos los pacientes ({chosen.length})</strong> : <strong>{chosen.length} paciente(s) seleccionado(s)</strong>}. {SENSITIVE}</>,
+      'Descargar', () => exportConsents(all ? null : chosen.map(p => p.id)));
+  };
 
   const exportCsv = (dataset: string) => run(`csv-${dataset}`, async () => {
     const res = await fetch(`/api/backup?action=csv&dataset=${dataset}`, { headers: authHeaders() });
@@ -350,14 +390,6 @@ export default function AdminBackup() {
               </ul>
             </Card>
 
-            <Card title="Consentimientos firmados (documento legible)" subtitle="Todos los consentimientos con su contenido, firmas, fechas y huella de integridad, listos para leer o imprimir">
-              <p className="text-xs text-gray-600 mb-3">Se descarga un archivo que se abre en cualquier navegador; desde ahí puedes usar <strong>Imprimir → Guardar como PDF</strong> para archivarlo.</p>
-              <button onClick={exportConsents} disabled={!!busy}
-                className="w-full py-2.5 rounded-xl border border-gray-200 text-sm text-gray-700 hover:border-gold hover:bg-gold/5 flex items-center justify-center gap-2 disabled:opacity-50">
-                {busy === 'consents' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSignature className="w-4 h-4 text-gold-dark" />}Descargar consentimientos firmados
-              </button>
-            </Card>
-
             <Card title="Respaldo técnico completo (JSON)" subtitle="Formato técnico para restaurar datos dentro de BioSkinTech. No está pensado para leerse ni editarse en Excel.">
               <div className="divide-y divide-gray-100 -mx-4 -mt-4 mb-4">
                 {MODULES.map(m => {
@@ -376,7 +408,9 @@ export default function AdminBackup() {
                   );
                 })}
               </div>
-              <button onClick={exportJson} disabled={!!busy || selected.size === 0}
+              <button onClick={() => ask('Descargar respaldo técnico',
+                <>Se generará un archivo JSON con: <strong>{MODULES.filter(m => selected.has(m.id)).map(m => m.label).join(', ')}</strong>. {SENSITIVE}</>,
+                'Descargar', exportJson)} disabled={!!busy || selected.size === 0}
                 className="w-full py-3.5 rounded-xl font-semibold flex items-center justify-center gap-2 bg-gold text-white hover:bg-gold-dark disabled:opacity-50">
                 {busy === 'export' ? <><Loader2 className="w-5 h-5 animate-spin" />Generando respaldo...</> : <><FileJson className="w-5 h-5" />Descargar respaldo (.json)</>}
               </button>
@@ -385,12 +419,22 @@ export default function AdminBackup() {
             <Card title="Tablas para Excel / Google Sheets (CSV)" subtitle="Listados simples para consultar o filtrar. No son fichas clínicas completas ni se pueden restaurar.">
               <div className="grid grid-cols-2 gap-2">
                 {[['patients', 'Pacientes'], ['treatments', 'Tratamientos'], ['finance', 'Finanzas'], ['inventory', 'Inventario']].map(([id, label]) => (
-                  <button key={id} onClick={() => exportCsv(id)} disabled={!!busy}
+                  <button key={id} onClick={() => ask(`Descargar tabla de ${label.toLowerCase()}`,
+                    <>Se descargará un archivo CSV con todos los registros de <strong>{label.toLowerCase()}</strong> de la clínica. {SENSITIVE}</>,
+                    'Descargar', () => exportCsv(id))} disabled={!!busy}
                     className="py-2.5 rounded-xl border border-gray-200 text-sm text-gray-700 hover:border-gold hover:bg-gold/5 flex items-center justify-center gap-2 disabled:opacity-50">
                     {busy === `csv-${id}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4 text-emerald-600" />}{label}
                   </button>
                 ))}
               </div>
+            </Card>
+
+            <Card title="Consentimientos firmados (documento legible)" subtitle="Consentimientos con su contenido, firmas, fechas y huella de integridad, listos para leer o imprimir">
+              <p className="text-xs text-gray-600 mb-3">Elige pacientes específicos o todos. Se descarga un archivo que se abre en cualquier navegador; desde ahí puedes usar <strong>Imprimir → Guardar como PDF</strong>.</p>
+              <button onClick={openConsentPicker} disabled={!!busy}
+                className="w-full py-2.5 rounded-xl border border-gray-200 text-sm text-gray-700 hover:border-gold hover:bg-gold/5 flex items-center justify-center gap-2 disabled:opacity-50">
+                {busy === 'consents' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSignature className="w-4 h-4 text-gold-dark" />}Seleccionar y descargar consentimientos
+              </button>
             </Card>
             <p className="text-xs text-gray-400 text-center">Los archivos descargados contienen datos sensibles de salud. Su custodia es responsabilidad de la clínica.</p>
           </>
@@ -454,7 +498,9 @@ export default function AdminBackup() {
                     </div>
                     <div className="flex gap-2">
                       <button onClick={resetRestore} disabled={!!busy} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-600">Cancelar</button>
-                      <button onClick={commitRestore} disabled={!canCommit || !!busy} className="flex-1 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2">
+                      <button onClick={() => ask('Confirmar restauración',
+                        <>Se agregarán <strong>{Object.values(restore.report.inserted).reduce((a, b) => a + b, 0)} registros</strong> que hoy no existen. Nada existente se modificará y antes se guardará un respaldo del estado actual.</>,
+                        'Restaurar', commitRestore)} disabled={!canCommit || !!busy} className="flex-1 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2">
                         {busy === 'restore' && <Loader2 className="w-4 h-4 animate-spin" />}Restaurar ahora
                       </button>
                     </div>
@@ -492,7 +538,7 @@ export default function AdminBackup() {
                   </details>
                 )}
                 <div className="flex gap-2 mb-4">
-                  <button onClick={downloadTemplate} disabled={!!busy} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-700 hover:bg-gray-50 flex items-center justify-center gap-2 disabled:opacity-50">{busy === 'template' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}Plantilla CSV</button>
+                  <button onClick={() => ask('Descargar plantilla', 'Se descargará la plantilla CSV vacía (con dos filas de ejemplo) para registrar pacientes.', 'Descargar', downloadTemplate)} disabled={!!busy} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-700 hover:bg-gray-50 flex items-center justify-center gap-2 disabled:opacity-50">{busy === 'template' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}Plantilla CSV</button>
                   <button onClick={() => csvInput.current?.click()} disabled={!!busy} className="flex-1 py-2.5 rounded-xl bg-gold text-white text-sm font-semibold hover:bg-gold-dark flex items-center justify-center gap-2 disabled:opacity-50">
                     {busy === 'csv-parse' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}Seleccionar CSV
                   </button>
@@ -512,7 +558,9 @@ export default function AdminBackup() {
                         {patientReport.duplicates.slice(0, 100).map(d => <p key={d.line}>Fila {d.line}: {d.reason}</p>)}
                       </div>
                     )}
-                    <button onClick={commitPatients} disabled={!!busy || patientReport.errors.length > 0 || patientReport.valid === 0}
+                    <button onClick={() => ask('Confirmar importación',
+                      <>Se crearán <strong>{patientReport.valid} pacientes</strong> con su expediente{patientReport.withHistory ? ` (${patientReport.withHistory} con antecedentes)` : ''}. Los pacientes ya registrados no se modifican.</>,
+                      'Importar', commitPatients)} disabled={!!busy || patientReport.errors.length > 0 || patientReport.valid === 0}
                       className="w-full py-2.5 rounded-xl bg-blue-600 text-white text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2">
                       {busy === 'patients' && <Loader2 className="w-4 h-4 animate-spin" />}Importar {patientReport.valid} pacientes
                     </button>
@@ -532,7 +580,7 @@ export default function AdminBackup() {
                 <li className="flex gap-2"><History className="w-3.5 h-3.5 text-blue-600 flex-shrink-0 mt-0.5" />Cada copia se elimina automáticamente a los 35 días. Ante un desastre, como máximo se pierde lo registrado desde la última copia (un día).</li>
               </ul>
               {stats && !stats.encryption_ready && <p className="text-xs text-red-600 mb-3">El cifrado de respaldos no está configurado en el servidor. Contacta a soporte.</p>}
-              <button onClick={createSnapshot} disabled={!!busy || (stats ? !stats.encryption_ready : false)}
+              <button onClick={() => ask('Crear respaldo en la nube', 'Se generará ahora una copia cifrada de toda la información de la clínica. Quedará protegida 30 días y se eliminará sola a los 35.', 'Crear respaldo', createSnapshot)} disabled={!!busy || (stats ? !stats.encryption_ready : false)}
                 className="w-full py-3 rounded-xl bg-gold text-white font-semibold hover:bg-gold-dark disabled:opacity-50 flex items-center justify-center gap-2">
                 {busy === 'snapshot' ? <Loader2 className="w-5 h-5 animate-spin" /> : <Cloud className="w-5 h-5" />}Crear respaldo en la nube ahora
               </button>
@@ -549,7 +597,7 @@ export default function AdminBackup() {
                       <p className="text-sm text-gray-800">{fmtDate(s.created_at)}</p>
                       <p className="text-xs text-gray-500">{KIND_LABEL[s.kind] || s.kind} · {fmtSize(s.size)}</p>
                     </div>
-                    <button onClick={() => downloadSnapshot(s)} disabled={!!busy} title="Descargar" className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50">
+                    <button onClick={() => ask('Descargar respaldo de la nube', <>Se descargará la copia del <strong>{fmtDate(s.created_at)}</strong> en formato JSON. {SENSITIVE}</>, 'Descargar', () => downloadSnapshot(s))} disabled={!!busy} title="Descargar" className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50">
                       {busy === `dl-${s.key}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4 text-gray-600" />}
                     </button>
                     <button onClick={() => previewRestore({ source: 'snapshot', key: s.key, label: `Nube · ${fmtDate(s.created_at)}` })} disabled={!!busy}
@@ -561,6 +609,57 @@ export default function AdminBackup() {
           </>
         )}
       </div>
+
+      {picker && (
+        <Modal title="Seleccionar consentimientos" onClose={() => setPicker(null)}>
+          {!picker.patients ? <p className="text-sm text-gray-500 flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Cargando pacientes…</p>
+            : picker.patients.length === 0 ? <p className="text-sm text-gray-500">No hay consentimientos firmados en la clínica.</p>
+            : (() => {
+              const q = picker.search.trim().toLowerCase();
+              const visible = picker.patients.filter(p => !q || `${p.first_name} ${p.last_name} ${p.identification || ''}`.toLowerCase().includes(q));
+              const toggle = (id: number) => setPicker(pk => pk && { ...pk, selected: new Set(pk.selected.has(id) ? [...pk.selected].filter(x => x !== id) : [...pk.selected, id]) });
+              return (
+                <>
+                  <input value={picker.search} onChange={e => setPicker(pk => pk && { ...pk, search: e.target.value })} placeholder="Buscar por nombre o identificación"
+                    className="w-full mb-3 px-3 py-2 rounded-xl border border-gray-200 text-sm focus:border-gold outline-none" />
+                  <div className="flex items-center justify-between text-xs text-gray-600 mb-2">
+                    <span>{picker.selected.size ? `${picker.selected.size} seleccionado(s)` : `Sin selección = todos (${picker.patients.length} pacientes)`}</span>
+                    <button onClick={() => setPicker(pk => pk && { ...pk, selected: pk.selected.size ? new Set() : new Set(visible.map(p => p.id)) })} className="text-gold-dark font-semibold hover:underline">
+                      {picker.selected.size ? 'Limpiar selección' : 'Seleccionar visibles'}
+                    </button>
+                  </div>
+                  <div className="max-h-72 overflow-auto divide-y divide-gray-100 border border-gray-100 rounded-xl">
+                    {visible.map(p => (
+                      <label key={p.id} className="flex items-center gap-3 px-3 py-2 text-sm cursor-pointer hover:bg-gray-50">
+                        <input type="checkbox" checked={picker.selected.has(p.id)} onChange={() => toggle(p.id)} className="w-4 h-4 accent-gold" />
+                        <span className="flex-1">{p.last_name} {p.first_name}<span className="block text-xs text-gray-400">{p.identification || 'Sin identificación'}</span></span>
+                        <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{p.consents}</span>
+                      </label>
+                    ))}
+                    {!visible.length && <p className="p-3 text-sm text-gray-500">Sin resultados.</p>}
+                  </div>
+                  <div className="flex gap-2 mt-4">
+                    <button onClick={() => setPicker(null)} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-600">Cancelar</button>
+                    <button onClick={confirmConsentDownload} className="flex-1 py-2.5 rounded-xl bg-gold text-white text-sm font-semibold hover:bg-gold-dark">
+                      {picker.selected.size ? `Continuar con ${picker.selected.size}` : 'Continuar con todos'}
+                    </button>
+                  </div>
+                </>
+              );
+            })()}
+        </Modal>
+      )}
+
+      {pending && (
+        <Modal title={pending.title} onClose={() => setPending(null)}>
+          <p className="text-sm text-gray-700 leading-relaxed">{pending.message}</p>
+          <div className="flex gap-2 mt-5">
+            <button onClick={() => setPending(null)} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-600">Cancelar</button>
+            <button autoFocus onClick={() => { const action = pending.onConfirm; setPending(null); action(); }}
+              className="flex-1 py-2.5 rounded-xl bg-gold text-white text-sm font-semibold hover:bg-gold-dark">{pending.confirmLabel}</button>
+          </div>
+        </Modal>
+      )}
     </AdminLayout>
   );
 }
