@@ -20,6 +20,7 @@ import {
   hasRecentAppointmentSystemReply,
   getPendingAppointmentReplyContext,
   setAppointmentReplyStatus,
+  clearAppointmentReplyStatus,
   getAppointmentReplyStatuses,
 } from '../lib/whatsapp-crm.js';
 import { getBotState, setBotState, clearBotState } from '../lib/whatsapp-bot-state.js';
@@ -99,17 +100,21 @@ export function normalizeEcuadorPhone(raw) {
   return `593${digits}`;
 }
 
-/** Extrae teléfono y nombre de paciente del evento de Google Calendar, igual que CalendarManager.tsx. */
-function parseAppointmentEvent(event) {
+/** Extrae teléfono, correo y nombre de paciente del evento de Google Calendar, igual que CalendarManager.tsx. */
+export function parseAppointmentEvent(event) {
   if (!event.summary?.startsWith('Cita: ')) return null;
   // Sin teléfono la cita igual debe listarse; solo se omite el link de recordatorio manual
   const phoneMatch = event.description?.match(/Teléfono:\s*([\d+\-\s]+)/);
   const phone = phoneMatch ? normalizeEcuadorPhone(phoneMatch[1]) : '';
-  const patientName = event.summary.substring(6).split(' - ')[0] || 'Paciente';
+  const summaryParts = event.summary.substring(6).split(' - ');
+  const patientName = summaryParts[0]?.trim() || 'Paciente';
+  // El agendamiento del panel guarda el correo en el título (`Cita: Nombre - correo`); el del bot, en la descripción.
+  const emailFromSummary = summaryParts.slice(1).find(part => part.includes('@'))?.trim() || '';
+  const email = (event.description?.match(/Correo:\s*(\S+@\S+)/)?.[1] || emailFromSummary).trim();
   const professional = event.description?.match(/Profesional:\s*([^\n]+)/)?.[1]?.trim() || '';
   const service = event.description?.match(/Servicio:\s*([^\n]+)/)?.[1]?.trim() || '';
   const resource = event.description?.match(/Recurso:\s*([^\n]+)/)?.[1]?.trim() || '';
-  return { phone, patientName, professional, service, resource };
+  return { phone, email, patientName, professional, service, resource };
 }
 
 function formatLocalDateKey(date, timeZone = 'America/Guayaquil') {
@@ -511,7 +516,7 @@ function parsePeriod(text) {
   return null;
 }
 
-/** Trae las citas de un día con datos listos para reprogramar/eliminar (id de evento, paciente, teléfono, duración). */
+/** Trae las citas de un día con datos listos para reprogramar/eliminar (id de evento, paciente, contacto, duración). */
 async function getAppointmentsForDate(userId, isoDate) {
   const auth = await getUserOAuth2Client(userId);
   if (!auth) return { error: 'No tienes Google Calendar conectado a tu cuenta.' };
@@ -520,29 +525,30 @@ async function getAppointmentsForDate(userId, isoDate) {
     calendarId: 'primary', timeMin: `${isoDate}T00:00:00-05:00`, timeMax: `${isoDate}T23:59:59-05:00`,
     singleEvents: true, orderBy: 'startTime',
   });
-  const appointments = await Promise.all((data.items || [])
+  const appointments = (data.items || [])
     .filter(e => e.summary?.startsWith('Cita: '))
-    .map(async e => {
+    .map(e => {
       const parsed = parseAppointmentEvent(e) || {};
       const start = new Date(e.start?.dateTime || e.start?.date);
       const end = new Date(e.end?.dateTime || e.end?.date);
       const hora = e.start?.dateTime
         ? start.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'America/Guayaquil' })
         : '';
-      const patientName = parsed.patientName || e.summary.substring(6).split(' - ')[0] || 'Paciente';
-      const reminderMessage = `Hola ${patientName}, te escribimos para confirmar/actualizar tu cita del ${isoDate}${hora ? ` a las ${hora}` : ''}. Por favor responde a este mensaje si tienes alguna consulta.`;
       return {
-        id: e.id, hora, patientName, phone: parsed.phone || '', professional: parsed.professional || '', resource: parsed.resource || '',
+        id: e.id, hora, patientName: parsed.patientName || 'Paciente', phone: parsed.phone || '', email: parsed.email || '',
+        professional: parsed.professional || '', service: parsed.service || '', resource: parsed.resource || '',
         resourceId: eventResourceId(e, userId),
-        link: parsed.phone ? await createShortWaLink(parsed.phone, reminderMessage) : '',
-        durationMs: (!Number.isNaN(end.getTime()) && !Number.isNaN(start.getTime()) && end > start) ? end - start : 60 * 60 * 1000,
+        startIso: Number.isNaN(start.getTime()) ? null : start.toISOString(),
+        durationMinutes: (!Number.isNaN(end.getTime()) && !Number.isNaN(start.getTime()) && end > start)
+          ? Math.round((end - start) / 60000)
+          : 60,
       };
-    }));
+    });
   return { appointments };
 }
 
 function formatAppointmentSelectionList(appointments) {
-  return appointments.map((a, i) => `${i + 1}. ${a.hora || 'Hora pendiente'} — ${a.patientName}`).join('\n');
+  return appointments.map((a, i) => `${i + 1}. ${a.hora || 'Hora pendiente'} — ${a.patientName}${a.resource ? ` (${a.resource})` : ''}`).join('\n');
 }
 
 async function listAppointmentsForDate(userId, isoDate, label) {
@@ -550,7 +556,14 @@ async function listAppointmentsForDate(userId, isoDate, label) {
   if (error) return error;
   const dateLabel = new Date(`${isoDate}T00:00:00-05:00`).toLocaleDateString('es-ES', { timeZone: 'America/Guayaquil', day: '2-digit', month: '2-digit', year: 'numeric' });
   if (!appointments.length) return `${label} (${dateLabel}): no hay citas agendadas.`;
-  const lines = appointments.map((a, i) => `${i + 1}. ${a.hora || 'Hora pendiente'} — ${a.patientName}${a.resource ? ` (${a.resource})` : ''}${a.link ? `\n   Enviar recordatorio: ${a.link}` : ''}`);
+  // El enlace corto solo se crea aquí: generárselo a cada cita en los flujos de reprogramar/eliminar
+  // insertaba filas en `wa_short_links` que nadie llegaba a abrir.
+  const lines = await Promise.all(appointments.map(async (a, i) => {
+    const link = a.phone
+      ? await createShortWaLink(a.phone, `Hola ${a.patientName}, te escribimos para confirmar/actualizar tu cita del ${dateLabel}${a.hora ? ` a las ${a.hora}` : ''}. Por favor responde a este mensaje si tienes alguna consulta.`)
+      : '';
+    return `${i + 1}. ${a.hora || 'Hora pendiente'} — ${a.patientName}${a.resource ? ` (${a.resource})` : ''}${link ? `\n   Enviar recordatorio: ${link}` : ''}`;
+  }));
   return `📅 ${label} (${dateLabel}):\n\n${lines.join('\n\n')}`;
 }
 
@@ -593,7 +606,7 @@ async function getAvailableSlots(userId, clinicId, isoDate, period, durationMinu
   return { slots };
 }
 
-/** Cambia la fecha/hora/duración de una cita existente. */
+/** Mueve la cita completa: `patch` conserva título, descripción (teléfono/correo) y recurso, y solo cambia el horario. */
 async function rescheduleAppointment(userId, eventId, startDate, durationMs) {
   const auth = await getUserOAuth2Client(userId);
   if (!auth) throw new Error('No tienes Google Calendar conectado a tu cuenta.');
@@ -604,6 +617,9 @@ async function rescheduleAppointment(userId, eventId, startDate, durationMs) {
     requestBody: {
       start: { dateTime: startDate.toISOString(), timeZone: 'America/Guayaquil' },
       end: { dateTime: endDate.toISOString(), timeZone: 'America/Guayaquil' },
+      // Sin borrar la marca, mover la cita dentro del mismo día dejaba al paciente con la hora vieja:
+      // el cron la daba por avisada y no reenviaba el recordatorio.
+      extendedProperties: { private: { bioskinReminderSent: null } },
     },
   });
   return startDate;
@@ -618,27 +634,139 @@ async function deleteAppointment(userId, eventId) {
 }
 
 /** Crea una cita nueva en el calendario del staff, con el mismo formato que lee `parseAppointmentEvent`. */
-async function createAppointmentEvent(userId, patientName, patientPhone, professional, startDate, durationMs, resourceId, resourceName) {
+async function createAppointmentEvent(userId, patientName, patientPhone, patientEmail, professional, startDate, durationMs, resourceId, resourceName) {
   const auth = await getUserOAuth2Client(userId);
   if (!auth) throw new Error('No tienes Google Calendar conectado a tu cuenta.');
   const calendar = google.calendar({ version: 'v3', auth });
   const endDate = new Date(startDate.getTime() + durationMs);
   const description = `Teléfono: ${patientPhone || 'No proporcionado'}` +
+    `\nCorreo: ${patientEmail || 'No proporcionado'}` +
     (professional ? `\nProfesional: ${professional}` : '') +
     (resourceName ? `\nRecurso: ${resourceName}` : '') +
     '\n[AGENDADO POR WHATSAPP]';
-  await calendar.events.insert({
+  const { data } = await calendar.events.insert({
     calendarId: 'primary',
     requestBody: {
-      summary: `Cita: ${patientName}`,
+      // Mismo título que el panel (`Cita: Nombre - correo`) para que la agenda se lea igual en ambos canales.
+      summary: patientEmail ? `Cita: ${patientName} - ${patientEmail}` : `Cita: ${patientName}`,
       description,
       start: { dateTime: startDate.toISOString(), timeZone: 'America/Guayaquil' },
       end: { dateTime: endDate.toISOString(), timeZone: 'America/Guayaquil' },
       extendedProperties: resourceExtendedProperties(resourceId, userId),
     },
   });
+  return data.id;
 }
 
+const APPOINTMENT_COPY = {
+  booked:      { subject: 'Tu cita está agendada', heading: '¡Tu cita está agendada!', intro: 'hemos registrado tu cita. Este es el resumen:' },
+  rescheduled: { subject: 'Tu cita fue reprogramada', heading: 'Tu cita fue reprogramada', intro: 'tu cita cambió de horario. Este es el nuevo detalle:' },
+  cancelled:   { subject: 'Tu cita fue cancelada', heading: 'Tu cita fue cancelada', intro: 'hemos cancelado la siguiente cita:' },
+};
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function buildAppointmentEmailHtml({ kind, patientName, clinicName, professionalName, dateLabel, durationMinutes }) {
+  const copy = APPOINTMENT_COPY[kind];
+  const rows = [
+    ['Fecha y hora', dateLabel],
+    durationMinutes ? ['Duración', `${durationMinutes} minutos`] : null,
+    professionalName ? ['Profesional', professionalName] : null,
+    ['Clínica', clinicName],
+  ].filter(Boolean);
+  return `
+    <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;">
+      <div style="background:linear-gradient(135deg,#8a6b3f 0%,#ba9256 100%);color:#fff;padding:22px 24px;border-radius:12px 12px 0 0;">
+        <h2 style="margin:0 0 4px;font-size:20px;">${escapeHtml(copy.heading)}</h2>
+        <p style="margin:0;font-size:13px;opacity:.85;">${escapeHtml(clinicName)}</p>
+      </div>
+      <div style="background:#fff;border:1px solid #ececec;border-top:0;padding:24px;">
+        <p style="margin:0 0 16px;color:#444;">Hola <strong>${escapeHtml(patientName)}</strong>, ${escapeHtml(copy.intro)}</p>
+        <table style="width:100%;border-collapse:collapse;">
+          ${rows.map(([label, value], i) => `<tr${i % 2 === 0 ? ' style="background:#faf5ef;"' : ''}><td style="padding:10px 12px;border-bottom:1px solid #f0e8d8;color:#666;font-size:13px;width:40%;">${escapeHtml(label)}</td><td style="padding:10px 12px;border-bottom:1px solid #f0e8d8;font-weight:600;color:#333;font-size:13px;">${escapeHtml(value)}</td></tr>`).join('')}
+        </table>
+        <p style="margin:20px 0 0;color:#555;font-size:13px;">${kind === 'cancelled' ? 'Si deseas agendar una nueva cita, responde este correo.' : '¿Tienes alguna pregunta? Responde este correo.'}</p>
+      </div>
+      <div style="padding:18px 24px;text-align:center;background:#3e3026;color:#eadfd2;font-size:11px;line-height:1.6;border-radius:0 0 12px 12px;">
+        <strong style="display:block;color:#e8c995;letter-spacing:2px;font-size:12px;">BIOSKINTECH · GESTIÓN CLÍNICA</strong>
+        <a href="https://bioskintechapp.com" style="color:#fff;text-decoration:none;">bioskintechapp.com</a>
+      </div>
+    </div>`;
+}
+
+/** Envía un correo desde la cuenta Gmail conectada del propio usuario/clínica, nunca desde el SMTP global. */
+async function sendEmailAsUser(userId, { fromName, to, subject, html }) {
+  const oauth = await getUserGmailClient(userId);
+  if (!oauth) throw new Error('no tienes una cuenta Gmail conectada');
+  const gmail = google.gmail({ version: 'v1', auth: oauth.client });
+  const raw = Buffer.from([
+    `From: ${fromName} <${oauth.email}>`,
+    `To: ${to}`,
+    `Subject: =?UTF-8?B?${Buffer.from(subject).toString('base64')}?=`,
+    'MIME-Version: 1.0',
+    'Content-Type: text/html; charset=UTF-8',
+    '',
+    html,
+  ].join('\r\n')).toString('base64url');
+  await gmail.users.messages.send({ userId: 'me', requestBody: { raw } });
+  return oauth.email;
+}
+
+/**
+ * Avisa al paciente de una cita creada, movida o cancelada por correo (Gmail del usuario) y por WhatsApp.
+ * Devuelve el detalle de lo ocurrido para mostrárselo al staff, en vez de fallar la operación completa.
+ */
+async function notifyPatientOfAppointment(clinicUser, { kind, patientName, phone, email, eventId, startDate, durationMinutes }) {
+  const clinicName = clinicUser.clinic_name || 'la clínica';
+  const professionalName = [clinicUser.gentilicio, clinicUser.full_name].filter(Boolean).join(' ').trim();
+  const dateLabel = startDate && !Number.isNaN(startDate.getTime())
+    ? startDate.toLocaleString('es-ES', { timeZone: 'America/Guayaquil', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : 'la fecha acordada';
+  const copy = APPOINTMENT_COPY[kind];
+  const lines = [];
+
+  if (email) {
+    try {
+      const sender = await sendEmailAsUser(clinicUser.id, {
+        fromName: clinicName,
+        to: email,
+        subject: `${copy.subject} — ${clinicName}`,
+        html: buildAppointmentEmailHtml({ kind, patientName, clinicName, professionalName, dateLabel, durationMinutes }),
+      });
+      lines.push(`📧 Correo enviado a ${email} desde ${sender}.`);
+    } catch (err) {
+      lines.push(`⚠️ No se pudo enviar el correo a ${email}: ${err.message}`);
+    }
+  } else {
+    lines.push('📧 Sin correo registrado — no se envió confirmación por correo.');
+  }
+
+  if (!phone) {
+    lines.push('📱 Sin número registrado — no se le puede escribir desde aquí.');
+    return lines.join('\n');
+  }
+
+  const patientText = kind === 'cancelled'
+    ? `Hola ${patientName}, tu cita del ${dateLabel} en ${clinicName} fue cancelada. Si deseas reagendar, responde a este mensaje.`
+    : `Hola ${patientName}, tu cita en ${clinicName} quedó ${kind === 'rescheduled' ? 'reprogramada' : 'agendada'} para el ${dateLabel}.\n\n✅ Responde *CONFIRMAR* si asistirás.\n🔄 Responde *CAMBIAR* si necesitas otro horario.`;
+  try {
+    // Fuera de la ventana de 24h de Meta el texto libre se rechaza; ahí el staff lo envía con un toque.
+    if (await isWithinCustomerServiceWindow(phone)) {
+      await sendWhatsAppText(phone, patientText, {
+        clinicId: clinicUser.clinic_id, bookedByUserId: clinicUser.id, name: patientName,
+        ...(kind === 'cancelled' ? {} : { appointmentEventId: eventId, appointmentStart: startDate, appointmentPatientName: patientName }),
+      });
+      lines.push('📱 WhatsApp enviado al paciente automáticamente.');
+    } else {
+      lines.push(`📱 Avísale tú (fuera de la ventana de 24h): ${await createShortWaLink(phone, patientText)}`);
+    }
+  } catch (err) {
+    lines.push(`⚠️ No se pudo avisar por WhatsApp: ${err.message}`);
+  }
+  return lines.join('\n');
+}
 
 const CANCEL_HINT = '\n\n(Escribe *cancelar* para salir de este proceso o *menu* para volver al inicio)';
 const MENU_TEXT = '1) Agenda\n2) Reporte financiero\n\nResponde con el número de la opción.';
@@ -652,8 +780,22 @@ const NEW_DURATION_PROMPT = '⏱️ ¿Cuánto dura la cita? Responde en minutos 
 const NEW_PERIOD_PROMPT = '🌤️ ¿Prefieres la cita en la mañana o en la tarde? Responde "mañana" o "tarde".' + CANCEL_HINT;
 const BOOKING_NAME_PROMPT = '🧑‍⚕️ Vamos a agendar una cita nueva.\n\n¿Cuál es el nombre completo del paciente?' + CANCEL_HINT;
 const BOOKING_PHONE_PROMPT = '📱 ¿Cuál es el número de WhatsApp del paciente? (ej: 0991234567)' + CANCEL_HINT;
+const BOOKING_EMAIL_PROMPT = '✉️ ¿Cuál es el correo del paciente? Ahí se envía la confirmación de la cita.\n\nSi no lo tienes, responde *omitir*.' + CANCEL_HINT;
 const BOOKING_DATE_PROMPT = '📅 ¿Para qué día es la cita?\nFormatos válidos: "hoy", "mañana", 31/12/2026 o 2026-12-31.' + CANCEL_HINT;
+const PAST_DATE_NOTICE = '⚠️ Esa fecha ya pasó. Escribe una fecha de hoy en adelante.';
 const ALLOWED_BOT_ACTIONS = new Set(['1', '2', 'diario', 'daily', 'semanal', 'weekly', 'mensual', 'monthly']);
+
+/** Un correo válido es requisito para la confirmación; "omitir" deja la cita sin correo a propósito. */
+export function parsePatientEmail(text) {
+  const raw = String(text || '').trim();
+  if (['omitir', 'no', 'ninguno', 'sin correo', 'skip'].includes(normalizeCommandText(raw))) return { skipped: true, email: '' };
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(raw) ? { skipped: false, email: raw.toLowerCase() } : null;
+}
+
+/** Hoy en Ecuador, para rechazar citas agendadas hacia atrás. */
+function isPastDate(isoDate) {
+  return isoDate < new Date().toLocaleDateString('en-CA', { timeZone: 'America/Guayaquil' });
+}
 
 function buildFinanceRange(period, today = new Date()) {
   const fmt = (d) => d.toISOString().split('T')[0];
@@ -961,9 +1103,11 @@ async function handleIncomingMessages(body) {
 
     const staff = await sql`
       SELECT cu.id, cu.clinic_id, cu.full_name, cu.gentilicio, cu.email, cu.phone, cu.whatsapp_staff_phone, cu.finance_scope,
+              cl.name AS clinic_name,
               COALESCE(cf.enabled, true) AND COALESCE(umo.enabled, true) AND COALESCE(vis.enabled, true) AS finance_enabled,
               COALESCE(calendar_feature.enabled, true) AND COALESCE(calendar_override.enabled, true) AS calendar_enabled
       FROM clinic_users cu
+            JOIN clinics cl ON cl.id = cu.clinic_id
             LEFT JOIN clinic_features cf ON cf.clinic_id = cu.clinic_id AND cf.feature = 'finance'
             LEFT JOIN clinic_features calendar_feature ON calendar_feature.clinic_id = cu.clinic_id AND calendar_feature.feature = 'calendar'
             LEFT JOIN user_module_overrides umo ON umo.clinic_user_id = cu.id AND umo.feature = 'finance'
@@ -1024,19 +1168,21 @@ async function handleIncomingMessages(body) {
           const selected = botState.appointments[Number(normalizedText) - 1];
           if (!selected) { await sendWhatsAppText(from, `Número inválido. Responde con el número de la lista.${CANCEL_HINT}`); continue; }
           await setBotState(from, 'reschedule', { stage: 'awaitingNewDate', selected });
-          await sendWhatsAppText(from, NEW_DATE_PROMPT);
+          await sendWhatsAppText(from, `Cita seleccionada: *${selected.patientName}* (${selected.hora || 'hora pendiente'}, ${selected.durationMinutes} min).\nSe mantienen su teléfono, correo y profesional.\n\n${NEW_DATE_PROMPT}`);
           continue;
         }
         if (botState.stage === 'awaitingNewDate') {
           const newIsoDate = parseFlexibleDate(normalizedText);
           if (!newIsoDate) { await sendWhatsAppText(from, `No reconocí esa fecha.\n\n${NEW_DATE_PROMPT}`); continue; }
+          if (isPastDate(newIsoDate)) { await sendWhatsAppText(from, `${PAST_DATE_NOTICE}\n\n${NEW_DATE_PROMPT}`); continue; }
           await setBotState(from, 'reschedule', { ...botState, stage: 'awaitingDuration', newIsoDate });
-          await sendWhatsAppText(from, NEW_DURATION_PROMPT);
+          await sendWhatsAppText(from, `⏱️ ¿Cuánto durará la cita? Responde en minutos, o *igual* para mantener los ${botState.selected.durationMinutes} min actuales.${CANCEL_HINT}`);
           continue;
         }
         if (botState.stage === 'awaitingDuration') {
-          const durationMinutes = parseDurationMinutes(normalizedText);
-          if (!durationMinutes) { await sendWhatsAppText(from, `No reconocí esa duración.\n\n${NEW_DURATION_PROMPT}`); continue; }
+          const keepCurrent = ['igual', 'misma', 'lo mismo', 'mantener'].includes(normalizedText);
+          const durationMinutes = keepCurrent ? botState.selected.durationMinutes : parseDurationMinutes(normalizedText);
+          if (!durationMinutes) { await sendWhatsAppText(from, `No reconocí esa duración. Responde en minutos o *igual* para mantener los ${botState.selected.durationMinutes} min.${CANCEL_HINT}`); continue; }
           await setBotState(from, 'reschedule', { ...botState, stage: 'awaitingPeriod', durationMinutes });
           await sendWhatsAppText(from, NEW_PERIOD_PROMPT);
           continue;
@@ -1059,14 +1205,19 @@ async function handleIncomingMessages(body) {
           const chosenIso = botState.slots[Number(normalizedText) - 1];
           if (!chosenIso) { await sendWhatsAppText(from, `Número inválido. Responde con el número de la lista.${CANCEL_HINT}`); continue; }
           await clearBotState(from);
+          const { selected, durationMinutes } = botState;
           try {
             const startDate = new Date(chosenIso);
-            await rescheduleAppointment(clinicUser.id, botState.selected.id, startDate, botState.durationMinutes * 60000);
+            await rescheduleAppointment(clinicUser.id, selected.id, startDate, durationMinutes * 60000);
+            // La confirmación anterior era para el horario viejo: dejarla marcada mostraba la cita
+            // como "confirmada" en el resumen aunque el paciente aún no supiera del cambio.
+            await clearAppointmentReplyStatus(selected.id).catch(() => {});
             const horaLabel = startDate.toLocaleString('es-ES', { timeZone: 'America/Guayaquil', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-            const patientPhone = botState.selected.phone;
-            const patientMessage = `Hola ${botState.selected.patientName}, tu cita fue reprogramada para el ${horaLabel}. Por favor responde a este mensaje si tienes alguna consulta.`;
-            const link = patientPhone ? `\n\nAvisa al paciente: ${await createShortWaLink(patientPhone, patientMessage)}` : '';
-            await sendWhatsAppText(from, `✅ Cita de ${botState.selected.patientName} reprogramada para el ${horaLabel} (${botState.durationMinutes} min).${link}\n\nEscribe *menu* para ver las opciones.`);
+            const notice = await notifyPatientOfAppointment(clinicUser, {
+              kind: 'rescheduled', patientName: selected.patientName, phone: selected.phone, email: selected.email,
+              eventId: selected.id, startDate, durationMinutes,
+            });
+            await sendWhatsAppText(from, `✅ Cita de ${selected.patientName} reprogramada para el ${horaLabel} (${durationMinutes} min).\nSe mantuvieron teléfono, correo, profesional y recurso.\n\n${notice}\n\nEscribe *menu* para ver las opciones.`);
           } catch (err) {
             await sendWhatsAppText(from, `❌ No se pudo reprogramar la cita: ${err.message}\n\nEscribe *menu* para ver las opciones.`);
           }
@@ -1101,8 +1252,13 @@ async function handleIncomingMessages(body) {
           if (['si', 'sí', 'confirmar', 'yes'].includes(normalizedText)) {
             try {
               await deleteAppointment(clinicUser.id, selected.id);
-              const link = selected.link ? `\n\nAvisa al paciente: ${selected.link}` : '';
-              await sendWhatsAppText(from, `✅ Cita de ${selected.patientName} eliminada.${link}\n\nEscribe *menu* para ver las opciones.`);
+              // El enlace anterior reutilizaba el texto de recordatorio ("confirmar/actualizar tu cita")
+              // justo después de borrarla, dejando al paciente con un mensaje contradictorio.
+              const notice = await notifyPatientOfAppointment(clinicUser, {
+                kind: 'cancelled', patientName: selected.patientName, phone: selected.phone, email: selected.email,
+                eventId: selected.id, startDate: selected.startIso ? new Date(selected.startIso) : null, durationMinutes: selected.durationMinutes,
+              });
+              await sendWhatsAppText(from, `✅ Cita de ${selected.patientName} eliminada.\n\n${notice}\n\nEscribe *menu* para ver las opciones.`);
             } catch (err) {
               await sendWhatsAppText(from, `❌ No se pudo eliminar la cita: ${err.message}\n\nEscribe *menu* para ver las opciones.`);
             }
@@ -1127,16 +1283,24 @@ async function handleIncomingMessages(body) {
         if (botState.stage === 'awaitingPatientPhone') {
           const patientPhone = normalizeEcuadorPhone(normalizedText);
           if (patientPhone.length < 11 || patientPhone.length > 13) { await sendWhatsAppText(from, `Ese número no parece válido.\n\n${BOOKING_PHONE_PROMPT}`); continue; }
+          await setBotState(from, 'booking', { ...botState, stage: 'awaitingPatientEmail', patientPhone });
+          await sendWhatsAppText(from, BOOKING_EMAIL_PROMPT);
+          continue;
+        }
+        if (botState.stage === 'awaitingPatientEmail') {
+          const parsedEmail = parsePatientEmail(text);
+          if (!parsedEmail) { await sendWhatsAppText(from, `Ese correo no parece válido.\n\n${BOOKING_EMAIL_PROMPT}`); continue; }
+          const withEmail = { ...botState, patientEmail: parsedEmail.email };
           const resources = await listActiveResources(clinicUser.id);
           if (resources.length) {
             const options = [{ id: ownerResourceId(clinicUser.id), name: clinicUser.full_name || 'Yo' },
                              ...resources.map(r => ({ id: `staff:${r.id}`, name: r.name }))];
-            await setBotState(from, 'booking', { ...botState, stage: 'awaitingResource', patientPhone, resourceOptions: options });
+            await setBotState(from, 'booking', { ...withEmail, stage: 'awaitingResource', resourceOptions: options });
             const list = options.map((o, i) => `${i + 1}. ${o.name}`).join('\n');
             await sendWhatsAppText(from, `¿Quién atiende esta cita?\n\n${list}\n\nResponde con el número.${CANCEL_HINT}`);
             continue;
           }
-          await setBotState(from, 'booking', { ...botState, stage: 'awaitingDate', patientPhone });
+          await setBotState(from, 'booking', { ...withEmail, stage: 'awaitingDate' });
           await sendWhatsAppText(from, BOOKING_DATE_PROMPT);
           continue;
         }
@@ -1150,6 +1314,7 @@ async function handleIncomingMessages(body) {
         if (botState.stage === 'awaitingDate') {
           const isoDate = parseFlexibleDate(normalizedText);
           if (!isoDate) { await sendWhatsAppText(from, `No reconocí esa fecha.\n\n${BOOKING_DATE_PROMPT}`); continue; }
+          if (isPastDate(isoDate)) { await sendWhatsAppText(from, `${PAST_DATE_NOTICE}\n\n${BOOKING_DATE_PROMPT}`); continue; }
           await setBotState(from, 'booking', { ...botState, stage: 'awaitingDuration', isoDate });
           await sendWhatsAppText(from, NEW_DURATION_PROMPT);
           continue;
@@ -1182,10 +1347,14 @@ async function handleIncomingMessages(body) {
           try {
             const startDate = new Date(chosenIso);
             const staffResourceName = botState.resourceId?.startsWith('staff:') ? botState.resourceName : '';
-            await createAppointmentEvent(clinicUser.id, botState.patientName, botState.patientPhone, clinicUser.full_name, startDate, botState.durationMinutes * 60000, botState.resourceId, staffResourceName);
+            const eventId = await createAppointmentEvent(clinicUser.id, botState.patientName, botState.patientPhone, botState.patientEmail, clinicUser.full_name, startDate, botState.durationMinutes * 60000, botState.resourceId, staffResourceName);
             await ensureWhatsAppContactClinic(botState.patientPhone, clinicUser.clinic_id);
             const horaLabel = startDate.toLocaleString('es-ES', { timeZone: 'America/Guayaquil', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-            await sendWhatsAppText(from, `✅ Cita de ${botState.patientName} agendada para el ${horaLabel} (${botState.durationMinutes} min).\nLa confirmación por WhatsApp se enviará automáticamente el día anterior a la cita, y el correo sigue siendo la confirmación inmediata al agendar.\n\nEscribe *menu* para ver las opciones.`);
+            const notice = await notifyPatientOfAppointment(clinicUser, {
+              kind: 'booked', patientName: botState.patientName, phone: botState.patientPhone, email: botState.patientEmail,
+              eventId, startDate, durationMinutes: botState.durationMinutes,
+            });
+            await sendWhatsAppText(from, `✅ Cita de ${botState.patientName} agendada para el ${horaLabel} (${botState.durationMinutes} min).\n\n${notice}\n\nEl recordatorio automático por WhatsApp sale el día anterior a la cita.\n\nEscribe *menu* para ver las opciones.`);
           } catch (err) {
             await sendWhatsAppText(from, `❌ No se pudo agendar la cita: ${err.message}\n\nEscribe *menu* para ver las opciones.`);
           }

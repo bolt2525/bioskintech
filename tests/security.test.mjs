@@ -385,6 +385,32 @@ test('appointment reminders are sent only one day before the event and never dup
   assert.equal(shouldSendAppointmentReminder({ ...event, start: { dateTime: '2026-09-26T10:30:00-05:00' } }, new Date('2026-09-24T18:00:00-05:00')), false);
 });
 
+test('patient email and contact data survive booking and rescheduling', async () => {
+  const { parsePatientEmail, parseAppointmentEvent } = await import('../api/whatsapp-chatbot.js');
+
+  assert.deepEqual(parsePatientEmail('Ana@Clinica.COM'), { skipped: false, email: 'ana@clinica.com' });
+  assert.deepEqual(parsePatientEmail('omitir'), { skipped: true, email: '' });
+  assert.equal(parsePatientEmail('ana(arroba)clinica.com'), null);
+  assert.equal(parsePatientEmail(''), null);
+
+  // Agendado desde el panel: el correo viaja en el título del evento.
+  assert.equal(parseAppointmentEvent({
+    summary: 'Cita: Ana García - ana@clinica.com',
+    description: 'Teléfono: 0987654321\nServicio: Limpieza facial',
+  }).email, 'ana@clinica.com');
+
+  // Agendado desde el bot: el correo viaja en la descripción, junto al teléfono.
+  const fromBot = parseAppointmentEvent({
+    summary: 'Cita: Ana García - ana@clinica.com',
+    description: 'Teléfono: 0987654321\nCorreo: ana@clinica.com\nProfesional: Dra. María',
+  });
+  assert.equal(fromBot.email, 'ana@clinica.com');
+  assert.equal(fromBot.phone, '593987654321');
+  assert.equal(fromBot.patientName, 'Ana García');
+
+  assert.equal(parseAppointmentEvent({ summary: 'Cita: Ana García', description: 'Teléfono: 0987654321' }).email, '');
+});
+
 test('appointment notifications target only the normalized patient number', async () => {
   const { normalizeWhatsAppNumber, buildAppointmentWhatsAppRecipients } = await import('../api/sendEmail.js');
 

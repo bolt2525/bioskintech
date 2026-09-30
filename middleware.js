@@ -15,9 +15,15 @@
  *           Para producción con alta carga usar Vercel KV o Upstash Redis.
  */
 
+import { neon } from '@neondatabase/serverless';
+
 // Mapa en memoria: ip → { count, resetAt }
 // ponytail: mapa global por instancia, no compartido → suficiente para el volumen esperado
 const rateMap = new Map();
+
+// Código corto → URL de wa.me. El destino es inmutable, así que cachearlo por instancia evita
+// incluso la consulta a Neon cuando varias personas abren el mismo enlace.
+const shortLinkCache = new Map();
 
 const RATE_LIMIT    = 60;   // requests por ventana
 const RATE_WINDOW   = 60_000; // 1 minuto en ms
@@ -40,10 +46,36 @@ const BLOCK_PATTERNS = [
   /phpmyadmin/i,
 ];
 
-export default function middleware(request) {
+export default async function middleware(request) {
   const url = new URL(request.url);
   const ip  = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
   const path = url.pathname;
+
+  // ── 0. Enlaces cortos de WhatsApp (/r/<code>) ────────────────────────────
+  // Se resuelve aquí, no en api/whatsapp-chatbot.js: esa función carga googleapis y nodemailer,
+  // y su arranque en frío hacía que el paciente esperara segundos antes de abrir el chat.
+  if (path.startsWith('/r/')) {
+    const code = path.slice(3);
+    if (/^[A-Za-z0-9_-]{4,64}$/.test(code)) {
+      const cached = shortLinkCache.get(code);
+      if (cached) return Response.redirect(cached, 302);
+      const conn = process.env.POSTGRES_URL || process.env.NEON_DATABASE_URL;
+      if (conn) {
+        try {
+          const rows = await neon(conn)`SELECT target_url FROM wa_short_links WHERE code = ${code}`;
+          const target = rows[0]?.target_url;
+          if (target) {
+            if (shortLinkCache.size > 500) shortLinkCache.clear();
+            shortLinkCache.set(code, target);
+            return Response.redirect(target, 302);
+          }
+          return new Response('Enlace no encontrado o expirado', { status: 404 });
+        } catch (error) {
+          console.error('[BIOSKIN Edge] Fallo resolviendo enlace corto, se delega a la función:', error.message);
+        }
+      }
+    }
+  }
 
   // ── 1. Bloquear patrones de explotación ──────────────────────────────────
   const fullUrl = url.pathname + url.search;

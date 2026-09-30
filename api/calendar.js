@@ -773,6 +773,9 @@ async function updateEvent(req, res, calendar, credentials) {
   if (startTime && endTime) {
     requestBody.start = { dateTime: `${date}T${startTime}:00-05:00`, timeZone: 'America/Guayaquil' };
     requestBody.end = { dateTime: `${date}T${endTime}:00-05:00`, timeZone: 'America/Guayaquil' };
+    // Al mover la cita, el recordatorio ya enviado deja de ser válido: sin borrar la marca,
+    // un cambio de hora dentro del mismo día dejaba al paciente con el horario viejo.
+    requestBody.extendedProperties = { private: { bioskinReminderSent: null } };
   }
   const response = await calendar.events.patch({ calendarId: credentials.calendar_id, eventId, requestBody });
   const event = response.data;
