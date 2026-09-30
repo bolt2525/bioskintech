@@ -7,6 +7,8 @@
 
 BioSkinTech App es una SPA de React 18 + TypeScript construida con Vite y TailwindCSS. Se despliega como aplicación estática en Vercel y expone funciones serverless Node.js bajo `/api/`. La persistencia principal está diseñada para Neon PostgreSQL; las fotografías clínicas usan Cloudflare R2 y la base almacena sus metadatos.
 
+El borrador contractual de cliente está en `docs/CONTRATO_CLIENTE_BIOSKINTECH.md`. Es un documento de trabajo trazable a las Condiciones de Servicio, la Política de Privacidad y el comportamiento del sistema; no sustituye esos documentos ni completa datos comerciales o legales que no constan en las fuentes.
+
 El build de producción pasa. El lint global no está limpio: en la línea base del 2026-09-07 reportó 471 errores y 54 warnings, principalmente en `src/**`. La superficie backend/R2 modificada durante esta auditoría pasa `node --check` y ESLint focalizado.
 
 ## 2. Evidencia de infraestructura
