@@ -870,7 +870,6 @@ export default async function handler(req, res) {
         deletePrescription: ['prescriptions', req.query.id],
         getConsent: ['consent_forms', req.query.id],
         generateSigningToken: ['consent_forms', body.id],
-        signConsentInPerson: ['consent_forms', body.id],
         annulConsent: ['consent_forms', body.id],
         deleteConsent: ['consent_forms', req.query.id],
         saveConsent: ['consent_forms', body.id],
@@ -3006,136 +3005,6 @@ export default async function handler(req, res) {
         }
       }
 
-      case 'signConsentInPerson': {
-        const consentId = Number(body.id);
-        const { signature, declarations, authorizations } = body;
-        if (req.method !== 'POST') return res.status(405).json({ error: 'Método no permitido' });
-        if (!Number.isSafeInteger(consentId) || consentId <= 0 || consentId > 2147483647 || !isValidSignatureDataUrl(signature))
-          return res.status(400).json({ error: 'Seleccione un consentimiento y capture una firma PNG válida.' });
-        const declarationKeys = ['understanding', 'questions', 'results', 'authorization', 'revocation', 'alternatives'];
-        const authorizationKeys = ['image_use', 'photo_video', 'privacy_policy'];
-        if (!declarations || declarationKeys.some(key => typeof declarations[key] !== 'boolean') ||
-            declarations.understanding !== true || declarations.authorization !== true ||
-            !authorizations || authorizationKeys.some(key => typeof authorizations[key] !== 'boolean') ||
-            authorizations.privacy_policy !== true)
-          return res.status(400).json({ error: 'El paciente debe revisar y aceptar la información y la política de privacidad antes de firmar.' });
-
-        if (!(await ownedByClinic(pool, 'consent_forms', consentId, effectiveClinicId)))
-          return res.status(403).json({ error: 'Sin permiso para firmar este consentimiento.' });
-        await client.query('BEGIN');
-        try {
-          const current = await pool.query(
-            `SELECT cf.*, p.first_name AS patient_first_name, p.last_name AS patient_last_name,
-               p.identification_type, p.identification_number, p.rut AS legacy_rut,
-               p.birth_date, p.email AS patient_email
-             FROM consent_forms cf
-             JOIN patients p ON p.id = cf.patient_id
-             JOIN clinical_records cr ON cr.id = cf.record_id AND cr.patient_id = cf.patient_id
-             WHERE cf.id = $1 FOR UPDATE OF cf`,
-            [consentId]
-          );
-          if (!current.rows.length) {
-            await client.query('ROLLBACK');
-            return res.status(404).json({ error: 'Consentimiento no encontrado.' });
-          }
-          const record = current.rows[0];
-          if (record.status === 'annulled') {
-            await client.query('ROLLBACK');
-            return res.status(409).json({ error: 'El consentimiento está anulado. Reactive el borrador antes de firmar.' });
-          }
-          if (!hasProfessionalSignature(record.signatures)) {
-            await client.query('ROLLBACK');
-            return res.status(409).json({ error: 'Antes de firmar con el paciente, el profesional debe cargar o registrar su firma y guardar los cambios.' });
-          }
-          const alreadySigned = record.signing_status === 'signed' || ['signed', 'finalized'].includes(record.status) ||
-            record.signature_data || record.signed_at || record.signing_signed_at ||
-            record.signatures?.patient_sig_data || record.signatures?.patient_signed_at;
-          if (alreadySigned) {
-            await client.query('ROLLBACK');
-            return res.status(409).json({ error: 'Este consentimiento ya tiene una firma registrada.' });
-          }
-          const patientName = `${record.patient_first_name} ${record.patient_last_name}`.trim();
-          const snapshot = createConsentSnapshot(record, {
-            first_name: record.patient_first_name,
-            last_name: record.patient_last_name,
-            identification_type: record.identification_type,
-            identification_number: record.identification_number,
-            rut: record.legacy_rut,
-            birth_date: record.birth_date,
-          });
-          const snapshotHash = hashConsentEvidence(snapshot);
-          const signedAt = new Date().toISOString();
-          const sessionUser = await getSessionUserOnce();
-          const signatures = {
-            ...(record.signatures || {}),
-            patient_name: patientName,
-            patient_sig_data: signature,
-            patient_signed_at: signedAt,
-            signature_method: 'in_person_assisted',
-            witness_user_id: sessionUser?.user_id ?? null,
-            witness_name: sessionUser?.full_name || sessionUser?.username || 'Personal autorizado',
-          };
-          const signingHash = hashConsentEvidence({ snapshot, snapshotHash, signature, declarations, authorizations, signedAt, signatureMethod: 'in_person_assisted', witnessUserId: sessionUser?.user_id ?? null });
-          const signed = await pool.query(
-            `UPDATE consent_forms SET signatures = $1::jsonb, declarations = $2::jsonb,
-               authorizations = $3::jsonb, status = 'finalized', signing_status = 'signed',
-               signing_snapshot = $4::jsonb, signing_snapshot_hash = $5, signing_hash = $6,
-               signing_signed_at = $7, signing_token = NULL, signing_sender_user_id = NULL, signing_expires_at = NULL,
-               signing_otp_hash = NULL, signing_verified_at = NULL, signing_session_hash = NULL,
-               signing_session_expires_at = NULL, updated_at = NOW()
-             WHERE id = $8 AND COALESCE(signing_status, 'pending') <> 'signed'
-               AND status NOT IN ('signed', 'finalized')
-               AND signature_data IS NULL AND signed_at IS NULL AND signing_signed_at IS NULL
-               AND NULLIF(signatures->>'patient_sig_data', '') IS NULL
-               AND NULLIF(signatures->>'patient_signed_at', '') IS NULL
-             RETURNING id, patient_id, record_id`,
-            [JSON.stringify(signatures), JSON.stringify(declarations), JSON.stringify(authorizations), JSON.stringify(snapshot), snapshotHash, signingHash, signedAt, consentId]
-          );
-          if (!signed.rows.length) {
-            await client.query('ROLLBACK');
-            return res.status(409).json({ error: 'El consentimiento ya fue firmado. No se modificó su evidencia.' });
-          }
-          await logAudit(pool, {
-            patientId: signed.rows[0].patient_id,
-            recordId: signed.rows[0].record_id,
-            clinicId: effectiveClinicId,
-            sessionUser,
-            actionType: 'sign',
-            module: 'consent',
-            summary: 'Consentimiento firmado presencialmente con asistencia del profesional',
-          });
-          await client.query('COMMIT');
-
-          let copyEmailed = false;
-          let copySender = null;
-          if (record.patient_email) {
-            try {
-              const email = buildSignedConsentEmail(snapshot, signatures, declarations, authorizations, signedAt, signingHash);
-              const copyUserId = await resolveConsentSenderUserId(req, sessionUser, effectiveClinicId);
-              const copyOAuth = copyUserId ? await getUserGmailClient(copyUserId) : null;
-              copySender = await sendConsentEmail({
-                oauth: copyOAuth,
-                fromName: await getConsentSenderName(effectiveClinicId, copyUserId),
-                to: record.patient_email,
-                subject: 'Copia de tu consentimiento informado firmado',
-                text: email.text,
-                html: email.html,
-                signatureDataUrl: signature,
-                professionalSignatureDataUrl: snapshot.professional?.signature_data,
-              });
-              copyEmailed = Boolean(copySender.senderEmail);
-              if (copyEmailed) await pool.query('UPDATE consent_forms SET signing_copy_sent_at = NOW() WHERE id = $1', [consentId]);
-            } catch {
-              console.error('No se pudo enviar la copia del consentimiento firmado.');
-            }
-          }
-          return res.status(200).json({ success: true, copyEmailed, copySenderEmail: copySender?.senderEmail || null, copySenderType: copySender?.senderType || null, signedAt, signingHash });
-        } catch (err) {
-          await client.query('ROLLBACK').catch(() => {});
-          throw err;
-        }
-      }
-
       case 'getSigningSession': {
         const { token } = req.query;
         if (typeof token !== 'string' || !SIGNING_TOKEN_PATTERN.test(token)) return res.status(404).json({ error: 'Session not found or expired' });
@@ -3380,7 +3249,7 @@ export default async function handler(req, res) {
         if (status === 'annulled') return res.status(400).json({ error: 'Use la acción de anulación para registrar motivo y responsable.' });
         const safeStatus = 'draft';
         if (signatures?.patient_sig_data || signatures?.patient_signed_at)
-          return res.status(400).json({ error: 'La firma del paciente debe registrarse mediante firma remota verificada o firma presencial asistida.' });
+          return res.status(400).json({ error: 'La firma digital del paciente solo se registra mediante firma remota verificada. Para firma presencial use el formato en papel.' });
         const safeSignatures = { ...(signatures || {}) };
         delete safeSignatures.patient_sig_data;
         delete safeSignatures.patient_signed_at;

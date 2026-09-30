@@ -125,15 +125,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
   const [signingUrl, setSigningUrl] = useState<string | null>(null);
   const [showQr, setShowQr] = useState(false);
   const [isSignatureModalOpen, setIsSignatureModalOpen] = useState(false);
-  const [isInPersonSigning, setIsInPersonSigning] = useState(false);
-  const [inPersonSigningBusy, setInPersonSigningBusy] = useState(false);
-  const [inPersonError, setInPersonError] = useState('');
-  const [inPersonDeclarations, setInPersonDeclarations] = useState({
-    understanding: false, questions: false, results: false, authorization: false,
-    revocation: false, alternatives: false, privacy_policy: false, image_use: false, photo_video: false,
-  });
   const profSigCanvas = useRef<SignatureCanvas>(null);
-  const patientSigCanvas = useRef<SignatureCanvas>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -296,7 +288,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
       setCurrentConsent(newConsent);
       if (!patient?.email?.trim()) {
         setView('form');
-        setMessage({ type: 'success', text: 'Nuevo consentimiento creado. Puede registrar la firma presencialmente en este dispositivo.' });
+        setMessage({ type: 'success', text: 'Nuevo consentimiento creado. El paciente no tiene correo: use “Firma presencial en papel” para imprimir el formato.' });
         await loadConsents();
         return;
       }
@@ -336,7 +328,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
       return;
     }
     if (!patient?.email?.trim()) {
-      setMessage({ type: 'error', text: 'Este paciente no tiene correo registrado. Use Firma presencial asistida.' });
+      setMessage({ type: 'error', text: 'Este paciente no tiene correo registrado. Use “Firma presencial en papel”.' });
       return;
     }
     
@@ -422,77 +414,6 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
       setMessage({ type: 'error', text: error instanceof Error ? error.message : 'No se pudo preparar el formato para imprimir.' });
     } finally {
       setLoading(false);
-    }
-  };
-
-  const submitInPersonSignature = async () => {
-    if (!currentConsent?.id || !patientSigCanvas.current || patientSigCanvas.current.isEmpty()) {
-      setInPersonError('Pida al paciente que firme en el recuadro.');
-      return;
-    }
-    const required = ['understanding', 'authorization', 'privacy_policy'] as const;
-    if (required.some(key => !inPersonDeclarations[key])) {
-      setInPersonError('Confirme que el paciente recibió la información, autoriza el tratamiento y acepta la política de privacidad.');
-      return;
-    }
-    setInPersonSigningBusy(true);
-    setInPersonError('');
-    try {
-      const signature = normalizeSignature(patientSigCanvas.current.getCanvas());
-      const res = await recordsFetch(API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'signConsentInPerson',
-          id: currentConsent.id,
-          signature,
-          declarations: {
-            understanding: inPersonDeclarations.understanding,
-            questions: inPersonDeclarations.questions,
-            results: inPersonDeclarations.results,
-            authorization: inPersonDeclarations.authorization,
-            revocation: inPersonDeclarations.revocation,
-            alternatives: inPersonDeclarations.alternatives,
-          },
-          authorizations: {
-            privacy_policy: inPersonDeclarations.privacy_policy,
-            image_use: inPersonDeclarations.image_use,
-            photo_video: inPersonDeclarations.photo_video,
-          },
-        }),
-      });
-      const result = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(result.error || 'No se pudo registrar la firma presencial.');
-      const signedAt = result.signedAt || new Date().toISOString();
-      setCurrentConsent(prev => prev ? {
-        ...prev,
-        status: 'finalized',
-        signing_status: 'signed',
-        signing_hash: result.signingHash,
-        declarations: { ...prev.declarations, ...inPersonDeclarations },
-        authorizations: { ...prev.authorizations, image_use: inPersonDeclarations.image_use, photo_video: inPersonDeclarations.photo_video },
-        signatures: {
-          ...prev.signatures,
-          patient_sig_data: signature,
-          patient_signed_at: signedAt,
-          signature_method: 'in_person_assisted',
-          witness_user_id: user?.id ?? null,
-          witness_name: professionalName || 'Personal autorizado',
-        },
-      } : prev);
-      setIsInPersonSigning(false);
-      setView('preview');
-      await loadConsents();
-      setMessage({
-        type: 'success',
-        text: result.copyEmailed
-          ? `Firma registrada. Copia enviada desde ${result.copySenderType === 'oauth' ? 'Gmail conectado' : 'Gmail de respaldo'}: ${result.copySenderEmail}.`
-          : 'Firma registrada. Imprima o guarde una copia desde la vista previa.',
-      });
-    } catch (error) {
-      setInPersonError(error instanceof Error ? error.message : 'No se pudo registrar la firma presencial.');
-    } finally {
-      setInPersonSigningBusy(false);
     }
   };
 
@@ -1860,81 +1781,6 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
               <button type="button" disabled={annulling} onClick={() => setAnnulTarget(null)} className="px-4 py-2 border border-gray-300 rounded-md">Volver</button>
               <button type="button" disabled={annulling || annulReason.trim().length < 8} onClick={handleAnnul} className="px-4 py-2 bg-red-700 text-white rounded-md disabled:opacity-50">{annulling ? 'Anulando...' : 'Confirmar anulación'}</button>
             </div>
-          </section>
-        </div>
-      )}
-      {isInPersonSigning && currentConsent && (
-        <div className="fixed inset-0 z-[70] bg-black/60 p-3 sm:p-6 flex items-center justify-center">
-          <section className="w-full max-w-3xl max-h-[94vh] bg-white rounded-lg shadow-2xl flex flex-col overflow-hidden">
-            <header className="px-5 py-4 border-b flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-bold text-gray-900">Revisión y firma presencial</h2>
-                <p className="text-sm text-gray-600">Lea el documento con el paciente. La firma se captura en este dispositivo.</p>
-              </div>
-              <button type="button" onClick={() => setIsInPersonSigning(false)} className="p-2 text-gray-500 hover:bg-gray-100 rounded-md" aria-label="Cerrar firma presencial">
-                <X className="w-5 h-5" />
-              </button>
-            </header>
-            <div className="flex-1 overflow-y-auto p-5 space-y-5">
-              <section className="p-4 bg-gray-50 border border-gray-200 rounded-md">
-                <h3 className="font-semibold text-gray-900">{currentConsent.procedure_type || 'Consentimiento informado'}</h3>
-                <p className="text-sm text-gray-700 mt-1"><strong>Paciente:</strong> {patient?.first_name} {patient?.last_name}</p>
-                <p className="text-sm text-gray-700"><strong>{patient?.identification_type === 'ruc' ? 'RUC' : patient?.identification_type === 'cedula' ? 'Cédula' : 'Identificación'}:</strong> {patient?.identification_number || 'No registrada'}</p>
-                <p className="mt-2 text-xs text-amber-800">Confirme la identidad del paciente con su documento original antes de continuar.</p>
-                {currentConsent.zone && <p className="text-sm text-gray-700"><strong>Zona:</strong> {currentConsent.zone}</p>}
-                <p className="text-sm text-gray-700 mt-2 whitespace-pre-wrap">{currentConsent.description || 'Sin descripción adicional.'}</p>
-              </section>
-              <ConsentDocumentSections consent={currentConsent} showAcceptanceState={false} />
-              <section className="space-y-3">
-                <h3 className="font-semibold text-gray-900">Declaraciones del paciente</h3>
-                {[
-                  ['understanding', 'Recibí información clara sobre el tratamiento.'],
-                  ['questions', 'Pude hacer preguntas y resolver mis dudas.'],
-                  ['results', 'Entiendo los beneficios esperados y que los resultados pueden variar.'],
-                  ['authorization', 'Autorizo voluntariamente la realización del tratamiento.'],
-                  ['revocation', 'Sé que puedo revocar este consentimiento antes del procedimiento.'],
-                  ['alternatives', 'Conozco las alternativas, incluida la opción de no realizar el tratamiento.'],
-                ].map(([key, label]) => (
-                  <label key={key} className="flex items-start gap-3 p-2 border-b border-gray-100 text-sm text-gray-700">
-                    <input type="checkbox" checked={inPersonDeclarations[key as keyof typeof inPersonDeclarations]} onChange={event => setInPersonDeclarations(previous => ({ ...previous, [key]: event.target.checked }))} className="mt-0.5 w-5 h-5 accent-[#b8944d]" />
-                    <span>{label}</span>
-                  </label>
-                ))}
-                <label className="flex items-start gap-3 p-3 bg-amber-50 border border-amber-200 rounded-md text-sm text-gray-700">
-                  <input type="checkbox" checked={inPersonDeclarations.privacy_policy} onChange={event => setInPersonDeclarations(previous => ({ ...previous, privacy_policy: event.target.checked }))} className="mt-0.5 w-5 h-5 accent-[#b8944d]" />
-                  <span>Acepto el uso y almacenamiento de mis datos clínicos según la <a href="/politica-de-privacidad" target="_blank" rel="noopener noreferrer" className="underline font-medium">Política de Privacidad</a>.</span>
-                </label>
-                <div className="border-t pt-3 space-y-2">
-                  <label className="flex items-start gap-3 text-sm text-gray-700">
-                    <input type="checkbox" checked={inPersonDeclarations.image_use} onChange={event => setInPersonDeclarations(previous => ({ ...previous, image_use: event.target.checked }))} className="mt-0.5 w-5 h-5 accent-[#b8944d]" />
-                    <span>Autorizo el uso de imágenes con fines educativos o promocionales. (Opcional)</span>
-                  </label>
-                  <label className="flex items-start gap-3 text-sm text-gray-700">
-                    <input type="checkbox" checked={inPersonDeclarations.photo_video} onChange={event => setInPersonDeclarations(previous => ({ ...previous, photo_video: event.target.checked }))} className="mt-0.5 w-5 h-5 accent-[#b8944d]" />
-                    <span>Autorizo fotografías o videos para el registro clínico. (Opcional)</span>
-                  </label>
-                </div>
-              </section>
-              <section className="space-y-2">
-                <h3 className="font-semibold text-gray-900">Firma del paciente</h3>
-                <p className="text-sm text-gray-600">Pida al paciente que firme en el recuadro. Puede borrar y volver a intentarlo.</p>
-                <div className="h-44 border border-gray-300 rounded-md overflow-hidden touch-none">
-                  <SignatureCanvas ref={patientSigCanvas} {...SIGNATURE_PEN} backgroundColor="white" canvasProps={{ className: 'w-full h-full', style: { width: '100%', height: '176px' } }} />
-                </div>
-              </section>
-              {inPersonError && <p role="alert" className="p-3 bg-red-50 text-red-700 rounded-md text-sm">{inPersonError}</p>}
-            </div>
-            <footer className="px-5 py-4 border-t flex flex-wrap justify-between gap-2">
-              <button type="button" disabled={inPersonSigningBusy} onClick={() => patientSigCanvas.current?.clear()} className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 inline-flex items-center gap-2 disabled:opacity-50">
-                <Eraser className="w-4 h-4" /> Borrar firma
-              </button>
-              <div className="flex gap-2 ml-auto">
-                <button type="button" disabled={inPersonSigningBusy} onClick={() => setIsInPersonSigning(false)} className="px-4 py-2 text-gray-600 rounded-md hover:bg-gray-100 disabled:opacity-50">Cancelar</button>
-                <button type="button" disabled={inPersonSigningBusy} onClick={submitInPersonSignature} className="px-4 py-2 bg-[#deb887] text-white rounded-md font-semibold disabled:opacity-50">
-                  {inPersonSigningBusy ? 'Guardando...' : 'Confirmar y firmar'}
-                </button>
-              </div>
-            </footer>
           </section>
         </div>
       )}

@@ -27,7 +27,7 @@ export default function TermsOfService() {
         <ul className={ul}>
           <li>Fichas clínicas digitales, expedientes, fotografías y marcaciones 2D/3D.</li>
           <li>Agenda integrada con Google Calendar, reservas en línea y recordatorios por correo o WhatsApp.</li>
-          <li>Consentimientos informados digitales con firma presencial o remota.</li>
+          <li>Consentimientos informados digitales con firma electrónica remota o formato impreso para firma presencial en papel.</li>
           <li>Inventario, finanzas, respaldos y, de forma opcional, herramientas de inteligencia artificial.</li>
         </ul>
         <p>BIOSKINTECH <strong>no presta servicios médicos, sanitarios, legales ni contables</strong>. Cualquier otro servicio de BIOSKINTECH (por ejemplo, servicio técnico de equipos) se rige por acuerdos separados.</p>
@@ -100,7 +100,8 @@ export default function TermsOfService() {
       <Section number={8} title="Consentimientos, plantillas y firma" icon={<PenLine className="w-4 h-4" />}>
         <ul className={ul}>
           <li>Las plantillas de consentimientos, recetas y protocolos son <strong>modelos referenciales</strong>. No constituyen asesoría legal ni médica; el Cliente debe revisarlas y adaptarlas a cada procedimiento y paciente.</li>
-          <li>La firma de consentimientos se captura como firma manuscrita digitalizada en pantalla, con fecha y hora y, en la modalidad remota, verificación por código enviado al correo del paciente y huella de integridad SHA-256. Constituye una <strong>firma electrónica simple</strong> y evidencia digital; <strong>no es una firma electrónica certificada</strong> emitida por una entidad de certificación acreditada.</li>
+          <li>En la firma electrónica remota, la firma del paciente se captura como firma manuscrita digitalizada en su dispositivo, con fecha y hora, verificación por código enviado a su correo y huella de integridad SHA-256. Constituye una <strong>firma electrónica simple</strong> y evidencia digital; <strong>no es una firma electrónica certificada</strong> emitida por una entidad de certificación acreditada.</li>
+          <li>En la modalidad presencial, la Plataforma solo genera el formato imprimible para firmar con esfero. El documento firmado en papel no queda registrado en la Plataforma y debe ser custodiado por el Cliente.</li>
           <li>Corresponde al Cliente evaluar si ese mecanismo es suficiente para cada caso o si requiere firma certificada o documento físico adicional.</li>
         </ul>
       </Section>
