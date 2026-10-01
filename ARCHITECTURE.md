@@ -9,6 +9,8 @@ BioSkinTech App es una SPA de React 18 + TypeScript construida con Vite y Tailwi
 
 `AdminLayout` comparte un lienzo claro gris perla con retícula sutil y superficies blancas en los módulos administrativos. Las experiencias que necesitan contraste propio, como visores 3D, modales multimedia y consolas operativas, conservan fondos oscuros locales; el tema global no modifica datos, APIs ni persistencia.
 
+`AdminFinance` usa una consola local verde carbón sobre ese lienzo, presets de periodo (`Todo`, `Hoy`, `Semana`, `Mes`, `Personalizado`), configuración de reportes plegable, KPI agrupados y tarjetas de registros en móvil; escritorio conserva la tabla financiera completa. Los presets reutilizan `financeList` con `startDate`/`endDate` y no cambian API, persistencia ni permisos.
+
 El borrador contractual de cliente está en `docs/CONTRATO_CLIENTE_BIOSKINTECH.md`. Es un documento de trabajo trazable a las Condiciones de Servicio, la Política de Privacidad y el comportamiento del sistema; no sustituye esos documentos ni completa datos comerciales o legales que no constan en las fuentes.
 
 La vista Master Admin mantiene el generador **Contrato** como acceso destacado independiente de la navegación desplazable. Las clínicas se presentan en lista de tarjetas adaptables con búsqueda/filtro local; estas mejoras son solo de presentación y estado cliente, sin cambios de API ni persistencia.

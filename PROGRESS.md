@@ -1,5 +1,6 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-01 Finanzas renovado con periodos directos, reportes plegables, KPI compactos y registros móviles completos.
 - ✅ 2026-10-01 Panel con lienzo claro global; Inventario renovado con KPI navegables, propietario legible y movimientos/ventas completos en móvil.
 - ✅ 2026-09-30 Contrato Master Admin aclarado: guía de datos del cliente y alcances independientes para DermoAtlas 3D y mapeo clínico 3D, sin comparaciones confusas.
 - ✅ 2026-09-30 Enrutamiento obligatorio de skills documentado en instrucciones globales, AGENTS, Copilot y agentes Frontend/QA/DevOps.

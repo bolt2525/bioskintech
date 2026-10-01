@@ -6,7 +6,7 @@ import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
 import { 
   Calendar, DollarSign, TrendingUp, TrendingDown, 
   Trash2, Edit2, Check, X, FileText, PieChart, BarChart2, Search, Filter, Info, Plus,
-  Download, ChevronDown, ChevronUp, Package, Calculator
+  Download, ChevronDown, ChevronUp, Package, Calculator, Mail
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer 
@@ -44,6 +44,19 @@ interface FinanceItem {
   tax: number;
   total: number;
 }
+
+type FinancePeriod = 'all' | 'today' | 'week' | 'month' | 'custom';
+
+const toLocalDateInput = (date: Date) => {
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return localDate.toISOString().split('T')[0];
+};
+
+const formatFinanceDate = (value: string) => {
+  const [year, month, day] = String(value).split('T')[0].split('-').map(Number);
+  if (!year || !month || !day) return value;
+  return new Intl.DateTimeFormat('es-EC').format(new Date(year, month - 1, day));
+};
 
 // Si el usuario ingresa el TOTAL, calcula subtotal e IVA
 const calcFromTotal = (total: number, ivaRate: number): { subtotal: number; tax: number } => {
@@ -93,6 +106,7 @@ const AdminFinance = () => {
   const [newForm, setNewForm] = useState<typeof EMPTY_FORM>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
+  const [periodFilter, setPeriodFilter] = useState<FinancePeriod>('all');
   const [taxRate, setTaxRate] = useState(15); // % IVA desde settings de clínica
   const [clinicTaxRate, setClinicTaxRate] = useState(15); // valor original inmutable del settings
   const [taxRateEditing, setTaxRateEditing] = useState(false); // campo IVA editable en el form
@@ -110,6 +124,7 @@ const AdminFinance = () => {
   const [csvSettingsSaving, setCsvSettingsSaving] = useState(false);
   const [csvSendingNow, setCsvSendingNow] = useState(false);
   const [csvMsg, setCsvMsg] = useState<{ text: string; ok: boolean } | null>(null);
+  const [showCsvSettings, setShowCsvSettings] = useState(false);
   useEffect(() => {
     const cid = user?.clinic_id;
     if (!cid) return;
@@ -167,6 +182,25 @@ const AdminFinance = () => {
 
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editFormData, setEditFormData] = useState<Partial<FinanceRecord>>({});
+
+  const applyPeriodFilter = (period: FinancePeriod) => {
+    setPeriodFilter(period);
+    if (period === 'custom') return;
+    if (period === 'all') {
+      setDateRange({ start: '', end: '' });
+      return;
+    }
+
+    const today = new Date();
+    const start = new Date(today);
+    if (period === 'week') {
+      const daysSinceMonday = (today.getDay() + 6) % 7;
+      start.setDate(today.getDate() - daysSinceMonday);
+    }
+    if (period === 'month') start.setDate(1);
+
+    setDateRange({ start: toLocalDateInput(start), end: toLocalDateInput(today) });
+  };
 
   // carga usuarios al montar (solo admin o master)
   useEffect(() => {
@@ -449,8 +483,8 @@ const AdminFinance = () => {
 
   return (
     <MotionConfig reducedMotion="user">
-    <div className="admin-page-enter min-h-screen bg-[#f5f4f1] pb-20">
-      <div className="bg-gradient-to-br from-[#282a27] via-[#34342f] to-[#454035] px-4 pb-20 pt-8 text-white shadow-xl sm:pb-24 sm:pt-10">
+    <div className="admin-page-enter min-h-screen bg-[#eef3f2] pb-20">
+      <div className="bg-[#172522] px-4 pb-20 pt-8 text-white shadow-xl sm:pb-24 sm:pt-10">
         <div className="container-custom mx-auto">
           <div className="mb-6 flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
             <div>
@@ -516,7 +550,7 @@ const AdminFinance = () => {
                             else next.add(fu.username);
                             return next;
                           })}
-                          className={`admin-focus-ring rounded-full border px-2.5 py-1 text-[10px] font-medium transition-all ${
+                          className={`admin-focus-ring rounded-full border px-2.5 py-1 text-[10px] font-medium transition-colors ${
                             isOn
                               ? 'bg-yellow-500 text-gray-900 border-yellow-500'
                               : 'text-gray-400 border-gray-600 hover:border-gray-400'
@@ -556,59 +590,55 @@ const AdminFinance = () => {
           </button>
         </div>
 
-        {/* ── Reporte por correo: config + envío manual ── */}
+        {/* ── Reporte por correo: configuración secundaria plegable ── */}
         {(user?.role === 'clinic_admin' || user?.role === 'master_admin') && (
-          <div className="bg-white border border-gray-200 rounded-xl p-4 mb-4 shadow-sm">
-            <p className="text-xs font-semibold text-gray-700 mb-2">📧 Reporte financiero por correo</p>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
-              <div className="md:col-span-2">
-                <label className="block text-xs font-medium text-gray-500 mb-1">Correo del administrador financiero</label>
-                <input type="email" value={csvSettings.admin_email}
-                  onChange={e => setCsvSettings(p => ({ ...p, admin_email: e.target.value }))}
-                  placeholder="admin@clinica.com"
-                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Envío automático</label>
-                <select value={csvSettings.csv_schedule}
-                  onChange={e => setCsvSettings(p => ({ ...p, csv_schedule: e.target.value as typeof p.csv_schedule }))}
-                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none">
-                  <option value="manual">Manual (solo con el botón)</option>
-                  <option value="daily">Diario</option>
-                  <option value="weekly">Semanal</option>
-                  <option value="monthly">Mensual</option>
-                </select>
-              </div>
-              {csvSettings.csv_schedule === 'weekly' && (
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Día de la semana</label>
-                  <select value={csvSettings.csv_weekday}
-                    onChange={e => setCsvSettings(p => ({ ...p, csv_weekday: parseInt(e.target.value) }))}
-                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none">
-                    {['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'].map((d, i) => <option key={i} value={i}>{d}</option>)}
-                  </select>
+          <div className="mb-4 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+            <button type="button" aria-expanded={showCsvSettings} onClick={() => setShowCsvSettings(value => !value)} className="admin-focus-ring flex min-h-14 w-full items-center gap-3 px-4 text-left hover:bg-gray-50">
+              <span className="rounded-lg bg-amber-50 p-2 text-amber-700"><Mail size={16} /></span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold text-gray-800">Envío de reportes</span>
+                <span className="block truncate text-xs text-gray-500">
+                  {csvSettings.csv_schedule === 'manual' ? 'Envío manual' : `Programación ${csvSettings.csv_schedule}`}
+                  {csvSettings.admin_email ? ` · ${csvSettings.admin_email}` : ' · Sin correo configurado'}
+                </span>
+              </span>
+              <ChevronDown size={18} className={`text-gray-400 transition-transform ${showCsvSettings ? 'rotate-180' : ''}`} />
+            </button>
+            {showCsvSettings && (
+              <div className="border-t border-gray-100 p-4">
+                <div className="grid grid-cols-1 items-end gap-3 md:grid-cols-4">
+                  <div className="md:col-span-2">
+                    <label className="mb-1 block text-xs font-medium text-gray-500" htmlFor="finance-report-email">Correo del administrador financiero</label>
+                    <input id="finance-report-email" name="finance-report-email" type="email" autoComplete="email" spellCheck={false} value={csvSettings.admin_email} onChange={e => setCsvSettings(p => ({ ...p, admin_email: e.target.value }))} placeholder="admin@clinica.com" className="admin-focus-ring w-full rounded-lg border px-3 py-2 text-sm" />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-500" htmlFor="finance-report-schedule">Envío automático</label>
+                    <select id="finance-report-schedule" value={csvSettings.csv_schedule} onChange={e => setCsvSettings(p => ({ ...p, csv_schedule: e.target.value as typeof p.csv_schedule }))} className="admin-focus-ring w-full rounded-lg border bg-white px-3 py-2 text-sm">
+                      <option value="manual">Manual (solo con el botón)</option><option value="daily">Diario</option><option value="weekly">Semanal</option><option value="monthly">Mensual</option>
+                    </select>
+                  </div>
+                  {csvSettings.csv_schedule === 'weekly' && (
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-gray-500" htmlFor="finance-report-weekday">Día de la semana</label>
+                      <select id="finance-report-weekday" value={csvSettings.csv_weekday} onChange={e => setCsvSettings(p => ({ ...p, csv_weekday: parseInt(e.target.value) }))} className="admin-focus-ring w-full rounded-lg border bg-white px-3 py-2 text-sm">
+                        {['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'].map((day, index) => <option key={day} value={index}>{day}</option>)}
+                      </select>
+                    </div>
+                  )}
+                  {csvSettings.csv_schedule === 'monthly' && (
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-gray-500" htmlFor="finance-report-month-day">Día del mes</label>
+                      <input id="finance-report-month-day" name="finance-report-month-day" type="number" min={1} max={28} value={csvSettings.csv_month_day} onChange={e => setCsvSettings(p => ({ ...p, csv_month_day: parseInt(e.target.value) || 1 }))} className="admin-focus-ring w-full rounded-lg border px-3 py-2 text-sm" />
+                    </div>
+                  )}
                 </div>
-              )}
-              {csvSettings.csv_schedule === 'monthly' && (
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Día del mes</label>
-                  <input type="number" min={1} max={28} value={csvSettings.csv_month_day}
-                    onChange={e => setCsvSettings(p => ({ ...p, csv_month_day: parseInt(e.target.value) || 1 }))}
-                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <button onClick={handleSaveCsvSettings} disabled={csvSettingsSaving} className="admin-focus-ring rounded-lg bg-gold px-3 py-2 text-xs font-semibold text-gray-900 hover:bg-gold-dark disabled:opacity-50">{csvSettingsSaving ? 'Guardando…' : 'Guardar configuración'}</button>
+                  <button onClick={handleSendCsvNow} disabled={csvSendingNow || !csvSettings.admin_email} className="admin-focus-ring rounded-lg bg-gray-800 px-3 py-2 text-xs font-semibold text-white hover:bg-gray-700 disabled:opacity-40">{csvSendingNow ? 'Enviando…' : 'Enviar CSV ahora'}</button>
+                  {csvMsg && <span aria-live="polite" className={`text-xs ${csvMsg.ok ? 'text-emerald-600' : 'text-red-500'}`}>{csvMsg.text}</span>}
                 </div>
-              )}
-            </div>
-            <div className="flex items-center gap-2 mt-3">
-              <button onClick={handleSaveCsvSettings} disabled={csvSettingsSaving}
-                className="px-3 py-1.5 bg-[#deb887] hover:bg-[#c9a876] text-white text-xs font-semibold rounded-lg disabled:opacity-50">
-                {csvSettingsSaving ? 'Guardando…' : 'Guardar configuración'}
-              </button>
-              <button onClick={handleSendCsvNow} disabled={csvSendingNow || !csvSettings.admin_email}
-                className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-xs font-semibold rounded-lg disabled:opacity-40">
-                {csvSendingNow ? 'Enviando…' : 'Enviar CSV por correo ahora'}
-              </button>
-              {csvMsg && <span className={`text-xs ${csvMsg.ok ? 'text-emerald-600' : 'text-red-500'}`}>{csvMsg.text}</span>}
-            </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -757,26 +787,47 @@ const AdminFinance = () => {
           )}
         </AnimatePresence>
 
-        <div className="admin-surface mb-6 flex flex-wrap items-center gap-3 p-4 sm:gap-4">
-          <div className="flex items-center gap-2 text-gray-500">
-            <Calendar size={18} />
-            <span className="font-medium text-sm">Fecha:</span>
+        <div className="admin-surface mb-6 p-4 sm:p-5">
+          <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center">
+            <div className="flex items-center gap-2 text-gray-600">
+              <Calendar size={18} />
+              <span className="text-sm font-semibold">Periodo</span>
+            </div>
+            <div className="admin-tabs grid w-full grid-cols-2 sm:grid-cols-5 lg:w-fit" role="group" aria-label="Filtrar por periodo">
+              {([['all', 'Todo'], ['today', 'Hoy'], ['week', 'Semana'], ['month', 'Mes'], ['custom', 'Personalizado']] as const).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={periodFilter === value}
+                  onClick={() => applyPeriodFilter(value)}
+                  className={`admin-tab admin-focus-ring min-w-0 px-2 ${value === 'custom' ? 'col-span-2 sm:col-span-1' : ''}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {periodFilter === 'custom' && (
+              <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+                <input
+                  type="date"
+                  aria-label="Fecha inicial"
+                  value={dateRange.start}
+                  onChange={(e) => setDateRange(prev => ({ start: e.target.value, end: prev.end && prev.end < e.target.value ? e.target.value : prev.end }))}
+                  className="admin-focus-ring min-h-10 min-w-0 rounded-xl border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm"
+                />
+                <span className="text-gray-300">→</span>
+                <input
+                  type="date"
+                  aria-label="Fecha final"
+                  value={dateRange.end}
+                  onChange={(e) => setDateRange(prev => ({ start: prev.start && prev.start > e.target.value ? e.target.value : prev.start, end: e.target.value }))}
+                  className="admin-focus-ring min-h-10 min-w-0 rounded-xl border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm"
+                />
+              </div>
+            )}
           </div>
-          <input 
-            type="date" 
-            aria-label="Fecha inicial"
-            value={dateRange.start}
-            onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
-            className="admin-focus-ring min-h-10 rounded-xl border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm"
-          />
-          <span className="text-gray-300">→</span>
-          <input 
-            type="date" 
-            aria-label="Fecha final"
-            value={dateRange.end}
-            onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
-            className="admin-focus-ring min-h-10 rounded-xl border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm"
-          />
+
+          <div className="flex flex-wrap items-center gap-3 sm:gap-4">
 
           <div className="hidden h-6 w-px bg-gray-200 sm:block"></div>
 
@@ -812,6 +863,7 @@ const AdminFinance = () => {
               onChange={(e) => setSearchTerm(e.target.value)}
               className="admin-focus-ring min-h-10 w-full rounded-xl border border-gray-200 bg-gray-50 py-1.5 pl-9 pr-4 text-sm"
             />
+          </div>
           </div>
         </div>
 
@@ -851,7 +903,7 @@ const AdminFinance = () => {
           </motion.div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <div className="mb-8 grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-gray-200 bg-gray-200 shadow-sm md:grid-cols-2 lg:grid-cols-4">
           <MetricCard title="Balance Total" amount={metrics.balanceTotal} icon={DollarSign} color={metrics.balanceTotal >= 0 ? "black" : "red"} currencySymbol={currencySymbol} />
           <MetricCard title="Ingresos" amount={metrics.totalIngresos} icon={TrendingUp} color="green" currencySymbol={currencySymbol} />
           <MetricCard title="Egresos" amount={metrics.totalEgresos} icon={TrendingDown} color="red" currencySymbol={currencySymbol} />
@@ -927,8 +979,61 @@ const AdminFinance = () => {
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-md overflow-hidden border border-gray-100">
-          <div className="overflow-x-auto">
+        <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-md">
+          <div className="divide-y divide-gray-100 md:hidden">
+            {loading ? (
+              <div className="px-5 py-12 text-center text-sm text-gray-500">Cargando registros…</div>
+            ) : filteredRecords.length === 0 ? (
+              <div className="px-5 py-12 text-center text-sm text-gray-500">No hay registros para este filtro.</div>
+            ) : filteredRecords.map(record => (
+              <article key={record.id} className={`p-4 ${selectedIds.includes(record.id) ? 'bg-amber-50/60' : 'bg-white'}`}>
+                {editingId === record.id ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="text-xs text-gray-500">Fecha<input type="date" value={editFormData.date?.split('T')[0]} onChange={event => handleEditChange('date', event.target.value)} className="admin-focus-ring mt-1 w-full rounded-lg border p-2 text-sm" /></label>
+                    <label className="text-xs text-gray-500">Tipo<select value={editFormData.type} onChange={event => handleEditChange('type', event.target.value)} className="admin-focus-ring mt-1 w-full rounded-lg border bg-white p-2 text-sm"><option value="ingreso">Ingreso</option><option value="egreso">Egreso</option></select></label>
+                    <label className="col-span-2 text-xs text-gray-500">Entidad<input type="text" value={editFormData.entity} onChange={event => handleEditChange('entity', event.target.value)} className="admin-focus-ring mt-1 w-full rounded-lg border p-2 text-sm" /></label>
+                    <label className="col-span-2 text-xs text-gray-500">N.º de factura<input type="text" value={editFormData.invoice_number} onChange={event => handleEditChange('invoice_number', event.target.value)} className="admin-focus-ring mt-1 w-full rounded-lg border p-2 text-sm" /></label>
+                    <label className="col-span-2 text-xs text-gray-500">Descripción<input type="text" value={editFormData.description} onChange={event => handleEditChange('description', event.target.value)} className="admin-focus-ring mt-1 w-full rounded-lg border p-2 text-sm" /></label>
+                    <label className="text-xs text-gray-500">Subtotal<input type="number" value={editFormData.subtotal} onChange={event => handleEditChange('subtotal', event.target.value)} className="admin-focus-ring mt-1 w-full rounded-lg border p-2 text-sm" /></label>
+                    <label className="text-xs text-gray-500">IVA<input type="number" value={editFormData.tax} onChange={event => handleEditChange('tax', event.target.value)} className="admin-focus-ring mt-1 w-full rounded-lg border p-2 text-sm" /></label>
+                    <label className="col-span-2 text-xs text-gray-500">Total<input type="number" value={editFormData.total} onChange={event => handleEditChange('total', event.target.value)} className="admin-focus-ring mt-1 w-full rounded-lg border p-2 text-sm font-bold" /></label>
+                    <div className="col-span-2 flex justify-end gap-2">
+                      <button type="button" onClick={cancelEdit} className="admin-focus-ring rounded-lg border px-3 py-2 text-sm text-gray-600">Cancelar</button>
+                      <button type="button" onClick={saveEdit} className="admin-focus-ring rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white">Guardar</button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="mb-3 flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-gray-900">{record.entity}</p>
+                        <p className="truncate text-xs text-gray-500">{record.description || 'Sin descripción'}</p>
+                      </div>
+                      <span className={`shrink-0 rounded-full px-2 py-1 text-xs font-semibold ${record.type === 'ingreso' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>{record.type === 'ingreso' ? 'Ingreso' : 'Egreso'}</span>
+                    </div>
+                    <div className="mb-3 grid grid-cols-2 gap-3 text-xs text-gray-500">
+                      <div><span className="block text-[10px] font-semibold uppercase text-gray-400">Fecha</span>{formatFinanceDate(record.date)}</div>
+                      <div><span className="block text-[10px] font-semibold uppercase text-gray-400">Factura</span>{record.invoice_number || 'S/N'}</div>
+                    </div>
+                    <div className="grid grid-cols-3 rounded-xl bg-gray-50 p-3 text-right">
+                      <div><span className="block text-[10px] uppercase text-gray-400">Subtotal</span><span className="text-sm tabular-nums text-gray-600">{currencySymbol}{parseFloat(String(record.subtotal || 0)).toFixed(2)}</span></div>
+                      <div><span className="block text-[10px] uppercase text-gray-400">IVA</span><span className="text-sm tabular-nums text-gray-600">{currencySymbol}{parseFloat(String(record.tax || 0)).toFixed(2)}</span></div>
+                      <div><span className="block text-[10px] uppercase text-gray-400">Total</span><span className="text-sm font-bold tabular-nums text-gray-900">{currencySymbol}{parseFloat(String(record.total || 0)).toFixed(2)}</span></div>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between gap-3">
+                      <label className="flex min-w-0 items-center gap-2 text-xs text-gray-500"><input type="checkbox" aria-label={`Seleccionar registro de ${record.entity}`} checked={selectedIds.includes(record.id)} onChange={() => toggleSelection(record.id)} className="h-4 w-4 rounded border-gray-300" /><span className="truncate">{record.registered_by || 'Seleccionar'}</span></label>
+                      <div className="flex gap-1">
+                        <button type="button" aria-label={`Ver desglose de ${record.entity}`} onClick={() => openDesglose(record)} className="admin-focus-ring inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-amber-600 hover:bg-amber-50"><Package size={17} /></button>
+                        <button type="button" aria-label={`Editar ${record.entity}`} onClick={() => startEdit(record)} className="admin-focus-ring inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-blue-600 hover:bg-blue-50"><Edit2 size={17} /></button>
+                        <button type="button" aria-label={`Eliminar ${record.entity}`} onClick={() => handleDelete(record.id)} className="admin-focus-ring inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-rose-600 hover:bg-rose-50"><Trash2 size={17} /></button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </article>
+            ))}
+          </div>
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full">
               <thead className="bg-gray-50 border-b">
                 <tr>
@@ -989,7 +1094,7 @@ const AdminFinance = () => {
                       ) : (
                         <>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                            {new Date(record.date).toLocaleDateString()}
+                            {formatFinanceDate(record.date)}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                             <div className="flex items-center gap-2">
@@ -1038,6 +1143,7 @@ const AdminFinance = () => {
                             <div className="flex justify-end gap-2">
                               <button 
                                 onClick={() => openDesglose(record)}
+                                aria-label={`Ver desglose de ${record.entity}`}
                                 className="p-1 text-yellow-500 hover:text-yellow-700 hover:bg-yellow-50 rounded"
                                 title="Ver / editar desglose de ítems"
                               >
@@ -1045,12 +1151,14 @@ const AdminFinance = () => {
                               </button>
                               <button 
                                 onClick={() => startEdit(record)}
+                                aria-label={`Editar ${record.entity}`}
                                 className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded"
                               >
                                 <Edit2 size={16} />
                               </button>
                               <button 
                                 onClick={() => handleDelete(record.id)}
+                                aria-label={`Eliminar ${record.entity}`}
                                 className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
                               >
                                 <Trash2 size={16} />
@@ -1176,13 +1284,13 @@ const MetricCard = ({ title, amount, icon: Icon, color, currencySymbol = '$' }: 
   };
 
   return (
-    <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className={`p-6 rounded-2xl border ${colorStyles[color].replace('text-', 'border-')} bg-white shadow-sm`}>
-      <div className="flex justify-between items-start mb-4">
+    <motion.div initial={{ y: 12, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="bg-white p-5">
+      <div className="flex items-start justify-between">
         <div>
-          <p className="text-sm font-medium text-gray-500 mb-1">{title}</p>
-          <h3 className="text-2xl font-bold text-gray-900">{currencySymbol}{amount.toFixed(2)}</h3>
+          <p className="mb-1 text-sm font-medium text-gray-500">{title}</p>
+          <p className="text-2xl font-bold tabular-nums text-gray-900">{currencySymbol}{amount.toFixed(2)}</p>
         </div>
-        <div className={`p-3 rounded-xl ${colorStyles[color]}`}>
+        <div className={`rounded-xl p-3 ${colorStyles[color]}`}>
           <Icon size={20} />
         </div>
       </div>
