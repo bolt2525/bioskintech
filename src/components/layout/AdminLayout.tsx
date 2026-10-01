@@ -6,7 +6,7 @@
  *  - Header con título, subtítulo y breadcrumbs opcionales
  *  - Botón de regreso configurable
  *  - Usuario autenticado + botón de cerrar sesión
- *  - Fondo oscuro gradient para el área de contenido
+ *  - Fondo claro con retícula sutil para el área de contenido
  *
  * USO:
  *   <AdminLayout title="Fichas Clínicas" subtitle="Gestión de pacientes" showBack backPath="/admin">
@@ -163,7 +163,7 @@ export default function AdminLayout({
           {children}
         </MotionConfig>
       </div>
-      <AppFooter theme="dark" />
+      <AppFooter theme="light" />
     </div>
   );
 }

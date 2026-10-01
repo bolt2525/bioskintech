@@ -29,9 +29,10 @@
 @layer components {
   .admin-layout-shell {
     background:
-      radial-gradient(ellipse at 12% 0%, rgba(190, 179, 157, 0.14), transparent 38rem),
-      radial-gradient(ellipse at 88% 18%, rgba(177, 167, 145, 0.12), transparent 32rem),
-      linear-gradient(145deg, #292a27 0%, #33332f 48%, #252622 100%);
+      linear-gradient(rgba(15, 118, 110, 0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(15, 118, 110, 0.035) 1px, transparent 1px),
+      #eef3f2;
+    background-size: 32px 32px;
   }
 
   /* Contenedor con padding responsivo */

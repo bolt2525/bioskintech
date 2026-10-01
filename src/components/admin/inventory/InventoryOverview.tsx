@@ -21,11 +21,13 @@ interface Stats {
 interface Props {
   stats: Stats | null;
   loading?: boolean;
+  onSelectMetric: (metric: 'products' | 'lowStock' | 'batches' | 'movements') => void;
 }
 
 const KPI_CARDS = [
   {
     key: 'total_items' as const,
+    action: 'products' as const,
     label: 'Total Productos',
     icon: Package,
     iconBg: 'bg-blue-100',
@@ -35,6 +37,7 @@ const KPI_CARDS = [
   },
   {
     key: 'low_stock_count' as const,
+    action: 'lowStock' as const,
     label: 'Bajo Stock',
     icon: AlertTriangle,
     iconBg: 'bg-yellow-100',
@@ -46,6 +49,7 @@ const KPI_CARDS = [
   },
   {
     key: 'expiring_soon_count' as const,
+    action: 'batches' as const,
     label: 'Lotes por Vencer',
     icon: AlertCircle,
     iconBg: 'bg-orange-100',
@@ -57,7 +61,8 @@ const KPI_CARDS = [
   },
   {
     key: 'movements_this_month' as const,
-    label: 'Movimientos (Mes)',
+    action: 'movements' as const,
+    label: 'Movimientos Este Mes',
     icon: TrendingUp,
     iconBg: 'bg-emerald-100',
     iconColor: 'text-emerald-600',
@@ -66,7 +71,7 @@ const KPI_CARDS = [
   },
 ];
 
-export default function InventoryOverview({ stats, loading }: Props) {
+export default function InventoryOverview({ stats, loading, onSelectMetric }: Props) {
   const money = new Intl.NumberFormat('es-EC', { style: 'currency', currency: 'USD' });
   return (
     <section className="overflow-hidden rounded-2xl border border-white/70 bg-white shadow-xl shadow-black/10" aria-label="Estado general del inventario">
@@ -76,14 +81,17 @@ export default function InventoryOverview({ stats, loading }: Props) {
         const subValue = stats && 'subKey' in card ? stats[card.subKey as keyof Stats] : null;
 
         return (
-          <motion.div
+          <motion.button
+            type="button"
             key={card.key}
+            onClick={() => onSelectMetric(card.action)}
+            aria-label={`${card.label}: ${loading ? 'cargando' : card.format(value)}. Abrir detalle`}
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.07 }}
-            className="flex min-h-24 items-center gap-3 bg-white p-4"
+            className="admin-focus-ring group flex min-h-24 items-center gap-3 bg-white p-4 text-left transition-colors hover:bg-amber-50/60"
           >
-            <div className={`p-2.5 rounded-xl ${card.iconBg} flex-shrink-0`}>
+            <div className={`p-2.5 rounded-xl ${card.iconBg} flex-shrink-0 transition-transform group-hover:scale-105`}>
               <card.icon className={`w-5 h-5 ${card.iconColor}`} />
             </div>
             <div className="min-w-0">
@@ -100,8 +108,9 @@ export default function InventoryOverview({ stats, loading }: Props) {
                   )}
                 </div>
               )}
+              <span className="mt-1 block text-[10px] font-medium text-gray-400 group-hover:text-amber-800">Abrir detalle →</span>
             </div>
-          </motion.div>
+          </motion.button>
         );
         })}
       </div>

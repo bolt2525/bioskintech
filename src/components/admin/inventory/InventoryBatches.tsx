@@ -110,15 +110,6 @@ export default function InventoryBatches({ canDelete = false }: { canDelete?: bo
                   {status.label}
                 </div>
 
-                {canDelete && !batch.is_archived && <button
-                  onClick={() => handleDeleteBatch(batch.id, batch.batch_number)}
-                  className="absolute bottom-3 right-3 p-2 text-gray-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-all z-10"
-                  title="Eliminar lote"
-                  aria-label={`Eliminar lote ${batch.batch_number}`}
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>}
-                
                 <div className="mb-4">
                   <h4 className="font-semibold text-gray-800 line-clamp-1" title={batch.item_name}>{batch.item_name}</h4>
                   <div className="text-xs text-gray-400 font-mono mt-1">{batch.sku}</div>
@@ -150,6 +141,17 @@ export default function InventoryBatches({ canDelete = false }: { canDelete?: bo
                     <p className="text-xs text-amber-800">Referencia del producto: ${Number(batch.reference_cost).toFixed(2)}</p>
                   )}
                 </div>
+                {canDelete && !batch.is_archived && <div className="mt-4 flex justify-end border-t border-gray-100 pt-2">
+                  <button
+                    onClick={() => handleDeleteBatch(batch.id, batch.batch_number)}
+                    className="admin-focus-ring inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-gray-500 transition-colors hover:bg-red-50 hover:text-red-700"
+                    title="Eliminar lote"
+                    aria-label={`Eliminar lote ${batch.batch_number}`}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Eliminar
+                  </button>
+                </div>}
               </article>
             );
           })

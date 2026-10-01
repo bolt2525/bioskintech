@@ -49,8 +49,8 @@ export default function AdminAgendaHub() {
       <div className="mx-auto max-w-5xl py-2 sm:py-5">
         <div className="mb-6 max-w-2xl">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-ink">Organiza tu jornada</p>
-          <h2 className="mt-1 text-2xl font-semibold text-white">Herramientas de agenda</h2>
-          <p className="mt-2 text-sm leading-relaxed text-gray-300">Elige una acción para consultar citas, agendar pacientes o gestionar la disponibilidad.</p>
+          <h2 className="mt-1 text-2xl font-semibold text-gray-900">Herramientas de agenda</h2>
+          <p className="mt-2 text-sm leading-relaxed text-gray-600">Elige una acción para consultar citas, agendar pacientes o gestionar la disponibilidad.</p>
         </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {visibleModules.map(item => {

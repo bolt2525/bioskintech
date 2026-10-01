@@ -38,6 +38,7 @@ interface InventoryItem {
   sale_price?: number | null;
   is_archived?: boolean;
   archive_reason?: string | null;
+  created_by_user_name?: string;
 }
 
 interface InventoryItemDraft {
@@ -333,6 +334,15 @@ export default function AdminInventory() {
     { id: 'sales' as const, label: 'Ventas', hint: 'Rendimiento', icon: BarChart3 },
   ];
 
+  const handleOverviewMetric = (metric: 'products' | 'lowStock' | 'batches' | 'movements') => {
+    if (metric === 'batches' || metric === 'movements') {
+      setActiveTab(metric);
+      return;
+    }
+    setProductView('active');
+    setStockFilter(metric === 'lowStock' ? 'low' : 'all');
+  };
+
   // â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   return (
     <AdminLayout title="Inventario Clínico" subtitle="Gestión de productos, stock y trazabilidad">
@@ -353,7 +363,7 @@ export default function AdminInventory() {
       </AnimatePresence>
 
       {/* Consola de navegación */}
-      <section className="mb-5 overflow-hidden rounded-2xl border border-white/15 bg-black/20 shadow-2xl shadow-black/10" aria-label="Centro de control de inventario">
+      <section className="mb-5 overflow-hidden rounded-2xl border border-emerald-950/15 bg-[#172522] shadow-xl shadow-emerald-950/10" aria-label="Centro de control de inventario">
         <div className="flex items-center justify-between gap-4 border-b border-white/10 px-4 py-2.5 sm:px-5">
           <h2 className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-300">Centro de control</h2>
           <p className="hidden text-xs text-gray-400 sm:block">Stock, trazabilidad y rendimiento</p>
@@ -367,7 +377,7 @@ export default function AdminInventory() {
                 onClick={() => setActiveTab(tab.id)}
                 type="button"
                 aria-pressed={selected}
-                className={`admin-focus-ring group flex min-h-16 items-center gap-3 bg-[#292a27] px-4 py-3 text-left transition-[background-color,color] duration-200 hover:bg-white/10 ${selected ? 'bg-white text-gray-950' : 'text-white'}`}
+                className={`admin-focus-ring group flex min-h-16 items-center gap-3 bg-[#172522] px-4 py-3 text-left transition-[background-color,color] duration-200 hover:bg-white/10 ${selected ? 'bg-white text-gray-950' : 'text-white'}`}
               >
                 <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border text-sm font-semibold ${selected ? 'border-amber-300 bg-amber-100 text-amber-900' : 'border-white/15 bg-white/5 text-amber-300'}`}>
                   <tab.icon className="h-4 w-4" aria-hidden="true" />
@@ -387,7 +397,7 @@ export default function AdminInventory() {
       {activeTab === 'inventory' && (
         <div className="space-y-5">
           {/* KPI Overview */}
-          {productView === 'active' && <InventoryOverview stats={stats} loading={statsLoading} />}
+          {productView === 'active' && <InventoryOverview stats={stats} loading={statsLoading} onSelectMetric={handleOverviewMetric} />}
 
           {/* Alerts banner */}
           {productView === 'active' && (stats?.alert_batches?.length > 0 || stats?.out_of_stock_count > 0 || stats?.low_stock_count > 0) ? (
@@ -531,27 +541,23 @@ export default function AdminInventory() {
               {groupedItems.map(([category, subgroups]) => (
                 <section key={category} aria-labelledby={`inventory-category-${category.replace(/\W+/g, '-').toLowerCase()}`}>
                   <div className="mb-3 flex items-center gap-2 border-b border-gray-200 pb-2">
-                    <h2 id={`inventory-category-${category.replace(/\W+/g, '-').toLowerCase()}`} className="text-sm font-semibold text-white">
+                    <h2 id={`inventory-category-${category.replace(/\W+/g, '-').toLowerCase()}`} className="text-sm font-semibold text-gray-900">
                       {category}
                     </h2>
-                    <span className="rounded-full bg-white/15 px-2 py-0.5 text-xs text-gray-100">{subgroups.reduce((total, group) => total + group.items.length, 0)}</span>
+                    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">{subgroups.reduce((total, group) => total + group.items.length, 0)}</span>
                   </div>
                   <div className="space-y-5">
                     {subgroups.map(group => (
                       <div key={group.name}>
-                        <h3 className="mb-2 text-xs font-semibold text-gray-200">{group.name} <span className="text-gray-300">({group.items.length})</span></h3>
+                        <h3 className="mb-2 text-xs font-semibold text-gray-700">{group.name} <span className="text-gray-500">({group.items.length})</span></h3>
                         <motion.div layout className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                           <AnimatePresence>
                             {group.items.map((item, idx) => (
-                              <div key={item.id} className="relative">
-                                {isAdmin && item.created_by_user_name && (
-                                  <div className="absolute top-2 right-2 z-10 px-2 py-0.5 bg-purple-50 text-purple-700 text-xs font-medium rounded-full border border-purple-100">
-                                    {item.created_by_user_name}
-                                  </div>
-                                )}
+                              <div key={item.id}>
                                 <InventoryProductCard
                                   item={item}
                                   index={idx}
+                                  showOwner={isAdmin}
                                   onSelect={(i) => setDrawerItem(i)}
                                   onAddStock={(i) => { setSelectedItem(i); setShowStockModal(true); }}
                                   onConsume={(i) => { setSelectedItem(i); setShowConsumeModal(true); }}

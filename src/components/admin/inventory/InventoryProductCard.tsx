@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import {
   AlertTriangle, AlertCircle, CheckCircle,
   Droplet, Plus, Minus, MoreVertical, Edit2, Archive, RotateCcw,
-  ThermometerSnowflake, Info
+  ThermometerSnowflake, Info, UserRound
 } from 'lucide-react';
 
 interface InventoryItem {
@@ -28,6 +28,7 @@ interface InventoryItem {
   sale_price?: number | null;
   is_archived?: boolean;
   archive_reason?: string | null;
+  created_by_user_name?: string;
 }
 
 interface Props {
@@ -39,6 +40,7 @@ interface Props {
   onArchive: (item: InventoryItem) => void;
   onRestore: (item: InventoryItem) => void;
   canArchive?: boolean;
+  showOwner?: boolean;
   index?: number;
 }
 
@@ -58,6 +60,7 @@ export default function InventoryProductCard({
   onArchive,
   onRestore,
   canArchive = false,
+  showOwner = false,
   index = 0,
 }: Props) {
   const [menuOpen, setMenuOpen] = React.useState(false);
@@ -155,6 +158,12 @@ export default function InventoryProductCard({
               </p>
             )}
             <p className="text-[11px] text-gray-500 font-mono mt-0.5">SKU: {item.sku || 'Sin SKU'}</p>
+            {showOwner && item.created_by_user_name && (
+              <p className="mt-1 flex min-w-0 items-center gap-1 text-[10px] font-medium text-violet-700" title={`Responsable: ${item.created_by_user_name}`}>
+                <UserRound className="h-3 w-3 shrink-0" aria-hidden="true" />
+                <span className="truncate">{item.created_by_user_name}</span>
+              </p>
+            )}
           </div>
 
           {/* Kebab menu */}
@@ -163,7 +172,9 @@ export default function InventoryProductCard({
               whileHover={{ backgroundColor: 'rgba(0,0,0,0.05)' }}
               whileTap={{ scale: 0.9 }}
               onClick={(e) => { e.stopPropagation(); setMenuOpen(v => !v); }}
-              className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 transition-colors"
+              className="admin-focus-ring rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700"
+              aria-label={`Opciones de ${item.name}`}
+              aria-expanded={menuOpen}
             >
               <MoreVertical className="w-4 h-4" />
             </motion.button>
