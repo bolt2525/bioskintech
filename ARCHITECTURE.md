@@ -138,7 +138,7 @@ Los avisos administrativos al desarrollador cubren registro público, invitacion
 - exámenes físicos y mapas JSONB;
 - marcaciones 3D faciales y corporales dentro de esos mapas JSONB, incluida posición, normal, distribución y radio zonal ajustable; el visor acepta mapas JSONB ya parseados o strings legados, orienta cada zona a la superficie del modelo, conserva el tamaño al guardar y mantiene visible el selector Facial/Corporal dentro del panel desplazable;
 - diagnósticos, tratamientos y recetas (`treatments.equipment_used` admite lista de equipos separados por coma —una sesión puede usar varias aparatologías—; `treatments.parameters JSONB` guarda un mapa `{ nombreEquipo: { campo: valor } }` capturado por equipo vía modal con plantillas según tipo de aparatología o manual; al guardar, el resumen legible de cada equipo se inserta/actualiza como bloque en `notes`, que sigue siendo texto libre editable);
-- inyectables y `mapping_data` JSONB;
+- inyectables y `mapping_data` JSONB; Toxina, Relleno HA, Hidratación y Bioestimulador comparten una carga normalizada que acepta objetos JSONB, strings legados y arrays antiguos, y restaura puntos, líneas de referencia, puntos editables, líneas libres, formas y viales;
 - consentimientos, tokens y firmas;
 - inventario, lotes y movimientos;
 - finanzas internas y partidas;

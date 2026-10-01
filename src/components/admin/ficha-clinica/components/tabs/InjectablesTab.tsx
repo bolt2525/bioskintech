@@ -56,7 +56,7 @@ interface Injectable {
   technique: string;
   injection_plane: string;
   needle_type: string;
-  mapping_data: any;
+  mapping_data: unknown;
   notes: string;
   dilution_volume: number | string;
   follow_up_date: string;
@@ -389,22 +389,16 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   useEffect(() => {
     if (current.mapping_data) {
       try {
-        const parsed = typeof current.mapping_data === 'string'
+        const parsed: unknown = typeof current.mapping_data === 'string'
           ? JSON.parse(current.mapping_data)
           : current.mapping_data;
-
-        // Formato nuevo: { injectionPoints: [...], referenceLines: [...] }
-        // Formato legacy: [...InjectionPoint[]]
-        let rawPoints: any[] = [];
-        let rawLines: any[] = [];
-
-        if (Array.isArray(parsed)) {
-          // Legacy: solo array de injection points
-          rawPoints = parsed;
-        } else if (parsed && typeof parsed === 'object') {
-          rawPoints = Array.isArray(parsed.injectionPoints) ? parsed.injectionPoints : [];
-          rawLines = Array.isArray(parsed.referenceLines) ? parsed.referenceLines : [];
-        }
+        const mapping = Array.isArray(parsed)
+          ? { injectionPoints: parsed }
+          : parsed && typeof parsed === 'object'
+            ? parsed as Record<string, unknown>
+            : {};
+        const rawPoints = Array.isArray(mapping.injectionPoints) ? mapping.injectionPoints : [];
+        const rawLines = Array.isArray(mapping.referenceLines) ? mapping.referenceLines : [];
 
         const points: InjectionPoint[] = rawPoints.map((item: any) => ({
           ...item,
@@ -420,13 +414,13 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
         setMarkers3D(libreMarkers);
         setReferenceLines(rawLines);
         // Restaurar puntos editables si existen en mapping_data
-        const rawEditablePoints = Array.isArray((parsed as any)?.editablePoints) ? (parsed as any).editablePoints : [];
+        const rawEditablePoints = Array.isArray(mapping.editablePoints) ? mapping.editablePoints : [];
         setEditablePoints(rawEditablePoints);
         setRefJsonLoaded(rawEditablePoints.length > 0);
         // Restaurar freehand lines y shapes
-        const rawFreehand: FreehandLine[] = Array.isArray(parsed.freehandLines) ? parsed.freehandLines : [];
-        const rawShapes: SurfaceShape[] = Array.isArray(parsed.surfaceShapes) ? parsed.surfaceShapes : [];
-        const rawHaVials: HaVial[] = Array.isArray(parsed.haVials) ? parsed.haVials : [];
+        const rawFreehand: FreehandLine[] = Array.isArray(mapping.freehandLines) ? mapping.freehandLines : [];
+        const rawShapes: SurfaceShape[] = Array.isArray(mapping.surfaceShapes) ? mapping.surfaceShapes : [];
+        const rawHaVials: HaVial[] = Array.isArray(mapping.haVials) ? mapping.haVials : [];
         setFreehandLines(rawFreehand);
         setSurfaceShapes(rawShapes);
         setHaVials(rawHaVials);
@@ -440,6 +434,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
         setRefJsonLoaded(false);
         setFreehandLines([]);
         setSurfaceShapes([]);
+        setHaVials([]);
+        setActiveVialId(null);
       }
     } else {
       setInjectionPoints([]);
@@ -452,7 +448,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
       setHaVials([]);
       setActiveVialId(null);
     }
-  }, [current.id]);
+  }, [current.id, current.mapping_data]);
 
   // Auto-dismiss messages
   useEffect(() => {
