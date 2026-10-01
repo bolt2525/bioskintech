@@ -880,7 +880,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
         <div className="flex-1 flex flex-col md:flex-row gap-6 overflow-visible md:overflow-hidden">
           {/* Left Column: Maps */}
           <div className="flex-1 flex flex-col overflow-y-auto min-w-0 custom-scrollbar pr-2">
-            <div className="admin-tabs mb-6 w-fit" role="group" aria-label="Zona de examen físico">
+            <div className="admin-tabs mb-6 w-fit shrink-0" role="group" aria-label="Zona de examen físico">
               {(['facial', 'corporal'] as const).map((tab) => (
                 <button
                   key={tab}

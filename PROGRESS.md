@@ -1,5 +1,6 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-09-30 Selector Facial/Corporal sin recorte.
 - ✅ 2026-10-01 Reducidos errores ESLint triviales del proyecto.
 - ✅ 2026-10-01 Lint sin errores en archivos UI modificados.
 - ✅ 2026-10-01 Dashboard y módulos renovados.
