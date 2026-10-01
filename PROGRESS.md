@@ -1,5 +1,6 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-01 Encabezado de pacientes simplificado con lenguaje clínico directo.
 - ✅ 2026-10-01 Fichas Clínicas verificadas tab por tab en producción; Consentimientos móvil completo y bundle inicial reducido 56%.
 - ✅ 2026-10-01 Fichas Clínicas renovado: lista móvil, expediente persistente, tabs accesibles, avisos y 23 overlays unificados.
 - ✅ 2026-10-01 Finanzas renovado con retorno al panel, periodos directos, reportes plegables, KPI compactos y registros móviles completos.

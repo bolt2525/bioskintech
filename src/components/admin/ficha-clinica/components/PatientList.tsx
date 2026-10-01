@@ -203,9 +203,9 @@ export default function PatientList() {
                 <ShieldCheck className="h-4 w-4 text-[#deb887]" />
                 Centro clínico
               </div>
-              <h2 className="font-serif text-2xl font-semibold sm:text-3xl">Archivo vivo de pacientes</h2>
+              <h2 className="font-serif text-2xl font-semibold sm:text-3xl">Pacientes y expedientes</h2>
               <p className="mt-2 max-w-xl text-sm leading-6 text-emerald-50/70">
-                Localiza un paciente, abre su expediente o revisa la trazabilidad desde un solo punto.
+                Busca pacientes, abre expedientes y consulta su trazabilidad clínica.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
