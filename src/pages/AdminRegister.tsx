@@ -448,13 +448,18 @@ export default function AdminRegister() {
                       <p className="text-xs text-[#deb887] font-semibold mt-0.5">🎉 Precio especial de lanzamiento</p>
                     </div>
                     <div className="text-right flex-shrink-0 ml-3">
-                      <p className="text-2xl font-black text-[#deb887]">$259.95</p>
+                      <p className="text-2xl font-black text-[#deb887]">$245.00</p>
                       <p className="text-xs text-gray-400">IVA incluido / año</p>
                     </div>
                   </div>
                   <p className="text-sm text-gray-600 leading-relaxed mb-3">
                     Fichas Clínicas, Agenda Google Calendar, 3D Injectable Mapping, Inventario, Finanzas, Consentimientos Digitales y Fotos Clínicas.
                   </p>
+                  <div className="mb-3 border-t border-[#deb887]/25 pt-3 text-xs text-gray-600">
+                    <div className="flex justify-between gap-3"><span>Suscripción anual</span><span>$245.00</span></div>
+                    <div className="mt-1 flex justify-between gap-3"><span>Recargo de pasarela PayPhone</span><span>$14.95</span></div>
+                    <div className="mt-2 flex justify-between gap-3 font-bold text-gray-900"><span>Total a cobrar con tarjeta</span><span>$259.95</span></div>
+                  </div>
                   <div className="flex flex-wrap gap-1.5">
                     {['Fichas Clínicas','Agenda Google','3D Mapping','Inventario','Finanzas','Consentimientos','Fotos'].map(f => (
                       <span key={f} className="text-xs bg-[#deb887]/20 text-[#c9a876] px-2 py-0.5 rounded-full font-medium">{f}</span>

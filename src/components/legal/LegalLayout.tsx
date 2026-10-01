@@ -5,8 +5,8 @@ import BrandLogo from '../ui/BrandLogo';
 export const LEGAL_CONTACT_EMAIL = 'soporte-tecnico@bioskintechapp.com';
 export const LEGAL_WHATSAPP = '+593 984 232 889';
 // Debe coincidir con LEGAL_VERSION de api/admin-auth.js; cambiarla obliga a todos los usuarios a re-aceptar.
-export const LEGAL_VERSION = '2026-09-30';
-export const LEGAL_UPDATED_LABEL = '30 de septiembre de 2026';
+export const LEGAL_VERSION = '2026-10-01';
+export const LEGAL_UPDATED_LABEL = '1 de octubre de 2026';
 
 export function LegalSection({ number, title, icon, children }: { number: number; title: string; icon: ReactNode; children: ReactNode }) {
   return (
@@ -23,7 +23,22 @@ export function LegalSection({ number, title, icon, children }: { number: number
   );
 }
 
-export function LegalShell({ title, icon, intro, children, footer }: { title: string; icon: ReactNode; intro: ReactNode; children: ReactNode; footer: ReactNode }) {
+export function LegalShell({ title, icon, intro, children, footer, embedded = false }: { title: string; icon: ReactNode; intro: ReactNode; children: ReactNode; footer: ReactNode; embedded?: boolean }) {
+  if (embedded) {
+    return (
+      <section className="legal-print-copy">
+        <header className="border-b border-gray-300 pb-5">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8b6945]">BIOSKINTECH · Documento integrante</p>
+          <h2 className="mt-2 text-2xl font-bold text-gray-900">{title}</h2>
+          <p className="mt-1 text-xs text-gray-600">Versión {LEGAL_VERSION} · Vigente desde el {LEGAL_UPDATED_LABEL}</p>
+          <div className="mt-4 space-y-3 text-sm leading-relaxed text-gray-700">{intro}</div>
+        </header>
+        <div className="mt-6 space-y-5">{children}</div>
+        <footer className="mt-6 border-t border-gray-300 pt-4 text-xs text-gray-600">{footer}</footer>
+      </section>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#fdf8f0] via-white to-[#faf4ea]">
       <header className="sticky top-0 bg-white/90 backdrop-blur border-b border-gold/20 z-10 shadow-sm">

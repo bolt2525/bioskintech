@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ShieldCheck, Loader2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { LEGAL_VERSION } from '../legal/LegalLayout';
 
 const ACCEPTED_KEY = 'bioskin_legal_accepted';
 
@@ -11,21 +12,44 @@ export default function LegalAcceptanceGate() {
   const [checked, setChecked] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [checking, setChecking] = useState(false);
+  const [checkError, setCheckError] = useState('');
 
   useEffect(() => {
-    if (!isAuthenticated || user?.role === 'master_admin') { setVersion(null); return; }
+    if (!isAuthenticated || user?.role === 'master_admin') { setVersion(null); setChecking(false); setCheckError(''); return; }
     const token = sessionStorage.getItem('adminSessionToken');
-    if (!token || sessionStorage.getItem(ACCEPTED_KEY) === String(user?.id)) return;
+    if (!token) { setCheckError('No se encontró una sesión válida. Cierre sesión e ingrese nuevamente.'); return; }
+    if (sessionStorage.getItem(ACCEPTED_KEY) === `${user?.id}:${LEGAL_VERSION}`) return;
+    setChecking(true);
+    setCheckError('');
     fetch('/api/admin-auth?action=legalStatus', { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json())
+      .then(async r => {
+        const data = await r.json();
+        if (!r.ok || (!data?.required && !data?.success)) throw new Error(data?.error || 'Respuesta inválida al verificar la aceptación.');
+        return data;
+      })
       .then(d => {
         if (d?.required) setVersion(d.version);
-        else if (d?.success) sessionStorage.setItem(ACCEPTED_KEY, String(user?.id));
+        else if (d?.success) sessionStorage.setItem(ACCEPTED_KEY, `${user?.id}:${d.version}`);
       })
-      .catch(() => {});
+      .catch(() => setCheckError('No se pudo verificar la aceptación de los documentos legales. Revise su conexión e intente nuevamente.'))
+      .finally(() => setChecking(false));
   }, [isAuthenticated, user?.id, user?.role]);
 
-  if (!version) return null;
+  if (!version && !checking && !checkError) return null;
+
+  if (!version) {
+    return (
+      <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="legal-check-title">
+        <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 text-center space-y-4">
+          <ShieldCheck aria-hidden="true" className="mx-auto h-8 w-8 text-gold-dark" />
+          <h2 id="legal-check-title" className="text-lg font-bold text-gray-900">Verificando documentos legales</h2>
+          {checking ? <Loader2 aria-hidden="true" className="mx-auto h-5 w-5 animate-spin text-gold-dark" /> : <p className="text-sm text-red-600" role="alert">{checkError}</p>}
+          {checkError && <button type="button" onClick={() => window.location.reload()} className="w-full py-2.5 rounded-xl bg-gold text-white text-sm font-semibold">Reintentar</button>}
+        </div>
+      </div>
+    );
+  }
 
   const accept = async () => {
     setSaving(true); setError('');
@@ -37,7 +61,7 @@ export default function LegalAcceptanceGate() {
       });
       const d = await r.json();
       if (!r.ok || d.required) throw new Error(d.error || 'No se pudo registrar la aceptación');
-      sessionStorage.setItem(ACCEPTED_KEY, String(user?.id));
+      sessionStorage.setItem(ACCEPTED_KEY, `${user?.id}:${version}`);
       setVersion(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo registrar la aceptación');

@@ -14,6 +14,21 @@
 import { getPool } from '../lib/neon-clinical-db.js';
 import { authenticateRequest } from '../lib/admin-auth.js';
 
+export async function verifyPatientAccess(pool, patientId, clinicId) {
+  if (clinicId == null) return { error: 'Seleccione una clínica antes de consultar un paciente', status: 400 };
+  const result = await pool.query('SELECT 1 FROM patients WHERE id = $1 AND clinic_id = $2', [patientId, clinicId]);
+  return result.rows.length ? null : { error: 'Paciente no encontrado en la clínica', status: 404 };
+}
+
+export async function deleteAiConsultation(pool, consultationId, clinicId) {
+  if (clinicId == null) return false;
+  const result = await pool.query(
+    'DELETE FROM ai_consultations WHERE id = $1 AND clinic_id = $2 RETURNING id',
+    [consultationId, clinicId]
+  );
+  return result.rows.length > 0;
+}
+
 export default async function handler(req, res) {
   const auth = await authenticateRequest(req);
   if (!auth.valid) return res.status(401).json({ error: 'No autorizado' });
@@ -52,12 +67,8 @@ export default async function handler(req, res) {
         const { patient_id } = req.query;
         if (!patient_id) return res.status(400).json({ error: 'patient_id requerido' });
 
-        // Tenant check: verify patient belongs to authenticated user's clinic (C-4 fix)
-        if (effectiveClinicId != null && auth.role !== 'master_admin') {
-          const chk = await pool.query('SELECT clinic_id FROM patients WHERE id = $1', [patient_id]);
-          if (chk.rows.length && chk.rows[0].clinic_id !== effectiveClinicId)
-            return res.status(403).json({ error: 'Acceso no autorizado' });
-        }
+        const accessError = await verifyPatientAccess(pool, patient_id, effectiveClinicId);
+        if (accessError) return res.status(accessError.status).json({ error: accessError.error });
 
         const [history, exams, diagnoses, treatments, prescriptions] = await Promise.all([
           pool.query(
@@ -111,11 +122,9 @@ export default async function handler(req, res) {
         const { patient_id, patient_name, question, selections, save = false } = body;
         if (!question) return res.status(400).json({ error: 'question requerido' });
 
-        // Tenant check: verify patient belongs to authenticated user's clinic (C-4 fix)
-        if (patient_id && effectiveClinicId != null && auth.role !== 'master_admin') {
-          const chk = await pool.query('SELECT clinic_id FROM patients WHERE id = $1', [patient_id]);
-          if (chk.rows.length && chk.rows[0].clinic_id !== effectiveClinicId)
-            return res.status(403).json({ error: 'Acceso no autorizado' });
+        if (patient_id) {
+          const accessError = await verifyPatientAccess(pool, patient_id, effectiveClinicId);
+          if (accessError) return res.status(accessError.status).json({ error: accessError.error });
         }
 
         const apiKey = process.env.GOOGLE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
@@ -152,8 +161,8 @@ CirugÃ­as previas: ${h.surgical_history || 'N/A'}`);
             tabsUsed.push('examen_fisico');
             const rows = await pool.query(
               `SELECT skin_type, phototype, glogau_scale, lesions_description, face_map_data, body_map_data
-               FROM physical_exams WHERE id = ANY($1)`,
-              [sel.examenes.ids]
+               FROM physical_exams WHERE patient_id = $1 AND id = ANY($2)`,
+              [patient_id, sel.examenes.ids]
             ).catch(() => ({ rows: [] }));
             if (rows.rows.length > 0) {
               const exBlocks = rows.rows.map(e => {
@@ -173,9 +182,11 @@ CirugÃ­as previas: ${h.surgical_history || 'N/A'}`);
           if (sel.diagnosticos?.enabled && sel.diagnosticos?.ids?.length > 0) {
             tabsUsed.push('diagnosticos');
             const rows = await pool.query(
-              `SELECT date, diagnosis_text, cie10_code, type, severity, notes
-               FROM diagnoses WHERE id = ANY($1) ORDER BY date DESC`,
-              [sel.diagnosticos.ids]
+              `SELECT d.date, d.diagnosis_text, d.cie10_code, d.type, d.severity, d.notes
+               FROM diagnoses d
+               JOIN clinical_records cr ON cr.id = d.record_id
+               WHERE cr.patient_id = $1 AND d.id = ANY($2) ORDER BY d.date DESC`,
+              [patient_id, sel.diagnosticos.ids]
             ).catch(() => ({ rows: [] }));
             if (rows.rows.length > 0) {
               const diagText = rows.rows.map(d =>
@@ -188,9 +199,11 @@ CirugÃ­as previas: ${h.surgical_history || 'N/A'}`);
           if (sel.tratamientos?.enabled && sel.tratamientos?.ids?.length > 0) {
             tabsUsed.push('tratamientos');
             const rows = await pool.query(
-              `SELECT date, procedure_name, equipment_used, area_treated, duration_minutes, notes
-               FROM treatments WHERE id = ANY($1) ORDER BY date DESC`,
-              [sel.tratamientos.ids]
+              `SELECT t.date, t.procedure_name, t.equipment_used, t.area_treated, t.duration_minutes, t.notes
+               FROM treatments t
+               JOIN clinical_records cr ON cr.id = t.record_id
+               WHERE cr.patient_id = $1 AND t.id = ANY($2) ORDER BY t.date DESC`,
+              [patient_id, sel.tratamientos.ids]
             ).catch(() => ({ rows: [] }));
             if (rows.rows.length > 0) {
               const treatText = rows.rows.map(t =>
@@ -203,9 +216,11 @@ CirugÃ­as previas: ${h.surgical_history || 'N/A'}`);
           if (sel.recetas?.enabled && sel.recetas?.ids?.length > 0) {
             tabsUsed.push('recetas');
             const rows = await pool.query(
-              `SELECT date, medications, instructions
-               FROM prescriptions WHERE id = ANY($1) ORDER BY date DESC`,
-              [sel.recetas.ids]
+              `SELECT p.date, p.medications, p.instructions
+               FROM prescriptions p
+               JOIN clinical_records cr ON cr.id = p.record_id
+               WHERE cr.patient_id = $1 AND p.id = ANY($2) ORDER BY p.date DESC`,
+              [patient_id, sel.recetas.ids]
             ).catch(() => ({ rows: [] }));
             if (rows.rows.length > 0) {
               const recetaText = rows.rows.map(r =>
@@ -302,7 +317,8 @@ Responde de forma clara y estructurada. Si el contexto clÃ­nico es suficiente,
       case 'delete': {
         const { id } = req.query;
         if (!id) return res.status(400).json({ error: 'id requerido' });
-        await pool.query('DELETE FROM ai_consultations WHERE id = $1', [id]);
+        const deleted = await deleteAiConsultation(pool, id, effectiveClinicId);
+        if (!deleted) return res.status(404).json({ error: 'Consulta no encontrada en la clínica' });
         return res.status(200).json({ ok: true });
       }
 

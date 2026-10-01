@@ -2,21 +2,20 @@
 
 > **Estado: borrador de trabajo; no firmar ni presentar como versión final sin completar los campos entre corchetes y someterlo a revisión jurídica en Ecuador.** Se preparó con los documentos y evidencias del repositorio. El diagrama mencionado por quien solicitó este documento no fue adjuntado ni se encontró en el repositorio; por tanto, no se incorporan ni se deducen hechos de ese diagrama.
 >
-> Este borrador no sustituye ni modifica por sí solo las Condiciones de Servicio ni la Política de Privacidad publicadas. Los compromisos que siguen resumen esos documentos; cualquier condición comercial o compromiso adicional debe constar expresamente en la cotización o en un acuerdo escrito aceptado por ambas partes. La prioridad entre documentos para materias distintas de las instrucciones lícitas sobre datos personales no está definida en las fuentes revisadas y debe acordarse antes de firmar.
+> Este archivo es material interno de revisión y no es el documento generado para firma. El paquete final emitido por Master Admin incorpora condiciones particulares, anexo de tratamiento, Condiciones de Servicio y Política de Privacidad. Su orden de prevalencia consta en la cláusula 3 de este archivo y en el paquete generado.
 
-**Versión de referencia de los documentos publicados:** 2026-09-30  
-**Fecha de preparación:** 30 de septiembre de 2026  
+**Versión de referencia de los documentos publicados:** 2026-10-01
+**Fecha de preparación:** 1 de octubre de 2026
 **Lugar de referencia contractual en las Condiciones:** Cuenca, Ecuador
 
 ## 1. Comparecientes y datos por completar
 
 Comparecen para celebrar este contrato:
 
-**Proveedor:** BIOSKINTECH, denominación usada en las Condiciones de Servicio para identificar a quien presta la plataforma.  
-Razón social o nombre legal del titular: **[PENDIENTE DE CONFIRMAR]**  
-Identificación tributaria: **[PENDIENTE DE CONFIRMAR]**  
-Domicilio: **[PENDIENTE DE CONFIRMAR]**  
-Representante y facultad para contratar, si corresponde: **[PENDIENTE DE CONFIRMAR]**
+**Proveedor:** Rafael Israel Larrea Galindo, quien opera bajo la denominación BIOSKINTECH.
+Identificación tributaria: **RUC 0105872600001**
+Domicilio contractual: **Cuenca, Ecuador**
+Calidad: **persona natural / por sus propios derechos**
 
 **Cliente:** clínica, centro estético, spa o profesional que contrata la plataforma.  
 Razón social o nombre: **[PENDIENTE DE COMPLETAR]**  
@@ -26,7 +25,7 @@ Representante, cargo y facultad para contratar: **[PENDIENTE DE COMPLETAR]**
 Correo de contacto y facturación: **[PENDIENTE DE COMPLETAR]**  
 Clínica/cuenta a la que se aplicará el servicio: **[PENDIENTE DE COMPLETAR]**
 
-Las personas que suscriben declaran contar con capacidad y facultades para obligar a la parte que representan. La identidad jurídica y los datos tributarios del Proveedor no constan de forma verificable en las fuentes examinadas y no se completan por inferencia.
+Las personas que suscriben declaran contar con capacidad y facultades para obligar a la parte que representan. La identidad del Proveedor debe contrastarse con su documento tributario vigente antes de cada firma.
 
 ## 2. Objeto y naturaleza del servicio
 
@@ -56,9 +55,9 @@ El contrato se integra con:
 3. la **Política de Privacidad y Tratamiento de Datos Personales** vigente; y
 4. la cotización, plan y condiciones comerciales expresamente aceptados por el Cliente.
 
-Las Condiciones de Servicio declaran que el registro, aceptación de invitación, pago o uso de la Plataforma constituye aceptación electrónica de esas Condiciones y de la Política de Privacidad. El Cliente acepta que estas últimas se encuentran en versión **2026-09-30** al celebrar este documento, salvo que la pantalla de aceptación o la oferta aceptada identifique otra versión. Las nuevas versiones se notifican en el panel y deben aceptarse para continuar el uso; el sistema registra la aceptación con versión, fecha, IP y navegador.
+Las Condiciones de Servicio declaran que el registro, aceptación de invitación, pago o uso de la Plataforma constituye aceptación electrónica de esas Condiciones y de la Política de Privacidad. El Cliente acepta que estas últimas se encuentran en versión **2026-10-01** al celebrar este documento, salvo que la pantalla de aceptación o la oferta aceptada identifique otra versión. Las nuevas versiones se notifican en el panel y deben aceptarse para continuar el uso; el sistema registra la aceptación con versión, fecha, IP y navegador.
 
-En materia de datos de pacientes, las instrucciones documentadas del Cliente prevalecen en tanto sean lícitas, conforme a la Política de Privacidad. Para una eventual contradicción entre este borrador y los demás documentos en otras materias, no se establece aquí una regla de prioridad: las partes deben resolverla expresamente antes de la firma.
+En caso de contradicción, las condiciones particulares firmadas prevalecen para identidad, precio, módulos y vigencia; el anexo de tratamiento prevalece para el encargo de datos; y las Condiciones de Servicio y la Política rigen sus materias restantes. Siempre prevalece la ley imperativa.
 
 ## 4. Precio, facturación y vigencia
 
@@ -70,7 +69,7 @@ En materia de datos de pacientes, las instrucciones documentadas del Cliente pre
 **Inicio y vencimiento del período contratado:** [COMPLETAR]  
 **Renovación y procedimiento de renovación:** [CONFIRMAR POR ESCRITO]
 
-Como regla publicada, el pago es anual y anticipado, salvo acuerdo escrito distinto. El precio aplicable y los impuestos son los indicados en el proceso de pago, cotización o código de registro entregado al Cliente. La Plataforma acepta tarjeta, transferencia interbancaria o efectivo; transferencias y pagos en efectivo se activan una vez confirmados por BIOSKINTECH. Los pagos con tarjeta son procesados por la pasarela y BIOSKINTECH declara que no recibe ni almacena números de tarjeta.
+Como regla publicada, el pago es anual y anticipado, salvo acuerdo escrito distinto. El Plan Lanzamiento cuesta USD 245 con IVA incluido. PayPhone agrega USD 14,95 cuando procesa ese pago, para un cargo total de USD 259,95 en tarjeta; el recargo no cambia el precio contractual de la suscripción. La Plataforma acepta tarjeta, transferencia interbancaria o efectivo; transferencias y pagos en efectivo se activan una vez confirmados por BIOSKINTECH. BIOSKINTECH no recibe ni almacena números de tarjeta.
 
 BIOSKINTECH puede modificar precios para renovaciones futuras con al menos 30 días de aviso. No se presume en este borrador una renovación automática, descuento, tarifa, período de gracia ni fecha de cobro distintos de los expresamente completados en la oferta aceptada.
 
@@ -161,13 +160,13 @@ BIOSKINTECH puede suspender o terminar el servicio por falta de pago, incumplimi
 
 Al vencimiento o cancelación, los datos se conservan durante 30 días para renovación o solicitud de exportación por canales oficiales. Las fotografías no se entregan y se eliminan al cumplirse ese plazo, salvo renovación. Pasado el plazo, BIOSKINTECH podrá eliminar los datos, sin perjuicio de copias residuales descritas en la Política —hasta seis horas en el historial de recuperación de la base y hasta 35 días en respaldos cifrados— o de obligaciones legales. El Cliente puede solicitar eliminación anticipada certificada, asumiendo que previamente resguardó lo que la ley le obligue a conservar.
 
-Si una cuenta de prueba no se convierte en servicio contratado, el usuario se desactiva o la cuenta puede eliminarse junto con sus fotografías; no se ofrece obligación de conservar o entregar los datos cargados en una prueba vencida. La prueba oficial es de tres días y puede ampliarse, a criterio de BIOSKINTECH, hasta diez días. El Cliente que ingrese datos reales durante la prueba asume desde ese momento sus responsabilidades de Responsable del Tratamiento.
+Si una cuenta de prueba no se convierte en servicio contratado, el usuario se desactiva o la cuenta puede eliminarse junto con sus fotografías; no se ofrece obligación de conservar o entregar los datos cargados en una prueba vencida. La prueba oficial es de tres días y puede ampliarse hasta diez; BIOSKINTECH puede conceder por escrito un trial comercial excepcional de hasta 30 días. El Cliente que ingrese datos reales durante la prueba asume desde ese momento sus responsabilidades de Responsable del Tratamiento.
 
 ## 12. Responsabilidad e indemnidad
 
 Las limitaciones publicadas en las Condiciones de Servicio forman parte de este acuerdo y se reproducen por referencia. En la máxima medida permitida por la ley, BIOSKINTECH no responde por actos médicos o mala praxis; contenido, exactitud o base legal del Cliente; acciones u omisiones de este o sus Usuarios; fallas de proveedores externos, conectividad, fuerza mayor o ataques que superen medidas razonables; ni daños indirectos, lucro cesante, pérdida de oportunidades, reputación o clientela.
 
-Las Condiciones fijan la responsabilidad total de BIOSKINTECH frente al Cliente, por cualquier causa, en un máximo equivalente al valor efectivamente pagado por el Cliente durante los 12 meses anteriores al hecho que origine la reclamación, con la excepción allí expresada para dolo. El Cliente mantendrá indemne a BIOSKINTECH, sus titulares y colaboradores frente a reclamaciones, sanciones, multas, costas y honorarios razonables derivados de la atención a pacientes, tratamiento de datos sin base legal o contrario a la LOPDP por parte del Cliente, contenido del Cliente o incumplimiento de las Condiciones por el Cliente o sus Usuarios. La validez y aplicación de estas cláusulas queda sujeta a la ley aplicable.
+Las Condiciones fijan la responsabilidad contractual total de BIOSKINTECH frente al Cliente en un máximo equivalente al valor efectivamente pagado durante los 12 meses anteriores al hecho. El límite no aplica ante dolo, culpa grave, prohibición legal ni reduce obligaciones frente a Titulares o autoridades. El Cliente mantendrá indemne a BIOSKINTECH, sus titulares y colaboradores frente a reclamaciones derivadas de la atención a pacientes, tratamiento de datos ilícito por parte del Cliente, contenido del Cliente o incumplimiento de las Condiciones, en la medida permitida por la ley.
 
 ## 13. Ley aplicable, notificaciones y firma
 
@@ -192,12 +191,11 @@ La aceptación electrónica prevista en las Condiciones y registrada por la Plat
 ## 14. Datos que deben confirmarse antes de formalizar
 
 1. Diagrama al que se refiere la solicitud: no fue recibido ni localizado.
-2. Identidad legal, identificación tributaria, domicilio y representante autorizado de BIOSKINTECH.
+2. Vigencia del RUC y documento de identidad del Proveedor.
 3. Identidad, domicilio, identificación, representante y correo del Cliente.
 4. Cotización, módulos habilitados, precio, impuestos, método de pago, fechas exactas, renovación y versión aceptada.
 5. Cualquier límite de usuarios, almacenamiento, soporte, servicio o plazo de atención que se pretenda pactar; esos límites no constan en los documentos revisados.
-6. Jerarquía entre este contrato, Condiciones, Política de Privacidad y cotización para materias distintas de las instrucciones lícitas de datos personales.
-7. Validación jurídica de las condiciones y su aplicación a la contratación concreta.
+6. Validación jurídica de las condiciones y su aplicación a la contratación concreta.
 
 ## Anexo A. Fuentes revisadas y trazabilidad
 
@@ -207,7 +205,7 @@ Este borrador se preparó contrastando el texto contractual con la implementaci�
 |---|---|
 | Condiciones de Servicio | `src/pages/TermsOfService.tsx`: objeto y límites del servicio (arts. 1, 8–9); pagos y pruebas (arts. 4–5); obligaciones del Cliente y firma (arts. 7–8); propiedad, respaldos y terceros (arts. 10–12); disponibilidad y responsabilidad (arts. 13–15); suspensión, terminación y ley (arts. 17–21). |
 | Política de Privacidad | `src/pages/PrivacyPolicy.tsx`: roles (art. 1); categorías de datos y subencargados (arts. 3–5); IA y finalidades (arts. 6–7); seguridad e incidentes (arts. 10–11); conservación y fin del servicio (arts. 12–13). |
-| Versión y contacto legal | `src/components/legal/LegalLayout.tsx:5-9,61-68`: versión 2026-09-30, correo y WhatsApp oficiales. |
+| Versión y contacto legal | `src/components/legal/LegalLayout.tsx`: versión 2026-10-01, correo y WhatsApp oficiales. |
 | Aceptación de documentos | `src/components/layout/LegalAcceptanceGate.tsx:7-24,30-45,63-75`: gate de aceptación y registro informado al usuario. `api/admin-auth.js:1195-1206,2454-2463`: versión, persistencia y verificación de aceptación. |
 | Programación de cron | `vercel.json:39-45`: cron de respaldos configurado diariamente a las 08:00 UTC. |
 | Cifrado y alcance de respaldos | `lib/backup-service.js:9-14,22-69,152-191,214-237`: formato, cifrado AES-256-GCM, límite por tabla y recolección por clínica. |

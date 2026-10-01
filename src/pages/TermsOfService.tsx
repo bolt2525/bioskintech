@@ -3,9 +3,10 @@ import { LegalShell, LegalSection as Section, Note, Mail, ContactChannels } from
 
 const ul = 'list-disc list-inside space-y-1.5 pl-1';
 
-export default function TermsOfService() {
+export default function TermsOfService({ embedded = false }: { embedded?: boolean }) {
   return (
     <LegalShell
+      embedded={embedded}
       title="Condiciones de Servicio"
       icon={<FileText className="w-7 h-7" />}
       intro={<>
@@ -13,6 +14,7 @@ export default function TermsOfService() {
           Estas Condiciones regulan el acceso y uso de la plataforma web <strong className="text-gray-800">BIOSKINTECH</strong> (la "Plataforma"), accesible en
           bioskintechapp.com, por parte de clínicas, centros estéticos, spas y profesionales de la salud (el "Cliente") y de las personas que el Cliente autoriza (los "Usuarios").
         </p>
+        <p>El proveedor contractual de la Plataforma es <strong>Rafael Israel Larrea Galindo, RUC 0105872600001</strong>, con domicilio en Cuenca, Ecuador ("BIOSKINTECH" o el "Proveedor").</p>
         <p>
           Al registrarse, aceptar una invitación, pagar o usar la Plataforma, el Cliente celebra un contrato electrónico válido conforme a la
           <strong> Ley de Comercio Electrónico, Firmas Electrónicas y Mensajes de Datos</strong> del Ecuador y acepta íntegramente estas Condiciones y la
@@ -36,6 +38,7 @@ export default function TermsOfService() {
       <Section number={2} title="Definiciones" icon={<HelpCircle className="w-4 h-4" />}>
         <div className="space-y-2">
           <p><strong>Cliente:</strong> persona natural o jurídica que contrata la Plataforma para uso profesional.</p>
+          <p><strong>Proveedor:</strong> Rafael Israel Larrea Galindo, quien concede el acceso SaaS y factura el servicio bajo la denominación BIOSKINTECH.</p>
           <p><strong>Usuarios:</strong> administradores y colaboradores a quienes el Cliente da acceso.</p>
           <p><strong>Paciente / Titular:</strong> persona cuyos datos registra el Cliente.</p>
           <p><strong>Contenido del Cliente:</strong> toda información, archivo o dato cargado en la Plataforma por el Cliente, sus Usuarios o sus pacientes.</p>
@@ -55,6 +58,7 @@ export default function TermsOfService() {
       <Section number={4} title="Precio, pago y renovación" icon={<Settings className="w-4 h-4" />}>
         <ul className={ul}>
           <li>El precio aplicable es el que se muestra al Cliente en el proceso de pago, en la cotización o en el código de registro entregado, con impuestos indicados. El pago es anual y anticipado, salvo acuerdo escrito distinto.</li>
+          <li>El precio anual del Plan Lanzamiento es <strong>USD 245 con IVA incluido</strong>. Cuando el Cliente paga mediante PayPhone, la pasarela agrega un recargo de <strong>USD 14,95</strong>, por lo que el cargo total en tarjeta es <strong>USD 259,95</strong>. Este recargo no aumenta el precio contractual de la suscripción.</li>
           <li>Medios de pago aceptados: <strong>tarjeta</strong> de crédito o débito a través de pasarelas o plataformas de pago, <strong>transferencia interbancaria</strong> o <strong>dinero en efectivo</strong>. Los pagos por transferencia o efectivo se activan una vez confirmados por BIOSKINTECH.</li>
           <li>La Plataforma integra la API de la pasarela PayPhone para pagos con tarjeta. Los datos de la tarjeta son procesados directamente por la pasarela; <strong>BIOSKINTECH no recibe ni almacena números de tarjeta</strong>.</li>
           <li>No hay reembolsos totales ni proporcionales, salvo falla técnica grave imputable exclusivamente a BIOSKINTECH que impida el uso del servicio durante más de 15 días consecutivos.</li>
@@ -70,6 +74,7 @@ export default function TermsOfService() {
         <p className="font-semibold text-gray-800 mt-2">Cuentas de prueba (demo)</p>
         <ul className={ul}>
           <li>El período de prueba oficial es de <strong>3 días</strong>, ampliable a solicitud del interesado y a criterio de BIOSKINTECH hasta un <strong>máximo de 10 días</strong>.</li>
+          <li>BIOSKINTECH puede conceder por escrito un plan trial comercial de hasta <strong>30 días</strong>. Esa concesión excepcional debe indicar su duración y no modifica la prueba oficial ni genera renovación automática.</li>
           <li>Las cuentas de prueba pueden usar credenciales definitivas y datos reales. Quien las usa con datos reales de pacientes asume desde ese momento las obligaciones de Responsable del Tratamiento previstas en estas Condiciones.</li>
           <li>Si se contrata el servicio, la cuenta y sus datos continúan habilitados por el tiempo del contrato.</li>
           <li>Si no se contrata al terminar la prueba, el usuario se desactiva o la cuenta se elimina, junto con sus fotografías, sin obligación de conservar ni entregar la información cargada.</li>
@@ -117,7 +122,7 @@ export default function TermsOfService() {
       <Section number={10} title="Propiedad intelectual y titularidad de los datos" icon={<Shield className="w-4 h-4" />}>
         <ul className={ul}>
           <li>El software, diseño, marcas, modelos 3D, plantillas y demás elementos de la Plataforma pertenecen a BIOSKINTECH o a sus licenciantes. El Cliente recibe una licencia de uso limitada, no exclusiva, no transferible y revocable durante la suscripción.</li>
-          <li>El Contenido del Cliente es del Cliente. Este otorga a BIOSKINTECH una licencia limitada para almacenarlo y procesarlo solo con el fin de prestar, asegurar y respaldar el servicio.</li>
+          <li>El Cliente conserva sus derechos sobre el Contenido del Cliente, sin perjuicio de los derechos de los Titulares sobre sus datos personales. El Cliente otorga a BIOSKINTECH una licencia limitada para almacenarlo y procesarlo solo con el fin de prestar, asegurar y respaldar el servicio.</li>
           <li>BIOSKINTECH puede usar métricas técnicas agregadas y anónimas, que no identifican a personas ni clínicas, para mejorar el servicio.</li>
           <li>Las sugerencias que el Cliente envíe pueden ser utilizadas libremente por BIOSKINTECH sin compensación.</li>
         </ul>
@@ -144,7 +149,7 @@ export default function TermsOfService() {
       </Section>
 
       <Section number={12} title="Servicios de terceros" icon={<Plug className="w-4 h-4" />}>
-        <p>La Plataforma funciona sobre servicios de terceros: Neon (base de datos), Vercel (alojamiento), Cloudflare (almacenamiento de fotografías, copias de seguridad y verificación anti-bot), Google (Calendar, Gmail y Gemini), Meta (WhatsApp) y pasarelas de pago como PayPhone. Estos servicios dependen de sus proveedores y de sus condiciones. BIOSKINTECH no responde por su disponibilidad, cambios, costos, bloqueos de cuentas ni por el tratamiento que realicen conforme a sus propias políticas.</p>
+        <p>La Plataforma funciona sobre servicios de terceros: Neon (base de datos), Vercel (alojamiento), Cloudflare (almacenamiento de fotografías, copias de seguridad y verificación anti-bot), Google (Calendar, Gmail y Gemini), Meta (WhatsApp) y pasarelas de pago como PayPhone. Estos servicios dependen de sus proveedores y condiciones, y BIOSKINTECH no controla su disponibilidad, cambios, costos o bloqueos. Esta dependencia no excluye las obligaciones que la ley atribuye a BIOSKINTECH como Responsable o Encargado del Tratamiento.</p>
       </Section>
 
       <Section number={13} title="Disponibilidad, mantenimiento y actualizaciones" icon={<RefreshCw className="w-4 h-4" />}>
@@ -165,7 +170,7 @@ export default function TermsOfService() {
           <li>Fallas de proveedores externos, conectividad, fuerza mayor o ataques que superen medidas de seguridad razonables.</li>
           <li>Daños indirectos, lucro cesante, pérdida de oportunidades, reputación o clientela.</li>
         </ul>
-        <Note tone="amber">La responsabilidad total de BIOSKINTECH frente al Cliente, por cualquier causa, no excederá el valor efectivamente pagado por el Cliente en los 12 meses anteriores al hecho que la origine. Esta limitación no aplica en caso de dolo.</Note>
+        <Note tone="amber">La responsabilidad contractual total de BIOSKINTECH frente al Cliente no excederá el valor efectivamente pagado por el Cliente en los 12 meses anteriores al hecho que la origine. Esta limitación no aplica en caso de dolo, culpa grave ni cuando una norma imperativa prohíba limitarla; tampoco reduce obligaciones frente a Titulares o autoridades de protección de datos.</Note>
       </Section>
 
       <Section number={15} title="Indemnidad" icon={<Handshake className="w-4 h-4" />}>
@@ -202,7 +207,7 @@ export default function TermsOfService() {
 
       <Section number={20} title="Disposiciones generales" icon={<FileText className="w-4 h-4" />}>
         <ul className={ul}>
-          <li>Estas Condiciones, la Política de Privacidad y las condiciones comerciales aceptadas al pagar constituyen el acuerdo íntegro entre las partes.</li>
+          <li>Estas Condiciones, la Política de Privacidad y las condiciones comerciales aceptadas constituyen el acuerdo íntegro. Las condiciones particulares firmadas prevalecen para identidad, precio, módulos y vigencia; un anexo de tratamiento firmado prevalece para el encargo de datos; siempre prevalece la ley imperativa.</li>
           <li>Si alguna cláusula fuera declarada inválida, las demás seguirán vigentes.</li>
           <li>La falta de ejercicio de un derecho no implica renuncia a él.</li>
           <li>El Cliente no puede ceder este contrato sin autorización escrita. BIOSKINTECH puede cederlo en caso de reorganización, fusión o venta del negocio, notificándolo al Cliente.</li>

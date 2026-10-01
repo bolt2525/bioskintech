@@ -3,9 +3,10 @@ import { LegalShell, LegalSection as Section, Note, Mail, ContactChannels } from
 
 const ul = 'list-disc list-inside space-y-1.5 pl-1';
 
-export default function PrivacyPolicy() {
+export default function PrivacyPolicy({ embedded = false }: { embedded?: boolean }) {
   return (
     <LegalShell
+      embedded={embedded}
       title="Política de Privacidad y Tratamiento de Datos Personales"
       icon={<Shield className="w-7 h-7" />}
       intro={<>
@@ -15,6 +16,7 @@ export default function PrivacyPolicy() {
           Aplica a las clínicas y profesionales que contratan la Plataforma (los "Clientes"), a sus colaboradores con acceso (los "Usuarios") y a los
           pacientes y personas cuyos datos registran los Clientes (los "Titulares").
         </p>
+        <p>BIOSKINTECH es operada por <strong>Rafael Israel Larrea Galindo, RUC 0105872600001</strong>, con domicilio en Cuenca, Ecuador. Los canales para ejercer derechos y realizar consultas constan en el Art. 9.</p>
         <p className="text-xs text-gray-500">
           Esta Política forma parte integrante de las Condiciones de Servicio. Ante cualquier discrepancia sobre el tratamiento de datos de pacientes,
           prevalecen las instrucciones documentadas del Cliente como Responsable del Tratamiento, siempre que sean lícitas.
@@ -75,7 +77,7 @@ export default function PrivacyPolicy() {
           <li>Tratar los datos solo para prestar el servicio y según las instrucciones del Cliente.</li>
           <li>Exigir confidencialidad a las personas autorizadas para acceder a la infraestructura.</li>
           <li>Aplicar las medidas de seguridad descritas en el Art. 10.</li>
-          <li>Recurrir solo a los proveedores (subencargados) listados en el Art. 5, con obligaciones de protección equivalentes.</li>
+          <li>Recurrir solo a los proveedores (subencargados) listados en el Art. 5 y exigir garantías de protección apropiadas cuando actúen como tales.</li>
           <li>Asistir al Cliente, en la medida de lo técnicamente posible, para atender derechos de los Titulares e incidentes de seguridad.</li>
           <li>Al terminar el servicio, poner los datos a disposición del Cliente y luego eliminarlos conforme al Art. 13.</li>
         </ul>
@@ -98,8 +100,8 @@ export default function PrivacyPolicy() {
           </table>
         </div>
         <p className="text-xs text-gray-500">
-          Estos proveedores publican programas de seguridad y certificaciones reconocidas internacionalmente. Sus propias políticas rigen el tratamiento que
-          realizan. El Cliente, al aceptar esta Política, autoriza y declara conocer estas transferencias, y asume informarlas a sus pacientes cuando corresponda.
+          Estos proveedores publican programas de seguridad y sus propias políticas rigen el tratamiento que realizan. BIOSKINTECH evaluará y aplicará las
+          garantías exigibles para las transferencias internacionales bajo la LOPDP. La autorización del Cliente no sustituye esas garantías ni su deber de informar a los pacientes cuando corresponda.
         </p>
       </Section>
 
@@ -162,7 +164,7 @@ export default function PrivacyPolicy() {
       <Section number={11} title="Incidentes de seguridad" icon={<AlertTriangle className="w-4 h-4" />}>
         <ol className="list-decimal list-inside space-y-1.5 pl-1">
           <li>BIOSKINTECH adoptará medidas para contener y mitigar el incidente.</li>
-          <li>Como Encargado, notificará al Cliente afectado sin dilación indebida desde que confirme el incidente, con la información disponible.</li>
+          <li>Como Encargado, notificará al Cliente afectado sin dilación indebida desde que tenga conocimiento de una violación que afecte sus datos, con la información disponible, y la completará progresivamente.</li>
           <li>El Cliente, como Responsable de los datos de sus pacientes, notificará a la Superintendencia de Protección de Datos Personales y a los Titulares en los plazos de la LOPDP. BIOSKINTECH colaborará con la información técnica a su alcance.</li>
           <li>Respecto de los datos de los que BIOSKINTECH es Responsable, realizará directamente las notificaciones legales.</li>
         </ol>
@@ -175,7 +177,7 @@ export default function PrivacyPolicy() {
           <li>Pueden subsistir copias residuales: hasta <strong>6 horas</strong> en el historial de recuperación de la base de datos y hasta <strong>35 días</strong> en las copias de seguridad cifradas, que se eliminan automáticamente al vencer ese plazo.</li>
           <li><strong>Fotografías clínicas:</strong> no se respaldan ni se entregan copias; se eliminan definitivamente 30 días después de terminar la suscripción si no hay renovación.</li>
           <li>Las exportaciones descargadas por el Cliente quedan bajo su exclusiva custodia y responsabilidad.</li>
-          <li>Cuentas de prueba: si no se contrata el servicio al finalizar la prueba (3 días, ampliable hasta 10), el usuario se desactiva o la cuenta se elimina con sus fotografías, sin obligación de conservar la información; si se contrata, los datos continúan durante el contrato.</li>
+          <li>Cuentas de prueba: si no se contrata el servicio al finalizar la prueba oficial (3 días, ampliable hasta 10) o un trial comercial concedido por escrito (hasta 30 días), el usuario se desactiva o la cuenta puede eliminarse con sus fotografías, sin obligación de conservar la información; si se contrata, los datos continúan durante el contrato.</li>
         </ul>
       </Section>
 
@@ -184,8 +186,8 @@ export default function PrivacyPolicy() {
           <li>Durante la suscripción, el administrador de la clínica puede exportar sus datos en todo momento desde el módulo <strong>Base de Datos</strong>: respaldo técnico completo en formato JSON (restaurable en la Plataforma), tablas CSV para Excel y consentimientos firmados en documento legible.</li>
           <li>Estos formatos permiten la portabilidad de los datos; no constituyen fichas, formularios ni hojas de cálculo diseñadas para continuar la atención fuera de la Plataforma.</li>
           <li>Tras el vencimiento o la cancelación, los datos se conservan <strong>30 días</strong> para renovación o para solicitar la exportación por los canales oficiales. Las fotografías no se entregan y se eliminan al cumplirse ese plazo.</li>
-          <li>Vencido ese plazo, BIOSKINTECH podrá eliminar definitivamente los datos, sin obligación de conservarlos, salvo copias residuales del Art. 12 u obligación legal.</li>
-          <li>El Cliente puede solicitar la eliminación anticipada y certificada de sus datos, asumiendo la responsabilidad de haber resguardado la información que la ley le obligue a conservar.</li>
+          <li>Vencido ese plazo, BIOSKINTECH podrá eliminar o anonimizar los datos de los sistemas activos, salvo obligación legal. Hasta ejecutar ese procedimiento, los datos permanecerán restringidos y no se usarán para prestar un servicio vencido. Las copias residuales del Art. 12 permanecerán aisladas del uso ordinario hasta vencer su ciclo de retención.</li>
+          <li>El Cliente puede solicitar la eliminación de la cuenta y sus datos activos. BIOSKINTECH confirmará por escrito el alcance ejecutado y las excepciones aplicables; esa confirmación no incluirá copias inmutables antes de que venza su retención ni datos cuya conservación exija la ley.</li>
         </ul>
       </Section>
 

@@ -68,7 +68,7 @@ const SUBSCRIPTION_PLANS = {
     name: 'Plan Lanzamiento BioskinTech',
     features: ['calendar','block_schedule','appointment','clinical_records','finance','inventory','system_status','backup'],
     access_scope: 'all',
-    amount_cents: 26450,       // $264.50/año
+    amount_cents: 24500,       // $245.00/año con IVA; PayPhone agrega $14.95 al cobrar
     description: 'Plan especial de lanzamiento con módulos principales',
   },
   plan_completo: {
@@ -1192,7 +1192,7 @@ async function claimSetupTokenFn(token, newPassword) {
 
 /** Extrae el usuario autenticado del header Authorization */
 // Cambiar esta fecha al publicar nuevas Condiciones/Política obliga a todos los usuarios a re-aceptar.
-export const LEGAL_VERSION = '2026-09-30';
+export const LEGAL_VERSION = '2026-10-01';
 
 async function recordLegalAcceptance(userId, clinicId, req) {
   const ip = String(req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || '').split(',')[0].trim().slice(0, 100) || null;

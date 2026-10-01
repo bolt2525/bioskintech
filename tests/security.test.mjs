@@ -1,6 +1,35 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+test('AI patient context requires the patient to belong to the selected clinic', async () => {
+  const { deleteAiConsultation, verifyPatientAccess } = await import('../api/ai-consultation.js');
+  const queries = [];
+  const pool = {
+    query: async (sql, params) => {
+      queries.push({ sql, params });
+      return { rows: params[0] === 7 && params[1] === 'clinic-a' ? [{ exists: 1 }] : [] };
+    },
+  };
+
+  assert.deepEqual(await verifyPatientAccess(pool, 7, null), {
+    error: 'Seleccione una clínica antes de consultar un paciente',
+    status: 400,
+  });
+  assert.equal(await verifyPatientAccess(pool, 7, 'clinic-a'), null);
+  assert.deepEqual(await verifyPatientAccess(pool, 7, 'clinic-b'), {
+    error: 'Paciente no encontrado en la clínica',
+    status: 404,
+  });
+  assert.match(queries[0].sql, /id = \$1 AND clinic_id = \$2/);
+
+  const deletePool = {
+    query: async (_sql, params) => ({ rows: params[0] === 11 && params[1] === 'clinic-a' ? [{ id: 11 }] : [] }),
+  };
+  assert.equal(await deleteAiConsultation(deletePool, 11, 'clinic-a'), true);
+  assert.equal(await deleteAiConsultation(deletePool, 11, 'clinic-b'), false);
+  assert.equal(await deleteAiConsultation(deletePool, 11, null), false);
+});
+
 test('inventory groups persist per clinic/category without products or accent/case duplicates', async () => {
   const { resolveInventoryGroup } = await import('../api/records.js');
   const queries = [];

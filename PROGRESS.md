@@ -1,5 +1,7 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-01 Paquete contractual formal v2026-10-01 con anexo LOPDP y documentos íntegros; USD 245 con IVA separado del recargo PayPhone de USD 14,95.
+- ✅ 2026-10-01 Contexto IA aislado por clínica y paciente antes de enviarse a Gemini.
 - ✅ 2026-10-01 Encabezado de pacientes simplificado con lenguaje clínico directo.
 - ✅ 2026-10-01 Fichas Clínicas verificadas tab por tab en producción; Consentimientos móvil completo y bundle inicial reducido 56%.
 - ✅ 2026-10-01 Fichas Clínicas renovado: lista móvil, expediente persistente, tabs accesibles, avisos y 23 overlays unificados.

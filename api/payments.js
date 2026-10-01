@@ -26,8 +26,9 @@ const PLANS = {
     name:          'Plan Lanzamiento BioskinTech',
     subtitle:      'Precio especial de lanzamiento',
     amount_cents:   25995,
-    base_cents:     22604,
-    tax_cents:       3391,
+    base_cents:     21304,
+    tax_cents:       3196,
+    service_cents:   1495,
     period:         'anual',
     features:       ['calendar','block_schedule','appointment','clinical_records','finance','inventory','clinical_3d','system_status','backup'],
   },
@@ -129,9 +130,9 @@ export default async function handler(req, res) {
       const payload = {
         amount:              plan.amount_cents,   // 25995
         amountWithoutTax:    0,
-        amountWithTax:       plan.base_cents,     // 22604
-        tax:                 plan.tax_cents,      // 3391
-        service:             0,
+        amountWithTax:       plan.base_cents,     // 21304
+        tax:                 plan.tax_cents,      // 3196
+        service:             plan.service_cents, // 1495 de recargo PayPhone
         tip:                 0,
         storeId,
         clientTransactionId: clientTxId,
