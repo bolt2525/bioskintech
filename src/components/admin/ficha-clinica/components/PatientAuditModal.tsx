@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Clock, User, ChevronDown, ChevronUp } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import recordsFetch from '../../../../utils/recordsFetch';
+import { Dialog } from '../../../ui/Dialog';
 
 interface AuditEntry {
   id: number;
@@ -60,23 +61,23 @@ export default function PatientAuditModal({ patientId, patientName, onClose }: P
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+    <Dialog open onClose={onClose} labelledBy="patient-audit-title">
       <motion.div
         initial={{ opacity: 0, scale: 0.96, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96 }}
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden"
+        className="flex max-h-[85dvh] w-[min(32rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-lg bg-white shadow-2xl"
       >
         <div className="h-0.5 bg-gradient-to-r from-[#deb887] to-[#c5a075]" />
         <div className="px-5 py-4 border-b flex items-center justify-between">
           <div>
-            <h3 className="font-bold text-gray-900 flex items-center gap-2">
+            <h3 id="patient-audit-title" className="font-bold text-gray-900 flex items-center gap-2">
               <Clock className="w-4 h-4 text-[#deb887]" />
               Historial de cambios
             </h3>
             <p className="text-xs text-gray-400 mt-0.5">{patientName}</p>
           </div>
-          <button onClick={onClose} className="text-gray-300 hover:text-gray-500 p-1">
+          <button onClick={onClose} className="admin-focus-ring flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600" aria-label="Cerrar historial de cambios">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -161,6 +162,6 @@ export default function PatientAuditModal({ patientId, patientName, onClose }: P
           </button>
         </div>
       </motion.div>
-    </div>
+    </Dialog>
   );
 }

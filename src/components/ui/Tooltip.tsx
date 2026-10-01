@@ -1,4 +1,4 @@
-﻿import React, { useState, useRef, useEffect } from 'react';
+﻿import React, { useState, useRef, useEffect, useId } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -21,6 +21,7 @@ export const Tooltip: React.FC<TooltipProps> = ({
   interactive = false
 }) => {
   const [isVisible, setIsVisible] = useState(false);
+  const tooltipId = useId();
   const [coords, setCoords] = useState({ top: 0, left: 0 });
   const triggerRef = useRef<HTMLDivElement>(null);
   const timeoutRef = useRef<NodeJS.Timeout>();
@@ -78,7 +79,11 @@ export const Tooltip: React.FC<TooltipProps> = ({
     }
   }, [isVisible]);
 
-  const isHtml = typeof content === 'string' && content.trim().startsWith('<');
+  const describedChild = React.isValidElement<{ 'aria-describedby'?: string }>(children)
+    ? React.cloneElement(children, {
+        'aria-describedby': [children.props['aria-describedby'], isVisible ? tooltipId : ''].filter(Boolean).join(' ') || undefined,
+      })
+    : children;
 
   return (
     <>
@@ -91,12 +96,14 @@ export const Tooltip: React.FC<TooltipProps> = ({
         onFocus={showTooltip}
         onBlur={hideTooltip}
       >
-        {children}
+        {describedChild}
       </div>
       {typeof document !== 'undefined' && createPortal(
         <AnimatePresence>
           {isVisible && (
             <motion.div
+              id={tooltipId}
+              role="tooltip"
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9 }}
@@ -107,9 +114,7 @@ export const Tooltip: React.FC<TooltipProps> = ({
                 position: 'fixed',
                 zIndex: 99999 
               }}
-              className={`px-3 py-1.5 text-xs font-medium text-white bg-gray-800 rounded-lg shadow-xl transform ${
-                isHtml ? 'whitespace-normal max-w-xs' : 'whitespace-nowrap'
-              } ${
+              className={`max-w-xs whitespace-normal px-3 py-1.5 text-xs font-medium text-white bg-gray-800 rounded-lg shadow-xl transform ${
                 interactive ? 'pointer-events-auto' : 'pointer-events-none'
               } ${
                 position === 'top' ? '-translate-x-1/2 -translate-y-full' :
@@ -128,11 +133,7 @@ export const Tooltip: React.FC<TooltipProps> = ({
                 }
               }}
             >
-              {isHtml ? (
-                <div dangerouslySetInnerHTML={{ __html: content as string }} />
-              ) : (
-                content
-              )}
+              {content}
               {/* Arrow */}
               <div 
                 className={`absolute w-2 h-2 bg-gray-800 transform rotate-45 ${

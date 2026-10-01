@@ -6,6 +6,7 @@
  */
 import { useEffect, useState } from 'react';
 import { X, Sparkles, Plus, Trash2 } from 'lucide-react';
+import { Dialog } from '../../../../ui/Dialog';
 
 type FieldType = 'text' | 'number';
 
@@ -202,13 +203,13 @@ export default function TreatmentParametersModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[85vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+    <Dialog open={isOpen} onClose={onClose} labelledBy="treatment-parameters-title">
+      <div className="flex max-h-[85dvh] w-[min(42rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-lg bg-white shadow-xl">
         <div className="flex items-center justify-between p-4 border-b border-gray-100 shrink-0">
-          <h3 className="font-semibold text-gray-800 flex items-center gap-2">
+          <h3 id="treatment-parameters-title" className="font-semibold text-gray-800 flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-[#b8944d]" /> Parámetros — <span className="text-[#b8944d]">{equipmentName}</span>
           </h3>
-          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-5 h-5 text-gray-500" /></button>
+          <button onClick={onClose} className="admin-focus-ring flex min-h-11 min-w-11 items-center justify-center rounded-lg hover:bg-gray-100" aria-label="Cerrar parámetros de tratamiento"><X className="w-5 h-5 text-gray-500" /></button>
         </div>
 
         <div className="overflow-y-auto flex-1 p-4 space-y-5">
@@ -296,6 +297,6 @@ export default function TreatmentParametersModal({
           </button>
         </div>
       </div>
-    </div>
+    </Dialog>
   );
 }

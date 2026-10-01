@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle, Droplets, FileSignature, X, ArrowRight } from 'lucide-react';
+import { Dialog } from '../../../ui/Dialog';
 
 interface Props {
   consultationId: number;
@@ -17,13 +18,13 @@ export default function ConsultationActivatedModal({ consultationId, onConfirm, 
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <Dialog open onClose={onClose} labelledBy="consultation-activated-title" describedBy="consultation-activated-description">
         <motion.div
           initial={{ opacity: 0, scale: 0.92, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.92, y: 20 }}
           transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-          className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden"
+          className="w-[min(28rem,calc(100vw-2rem))] overflow-hidden rounded-lg bg-white shadow-2xl"
         >
           {/* Header */}
           <div className="bg-gradient-to-r from-[#deb887]/20 to-amber-50 px-6 py-5 border-b border-[#deb887]/20">
@@ -33,11 +34,11 @@ export default function ConsultationActivatedModal({ consultationId, onConfirm, 
                   <CheckCircle className="w-5 h-5 text-[#b8944d]" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-gray-800">{isEdit ? 'Editar tabs habilitados' : 'Consulta registrada'}</h3>
+                  <h3 id="consultation-activated-title" className="text-base font-bold text-gray-800">{isEdit ? 'Editar tabs habilitados' : 'Consulta registrada'}</h3>
                   <p className="text-xs text-gray-500 mt-0.5">ID #{consultationId}</p>
                 </div>
               </div>
-              <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+              <button onClick={onClose} className="admin-focus-ring flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-white/60 hover:text-gray-600" aria-label="Cerrar configuración de consulta">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -45,7 +46,7 @@ export default function ConsultationActivatedModal({ consultationId, onConfirm, 
 
           {/* Body */}
           <div className="px-6 py-5 space-y-4">
-            <p className="text-sm text-gray-600">
+            <p id="consultation-activated-description" className="text-sm text-gray-600">
               {isEdit ? 'Activa o desactiva los tabs adicionales para esta consulta.' : '¿Deseas habilitar tabs adicionales para esta sesión de consulta?'}
             </p>
 
@@ -123,7 +124,7 @@ export default function ConsultationActivatedModal({ consultationId, onConfirm, 
             </button>
           </div>
         </motion.div>
-      </div>
+      </Dialog>
     </AnimatePresence>
   );
 }

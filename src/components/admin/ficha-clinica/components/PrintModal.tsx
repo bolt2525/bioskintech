@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Printer, X, AlertCircle, ChevronDown, ChevronUp, Settings } from 'lucide-react';
 import { useClinicSettings } from '../../../../hooks/useClinicSettings';
 import { useAuth } from '../../../../context/AuthContext';
+import { Dialog } from '../../../ui/Dialog';
 
 interface PrintOptions {
   antecedentes: boolean;
@@ -472,20 +473,19 @@ export default function PrintModal({ patient, recordId, recordData, activeConsul
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+    <Dialog open onClose={onClose} labelledBy="print-clinical-record-title">
       <motion.div
         initial={{ opacity: 0, scale: 0.93, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden flex flex-col"
-        style={{ maxHeight: '90vh' }}
+        className="flex max-h-[90dvh] w-[min(36rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-lg bg-white shadow-2xl"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
           <div className="flex items-center gap-3">
             <Printer className="w-5 h-5 text-[#b8944d]" />
-            <h3 className="text-base font-bold text-gray-800">Imprimir Ficha Clínica</h3>
+            <h3 id="print-clinical-record-title" className="text-base font-bold text-gray-800">Imprimir Ficha Clínica</h3>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+          <button onClick={onClose} className="admin-focus-ring flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600" aria-label="Cerrar opciones de impresión"><X className="w-5 h-5" /></button>
         </div>
 
         <div className="px-6 py-4 space-y-4 overflow-y-auto flex-1">
@@ -625,6 +625,6 @@ export default function PrintModal({ patient, recordId, recordData, activeConsul
           </button>
         </div>
       </motion.div>
-    </div>
+    </Dialog>
   );
 }

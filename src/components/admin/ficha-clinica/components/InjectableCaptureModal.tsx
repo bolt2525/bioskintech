@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import Clinical3DViewer, { Marker3D, EditablePoint, FreehandLine, SurfaceShape } from './Clinical3DViewer';
 import type { ReferenceLine, ProjectedPosition } from './Clinical3DViewer';
+import { Dialog } from '../../../ui/Dialog';
 
 // ==========================================
 // TIPOS
@@ -162,19 +163,13 @@ export default function InjectableCaptureModal({
   return (
     <AnimatePresence>
       {isOpen && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-          onClick={e => { if (e.target === e.currentTarget) handleClose(); }}
-        >
+        <Dialog open={isOpen} onClose={handleClose} labelledBy="injectable-capture-title">
           <motion.div
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden border border-gray-100"
+            className="flex max-h-[90dvh] w-[min(64rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-lg border border-gray-100 bg-white shadow-2xl"
           >
             {/* ---- HEADER ---- */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-[#deb887]/10 to-[#deb887]/5 shrink-0">
@@ -183,13 +178,14 @@ export default function InjectableCaptureModal({
                   <Images className="w-5 h-5 text-[#b8944d]" />
                 </div>
                 <div>
-                  <h2 className="text-base font-bold text-gray-800">Capturas del Mapeo 3D</h2>
+                  <h2 id="injectable-capture-title" className="text-base font-bold text-gray-800">Capturas del Mapeo 3D</h2>
                   <p className="text-xs text-gray-500">Gira el modelo a la vista deseada y captura. Añade una etiqueta opcional a cada imagen.</p>
                 </div>
               </div>
               <button
                 onClick={handleClose}
-                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-xl transition-all"
+                className="admin-focus-ring flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-400 transition-all hover:bg-gray-100 hover:text-gray-600"
+                aria-label="Cerrar capturas del mapeo"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -474,20 +470,14 @@ export default function InjectableCaptureModal({
           {/* Full-screen preview */}
           <AnimatePresence>
             {previewCapture && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="fixed inset-0 z-60 bg-black/90 flex items-center justify-center p-4"
-                onClick={() => setPreviewCapture(null)}
-              >
+              <Dialog open onClose={() => setPreviewCapture(null)} labelledBy="injectable-capture-preview-title" className="backdrop:bg-black/90">
                 <motion.div
                   initial={{ scale: 0.85 }}
                   animate={{ scale: 1 }}
                   exit={{ scale: 0.85 }}
-                  className="relative max-w-2xl w-full"
-                  onClick={e => e.stopPropagation()}
+                  className="relative w-[min(42rem,calc(100vw-2rem))]"
                 >
+                  <h3 id="injectable-capture-preview-title" className="sr-only">Vista previa de captura 3D</h3>
                   <img
                     src={previewCapture.dataUrl}
                     alt={previewCapture.label}
@@ -500,15 +490,16 @@ export default function InjectableCaptureModal({
                   )}
                   <button
                     onClick={() => setPreviewCapture(null)}
-                    className="absolute top-3 right-3 p-2 bg-black/60 hover:bg-black/80 text-white rounded-full transition-all"
+                    className="admin-focus-ring absolute right-3 top-3 flex min-h-11 min-w-11 items-center justify-center rounded-full bg-black/60 text-white transition-all hover:bg-black/80"
+                    aria-label="Cerrar vista previa"
                   >
                     <X className="w-4 h-4" />
                   </button>
                 </motion.div>
-              </motion.div>
+              </Dialog>
             )}
           </AnimatePresence>
-        </motion.div>
+        </Dialog>
       )}
     </AnimatePresence>
   );

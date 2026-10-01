@@ -104,6 +104,27 @@
     animation: admin-page-enter 240ms ease-out;
   }
 
+  .clinical-workspace {
+    @apply text-gray-800;
+  }
+
+  .clinical-workspace :is(input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']), select) {
+    min-height: 2.75rem;
+  }
+
+  .clinical-workspace :is(input, select, textarea, button, [role='button']):focus-visible {
+    @apply outline-none ring-2 ring-emerald-800 ring-offset-2;
+  }
+
+  .clinical-workspace :is(button, [role='button']) {
+    touch-action: manipulation;
+  }
+
+  .clinical-workspace [role='alert'],
+  .clinical-workspace [role='status'] {
+    @apply rounded-lg;
+  }
+
   .dashboard-hero {
     background:
       radial-gradient(ellipse at 90% 10%, rgba(190, 179, 157, 0.3), transparent 22rem),

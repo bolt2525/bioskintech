@@ -9,6 +9,7 @@ import { useClinicSettings } from '../../../../../hooks/useClinicSettings';
 import { useAuth } from '../../../../../context/AuthContext';
 import FieldHelp from '../FieldHelp';
 import { HELP } from '../../data/fieldHelpTexts';
+import { Dialog } from '../../../../ui/Dialog';
 
 /** Extrae solo YYYY-MM-DD de un ISO timestamp o string de PG para evitar desfase de zona horaria */
 const toDateOnly = (d: string | null | undefined): string => {
@@ -765,6 +766,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
           {message && (
             <motion.div 
               ref={messageRef}
+              role={message.type === 'error' ? 'alert' : 'status'} aria-live={message.type === 'error' ? 'assertive' : 'polite'}
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
@@ -1048,9 +1050,9 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
       </div>
     </motion.div>
     {showPrintReview && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-4">
-          <div className="flex items-start gap-3"><ShieldAlert className="w-6 h-6 text-amber-600 flex-shrink-0" /><div><h3 className="font-bold text-gray-900">Revisar receta médica</h3><p className="text-sm text-gray-500 mt-1">La impresión puede continuar aunque existan campos no registrados. Verifica la información antes de firmar y sellar.</p></div></div>
+      <Dialog open onClose={() => setShowPrintReview(false)} labelledBy="prescription-print-review-title" describedBy="prescription-print-review-description">
+        <div className="w-[min(32rem,calc(100vw-2rem))] space-y-4 rounded-lg bg-white p-6 shadow-2xl">
+          <div className="flex items-start gap-3"><ShieldAlert className="w-6 h-6 text-amber-600 flex-shrink-0" /><div><h3 id="prescription-print-review-title" className="font-bold text-gray-900">Revisar receta médica</h3><p id="prescription-print-review-description" className="text-sm text-gray-500 mt-1">La impresión puede continuar aunque existan campos no registrados. Verifica la información antes de firmar y sellar.</p></div></div>
           {missingPrintFields.length > 0 && <div className="rounded-xl bg-amber-50 border border-amber-200 p-3"><p className="text-xs font-semibold text-amber-800 mb-1">Datos pendientes:</p><p className="text-xs text-amber-700">{missingPrintFields.join(', ')}.</p></div>}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="text-xs font-semibold text-gray-600">CIE-10 temporal<input value={manualCie10} onChange={e => setManualCie10(e.target.value)} placeholder={activeCie10 || 'Ej. L70.0'} className="mt-1 w-full p-2 border border-gray-200 rounded-lg font-normal outline-none focus:ring-2 focus:ring-[#deb887]" /></label>
@@ -1060,7 +1062,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
           <label className="flex items-start gap-2 text-sm text-gray-700"><input type="checkbox" checked={printAcknowledged} onChange={e => setPrintAcknowledged(e.target.checked)} className="mt-0.5 accent-[#deb887]" /><span>Confirmo que revisé la receta y entiendo que su emisión, firma, sello y uso son responsabilidad exclusiva del profesional habilitado.</span></label>
           <div className="flex gap-3"><button type="button" onClick={() => setShowPrintReview(false)} className="flex-1 px-4 py-2.5 rounded-xl bg-gray-100 text-gray-700 font-medium">Volver</button><button type="button" disabled={!printAcknowledged} onClick={() => { setShowPrintReview(false); printDocument(); }} className="flex-1 px-4 py-2.5 rounded-xl bg-[#deb887] text-white font-semibold disabled:opacity-50">Continuar e imprimir</button></div>
         </div>
-      </div>
+      </Dialog>
     )}
     <CrossConsultHistoryModal
       isOpen={crossHistOpen}
@@ -1079,7 +1081,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
         <>
           {p.diagnostico && <div><span className="text-gray-400">Diagnóstico:</span> <span className="font-medium">{p.diagnostico}</span></div>}
           {p.fecha && <div><span className="text-gray-400">Fecha:</span> {new Date(toDateOnly(p.fecha)+'T12:00:00').toLocaleDateString('es-EC')}</div>}
-          {p.items?.map((item, i: number) => (
+          {p.items?.map((item: PrescriptionItem, i: number) => (
             <div key={i} className="border rounded-lg p-2 mt-2 space-y-0.5">
               <p className="font-medium">{item.medicamento || item.nombre_comercial}</p>
               {item.indicaciones && <p className="text-gray-500">{item.indicaciones}</p>}

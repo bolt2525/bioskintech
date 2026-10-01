@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect } from 'react';
-import { Search, Plus, FileText, User, Edit2, Trash2, Clock, X, ArrowRightLeft, Share2, Eye } from 'lucide-react';
+import { Search, Plus, FileText, User, Users, Edit2, Trash2, Clock, X, ArrowRightLeft, Share2, Eye, ShieldCheck } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import AdminLayout from '../../../layout/AdminLayout';
 import recordsFetch from '../../../../utils/recordsFetch';
@@ -7,6 +7,7 @@ import PatientAuditModal from './PatientAuditModal';
 import { useAdminNav } from '../../../../hooks/useAdminNav';
 import { useAuth } from '../../../../hooks/useAuth';
 import { useMasterView } from '../../../../context/MasterViewContext';
+import { Dialog } from '../../../ui/Dialog';
 
 /** Formats a stable per-clinic patient code: {INITIALS}-{YEAR}-{SEQ:03} */
 function clinicCode(clinicName: string, seq: number, createdAt?: string): string {
@@ -194,59 +195,127 @@ export default function PatientList() {
   return (
     <AdminLayout title="Fichas Clínicas" subtitle="Gestión de pacientes y expedientes médicos" backPath="/admin">
       <div className="space-y-6">
-        <div className="flex flex-wrap gap-4 justify-between items-center bg-white p-4 rounded-xl shadow-sm">
-          <h2 className="text-xl font-bold text-gray-800">Pacientes Registrados</h2>
-          <div className="flex items-center gap-3">
+        <section className="relative overflow-hidden rounded-lg border border-emerald-950/10 bg-[#172522] p-5 text-white shadow-sm sm:p-6">
+          <div className="absolute inset-y-0 right-0 w-1/3 bg-[radial-gradient(circle_at_center,rgba(222,184,135,0.16),transparent_68%)]" aria-hidden="true" />
+          <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <div className="max-w-2xl">
+              <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-emerald-100/70">
+                <ShieldCheck className="h-4 w-4 text-[#deb887]" />
+                Centro clínico
+              </div>
+              <h2 className="font-serif text-2xl font-semibold sm:text-3xl">Archivo vivo de pacientes</h2>
+              <p className="mt-2 max-w-xl text-sm leading-6 text-emerald-50/70">
+                Localiza un paciente, abre su expediente o revisa la trazabilidad desde un solo punto.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex min-h-11 items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-4">
+                <Users className="h-4 w-4 text-[#deb887]" />
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-emerald-100/60">Pacientes visibles</p>
+                  <p className="text-lg font-semibold leading-5">{patients.length}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => nav('clinical-records/new')}
+                className="admin-focus-ring flex min-h-11 items-center gap-2 rounded-lg bg-[#deb887] px-4 py-2 font-semibold text-[#172522] transition-colors hover:bg-[#e8cda9]"
+              >
+                <Plus className="h-4 w-4" />
+                Nuevo paciente
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <div className="admin-surface flex flex-col gap-4 p-4 lg:flex-row lg:items-end">
+          <label className="min-w-0 flex-1">
+            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-gray-500">Buscar paciente</span>
+            <span className="relative block">
+              <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+              <input
+                type="search"
+                placeholder="Nombre, cédula o RUC"
+                autoComplete="off"
+                className="admin-focus-ring min-h-11 w-full rounded-lg border border-gray-200 bg-white py-2.5 pl-10 pr-4 outline-none"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </span>
+          </label>
+          <div className="flex flex-col gap-3 sm:flex-row">
             {/* Filtro por profesional — solo para admins en vista clínica (no en impersonación MasterView) */}
             {isAdmin && !isMasterView && clinicUsers.length > 0 && (
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-500">Profesional:</span>
+              <label>
+                <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-gray-500">Profesional</span>
                 <select
                   value={filterUserId}
                   onChange={e => setFilterUserId(e.target.value ? Number(e.target.value) : '')}
-                  className="text-sm border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] focus:outline-none"
+                  className="admin-focus-ring min-h-11 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none sm:w-auto"
                 >
                   <option value="">Todos</option>
                   {clinicUsers.map(u => (
                     <option key={u.id} value={u.id}>{u.full_name || u.username}</option>
                   ))}
                 </select>
-              </div>
+              </label>
             )}
-            <button
-              onClick={() => nav('clinical-records/new')}
-              className="bg-[#deb887] text-white px-4 py-2 rounded-lg hover:bg-[#c5a075] transition-colors flex items-center gap-2"
-            >
-              <Plus className="w-4 h-4" />
-              Nuevo Paciente
-            </button>
           </div>
-        </div>
-
-        {/* Search Bar */}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-          <input
-            type="text"
-            placeholder="Buscar por nombre, cédula o RUC..."
-            className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#deb887] focus:border-transparent outline-none shadow-sm"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
         </div>
 
         {/* Error Message */}
         {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl">
+          <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-red-700">
             <p className="font-bold">Error cargando pacientes:</p>
             <p>{error}</p>
           </div>
         )}
 
+        {!loading && !error && (
+          <div className="grid gap-3 md:hidden">
+            {filteredPatients.length === 0 ? (
+              <div className="admin-surface px-5 py-10 text-center text-sm text-gray-500">No se encontraron pacientes</div>
+            ) : filteredPatients.map((patient) => (
+              <article key={patient.id} className="admin-surface overflow-hidden p-4">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-emerald-950/5 text-emerald-900">
+                    <User className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="truncate font-semibold text-gray-900">{patient.first_name} {patient.last_name}</h3>
+                    <p className="mt-0.5 text-xs text-gray-500">{patient.seq ? clinicCode(user?.clinic_name || '', patient.seq, patient.created_at) : `#${patient.id}`}</p>
+                    {isAdmin && patient.created_by_user_name && <p className="mt-1 truncate text-xs text-gray-500">Profesional: {patient.created_by_user_name}</p>}
+                  </div>
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-3 rounded-lg bg-gray-50 p-3 text-xs">
+                  <div><span className="block text-gray-400">Identificación</span><span className="font-medium text-gray-700">{patient.identification_number || 'Pendiente'}</span></div>
+                  <div><span className="block text-gray-400">Teléfono</span><span className="font-medium text-gray-700">{patient.phone || 'No registrado'}</span></div>
+                </div>
+                <button onClick={() => nav(`ficha-clinica/paciente/${patient.id}`)} className="admin-focus-ring mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#172522] px-4 text-sm font-semibold text-white hover:bg-[#21332f]">
+                  <FileText className="h-4 w-4" /> Abrir expediente
+                </button>
+                <div className="mt-2 grid grid-cols-4 gap-1 border-t border-gray-100 pt-2">
+                  <button onClick={() => openPatientModal(patient.id)} className="admin-focus-ring flex min-h-11 items-center justify-center rounded-lg text-gray-500 hover:bg-teal-50 hover:text-teal-700" aria-label={`Vista rápida de ${patient.first_name}`}><Eye className="h-4 w-4" /></button>
+                  <button onClick={() => nav(`clinical-records/edit/${patient.id}`)} className="admin-focus-ring flex min-h-11 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100" aria-label={`Editar a ${patient.first_name}`}><Edit2 className="h-4 w-4" /></button>
+                  <button onClick={() => setAuditModal({ patientId: patient.id, patientName: `${patient.first_name} ${patient.last_name}` })} className="admin-focus-ring flex min-h-11 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100" aria-label={`Historial de ${patient.first_name}`}><Clock className="h-4 w-4" /></button>
+                  <details className="group relative">
+                    <summary className="admin-focus-ring flex min-h-11 cursor-pointer list-none items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100" aria-label={`Más acciones para ${patient.first_name}`}><span className="text-lg leading-none">•••</span></summary>
+                    <div className="absolute bottom-12 right-0 z-20 w-56 rounded-lg border border-gray-200 bg-white p-1.5 shadow-xl">
+                      {isAdmin && <button onClick={() => setAssignModal({ patient, mode: 'assign' })} className="flex min-h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm hover:bg-gray-50"><Share2 className="h-4 w-4" /> Copiar acceso</button>}
+                      {isAdmin && <button onClick={() => setAssignModal({ patient, mode: 'transfer' })} className="flex min-h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm hover:bg-gray-50"><ArrowRightLeft className="h-4 w-4" /> Trasladar</button>}
+                      <button onClick={(event) => handleDelete(patient.id, event)} className="flex min-h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm text-red-600 hover:bg-red-50"><Trash2 className="h-4 w-4" /> Eliminar</button>
+                    </div>
+                  </details>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+
         {/* Patients Table */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="admin-surface hidden overflow-hidden md:block">
           <div className="overflow-x-auto">
             <table className="w-full text-left">
+              <caption className="sr-only">Pacientes registrados y acciones disponibles</caption>
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
                   <th className="px-6 py-4 font-semibold text-gray-600">Paciente</th>
@@ -273,7 +342,7 @@ export default function PatientList() {
                   </tr>
                 ) : (
                   filteredPatients.map((patient) => (
-                    <tr key={patient.id} className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => nav(`ficha-clinica/paciente/${patient.id}`)}>
+                    <tr key={patient.id} className="transition-colors hover:bg-gray-50">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-full bg-[#deb887]/10 flex items-center justify-center text-[#deb887]">
@@ -302,22 +371,25 @@ export default function PatientList() {
                         <div className="flex items-center gap-2">
                           <button 
                             onClick={(e) => { e.stopPropagation(); nav(`clinical-records/edit/${patient.id}`); }}
-                            className="p-2 text-gray-500 hover:text-[#deb887] hover:bg-[#deb887]/10 rounded-lg transition-colors"
+                            className="admin-focus-ring flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900"
                             title="Editar"
+                            aria-label={`Editar a ${patient.first_name}`}
                           >
                             <Edit2 className="w-4 h-4" />
                           </button>
                           <button 
                             onClick={(e) => handleDelete(patient.id, e)}
-                            className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                            className="admin-focus-ring flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-red-50 hover:text-red-500"
                             title="Eliminar"
+                            aria-label={`Eliminar a ${patient.first_name}`}
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
                           <button
                             onClick={e => { e.stopPropagation(); setAuditModal({ patientId: patient.id, patientName: `${patient.first_name} ${patient.last_name}` }); }}
-                            className="p-2 text-gray-500 hover:text-[#deb887] hover:bg-[#deb887]/10 rounded-lg transition-colors"
+                            className="admin-focus-ring flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900"
                             title="Historial de cambios"
+                            aria-label={`Historial de cambios de ${patient.first_name}`}
                           >
                             <Clock className="w-4 h-4" />
                           </button>
@@ -325,15 +397,17 @@ export default function PatientList() {
                             <>
                               <button
                                 onClick={e => { e.stopPropagation(); setAssignModal({ patient, mode: 'assign' }); }}
-                                className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                className="admin-focus-ring flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-blue-50 hover:text-blue-600"
                                 title="Copiar acceso a otro usuario"
+                                aria-label={`Copiar acceso a ${patient.first_name}`}
                               >
                                 <Share2 className="w-4 h-4" />
                               </button>
                               <button
                                 onClick={e => { e.stopPropagation(); setAssignModal({ patient, mode: 'transfer' }); }}
-                                className="p-2 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                                className="admin-focus-ring flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-purple-50 hover:text-purple-600"
                                 title="Trasladar a otro usuario"
+                                aria-label={`Trasladar a ${patient.first_name}`}
                               >
                                 <ArrowRightLeft className="w-4 h-4" />
                               </button>
@@ -341,14 +415,15 @@ export default function PatientList() {
                           )}
                           <button 
                             onClick={(e) => { e.stopPropagation(); openPatientModal(patient.id); }}
-                            className="p-2 text-gray-500 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition-colors"
+                            className="admin-focus-ring flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-teal-50 hover:text-teal-600"
                             title="Ver datos del paciente"
+                            aria-label={`Vista rápida de ${patient.first_name}`}
                           >
                             <Eye className="w-4 h-4" />
                           </button>
                           <button 
                             onClick={(e) => { e.stopPropagation(); nav(`ficha-clinica/paciente/${patient.id}`); }}
-                            className="text-[#deb887] hover:text-[#c5a075] font-medium flex items-center gap-1 ml-2"
+                            className="admin-focus-ring ml-2 flex min-h-11 items-center gap-1 rounded-lg px-3 font-medium text-emerald-900 hover:bg-emerald-950/5"
                           >
                             <FileText className="w-4 h-4" />
                             Ver Ficha
@@ -375,8 +450,8 @@ export default function PatientList() {
 
       {/* Modal Ver Paciente */}
       {patientModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setPatientModal(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+        <Dialog open onClose={() => setPatientModal(null)} labelledBy="patient-preview-title">
+          <div className="flex max-h-[85dvh] w-[min(32rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-lg bg-white shadow-2xl">
             {/* Header */}
             <div className="flex items-center justify-between p-5 border-b border-gray-100">
               <div className="flex items-center gap-3">
@@ -384,13 +459,13 @@ export default function PatientList() {
                   <User className="w-5 h-5 text-[#deb887]" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-gray-900 text-base">
+                  <h3 id="patient-preview-title" className="font-bold text-gray-900 text-base">
                     {patientModal.full ? `${patientModal.full.first_name} ${patientModal.full.last_name}` : 'Cargando...'}
                   </h3>
                   <p className="text-xs text-gray-400">Datos del paciente</p>
                 </div>
               </div>
-              <button onClick={() => setPatientModal(null)} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600">
+              <button onClick={() => setPatientModal(null)} className="admin-focus-ring flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600" aria-label="Cerrar vista rápida">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -484,28 +559,28 @@ export default function PatientList() {
               </button>
             </div>
           </div>
-        </div>
+        </Dialog>
       )}
 
       {/* Modal de asignación / traslado */}
       {assignModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+        <Dialog open onClose={() => setAssignModal(null)} labelledBy="patient-assignment-title" describedBy="patient-assignment-description">
+          <div className="w-[min(28rem,calc(100vw-2rem))] overflow-hidden rounded-lg bg-white shadow-2xl">
             <div className="flex items-center justify-between p-6 border-b">
               <div>
-                <h3 className="text-lg font-bold text-gray-900">
+                <h3 id="patient-assignment-title" className="text-lg font-bold text-gray-900">
                   {assignModal.mode === 'transfer' ? 'Trasladar paciente' : 'Copiar acceso a paciente'}
                 </h3>
                 <p className="text-sm text-gray-500 mt-0.5">
                   {assignModal.patient.first_name} {assignModal.patient.last_name}
                 </p>
               </div>
-              <button onClick={() => setAssignModal(null)} className="p-2 hover:bg-gray-100 rounded-lg">
+              <button onClick={() => setAssignModal(null)} className="admin-focus-ring flex min-h-11 min-w-11 items-center justify-center rounded-lg hover:bg-gray-100" aria-label="Cerrar asignación">
                 <X className="w-5 h-5 text-gray-500" />
               </button>
             </div>
             <div className="p-6">
-              <p className="text-sm text-gray-600 mb-4">
+              <p id="patient-assignment-description" className="text-sm text-gray-600 mb-4">
                 {assignModal.mode === 'transfer'
                   ? 'El paciente pasará a ser propiedad del usuario seleccionado. Ya no aparecerá en tu lista.'
                   : 'El usuario seleccionado podrá ver y editar este paciente. El propietario original no cambia.'}
@@ -534,7 +609,7 @@ export default function PatientList() {
               )}
             </div>
           </div>
-        </div>
+        </Dialog>
       )}
     </AdminLayout>
   );

@@ -7,6 +7,7 @@ import {
   SplitSquareHorizontal, ZoomIn, ZoomOut, ImageOff,
 } from 'lucide-react';
 import recordsFetch from '../../../../../utils/recordsFetch';
+import { Dialog } from '../../../../ui/Dialog';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -517,6 +518,7 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
       <AnimatePresence>
         {message && (
           <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+            role={message.type === 'error' ? 'alert' : 'status'} aria-live={message.type === 'error' ? 'assertive' : 'polite'}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm border ${
               message.type === 'success' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'
             }`}>
@@ -527,7 +529,7 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
       </AnimatePresence>
 
       {uploading && (
-        <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-[#deb887]/40 rounded-lg text-sm text-[#b8944d]">
+        <div role="status" aria-live="polite" className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-[#deb887]/40 rounded-lg text-sm text-[#b8944d]">
           <div className="w-4 h-4 border-2 border-[#deb887] border-t-transparent rounded-full animate-spin" />
           {uploadProgress || 'Subiendo…'}
         </div>
@@ -894,13 +896,11 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
       ════════════════════════════════════════════════════════════ */}
       <AnimatePresence>
         {selectedPhoto && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
-            onClick={() => setSelectedPhoto(null)}>
+          <Dialog open onClose={() => setSelectedPhoto(null)} labelledBy="clinical-photo-title" className="backdrop:bg-black/90">
             <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
-              className="relative max-w-4xl w-full flex flex-col gap-3"
-              onClick={e => e.stopPropagation()}>
-              <button onClick={() => setSelectedPhoto(null)} className="absolute -top-10 right-0 text-white/70 hover:text-white">
+              className="relative flex w-[min(56rem,calc(100vw-2rem))] flex-col gap-3">
+              <h3 id="clinical-photo-title" className="sr-only">Fotografía clínica ampliada</h3>
+              <button onClick={() => setSelectedPhoto(null)} className="admin-focus-ring absolute -top-12 right-0 flex min-h-11 min-w-11 items-center justify-center rounded-lg text-white/70 hover:bg-white/10 hover:text-white" aria-label="Cerrar fotografía ampliada">
                 <X className="w-6 h-6" />
               </button>
               {filteredPhotos.length > 1 && (
@@ -927,7 +927,7 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
                 <p className="text-center text-white/50 text-xs">{lightboxIndex + 1} / {filteredPhotos.length}</p>
               )}
             </motion.div>
-          </motion.div>
+          </Dialog>
         )}
       </AnimatePresence>
 
@@ -936,15 +936,12 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
       ════════════════════════════════════════════════════════════ */}
       <AnimatePresence>
         {editingPhoto && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
-            onClick={() => setEditingPhoto(null)}>
+          <Dialog open onClose={() => setEditingPhoto(null)} labelledBy="edit-clinical-photo-title">
             <motion.div initial={{ scale: 0.95, y: 10 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95 }}
-              className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md space-y-4"
-              onClick={e => e.stopPropagation()}>
+              className="w-[min(28rem,calc(100vw-2rem))] space-y-4 rounded-lg bg-white p-6 shadow-xl">
               <div className="flex items-center justify-between">
-                <h4 className="font-semibold text-gray-800">Editar foto</h4>
-                <button onClick={() => setEditingPhoto(null)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+                <h4 id="edit-clinical-photo-title" className="font-semibold text-gray-800">Editar foto</h4>
+                <button onClick={() => setEditingPhoto(null)} className="admin-focus-ring flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600" aria-label="Cerrar edición de foto"><X className="w-5 h-5" /></button>
               </div>
               <img src={editingPhoto.r2_url} alt="" className="w-full h-40 object-contain bg-gray-50 rounded-lg" />
 
@@ -993,7 +990,7 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
                 </button>
               </div>
             </motion.div>
-          </motion.div>
+          </Dialog>
         )}
       </AnimatePresence>
     </div>

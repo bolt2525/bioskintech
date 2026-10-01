@@ -195,6 +195,7 @@ export default function ConsultationTab({
         <AnimatePresence>
           {message && (
             <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+              role={message.type === 'error' ? 'alert' : 'status'} aria-live={message.type === 'error' ? 'assertive' : 'polite'}
               className={`flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-medium ${
                 message.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'
               }`}>

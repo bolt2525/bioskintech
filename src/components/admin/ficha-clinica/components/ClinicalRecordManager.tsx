@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import recordsFetch from '../../../../utils/recordsFetch';
 import { useAdminNav } from '../../../../hooks/useAdminNav';
@@ -33,31 +33,38 @@ const InjectablesTab = React.lazy(() => import('./tabs/InjectablesTab'));
 const PhotosTab = React.lazy(() => import('./tabs/PhotosTab'));
 
 interface TabButtonProps {
-  id: string;
+  id: ClinicalTabId;
   label: string;
   icon: React.ElementType;
   active: boolean;
   onClick: () => void;
+  onKeyDown: (event: React.KeyboardEvent<HTMLButtonElement>) => void;
   disabled?: boolean;
 }
 
-const TabButton: React.FC<TabButtonProps> = ({ id, label, icon: Icon, active, onClick, disabled }) => (  // ponytail: disabled → greyed out until consultation selected
+const CLINICAL_TABS = ['history', 'consultation', 'physical', 'diagnosis', 'treatment', 'prescription', 'consent', 'injectables', 'photos'] as const;
+type ClinicalTabId = typeof CLINICAL_TABS[number];
+
+const TabButton: React.FC<TabButtonProps> = ({ id, label, icon: Icon, active, onClick, onKeyDown, disabled }) => (  // ponytail: disabled → greyed out until consultation selected
   <button
     id={`clinical-tab-${id}`}
     type="button"
+    role="tab"
     onClick={disabled ? undefined : onClick}
+    onKeyDown={onKeyDown}
     disabled={disabled}
-    aria-pressed={active}
+    aria-selected={active}
     aria-controls="clinical-tabpanel"
+    tabIndex={active ? 0 : -1}
     title={disabled ? 'Selecciona o crea una consulta para habilitar este tab' : undefined}
     className={`admin-focus-ring relative flex min-h-12 shrink-0 items-center gap-2 px-4 py-3 text-sm font-medium transition-colors ${
-      disabled ? 'text-gray-300 cursor-not-allowed' : active ? 'text-[#deb887]' : 'text-gray-500 hover:text-gray-700'
+      disabled ? 'text-gray-300 cursor-not-allowed' : active ? 'text-emerald-950' : 'text-gray-500 hover:text-gray-700'
     }`}
   >
     {active && (
       <motion.div
         layoutId="activeTab"
-        className="absolute inset-0 rounded-t-lg border-b-2 border-gold bg-gold/10"
+        className="absolute inset-0 rounded-t-lg border-b-2 border-emerald-800 bg-emerald-950/5"
         initial={false}
         transition={{ type: "spring", stiffness: 500, damping: 30 }}
       />
@@ -94,7 +101,10 @@ interface ClinicalRecordData {
   recordId: number;
   patient?: ClinicalPatient;
   consultations?: ClinicalConsultation[];
-  history?: unknown;
+  history?: {
+    allergies?: string;
+    [key: string]: unknown;
+  };
   physicalExams?: {
     id?: number;
     record_id: number;
@@ -131,7 +141,7 @@ interface ClinicalRecordData {
     date: string;
     procedure_name: string;
     equipment_used: string;
-    parameters?: Record<string, unknown> | null;
+    parameters?: Record<string, import('./tabs/TreatmentParametersModal').TreatmentParameters> | null;
     area_treated: string;
     duration_minutes: number;
     cost: number;
@@ -144,8 +154,12 @@ interface ClinicalRecordData {
 
 export default function ClinicalRecordManager() {
   const { recordId } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { nav } = useAdminNav();
-  const [activeTab, setActiveTab] = useState('consultation');
+  const requestedTab = searchParams.get('tab');
+  const [activeTab, setActiveTab] = useState<ClinicalTabId>(
+    CLINICAL_TABS.includes(requestedTab as ClinicalTabId) ? requestedTab as ClinicalTabId : 'consultation'
+  );
   const [loading, setLoading] = useState(true);
   const [patient, setPatient] = useState<ClinicalPatient | null>(null);
   const [recordData, setRecordData] = useState<ClinicalRecordData | null>(null);
@@ -162,6 +176,79 @@ export default function ClinicalRecordManager() {
     injectables: activeConsultation?.enable_injectables ?? false,
     consents: activeConsultation?.enable_consents ?? false,
   };
+
+  const visibleTabs: ClinicalTabId[] = [
+    'history', 'consultation', 'physical', 'diagnosis', 'treatment', 'prescription',
+    ...(enabledOptional.consents ? ['consent' as const] : []),
+    ...(enabledOptional.injectables ? ['injectables' as const] : []),
+    'photos',
+  ];
+
+  const isTabDisabled = (tab: ClinicalTabId) =>
+    !activeConsultation && !['history', 'consultation', 'photos'].includes(tab);
+
+  const activateTab = (tab: ClinicalTabId) => {
+    if (isTabDisabled(tab)) return;
+    setActiveTab(tab);
+    setSearchParams(previous => {
+      const next = new URLSearchParams(previous);
+      next.set('tab', tab);
+      return next;
+    }, { replace: true });
+  };
+
+  const handleSelectConsultation = (consultation: ClinicalConsultation | null) => {
+    setActiveConsultation(consultation);
+    setSearchParams(previous => {
+      const next = new URLSearchParams(previous);
+      if (consultation) next.set('consultation', String(consultation.id));
+      else next.delete('consultation');
+      return next;
+    }, { replace: true });
+  };
+
+  const handleTabKeyDown = (currentTab: ClinicalTabId, event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const enabledTabs = visibleTabs.filter(tab => !isTabDisabled(tab));
+    const currentIndex = enabledTabs.indexOf(currentTab);
+    const nextIndex = event.key === 'Home'
+      ? 0
+      : event.key === 'End'
+        ? enabledTabs.length - 1
+        : (currentIndex + (event.key === 'ArrowRight' ? 1 : -1) + enabledTabs.length) % enabledTabs.length;
+    const nextTab = enabledTabs[nextIndex];
+    activateTab(nextTab);
+    requestAnimationFrame(() => document.getElementById(`clinical-tab-${nextTab}`)?.focus());
+  };
+
+  useEffect(() => {
+    if (!CLINICAL_TABS.includes(requestedTab as ClinicalTabId)) return;
+    const nextTab = requestedTab as ClinicalTabId;
+    const optionalTabUnavailable =
+      (nextTab === 'consent' && !enabledOptional.consents) ||
+      (nextTab === 'injectables' && !enabledOptional.injectables);
+    const consultationRequired =
+      !activeConsultation && !['history', 'consultation', 'photos'].includes(nextTab);
+    if (nextTab !== activeTab && !optionalTabUnavailable && !consultationRequired) setActiveTab(nextTab);
+  }, [requestedTab, activeTab, activeConsultation, enabledOptional.consents, enabledOptional.injectables]);
+
+  useEffect(() => {
+    const optionalTabUnavailable =
+      (activeTab === 'consent' && !enabledOptional.consents) ||
+      (activeTab === 'injectables' && !enabledOptional.injectables);
+    const consultationRequired =
+      !activeConsultation && !['history', 'consultation', 'photos'].includes(activeTab);
+
+    if (optionalTabUnavailable || consultationRequired) {
+      setActiveTab('consultation');
+      setSearchParams(previous => {
+        const next = new URLSearchParams(previous);
+        next.set('tab', 'consultation');
+        return next;
+      }, { replace: true });
+    }
+  }, [activeTab, activeConsultation, enabledOptional.consents, enabledOptional.injectables, setSearchParams]);
 
   useEffect(() => {
     if (recordId) {
@@ -180,6 +267,13 @@ export default function ClinicalRecordManager() {
         const rData = await recordRes.json();
         setRecordData(rData);
         setPatient(rData.patient || null);
+        const requestedConsultationId = Number(searchParams.get('consultation'));
+        if (requestedConsultationId > 0) {
+          const requestedConsultation = (rData.consultations || []).find(
+            (consultation: ClinicalConsultation) => Number(consultation.id) === requestedConsultationId
+          );
+          if (requestedConsultation) setActiveConsultation(requestedConsultation);
+        }
       } else {
         const errData = await recordRes.json().catch(() => ({ error: 'Error desconocido' }));
         setError(errData.error || 'Error al cargar el expediente');
@@ -193,7 +287,7 @@ export default function ClinicalRecordManager() {
   };
 
   const handleConsultationActivated = (consultation: ClinicalConsultation) => {
-    setActiveConsultation(consultation);
+    handleSelectConsultation(consultation);
     setPendingNewConsultation(consultation);
     setShowActivatedModal(true);
   };
@@ -213,7 +307,7 @@ export default function ClinicalRecordManager() {
       });
       if (r.ok) {
         const updated = await r.json();
-        setActiveConsultation(updated);
+        handleSelectConsultation(updated);
         fetchData(false);
       }
     } catch (e) { console.error('Error updating consultation tabs:', e); }
@@ -281,25 +375,32 @@ export default function ClinicalRecordManager() {
       subtitle={`Expediente #${recordId} • ${patient?.identification_type === 'ruc' ? 'RUC' : patient?.identification_type === 'cedula' ? 'Cédula' : 'Identificación'} ${patient?.identification_number || 'no registrada'}`}
       backPath={patient ? `/admin/ficha-clinica/paciente/${patient.id}` : '/admin/clinical-records'}
     >
-      <div className="space-y-6">
-        {/* Header with Back Button to Patient Profile - Sticky */}
-        <div className="sticky top-0 z-20 bg-gray-50/95 backdrop-blur pt-2 pb-4">
-          <div className="flex items-center justify-between bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+      <div className="space-y-5">
+        <section className="overflow-hidden rounded-lg border border-emerald-950/10 bg-[#172522] text-white shadow-sm">
+          <div className="flex flex-col gap-4 p-4 sm:p-5 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
             <button 
               onClick={() => nav(`ficha-clinica/paciente/${patient?.id}`)}
-              className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
+                className="admin-focus-ring flex min-h-11 items-center gap-2 rounded-lg px-2 text-sm text-emerald-50/70 transition-colors hover:bg-white/5 hover:text-white"
             >
               <ArrowLeft className="w-5 h-5" />
               <span>Volver al perfil del paciente</span>
             </button>
-            <div className="flex items-center gap-2">
+              <div className="mt-2 flex flex-wrap items-center gap-2 pl-2">
+                <span className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-emerald-100/60">Expediente #{recordId}</span>
+                <span className="flex items-center gap-1.5 rounded-md bg-emerald-400/10 px-2 py-1 text-xs font-medium text-emerald-200">
+                  <span className="h-2 w-2 rounded-full bg-emerald-400" /> Ficha activa
+                </span>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 pl-2 lg:justify-end lg:pl-0">
               {activeConsultation && (
-                <div className="flex flex-col items-end min-w-0 max-w-[260px]">
-                  <span className="text-[10px] text-gray-400 leading-none mb-0.5">
+                <div className="mr-auto min-w-0 max-w-[260px] lg:mr-2 lg:text-right">
+                  <span className="block text-[10px] uppercase tracking-wider text-emerald-100/50">
                     {new Date(activeConsultation.created_at).toLocaleDateString('es', { day: '2-digit', month: 'short', year: 'numeric' })}
                   </span>
                   <span
-                    className="px-2.5 py-1 bg-amber-50 text-[#b8944d] rounded-full text-xs font-medium border border-[#deb887]/30 truncate max-w-full"
+                    className="mt-1 block max-w-full truncate text-sm font-medium text-white"
                     title={activeConsultation.reason || 'Consulta activa'}
                   >
                     {activeConsultation.reason || 'Consulta activa'}
@@ -309,54 +410,50 @@ export default function ClinicalRecordManager() {
               <button
                 onClick={() => setShowPrintModal(true)}
                 title="Imprimir ficha clínica"
-                className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 hover:text-[#b8944d] hover:bg-amber-50 rounded-lg border border-gray-200 hover:border-[#deb887]/40 transition-colors"
+                className="admin-focus-ring flex min-h-11 items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 text-sm text-emerald-50 transition-colors hover:bg-white/10"
               >
                 <Printer className="w-4 h-4" />
                 <span className="hidden sm:inline">Imprimir</span>
               </button>
-              <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium flex items-center gap-1">
-                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                Ficha Activa
-              </span>
             </div>
           </div>
-        </div>
+        </section>
 
         {/* Tabs Navigation */}
         <div className="admin-surface min-h-[600px] overflow-hidden">
-          <div className="flex snap-x snap-mandatory overflow-x-auto border-b border-gray-100 px-2 scrollbar-hide" role="group" aria-label="Secciones del expediente clínico">
+          <div className="flex snap-x snap-mandatory overflow-x-auto border-b border-gray-100 px-2 scrollbar-hide" role="tablist" aria-label="Secciones del expediente clínico">
             <TabButton id="history" label="Antecedentes" icon={ClipboardList}
-              active={activeTab === 'history'} onClick={() => setActiveTab('history')} />
+              active={activeTab === 'history'} onClick={() => activateTab('history')} onKeyDown={event => handleTabKeyDown('history', event)} />
             <TabButton id="consultation" label="Consulta" icon={MessageSquare}
-              active={activeTab === 'consultation'} onClick={() => setActiveTab('consultation')} />
+              active={activeTab === 'consultation'} onClick={() => activateTab('consultation')} onKeyDown={event => handleTabKeyDown('consultation', event)} />
             <TabButton id="physical" label="Examen Físico" icon={Activity}
-              active={activeTab === 'physical'} onClick={() => setActiveTab('physical')}
+              active={activeTab === 'physical'} onClick={() => activateTab('physical')} onKeyDown={event => handleTabKeyDown('physical', event)}
               disabled={!activeConsultation} />
             <TabButton id="diagnosis" label="Diagnóstico" icon={Stethoscope}
-              active={activeTab === 'diagnosis'} onClick={() => setActiveTab('diagnosis')}
+              active={activeTab === 'diagnosis'} onClick={() => activateTab('diagnosis')} onKeyDown={event => handleTabKeyDown('diagnosis', event)}
               disabled={!activeConsultation} />
             <TabButton id="treatment" label="Tratamientos" icon={Syringe}
-              active={activeTab === 'treatment'} onClick={() => setActiveTab('treatment')}
+              active={activeTab === 'treatment'} onClick={() => activateTab('treatment')} onKeyDown={event => handleTabKeyDown('treatment', event)}
               disabled={!activeConsultation} />
             <TabButton id="prescription" label="Recetas" icon={Pill}
-              active={activeTab === 'prescription'} onClick={() => setActiveTab('prescription')}
+              active={activeTab === 'prescription'} onClick={() => activateTab('prescription')} onKeyDown={event => handleTabKeyDown('prescription', event)}
               disabled={!activeConsultation} />
             {enabledOptional.consents && (
               <TabButton id="consent" label="Consentimientos" icon={FileSignature}
-                active={activeTab === 'consent'} onClick={() => setActiveTab('consent')}
+                active={activeTab === 'consent'} onClick={() => activateTab('consent')} onKeyDown={event => handleTabKeyDown('consent', event)}
                 disabled={!activeConsultation} />
             )}
             {enabledOptional.injectables && (
               <TabButton id="injectables" label="Inyectables" icon={Droplets}
-                active={activeTab === 'injectables'} onClick={() => setActiveTab('injectables')}
+                active={activeTab === 'injectables'} onClick={() => activateTab('injectables')} onKeyDown={event => handleTabKeyDown('injectables', event)}
                 disabled={!activeConsultation} />
             )}
             <TabButton id="photos" label="Fotos" icon={Camera}
-              active={activeTab === 'photos'} onClick={() => setActiveTab('photos')} />
+              active={activeTab === 'photos'} onClick={() => activateTab('photos')} onKeyDown={event => handleTabKeyDown('photos', event)} />
           </div>
 
           {/* Tab Content */}
-          <div id="clinical-tabpanel" role="region" aria-labelledby={`clinical-tab-${activeTab}`} className="min-w-0 bg-gray-50/30 p-4 sm:p-6">
+          <div id="clinical-tabpanel" role="tabpanel" tabIndex={0} aria-labelledby={`clinical-tab-${activeTab}`} className="clinical-workspace min-w-0 bg-gray-50/30 p-4 outline-none sm:p-6">
             {/* Banner cuando no hay consulta activa */}
             {!activeConsultation && activeTab !== 'history' && activeTab !== 'consultation' && (
               <motion.div
@@ -389,7 +486,7 @@ export default function ClinicalRecordManager() {
                     recordId={parseInt(recordId!)}
                     consultations={recordData?.consultations || []}
                     activeConsultation={activeConsultation}
-                    onSelectConsultation={setActiveConsultation}
+                    onSelectConsultation={handleSelectConsultation}
                     onConsultationCreated={handleConsultationActivated}
                     onSave={() => fetchData(false)}
                   />
@@ -437,9 +534,9 @@ export default function ClinicalRecordManager() {
                     initialPrescriptions={(recordData?.prescriptions || []) as never[]}
                   />
                 )}
-                {activeTab === 'consent' && activeConsultation && enabledOptional.consents && (
+                {activeTab === 'consent' && activeConsultation && enabledOptional.consents && patient && (
                   <ConsentimientosTab
-                    patientId={patient?.id}
+                    patientId={patient.id}
                     recordId={parseInt(recordId!)}
                     patient={patient}
                     consultationId={activeConsultation?.id}

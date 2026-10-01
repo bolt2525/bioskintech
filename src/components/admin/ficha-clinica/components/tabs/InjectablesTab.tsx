@@ -19,6 +19,7 @@ import { useClinicSettings } from '../../../../../hooks/useClinicSettings';
 import { useAuth } from '../../../../../context/AuthContext';
 import FieldHelp from '../FieldHelp';
 import { HELP } from '../../data/fieldHelpTexts';
+import { Dialog } from '../../../../ui/Dialog';
 
 // ==========================================
 // TYPES
@@ -1865,6 +1866,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
           {message && (
             <motion.div
               ref={messageRef}
+              role={message.type === 'error' ? 'alert' : 'status'} aria-live={message.type === 'error' ? 'assertive' : 'polite'}
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
@@ -3264,24 +3266,19 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
       {/* ========== MODAL: CONFIRMAR CAMBIO DE TAB ========== */}
       <AnimatePresence>
         {pendingTabSwitch && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
-          >
+          <Dialog open onClose={() => setPendingTabSwitch(null)} labelledBy="injectable-tab-switch-title">
             <motion.div
               initial={{ scale: 0.92, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.92, opacity: 0 }}
-              className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6"
+              className="w-[min(24rem,calc(100vw-2rem))] rounded-lg bg-white p-6 shadow-2xl"
             >
               <div className="flex items-center gap-3 mb-4">
                 <div className={`p-2 rounded-xl ${pendingTabSwitch === 'toxina' ? 'bg-amber-100' : 'bg-purple-100'}`}>
                   {pendingTabSwitch === 'toxina' ? <FlaskConical className="w-5 h-5 text-amber-600" /> : <Droplets className="w-5 h-5 text-purple-600" />}
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-gray-800">¿Cambiar a {pendingTabSwitch === 'toxina' ? 'Toxina Botulínica' : 'Relleno (HA)'}?</h3>
+                  <h3 id="injectable-tab-switch-title" className="text-sm font-bold text-gray-800">¿Cambiar a {pendingTabSwitch === 'toxina' ? 'Toxina Botulínica' : 'Relleno (HA)'}?</h3>
                   <p className="text-xs text-gray-500 mt-0.5">Tienes trabajo no guardado en este tab</p>
                 </div>
               </div>
@@ -3310,31 +3307,26 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 </button>
               </div>
             </motion.div>
-          </motion.div>
+          </Dialog>
         )}
       </AnimatePresence>
 
       {/* ========== MODAL: CONFIRMAR CAMBIO DE SUB-TIPO (relleno) ========== */}
       <AnimatePresence>
         {pendingSubTypeSwitch && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
-          >
+          <Dialog open onClose={() => setPendingSubTypeSwitch(null)} labelledBy="injectable-subtype-switch-title">
             <motion.div
               initial={{ scale: 0.92, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.92, opacity: 0 }}
-              className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6"
+              className="w-[min(24rem,calc(100vw-2rem))] rounded-lg bg-white p-6 shadow-2xl"
             >
               <div className="flex items-center gap-3 mb-4">
                 <div className={`p-2 rounded-xl ${RELLENO_SUBTYPE_COLORS[pendingSubTypeSwitch].badge}`}>
                   {pendingSubTypeSwitch === 'hidratacion' ? <Pipette className="w-5 h-5" /> : pendingSubTypeSwitch === 'bioestimulador' ? <FlaskConical className="w-5 h-5" /> : <Droplets className="w-5 h-5" />}
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-gray-800">¿Cambiar a {RELLENO_SUBTYPE_LABELS[pendingSubTypeSwitch]}?</h3>
+                  <h3 id="injectable-subtype-switch-title" className="text-sm font-bold text-gray-800">¿Cambiar a {RELLENO_SUBTYPE_LABELS[pendingSubTypeSwitch]}?</h3>
                   <p className="text-xs text-gray-500 mt-0.5">Tienes trabajo no guardado en este subtratamiento</p>
                 </div>
               </div>
@@ -3363,31 +3355,24 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 </button>
               </div>
             </motion.div>
-          </motion.div>
+          </Dialog>
         )}
       </AnimatePresence>
 
       {/* ========== MODAL: CONFIGURACIÓN DE FORMAS HA ========== */}
       <AnimatePresence>
         {haShapeConfigOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
-            onClick={() => setHaShapeConfigOpen(false)}
-          >
+          <Dialog open onClose={() => setHaShapeConfigOpen(false)} labelledBy="ha-shape-config-title">
             <motion.div
               initial={{ scale: 0.92, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.92, opacity: 0 }}
               transition={{ duration: 0.18 }}
-              className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6"
-              onClick={e => e.stopPropagation()}
+              className="w-[min(24rem,calc(100vw-2rem))] rounded-lg bg-white p-6 shadow-2xl"
             >
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <h3 className="text-sm font-bold text-gray-800">
+                  <h3 id="ha-shape-config-title" className="text-sm font-bold text-gray-800">
                     {haShapeConfigTool === 'ha-fan' ? 'Configurar Abanico' : haShapeConfigTool === 'ha-grid' ? 'Configurar Malla' : 'Configurar Helecho'}
                   </h3>
                   <p className="text-[11px] text-gray-500 mt-0.5">
@@ -3500,24 +3485,19 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 </button>
               </div>
             </motion.div>
-          </motion.div>
+          </Dialog>
         )}
       </AnimatePresence>
 
       {/* ========== MODAL: ALERTA DE CAPTURAS / IMPRESIÓN ========== */}
       <AnimatePresence>
         {captureAlert && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
-          >
+          <Dialog open onClose={() => setCaptureAlert(null)} labelledBy="injectable-capture-alert-title">
             <motion.div
               initial={{ scale: 0.92, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.92, opacity: 0 }}
-              className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6"
+              className="w-[min(24rem,calc(100vw-2rem))] rounded-lg bg-white p-6 shadow-2xl"
             >
               {captureAlert === 'capture-save-first' ? (
                 <>
@@ -3526,7 +3506,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                       <Images className="w-5 h-5 text-amber-600" />
                     </div>
                     <div>
-                      <h3 className="text-sm font-bold text-gray-800">Guardar antes de capturar</h3>
+                      <h3 id="injectable-capture-alert-title" className="text-sm font-bold text-gray-800">Guardar antes de capturar</h3>
                       <p className="text-xs text-gray-500 mt-0.5">Hay marcaciones no guardadas. Guarda primero para tomar capturas del registro.</p>
                     </div>
                   </div>
@@ -3557,7 +3537,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                       <Printer className="w-5 h-5 text-blue-600" />
                     </div>
                     <div>
-                      <h3 className="text-sm font-bold text-gray-800">Sin capturas del mapeo 3D</h3>
+                      <h3 id="injectable-capture-alert-title" className="text-sm font-bold text-gray-800">Sin capturas del mapeo 3D</h3>
                       <p className="text-xs text-gray-500 mt-0.5">El informe no incluirá imágenes del mapeo facial.</p>
                     </div>
                   </div>
@@ -3586,7 +3566,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 </>
               )}
             </motion.div>
-          </motion.div>
+          </Dialog>
         )}
       </AnimatePresence>
 
@@ -3611,23 +3591,18 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
       {/* ========== MODAL: UNIDADES PARA PUNTO DEL TRAZADO (multi-paso) ========== */}
       <AnimatePresence>
         {unitsModal?.open && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
-          >
+          <Dialog open onClose={() => { setPendingFreePoint(null); setSelectedPointId(null); setUnitsModal(null); setUnitsModalInput(''); setUnitsModalStep(1); setUnitsModalTercio(''); setUnitsModalZone(''); setUnitsModalPlane(''); setUnitsModalZoneFilter(''); setUnitsModalTecnica(''); }} labelledBy="injectable-units-title">
             <motion.div
               initial={{ scale: 0.92, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.92, opacity: 0 }}
               transition={{ duration: 0.18 }}
-              className="bg-white rounded-2xl shadow-2xl w-full max-w-xs p-6"
+              className="w-[min(20rem,calc(100vw-2rem))] rounded-lg bg-white p-6 shadow-2xl"
             >
               {/* Header */}
               <div className="flex items-start justify-between mb-3">
                 <div>
-                  <h3 className="text-sm font-bold text-gray-800">
+                  <h3 id="injectable-units-title" className="text-sm font-bold text-gray-800">
                     {current.product_type === 'relleno'
                       ? (unitsModalStep === 1 ? 'Volumen (ml)' : unitsModalStep === 2 ? 'Tercio facial' : 'Zona anatómica')
                       : (unitsModalStep === 1 ? 'Unidades (UI)' : unitsModalStep === 2 ? 'Tercio facial' : unitsModalStep === 3 ? 'Zona anatómica' : 'Plano de inyección')
@@ -3929,7 +3904,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 </div>
               </div>
             </motion.div>
-          </motion.div>
+          </Dialog>
         )}
       </AnimatePresence>
       </div> {/* end layout principal flex row */}

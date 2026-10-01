@@ -237,6 +237,7 @@ export default function HistoryTab({ recordId, initialData, onSave }: HistoryTab
       <AnimatePresence>
         {message && (
           <motion.div 
+            role={message.type === 'error' ? 'alert' : 'status'} aria-live={message.type === 'error' ? 'assertive' : 'polite'}
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}

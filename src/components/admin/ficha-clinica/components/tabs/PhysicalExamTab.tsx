@@ -14,6 +14,7 @@ import { Select } from '../../../../ui/Select';
 import trazadoData from '../../data/trazado-referencia-superior.json';
 import FieldHelp from '../FieldHelp';
 import { HELP } from '../../data/fieldHelpTexts';
+import { Dialog } from '../../../../ui/Dialog';
 
 // -- Constantes para el visor 3D facial ----------------------------------------
 const TERCIO_BOUNDARIES = (trazadoData as { hairline: {
@@ -209,14 +210,14 @@ const MarkEditModal = ({
   });
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100] backdrop-blur-sm p-4">
+    <Dialog open onClose={onCancel} labelledBy="lesion-details-title">
       <motion.div 
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.9 }}
-        className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-md border border-gray-100"
+        className="w-[min(28rem,calc(100vw-2rem))] rounded-lg border border-gray-100 bg-white p-6 shadow-2xl"
       >
-        <h3 className="text-xl font-bold mb-4 text-gray-800 flex items-center gap-2 border-b border-gray-100 pb-4">
+        <h3 id="lesion-details-title" className="text-xl font-bold mb-4 text-gray-800 flex items-center gap-2 border-b border-gray-100 pb-4">
           <div className="w-1.5 h-6 bg-[#deb887] rounded-full" />
           Detalles de la Lesión
           {tercio && (
@@ -361,7 +362,7 @@ const MarkEditModal = ({
           </motion.button>
         </div>
       </motion.div>
-    </div>
+    </Dialog>
   );
 };
 
@@ -693,24 +694,19 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
           </AnimatePresence>
           <AnimatePresence>
             {saveWarning && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-              >
+              <Dialog open onClose={() => setSaveWarning(null)} labelledBy="physical-save-warning-title">
                 <motion.div
                   initial={{ opacity: 0, scale: 0.9, y: 10 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.9, y: 10 }}
-                  className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-gray-100 p-6"
+                  className="w-[min(28rem,calc(100vw-2rem))] rounded-lg border border-gray-100 bg-white p-6 shadow-2xl"
                 >
                   <div className="flex items-start gap-4 mb-5">
                     <div className="p-2.5 rounded-xl bg-amber-100 shrink-0">
                       <AlertCircle className="w-5 h-5 text-amber-600" />
                     </div>
                     <div>
-                      <h3 className="font-bold text-gray-800 text-lg">Advertencia</h3>
+                      <h3 id="physical-save-warning-title" className="font-bold text-gray-800 text-lg">Advertencia</h3>
                       <ul className="mt-2 space-y-1">
                         {saveWarning.messages.map((m, i) => (
                           <li key={i} className="text-sm text-gray-600 flex items-start gap-2">
@@ -737,7 +733,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
                     </button>
                   </div>
                 </motion.div>
-              </motion.div>
+              </Dialog>
             )}
           </AnimatePresence>
         </>,
@@ -861,6 +857,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
           {message && (
             <motion.div 
               ref={messageRef}
+              role={message.type === 'error' ? 'alert' : 'status'} aria-live={message.type === 'error' ? 'assertive' : 'polite'}
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}

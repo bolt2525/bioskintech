@@ -17,11 +17,20 @@ import { useAuth } from '../../../../../context/AuthContext';
 import { useMasterView } from '../../../../../context/MasterViewContext';
 import FieldHelp from '../FieldHelp';
 import { HELP } from '../../data/fieldHelpTexts';
+import { Dialog } from '../../../../ui/Dialog';
 
 interface ConsentTemplate {
   id?: number | string;
   name?: string;
   procedure_type?: string;
+  description?: string;
+  objectives?: string[];
+  risks?: string[];
+  benefits?: string[];
+  alternatives?: string[];
+  pre_care?: string[];
+  post_care?: string[];
+  contraindications?: string[];
   [key: string]: unknown;
 }
 
@@ -36,6 +45,10 @@ interface ConsentPatient {
   first_name?: string;
   last_name?: string;
   birth_date?: string;
+  email?: string;
+  phone?: string;
+  identification_type?: string;
+  identification_number?: string;
   [key: string]: unknown;
 }
 
@@ -456,8 +469,8 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
 
     setCurrentConsent({
       ...currentConsent,
-      procedure_type: template.procedure_type,
-      description: template.description,
+      procedure_type: template.procedure_type || template.name || '',
+      description: template.description || '',
       objectives: template.objectives || [],
       risks: template.risks || [],
       benefits: template.benefits || [],
@@ -925,7 +938,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                         onClick={() => {
                           const originalIndex = templates.indexOf(t);
                           loadTemplate(originalIndex.toString());
-                          setSearchTerm(t.procedure_type);
+                          setSearchTerm(t.procedure_type || t.name || '');
                           setIsDropdownOpen(false);
                         }}
                       >
@@ -1343,26 +1356,22 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                   {/* Signature Modal */}
                   <AnimatePresence>
                     {isSignatureModalOpen && (
-                      <motion.div 
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-                      >
+                      <Dialog open onClose={() => setIsSignatureModalOpen(false)} labelledBy="professional-signature-title">
                         <motion.div 
                           initial={{ scale: 0.9, opacity: 0 }}
                           animate={{ scale: 1, opacity: 1 }}
                           exit={{ scale: 0.9, opacity: 0 }}
-                          className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl flex flex-col h-[85vh] overflow-hidden"
+                          className="flex h-[min(85dvh,52rem)] w-[min(64rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-lg bg-white shadow-2xl"
                         >
                           <div className="flex justify-between items-center p-4 border-b bg-gray-50">
-                            <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+                            <h3 id="professional-signature-title" className="text-xl font-bold text-gray-800 flex items-center gap-2">
                               <Edit className="text-[#deb887]" />
                               Firma del Profesional
                             </h3>
                             <button 
                               onClick={() => setIsSignatureModalOpen(false)}
-                              className="text-gray-400 hover:text-gray-600 transition-colors p-1 hover:bg-gray-200 rounded-lg"
+                              className="admin-focus-ring flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-gray-200 hover:text-gray-600"
+                              aria-label="Cerrar firma profesional"
                             >
                               <X size={24} />
                             </button>
@@ -1415,7 +1424,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                             </div>
                           </div>
                         </motion.div>
-                      </motion.div>
+                      </Dialog>
                     )}
                   </AnimatePresence>
 
@@ -1764,8 +1773,8 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
         {message && (
           <motion.div
             ref={messageRef}
-            role="status"
-            aria-live="polite"
+            role={message.type === 'error' ? 'alert' : 'status'}
+            aria-live={message.type === 'error' ? 'assertive' : 'polite'}
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
@@ -1784,10 +1793,10 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
       {view === 'form' && renderForm()}
       {view === 'preview' && renderPreview()}
       {annulTarget && (
-        <div className="fixed inset-0 z-[80] bg-black/60 p-4 flex items-center justify-center no-print" role="presentation">
-          <section role="dialog" aria-modal="true" aria-labelledby="annul-consent-title" className="w-full max-w-lg bg-white rounded-lg shadow-xl p-6 space-y-4">
+        <Dialog open onClose={() => setAnnulTarget(null)} labelledBy="annul-consent-title" describedBy="annul-consent-description" className="no-print">
+          <section className="w-[min(32rem,calc(100vw-2rem))] space-y-4 rounded-lg bg-white p-6 shadow-xl">
             <h2 id="annul-consent-title" className="text-lg font-bold text-gray-900">Anular consentimiento #{annulTarget.id}</h2>
-            <p className="text-sm text-gray-700">La anulación conserva las firmas y la evidencia original. El documento dejará de estar vigente; no podrá volver a editarse ni firmarse.</p>
+            <p id="annul-consent-description" className="text-sm text-gray-700">La anulación conserva las firmas y la evidencia original. El documento dejará de estar vigente; no podrá volver a editarse ni firmarse.</p>
             <label className="block text-sm font-medium text-gray-800" htmlFor="annul-consent-reason">Motivo de anulación (obligatorio)</label>
             <textarea id="annul-consent-reason" value={annulReason} onChange={event => setAnnulReason(event.target.value)} maxLength={500} rows={3} className="w-full border border-gray-300 rounded-md p-2 text-sm" placeholder="Describa el motivo de anulación" />
             <label className="flex items-start gap-2 text-sm text-gray-800">
@@ -1799,7 +1808,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
               <button type="button" disabled={annulling || annulReason.trim().length < 8} onClick={handleAnnul} className="px-4 py-2 bg-red-700 text-white rounded-md disabled:opacity-50">{annulling ? 'Anulando...' : 'Confirmar anulación'}</button>
             </div>
           </section>
-        </div>
+        </Dialog>
       )}
       <CrossConsultHistoryModal
         isOpen={crossHistOpen}

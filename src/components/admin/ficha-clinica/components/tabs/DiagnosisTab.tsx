@@ -340,6 +340,7 @@ export default function DiagnosisTab({ recordId, diagnoses, patientName, consult
           {message && (
             <motion.div 
               ref={messageRef}
+              role={message.type === 'error' ? 'alert' : 'status'} aria-live={message.type === 'error' ? 'assertive' : 'polite'}
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}

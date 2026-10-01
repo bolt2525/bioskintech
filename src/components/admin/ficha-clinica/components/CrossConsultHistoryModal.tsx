@@ -5,6 +5,7 @@
 import { useState } from 'react';
 import { X, History, ChevronDown, ChevronRight as ChevronRightIcon } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { Dialog } from '../../../ui/Dialog';
 
 export interface ConsultationRef {
   id: number;
@@ -70,23 +71,19 @@ export default function CrossConsultHistoryModal({
 
   return (
     <AnimatePresence>
-      <motion.div
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-[60]"
-        onClick={e => { if (e.target === e.currentTarget) onClose(); }}
-      >
+      <Dialog open={isOpen} onClose={onClose} labelledBy="cross-consult-history-title">
         <motion.div
           initial={{ scale: 0.96, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.96, opacity: 0 }}
-          className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[82vh] flex flex-col overflow-hidden"
+          className="flex max-h-[82dvh] w-[min(42rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-lg bg-white shadow-2xl"
         >
           {/* Header */}
           <div className="flex items-center gap-3 px-5 py-4 border-b">
             <History className="w-4 h-4 text-[#b8944d]" />
-            <h3 className="font-semibold text-gray-900 flex-1 text-sm">
+            <h3 id="cross-consult-history-title" className="font-semibold text-gray-900 flex-1 text-sm">
               Historial completo — <span className="text-[#b8944d]">{tabLabel}</span>
             </h3>
             <span className="text-xs text-gray-400">{items.length} registro{items.length !== 1 ? 's' : ''}</span>
-            <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg ml-1">
+            <button onClick={onClose} className="admin-focus-ring ml-1 flex min-h-11 min-w-11 items-center justify-center rounded-lg hover:bg-gray-100" aria-label="Cerrar historial completo">
               <X className="w-4 h-4 text-gray-400" />
             </button>
           </div>
@@ -164,7 +161,7 @@ export default function CrossConsultHistoryModal({
             </AnimatePresence>
           </div>
         </motion.div>
-      </motion.div>
+      </Dialog>
     </AnimatePresence>
   );
 }

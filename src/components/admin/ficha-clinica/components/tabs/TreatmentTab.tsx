@@ -9,6 +9,7 @@ import treatmentOptions from '../../data/treatment_options.json';
 import { Tooltip } from '../../../../ui/Tooltip';
 import FieldHelp from '../FieldHelp';
 import { HELP } from '../../data/fieldHelpTexts';
+import { Dialog } from '../../../../ui/Dialog';
 
 // Sugerencias de equipos: nombres de marcas/modelos ya catalogados por tipo de aparatología
 const EQUIPMENT_SUGGESTIONS: string[] = [
@@ -490,6 +491,7 @@ export default function TreatmentTab({ recordId, treatments, consultationId, con
           {message && (
             <motion.div 
               ref={messageRef}
+              role={message.type === 'error' ? 'alert' : 'status'} aria-live={message.type === 'error' ? 'assertive' : 'polite'}
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
@@ -700,11 +702,11 @@ export default function TreatmentTab({ recordId, treatments, consultationId, con
       )}
     />
     {notesModalOpen && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setNotesModalOpen(false)}>
-        <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+      <Dialog open onClose={() => setNotesModalOpen(false)} labelledBy="record-observations-title">
+        <div className="max-h-[80dvh] w-[min(42rem,calc(100vw-2rem))] overflow-hidden rounded-lg bg-white shadow-xl">
           <div className="flex items-center justify-between p-4 border-b border-gray-100">
-            <h3 className="font-semibold text-gray-800 flex items-center gap-2"><Eye className="w-5 h-5 text-teal-600" /> Observaciones del expediente</h3>
-            <button onClick={() => setNotesModalOpen(false)} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-5 h-5 text-gray-500" /></button>
+            <h3 id="record-observations-title" className="font-semibold text-gray-800 flex items-center gap-2"><Eye className="w-5 h-5 text-teal-600" /> Observaciones del expediente</h3>
+            <button onClick={() => setNotesModalOpen(false)} className="admin-focus-ring flex min-h-11 min-w-11 items-center justify-center rounded-lg hover:bg-gray-100" aria-label="Cerrar observaciones"><X className="w-5 h-5 text-gray-500" /></button>
           </div>
           <div className="overflow-y-auto max-h-[calc(80vh-60px)] p-4 space-y-4">
             {consultations.length === 0 ? (
@@ -736,7 +738,7 @@ export default function TreatmentTab({ recordId, treatments, consultationId, con
             )}
           </div>
         </div>
-      </div>
+      </Dialog>
     )}
     <TreatmentParametersModal
       isOpen={paramsModalOpen}

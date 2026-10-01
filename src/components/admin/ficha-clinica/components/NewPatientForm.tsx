@@ -4,6 +4,7 @@ import { useParams } from 'react-router-dom';
 import { Save, AlertCircle, Users, X } from 'lucide-react';
 import AdminLayout from '../../../layout/AdminLayout';
 import { useAdminNav } from '../../../../hooks/useAdminNav';
+import { Dialog } from '../../../ui/Dialog';
 
 interface DuplicatePatient { id: number; first_name: string; last_name: string; identification_type: string; identification_number: string; sameUser?: boolean; }
 
@@ -155,9 +156,9 @@ export default function NewPatientForm() {
       subtitle={isEditing ? "Modificar datos del paciente" : "Registro de nuevo paciente en el sistema"}
     >
       <div className="max-w-3xl mx-auto space-y-6">
-        <form onSubmit={handleSubmit} className="bg-white p-8 rounded-xl shadow-sm border border-gray-100 space-y-6">
+        <form onSubmit={handleSubmit} className="admin-surface space-y-6 p-5 sm:p-8">
           {error && (
-            <div className="p-4 bg-red-50 text-red-700 rounded-lg flex items-center gap-2">
+            <div role="alert" aria-live="assertive" className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">
               <AlertCircle className="w-5 h-5" />
               {error}
             </div>
@@ -165,20 +166,20 @@ export default function NewPatientForm() {
 
           {/* Modal de paciente duplicado en la misma clínica */}
           {duplicate && (
-            <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-              <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+            <Dialog open onClose={() => setDuplicate(null)} labelledBy="duplicate-patient-title" describedBy="duplicate-patient-description">
+              <div className="w-[min(28rem,calc(100vw-2rem))] overflow-hidden rounded-lg bg-white shadow-2xl">
                 <div className="h-1 bg-gradient-to-r from-[#deb887] to-[#c5a075]" />
                 <div className="px-5 py-4 border-b flex justify-between items-center">
-                  <h3 className="font-semibold text-gray-900 flex items-center gap-2 text-sm">
+                  <h3 id="duplicate-patient-title" className="font-semibold text-gray-900 flex items-center gap-2 text-sm">
                     <Users className="w-4 h-4 text-[#deb887]" />
                     {duplicate.sameUser ? 'Paciente ya registrado por ti' : 'Paciente existente en tu clínica'}
                   </h3>
-                  <button onClick={() => setDuplicate(null)} className="text-gray-300 hover:text-gray-500">
+                  <button type="button" onClick={() => setDuplicate(null)} className="admin-focus-ring flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600" aria-label="Cerrar aviso de paciente duplicado">
                     <X className="w-4 h-4" />
                   </button>
                 </div>
                 <div className="p-5 space-y-4">
-                  <p className="text-sm text-gray-600">
+                  <p id="duplicate-patient-description" className="text-sm text-gray-600">
                     {duplicate.sameUser
                       ? 'Este paciente ya existe en tu expediente:'
                       : 'Este paciente ya fue registrado por otro profesional de tu clínica:'}
@@ -189,7 +190,7 @@ export default function NewPatientForm() {
                   </div>
                   {duplicate.sameUser ? (
                     <div className="flex gap-2 pt-2">
-                      <button onClick={() => nav(`ficha-clinica/paciente/${duplicate.id}`)}
+                      <button type="button" onClick={() => nav(`ficha-clinica/paciente/${duplicate.id}`)}
                         className="flex-1 py-2.5 bg-[#deb887] text-white rounded-xl text-sm font-semibold hover:bg-[#c9a876] transition-colors">
                         Ir al expediente existente
                       </button>
@@ -213,31 +214,33 @@ export default function NewPatientForm() {
                         Debes importar el paciente para poder acceder a su expediente desde tu cuenta.
                       </p>
                       <div className="flex gap-2 pt-2">
-                        <button onClick={handleImport} disabled={importing || (!importFields.basic && !importFields.history)}
+                        <button type="button" onClick={handleImport} disabled={importing || (!importFields.basic && !importFields.history)}
                           className="flex-1 py-2.5 bg-[#deb887] text-white rounded-xl text-sm font-semibold hover:bg-[#c9a876] disabled:opacity-50 transition-colors">
                           {importing ? 'Importando...' : 'Importar y abrir expediente'}
                         </button>
-                        <button onClick={() => setDuplicate(null)}
+                        <button type="button" onClick={() => setDuplicate(null)}
                           className="py-2.5 px-4 border border-gray-200 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors">
                           Cancelar
                         </button>
                       </div>
                     </>
                   )}
-                  <button onClick={() => setDuplicate(null)} className="w-full text-xs text-gray-400 hover:text-gray-600 transition-colors py-1">
+                  <button type="button" onClick={() => setDuplicate(null)} className="w-full text-xs text-gray-400 hover:text-gray-600 transition-colors py-1">
                     Cancelar
                   </button>
                 </div>
               </div>
-            </div>
+            </Dialog>
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">Nombres *</label>
+              <label htmlFor="first_name" className="block text-sm font-medium text-gray-700">Nombres *</label>
               <input
+                id="first_name"
                 type="text"
                 name="first_name"
+                autoComplete="given-name"
                 required
                 className="w-full p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none"
                 value={formData.first_name}
@@ -246,10 +249,12 @@ export default function NewPatientForm() {
             </div>
 
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">Apellidos *</label>
+              <label htmlFor="last_name" className="block text-sm font-medium text-gray-700">Apellidos *</label>
               <input
+                id="last_name"
                 type="text"
                 name="last_name"
+                autoComplete="family-name"
                 required
                 className="w-full p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none"
                 value={formData.last_name}
@@ -258,8 +263,9 @@ export default function NewPatientForm() {
             </div>
 
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">Tipo de identificación *</label>
+              <label htmlFor="identification_type" className="block text-sm font-medium text-gray-700">Tipo de identificación *</label>
               <select
+                id="identification_type"
                 name="identification_type"
                 required
                 className="w-full p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none"
@@ -273,8 +279,9 @@ export default function NewPatientForm() {
             </div>
 
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">Número de {formData.identification_type === 'ruc' ? 'RUC' : 'cédula'} *</label>
+              <label htmlFor="identification_number" className="block text-sm font-medium text-gray-700">Número de {formData.identification_type === 'ruc' ? 'RUC' : 'cédula'} *</label>
               <input
+                id="identification_number"
                 type="text"
                 name="identification_number"
                 required
@@ -288,10 +295,12 @@ export default function NewPatientForm() {
             </div>
 
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">Fecha de Nacimiento</label>
+              <label htmlFor="birth_date" className="block text-sm font-medium text-gray-700">Fecha de Nacimiento</label>
               <input
+                id="birth_date"
                 type="date"
                 name="birth_date"
+                autoComplete="bday"
                 className="w-full p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none"
                 value={formData.birth_date}
                 onChange={handleChange}
@@ -299,10 +308,12 @@ export default function NewPatientForm() {
             </div>
 
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">Email</label>
+              <label htmlFor="email" className="block text-sm font-medium text-gray-700">Email</label>
               <input
+                id="email"
                 type="email"
                 name="email"
+                autoComplete="email"
                 className="w-full p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none"
                 value={formData.email}
                 onChange={handleChange}
@@ -310,10 +321,12 @@ export default function NewPatientForm() {
             </div>
 
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">Teléfono</label>
+              <label htmlFor="phone" className="block text-sm font-medium text-gray-700">Teléfono</label>
               <input
+                id="phone"
                 type="tel"
                 name="phone"
+                autoComplete="tel"
                 className="w-full p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none"
                 value={formData.phone}
                 onChange={handleChange}
@@ -321,8 +334,9 @@ export default function NewPatientForm() {
             </div>
 
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">Género</label>
+              <label htmlFor="gender" className="block text-sm font-medium text-gray-700">Género</label>
               <select
+                id="gender"
                 name="gender"
                 className="w-full p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none"
                 value={formData.gender}
@@ -336,10 +350,12 @@ export default function NewPatientForm() {
             </div>
 
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">Ocupación</label>
+              <label htmlFor="occupation" className="block text-sm font-medium text-gray-700">Ocupación</label>
               <input
+                id="occupation"
                 type="text"
                 name="occupation"
+                autoComplete="organization-title"
                 className="w-full p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none"
                 value={formData.occupation}
                 onChange={handleChange}
@@ -347,8 +363,9 @@ export default function NewPatientForm() {
             </div>
 
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">Tipo de Sangre <span className="text-gray-400 font-normal">(opcional)</span></label>
+              <label htmlFor="tipo_sangre" className="block text-sm font-medium text-gray-700">Tipo de Sangre <span className="text-gray-400 font-normal">(opcional)</span></label>
               <input
+                id="tipo_sangre"
                 type="text"
                 name="tipo_sangre"
                 list="tipo-sangre-options"
@@ -363,8 +380,9 @@ export default function NewPatientForm() {
             </div>
 
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">Estado Civil <span className="text-gray-400 font-normal">(opcional)</span></label>
+              <label htmlFor="estado_civil" className="block text-sm font-medium text-gray-700">Estado Civil <span className="text-gray-400 font-normal">(opcional)</span></label>
               <input
+                id="estado_civil"
                 type="text"
                 name="estado_civil"
                 list="estado-civil-options"
@@ -380,10 +398,12 @@ export default function NewPatientForm() {
           </div>
 
           <div className="space-y-2">
-            <label className="block text-sm font-medium text-gray-700">Dirección</label>
+            <label htmlFor="address" className="block text-sm font-medium text-gray-700">Dirección</label>
             <input
+              id="address"
               type="text"
               name="address"
+              autoComplete="street-address"
               className="w-full p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none"
               value={formData.address}
               onChange={handleChange}
@@ -394,7 +414,7 @@ export default function NewPatientForm() {
             <button
               type="submit"
               disabled={saving}
-              className="bg-[#deb887] text-white px-8 py-3 rounded-lg hover:bg-[#c5a075] transition-colors flex items-center gap-2 font-medium disabled:opacity-50"
+              className="admin-focus-ring flex min-h-11 items-center gap-2 rounded-lg bg-[#172522] px-8 py-3 font-medium text-white transition-colors hover:bg-[#21332f] disabled:opacity-50"
             >
               <Save className="w-5 h-5" />
               {saving ? 'Guardando...' : (isEditing ? 'Actualizar Paciente' : 'Crear Paciente')}
