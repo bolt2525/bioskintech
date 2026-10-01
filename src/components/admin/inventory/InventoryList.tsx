@@ -1,5 +1,5 @@
 import React from 'react';
-import { Package, AlertTriangle, Plus, History, Search, Droplet, Minus, Edit2, Trash2, Info } from 'lucide-react';
+import { Plus, Search, Droplet, Minus, Edit2, Trash2, Info } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface InventoryItem {
@@ -29,7 +29,7 @@ interface InventoryListProps {
   onDeleteItem: (item: InventoryItem) => void;
 }
 
-export default function InventoryList({ items, onSelectItem, onAddStock, onConsumeStock, onEditItem, onDeleteItem }: InventoryListProps) {
+export default function InventoryList({ items, onAddStock, onConsumeStock, onEditItem, onDeleteItem }: InventoryListProps) {
   const [searchTerm, setSearchTerm] = React.useState('');
   const [filterCategory, setFilterCategory] = React.useState('all');
 
@@ -256,4 +256,3 @@ export default function InventoryList({ items, onSelectItem, onAddStock, onConsu
     </div>
   );
 }
-

@@ -1,6 +1,6 @@
 ﻿import React, { useState, useEffect } from 'react';
-import { Search, Plus, FileText, User, Calendar, Edit2, Trash2, Clock, UserPlus, X, ArrowRightLeft, Share2, Eye } from 'lucide-react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Search, Plus, FileText, User, Edit2, Trash2, Clock, X, ArrowRightLeft, Share2, Eye } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import AdminLayout from '../../../layout/AdminLayout';
 import recordsFetch from '../../../../utils/recordsFetch';
 import PatientAuditModal from './PatientAuditModal';
@@ -49,7 +49,6 @@ export default function PatientList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const navigate = useNavigate();
   const { nav } = useAdminNav();
   const [searchParams] = useSearchParams();
   const { user } = useAuth();

@@ -12,10 +12,7 @@ import {
   Image, 
   Database,
   Monitor,
-  MessageSquare,
   Shield,
-  Eye,
-  TrendingUp,
   Clock,
   Bell,
   X,
@@ -82,7 +79,7 @@ const AdminDashboard: React.FC = () => {
           const data = await response.json();
           
           if (data.events && Array.isArray(data.events)) {
-            data.events.forEach((event: any) => {
+            data.events.forEach((event: UpcomingAppointment) => {
               appointments.push({
                 id: event.id,
                 summary: event.summary,
@@ -291,6 +288,9 @@ const AdminDashboard: React.FC = () => {
     }
   ];
 
+  const todayAppointments = upcomingAppointments.filter(appointment => appointment.isToday).length;
+  const tomorrowAppointments = upcomingAppointments.filter(appointment => appointment.isTomorrow).length;
+
   const renderActiveSection = () => {
     switch (activeSection) {
       case 'appointments':
@@ -312,20 +312,71 @@ const AdminDashboard: React.FC = () => {
       case 'dashboard':
       default:
         return (
-          <div className="space-y-6">
+          <div className="dashboard-page space-y-7">
             {/* Header del Dashboard con Notificaciones */}
-            <div className="flex justify-between items-center">
-              <div>
-                <h1 className="text-3xl font-bold text-gray-800">Panel Administrativo</h1>
-                <p className="text-gray-600 mt-1">Gestión y monitoreo de BioSkinTech</p>
+            <section className="dashboard-hero relative overflow-hidden rounded-3xl border border-white/70 p-6 shadow-xl sm:p-8">
+              <div className="relative z-10 flex flex-col justify-between gap-6 md:flex-row md:items-end">
+                <div className="max-w-2xl">
+                  <span className="mb-3 inline-flex items-center gap-2 rounded-full border border-gold/40 bg-white/70 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-gold-ink">
+                    <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                    BIOSKIN · Panel de gestión
+                  </span>
+                  <h1 className="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">Panel Administrativo</h1>
+                  <p className="mt-2 text-sm leading-relaxed text-gray-600 sm:text-base">
+                    Una vista clara de la agenda y las herramientas de tu clínica.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => setActiveSection('appointments')}
+                    className="admin-focus-ring admin-interactive inline-flex min-h-11 items-center gap-2 rounded-xl bg-gold-ink px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-gold-ink/90"
+                  >
+                    <Calendar className="h-4 w-4" />
+                    Agendar cita
+                  </button>
+                  <button
+                    onClick={() => setActiveSection('calendar')}
+                    className="admin-focus-ring admin-interactive inline-flex min-h-11 items-center gap-2 rounded-xl border border-gray-200 bg-white/80 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-white"
+                  >
+                    <CalendarDays className="h-4 w-4" />
+                    Ver agenda
+                  </button>
+                </div>
               </div>
-            </div>
+
+              <div className="dashboard-summary mt-7 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="dashboard-summary-card">
+                  <span className="dashboard-summary-label">Próximos 15 días</span>
+                  <span className="dashboard-summary-value" aria-live="polite">
+                    {loadingNotifications ? '—' : upcomingAppointments.length}
+                  </span>
+                  <span className="dashboard-summary-note">citas programadas</span>
+                </div>
+                <div className="dashboard-summary-card">
+                  <span className="dashboard-summary-label">Hoy</span>
+                  <span className="dashboard-summary-value" aria-live="polite">
+                    {loadingNotifications ? '—' : todayAppointments}
+                  </span>
+                  <span className="dashboard-summary-note">citas para atender</span>
+                </div>
+                <div className="dashboard-summary-card">
+                  <span className="dashboard-summary-label">Mañana</span>
+                  <span className="dashboard-summary-value" aria-live="polite">
+                    {loadingNotifications ? '—' : tomorrowAppointments}
+                  </span>
+                  <span className="dashboard-summary-note">citas previstas</span>
+                </div>
+              </div>
+            </section>
             
             {/* Botón Flotante de Notificaciones */}
-            <div className="fixed bottom-6 right-6 z-50 notifications-panel">
+            <div className="notifications-panel fixed bottom-4 right-4 z-50 sm:bottom-6 sm:right-6">
               <button
                 onClick={() => setShowNotifications(!showNotifications)}
-                className={`flex items-center gap-3 text-white px-6 py-4 rounded-full shadow-2xl hover:shadow-3xl transform hover:scale-105 transition-all duration-300 border-2 border-white notification-float ${
+                aria-expanded={showNotifications}
+                aria-controls="dashboard-notifications"
+                aria-label={loadingNotifications ? 'Cargando notificaciones' : `Notificaciones de citas: ${upcomingAppointments.length}`}
+                className={`admin-focus-ring admin-interactive flex items-center gap-2 rounded-full border border-white/80 px-4 py-3 text-white shadow-xl hover:-translate-y-0.5 hover:shadow-2xl sm:gap-3 sm:px-5 ${
                   loadingNotifications 
                     ? 'bg-gradient-to-r from-blue-500 to-blue-600'
                     : upcomingAppointments.length > 0 
@@ -336,16 +387,16 @@ const AdminDashboard: React.FC = () => {
                 <div className="relative">
                   <Bell className={`w-6 h-6 ${loadingNotifications ? 'animate-pulse' : ''}`} />
                   {loadingNotifications ? (
-                    <div className="absolute -top-3 -right-3 bg-blue-500 text-white text-xs rounded-full h-6 w-6 flex items-center justify-center font-bold animate-spin border-2 border-white">
+                    <div className="absolute -top-2 -right-2 flex h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-blue-500 text-xs font-bold">
                       <Clock className="w-3 h-3" />
                     </div>
                   ) : upcomingAppointments.length > 0 ? (
-                    <div className="absolute -top-3 -right-3 bg-red-500 text-white text-xs rounded-full h-6 w-6 flex items-center justify-center font-bold animate-bounce border-2 border-white">
+                    <div className="absolute -top-2 -right-2 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-red-600 px-1 text-[10px] font-bold">
                       {upcomingAppointments.length > 9 ? '9+' : upcomingAppointments.length}
                     </div>
                   ) : null}
                 </div>
-                <span className="font-semibold text-sm">
+                <span className="text-sm font-semibold">
                   {loadingNotifications ? (
                     'Cargando...'
                   ) : upcomingAppointments.length > 0 ? (
@@ -363,7 +414,7 @@ const AdminDashboard: React.FC = () => {
 
               {/* Panel de Notificaciones Reposicionado */}
               {showNotifications && (
-                <div className="absolute bottom-full right-0 mb-4 w-96 bg-white rounded-xl shadow-2xl border border-gray-200 max-h-96 overflow-hidden">
+                <div id="dashboard-notifications" role="region" aria-label="Citas próximas" className="admin-page-enter absolute bottom-full right-0 mb-4 max-h-[min(26rem,75vh)] w-[calc(100vw_-_2rem)] max-w-sm overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl">
                   <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gradient-to-r from-[#deb887] to-[#d4a574] text-white rounded-t-xl">
                     <h3 className="font-semibold flex items-center gap-2">
                       <CalendarDays className="w-5 h-5" />
@@ -373,35 +424,37 @@ const AdminDashboard: React.FC = () => {
                       <button
                         onClick={() => fetchUpcomingAppointments()}
                         disabled={loadingNotifications}
-                        className="p-1 text-white hover:text-gray-200 transition-colors"
+                        className="admin-focus-ring rounded-lg p-1 text-white hover:bg-white/15"
                         title="Actualizar notificaciones"
+                        aria-label="Actualizar notificaciones"
                       >
                         <Clock className={`w-4 h-4 ${loadingNotifications ? 'animate-spin' : ''}`} />
                       </button>
                       <button
                         onClick={() => setShowNotifications(false)}
-                        className="text-white hover:text-gray-200"
+                        className="admin-focus-ring rounded-lg p-1 text-white hover:bg-white/15"
+                        aria-label="Cerrar notificaciones"
                       >
                         <X className="w-5 h-5" />
                       </button>
                     </div>
                   </div>
                   
-                  <div className="max-h-80 overflow-y-auto">
+                  <div className="max-h-[min(20rem,60vh)] overflow-y-auto">
                     {loadingNotifications ? (
                       <div className="p-6 text-center">
-                        <Clock className="w-8 h-8 text-[#deb887] animate-spin mx-auto mb-2" />
+                        <Clock className="mx-auto mb-2 h-8 w-8 animate-spin text-[#deb887]" />
                         <p className="text-gray-600">Cargando citas...</p>
                       </div>
                     ) : upcomingAppointments.length === 0 ? (
                       <div className="p-6 text-center">
-                        <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                        <Calendar className="mx-auto mb-3 h-12 w-12 text-gray-300" />
                         <p className="text-gray-500">No hay citas próximas</p>
-                        <p className="text-sm text-gray-400 mt-1">en los próximos 15 días</p>
+                        <p className="mt-1 text-sm text-gray-400">en los próximos 15 días</p>
                       </div>
                     ) : (
                       <div className="divide-y divide-gray-100">
-                        {upcomingAppointments.slice(0, 10).map((appointment, index) => {
+                        {upcomingAppointments.slice(0, 10).map(appointment => {
                           const urgency = getUrgencyMessage(appointment);
                           const { time, day } = formatAppointmentDateTime(appointment.start);
                           
@@ -475,12 +528,14 @@ const AdminDashboard: React.FC = () => {
             </div>
             
             {/* Acceso directo al generador local */}
-            <div className="bg-gradient-to-r from-[#deb887] to-[#d4a574] p-6 rounded-lg text-white mb-6">
-              <h3 className="text-xl font-bold mb-2">Generador de Blogs Local</h3>
-              <p className="mb-4 opacity-90">Accede al sistema de generación de blogs con IA</p>
+            <div className="admin-surface flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">Generador de Blogs Local</h3>
+                <p className="mt-1 text-sm text-gray-600">Acceso al sistema local de generación de blogs con IA.</p>
+              </div>
               <button
                 onClick={() => window.open('http://localhost:3336', '_blank')}
-                className="bg-white text-[#deb887] px-6 py-2 rounded-lg font-semibold hover:bg-gray-100 transition-colors"
+                className="admin-focus-ring admin-interactive inline-flex min-h-10 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100"
               >
                 Abrir Generador de Blogs
               </button>
@@ -490,28 +545,34 @@ const AdminDashboard: React.FC = () => {
 
             {/* Opciones de gestión */}
             <div>
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">Opciones de Gestión</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              <div className="mb-4 flex items-end justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-ink">Espacio de trabajo</p>
+                  <h3 className="mt-1 text-xl font-semibold text-gray-900">Opciones de gestión</h3>
+                </div>
+                <span className="hidden text-sm text-gray-500 sm:block">Accesos disponibles para tu cuenta</span>
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {adminOptions.map((option) => (
                   <button
                     key={option.id}
                     onClick={() => option.available && setActiveSection(option.id)}
                     disabled={!option.available}
-                    className={`p-4 rounded-lg border-2 transition-all text-left ${
+                    className={`admin-focus-ring admin-interactive group rounded-2xl border p-4 text-left ${
                       option.available
-                        ? 'border-gray-200 hover:border-[#deb887] hover:shadow-md cursor-pointer'
-                        : 'border-gray-100 opacity-50 cursor-not-allowed'
+                        ? 'border-gray-200 bg-white hover:-translate-y-0.5 hover:border-gold/70 hover:shadow-lg'
+                        : 'border-gray-100 bg-white/60 opacity-60 cursor-not-allowed'
                     }`}
                   >
                     <div className="flex items-start gap-3">
-                      <div className={`p-2 rounded-lg ${option.color} text-white`}>
+                      <div className={`rounded-xl p-2.5 text-white shadow-sm ${option.color}`}>
                         {option.icon}
                       </div>
                       <div className="flex-1">
-                        <h4 className="font-semibold text-gray-800 mb-1">{option.title}</h4>
-                        <p className="text-sm text-gray-600">{option.description}</p>
+                        <h4 className="mb-1 font-semibold text-gray-900">{option.title}</h4>
+                        <p className="text-sm leading-relaxed text-gray-600">{option.description}</p>
                         {!option.available && (
-                          <span className="inline-block mt-2 px-2 py-1 bg-gray-100 text-gray-500 text-xs rounded">
+                          <span className="mt-3 inline-flex rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-500">
                             Próximamente
                           </span>
                         )}
@@ -523,8 +584,8 @@ const AdminDashboard: React.FC = () => {
             </div>
 
             {/* Actividad reciente */}
-            <div className="bg-white rounded-lg shadow p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">Actividad Reciente</h3>
+            <div className="admin-surface p-5 sm:p-6">
+              <h3 className="mb-4 text-lg font-semibold text-gray-900">Actividad Reciente</h3>
               <div className="space-y-3">
                 <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
                   <Monitor className="w-5 h-5 text-blue-500" />

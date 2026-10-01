@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Activity, Database, Mail, Calendar, CheckCircle2, XCircle,
   Loader2, RefreshCw, ChevronDown, ChevronUp, Server,
-  Shield, Clock, User, Info, Link2, Link2Off, Send,
+  Shield, Clock, User, Info, Link2, Link2Off,
   CreditCard, AlertTriangle, Sparkles,
 } from 'lucide-react';
 import AdminLayout from '../components/layout/AdminLayout';
@@ -289,7 +289,6 @@ function UserStatusView({ user }: { user: any }) {
 export default function AdminSystemStatus() {
   const { user } = useAuth();
   const isMaster = user?.role === 'master_admin';
-  const isClinicAdmin = user?.role === 'clinic_admin';
 
   const [statusData, setStatusData] = useState<StatusData | null>(null);
   const [loadingAll, setLoadingAll] = useState(false);

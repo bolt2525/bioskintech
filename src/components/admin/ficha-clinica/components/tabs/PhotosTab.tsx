@@ -173,7 +173,6 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState('');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [r2Available, setR2Available] = useState<boolean | null>(null);
   const [filterType, setFilterType] = useState('all');
   const [dragOver, setDragOver] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
@@ -373,10 +372,9 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
             session_label: new Date().toLocaleDateString('es-CL'),
           }),
         });
-        if (res.status === 503) { setR2Available(false); setMessage({ type: 'error', text: 'Almacenamiento R2 no configurado' }); setUploading(false); setUploadProgress(''); return; }
+        if (res.status === 503) { setMessage({ type: 'error', text: 'Almacenamiento R2 no configurado' }); setUploading(false); setUploadProgress(''); return; }
         if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `Error ${res.status}`); }
-        setR2Available(true);
-      } catch (err: any) { anyFailed = true; setMessage({ type: 'error', text: err.message || 'Error al subir' }); }
+      } catch (err) { anyFailed = true; setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Error al subir' }); }
     }
     setUploading(false); setUploadProgress('');
     if (!anyFailed) setMessage({ type: 'success', text: `${files.length} foto(s) subida(s)` });
@@ -456,7 +454,12 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
   };
 
   const toggleGroup = (key: string) =>
-    setCollapsedGroups(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
 
   // ── Shared card props ──────────────────────────────────────────────────────
 
@@ -483,17 +486,17 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
         <div className="flex items-center gap-2 flex-wrap">
           {/* View mode tabs */}
           {photos.length >= 1 && (
-            <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs">
+            <div className="admin-tabs w-fit" role="group" aria-label="Vista de fotografías">
               {([
                 ['grid', LayoutGrid, 'Galería'],
                 ['timeline', Clock, 'Línea de tiempo'],
                 ['compare', SplitSquareHorizontal, 'Comparar'],
               ] as [ViewMode, React.ElementType, string][]).map(([mode, Icon, label]) => (
                 <button key={mode} type="button"
+                  aria-pressed={viewMode === mode}
+                  aria-label={label}
                   onClick={() => { setViewMode(mode); if (mode !== 'compare') resetCompare(); }}
-                  className={`flex items-center gap-1 px-3 py-2 font-medium transition-colors ${
-                    viewMode === mode ? 'bg-[#deb887] text-white' : 'text-gray-600 hover:bg-gray-50'
-                  }`}>
+                  className="admin-tab admin-focus-ring">
                   <Icon className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">{label}</span>
                 </button>
@@ -501,7 +504,7 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
             </div>
           )}
           <button type="button" disabled={uploading} onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm bg-[#deb887] text-white rounded-lg hover:bg-[#b8944d] transition-colors disabled:opacity-60">
+            className="admin-focus-ring admin-interactive flex min-h-10 items-center gap-1.5 rounded-xl bg-[#8b6840] px-3 py-2 text-sm font-medium text-white hover:bg-[#755632] disabled:opacity-60">
             <Upload className="w-4 h-4" />
             Subir Fotos
           </button>
@@ -680,7 +683,12 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
                       const isSel = timelineSelected.has(photo.id);
                       return (
                         <button key={photo.id} type="button"
-                          onClick={() => setTimelineSelected(prev => { const n = new Set(prev); n.has(photo.id) ? n.delete(photo.id) : n.add(photo.id); return n; })}
+                          onClick={() => setTimelineSelected(prev => {
+                            const next = new Set(prev);
+                            if (next.has(photo.id)) next.delete(photo.id);
+                            else next.add(photo.id);
+                            return next;
+                          })}
                           className={`relative aspect-square rounded-lg overflow-hidden border-2 transition-all ${
                             isSel ? 'border-[#deb887] ring-2 ring-[#deb887]/40' : 'border-transparent hover:border-gray-300'
                           }`}>

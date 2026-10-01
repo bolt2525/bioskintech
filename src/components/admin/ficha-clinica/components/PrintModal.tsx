@@ -169,7 +169,6 @@ export default function PrintModal({ patient, recordId, recordData, activeConsul
     const h = recordData?.history || {};
     const consultation = activeConsultation;
     const esc = (s: any) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    const formatDate = (d: string) => d ? new Date(d).toLocaleDateString('es-EC', { day: '2-digit', month: 'long', year: 'numeric' }) : '';
     const formatDateShort = (d: string) => d ? new Date(d).toLocaleDateString('es-EC', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
     const field = (label: string, val: any) =>
       val ? `<div class="field"><span class="label">${label}:</span> <span class="val">${esc(String(val))}</span></div>` : '';
@@ -461,7 +460,7 @@ export default function PrintModal({ patient, recordId, recordData, activeConsul
 
   ${contactItems.length ? `<div class="contact-footer">${contactItems.join(' &nbsp;&nbsp;|&nbsp;&nbsp; ')}</div>` : ''}
   <div class="gen-footer">Documento generado el ${new Date().toLocaleString('es-EC')} &mdash; ${esc(clinicName)}</div>
-  <script>window.onload=()=>window.print();<\/script>
+  <script>window.onload=()=>window.print();</script>
 </body>
 </html>`;
 

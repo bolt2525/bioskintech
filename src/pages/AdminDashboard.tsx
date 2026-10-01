@@ -19,7 +19,7 @@ import { useAdminNav } from '../hooks/useAdminNav';
 import {
   LogOut, Calendar, Bell, X, AlertCircle, ChevronRight, Sparkles,
   Users, Shield, Settings, Lock, Eye, EyeOff, Pencil, Check,
-  UserCircle, CalendarDays, Building2, KeyRound, Plus, Trash2, UserCheck, MessageCircle,
+  UserCircle, CalendarDays, Building2, KeyRound, Plus, UserCheck, MessageCircle,
 } from 'lucide-react';
 import { useEffect, useState, useRef } from 'react';
 import { Fragment } from 'react';
@@ -43,6 +43,20 @@ type ProfileForm = {
 type ClinicForm = {
   name: string; phone: string; address: string;
   city: string; website: string; description: string;
+};
+
+type DashboardCalendarEvent = {
+  id: string;
+  summary: string;
+  eventType?: string;
+  startDateTime?: string;
+  start?: string | { dateTime?: string; date?: string };
+  end?: string | { dateTime?: string; date?: string };
+  description?: string;
+};
+type DashboardAppointment = Omit<UpcomingAppointment, 'end'> & {
+  end?: DashboardCalendarEvent['end'];
+  professional?: string;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -91,7 +105,7 @@ export default function AdminDashboard() {
 
   // Estado de notificaciones de citas
   const [showNotifications, setShowNotifications]       = useState(false);
-  const [upcomingAppointments, setUpcomingAppointments] = useState<UpcomingAppointment[]>([]);
+  const [upcomingAppointments, setUpcomingAppointments] = useState<DashboardAppointment[]>([]);
   const [loadingNotifications, setLoadingNotifications] = useState(false);
 
   // Toast para mensajes transitorios (ej. retorno de OAuth)
@@ -205,17 +219,17 @@ export default function AdminDashboard() {
       const data = await res.json();
       const today = new Date();
       today.setHours(0,0,0,0);
-      const appointments: UpcomingAppointment[] = (data.events || [])
-        .filter((ev: any) => ev.eventType !== 'block')
-        .map((ev: any) => {
-          const startStr = ev.startDateTime || ev.start?.dateTime || ev.start?.date || '';
+      const appointments: DashboardAppointment[] = (data.events || [])
+        .filter((ev: DashboardCalendarEvent) => ev.eventType !== 'block')
+        .map((ev: DashboardCalendarEvent) => {
+          const startStr = ev.startDateTime || (typeof ev.start === 'string' ? ev.start : ev.start?.dateTime || ev.start?.date) || '';
           const start = new Date(startStr);
           const diffDays = Math.floor((start.getTime() - today.getTime()) / 86_400_000);
           // ponytail: parse "Profesional: X" from Calendar event description
           const professional = (ev.description || '').match(/Profesional:\s*([^\n]+)/)?.[1]?.trim() || '';
           return { ...ev, start: startStr, daysUntil: diffDays, isToday: diffDays === 0, isTomorrow: diffDays === 1, professional };
         })
-        .sort((a: any, b: any) => new Date(a.startDateTime).getTime() - new Date(b.startDateTime).getTime());
+        .sort((a, b) => new Date(a.startDateTime || '').getTime() - new Date(b.startDateTime || '').getTime());
       setUpcomingAppointments(appointments);
     } catch { /* calendar no configurado — ignorar */ }
     finally { setLoadingNotifications(false); }
@@ -414,35 +428,6 @@ export default function AdminDashboard() {
     } finally { setWhatsappBotSaving(false); }
   };
 
-  // ─── Guardar tratamientos de clínica ────────────────────────────────────
-  const handleSaveTreatments = async () => {
-    if (!user?.clinic_id) return;
-    setAgendaSaving(true); setAgendaMsg(null);
-    try {
-      const res = await fetch('/api/admin-auth?action=saveClinicSettings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken')}` },
-        body: JSON.stringify({ clinicId: user.clinic_id, section: 'treatments', data: clinicTreatments }),
-      });
-      const d = await res.json();
-      setAgendaMsg({ text: d.error || '¡Tratamientos guardados!', ok: !!d.success });
-    } finally { setAgendaSaving(false); }
-  };
-
-  // ─── Guardar staff personal CC ──────────────────────────────────────────
-  const handleSavePersonalEmails = async () => {
-    setAgendaSaving(true); setAgendaMsg(null);
-    try {
-      const res = await fetch('/api/admin-auth?action=updatePersonalStaffEmails', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken')}` },
-        body: JSON.stringify({ emails: personalEmails }),
-      });
-      const d = await res.json();
-      setAgendaMsg({ text: d.error || '¡Correos guardados!', ok: !!d.success });
-    } finally { setAgendaSaving(false); }
-  };
-
   // ─── Agenda multi-recurso: ayudantes ────────────────────────────────────
   const agendaAuthHeaders = () => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken')}` });
 
@@ -613,10 +598,10 @@ export default function AdminDashboard() {
                                   <Calendar className="w-3 h-3" />
                                   <span className="capitalize">{day}</span>
                                 </div>
-                                {(apt as any).professional && (
+                                {apt.professional && (
                                   <div className="flex items-center gap-1 text-xs text-[#c5a075] mt-0.5">
                                     <UserCheck className="w-3 h-3" />
-                                    <span>{(apt as any).professional}</span>
+                                    <span>{apt.professional}</span>
                                   </div>
                                 )}
                               </div>
@@ -701,7 +686,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* ── Cuerpo ──────────────────────────────────────────────────────── */}
-      <div className="container-custom py-8">
+      <div className="container-custom admin-page-enter py-5 sm:py-8">
 
         {!masterView.isActive && user?.must_change_password && (
           <div className="mb-6 flex flex-col gap-3 border-l-4 border-amber-500 bg-amber-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
@@ -719,17 +704,20 @@ export default function AdminDashboard() {
         )}
 
         {/* Saludo */}
-        <div className="mb-8 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-[#deb887] flex items-center justify-center flex-shrink-0">
-            <Sparkles className="w-5 h-5 text-white" />
+        <section className="dashboard-hero mb-8 rounded-3xl border border-white/80 p-5 shadow-sm sm:p-7">
+          <div className="flex items-start gap-4">
+            <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl bg-gold-ink text-white shadow-sm">
+              <Sparkles className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-ink">Tu espacio de trabajo</p>
+              <h2 className="mt-1 text-xl font-semibold text-gray-900 sm:text-2xl">
+                Bienvenido, {effectiveUser?.full_name?.split(' ')[0] || effectiveUser?.username}
+              </h2>
+              <p className="mt-1 text-sm text-gray-600">Elige un módulo para continuar con la gestión de tu clínica.</p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">
-              Bienvenido, {effectiveUser?.full_name?.split(' ')[0] || effectiveUser?.username}
-            </h2>
-            <p className="text-sm text-gray-400">Selecciona un módulo para continuar</p>
-          </div>
-        </div>
+        </section>
 
         {/* Estado sin módulos */}
         {tiles.length === 0 && (
@@ -741,31 +729,41 @@ export default function AdminDashboard() {
         )}
 
         {/* Grid de módulos */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {tiles.map((item, idx) => {
-            const Icon = item.icon;
-            return (
-              <button
-                key={`${item.feat}-${idx}`}
-                onClick={() => nav(item.path.replace(/^\/admin\//, ''))}
-                className="group bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-[#deb887]/40 hover:-translate-y-0.5 transition-all duration-200 text-left p-5 flex flex-col"
-              >
-                <div className={`w-11 h-11 rounded-xl ${item.bgColor} flex items-center justify-center mb-4`}>
-                  <Icon className={`w-5 h-5 ${item.iconColor}`} />
-                </div>
-                <h3 className="font-semibold text-gray-900 text-sm leading-snug mb-1 group-hover:text-[#deb887] transition-colors">
-                  {item.title}
-                </h3>
-                <p className="text-gray-400 text-xs leading-relaxed flex-1">{item.description}</p>
-                <div className="flex items-center gap-1 mt-3 text-[#deb887] text-xs font-medium opacity-0 group-hover:opacity-100 transition-opacity">
-                  <span>Acceder</span>
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </div>
-              </button>
-            );
-          })}
-
-        </div>
+        {tiles.length > 0 && (
+          <>
+            <div className="mb-4 flex items-end justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-ink">Módulos habilitados</p>
+                <h3 className="mt-1 text-lg font-semibold text-gray-900">Accesos de tu clínica</h3>
+              </div>
+              <span className="hidden text-sm text-gray-500 sm:inline">{tiles.length} disponibles</span>
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {tiles.map((item, idx) => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={`${item.feat}-${idx}`}
+                    onClick={() => nav(item.path.replace(/^\/admin\//, ''))}
+                    className="admin-focus-ring admin-interactive group flex min-h-48 flex-col rounded-2xl border border-gray-200 bg-white p-5 text-left shadow-sm hover:-translate-y-0.5 hover:border-gold/60 hover:shadow-lg"
+                  >
+                    <div className={`w-11 h-11 rounded-xl ${item.bgColor} flex items-center justify-center mb-4`}>
+                      <Icon className={`w-5 h-5 ${item.iconColor}`} />
+                    </div>
+                    <h3 className="mb-1 text-sm font-semibold leading-snug text-gray-900 transition-colors group-hover:text-gold-ink">
+                      {item.title}
+                    </h3>
+                    <p className="flex-1 text-xs leading-relaxed text-gray-500">{item.description}</p>
+                    <div className="mt-4 flex items-center gap-1 text-xs font-semibold text-gold-ink">
+                      <span>Acceder</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
       </div>
 
       {/* ── Modal: Ajustes tabbed ─────────────────────────────────────── */}

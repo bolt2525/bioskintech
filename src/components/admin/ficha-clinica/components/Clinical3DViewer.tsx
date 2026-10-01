@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { DecalGeometry } from 'three/examples/jsm/geometries/DecalGeometry.js';
 import {
   Loader2, AlertCircle, Upload
 } from 'lucide-react';
@@ -563,7 +562,6 @@ const ThreeEngine: React.FC<{
     let brushLastScreenPos = { x: 0, y: 0 };
     const BRUSH_SAMPLE_PX = 6; // píxeles mínimos entre muestras
 
-    let polyActive = false;
     let polyPoints: THREE.Vector3[] = [];
     let polyLastClickTime = 0;
     const DOUBLE_CLICK_MS = 350;
@@ -584,7 +582,6 @@ const ThreeEngine: React.FC<{
     // ── Estado snap / imán ────────────────────────────────────────────────
     let currentSnapPt: THREE.Vector3 | null = null; // punto snap activo
     let snapPtIsVertex = false; // true si es un vértice/intersección
-    const snapFrameCount = 0;
 
     const clearSnap = () => {
       if (currentSnapPt) {
@@ -1325,13 +1322,6 @@ const ThreeEngine: React.FC<{
       // ── Modo shape: preview de círculo o rectángulo ────────────────────────
       if (shapeAnchor && faceMeshRef.current && cameraRef.current) {
         const rect = renderer.domElement.getBoundingClientRect();
-        const dx = e.clientX - rect.left - rect.width / 2;
-        const dy = e.clientY - rect.top - rect.height / 2;
-        // Estimar radio en unidades del modelo desde distancia en pantalla
-        const screenDist = Math.sqrt(
-          (e.clientX - (rect.left + rect.width / 2 + shapeAnchor.point.x * 50)) ** 2 +
-          (e.clientY - (rect.top + rect.height / 2 - shapeAnchor.point.y * 50)) ** 2
-        );
         // Conversión aproximada: la cámara está a ~12 unidades, FOV=35°
         const camDist = cameraRef.current.position.distanceTo(shapeAnchor.point);
         const fovRad = (cameraRef.current.fov * Math.PI) / 180;
@@ -1973,11 +1963,9 @@ const ThreeEngine: React.FC<{
             });
           }
           polyPoints = [];
-          polyActive = false;
           clearBrushPreview();
         } else {
           polyPoints.push(point.clone());
-          polyActive = true;
           clearBrushPreview();
           if (polyPoints.length >= 2 && brushPreviewGroupRef.current) {
             const col = new THREE.Color(callbacks.current.pendingBrushColor || '#8b5cf6');
@@ -2291,7 +2279,7 @@ const ThreeEngine: React.FC<{
       }
       cancelAnimationFrame(animationFrameId);
       if (mountRef.current && rendererRef.current) {
-        try { mountRef.current.removeChild(rendererRef.current.domElement); } catch (_) {}
+        try { mountRef.current.removeChild(rendererRef.current.domElement); } catch { /* element already detached */ }
       }
       controlsRef.current?.dispose();
       sceneRef.current?.traverse((object: any) => {
@@ -2367,7 +2355,7 @@ const ThreeEngine: React.FC<{
       callbacks.current.onLoaded();
     };
 
-    const handleLoadError = (_error: any) => {
+    const handleLoadError = () => {
       if (modelSource.type === 'buffer' && !modelSource.data) return;
       callbacks.current.onError("No se pudo cargar el modelo 3D.");
     };

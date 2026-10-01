@@ -176,7 +176,7 @@ class SkinRenderer {
       child.frustumCulled = false;
       this.skinMeshes.push(child);
       const mats = Array.isArray(child.material) ? child.material : [child.material];
-      mats.forEach((mat: any) => {
+      mats.forEach((mat: THREE.Material & Partial<THREE.MeshStandardMaterial>) => {
         mat.metalness       = 0;
         mat.roughness       = 0.8;
         mat.envMapIntensity = 0.4;
@@ -390,7 +390,7 @@ class SkinRenderer {
     this.wireframe = !this.wireframe;
     this.skinMeshes.forEach(mesh => {
       const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-      mats.forEach((m: any) => { if ('wireframe' in m) m.wireframe = this.wireframe; m.needsUpdate = true; });
+      mats.forEach((m: THREE.Material & { wireframe?: boolean }) => { if ('wireframe' in m) m.wireframe = this.wireframe; m.needsUpdate = true; });
     });
     this.dirty = true;
     return this.wireframe;
@@ -434,7 +434,7 @@ export interface SkinCanvasProps {
 }
 
 export const SkinCanvas = forwardRef<SkinCanvasHandle, SkinCanvasProps>(
-  ({ hotspots, selected, onSelect, autoRotate, onInteraction }, ref) => {
+  ({ hotspots, onSelect, autoRotate }, ref) => {
     const mountRef    = useRef<HTMLDivElement>(null);
     const rendererRef = useRef<SkinRenderer | null>(null);
     const [loading,  setLoading]  = useState(true);

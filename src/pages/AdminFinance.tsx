@@ -1,7 +1,8 @@
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
+import type { LucideIcon } from 'lucide-react';
 import recordsFetch from "../utils/recordsFetch";
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
 import { 
   Calendar, DollarSign, TrendingUp, TrendingDown, 
   Trash2, Edit2, Check, X, FileText, PieChart, BarChart2, Search, Filter, Info, Plus,
@@ -43,16 +44,6 @@ interface FinanceItem {
   tax: number;
   total: number;
 }
-
-// Calcula totales de un item dado sus campos base
-const calcItem = (it: Partial<FinanceItem>, defaultIva = 15): FinanceItem => {
-  const qty     = parseFloat(String(it.quantity  ?? 1));
-  const uprice  = parseFloat(String(it.unit_price ?? 0));
-  const ivaRate = parseFloat(String(it.iva_rate   ?? defaultIva));
-  const subtotal = parseFloat((qty * uprice).toFixed(2));
-  const tax      = parseFloat((subtotal * ivaRate / 100).toFixed(2));
-  return { description: it.description || '', quantity: qty, unit_price: uprice, iva_rate: ivaRate, subtotal, tax, total: parseFloat((subtotal + tax).toFixed(2)) };
-};
 
 // Si el usuario ingresa el TOTAL, calcula subtotal e IVA
 const calcFromTotal = (total: number, ivaRate: number): { subtotal: number; tax: number } => {
@@ -302,22 +293,22 @@ const AdminFinance = () => {
 
       setNewForm(EMPTY_FORM); setNewItems([]); setShowItems(false); setShowNewForm(false);
       fetchData();
-    } catch (e: any) {
-      alert('Error al guardar: ' + e.message);
+    } catch (e) {
+      alert('Error al guardar: ' + (e instanceof Error ? e.message : 'Error desconocido'));
     } finally {
       setSaving(false);
     }
   };
 
   // Normaliza campos NUMERIC de PostgreSQL que llegan como strings
-  const normalizeItem = (it: any): FinanceItem => ({
+  const normalizeItem = (it: Record<string, unknown>): FinanceItem => ({
     ...it,
-    quantity:   parseFloat(it.quantity   ?? 1),
-    unit_price: parseFloat(it.unit_price ?? 0),
-    iva_rate:   parseFloat(it.iva_rate   ?? 0),
-    subtotal:   parseFloat(it.subtotal   ?? 0),
-    tax:        parseFloat(it.tax        ?? 0),
-    total:      parseFloat(it.total      ?? 0),
+    quantity:   parseFloat(String(it.quantity   ?? 1)),
+    unit_price: parseFloat(String(it.unit_price ?? 0)),
+    iva_rate:   parseFloat(String(it.iva_rate   ?? 0)),
+    subtotal:   parseFloat(String(it.subtotal   ?? 0)),
+    tax:        parseFloat(String(it.tax        ?? 0)),
+    total:      parseFloat(String(it.total      ?? 0)),
   });
 
   const openDesglose = async (record: FinanceRecord) => {
@@ -353,8 +344,8 @@ const AdminFinance = () => {
       }
       setDesgModal({ open: false, record: null, items: [], loading: false, updateRecord: false });
       fetchData();
-    } catch (e: any) {
-      alert('Error al guardar desglose: ' + e.message);
+    } catch (e) {
+      alert('Error al guardar desglose: ' + (e instanceof Error ? e.message : 'Error desconocido'));
     } finally {
       setSaving(false);
     }
@@ -369,7 +360,7 @@ const AdminFinance = () => {
         body: JSON.stringify({ action: 'financeDelete', id })
       });
       fetchData();
-    } catch (e) {
+    } catch {
       alert('Error al eliminar');
     }
   };
@@ -394,7 +385,6 @@ const AdminFinance = () => {
 
     // Cálculo Neto: (Ingresos) - (Egresos)
     const totalIVA = ivaIngresos - ivaEgresos;
-    const totalSubtotal = subtotalIngresos - subtotalEgresos;
     const balanceTotal = totalIngresos - totalEgresos;
 
     return { 
@@ -453,20 +443,24 @@ const AdminFinance = () => {
     }
   };
 
-  const handleEditChange = (field: keyof FinanceRecord, value: any) => {
+  const handleEditChange = (field: keyof FinanceRecord, value: string | number) => {
     setEditFormData(prev => ({ ...prev, [field]: value }));
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20">
-      <div className="bg-gradient-to-r from-gray-900 to-gray-800 text-white pt-12 pb-24 px-4 shadow-xl">
+    <MotionConfig reducedMotion="user">
+    <div className="admin-page-enter min-h-screen bg-[#f5f4f1] pb-20">
+      <div className="bg-gradient-to-br from-[#282a27] via-[#34342f] to-[#454035] px-4 pb-20 pt-8 text-white shadow-xl sm:pb-24 sm:pt-10">
         <div className="container-custom mx-auto">
-          <div className="flex flex-col md:flex-row justify-between items-center mb-6">
+          <div className="mb-6 flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
             <div>
-              <h1 className="text-3xl font-serif font-bold mb-2 flex items-center gap-3">
-                <DollarSign className="text-yellow-500" /> Finanzas & Facturas
+              <span className="mb-3 inline-flex rounded-full border border-gold/40 bg-white/5 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-amber-100">
+                Administración financiera
+              </span>
+              <h1 className="mb-2 flex items-center gap-3 text-2xl font-bold sm:text-3xl">
+                <DollarSign className="text-gold" /> Finanzas y facturación
               </h1>
-              <p className="opacity-70">
+              <p className="max-w-2xl text-sm text-gray-300">
                 {user?.role === 'clinic_user'
                   ? 'Mis registros de ingresos y egresos'
                   : selectedUsers.size === 0
@@ -481,7 +475,9 @@ const AdminFinance = () => {
             {/* ── Filtro de usuario (solo admin/master) ── */}
             {(user?.role === 'clinic_admin' || user?.role === 'master_admin') && financeUsers.length > 0 && (
               <div className="mt-4 md:mt-0 flex flex-col items-end gap-1.5">
+                <label className="block text-xs font-medium text-gray-300" htmlFor="finance-user-filter">Mostrar registros de</label>
                 <select
+                  id="finance-user-filter"
                   value={selectedUsers.size === 0 ? '__global__' : (selectedUsers.size === 1 ? Array.from(selectedUsers)[0] : '__multi__')}
                   onChange={e => {
                     const val = e.target.value;
@@ -489,7 +485,7 @@ const AdminFinance = () => {
                     // Selección individual desde el dropdown → Set de 1
                     setSelectedUsers(new Set([val]));
                   }}
-                  className="px-4 py-2 bg-gray-800/60 border border-gray-600 text-white rounded-xl text-sm focus:ring-2 focus:ring-yellow-500/50 focus:border-yellow-500 outline-none cursor-pointer backdrop-blur min-w-[180px]"
+                  className="admin-focus-ring min-h-10 min-w-[180px] cursor-pointer rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-sm text-white backdrop-blur"
                 >
                   <option value="__global__">🌐 Vista Global</option>
                   <optgroup label="── Usuarios ──">
@@ -520,7 +516,7 @@ const AdminFinance = () => {
                             else next.add(fu.username);
                             return next;
                           })}
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-medium transition-all border ${
+                          className={`admin-focus-ring rounded-full border px-2.5 py-1 text-[10px] font-medium transition-all ${
                             isOn
                               ? 'bg-yellow-500 text-gray-900 border-yellow-500'
                               : 'text-gray-400 border-gray-600 hover:border-gray-400'
@@ -531,7 +527,7 @@ const AdminFinance = () => {
                       );
                     })}
                     {selectedUsers.size > 0 && (
-                      <button onClick={() => setSelectedUsers(new Set())} className="px-2 py-0.5 rounded-full text-[10px] text-gray-500 border border-gray-600 hover:text-white">✕ limpiar</button>
+                      <button onClick={() => setSelectedUsers(new Set())} className="admin-focus-ring rounded-full border border-gray-600 px-2.5 py-1 text-[10px] text-gray-300 hover:text-white">Limpiar selección</button>
                     )}
                   </div>
                 )}
@@ -541,20 +537,20 @@ const AdminFinance = () => {
         </div>
       </div>
 
-      <div className="container-custom mx-auto -mt-16 px-4">
+      <div className="container-custom mx-auto -mt-14 px-4 sm:-mt-16">
 
         {/* ── Barra superior: botones nuevo registro + export ── */}
-        <div className="flex justify-between items-center mb-3">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
           <button
             onClick={() => setShowNewForm(v => !v)}
-            className="flex items-center gap-2 px-4 py-2 bg-yellow-500 hover:bg-yellow-400 text-gray-900 font-semibold rounded-xl shadow-md text-sm transition-all"
+            className="admin-focus-ring admin-interactive flex min-h-10 items-center gap-2 rounded-xl bg-gold px-4 py-2 text-sm font-semibold text-gray-900 shadow-md hover:bg-gold-dark"
           >
             <Plus size={16} /> Nuevo Registro
           </button>
           <button
             onClick={() => exportCSV(filteredRecords, `finanzas${selectedUsers.size === 1 ? '_'+Array.from(selectedUsers)[0] : ''}`)}
             disabled={filteredRecords.length === 0}
-            className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-xl text-sm transition-all disabled:opacity-40"
+            className="admin-focus-ring admin-interactive ml-auto flex min-h-10 items-center gap-2 rounded-xl bg-gray-800 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700 disabled:opacity-40"
           >
             <Download size={15} /> Exportar CSV ({filteredRecords.length})
           </button>
@@ -650,7 +646,7 @@ const AdminFinance = () => {
                 <div className="flex gap-3">
                   <div className="flex-1">
                     <label className="text-xs text-gray-500 mb-1 block">Tipo</label>
-                    <select value={newForm.type} onChange={e => setNewForm(p => ({...p, type: e.target.value as any}))} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 outline-none">
+                    <select value={newForm.type} onChange={e => setNewForm(p => ({...p, type: e.target.value as FinanceRecord['type']}))} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 outline-none">
                       <option value="ingreso">Ingreso</option>
                       <option value="egreso">Egreso</option>
                     </select>
@@ -761,51 +757,60 @@ const AdminFinance = () => {
           )}
         </AnimatePresence>
 
-        <div className="bg-white p-4 rounded-xl shadow-lg border border-gray-100 mb-6 flex flex-wrap items-center gap-4">
+        <div className="admin-surface mb-6 flex flex-wrap items-center gap-3 p-4 sm:gap-4">
           <div className="flex items-center gap-2 text-gray-500">
             <Calendar size={18} />
             <span className="font-medium text-sm">Fecha:</span>
           </div>
           <input 
             type="date" 
+            aria-label="Fecha inicial"
             value={dateRange.start}
             onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
-            className="px-3 py-1.5 bg-gray-50 border rounded-lg text-sm focus:ring-2 focus:ring-yellow-500 outline-none"
+            className="admin-focus-ring min-h-10 rounded-xl border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm"
           />
           <span className="text-gray-300">→</span>
           <input 
             type="date" 
+            aria-label="Fecha final"
             value={dateRange.end}
             onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
-            className="px-3 py-1.5 bg-gray-50 border rounded-lg text-sm focus:ring-2 focus:ring-yellow-500 outline-none"
+            className="admin-focus-ring min-h-10 rounded-xl border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm"
           />
 
-          <div className="h-6 w-px bg-gray-200 mx-2"></div>
+          <div className="hidden h-6 w-px bg-gray-200 sm:block"></div>
 
-          <div className="flex items-center gap-2 text-gray-500">
+          <div className="flex items-center gap-2 text-gray-500" id="finance-type-filter-label">
             <Filter size={18} />
             <span className="font-medium text-sm">Tipo:</span>
           </div>
-          <select 
-            value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value as any)}
-            className="px-3 py-1.5 bg-gray-50 border rounded-lg text-sm focus:ring-2 focus:ring-yellow-500 outline-none"
-          >
-            <option value="all">Todos</option>
-            <option value="ingreso">Ingresos</option>
-            <option value="egreso">Egresos</option>
-          </select>
-
-          <div className="h-6 w-px bg-gray-200 mx-2"></div>
+          <div className="admin-tabs w-fit" role="group" aria-labelledby="finance-type-filter-label">
+            {([
+              ['all', 'Todos'],
+              ['ingreso', 'Ingresos'],
+              ['egreso', 'Egresos'],
+            ] as const).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={typeFilter === value}
+                onClick={() => setTypeFilter(value)}
+                className="admin-tab admin-focus-ring"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
 
           <div className="relative flex-1 min-w-[200px]">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input 
               type="text" 
+              aria-label="Buscar registros financieros"
               placeholder="Buscar por cliente, descripción, factura..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-4 py-1.5 bg-gray-50 border rounded-lg text-sm focus:ring-2 focus:ring-yellow-500 outline-none"
+              className="admin-focus-ring min-h-10 w-full rounded-xl border border-gray-200 bg-gray-50 py-1.5 pl-9 pr-4 text-sm"
             />
           </div>
         </div>
@@ -1149,13 +1154,14 @@ const AdminFinance = () => {
         </div>
       )}
     </div>
+    </MotionConfig>
   );
 };
 
 interface MetricCardProps {
   title: string;
   amount: number;
-  icon: any;
+  icon: LucideIcon;
   color: 'blue' | 'green' | 'red' | 'orange' | 'black';
   currencySymbol?: string;
 }
@@ -1186,7 +1192,7 @@ const MetricCard = ({ title, amount, icon: Icon, color, currencySymbol = '$' }: 
 
 interface EditRowProps {
   data: Partial<FinanceRecord>;
-  onChange: (field: keyof FinanceRecord, value: any) => void;
+  onChange: (field: keyof FinanceRecord, value: string | number) => void;
   onSave: () => void;
   onCancel: () => void;
 }

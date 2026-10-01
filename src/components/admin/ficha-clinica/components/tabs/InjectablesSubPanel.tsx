@@ -85,12 +85,10 @@ export default function InjectablesSubPanel({ recordId, treatmentId, onMessage }
   const [saving, setSaving] = useState(false);
   const [show3D, setShow3D] = useState(false);
   const [markers3D, setMarkers3D] = useState<Marker3D[]>([]);
-  const [_loading, setLoading] = useState(false);
 
   // Load injectables for current treatment
   const loadInjectables = useCallback(async () => {
     if (!treatmentId) return;
-    setLoading(true);
     try {
       const res = await recordsFetch(`/api/records?action=getInjectablesByTreatment&treatment_id=${treatmentId}`);
       if (res.ok) {
@@ -99,8 +97,6 @@ export default function InjectablesSubPanel({ recordId, treatmentId, onMessage }
       }
     } catch (e) {
       console.error('Error loading injectables:', e);
-    } finally {
-      setLoading(false);
     }
   }, [treatmentId]);
 

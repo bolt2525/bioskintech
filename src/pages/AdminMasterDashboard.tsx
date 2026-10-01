@@ -19,8 +19,8 @@ import { useAuth } from '../context/AuthContext';
 import {
   LogOut, Building2, Users, Shield, RefreshCw, ChevronDown, ChevronUp,
   Plus, Edit, Trash2, Eye, EyeOff, Key, X, Check, AlertCircle, Copy, Send,
-  Activity, ClipboardList, ChevronRight, Sparkles, Lock, Mail, Unlink, ExternalLink, Settings2, LayoutDashboard, UserCheck, Calendar, Infinity, Clock, Bell,
-  Link2Off, Loader2, CheckCircle2, MessageCircle, FileText, Search,
+  Activity, ClipboardList, ChevronRight, Sparkles, Mail, Unlink, Settings2, LayoutDashboard, UserCheck, Calendar, Infinity as InfinityIcon, Clock, Bell,
+  MessageCircle, FileText, Search,
 } from 'lucide-react';
 
 // Constantes centralizadas — no duplicar aquí
@@ -2345,7 +2345,7 @@ export default function AdminMasterDashboard() {
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-gray-800 truncate">{clinic.name}</p>
                         {exp === null ? (
-                          <p className="text-xs text-emerald-600 flex items-center gap-1"><Infinity className="w-3 h-3" /> Sin vencimiento</p>
+                          <p className="text-xs text-emerald-600 flex items-center gap-1"><InfinityIcon className="w-3 h-3" /> Sin vencimiento</p>
                         ) : inGrace ? (
                           <p className="text-xs text-orange-600 font-medium">⚠️ Gracia: {graceLeft}d restantes · venció {exp.toLocaleDateString('es-EC')}</p>
                         ) : isExpired ? (
@@ -3469,7 +3469,7 @@ export default function AdminMasterDashboard() {
               <label className="flex items-center gap-3 cursor-pointer select-none">
                 <input type="checkbox" checked={subNoExpiry} onChange={e => setSubNoExpiry(e.target.checked)} className="w-4 h-4 accent-[#deb887]" />
                 <span className="flex items-center gap-1.5 text-sm font-medium text-gray-700">
-                  <Infinity className="w-4 h-4 text-[#deb887]" /> Sin fecha de vencimiento (acceso de por vida)
+                  <InfinityIcon className="w-4 h-4 text-[#deb887]" /> Sin fecha de vencimiento (acceso de por vida)
                 </span>
               </label>
               {!subNoExpiry && (

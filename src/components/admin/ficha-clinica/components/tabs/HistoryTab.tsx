@@ -21,7 +21,7 @@ interface HistoryFieldProps {
   disabled?: boolean;
 }
 
-const HistoryField = ({ label, name, value, onChange, placeholder, categoryId, disabled }: HistoryFieldProps) => {
+const HistoryField = ({ label, name, value, onChange, placeholder, categoryId }: HistoryFieldProps) => {
   const [inputValue, setInputValue] = useState('');
   const listId = `list-${name}`;
 
@@ -169,7 +169,7 @@ export default function HistoryTab({ recordId, initialData, onSave }: HistoryTab
       } else {
         throw new Error('Error al guardar');
       }
-    } catch (error) {
+    } catch {
       setMessage({ type: 'error', text: 'Error al guardar los antecedentes' });
     } finally {
       setSaving(false);

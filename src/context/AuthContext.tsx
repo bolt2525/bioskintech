@@ -79,8 +79,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!stored) return null;
       const parsed = JSON.parse(stored);
       // features van dentro del objeto SS_USER (ver persistAuth)
-      const { features: _f, ...u } = parsed;
-      return u as AuthUser;
+      const userWithoutFeatures = { ...parsed };
+      delete userWithoutFeatures.features;
+      return userWithoutFeatures as AuthUser;
     } catch { return null; }
   });
   const [features, setFeatures] = useState<string[]>(() => {

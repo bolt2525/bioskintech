@@ -1,7 +1,6 @@
 import React from 'react';
 import recordsFetch from "../../../utils/recordsFetch";
 import { format, differenceInDays } from 'date-fns';
-import { es } from 'date-fns/locale';
 import { Calendar, AlertTriangle, AlertCircle, CheckCircle, Trash2 } from 'lucide-react';
 
 interface Batch {

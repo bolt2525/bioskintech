@@ -1,5 +1,8 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-01 Reducidos errores ESLint triviales del proyecto.
+- ✅ 2026-10-01 Lint sin errores en archivos UI modificados.
+- ✅ 2026-10-01 Dashboard y módulos renovados.
 - ✅ 2026-10-01 README creado y documentación de rutas, comandos, RLS y 11 funciones API alineada con el código.
 - ✅ 2026-09-30 Master Admin: acceso Contrato destacado; clínicas en lista adaptable con búsqueda y filtro.
 - ✅ 2026-09-30 Añadido al Master Admin un generador de vista previa contractual anual: captura cliente/clínica, módulos, chatbot opcional, fechas y pago; precios explícitos, comisión de tarjeta ingresada sin tasa ni IVA asumidos e impresión/Guardar como PDF nativos. No persiste contratos; módulo y distinción DermoAtlas/Clinical3D documentados en ARCHITECTURE.md.

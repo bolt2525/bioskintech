@@ -23,7 +23,7 @@ interface Props {
   onFilterCategory?: (filter: string) => void;
 }
 
-export default function InventoryAlerts({ alertBatches, outOfStockCount, lowStockCount, onFilterCategory }: Props) {
+export default function InventoryAlerts({ alertBatches, outOfStockCount, lowStockCount }: Props) {
   const [expanded, setExpanded] = useState(true);
   const [dismissed, setDismissed] = useState(false);
 

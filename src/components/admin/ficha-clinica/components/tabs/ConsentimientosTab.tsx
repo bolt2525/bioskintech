@@ -3,8 +3,8 @@ import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   FileText, Plus, Trash2, Edit, Eye, Save, Printer, 
-  CheckCircle, XCircle, AlertTriangle, ChevronRight, ChevronDown,
-  Copy, RefreshCw, QrCode, Smartphone, Eraser, X, Maximize2, Search, Check, AlertCircle, History
+  CheckCircle, XCircle, AlertTriangle,
+  RefreshCw, QrCode, Eraser, X, Search, Check, AlertCircle, History
 } from 'lucide-react';
 import CrossConsultHistoryModal, { type ConsultationRef } from '../CrossConsultHistoryModal';
 import { QRCodeSVG } from 'qrcode.react';
@@ -18,9 +18,26 @@ import { useMasterView } from '../../../../../context/MasterViewContext';
 import FieldHelp from '../FieldHelp';
 import { HELP } from '../../data/fieldHelpTexts';
 
+interface ConsentTemplate {
+  id?: number | string;
+  name?: string;
+  procedure_type?: string;
+  [key: string]: unknown;
+}
+
 // Fallback local templates (sólo si la clínica no tiene asignadas desde DB)
 const localTemplatesGlob = import.meta.glob('/src/data/consent-templates/*.json', { eager: true });
-const localTemplates = Object.values(localTemplatesGlob).map((mod: any) => mod.default || mod);
+const localTemplates = Object.values(localTemplatesGlob).map(mod => {
+  const templateModule = mod as { default?: ConsentTemplate };
+  return templateModule.default || templateModule as ConsentTemplate;
+});
+
+interface ConsentPatient {
+  first_name?: string;
+  last_name?: string;
+  birth_date?: string;
+  [key: string]: unknown;
+}
 
 interface ConsentForm {
   id?: number;
@@ -81,13 +98,13 @@ interface ConsentForm {
     patient_sig_size?: number;
     professional_sig_size?: number;
   };
-  attachments: any[];
+  attachments: unknown[];
 }
 
 interface Props {
   patientId: number;
   recordId: number;
-  patient?: any;
+  patient?: ConsentPatient;
   consultationId?: number;
   consultations?: ConsultationRef[];
   initialConsents?: ConsentForm[];
@@ -111,7 +128,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
   const clinicDisplayName = clinic.general.name || user?.clinic_name || 'Clínica';
   const professionalName = [user?.gentilicio, user?.full_name].filter(Boolean).join(' ');
   const [consents, setConsents] = useState<ConsentForm[]>(initialConsents);
-  const [dbTemplates, setDbTemplates] = useState<any[]>([]);
+  const [dbTemplates, setDbTemplates] = useState<ConsentTemplate[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [view, setView] = useState<'list' | 'form' | 'preview'>('list');
   const [isPaperConsent, setIsPaperConsent] = useState(false);
@@ -137,7 +154,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
 
   // Combina plantillas de DB (por clínica) con fallback a locales
   const templates = dbTemplates.length > 0 ? dbTemplates : localTemplates;
-  const filteredTemplates = templates.filter((t: any) => 
+  const filteredTemplates = templates.filter(t =>
     (t.procedure_type || t.name || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -605,28 +622,28 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
         setView('list');
         setMessage({ type: 'success', text: 'Consentimiento guardado correctamente' });
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error saving consent:', error);
-      setMessage({ type: 'error', text: error.message || 'Error al guardar el consentimiento' });
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Error al guardar el consentimiento' });
     } finally {
       setLoading(false);
     }
   };
 
-  const updateField = (field: keyof ConsentForm, value: any) => {
+  const updateField = (field: keyof ConsentForm, value: unknown) => {
     if (!currentConsent) return;
-    setCurrentConsent({ ...currentConsent, [field]: value });
+    setCurrentConsent({ ...currentConsent, [field]: value } as ConsentForm);
   };
 
-  const updateNestedField = (parent: keyof ConsentForm, child: string, value: any) => {
+  const updateNestedField = (parent: 'critical_antecedents' | 'authorizations' | 'declarations' | 'signatures', child: string, value: unknown) => {
     if (!currentConsent) return;
     setCurrentConsent({
       ...currentConsent,
       [parent]: {
-        ...(currentConsent[parent] as any),
+        ...(currentConsent[parent] as object),
         [child]: value
       }
-    });
+    } as ConsentForm);
   };
 
   const migrateDB = async () => {
@@ -901,7 +918,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                   className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-60 overflow-y-auto custom-scrollbar"
                 >
                   {filteredTemplates.length > 0 ? (
-                    filteredTemplates.map((t: any, i) => (
+                    filteredTemplates.map((t, i) => (
                       <button
                         key={i}
                         className="w-full text-left px-4 py-3 hover:bg-blue-50 text-gray-700 transition-colors border-b border-gray-50 last:border-0 text-sm"
@@ -925,16 +942,16 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
         </div>
 
         {/* Tabs Navigation */}
-        <div className="flex border-b border-gray-200 overflow-x-auto">
+        <div className="admin-tabs w-full" role="group" aria-label="Secciones del consentimiento">
           {tabs.map((tab) => (
             <button
               key={tab.id}
+              type="button"
+              id={`consent-tab-${tab.id}`}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-6 py-3 border-b-2 whitespace-nowrap transition-all ${
-                activeTab === tab.id
-                  ? 'border-[#deb887] text-[#deb887] font-bold bg-[#deb887]/5'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-              }`}
+              aria-pressed={activeTab === tab.id}
+              aria-controls="consent-tabpanel"
+              className="admin-tab admin-focus-ring"
             >
               <tab.icon size={18} />
               {tab.label}
@@ -943,7 +960,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
         </div>
 
         {/* Tab Content */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 min-h-[400px]">
+        <div id="consent-tabpanel" role="region" aria-labelledby={`consent-tab-${activeTab}`} className="admin-surface min-h-[400px] p-4 sm:p-6">
           <AnimatePresence mode="wait">
             <motion.div
               key={activeTab}
@@ -1153,7 +1170,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                         <label key={item.key} className="flex items-center gap-3 cursor-pointer group">
                           <input
                             type="checkbox"
-                            checked={(currentConsent.declarations as any)?.[item.key]}
+                            checked={(currentConsent.declarations as Record<string, boolean>)[item.key]}
                             onChange={(e) => updateNestedField('declarations', item.key, e.target.checked)}
                             className="w-4 h-4 rounded text-[#deb887] focus:ring-[#deb887] border-gray-300"
                           />

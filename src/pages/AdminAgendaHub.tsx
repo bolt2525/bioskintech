@@ -46,24 +46,29 @@ export default function AdminAgendaHub() {
       showBack
       backPath="/admin"
     >
-      <div className="max-w-3xl mx-auto p-4 md:p-8">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="mx-auto max-w-5xl py-2 sm:py-5">
+        <div className="mb-6 max-w-2xl">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-ink">Organiza tu jornada</p>
+          <h2 className="mt-1 text-2xl font-semibold text-white">Herramientas de agenda</h2>
+          <p className="mt-2 text-sm leading-relaxed text-gray-300">Elige una acción para consultar citas, agendar pacientes o gestionar la disponibilidad.</p>
+        </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {visibleModules.map(item => {
             const Icon = item.icon;
             return (
               <button
                 key={item.feat}
                 onClick={() => nav(item.path)}
-                className="group bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-indigo-200 hover:-translate-y-0.5 transition-all duration-200 text-left p-5 flex flex-col"
+                className="admin-focus-ring admin-interactive group admin-surface flex min-h-52 flex-col p-5 text-left hover:-translate-y-0.5 hover:border-gold/60 hover:shadow-lg"
               >
-                <div className={`w-11 h-11 rounded-xl ${item.bgColor} flex items-center justify-center mb-4`}>
+                <div className={`mb-4 flex h-11 w-11 items-center justify-center rounded-xl ${item.bgColor}`}>
                   <Icon className={`w-5 h-5 ${item.iconColor}`} />
                 </div>
-                <h3 className="font-semibold text-gray-900 text-sm leading-snug mb-1 group-hover:text-indigo-600 transition-colors">
+                <h3 className="mb-1 text-sm font-semibold leading-snug text-gray-900 transition-colors group-hover:text-gold-ink">
                   {item.title}
                 </h3>
-                <p className="text-gray-400 text-xs leading-relaxed flex-1">{item.description}</p>
-                <div className="flex items-center gap-1 mt-3 text-indigo-500 text-xs font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+                <p className="flex-1 text-xs leading-relaxed text-gray-500">{item.description}</p>
+                <div className="mt-4 flex items-center gap-1 text-xs font-semibold text-gold-ink">
                   <span>Acceder</span>
                   <ChevronRight className="w-3.5 h-3.5" />
                 </div>
