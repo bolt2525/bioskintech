@@ -39,7 +39,9 @@ Usa el agente más especializado posible según el tipo de tarea:
 - Si se va a eliminar o simplificar código, valida primero con `Auditor de Código` y luego verifica con `QA y Testing`.
 - Si una tarea cambia la estructura, arquitectura por capas, esquema de datos o integraciones externas, aplica **obligatoriamente** `.github/instructions/architecture-sync.instructions.md` — actualizar `ARCHITECTURE.md`/`PROGRESS.md` no es opcional.
 
-## Recommended Skills
+## Skill Routing (Obligatorio)
+Antes de buscar, editar o ejecutar comandos, carga las skills cuyo disparador coincida con la tarea. Si una tarea cruza categorías, combina las skills; no elijas solo una por conveniencia. La matriz completa vive en `.github/instructions/skill-routing.instructions.md`.
+
 - **`vercel-operations`**: despliegues, producción, logs y Vercel.
 - **`testing-validation`**: build, lint, tests, regresión y validación real.
 - **`code-cleanup-audit`**: auditoría técnica, legacy y limpieza de código.
@@ -49,6 +51,11 @@ Usa el agente más especializado posible según el tipo de tarea:
 - **`vercel-composition-patterns`**: refactorización de componentes extensos; aplicar solo patrones compatibles con React 18.
 - **`vercel-cli`**: comandos oficiales para inspeccionar y operar el proyecto Vercel.
 - **`agent-browser`**: navegación, screenshots y smoke tests visuales.
+
+Los agentes especializados deben aplicar estas combinaciones:
+- **Frontend**: `building-components` + `vercel-react-best-practices`; sumar `web-design-guidelines` para auditoría y `vercel-composition-patterns` para refactorización estructural.
+- **QA**: `testing-validation`; sumar `agent-browser` para flujos reales del navegador.
+- **DevOps/Vercel**: `vercel-cli` + `vercel-operations` + `cli-tools.instructions.md`.
 
 ### Compatibilidad frontend de las skills
 - El stack verificado es **React 18 + Vite**, sin Next.js. No aplicar reglas de Next.js, RSC ni APIs exclusivas de React 19.

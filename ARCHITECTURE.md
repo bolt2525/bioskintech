@@ -35,6 +35,8 @@ La existencia de una variable en Vercel no demuestra por sí sola que su valor s
 
 Las skills externas de GitHub Copilot se almacenan en `.agents/skills/` y sus fuentes/versiones se fijan en `skills-lock.json`. Están instaladas `web-design-guidelines`, `building-components`, `vercel-react-best-practices`, `vercel-composition-patterns`, `vercel-cli` y `agent-browser`. Son contexto y herramientas de desarrollo: no se incluyen en `dist`, no cambian las funciones serverless y no son dependencias de ejecución de la aplicación.
 
+El enrutamiento obligatorio se define en `.github/instructions/skill-routing.instructions.md` y se replica en `AGENTS.md`, `.github/copilot-instructions.md` y los agentes especializados de Frontend, QA y DevOps. Cada agente debe cargar las skills aplicables antes de actuar y combinarlas cuando la tarea cruce UI, validación, navegador o plataforma.
+
 El frontend verificado continúa en React 18 + Vite, sin Next.js. Las reglas exclusivas de Next.js, React Server Components o React 19 no aplican. React 19 se aplaza porque los visores actuales dependen de `@react-three/fiber@8` y `@react-three/drei@9`, cuyas peer dependencies exigen React 18; una actualización requerirá migrar ambas bibliotecas y validar de nuevo los flujos 3D.
 
 `agent-browser` 0.38.1 usa un Chrome aislado para smoke tests y revisión visual. Su uso en producción debe ser de solo lectura salvo autorización explícita y nunca debe capturar datos clínicos, credenciales, tokens o cookies reales; las pruebas autenticadas deben usar cuentas y datos de prueba o anonimizados.

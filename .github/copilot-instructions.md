@@ -6,6 +6,17 @@ Construido con **React 18 + TypeScript + Vite + TailwindCSS** (frontend) y **Ver
 
 Este proyecto es el **panel admin exclusivo** — NO contiene páginas públicas del sitio web.
 
+## Skills Obligatorias
+Antes de actuar, cargar toda skill cuyo disparador coincida con la tarea. La matriz vinculante está en `.github/instructions/skill-routing.instructions.md`.
+
+- UI React: `building-components` + `vercel-react-best-practices`.
+- Auditoría visual/UX/accesibilidad: `web-design-guidelines`.
+- Refactorización de componentes: `vercel-composition-patterns` + `vercel-react-best-practices`.
+- Vercel: `vercel-cli` + `vercel-operations` y `cli-tools.instructions.md`.
+- Navegación o QA visual: `agent-browser` + `testing-validation`.
+
+No aplicar recomendaciones exclusivas de Next.js, RSC o React 19: el proyecto usa React 18 + Vite.
+
 ## Architecture & Key Patterns
 
 ### Core Structure

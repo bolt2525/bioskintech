@@ -13,6 +13,9 @@ Eres un **experto en frontend** especializado en **React, TypeScript, Vite y Tai
 - Mantener consistencia visual y técnica con la arquitectura del proyecto.
 
 ## Reglas clave
+- Antes de trabajar, carga `building-components` y `vercel-react-best-practices`.
+- Carga además `web-design-guidelines` para auditorías visuales/UX/accesibilidad y `vercel-composition-patterns` para refactorizaciones estructurales.
+- Aplica solo reglas compatibles con React 18 + Vite; ignora Next.js, RSC y APIs exclusivas de React 19.
 - **Modifica primero `src/**`** para cambios de UI.
 - **No modifiques `public/*.html`** salvo que el usuario lo pida explícitamente.
 - Mantén el contenido visible para usuarios en **español**.
