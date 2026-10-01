@@ -483,17 +483,17 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
         <div className="flex items-center gap-2 flex-wrap">
           {/* View mode tabs */}
           {photos.length >= 1 && (
-            <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs">
+            <div className="admin-tabs w-fit" role="group" aria-label="Vista de fotografías">
               {([
                 ['grid', LayoutGrid, 'Galería'],
                 ['timeline', Clock, 'Línea de tiempo'],
                 ['compare', SplitSquareHorizontal, 'Comparar'],
               ] as [ViewMode, React.ElementType, string][]).map(([mode, Icon, label]) => (
                 <button key={mode} type="button"
+                  aria-pressed={viewMode === mode}
+                  aria-label={label}
                   onClick={() => { setViewMode(mode); if (mode !== 'compare') resetCompare(); }}
-                  className={`flex items-center gap-1 px-3 py-2 font-medium transition-colors ${
-                    viewMode === mode ? 'bg-[#deb887] text-white' : 'text-gray-600 hover:bg-gray-50'
-                  }`}>
+                  className="admin-tab admin-focus-ring">
                   <Icon className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">{label}</span>
                 </button>
@@ -501,7 +501,7 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
             </div>
           )}
           <button type="button" disabled={uploading} onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm bg-[#deb887] text-white rounded-lg hover:bg-[#b8944d] transition-colors disabled:opacity-60">
+            className="admin-focus-ring admin-interactive flex min-h-10 items-center gap-1.5 rounded-xl bg-[#8b6840] px-3 py-2 text-sm font-medium text-white hover:bg-[#755632] disabled:opacity-60">
             <Upload className="w-4 h-4" />
             Subir Fotos
           </button>

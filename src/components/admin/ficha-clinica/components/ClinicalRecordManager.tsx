@@ -43,16 +43,21 @@ interface TabButtonProps {
 
 const TabButton: React.FC<TabButtonProps> = ({ id, label, icon: Icon, active, onClick, disabled }) => (  // ponytail: disabled → greyed out until consultation selected
   <button
+    id={`clinical-tab-${id}`}
+    type="button"
     onClick={disabled ? undefined : onClick}
+    disabled={disabled}
+    aria-pressed={active}
+    aria-controls="clinical-tabpanel"
     title={disabled ? 'Selecciona o crea una consulta para habilitar este tab' : undefined}
-    className={`relative flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors ${
+    className={`admin-focus-ring relative flex min-h-12 shrink-0 items-center gap-2 px-4 py-3 text-sm font-medium transition-colors ${
       disabled ? 'text-gray-300 cursor-not-allowed' : active ? 'text-[#deb887]' : 'text-gray-500 hover:text-gray-700'
     }`}
   >
     {active && (
       <motion.div
         layoutId="activeTab"
-        className="absolute inset-0 bg-[#deb887]/10 border-b-2 border-[#deb887]"
+        className="absolute inset-0 rounded-t-lg border-b-2 border-gold bg-gold/10"
         initial={false}
         transition={{ type: "spring", stiffness: 500, damping: 30 }}
       />
@@ -245,8 +250,8 @@ export default function ClinicalRecordManager() {
         </div>
 
         {/* Tabs Navigation */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-hidden overflow-y-visible min-h-[600px]">
-          <div className="flex overflow-x-auto border-b border-gray-100 scrollbar-hide">
+        <div className="admin-surface min-h-[600px] overflow-hidden">
+          <div className="flex snap-x snap-mandatory overflow-x-auto border-b border-gray-100 px-2 scrollbar-hide" role="group" aria-label="Secciones del expediente clínico">
             <TabButton id="history" label="Antecedentes" icon={ClipboardList}
               active={activeTab === 'history'} onClick={() => setActiveTab('history')} />
             <TabButton id="consultation" label="Consulta" icon={MessageSquare}
@@ -278,7 +283,7 @@ export default function ClinicalRecordManager() {
           </div>
 
           {/* Tab Content */}
-          <div className="p-6 bg-gray-50/30">
+          <div id="clinical-tabpanel" role="region" aria-labelledby={`clinical-tab-${activeTab}`} className="min-w-0 bg-gray-50/30 p-4 sm:p-6">
             {/* Banner cuando no hay consulta activa */}
             {!activeConsultation && activeTab !== 'history' && activeTab !== 'consultation' && (
               <motion.div

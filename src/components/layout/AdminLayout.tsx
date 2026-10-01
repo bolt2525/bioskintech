@@ -17,6 +17,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, LogOut, User, ChevronRight } from 'lucide-react';
+import { MotionConfig } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
 import type { Breadcrumb } from '../../types';
 import AppFooter from './AppFooter';
@@ -76,7 +77,7 @@ export default function AdminLayout({
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+    <div className="admin-layout-shell min-h-screen">
       {/* Demo banner */}
       {user?.is_demo && (
         <div className="bg-amber-500 text-white text-center text-xs py-2 px-4 font-medium sticky top-0 z-[60] flex items-center justify-center gap-2">
@@ -98,23 +99,23 @@ export default function AdminLayout({
       )}
 
       {/* ── Header fijo ───────────────────────────────────────────────── */}
-      <div className="bg-white shadow-lg sticky top-0 z-50">
-        <div className="container-custom py-4">
+      <div className="sticky top-0 z-50 border-b border-white/70 bg-white/95 shadow-sm backdrop-blur-xl">
+        <div className="container-custom py-3 md:py-4">
           <div className="flex items-center justify-between">
 
             {/* Izquierda: botón back + título + breadcrumbs */}
-            <div className="flex items-center gap-4">
+            <div className="flex min-w-0 items-center gap-2 sm:gap-4">
               {showBack && (
                 <button
                   onClick={handleBack}
-                  className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                  className="admin-focus-ring admin-interactive shrink-0 rounded-full p-2 hover:bg-gray-100"
                   aria-label="Volver"
                 >
                   <ArrowLeft className="w-5 h-5 text-gray-600" />
                 </button>
               )}
 
-              <div>
+              <div className="min-w-0">
                 {/* Breadcrumbs opcionales */}
                 {breadcrumbs && breadcrumbs.length > 0 && (
                   <nav className="flex items-center gap-1 mb-1" aria-label="Ruta de navegación">
@@ -123,7 +124,7 @@ export default function AdminLayout({
                         {i > 0 && <ChevronRight className="w-3 h-3 text-gray-400" />}
                         <button
                           onClick={() => navigate(crumb.path)}
-                          className="text-xs text-[#deb887] hover:text-[#c9a96e] hover:underline transition-colors font-medium"
+                          className="admin-focus-ring rounded text-xs font-medium text-[#8b6840] transition-colors hover:text-[#6f5030] hover:underline"
                         >
                           {crumb.label}
                         </button>
@@ -131,20 +132,21 @@ export default function AdminLayout({
                     ))}
                   </nav>
                 )}
-                <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
-                {subtitle && <p className="text-gray-600 text-sm">{subtitle}</p>}
+                <h1 className="truncate text-xl font-bold text-gray-900 sm:text-2xl">{title}</h1>
+                {subtitle && <p className="line-clamp-2 text-xs text-gray-600 sm:text-sm">{subtitle}</p>}
               </div>
             </div>
 
             {/* Derecha: usuario + logout */}
-            <div className="flex items-center gap-4">
-              <div className="hidden md:flex items-center gap-2 text-gray-700">
+            <div className="ml-2 flex shrink-0 items-center gap-2 sm:gap-4">
+              <div className="hidden max-w-48 items-center gap-2 text-gray-700 md:flex">
                 <User className="w-5 h-5" />
-                <span className="font-medium">{username}</span>
+                <span className="truncate font-medium">{username}</span>
               </div>
               <button
                 onClick={handleLogout}
-                className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm"
+                className="admin-focus-ring admin-interactive flex items-center gap-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 hover:border-red-200 hover:bg-red-100 sm:px-4"
+                aria-label="Cerrar sesión"
               >
                 <LogOut className="w-4 h-4" />
                 <span className="hidden md:inline">Cerrar Sesión</span>
@@ -156,8 +158,10 @@ export default function AdminLayout({
       </div>
 
       {/* ── Contenido ─────────────────────────────────────────────────── */}
-      <div className="container-custom py-8">
-        {children}
+      <div className="container-custom admin-page-enter py-5 sm:py-8">
+        <MotionConfig reducedMotion="user">
+          {children}
+        </MotionConfig>
       </div>
       <AppFooter theme="dark" />
     </div>

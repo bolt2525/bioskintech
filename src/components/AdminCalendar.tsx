@@ -359,7 +359,7 @@ const AdminCalendar: React.FC<AdminCalendarProps> = ({ onBack }) => {
   }
 
   return (
-    <div className="max-w-7xl mx-auto bg-white rounded-lg shadow-lg p-6 relative">
+    <div className="admin-surface relative mx-auto max-w-7xl p-4 sm:p-6">
       {/* Overlay de carga para escritorio */}
       {(loading || loadingMonth) && (
         <div className="absolute inset-0 bg-white bg-opacity-95 flex items-center justify-center z-50 rounded-lg">
@@ -385,8 +385,8 @@ const AdminCalendar: React.FC<AdminCalendarProps> = ({ onBack }) => {
         </div>
       )}
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-4">
+      <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex flex-wrap items-center gap-3 sm:gap-4">
           <button
             onClick={onBack}
             className="flex items-center gap-2 text-[#deb887] hover:text-[#d4a574] font-medium"
@@ -399,25 +399,21 @@ const AdminCalendar: React.FC<AdminCalendarProps> = ({ onBack }) => {
         </div>
         <div className="flex items-center gap-4">
           {/* Selector de vista */}
-          <div className="flex bg-gray-100 rounded-lg p-1">
+          <div className="admin-tabs w-fit" role="group" aria-label="Vista de agenda">
             <button
               onClick={() => setViewMode('month')}
-              className={`flex items-center gap-2 px-3 py-2 rounded-md transition-colors ${
-                viewMode === 'month' 
-                  ? 'bg-white text-[#deb887] shadow-sm' 
-                  : 'text-gray-600 hover:text-gray-800'
-              }`}
+              type="button"
+              aria-pressed={viewMode === 'month'}
+              className="admin-tab admin-focus-ring"
             >
               <Grid className="w-4 h-4" />
               Mes
             </button>
             <button
               onClick={() => setViewMode('week')}
-              className={`flex items-center gap-2 px-3 py-2 rounded-md transition-colors ${
-                viewMode === 'week' 
-                  ? 'bg-white text-[#deb887] shadow-sm' 
-                  : 'text-gray-600 hover:text-gray-800'
-              }`}
+              type="button"
+              aria-pressed={viewMode === 'week'}
+              className="admin-tab admin-focus-ring"
             >
               <List className="w-4 h-4" />
               Semana
@@ -430,7 +426,7 @@ const AdminCalendar: React.FC<AdminCalendarProps> = ({ onBack }) => {
               fetchMonthEvents(selectedDate);
             }}
             disabled={loading || loadingMonth}
-            className="flex items-center gap-2 px-4 py-2 bg-[#deb887] text-white rounded-lg hover:bg-[#d4a574] transition-colors disabled:opacity-50"
+            className="admin-focus-ring admin-interactive flex min-h-10 items-center gap-2 rounded-xl bg-gold-ink px-4 py-2 text-sm font-semibold text-white hover:bg-gold-ink/90 disabled:opacity-50"
           >
             <RefreshCw className={`w-4 h-4 ${(loading || loadingMonth) ? 'animate-spin' : ''}`} />
             {(loading || loadingMonth) ? 'Cargando...' : 'Actualizar'}

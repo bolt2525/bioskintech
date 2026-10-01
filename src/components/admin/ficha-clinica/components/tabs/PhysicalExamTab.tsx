@@ -886,14 +886,14 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
         <div className="flex-1 flex flex-col md:flex-row gap-6 overflow-visible md:overflow-hidden">
           {/* Left Column: Maps */}
           <div className="flex-1 flex flex-col overflow-y-auto min-w-0 custom-scrollbar pr-2">
-            <div className="flex gap-2 mb-6 border-b border-gray-100">
+            <div className="admin-tabs mb-6 w-fit" role="group" aria-label="Zona de examen físico">
               {['facial', 'corporal'].map((tab) => (
                 <button
                   key={tab}
+                  type="button"
                   onClick={() => setActiveTab(tab as any)}
-                  className={`relative px-6 py-3 font-medium transition-colors ${
-                    activeTab === tab ? 'text-[#deb887]' : 'text-gray-500 hover:text-gray-700'
-                  }`}
+                  aria-pressed={activeTab === tab}
+                  className="admin-tab admin-focus-ring relative"
                 >
                   {tab.charAt(0).toUpperCase() + tab.slice(1)}
                   {activeTab === tab && (

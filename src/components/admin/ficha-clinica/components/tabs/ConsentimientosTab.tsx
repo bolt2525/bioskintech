@@ -925,16 +925,16 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
         </div>
 
         {/* Tabs Navigation */}
-        <div className="flex border-b border-gray-200 overflow-x-auto">
+        <div className="admin-tabs w-full" role="group" aria-label="Secciones del consentimiento">
           {tabs.map((tab) => (
             <button
               key={tab.id}
+              type="button"
+              id={`consent-tab-${tab.id}`}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-6 py-3 border-b-2 whitespace-nowrap transition-all ${
-                activeTab === tab.id
-                  ? 'border-[#deb887] text-[#deb887] font-bold bg-[#deb887]/5'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-              }`}
+              aria-pressed={activeTab === tab.id}
+              aria-controls="consent-tabpanel"
+              className="admin-tab admin-focus-ring"
             >
               <tab.icon size={18} />
               {tab.label}
@@ -943,7 +943,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
         </div>
 
         {/* Tab Content */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 min-h-[400px]">
+        <div id="consent-tabpanel" role="region" aria-labelledby={`consent-tab-${activeTab}`} className="admin-surface min-h-[400px] p-4 sm:p-6">
           <AnimatePresence mode="wait">
             <motion.div
               key={activeTab}

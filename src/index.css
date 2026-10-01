@@ -27,6 +27,13 @@
 }
 
 @layer components {
+  .admin-layout-shell {
+    background:
+      radial-gradient(ellipse at 12% 0%, rgba(190, 179, 157, 0.14), transparent 38rem),
+      radial-gradient(ellipse at 88% 18%, rgba(177, 167, 145, 0.12), transparent 32rem),
+      linear-gradient(145deg, #292a27 0%, #33332f 48%, #252622 100%);
+  }
+
   /* Contenedor con padding responsivo */
   .container-custom {
     @apply container mx-auto px-4 md:px-8;
@@ -54,6 +61,84 @@
   .section-title::after {
     content: '';
     @apply absolute bottom-0 left-1/2 transform -translate-x-1/2 h-1 w-16 bg-[#deb887] rounded-full mt-2;
+  }
+
+  /* Controles compartidos del panel: superficie, jerarquía y estados de foco. */
+  .admin-surface {
+    @apply rounded-2xl border border-white/70 bg-white shadow-sm;
+    box-shadow: 0 12px 32px -24px rgba(18, 24, 20, 0.35);
+  }
+
+  .admin-tabs {
+    @apply flex w-full max-w-full items-center gap-1 overflow-x-auto rounded-xl border border-gray-200/80 bg-gray-100/80 p-1;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
+  }
+
+  .admin-tab {
+    @apply inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-gray-600 transition-colors duration-200;
+  }
+
+  .admin-tab:hover:not(:disabled) {
+    @apply bg-white/70 text-gray-900;
+  }
+
+  .admin-tab[aria-pressed="true"] {
+    @apply bg-white font-semibold text-gold-ink shadow-sm ring-1 ring-gray-200/80;
+  }
+
+  .admin-tab:disabled {
+    @apply cursor-not-allowed opacity-50;
+  }
+
+  .admin-focus-ring {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-ink focus-visible:ring-offset-2;
+  }
+
+  .admin-interactive {
+    @apply transition-[color,background-color,border-color,box-shadow,transform] duration-200 ease-out;
+  }
+
+  .admin-page-enter {
+    animation: admin-page-enter 240ms ease-out;
+  }
+
+  .dashboard-hero {
+    background:
+      radial-gradient(ellipse at 90% 10%, rgba(190, 179, 157, 0.3), transparent 22rem),
+      linear-gradient(120deg, #fffdfa 0%, #f5f0e8 58%, #eee8dd 100%);
+  }
+
+  .dashboard-summary-card {
+    @apply grid items-center gap-x-4 rounded-2xl border border-white/80 bg-white/75 px-4 py-3 shadow-sm backdrop-blur-sm;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .dashboard-summary-label {
+    @apply text-xs font-medium uppercase tracking-wider text-gray-500;
+  }
+
+  .dashboard-summary-value {
+    @apply row-span-2 text-3xl font-semibold tracking-tight text-gray-900;
+  }
+
+  .dashboard-summary-note {
+    @apply text-xs text-gray-500;
+  }
+}
+
+@keyframes admin-page-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
   }
 }
 

@@ -780,9 +780,9 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
             <div className="flex items-center gap-2 text-xs font-bold uppercase text-gray-500">
               <FileText className="w-4 h-4 text-[#b8944d]" /> Tipo de documento
             </div>
-            <div className="flex rounded-xl border border-gray-200 p-1 bg-gray-50 min-w-0">
-              <button type="button" onClick={() => { setMode('routine'); setCurrentPrescription(p => ({ ...p, mode: 'routine' })); }} className={`flex-1 flex items-center justify-center gap-2 px-2.5 py-1.5 rounded-lg text-sm font-semibold transition-colors ${mode === 'routine' ? 'bg-white text-[#99652f] shadow-sm border border-[#deb887]/40' : 'text-gray-400 hover:text-gray-600'}`}><Home className="w-4 h-4" /> Rutina / Guía</button>
-              <button type="button" onClick={() => { setMode('prescription'); setCurrentPrescription(p => ({ ...p, mode: 'prescription' })); }} className={`flex-1 flex items-center justify-center gap-2 px-2.5 py-1.5 rounded-lg text-sm font-semibold transition-colors ${mode === 'prescription' ? 'bg-[#deb887] text-white shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}><Stethoscope className="w-4 h-4" /> Receta médica</button>
+            <div className="admin-tabs min-w-0" role="group" aria-label="Tipo de documento">
+              <button type="button" aria-pressed={mode === 'routine'} onClick={() => { setMode('routine'); setCurrentPrescription(p => ({ ...p, mode: 'routine' })); }} className="admin-tab admin-focus-ring flex-1"><Home className="w-4 h-4" /> Rutina / Guía</button>
+              <button type="button" aria-pressed={mode === 'prescription'} onClick={() => { setMode('prescription'); setCurrentPrescription(p => ({ ...p, mode: 'prescription' })); }} className="admin-tab admin-focus-ring flex-1"><Stethoscope className="w-4 h-4" /> Receta médica</button>
             </div>
             {mode === 'prescription' && (
               <label className="text-xs font-semibold text-gray-600">

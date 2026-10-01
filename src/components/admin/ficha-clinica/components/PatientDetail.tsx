@@ -181,25 +181,27 @@ export default function PatientDetail() {
     >
       <div className="space-y-8">
         {/* Patient Info Card */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 relative">
-          <div className="absolute top-6 right-6 flex gap-2">
+        <div className="admin-surface relative p-5 sm:p-6">
+          <div className="absolute right-4 top-4 flex gap-1 sm:right-6 sm:top-6 sm:gap-2">
             <button 
               onClick={() => nav(`clinical-records/edit/${patient.id}`)}
-              className="p-2 text-gray-500 hover:text-[#deb887] hover:bg-[#deb887]/10 rounded-lg transition-colors"
+              className="admin-focus-ring admin-interactive rounded-lg p-2 text-gray-500 hover:bg-gold/10 hover:text-gold-ink"
               title="Editar Información"
+              aria-label="Editar información del paciente"
             >
               <Edit2 className="w-5 h-5" />
             </button>
             <button 
               onClick={handleDeletePatient}
-              className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+              className="admin-focus-ring admin-interactive rounded-lg p-2 text-gray-500 hover:bg-red-50 hover:text-red-600"
               title="Eliminar Paciente"
+              aria-label="Eliminar paciente"
             >
               <Trash2 className="w-5 h-5" />
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 gap-x-6 gap-y-4 pr-16 sm:grid-cols-2 sm:pr-20 lg:grid-cols-3">
             <div>
               <label className="text-sm text-gray-500">{patient.identification_type === 'ruc' ? 'RUC' : patient.identification_type === 'cedula' ? 'Cédula' : 'Identificación'}</label>
               <p className="font-medium text-gray-900">{patient.identification_number || 'No registrada'}</p>
@@ -234,11 +236,14 @@ export default function PatientDetail() {
 
         {/* Records List */}
         <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <h2 className="text-xl font-bold text-gray-800">Expedientes Clínicos</h2>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-ink">Historial médico</p>
+              <h2 className="mt-1 text-xl font-bold text-gray-900">Expedientes Clínicos</h2>
+            </div>
             <button 
               onClick={handleCreateRecord}
-              className="bg-[#deb887] text-white px-4 py-2 rounded-lg hover:bg-[#c5a075] transition-colors flex items-center gap-2"
+              className="admin-focus-ring admin-interactive inline-flex min-h-11 items-center justify-center gap-2 self-start rounded-xl bg-gold-ink px-4 py-2.5 text-sm font-semibold text-white hover:bg-gold-ink/90 sm:self-auto"
             >
               <Plus className="w-4 h-4" />
               Nuevo Expediente
@@ -254,10 +259,10 @@ export default function PatientDetail() {
               records.map((record, recIdx) => (
                 <div 
                   key={record.id}
-                  className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow flex justify-between items-center group"
+                  className="admin-surface group flex flex-col justify-between gap-5 p-4 transition-shadow hover:shadow-md sm:flex-row sm:items-center sm:p-5"
                 >
                   <div className="flex items-start gap-4">
-                    <div className="p-3 bg-[#deb887]/10 rounded-lg text-[#deb887]">
+                    <div className="rounded-xl bg-gold/10 p-3 text-gold-ink">
                       <FileText className="w-6 h-6" />
                     </div>
                     <div>
@@ -267,7 +272,7 @@ export default function PatientDetail() {
                           {record.created_by_gentilicio ? `${record.created_by_gentilicio} ` : ''}{record.created_by_full_name}
                         </p>
                       )}
-                      <div className="flex items-center gap-4 text-sm text-gray-500 mt-1">
+                      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-gray-500">
                         <span className="flex items-center gap-1">
                           <Calendar className="w-4 h-4" />
                           {new Date(record.created_at).toLocaleDateString()}
@@ -285,20 +290,21 @@ export default function PatientDetail() {
                     </div>
                   </div>
                   
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-end gap-3 border-t border-gray-100 pt-3 sm:border-0 sm:pt-0">
                     <button 
                       onClick={(e) => {
                         e.stopPropagation();
                         handleDeleteRecord(record.id);
                       }}
-                      className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                      className="admin-focus-ring admin-interactive rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-500"
                       title="Eliminar Expediente"
+                      aria-label={`Eliminar expediente ${clinicCode(user?.clinic_name || '', recIdx + 1, record.created_at)}`}
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
                     <button 
                       onClick={() => nav(`ficha-clinica/expediente/${record.id}`)}
-                      className="flex items-center gap-2 text-[#deb887] font-medium group-hover:translate-x-1 transition-transform"
+                      className="admin-focus-ring admin-interactive flex min-h-10 items-center gap-2 rounded-lg px-2 font-medium text-gold-ink hover:text-gold-ink/80"
                     >
                       Ver Detalles
                       <ArrowRight className="w-4 h-4" />

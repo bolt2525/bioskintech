@@ -442,29 +442,30 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
   }
 
   return (
-    <section className="py-16 bg-gray-50 min-h-screen">
-      <div className="max-w-6xl w-full mx-auto bg-white rounded-3xl shadow-2xl p-6 md:p-10">
+    <section className="min-h-screen bg-[#f5f4f1] px-3 py-6 sm:px-6 sm:py-10">
+      <div className="admin-surface mx-auto w-full max-w-6xl p-4 sm:p-6 lg:p-9">
         {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-3">
+        <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-center gap-3">
             <button
               onClick={onBack}
-              className="p-2 text-gray-600 hover:text-[#deb887] hover:bg-gray-100 rounded-lg transition-colors"
+              className="admin-focus-ring admin-interactive shrink-0 rounded-xl p-2 text-gray-600 hover:bg-gray-100 hover:text-gold-ink"
+              aria-label="Volver al panel"
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
             <div>
-              <h2 className="text-2xl font-bold text-[#99652f] flex items-center gap-2">
+              <h2 className="flex items-center gap-2 text-xl font-bold text-gold-ink sm:text-2xl">
                 <Calendar className="w-6 h-6" />
                 Gestión Completa del Calendario
               </h2>
-              <p className="text-gray-600">Visualiza y gestiona todas las citas y bloqueos del calendario</p>
+              <p className="mt-1 text-sm text-gray-600">Visualiza y gestiona todas las citas y bloqueos del calendario</p>
             </div>
           </div>
           <button
             onClick={loadCalendarEvents}
             disabled={loading}
-            className="flex items-center gap-2 px-4 py-2 bg-[#deb887] hover:bg-[#d4a574] text-white rounded-lg transition-colors disabled:opacity-50"
+            className="admin-focus-ring admin-interactive inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-gold-ink px-4 py-2 text-sm font-semibold text-white hover:bg-gold-ink/90 disabled:opacity-50"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             {loading ? 'Cargando...' : 'Actualizar'}
@@ -472,7 +473,7 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
         </div>
 
         {/* Filtros */}
-        <div className="flex flex-wrap gap-4 mb-6">
+        <div className="mb-6 flex flex-wrap items-end gap-3 rounded-2xl border border-gray-100 bg-gray-50/80 p-4 sm:gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Días a mostrar
@@ -504,7 +505,7 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
                 nextDate.setDate(nextDate.getDate() + Math.max(0, days - 1));
                 setEndDate(getLocalDateString(nextDate));
               }}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#deb887] focus:border-transparent"
+              className="admin-focus-ring min-h-10 rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm"
             >
               <option value="today">Hoy</option>
               <option value="tomorrow">Mañana</option>
@@ -518,15 +519,15 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
           </div>
           {dateRange === 0 && <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Desde</label>
-            <input type="date" value={startDate} max={endDate} onChange={(e) => setStartDate(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#deb887] focus:border-transparent" />
+            <input aria-label="Fecha inicial" type="date" value={startDate} max={endDate} onChange={(e) => setStartDate(e.target.value)} className="admin-focus-ring min-h-10 rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm" />
           </div>}
           {dateRange === 0 && <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Hasta</label>
-            <input type="date" value={endDate} min={startDate} onChange={(e) => setEndDate(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#deb887] focus:border-transparent" />
+            <input aria-label="Fecha final" type="date" value={endDate} min={startDate} onChange={(e) => setEndDate(e.target.value)} className="admin-focus-ring min-h-10 rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm" />
           </div>}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Filtrar eventos</label>
-            <select value={eventFilter} onChange={(e) => setEventFilter(e.target.value as typeof eventFilter)} className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#deb887] focus:border-transparent">
+            <select value={eventFilter} aria-label="Filtrar eventos" onChange={(e) => setEventFilter(e.target.value as typeof eventFilter)} className="admin-focus-ring min-h-10 rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm">
               <option value="all">Citas y bloqueos</option>
               <option value="appointment">Solo citas</option>
               <option value="block">Solo bloqueos</option>
@@ -534,7 +535,7 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Profesional o recurso</label>
-            <select value={resourceFilter} onChange={(e) => setResourceFilter(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#deb887] focus:border-transparent">
+            <select value={resourceFilter} aria-label="Filtrar por profesional o recurso" onChange={(e) => setResourceFilter(e.target.value)} className="admin-focus-ring min-h-10 rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm">
               <option value="all">Todos</option>
               {user?.id && <option value={`owner:${user.id}`}>Titular · {user.full_name || user.username || 'Yo'}</option>}
               {staffResources.map(resource => <option key={resource.id} value={`staff:${resource.id}`}>{resource.name}</option>)}
@@ -542,12 +543,12 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
           </div>
           <label className="flex items-end relative">
             <Search className="w-4 h-4 text-gray-400 absolute left-3 bottom-3" />
-            <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Buscar paciente o servicio" className="w-full md:w-64 pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#deb887] focus:border-transparent" />
+            <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Buscar paciente o servicio" aria-label="Buscar paciente o servicio" className="admin-focus-ring min-h-10 w-full rounded-xl border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm md:w-64" />
           </label>
           <div className="flex items-end ml-auto">
-            <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1" role="group" aria-label="Vista del calendario">
-              <button onClick={() => setViewMode('list')} aria-pressed={viewMode === 'list'} className={`inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${viewMode === 'list' ? 'bg-white text-[#99652f] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}><List className="w-4 h-4" /> Lista</button>
-              <button onClick={() => setViewMode('calendar')} aria-pressed={viewMode === 'calendar'} className={`inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${viewMode === 'calendar' ? 'bg-white text-[#99652f] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}><CalendarDays className="w-4 h-4" /> Calendario</button>
+            <div className="admin-tabs w-fit" role="group" aria-label="Vista del calendario">
+              <button type="button" onClick={() => setViewMode('list')} aria-pressed={viewMode === 'list'} className="admin-tab admin-focus-ring"><List className="w-4 h-4" /> Lista</button>
+              <button type="button" onClick={() => setViewMode('calendar')} aria-pressed={viewMode === 'calendar'} className="admin-tab admin-focus-ring"><CalendarDays className="w-4 h-4" /> Calendario</button>
             </div>
           </div>
         </div>
