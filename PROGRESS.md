@@ -200,6 +200,8 @@
 - ✅ 2026-09-30 `clinic_id` lleva `DEFAULT` desde `app.current_tenant`, así que los `INSERT` del panel heredan la clínica sin cambiar cada consulta y no pueden generar filas huérfanas. `injectable_catalog` queda como catálogo global de solo lectura para el rol de aplicación; sus escrituras (ya `master_admin`) pasan por `getPool()`. Una plantilla de receta de prueba sin dueño derivable se conservó e quedó invisible bajo RLS en vez de borrarla.
 - ✅ 2026-09-30 `npm run test:rls` ampliado a 42 aserciones: aislamiento por tenant en 6 tablas, ausencia de escalamiento a credenciales/sesiones, y 15 consultas y escrituras reales de `records.js` bajo el rol restringido.
 
+- ✅ 2026-10-01 Reordenados y acortados los mensajes libres del chatbot de WhatsApp; los resúmenes de staff ya no se aplanan en párrafos extensos y los valores dinámicos rechazan controles visuales. La plantilla aprobada de confirmación al paciente permanece intacta.
+
 ## Pendientes verificables
 - ⏳ Resolver o registrar la deuda de lint global: 471 errores y 54 warnings en la línea base.
 - ⏳ Revisar vulnerabilidades restantes exclusivamente en herramientas dev/build; `npm audit --force` propone downgrades incompatibles.

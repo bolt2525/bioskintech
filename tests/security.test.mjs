@@ -291,6 +291,19 @@ test('WhatsApp message sending fails closed without credentials', async () => {
   );
 });
 
+test('WhatsApp template values cannot break message layout', async () => {
+  const { normalizeWhatsAppTemplateValue } = await import('../lib/whatsapp-service.js');
+
+  assert.equal(
+    normalizeWhatsAppTemplateValue('  Ana\n*_García_*\u202e\u200f  '),
+    'Ana García'
+  );
+  const boundaryValue = `${'a'.repeat(1023)}😀otro texto`;
+  const truncated = normalizeWhatsAppTemplateValue(boundaryValue);
+  assert.equal(Array.from(truncated).length, 1024);
+  assert.match(truncated, /😀$/u);
+});
+
 test('appointment system note prefers clinic contact and falls back to professional', async () => {
   const { buildAppointmentSystemNote } = await import('../lib/whatsapp-service.js');
 
@@ -363,7 +376,42 @@ test('WhatsApp bot extracts auditable messages only when a sender exists', async
 });
 
 test('appointment replies classify only explicit confirmations as confirmed', async () => {
-  const { classifyAppointmentReply, formatAppointmentReplyStatus } = await import('../api/whatsapp-chatbot.js');
+  const {
+    buildClinicContactMessage,
+    buildDailySummaryMessage,
+    buildPatientReminderMessage,
+    classifyAppointmentReply,
+    formatWhatsAppLabel,
+    formatAppointmentReplyStatus,
+  } = await import('../api/whatsapp-chatbot.js');
+
+  const reminder = buildPatientReminderMessage({
+    patientName: 'Ana',
+    clinicName: 'Clínica BIOSKIN',
+    professionalName: 'Dra. María',
+    dateLabel: '02/10/2026, 10:30',
+  });
+  assert.match(reminder, /\*Recordatorio de cita\*\n📍 Clínica BIOSKIN\n👤 Dra\. María\n📅 02\/10\/2026, 10:30/);
+  assert.match(reminder, /\*Elige una opción:\*\n✅ \*CONFIRMAR\* — asistiré\n🔄 \*CAMBIAR\* — necesito otra fecha/);
+  assert.doesNotMatch(reminder, /te recordamos tu cita.+para el/s);
+
+  assert.equal(
+    buildClinicContactMessage({ clinicName: 'Clínica BIOSKIN', contactLink: 'https://example.test/r/abc' }),
+    'Para cambiar o consultar tu cita, escribe directamente a *Clínica BIOSKIN*:\nhttps://example.test/r/abc'
+  );
+  assert.equal(formatWhatsAppLabel('Clínica\n*_falsa_*\u202esecret'), 'Clínica falsa secret');
+
+  const summaryMessage = buildDailySummaryMessage({
+    greeting: 'Hola equipo 👋',
+    header: 'Agenda de hoy',
+    lines: ['Cita 1', 'Cita 2', 'Cita 3', 'Cita 4', 'Cita 5'],
+    footer: 'Responde 1 para Agenda.',
+    moreInstruction: 'Escribe 1 para verla.',
+  });
+  assert.equal(
+    summaryMessage,
+    'Hola equipo 👋\n\nAgenda de hoy\n\nCita 1\n\nCita 2\n\nCita 3\n\nCita 4\n\n*Hay 1 cita más.* Escribe 1 para verla.\n\nResponde 1 para Agenda.'
+  );
 
   assert.equal(classifyAppointmentReply('Confirmar', 'appointment_confirm:event-1'), 'confirmed');
   assert.equal(classifyAppointmentReply('Sí, asistiré'), 'confirmed');

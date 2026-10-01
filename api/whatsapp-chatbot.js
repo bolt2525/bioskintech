@@ -141,9 +141,22 @@ export function shouldSendAppointmentReminder(event, now = new Date()) {
   return sentDateKey !== currentDateKey;
 }
 
-function buildPatientReminderMessage({ patientName, clinicName, dateLabel, professionalName }) {
-  const professionalText = professionalName ? ` con ${professionalName}` : '';
-  return `Hola ${patientName}, te recordamos tu cita en ${clinicName}${professionalText} para el ${dateLabel}.\n\n✅ Responde *CONFIRMAR* si asistirás.\n🔄 Responde *CAMBIAR* si necesitas reprogramar o cancelar.`;
+export function formatWhatsAppLabel(value, fallback = '') {
+  const normalized = String(value ?? '')
+    .replace(/[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g, ' ')
+    .replace(/[*_~`]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return Array.from(normalized || fallback).slice(0, 150).join('');
+}
+
+export function buildPatientReminderMessage({ patientName, clinicName, dateLabel, professionalName }) {
+  const patient = formatWhatsAppLabel(patientName, 'Paciente');
+  const clinic = formatWhatsAppLabel(clinicName, 'la clínica');
+  const date = formatWhatsAppLabel(dateLabel, 'fecha acordada');
+  const professional = formatWhatsAppLabel(professionalName);
+  const professionalLine = professional ? `\n👤 ${professional}` : '';
+  return `Hola ${patient} 👋\n\n*Recordatorio de cita*\n📍 ${clinic}${professionalLine}\n📅 ${date}\n\n*Elige una opción:*\n✅ *CONFIRMAR* — asistiré\n🔄 *CAMBIAR* — necesito otra fecha`;
 }
 
 
@@ -173,11 +186,12 @@ function normalizeContactPhone(value) {
   return normalizeEcuadorPhone(value);
 }
 
-function buildClinicContactMessage({ clinicName, contactLink, professionalName }) {
-  const clinic = String(clinicName || 'la clínica').trim();
+export function buildClinicContactMessage({ clinicName, contactLink, professionalName }) {
+  const clinic = formatWhatsAppLabel(clinicName, 'la clínica');
+  const professional = formatWhatsAppLabel(professionalName, clinic);
   return contactLink
-    ? `ℹ️ Este es un mensaje automático del sistema de agenda. Para confirmar, cambiar o consultar tu cita, comunícate directamente con ${clinic}: ${contactLink}`
-    : `ℹ️ Este es un mensaje automático del sistema de agenda. Para confirmar, cambiar o consultar tu cita, comunícate directamente con ${professionalName || clinic} por sus canales habituales.`;
+    ? `Para cambiar o consultar tu cita, escribe directamente a *${clinic}*:\n${contactLink}`
+    : `Para cambiar o consultar tu cita, comunícate con *${professional}* por sus canales habituales.`;
 }
 
 async function notifyStaffOfPatientReply(appointment, patientText, intent) {
@@ -548,7 +562,16 @@ async function getAppointmentsForDate(userId, isoDate) {
 }
 
 function formatAppointmentSelectionList(appointments) {
-  return appointments.map((a, i) => `${i + 1}. ${a.hora || 'Hora pendiente'} — ${a.patientName}${a.resource ? ` (${a.resource})` : ''}`).join('\n');
+  return appointments.map((a, i) => `${i + 1}. ${a.hora || 'Hora pendiente'} — ${formatWhatsAppLabel(a.patientName, 'Paciente')}${a.resource ? ` (${formatWhatsAppLabel(a.resource)})` : ''}`).join('\n');
+}
+
+export function buildDailySummaryMessage({ greeting, header, lines, footer, moreInstruction }, visibleLimit = 4) {
+  const visibleLines = lines.slice(0, visibleLimit);
+  const remaining = lines.length - visibleLines.length;
+  const more = remaining > 0
+    ? `\n\n*Hay ${remaining} ${remaining === 1 ? 'cita' : 'citas'} más.* ${moreInstruction}`
+    : '';
+  return `${greeting}\n\n${header}\n\n${visibleLines.join('\n\n')}${more}\n\n${footer}`;
 }
 
 async function listAppointmentsForDate(userId, isoDate, label) {
@@ -768,20 +791,21 @@ async function notifyPatientOfAppointment(clinicUser, { kind, patientName, phone
   return lines.join('\n');
 }
 
-const CANCEL_HINT = '\n\n(Escribe *cancelar* para salir de este proceso o *menu* para volver al inicio)';
-const MENU_TEXT = '1) Agenda\n2) Reporte financiero\n\nResponde con el número de la opción.';
-const AGENDA_MENU_TEXT = '📅 Agenda\n\n1) Ver citas de hoy\n2) Ver citas de otro día\n3) Reprogramar una cita\n4) Eliminar una cita\n5) Agendar una cita nueva\n\nResponde con el número de la opción.' + CANCEL_HINT;
-const FINANCE_REPORT_MENU_TEXT = '📊 Reporte financiero\n\n1) Diario\n2) Semanal\n3) Mensual\n\nResponde con el número o la palabra del período.' + CANCEL_HINT;
-const AGENDA_DATE_PROMPT = '📅 Escribe la fecha que quieres consultar.\nFormatos válidos: "hoy", "mañana", 31/12/2026 o 2026-12-31.' + CANCEL_HINT;
-const RESCHEDULE_DATE_PROMPT = '📅 ¿Qué día está la cita que quieres reprogramar?\nFormatos válidos: "hoy", "mañana", 31/12/2026 o 2026-12-31.' + CANCEL_HINT;
-const DELETE_DATE_PROMPT = '📅 ¿Qué día está la cita que quieres eliminar?\nFormatos válidos: "hoy", "mañana", 31/12/2026 o 2026-12-31.' + CANCEL_HINT;
-const NEW_DATE_PROMPT = '📅 Escribe la nueva fecha para la cita.\nFormatos válidos: "hoy", "mañana", 31/12/2026 o 2026-12-31.' + CANCEL_HINT;
-const NEW_DURATION_PROMPT = '⏱️ ¿Cuánto dura la cita? Responde en minutos (ej: 30, 60, 90).' + CANCEL_HINT;
-const NEW_PERIOD_PROMPT = '🌤️ ¿Prefieres la cita en la mañana o en la tarde? Responde "mañana" o "tarde".' + CANCEL_HINT;
+const CANCEL_HINT = '\n\n_Salir: *cancelar* · Inicio: *menu*_';
+const MENU_TEXT = '*¿Qué deseas hacer?*\n\n1. Ver agenda\n2. Recibir reporte financiero\n\n_Responde solo con 1 o 2._';
+const AGENDA_MENU_TEXT = '📅 *Agenda*\n\n1. Citas de hoy\n2. Citas de otra fecha\n3. Reprogramar cita\n4. Eliminar cita\n5. Agendar cita\n\n_Responde solo con un número._' + CANCEL_HINT;
+const FINANCE_REPORT_MENU_TEXT = '📊 *Reporte financiero*\n\n1. Diario\n2. Semanal\n3. Mensual\n\n_Responde solo con un número._' + CANCEL_HINT;
+const DATE_FORMAT_HINT = '_Ejemplo: hoy, mañana o 31/12/2026_';
+const AGENDA_DATE_PROMPT = '📅 *Consultar agenda*\n\n¿Qué fecha deseas ver?\n' + DATE_FORMAT_HINT + CANCEL_HINT;
+const RESCHEDULE_DATE_PROMPT = '📅 *Reprogramar cita*\n\n¿En qué fecha está la cita?\n' + DATE_FORMAT_HINT + CANCEL_HINT;
+const DELETE_DATE_PROMPT = '📅 *Eliminar cita*\n\n¿En qué fecha está la cita?\n' + DATE_FORMAT_HINT + CANCEL_HINT;
+const NEW_DATE_PROMPT = '📅 *Nueva fecha*\n\n¿Para qué día deseas moverla?\n' + DATE_FORMAT_HINT + CANCEL_HINT;
+const NEW_DURATION_PROMPT = '⏱️ *Duración*\n\n¿Cuántos minutos dura?\n_Ejemplo: 30, 60 o 90_' + CANCEL_HINT;
+const NEW_PERIOD_PROMPT = '🌤️ *Horario*\n\n¿Mañana o tarde?\n_Responde: mañana o tarde_' + CANCEL_HINT;
 const BOOKING_NAME_PROMPT = '🧑‍⚕️ Vamos a agendar una cita nueva.\n\n¿Cuál es el nombre completo del paciente?' + CANCEL_HINT;
-const BOOKING_PHONE_PROMPT = '📱 ¿Cuál es el número de WhatsApp del paciente? (ej: 0991234567)' + CANCEL_HINT;
+const BOOKING_PHONE_PROMPT = '📱 *WhatsApp del paciente*\n\nEscribe el número.\n_Ejemplo: 0991234567_' + CANCEL_HINT;
 const BOOKING_EMAIL_PROMPT = '✉️ ¿Cuál es el correo del paciente? Ahí se envía la confirmación de la cita.\n\nSi no lo tienes, responde *omitir*.' + CANCEL_HINT;
-const BOOKING_DATE_PROMPT = '📅 ¿Para qué día es la cita?\nFormatos válidos: "hoy", "mañana", 31/12/2026 o 2026-12-31.' + CANCEL_HINT;
+const BOOKING_DATE_PROMPT = '📅 *Fecha de la cita*\n\n¿Para qué día es?\n' + DATE_FORMAT_HINT + CANCEL_HINT;
 const PAST_DATE_NOTICE = '⚠️ Esa fecha ya pasó. Escribe una fecha de hoy en adelante.';
 const ALLOWED_BOT_ACTIONS = new Set(['1', '2', 'diario', 'daily', 'semanal', 'weekly', 'mensual', 'monthly']);
 
@@ -1487,12 +1511,13 @@ async function sendAppointmentSummaries(dayOffset = 0, slot = 'morning', startIn
         const hora = event.start?.dateTime
           ? start.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'America/Guayaquil' })
           : '';
-        const patientMessage = `Hola ${appointment.patientName}, te escribimos de ${clinicName}. ` +
+        const patientName = formatWhatsAppLabel(appointment.patientName, 'Paciente');
+        const patientMessage = `Hola ${patientName}, te escribimos de ${formatWhatsAppLabel(clinicName, 'la clínica')}. ` +
           `Te recordamos tu cita para el ${targetDate}${hora ? ` a las ${hora}` : ''}. ` +
           'Por favor confirma tu asistencia respondiendo a este mensaje o comunícate con la clínica.';
         // Enlace abre WhatsApp del staff con el chat del PACIENTE, no del número de la clínica
         const link = appointment.phone ? await createShortWaLink(appointment.phone, patientMessage) : '';
-        appointments.push({ ...appointment, eventId: event.id, hora, link });
+        appointments.push({ ...appointment, patientName, eventId: event.id, hora, link });
       }
       if (!appointments.length) continue;
 
@@ -1505,11 +1530,18 @@ async function sendAppointmentSummaries(dayOffset = 0, slot = 'morning', startIn
         return `${index + 1}) ${appointment.hora || 'Hora pendiente'} — ${appointment.patientName}\n   ${formatAppointmentReplyStatus(replyStatuses[appointment.eventId])}${contact}`;
       });
       const pending = appointments.filter(a => replyStatuses[a.eventId] !== 'confirmed').length;
-      const header = `📅 *Agenda de ${label}* (${targetDate}) — ${clinicName}\n` +
+      const header = `📅 *Agenda de ${label}* (${targetDate}) — ${formatWhatsAppLabel(clinicName, 'la clínica')}\n` +
         `${appointments.length} cita(s) · ${appointments.length - pending} confirmada(s) · ${pending} sin confirmar`;
-      const summary = `Hola ${row.staff_name || 'equipo'} 👋\n\n${header}\n\n${lines.join('\n\n')}\n\n` +
-        'ℹ️ “Aún no responde” NO significa que el paciente vaya a faltar: solo que todavía no contestó el recordatorio automático.\n\n' +
-        'Responde *1* para Agenda o *2* para Reporte financiero.';
+      const footer = 'ℹ️ “Aún no responde” solo indica que el paciente todavía no contestó.\n\nResponde *1* para Agenda o *2* para Reporte financiero.';
+      const summaryMessage = buildDailySummaryMessage({
+        greeting: `Hola ${formatWhatsAppLabel(row.staff_name, 'equipo')} 👋`,
+        header,
+        lines,
+        footer,
+        moreInstruction: dayOffset === 0
+          ? 'Escribe *1* y elige “Citas de hoy” para verla.'
+          : 'Escribe *1* y elige “Citas de otra fecha” para verlas.',
+      });
       const staffPhone = normalizeEcuadorPhone(row.staff_phone);
       try {
         // El staff no necesariamente escribió hoy: fuera de la ventana de 24h se requiere plantilla aprobada
@@ -1517,15 +1549,18 @@ async function sendAppointmentSummaries(dayOffset = 0, slot = 'morning', startIn
         const templateName = (process.env.WHATSAPP_TEMPLATE_DAILY_SUMMARY || '').trim();
         const templateLang = (process.env.WHATSAPP_TEMPLATE_DAILY_SUMMARY_LANG || 'es_MX').trim();
         if (withinWindow) {
-          await sendWhatsAppText(staffPhone, summary, { clinicId: row.clinic_id });
+          await sendWhatsAppText(staffPhone, summaryMessage, { clinicId: row.clinic_id });
         } else if (templateName) {
-          // Meta rechaza parámetros de plantilla con saltos de línea; se aplana a una sola línea
-          const summaryFlat = summary.replace(/\s*\n+\s*/g, ' · ').trim();
+          const visibleLines = lines.slice(0, 3).map(line => line.replace(/\s*\n+\s*/g, ' — '));
+          if (lines.length > visibleLines.length) {
+            const remaining = lines.length - visibleLines.length;
+            visibleLines.push(`Y ${remaining} ${remaining === 1 ? 'cita más' : 'citas más'} en el panel`);
+          }
           await sendWhatsAppTemplate(staffPhone, templateName, templateLang, {
-            nombre_usuario: row.staff_name || 'equipo',
-            nombre_clinica: clinicName,
+            nombre_usuario: formatWhatsAppLabel(row.staff_name, 'equipo'),
+            nombre_clinica: formatWhatsAppLabel(clinicName, 'la clínica'),
             fecha: targetDate,
-            resumen: summaryFlat,
+            resumen: visibleLines.join(' | '),
           }, { clinicId: row.clinic_id });
         } else {
           throw new Error('Fuera de ventana de 24h y no hay WHATSAPP_TEMPLATE_DAILY_SUMMARY configurada');
