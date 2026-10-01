@@ -234,6 +234,7 @@ export default function ClinicalRecordManager() {
   }, [requestedTab, activeTab, activeConsultation, enabledOptional.consents, enabledOptional.injectables]);
 
   useEffect(() => {
+    if (loading) return;
     const optionalTabUnavailable =
       (activeTab === 'consent' && !enabledOptional.consents) ||
       (activeTab === 'injectables' && !enabledOptional.injectables);
@@ -248,7 +249,7 @@ export default function ClinicalRecordManager() {
         return next;
       }, { replace: true });
     }
-  }, [activeTab, activeConsultation, enabledOptional.consents, enabledOptional.injectables, setSearchParams]);
+  }, [activeTab, activeConsultation, enabledOptional.consents, enabledOptional.injectables, loading, setSearchParams]);
 
   useEffect(() => {
     if (recordId) {

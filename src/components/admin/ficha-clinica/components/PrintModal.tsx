@@ -50,9 +50,9 @@ const SECTIONS = [
   { key: 'consentimientos', label: 'Consentimientos' },
 ] as const;
 
-function CheckboxUI({ checked, onChange }: { checked: boolean; onChange: () => void }) {
+function CheckboxUI({ checked, onChange, label }: { checked: boolean; onChange: () => void; label: string }) {
   return (
-    <button type="button" onClick={onChange}
+    <button type="button" role="checkbox" aria-checked={checked} aria-label={label} onClick={onChange}
       className={`w-4 h-4 rounded flex items-center justify-center border-2 flex-shrink-0 ${
         checked ? 'bg-[#deb887] border-[#deb887]' : 'border-gray-300 bg-white'
       }`}>
@@ -548,7 +548,7 @@ export default function PrintModal({ patient, recordId, recordData, activeConsul
                 return (
                   <div key={s.key} className={`rounded-xl border overflow-hidden ${opts[s.key as keyof PrintOptions] ? 'border-[#deb887]/50 bg-amber-50/30' : 'border-gray-100'}`}>
                     <div className="flex items-center gap-2 p-2.5">
-                      <CheckboxUI checked={!!opts[s.key as keyof PrintOptions]} onChange={() => toggle(s.key as keyof PrintOptions)} />
+                      <CheckboxUI checked={!!opts[s.key as keyof PrintOptions]} onChange={() => toggle(s.key as keyof PrintOptions)} label={s.label} />
                       <span className={`text-sm font-medium flex-1 ${opts[s.key as keyof PrintOptions] ? 'text-gray-800' : 'text-gray-400'}`}>
                         {s.label}
                       </span>
@@ -579,7 +579,7 @@ export default function PrintModal({ patient, recordId, recordData, activeConsul
                               return (
                                 <label key={getItemId(item, idx)}
                                   className={`flex items-center gap-2 p-1.5 rounded-lg cursor-pointer transition-colors ${isSel ? 'bg-amber-50' : 'hover:bg-gray-50'}`}>
-                                  <CheckboxUI checked={isSel} onChange={() => toggleItem(s.key, item, idx)} />
+                                  <CheckboxUI checked={isSel} onChange={() => toggleItem(s.key, item, idx)} label={getItemLabel(s.key, item, idx)} />
                                   <span className={`text-xs ${isSel ? 'text-gray-700' : 'text-gray-400 line-through'}`}>
                                     {getItemLabel(s.key, item, idx)}
                                   </span>
@@ -606,7 +606,7 @@ export default function PrintModal({ patient, recordId, recordData, activeConsul
               ].map(o => (
                 <label key={o.key}
                   className={`flex items-center gap-2 p-2.5 rounded-xl border cursor-pointer transition-all ${opts[o.key as keyof PrintOptions] ? 'bg-amber-50 border-[#deb887]/50' : 'border-gray-100 hover:border-gray-200'}`}>
-                  <CheckboxUI checked={!!opts[o.key as keyof PrintOptions]} onChange={() => toggle(o.key as keyof PrintOptions)} />
+                  <CheckboxUI checked={!!opts[o.key as keyof PrintOptions]} onChange={() => toggle(o.key as keyof PrintOptions)} label={o.label} />
                   <span className="text-xs font-medium text-gray-700">{o.label}</span>
                 </label>
               ))}
