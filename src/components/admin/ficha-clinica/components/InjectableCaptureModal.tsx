@@ -1,8 +1,7 @@
 import React, { useRef, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Camera, X, Trash2, Check, Images, ZoomIn, ZoomOut,
-  RotateCcw, RotateCw, Info, Eye, EyeOff
+  Camera, X, Trash2, Check, Images, ZoomIn, Info, Eye, EyeOff
 } from 'lucide-react';
 import Clinical3DViewer, { Marker3D, EditablePoint, FreehandLine, SurfaceShape } from './Clinical3DViewer';
 import type { ReferenceLine, ProjectedPosition } from './Clinical3DViewer';

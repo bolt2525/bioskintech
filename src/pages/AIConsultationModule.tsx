@@ -4,7 +4,7 @@ import {
   Brain, User, Users, ChevronRight, ChevronDown, ChevronLeft,
   Send, Loader2, BookOpen, Stethoscope, Pill, FlaskConical,
   FileText, ClipboardList, X, Check, History, Trash2, AlertCircle,
-  Sparkles, RotateCcw, Save
+  Sparkles, RotateCcw
 } from 'lucide-react';
 import AdminLayout from '../components/layout/AdminLayout';
 import recordsFetch from '../utils/recordsFetch';

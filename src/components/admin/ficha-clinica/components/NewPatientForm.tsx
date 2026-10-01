@@ -1,14 +1,13 @@
 ﻿import React, { useState, useEffect } from 'react';
 import recordsFetch from "../../../../utils/recordsFetch";
 import { useNavigate, useParams } from 'react-router-dom';
-import { Save, ArrowLeft, AlertCircle, Users, X } from 'lucide-react';
+import { Save, AlertCircle, Users, X } from 'lucide-react';
 import AdminLayout from '../../../layout/AdminLayout';
 import { useAdminNav } from '../../../../hooks/useAdminNav';
 
 interface DuplicatePatient { id: number; first_name: string; last_name: string; identification_type: string; identification_number: string; sameUser?: boolean; }
 
 export default function NewPatientForm() {
-  const navigate = useNavigate();
   const { nav } = useAdminNav();
   const { patientId } = useParams();
   const isEditing = Boolean(patientId);

@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Activity, Database, Mail, Calendar, CheckCircle2, XCircle,
   Loader2, RefreshCw, ChevronDown, ChevronUp, Server,
-  Shield, Clock, User, Info, Link2, Link2Off, Send,
+  Shield, Clock, User, Info, Link2, Link2Off,
   CreditCard, AlertTriangle, Sparkles,
 } from 'lucide-react';
 import AdminLayout from '../components/layout/AdminLayout';

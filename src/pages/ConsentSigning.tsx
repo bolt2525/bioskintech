@@ -3,7 +3,7 @@ import recordsFetch from "../utils/recordsFetch";
 import { useParams, useNavigate } from 'react-router-dom';
 import SignatureCanvas from 'react-signature-canvas';
 import { normalizeSignature, SIGNATURE_PEN } from '../utils/signatureImage';
-import { CheckCircle, AlertTriangle, PenTool, Eraser, Save, X, Printer } from 'lucide-react';
+import { CheckCircle, PenTool, Eraser, Save, X, Printer } from 'lucide-react';
 import BrandLogo from '../components/ui/BrandLogo';
 import ConsentDocumentSections from '../components/admin/ficha-clinica/components/ConsentDocumentSections';
 
@@ -64,7 +64,6 @@ interface ConsentSession {
 
 export default function ConsentSigning() {
   const { token } = useParams();
-  const navigate = useNavigate();
   const [session, setSession] = useState<ConsentSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

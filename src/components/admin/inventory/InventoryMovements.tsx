@@ -3,7 +3,7 @@ import React from 'react';
 import recordsFetch from "../../../utils/recordsFetch";
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { ArrowUpRight, ArrowDownLeft, Activity, Search, Trash2, Filter, Calendar, RefreshCw, Eraser } from 'lucide-react';
+import { ArrowUpRight, ArrowDownLeft, Activity, Search, Trash2, Calendar, RefreshCw, Eraser } from 'lucide-react';
 
 interface Movement {
   id: number;

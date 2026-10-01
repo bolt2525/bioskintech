@@ -13,7 +13,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   User, Mail, Lock, Eye, EyeOff, Building2, CheckCircle2,
-  AlertCircle, Loader2, ShieldCheck, KeyRound, AtSign,
+  AlertCircle, Loader2, ShieldCheck, AtSign,
 } from 'lucide-react';
 import BrandLogo from '../components/ui/BrandLogo';
 import { useAuth } from '../context/AuthContext';

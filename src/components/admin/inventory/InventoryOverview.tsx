@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Package, AlertTriangle, RefreshCw, AlertCircle, TrendingUp } from 'lucide-react';
+import { Package, AlertTriangle, AlertCircle, TrendingUp } from 'lucide-react';
 
 interface Stats {
   total_items: number;
