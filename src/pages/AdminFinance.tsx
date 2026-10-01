@@ -1,12 +1,13 @@
 
 import { useState, useEffect } from 'react';
 import type { LucideIcon } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import recordsFetch from "../utils/recordsFetch";
 import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
 import { 
   Calendar, DollarSign, TrendingUp, TrendingDown, 
   Trash2, Edit2, Check, X, FileText, PieChart, BarChart2, Search, Filter, Info, Plus,
-  Download, ChevronDown, ChevronUp, Package, Calculator, Mail
+  Download, ChevronDown, ChevronUp, Package, Calculator, Mail, ArrowLeft
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer 
@@ -96,6 +97,7 @@ const exportCSV = (records: FinanceRecord[], filename = 'finanzas') => {
 };
 
 const AdminFinance = () => {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [records, setRecords] = useState<FinanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -488,6 +490,14 @@ const AdminFinance = () => {
         <div className="container-custom mx-auto">
           <div className="mb-6 flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
             <div>
+              <button
+                type="button"
+                onClick={() => navigate(-1)}
+                className="admin-focus-ring admin-interactive mb-4 inline-flex min-h-10 items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 text-sm font-medium text-gray-200 hover:bg-white/15 hover:text-white"
+                aria-label="Volver"
+              >
+                <ArrowLeft size={18} /> Volver
+              </button>
               <span className="mb-3 inline-flex rounded-full border border-gold/40 bg-white/5 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-amber-100">
                 Administración financiera
               </span>
