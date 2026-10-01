@@ -64,7 +64,7 @@ Navegador React/Vite
 
 La línea base histórica de `external_finance_records` y el flujo `external-finance.js` se conserva como legado para implementaciones futuras; en esta fase el bot y los reportes usan el conjunto operativo `financial_records` y el correo configurado en `finanzas.admin_email`.
 
-El repositorio contiene 10 archivos de función bajo `/api/`. El límite efectivo de Vercel debe confirmarse contra el plan activo antes de crear nuevas rutas.
+El repositorio contiene 11 archivos de función bajo `/api/` (`admin-auth.js`, `ai-consultation.js`, `backup.js`, `calendar.js`, `external-finance.js`, `payments.js`, `public-booking.js`, `records.js`, `sendEmail.js`, `system-status.js` y `whatsapp-chatbot.js`). El límite efectivo de Vercel debe confirmarse contra el plan activo antes de crear nuevas rutas.
 
 ## 4. Capas de datos
 
