@@ -677,7 +677,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
       animate={{ opacity: 1, y: 0 }}
       className="space-y-6"
     >
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
           <div className="w-1 h-6 bg-[#deb887] rounded-full" />
           <h3 className="text-lg font-bold text-gray-800">Historial de Consentimientos</h3>
@@ -689,13 +689,13 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
           )}
           <span className="text-xs bg-gray-100 text-gray-500 rounded-full px-2 py-0.5 ml-1">{currentConsents.length}</span>
         </div>
-        <div className="flex gap-2">
+        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
           <Tooltip content="Actualizar estructura DB">
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={migrateDB}
-              className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 text-sm font-medium transition-colors"
+              className="flex items-center justify-center gap-2 px-3 py-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 text-sm font-medium transition-colors"
             >
               <RefreshCw size={16} />
               Configurar DB
@@ -706,7 +706,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={handleNew}
-              className="flex items-center gap-2 px-4 py-2 bg-[#deb887] text-white rounded-lg hover:bg-[#c5a075] transition-colors shadow-lg shadow-[#deb887]/20 font-medium"
+              className="flex items-center justify-center gap-2 px-3 py-2 bg-[#deb887] text-white rounded-lg hover:bg-[#c5a075] transition-colors shadow-lg shadow-[#deb887]/20 text-sm font-medium"
             >
               <Plus size={20} />
               Nuevo Consentimiento
@@ -715,7 +715,61 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
         </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+      <div className="space-y-3 md:hidden">
+        {currentConsents.map((consent, index) => (
+          <motion.article
+            key={consent.id}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: index * 0.05 }}
+            className="rounded-lg border border-gray-100 bg-white p-4 shadow-sm"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-gray-500">
+                  {new Date(consent.created_at || '').toLocaleDateString()}
+                </p>
+                <h4 className="mt-1 text-sm font-semibold leading-5 text-gray-900">{consent.procedure_type}</h4>
+              </div>
+              <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${
+                isAnnulledConsent(consent) ? 'bg-red-100 text-red-800' :
+                isSignedConsent(consent) ? 'bg-emerald-100 text-emerald-800' :
+                'bg-amber-100 text-amber-800'
+              }`}>
+                {isAnnulledConsent(consent) ? 'Anulado' : isSignedConsent(consent) ? 'Firmado' : 'Borrador'}
+              </span>
+            </div>
+            {consent.replaces_consent_id && <p className="mt-2 text-xs text-gray-500">Reemplaza #{consent.replaces_consent_id}</p>}
+            <div className="mt-4 flex items-center justify-end gap-2 border-t border-gray-100 pt-3">
+              {isSignedConsent(consent) || isAnnulledConsent(consent) ? (
+                <>
+                  <button type="button" onClick={() => handleEdit(consent)} className="inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm font-medium text-emerald-700 hover:bg-emerald-50">
+                    <Eye size={18} /> Ver
+                  </button>
+                  {!isAnnulledConsent(consent) && (
+                    <button type="button" onClick={() => { setAnnulTarget(consent); setAnnulReason(''); setCreateReplacementOnAnnul(false); }} className="inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm font-medium text-red-700 hover:bg-red-50">
+                      <XCircle size={18} /> Anular
+                    </button>
+                  )}
+                </>
+              ) : (
+                <>
+                  <button type="button" onClick={() => handleEdit(consent)} className="inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm font-medium text-blue-700 hover:bg-blue-50">
+                    <Edit size={18} /> Editar
+                  </button>
+                  <button type="button" onClick={() => handleDelete(consent.id!)} className="inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm font-medium text-red-700 hover:bg-red-50">
+                    <Trash2 size={18} /> Eliminar
+                  </button>
+                </>
+              )}
+            </div>
+          </motion.article>
+        ))}
+        {loading && consents.length === 0 && <p className="py-10 text-center text-sm text-gray-400">Cargando consentimientos...</p>}
+        {!loading && consents.length === 0 && <p className="py-10 text-center text-sm text-gray-400">No hay consentimientos registrados</p>}
+      </div>
+
+      <div className="hidden bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden md:block">
         <table className="min-w-full divide-y divide-gray-100">
           <thead className="bg-gray-50">
             <tr>

@@ -180,11 +180,11 @@ export default function PatientDetail() {
     >
       <div className="space-y-8">
         {/* Patient Info Card */}
-        <div className="admin-surface relative p-5 sm:p-6">
+        <div className="relative overflow-hidden rounded-lg border border-emerald-900/20 bg-[#11251f] p-5 text-white shadow-sm sm:p-6">
           <div className="absolute right-4 top-4 flex gap-1 sm:right-6 sm:top-6 sm:gap-2">
             <button 
               onClick={() => nav(`clinical-records/edit/${patient.id}`)}
-              className="admin-focus-ring admin-interactive rounded-lg p-2 text-gray-500 hover:bg-gold/10 hover:text-gold-ink"
+              className="admin-focus-ring admin-interactive rounded-lg border border-white/10 bg-white/5 p-2 text-emerald-100 hover:bg-white/10 hover:text-white"
               title="Editar Información"
               aria-label="Editar información del paciente"
             >
@@ -192,7 +192,7 @@ export default function PatientDetail() {
             </button>
             <button 
               onClick={handleDeletePatient}
-              className="admin-focus-ring admin-interactive rounded-lg p-2 text-gray-500 hover:bg-red-50 hover:text-red-600"
+              className="admin-focus-ring admin-interactive rounded-lg border border-white/10 bg-white/5 p-2 text-emerald-100 hover:border-red-300/30 hover:bg-red-400/10 hover:text-red-200"
               title="Eliminar Paciente"
               aria-label="Eliminar paciente"
             >
@@ -200,37 +200,42 @@ export default function PatientDetail() {
             </button>
           </div>
 
-          <div className="grid grid-cols-1 gap-x-6 gap-y-4 pr-16 sm:grid-cols-2 sm:pr-20 lg:grid-cols-3">
+          <div className="mb-6 flex flex-wrap items-center gap-2 pr-20">
+            <span className="rounded-md border border-emerald-200/10 bg-emerald-300/10 px-2 py-1 text-[11px] font-semibold uppercase text-emerald-100">Perfil clínico</span>
+            <span className="text-xs text-emerald-100/70">{records.length} expediente{records.length === 1 ? '' : 's'}</span>
+          </div>
+
+          <dl className="grid grid-cols-1 gap-x-6 gap-y-5 pr-2 sm:grid-cols-2 sm:pr-20 lg:grid-cols-3">
             <div>
-              <label className="text-sm text-gray-500">{patient.identification_type === 'ruc' ? 'RUC' : patient.identification_type === 'cedula' ? 'Cédula' : 'Identificación'}</label>
-              <p className="font-medium text-gray-900">{patient.identification_number || 'No registrada'}</p>
+              <dt className="text-xs font-medium uppercase text-emerald-100/60">{patient.identification_type === 'ruc' ? 'RUC' : patient.identification_type === 'cedula' ? 'Cédula' : 'Identificación'}</dt>
+              <dd className="mt-1 font-medium text-white">{patient.identification_number || 'No registrada'}</dd>
             </div>
             <div>
-              <label className="text-sm text-gray-500">Email</label>
-              <p className="font-medium text-gray-900">{patient.email || 'No registrado'}</p>
+              <dt className="text-xs font-medium uppercase text-emerald-100/60">Email</dt>
+              <dd className="mt-1 break-words font-medium text-white">{patient.email || 'No registrado'}</dd>
             </div>
             <div>
-              <label className="text-sm text-gray-500">Teléfono</label>
-              <p className="font-medium text-gray-900">{patient.phone || 'No registrado'}</p>
+              <dt className="text-xs font-medium uppercase text-emerald-100/60">Teléfono</dt>
+              <dd className="mt-1 font-medium text-white">{patient.phone || 'No registrado'}</dd>
             </div>
             <div>
-              <label className="text-sm text-gray-500">Fecha de Nacimiento</label>
-              <p className="font-medium text-gray-900">
+              <dt className="text-xs font-medium uppercase text-emerald-100/60">Fecha de Nacimiento</dt>
+              <dd className="mt-1 font-medium text-white">
                 {formatDate(patient.birth_date)} 
-                <span className="text-gray-500 text-sm ml-2">
+                <span className="ml-2 text-sm text-emerald-100/60">
                   ({calculateAge(patient.birth_date)} años)
                 </span>
-              </p>
+              </dd>
             </div>
             <div>
-              <label className="text-sm text-gray-500">Ocupación</label>
-              <p className="font-medium text-gray-900">{patient.occupation || 'No registrado'}</p>
+              <dt className="text-xs font-medium uppercase text-emerald-100/60">Ocupación</dt>
+              <dd className="mt-1 font-medium text-white">{patient.occupation || 'No registrado'}</dd>
             </div>
             <div>
-              <label className="text-sm text-gray-500">Dirección</label>
-              <p className="font-medium text-gray-900">{patient.address || 'No registrado'}</p>
+              <dt className="text-xs font-medium uppercase text-emerald-100/60">Dirección</dt>
+              <dd className="mt-1 font-medium text-white">{patient.address || 'No registrado'}</dd>
             </div>
-          </div>
+          </dl>
         </div>
 
         {/* Records List */}
@@ -242,7 +247,7 @@ export default function PatientDetail() {
             </div>
             <button 
               onClick={handleCreateRecord}
-              className="admin-focus-ring admin-interactive inline-flex min-h-11 items-center justify-center gap-2 self-start rounded-xl bg-gold-ink px-4 py-2.5 text-sm font-semibold text-white hover:bg-gold-ink/90 sm:self-auto"
+              className="admin-focus-ring admin-interactive inline-flex min-h-11 items-center justify-center gap-2 self-start rounded-lg bg-[#11251f] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#19372e] sm:self-auto"
             >
               <Plus className="w-4 h-4" />
               Nuevo Expediente
@@ -258,7 +263,7 @@ export default function PatientDetail() {
               records.map((record, recIdx) => (
                 <div 
                   key={record.id}
-                  className="admin-surface group flex flex-col justify-between gap-5 p-4 transition-shadow hover:shadow-md sm:flex-row sm:items-center sm:p-5"
+                  className="admin-surface group flex flex-col justify-between gap-5 border-l-4 border-l-emerald-800 p-4 transition-shadow hover:shadow-md sm:flex-row sm:items-center sm:p-5"
                 >
                   <div className="flex items-start gap-4">
                     <div className="rounded-xl bg-gold/10 p-3 text-gold-ink">

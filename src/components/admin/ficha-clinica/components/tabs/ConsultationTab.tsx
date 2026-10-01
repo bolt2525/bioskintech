@@ -181,7 +181,8 @@ export default function ConsultationTab({
                   </div>
                 )}
                 <button onClick={e => { e.stopPropagation(); handleDelete(c.id); }} disabled={deleting === c.id}
-                  className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-1 text-gray-300 hover:text-red-400 transition-all rounded">
+                  aria-label={`Eliminar consulta del ${new Date(c.created_at).toLocaleDateString('es')}`}
+                  className="absolute bottom-2 right-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 focus:opacity-100 p-1 text-gray-300 hover:text-red-500 transition-all rounded">
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
               </motion.div>
@@ -277,6 +278,7 @@ export default function ConsultationTab({
                   )}
                   <Tooltip content="Editar tabs habilitados">
                     <button onClick={() => setShowTabsModal(true)}
+                      aria-label="Editar pestañas habilitadas"
                       className="ml-1 p-1 rounded-md text-gray-300 hover:text-[#b8944d] hover:bg-amber-50 transition-colors">
                       <Settings2 className="w-3.5 h-3.5" />
                     </button>

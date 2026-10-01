@@ -11,6 +11,11 @@ interface TooltipProps {
   interactive?: boolean;
 }
 
+const hasVisibleText = (node: React.ReactNode): boolean => React.Children.toArray(node).some((child) => {
+  if (typeof child === 'string' || typeof child === 'number') return String(child).trim().length > 0;
+  return React.isValidElement<{ children?: React.ReactNode }>(child) && hasVisibleText(child.props.children);
+});
+
 // Portal-based tooltip for better z-index handling
 export const Tooltip: React.FC<TooltipProps> = ({ 
   content, 
@@ -79,9 +84,10 @@ export const Tooltip: React.FC<TooltipProps> = ({
     }
   }, [isVisible]);
 
-  const describedChild = React.isValidElement<{ 'aria-describedby'?: string }>(children)
+  const describedChild = React.isValidElement<{ 'aria-describedby'?: string; 'aria-label'?: string; children?: React.ReactNode }>(children)
     ? React.cloneElement(children, {
         'aria-describedby': [children.props['aria-describedby'], isVisible ? tooltipId : ''].filter(Boolean).join(' ') || undefined,
+        'aria-label': children.props['aria-label'] || (!hasVisibleText(children.props.children) && typeof content === 'string' ? content : undefined),
       })
     : children;
 

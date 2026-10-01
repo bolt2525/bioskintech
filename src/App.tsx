@@ -13,6 +13,7 @@
  * navigate('/admin/...') internos del panel funcionen sin cambio alguno.
  */
 
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { MasterViewProvider } from './context/MasterViewContext';
@@ -38,17 +39,24 @@ import PatientDetail         from './components/admin/ficha-clinica/components/P
 import ClinicalRecordManager from './components/admin/ficha-clinica/components/ClinicalRecordManager';
 import ConsentSigning        from './pages/ConsentSigning';
 import AIConsultationModule  from './pages/AIConsultationModule';
-import AdminInventory    from './pages/AdminInventory';
-import AdminFinance      from './pages/AdminFinance';
-import Clinical3D        from './pages/Clinical3D';
 import AdminSystemStatus from './pages/AdminSystemStatus';
 import AdminBackup       from './pages/AdminBackup';
 import AdminAgendaHub    from './pages/AdminAgendaHub';
 import AdminWhatsAppCRM  from './pages/AdminWhatsAppCRM';
 import MasterClinicWrapper   from './pages/MasterClinicWrapper';
-import ExternalMedicalFinance from './pages/ExternalMedicalFinance';
-import SkinExplorerPage from './skin-explorer/SkinExplorerPage';
 import PublicBookingPage from './pages/PublicBookingPage';
+
+const AdminInventory = lazy(() => import('./pages/AdminInventory'));
+const AdminFinance = lazy(() => import('./pages/AdminFinance'));
+const Clinical3D = lazy(() => import('./pages/Clinical3D'));
+const ExternalMedicalFinance = lazy(() => import('./pages/ExternalMedicalFinance'));
+const SkinExplorerPage = lazy(() => import('./skin-explorer/SkinExplorerPage'));
+
+const routeFallback = (
+  <div className="flex min-h-screen items-center justify-center bg-[#f4f7f6] text-sm font-medium text-slate-600" role="status">
+    Cargando módulo...
+  </div>
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Rutas reutilizadas dentro del panel admin
@@ -59,6 +67,7 @@ function AdminRoutes() {
     <AuthProvider>
       <MasterViewProvider>
         <LegalAcceptanceGate />
+        <Suspense fallback={routeFallback}>
         <Routes>
           <Route path="/" element={<Navigate to="/admin/login" replace />} />
 
@@ -134,6 +143,7 @@ function AdminRoutes() {
 
           <Route path="*" element={<Navigate to="/admin/login" replace />} />
         </Routes>
+        </Suspense>
       </MasterViewProvider>
     </AuthProvider>
   );
@@ -167,6 +177,7 @@ export default function App() {
   // Landing page, consent-signing, medical-finance → sin basename
   return (
     <BrowserRouter>
+      <Suspense fallback={routeFallback}>
       <Routes>
         <Route path="/"                        element={<LandingPage />} />
         <Route path="/reservar/:clinicSlug/:username" element={<PublicBookingPage />} />
@@ -177,6 +188,7 @@ export default function App() {
         <Route path="/medical-finance"          element={<ExternalMedicalFinance />} />
         <Route path="*"                         element={<LandingPage />} />
       </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }
