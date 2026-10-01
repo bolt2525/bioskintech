@@ -151,6 +151,7 @@ export default function ContractGenerator() {
           body.master-contract-printing .legal-print-copy tr,
           body.master-contract-printing .signature-block { break-inside: avoid; }
           body.master-contract-printing .contract-economic-section,
+          body.master-contract-printing .contract-party-block,
           body.master-contract-printing .contract-signature-section { break-inside: avoid; }
           body.master-contract-printing .master-contract-preview table { font-size: 9pt !important; }
           body.master-contract-printing .master-contract-preview { overflow-wrap: anywhere; print-color-adjust: exact; }
@@ -327,21 +328,32 @@ export default function ContractGenerator() {
           <p className="mt-2 text-xs font-medium text-gray-700">Referencia: {client.contractReference || '—'} · Lugar de celebración: Cuenca, Ecuador</p>
         </div>
 
-        <section className="contract-economic-section mt-6">
+        <section className="mt-6">
           <h3 className="text-sm font-bold uppercase tracking-wide text-gray-800">1. Partes y cuenta</h3>
-          <dl className="mt-3 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
-            <div><dt className="text-gray-500">Proveedor</dt><dd className="font-medium text-gray-900">Rafael Israel Larrea Galindo</dd></div>
-            <div><dt className="text-gray-500">RUC del proveedor</dt><dd className="font-medium text-gray-900">0105872600001</dd></div>
-            <div><dt className="text-gray-500">Domicilio del proveedor</dt><dd className="font-medium text-gray-900">Cuenca, Ecuador</dd></div>
-            <div><dt className="text-gray-500">Cliente</dt><dd className="font-medium text-gray-900">{client.name || '—'}</dd></div>
-            <div><dt className="text-gray-500">RUC o cédula</dt><dd className="font-medium text-gray-900">{client.taxId || '—'}</dd></div>
-            <div><dt className="text-gray-500">Clínica o cuenta</dt><dd className="font-medium text-gray-900">{client.clinicName || '—'}</dd></div>
-            <div><dt className="text-gray-500">Domicilio del cliente</dt><dd className="font-medium text-gray-900">{client.address || '—'}</dd></div>
-            <div><dt className="text-gray-500">Persona que suscribe / calidad</dt><dd className="font-medium text-gray-900">{client.representative || '—'}{client.representativeRole ? ` · ${client.representativeRole}` : ''}</dd></div>
-            <div><dt className="text-gray-500">Identificación de quien suscribe</dt><dd className="font-medium text-gray-900">{client.representativeId || '—'}</dd></div>
-            <div><dt className="text-gray-500">Correo</dt><dd className="font-medium text-gray-900">{client.email || '—'}</dd></div>
-            {client.phone && <div><dt className="text-gray-500">Teléfono</dt><dd className="font-medium text-gray-900">{client.phone}</dd></div>}
-          </dl>
+          <div className="mt-3 grid gap-5 text-sm sm:grid-cols-2 sm:divide-x sm:divide-gray-200">
+            <div className="contract-party-block">
+              <h4 className="border-b border-gray-200 pb-2 font-bold text-gray-900">A. Proveedor</h4>
+              <dl className="mt-3 space-y-3">
+                <div><dt className="text-gray-500">Nombre</dt><dd className="font-medium text-gray-900">Rafael Israel Larrea Galindo</dd></div>
+                <div><dt className="text-gray-500">RUC</dt><dd className="font-medium text-gray-900">0105872600001</dd></div>
+                <div><dt className="text-gray-500">Domicilio contractual</dt><dd className="font-medium text-gray-900">Cuenca, Ecuador</dd></div>
+                <div><dt className="text-gray-500">Calidad</dt><dd className="font-medium text-gray-900">Persona natural, por sus propios derechos</dd></div>
+              </dl>
+            </div>
+            <div className="contract-party-block sm:pl-5">
+              <h4 className="border-b border-gray-200 pb-2 font-bold text-gray-900">B. Cliente y cuenta contratada</h4>
+              <dl className="mt-3 space-y-3">
+                <div><dt className="text-gray-500">Titular del contrato</dt><dd className="font-medium text-gray-900">{client.name || '—'}</dd></div>
+                <div><dt className="text-gray-500">RUC o cédula del titular</dt><dd className="font-medium text-gray-900">{client.taxId || '—'}</dd></div>
+                <div><dt className="text-gray-500">Domicilio contractual</dt><dd className="font-medium text-gray-900">{client.address || '—'}</dd></div>
+                <div><dt className="text-gray-500">Cuenta habilitada en BIOSKINTECH</dt><dd className="font-medium text-gray-900">{client.clinicName || '—'}</dd></div>
+                <div><dt className="text-gray-500">Firmante autorizado</dt><dd className="font-medium text-gray-900">{client.representative || '—'}</dd></div>
+                <div><dt className="text-gray-500">Identificación del firmante</dt><dd className="font-medium text-gray-900">{client.representativeId || '—'}</dd></div>
+                <div><dt className="text-gray-500">Calidad del firmante</dt><dd className="font-medium text-gray-900">{client.representativeRole || '—'}</dd></div>
+                <div><dt className="text-gray-500">Contacto</dt><dd className="font-medium text-gray-900">{client.email || '—'}{client.phone ? ` · ${client.phone}` : ''}</dd></div>
+              </dl>
+            </div>
+          </div>
         </section>
 
         <section className="mt-6">
@@ -355,7 +367,7 @@ export default function ContractGenerator() {
           {chatbot && <p className="mt-3 text-sm text-gray-700"><span className="font-semibold text-gray-900">Chatbot WhatsApp del sistema:</span> servicio opcional contratado durante esta vigencia anual.</p>}
         </section>
 
-        <section className="mt-6">
+        <section className="contract-economic-section mt-6">
           <h3 className="text-sm font-bold uppercase tracking-wide text-gray-800">3. Precio, vigencia y pago</h3>
           <dl className="mt-3 space-y-2 text-sm">
             <div className="flex justify-between gap-4"><dt className="text-gray-700">Plataforma, anual, IVA incluido</dt><dd className="shrink-0 font-medium text-gray-900">{formatUsd(PLATFORM_PRICE)}</dd></div>

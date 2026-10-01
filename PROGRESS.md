@@ -1,5 +1,6 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-01 Contrato separa claramente proveedor, cliente, firmante y cuenta habilitada.
 - ✅ 2026-10-01 Paquete contractual formal v2026-10-01 con anexo LOPDP y documentos íntegros; USD 245 con IVA separado del recargo PayPhone de USD 14,95.
 - ✅ 2026-10-01 Contexto IA aislado por clínica y paciente antes de enviarse a Gemini.
 - ✅ 2026-10-01 Encabezado de pacientes simplificado con lenguaje clínico directo.
