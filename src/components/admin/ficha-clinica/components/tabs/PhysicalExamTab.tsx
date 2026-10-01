@@ -424,6 +424,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
     try {
       const parseData = (data?: string | Mark[]): Mark[] => {
         if (!data) return [];
+        if (Array.isArray(data)) return data;
         if (typeof data === 'string') {
           try {
             const parsed: unknown = JSON.parse(data);
