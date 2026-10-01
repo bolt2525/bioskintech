@@ -73,7 +73,7 @@ export function useClinicSettings(): { settings: ClinicSettings; loading: boolea
       .then(r => r.json())
       .then(d => {
         if (d.settings) {
-          setSettings(prev => ({
+          setSettings({
             ...DEFAULTS,
             ...d.settings,
             general: {
@@ -81,7 +81,7 @@ export function useClinicSettings(): { settings: ClinicSettings; loading: boolea
               name: user?.clinic_name || '',  // fallback al nombre del auth token
               ...d.settings.general,
             },
-          }));
+          });
         }
       })
       .catch(() => {/* silencioso — usa nombre del auth token */})

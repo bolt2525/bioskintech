@@ -13,9 +13,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, Outlet } from 'react-router-dom';
 import { ArrowLeft, Eye, Loader2, AlertCircle } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
 import { useMasterView } from '../context/MasterViewContext';
-import AdminDashboard from './AdminDashboard';
 
 interface ClinicUserInfo {
   id: number;
@@ -34,8 +32,7 @@ const authFetch = (url: string) =>
 export default function MasterClinicWrapper() {
   const { clinicSlug, username } = useParams<{ clinicSlug: string; username: string }>();
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const { enterClinicView, exitClinicView, isActive } = useMasterView();
+  const { enterClinicView, exitClinicView } = useMasterView();
 
   const [loading, setLoading] = useState(true);
   const [error, setError]   = useState<string | null>(null);

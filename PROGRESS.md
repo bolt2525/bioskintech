@@ -1,5 +1,6 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-01 Reducidos errores ESLint triviales del proyecto.
 - ✅ 2026-10-01 Lint sin errores en archivos UI modificados.
 - ✅ 2026-10-01 Dashboard y módulos renovados.
 - ✅ 2026-10-01 README creado y documentación de rutas, comandos, RLS y 11 funciones API alineada con el código.

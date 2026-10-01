@@ -77,7 +77,7 @@ const EMPTY_TREATMENT: Treatment = {
   notes: '',
 };
 
-export default function TreatmentTab({ recordId, treatments, patientName, consultationId, consultations = [], onSave }: TreatmentTabProps) {
+export default function TreatmentTab({ recordId, treatments, consultationId, consultations = [], onSave }: TreatmentTabProps) {
   const { hasFeature } = useAuth();
   const [currentTreatment, setCurrentTreatment] = useState<Treatment>({ ...EMPTY_TREATMENT });
   const [dateLocked, setDateLocked] = useState(false);
@@ -190,7 +190,8 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
   /** Duplica el tratamiento actual: lo guarda de inmediato como una nueva sesión (nuevo id) y la selecciona/resalta en el historial */
   const handleDuplicate = async () => {
     if (!currentTreatment.id) return;
-    const { id, ...rest } = currentTreatment;
+    const rest = { ...currentTreatment };
+    delete rest.id;
     setDuplicating(true);
     setMessage(null);
     try {
