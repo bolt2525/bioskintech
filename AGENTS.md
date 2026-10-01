@@ -62,11 +62,11 @@ Usa el agente más especializado posible según el tipo de tarea:
 
 ## Project Conventions
 - **Base de datos**: ÚNICAMENTE Neon PostgreSQL. No SQLite, no otros archivos `.db`.
-- **Clientes de DB**: `getPool()` (lib/neon-clinical-db.js) para fichas clínicas; `sql` (@vercel/postgres) para auth/bot.
+- **Clientes de DB**: `getAppPool()` (lib/neon-clinical-db.js) para queries clínicas con RLS; `getPool()` solo para migraciones, inicialización y operaciones administrativas; `sql` (@vercel/postgres) para auth/bot.
 - **Módulos**: Ver `lib/modules/` para la estructura de dominio.
 - **Fichas Clínicas**: Sub-módulos (antecedentes, recetas, tratamientos, inyectables, consentimientos) en `api/records.js`.
 - **Auth multi-tenant**: `master_admin` → `clinic_admin` → `clinic_user`. Siempre pasar por `lib/admin-auth.js`.
 - **Design tokens**: Colores y roles en `src/constants/theme.ts`. No hardcodear `#deb887` en nuevos archivos.
 - **Features**: Agregar nuevos módulos a `src/constants/features.ts` y a `ALL_FEATURES` en `api/admin-auth.js`.
-- **Vercel Functions**: Límite 12 según el plan documentado. El repositorio contiene 9 archivos de función en `api/`; confirmar el límite y funciones efectivas en el proyecto Vercel antes de crear otra.
-- **No crear páginas públicas**: Este proyecto es admin-only.
+- **Vercel Functions**: Límite 12 según el plan documentado. El repositorio contiene 11 archivos de función en `api/`; confirmar el límite y funciones efectivas en el proyecto Vercel antes de crear otra.
+- **Rutas públicas**: El panel es el núcleo administrativo, pero también existen landing, reserva pública, firma de consentimientos y gestión médica externa; no añadir páginas públicas fuera de ese alcance sin documentarlas.
