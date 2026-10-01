@@ -24,7 +24,7 @@ interface Props {
 }
 
 export default function InventoryAlerts({ alertBatches, outOfStockCount, lowStockCount }: Props) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   const [dismissed, setDismissed] = useState(false);
 
   const expiredBatches = alertBatches.filter(b => b.alert_type === 'expired');
@@ -39,14 +39,16 @@ export default function InventoryAlerts({ alertBatches, outOfStockCount, lowStoc
       initial={{ opacity: 0, y: -12 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -12 }}
-      className="rounded-2xl border border-orange-200 bg-orange-50/80 overflow-hidden shadow-sm"
+      className="overflow-hidden rounded-xl border border-amber-300/70 bg-amber-50 shadow-sm"
     >
       {/* Header bar */}
-      <div
-        className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-orange-100/40 transition-colors"
-        onClick={() => setExpanded(v => !v)}
-      >
-        <div className="flex items-center gap-2">
+      <div className="flex items-stretch">
+        <button
+          type="button"
+          aria-expanded={expanded}
+          className="admin-focus-ring flex min-w-0 flex-1 items-center gap-2 px-4 py-3 text-left transition-colors hover:bg-amber-100/60"
+          onClick={() => setExpanded(value => !value)}
+        >
           <AlertTriangle className="w-4 h-4 text-orange-600 flex-shrink-0" />
           <span className="text-sm font-semibold text-orange-800">
             {totalAlerts} alerta{totalAlerts !== 1 ? 's' : ''} pendiente{totalAlerts !== 1 ? 's' : ''}
@@ -73,20 +75,20 @@ export default function InventoryAlerts({ alertBatches, outOfStockCount, lowStoc
               </span>
             )}
           </div>
-        </div>
-        <div className="flex items-center gap-1">
-          <button
-            onClick={(e) => { e.stopPropagation(); setDismissed(true); }}
-            className="p-1 rounded-lg text-orange-400 hover:text-orange-700 hover:bg-orange-100 transition-colors"
-            title="Cerrar alertas"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
           {expanded
             ? <ChevronUp className="w-4 h-4 text-orange-500" />
             : <ChevronDown className="w-4 h-4 text-orange-500" />
           }
-        </div>
+        </button>
+        <button
+          type="button"
+          aria-label="Cerrar alertas"
+          onClick={() => setDismissed(true)}
+          className="admin-focus-ring flex min-w-11 items-center justify-center border-l border-amber-200 text-orange-500 transition-colors hover:bg-amber-100 hover:text-orange-700"
+          title="Cerrar alertas"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
       </div>
 
       {/* Expandable content */}

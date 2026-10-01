@@ -77,46 +77,46 @@ export default function InventorySales({ categories, filterUserId, clinicKey }: 
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end gap-3 border-b border-white/25 pb-4 text-white">
+      <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-white/70 bg-white p-4 text-gray-900 shadow-xl shadow-black/10">
         <div className="flex gap-1" aria-label="Período de ventas">
           {([30, 90, 365] as const).map(days => (
             <button key={days} type="button" onClick={() => selectPeriod(days)} aria-pressed={period === String(days)}
-              className={`px-3 py-2 text-xs font-semibold ${period === String(days) ? 'bg-white text-gray-900' : 'border border-white/40 text-gray-100 hover:bg-white/10'}`}>
+              className={`admin-focus-ring rounded-lg px-3 py-2 text-xs font-semibold ${period === String(days) ? 'bg-gray-900 text-white' : 'border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>
               {days} días
             </button>
           ))}
         </div>
-        <label className="text-xs text-gray-100">Desde
+        <label className="text-xs text-gray-600">Desde
           <input type="date" value={startDate} max={endDate} onChange={event => { setStartDate(event.target.value); setPeriod('custom'); }} className={`mt-1 block ${inputClass}`} />
         </label>
-        <label className="text-xs text-gray-100">Hasta
+        <label className="text-xs text-gray-600">Hasta
           <input type="date" value={endDate} min={startDate} onChange={event => { setEndDate(event.target.value); setPeriod('custom'); }} className={`mt-1 block ${inputClass}`} />
         </label>
-        <label className="text-xs text-gray-100">Categoría
+        <label className="text-xs text-gray-600">Categoría
           <select value={category} onChange={event => setCategory(event.target.value)} className={`mt-1 block min-w-36 ${inputClass}`}>
             <option value="">Todas</option>
             {categories.map(option => <option key={option} value={option}>{option}</option>)}
           </select>
         </label>
-        <label className="relative min-w-44 flex-1 text-xs text-gray-100">Producto o SKU
+        <label className="relative min-w-44 flex-1 text-xs text-gray-600">Producto o SKU
           <Search className="pointer-events-none absolute bottom-2.5 left-2.5 h-4 w-4 text-gray-500" />
           <input type="search" maxLength={100} value={search} onChange={event => setSearch(event.target.value)}
-            className={`mt-1 block w-full pl-9 ${inputClass}`} placeholder="Buscar ventas" />
+            className={`mt-1 block w-full pl-9 ${inputClass}`} placeholder="Buscar ventas…" />
         </label>
         <button type="button" aria-label="Actualizar ventas" title="Actualizar ventas" onClick={() => setRefreshKey(key => key + 1)}
-          className="border border-white/40 p-2.5 text-white hover:bg-white/10"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /></button>
+          className="admin-focus-ring rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-gray-600 hover:bg-amber-50 hover:text-amber-800"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /></button>
       </div>
 
-      <div className="bg-white p-4 text-gray-900 sm:p-6">
+      <div className="rounded-2xl border border-white/70 bg-white p-4 text-gray-900 shadow-xl shadow-black/10 sm:p-6">
         {error ? <p role="alert" className="text-sm font-medium text-red-700">{error}</p> : loading ? (
           <p className="py-16 text-center text-sm text-gray-600">Cargando ventas…</p>
         ) : report ? (
           <div className="space-y-6">
-            <div className="grid grid-cols-2 gap-4 border-b border-gray-200 pb-5 lg:grid-cols-4">
-              <div><p className="text-xs font-medium text-gray-600">Importe registrado</p><p className="text-xl font-bold">{currency.format(Number(report.summary.total))}</p></div>
-              <div><p className="text-xs font-medium text-gray-600">Salidas por venta</p><p className="text-xl font-bold">{report.summary.sales_count}</p></div>
-              <div><p className="text-xs font-medium text-gray-600">Productos vendidos</p><p className="text-xl font-bold">{report.summary.products_count}</p></div>
-              <div><p className="text-xs font-medium text-gray-600">Margen conocido</p><p className="text-xl font-bold">{currency.format(Number(report.summary.known_margin))}</p>
+            <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-gray-200 bg-gray-200 lg:grid-cols-4">
+              <div className="bg-gray-50 p-4"><p className="text-xs font-medium text-gray-600">Importe registrado</p><p className="text-xl font-bold tabular-nums">{currency.format(Number(report.summary.total))}</p></div>
+              <div className="bg-gray-50 p-4"><p className="text-xs font-medium text-gray-600">Salidas por venta</p><p className="text-xl font-bold tabular-nums">{report.summary.sales_count}</p></div>
+              <div className="bg-gray-50 p-4"><p className="text-xs font-medium text-gray-600">Productos vendidos</p><p className="text-xl font-bold tabular-nums">{report.summary.products_count}</p></div>
+              <div className="bg-gray-50 p-4"><p className="text-xs font-medium text-gray-600">Margen conocido</p><p className="text-xl font-bold tabular-nums text-emerald-800">{currency.format(Number(report.summary.known_margin))}</p>
                 {report.summary.sales_without_cost > 0 && <p className="text-xs text-amber-800">{report.summary.sales_without_cost} ventas sin costo; margen parcial</p>}
               </div>
             </div>

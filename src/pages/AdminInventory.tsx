@@ -327,10 +327,10 @@ export default function AdminInventory() {
   }, [items]);
 
   const TABS = [
-    { id: 'inventory' as const, label: 'Inventario', icon: Package },
-    { id: 'batches' as const, label: 'Lotes', icon: Calendar },
-    { id: 'movements' as const, label: 'Movimientos', icon: Activity },
-    { id: 'sales' as const, label: 'Ventas', icon: BarChart3 },
+    { id: 'inventory' as const, label: 'Inventario', hint: 'Stock actual', icon: Package },
+    { id: 'batches' as const, label: 'Lotes', hint: 'Caducidad', icon: Calendar },
+    { id: 'movements' as const, label: 'Movimientos', hint: 'Trazabilidad', icon: Activity },
+    { id: 'sales' as const, label: 'Ventas', hint: 'Rendimiento', icon: BarChart3 },
   ];
 
   // â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -352,21 +352,36 @@ export default function AdminInventory() {
         )}
       </AnimatePresence>
 
-      {/* Tab bar */}
-      <div className="admin-tabs mb-6" role="group" aria-label="Secciones de inventario">
-        {TABS.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            type="button"
-            aria-pressed={activeTab === tab.id}
-            className="admin-tab admin-focus-ring"
-          >
-            <tab.icon className="w-4 h-4" />
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      {/* Consola de navegación */}
+      <section className="mb-5 overflow-hidden rounded-2xl border border-white/15 bg-black/20 shadow-2xl shadow-black/10" aria-label="Centro de control de inventario">
+        <div className="flex items-center justify-between gap-4 border-b border-white/10 px-4 py-2.5 sm:px-5">
+          <h2 className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-300">Centro de control</h2>
+          <p className="hidden text-xs text-gray-400 sm:block">Stock, trazabilidad y rendimiento</p>
+        </div>
+        <div className="grid grid-cols-2 gap-px bg-white/10 lg:grid-cols-4" role="group" aria-label="Secciones de inventario">
+          {TABS.map((tab, index) => {
+            const selected = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                type="button"
+                aria-pressed={selected}
+                className={`admin-focus-ring group flex min-h-16 items-center gap-3 bg-[#292a27] px-4 py-3 text-left transition-[background-color,color] duration-200 hover:bg-white/10 ${selected ? 'bg-white text-gray-950' : 'text-white'}`}
+              >
+                <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border text-sm font-semibold ${selected ? 'border-amber-300 bg-amber-100 text-amber-900' : 'border-white/15 bg-white/5 text-amber-300'}`}>
+                  <tab.icon className="h-4 w-4" aria-hidden="true" />
+                </span>
+                <span className="min-w-0">
+                  <span className={`block text-[10px] font-medium tabular-nums ${selected ? 'text-gray-500' : 'text-gray-400'}`}>0{index + 1}</span>
+                  <span className="block truncate text-sm font-semibold">{tab.label}</span>
+                  <span className={`hidden text-[11px] sm:block ${selected ? 'text-gray-600' : 'text-gray-400'}`}>{tab.hint}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
 
       {/* â”€â”€ INVENTORY TAB â”€â”€ */}
       {activeTab === 'inventory' && (
@@ -384,17 +399,17 @@ export default function AdminInventory() {
           ) : null}
 
           {/* Toolbar */}
-          <div className="space-y-3">
+          <div className="space-y-3 rounded-2xl border border-white/70 bg-white/95 p-3 shadow-xl shadow-black/10 sm:p-4">
             <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-3">
               {/* Filtro por profesional — solo admins */}
               {isAdmin && user?.inventory_scope !== 'own' && clinicUsers.length > 0 && (
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  <label htmlFor="inventory-professional" className="text-xs font-medium text-gray-200">Profesional:</label>
+                  <label htmlFor="inventory-professional" className="text-xs font-medium text-gray-600">Profesional</label>
                   <select
                     id="inventory-professional"
                     value={filterUserId}
                     onChange={e => setFilterUserId(e.target.value ? Number(e.target.value) : '')}
-                    className="min-w-0 flex-1 lg:flex-none text-sm border border-gray-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none"
+                    className="admin-focus-ring min-h-10 min-w-0 flex-1 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm lg:flex-none"
                   >
                     <option value="">Todos</option>
                     {clinicUsers.map(u => (
@@ -410,10 +425,10 @@ export default function AdminInventory() {
                 <input
                   id="inventory-search"
                   type="search"
-                  placeholder="Buscar producto, marca, grupo o SKU..."
+                  placeholder="Buscar producto, marca, grupo o SKU…"
                   value={search}
                   onChange={e => setSearch(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#deb887] focus:border-[#deb887] outline-none bg-white"
+                  className="admin-focus-ring min-h-10 w-full rounded-xl border border-gray-200 bg-gray-50 py-2.5 pl-9 pr-4 text-sm"
                 />
               </div>
               {/* Actions */}
@@ -421,7 +436,7 @@ export default function AdminInventory() {
                 <motion.button
                   whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
                   onClick={refresh}
-                  className="p-2.5 rounded-xl text-gray-400 hover:text-[#b8905a] hover:bg-[#deb887]/10 transition-colors border border-gray-200"
+                  className="admin-focus-ring min-h-10 min-w-10 rounded-xl border border-gray-200 p-2.5 text-gray-500 transition-colors hover:bg-amber-50 hover:text-amber-800"
                   title="Actualizar"
                   aria-label="Actualizar inventario"
                 >
@@ -431,26 +446,26 @@ export default function AdminInventory() {
                   whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
                   onClick={() => { setSelectedItem(null); setShowForm(true); }}
                   disabled={productView === 'archived'}
-                  className="flex-1 lg:flex-none justify-center flex items-center gap-2 bg-[#deb887] text-white px-4 py-2.5 rounded-xl hover:bg-[#c5a075] transition-colors text-sm font-semibold shadow-sm shadow-[#deb887]/30 disabled:opacity-50"
+                  className="admin-focus-ring flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-gray-700 disabled:opacity-50 lg:flex-none"
                 >
                   <Plus className="w-4 h-4" />
                   Nuevo Producto
                 </motion.button>
               </div>
             </div>
-            {isAdmin && <div className="inline-flex max-w-full items-center gap-1 rounded-md border border-white/25 bg-white/10 p-1" role="group" aria-label="Estado de productos">
+            {isAdmin && <div className="inline-flex max-w-full items-center gap-1 rounded-lg border border-gray-200 bg-gray-100 p-1" role="group" aria-label="Estado de productos">
               {([
                 ['active', 'Activos', stats?.total_items ?? 0],
                 ['archived', 'Archivados', stats?.archived_items_count ?? 0],
               ] as const).map(([view, label, count]) => (
                 <button key={view} type="button" aria-pressed={productView === view}
                   onClick={() => { setProductView(view); setCategoryFilter('all'); setStockFilter('all'); }}
-                  className={`admin-focus-ring rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${productView === view ? 'bg-white text-gray-900 shadow-sm' : 'text-white hover:bg-white/10'}`}>
-                  {label} <span className={productView === view ? 'text-gray-600' : 'text-gray-300'}>{count}</span>
+                  className={`admin-focus-ring rounded-md px-3 py-2 text-xs font-semibold transition-colors ${productView === view ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:bg-white/70'}`}>
+                  {label} <span className="ml-1 text-gray-500 tabular-nums">{count}</span>
                 </button>
               ))}
             </div>}
-            {productView === 'archived' && <div className="border-l-2 border-amber-400 bg-white/10 px-3 py-2 text-sm text-gray-100">
+            {productView === 'archived' && <div className="border-l-2 border-amber-500 bg-amber-50 px-3 py-2 text-sm text-amber-950">
               Productos fuera del stock activo. Sus ventas y movimientos se conservan; restáuralos para volver a operar.
             </div>}
             {/* Category filter chips */}
@@ -459,9 +474,9 @@ export default function AdminInventory() {
                 type="button"
                 onClick={() => setCategoryFilter('all')}
                 aria-pressed={categoryFilter === 'all'}
-                className={`admin-focus-ring px-3 py-2 rounded-xl text-xs font-medium transition-all ${
+                className={`admin-focus-ring rounded-lg px-3 py-2 text-xs font-medium transition-colors ${
                   categoryFilter === 'all'
-                    ? 'bg-[#deb887] text-white shadow-sm'
+                    ? 'bg-amber-100 text-amber-950 ring-1 ring-amber-300'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
               >
@@ -473,9 +488,9 @@ export default function AdminInventory() {
                   type="button"
                   onClick={() => setCategoryFilter(cat)}
                   aria-pressed={categoryFilter === cat}
-                  className={`admin-focus-ring px-3 py-2 rounded-xl text-xs font-medium transition-all ${
+                  className={`admin-focus-ring rounded-lg px-3 py-2 text-xs font-medium transition-colors ${
                     categoryFilter === cat
-                      ? 'bg-[#deb887] text-white shadow-sm'
+                      ? 'bg-amber-100 text-amber-950 ring-1 ring-amber-300'
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
@@ -491,8 +506,8 @@ export default function AdminInventory() {
                 ['expired', 'Con vencidos', stockCounts.expired],
               ] as const).map(([key, label, count]) => (
                 <button key={key} type="button" onClick={() => setStockFilter(key)} aria-pressed={stockFilter === key}
-                  className={`admin-focus-ring px-3 py-1.5 border-b-2 text-xs font-medium transition-colors ${stockFilter === key ? 'border-amber-400 text-white' : 'border-transparent text-gray-300 hover:text-white'}`}>
-                  {label} <span className={stockFilter === key ? 'text-amber-300' : 'text-gray-400'}>{count}</span>
+                  className={`admin-focus-ring rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${stockFilter === key ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50'}`}>
+                  {label} <span className={stockFilter === key ? 'text-amber-300' : 'text-gray-500'}>{count}</span>
                 </button>
               ))}
             </div>}

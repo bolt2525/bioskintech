@@ -69,14 +69,26 @@ export default function InventoryBatches({ canDelete = false }: { canDelete?: bo
     return { label: 'Vigente', color: 'bg-green-100 text-green-700', text: 'text-green-700', icon: CheckCircle };
   };
 
+  const riskCount = batches.filter(batch => {
+    if (!batch.expiration_date || batch.expiration_date.startsWith('2099')) return false;
+    return differenceInDays(new Date(batch.expiration_date), new Date()) < 30;
+  }).length;
+
   return (
-    <div className="space-y-6">
-      <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-        <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-          <Calendar className="w-5 h-5 text-[#deb887]" />
-          Lotes y Vencimientos
-        </h3>
-        <p className="text-sm text-gray-500 mt-1">Listado de lotes activos ordenados por fecha de vencimiento.</p>
+    <div className="space-y-4">
+      <div className="flex flex-col gap-4 rounded-2xl border border-white/70 bg-white p-5 shadow-xl shadow-black/10 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-700">Control de caducidad</p>
+          <h3 className="mt-1 flex items-center gap-2 text-lg font-semibold text-gray-900">
+            <Calendar className="h-5 w-5 text-amber-700" aria-hidden="true" />
+            Lotes Activos
+          </h3>
+          <p className="mt-1 text-sm text-gray-500">Prioridad ordenada por fecha de vencimiento.</p>
+        </div>
+        <div className="flex divide-x divide-gray-200 rounded-xl border border-gray-200 bg-gray-50">
+          <div className="px-4 py-2 text-center"><span className="block text-lg font-bold tabular-nums text-gray-900">{loading ? '—' : batches.length}</span><span className="text-[10px] font-medium uppercase text-gray-500">Lotes</span></div>
+          <div className="px-4 py-2 text-center"><span className={`block text-lg font-bold tabular-nums ${riskCount ? 'text-red-700' : 'text-emerald-700'}`}>{loading ? '—' : riskCount}</span><span className="text-[10px] font-medium uppercase text-gray-500">En Riesgo</span></div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -92,7 +104,7 @@ export default function InventoryBatches({ canDelete = false }: { canDelete?: bo
             const StatusIcon = status.icon;
             
             return (
-              <div key={batch.id} className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
+              <article key={batch.id} className="group relative overflow-hidden rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:border-amber-300 hover:shadow-lg">
                 <div className={`absolute top-0 right-0 p-2 rounded-bl-xl ${status.color} text-xs font-semibold flex items-center gap-1`}>
                   <StatusIcon className="w-3 h-3" />
                   {status.label}
@@ -138,7 +150,7 @@ export default function InventoryBatches({ canDelete = false }: { canDelete?: bo
                     <p className="text-xs text-amber-800">Referencia del producto: ${Number(batch.reference_cost).toFixed(2)}</p>
                   )}
                 </div>
-              </div>
+              </article>
             );
           })
         )}

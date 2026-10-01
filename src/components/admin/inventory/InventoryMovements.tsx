@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React from 'react';
 import recordsFetch from "../../../utils/recordsFetch";
 import { format } from 'date-fns';
@@ -32,11 +31,7 @@ export default function InventoryMovements({ canDelete = false, canClear = false
   const [startDate, setStartDate] = React.useState('');
   const [endDate, setEndDate] = React.useState('');
 
-  React.useEffect(() => {
-    fetchMovements();
-  }, [filterType, startDate, endDate]);
-
-  const fetchMovements = async () => {
+  const fetchMovements = React.useCallback(async () => {
     try {
       setLoading(true);
       const queryParams = new URLSearchParams({
@@ -58,7 +53,11 @@ export default function InventoryMovements({ canDelete = false, canClear = false
     } finally {
       setLoading(false);
     }
-  };
+  }, [filterType, startDate, endDate]);
+
+  React.useEffect(() => {
+    fetchMovements();
+  }, [fetchMovements]);
 
   const handleDelete = async (id: number) => {
     if (!window.confirm('¿Estás seguro de que deseas eliminar este registro de movimiento? Esta acción no se puede deshacer.')) {
@@ -110,33 +109,49 @@ export default function InventoryMovements({ canDelete = false, canClear = false
     m.batch_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     m.reason?.toLowerCase().includes(searchTerm.toLowerCase())
   );
+  const entryCount = filteredMovements.filter(movement => movement.quantity_change > 0).length;
+  const exitCount = filteredMovements.length - entryCount;
 
   return (
-    <div className="space-y-6 animate-enter">
+    <div className="space-y-4 animate-enter">
       {/* Header & Controls */}
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+      <div className="rounded-2xl border border-white/70 bg-white p-4 shadow-xl shadow-black/10 sm:p-5">
+        <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
         <div>
-          <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-            <Activity className="w-5 h-5 text-[#deb887]" />
-            Auditoría de Movimientos
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-700">Bitácora operativa</p>
+          <h3 className="mt-1 flex items-center gap-2 text-lg font-semibold text-gray-900">
+            <Activity className="h-5 w-5 text-amber-700" aria-hidden="true" />
+            Movimientos
           </h3>
-          <p className="text-sm text-gray-500 mt-1">Registro detallado de ingresos y salidas del inventario</p>
+          <p className="mt-1 text-sm text-gray-500">Registro detallado de ingresos y salidas.</p>
+        </div>
+        <div className="flex divide-x divide-gray-200 rounded-xl border border-gray-200 bg-gray-50">
+          <div className="px-4 py-2 text-center"><span className="block text-lg font-bold tabular-nums text-emerald-700">{entryCount}</span><span className="text-[10px] uppercase text-gray-500">Ingresos visibles</span></div>
+          <div className="px-4 py-2 text-center"><span className="block text-lg font-bold tabular-nums text-red-700">{exitCount}</span><span className="text-[10px] uppercase text-gray-500">Salidas visibles</span></div>
+        </div>
         </div>
         
-        <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+        <div className="mt-4 grid gap-3 border-t border-gray-100 pt-4 md:grid-cols-[minmax(0,1fr)_auto_auto_auto]">
+           <div className="relative min-w-0">
+             <label htmlFor="movement-search" className="sr-only">Buscar movimientos</label>
+             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+             <input id="movement-search" type="search" placeholder="Producto, SKU, lote o razón…" className="admin-focus-ring min-h-10 w-full rounded-xl border border-gray-200 bg-gray-50 py-2 pl-9 pr-4 text-sm text-gray-900 placeholder:text-gray-500" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+           </div>
            {/* Date Filters */}
-           <div className="flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">
-             <Calendar className="w-4 h-4 text-gray-400" />
+           <div className="flex flex-col gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 focus-within:ring-2 focus-within:ring-amber-800 sm:flex-row sm:items-center">
+             <Calendar className="hidden h-4 w-4 text-gray-400 sm:block" />
              <input 
+               aria-label="Fecha inicial"
                type="date" 
-               className="bg-transparent text-sm text-gray-600 outline-none w-32"
+               className="w-full bg-transparent text-sm text-gray-600 outline-none sm:w-32"
                value={startDate}
                onChange={(e) => setStartDate(e.target.value)}
              />
              <span className="text-gray-400">-</span>
              <input 
+               aria-label="Fecha final"
                type="date" 
-               className="bg-transparent text-sm text-gray-600 outline-none w-32"
+               className="w-full bg-transparent text-sm text-gray-600 outline-none sm:w-32"
                value={endDate}
                onChange={(e) => setEndDate(e.target.value)}
              />
@@ -144,9 +159,10 @@ export default function InventoryMovements({ canDelete = false, canClear = false
 
            {/* Type Filter */}
            <select 
-             className="px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-[#deb887]"
+             aria-label="Filtrar por tipo de movimiento"
+             className="admin-focus-ring min-h-10 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm"
              value={filterType}
-             onChange={(e) => setFilterType(e.target.value as any)}
+             onChange={(e) => setFilterType(e.target.value as 'all' | 'IN' | 'OUT')}
            >
              <option value="all">Todos los tipos</option>
              <option value="IN">Ingresos (+)</option>
@@ -165,24 +181,13 @@ export default function InventoryMovements({ canDelete = false, canClear = false
 
            <button 
              onClick={fetchMovements}
-             className="p-2 text-gray-400 hover:text-[#deb887] hover:bg-[#deb887]/10 rounded-lg transition-colors"
+             className="admin-focus-ring min-h-10 min-w-10 rounded-lg border border-gray-200 p-2 text-gray-500 transition-colors hover:bg-amber-50 hover:text-amber-800"
              title="Actualizar"
+             aria-label="Actualizar movimientos"
            >
              <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
            </button>
         </div>
-      </div>
-
-      {/* Search Bar */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-        <input
-          type="text"
-          placeholder="Buscar por nombre, SKU, lote o razón..."
-          className="w-full bg-white pl-9 pr-4 py-3 text-sm text-gray-900 placeholder:text-gray-500 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#deb887] outline-none shadow-sm"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-        />
       </div>
 
       {/* Table */}

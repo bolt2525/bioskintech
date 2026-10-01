@@ -1,5 +1,6 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-01 Inventario renovado como consola inmersiva y responsive en sus cuatro tabs.
 - ✅ 2026-09-30 Contrato Master Admin aclarado: guía de datos del cliente y alcances independientes para DermoAtlas 3D y mapeo clínico 3D, sin comparaciones confusas.
 - ✅ 2026-09-30 Enrutamiento obligatorio de skills documentado en instrucciones globales, AGENTS, Copilot y agentes Frontend/QA/DevOps.
 - ✅ 2026-09-30 Skills Vercel de UI, React, CLI y Agent Browser instaladas; React 18/Vite verificado y navegación automatizada limitada a datos seguros.
