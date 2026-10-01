@@ -13,7 +13,6 @@ import injectablesCatalog from '../../data/injectables.json';
 import Clinical3DViewer, { Marker3D, EditablePoint, FreehandLine, SurfaceShape, DrawingTool, MarkerType } from '../Clinical3DViewer';
 import type { ReferenceLine, LineType, ProjectedPosition } from '../Clinical3DViewer';
 import InjectableCaptureModal, { CaptureImage } from '../InjectableCaptureModal';
-import ReferenceLinePanel from '../ReferenceLinePanel';
 import type { LinePreset } from '../ReferenceLinePanel';
 import trazadoSuperior from '../../data/trazado-referencia-superior.json';
 import { useClinicSettings } from '../../../../../hooks/useClinicSettings';

@@ -87,8 +87,10 @@ export default function DiagnosisTab({ recordId, diagnoses, patientName, consult
   };
 
   const handleDuplicate = () => {
-    const { id, date, ...rest } = currentDiagnosis;
-    setCurrentDiagnosis({ ...rest, record_id: recordId });
+    const duplicate = { ...currentDiagnosis };
+    delete duplicate.id;
+    delete duplicate.date;
+    setCurrentDiagnosis({ ...duplicate, record_id: recordId });
     setMessage({ type: 'success', text: 'Diagnóstico duplicado. Guarde para crear uno nuevo.' });
   };
 

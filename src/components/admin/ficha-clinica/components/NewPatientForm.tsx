@@ -1,6 +1,6 @@
 ﻿import React, { useState, useEffect } from 'react';
 import recordsFetch from "../../../../utils/recordsFetch";
-import { useNavigate, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { Save, AlertCircle, Users, X } from 'lucide-react';
 import AdminLayout from '../../../layout/AdminLayout';
 import { useAdminNav } from '../../../../hooks/useAdminNav';

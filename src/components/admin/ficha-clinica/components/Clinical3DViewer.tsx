@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { DecalGeometry } from 'three/examples/jsm/geometries/DecalGeometry.js';
 import {
   Loader2, AlertCircle, Upload
 } from 'lucide-react';
@@ -2291,7 +2290,7 @@ const ThreeEngine: React.FC<{
       }
       cancelAnimationFrame(animationFrameId);
       if (mountRef.current && rendererRef.current) {
-        try { mountRef.current.removeChild(rendererRef.current.domElement); } catch (_) {}
+        try { mountRef.current.removeChild(rendererRef.current.domElement); } catch { /* element already detached */ }
       }
       controlsRef.current?.dispose();
       sceneRef.current?.traverse((object: any) => {

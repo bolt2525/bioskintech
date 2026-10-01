@@ -328,7 +328,8 @@ export default function TreatmentTab({ recordId, treatments, patientName, consul
                 const isCollapsed = !expandedGroups.has(normalKey);
                 const toggleCollapse = () => setExpandedGroups(prev => {
                   const next = new Set(prev);
-                  next.has(normalKey) ? next.delete(normalKey) : next.add(normalKey);
+                  if (next.has(normalKey)) next.delete(normalKey);
+                  else next.add(normalKey);
                   return next;
                 });
                 return (

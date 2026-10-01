@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import recordsFetch from "../utils/recordsFetch";
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import SignatureCanvas from 'react-signature-canvas';
 import { normalizeSignature, SIGNATURE_PEN } from '../utils/signatureImage';
 import { CheckCircle, PenTool, Eraser, Save, X, Printer } from 'lucide-react';

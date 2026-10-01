@@ -98,7 +98,7 @@ export default function ExternalMedicalFinance() {
       if (data.length === 0 && viewMode === 'list') {
         // Optional: Message if empty
       }
-    } catch (e) {
+    } catch {
       console.error(e);
       setError('Error al cargar registros');
     } finally {
@@ -118,7 +118,7 @@ export default function ExternalMedicalFinance() {
       if (!res.ok) throw new Error('Falló eliminación');
       setSuccess('Registro eliminado');
       fetchRecords();
-    } catch (e) {
+    } catch {
       setError('Error al eliminar');
     } finally {
       setLoading(false);

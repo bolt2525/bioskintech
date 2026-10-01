@@ -66,7 +66,7 @@ export default function AdminRegister() {
   const [clinicPhone, setClinicPhone] = useState('');
   const [clinicAddress, setClinicAddress] = useState('');
   const [clinicCity, setClinicCity]   = useState('');
-  const [clinicCountry, setClinicCountry] = useState('Ecuador');
+  const [clinicCountry] = useState('Ecuador');
   const [clinicRuc, setClinicRuc]     = useState('');
   const [clinicWebsite, setClinicWebsite] = useState('');
   const [cedulaPro, setCedulaPro]     = useState('');

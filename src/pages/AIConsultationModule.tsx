@@ -207,7 +207,8 @@ export default function AIConsultationModule() {
   const toggleExpanded = (tab: keyof Selections) => {
     setExpandedTabs(prev => {
       const next = new Set(prev);
-      next.has(tab) ? next.delete(tab) : next.add(tab);
+      if (next.has(tab)) next.delete(tab);
+      else next.add(tab);
       return next;
     });
   };

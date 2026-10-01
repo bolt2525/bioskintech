@@ -434,7 +434,7 @@ export interface SkinCanvasProps {
 }
 
 export const SkinCanvas = forwardRef<SkinCanvasHandle, SkinCanvasProps>(
-  ({ hotspots, selected, onSelect, autoRotate, onInteraction }, ref) => {
+  ({ hotspots, onSelect, autoRotate }, ref) => {
     const mountRef    = useRef<HTMLDivElement>(null);
     const rendererRef = useRef<SkinRenderer | null>(null);
     const [loading,  setLoading]  = useState(true);
