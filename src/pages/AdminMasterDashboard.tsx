@@ -20,7 +20,7 @@ import {
   LogOut, Building2, Users, Shield, RefreshCw, ChevronDown, ChevronUp,
   Plus, Edit, Trash2, Eye, EyeOff, Key, X, Check, AlertCircle, Copy, Send,
   Activity, ClipboardList, ChevronRight, Sparkles, Lock, Mail, Unlink, ExternalLink, Settings2, LayoutDashboard, UserCheck, Calendar, Infinity, Clock, Bell,
-  Link2Off, Loader2, CheckCircle2, MessageCircle,
+  Link2Off, Loader2, CheckCircle2, MessageCircle, FileText, Search,
 } from 'lucide-react';
 
 // Constantes centralizadas — no duplicar aquí
@@ -31,13 +31,14 @@ import { slugify } from '../utils/slugify';
 
 // Tipos centralizados
 import InjectableSeedsPanel from '../components/admin/InjectableSeedsPanel';
+import ContractGenerator from '../components/admin/ContractGenerator';
 import type { Clinic, ClinicUser, FeatureRow } from '../types';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tipos locales (solo usados en este archivo)
 // ─────────────────────────────────────────────────────────────────────────────
 
-type TabKey = 'clinics' | 'users' | 'modules' | 'system' | 'templates' | 'accesos' | 'vencimientos';
+type TabKey = 'clinics' | 'users' | 'modules' | 'system' | 'templates' | 'accesos' | 'vencimientos' | 'contrato';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Componentes pequeños reutilizables dentro de este módulo
@@ -1164,6 +1165,8 @@ export default function AdminMasterDashboard() {
   // ── Filtros de usuarios ──────────────────────────────────────────────────
   const [userSearch, setUserSearch]           = useState('');
   const [userClinicFilter, setUserClinicFilter] = useState('');
+  const [clinicSearch, setClinicSearch] = useState('');
+  const [clinicStatusFilter, setClinicStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
 
   // ─── Helpers ─────────────────────────────────────────────────────────────
 
@@ -1581,6 +1584,14 @@ export default function AdminMasterDashboard() {
     const matchClinic  = !userClinicFilter || String(u.clinic_id) === userClinicFilter;
     return matchSearch && matchClinic;
   });
+  const filteredClinics = clinics.filter(clinic => {
+    const query = clinicSearch.trim().toLocaleLowerCase();
+    const matchesSearch = !query || [clinic.name, clinic.slug, clinic.email]
+      .some(value => value?.toLocaleLowerCase().includes(query));
+    const matchesStatus = clinicStatusFilter === 'all' ||
+      (clinicStatusFilter === 'active' ? clinic.is_active : !clinic.is_active);
+    return matchesSearch && matchesStatus;
+  });
 
   // ─── Notificaciones de vencimiento ───────────────────────────────────────
   type NotifItem = { key: string; type: 'demo_urgent' | 'demo_expired' | 'clinic_expiring' | 'clinic_grace' | 'clinic_expired'; label: string; detail: string };
@@ -1730,9 +1741,11 @@ export default function AdminMasterDashboard() {
             ))}
           </div>
 
-          {/* Tabs de navegación */}
-          <div className="flex gap-1 mt-5 bg-white/5 border border-white/10 rounded-xl p-1 w-fit">
-            {([
+          {/* Navegación: Contrato queda como acceso destacado y siempre visible */}
+          <div className="mt-5 flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
+            <nav aria-label="Secciones de administración" className="min-w-0 flex-1 overflow-x-auto rounded-xl border border-white/10 bg-white/5 p-1">
+              <div className="flex w-max flex-nowrap gap-1">
+              {([
               ['clinics',   '🏥 Clínicas'],
               ['users',     '👥 Usuarios'],
               ['modules',   '✦ Módulos'],
@@ -1744,7 +1757,8 @@ export default function AdminMasterDashboard() {
               <button
                 key={key}
                 onClick={() => setTab(key)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                aria-current={tab === key ? 'page' : undefined}
+                className={`shrink-0 rounded-lg px-4 py-2 text-sm font-medium transition-all focus:outline-none focus:ring-2 focus:ring-[#deb887] focus:ring-offset-2 focus:ring-offset-[#1a1209] ${
                   tab === key
                     ? 'bg-gradient-to-r from-[#deb887] to-[#c5a075] text-white shadow-md shadow-[#deb887]/20'
                     : 'text-white/50 hover:text-white/80'
@@ -1753,6 +1767,21 @@ export default function AdminMasterDashboard() {
                 {label}
               </button>
             ))}
+              </div>
+            </nav>
+            <button
+              type="button"
+              onClick={() => setTab('contrato')}
+              aria-current={tab === 'contrato' ? 'page' : undefined}
+              className={`inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold transition-all focus:outline-none focus:ring-2 focus:ring-[#deb887] focus:ring-offset-2 focus:ring-offset-[#1a1209] ${
+                tab === 'contrato'
+                  ? 'border-[#deb887] bg-gradient-to-r from-[#deb887] to-[#c5a075] text-white shadow-md'
+                  : 'border-[#deb887]/40 bg-[#deb887]/10 text-[#f1d5ae] hover:border-[#deb887] hover:bg-[#deb887]/20'
+              }`}
+            >
+              <FileText className="h-4 w-4" aria-hidden="true" />
+              Contrato
+            </button>
           </div>
         </div>
       </div>
@@ -1769,113 +1798,148 @@ export default function AdminMasterDashboard() {
 
         {/* ── Tab: Clínicas ────────────────────────────────────────────── */}
         {tab === 'clinics' && (
-          <div>
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-lg font-bold text-gray-900">Clínicas registradas</h2>
-              <button onClick={openCreateClinic} className="flex items-center gap-2 px-4 py-2 text-white rounded-xl text-sm font-medium transition-all shadow-md hover:shadow-lg hover:-translate-y-0.5" style={{background:'linear-gradient(135deg,#deb887,#c5a075)'}}>
+          <section aria-labelledby="clinics-heading">
+            <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 id="clinics-heading" className="text-lg font-bold text-gray-900">Clínicas registradas</h2>
+                <p className="mt-1 text-sm text-gray-500">Busca y administra las clínicas de tu plataforma.</p>
+              </div>
+              <button onClick={openCreateClinic} className="inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium text-white shadow-md transition-all hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-[#c5a075] focus:ring-offset-2" style={{background:'linear-gradient(135deg,#deb887,#c5a075)'}}>
                 <Plus className="w-4 h-4" /> Nueva Clínica
               </button>
+            </div>
+
+            <div className="mb-5 flex flex-col gap-3 sm:flex-row">
+              <label className="relative block min-w-0 flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" aria-hidden="true" />
+                <span className="sr-only">Buscar clínicas</span>
+                <input
+                  type="search"
+                  value={clinicSearch}
+                  onChange={e => setClinicSearch(e.target.value)}
+                  placeholder="Buscar por clínica, usuario o correo…"
+                  className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-9 pr-3 text-sm text-gray-800 placeholder:text-gray-400 focus:border-[#c5a075] focus:outline-none focus:ring-2 focus:ring-[#deb887]/30"
+                />
+              </label>
+              <label className="sm:w-48">
+                <span className="sr-only">Filtrar clínicas por estado</span>
+                <select
+                  value={clinicStatusFilter}
+                  onChange={e => setClinicStatusFilter(e.target.value as typeof clinicStatusFilter)}
+                  className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-700 focus:border-[#c5a075] focus:outline-none focus:ring-2 focus:ring-[#deb887]/30"
+                >
+                  <option value="all">Todos los estados</option>
+                  <option value="active">Activas</option>
+                  <option value="inactive">Inactivas</option>
+                </select>
+              </label>
             </div>
 
             {loading ? (
               <div className="flex items-center justify-center py-20 text-gray-400">
                 <RefreshCw className="w-6 h-6 animate-spin mr-2" /> Cargando…
               </div>
-            ) : (
-              <div className="grid md:grid-cols-2 gap-5">
-                {clinics.map(clinic => (
-                  <div key={clinic.id} className={`bg-white rounded-2xl shadow border ${clinic.is_active ? 'border-gray-100' : 'border-red-200 opacity-70'}`}>
-                    <div className="p-5">
-                      {/* Encabezado de la clínica */}
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-gradient-to-br from-[#deb887] to-[#c5a075] rounded-xl flex items-center justify-center text-white font-bold text-sm shadow-md shadow-[#deb887]/20">
-                            {clinic.name.charAt(0)}
-                          </div>
-                          <div>
-                            <h3 className="font-bold text-gray-900">{clinic.name}</h3>
-                            <p className="text-gray-400 text-xs">@{clinic.slug}</p>
-                          </div>
-                        </div>
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${clinic.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
-                          {clinic.is_active ? 'Activa' : 'Inactiva'}
-                        </span>
-                      </div>
-
-                      {/* Stats de la clínica */}
-                      <div className="grid grid-cols-3 gap-2 mb-4">
-                        {[
-                          { label: 'Usuarios',  value: clinic.user_count || 0 },
-                          { label: 'Pacientes', value: clinic.patient_count || 0 },
-                          { label: 'Módulos',   value: ALL_FEATURES.filter(f => isClinicFeatureEnabled(featMap[clinic.id], f)).length },
-                        ].map(s => (
-                          <div key={s.label} className="text-center p-2 bg-gray-50 rounded-lg">
-                            <div className="text-lg font-bold text-gray-900">{s.value}</div>
-                            <div className="text-xs text-gray-400">{s.label}</div>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Suscripción */}
-                      {(() => {
-                        const exp = clinic.subscription_expires_at ? new Date(clinic.subscription_expires_at) : null;
-                        const expired = exp && exp < new Date();
-                        const daysLeft = exp ? Math.ceil((exp.getTime() - Date.now()) / 86400000) : null;
-                        return (
-                          <div className={`flex items-center justify-between px-3 py-2 rounded-lg mb-3 text-xs ${expired ? 'bg-red-50 border border-red-200' : exp && daysLeft! <= 30 ? 'bg-amber-50 border border-amber-200' : 'bg-green-50 border border-green-100'}`}>
-                            <div>
-                              <span className={`font-semibold ${expired ? 'text-red-600' : exp && daysLeft! <= 30 ? 'text-amber-700' : 'text-green-700'}`}>
-                                {expired ? '⚠ Suscripción vencida' : exp ? `Vence: ${exp.toLocaleDateString('es-EC')} (${daysLeft}d)` : 'Sin fecha de vencimiento'}
-                              </span>
+            ) : filteredClinics.length > 0 ? (
+              <div className="space-y-3" aria-live="polite">
+                <p className="text-xs text-gray-500">{filteredClinics.length} de {clinics.length} clínicas</p>
+                {filteredClinics.map(clinic => (
+                  <article key={clinic.id} aria-label={`Clínica ${clinic.name}`} className={`overflow-hidden rounded-2xl border bg-white shadow-sm transition-shadow hover:shadow-md ${clinic.is_active ? 'border-gray-200 border-l-4 border-l-emerald-400' : 'border-red-200 border-l-4 border-l-red-400'}`}>
+                    <div className="grid lg:grid-cols-[minmax(0,1fr)_250px]">
+                      <div className="min-w-0 p-4 sm:p-5">
+                        <div className="mb-4 flex items-start justify-between gap-3">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#deb887] to-[#c5a075] text-sm font-bold text-white shadow-sm" aria-hidden="true">
+                              {clinic.name.charAt(0).toUpperCase()}
                             </div>
-                            <button
-                              onClick={() => { setSubModal({ open: true, clinic }); setSubDays(365); setSubNoExpiry(false); }}
-                              className="text-xs text-[#c5a075] hover:text-[#deb887] font-medium underline"
-                            >
-                              Renovar
-                            </button>
+                            <div className="min-w-0">
+                              <h3 className="truncate font-bold text-gray-900">{clinic.name}</h3>
+                              <p className="truncate text-xs text-gray-500">@{clinic.slug}</p>
+                            </div>
                           </div>
-                        );
-                      })()}
+                          <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${clinic.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+                            {clinic.is_active ? 'Activa' : 'Inactiva'}
+                          </span>
+                        </div>
 
-                      {/* Panel de features toggleable */}
-                      <ClinicFeaturesPanel
-                        clinic={clinic}
-                        featMap={featMap[clinic.id] || {}}
-                        onToggle={handleToggleFeature}
-                      />
+                        <div className="mb-4 grid grid-cols-3 gap-2">
+                          {[
+                            { label: 'Usuarios', value: clinic.user_count || 0 },
+                            { label: 'Pacientes', value: clinic.patient_count || 0 },
+                            { label: 'Módulos', value: ALL_FEATURES.filter(f => isClinicFeatureEnabled(featMap[clinic.id], f)).length },
+                          ].map(stat => (
+                            <div key={stat.label} className="rounded-xl bg-gray-50 px-2 py-2 text-center">
+                              <div className="text-lg font-bold text-gray-900">{stat.value}</div>
+                              <div className="text-xs text-gray-500">{stat.label}</div>
+                            </div>
+                          ))}
+                        </div>
 
-                      <p className="mt-3 pt-3 border-t border-gray-50 text-[10px] text-gray-400 text-center">Google Calendar se conecta por usuario desde la pestaña Usuarios.</p>
+                        {(() => {
+                          const exp = clinic.subscription_expires_at ? new Date(clinic.subscription_expires_at) : null;
+                          const expired = exp && exp < new Date();
+                          const daysLeft = exp ? Math.ceil((exp.getTime() - Date.now()) / 86400000) : null;
+                          return (
+                            <div className={`mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-xs ${expired ? 'border-red-200 bg-red-50' : exp && daysLeft! <= 30 ? 'border-amber-200 bg-amber-50' : 'border-emerald-100 bg-emerald-50'}`}>
+                              <span className={`font-semibold ${expired ? 'text-red-700' : exp && daysLeft! <= 30 ? 'text-amber-800' : 'text-emerald-800'}`}>
+                                {expired ? 'Suscripción vencida' : exp ? `Vence: ${exp.toLocaleDateString('es-EC')} · ${daysLeft} días` : 'Sin fecha de vencimiento'}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => { setSubModal({ open: true, clinic }); setSubDays(365); setSubNoExpiry(false); }}
+                                className="rounded font-semibold text-[#9a7040] underline decoration-[#deb887]/50 underline-offset-2 hover:text-[#704c27] focus:outline-none focus:ring-2 focus:ring-[#c5a075]"
+                              >
+                                Renovar
+                              </button>
+                            </div>
+                          );
+                        })()}
 
-                      {/* Acciones de la clínica */}
-                      <div className="flex gap-2 mt-4 pt-4 border-t">
-                        <button onClick={() => openEditClinic(clinic)} className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-[#c5a075] bg-[#deb887]/8 hover:bg-[#deb887]/15 border border-[#deb887]/20 rounded-lg transition-colors">
-                          <Edit className="w-3.5 h-3.5" /> Editar
-                        </button>
-                        <button onClick={() => { setUserClinicFilter(String(clinic.id)); setTab('users'); }} className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg transition-colors">
-                          <Users className="w-3.5 h-3.5" /> Usuarios
-                        </button>
-                        <button onClick={() => openClinicSettings(clinic)} className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors">
-                          <Settings2 className="w-3.5 h-3.5" /> Ajustes
-                        </button>
-                        <button onClick={() => { setSelectedModuleClinic(clinic.id); setTab('modules'); }} className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-[#c5a075] bg-[#deb887]/10 hover:bg-[#deb887]/20 rounded-lg transition-colors">
-                          <Sparkles className="w-3.5 h-3.5" /> Módulos
-                        </button>
-                        <button onClick={() => openDemoModal(clinic.id, clinic.name)}
-                          className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition-colors">
-                          ⏱ Demo
-                        </button>
-                        <button onClick={() => deleteClinic(clinic)}
-                          className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors" title="Eliminar clínica">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        <ClinicFeaturesPanel clinic={clinic} featMap={featMap[clinic.id] || {}} onToggle={handleToggleFeature} />
+                        <p className="mt-4 border-t border-gray-100 pt-3 text-xs text-gray-500">
+                          Google Calendar se conecta por usuario desde la pestaña Usuarios.
+                        </p>
+                      </div>
+
+                      <div className="border-t border-gray-100 bg-gray-50/70 p-4 lg:border-l lg:border-t-0">
+                        <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Acciones de clínica</h4>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button onClick={() => openEditClinic(clinic)} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-[#deb887]/30 bg-white px-2 py-2 text-xs font-medium text-[#805d36] transition-colors hover:bg-[#deb887]/10 focus:outline-none focus:ring-2 focus:ring-[#c5a075]">
+                            <Edit className="h-3.5 w-3.5" /> Editar
+                          </button>
+                          <button onClick={() => { setUserClinicFilter(String(clinic.id)); setTab('users'); }} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2 py-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-400">
+                            <Users className="h-3.5 w-3.5" /> Usuarios
+                          </button>
+                          <button onClick={() => openClinicSettings(clinic)} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-indigo-200 bg-white px-2 py-2 text-xs font-medium text-indigo-700 transition-colors hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                            <Settings2 className="h-3.5 w-3.5" /> Ajustes
+                          </button>
+                          <button onClick={() => { setSelectedModuleClinic(clinic.id); setTab('modules'); }} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-[#deb887]/30 bg-white px-2 py-2 text-xs font-medium text-[#805d36] transition-colors hover:bg-[#deb887]/10 focus:outline-none focus:ring-2 focus:ring-[#c5a075]">
+                            <Sparkles className="h-3.5 w-3.5" /> Módulos
+                          </button>
+                          <button onClick={() => openDemoModal(clinic.id, clinic.name)} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-amber-200 bg-white px-2 py-2 text-xs font-medium text-amber-800 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-2 focus:ring-amber-400">
+                            <Clock className="h-3.5 w-3.5" /> Demo
+                          </button>
+                          <button onClick={() => deleteClinic(clinic)} aria-label={`Eliminar clínica ${clinic.name}`} title="Eliminar clínica" className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-white px-2 py-2 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-400">
+                            <Trash2 className="h-3.5 w-3.5" /> Eliminar
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  </article>
                 ))}
               </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-gray-300 bg-white px-5 py-12 text-center">
+                <Building2 className="mx-auto mb-3 h-10 w-10 text-gray-300" aria-hidden="true" />
+                <h3 className="font-semibold text-gray-800">{clinics.length ? 'No se encontraron clínicas' : 'Aún no hay clínicas'}</h3>
+                <p className="mt-1 text-sm text-gray-500">{clinics.length ? 'Prueba con otro nombre o cambia el filtro de estado.' : 'Crea la primera clínica para empezar a administrar la plataforma.'}</p>
+                {!clinics.length && (
+                  <button onClick={openCreateClinic} className="mt-4 inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white focus:outline-none focus:ring-2 focus:ring-[#c5a075] focus:ring-offset-2" style={{background:'linear-gradient(135deg,#deb887,#c5a075)'}}>
+                    <Plus className="h-4 w-4" /> Nueva Clínica
+                  </button>
+                )}
+              </div>
             )}
-          </div>
+          </section>
         )}
 
         {/* ── Tab: Usuarios ────────────────────────────────────────────── */}
@@ -2371,6 +2435,8 @@ export default function AdminMasterDashboard() {
             </div>
           </div>
         )}
+
+        {tab === 'contrato' && <ContractGenerator />}
 
       </div>
 
@@ -3636,4 +3702,3 @@ export default function AdminMasterDashboard() {
     </div>
   );
 }
-
