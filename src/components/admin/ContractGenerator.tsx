@@ -11,7 +11,8 @@ const MODULES = [
   { id: 'system-status', name: 'Estado del Sistema', detail: 'Consulta de suscripción, correo y conectividad.' },
   { id: 'appointments', name: 'Agendamiento', detail: 'Citas, calendario, bloqueos y reservas.' },
   { id: 'database', name: 'Base de Datos', detail: 'Estadísticas, respaldos y exportaciones.' },
-  { id: 'dermoatlas', name: 'DermoAtlas 3D', detail: 'Explorador interactivo educativo de anatomía y capas de la piel.' },
+  { id: 'clinical-3d', name: 'Mapeo clínico 3D', detail: 'Visor interactivo para registrar marcaciones de examen físico y tratamientos inyectables.' },
+  { id: 'dermoatlas', name: 'DermoAtlas 3D', detail: 'Explorador educativo interactivo de anatomía y capas de la piel.' },
 ] as const;
 
 const initialClient = {
@@ -149,38 +150,47 @@ export default function ContractGenerator() {
         <div className="space-y-6">
           <fieldset className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
             <legend className="px-1 text-sm font-semibold text-gray-900">Datos del cliente y la clínica</legend>
+            <p className="mt-2 text-xs leading-relaxed text-gray-600">
+              Identifique a quien contrata y a la cuenta que usará el servicio. Si contrata una persona natural, puede repetir su nombre como persona que firma y escribir “por sus propios derechos” como calidad.
+            </p>
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <label className="text-sm font-medium text-gray-700 sm:col-span-2">
-                Nombre legal o nombre completo del cliente <span aria-hidden="true">*</span>
-                <input required autoComplete="organization" value={client.name} onChange={event => updateClient('name', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
+                Titular del contrato <span aria-hidden="true">*</span>
+                <input required name="clientName" autoComplete="organization" value={client.name} onChange={event => updateClient('name', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
+                <span className="mt-1 block text-xs font-normal text-gray-600">Razón social de la empresa o nombres completos de la persona natural.</span>
               </label>
               <label className="text-sm font-medium text-gray-700">
-                RUC o cédula <span aria-hidden="true">*</span>
-                <input required value={client.taxId} onChange={event => updateClient('taxId', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
+                Identificación del titular <span aria-hidden="true">*</span>
+                <input required name="taxId" inputMode="numeric" value={client.taxId} onChange={event => updateClient('taxId', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
+                <span className="mt-1 block text-xs font-normal text-gray-600">RUC de la empresa o cédula de la persona natural.</span>
               </label>
               <label className="text-sm font-medium text-gray-700">
-                Clínica o cuenta <span aria-hidden="true">*</span>
-                <input required value={client.clinicName} onChange={event => updateClient('clinicName', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
+                Nombre de la clínica o cuenta <span aria-hidden="true">*</span>
+                <input required name="clinicName" autoComplete="organization" value={client.clinicName} onChange={event => updateClient('clinicName', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
+                <span className="mt-1 block text-xs font-normal text-gray-600">Nombre que identifica la cuenta en BIOSKINTECH; puede coincidir con el titular.</span>
               </label>
               <label className="text-sm font-medium text-gray-700 sm:col-span-2">
-                Domicilio del cliente <span aria-hidden="true">*</span>
-                <input required autoComplete="street-address" value={client.address} onChange={event => updateClient('address', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
+                Domicilio del titular <span aria-hidden="true">*</span>
+                <input required name="address" autoComplete="street-address" value={client.address} onChange={event => updateClient('address', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
+                <span className="mt-1 block text-xs font-normal text-gray-600">Dirección declarada para el contrato y las notificaciones formales.</span>
               </label>
               <label className="text-sm font-medium text-gray-700">
-                Representante o persona que suscribe <span aria-hidden="true">*</span>
-                <input required autoComplete="name" value={client.representative} onChange={event => updateClient('representative', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
+                Persona que firma <span aria-hidden="true">*</span>
+                <input required name="representative" autoComplete="name" value={client.representative} onChange={event => updateClient('representative', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
+                <span className="mt-1 block text-xs font-normal text-gray-600">Quien aceptará o firmará el contrato por el titular.</span>
               </label>
               <label className="text-sm font-medium text-gray-700">
-                Cargo o calidad en que suscribe <span aria-hidden="true">*</span>
-                <input required placeholder="Ej.: representante legal o persona natural" value={client.representativeRole} onChange={event => updateClient('representativeRole', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
+                Calidad con la que firma <span aria-hidden="true">*</span>
+                <input required name="representativeRole" placeholder="Ej.: representante legal…" value={client.representativeRole} onChange={event => updateClient('representativeRole', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
+                <span className="mt-1 block text-xs font-normal text-gray-600">Use “representante legal” para una empresa o “por sus propios derechos” para una persona natural.</span>
               </label>
               <label className="text-sm font-medium text-gray-700">
                 Correo de contacto <span aria-hidden="true">*</span>
-                <input required type="email" autoComplete="email" value={client.email} onChange={event => updateClient('email', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
+                <input required name="email" type="email" autoComplete="email" spellCheck={false} value={client.email} onChange={event => updateClient('email', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
               </label>
               <label className="text-sm font-medium text-gray-700">
                 Teléfono (opcional)
-                <input type="tel" autoComplete="tel" value={client.phone} onChange={event => updateClient('phone', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
+                <input name="phone" type="tel" autoComplete="tel" value={client.phone} onChange={event => updateClient('phone', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
               </label>
             </div>
           </fieldset>
@@ -299,7 +309,6 @@ export default function ContractGenerator() {
             </ul>
           ) : <p className="mt-3 text-sm text-gray-700">No se seleccionaron módulos individuales.</p>}
           {chatbot && <p className="mt-3 text-sm text-gray-700"><span className="font-semibold text-gray-900">Chatbot WhatsApp del sistema:</span> servicio opcional contratado durante esta vigencia anual.</p>}
-          <p className="mt-3 rounded-lg bg-gray-50 p-3 text-xs leading-relaxed text-gray-700"><strong>Alcance 3D:</strong> DermoAtlas 3D es un explorador educativo de anatomía y capas de la piel. No debe confundirse con Visualización 3D clínica (Clinical3D), que mantiene los datos en memoria temporal de la sesión y no ofrece persistencia en servidor; Clinical3D no está incluido ni se cotiza en esta selección.</p>
         </section>
 
         <section className="mt-6">
