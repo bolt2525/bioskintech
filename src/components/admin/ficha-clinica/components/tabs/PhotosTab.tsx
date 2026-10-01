@@ -905,10 +905,10 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
               </button>
               {filteredPhotos.length > 1 && (
                 <>
-                  <button onClick={() => lightboxNav(-1)} className="absolute left-2 top-1/2 -translate-y-1/2 z-10 p-2 bg-black/50 hover:bg-black/70 rounded-full text-white">
+                  <button onClick={() => lightboxNav(-1)} aria-label="Fotografía anterior" className="absolute left-2 top-1/2 -translate-y-1/2 z-10 p-2 bg-black/50 hover:bg-black/70 rounded-full text-white">
                     <ChevronLeft className="w-5 h-5" />
                   </button>
-                  <button onClick={() => lightboxNav(1)} className="absolute right-2 top-1/2 -translate-y-1/2 z-10 p-2 bg-black/50 hover:bg-black/70 rounded-full text-white">
+                  <button onClick={() => lightboxNav(1)} aria-label="Fotografía siguiente" className="absolute right-2 top-1/2 -translate-y-1/2 z-10 p-2 bg-black/50 hover:bg-black/70 rounded-full text-white">
                     <ChevronRight className="w-5 h-5" />
                   </button>
                 </>
