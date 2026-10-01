@@ -155,7 +155,24 @@ export default function InventorySales({ categories, filterUserId, clinicKey }: 
             {report.recent.length > 0 && (
               <section>
                 <h3 className="mb-3 text-sm font-semibold">Ventas registradas <span className="font-normal text-gray-600">(últimas 100 del período)</span></h3>
-                <div className="overflow-x-auto border-t border-gray-200">
+                <div className="divide-y divide-gray-100 border-t border-gray-200 md:hidden">
+                  {report.recent.map(sale => (
+                    <article key={sale.id} className="space-y-2 py-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-gray-900">{sale.item_name}</p>
+                          <p className="text-xs text-gray-500">Lote {sale.batch_number}{sale.is_archived ? ' · Archivado' : ''}</p>
+                        </div>
+                        <p className="shrink-0 text-sm font-bold tabular-nums text-emerald-800">{currency.format(Number(sale.sale_total))}</p>
+                      </div>
+                      <div className="flex items-end justify-between gap-3 text-xs text-gray-600">
+                        <p>{Number(-sale.quantity_change)} {sale.unit_of_measure} · {currency.format(Number(sale.unit_sale_price))} c/u<br /><span className="text-gray-500">{sale.reason}</span></p>
+                        <time className="shrink-0">{new Date(sale.created_at).toLocaleDateString('es-EC')}</time>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+                <div className="hidden overflow-x-auto border-t border-gray-200 md:block">
                   <table className="w-full min-w-[600px] text-left text-sm">
                     <thead className="text-xs text-gray-600"><tr><th className="py-2">Fecha</th><th>Producto / lote</th><th>Salida</th><th className="text-right">Precio unit.</th><th className="text-right">Importe</th></tr></thead>
                     <tbody className="divide-y divide-gray-100">{report.recent.map(sale => (
