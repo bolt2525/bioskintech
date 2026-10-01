@@ -43,6 +43,23 @@ Usa el agente más especializado posible según el tipo de tarea:
 - **`vercel-operations`**: despliegues, producción, logs y Vercel.
 - **`testing-validation`**: build, lint, tests, regresión y validación real.
 - **`code-cleanup-audit`**: auditoría técnica, legacy y limpieza de código.
+- **`web-design-guidelines`**: auditoría de UI, UX y accesibilidad.
+- **`building-components`**: componentes accesibles, tokens y APIs componibles.
+- **`vercel-react-best-practices`**: rendimiento React y optimización de bundle.
+- **`vercel-composition-patterns`**: refactorización de componentes extensos; aplicar solo patrones compatibles con React 18.
+- **`vercel-cli`**: comandos oficiales para inspeccionar y operar el proyecto Vercel.
+- **`agent-browser`**: navegación, screenshots y smoke tests visuales.
+
+### Compatibilidad frontend de las skills
+- El stack verificado es **React 18 + Vite**, sin Next.js. No aplicar reglas de Next.js, RSC ni APIs exclusivas de React 19.
+- React 19 requiere una migración independiente y validación de los visores 3D: `@react-three/fiber@8` y `@react-three/drei@9` declaran React 18.
+- Las skills externas se copian en `.agents/skills/` y se registran en `skills-lock.json`; no forman parte del bundle ni del runtime de producción.
+
+### Uso seguro de Agent Browser
+- Cargar primero `agent-browser skills get core` y cerrar la sesión al terminar.
+- Usar cuentas de prueba y datos ficticios o anonimizados; no capturar pacientes, fichas clínicas, consentimientos, tokens, cookies ni credenciales reales.
+- En producción, limitarse por defecto a recorridos de solo lectura. Cualquier alta, edición, eliminación, envío o pago requiere autorización explícita del usuario.
+- Validar al menos desktop y móvil, sin confundir una captura visual con una prueba funcional completa.
 
 ## Build and Test
 - `npm run build` para validación global del frontend.
