@@ -1,5 +1,6 @@
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
+import type { LucideIcon } from 'lucide-react';
 import recordsFetch from "../utils/recordsFetch";
 import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
 import { 
@@ -43,16 +44,6 @@ interface FinanceItem {
   tax: number;
   total: number;
 }
-
-// Calcula totales de un item dado sus campos base
-const calcItem = (it: Partial<FinanceItem>, defaultIva = 15): FinanceItem => {
-  const qty     = parseFloat(String(it.quantity  ?? 1));
-  const uprice  = parseFloat(String(it.unit_price ?? 0));
-  const ivaRate = parseFloat(String(it.iva_rate   ?? defaultIva));
-  const subtotal = parseFloat((qty * uprice).toFixed(2));
-  const tax      = parseFloat((subtotal * ivaRate / 100).toFixed(2));
-  return { description: it.description || '', quantity: qty, unit_price: uprice, iva_rate: ivaRate, subtotal, tax, total: parseFloat((subtotal + tax).toFixed(2)) };
-};
 
 // Si el usuario ingresa el TOTAL, calcula subtotal e IVA
 const calcFromTotal = (total: number, ivaRate: number): { subtotal: number; tax: number } => {
@@ -302,22 +293,22 @@ const AdminFinance = () => {
 
       setNewForm(EMPTY_FORM); setNewItems([]); setShowItems(false); setShowNewForm(false);
       fetchData();
-    } catch (e: any) {
-      alert('Error al guardar: ' + e.message);
+    } catch (e) {
+      alert('Error al guardar: ' + (e instanceof Error ? e.message : 'Error desconocido'));
     } finally {
       setSaving(false);
     }
   };
 
   // Normaliza campos NUMERIC de PostgreSQL que llegan como strings
-  const normalizeItem = (it: any): FinanceItem => ({
+  const normalizeItem = (it: Record<string, unknown>): FinanceItem => ({
     ...it,
-    quantity:   parseFloat(it.quantity   ?? 1),
-    unit_price: parseFloat(it.unit_price ?? 0),
-    iva_rate:   parseFloat(it.iva_rate   ?? 0),
-    subtotal:   parseFloat(it.subtotal   ?? 0),
-    tax:        parseFloat(it.tax        ?? 0),
-    total:      parseFloat(it.total      ?? 0),
+    quantity:   parseFloat(String(it.quantity   ?? 1)),
+    unit_price: parseFloat(String(it.unit_price ?? 0)),
+    iva_rate:   parseFloat(String(it.iva_rate   ?? 0)),
+    subtotal:   parseFloat(String(it.subtotal   ?? 0)),
+    tax:        parseFloat(String(it.tax        ?? 0)),
+    total:      parseFloat(String(it.total      ?? 0)),
   });
 
   const openDesglose = async (record: FinanceRecord) => {
@@ -353,8 +344,8 @@ const AdminFinance = () => {
       }
       setDesgModal({ open: false, record: null, items: [], loading: false, updateRecord: false });
       fetchData();
-    } catch (e: any) {
-      alert('Error al guardar desglose: ' + e.message);
+    } catch (e) {
+      alert('Error al guardar desglose: ' + (e instanceof Error ? e.message : 'Error desconocido'));
     } finally {
       setSaving(false);
     }
@@ -369,7 +360,7 @@ const AdminFinance = () => {
         body: JSON.stringify({ action: 'financeDelete', id })
       });
       fetchData();
-    } catch (e) {
+    } catch {
       alert('Error al eliminar');
     }
   };
@@ -394,7 +385,6 @@ const AdminFinance = () => {
 
     // Cálculo Neto: (Ingresos) - (Egresos)
     const totalIVA = ivaIngresos - ivaEgresos;
-    const totalSubtotal = subtotalIngresos - subtotalEgresos;
     const balanceTotal = totalIngresos - totalEgresos;
 
     return { 
@@ -453,7 +443,7 @@ const AdminFinance = () => {
     }
   };
 
-  const handleEditChange = (field: keyof FinanceRecord, value: any) => {
+  const handleEditChange = (field: keyof FinanceRecord, value: string | number) => {
     setEditFormData(prev => ({ ...prev, [field]: value }));
   };
 
@@ -656,7 +646,7 @@ const AdminFinance = () => {
                 <div className="flex gap-3">
                   <div className="flex-1">
                     <label className="text-xs text-gray-500 mb-1 block">Tipo</label>
-                    <select value={newForm.type} onChange={e => setNewForm(p => ({...p, type: e.target.value as any}))} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 outline-none">
+                    <select value={newForm.type} onChange={e => setNewForm(p => ({...p, type: e.target.value as FinanceRecord['type']}))} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 outline-none">
                       <option value="ingreso">Ingreso</option>
                       <option value="egreso">Egreso</option>
                     </select>
@@ -1171,7 +1161,7 @@ const AdminFinance = () => {
 interface MetricCardProps {
   title: string;
   amount: number;
-  icon: any;
+  icon: LucideIcon;
   color: 'blue' | 'green' | 'red' | 'orange' | 'black';
   currencySymbol?: string;
 }
@@ -1202,7 +1192,7 @@ const MetricCard = ({ title, amount, icon: Icon, color, currencySymbol = '$' }: 
 
 interface EditRowProps {
   data: Partial<FinanceRecord>;
-  onChange: (field: keyof FinanceRecord, value: any) => void;
+  onChange: (field: keyof FinanceRecord, value: string | number) => void;
   onSave: () => void;
   onCancel: () => void;
 }

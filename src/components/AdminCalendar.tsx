@@ -174,7 +174,7 @@ const AdminCalendar: React.FC<AdminCalendarProps> = ({ onBack }) => {
       // Esperar a que todas las promesas se resuelvan
       const results = await Promise.all(promises);
       
-      if (results.some((r: any) => r?.calendarNotConfigured)) {
+      if (results.some(result => result !== null && 'calendarNotConfigured' in result && result.calendarNotConfigured)) {
         setCalendarNotConfigured(true);
         return;
       }

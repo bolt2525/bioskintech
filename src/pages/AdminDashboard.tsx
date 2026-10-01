@@ -19,7 +19,7 @@ import { useAdminNav } from '../hooks/useAdminNav';
 import {
   LogOut, Calendar, Bell, X, AlertCircle, ChevronRight, Sparkles,
   Users, Shield, Settings, Lock, Eye, EyeOff, Pencil, Check,
-  UserCircle, CalendarDays, Building2, KeyRound, Plus, Trash2, UserCheck, MessageCircle,
+  UserCircle, CalendarDays, Building2, KeyRound, Plus, UserCheck, MessageCircle,
 } from 'lucide-react';
 import { useEffect, useState, useRef } from 'react';
 import { Fragment } from 'react';
@@ -43,6 +43,20 @@ type ProfileForm = {
 type ClinicForm = {
   name: string; phone: string; address: string;
   city: string; website: string; description: string;
+};
+
+type DashboardCalendarEvent = {
+  id: string;
+  summary: string;
+  eventType?: string;
+  startDateTime?: string;
+  start?: string | { dateTime?: string; date?: string };
+  end?: string | { dateTime?: string; date?: string };
+  description?: string;
+};
+type DashboardAppointment = Omit<UpcomingAppointment, 'end'> & {
+  end?: DashboardCalendarEvent['end'];
+  professional?: string;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -91,7 +105,7 @@ export default function AdminDashboard() {
 
   // Estado de notificaciones de citas
   const [showNotifications, setShowNotifications]       = useState(false);
-  const [upcomingAppointments, setUpcomingAppointments] = useState<UpcomingAppointment[]>([]);
+  const [upcomingAppointments, setUpcomingAppointments] = useState<DashboardAppointment[]>([]);
   const [loadingNotifications, setLoadingNotifications] = useState(false);
 
   // Toast para mensajes transitorios (ej. retorno de OAuth)
@@ -205,17 +219,17 @@ export default function AdminDashboard() {
       const data = await res.json();
       const today = new Date();
       today.setHours(0,0,0,0);
-      const appointments: UpcomingAppointment[] = (data.events || [])
-        .filter((ev: any) => ev.eventType !== 'block')
-        .map((ev: any) => {
-          const startStr = ev.startDateTime || ev.start?.dateTime || ev.start?.date || '';
+      const appointments: DashboardAppointment[] = (data.events || [])
+        .filter((ev: DashboardCalendarEvent) => ev.eventType !== 'block')
+        .map((ev: DashboardCalendarEvent) => {
+          const startStr = ev.startDateTime || (typeof ev.start === 'string' ? ev.start : ev.start?.dateTime || ev.start?.date) || '';
           const start = new Date(startStr);
           const diffDays = Math.floor((start.getTime() - today.getTime()) / 86_400_000);
           // ponytail: parse "Profesional: X" from Calendar event description
           const professional = (ev.description || '').match(/Profesional:\s*([^\n]+)/)?.[1]?.trim() || '';
           return { ...ev, start: startStr, daysUntil: diffDays, isToday: diffDays === 0, isTomorrow: diffDays === 1, professional };
         })
-        .sort((a: any, b: any) => new Date(a.startDateTime).getTime() - new Date(b.startDateTime).getTime());
+        .sort((a, b) => new Date(a.startDateTime || '').getTime() - new Date(b.startDateTime || '').getTime());
       setUpcomingAppointments(appointments);
     } catch { /* calendar no configurado — ignorar */ }
     finally { setLoadingNotifications(false); }
@@ -414,35 +428,6 @@ export default function AdminDashboard() {
     } finally { setWhatsappBotSaving(false); }
   };
 
-  // ─── Guardar tratamientos de clínica ────────────────────────────────────
-  const handleSaveTreatments = async () => {
-    if (!user?.clinic_id) return;
-    setAgendaSaving(true); setAgendaMsg(null);
-    try {
-      const res = await fetch('/api/admin-auth?action=saveClinicSettings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken')}` },
-        body: JSON.stringify({ clinicId: user.clinic_id, section: 'treatments', data: clinicTreatments }),
-      });
-      const d = await res.json();
-      setAgendaMsg({ text: d.error || '¡Tratamientos guardados!', ok: !!d.success });
-    } finally { setAgendaSaving(false); }
-  };
-
-  // ─── Guardar staff personal CC ──────────────────────────────────────────
-  const handleSavePersonalEmails = async () => {
-    setAgendaSaving(true); setAgendaMsg(null);
-    try {
-      const res = await fetch('/api/admin-auth?action=updatePersonalStaffEmails', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken')}` },
-        body: JSON.stringify({ emails: personalEmails }),
-      });
-      const d = await res.json();
-      setAgendaMsg({ text: d.error || '¡Correos guardados!', ok: !!d.success });
-    } finally { setAgendaSaving(false); }
-  };
-
   // ─── Agenda multi-recurso: ayudantes ────────────────────────────────────
   const agendaAuthHeaders = () => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken')}` });
 
@@ -613,10 +598,10 @@ export default function AdminDashboard() {
                                   <Calendar className="w-3 h-3" />
                                   <span className="capitalize">{day}</span>
                                 </div>
-                                {(apt as any).professional && (
+                                {apt.professional && (
                                   <div className="flex items-center gap-1 text-xs text-[#c5a075] mt-0.5">
                                     <UserCheck className="w-3 h-3" />
-                                    <span>{(apt as any).professional}</span>
+                                    <span>{apt.professional}</span>
                                   </div>
                                 )}
                               </div>

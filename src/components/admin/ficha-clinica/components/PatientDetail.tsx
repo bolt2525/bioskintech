@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { Plus, FileText, Calendar, Clock, ArrowRight, Edit2, Trash2 } from 'lucide-react';
 import AdminLayout from '../../../layout/AdminLayout';
 import recordsFetch from '../../../../utils/recordsFetch';
@@ -39,7 +39,6 @@ interface ClinicalRecord {
 
 export default function PatientDetail() {
   const { patientId } = useParams();
-  const navigate = useNavigate();
   const { nav } = useAdminNav();
   const { user } = useAuth();
   const [patient, setPatient] = useState<Patient | null>(null);

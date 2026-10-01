@@ -2,11 +2,10 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
-import { Save, AlertCircle, Plus, Trash2, Copy, Printer, Info, Edit2, Check, User, FileText, Eye, EyeOff, History } from 'lucide-react';
+import { Save, AlertCircle, Plus, Trash2, Copy, Printer, Info, Edit2, Check, Eye, EyeOff, History } from 'lucide-react';
 import CrossConsultHistoryModal, { type ConsultationRef } from '../CrossConsultHistoryModal';
 import { CLINICAL_FIELDS, LESION_CATALOG, PARAMETER_TOOLTIPS } from '../../../../../data/clinical-catalogs';
 import { Mark } from '../FaceMapCanvas';
-import BodyMapCanvas from '../BodyMapCanvas';
 import Clinical3DViewer from '../Clinical3DViewer';
 import type { Marker3D } from '../Clinical3DViewer';
 import type { ReferenceLine } from '../ReferenceLinePanel';
@@ -17,11 +16,10 @@ import FieldHelp from '../FieldHelp';
 import { HELP } from '../../data/fieldHelpTexts';
 
 // -- Constantes para el visor 3D facial ----------------------------------------
-const _trazado = trazadoData as any;
-const TERCIO_BOUNDARIES = _trazado.hairline as {
+const TERCIO_BOUNDARIES = (trazadoData as { hairline: {
   topY: number; bottomY: number;
   tercioMedioBottomY: number; tercioInferiorBottomY: number;
-};
+} }).hairline;
 // Límite lateral: líneas verticales desplazadas hacia afuera (zona sien/temporal)
 const COLA_CEJA_X_LEFT  = -1.0;
 const COLA_CEJA_X_RIGHT =  1.0;
@@ -161,8 +159,8 @@ interface PhysicalExam {
   pores?: string;
   pigmentation?: string;
   sensitivity?: string;
-  face_map_data?: string;
-  body_map_data?: string;
+  face_map_data?: string | Mark[];
+  body_map_data?: string | Mark[];
   created_at?: string;
 }
 
@@ -247,7 +245,7 @@ const MarkEditModal = ({
             <label className="block text-sm font-bold text-gray-700">Severidad / Grado</label>
             <Select 
               value={editedMark.severity ?? ''}
-              onChange={val => setEditedMark({...editedMark, severity: val as any})}
+              onChange={val => setEditedMark({...editedMark, severity: val as Mark['severity']})}
               options={[
                 { value: "leve", label: "Leve" },
                 { value: "moderado", label: "Moderado" },
@@ -367,7 +365,7 @@ const MarkEditModal = ({
   );
 };
 
-export default function PhysicalExamTab({ recordId, physicalExams, patientName, consultationId, consultations = [], onSave }: PhysicalExamTabProps) {
+export default function PhysicalExamTab({ recordId, physicalExams, consultationId, consultations = [], onSave }: PhysicalExamTabProps) {
   const [currentExam, setCurrentExam] = useState<PhysicalExam>({ ...EMPTY_EXAM, record_id: recordId });
   const [crossHistOpen, setCrossHistOpen] = useState(false);
   const messageRef = useRef<HTMLDivElement>(null);
@@ -391,7 +389,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
   const [pendingRegion, setPendingRegion] = useState<FacialRegion | null>(null);
   const [showReferenceLines, setShowReferenceLines] = useState(true);
   // Warning modal para confirmación de guardado con campos incompletos
-  const [saveWarning, setSaveWarning] = useState<{ messages: string[]; payload: any } | null>(null);
+  const [saveWarning, setSaveWarning] = useState<{ messages: string[]; payload: PhysicalExam } | null>(null);
 
   // Reset form when active consultation changes
 
@@ -424,16 +422,17 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
   const loadExam = (exam: PhysicalExam) => {
     setCurrentExam(exam);
     try {
-      const parseData = (data: any) => {
+      const parseData = (data?: string | Mark[]): Mark[] => {
         if (!data) return [];
         if (typeof data === 'string') {
           try {
-            return JSON.parse(data);
+            const parsed: unknown = JSON.parse(data);
+            return Array.isArray(parsed) ? parsed as Mark[] : [];
           } catch {
             return [];
           }
         }
-        return data;
+        return [];
       };
 
       setFaceMarks(parseData(exam.face_map_data));
@@ -462,8 +461,10 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
   };
 
   const handleDuplicate = () => {
-    const { id, created_at, ...rest } = currentExam;
-    setCurrentExam({ ...rest, record_id: recordId });
+    const duplicate = { ...currentExam };
+    delete duplicate.id;
+    delete duplicate.created_at;
+    setCurrentExam({ ...duplicate, record_id: recordId });
     setMessage({ type: 'success', text: 'Examen duplicado. Guarde para crear uno nuevo.' });
   };
 
@@ -490,7 +491,7 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
     }
   };
 
-  const doSave = async (payload: any) => {
+  const doSave = async (payload: PhysicalExam) => {
     setSaving(true);
     setMessage(null);
     try {
@@ -512,8 +513,8 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
         const errData = await response.json();
         throw new Error(errData.error || 'Error al guardar');
       }
-    } catch (error: any) {
-      setMessage({ type: 'error', text: error.message || 'Error al guardar el examen físico' });
+    } catch (error) {
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Error al guardar el examen físico' });
     } finally {
       setSaving(false);
     }
@@ -544,13 +545,6 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
   const handlePrint = () => {
     setMessage({ type: 'success', text: 'Imprimiendo página actual...' });
     window.print();
-  };
-
-  // Map Handlers
-  const initiateAddMark = (mark: Omit<Mark, 'id'>) => {
-    const newMark = { ...mark, id: Date.now().toString() };
-    setEditingMark(newMark);
-    setIsModalOpen(true);
   };
 
   // 3D model click ? identify tercio ? open modal with suggestions
@@ -887,11 +881,11 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
           {/* Left Column: Maps */}
           <div className="flex-1 flex flex-col overflow-y-auto min-w-0 custom-scrollbar pr-2">
             <div className="admin-tabs mb-6 w-fit" role="group" aria-label="Zona de examen físico">
-              {['facial', 'corporal'].map((tab) => (
+              {(['facial', 'corporal'] as const).map((tab) => (
                 <button
                   key={tab}
                   type="button"
-                  onClick={() => setActiveTab(tab as any)}
+                  onClick={() => setActiveTab(tab)}
                   aria-pressed={activeTab === tab}
                   className="admin-tab admin-focus-ring relative"
                 >
@@ -1059,16 +1053,16 @@ export default function PhysicalExamTab({ recordId, physicalExams, patientName, 
               Parámetros Clínicos
             </h3>
             
-            {Object.entries(CLINICAL_FIELDS).map(([key, field]) => (
+            {(Object.entries(CLINICAL_FIELDS) as [keyof typeof CLINICAL_FIELDS, (typeof CLINICAL_FIELDS)[keyof typeof CLINICAL_FIELDS]][]).map(([key, field]) => (
               <div key={key} className="space-y-1.5 group">
                 <div className="flex items-center gap-2">
-                  <label className="block text-sm font-bold text-gray-700 group-hover:text-[#deb887] transition-colors">{field.label}<FieldHelp text={(HELP.physical as any)[key] || ''} /></label>
+                  <label className="block text-sm font-bold text-gray-700 group-hover:text-[#deb887] transition-colors">{field.label}<FieldHelp text={HELP.physical[key] || ''} /></label>
                   <Tooltip content={PARAMETER_TOOLTIPS[key] || ''}>
                     <Info size={14} className="text-gray-400 hover:text-[#deb887] transition-colors cursor-help" />
                   </Tooltip>
                 </div>
                 <Select
-                  value={(currentExam as any)[key] || ''}
+                  value={currentExam[key] || ''}
                   onChange={(value) => setCurrentExam(prev => ({ ...prev, [key]: value }))}
                   options={field.options}
                   placeholder="Seleccionar..."

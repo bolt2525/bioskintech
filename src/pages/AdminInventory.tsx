@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect, useMemo } from 'react';
-import { Package, Plus, CheckCircle, Activity, Calendar, Search, RefreshCw, LayoutGrid, List, Filter, Archive, AlertTriangle, BarChart3 } from 'lucide-react';
+import { Package, Plus, CheckCircle, Activity, Calendar, Search, RefreshCw, Archive, BarChart3 } from 'lucide-react';
 import recordsFetch from "../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
 import AdminLayout from '../components/layout/AdminLayout';
@@ -16,14 +16,50 @@ import InventorySales from '../components/admin/inventory/InventorySales';
 import { useAuth } from '../context/AuthContext';
 import { useMasterView } from '../context/MasterViewContext';
 
+interface InventoryItem {
+  id: number;
+  sku: string;
+  name: string;
+  brand?: string;
+  category: string;
+  group_name?: string;
+  unit_of_measure: string;
+  total_stock: number;
+  expired_stock?: number;
+  total_initial?: number;
+  batch_count?: number;
+  preferred_display_unit?: 'absolute' | 'percentage';
+  min_stock_level: number;
+  next_expiry: string;
+  requires_cold_chain: boolean;
+  sanitary_registration?: string;
+  description?: string;
+  cost_price?: number | null;
+  sale_price?: number | null;
+  is_archived?: boolean;
+  archive_reason?: string | null;
+}
+
+interface InventoryItemDraft {
+  id?: number;
+  sku?: string;
+  [key: string]: string | number | boolean | null | undefined;
+}
+
+type InventoryStockInput = Record<string, string | number | boolean | null | undefined>;
+interface InventoryStats {
+  total_items?: number;
+  archived_items_count?: number;
+}
+
 export default function AdminInventory() {
-  const { user, username } = useAuth();
+  const { user } = useAuth();
   const masterView = useMasterView();
   const isAdmin = user?.role === 'clinic_admin' || user?.role === 'master_admin';
   const [activeTab, setActiveTab] = useState<'inventory' | 'batches' | 'movements' | 'sales'>('inventory');
   const [productView, setProductView] = useState<'active' | 'archived'>('active');
-  const [items, setItems] = useState<any[]>([]);
-  const [stats, setStats] = useState<any>(null);
+  const [items, setItems] = useState<InventoryItem[]>([]);
+  const [stats, setStats] = useState<InventoryStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   // Categories from clinic settings (fallback to categories from existing items)
@@ -40,11 +76,11 @@ export default function AdminInventory() {
   const [showForm, setShowForm] = useState(false);
   const [showStockModal, setShowStockModal] = useState(false);
   const [showConsumeModal, setShowConsumeModal] = useState(false);
-  const [selectedItem, setSelectedItem] = useState<any>(null);
-  const [drawerItem, setDrawerItem] = useState<any>(null);
+  const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
+  const [drawerItem, setDrawerItem] = useState<InventoryItem | null>(null);
 
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [archiveTarget, setArchiveTarget] = useState<any>(null);
+  const [archiveTarget, setArchiveTarget] = useState<InventoryItem | null>(null);
   const [archiveReason, setArchiveReason] = useState('');
   const [archiveError, setArchiveError] = useState('');
   // Filtro por profesional (solo admins)
@@ -132,7 +168,7 @@ export default function AdminInventory() {
 
   // â”€â”€ Handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-  const handleCreateItem = async (data: any) => {
+  const handleCreateItem = async (data: InventoryItemDraft) => {
     const action = data.id ? 'inventoryUpdateItem' : 'inventoryCreateItem';
     const res = await recordsFetch(`/api/records?action=${action}`, {
       method: 'POST',
@@ -148,7 +184,7 @@ export default function AdminInventory() {
     return saved;
   };
 
-  const handleCreateWithStock = async (itemData: any, stockData: any) => {
+  const handleCreateWithStock = async (itemData: InventoryItemDraft, stockData: InventoryStockInput) => {
     // Step 1: create item
     const itemRes = await recordsFetch('/api/records?action=inventoryCreateItem', {
       method: 'POST',
@@ -172,7 +208,7 @@ export default function AdminInventory() {
     refresh();
   };
 
-  const handleArchiveItem = (item: any) => { setArchiveTarget(item); setArchiveReason(''); setArchiveError(''); };
+  const handleArchiveItem = (item: InventoryItem) => { setArchiveTarget(item); setArchiveReason(''); setArchiveError(''); };
 
   const confirmArchive = async () => {
     if (!archiveTarget || archiveReason.trim().length < 8) return;
@@ -193,7 +229,7 @@ export default function AdminInventory() {
     }
   };
 
-  const handleRestoreItem = async (item: any) => {
+  const handleRestoreItem = async (item: InventoryItem) => {
     try {
       const res = await recordsFetch('/api/records?action=inventoryRestoreItem', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -209,7 +245,7 @@ export default function AdminInventory() {
     }
   };
 
-  const handleAddStock = async (data: any) => {
+  const handleAddStock = async (data: InventoryStockInput) => {
     const res = await recordsFetch('/api/records?action=inventoryAddBatch', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -221,7 +257,7 @@ export default function AdminInventory() {
     setShowStockModal(false);
   };
 
-  const handleConsumeStock = async (data: any) => {
+  const handleConsumeStock = async (data: InventoryStockInput) => {
     const res = await recordsFetch('/api/records?action=inventoryConsume', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -265,7 +301,7 @@ export default function AdminInventory() {
   ])).sort(), [categories, settingsCategories, groupNames]);
 
   const groupedItems = useMemo(() => {
-    const groups = new Map<string, Map<string, { name: string; items: any[] }>>();
+    const groups = new Map<string, Map<string, { name: string; items: InventoryItem[] }>>();
     filteredItems.forEach(item => {
       const category = item.category?.trim() || 'Sin categoría';
       const name = item.group_name?.trim().replace(/\s+/g, ' ') || 'Otros';

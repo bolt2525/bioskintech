@@ -69,19 +69,92 @@ const TabButton: React.FC<TabButtonProps> = ({ id, label, icon: Icon, active, on
   </button>
 );
 
+interface ClinicalPatient {
+  id: number;
+  first_name: string;
+  last_name: string;
+  identification_type?: string;
+  identification_number?: string;
+  birth_date?: string;
+  [key: string]: unknown;
+}
+
+interface ClinicalConsultation {
+  id: number;
+  record_id: number;
+  reason: string;
+  current_illness: string;
+  enable_injectables: boolean;
+  enable_consents: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ClinicalRecordData {
+  recordId: number;
+  patient?: ClinicalPatient;
+  consultations?: ClinicalConsultation[];
+  history?: unknown;
+  physicalExams?: {
+    id?: number;
+    record_id: number;
+    consultation_id?: number;
+    skin_type: string;
+    phototype: string;
+    glogau_scale: string;
+    hydration: string;
+    elasticity: string;
+    lesions_description: string;
+    photoprotection?: string;
+    texture?: string;
+    pores?: string;
+    pigmentation?: string;
+    sensitivity?: string;
+    face_map_data?: string | import('./FaceMapCanvas').Mark[];
+    body_map_data?: string | import('./FaceMapCanvas').Mark[];
+    created_at?: string;
+  }[];
+  diagnoses?: {
+    id?: number;
+    record_id: number;
+    consultation_id?: number;
+    date?: string;
+    diagnosis_text: string;
+    cie10_code: string;
+    type: string;
+    severity: string;
+    notes: string;
+  }[];
+  treatments?: {
+    id?: number;
+    consultation_id?: number;
+    date: string;
+    procedure_name: string;
+    equipment_used: string;
+    parameters?: Record<string, unknown> | null;
+    area_treated: string;
+    duration_minutes: number;
+    cost: number;
+    notes: string;
+  }[];
+  prescriptions?: unknown[];
+  consentForms?: unknown[];
+  injectables?: unknown[];
+}
+
 export default function ClinicalRecordManager() {
   const { recordId } = useParams();
   const { nav } = useAdminNav();
   const [activeTab, setActiveTab] = useState('consultation');
   const [loading, setLoading] = useState(true);
-  const [patient, setPatient] = useState<any>(null);
-  const [recordData, setRecordData] = useState<any>(null);
+  const [patient, setPatient] = useState<ClinicalPatient | null>(null);
+  const [recordData, setRecordData] = useState<ClinicalRecordData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Hub de consulta activa
-  const [activeConsultation, setActiveConsultation] = useState<any>(null);
+  const [activeConsultation, setActiveConsultation] = useState<ClinicalConsultation | null>(null);
   const [showActivatedModal, setShowActivatedModal] = useState(false);
-  const [pendingNewConsultation, setPendingNewConsultation] = useState<any>(null);
+  const [pendingNewConsultation, setPendingNewConsultation] = useState<ClinicalConsultation | null>(null);
   const [showPrintModal, setShowPrintModal] = useState(false);
 
   // Tabs opcionales habilitados por la consulta activa
@@ -111,15 +184,15 @@ export default function ClinicalRecordManager() {
         const errData = await recordRes.json().catch(() => ({ error: 'Error desconocido' }));
         setError(errData.error || 'Error al cargar el expediente');
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error loading clinical record:', error);
-      setError(error.message || 'Error de conexión');
+      setError(error instanceof Error ? error.message : 'Error de conexión');
     } finally {
       if (showLoading) setLoading(false);
     }
   };
 
-  const handleConsultationActivated = (consultation: any) => {
+  const handleConsultationActivated = (consultation: ClinicalConsultation) => {
     setActiveConsultation(consultation);
     setPendingNewConsultation(consultation);
     setShowActivatedModal(true);
@@ -361,7 +434,7 @@ export default function ClinicalRecordManager() {
                     consultations={recordData?.consultations || []}
                     diagnoses={recordData?.diagnoses || []}
                     allergies={recordData?.history?.allergies || ''}
-                    initialPrescriptions={recordData?.prescriptions || []}
+                    initialPrescriptions={(recordData?.prescriptions || []) as never[]}
                   />
                 )}
                 {activeTab === 'consent' && activeConsultation && enabledOptional.consents && (
@@ -371,13 +444,13 @@ export default function ClinicalRecordManager() {
                     patient={patient}
                     consultationId={activeConsultation?.id}
                     consultations={recordData?.consultations || []}
-                    initialConsents={recordData?.consentForms || []}
+                    initialConsents={(recordData?.consentForms || []) as never[]}
                   />
                 )}
                 {activeTab === 'injectables' && activeConsultation && enabledOptional.injectables && (
                   <InjectablesTab
                     recordId={recordData?.recordId}
-                    injectables={recordData?.injectables || []}
+                    injectables={(recordData?.injectables || []) as never[]}
                     patientName={patient ? `${patient.first_name} ${patient.last_name}` : ''}
                     consultationId={activeConsultation?.id}
                     consultations={recordData?.consultations || []}

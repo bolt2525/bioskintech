@@ -173,7 +173,6 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState('');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [r2Available, setR2Available] = useState<boolean | null>(null);
   const [filterType, setFilterType] = useState('all');
   const [dragOver, setDragOver] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
@@ -373,10 +372,9 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
             session_label: new Date().toLocaleDateString('es-CL'),
           }),
         });
-        if (res.status === 503) { setR2Available(false); setMessage({ type: 'error', text: 'Almacenamiento R2 no configurado' }); setUploading(false); setUploadProgress(''); return; }
+        if (res.status === 503) { setMessage({ type: 'error', text: 'Almacenamiento R2 no configurado' }); setUploading(false); setUploadProgress(''); return; }
         if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `Error ${res.status}`); }
-        setR2Available(true);
-      } catch (err: any) { anyFailed = true; setMessage({ type: 'error', text: err.message || 'Error al subir' }); }
+      } catch (err) { anyFailed = true; setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Error al subir' }); }
     }
     setUploading(false); setUploadProgress('');
     if (!anyFailed) setMessage({ type: 'success', text: `${files.length} foto(s) subida(s)` });
@@ -456,7 +454,12 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
   };
 
   const toggleGroup = (key: string) =>
-    setCollapsedGroups(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
 
   // ── Shared card props ──────────────────────────────────────────────────────
 
@@ -680,7 +683,12 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
                       const isSel = timelineSelected.has(photo.id);
                       return (
                         <button key={photo.id} type="button"
-                          onClick={() => setTimelineSelected(prev => { const n = new Set(prev); n.has(photo.id) ? n.delete(photo.id) : n.add(photo.id); return n; })}
+                          onClick={() => setTimelineSelected(prev => {
+                            const next = new Set(prev);
+                            if (next.has(photo.id)) next.delete(photo.id);
+                            else next.add(photo.id);
+                            return next;
+                          })}
                           className={`relative aspect-square rounded-lg overflow-hidden border-2 transition-all ${
                             isSel ? 'border-[#deb887] ring-2 ring-[#deb887]/40' : 'border-transparent hover:border-gray-300'
                           }`}>

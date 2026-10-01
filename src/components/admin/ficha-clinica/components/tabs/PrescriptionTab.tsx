@@ -1,7 +1,7 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
 import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Trash2, Save, FileText, Copy, Printer, Search, Calendar, Check, AlertCircle, Pill, Pencil, History, Stethoscope, Home, ShieldAlert, LockKeyhole } from 'lucide-react';
+import { Plus, Trash2, Save, FileText, Copy, Printer, Calendar, Check, AlertCircle, Pill, Pencil, History, Stethoscope, Home, ShieldAlert, LockKeyhole } from 'lucide-react';
 import CrossConsultHistoryModal, { type ConsultationRef } from '../CrossConsultHistoryModal';
 import prescriptionOptions from '../data/prescription_options.json';
 import { Tooltip } from '../../../../ui/Tooltip';
@@ -55,6 +55,12 @@ type PrescriptionSeed = Partial<Prescription> & {
   diagnosis?: string;
   prescription_mode?: Prescription['mode'];
 };
+
+interface PrescriptionTemplate {
+  id: number | string;
+  nombre: string;
+  items_json: string;
+}
 
 interface PrescriptionTabProps {
   recordId: number;
@@ -115,7 +121,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
   const [showPrintReview, setShowPrintReview] = useState(false);
   const [printAcknowledged, setPrintAcknowledged] = useState(false);
   const [dateLocked, setDateLocked] = useState(false);
-  const [templates, setTemplates] = useState<any[]>([]);
+  const [templates, setTemplates] = useState<PrescriptionTemplate[]>([]);
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState('');
@@ -273,7 +279,8 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
   };
 
   const handleDuplicate = () => {
-    const { id, ...rest } = currentPrescription;
+    const rest = { ...currentPrescription };
+    delete rest.id;
     setCurrentPrescription({
       ...rest,
       fecha: getLocalDate()
@@ -984,7 +991,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
                     disabled={mode === 'prescription'}
                     className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all hover:bg-gray-50 focus:bg-white cursor-pointer"
                     value={item.rutina}
-                    onChange={e => updateItem(idx, 'rutina', e.target.value as any)}
+                    onChange={e => updateItem(idx, 'rutina', e.target.value as PrescriptionItem['rutina'])}
                   >
                     <option value="">Seleccionar...</option>
                     <option value="mañana">☀️ Mañana</option>
@@ -1072,7 +1079,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
         <>
           {p.diagnostico && <div><span className="text-gray-400">Diagnóstico:</span> <span className="font-medium">{p.diagnostico}</span></div>}
           {p.fecha && <div><span className="text-gray-400">Fecha:</span> {new Date(toDateOnly(p.fecha)+'T12:00:00').toLocaleDateString('es-EC')}</div>}
-          {p.items?.map((item: any, i: number) => (
+          {p.items?.map((item, i: number) => (
             <div key={i} className="border rounded-lg p-2 mt-2 space-y-0.5">
               <p className="font-medium">{item.medicamento || item.nombre_comercial}</p>
               {item.indicaciones && <p className="text-gray-500">{item.indicaciones}</p>}

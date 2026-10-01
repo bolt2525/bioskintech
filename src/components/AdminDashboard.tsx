@@ -12,10 +12,7 @@ import {
   Image, 
   Database,
   Monitor,
-  MessageSquare,
   Shield,
-  Eye,
-  TrendingUp,
   Clock,
   Bell,
   X,
@@ -82,7 +79,7 @@ const AdminDashboard: React.FC = () => {
           const data = await response.json();
           
           if (data.events && Array.isArray(data.events)) {
-            data.events.forEach((event: any) => {
+            data.events.forEach((event: UpcomingAppointment) => {
               appointments.push({
                 id: event.id,
                 summary: event.summary,
