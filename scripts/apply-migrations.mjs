@@ -98,10 +98,11 @@ const newTables = [
   )`,
   // Links cortos propios que redirigen a wa.me (evita URLs kilométricas en los listados del bot)
   `CREATE TABLE IF NOT EXISTS wa_short_links (
-    code       VARCHAR(16) PRIMARY KEY,
+    code       VARCHAR(64) PRIMARY KEY,
     target_url TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
+  'ALTER TABLE wa_short_links ALTER COLUMN code TYPE VARCHAR(64)',
   // Códigos de registro
   `CREATE TABLE IF NOT EXISTS registration_codes (
     id           SERIAL PRIMARY KEY,
@@ -182,6 +183,22 @@ const oauthMigrations = [
 ];
 
 const whatsappIndexes = [
+  'DROP INDEX IF EXISTS uq_clinic_users_whatsapp_staff_phone',
+  `CREATE UNIQUE INDEX IF NOT EXISTS uq_clinic_users_whatsapp_staff_phone
+    ON clinic_users ((
+      CASE
+        WHEN regexp_replace(COALESCE(NULLIF(whatsapp_staff_phone, ''), phone, ''), '\\D', '', 'g') = '' THEN NULL
+        WHEN regexp_replace(COALESCE(NULLIF(whatsapp_staff_phone, ''), phone, ''), '\\D', '', 'g') LIKE '5930%' THEN
+          '593' || substring(regexp_replace(COALESCE(NULLIF(whatsapp_staff_phone, ''), phone, ''), '\\D', '', 'g') FROM 5)
+        WHEN regexp_replace(COALESCE(NULLIF(whatsapp_staff_phone, ''), phone, ''), '\\D', '', 'g') LIKE '593%' THEN
+          regexp_replace(COALESCE(NULLIF(whatsapp_staff_phone, ''), phone, ''), '\\D', '', 'g')
+        WHEN regexp_replace(COALESCE(NULLIF(whatsapp_staff_phone, ''), phone, ''), '\\D', '', 'g') LIKE '0%' THEN
+          '593' || substring(regexp_replace(COALESCE(NULLIF(whatsapp_staff_phone, ''), phone, ''), '\\D', '', 'g') FROM 2)
+        ELSE '593' || regexp_replace(COALESCE(NULLIF(whatsapp_staff_phone, ''), phone, ''), '\\D', '', 'g')
+      END
+    ))
+    WHERE is_active = true AND whatsapp_bot_enabled = true
+      AND COALESCE(NULLIF(whatsapp_staff_phone, ''), phone) IS NOT NULL`,
   `CREATE UNIQUE INDEX IF NOT EXISTS uq_whatsapp_messages_provider_id
     ON whatsapp_messages(provider_message_id) WHERE provider_message_id IS NOT NULL`,
   'CREATE INDEX IF NOT EXISTS idx_whatsapp_contacts_last_message ON whatsapp_contacts(last_message_at DESC)',

@@ -1,5 +1,8 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-05 Recordatorios WhatsApp enrutan paciente→clínica y resumen profesional→paciente; confirmaciones sin aviso redundante.
+- ✅ 2026-10-05 WhatsApp multiusuario blindado con opt-ins, teléfono canónico único, correlación inequívoca y enlaces de 128 bits expirables.
+- ✅ 2026-10-05 Neon migrado y verificado; 60 pruebas, lint focal y build aprobados.
 - ✅ 2026-10-01 Contrato separa claramente proveedor, cliente, firmante y cuenta habilitada.
 - ✅ 2026-10-01 Paquete contractual formal v2026-10-01 con anexo LOPDP y documentos íntegros; USD 245 con IVA separado del recargo PayPhone de USD 14,95.
 - ✅ 2026-10-01 Contexto IA aislado por clínica y paciente antes de enviarse a Gemini.

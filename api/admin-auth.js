@@ -241,12 +241,26 @@ export function normalizeUserPhone(value) {
   return `593${digits}`;
 }
 
+export function getEffectiveWhatsAppStaffPhone(staffPhone, registeredPhone) {
+  return normalizeUserPhone(staffPhone) || normalizeUserPhone(registeredPhone);
+}
+
 async function isPhoneAvailable(phone, excludedUserId = null) {
   if (!phone) return true;
   const users = excludedUserId
     ? await sql`SELECT id, phone FROM clinic_users WHERE phone IS NOT NULL AND id != ${excludedUserId}`
     : await sql`SELECT id, phone FROM clinic_users WHERE phone IS NOT NULL`;
   return !users.rows.some(row => normalizeUserPhone(row.phone) === phone);
+}
+
+async function isWhatsAppStaffPhoneAvailable(phone, excludedUserId) {
+  if (!phone) return true;
+  const users = await sql`
+    SELECT id, phone, whatsapp_staff_phone
+    FROM clinic_users
+    WHERE is_active = true AND whatsapp_bot_enabled = true AND id != ${excludedUserId}
+  `;
+  return !users.rows.some(row => getEffectiveWhatsAppStaffPhone(row.whatsapp_staff_phone, row.phone) === phone);
 }
 
 export function generateTemporaryPassword() {
@@ -411,11 +425,12 @@ export async function initMultiTenantSchema() {
   // Links cortos propios que redirigen a wa.me (evita URLs kilométricas en los listados del bot)
   await sql`
     CREATE TABLE IF NOT EXISTS wa_short_links (
-      code       VARCHAR(16) PRIMARY KEY,
+      code       VARCHAR(64) PRIMARY KEY,
       target_url TEXT NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `;
+  await sql`ALTER TABLE wa_short_links ALTER COLUMN code TYPE VARCHAR(64)`;
 
   // Configuración personalizable por clínica (JSONB para evitar migraciones futuras)
   await sql`
@@ -660,6 +675,23 @@ export async function initMultiTenantSchema() {
 
   // Índices de rendimiento
   await sql`CREATE INDEX IF NOT EXISTS idx_clinic_users_username ON clinic_users(username) WHERE is_active = true`;
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_clinic_users_whatsapp_staff_phone
+    ON clinic_users ((
+      CASE
+        WHEN regexp_replace(COALESCE(NULLIF(whatsapp_staff_phone, ''), phone, ''), '\D', '', 'g') = '' THEN NULL
+        WHEN regexp_replace(COALESCE(NULLIF(whatsapp_staff_phone, ''), phone, ''), '\D', '', 'g') LIKE '5930%' THEN
+          '593' || substring(regexp_replace(COALESCE(NULLIF(whatsapp_staff_phone, ''), phone, ''), '\D', '', 'g') FROM 5)
+        WHEN regexp_replace(COALESCE(NULLIF(whatsapp_staff_phone, ''), phone, ''), '\D', '', 'g') LIKE '593%' THEN
+          regexp_replace(COALESCE(NULLIF(whatsapp_staff_phone, ''), phone, ''), '\D', '', 'g')
+        WHEN regexp_replace(COALESCE(NULLIF(whatsapp_staff_phone, ''), phone, ''), '\D', '', 'g') LIKE '0%' THEN
+          '593' || substring(regexp_replace(COALESCE(NULLIF(whatsapp_staff_phone, ''), phone, ''), '\D', '', 'g') FROM 2)
+        ELSE '593' || regexp_replace(COALESCE(NULLIF(whatsapp_staff_phone, ''), phone, ''), '\D', '', 'g')
+      END
+    ))
+    WHERE is_active = true AND whatsapp_bot_enabled = true
+      AND COALESCE(NULLIF(whatsapp_staff_phone, ''), phone) IS NOT NULL
+  `;
   try { await sql`CREATE INDEX IF NOT EXISTS idx_patients_clinic ON patients(clinic_id)`; } catch { /* patients aún no existe */ }
   await sql`CREATE INDEX IF NOT EXISTS idx_session_token ON admin_sessions(session_token) WHERE is_active = true`;
 }
@@ -3408,7 +3440,7 @@ export default async function handler(req, res) {
       const rawEsp    = (req.body?.especialidad       || '').trim();
       const rawGent   = (req.body?.gentilicio         || '').trim();
       const rawProf   = (req.body?.profession         || '').trim();
-      const rawPhone  = (req.body?.phone              || '').replace(/\D/g, '');
+      const rawPhone  = normalizeUserPhone(req.body?.phone || '') || '';
       if (rawEmail) {
         // Email format validation
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail))
@@ -3418,6 +3450,14 @@ export default async function handler(req, res) {
           ? await sql`SELECT id FROM clinic_users WHERE LOWER(email) = ${rawEmail} AND id != ${user.id} AND clinic_id = ${user.clinic_id}`
           : await sql`SELECT id FROM clinic_users WHERE LOWER(email) = ${rawEmail} AND id != ${user.id}`;
         if (conflict.rows.length) return res.status(400).json({ error: 'Este email ya lo usa otro usuario' });
+      }
+      if (rawPhone && !(await isPhoneAvailable(rawPhone, user.id)))
+        return res.status(409).json({ error: 'Este teléfono ya lo usa otro usuario.' });
+      if (rawPhone) {
+        const botConfig = await sql`SELECT whatsapp_bot_enabled, whatsapp_staff_phone FROM clinic_users WHERE id = ${user.id}`;
+        const effectiveStaffPhone = getEffectiveWhatsAppStaffPhone(botConfig.rows[0]?.whatsapp_staff_phone, rawPhone);
+        if (botConfig.rows[0]?.whatsapp_bot_enabled === true && !(await isWhatsAppStaffPhoneAvailable(effectiveStaffPhone, user.id)))
+          return res.status(409).json({ error: 'Este número de WhatsApp ya está asignado al chatbot de otro usuario.' });
       }
       await sql`
         UPDATE clinic_users SET
@@ -3458,7 +3498,7 @@ export default async function handler(req, res) {
     }
 
     if (action === 'saveWhatsAppBotConfig') {
-      const current = await sql`SELECT whatsapp_bot_enabled FROM clinic_users WHERE id = ${user.id}`;
+      const current = await sql`SELECT phone, whatsapp_bot_enabled FROM clinic_users WHERE id = ${user.id}`;
       if (current.rows[0]?.whatsapp_bot_enabled !== true)
         return res.status(403).json({ error: 'El bot de WhatsApp no está habilitado para tu usuario. Contacta a tu administrador.' });
       const confirmEnabled = req.body?.confirm_enabled === true;
@@ -3466,6 +3506,9 @@ export default async function handler(req, res) {
       const summary7pm     = req.body?.summary_7pm === true;
       const staffPhone     = normalizeUserPhone(req.body?.staff_phone || '');
       const financePhone   = normalizeUserPhone(req.body?.finance_phone || '');
+      const effectiveStaffPhone = getEffectiveWhatsAppStaffPhone(staffPhone, current.rows[0]?.phone);
+      if (!(await isWhatsAppStaffPhoneAvailable(effectiveStaffPhone, user.id)))
+        return res.status(409).json({ error: 'Este número de WhatsApp ya está asignado al chatbot de otro usuario.' });
       await sql`
         UPDATE clinic_users SET
           whatsapp_confirm_enabled = ${confirmEnabled},
@@ -3484,6 +3527,13 @@ export default async function handler(req, res) {
       const targetId = req.body?.id;
       if (!targetId) return res.status(400).json({ error: 'id requerido' });
       const enabled = req.body?.enabled === true;
+      if (enabled) {
+        const target = await sql`SELECT phone, whatsapp_staff_phone FROM clinic_users WHERE id = ${targetId} AND is_active = true`;
+        if (!target.rows.length) return res.status(404).json({ error: 'Usuario no encontrado' });
+        const effectiveStaffPhone = getEffectiveWhatsAppStaffPhone(target.rows[0].whatsapp_staff_phone, target.rows[0].phone);
+        if (!(await isWhatsAppStaffPhoneAvailable(effectiveStaffPhone, targetId)))
+          return res.status(409).json({ error: 'Este número de WhatsApp ya está asignado al chatbot de otro usuario.' });
+      }
       await sql`UPDATE clinic_users SET whatsapp_bot_enabled = ${enabled} WHERE id = ${targetId}`;
       return res.status(200).json({ success: true, enabled });
     }

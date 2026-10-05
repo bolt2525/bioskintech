@@ -21,9 +21,9 @@ import { neon } from '@neondatabase/serverless';
 // ponytail: mapa global por instancia, no compartido → suficiente para el volumen esperado
 const rateMap = new Map();
 
-// Código corto → URL de wa.me. El destino es inmutable, así que cachearlo por instancia evita
-// incluso la consulta a Neon cuando varias personas abren el mismo enlace.
+// Código corto → URL de wa.me con caché breve; la expiración evita revivir enlaces purgados.
 const shortLinkCache = new Map();
+const SHORT_LINK_CACHE_TTL = 5 * 60_000;
 
 const RATE_LIMIT    = 60;   // requests por ventana
 const RATE_WINDOW   = 60_000; // 1 minuto en ms
@@ -58,15 +58,19 @@ export default async function middleware(request) {
     const code = path.slice(3);
     if (/^[A-Za-z0-9_-]{4,64}$/.test(code)) {
       const cached = shortLinkCache.get(code);
-      if (cached) return Response.redirect(cached, 302);
+      if (cached?.expiresAt > Date.now()) return Response.redirect(cached.target, 302);
+      if (cached) shortLinkCache.delete(code);
       const conn = process.env.POSTGRES_URL || process.env.NEON_DATABASE_URL;
       if (conn) {
         try {
-          const rows = await neon(conn)`SELECT target_url FROM wa_short_links WHERE code = ${code}`;
+          const rows = await neon(conn)`
+            SELECT target_url FROM wa_short_links
+            WHERE code = ${code} AND created_at > NOW() - INTERVAL '30 days'
+          `;
           const target = rows[0]?.target_url;
           if (target) {
             if (shortLinkCache.size > 500) shortLinkCache.clear();
-            shortLinkCache.set(code, target);
+            shortLinkCache.set(code, { target, expiresAt: Date.now() + SHORT_LINK_CACHE_TTL });
             return Response.redirect(target, 302);
           }
           return new Response('Enlace no encontrado o expirado', { status: 404 });

@@ -304,8 +304,8 @@ test('WhatsApp template values cannot break message layout', async () => {
   assert.match(truncated, /😀$/u);
 });
 
-test('appointment system note prefers clinic contact and falls back to professional', async () => {
-  const { buildAppointmentSystemNote } = await import('../lib/whatsapp-service.js');
+test('appointment contact routing separates clinic links from professional summaries', async () => {
+  const { buildAppointmentSystemNote, resolveAppointmentContactPhone, resolvePatientReminderContactPhone } = await import('../lib/whatsapp-service.js');
 
   assert.match(
     buildAppointmentSystemNote({
@@ -314,11 +314,34 @@ test('appointment system note prefers clinic contact and falls back to professio
       professionalName: 'Dra. Ana',
       professionalPhone: '098 765 4321',
     }),
-    /Clínica BIOSKIN: https:\/\/wa\.me\/593991234567/
+    /Dra\. Ana: https:\/\/wa\.me\/593987654321/
   );
   assert.match(
     buildAppointmentSystemNote({ clinicName: 'Clínica BIOSKIN', professionalName: 'Dra. Ana', professionalPhone: '098 765 4321' }),
     /Dra\. Ana: https:\/\/wa\.me\/593987654321/
+  );
+  assert.equal(resolveAppointmentContactPhone({
+    professionalPhone: '0987654321', userPhone: '0977777777', clinicPhone: '0966666666', patientPhone: '0955555555',
+  }), '593987654321');
+  assert.equal(resolveAppointmentContactPhone({
+    professionalPhone: '0987654321', userPhone: '0977777777', clinicPhone: '0966666666', patientPhone: '0987654321',
+  }), '593977777777');
+  assert.equal(resolveAppointmentContactPhone({
+    professionalPhone: '0987654321', clinicPhone: '0987654321', patientPhone: '0987654321',
+  }), '');
+  assert.equal(resolvePatientReminderContactPhone({
+    clinicPhone: '0966666666', patientPhone: '0955555555',
+  }), '593966666666');
+  assert.equal(resolvePatientReminderContactPhone({
+    clinicPhone: '0966666666', patientPhone: '0966666666',
+  }), '');
+  assert.equal(resolvePatientReminderContactPhone({ patientPhone: '0955555555' }), '');
+  assert.doesNotMatch(
+    buildAppointmentSystemNote({
+      clinicName: 'Clínica BIOSKIN', clinicPhone: '0987654321', professionalName: 'Dra. Ana',
+      professionalPhone: '0987654321', patientPhone: '0987654321',
+    }),
+    /wa\.me/
   );
 });
 
@@ -333,12 +356,15 @@ test('WhatsApp bot normalizes Ecuadorian phone numbers consistently', async () =
 });
 
 test('user WhatsApp numbers are stored in one canonical format', async () => {
-  const { normalizeUserPhone } = await import('../api/admin-auth.js');
+  const { getEffectiveWhatsAppStaffPhone, normalizeUserPhone } = await import('../api/admin-auth.js');
 
   assert.equal(normalizeUserPhone('098 765 4321'), '593987654321');
   assert.equal(normalizeUserPhone('+593 098 765 4321'), '593987654321');
   assert.equal(normalizeUserPhone('987654321'), '593987654321');
   assert.equal(normalizeUserPhone(''), null);
+  assert.equal(getEffectiveWhatsAppStaffPhone('098 111 1111', '0992222222'), '593981111111');
+  assert.equal(getEffectiveWhatsAppStaffPhone('', '0992222222'), '593992222222');
+  assert.equal(getEffectiveWhatsAppStaffPhone('', ''), null);
 });
 
 test('WhatsApp bot extracts auditable messages only when a sender exists', async () => {
@@ -383,6 +409,10 @@ test('appointment replies classify only explicit confirmations as confirmed', as
     classifyAppointmentReply,
     formatWhatsAppLabel,
     formatAppointmentReplyStatus,
+    formatAppointmentSummaryStatus,
+    isExplicitAppointmentChangeRequest,
+    paginateAppointmentSummaryLines,
+    shouldNotifyStaffOfAppointmentReply,
   } = await import('../api/whatsapp-chatbot.js');
 
   const reminder = buildPatientReminderMessage({
@@ -412,6 +442,10 @@ test('appointment replies classify only explicit confirmations as confirmed', as
     summaryMessage,
     'Hola equipo 👋\n\nAgenda de hoy\n\nCita 1\n\nCita 2\n\nCita 3\n\nCita 4\n\n*Hay 1 cita más.* Escribe 1 para verla.\n\nResponde 1 para Agenda.'
   );
+  assert.equal(
+    buildDailySummaryMessage({ greeting: 'Hola Ana 👋', header: 'Agenda de hoy', lines: ['09:00 · Paciente · ✅ Confirmada'], footer: '' }),
+    'Hola Ana 👋\n\nAgenda de hoy\n\n09:00 · Paciente · ✅ Confirmada'
+  );
 
   assert.equal(classifyAppointmentReply('Confirmar', 'appointment_confirm:event-1'), 'confirmed');
   assert.equal(classifyAppointmentReply('Sí, asistiré'), 'confirmed');
@@ -421,9 +455,17 @@ test('appointment replies classify only explicit confirmations as confirmed', as
   // La negación debe primar sobre la palabra "confirmar" presente en la misma frase
   assert.equal(classifyAppointmentReply('No voy a poder confirmar'), 'needs_contact');
   assert.equal(classifyAppointmentReply('necesito cancelar, confirmo que no puedo'), 'needs_contact');
-  assert.equal(formatAppointmentReplyStatus('confirmed'), '✅ Confirmó asistencia');
-  assert.equal(formatAppointmentReplyStatus('needs_contact'), '🔴 Respondió — requiere que la clínica lo contacte');
-  assert.equal(formatAppointmentReplyStatus(null), '⏳ Aún no responde el recordatorio');
+  assert.equal(formatAppointmentReplyStatus('confirmed'), '✅ Confirmada');
+  assert.equal(formatAppointmentReplyStatus('needs_contact'), '🔴 Requiere contacto');
+  assert.equal(formatAppointmentReplyStatus(null), '⏳ Sin respuesta');
+  assert.equal(formatAppointmentSummaryStatus(null, 'fallido'), '⚠️ Recordatorio no entregado');
+  assert.equal(isExplicitAppointmentChangeRequest('gracias'), false);
+  assert.equal(isExplicitAppointmentChangeRequest('Necesito cambiar la fecha'), true);
+  assert.equal(isExplicitAppointmentChangeRequest('Solicito cambio de fecha'), true);
+  assert.equal(isExplicitAppointmentChangeRequest('Necesito la cancelación'), true);
+  assert.equal(shouldNotifyStaffOfAppointmentReply('confirmed'), false);
+  assert.equal(shouldNotifyStaffOfAppointmentReply('needs_contact'), true);
+  assert.deepEqual(paginateAppointmentSummaryLines(['1', '2', '3', '4', '5'], 4), [['1', '2', '3', '4'], ['5']]);
 });
 
 test('WhatsApp delivery status only alerts staff when delivery fails', async () => {
