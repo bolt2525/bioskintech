@@ -71,6 +71,8 @@
 
 ## Auditoría integral
 
+- ✅ 2026-10-05 Corregidos tooltips clínicos y su acceso por teclado.
+- ✅ 2026-10-05 Lecturas WhatsApp quedan en CRM sin avisos; fallos y respuestas reales sí notifican.
 - ✅ 2026-09-24 Simplificado aviso de origen: se identifica brevemente al chatbot del sistema como generador del resumen y gestor de recordatorios.
 - ✅ 2026-09-24 Compactado resumen multi-cita de WhatsApp: una línea por paciente con hora, estado y acción.
 - ✅ 2026-09-24 Humanizados avisos automáticos al staff: se identifica el bot, se explica cada estado y se sugiere la acción para pacientes sin confirmación.

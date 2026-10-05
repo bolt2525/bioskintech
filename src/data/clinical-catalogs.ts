@@ -68,82 +68,67 @@ export const LESION_CATALOG = [
   "Estrías", "Cicatrices quirúrgicas"
 ].sort();
 
-export const PARAMETER_TOOLTIPS: Record<string, string> = {
-  skin_type: `
-    <div class="space-y-1">
-      <p><strong>Sensible:</strong> Reacciona fácilmente a productos y factores externos</p>
-      <p><strong>Seca:</strong> Falta de producción sebácea, tendencia a descamación</p>
-      <p><strong>Normal:</strong> Equilibrio entre grasa y hidratación</p>
-      <p><strong>Grasa:</strong> Exceso de producción sebácea, brillo y poros dilatados</p>
-      <p><strong>Mixta:</strong> Grasa en zona T, normal/seca en mejillas</p>
-    </div>
-  `,
-  phototype: `
-    <div class="space-y-1">
-      <p><strong>I:</strong> Muy pálida, siempre se quema, nunca se broncea</p>
-      <p><strong>II:</strong> Pálida, se quema fácil, bronceado mínimo</p>
-      <p><strong>III:</strong> Morena clara, se quema moderado, bronceado gradual</p>
-      <p><strong>IV:</strong> Morena, se quema mínimo, bronceado fácil</p>
-      <p><strong>V:</strong> Morena oscura, rara vez se quema</p>
-      <p><strong>VI:</strong> Negra, nunca se quema, muy pigmentada</p>
-    </div>
-  `,
-  glogau_scale: `
-    <div class="space-y-1">
-      <p><strong>I (20-30 años):</strong> Sin arrugas, cambios pigmentarios mínimos</p>
-      <p><strong>II (30-40 años):</strong> Arrugas dinámicas, lentigos tempranos</p>
-      <p><strong>III (40-60 años):</strong> Arrugas persistentes, telangectasias</p>
-      <p><strong>IV (60+ años):</strong> Arrugas severas, actínico daño extenso</p>
-    </div>
-  `,
-  photoprotection: `
-    <div class="space-y-1">
-      <p><strong>No usa:</strong> Sin protector solar habitual</p>
-      <p><strong>Ocasional:</strong> Solo en exposición solar directa</p>
-      <p><strong>Regular:</strong> Uso diario en rostro</p>
-      <p><strong>Alta:</strong> Reaplicación y uso corporal</p>
-    </div>
-  `,
-  hydration: `
-    <div class="space-y-1">
-      <p><strong>Baja:</strong> Piel tirante, descamación visible</p>
-      <p><strong>Media:</strong> Hidratación adecuada en general</p>
-      <p><strong>Alta:</strong> Piel bien hidratada y flexible</p>
-    </div>
-  `,
-  texture: `
-    <div class="space-y-1">
-      <p><strong>Fina:</strong> Delgada, traslúcida, frágil</p>
-      <p><strong>Mediana:</strong> Grosor normal, resiliente</p>
-      <p><strong>Gruesa:</strong> Piel resistente, poros más evidentes</p>
-    </div>
-  `,
-  pores: `
-    <div class="space-y-1">
-      <p><strong>Cerrados:</strong> Poros poco visibles</p>
-      <p><strong>Medianos:</strong> Poros moderadamente visibles</p>
-      <p><strong>Dilatados:</strong> Poros muy evidentes, principalmente zona T</p>
-    </div>
-  `,
-  elasticity: `
-    <div class="space-y-1">
-      <p><strong>Baja:</strong> Recuperación lenta al pellizco</p>
-      <p><strong>Media:</strong> Recuperación normal</p>
-      <p><strong>Buena:</strong> Recuperación inmediata, piel turgente</p>
-    </div>
-  `,
-  pigmentation: `
-    <div class="space-y-1">
-      <p><strong>Homogénea:</strong> Color uniforme, sin manchas</p>
-      <p><strong>Levemente irregular:</strong> Leves variaciones tonales</p>
-      <p><strong>Irregular:</strong> Manchas evidentes, melasma, lentigos</p>
-    </div>
-  `,
-  sensitivity: `
-    <div class="space-y-1">
-      <p><strong>Baja:</strong> Tolera bien productos y tratamientos</p>
-      <p><strong>Media:</strong> Sensibilidad ocasional</p>
-      <p><strong>Alta:</strong> Reacciones frecuentes, rojez, picor</p>
-    </div>
-  `
+export interface ParameterTooltipItem {
+  label: string;
+  description: string;
+}
+
+export const PARAMETER_TOOLTIPS: Record<string, ParameterTooltipItem[]> = {
+  skin_type: [
+    { label: 'Sensible', description: 'Reacciona fácilmente a productos y factores externos' },
+    { label: 'Seca', description: 'Falta de producción sebácea, tendencia a descamación' },
+    { label: 'Normal', description: 'Equilibrio entre grasa y hidratación' },
+    { label: 'Grasa', description: 'Exceso de producción sebácea, brillo y poros dilatados' },
+    { label: 'Mixta', description: 'Grasa en zona T, normal/seca en mejillas' },
+  ],
+  phototype: [
+    { label: 'I', description: 'Muy pálida, siempre se quema, nunca se broncea' },
+    { label: 'II', description: 'Pálida, se quema fácil, bronceado mínimo' },
+    { label: 'III', description: 'Morena clara, se quema moderado, bronceado gradual' },
+    { label: 'IV', description: 'Morena, se quema mínimo, bronceado fácil' },
+    { label: 'V', description: 'Morena oscura, rara vez se quema' },
+    { label: 'VI', description: 'Negra, nunca se quema, muy pigmentada' },
+  ],
+  glogau_scale: [
+    { label: 'I (20-30 años)', description: 'Sin arrugas, cambios pigmentarios mínimos' },
+    { label: 'II (30-40 años)', description: 'Arrugas dinámicas, lentigos tempranos' },
+    { label: 'III (40-60 años)', description: 'Arrugas persistentes, telangectasias' },
+    { label: 'IV (60+ años)', description: 'Arrugas severas, daño actínico extenso' },
+  ],
+  photoprotection: [
+    { label: 'No usa', description: 'Sin protector solar habitual' },
+    { label: 'Ocasional', description: 'Solo en exposición solar directa' },
+    { label: 'Regular', description: 'Uso diario en rostro' },
+    { label: 'Alta', description: 'Reaplicación y uso corporal' },
+  ],
+  hydration: [
+    { label: 'Baja', description: 'Piel tirante, descamación visible' },
+    { label: 'Media', description: 'Hidratación adecuada en general' },
+    { label: 'Alta', description: 'Piel bien hidratada y flexible' },
+  ],
+  texture: [
+    { label: 'Fina', description: 'Delgada, traslúcida, frágil' },
+    { label: 'Mediana', description: 'Grosor normal, resiliente' },
+    { label: 'Gruesa', description: 'Piel resistente, poros más evidentes' },
+  ],
+  pores: [
+    { label: 'Cerrados', description: 'Poros poco visibles' },
+    { label: 'Medianos', description: 'Poros moderadamente visibles' },
+    { label: 'Dilatados', description: 'Poros muy evidentes, principalmente zona T' },
+  ],
+  elasticity: [
+    { label: 'Baja', description: 'Recuperación lenta al pellizco' },
+    { label: 'Media', description: 'Recuperación normal' },
+    { label: 'Buena', description: 'Recuperación inmediata, piel turgente' },
+  ],
+  pigmentation: [
+    { label: 'Homogénea', description: 'Color uniforme, sin manchas' },
+    { label: 'Levemente irregular', description: 'Leves variaciones tonales' },
+    { label: 'Irregular', description: 'Manchas evidentes, melasma, lentigos' },
+  ],
+  sensitivity: [
+    { label: 'Baja', description: 'Tolera bien productos y tratamientos' },
+    { label: 'Media', description: 'Sensibilidad ocasional' },
+    { label: 'Alta', description: 'Reacciones frecuentes, rojez, picor' },
+  ],
 };

@@ -426,6 +426,14 @@ test('appointment replies classify only explicit confirmations as confirmed', as
   assert.equal(formatAppointmentReplyStatus(null), '⏳ Aún no responde el recordatorio');
 });
 
+test('WhatsApp delivery status only alerts staff when delivery fails', async () => {
+  const { shouldNotifyBookingUserOfDeliveryStatus } = await import('../api/whatsapp-chatbot.js');
+
+  assert.equal(shouldNotifyBookingUserOfDeliveryStatus('enviado'), false);
+  assert.equal(shouldNotifyBookingUserOfDeliveryStatus('leido'), false);
+  assert.equal(shouldNotifyBookingUserOfDeliveryStatus('fallido'), true);
+});
+
 test('bot global commands ignore accents added by mobile autocorrect', async () => {
   const { normalizeCommandText } = await import('../api/whatsapp-chatbot.js');
 

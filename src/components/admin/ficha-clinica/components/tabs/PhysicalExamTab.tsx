@@ -1055,8 +1055,20 @@ export default function PhysicalExamTab({ recordId, physicalExams, consultationI
               <div key={key} className="space-y-1.5 group">
                 <div className="flex items-center gap-2">
                   <label className="block text-sm font-bold text-gray-700 group-hover:text-[#deb887] transition-colors">{field.label}<FieldHelp text={HELP.physical[key] || ''} /></label>
-                  <Tooltip content={PARAMETER_TOOLTIPS[key] || ''}>
-                    <Info size={14} className="text-gray-400 hover:text-[#deb887] transition-colors cursor-help" />
+                  <Tooltip content={(
+                    <div className="space-y-1 text-left">
+                      {(PARAMETER_TOOLTIPS[key] || []).map(item => (
+                        <p key={item.label}><strong>{item.label}:</strong> {item.description}</p>
+                      ))}
+                    </div>
+                  )}>
+                    <button
+                      type="button"
+                      aria-label={`Ayuda sobre ${field.label}`}
+                      className="rounded-sm text-gray-400 transition-colors hover:text-[#deb887] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#deb887]"
+                    >
+                      <Info size={14} aria-hidden="true" />
+                    </button>
                   </Tooltip>
                 </div>
                 <Select

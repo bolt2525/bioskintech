@@ -60,7 +60,7 @@ const migrations = [
   "ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS validity_type VARCHAR(30)",
   "ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS valid_until DATE",
   "ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS regulatory_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb",
-  // Notificar al staff que agendó cuando el paciente lee (o falla) la confirmación de WhatsApp
+  // Reservar de forma idempotente el aviso al staff cuando falla un recordatorio de WhatsApp
   "ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS booked_by_user_id INTEGER",
   "ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS read_notified BOOLEAN NOT NULL DEFAULT false",
   "ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS appointment_event_id VARCHAR(255)",

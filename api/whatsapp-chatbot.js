@@ -13,7 +13,7 @@ import {
   updateWhatsAppMessageStatus,
   isSystemStaffPhone,
   setWhatsAppContactClinic,
-  claimMessageReadNotification,
+  claimMessageStatusNotification,
   getContactById,
   ensureWhatsAppContactClinic,
   getRecentAppointmentNotificationContext,
@@ -1052,9 +1052,13 @@ async function handleSystemStaffMessage(from, text, normalizedText) {
   await sendWhatsAppText(from, SYSTEM_MENU_TEXT);
 }
 
-/** Avisa al staff que agendó la cita cuando el paciente lee (o falla) el recordatorio — así no queda "a ciegas" como con el correo. */
+export function shouldNotifyBookingUserOfDeliveryStatus(status) {
+  return status === 'fallido';
+}
+
+/** Avisa al staff solo cuando el recordatorio falla; las lecturas se conservan en el CRM sin generar ruido. */
 async function notifyBookingUserOfDeliveryStatus({ bookedByUserId, contactId, status, patientName, appointmentStart }) {
-  if (!bookedByUserId || (status !== 'leido' && status !== 'fallido')) return;
+  if (!bookedByUserId || !shouldNotifyBookingUserOfDeliveryStatus(status)) return;
   try {
     const [staffRes, contact] = await Promise.all([
       sql`SELECT phone, whatsapp_staff_phone FROM clinic_users WHERE id = ${bookedByUserId} AND is_active = true AND whatsapp_bot_enabled = true`,
@@ -1067,9 +1071,7 @@ async function notifyBookingUserOfDeliveryStatus({ bookedByUserId, contactId, st
     const dateNote = appointmentStart
       ? ` del ${new Date(appointmentStart).toLocaleString('es-EC', { timeZone: 'America/Guayaquil', dateStyle: 'short', timeStyle: 'short' })}`
       : '';
-    const message = status === 'leido'
-      ? `👀 *Recordatorio leído, aún SIN confirmar*\n\n${patientLabel}${phoneNote} abrió el recordatorio de su cita${dateNote}, pero todavía no ha respondido.\n\nEsto no es una confirmación. Te avisaremos apenas responda.`
-      : `⚠️ *Recordatorio NO entregado*\n\nNo se pudo enviar el recordatorio de WhatsApp a ${patientLabel}${phoneNote} para su cita${dateNote}. Verifica el número o avísale por otro medio.\n\nEscribe *menu* para ver las opciones.`;
+    const message = `⚠️ *Recordatorio NO entregado*\n\nNo se pudo enviar el recordatorio de WhatsApp a ${patientLabel}${phoneNote} para su cita${dateNote}. Verifica el número o avísale por otro medio.\n\nEscribe *menu* para ver las opciones.`;
     await sendWhatsAppText(staffPhone, message);
   } catch (err) {
     console.error('❌ Error notificando estado de entrega al staff:', err.message);
@@ -1081,9 +1083,9 @@ async function handleIncomingMessages(body) {
   for (const event of extractMessageStatuses(body)) {
     const updated = await updateWhatsAppMessageStatus(event.providerMessageId, event.status, event.errorDetail);
     if (!updated || updated.read_notified) continue;
-    if (updated.status !== 'leido' && updated.status !== 'fallido') continue;
+    if (!shouldNotifyBookingUserOfDeliveryStatus(updated.status)) continue;
     // Reservar ANTES de enviar: Meta reintenta el webhook y dos invocaciones en paralelo avisaban dos veces.
-    if (!(await claimMessageReadNotification(updated.id))) continue;
+    if (!(await claimMessageStatusNotification(updated.id))) continue;
     await notifyBookingUserOfDeliveryStatus({
       bookedByUserId: updated.booked_by_user_id,
       contactId: updated.contact_id,
