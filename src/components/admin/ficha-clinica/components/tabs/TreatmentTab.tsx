@@ -69,8 +69,8 @@ export default function TreatmentTab({ recordId, treatments, consultationId, con
               whileTap={{ scale: 0.99 }}
               className={`admin-focus-ring relative overflow-hidden rounded-2xl border p-3 text-left transition-[border-color,box-shadow,background-color] duration-200 ${
                 active
-                  ? `border-gold-500 bg-gradient-to-br ${meta.accent} shadow-[0_12px_30px_-20px_rgba(139,104,64,0.75)]`
-                  : 'border-gray-200 bg-white hover:border-gold-300 hover:shadow-sm'
+                  ? `border-gold bg-gradient-to-br ${meta.accent} shadow-[0_12px_30px_-20px_rgba(139,104,64,0.75)]`
+                  : 'border-gray-200 bg-white hover:border-gold hover:shadow-sm'
               }`}
             >
               <div className="flex items-center gap-3">
@@ -85,7 +85,7 @@ export default function TreatmentTab({ recordId, treatments, consultationId, con
                   <span className="mt-0.5 block truncate text-xs text-gray-500">{meta.description}</span>
                 </span>
               </div>
-              {active ? <motion.span layoutId="activeTreatmentMode" className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-gold-500" /> : null}
+              {active ? <motion.span layoutId="activeTreatmentMode" className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-gold" /> : null}
             </motion.button>
           );
         })}

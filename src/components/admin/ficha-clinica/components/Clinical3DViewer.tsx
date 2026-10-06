@@ -71,7 +71,7 @@ const CAMERA_PRESETS: Record<ClinicalCameraPreset, { position: [number, number, 
   default: { position: [0, 0, 12], target: [0, 0, 0] },
   face: { position: [0, 0.15, 8], target: [0, 0.15, 0] },
   body: { position: [0, 0, 8.5], target: [0, 0, 0] },
-  scalp: { position: [0, 1.8, 6.5], target: [0, 1.2, 0] },
+  scalp: { position: [0, 3.7, 5.8], target: [0, 0.75, 0] },
 };
 
 // ==========================================

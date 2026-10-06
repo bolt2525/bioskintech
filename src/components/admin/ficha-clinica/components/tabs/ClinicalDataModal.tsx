@@ -4,17 +4,18 @@
  * `treatment.parameters[RESERVED_PARAM_KEYS[mode]]` (JSONB) — no requiere cambios de esquema.
  */
 import { useEffect, useState } from 'react';
-import { X, ClipboardList, Ruler, Scissors } from 'lucide-react';
+import { X, ClipboardList, Ruler, Scissors, CheckCircle2 } from 'lucide-react';
 import { Dialog } from '../../../../ui/Dialog';
+import { Tooltip } from '../../../../ui/Tooltip';
 import type {
   TreatmentMode, PostCareData, AnthropometricsData, ScalpAssessmentData, SeverityScale, HairLossScale,
 } from '../../types/treatment';
 
-const SEVERITY_META: Record<SeverityScale, { label: string; description: string; tone: string; fill: number }> = {
-  0: { label: 'Sin reacción', description: 'Piel sin cambios visibles', tone: 'emerald', fill: 0 },
-  1: { label: 'Leve', description: 'Respuesta localizada discreta', tone: 'amber', fill: 1 },
-  2: { label: 'Moderado', description: 'Respuesta visible y delimitada', tone: 'orange', fill: 2 },
-  3: { label: 'Intenso', description: 'Respuesta marcada; vigilar evolución', tone: 'rose', fill: 3 },
+const SEVERITY_META: Record<SeverityScale, { label: string; description: string; detail: string }> = {
+  0: { label: 'Sin reacción', description: 'Piel sin cambios visibles', detail: 'No se aprecia respuesta inmediata relevante. Registra igualmente las indicaciones entregadas y cualquier sensación referida.' },
+  1: { label: 'Leve', description: 'Respuesta localizada discreta', detail: 'Cambio tenue y localizado. Documenta la zona y controla su evolución según el procedimiento realizado.' },
+  2: { label: 'Moderado', description: 'Respuesta visible y delimitada', detail: 'Cambio claramente visible y delimitado. Conviene describir extensión, síntomas asociados y cuidados indicados.' },
+  3: { label: 'Intenso', description: 'Respuesta marcada; vigilar evolución', detail: 'Respuesta marcada que requiere documentación detallada, seguimiento y criterio clínico antes de dar por finalizado el control.' },
 };
 const POST_CARE_INDICATIONS = [
   'Protección solar FPS50+',
@@ -161,15 +162,21 @@ export default function ClinicalDataModal({ isOpen, mode, initialData, onClose, 
                 <div key={field} className="space-y-2">
                   <label className="block text-sm font-medium text-gray-700">{field === 'erythema' ? 'Eritema' : 'Edema'}</label>
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    {([0, 1, 2, 3] as SeverityScale[]).map(level => (
-                      <button key={level} type="button" onClick={() => setPostCare(prev => ({ ...prev, [field]: level }))}
-                        aria-pressed={postCare[field] === level}
-                        className={`admin-focus-ring rounded-xl border p-2 text-left transition-[border-color,background-color,box-shadow] ${postCare[field] === level ? 'border-gold-500 bg-gold-50 shadow-sm' : 'border-gray-200 hover:border-gold-300 hover:bg-gray-50'}`}>
-                        <SeverityIllustration level={level} kind={field} />
-                        <span className="block text-xs font-semibold text-gray-800">{SEVERITY_META[level].label}</span>
-                        <span className="mt-0.5 block text-[9px] leading-3 text-gray-400">{SEVERITY_META[level].description}</span>
-                      </button>
-                    ))}
+                    {([0, 1, 2, 3] as SeverityScale[]).map(level => {
+                      const selected = postCare[field] === level;
+                      return (
+                        <Tooltip key={level} content={SEVERITY_META[level].detail} position="top" className="w-full">
+                          <button type="button" onClick={() => setPostCare(prev => ({ ...prev, [field]: level }))}
+                            aria-pressed={selected}
+                            className={`admin-focus-ring relative w-full rounded-xl p-2 text-left transition-[border-color,background-color,box-shadow,transform] ${selected ? 'border-2 border-gold-dark bg-gold/10 shadow-md ring-2 ring-gold/30' : 'border border-gray-200 hover:-translate-y-0.5 hover:border-gold hover:bg-gold/10 hover:shadow-sm'}`}>
+                            {selected ? <CheckCircle2 className="absolute right-2 top-2 h-4 w-4 text-gold-ink" aria-hidden="true" /> : null}
+                            <SeverityIllustration level={level} kind={field} />
+                            <span className="block text-xs font-semibold text-gray-800">{SEVERITY_META[level].label}</span>
+                            <span className="mt-0.5 block text-[9px] leading-3 text-gray-500">{SEVERITY_META[level].description}</span>
+                          </button>
+                        </Tooltip>
+                      );
+                    })}
                   </div>
                 </div>
               ))}
@@ -181,8 +188,9 @@ export default function ClinicalDataModal({ isOpen, mode, initialData, onClose, 
                     return (
                       <button key={ind} type="button"
                         onClick={() => setPostCare(prev => ({ ...prev, indications: active ? prev.indications.filter(i => i !== ind) : [...prev.indications, ind] }))}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${active ? 'bg-[#deb887]/20 border-[#deb887] text-[#b8944d]' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
-                        {ind}
+                        aria-pressed={active}
+                        className={`inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium transition-[color,background-color,border-color,box-shadow] ${active ? 'border-2 border-gray-900 bg-gray-900 text-white shadow-sm ring-2 ring-gray-300' : 'border border-gray-200 text-gray-600 hover:border-gold hover:bg-gold/10'}`}>
+                        {active ? <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> : null}{ind}
                       </button>
                     );
                   })}
@@ -208,9 +216,9 @@ export default function ClinicalDataModal({ isOpen, mode, initialData, onClose, 
                           {hasDelta ? <span className={`rounded-full px-2 py-0.5 text-[9px] font-semibold ${delta <= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{delta > 0 ? '+' : ''}{delta.toFixed(1)} {f.unit}</span> : null}
                         </div>
                         <div className="grid grid-cols-2 gap-2">
-                          <input aria-label={`${f.label} antes`} placeholder="Antes" type="text" inputMode="decimal" className="w-full rounded-lg border border-gray-200 bg-white p-2 text-center text-sm outline-none focus:ring-2 focus:ring-gold-500"
+                          <input aria-label={`${f.label} antes`} placeholder="Antes" type="text" inputMode="decimal" className="w-full rounded-lg border border-gray-200 bg-white p-2 text-center text-sm outline-none focus:ring-2 focus:ring-gold"
                             value={anthro.before[f.key] || ''} onChange={e => setAnthro(prev => ({ ...prev, before: { ...prev.before, [f.key]: e.target.value } }))} />
-                          <input aria-label={`${f.label} después`} placeholder="Después" type="text" inputMode="decimal" className="w-full rounded-lg border border-gray-200 bg-white p-2 text-center text-sm outline-none focus:ring-2 focus:ring-gold-500"
+                          <input aria-label={`${f.label} después`} placeholder="Después" type="text" inputMode="decimal" className="w-full rounded-lg border border-gray-200 bg-white p-2 text-center text-sm outline-none focus:ring-2 focus:ring-gold"
                             value={anthro.after[f.key] || ''} onChange={e => setAnthro(prev => ({ ...prev, after: { ...prev.after, [f.key]: e.target.value } }))} />
                         </div>
                       </div>
@@ -246,8 +254,9 @@ export default function ClinicalDataModal({ isOpen, mode, initialData, onClose, 
                 <div className="flex gap-2">
                   {(['norwood', 'ludwig'] as HairLossScale[]).map(s => (
                     <button key={s} type="button" onClick={() => setScalp(prev => ({ ...prev, scale: s, stage: null }))}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors capitalize ${scalp.scale === s ? 'bg-[#deb887] text-white border-[#deb887]' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
-                      {s === 'norwood' ? 'Norwood (masculino)' : 'Ludwig (femenino)'}
+                      aria-pressed={scalp.scale === s}
+                      className={`inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium capitalize transition-[color,background-color,border-color,box-shadow] ${scalp.scale === s ? 'border-2 border-gray-900 bg-gray-900 text-white shadow-sm ring-2 ring-gray-300' : 'border border-gray-200 text-gray-600 hover:border-gold hover:bg-gold/10'}`}>
+                      {scalp.scale === s ? <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> : null}{s === 'norwood' ? 'Norwood (masculino)' : 'Ludwig (femenino)'}
                     </button>
                   ))}
                 </div>
@@ -257,15 +266,22 @@ export default function ClinicalDataModal({ isOpen, mode, initialData, onClose, 
                 <div className="space-y-2">
                   <label className="block text-sm font-medium text-gray-700">Etapa (tarjetas ilustrativas, haz clic para seleccionar)</label>
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    {stages.map((label, idx) => (
-                      <button key={label} type="button" onClick={() => setScalp(prev => ({ ...prev, stage: label }))}
-                        aria-pressed={scalp.stage === label}
-                        className={`admin-focus-ring flex min-h-36 flex-col items-center gap-1 rounded-xl border p-2 text-center transition-[border-color,background-color,box-shadow] ${scalp.stage === label ? 'border-gold-500 bg-gold-50 shadow-sm' : 'border-gray-200 hover:border-gold-300 hover:bg-gray-50'}`}>
-                        <ScalpStageIllustration scale={scalp.scale as HairLossScale} stageIndex={idx} />
-                        <span className="text-xs font-semibold text-gray-700">Etapa {label}</span>
-                        <span className="text-[9px] leading-3 text-gray-400">{(scalp.scale === 'norwood' ? NORWOOD_DESCRIPTIONS : LUDWIG_DESCRIPTIONS)[idx]}</span>
-                      </button>
-                    ))}
+                    {stages.map((label, idx) => {
+                      const description = (scalp.scale === 'norwood' ? NORWOOD_DESCRIPTIONS : LUDWIG_DESCRIPTIONS)[idx];
+                      const selected = scalp.stage === label;
+                      return (
+                        <Tooltip key={label} content={`Etapa ${label}: ${description}. Ilustración orientativa; complementa la selección con densidad, tipo de alopecia, síntomas y notas clínicas.`} position="top" className="w-full">
+                          <button type="button" onClick={() => setScalp(prev => ({ ...prev, stage: label }))}
+                            aria-pressed={selected}
+                            className={`admin-focus-ring relative flex min-h-36 w-full flex-col items-center gap-1 rounded-xl p-2 text-center transition-[border-color,background-color,box-shadow,transform] ${selected ? 'border-2 border-gold-dark bg-gold/10 shadow-md ring-2 ring-gold/30' : 'border border-gray-200 hover:-translate-y-0.5 hover:border-gold hover:bg-gold/10 hover:shadow-sm'}`}>
+                            {selected ? <CheckCircle2 className="absolute right-2 top-2 h-4 w-4 text-gold-ink" aria-hidden="true" /> : null}
+                            <ScalpStageIllustration scale={scalp.scale as HairLossScale} stageIndex={idx} />
+                            <span className="text-xs font-semibold text-gray-700">Etapa {label}</span>
+                            <span className="text-[9px] leading-3 text-gray-500">{description}</span>
+                          </button>
+                        </Tooltip>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -275,8 +291,9 @@ export default function ClinicalDataModal({ isOpen, mode, initialData, onClose, 
                 <div className="flex gap-2">
                   {(['Alta', 'Media', 'Baja'] as const).map(d => (
                     <button key={d} type="button" onClick={() => setScalp(prev => ({ ...prev, density: d }))}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${scalp.density === d ? 'bg-[#deb887] text-white border-[#deb887]' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
-                      {d}
+                      aria-pressed={scalp.density === d}
+                      className={`inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium transition-[color,background-color,border-color,box-shadow] ${scalp.density === d ? 'border-2 border-gray-900 bg-gray-900 text-white shadow-sm ring-2 ring-gray-300' : 'border border-gray-200 text-gray-600 hover:border-gold hover:bg-gold/10'}`}>
+                      {scalp.density === d ? <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> : null}{d}
                     </button>
                   ))}
                 </div>
@@ -287,8 +304,9 @@ export default function ClinicalDataModal({ isOpen, mode, initialData, onClose, 
                 <div className="flex gap-2 flex-wrap">
                   {ALOPECIA_TYPES.map(t => (
                     <button key={t} type="button" onClick={() => setScalp(prev => ({ ...prev, alopecia_type: t }))}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${scalp.alopecia_type === t ? 'bg-[#deb887]/20 border-[#deb887] text-[#b8944d]' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
-                      {t}
+                      aria-pressed={scalp.alopecia_type === t}
+                      className={`inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium transition-[color,background-color,border-color,box-shadow] ${scalp.alopecia_type === t ? 'border-2 border-gray-900 bg-gray-900 text-white shadow-sm ring-2 ring-gray-300' : 'border border-gray-200 text-gray-600 hover:border-gold hover:bg-gold/10'}`}>
+                      {scalp.alopecia_type === t ? <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> : null}{t}
                     </button>
                   ))}
                 </div>

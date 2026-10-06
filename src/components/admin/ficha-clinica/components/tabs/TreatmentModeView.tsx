@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Calendar, DollarSign, Clock, Save, Trash2, Copy, Check, AlertCircle, FileText, Pencil, Layers, History, Eye, X, ChevronDown, ChevronRight, Sparkles, Wrench, Package, Wallet, ClipboardList, MapPin, CircleDashed, Undo2 } from 'lucide-react';
+import { Plus, Calendar, DollarSign, Clock, Save, Trash2, Copy, Check, AlertCircle, FileText, Pencil, Layers, History, Eye, X, ChevronDown, ChevronRight, Sparkles, Wrench, Package, Wallet, ClipboardList, MapPin, CircleDashed, Undo2, CheckCircle2 } from 'lucide-react';
 import CrossConsultHistoryModal, { type ConsultationRef } from '../CrossConsultHistoryModal';
 import TreatmentParametersModal, { type TreatmentParameters, formatParametersAsText, upsertNotesBlock, removeNotesBlock } from './TreatmentParametersModal';
 import TreatmentPackageModal from './TreatmentPackageModal';
@@ -54,6 +54,33 @@ const FORM_COPY: Record<TreatmentMode, { procedure: string; equipment: string; a
   capilar: { procedure: 'Ej: PRP capilar', equipment: 'Ej: Kit PRP, Dermapen capilar...', area: 'Ej: Coronilla y línea frontal' },
 };
 
+interface MarkingPreset {
+  id: string;
+  title: string;
+  procedure: string;
+  markerType: MarkerType;
+  zones: string[];
+  description: string;
+}
+
+const MARKING_PRESETS_BY_MODE: Record<TreatmentMode, MarkingPreset[]> = {
+  facial: [
+    { id: 'facial-toxin', title: 'Toxina', procedure: 'Toxina botulínica', markerType: 'Puntual', zones: ['Frente', 'Entrecejo'], description: 'Prepara puntos de referencia para el tercio superior facial.' },
+    { id: 'facial-fillers', title: 'Rellenos', procedure: 'Rellenos dérmicos', markerType: 'Puntual', zones: ['Pómulos', 'Surco nasogeniano', 'Labio superior'], description: 'Sugiere zonas frecuentes de soporte y perfilado; cada punto se coloca manualmente.' },
+    { id: 'facial-energy', title: 'Energía facial', procedure: 'Láser', markerType: 'Zonal', zones: ['Mejillas', 'Mandíbula', 'Cuello'], description: 'Activa cobertura zonal para láser, radiofrecuencia o ultrasonido.' },
+  ],
+  corporal: [
+    { id: 'body-cryo', title: 'Criolipólisis', procedure: 'Criolipólisis', markerType: 'Zonal', zones: ['Abdomen', 'Cintura'], description: 'Prepara áreas amplias para documentar aplicadores y cobertura corporal.' },
+    { id: 'body-meso', title: 'Mesoterapia', procedure: 'Mesoterapia', markerType: 'Puntual', zones: ['Abdomen', 'Muslos'], description: 'Activa marcación puntual para registrar sitios seriados de aplicación.' },
+    { id: 'body-drainage', title: 'Drenaje', procedure: 'Drenaje Linfático', markerType: 'Zonal', zones: ['Piernas', 'Pantorrillas'], description: 'Sugiere cobertura regional para seguimiento de drenaje o presoterapia.' },
+  ],
+  capilar: [
+    { id: 'hair-prp', title: 'PRP', procedure: 'Plasma rico en plaquetas (PRP) capilar', markerType: 'Puntual', zones: ['Coronilla', 'Vértex', 'Entradas'], description: 'Prepara puntos distribuidos para documentar el patrón de aplicación de PRP.' },
+    { id: 'hair-meso', title: 'Mesoterapia', procedure: 'Mesoterapia capilar', markerType: 'Puntual', zones: ['Línea de implantación frontal', 'Temporal derecho', 'Temporal izquierdo'], description: 'Activa puntos para registrar aplicaciones en línea frontal y regiones temporales.' },
+    { id: 'hair-lllt', title: 'LLLT', procedure: 'Láser de bajo nivel (LLLT)', markerType: 'Zonal', zones: ['Difuso (toda la cabeza)'], description: 'Activa una zona amplia para documentar cobertura lumínica difusa.' },
+  ],
+};
+
 /** Resumen corto (badge) de los datos clínicos del modo, para mostrar en las tarjetas del historial */
 function getClinicalDataBadge(t: Treatment, mode: TreatmentMode): string | null {
   const data = t.parameters?.[RESERVED_PARAM_KEYS[mode]] as PostCareData | AnthropometricsData | ScalpAssessmentData | undefined;
@@ -96,7 +123,7 @@ function ClinicalSummaryPanel({
   const renderContent = () => {
     if (!data) {
       return (
-        <div className="rounded-xl border border-dashed border-gold-300 bg-gold-50/50 p-4 text-center">
+        <div className="rounded-xl border border-dashed border-gold/40 bg-gold/10 p-4 text-center">
           <ClipboardList className="mx-auto mb-2 h-6 w-6 text-gold-ink/60" aria-hidden="true" />
           <p className="text-xs leading-5 text-gray-500">Aún no hay datos clínicos registrados para esta sesión.</p>
         </div>
@@ -168,7 +195,7 @@ function ClinicalSummaryPanel({
   return (
     <aside className="admin-surface h-fit p-4 xl:sticky xl:top-4">
       <div className="mb-4">
-        <span className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-gold-50 text-gold-ink">
+        <span className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-gold/10 text-gold-ink">
           <ClipboardList className="h-5 w-5" aria-hidden="true" />
         </span>
         <h3 className="font-semibold text-gray-900">{titles[mode][0]}</h3>
@@ -260,6 +287,8 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
   // Zona activa seleccionada en los chips, aplicada a la próxima marcación que se coloque en el visor 3D
   const [activeZoneChip, setActiveZoneChip] = useState<string | null>(null);
   const [markerType, setMarkerType] = useState<MarkerType>('Puntual');
+  const [activePresetId, setActivePresetId] = useState<string | null>(null);
+  const [customZone, setCustomZone] = useState('');
   const [duplicating, setDuplicating] = useState(false);
   const [highlightedId, setHighlightedId] = useState<number | null>(null);
   // ponytail: string state to allow empty field and comma-as-decimal-separator
@@ -464,6 +493,24 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
 
   const handleRemoveMarker = (markerId: string | undefined) => {
     setCurrentTreatment(prev => ({ ...prev, area_marker: getAreaMarkers(prev).filter(m => m.id !== markerId) }));
+  };
+
+  const handleApplyMarkingPreset = (preset: MarkingPreset) => {
+    setActivePresetId(preset.id);
+    setMarkerType(preset.markerType);
+    setActiveZoneChip(preset.zones[0]);
+    setCurrentTreatment(prev => ({
+      ...prev,
+      procedure_name: preset.procedure,
+      area_treated: preset.zones.join(', '),
+    }));
+  };
+
+  const handleUseCustomZone = () => {
+    const zone = customZone.trim();
+    if (!zone) return;
+    setActivePresetId(null);
+    setActiveZoneChip(zone);
   };
 
   /** Abre el modal de parámetros para el último equipo escrito en el campo (no bloquea el guardado normal del tratamiento) */
@@ -776,26 +823,30 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
             <p className="text-xs text-gray-400">Elige el tipo de herramienta, selecciona una zona y haz clic sobre el modelo.</p>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto]">
               {([
-                ['Puntual', MapPin, 'Punto preciso', 'Ideal para sitios de aplicación'],
-                ['Zonal', CircleDashed, 'Área de cobertura', 'Delimita regiones más amplias'],
-              ] as const).map(([type, Icon, title, description]) => (
-                <button
-                  key={type}
-                  type="button"
-                  onClick={() => setMarkerType(type)}
-                  aria-pressed={markerType === type}
-                  className={`admin-focus-ring flex items-center gap-2 rounded-xl border p-2.5 text-left transition-[border-color,background-color,box-shadow] ${
-                    markerType === type ? 'border-gold-500 bg-gold-50 shadow-sm' : 'border-gray-200 hover:border-gold-300'
-                  }`}
-                >
-                  <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${markerType === type ? 'bg-white text-gold-ink' : 'bg-gray-50 text-gray-500'}`}>
-                    <Icon className="h-4 w-4" aria-hidden="true" />
-                  </span>
-                  <span>
-                    <span className="block text-xs font-semibold text-gray-800">{title}</span>
-                    <span className="block text-[9px] text-gray-400">{description}</span>
-                  </span>
-                </button>
+                ['Puntual', MapPin, 'Punto preciso', 'Ideal para sitios de aplicación', 'Crea una marca pequeña y exacta. Úsala para inyecciones, punciones o referencias anatómicas localizadas.'],
+                ['Zonal', CircleDashed, 'Área de cobertura', 'Delimita regiones más amplias', 'Crea una región circular ajustable. Úsala para aparatología, láser o tratamientos de cobertura continua.'],
+              ] as const).map(([type, Icon, title, description, detail]) => (
+                <Tooltip key={type} content={detail} position="top" className="w-full">
+                  <button
+                    type="button"
+                    onClick={() => { setMarkerType(type); setActivePresetId(null); }}
+                    aria-pressed={markerType === type}
+                    className={`admin-focus-ring relative flex w-full items-center gap-2 rounded-xl p-2.5 text-left transition-[border-color,background-color,box-shadow,transform] ${
+                      markerType === type
+                        ? 'border-2 border-gold-dark bg-gold/10 shadow-md ring-2 ring-gold/30'
+                        : 'border border-gray-200 hover:-translate-y-0.5 hover:border-gold hover:bg-gold/10 hover:shadow-sm'
+                    }`}
+                  >
+                    <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${markerType === type ? 'bg-gold-dark text-white' : 'bg-gray-50 text-gray-500'}`}>
+                      <Icon className="h-4 w-4" aria-hidden="true" />
+                    </span>
+                    <span className="pr-5">
+                      <span className="block text-xs font-semibold text-gray-800">{title}</span>
+                      <span className="block text-[9px] text-gray-500">{description}</span>
+                    </span>
+                    {markerType === type ? <CheckCircle2 className="absolute right-2 top-2 h-4 w-4 text-gold-ink" aria-hidden="true" /> : null}
+                  </button>
+                </Tooltip>
               ))}
               <button
                 type="button"
@@ -806,17 +857,86 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                 <Undo2 className="h-4 w-4" aria-hidden="true" /> Deshacer
               </button>
             </div>
+            <div className="rounded-xl border border-gray-100 bg-gray-50/70 p-3">
+              <div className="mb-2 flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-gold-ink" aria-hidden="true" />
+                <span className="text-xs font-semibold text-gray-700">Presets por procedimiento</span>
+                <span className="text-[9px] text-gray-400">Preparan herramienta, procedimiento y zonas sugeridas</span>
+              </div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                {MARKING_PRESETS_BY_MODE[mode].map(preset => {
+                  const selected = activePresetId === preset.id;
+                  return (
+                    <Tooltip key={preset.id} content={preset.description} position="top" className="w-full">
+                      <button
+                        type="button"
+                        onClick={() => handleApplyMarkingPreset(preset)}
+                        aria-pressed={selected}
+                        className={`admin-focus-ring relative w-full rounded-lg px-3 py-2 text-left transition-[border-color,background-color,box-shadow] ${
+                          selected
+                            ? 'border-2 border-gray-900 bg-gray-900 text-white shadow-md ring-2 ring-gray-300'
+                            : 'border border-gray-200 bg-white text-gray-700 hover:border-gold hover:bg-gold/10'
+                        }`}
+                      >
+                        <span className="block text-xs font-semibold">{preset.title}</span>
+                        <span className={`mt-0.5 block text-[9px] ${selected ? 'text-gray-300' : 'text-gray-400'}`}>{preset.markerType} · {preset.zones.length} zona(s)</span>
+                        {selected ? <CheckCircle2 className="absolute right-2 top-2 h-4 w-4 text-gold" aria-hidden="true" /> : null}
+                      </button>
+                    </Tooltip>
+                  );
+                })}
+              </div>
+            </div>
             <div className="flex flex-wrap gap-1.5">
               {(ZONE_CHIPS_BY_MODE[mode] || []).map(zone => (
                 <button
                   key={zone}
                   type="button"
                   onClick={() => setActiveZoneChip(prev => prev === zone ? null : zone)}
-                  className={`px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${activeZoneChip === zone ? 'bg-[#deb887] text-white border-[#deb887]' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                  aria-pressed={activeZoneChip === zone}
+                  className={`admin-focus-ring rounded-full px-2.5 py-1 text-[11px] font-medium transition-[color,background-color,border-color,box-shadow] ${
+                    activeZoneChip === zone
+                      ? 'border-2 border-gray-900 bg-gray-900 text-white shadow-sm ring-2 ring-gray-300'
+                      : activePresetId && MARKING_PRESETS_BY_MODE[mode].find(p => p.id === activePresetId)?.zones.includes(zone)
+                        ? 'border border-gold bg-gold/10 text-gold-ink'
+                        : 'border border-gray-200 text-gray-600 hover:border-gold hover:bg-gold/10'
+                  }`}
                 >
                   {zone}
                 </button>
               ))}
+              {activeZoneChip && !(ZONE_CHIPS_BY_MODE[mode] || []).includes(activeZoneChip) ? (
+                <button
+                  type="button"
+                  aria-pressed="true"
+                  onClick={() => setActiveZoneChip(null)}
+                  className="admin-focus-ring rounded-full border-2 border-gray-900 bg-gray-900 px-2.5 py-1 text-[11px] font-medium text-white shadow-sm ring-2 ring-gray-300"
+                >
+                  {activeZoneChip} ×
+                </button>
+              ) : null}
+            </div>
+            <div className="flex flex-col gap-2 rounded-xl border border-dashed border-gray-200 bg-white p-2.5 sm:flex-row">
+              <div className="min-w-0 flex-1">
+                <label htmlFor={`custom-zone-${mode}`} className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-gray-500">Zona libre</label>
+                <input
+                  id={`custom-zone-${mode}`}
+                  type="text"
+                  value={customZone}
+                  onChange={event => setCustomZone(event.target.value)}
+                  onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); handleUseCustomZone(); } }}
+                  placeholder="Ej: Región retroauricular derecha"
+                  className="admin-focus-ring w-full rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-700 placeholder:text-gray-400"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleUseCustomZone}
+                disabled={!customZone.trim()}
+                className="admin-focus-ring inline-flex items-center justify-center gap-1 rounded-lg bg-gray-900 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-gold-ink disabled:cursor-not-allowed disabled:opacity-40 sm:self-end"
+              >
+                <Plus className="h-3.5 w-3.5" aria-hidden="true" /> Usar zona
+              </button>
             </div>
             <div className="relative overflow-hidden rounded-2xl border border-gray-100 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.8)]" style={{ height: '360px' }}>
               <Clinical3DViewer
