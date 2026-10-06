@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Calendar, DollarSign, Clock, Save, Trash2, Copy, Check, AlertCircle, FileText, Pencil, Layers, History, Eye, X, ChevronDown, ChevronRight, Sparkles, Wrench, Package, Wallet, ClipboardList } from 'lucide-react';
+import { Plus, Calendar, DollarSign, Clock, Save, Trash2, Copy, Check, AlertCircle, FileText, Pencil, Layers, History, Eye, X, ChevronDown, ChevronRight, Sparkles, Wrench, Package, Wallet, ClipboardList, MapPin, CircleDashed, Undo2 } from 'lucide-react';
 import CrossConsultHistoryModal, { type ConsultationRef } from '../CrossConsultHistoryModal';
 import TreatmentParametersModal, { type TreatmentParameters, formatParametersAsText, upsertNotesBlock, removeNotesBlock } from './TreatmentParametersModal';
 import TreatmentPackageModal from './TreatmentPackageModal';
 import ClinicalDataModal from './ClinicalDataModal';
 import Clinical3DViewer from '../Clinical3DViewer';
-import type { Marker3D } from '../Clinical3DViewer';
+import type { Marker3D, MarkerType } from '../Clinical3DViewer';
 import { useAuth } from '../../../../../context/AuthContext';
 import treatmentOptions from '../../data/treatment_options.json';
 import { Tooltip } from '../../../../ui/Tooltip';
@@ -26,6 +26,32 @@ const ZONE_CHIPS_BY_MODE: Record<TreatmentMode, string[]> = {
   facial: treatmentOptions.procedures.facial,
   corporal: treatmentOptions.procedures.corporal,
   capilar: (treatmentOptions.procedures as Record<string, string[]>).capilar || [],
+};
+
+const PROCEDURES = treatmentOptions.procedures as Record<string, string[]>;
+const PROCEDURE_SUGGESTIONS_BY_MODE: Record<TreatmentMode, string[]> = {
+  facial: PROCEDURES['Medicina Estética'] || [],
+  corporal: PROCEDURES.tratamientos_corporales || [],
+  capilar: PROCEDURES.tratamientos_capilares || [],
+};
+const EQUIPMENT_SUGGESTIONS_BY_MODE: Record<TreatmentMode, string[]> = {
+  facial: [
+    ...(PROCEDURES.equipos_laser || []),
+    ...(PROCEDURES.equipos_radiofrecuencia || []),
+    ...(PROCEDURES.equipos_ultrasonido || []),
+    ...(PROCEDURES.equipos_inyeccion || []),
+  ],
+  corporal: [
+    ...(PROCEDURES.equipos_corporales || []),
+    ...(PROCEDURES.aplicadores_rf || []),
+    ...(PROCEDURES.transductores_hifu || []),
+  ],
+  capilar: PROCEDURES.equipos_capilares || [],
+};
+const FORM_COPY: Record<TreatmentMode, { procedure: string; equipment: string; area: string }> = {
+  facial: { procedure: 'Ej: Láser fraccionado facial', equipment: 'Ej: Fotona 4D, Morpheus8...', area: 'Ej: Tercio medio facial' },
+  corporal: { procedure: 'Ej: Criolipólisis', equipment: 'Ej: CoolSculpting, VelaShape...', area: 'Ej: Abdomen inferior y flancos' },
+  capilar: { procedure: 'Ej: PRP capilar', equipment: 'Ej: Kit PRP, Dermapen capilar...', area: 'Ej: Coronilla y línea frontal' },
 };
 
 /** Resumen corto (badge) de los datos clínicos del modo, para mostrar en las tarjetas del historial */
@@ -161,14 +187,6 @@ function ClinicalSummaryPanel({
   );
 }
 
-// Sugerencias de equipos: nombres de marcas/modelos ya catalogados por tipo de aparatología
-const EQUIPMENT_SUGGESTIONS: string[] = [
-  ...Object.entries(treatmentOptions.procedures)
-    .filter(([key]) => /^(equipos_|tips_|handpieces|aplicadores_|transductores_)/.test(key))
-    .flatMap(([, arr]) => arr as string[]),
-  ...treatmentOptions.equipment,
-];
-
 /** Divide el string "equipment_used" (separado por comas) en una lista de nombres limpios y sin duplicados */
 const parseEquipmentNames = (equipmentUsed: string): string[] => {
   const seen = new Set<string>();
@@ -241,6 +259,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
   const [editingEquipmentName, setEditingEquipmentName] = useState('');
   // Zona activa seleccionada en los chips, aplicada a la próxima marcación que se coloque en el visor 3D
   const [activeZoneChip, setActiveZoneChip] = useState<string | null>(null);
+  const [markerType, setMarkerType] = useState<MarkerType>('Puntual');
   const [duplicating, setDuplicating] = useState(false);
   const [highlightedId, setHighlightedId] = useState<number | null>(null);
   // ponytail: string state to allow empty field and comma-as-decimal-separator
@@ -434,7 +453,12 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
   const handleMarkerPlaced = (marker: Marker3D) => {
     setCurrentTreatment(prev => ({
       ...prev,
-      area_marker: [...getAreaMarkers(prev), { ...marker, zone: activeZoneChip || marker.zone }],
+      area_marker: [...getAreaMarkers(prev), {
+        ...marker,
+        type: markerType,
+        radius: markerType === 'Zonal' ? 0.55 : marker.radius,
+        zone: activeZoneChip || marker.zone,
+      }],
     }));
   };
 
@@ -749,7 +773,39 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
           {/* Visor 3D de marcación anatómica (múltiples zonas por sesión) */}
           <div className="space-y-2">
             <label className="block text-sm font-medium text-gray-700">Marcación Anatómica (referencial)</label>
-            <p className="text-xs text-gray-400">Selecciona una zona y luego haz clic en el modelo para marcarla. Puedes agregar varias.</p>
+            <p className="text-xs text-gray-400">Elige el tipo de herramienta, selecciona una zona y haz clic sobre el modelo.</p>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto]">
+              {([
+                ['Puntual', MapPin, 'Punto preciso', 'Ideal para sitios de aplicación'],
+                ['Zonal', CircleDashed, 'Área de cobertura', 'Delimita regiones más amplias'],
+              ] as const).map(([type, Icon, title, description]) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => setMarkerType(type)}
+                  aria-pressed={markerType === type}
+                  className={`admin-focus-ring flex items-center gap-2 rounded-xl border p-2.5 text-left transition-[border-color,background-color,box-shadow] ${
+                    markerType === type ? 'border-gold-500 bg-gold-50 shadow-sm' : 'border-gray-200 hover:border-gold-300'
+                  }`}
+                >
+                  <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${markerType === type ? 'bg-white text-gold-ink' : 'bg-gray-50 text-gray-500'}`}>
+                    <Icon className="h-4 w-4" aria-hidden="true" />
+                  </span>
+                  <span>
+                    <span className="block text-xs font-semibold text-gray-800">{title}</span>
+                    <span className="block text-[9px] text-gray-400">{description}</span>
+                  </span>
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => setCurrentTreatment(prev => ({ ...prev, area_marker: getAreaMarkers(prev).slice(0, -1) }))}
+                disabled={getAreaMarkers(currentTreatment).length === 0}
+                className="admin-focus-ring inline-flex min-h-12 items-center justify-center gap-1 rounded-xl border border-gray-200 px-3 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Undo2 className="h-4 w-4" aria-hidden="true" /> Deshacer
+              </button>
+            </div>
             <div className="flex flex-wrap gap-1.5">
               {(ZONE_CHIPS_BY_MODE[mode] || []).map(zone => (
                 <button
@@ -835,10 +891,10 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                 className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
                 value={currentTreatment.procedure_name}
                 onChange={e => setCurrentTreatment({ ...currentTreatment, procedure_name: e.target.value })}
-                placeholder="Ej: Limpieza Facial Profunda"
+                placeholder={FORM_COPY[mode].procedure}
               />
               <datalist id="procedures-list">
-                {Object.values(treatmentOptions.procedures).flat().map((p: string, i: number) => (
+                {PROCEDURE_SUGGESTIONS_BY_MODE[mode].map((p: string, i: number) => (
                   <option key={i} value={p} />
                 ))}
               </datalist>
@@ -901,7 +957,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                   className="flex-1 p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
                   value={currentTreatment.equipment_used}
                   onChange={e => setCurrentTreatment({ ...currentTreatment, equipment_used: e.target.value })}
-                  placeholder="Ej: Nd:YAG 1064nm, Hydrafacial..."
+                  placeholder={FORM_COPY[mode].equipment}
                 />
                 <Tooltip content="Registrar parámetros del último equipo escrito (opcional)">
                   <button
@@ -915,7 +971,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                 </Tooltip>
               </div>
               <datalist id="equipment-list">
-                {EQUIPMENT_SUGGESTIONS.map((e: string, i: number) => (
+                {EQUIPMENT_SUGGESTIONS_BY_MODE[mode].map((e: string, i: number) => (
                   <option key={i} value={e} />
                 ))}
               </datalist>
@@ -928,7 +984,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                 className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
                 value={currentTreatment.area_treated}
                 onChange={e => setCurrentTreatment({ ...currentTreatment, area_treated: e.target.value })}
-                placeholder="Ej: Rostro completo"
+                placeholder={FORM_COPY[mode].area}
               />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

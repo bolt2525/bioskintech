@@ -3,14 +3,19 @@
  * patrón visual de TreatmentParametersModal/TreatmentPackageModal. Todo se guarda dentro de
  * `treatment.parameters[RESERVED_PARAM_KEYS[mode]]` (JSONB) — no requiere cambios de esquema.
  */
-import { Fragment, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { X, ClipboardList, Ruler, Scissors } from 'lucide-react';
 import { Dialog } from '../../../../ui/Dialog';
 import type {
   TreatmentMode, PostCareData, AnthropometricsData, ScalpAssessmentData, SeverityScale, HairLossScale,
 } from '../../types/treatment';
 
-const SEVERITY_LABELS: Record<SeverityScale, string> = { 0: 'Ninguno', 1: 'Leve', 2: 'Moderado', 3: 'Severo' };
+const SEVERITY_META: Record<SeverityScale, { label: string; description: string; tone: string; fill: number }> = {
+  0: { label: 'Sin reacción', description: 'Piel sin cambios visibles', tone: 'emerald', fill: 0 },
+  1: { label: 'Leve', description: 'Respuesta localizada discreta', tone: 'amber', fill: 1 },
+  2: { label: 'Moderado', description: 'Respuesta visible y delimitada', tone: 'orange', fill: 2 },
+  3: { label: 'Intenso', description: 'Respuesta marcada; vigilar evolución', tone: 'rose', fill: 3 },
+};
 const POST_CARE_INDICATIONS = [
   'Protección solar FPS50+',
   'Evitar maquillaje 24h',
@@ -30,6 +35,52 @@ const ANTHRO_FIELDS: Array<{ key: keyof AnthropometricsData['before']; label: st
 const ALOPECIA_TYPES = ['Androgenética', 'Areata', 'Telógena', 'Cicatricial', 'Otra'];
 export const NORWOOD_STAGES = ['I', 'II', 'III', 'III Vertex', 'IV', 'V', 'VI', 'VII'];
 export const LUDWIG_STAGES = ['I', 'II', 'III'];
+const NORWOOD_DESCRIPTIONS = [
+  'Línea frontal conservada',
+  'Retroceso temporal leve',
+  'Entradas más definidas',
+  'Compromiso predominante de vértex',
+  'Pérdida frontal y coronilla',
+  'Puente capilar reducido',
+  'Áreas frontal y superior unidas',
+  'Cabello lateral y occipital residual',
+];
+const LUDWIG_DESCRIPTIONS = [
+  'Ensanchamiento leve de la raya',
+  'Disminución visible de densidad',
+  'Aclaramiento difuso avanzado',
+];
+
+function SeverityIllustration({ level, kind }: { level: SeverityScale; kind: 'erythema' | 'edema' }) {
+  const color = level === 0 ? '#d1fae5' : level === 1 ? '#fde68a' : level === 2 ? '#fdba74' : '#fda4af';
+  return (
+    <svg viewBox="0 0 64 48" className="h-11 w-full" aria-hidden="true">
+      <path d="M18 34c-3-5-4-12-1-18 3-7 9-10 15-10s12 3 15 10c3 6 2 13-1 18-3 5-8 8-14 8s-11-3-14-8Z" fill="#fff7ed" stroke="#c4a275" strokeWidth="1.5" />
+      {kind === 'erythema' ? (
+        <>
+          <ellipse cx="24" cy="25" rx={4 + level * 1.5} ry={2 + level} fill={color} opacity={level === 0 ? 0.35 : 0.75} />
+          <ellipse cx="40" cy="25" rx={4 + level * 1.5} ry={2 + level} fill={color} opacity={level === 0 ? 0.35 : 0.75} />
+        </>
+      ) : (
+        <path d={`M22 29 Q32 ${29 + level * 2} 42 29`} fill="none" stroke={color} strokeWidth={2 + level} strokeLinecap="round" opacity={level === 0 ? 0.35 : 0.85} />
+      )}
+      <circle cx="25" cy="19" r="1.5" fill="#6b7280" />
+      <circle cx="39" cy="19" r="1.5" fill="#6b7280" />
+    </svg>
+  );
+}
+
+function BodyMeasureIllustration({ measure }: { measure: keyof AnthropometricsData['before'] }) {
+  const zoneY = { arm: 25, waist: 34, abdomen: 39, hip: 45, thigh: 55, weight: 35 }[measure] ?? 35;
+  return (
+    <svg viewBox="0 0 48 72" className="h-14 w-10 shrink-0" aria-hidden="true">
+      <circle cx="24" cy="8" r="5" fill="#f6e2d2" stroke="#9ca3af" />
+      <path d="M18 15 Q24 12 30 15 L34 42 29 65H24L22 44 20 65H15L14 42Z" fill="#f8fafc" stroke="#9ca3af" strokeWidth="1.2" />
+      <path d="M18 18 10 38M30 18l8 20" stroke="#9ca3af" strokeWidth="4" strokeLinecap="round" />
+      <ellipse cx="24" cy={zoneY} rx={measure === 'arm' ? 15 : 10} ry="4" fill="#deb887" opacity="0.75" />
+    </svg>
+  );
+}
 
 /** Ilustración esquemática (SVG generado, no una foto clínica) de la silueta craneal con el patrón
  *  de pérdida capilar aproximado para la escala/etapa seleccionada — solo referencial. */
@@ -40,16 +91,17 @@ function ScalpStageIllustration({ scale, stageIndex }: { scale: HairLossScale; s
   const hairlineY = scale === 'norwood' ? 14 + progress * 16 : 14;
   const crownOpacity = scale === 'ludwig' ? Math.max(0.08, 0.6 - progress * 0.55) : 0.6;
   return (
-    <svg viewBox="0 0 60 60" className="w-10 h-10 shrink-0">
-      <circle cx="30" cy="34" r="22" fill="#fde9d7" stroke="#b8944d" strokeWidth="1.5" />
+    <svg viewBox="0 0 72 72" className="h-16 w-16 shrink-0" aria-hidden="true">
+      <circle cx="36" cy="39" r="26" fill="#fde9d7" stroke="#b8944d" strokeWidth="1.5" />
       {scale === 'norwood' ? (
-        <path d={`M8,${hairlineY} Q30,${hairlineY - 10 + progress * 6} 52,${hairlineY}`} fill="none" stroke="#5b3a1e" strokeWidth="5" strokeLinecap="round" />
+        <path d={`M10,${hairlineY + 4} Q36,${hairlineY - 8 + progress * 6} 62,${hairlineY + 4}`} fill="none" stroke="#5b3a1e" strokeWidth="6" strokeLinecap="round" />
       ) : (
-        <ellipse cx="30" cy="20" rx="16" ry="9" fill="#5b3a1e" opacity={crownOpacity} />
+        <ellipse cx="36" cy="24" rx="19" ry="11" fill="#5b3a1e" opacity={crownOpacity} />
       )}
       {scale === 'norwood' && progress > 0.3 && (
-        <ellipse cx="30" cy="18" rx={6 + progress * 10} ry={4 + progress * 6} fill="#fde9d7" />
+        <ellipse cx="36" cy="22" rx={7 + progress * 12} ry={5 + progress * 7} fill="#fde9d7" />
       )}
+      <path d="M29 47q7 5 14 0" fill="none" stroke="#c0846a" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
 }
@@ -108,11 +160,14 @@ export default function ClinicalDataModal({ isOpen, mode, initialData, onClose, 
               {(['erythema', 'edema'] as const).map(field => (
                 <div key={field} className="space-y-2">
                   <label className="block text-sm font-medium text-gray-700">{field === 'erythema' ? 'Eritema' : 'Edema'}</label>
-                  <div className="flex gap-2 flex-wrap">
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                     {([0, 1, 2, 3] as SeverityScale[]).map(level => (
                       <button key={level} type="button" onClick={() => setPostCare(prev => ({ ...prev, [field]: level }))}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${postCare[field] === level ? 'bg-[#deb887] text-white border-[#deb887]' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
-                        {SEVERITY_LABELS[level]}
+                        aria-pressed={postCare[field] === level}
+                        className={`admin-focus-ring rounded-xl border p-2 text-left transition-[border-color,background-color,box-shadow] ${postCare[field] === level ? 'border-gold-500 bg-gold-50 shadow-sm' : 'border-gray-200 hover:border-gold-300 hover:bg-gray-50'}`}>
+                        <SeverityIllustration level={level} kind={field} />
+                        <span className="block text-xs font-semibold text-gray-800">{SEVERITY_META[level].label}</span>
+                        <span className="mt-0.5 block text-[9px] leading-3 text-gray-400">{SEVERITY_META[level].description}</span>
                       </button>
                     ))}
                   </div>
@@ -138,19 +193,30 @@ export default function ClinicalDataModal({ isOpen, mode, initialData, onClose, 
 
           {mode === 'corporal' && (
             <>
-              <div className="grid grid-cols-3 gap-x-3 gap-y-2 items-center text-xs font-medium text-gray-500">
-                <span />
-                <span className="text-center">Antes</span>
-                <span className="text-center">Después</span>
-                {ANTHRO_FIELDS.map(f => (
-                  <Fragment key={f.key}>
-                    <label className="text-gray-700 font-medium">{f.label} <span className="text-gray-400">({f.unit})</span></label>
-                    <input type="text" inputMode="decimal" className="w-full p-2 border border-gray-200 rounded-lg text-sm text-center outline-none focus:ring-2 focus:ring-[#deb887]"
-                      value={anthro.before[f.key] || ''} onChange={e => setAnthro(prev => ({ ...prev, before: { ...prev.before, [f.key]: e.target.value } }))} />
-                    <input type="text" inputMode="decimal" className="w-full p-2 border border-gray-200 rounded-lg text-sm text-center outline-none focus:ring-2 focus:ring-[#deb887]"
-                      value={anthro.after[f.key] || ''} onChange={e => setAnthro(prev => ({ ...prev, after: { ...prev.after, [f.key]: e.target.value } }))} />
-                  </Fragment>
-                ))}
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {ANTHRO_FIELDS.map(f => {
+                  const before = Number.parseFloat(anthro.before[f.key] || '');
+                  const after = Number.parseFloat(anthro.after[f.key] || '');
+                  const hasDelta = Number.isFinite(before) && Number.isFinite(after);
+                  const delta = hasDelta ? after - before : 0;
+                  return (
+                    <div key={f.key} className="flex gap-3 rounded-xl border border-gray-200 bg-gray-50/60 p-3">
+                      <BodyMeasureIllustration measure={f.key} />
+                      <div className="min-w-0 flex-1">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <label className="text-xs font-semibold text-gray-700">{f.label} <span className="font-normal text-gray-400">({f.unit})</span></label>
+                          {hasDelta ? <span className={`rounded-full px-2 py-0.5 text-[9px] font-semibold ${delta <= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{delta > 0 ? '+' : ''}{delta.toFixed(1)} {f.unit}</span> : null}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <input aria-label={`${f.label} antes`} placeholder="Antes" type="text" inputMode="decimal" className="w-full rounded-lg border border-gray-200 bg-white p-2 text-center text-sm outline-none focus:ring-2 focus:ring-gold-500"
+                            value={anthro.before[f.key] || ''} onChange={e => setAnthro(prev => ({ ...prev, before: { ...prev.before, [f.key]: e.target.value } }))} />
+                          <input aria-label={`${f.label} después`} placeholder="Después" type="text" inputMode="decimal" className="w-full rounded-lg border border-gray-200 bg-white p-2 text-center text-sm outline-none focus:ring-2 focus:ring-gold-500"
+                            value={anthro.after[f.key] || ''} onChange={e => setAnthro(prev => ({ ...prev, after: { ...prev.after, [f.key]: e.target.value } }))} />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
               <div className="space-y-2 pt-2 border-t border-gray-100">
                 <div className="flex items-center justify-between">
@@ -190,12 +256,14 @@ export default function ClinicalDataModal({ isOpen, mode, initialData, onClose, 
               {scalp.scale && (
                 <div className="space-y-2">
                   <label className="block text-sm font-medium text-gray-700">Etapa (tarjetas ilustrativas, haz clic para seleccionar)</label>
-                  <div className="grid grid-cols-4 gap-2">
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                     {stages.map((label, idx) => (
                       <button key={label} type="button" onClick={() => setScalp(prev => ({ ...prev, stage: label }))}
-                        className={`flex flex-col items-center gap-1 p-2 rounded-lg border transition-colors ${scalp.stage === label ? 'bg-[#deb887]/20 border-[#deb887]' : 'border-gray-200 hover:bg-gray-50'}`}>
+                        aria-pressed={scalp.stage === label}
+                        className={`admin-focus-ring flex min-h-36 flex-col items-center gap-1 rounded-xl border p-2 text-center transition-[border-color,background-color,box-shadow] ${scalp.stage === label ? 'border-gold-500 bg-gold-50 shadow-sm' : 'border-gray-200 hover:border-gold-300 hover:bg-gray-50'}`}>
                         <ScalpStageIllustration scale={scalp.scale as HairLossScale} stageIndex={idx} />
-                        <span className="text-[10px] font-medium text-gray-600">Etapa {label}</span>
+                        <span className="text-xs font-semibold text-gray-700">Etapa {label}</span>
+                        <span className="text-[9px] leading-3 text-gray-400">{(scalp.scale === 'norwood' ? NORWOOD_DESCRIPTIONS : LUDWIG_DESCRIPTIONS)[idx]}</span>
                       </button>
                     ))}
                   </div>
