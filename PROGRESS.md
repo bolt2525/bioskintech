@@ -1,5 +1,6 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-06 Facial sin 3D; zonas sincronizadas.
 - ✅ 2026-10-06 Tratamientos premium en tres zonas.
 - ✅ 2026-10-06 Evaluaciones y marcaciones visuales.
 - ✅ 2026-10-06 Presets y selección inequívoca.
