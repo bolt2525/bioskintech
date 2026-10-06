@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import {
-  Loader2, AlertCircle, Upload
+  Loader2, AlertCircle, Upload, MousePointer2, Rotate3D, ZoomIn
 } from 'lucide-react';
 import type { ReferenceLine, LineType } from './ReferenceLinePanel';
 export type { ReferenceLine, LineType };
@@ -64,6 +64,15 @@ export interface ProjectedPosition {
   x: number;
   y: number;
 }
+
+export type ClinicalCameraPreset = 'default' | 'face' | 'body' | 'scalp';
+
+const CAMERA_PRESETS: Record<ClinicalCameraPreset, { position: [number, number, number]; target: [number, number, number] }> = {
+  default: { position: [0, 0, 12], target: [0, 0, 0] },
+  face: { position: [0, 0.15, 7.2], target: [0, 0.15, 0] },
+  body: { position: [0, 0, 7.2], target: [0, 0, 0] },
+  scalp: { position: [0, 1.8, 6.5], target: [0, 1.2, 0] },
+};
 
 // ==========================================
 // NUEVOS TIPOS: HERRAMIENTAS HA
@@ -282,6 +291,8 @@ interface Clinical3DViewerProps {
   height?: string;
   /** URL del modelo GLB (default: /models/clinical/male_head.glb) */
   modelUrl?: string;
+  /** Encuadre inicial optimizado para la región clínica */
+  cameraPreset?: ClinicalCameraPreset;
   /** Modo solo lectura (sin clicks) */
   readOnly?: boolean;
   /** Saltar el diálogo interno de confirmación (el padre maneja su propio diálogo) */
@@ -382,6 +393,7 @@ const ThreeEngine: React.FC<{
   highlightedPointIds?: string[];
   onEditablePointHovered?: (id: string | null) => void;
   onBackgroundClick?: () => void;
+  cameraPreset?: ClinicalCameraPreset;
 }> = ({
   modelSource, markers, zones, onMeshClick, onMarkerRadiusChange, onLoaded, onError, readOnly,
   referenceLines = [], lineDrawingMode, onLinePointAnchored,
@@ -398,6 +410,7 @@ const ThreeEngine: React.FC<{
   onEditablePointHovered,
   onBackgroundClick,
   pointMarkerScale = 1.0,
+  cameraPreset = 'default',
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -489,7 +502,8 @@ const ThreeEngine: React.FC<{
     scene.add(snapMesh);
 
     const camera = new THREE.PerspectiveCamera(35, mountRef.current.clientWidth / mountRef.current.clientHeight, 0.1, 1000);
-    camera.position.set(0, 0, 12);
+    const initialCamera = CAMERA_PRESETS[cameraPreset];
+    camera.position.set(...initialCamera.position);
     cameraRef.current = camera;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true });
@@ -508,6 +522,8 @@ const ThreeEngine: React.FC<{
     controls.maxDistance = 100;
     controls.minPolarAngle = 0;
     controls.maxPolarAngle = Math.PI;
+    controls.target.set(...initialCamera.target);
+    controls.update();
     controlsRef.current = controls;
 
     // Lighting
@@ -2347,7 +2363,9 @@ const ThreeEngine: React.FC<{
       });
 
       if (controlsRef.current) {
-        controlsRef.current.target.set(0, 0, 0);
+        const preset = CAMERA_PRESETS[cameraPreset];
+        cameraRef.current?.position.set(...preset.position);
+        controlsRef.current.target.set(...preset.target);
         controlsRef.current.update();
       }
 
@@ -2372,7 +2390,7 @@ const ThreeEngine: React.FC<{
     } catch (err) {
       handleLoadError(err);
     }
-  }, [modelSource]);
+  }, [modelSource, cameraPreset]);
 
   // 3. Render markers
   useEffect(() => {
@@ -3107,6 +3125,7 @@ export default function Clinical3DViewer({
   onMarkerRadiusChange,
   height = '400px',
   modelUrl = '/models/clinical/male_head.glb',
+  cameraPreset = 'default',
   readOnly = false,
   skipConfirmation = false,
   referenceLines = [],
@@ -3234,6 +3253,7 @@ export default function Clinical3DViewer({
             onEditablePointHovered={onEditablePointHovered}
             onBackgroundClick={onBackgroundClick}
             pointMarkerScale={pointMarkerScale}
+            cameraPreset={cameraPreset}
           />
         )}
       </div>
@@ -3256,6 +3276,22 @@ export default function Clinical3DViewer({
             Subir .glb
             <input type="file" accept=".glb,.gltf" className="hidden" onChange={handleFileUpload} />
           </label>
+        </div>
+      )}
+
+      {!isLoading && !modelError && (
+        <div className="pointer-events-none absolute bottom-3 left-3 right-3 z-10 flex flex-wrap items-center gap-2 text-[10px] font-medium text-white/90">
+          <span className="inline-flex items-center gap-1 rounded-full bg-slate-950/65 px-2.5 py-1.5 backdrop-blur-sm">
+            <Rotate3D className="h-3.5 w-3.5" aria-hidden="true" /> Arrastra para rotar
+          </span>
+          <span className="inline-flex items-center gap-1 rounded-full bg-slate-950/65 px-2.5 py-1.5 backdrop-blur-sm">
+            <ZoomIn className="h-3.5 w-3.5" aria-hidden="true" /> Rueda para acercar
+          </span>
+          {!readOnly ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-gold-ink/85 px-2.5 py-1.5 backdrop-blur-sm">
+              <MousePointer2 className="h-3.5 w-3.5" aria-hidden="true" /> Clic para marcar
+            </span>
+          ) : null}
         </div>
       )}
 

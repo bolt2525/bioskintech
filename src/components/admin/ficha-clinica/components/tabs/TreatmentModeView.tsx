@@ -52,6 +52,115 @@ function getClinicalDataBadge(t: Treatment, mode: TreatmentMode): string | null 
   return `${d.scale === 'norwood' ? 'Norwood' : 'Ludwig'} ${d.stage ?? ''} · ${d.density ?? 'sin densidad'}`;
 }
 
+function ClinicalSummaryPanel({
+  mode,
+  data,
+  onEdit,
+}: {
+  mode: TreatmentMode;
+  data: PostCareData | AnthropometricsData | ScalpAssessmentData | undefined;
+  onEdit: () => void;
+}) {
+  const titles = {
+    facial: ['Post-tratamiento', 'Evolución inmediata y cuidados'],
+    corporal: ['Antropometría', 'Medidas antes y después'],
+    capilar: ['Evaluación tricológica', 'Escala, densidad y hallazgos'],
+  } as const;
+
+  const renderContent = () => {
+    if (!data) {
+      return (
+        <div className="rounded-xl border border-dashed border-gold-300 bg-gold-50/50 p-4 text-center">
+          <ClipboardList className="mx-auto mb-2 h-6 w-6 text-gold-ink/60" aria-hidden="true" />
+          <p className="text-xs leading-5 text-gray-500">Aún no hay datos clínicos registrados para esta sesión.</p>
+        </div>
+      );
+    }
+    if (mode === 'facial') {
+      const postCare = data as PostCareData;
+      return (
+        <div className="grid grid-cols-2 gap-2">
+          {[
+            ['Eritema', postCare.erythema == null ? '—' : `${postCare.erythema}/3`],
+            ['Edema', postCare.edema == null ? '—' : `${postCare.edema}/3`],
+            ['Indicaciones', String(postCare.indications?.length || 0)],
+            ['Notas', postCare.notes?.trim() ? 'Sí' : 'No'],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-xl border border-gray-100 bg-gray-50/80 p-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{label}</p>
+              <p className="mt-1 text-sm font-semibold text-gray-800">{value}</p>
+            </div>
+          ))}
+        </div>
+      );
+    }
+    if (mode === 'corporal') {
+      const anthropometrics = data as AnthropometricsData;
+      const beforeCount = Object.values(anthropometrics.before || {}).filter(Boolean).length;
+      const afterCount = Object.values(anthropometrics.after || {}).filter(Boolean).length;
+      return (
+        <div className="space-y-2">
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-xl border border-gray-100 bg-gray-50/80 p-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Medidas antes</p>
+              <p className="mt-1 text-lg font-semibold text-gray-800">{beforeCount}</p>
+            </div>
+            <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 p-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-600">Medidas después</p>
+              <p className="mt-1 text-lg font-semibold text-emerald-800">{afterCount}</p>
+            </div>
+          </div>
+          <p className="rounded-lg bg-gray-50 px-3 py-2 text-[11px] text-gray-500">
+            {anthropometrics.custom?.length || 0} medida(s) personalizada(s)
+          </p>
+        </div>
+      );
+    }
+    const scalp = data as ScalpAssessmentData;
+    return (
+      <div className="space-y-2">
+        <div className="rounded-xl border border-violet-100 bg-violet-50/70 p-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-violet-500">Clasificación</p>
+          <p className="mt-1 font-semibold text-gray-800">
+            {scalp.scale ? `${scalp.scale === 'norwood' ? 'Norwood' : 'Ludwig'} ${scalp.stage || ''}` : 'Sin clasificar'}
+          </p>
+        </div>
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <div className="rounded-xl border border-gray-100 bg-gray-50/80 p-3">
+            <p className="text-gray-400">Densidad</p>
+            <p className="mt-1 font-semibold text-gray-800">{scalp.density || '—'}</p>
+          </div>
+          <div className="rounded-xl border border-gray-100 bg-gray-50/80 p-3">
+            <p className="text-gray-400">Alopecia</p>
+            <p className="mt-1 truncate font-semibold text-gray-800">{scalp.alopecia_type || '—'}</p>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <aside className="admin-surface h-fit p-4 xl:sticky xl:top-4">
+      <div className="mb-4">
+        <span className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-gold-50 text-gold-ink">
+          <ClipboardList className="h-5 w-5" aria-hidden="true" />
+        </span>
+        <h3 className="font-semibold text-gray-900">{titles[mode][0]}</h3>
+        <p className="mt-1 text-xs text-gray-500">{titles[mode][1]}</p>
+      </div>
+      {renderContent()}
+      <button
+        type="button"
+        onClick={onEdit}
+        className="admin-focus-ring mt-4 w-full rounded-xl bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-gold-ink"
+      >
+        {data ? 'Editar datos clínicos' : 'Completar evaluación'}
+      </button>
+      <p className="mt-3 text-center text-[10px] leading-4 text-gray-400">Se guarda dentro de esta sesión y permanece vinculado al historial.</p>
+    </aside>
+  );
+}
+
 // Sugerencias de equipos: nombres de marcas/modelos ya catalogados por tipo de aparatología
 const EQUIPMENT_SUGGESTIONS: string[] = [
   ...Object.entries(treatmentOptions.procedures)
@@ -418,10 +527,10 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="flex flex-col md:flex-row h-auto md:h-[600px] gap-6"
+      className="grid grid-cols-1 gap-5 xl:grid-cols-[15rem_minmax(0,1fr)_19rem]"
     >
       {/* Sidebar List */}
-      <div className="w-full md:w-72 border-r-0 md:border-r border-b md:border-b-0 border-gray-100 pr-0 md:pr-6 pb-4 md:pb-0 flex flex-col gap-4 shrink-0">
+      <div className="admin-surface flex max-h-[36rem] w-full flex-col gap-4 border-b border-gray-100 p-4 xl:sticky xl:top-4 xl:max-h-[calc(100dvh-12rem)]">
         <div className="font-bold text-gray-800 flex items-center gap-2 flex-wrap">
           <div className="w-1 h-5 bg-[#deb887] rounded-full" />
           Historial
@@ -547,7 +656,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
       </div>
 
       {/* Main Form */}
-      <div className="flex-1 flex flex-col gap-6 relative overflow-visible md:overflow-hidden">
+      <div className="relative flex min-w-0 flex-col gap-5 overflow-visible">
         {/* Toolbar */}
         <div className="flex flex-wrap gap-4 justify-between items-center bg-white p-4 rounded-xl border border-gray-100 shadow-sm sticky top-0 z-10">
           <div className="flex gap-2 items-center">
@@ -595,17 +704,6 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                 className="p-2 hover:bg-red-50 rounded-lg text-red-500 border border-red-100 disabled:opacity-50"
               >
                 {deleting ? <div className="animate-spin w-5 h-5 border-2 border-red-300 border-t-red-500 rounded-full" /> : <Trash2 className="w-5 h-5" />}
-              </motion.button>
-            </Tooltip>
-
-            <Tooltip content={mode === 'corporal' ? 'Antropometría' : mode === 'capilar' ? 'Evaluación tricológica' : 'Cuidados post-tratamiento'}>
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setClinicalDataModalOpen(true)}
-                className="p-2 hover:bg-[#deb887]/10 rounded-lg text-[#b8944d] border border-[#deb887]/30"
-              >
-                <ClipboardList className="w-5 h-5" />
               </motion.button>
             </Tooltip>
 
@@ -664,14 +762,15 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                 </button>
               ))}
             </div>
-            <div className="rounded-xl border border-gray-100 overflow-hidden relative" style={{ height: '280px' }}>
+            <div className="relative overflow-hidden rounded-2xl border border-gray-100 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.8)]" style={{ height: '360px' }}>
               <Clinical3DViewer
                 markers={getAreaMarkers(currentTreatment)}
                 selectedPathology="lesion"
                 modelUrl={modelUrl}
+                cameraPreset={mode === 'capilar' ? 'scalp' : mode === 'corporal' ? 'body' : 'face'}
                 skipConfirmation={true}
                 onMarkerPlaced={handleMarkerPlaced}
-                height="280px"
+                height="360px"
                 pointMarkerScale={0.6}
               />
               {getAreaMarkers(currentTreatment).length > 0 && (
@@ -882,6 +981,12 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
 
         </div>
       </div>
+
+      <ClinicalSummaryPanel
+        mode={mode}
+        data={currentTreatment.parameters?.[RESERVED_PARAM_KEYS[mode]] as PostCareData | AnthropometricsData | ScalpAssessmentData | undefined}
+        onEdit={() => setClinicalDataModalOpen(true)}
+      />
     </motion.div>
     <CrossConsultHistoryModal
       isOpen={crossHistOpen}
