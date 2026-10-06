@@ -69,8 +69,8 @@ export type ClinicalCameraPreset = 'default' | 'face' | 'body' | 'scalp';
 
 const CAMERA_PRESETS: Record<ClinicalCameraPreset, { position: [number, number, number]; target: [number, number, number] }> = {
   default: { position: [0, 0, 12], target: [0, 0, 0] },
-  face: { position: [0, 0.15, 7.2], target: [0, 0.15, 0] },
-  body: { position: [0, 0, 7.2], target: [0, 0, 0] },
+  face: { position: [0, 0.15, 8], target: [0, 0.15, 0] },
+  body: { position: [0, 0, 8.5], target: [0, 0, 0] },
   scalp: { position: [0, 1.8, 6.5], target: [0, 1.2, 0] },
 };
 
