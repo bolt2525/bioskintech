@@ -1,6 +1,7 @@
 # Progreso de BioSkinTech App
 
 - ✅ 2026-10-06 Tab Tratamientos refactorizado en 3 modos (Facial/Corporal/Capilar) con modelos 3D propios, gestión de Paquetes vs Sesiones Independientes con cálculo de deuda, y reutilización de la lógica de agrupación del historial (hook `useTreatmentGrouping`). Migración aplicada en producción: 115 tratamientos existentes asignados a modo Facial (verificado). IDOR en `package_id` detectado por revisión de seguridad y corregido antes de cerrar.
+- ✅ 2026-10-06 Fix post-deploy: `treatment_packages` causaba `permission denied` (500) en producción porque la tabla nueva no heredó RLS ni GRANT del rol `bioskin_app`. Aplicado `scripts/migrate-treatment-packages-rls.mjs` (RLS + policies + GRANT tabla/secuencia) en producción y embebido el mismo setup en `initClinicalDatabase()` para futuras inicializaciones. Verificado con simulación de solo lectura como `bioskin_app` contra el expediente real #19.
 - ✅ 2026-10-05 Recordatorios WhatsApp enrutan paciente→clínica y resumen profesional→paciente; confirmaciones sin aviso redundante.
 - ✅ 2026-10-05 WhatsApp multiusuario blindado con opt-ins, teléfono canónico único, correlación inequívoca y enlaces de 128 bits expirables.
 - ✅ 2026-10-05 Neon migrado y verificado; 60 pruebas, lint focal y build aprobados.
