@@ -287,7 +287,8 @@ async function logAudit(client, { patientId, recordId, clinicId, sessionUser, ac
 }
 
 /** IDOR guard — returns false if item doesn't belong to the current clinic */
-const CLINICAL_TABLES = new Set(['physical_exams', 'diagnoses', 'treatments', 'injectables', 'consent_forms']);
+const CLINICAL_TABLES = new Set(['physical_exams', 'diagnoses', 'treatments', 'injectables', 'consent_forms', 'treatment_packages']);
+const TREATMENT_MODES = new Set(['facial', 'corporal', 'capilar']);
 const MAX_PHOTO_BYTES = 4 * 1024 * 1024;
 const PHOTO_TYPES = new Set(['before', 'after', 'diagnostic', 'progress', 'general']);
 
@@ -839,6 +840,8 @@ export default async function handler(req, res) {
         savePhysicalExam: body.id ? null : body.record_id,
         saveDiagnosis: body.id ? null : body.record_id,
         addTreatment: body.record_id,
+        createPackage: body.record_id,
+        listPackagesByRecord: req.query.record_id,
         getInjectablesByRecord: req.query.record_id,
         addInjectable: body.record_id,
         listPrescriptions: req.query.record_id,
@@ -862,6 +865,7 @@ export default async function handler(req, res) {
         deleteDiagnosis: ['diagnoses', req.query.id],
         updateTreatment: ['treatments', body.id],
         deleteTreatment: ['treatments', req.query.id],
+        deletePackage: ['treatment_packages', req.query.id],
         getInjectablesByTreatment: ['treatments', req.query.treatment_id],
         updateInjectable: ['injectables', body.id],
         deleteInjectable: ['injectables', req.query.id],
@@ -2580,8 +2584,19 @@ export default async function handler(req, res) {
         // Whitelist: solo identificadores SQL válidos — previene SQL injection por nombres de columna
         // clinic_id/id se excluyen: un tratamiento duplicado en el cliente puede traer el clinic_id de la fila original
         const safeTreatData = Object.fromEntries(Object.entries(treatData).filter(([k]) => /^\w+$/.test(k) && k !== 'clinic_id' && k !== 'id'));
+        if (safeTreatData.treatment_mode && !TREATMENT_MODES.has(safeTreatData.treatment_mode)) {
+          return res.status(400).json({ error: 'treatment_mode inválido' });
+        }
+        // El paquete debe pertenecer al mismo expediente (previene vincular tratamientos a paquetes de otro paciente/clínica)
+        if (safeTreatData.package_id) {
+          const pkgCheck = await pool.query('SELECT 1 FROM treatment_packages WHERE id = $1 AND record_id = $2 AND clinic_id = $3', [safeTreatData.package_id, tid, effectiveClinicId]);
+          if (pkgCheck.rowCount === 0) return res.status(400).json({ error: 'package_id inválido para este expediente' });
+        }
         if (safeTreatData.parameters && typeof safeTreatData.parameters === 'object') {
           safeTreatData.parameters = JSON.stringify(safeTreatData.parameters);
+        }
+        if (safeTreatData.area_marker && typeof safeTreatData.area_marker === 'object') {
+          safeTreatData.area_marker = JSON.stringify(safeTreatData.area_marker);
         }
         const tFields = ['record_id', 'clinic_id', ...Object.keys(safeTreatData)];
         const tValues = [tid, effectiveClinicId, ...Object.values(safeTreatData)];
@@ -2593,11 +2608,24 @@ export default async function handler(req, res) {
 
       case 'updateTreatment': {
         const { id: upTreatId, ...upTreatData } = body;
+        if (!(await ownedByClinic(pool, 'treatments', upTreatId, effectiveClinicId)))
+          return res.status(403).json({ error: 'Sin permiso' });
         // Whitelist: solo identificadores SQL válidos — previene SQL injection por nombres de columna
-        // clinic_id se excluye: no debe ser modificable por el cliente (aislamiento de tenant)
-        const safeUpTreat = Object.fromEntries(Object.entries(upTreatData).filter(([k]) => /^\w+$/.test(k) && k !== 'clinic_id'));
+        // clinic_id/record_id se excluyen: no deben ser modificables por el cliente (aislamiento de tenant/expediente)
+        const safeUpTreat = Object.fromEntries(Object.entries(upTreatData).filter(([k]) => /^\w+$/.test(k) && k !== 'clinic_id' && k !== 'record_id'));
+        if (safeUpTreat.treatment_mode && !TREATMENT_MODES.has(safeUpTreat.treatment_mode)) {
+          return res.status(400).json({ error: 'treatment_mode inválido' });
+        }
+        if (safeUpTreat.package_id) {
+          const curTreat = await pool.query('SELECT record_id FROM treatments WHERE id = $1', [upTreatId]);
+          const pkgCheck = await pool.query('SELECT 1 FROM treatment_packages WHERE id = $1 AND record_id = $2 AND clinic_id = $3', [safeUpTreat.package_id, curTreat.rows[0]?.record_id, effectiveClinicId]);
+          if (pkgCheck.rowCount === 0) return res.status(400).json({ error: 'package_id inválido para este expediente' });
+        }
         if (safeUpTreat.parameters && typeof safeUpTreat.parameters === 'object') {
           safeUpTreat.parameters = JSON.stringify(safeUpTreat.parameters);
+        }
+        if (safeUpTreat.area_marker && typeof safeUpTreat.area_marker === 'object') {
+          safeUpTreat.area_marker = JSON.stringify(safeUpTreat.area_marker);
         }
         const upTFields = Object.keys(safeUpTreat);
         const upTValues = Object.values(safeUpTreat);
@@ -2622,6 +2650,53 @@ export default async function handler(req, res) {
         if (!(await ownedByClinic(pool, 'treatments', delTreatId, effectiveClinicId)))
           return res.status(403).json({ error: 'Sin permiso' });
         await pool.query('DELETE FROM treatments WHERE id = $1', [delTreatId]);
+        return res.status(200).json({ success: true });
+      }
+
+      // --- PAQUETES DE TRATAMIENTO ---
+
+      case 'createPackage': {
+        const { record_id: pkgRecordId, consultation_id: pkgConsultId, treatment_mode: pkgMode, name: pkgName, total_cost: pkgCost, estimated_sessions: pkgSessions, initial_payment: pkgInitial } = body;
+        if (!pkgRecordId || !pkgName?.trim() || !TREATMENT_MODES.has(pkgMode)) {
+          return res.status(400).json({ error: 'record_id, name y treatment_mode (facial/corporal/capilar) son requeridos' });
+        }
+        const newPkg = await pool.query(
+          `INSERT INTO treatment_packages (record_id, clinic_id, consultation_id, treatment_mode, name, total_cost, estimated_sessions, initial_payment)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+          [pkgRecordId, effectiveClinicId, pkgConsultId || null, pkgMode, pkgName.trim(), Number(pkgCost) || 0, Math.max(1, parseInt(pkgSessions) || 1), Number(pkgInitial) || 0]
+        );
+        await logAudit(pool, { recordId: pkgRecordId, sessionUser: await getSessionUserOnce(), actionType: 'create', module: 'treatment_package', summary: `Creó paquete: ${pkgName.trim()}` });
+        return res.status(201).json(newPkg.rows[0]);
+      }
+
+      case 'listPackagesByRecord': {
+        const { record_id: lpRecordId, treatment_mode: lpMode } = req.query;
+        if (!lpRecordId) return res.status(400).json({ error: 'record_id required' });
+        const lpParams = [lpRecordId];
+        let lpModeFilter = '';
+        if (lpMode && TREATMENT_MODES.has(lpMode)) {
+          lpParams.push(lpMode);
+          lpModeFilter = `AND tp.treatment_mode = $${lpParams.length}`;
+        }
+        const pkgs = await pool.query(
+          `SELECT tp.*,
+             COALESCE(SUM(t.cost), 0)::float AS sessions_paid,
+             COUNT(t.id)::int AS sessions_count
+           FROM treatment_packages tp
+           LEFT JOIN treatments t ON t.package_id = tp.id AND t.record_id = tp.record_id
+           WHERE tp.record_id = $1 ${lpModeFilter}
+           GROUP BY tp.id
+           ORDER BY tp.created_at DESC`,
+          lpParams
+        );
+        return res.status(200).json(pkgs.rows);
+      }
+
+      case 'deletePackage': {
+        const { id: delPkgId } = req.query;
+        if (!(await ownedByClinic(pool, 'treatment_packages', delPkgId, effectiveClinicId)))
+          return res.status(403).json({ error: 'Sin permiso' });
+        await pool.query('DELETE FROM treatment_packages WHERE id = $1', [delPkgId]);
         return res.status(200).json({ success: true });
       }
 

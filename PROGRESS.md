@@ -1,5 +1,6 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-06 Tab Tratamientos refactorizado en 3 modos (Facial/Corporal/Capilar) con modelos 3D propios, gestión de Paquetes vs Sesiones Independientes con cálculo de deuda, y reutilización de la lógica de agrupación del historial (hook `useTreatmentGrouping`). Migración aplicada en producción: 115 tratamientos existentes asignados a modo Facial (verificado). IDOR en `package_id` detectado por revisión de seguridad y corregido antes de cerrar.
 - ✅ 2026-10-05 Recordatorios WhatsApp enrutan paciente→clínica y resumen profesional→paciente; confirmaciones sin aviso redundante.
 - ✅ 2026-10-05 WhatsApp multiusuario blindado con opt-ins, teléfono canónico único, correlación inequívoca y enlaces de 128 bits expirables.
 - ✅ 2026-10-05 Neon migrado y verificado; 60 pruebas, lint focal y build aprobados.
