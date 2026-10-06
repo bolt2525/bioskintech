@@ -226,6 +226,34 @@
       "Pantorrillas",
       "Tobillos"
     ],
+    "capilar": [
+      "Coronilla",
+      "Vértex",
+      "Entradas",
+      "Línea de implantación frontal",
+      "Temporal derecho",
+      "Temporal izquierdo",
+      "Occipital",
+      "Difuso (toda la cabeza)"
+    ],
+    "tratamientos_capilares": [
+      "Mesoterapia capilar",
+      "Plasma rico en plaquetas (PRP) capilar",
+      "Microneedling / Dermaroller capilar",
+      "Láser de bajo nivel (LLLT)",
+      "Oxigenoterapia capilar",
+      "Infusión de minoxidil tópico",
+      "Peeling capilar exfoliante"
+    ],
+    "equipos_capilares": [
+      "Dermaroller capilar",
+      "Dermapen capilar",
+      "Mesogun capilar",
+      "Kit PRP / Centrífuga",
+      "Casco LLLT",
+      "Peine láser capilar",
+      "Equipo de oxigenoterapia"
+    ],
     "areas_especificas": [
       "Zona T",
       "Contorno facial",

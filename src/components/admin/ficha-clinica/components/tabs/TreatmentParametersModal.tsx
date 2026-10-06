@@ -76,6 +76,49 @@ const TEMPLATES: Record<string, CategoryTemplate> = {
       { key: 'intensity', label: 'Intensidad', type: 'text' },
     ],
   },
+  mesoterapia: {
+    label: 'Mesoterapia (facial / corporal / capilar)',
+    fields: [
+      { key: 'formula', label: 'Fórmula / Cóctel', type: 'text' },
+      { key: 'volume_per_point', label: 'Volumen por punto', type: 'text', unit: 'ml' },
+      { key: 'needle_depth', label: 'Profundidad de aguja', type: 'text', unit: 'mm' },
+      { key: 'punctures', label: 'N° de punciones', type: 'number' },
+    ],
+  },
+  prp: {
+    label: 'Plasma Rico en Plaquetas (PRP)',
+    fields: [
+      { key: 'blood_volume', label: 'Volumen extraído', type: 'text', unit: 'ml' },
+      { key: 'centrifuge_speed', label: 'Velocidad de centrifugado', type: 'text', unit: 'rpm' },
+      { key: 'centrifuge_time', label: 'Tiempo de centrifugado', type: 'text', unit: 'min' },
+      { key: 'injection_volume', label: 'Volumen inyectado', type: 'text', unit: 'ml' },
+    ],
+  },
+  microneedling: {
+    label: 'Microneedling / Dermapen / Dermaroller',
+    fields: [
+      { key: 'needle_depth', label: 'Profundidad de aguja', type: 'text', unit: 'mm' },
+      { key: 'passes', label: 'N° de pases', type: 'number' },
+      { key: 'product_applied', label: 'Producto aplicado', type: 'text' },
+    ],
+  },
+  hilos_tensores: {
+    label: 'Hilos tensores',
+    fields: [
+      { key: 'thread_type', label: 'Tipo de hilo', type: 'text', placeholder: 'PDO liso / cog / mono' },
+      { key: 'caliber', label: 'Calibre', type: 'text' },
+      { key: 'quantity', label: 'Cantidad de hilos', type: 'number' },
+      { key: 'technique', label: 'Técnica de inserción', type: 'text' },
+    ],
+  },
+  capilar_lllt: {
+    label: 'Láser capilar de bajo nivel (LLLT)',
+    fields: [
+      { key: 'diodes', label: 'N° de diodos', type: 'number' },
+      { key: 'wavelength', label: 'Longitud de onda', type: 'text', unit: 'nm' },
+      { key: 'session_time', label: 'Tiempo de sesión', type: 'text', unit: 'min' },
+    ],
+  },
   manual: {
     label: 'Manual / sin aparatología',
     fields: [
@@ -87,7 +130,14 @@ const TEMPLATES: Record<string, CategoryTemplate> = {
   },
 };
 
+// El orden importa: las categorías más específicas deben evaluarse antes que las genéricas
+// (p. ej. "láser capilar" debe detectar capilar_lllt y no el "laser" genérico).
 const KEYWORDS: Record<string, RegExp> = {
+  mesoterapia: /mesoterapia/i,
+  prp: /\bprp\b|plasma rico en plaquetas/i,
+  microneedling: /microneedling|dermapen|dermaroller|skinpen/i,
+  hilos_tensores: /hilos? tensor(es)?|\bpdo\b|mono ?hilo|\bcog\b/i,
+  capilar_lllt: /l\.?l\.?l\.?t\.?|l[aá]ser capilar|low level laser|casco l[aá]ser|peine l[aá]ser/i,
   laser: /l[aá]ser|ipl|nd:?yag|q-?switch|pico(sure|way)?|diodo|alejandrita|co2|erbium|thulium|ruby|revlite|spectravrm|vbeam|gentlelase|gentlemax|lightsheer|soprano|bbl|excel v|4d/i,
   radiofrecuencia: /radiofrecuencia|\brf\b|thermage|exilis|morpheus|venus (freeze|legacy)|accent|endymed|pollogen/i,
   hifu: /hifu|ultherapy|ultrasonido focalizado|doublo|ultraformer|utims|sygmalift|ultracel/i,

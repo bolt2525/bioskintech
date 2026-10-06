@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Calendar, DollarSign, Clock, Save, Trash2, Copy, Check, AlertCircle, FileText, Pencil, Layers, History, Eye, X, ChevronDown, ChevronRight, Sparkles, Wrench, Package, Wallet } from 'lucide-react';
+import { Plus, Calendar, DollarSign, Clock, Save, Trash2, Copy, Check, AlertCircle, FileText, Pencil, Layers, History, Eye, X, ChevronDown, ChevronRight, Sparkles, Wrench, Package, Wallet, ClipboardList } from 'lucide-react';
 import CrossConsultHistoryModal, { type ConsultationRef } from '../CrossConsultHistoryModal';
 import TreatmentParametersModal, { type TreatmentParameters, formatParametersAsText, upsertNotesBlock, removeNotesBlock } from './TreatmentParametersModal';
 import TreatmentPackageModal from './TreatmentPackageModal';
+import ClinicalDataModal from './ClinicalDataModal';
 import Clinical3DViewer from '../Clinical3DViewer';
+import type { Marker3D } from '../Clinical3DViewer';
 import { useAuth } from '../../../../../context/AuthContext';
 import treatmentOptions from '../../data/treatment_options.json';
 import { Tooltip } from '../../../../ui/Tooltip';
@@ -15,8 +17,40 @@ import { Dialog } from '../../../../ui/Dialog';
 import { useTreatmentGrouping } from '../../hooks/useTreatmentGrouping';
 import {
   type Treatment, type TreatmentMode, type TreatmentPackage,
-  getPackageDebt, getPackagePaidTotal,
+  type PostCareData, type AnthropometricsData, type ScalpAssessmentData,
+  getPackageDebt, getPackagePaidTotal, getAreaMarkers, RESERVED_PARAM_KEYS,
 } from '../../types/treatment';
+
+/** Zonas sugeridas por modo (chips clickeables para etiquetar cada marcación anatómica) */
+const ZONE_CHIPS_BY_MODE: Record<TreatmentMode, string[]> = {
+  facial: treatmentOptions.procedures.facial,
+  corporal: treatmentOptions.procedures.corporal,
+  capilar: (treatmentOptions.procedures as Record<string, string[]>).capilar || [],
+};
+
+/** Resumen corto (badge) de los datos clínicos del modo, para mostrar en las tarjetas del historial */
+function getClinicalDataBadge(t: Treatment, mode: TreatmentMode): string | null {
+  const data = t.parameters?.[RESERVED_PARAM_KEYS[mode]] as PostCareData | AnthropometricsData | ScalpAssessmentData | undefined;
+  if (!data) return null;
+  if (mode === 'facial') {
+    const d = data as PostCareData;
+    if (d.erythema == null && d.edema == null) return null;
+    return `Eritema ${d.erythema ?? '-'} · Edema ${d.edema ?? '-'}`;
+  }
+  if (mode === 'corporal') {
+    const d = data as AnthropometricsData;
+    const waistBefore = parseFloat(d.before?.waist || '');
+    const waistAfter = parseFloat(d.after?.waist || '');
+    if (!isNaN(waistBefore) && !isNaN(waistAfter)) {
+      const delta = waistAfter - waistBefore;
+      return `Cintura: ${delta > 0 ? '+' : ''}${delta.toFixed(1)}cm`;
+    }
+    return Object.values(d.before || {}).some(Boolean) ? 'Antropometría registrada' : null;
+  }
+  const d = data as ScalpAssessmentData;
+  if (!d.scale) return null;
+  return `${d.scale === 'norwood' ? 'Norwood' : 'Ludwig'} ${d.stage ?? ''} · ${d.density ?? 'sin densidad'}`;
+}
 
 // Sugerencias de equipos: nombres de marcas/modelos ya catalogados por tipo de aparatología
 const EQUIPMENT_SUGGESTIONS: string[] = [
@@ -94,7 +128,10 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
   const [crossHistOpen, setCrossHistOpen] = useState(false);
   const [notesModalOpen, setNotesModalOpen] = useState(false);
   const [paramsModalOpen, setParamsModalOpen] = useState(false);
+  const [clinicalDataModalOpen, setClinicalDataModalOpen] = useState(false);
   const [editingEquipmentName, setEditingEquipmentName] = useState('');
+  // Zona activa seleccionada en los chips, aplicada a la próxima marcación que se coloque en el visor 3D
+  const [activeZoneChip, setActiveZoneChip] = useState<string | null>(null);
   const [duplicating, setDuplicating] = useState(false);
   const [highlightedId, setHighlightedId] = useState<number | null>(null);
   // ponytail: string state to allow empty field and comma-as-decimal-separator
@@ -148,6 +185,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
     setCostInput('');
     setDateLocked(false);
     setMessage(null);
+    setActiveZoneChip(null);
   };
 
   const handleSelect = (treatment: Treatment) => {
@@ -155,6 +193,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
     setCostInput(treatment.cost > 0 ? String(treatment.cost) : '');
     setDateLocked(true);
     setMessage(null);
+    setActiveZoneChip(null);
   };
 
   const togglePackageExpand = (id: number) => setExpandedPackages(prev => {
@@ -274,6 +313,26 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
 
   const equipmentNames = parseEquipmentNames(currentTreatment.equipment_used);
 
+  /** Guarda los datos clínicos adicionales del modo (cuidados post-tratamiento, antropometría o evaluación tricológica) bajo la clave reservada de `parameters` */
+  const handleSaveClinicalData = (data: PostCareData | AnthropometricsData | ScalpAssessmentData) => {
+    setCurrentTreatment(prev => ({
+      ...prev,
+      parameters: { ...(prev.parameters || {}), [RESERVED_PARAM_KEYS[mode]]: data },
+    }));
+  };
+
+  /** Agrega una nueva marcación anatómica (soporta varias por sesión), etiquetada con la zona activa si hay una seleccionada */
+  const handleMarkerPlaced = (marker: Marker3D) => {
+    setCurrentTreatment(prev => ({
+      ...prev,
+      area_marker: [...getAreaMarkers(prev), { ...marker, zone: activeZoneChip || marker.zone }],
+    }));
+  };
+
+  const handleRemoveMarker = (markerId: string | undefined) => {
+    setCurrentTreatment(prev => ({ ...prev, area_marker: getAreaMarkers(prev).filter(m => m.id !== markerId) }));
+  };
+
   /** Abre el modal de parámetros para el último equipo escrito en el campo (no bloquea el guardado normal del tratamiento) */
   const handleAddEquipment = () => {
     const name = equipmentNames[equipmentNames.length - 1];
@@ -346,6 +405,11 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
       </div>
       <div className="text-xs font-semibold truncate mt-0.5">{t.procedure_name || 'Sin procedimiento'}</div>
       <div className="text-xs opacity-75 truncate">{t.equipment_used || 'Sin equipo'}</div>
+      {getClinicalDataBadge(t, mode) && (
+        <div className={`text-[10px] mt-1 truncate rounded px-1.5 py-0.5 inline-block ${currentTreatment.id === t.id ? 'bg-white/20' : 'bg-[#deb887]/10 text-[#b8944d]'}`}>
+          {getClinicalDataBadge(t, mode)}
+        </div>
+      )}
     </motion.div>
   );
 
@@ -534,6 +598,17 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
               </motion.button>
             </Tooltip>
 
+            <Tooltip content={mode === 'corporal' ? 'Antropometría' : mode === 'capilar' ? 'Evaluación tricológica' : 'Cuidados post-tratamiento'}>
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setClinicalDataModalOpen(true)}
+                className="p-2 hover:bg-[#deb887]/10 rounded-lg text-[#b8944d] border border-[#deb887]/30"
+              >
+                <ClipboardList className="w-5 h-5" />
+              </motion.button>
+            </Tooltip>
+
             {hasFeature('treatment_notes_view') && (
               <Tooltip content="Ver observaciones del expediente">
                 <motion.button
@@ -573,29 +648,52 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
 
         {/* Form Fields */}
         <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm space-y-6 overflow-y-auto custom-scrollbar">
-          {/* Visor 3D de marcación anatómica */}
+          {/* Visor 3D de marcación anatómica (múltiples zonas por sesión) */}
           <div className="space-y-2">
             <label className="block text-sm font-medium text-gray-700">Marcación Anatómica (referencial)</label>
+            <p className="text-xs text-gray-400">Selecciona una zona y luego haz clic en el modelo para marcarla. Puedes agregar varias.</p>
+            <div className="flex flex-wrap gap-1.5">
+              {(ZONE_CHIPS_BY_MODE[mode] || []).map(zone => (
+                <button
+                  key={zone}
+                  type="button"
+                  onClick={() => setActiveZoneChip(prev => prev === zone ? null : zone)}
+                  className={`px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${activeZoneChip === zone ? 'bg-[#deb887] text-white border-[#deb887]' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                >
+                  {zone}
+                </button>
+              ))}
+            </div>
             <div className="rounded-xl border border-gray-100 overflow-hidden relative" style={{ height: '280px' }}>
               <Clinical3DViewer
-                markers={currentTreatment.area_marker ? [currentTreatment.area_marker] : []}
+                markers={getAreaMarkers(currentTreatment)}
                 selectedPathology="lesion"
                 modelUrl={modelUrl}
                 skipConfirmation={true}
-                onMarkerPlaced={(marker) => setCurrentTreatment(prev => ({ ...prev, area_marker: marker }))}
+                onMarkerPlaced={handleMarkerPlaced}
                 height="280px"
                 pointMarkerScale={0.6}
               />
-              {currentTreatment.area_marker && (
+              {getAreaMarkers(currentTreatment).length > 0 && (
                 <button
                   type="button"
                   onClick={() => setCurrentTreatment(prev => ({ ...prev, area_marker: null }))}
                   className="absolute top-2 right-2 z-10 flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-gray-900/65 text-white hover:bg-gray-900/90 transition-colors border border-white/15 backdrop-blur-sm"
                 >
-                  <X size={12} /> Quitar marcación
+                  <X size={12} /> Quitar todas
                 </button>
               )}
             </div>
+            {getAreaMarkers(currentTreatment).length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {getAreaMarkers(currentTreatment).map(m => (
+                  <span key={m.id} className="flex items-center gap-1 text-[11px] bg-[#deb887]/10 text-[#b8944d] rounded-full px-2 py-0.5">
+                    {m.zone || 'Sin zona'}
+                    <button type="button" onClick={() => handleRemoveMarker(m.id)} className="hover:text-red-600"><X size={10} /></button>
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -869,6 +967,13 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
         }}
       />
     )}
+    <ClinicalDataModal
+      isOpen={clinicalDataModalOpen}
+      mode={mode}
+      initialData={currentTreatment.parameters?.[RESERVED_PARAM_KEYS[mode]] as PostCareData | AnthropometricsData | ScalpAssessmentData | undefined}
+      onClose={() => setClinicalDataModalOpen(false)}
+      onSave={handleSaveClinicalData}
+    />
     </>
   );
 }
