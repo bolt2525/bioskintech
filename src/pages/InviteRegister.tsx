@@ -16,6 +16,7 @@ import {
   AlertCircle, Loader2, ShieldCheck, AtSign,
 } from 'lucide-react';
 import BrandLogo from '../components/ui/BrandLogo';
+import { LEGAL_VERSION } from '../components/legal/LegalLayout';
 import { useAuth } from '../context/AuthContext';
 
 const API = '/api/admin-auth';
@@ -142,6 +143,7 @@ export default function InviteRegister() {
           matricula_senescyt: matriculaSenescyt.trim() || undefined,
           registro_acess: registroAcess.trim() || undefined,
           accepted_terms: acceptedTerms,
+          accepted_legal_version: LEGAL_VERSION,
         }),
       });
       const d = await r.json();

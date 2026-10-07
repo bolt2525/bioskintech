@@ -1,5 +1,10 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-06 Contrato natural; anexo negociado.
+- ✅ 2026-10-06 Garantías internacionales y versión legal.
+- ✅ 2026-10-06 Registro exige versión aceptada.
+- ✅ 2026-10-06 Plan fotográfico; implementación pendiente.
+- ✅ 2026-10-06 Contrato validado desktop y móvil.
 - ✅ 2026-10-06 Tratamientos integrados con Finanzas.
 - ✅ 2026-10-06 Permiso financiero vía sesión.
 - ✅ 2026-10-06 Bloque financiero responsivo.

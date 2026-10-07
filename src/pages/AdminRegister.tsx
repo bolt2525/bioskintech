@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import AppFooter from '../components/layout/AppFooter';
 import BrandLogo from '../components/ui/BrandLogo';
+import { LEGAL_VERSION } from '../components/legal/LegalLayout';
 
 // Contacto de soporte BioskinTech (número en formato internacional sin +)
 const BIOSKIN_SUPPORT_WA = '593984232889';
@@ -292,6 +293,7 @@ export default function AdminRegister() {
         registro_acess: registroAcess || undefined,
         especialidad: especialidad || undefined,
         accepted_terms: acceptedTerms,
+        accepted_legal_version: LEGAL_VERSION,
       };
 
       // Fuente de autorización: código, pago o invite

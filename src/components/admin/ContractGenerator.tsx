@@ -20,6 +20,7 @@ const MODULES = [
 ] as const;
 
 const initialClient = {
+  partyType: 'natural',
   contractReference: '',
   name: '',
   taxId: '',
@@ -68,6 +69,8 @@ export default function ContractGenerator() {
   const formRef = useRef<HTMLFormElement>(null);
   const [client, setClient] = useState(initialClient);
   const [chatbot, setChatbot] = useState(false);
+  const [negotiated, setNegotiated] = useState(false);
+  const [jurisdiction, setJurisdiction] = useState('Quito');
   const [selectedModules, setSelectedModules] = useState<string[]>(MODULES.map(module => module.id));
   const [moduleError, setModuleError] = useState('');
 
@@ -89,6 +92,10 @@ export default function ContractGenerator() {
     : 0;
   const total = PLATFORM_PRICE + (chatbot ? WHATSAPP_PRICE : 0) + commission;
   const includedModules = MODULES.filter(module => selectedModules.includes(module.id));
+  const naturalPerson = client.partyType === 'natural';
+  const signatory = naturalPerson ? client.name : client.representative;
+  const signatoryId = naturalPerson ? client.taxId : client.representativeId;
+  const signatoryRole = naturalPerson ? 'Persona natural, por sus propios derechos' : client.representativeRole;
 
   useEffect(() => {
     const clearPrintMode = () => document.body.classList.remove('master-contract-printing');
@@ -188,6 +195,13 @@ export default function ContractGenerator() {
             </p>
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <label className="text-sm font-medium text-gray-700 sm:col-span-2">
+                Tipo de contratante
+                <select name="partyType" value={client.partyType} onChange={event => updateClient('partyType', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 font-normal">
+                  <option value="natural">Persona natural, por sus propios derechos</option>
+                  <option value="juridica">Persona jurídica, mediante representante</option>
+                </select>
+              </label>
+              <label className="text-sm font-medium text-gray-700 sm:col-span-2">
                 Referencia de oferta o contrato <span aria-hidden="true">*</span>
                 <input required name="contractReference" autoComplete="off" placeholder="Ej.: BIOSKIN-2026-001…" value={client.contractReference} onChange={event => updateClient('contractReference', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
                 <span className="mt-1 block text-xs font-normal text-gray-600">Identificador único de esta oferta para relacionar contrato, factura y comprobante de pago.</span>
@@ -212,20 +226,20 @@ export default function ContractGenerator() {
                 <input required name="address" autoComplete="street-address" value={client.address} onChange={event => updateClient('address', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
                 <span className="mt-1 block text-xs font-normal text-gray-600">Dirección declarada para el contrato y las notificaciones formales.</span>
               </label>
-              <label className="text-sm font-medium text-gray-700">
+              {!naturalPerson && <label className="text-sm font-medium text-gray-700">
                 Persona que firma <span aria-hidden="true">*</span>
                 <input required name="representative" autoComplete="name" value={client.representative} onChange={event => updateClient('representative', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
                 <span className="mt-1 block text-xs font-normal text-gray-600">Quien aceptará o firmará el contrato por el titular.</span>
-              </label>
-              <label className="text-sm font-medium text-gray-700">
+              </label>}
+              {!naturalPerson && <label className="text-sm font-medium text-gray-700">
                 Calidad con la que firma <span aria-hidden="true">*</span>
                 <input required name="representativeRole" placeholder="Ej.: representante legal…" value={client.representativeRole} onChange={event => updateClient('representativeRole', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
                 <span className="mt-1 block text-xs font-normal text-gray-600">Use “representante legal” para una empresa o “por sus propios derechos” para una persona natural.</span>
-              </label>
-              <label className="text-sm font-medium text-gray-700">
+              </label>}
+              {!naturalPerson && <label className="text-sm font-medium text-gray-700">
                 Identificación de quien firma <span aria-hidden="true">*</span>
                 <input required name="representativeId" inputMode="numeric" pattern="(?:[0-9]{10}|[0-9]{13})" title="Ingrese una cédula de 10 dígitos o un RUC de 13 dígitos." autoComplete="off" value={client.representativeId} onChange={event => updateClient('representativeId', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
-              </label>
+              </label>}
               <label className="text-sm font-medium text-gray-700">
                 Correo de contacto <span aria-hidden="true">*</span>
                 <input required name="email" type="email" autoComplete="email" spellCheck={false} value={client.email} onChange={event => updateClient('email', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
@@ -303,6 +317,24 @@ export default function ContractGenerator() {
               </span>
             </label>
           </fieldset>
+
+          <fieldset className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+            <legend className="px-1 text-sm font-semibold text-gray-900">Condiciones particulares negociadas</legend>
+            <label className="flex items-start gap-3 text-sm text-gray-700">
+              <input type="checkbox" name="negotiated" checked={negotiated} onChange={event => setNegotiated(event.target.checked)} className="mt-1 h-4 w-4 accent-gold" />
+              <span>Incluir Anexo B: soporte, devolución proporcional, jurisdicción particular y aclaración de responsabilidad.</span>
+            </label>
+            {negotiated && <div className="mt-4 space-y-4">
+              <label className="block text-sm font-medium text-gray-700">
+                Ciudad de jurisdicción pactada
+                <select name="jurisdiction" value={jurisdiction} onChange={event => setJurisdiction(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3">
+                  <option>Quito</option>
+                  <option>Cuenca</option>
+                </select>
+              </label>
+              <p className="rounded-lg bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">El respaldo fotográfico masivo anual y las historias clínicas completas legibles todavía no están implementados. Este anexo no los promete ni resuelve esa petición del cliente. Verifique también las autorizaciones de IA y las garantías del plan de infraestructura antes de firmar.</p>
+            </div>}
+          </fieldset>
         </div>
 
         <aside className="contract-editor h-fit rounded-2xl border border-gray-200 bg-white p-5 shadow-sm xl:sticky xl:top-5">
@@ -324,8 +356,8 @@ export default function ContractGenerator() {
         <div className="border-b border-gray-200 pb-5">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8b6945]">BIOSKINTECH · Condiciones particulares</p>
           <h2 className="mt-2 text-2xl font-bold text-gray-900">Contrato anual de acceso a la plataforma</h2>
-          <p className="mt-2 text-sm leading-relaxed text-gray-600">El presente contrato contiene las condiciones particulares del servicio, el Anexo A de Tratamiento de Datos y las copias íntegras de las Condiciones de Servicio y la Política de Privacidad versión {LEGAL_VERSION}, que forman parte inseparable del acuerdo.</p>
-          <p className="mt-2 text-xs font-medium text-gray-700">Referencia: {client.contractReference || '—'} · Lugar de celebración: Cuenca, Ecuador</p>
+          <p className="mt-2 text-sm leading-relaxed text-gray-600">El presente contrato contiene las condiciones particulares del servicio, el Anexo A de Tratamiento de Datos{negotiated ? ', el Anexo B de Condiciones Negociadas' : ''} y las copias íntegras de las Condiciones de Servicio y la Política de Privacidad versión {LEGAL_VERSION}, que forman parte inseparable del acuerdo.</p>
+          <p className="mt-2 text-xs font-medium text-gray-700">Referencia: {client.contractReference || '—'} · Domicilio del Proveedor: Cuenca, Ecuador</p>
         </div>
 
         <section className="mt-6">
@@ -347,9 +379,9 @@ export default function ContractGenerator() {
                 <div><dt className="text-gray-500">RUC o cédula del titular</dt><dd className="font-medium text-gray-900">{client.taxId || '—'}</dd></div>
                 <div><dt className="text-gray-500">Domicilio contractual</dt><dd className="font-medium text-gray-900">{client.address || '—'}</dd></div>
                 <div><dt className="text-gray-500">Cuenta habilitada en BIOSKINTECH</dt><dd className="font-medium text-gray-900">{client.clinicName || '—'}</dd></div>
-                <div><dt className="text-gray-500">Firmante autorizado</dt><dd className="font-medium text-gray-900">{client.representative || '—'}</dd></div>
-                <div><dt className="text-gray-500">Identificación del firmante</dt><dd className="font-medium text-gray-900">{client.representativeId || '—'}</dd></div>
-                <div><dt className="text-gray-500">Calidad del firmante</dt><dd className="font-medium text-gray-900">{client.representativeRole || '—'}</dd></div>
+                <div><dt className="text-gray-500">Firmante</dt><dd className="font-medium text-gray-900">{signatory || '—'}</dd></div>
+                <div><dt className="text-gray-500">Identificación del firmante</dt><dd className="font-medium text-gray-900">{signatoryId || '—'}</dd></div>
+                <div><dt className="text-gray-500">Calidad del firmante</dt><dd className="font-medium text-gray-900">{signatoryRole || '—'}</dd></div>
                 <div><dt className="text-gray-500">Contacto</dt><dd className="font-medium text-gray-900">{client.email || '—'}{client.phone ? ` · ${client.phone}` : ''}</dd></div>
               </dl>
             </div>
@@ -365,6 +397,7 @@ export default function ContractGenerator() {
             </ul>
           ) : <p className="mt-3 text-sm text-gray-700">No se seleccionaron módulos individuales.</p>}
           {chatbot && <p className="mt-3 text-sm text-gray-700"><span className="font-semibold text-gray-900">Chatbot WhatsApp del sistema:</span> servicio opcional contratado durante esta vigencia anual.</p>}
+          {!chatbot && <p className="mt-3 text-sm text-gray-700"><strong>Excluido:</strong> chatbot WhatsApp del sistema; no se cobra ese adicional. Las comunicaciones opcionales no se habilitan por la mera firma de este contrato.</p>}
         </section>
 
         <section className="contract-economic-section mt-6">
@@ -382,7 +415,7 @@ export default function ContractGenerator() {
 
         <section className="mt-6 border-t border-gray-200 pt-5">
           <h3 className="text-sm font-bold uppercase tracking-wide text-gray-800">4. Documentos integrantes y orden de prevalencia</h3>
-          <p className="mt-2 text-sm leading-relaxed text-gray-700">Forman un único acuerdo esta carátula y sus condiciones particulares, el Anexo A de Tratamiento de Datos, las Condiciones de Servicio y la Política de Privacidad versión {LEGAL_VERSION}, cuyas copias se adjuntan. En caso de contradicción, prevalecen: (i) estas condiciones particulares para identidad, precio, módulos y vigencia; (ii) el Anexo A para el tratamiento de datos por cuenta del Cliente; y (iii) las Condiciones de Servicio y la Política de Privacidad para sus respectivas materias. Siempre prevalece la ley imperativa.</p>
+          <p className="mt-2 text-sm leading-relaxed text-gray-700">Forman un único acuerdo esta carátula y sus condiciones particulares, el Anexo A de Tratamiento de Datos{negotiated ? ', el Anexo B de Condiciones Negociadas' : ''}, las Condiciones de Servicio y la Política de Privacidad versión {LEGAL_VERSION}, cuyas copias se adjuntan. Las condiciones particulares prevalecen para identidad, precio, módulos y vigencia; el Anexo A para el encargo de datos; {negotiated ? 'y el Anexo B exclusivamente para las disposiciones que identifica y sustituye expresamente, incluso cuando figuren en el Anexo A. ' : ''}Los documentos generales rigen las materias restantes. Siempre prevalece la ley imperativa.</p>
         </section>
 
         <section className="contract-signature-section mt-6">
@@ -393,22 +426,37 @@ export default function ContractGenerator() {
 
         <section className="mt-6">
           <h3 className="text-sm font-bold uppercase tracking-wide text-gray-800">6. Disponibilidad, soporte y responsabilidad</h3>
-          <p className="mt-2 text-sm leading-relaxed text-gray-700">No se pacta un porcentaje de disponibilidad, tiempo de respuesta o recuperación distinto de lo descrito en los documentos adjuntos. Puede haber mantenimientos, fallas e indisponibilidad de terceros. Los respaldos reducen riesgos, pero no garantizan recuperación total; el Cliente debe conservar las copias exigidas por la normativa aplicable.</p>
-          <p className="mt-2 text-sm leading-relaxed text-gray-700">En la máxima medida permitida por la ley, se excluyen daños indirectos y lucro cesante. La responsabilidad contractual total del Proveedor frente al Cliente no excederá lo efectivamente pagado bajo este contrato durante los 12 meses anteriores al hecho. Este límite no opera en supuestos que legalmente no puedan limitarse y no reduce obligaciones frente a Titulares o autoridades de protección de datos.</p>
+          <p className="mt-2 text-sm leading-relaxed text-gray-700">{negotiated ? 'Los horarios, primeras respuestas, objetivos de recuperación y excepciones de responsabilidad constan en el Anexo B.' : 'No se pacta un porcentaje de disponibilidad, tiempo de respuesta o recuperación distinto de lo descrito en los documentos adjuntos.'} Puede haber mantenimientos, fallas e indisponibilidad de terceros. Los respaldos reducen riesgos, pero no garantizan recuperación total; el Cliente debe conservar las copias exigidas por la normativa aplicable.</p>
+          <p className="mt-2 text-sm leading-relaxed text-gray-700">En la máxima medida permitida por la ley, se excluyen daños indirectos y lucro cesante. {negotiated ? 'Los límites contractuales se detallan en el Anexo B.' : 'La responsabilidad contractual total del Proveedor frente al Cliente no excederá lo efectivamente pagado bajo este contrato durante los 12 meses anteriores al hecho.'} Ningún límite opera ante dolo, culpa grave o supuestos legalmente indisponibles, ni reduce obligaciones frente a Titulares o autoridades de protección de datos.</p>
         </section>
 
         <section className="mt-6">
           <h3 className="text-sm font-bold uppercase tracking-wide text-gray-800">7. Aceptación y firma</h3>
           <p className="mt-2 text-sm leading-relaxed text-gray-700">Las partes declaran haber verificado su identificación, facultades, alcance, importes y anexos antes de suscribir. El Cliente confirma haber recibido, leído y aceptado los documentos adjuntos versión {LEGAL_VERSION}. La firma manuscrita o electrónica válida de este paquete expresa la aceptación del acuerdo completo.</p>
           <div className="signature-block mt-12 grid gap-10 sm:grid-cols-2">
-            <div className="border-t border-gray-400 pt-2 text-sm text-gray-700">Firma del cliente · {client.representative || 'Nombre'}</div>
+            <div className="border-t border-gray-400 pt-2 text-sm text-gray-700">Firma del cliente · {signatory || 'Nombre'}</div>
             <div className="border-t border-gray-400 pt-2 text-sm text-gray-700">Firma del proveedor · Rafael Israel Larrea Galindo</div>
           </div>
           <div className="signature-block mt-8 grid gap-6 text-xs text-gray-600 sm:grid-cols-2">
-            <p>Fecha: ____________________<br />Lugar: Cuenca, Ecuador</p>
+            <p>Fecha: ____________________<br />Lugar de firma: ____________________</p>
             <p>Fecha: ____________________<br />RUC: 0105872600001</p>
           </div>
         </section>
+
+        {negotiated && <section className="contract-annex mt-10">
+          <h2 className="text-2xl font-bold text-gray-900">Anexo B · Condiciones particulares negociadas</h2>
+          <p className="mt-2 text-xs text-gray-600">Vinculado a {client.contractReference || 'la referencia pendiente'}. Solo modifica este contrato; no altera las condiciones de otros clientes.</p>
+          <div className="mt-6 space-y-5 text-sm leading-relaxed text-gray-700">
+            <section><h3 className="font-bold text-gray-900">B.1. Soporte y clasificación</h3><p className="mt-1">Sustituye las reglas de soporte de la cláusula 6 de la carátula y del Art. 19 de las Condiciones. Atención de lunes a viernes, de 09:00 a 18:00, hora de Ecuador continental (UTC−5), excepto feriados nacionales y del domicilio del Proveedor. Canal de registro: soporte-tecnico@bioskintechapp.com; escalamiento: WhatsApp oficial. No se ofrece atención humana continua 24/7.</p><ul className="mt-2 list-disc space-y-1 pl-5"><li>P1: indisponibilidad total o imposibilidad general de consultar fichas, sin alternativa. Primera respuesta humana en 4 horas hábiles; actualización cada 4 horas hábiles mientras persista.</li><li>P2: función principal afectada con alternativa temporal. Primera respuesta en 8 horas hábiles; actualización al menos cada día hábil.</li><li>P3: consultas, capacitación o defectos menores. Primera respuesta en 2 días hábiles.</li></ul><p className="mt-2">El cómputo comienza al recibirse el reporte por correo y acumula únicamente horas de atención. Un acuse automático no es primera respuesta. La clasificación se comunica al Cliente y puede revisarse según el impacto.</p></section>
+            <section><h3 className="font-bold text-gray-900">B.2. Recuperación y mantenimiento</h3><p className="mt-1">Objetivos iniciales, no plazos máximos garantizados: ofrecer una alternativa o recuperar P1 en 1 día hábil y P2 en 3 días hábiles desde el reporte. No equivalen a un RTO certificado ni a una garantía de disponibilidad. Si no se alcanzan, el Proveedor informará causas, acciones, dependencias y una nueva estimación. No se suspenden las obligaciones de información, mitigación ni los remedios de B.3 por una falla de terceros. Mantenimiento planificado: aviso con 48 horas corridas, salvo urgencias de seguridad.</p><p className="mt-2">La recuperación depende de la última copia válida y del incidente. Una programación diaria no garantiza un RPO de 24 horas si una copia falla. No se ofrece recuperación de fotografías que no cuenten con copia independiente; el respaldo fotográfico anual sigue pendiente de implementación y acuerdo.</p></section>
+            <section><h3 className="font-bold text-gray-900">B.3. Terminación y devolución proporcional</h3><p className="mt-1">Sustituye los Arts. 4, 13 y 17 de las Condiciones en lo siguiente: si el Proveedor termina anticipadamente sin incumplimiento del Cliente, retira una función principal contratada sin reemplazo equivalente o mantiene un incumplimiento imputable que impida el uso esencial y no lo subsana dentro de 5 días hábiles del requerimiento escrito, el Cliente podrá terminar y recibirá el importe de suscripción efectivamente pagado, IVA incluido, multiplicado por los días naturales pendientes y dividido por los días naturales del período contratado. El remanente se calcula desde la terminación efectiva; se devuelve dentro de 15 días hábiles, con el ajuste tributario correspondiente. No incluye consumos o servicios efectivamente prestados ni recargos de terceros no recuperados, sin perjuicio de derechos imperativos. Se mantiene el aviso de 30 días para discontinuación planificada y se facilita la exportación disponible; una falla de terceros no exonera automáticamente al Proveedor.</p></section>
+            <section><h3 className="font-bold text-gray-900">B.4. Devolución de datos y conservación</h3><p className="mt-1">Se mantiene el plazo de 30 días naturales posteriores al vencimiento o terminación para solicitar por los canales oficiales la exportación de los formatos actualmente disponibles. No se concede una retención gratuita de 90 días. Una ampliación requerirá cotización, aceptación escrita y confirmación técnica antes de vencer el plazo; no se presume ni altera automáticamente el borrado programado. La entrega masiva de fotografías y de historias clínicas completas legibles no está incluida en el sistema actual y deberá acordarse por separado después de implementar y verificar ese flujo. Los archivos de papel no digitalizados no pueden exportarse. Las copias residuales inmutables mantienen sus ciclos de retención, aisladas del uso ordinario, y se respetan obligaciones legales aplicables.</p></section>
+            <section><h3 className="font-bold text-gray-900">B.5. Incidentes, IA y garantías internacionales</h3><p className="mt-1">Sustituye A.6 y el Art. 11 de la Política respecto del plazo de aviso: el Proveedor comunicará al Cliente una vulneración que afecte sus datos sin dilación indebida y, como máximo, dentro de 24 horas corridas desde que tenga conocimiento, sin esperar a concluir la investigación. El aviso inicial contendrá lo conocido, contacto, alcance preliminar y medidas; se completará progresivamente. No sustituye las notificaciones legales a autoridades o Titulares. Este plazo no es un compromiso de detección en 24 horas ni depende del horario de soporte.</p><p className="mt-2">La firma, el pago o el uso del servicio no autorizan IA. El Proveedor no habilitará ni utilizará funciones de IA sobre datos del Cliente sin su instrucción expresa, documentada y revocable, con identificación del proveedor, finalidad y datos enviados. La instrucción no sustituye la base jurídica requerida respecto de los pacientes. Antes de firmar se debe comprobar la configuración y los controles efectivos; este anexo no acredita esa comprobación.</p><p className="mt-2">Las fuentes y salvaguardas públicas de infraestructura se detallan en el Art. 5 de la Política. El Proveedor facilitará a solicitud razonable la evidencia disponible de los acuerdos aplicables, regiones, subencargados y evaluación del mecanismo de transferencia conforme a la normativa ecuatoriana. No se afirma que una certificación, cláusula extranjera o consentimiento del Cliente equivalga por sí solo a una garantía de cumplimiento de la LOPDP. Deben verificarse cobertura contractual y medidas efectivas antes de formalizar.</p></section>
+            <section><h3 className="font-bold text-gray-900">B.6. Responsabilidad y alcance del límite vigente</h3><p className="mt-1">Se mantiene, sin aumentar su importe, el límite contractual de la cláusula 6 de la carátula y del Art. 14 de las Condiciones: el valor efectivamente pagado por la suscripción en los 12 meses anteriores al hecho. No se acepta excluir con carácter general del límite los incumplimientos de confidencialidad, protección de datos o pérdida de información. Esto no exonera al Proveedor de aplicar medidas de seguridad razonables y proporcionales al riesgo ni de cumplir sus obligaciones de tratamiento, respaldo, asistencia y notificación.</p><p className="mt-2">El límite y las exclusiones no operan ante dolo, culpa grave, prohibiciones imperativas ni responsabilidades indisponibles frente a Titulares o autoridades. No constituyen un blindaje frente a toda reclamación o sanción. La imputabilidad, causalidad y cuantía se determinarán conforme a la ley; la mera intervención de un tercero no excluye la responsabilidad del Proveedor. No se garantiza la ausencia absoluta de incidentes ni recuperación total. La conservación del límite es una contrapropuesta que requiere aceptación del Cliente y revisión jurídica.</p></section>
+            <section><h3 className="font-bold text-gray-900">B.7. Ley y jurisdicción particular</h3><p className="mt-1">Sustituye el Art. 21 de las Condiciones únicamente para este contrato: rige la ley ecuatoriana; se intentará una solución directa durante 30 días desde la notificación escrita. Las partes podrán acordar mediación voluntaria, incluso a distancia, sin imponer arbitraje ni bloquear medidas urgentes. Si no hay acuerdo, conocerán los jueces competentes de {jurisdiction}, Ecuador, sin alterar competencias legalmente obligatorias. El domicilio del Proveedor y el lugar de firma no cambian por este pacto.</p></section>
+            <section><h3 className="font-bold text-gray-900">B.8. Activación y capacitación</h3><p className="mt-1">Una vez firmado el paquete completo, confirmado el pago y recibidos los datos de la cuenta y del administrador, el Proveedor activará el servicio dentro de 1 día hábil y propondrá, dentro de 3 días hábiles, fechas para la reunión inicial y capacitación. La fecha efectiva de la reunión se coordina según disponibilidad de ambas partes; el plazo de propuesta no garantiza celebrarla en ese período. El Proveedor confirmará la activación por escrito. La capacitación cubrirá acceso, permisos, fichas, consentimientos y exportaciones disponibles; las integraciones opcionales requieren su autorización y configuración.</p></section>
+          </div>
+        </section>}
 
         <section className="contract-annex mt-10">
           <div className="border-b border-gray-300 pb-5">

@@ -1224,7 +1224,7 @@ async function claimSetupTokenFn(token, newPassword) {
 
 /** Extrae el usuario autenticado del header Authorization */
 // Cambiar esta fecha al publicar nuevas Condiciones/Política obliga a todos los usuarios a re-aceptar.
-export const LEGAL_VERSION = '2026-10-01';
+export const LEGAL_VERSION = '2026-10-06';
 
 async function recordLegalAcceptance(userId, clinicId, req) {
   const ip = String(req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || '').split(',')[0].trim().slice(0, 100) || null;
@@ -2461,6 +2461,8 @@ export default async function handler(req, res) {
     if (action === 'register') {
       if (req.body?.accepted_terms !== true)
         return res.status(400).json({ error: 'Debes aceptar las Condiciones de Servicio y la Política de Privacidad' });
+      if (req.body?.accepted_legal_version !== LEGAL_VERSION)
+        return res.status(400).json({ error: 'La versión de las Condiciones de Servicio y la Política de Privacidad está desactualizada' });
       const result = await registerClinic(req.body || {});
       if (result.success) await recordLegalAcceptance(result.user.id, result.user.clinic_id, req).catch(e => console.error('[legal] acceptance log error:', e.code || e.message));
       return res.status(result.error ? 400 : 201).json(result);
@@ -2477,6 +2479,8 @@ export default async function handler(req, res) {
     if (action === 'useInvite') {
       if (req.body?.accepted_terms !== true)
         return res.status(400).json({ error: 'Debes aceptar las Condiciones de Servicio y la Política de Privacidad' });
+      if (req.body?.accepted_legal_version !== LEGAL_VERSION)
+        return res.status(400).json({ error: 'La versión de las Condiciones de Servicio y la Política de Privacidad está desactualizada' });
       const token = req.query.token || req.body?.token;
       const result = await useInviteLink(token, req.body || {});
       if (result.success) await recordLegalAcceptance(result.user.id, result.user.clinic_id, req).catch(e => console.error('[legal] acceptance log error:', e.code || e.message));

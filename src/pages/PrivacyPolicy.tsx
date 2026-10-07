@@ -103,6 +103,14 @@ export default function PrivacyPolicy({ embedded = false }: { embedded?: boolean
           Estos proveedores publican programas de seguridad y sus propias políticas rigen el tratamiento que realizan. BIOSKINTECH evaluará y aplicará las
           garantías exigibles para las transferencias internacionales bajo la LOPDP. La autorización del Cliente no sustituye esas garantías ni su deber de informar a los pacientes cuando corresponda.
         </p>
+        <p className="font-semibold text-gray-800 mt-2">Garantías, evidencia y límites de la infraestructura internacional</p>
+        <ul className={ul}>
+          <li><strong>Vercel:</strong> su <a href="https://vercel.com/legal/dpa" className="text-gold-dark underline">acuerdo de tratamiento (DPA)</a> publica obligaciones de seguridad, confidencialidad, subencargados, asistencia, devolución y supresión, y mecanismos de transferencia para las jurisdicciones allí indicadas. El documento publicado aplica a planes Pro y Enterprise; no se presume su cobertura en Hobby. Debe verificarse el plan y el acuerdo aplicables a la cuenta de BIOSKINTECH.</li>
+          <li><strong>Neon:</strong> sus <a href="https://neon.com/platform-terms" className="text-gold-dark underline">condiciones específicas vigentes</a> remiten a los acuerdos de Databricks e incluyen un anexo de seguridad: controles de acceso, cifrado, registro y respuesta a incidentes, y continuidad. La región de la base principal documentada es AWS us-east-1; esto no acredita que todos los accesos, registros técnicos o subencargados estén limitados a esa región.</li>
+          <li><strong>Cloudflare:</strong> publica un <a href="https://www.cloudflare.com/cloudflare-customer-dpa/" className="text-gold-dark underline">DPA</a>, un <a href="https://www.cloudflare.com/security-exhibit/" className="text-gold-dark underline">anexo de seguridad</a> y una <a href="https://www.cloudflare.com/gdpr/subprocessors/" className="text-gold-dark underline">lista de subencargados</a>. Las fotografías se almacenan en R2 privado y se acceden mediante enlaces firmados. Una región de colocación no equivale por sí sola a una garantía contractual de residencia exclusiva.</li>
+          <li><strong>Verificación aplicable:</strong> BIOSKINTECH debe documentar el proveedor y servicio efectivos, países o regiones pertinentes, datos y finalidades, acuerdo de encargo aplicable, medidas de seguridad y el mecanismo de transferencia que corresponda bajo la normativa ecuatoriana. A solicitud razonable facilitará la evidencia disponible, sin revelar credenciales, secretos ni datos de otras clínicas.</li>
+          <li><strong>Límites:</strong> certificaciones, cláusulas contractuales extranjeras y documentos públicos son evidencias a evaluar, no una certificación de BIOSKINTECH ni una declaración automática de adecuación bajo la LOPDP. No se ofrece invulnerabilidad, recuperación total, residencia exclusivamente ecuatoriana ni un plazo de aviso de terceros que no esté contratado. Los cambios relevantes se informarán conforme al acuerdo de encargo aplicable.</li>
+        </ul>
       </Section>
 
       <Section number={6} title="Inteligencia artificial" icon={<Brain className="w-4 h-4" />}>
@@ -165,6 +173,7 @@ export default function PrivacyPolicy({ embedded = false }: { embedded?: boolean
         <ol className="list-decimal list-inside space-y-1.5 pl-1">
           <li>BIOSKINTECH adoptará medidas para contener y mitigar el incidente.</li>
           <li>Como Encargado, notificará al Cliente afectado sin dilación indebida desde que tenga conocimiento de una violación que afecte sus datos, con la información disponible, y la completará progresivamente.</li>
+          <li>Si un anexo particular pacta un plazo de aviso más estricto, ese plazo rige para el Cliente correspondiente; no se espera a concluir la investigación para el aviso inicial. Los plazos contractuales no sustituyen los legales ni constituyen una garantía de detección inmediata.</li>
           <li>El Cliente, como Responsable de los datos de sus pacientes, notificará a la Superintendencia de Protección de Datos Personales y a los Titulares en los plazos de la LOPDP. BIOSKINTECH colaborará con la información técnica a su alcance.</li>
           <li>Respecto de los datos de los que BIOSKINTECH es Responsable, realizará directamente las notificaciones legales.</li>
         </ol>

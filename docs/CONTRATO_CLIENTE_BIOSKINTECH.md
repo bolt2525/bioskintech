@@ -4,9 +4,11 @@
 >
 > Este archivo es material interno de revisión y no es el documento generado para firma. El paquete final emitido por Master Admin incorpora condiciones particulares, anexo de tratamiento, Condiciones de Servicio y Política de Privacidad. Su orden de prevalencia consta en la cláusula 3 de este archivo y en el paquete generado.
 
-**Versión de referencia de los documentos publicados:** 2026-10-01
-**Fecha de preparación:** 1 de octubre de 2026
+**Versión de referencia de los documentos publicados:** 2026-10-06
+**Fecha de preparación:** 6 de octubre de 2026
 **Lugar de referencia contractual en las Condiciones:** Cuenca, Ecuador
+
+**Actualización de negociación:** el generador distingue persona natural de persona jurídica y permite un Anexo B opcional para soporte, devolución proporcional, aviso de incidentes en 24 horas corridas y jurisdicción particular Quito. Se mantienen la retención de 30 días y el límite de responsabilidad vigente, con las excepciones legales. Véase [garantías y condiciones particulares](./GARANTIAS_Y_CONDICIONES_PARTICULARES.md). No se promete respaldo fotográfico anual ni historias clínicas completas legibles mientras esas funciones no estén implementadas; el punto 4 y la aceptación del límite siguen pendientes de acuerdo.
 
 ## 1. Comparecientes y datos por completar
 
@@ -21,11 +23,11 @@ Calidad: **persona natural / por sus propios derechos**
 Razón social o nombre: **[PENDIENTE DE COMPLETAR]**  
 RUC/cédula: **[PENDIENTE DE COMPLETAR]**  
 Domicilio: **[PENDIENTE DE COMPLETAR]**  
-Representante, cargo y facultad para contratar: **[PENDIENTE DE COMPLETAR]**  
+Calidad y firmante: **[POR SUS PROPIOS DERECHOS / REPRESENTANTE, SEGÚN CORRESPONDA]**
 Correo de contacto y facturación: **[PENDIENTE DE COMPLETAR]**  
 Clínica/cuenta a la que se aplicará el servicio: **[PENDIENTE DE COMPLETAR]**
 
-Las personas que suscriben declaran contar con capacidad y facultades para obligar a la parte que representan. La identidad del Proveedor debe contrastarse con su documento tributario vigente antes de cada firma.
+Las personas que suscriben declaran contar con capacidad para contratar por sus propios derechos o, si corresponde, facultades para obligar a la persona jurídica representada. La identidad del Proveedor debe contrastarse con su documento tributario vigente antes de cada firma.
 
 ## 2. Objeto y naturaleza del servicio
 
@@ -55,9 +57,9 @@ El contrato se integra con:
 3. la **Política de Privacidad y Tratamiento de Datos Personales** vigente; y
 4. la cotización, plan y condiciones comerciales expresamente aceptados por el Cliente.
 
-Las Condiciones de Servicio declaran que el registro, aceptación de invitación, pago o uso de la Plataforma constituye aceptación electrónica de esas Condiciones y de la Política de Privacidad. El Cliente acepta que estas últimas se encuentran en versión **2026-10-01** al celebrar este documento, salvo que la pantalla de aceptación o la oferta aceptada identifique otra versión. Las nuevas versiones se notifican en el panel y deben aceptarse para continuar el uso; el sistema registra la aceptación con versión, fecha, IP y navegador.
+Las Condiciones de Servicio declaran que el registro, aceptación de invitación, pago o uso de la Plataforma constituye aceptación electrónica de esas Condiciones y de la Política de Privacidad. El Cliente acepta que estas últimas se encuentran en versión **2026-10-06** al celebrar este documento, salvo que la pantalla de aceptación o la oferta aceptada identifique otra versión. Las nuevas versiones se notifican en el panel y deben aceptarse para continuar el uso; el sistema registra la aceptación con versión, fecha, IP y navegador.
 
-En caso de contradicción, las condiciones particulares firmadas prevalecen para identidad, precio, módulos y vigencia; el anexo de tratamiento prevalece para el encargo de datos; y las Condiciones de Servicio y la Política rigen sus materias restantes. Siempre prevalece la ley imperativa.
+En caso de contradicción, las condiciones particulares firmadas prevalecen para identidad, precio, módulos y vigencia; el anexo de tratamiento prevalece para el encargo de datos; un Anexo B negociado sustituye solo las disposiciones que identifica expresamente para ese contrato; y las Condiciones de Servicio y la Política rigen sus materias restantes. Siempre prevalece la ley imperativa.
 
 ## 4. Precio, facturación y vigencia
 
@@ -104,7 +106,7 @@ La Política de Privacidad describe como medidas de la Plataforma: comunicacione
 
 Estas medidas no constituyen garantía de invulnerabilidad. BIOSKINTECH declara una obligación de medios: aplicar medidas razonables y proporcionales al riesgo, sin garantizar la ausencia absoluta de incidentes. La seguridad también depende de la custodia de credenciales, dispositivos y cuentas conectadas por parte del Cliente.
 
-Ante un incidente confirmado, BIOSKINTECH declara que adoptará medidas de contención y mitigación y notificará al Cliente afectado sin dilación indebida desde que lo confirme, con la información disponible. El Cliente, como Responsable de los datos de sus pacientes, efectuará las notificaciones a la autoridad y a los Titulares dentro de los plazos legales; BIOSKINTECH colaborará con la información técnica a su alcance. Las notificaciones relativas a datos de los que BIOSKINTECH es Responsable corresponden a BIOSKINTECH.
+Ante una vulneración de datos de la que tenga conocimiento, BIOSKINTECH declara que adoptará medidas de contención y mitigación y notificará al Cliente afectado sin dilación indebida, con la información disponible, sin esperar a concluir la investigación. Si se pacta el Anexo B, el aviso inicial tiene un máximo de 24 horas corridas desde su conocimiento, independiente del horario de soporte. El Cliente, como Responsable de los datos de sus pacientes, efectuará las notificaciones a la autoridad y a los Titulares dentro de los plazos legales; BIOSKINTECH colaborará con la información técnica a su alcance. Las notificaciones relativas a datos de los que BIOSKINTECH es Responsable corresponden a BIOSKINTECH.
 
 ## 8. Respaldos, recuperación y exportación
 
@@ -205,7 +207,7 @@ Este borrador se preparó contrastando el texto contractual con la implementaci�
 |---|---|
 | Condiciones de Servicio | `src/pages/TermsOfService.tsx`: objeto y límites del servicio (arts. 1, 8–9); pagos y pruebas (arts. 4–5); obligaciones del Cliente y firma (arts. 7–8); propiedad, respaldos y terceros (arts. 10–12); disponibilidad y responsabilidad (arts. 13–15); suspensión, terminación y ley (arts. 17–21). |
 | Política de Privacidad | `src/pages/PrivacyPolicy.tsx`: roles (art. 1); categorías de datos y subencargados (arts. 3–5); IA y finalidades (arts. 6–7); seguridad e incidentes (arts. 10–11); conservación y fin del servicio (arts. 12–13). |
-| Versión y contacto legal | `src/components/legal/LegalLayout.tsx`: versión 2026-10-01, correo y WhatsApp oficiales. |
+| Versión y contacto legal | `src/components/legal/LegalLayout.tsx`: versión 2026-10-06, correo y WhatsApp oficiales. |
 | Aceptación de documentos | `src/components/layout/LegalAcceptanceGate.tsx:7-24,30-45,63-75`: gate de aceptación y registro informado al usuario. `api/admin-auth.js:1195-1206,2454-2463`: versión, persistencia y verificación de aceptación. |
 | Programación de cron | `vercel.json:39-45`: cron de respaldos configurado diariamente a las 08:00 UTC. |
 | Cifrado y alcance de respaldos | `lib/backup-service.js:9-14,22-69,152-191,214-237`: formato, cifrado AES-256-GCM, límite por tabla y recolección por clínica. |

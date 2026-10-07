@@ -207,7 +207,7 @@ export default function TermsOfService({ embedded = false }: { embedded?: boolea
 
       <Section number={20} title="Disposiciones generales" icon={<FileText className="w-4 h-4" />}>
         <ul className={ul}>
-          <li>Estas Condiciones, la Política de Privacidad y las condiciones comerciales aceptadas constituyen el acuerdo íntegro. Las condiciones particulares firmadas prevalecen para identidad, precio, módulos y vigencia; un anexo de tratamiento firmado prevalece para el encargo de datos; siempre prevalece la ley imperativa.</li>
+          <li>Estas Condiciones, la Política de Privacidad y las condiciones comerciales aceptadas constituyen el acuerdo íntegro. Las condiciones particulares firmadas prevalecen para identidad, precio, módulos y vigencia; un anexo de tratamiento firmado prevalece para el encargo de datos. Un anexo de condiciones negociadas firmado puede sustituir otras disposiciones, incluida la jurisdicción, soporte, devolución o responsabilidad, solo cuando identifique expresamente las reglas sustituidas y el contrato al que aplica; no modifica los acuerdos de otros clientes. Siempre prevalece la ley imperativa.</li>
           <li>Si alguna cláusula fuera declarada inválida, las demás seguirán vigentes.</li>
           <li>La falta de ejercicio de un derecho no implica renuncia a él.</li>
           <li>El Cliente no puede ceder este contrato sin autorización escrita. BIOSKINTECH puede cederlo en caso de reorganización, fusión o venta del negocio, notificándolo al Cliente.</li>
