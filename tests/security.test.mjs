@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 test('treatment finance breakdown keeps the charged total and only extracts selected IVA', async () => {
-  const { calculateTreatmentFinanceBreakdown, isCompatibleTreatmentPosting } = await import('../api/records.js');
+  const {
+    calculateTreatmentFinanceBreakdown,
+    canPostTreatmentFinance,
+    isCompatibleTreatmentPosting,
+  } = await import('../api/records.js');
   assert.deepEqual(calculateTreatmentFinanceBreakdown(115, true), {
     subtotal: 100,
     tax: 15,
@@ -48,6 +52,10 @@ test('treatment finance breakdown keeps the charged total and only extracts sele
     ...identity,
     posting: { total: 115, includesIva: true, invoiceNumber: '001-001-1' },
   }), false);
+  assert.equal(canPostTreatmentFinance({ role: 'master_admin', finance_enabled: false }), true);
+  assert.equal(canPostTreatmentFinance({ role: 'clinic_admin', finance_enabled: true }), true);
+  assert.equal(canPostTreatmentFinance({ role: 'clinic_admin', finance_enabled: false }), false);
+  assert.equal(canPostTreatmentFinance({ role: 'clinic_user', finance_enabled: true }), false);
 });
 
 test('AI patient context requires the patient to belong to the selected clinic', async () => {

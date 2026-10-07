@@ -69,25 +69,18 @@ async function assertConsultationBelongsToRecord(db, consultationId, recordId, c
   if (result.rowCount === 0) throw new Error('La consulta no pertenece a este expediente');
 }
 
-async function assertTreatmentFinancePermission(db, sessionUser, clinicId) {
+export function canPostTreatmentFinance(sessionUser) {
+  return sessionUser?.role === 'master_admin'
+    || (sessionUser?.role === 'clinic_admin' && sessionUser.finance_enabled === true);
+}
+
+function assertTreatmentFinancePermission(sessionUser) {
   if (!['clinic_admin', 'master_admin'].includes(sessionUser?.role)) {
     const error = new Error('Solo administradores con acceso a Finanzas pueden registrar cobros');
     error.code = 'FINANCE_FORBIDDEN';
     throw error;
   }
-  if (sessionUser.role === 'master_admin') return;
-  const result = await db.query(
-    `SELECT
-       COALESCE((SELECT enabled FROM clinic_features WHERE clinic_id = $1 AND feature = 'finance'), true)
-       AND NOT EXISTS (
-         SELECT 1 FROM user_module_overrides
-         WHERE clinic_user_id = $2
-           AND feature IN ('finance', 'finanzas_visible')
-           AND enabled = false
-       ) AS allowed`,
-    [clinicId, sessionUser.user_id]
-  );
-  if (result.rows[0]?.allowed !== true) {
+  if (!canPostTreatmentFinance(sessionUser)) {
     const error = new Error('El módulo de Finanzas no está habilitado para este usuario');
     error.code = 'FINANCE_FORBIDDEN';
     throw error;
@@ -444,6 +437,7 @@ function buildSu(auth) {
     user_id:             auth.id,
     access_scope:        auth.access_scope || 'all',
     finance_scope:       auth.finance_scope || 'all',
+    finance_enabled:     auth.finance_enabled === true,
     inventory_scope:     auth.inventory_scope || 'all',
     calendar_scope:      auth.calendar_scope || 'own',
     username:            auth.username,
@@ -2811,7 +2805,7 @@ export default async function handler(req, res) {
           await client.query('BEGIN');
           await assertConsultationBelongsToRecord(client, consultationId, tid, effectiveClinicId);
           if (financePosting) {
-            await assertTreatmentFinancePermission(client, await getSessionUserOnce(), effectiveClinicId);
+            assertTreatmentFinancePermission(await getSessionUserOnce());
             const existing = await findIdempotentTreatmentPosting(client, {
               clinicId: effectiveClinicId,
               idempotencyKey: financePosting.idempotencyKey,
@@ -2943,7 +2937,7 @@ export default async function handler(req, res) {
             }
           }
           if (financePosting) {
-            await assertTreatmentFinancePermission(client, await getSessionUserOnce(), effectiveClinicId);
+            assertTreatmentFinancePermission(await getSessionUserOnce());
             const existing = await findIdempotentTreatmentPosting(client, {
               clinicId: effectiveClinicId,
               idempotencyKey: financePosting.idempotencyKey,
@@ -3093,7 +3087,7 @@ export default async function handler(req, res) {
           await client.query('BEGIN');
           await assertConsultationBelongsToRecord(client, pkgConsultId, pkgRecordId, effectiveClinicId);
           if (financePosting) {
-            await assertTreatmentFinancePermission(client, await getSessionUserOnce(), effectiveClinicId);
+            assertTreatmentFinancePermission(await getSessionUserOnce());
             const existing = await findIdempotentTreatmentPosting(client, {
               clinicId: effectiveClinicId,
               idempotencyKey: financePosting.idempotencyKey,
