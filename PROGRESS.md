@@ -1,5 +1,6 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-07 Calendar por usuario restaurado.
 - ✅ 2026-10-06 Respaldo: 155 pruebas aprobadas.
 - ✅ 2026-10-06 Limpieza segura; caducados asistidos.
 - ✅ 2026-10-06 Respaldo anual preparado, desactivado.

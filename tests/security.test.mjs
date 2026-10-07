@@ -320,6 +320,17 @@ test('temporary passwords are strong and unique', async () => {
   }
 });
 
+test('OAuth target user ids accept only PostgreSQL integer ids', async () => {
+  const { parsePostgresIntegerId } = await import('../api/admin-auth.js');
+
+  assert.equal(parsePostgresIntegerId(12), 12);
+  assert.equal(parsePostgresIntegerId(' 12 '), 12);
+  assert.equal(parsePostgresIntegerId([12]), null);
+  assert.equal(parsePostgresIntegerId('1.5'), null);
+  assert.equal(parsePostgresIntegerId('999999999999999999999'), null);
+  assert.equal(parsePostgresIntegerId(2147483648), null);
+});
+
 test('WhatsApp webhook only accepts the configured verification token', async () => {
   const { verifyWhatsAppWebhook, verifyWhatsAppSignature } = await import('../api/whatsapp-chatbot.js');
 

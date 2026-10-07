@@ -63,6 +63,14 @@ const ALL_FEATURES = [
 const OPT_IN_FEATURES = ['treatment_notes_view', 'ai_consultation', 'clinical_3d'];
 
 // Planes de suscripción predefinidos (precio en centavos USD)
+export function parsePostgresIntegerId(value) {
+  if (typeof value !== 'number' && typeof value !== 'string') return null;
+  const normalized = typeof value === 'string' ? value.trim() : value;
+  if (!/^[1-9]\d*$/.test(String(normalized))) return null;
+  const parsed = Number(normalized);
+  return Number.isSafeInteger(parsed) && parsed <= 2147483647 ? parsed : null;
+}
+
 const SUBSCRIPTION_PLANS = {
   plan_lanzamiento: {
     name: 'Plan Lanzamiento BioskinTech',
@@ -2860,11 +2868,20 @@ export default async function handler(req, res) {
 
     // ── OAuth Google por usuario ───────────────────────────────────────────
     if (action === 'oauthStart') {
-      const targetUserId = user.id;
+      const requestedUserId = req.body?.userId;
+      const hasRequestedUser = requestedUserId !== undefined && requestedUserId !== null && requestedUserId !== '';
+      if (hasRequestedUser && !requireRole(user, 'master_admin') && String(requestedUserId) !== String(user.id))
+        return res.status(403).json({ error: 'Sin permiso para conectar otro usuario' });
+      const parsedRequestedUserId = hasRequestedUser ? parsePostgresIntegerId(requestedUserId) : null;
+      if (hasRequestedUser && !parsedRequestedUserId)
+        return res.status(400).json({ error: 'userId inválido' });
+      const targetUserId = hasRequestedUser ? parsedRequestedUserId : user.id;
       if (!targetUserId) return res.status(400).json({ error: 'Selecciona el usuario que conectará su cuenta Google' });
-      const target = await sql`SELECT id, clinic_id, email FROM clinic_users WHERE id = ${targetUserId} AND is_active = true`;
+      const target = await sql`SELECT id, clinic_id, email, role FROM clinic_users WHERE id = ${targetUserId} AND is_active = true`;
       if (!target.rows.length) return res.status(404).json({ error: 'Usuario no encontrado' });
       const targetUser = target.rows[0];
+      if (hasRequestedUser && (targetUser.role === 'master_admin' || !targetUser.clinic_id))
+        return res.status(400).json({ error: 'El usuario seleccionado no pertenece a una clínica' });
       const clientId = (process.env.GOOGLE_CLIENT_ID || '').trim();
       if (!clientId) return res.status(503).json({ error: 'GOOGLE_CLIENT_ID no configurado' });
       const appBase = (process.env.APP_URL || `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app'}`).replace(/\/$/, '').trim();
@@ -2899,8 +2916,8 @@ export default async function handler(req, res) {
 
     if (action === 'oauthRevoke') {
       if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master_admin' });
-      const { userId } = req.body || {};
-      if (!userId) return res.status(400).json({ error: 'userId requerido' });
+      const userId = parsePostgresIntegerId(req.body?.userId);
+      if (!userId) return res.status(400).json({ error: 'userId inválido' });
       const tok = await sql`SELECT refresh_token FROM clinic_oauth_tokens WHERE clinic_user_id = ${userId}`;
       try { await revokeGoogleRefreshToken(tok.rows[0]?.refresh_token); }
       catch (error) { return res.status(502).json({ error: error.message }); }

@@ -1005,10 +1005,10 @@ export default function AdminMasterDashboard() {
   const [credentialsSent, setCredentialsSent] = useState(false);
   const [showPwd, setShowPwd]       = useState<Record<string, boolean>>({});
 
-  // ── OAuth Google por clínica ──────────────────────────────────────────────
+  // ── OAuth Google por usuario ──────────────────────────────────────────────
   const [oauthStatus, setOauthStatus] = useState<Record<number, { email: string; connected_at: string }>>({});
-  const [oauthLinks, setOauthLinks]   = useState<Record<number, string>>({});
-  const [oauthLinkModal, setOauthLinkModal] = useState<{ open: boolean; url: string; clinicName: string } | null>(null);
+  const [oauthBusyUserId, setOauthBusyUserId] = useState<number | null>(null);
+  const [oauthLinkModal, setOauthLinkModal] = useState<{ open: boolean; url: string; userName: string } | null>(null);
 
   // ── Suscripción por clínica ────────────────────────────────────────────────
   const [subModal, setSubModal] = useState<{ open: boolean; clinic: Clinic | null }>({ open: false, clinic: null });
@@ -1139,28 +1139,69 @@ export default function AdminMasterDashboard() {
   };
 
   const handleOauthConnect = async (userId: number) => {
-    const res  = await fetch('/api/admin-auth?action=oauthStart', { method: 'POST', headers: authHeader(), body: JSON.stringify({ userId }) });
-    const data = await res.json();
-    if (data.error) { flash(data.error, 'err'); return; }
-    setOauthLinks(prev => ({ ...prev, [userId]: data.url }));
-    window.open(data.url, '_blank', 'width=500,height=600');
-    flash('Completa la autorización en la ventana de Google', 'ok');
-    setTimeout(() => loadOauthStatus(), 10000);
+    setOauthBusyUserId(userId);
+    try {
+      const res  = await fetch('/api/admin-auth?action=oauthStart', { method: 'POST', headers: authHeader(), body: JSON.stringify({ userId, returnPath: '/gestionestetica/admin/master' }) });
+      const data = await res.json();
+      if (!res.ok || data.error) { flash(data.error || 'No se pudo iniciar la conexión', 'err'); return; }
+      window.open(data.url, '_blank', 'width=500,height=600');
+      flash('Completa la autorización en la ventana de Google', 'ok');
+      setTimeout(() => loadOauthStatus(), 10000);
+    } catch {
+      flash('No se pudo iniciar la conexión con Google', 'err');
+    } finally {
+      setOauthBusyUserId(null);
+    }
   };
 
-  const copyOauthLink = async (userId: number, clinicName: string) => {
-    const res  = await fetch('/api/admin-auth?action=oauthStart', { method: 'POST', headers: authHeader(), body: JSON.stringify({ userId }) });
-    const data = await res.json();
-    if (data.error) { flash(data.error, 'err'); return; }
-    // Mostrar modal con el enlace — clipboard async falla en móvil por pérdida del user gesture
-    setOauthLinkModal({ open: true, url: data.url, clinicName });
+  const copyOauthLink = async (userId: number, userName: string) => {
+    setOauthBusyUserId(userId);
+    try {
+      const res  = await fetch('/api/admin-auth?action=oauthStart', { method: 'POST', headers: authHeader(), body: JSON.stringify({ userId, returnPath: '/gestionestetica/admin/master' }) });
+      const data = await res.json();
+      if (!res.ok || data.error) { flash(data.error || 'No se pudo generar el enlace', 'err'); return; }
+      setOauthLinkModal({ open: true, url: data.url, userName });
+    } catch {
+      flash('No se pudo generar el enlace de conexión', 'err');
+    } finally {
+      setOauthBusyUserId(null);
+    }
+  };
+
+  const verifyOauthStatus = async (userId: number) => {
+    setOauthBusyUserId(userId);
+    try {
+      const res = await fetch(`/api/admin-auth?action=getEmailConnectionStatus&userId=${userId}`, { headers: authHeader() });
+      const data = await res.json();
+      if (!res.ok || data.error) { flash(data.error || 'No se pudo verificar la conexión', 'err'); return; }
+      setOauthStatus(current => {
+        if (data.connected) return { ...current, [userId]: { email: data.email, connected_at: data.connected_at } };
+        const next = { ...current };
+        delete next[userId];
+        return next;
+      });
+      flash(data.connected ? `Google Calendar conectado: ${data.email}` : 'Google Calendar no está conectado');
+    } catch {
+      flash('No se pudo verificar la conexión con Google', 'err');
+    } finally {
+      setOauthBusyUserId(null);
+    }
   };
 
   const handleOauthRevoke = async (userId: number) => {
     if (!confirm('¿Desconectar la cuenta de Google de este usuario?')) return;
-    await fetch('/api/admin-auth?action=oauthRevoke', { method: 'POST', headers: authHeader(), body: JSON.stringify({ userId }) });
-    flash('Cuenta desconectada');
-    loadOauthStatus();
+    setOauthBusyUserId(userId);
+    try {
+      const res = await fetch('/api/admin-auth?action=oauthRevoke', { method: 'POST', headers: authHeader(), body: JSON.stringify({ userId }) });
+      const data = await res.json();
+      if (!res.ok || data.error) { flash(data.error || 'No se pudo desconectar la cuenta', 'err'); return; }
+      flash('Cuenta desconectada');
+      await loadOauthStatus();
+    } catch {
+      flash('No se pudo desconectar la cuenta de Google', 'err');
+    } finally {
+      setOauthBusyUserId(null);
+    }
   };
 
   // ── Filtros de usuarios ──────────────────────────────────────────────────
@@ -1976,7 +2017,7 @@ export default function AdminMasterDashboard() {
                 <table className="w-full">
                   <thead className="bg-gray-50 border-b border-gray-100">
                     <tr>
-                      {['Usuario', 'Nombre', 'Rol', 'Clínica', 'Acceso', 'Estado', 'Acciones'].map(h => (
+                      {['Usuario', 'Nombre', 'Rol', 'Clínica', 'Acceso', 'Estado', 'Google Calendar', 'Acciones'].map(h => (
                         <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
                       ))}
                     </tr>
@@ -2024,6 +2065,58 @@ export default function AdminMasterDashboard() {
                             {u.is_active ? <Eye className="w-4 h-4 text-green-600" /> : <EyeOff className="w-4 h-4 text-gray-400" />}
                           </button>
                         </td>
+                        <td className="px-4 py-3 min-w-[250px]">
+                          {u.role === 'master_admin' ? (
+                            <span className="text-xs text-gray-400">No aplica</span>
+                          ) : (
+                            <div className="space-y-1.5">
+                              <div className={`flex items-center gap-1.5 text-xs font-medium ${oauthStatus[u.id] ? 'text-emerald-700' : 'text-gray-500'}`}>
+                                <span className={`h-2 w-2 rounded-full ${oauthStatus[u.id] ? 'bg-emerald-500' : 'bg-gray-300'}`} />
+                                {oauthStatus[u.id] ? oauthStatus[u.id].email : 'Sin conectar'}
+                              </div>
+                              <div className="flex flex-wrap gap-1">
+                                {!oauthStatus[u.id] && (
+                                  <>
+                                    <button
+                                      onClick={() => handleOauthConnect(u.id)}
+                                      disabled={oauthBusyUserId === u.id}
+                                      className="inline-flex items-center gap-1 rounded-md bg-indigo-600 px-2 py-1 text-[11px] font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+                                      title="Conectar Google Calendar ahora"
+                                    >
+                                      <Calendar className="h-3 w-3" /> Conectar
+                                    </button>
+                                    <button
+                                      onClick={() => copyOauthLink(u.id, u.full_name || u.username)}
+                                      disabled={oauthBusyUserId === u.id}
+                                      className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1 text-[11px] font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                                      title="Generar un enlace para enviarlo al usuario"
+                                    >
+                                      <Mail className="h-3 w-3" /> Enviar enlace
+                                    </button>
+                                  </>
+                                )}
+                                <button
+                                  onClick={() => verifyOauthStatus(u.id)}
+                                  disabled={oauthBusyUserId === u.id}
+                                  className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1 text-[11px] font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                                  title="Verificar el estado de la conexión"
+                                >
+                                  <RefreshCw className={`h-3 w-3 ${oauthBusyUserId === u.id ? 'animate-spin' : ''}`} /> Verificar
+                                </button>
+                                {oauthStatus[u.id] && (
+                                  <button
+                                    onClick={() => handleOauthRevoke(u.id)}
+                                    disabled={oauthBusyUserId === u.id}
+                                    className="inline-flex items-center gap-1 rounded-md border border-red-200 px-2 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+                                    title="Desconectar y revocar el acceso en Google"
+                                  >
+                                    <Unlink className="h-3 w-3" /> Desconectar
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </td>
                         <td className="px-4 py-3">
                               <div className="flex gap-1">
                                 {/* Botón "Ver módulos" — solo para usuarios con clínica */}
@@ -2046,11 +2139,6 @@ export default function AdminMasterDashboard() {
                                     title={u.whatsapp_bot_enabled ? 'Bot de WhatsApp habilitado — clic para deshabilitar' : 'Bot de WhatsApp deshabilitado — clic para habilitar'}
                                   >
                                     <MessageCircle className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
-                                {u.role !== 'master_admin' && oauthStatus[u.id] && (
-                                  <button onClick={() => handleOauthRevoke(u.id)} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded" title={`Google conectado: ${oauthStatus[u.id].email}`}>
-                                    <Unlink className="w-3.5 h-3.5" />
                                   </button>
                                 )}
                                 <button onClick={() => { setResetCredentials(null); setCredentialsSent(false); setPwdModal({ open: true, userId: u.id, username: u.username, email: u.email }); }} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded" title="Generar clave temporal">
@@ -2076,7 +2164,7 @@ export default function AdminMasterDashboard() {
                           {/* Inline expiry editor — solo para demos */}
                           {u.is_demo && isEditingExpiry && (
                             <tr className="bg-amber-50/60">
-                              <td colSpan={7} className="px-6 py-3 border-l-4 border-amber-400">
+                              <td colSpan={8} className="px-6 py-3 border-l-4 border-amber-400">
                                 <div className="flex flex-wrap items-center gap-3 text-xs">
                                   <span className="font-medium text-gray-700">Nuevo tiempo para <span className="font-mono">{u.username}</span>:</span>
                                   <input type="number" min={1} max={999} value={demoExpiryEdit.value}
@@ -2758,19 +2846,19 @@ export default function AdminMasterDashboard() {
         </Modal>
       )}
 
-      {/* ── Modal: Enlace OAuth (para enviar al admin de clinica) ──────── */}
+      {/* ── Modal: Enlace OAuth para el usuario seleccionado ──────────── */}
       {oauthLinkModal?.open && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden">
             <div className="h-0.5 bg-gradient-to-r from-[#deb887] to-[#c5a075]" />
             <div className="p-5 border-b flex justify-between items-center">
               <h3 className="font-semibold text-gray-900 flex items-center gap-2 text-sm">
-                <Mail className="w-4 h-4 text-[#deb887]" /> Enlace de conexión — {oauthLinkModal.clinicName}
+                <Mail className="w-4 h-4 text-[#deb887]" /> Enlace de conexión — {oauthLinkModal.userName}
               </h3>
               <button onClick={() => setOauthLinkModal(null)} className="text-gray-300 hover:text-gray-500"><X className="w-4 h-4" /></button>
             </div>
             <div className="p-5 space-y-4">
-              <p className="text-sm text-gray-600">Envía este enlace al administrador de la clínica. Debe abrirlo desde el navegador donde está logueado con el Gmail de la clínica.</p>
+              <p className="text-sm text-gray-600">Envía este enlace al usuario. Debe abrirlo en el navegador y autorizar la cuenta Google que usará para Calendar y correos.</p>
               <div className="relative">
                 <textarea
                   readOnly
