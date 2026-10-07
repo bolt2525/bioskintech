@@ -16,15 +16,19 @@ const signed = [];
 const deleted = [];
 let deleteFails = false;
 let deleteHook = null;
+let clinicActive = true;
+let clinicPurging = false;
 const client = {
-  query: async (sql, params = []) => (/^(BEGIN|COMMIT|ROLLBACK|SET LOCAL)/.test(sql.trim()) ? { rows: [] } : handleQuery(sql, params)),
+  query: async (sql, params = []) => sql.includes("SELECT c.is_active,cs.general ? '_purge'")
+    ? { rows: [{ is_active: clinicActive, purging: clinicPurging }] }
+    : (/^(BEGIN|COMMIT|ROLLBACK|SET LOCAL)/.test(sql.trim()) ? { rows: [] } : handleQuery(sql, params)),
   release() {},
 };
 const url = path => new URL(path, import.meta.url).href;
 mock.module(url('../lib/admin-auth.js'), { namedExports: { authenticateRequest: async () => auth } });
 mock.module(url('../lib/neon-clinical-db.js'), {
   namedExports: {
-    getPool: () => ({ connect: async () => client }),
+    getPool: () => ({ connect: async () => client, query: (...args) => client.query(...args) }),
     getAppPool: () => { throw new Error('No se esperaba appPool'); },
     withTenantContext: async (_clinicId, fn) => fn(client),
   },
@@ -229,4 +233,77 @@ test('Mantenimiento: un fallo de R2 no marca limpieza ni reporta éxito', async 
   assert.equal(r.body.failures, 1);
   assert.equal(r.body.sourcesDeleted, 0);
   assert.equal(updates[0][3], 'R2_DELETE_FAILED');
+});
+
+test('Purga: un tombstone cancela callbacks del Worker y bloquea aprobación/descarga', async () => {
+  handleQuery = sql => sql.includes("FROM clinic_settings WHERE clinic_id=$1 AND general ? '_purge'")
+    ? { rows: [{}] } : { rows: [] };
+  const callback = res();
+  await handleAnnualPhotoBackup({ method: 'POST', headers: { 'x-photo-backup-secret': SECRET },
+    body: { clinicId: CLINIC, requestId: REQUEST }, query: {} }, callback, 'photoBackupWorkerClaim');
+  assert.equal(callback.code, 200);
+  assert.equal(callback.body.state, 'cancelled');
+  auth = { valid: true, id: 1, role: 'master_admin', clinic_id: null };
+  const approval = res();
+  await handleAnnualPhotoBackup(approveReq(), approval, 'approvePhotoBackup');
+  assert.equal(approval.code, 409);
+  auth.effective_clinic_id = CLINIC;
+  const download = res();
+  await handleAnnualPhotoBackup({ method: 'GET', headers: {}, query: { requestId: REQUEST },
+    body: {} }, download, 'photoBackupDownload');
+  assert.equal(download.code, 409);
+});
+
+test('Master may reject an inactive pending annual request without reopening access; tombstones still reject it', async () => {
+  clinicActive = false;
+  auth = { valid: true, id: 1, role: 'master_admin', clinic_id: null };
+  const queries = [];
+  handleQuery = sql => {
+    queries.push(sql);
+    if (sql.includes("status='REJECTED'") && sql.includes('RETURNING *'))
+      return { rows: [{ id: REQUEST, clinic_id: CLINIC, requester_email: 'qa@example.test' }] };
+    return { rows: [] };
+  };
+  try {
+    const rejected = res();
+    await handleAnnualPhotoBackup({ ...approveReq(), body: {
+      clinicId: CLINIC, requestId: REQUEST, reason: 'Cierre ficticio autorizado',
+    } }, rejected, 'rejectPhotoBackup');
+    assert.equal(rejected.code, 200);
+    assert.equal(rejected.body.status, 'REJECTED');
+    assert.equal(queries.some(sql => /UPDATE clinics/.test(sql)), false);
+    clinicPurging = true;
+    const denied = res();
+    await handleAnnualPhotoBackup({ ...approveReq(), body: {
+      clinicId: CLINIC, requestId: REQUEST, reason: 'Cierre ficticio autorizado',
+    } }, denied, 'rejectPhotoBackup');
+    assert.equal(denied.code, 409);
+  } finally { clinicActive = true; clinicPurging = false; }
+});
+
+test('Inactive clinic: only the terminal Fail callback is processed; Claim/Part/Complete cancel; tombstone cancels Fail', async () => {
+  clinicActive = false;
+  const updates = [];
+  handleQuery = sql => {
+    if (/SELECT id,status FROM annual_photo_backup_requests/.test(sql)) return { rows: [{ id: REQUEST, status: 'APPROVED' }] };
+    if (/UPDATE annual_photo_backup_requests SET lease_hash=NULL/.test(sql)) updates.push(sql);
+    if (/annual_photo_backup_parts/.test(sql)) throw new Error('parts must not be touched on inactive clinics');
+    return { rows: [] };
+  };
+  const call = async (action, body = {}) => {
+    const out = res();
+    await handleAnnualPhotoBackup({ method: 'POST', headers: { 'x-photo-backup-secret': SECRET }, query: {},
+      body: { clinicId: CLINIC, requestId: REQUEST, ...body } }, out, action);
+    return out;
+  };
+  try {
+    for (const action of ['photoBackupWorkerClaim', 'photoBackupWorkerPart', 'photoBackupWorkerComplete'])
+      assert.equal((await call(action, { leaseToken: 'a'.repeat(64) })).body.state, 'cancelled', action);
+    const failed = await call('photoBackupWorkerFail', { code: 'LEASE_LOST' });
+    assert.equal(failed.body.state, 'failed');
+    assert.equal(updates.length, 1);
+    clinicPurging = true;
+    assert.equal((await call('photoBackupWorkerFail', { code: 'LEASE_LOST' })).body.state, 'cancelled');
+    assert.equal(updates.length, 1);
+  } finally { clinicActive = true; clinicPurging = false; }
 });

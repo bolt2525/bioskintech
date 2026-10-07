@@ -16,6 +16,10 @@
 
 El cliente pidió excluir cualquier límite en esas materias. Mantener el límite vigente es una **contrapropuesta**, no una aceptación de su solicitud. No enviar el documento como si los siete puntos estuvieran resueltos.
 
+El punto 7 sí se refiere al alcance económico de responsabilidad ante una filtración a terceros, incumplimiento de confidencialidad/protección de datos o pérdida imputable al Proveedor. No se refiere solo a fallas de disponibilidad. La versión `2026-10-07-r2` lo hace explícito en carátula §6 y Condiciones Art. 14: se conserva el tope ordinario donde la ley lo permita, sin limitar dolo, culpa grave, sanciones, derechos de pacientes ni otras responsabilidades indisponibles. No es un permiso para divulgar datos ni elimina prevención, respuesta, notificación y subsanación. No se garantiza que el límite sea oponible a cualquier reclamo; requiere revisión jurídica ecuatoriana.
+
+La plantilla del contrato, Condiciones y Política son reutilizables para todos. Una mejora general modifica los documentos comunes, se versiona y se adjunta a cada paquete; una excepción comercial modifica solo la carátula o Anexo B del contrato concreto, sin reescribir los documentos generales. La referencia, datos, módulos, precio, fechas y jurisdicción pactada individualizan cada ejemplar; no existe un contrato ya completado válido para todos.
+
 ## 2. Soporte autorizado y criterios
 
 Lunes a viernes, 09:00–18:00, UTC−5, salvo feriados nacionales y del domicilio del proveedor. Correo oficial para registrar; WhatsApp para escalar. No se ofrece atención humana 24/7.
@@ -37,6 +41,8 @@ Se conserva la ventana de **30 días naturales**, no 90 días gratuitos. No se i
 Una ampliación requiere presupuesto, acuerdo escrito y confirmación técnica antes del vencimiento. Hoy existe limpieza programada de fotos por suscripción vencida: no basta un acuerdo comercial para que una extensión funcione. No ofertar 90 días hasta que el borrado respete expresamente esa extensión.
 
 La entrega anual no consumida del período terminado puede solicitarse por los canales oficiales durante esos 30 días. Es un procedimiento manual: verificar identidad y autorización, registrar fecha/referencia de solicitud, comprobar cuota y conservación, recopilar los datos y coordinar una entrega privada con destinatario y recepción verificados. No se rehabilita la cuenta ni se usa el botón automático con un período vencido. Si la cuota ya se consumió, las entregas adicionales requieren acuerdo previo de alcance y costos, sin obstaculizar derechos legales. No se ofrece una segunda entrega gratuita automática.
+
+Desactivar desde Master Admin conserva los datos; no significa eliminarlos. Antes de una purga, comprobar la entrega acordada, la instrucción autorizada y cualquier deber de conservación. El panel debe distinguir la supresión de datos activos de las copias cifradas residuales: el bloqueo de 30 días y la caducidad de 35 días se computan desde la creación de cada copia, no desde la solicitud de borrado. Esas copias quedan fuera de uso ordinario; no se utilizarán para reactivar información ya suprimida.
 
 ## Condiciones generales frente a excepciones
 
@@ -97,7 +103,9 @@ Justificación comercial sugerida: el precio corresponde a un SaaS de gestión c
 
 Garantizar que nunca habrá incidentes o pérdida sería una promesa absoluta no verificable. Lo exigible es documentar controles, prevenir, detectar, contener, notificar y probar recuperación. Hoy no existe una copia independiente de los binarios fotográficos: no afirmar que la pérdida de fotos está cubierta por el respaldo JSON.
 
-La devolución de suscripción se calcula: importe de suscripción efectivamente pagado, IVA incluido × días naturales pendientes / días naturales del período contratado. Se activa en los supuestos de B.3; remanente desde terminación efectiva, pago en 15 días hábiles y ajuste tributario. No excluye remedios legales ni convierte un objetivo de recuperación en garantía absoluta.
+La devolución general de suscripción se calcula por días de período pagado no prestado, en los supuestos del Art. 4 de las Condiciones. Un plazo particular de pago o ajuste tributario debe constar en el acuerdo correspondiente; no se incorpora un plazo adicional solo por esta guía. No excluye remedios legales ni convierte un objetivo de recuperación en garantía absoluta.
+
+Fuentes de esta aclaración: [LOPDP oficial](https://www.gob.ec/regulaciones/ley-organica-proteccion-datos-personales), seguridad Art. 37 y notificación Art. 43. La limitación monetaria privada no sustituye esos deberes. Las recomendaciones de retención de respaldos de [ICO](https://ico.org.uk/for-organisations/uk-gdpr-guidance-and-resources/individual-rights/individual-rights/right-to-erasure/) son orientación técnica (aislar copias residuales hasta caducidad), no legislación ecuatoriana.
 
 ## 6. Después de firmar
 

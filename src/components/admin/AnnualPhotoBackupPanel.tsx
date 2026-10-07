@@ -138,6 +138,7 @@ export default function AnnualPhotoBackupPanel({ master = false, clinics = [] }:
     {error && <p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
     {notice && <p role="status" className="mt-3 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p>}
     {!loading && configured !== true && <p role="status" className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{configured === false ? 'El procesamiento está deshabilitado o no configurado. El registro de períodos, las solicitudes y las aprobaciones están bloqueados.' : 'No se pudo verificar la configuración. Actualice el estado antes de registrar períodos, solicitar o aprobar entregas.'}</p>}
+    {!master && !loading && configured !== true && <p className="mt-2 text-sm text-gray-600">El derecho a la entrega anual se mantiene. Contacta a soporte por los canales oficiales para registrar y coordinar una solicitud asistida; no necesitas contratar infraestructura.</p>}
     {configurationReason && <p className="mt-3 text-sm text-gray-600">{REASON_LABELS[configurationReason] || configurationReason}</p>}
     {loading ? <p className="mt-4 flex items-center gap-2 text-sm"><Loader2 className="h-4 w-4 animate-spin" />Consultando solicitudes…</p> : <>
       {!master && <div className="mt-4 space-y-3">

@@ -1,7 +1,16 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-07 Purga clínica autorizada, por lotes.
+- ✅ 2026-10-07 Regresión integrada: 199 pruebas aprobadas.
+- ✅ 2026-10-07 Purga: escritores concurrentes coordinados.
+- ✅ 2026-10-07 Seguridad: bloqueantes revisados, corregidos.
+- ✅ 2026-10-07 Base de Datos: QA desktop/móvil.
+- ✅ 2026-10-07 Purga Master: QA desktop/móvil.
+- ✅ 2026-10-07 Confidencialidad y límite explícitos.
+- ✅ 2026-10-07 Base de Datos: alcance claro.
 - ✅ 2026-10-07 Contrato: sugerencias particulares editables.
 - ✅ 2026-10-07 Garantías oficiales, versión legal sincronizada.
+- ✅ 2026-10-07 Borrado: copias residuales transparentes.
 - ✅ 2026-10-07 Copias diarias: 77 verificadas.
 - ✅ 2026-10-07 Entrega anual: compromiso asistido.
 - ✅ 2026-10-07 Calendar por usuario restaurado.

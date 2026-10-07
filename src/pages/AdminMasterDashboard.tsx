@@ -13,7 +13,7 @@
  * (mismo origen que AdminDashboard → sin duplicación).
  */
 
-import { useEffect, useState, useCallback, Fragment } from 'react';
+import { useEffect, useState, useCallback, Fragment, useId, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -40,6 +40,62 @@ import type { Clinic, ClinicUser, FeatureRow } from '../types';
 // ─────────────────────────────────────────────────────────────────────────────
 
 type TabKey = 'clinics' | 'users' | 'modules' | 'system' | 'templates' | 'accesos' | 'vencimientos' | 'contrato' | 'photo-backups';
+
+type ClinicPurgeJob = {
+  state: string;
+  phase?: string;
+  requestedAt?: string;
+  retryAfter?: string | null;
+  leaseUntil?: string | null;
+  completedAt?: string;
+  deletedObjects?: number;
+  last_error?: string | null;
+};
+
+type ClinicPurgePreview = {
+  success: true;
+  clinic: { id: string; name: string; slug: string; is_active: boolean; subscription_expires_at?: string | null };
+  purge: ClinicPurgeJob | null;
+  counts: Record<string, number>;
+  eligible: boolean;
+  reasons: string[];
+  requiredConfirmation: string;
+  complete: boolean;
+  retainedBackups: { prefix: string; immutableDays: number; retentionDays: number; note: string };
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isClinicPurgePreview(value: unknown): value is ClinicPurgePreview {
+  if (!isRecord(value) || value.success !== true || typeof value.eligible !== 'boolean' ||
+      typeof value.complete !== 'boolean' || typeof value.requiredConfirmation !== 'string' ||
+      !Array.isArray(value.reasons) || !value.reasons.every(reason => typeof reason === 'string') ||
+      !isRecord(value.clinic) || typeof value.clinic.id !== 'string' ||
+      typeof value.clinic.name !== 'string' || typeof value.clinic.slug !== 'string' ||
+      typeof value.clinic.is_active !== 'boolean' || !isRecord(value.counts) ||
+      !Object.values(value.counts).every(count => typeof count === 'number' && Number.isFinite(count)) ||
+      !isRecord(value.retainedBackups) || typeof value.retainedBackups.prefix !== 'string' ||
+      typeof value.retainedBackups.immutableDays !== 'number' ||
+      typeof value.retainedBackups.retentionDays !== 'number' || typeof value.retainedBackups.note !== 'string') return false;
+  if (value.purge !== null && value.purge !== undefined &&
+      (!isRecord(value.purge) || typeof value.purge.state !== 'string')) return false;
+  return true;
+}
+
+function formatPurgeDate(value?: string | null): string {
+  if (!value) return 'No registrada';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'Fecha inválida' : date.toLocaleString('es-EC');
+}
+
+function formatPurgeEligibilityDate(value?: string | null): string {
+  const endedAt = value ? Date.parse(value) : Number.NaN;
+  return Number.isFinite(endedAt)
+    ? formatPurgeDate(new Date(endedAt + 30 * 86400000).toISOString())
+    : 'No calculable sin vencimiento registrado';
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Componentes pequeños reutilizables dentro de este módulo
@@ -70,13 +126,50 @@ function FeatureToggle({
 
 /** Modal genérico con título y botón de cerrar */
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  const titleId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+  useEffect(() => {
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const dialog = dialogRef.current;
+    const focusableSelector = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
+    dialog?.querySelector<HTMLElement>(focusableSelector)?.focus();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onCloseRef.current();
+      } else if (event.key === 'Tab' && dialog) {
+        const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(focusableSelector))
+          .filter(element => element.getClientRects().length > 0);
+        if (!focusable.length) {
+          event.preventDefault();
+          return;
+        }
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && (document.activeElement === last || !dialog.contains(document.activeElement))) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      previouslyFocused?.focus();
+    };
+  }, []);
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden">
         <div className="h-0.5 bg-gradient-to-r from-[#deb887] to-[#c5a075]" />
         <div className="p-5 border-b flex justify-between items-center">
-          <h3 className="font-bold text-gray-900">{title}</h3>
-          <button onClick={onClose} className="text-gray-300 hover:text-gray-500"><X className="w-5 h-5" /></button>
+          <h3 id={titleId} className="font-bold text-gray-900">{title}</h3>
+          <button type="button" onClick={onClose} data-modal-close aria-label={`Cerrar ${title}`} className="text-gray-300 hover:text-gray-500"><X className="w-5 h-5" /></button>
         </div>
         <div className="p-5 overflow-y-auto flex-1">{children}</div>
       </div>
@@ -990,6 +1083,17 @@ export default function AdminMasterDashboard() {
   const [clinics, setClinics]   = useState<Clinic[]>([]);
   const [allUsers, setAllUsers] = useState<ClinicUser[]>([]);
   const [featData, setFeatData] = useState<FeatureRow[]>([]);
+  const [clinicActionBusyId, setClinicActionBusyId] = useState<number | null>(null);
+  const [clinicPurgeTarget, setClinicPurgeTarget] = useState<Clinic | null>(null);
+  const [clinicPurgePreview, setClinicPurgePreview] = useState<ClinicPurgePreview | null>(null);
+  const clinicPurgeRequestId = useRef(0);
+  const [clinicPurgeLoading, setClinicPurgeLoading] = useState(false);
+  const [clinicPurgeBusy, setClinicPurgeBusy] = useState(false);
+  const [clinicPurgeError, setClinicPurgeError] = useState('');
+  const [clinicPurgeConfirmation, setClinicPurgeConfirmation] = useState('');
+  const [clinicPurgeAuthorized, setClinicPurgeAuthorized] = useState(false);
+  const [clinicPurgeRetentionConfirmed, setClinicPurgeRetentionConfirmed] = useState(false);
+  const [clinicPurgeReason, setClinicPurgeReason] = useState('');
 
   // ── Estado modales ───────────────────────────────────────────────────────
   const [userModal,   setUserModal]   = useState<{ open: boolean; userId?: number }>({ open: false });
@@ -1547,15 +1651,119 @@ export default function AdminMasterDashboard() {
     loadAll();
   };
 
-  const deleteClinic = async (clinic: Clinic) => {
-    if (!confirm(`¿Eliminar permanentemente la clínica "${clinic.name}"?\n\nSe eliminarán TODOS los usuarios, fichas clínicas, ajustes y datos asociados.\nTambién se eliminarán TODAS las fotos subidas a Cloudflare R2.\n\nEsta acción es IRREVERSIBLE.`)) return;
+  const setClinicActive = async (clinic: Clinic) => {
+    const is_active = !clinic.is_active;
+    if (!is_active && !confirm(`¿Desactivar la clínica "${clinic.name}"?\n\nSe revocará el acceso y se invalidarán los enlaces de firma pendientes. Sus datos, fotos, consentimientos y firmas permanecerán conservados.\n\nPodrás reactivarla mientras no se haya iniciado una purga. Al reactivar, los consentimientos pendientes requieren un nuevo enlace de firma.`)) return;
+    setClinicActionBusyId(clinic.id);
     try {
-      const res = await fetch(`/api/admin-auth?action=deleteClinic&id=${clinic.id}`, { method: 'DELETE', headers: authHeader() });
+      const res = await fetch('/api/admin-auth?action=updateClinic', {
+        method: 'POST',
+        headers: authHeader(),
+        body: JSON.stringify({ id: String(clinic.id), is_active }),
+      });
       const d = await res.json();
-      if (d.error) { flash(d.error, 'err'); return; }
-      flash(`Clínica "${clinic.name}" eliminada`);
-      loadAll();
-    } catch { flash('Error al eliminar la clínica', 'err'); }
+      if (!res.ok || !d.success || d.error) {
+        flash(d.error || `No se pudo ${is_active ? 'reactivar' : 'desactivar'} la clínica`, 'err');
+        return;
+      }
+      flash(is_active
+        ? `Clínica "${clinic.name}" reactivada. Los consentimientos pendientes requieren un nuevo enlace de firma.`
+        : `Clínica "${clinic.name}" desactivada`);
+      await loadAll();
+    } catch {
+      flash(`No se pudo ${is_active ? 'reactivar' : 'desactivar'} la clínica`, 'err');
+    } finally {
+      setClinicActionBusyId(null);
+    }
+  };
+
+  const readClinicPurgePreview = async (clinicId: string) => {
+    const res = await fetch(`/api/admin-auth?action=clinicPurgePreview&id=${encodeURIComponent(clinicId)}`, {
+      headers: authHeader(),
+      cache: 'no-store',
+    });
+    const payload: unknown = await res.json();
+    if (!res.ok || !isClinicPurgePreview(payload)) {
+      const error = isRecord(payload) && typeof payload.error === 'string' ? payload.error : 'La API devolvió una vista previa inválida.';
+      throw new Error(error);
+    }
+    return payload;
+  };
+
+  const openClinicPurge = async (clinic: Clinic) => {
+    const requestId = ++clinicPurgeRequestId.current;
+    setClinicPurgeTarget(clinic);
+    setClinicPurgePreview(null);
+    setClinicPurgeError('');
+    setClinicPurgeConfirmation('');
+    setClinicPurgeAuthorized(false);
+    setClinicPurgeRetentionConfirmed(false);
+    setClinicPurgeReason('');
+    setClinicPurgeLoading(true);
+    try {
+      const preview = await readClinicPurgePreview(String(clinic.id));
+      if (requestId === clinicPurgeRequestId.current) setClinicPurgePreview(preview);
+    } catch (error) {
+      if (requestId === clinicPurgeRequestId.current)
+        setClinicPurgeError(error instanceof Error ? error.message : 'No se pudo cargar el alcance de la purga.');
+    } finally {
+      if (requestId === clinicPurgeRequestId.current) setClinicPurgeLoading(false);
+    }
+  };
+
+  const refreshClinicPurge = async () => {
+    if (!clinicPurgeTarget) return;
+    const requestId = ++clinicPurgeRequestId.current;
+    setClinicPurgeLoading(true);
+    setClinicPurgeError('');
+    try {
+      const preview = await readClinicPurgePreview(String(clinicPurgeTarget.id));
+      if (requestId === clinicPurgeRequestId.current) setClinicPurgePreview(preview);
+    } catch (error) {
+      if (requestId === clinicPurgeRequestId.current)
+        setClinicPurgeError(error instanceof Error ? error.message : 'No se pudo actualizar el estado de la purga.');
+    } finally {
+      if (requestId === clinicPurgeRequestId.current) setClinicPurgeLoading(false);
+    }
+  };
+
+  const processClinicPurge = async () => {
+    if (!clinicPurgeTarget || !clinicPurgePreview || clinicPurgeBusy) return;
+    setClinicPurgeBusy(true);
+    setClinicPurgeError('');
+    try {
+      const res = await fetch('/api/admin-auth?action=purgeClinic', {
+        method: 'POST',
+        headers: authHeader(),
+        body: JSON.stringify({
+          id: String(clinicPurgeTarget.id),
+          confirmation: clinicPurgeConfirmation,
+          authorizationConfirmed: clinicPurgeAuthorized,
+          retentionConfirmed: clinicPurgeRetentionConfirmed,
+          reason: clinicPurgeReason.trim(),
+        }),
+      });
+      const payload: unknown = await res.json();
+      if (!res.ok || !isClinicPurgePreview(payload)) {
+        const error = isRecord(payload) && typeof payload.error === 'string' ? payload.error : 'No se pudo procesar el lote de purga.';
+        throw new Error(error);
+      }
+      if (payload.complete && (res.status !== 200 || payload.purge?.state !== 'COMPLETE')) {
+        throw new Error('La API no confirmó una finalización válida. Actualiza el estado antes de continuar.');
+      }
+      setClinicPurgePreview(payload);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'No se pudo procesar el lote de purga.';
+      setClinicPurgeError(message);
+      try {
+        setClinicPurgePreview(await readClinicPurgePreview(String(clinicPurgeTarget.id)));
+      } catch (refreshError) {
+        const refreshMessage = refreshError instanceof Error ? refreshError.message : 'Error desconocido';
+        setClinicPurgeError(`${message} Además, no se pudo refrescar el estado durable: ${refreshMessage}`);
+      }
+    } finally {
+      setClinicPurgeBusy(false);
+    }
   };
 
   const doResetPwd = async () => {
@@ -1659,6 +1867,25 @@ export default function AdminMasterDashboard() {
       notificationItems.push({ key: `clinic_dead_${c.id}`, type: 'clinic_expired', label: c.name, detail: 'Período de gracia agotado' });
     }
   });
+  const purgeJob = clinicPurgePreview?.purge || null;
+  const purgeWaitUntil = Math.max(0, ...[purgeJob?.retryAfter, purgeJob?.leaseUntil]
+    .filter((value): value is string => Boolean(value))
+    .map(value => Date.parse(value))
+    .filter(Number.isFinite));
+  const purgeWaiting = purgeWaitUntil > Date.now();
+  const purgeCanProcess = Boolean(
+    clinicPurgePreview?.eligible && !clinicPurgePreview.complete && !purgeWaiting &&
+    !clinicPurgeBusy && !clinicPurgeLoading &&
+    clinicPurgeConfirmation === clinicPurgePreview.requiredConfirmation &&
+    clinicPurgeAuthorized && clinicPurgeRetentionConfirmed &&
+    clinicPurgeReason.trim().length >= 10 && clinicPurgeReason.trim().length <= 1000
+  );
+  const purgeStatusLabel = purgeJob ? ({
+    QUIESCING: 'Espera de seguridad',
+    RUNNING: 'En proceso por lotes',
+    FAILED: 'Lote fallido; reintento disponible',
+    COMPLETE: 'Purga completada',
+  }[purgeJob.state] || purgeJob.state) : '';
 
   // ─────────────────────────────────────────────────────────────────────────
   // Render
@@ -1961,8 +2188,23 @@ export default function AdminMasterDashboard() {
                           <button onClick={() => openDemoModal(clinic.id, clinic.name)} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-amber-200 bg-white px-2 py-2 text-xs font-medium text-amber-800 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-2 focus:ring-amber-400">
                             <Clock className="h-3.5 w-3.5" /> Demo
                           </button>
-                          <button onClick={() => deleteClinic(clinic)} aria-label={`Eliminar clínica ${clinic.name}`} title="Eliminar clínica" className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-white px-2 py-2 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-400">
-                            <Trash2 className="h-3.5 w-3.5" /> Eliminar
+                          <button
+                            type="button"
+                            onClick={() => setClinicActive(clinic)}
+                            disabled={clinicActionBusyId === clinic.id}
+                            aria-label={`${clinic.is_active ? 'Desactivar' : 'Reactivar'} clínica ${clinic.name}`}
+                            className={`inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border bg-white px-2 py-2 text-xs font-medium transition-colors focus:outline-none focus:ring-2 disabled:cursor-wait disabled:opacity-60 ${clinic.is_active ? 'border-amber-200 text-amber-800 hover:bg-amber-50 focus:ring-amber-400' : 'border-emerald-200 text-emerald-700 hover:bg-emerald-50 focus:ring-emerald-400'}`}
+                          >
+                            {clinic.is_active ? <EyeOff className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />}
+                            {clinicActionBusyId === clinic.id ? 'Guardando…' : clinic.is_active ? 'Desactivar' : 'Reactivar'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openClinicPurge(clinic)}
+                            aria-label={`Revisar y purgar clínica ${clinic.name}`}
+                            className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-white px-2 py-2 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-400"
+                          >
+                            <Eye className="h-3.5 w-3.5" /> Purga
                           </button>
                         </div>
                       </div>
@@ -3474,6 +3716,173 @@ export default function AdminMasterDashboard() {
             </div>
           </div>
         </div>
+      )}
+
+      {clinicPurgeTarget && (
+        <Modal
+          title={`Purga de ${clinicPurgeTarget.name}`}
+          onClose={() => {
+            if (!clinicPurgeBusy) {
+              clinicPurgeRequestId.current += 1;
+              setClinicPurgeTarget(null);
+            }
+          }}
+        >
+          <div className="space-y-4">
+            <p className="text-sm text-gray-700">
+              Esta revisión no borra información. La purga permanente solo puede iniciarse si la clínica está desactivada y han transcurrido 30 días desde el vencimiento registrado.
+            </p>
+
+            {clinicPurgeError && (
+              <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                {clinicPurgeError}
+                {!clinicPurgePreview && (
+                  <button type="button" onClick={() => clinicPurgeTarget && openClinicPurge(clinicPurgeTarget)} disabled={clinicPurgeLoading} className="min-h-9 rounded-lg border border-red-300 bg-white px-3 text-xs font-semibold text-red-800 hover:bg-red-100 disabled:opacity-50">
+                    Reintentar vista previa
+                  </button>
+                )}
+              </div>
+            )}
+
+            {clinicPurgeLoading && !clinicPurgePreview && (
+              <div role="status" className="flex items-center gap-2 py-4 text-sm text-gray-500">
+                <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" /> Consultando alcance y elegibilidad…
+              </div>
+            )}
+
+            {clinicPurgePreview && (
+              <>
+                <section aria-labelledby="clinic-purge-eligibility" className={`rounded-xl border p-3 ${clinicPurgePreview.eligible ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h4 id="clinic-purge-eligibility" className="font-semibold text-gray-900">
+                      {clinicPurgePreview.eligible ? 'Elegible para iniciar o continuar' : 'Purga bloqueada por requisitos'}
+                    </h4>
+                    <button
+                      type="button"
+                      onClick={refreshClinicPurge}
+                      disabled={clinicPurgeLoading || clinicPurgeBusy}
+                      className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 text-xs font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#c5a075] disabled:opacity-50"
+                    >
+                      <RefreshCw className={`h-3.5 w-3.5 ${clinicPurgeLoading ? 'animate-spin' : ''}`} aria-hidden="true" />
+                      Actualizar estado
+                    </button>
+                  </div>
+                  <p className="mt-2 text-xs text-gray-700">
+                    Clínica: <strong>{clinicPurgePreview.clinic.slug}</strong> · {clinicPurgePreview.clinic.is_active ? 'Activa' : 'Desactivada'}
+                  </p>
+                  <p className="mt-1 text-xs text-gray-700">
+                    Vencimiento: {formatPurgeDate(clinicPurgePreview.clinic.subscription_expires_at)} · Fecha mínima estimada tras 30 días: {formatPurgeEligibilityDate(clinicPurgePreview.clinic.subscription_expires_at)}. La API confirma la elegibilidad final.
+                  </p>
+                  {clinicPurgePreview.reasons.length > 0 && (
+                    <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-amber-900">
+                      {clinicPurgePreview.reasons.map(reason => <li key={reason}>{reason}</li>)}
+                    </ul>
+                  )}
+                </section>
+
+                <section aria-labelledby="clinic-purge-scope" className="rounded-xl border border-gray-200 p-3">
+                  <h4 id="clinic-purge-scope" className="font-semibold text-gray-900">Alcance verificado en Neon</h4>
+                  <ul className="mt-2 grid grid-cols-1 gap-1.5 text-xs text-gray-700 sm:grid-cols-2">
+                    {Object.entries(clinicPurgePreview.counts).map(([table, count]) => (
+                      <li key={table} className="flex justify-between gap-3 rounded bg-gray-50 px-2 py-1.5">
+                        <span className="break-all">{table}</span>
+                        <span className="shrink-0 font-semibold">{count.toLocaleString('es-EC')}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  {Object.keys(clinicPurgePreview.counts).length === 0 && (
+                    <p className="mt-2 text-xs text-gray-600">No hay tablas clínicas con filas para este tenant.</p>
+                  )}
+                  <p className="mt-2 text-xs text-gray-600">
+                    En R2 se procesan fotos clínicas y objetos temporales/anuales bajo los prefijos de la clínica. La vista previa no informa un conteo exacto de objetos R2. Se conserva la identidad de la clínica y el registro mínimo de auditoría.
+                  </p>
+                </section>
+
+                <section aria-labelledby="clinic-purge-backups" className="rounded-xl border border-blue-200 bg-blue-50 p-3">
+                  <h4 id="clinic-purge-backups" className="font-semibold text-blue-950">Copias cifradas y recuperación</h4>
+                  <p className="mt-1 break-all text-xs text-blue-900">Prefijo retenido: {clinicPurgePreview.retainedBackups.prefix}</p>
+                  <p className="mt-1 text-xs text-blue-900">
+                    No se borran inmediatamente ni se crea otra copia al purgar. Bloqueo inmutable: {clinicPurgePreview.retainedBackups.immutableDays} días; lifecycle informado: {clinicPurgePreview.retainedBackups.retentionDays} días.
+                  </p>
+                  <p className="mt-1 text-xs text-blue-800">{clinicPurgePreview.retainedBackups.note}</p>
+                </section>
+
+                {purgeJob && (
+                  <section aria-labelledby="clinic-purge-progress" aria-live="polite" className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+                    <h4 id="clinic-purge-progress" className="font-semibold text-gray-900">Estado durable: {purgeStatusLabel}</h4>
+                    <dl className="mt-2 grid grid-cols-1 gap-1 text-xs text-gray-700 sm:grid-cols-2">
+                      <div><dt className="inline font-medium">Fase: </dt><dd className="inline">{purgeJob.phase || '—'}</dd></div>
+                      <div><dt className="inline font-medium">Objetos R2 eliminados: </dt><dd className="inline">{purgeJob.deletedObjects ?? 0}</dd></div>
+                      <div><dt className="inline font-medium">Solicitud registrada: </dt><dd className="inline">{formatPurgeDate(purgeJob.requestedAt)}</dd></div>
+                      {purgeJob.completedAt && <div><dt className="inline font-medium">Completada: </dt><dd className="inline">{formatPurgeDate(purgeJob.completedAt)}</dd></div>}
+                    </dl>
+                    {purgeWaiting && (
+                      <p className="mt-2 text-xs text-amber-900">
+                        Lote reservado o período de cierre en curso. Se podrá continuar después de {formatPurgeDate(new Date(purgeWaitUntil).toISOString())}.
+                      </p>
+                    )}
+                    {purgeJob.last_error && (
+                      <p className="mt-2 text-xs text-red-800">El último lote falló ({purgeJob.last_error}). Actualiza el estado y reintenta cuando venza la reserva.</p>
+                    )}
+                    {clinicPurgePreview.complete && (
+                      <p className="mt-2 text-sm font-semibold text-emerald-800">La purga está registrada como completada.</p>
+                    )}
+                  </section>
+                )}
+
+                {!clinicPurgePreview.complete && (
+                  <fieldset disabled={clinicPurgeBusy} className="space-y-3 rounded-xl border border-red-200 p-3">
+                    <legend className="px-1 text-sm font-semibold text-red-800">Confirmación y autorización Master</legend>
+                    <div>
+                      <label htmlFor="clinic-purge-confirmation" className="block text-xs font-medium text-gray-700">
+                        Escribe exactamente el identificador de destino: <code className="font-bold">{clinicPurgePreview.requiredConfirmation}</code>
+                      </label>
+                      <input
+                        id="clinic-purge-confirmation"
+                        autoComplete="off"
+                        spellCheck={false}
+                        value={clinicPurgeConfirmation}
+                        onChange={event => setClinicPurgeConfirmation(event.target.value)}
+                        className="mt-1 min-h-10 w-full rounded-lg border border-gray-300 px-3 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-200"
+                      />
+                    </div>
+                    <label className="flex items-start gap-2 text-xs text-gray-700">
+                      <input type="checkbox" checked={clinicPurgeAuthorized} onChange={event => setClinicPurgeAuthorized(event.target.checked)} className="mt-0.5 accent-red-700" />
+                      <span>Autorizo la purga irreversible del alcance mostrado, tras el plazo de devolución, y entiendo que las sesiones de la clínica se revocarán al iniciar.</span>
+                    </label>
+                    <label className="flex items-start gap-2 text-xs text-gray-700">
+                      <input type="checkbox" checked={clinicPurgeRetentionConfirmed} onChange={event => setClinicPurgeRetentionConfirmed(event.target.checked)} className="mt-0.5 accent-red-700" />
+                      <span>Confirmo la retención indicada: las copias existentes no se eliminan inmediatamente; el lifecycle de R2 debe cumplir los plazos mostrados.</span>
+                    </label>
+                    <div>
+                      <label htmlFor="clinic-purge-reason" className="block text-xs font-medium text-gray-700">Motivo de autorización (10–1000 caracteres)</label>
+                      <textarea
+                        id="clinic-purge-reason"
+                        rows={3}
+                        maxLength={1000}
+                        value={clinicPurgeReason}
+                        onChange={event => setClinicPurgeReason(event.target.value)}
+                        className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-200"
+                      />
+                    </div>
+                    <p className="text-xs text-red-800">
+                      El primer envío registra una orden durable y cierra accesos. No borra datos de inmediato: aplica una espera de seguridad antes de procesar fases por lotes.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={processClinicPurge}
+                      disabled={!purgeCanProcess}
+                      className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {clinicPurgeBusy && <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" />}
+                      {clinicPurgeBusy ? 'Procesando lote…' : purgeJob?.state === 'FAILED' ? 'Reintentar lote fallido' : purgeJob ? 'Procesar siguiente lote' : 'Iniciar purga irreversible'}
+                    </button>
+                  </fieldset>
+                )}
+              </>
+            )}
+          </div>
+        </Modal>
       )}
 
       {/* ── Modal: Clínica ────────────────────────────────────────────── */}

@@ -37,6 +37,7 @@ test('default natural-person contract does not require a legal representative', 
   for (const name of ['contractReference', 'clientName', 'taxId', 'clinicName', 'address', 'email']) {
     assert.match(html, new RegExp(`<input[^>]*name="${name}"[^>]*value=""`));
   }
+  assert.doesNotMatch(html, /Alejandro Codón|Bárbara Atenea Beauty Club/);
 });
 
 test('default package excludes chatbot and does not silently enable negotiated annex', () => {
@@ -78,6 +79,12 @@ test('common support refund incident notice and AI safeguards apply without a pa
   assert.match(text, /autorización expresa, documentada y específica/);
   assert.match(text, /Contratar el plan o aceptar estas Condiciones no constituye esa autorización/);
   assert.match(text, /no eliminan las garantías comunes de soporte, devolución, aviso de incidentes ni autorización de IA/);
+  assert.match(text, /reclamaciones contractuales del Cliente por divulgación no autorizada/);
+  assert.match(text, /No limita por contrato sanciones administrativas/);
+  assert.match(text, /La confidencialidad subsiste después de terminar el contrato/);
+  assert.match(text, /obligaciones de prevención, contención, investigación, aviso y asistencia se mantienen/);
+  assert.match(text, /Desactivar una clínica suspende el acceso y no equivale a eliminar sus datos/);
+  assert.match(text, /no se reutilizarán para reactivar datos cuya supresión ya se haya confirmado/);
 });
 
 test('printed privacy safeguards distinguish automatic backups from the authorized annual delivery', () => {
@@ -98,13 +105,18 @@ test('printed privacy safeguards distinguish automatic backups from the authoriz
   assert.match(text, /requiere cotización y aceptación previa/);
   assert.match(text, /No se cobrarán correcciones o reintentos necesarios por fallos imputables al Proveedor/);
   assert.match(text, /ni se condicionará el ejercicio de derechos legales/);
+  assert.match(text, /35 días desde la creación de cada copia/);
+  assert.match(text, /el bloqueo impide borrarlas antes de cumplir 30 días/);
+  assert.match(text, /Una vez registrada la purga no se inician nuevas copias de la clínica/);
+  assert.match(text, /una ejecución que ya hubiera comenzado puede concluir durante el período de drenaje/);
+  assert.match(text, /se aplicarán de nuevo las instrucciones de eliminación antes de reanudar el uso ordinario/);
   assert.doesNotMatch(text, /Pendiente de implementación\/verificación/);
 });
 
 test('registration and invitation reject stale or missing legal versions before database operations', async () => {
   const { default: handler } = await import('../api/admin-auth.js');
   for (const action of ['register', 'useInvite']) {
-    for (const version of [undefined, '2026-10-01', '2026-10-06-r2']) {
+    for (const version of [undefined, '2026-10-01', '2026-10-06-r2', '2026-10-07']) {
       let status;
       let response;
       const res = {
@@ -174,6 +186,15 @@ test('editable suggestions are opt-in, preserve edits and print only selected pa
       isolated.exports.CONTRACT_SUGGESTIONS[field]);
     toggle().props.onChange({ target: { checked: false } });
   }
+  let tree = render();
+  nodes(tree).find(node => node.type === 'select' && node.props.name === 'jurisdiction')
+    .props.onChange({ target: { value: 'Quito' } });
+  tree = render();
+  assert.match(markup(tree), /B\.5\. Jurisdicción particular/);
+  assert.match(markup(tree), /Solo para este contrato/);
+  nodes(tree).find(node => node.type === 'select' && node.props.name === 'jurisdiction')
+    .props.onChange({ target: { value: 'Cuenca' } });
+  assert.doesNotMatch(markup(render()), /B\.5\. Jurisdicción particular/);
 });
 
 test('both onboarding forms submit the displayed legal version', () => {

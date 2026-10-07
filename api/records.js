@@ -5,6 +5,7 @@ import { sql } from '@vercel/postgres';
 import { initClinicalDatabase, getPool, getAppPool } from '../lib/neon-clinical-db.js';
 import { authenticateRequest } from '../lib/admin-auth.js';
 import { generateUploadUrl, generateReadUrl, deleteR2Object, putR2Object } from '../lib/r2-service.js';
+import { lockClinicWriters, unlockClinicWriters, requireClinicWritable } from '../lib/clinic-lifecycle.js';
 import { buildFinanceCsv } from '../lib/finance-csv.js';
 import { normalizeEcuadorIdentification, hashConsentEvidence, hashSigningCode, hashConsentSession, isValidSignatureDataUrl, maskEmail, buildConsentGmailRaw } from '../lib/consent-signing.js';
 
@@ -992,8 +993,26 @@ export default async function handler(req, res) {
     // ponytail: más simple que BEGIN/COMMIT y compatible con early-return en cada case.
     const effectiveClinicId = su?.effective_clinic_id ?? su?.clinic_id ?? null;
     const client = await appPool.connect();
+    let lifecycleClinicId = effectiveClinicId;
+    let lifecycleLocked = false;
+    let clientDiscarded = false;
 
     try {
+      if (!lifecycleClinicId && PUBLIC_ACTIONS.has(action)) {
+        const signingToken = req.query.token || body.token;
+        if (typeof signingToken !== 'string' || !SIGNING_TOKEN_PATTERN.test(signingToken))
+          return res.status(404).json({ error: 'Session not found or expired' });
+        const target = await getPool().query('SELECT clinic_id FROM consent_forms WHERE signing_token=$1', [signingToken]);
+        lifecycleClinicId = target.rows[0]?.clinic_id;
+        if (!lifecycleClinicId) return res.status(404).json({ error: 'Session not found or expired' });
+      }
+      if (lifecycleClinicId) {
+        await client.query("SET statement_timeout = '15s'");
+        await lockClinicWriters(client, [lifecycleClinicId], { session: true });
+        lifecycleLocked = true;
+        await client.query('SET statement_timeout = 0');
+        await requireClinicWritable(getPool(), lifecycleClinicId);
+      } else return res.status(400).json({ error: 'Selecciona una clínica para operar sus datos.' });
       await client.query(
         "SELECT set_config('app.current_tenant', $1, false)",
         [effectiveClinicId ? String(effectiveClinicId) : '']
@@ -4600,12 +4619,23 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'Invalid action' });
     }
     } finally {
+      if (lifecycleLocked) {
+        try { await unlockClinicWriters(client, [lifecycleClinicId]); }
+        catch (error) {
+          console.error('[records:lifecycle] unlock failed', error.code || error.name);
+          client.release(error);
+          clientDiscarded = true;
+        }
+      }
       // Limpiar tenant antes de devolver la conexión al pool
-      try { await client.query("SELECT set_config('app.current_tenant', '', false)"); } catch {}
-      client.release();
+      if (!clientDiscarded) {
+        try { await client.query('SET statement_timeout = 0'); } catch {}
+        try { await client.query("SELECT set_config('app.current_tenant', '', false)"); } catch {}
+        client.release();
+      }
     }
   } catch (error) {
     console.error('Clinical Records API Error:', error);
-    return res.status(500).json({ error: error.message });
+    return res.status(error.status || 500).json({ error: error.message });
   }
 }

@@ -11,6 +11,7 @@ import crypto from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 import { getPool } from '../lib/neon-clinical-db.js';
 import { authenticateRequest } from '../lib/admin-auth.js';
+import { lockClinicWriters, unlockClinicWriters, requireClinicWritable } from '../lib/clinic-lifecycle.js';
 import { PHOTO_BACKUP_ACTIONS, handleAnnualPhotoBackup } from '../lib/annual-photo-backup.js';
 import { putR2Object, getR2ObjectBuffer, listR2Objects, generateDownloadUrl, generateUploadUrl, r2ObjectExists, deleteR2Object } from '../lib/r2-service.js';
 import {
@@ -44,6 +45,15 @@ const LEGACY_FINANCE_COLUMNS = new Set([
 const CURRENT_FINANCE_COLUMNS = new Set(['date', 'entity', 'type', 'subtotal', 'tax', 'registered_by']);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SNAPSHOT_KINDS = ['auto', 'manual', 'pre-restore'];
+
+export async function rejectPurgedBackup(pool, doc, targetClinicId) {
+  const ids = [targetClinicId, doc?.metadata?.clinic_id].filter(id => typeof id === 'string' && UUID_RE.test(id));
+  if (!ids.length) return;
+  const result = await pool.query(`SELECT true AS purge FROM clinic_settings
+    WHERE clinic_id=ANY($1::uuid[]) AND general ? '_purge' LIMIT 1`, [ids]);
+  if (result.rows.some(row => row.purge === true))
+    throw Object.assign(new Error('No se permite restaurar copias de una clínica con purga registrada, ni en otra identidad de clínica.'), { status: 409 });
+}
 
 export function resolveFinanceSourceTable(financeModule) {
   const source = financeModule?.source_table;
@@ -265,6 +275,12 @@ export async function restoreBackupDocument(pool, doc, clinicId, { dryRun = true
 
   try {
     await client.query('BEGIN');
+    await client.query("SET LOCAL statement_timeout = '15s'");
+    const sourceClinic = doc?.metadata?.clinic_id;
+    await lockClinicWriters(client, [clinicId,
+      ...(typeof sourceClinic === 'string' && UUID_RE.test(sourceClinic) ? [sourceClinic] : [])]);
+    await requireClinicWritable(client, clinicId);
+    await rejectPurgedBackup(client, doc, clinicId);
     const modules = doc.modules;
     const t = modules.patients?.tables;
     if (t && typeof t === 'object') {
@@ -329,16 +345,32 @@ async function clinicName(pool, clinicId) {
   return (await pool.query('SELECT name FROM clinics WHERE id = $1', [clinicId])).rows[0]?.name || null;
 }
 
-async function createSnapshot(pool, clinicId, kind, generatedBy, { signal } = {}) {
+export async function createSnapshot(pool, clinicId, kind, generatedBy, {
+  signal, collect = collectClinicData, put = putR2Object,
+} = {}) {
   signal?.throwIfAborted();
-  const modules = await collectClinicData(pool, clinicId, BACKUP_MODULES, { signal });
+  const modules = await collect(pool, clinicId, BACKUP_MODULES, { signal });
   signal?.throwIfAborted();
   const doc = buildBackupDocument({ clinicId, clinicName: await clinicName(pool, clinicId), generatedBy, kind, modules });
   signal?.throwIfAborted();
   const body = encryptBackup(compressBackup(doc));
   signal?.throwIfAborted();
   const key = `backups/${clinicId}/${kind}/${stamp()}-${crypto.randomBytes(4).toString('hex')}.json.gz.enc`;
-  await putR2Object(key, body, 'application/octet-stream');
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query("SET LOCAL statement_timeout = '10s'");
+    await lockClinicWriters(client, [clinicId]);
+    await requireClinicWritable(client, clinicId, { allowInactive: true });
+    signal?.throwIfAborted();
+    await put(key, body, 'application/octet-stream', {
+      abortSignal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10000)]) : AbortSignal.timeout(10000),
+    });
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally { client.release(); }
   return { key, size: body.length, counts: doc.metadata.counts };
 }
 
@@ -372,6 +404,7 @@ export async function purgeExpiredClinicPhotos(pool, deleteObject = deleteR2Obje
   const { rows } = await pool.query(
     `SELECT f.id, f.r2_key FROM clinical_photos f JOIN clinics c ON c.id = f.clinic_id
      WHERE c.subscription_expires_at IS NOT NULL AND c.subscription_expires_at < NOW() - INTERVAL '30 days'
+       AND NOT EXISTS (SELECT 1 FROM clinic_settings cs WHERE cs.clinic_id=c.id AND cs.general ? '_purge')
      ORDER BY f.id LIMIT ${Number(limit)}`);
   let deleted = 0;
   for (const photo of rows) {
@@ -443,8 +476,10 @@ export async function runCron(req, res, pool, {
   const scope = { scope: targeted ? 'clinic' : 'all', clinicId: targeted ? targetClinicId : null };
   if (!hasBackupKey()) return res.status(503).json({ error: 'BACKUP_ENCRYPTION_KEY no configurada' });
   const clinicResult = await withinBudget(() => targeted
-    ? pool.query('SELECT id FROM clinics WHERE id = $1', [targetClinicId])
-    : pool.query('SELECT id FROM clinics ORDER BY id'));
+    ? pool.query(`SELECT c.id FROM clinics c WHERE c.id=$1 AND NOT EXISTS
+        (SELECT 1 FROM clinic_settings cs WHERE cs.clinic_id=c.id AND cs.general ? '_purge')`, [targetClinicId])
+    : pool.query(`SELECT c.id FROM clinics c WHERE NOT EXISTS
+        (SELECT 1 FROM clinic_settings cs WHERE cs.clinic_id=c.id AND cs.general ? '_purge') ORDER BY c.id`));
   if (clinicResult === CRON_BUDGET_EXCEEDED)
     return res.status(503).json({ error: 'Presupuesto agotado al listar clínicas; ninguna fue iniciada',
       ...scope, complete: false, needsRetry: true, retryScheduled: false });
@@ -607,8 +642,18 @@ export default async function handler(req, res) {
   if (clinicId && !UUID_RE.test(String(clinicId))) return res.status(400).json({ error: 'Clínica inválida' });
   const requireClinic = () => { if (!clinicId) { res.status(400).json({ error: 'Selecciona una clínica para operar sus respaldos' }); return false; } return true; };
   const isPost = req.method === 'POST';
+  let writerClient = null;
+  let writerLocked = false;
 
   try {
+    if (clinicId) {
+      writerClient = await pool.connect();
+      await writerClient.query("SET statement_timeout = '15s'");
+      await lockClinicWriters(writerClient, [clinicId], { session: true });
+      writerLocked = true;
+      await writerClient.query('SET statement_timeout = 0');
+      await requireClinicWritable(writerClient, clinicId, { allowInactive: true });
+    }
     if (action === 'stats' && req.method === 'GET') {
       const existing = new Set((await pool.query("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")).rows.map(r => r.table_name));
       const finTable = existing.has('financial_records') ? 'financial_records' : 'external_finance_records';
@@ -718,6 +763,12 @@ export default async function handler(req, res) {
       if (!validKey) return res.status(400).json({ error: 'Archivo de respaldo no válido para esta clínica' });
       const doc = decodeBackupBuffer(await getR2ObjectBuffer(body.key, MAX_UPLOAD_BYTES * 2));
       const info = inspectBackupDocument(doc, clinicId);
+      try { await rejectPurgedBackup(pool, doc, clinicId); }
+      catch (error) {
+        if (!error.status) throw error;
+        console.error('[backup:restore]', error.status);
+        return res.status(error.status).json({ error: error.message });
+      }
       const dryRun = body.dryRun !== false;
       const confirmations = [];
       if (info.signature !== 'valid') confirmations.push('unsigned');
@@ -748,5 +799,16 @@ export default async function handler(req, res) {
     const known = error instanceof Error && error.name === 'Error' && !error.code && !error.$metadata;
     console.error('[backup] error', action, error?.code || error?.name || 'Error');
     return res.status(known ? (error.status === 409 ? 409 : 400) : 500).json({ error: known ? error.message : 'No se pudo procesar el respaldo.' });
+  } finally {
+    if (writerClient) {
+      try {
+        if (writerLocked) await unlockClinicWriters(writerClient, [clinicId]);
+        await writerClient.query('SET statement_timeout = 0');
+        writerClient.release();
+      } catch (error) {
+        console.error('[backup:lifecycle] release failed', error.code || error.name);
+        writerClient.release(error);
+      }
+    }
   }
 }

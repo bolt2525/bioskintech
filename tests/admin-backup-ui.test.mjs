@@ -125,6 +125,55 @@ test('backup distingue ausencia, error y copia automática antigua (>48 h)', asy
   assert.doesNotMatch(text(await harness.mount()), /Tiene más de 48 horas/);
 });
 
+test('Base de Datos distingue selección JSON, firmas, originales y copias en nube', async () => {
+  const harness = componentHarness(backupPath, 'clinic_admin', async url =>
+    json(url.includes('snapshots') ? { snapshots: [] } : { stats: {}, encryption_ready: true }));
+  const tree = await harness.mount();
+  assert.match(text(tree), /El JSON conserva datos estructurados, firmas y marcaciones/);
+  assert.match(text(tree), /ni contiene los archivos de fotografías/);
+  assert.match(text(tree), /no solo las casillas de Exportar/);
+  assert.ok(elements(tree).some(node => node.props?.title === 'Respaldo técnico por módulos (JSON)'));
+  assert.match(text(tree), /hasta 100 consentimientos/);
+  for (const label of ['Exportar', 'Importar', 'Nube']) {
+    const tab = elements(tree).find(node => node.type === 'button' && text(node).endsWith(label));
+    assert.equal(tab.props['aria-pressed'], label === 'Exportar');
+  }
+});
+
+test('La guía de importación informa errores y permite reintentar', async () => {
+  let failed = true;
+  const harness = componentHarness(backupPath, 'clinic_admin', async url => {
+    if (url.includes('templateInfo')) return failed ? json({ error: 'Guía temporalmente no disponible' }, false)
+      : json({ columns: [{ name: 'nombres', required: true, description: 'Nombres', example: 'Prueba' }] });
+    return json(url.includes('snapshots') ? { snapshots: [] } : { stats: {}, encryption_ready: true });
+  });
+  let tree = await harness.mount();
+  button(tree, 'Importar').props.onClick();
+  tree = harness.render();
+  button(tree, 'Importar pacientes (CSV)').props.onClick();
+  tree = await harness.mount();
+  assert.match(text(tree), /No se pudo cargar la guía de columnas/);
+  failed = false;
+  button(tree, 'Reintentar guía').props.onClick();
+  await new Promise(resolve => setImmediate(resolve));
+  tree = harness.render();
+  assert.doesNotMatch(text(tree), /No se pudo cargar la guía de columnas/);
+  assert.match(text(tree), /Ver guía de columnas \(1\)/);
+});
+
+test('El canal anual apagado conserva coordinación asistida sin solicitudes automáticas', async () => {
+  const calls = [];
+  const harness = componentHarness(annualPath, 'clinic_admin', async url => {
+    calls.push(url);
+    return json({ configured: false, eligible: false, reason: 'feature_disabled', requests: [] });
+  });
+  const tree = await harness.mount();
+  assert.match(text(tree), /Contacta a soporte por los canales oficiales/);
+  assert.match(text(tree), /no necesitas contratar infraestructura/);
+  assert.equal(button(tree, 'Solicitar Respaldo Anual').props.disabled, true);
+  assert.equal(calls.length, 1);
+});
+
 for (const configured of [false, true, undefined]) {
   test(`Master conserva configured y bloquea período/aprobación: ${configured}`, async () => {
     const calls = [];

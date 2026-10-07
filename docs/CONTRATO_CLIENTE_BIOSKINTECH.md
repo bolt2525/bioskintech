@@ -4,7 +4,7 @@
 >
 > Este archivo es material interno de revisión y no es el documento generado para firma. El paquete final emitido por Master Admin incorpora condiciones particulares, anexo de tratamiento, Condiciones de Servicio y Política de Privacidad. Su orden de prevalencia consta en la cláusula 3 de este archivo y en el paquete generado.
 
-**Versión de referencia de los documentos publicados:** 2026-10-07
+**Versión de referencia de los documentos publicados:** 2026-10-07-r2
 **Fecha de preparación:** 7 de octubre de 2026
 **Lugar de referencia contractual en las Condiciones:** Cuenca, Ecuador
 
@@ -57,7 +57,7 @@ El contrato se integra con:
 3. la **Política de Privacidad y Tratamiento de Datos Personales** vigente; y
 4. la cotización, plan y condiciones comerciales expresamente aceptados por el Cliente.
 
-Las Condiciones de Servicio declaran que el registro, aceptación de invitación, pago o uso de la Plataforma constituye aceptación electrónica de esas Condiciones y de la Política de Privacidad. El Cliente acepta que estas últimas se encuentran en versión **2026-10-07** al celebrar este documento, salvo que la pantalla de aceptación o la oferta aceptada identifique otra versión. Las nuevas versiones se notifican en el panel y deben aceptarse para continuar el uso; el sistema registra la aceptación con versión, fecha, IP y navegador.
+Las Condiciones de Servicio declaran que el registro, aceptación de invitación, pago o uso de la Plataforma constituye aceptación electrónica de esas Condiciones y de la Política de Privacidad. El Cliente acepta que estas últimas se encuentran en versión **2026-10-07-r2** al celebrar este documento, salvo que la pantalla de aceptación o la oferta aceptada identifique otra versión. Las nuevas versiones se notifican en el panel y deben aceptarse para continuar el uso; el sistema registra la aceptación con versión, fecha, IP y navegador.
 
 En caso de contradicción, las condiciones particulares firmadas prevalecen para identidad, precio, módulos y vigencia; el anexo de tratamiento prevalece para el encargo de datos; un Anexo B negociado sustituye solo las disposiciones que identifica expresamente para ese contrato; y las Condiciones de Servicio y la Política rigen sus materias restantes. Siempre prevalece la ley imperativa.
 
@@ -142,7 +142,7 @@ El JSON es técnico; los CSV son listados simples. La entrega anual autorizada a
 
 BIOSKINTECH procura mantener la Plataforma disponible, pero las Condiciones de Servicio no garantizan un nivel específico de disponibilidad ni ausencia de errores. No se establece un SLA, porcentaje de disponibilidad, ventana de mantenimiento ni RTO/RPO distinto de las descripciones expresas sobre copias y recuperación de la cláusula 8.
 
-La Plataforma depende de proveedores externos. Las Condiciones indican que BIOSKINTECH no responde por su disponibilidad, cambios, costos, bloqueos de cuentas ni por el tratamiento que realicen según sus políticas. BIOSKINTECH puede actualizar, reorganizar o retirar funcionalidades o integraciones; los mantenimientos planificados se informarán con anticipación cuando sea razonablemente posible y los cambios urgentes por seguridad o estabilidad pueden aplicarse sin aviso previo. Si se elimina una funcionalidad principal del plan sin reemplazo equivalente, el Cliente puede cancelar conforme a las Condiciones.
+La Plataforma depende de proveedores externos y de su disponibilidad y condiciones. Esa dependencia no excluye las obligaciones legales de BIOSKINTECH como Responsable o Encargado. BIOSKINTECH puede actualizar, reorganizar o retirar funcionalidades o integraciones; los mantenimientos planificados se informarán con anticipación cuando sea razonablemente posible y los cambios urgentes por seguridad o estabilidad pueden aplicarse sin aviso previo. Si se elimina una funcionalidad principal del plan sin reemplazo equivalente, el Cliente puede cancelar conforme a las Condiciones y aplicar la devolución proporcional cuando corresponda.
 
 Los canales oficiales publicados son **soporte-tecnico@bioskintechapp.com**, WhatsApp **+593 984 232 889**, el sitio bioskintechapp.com y los avisos dentro del panel. Soporte general L–V 09:00–18:00 UTC−5 salvo feriados; primera respuesta humana P1 4 horas hábiles, P2 8 horas hábiles y P3 2 días hábiles. Objetivos iniciales de recuperación P1 1 día hábil y P2 3 días hábiles, no máximos absolutos ni disponibilidad garantizada. Activación hasta 1 día hábil tras contrato/pago/datos, y propuesta de capacitación hasta 3 días hábiles tras activar.
 
@@ -160,7 +160,9 @@ La Plataforma avisa desde 21 días antes del vencimiento y luego suspende acceso
 
 BIOSKINTECH puede suspender o terminar el servicio por falta de pago, incumplimiento grave, uso ilícito, riesgo para la seguridad de la Plataforma u otros clientes u orden de autoridad competente; en riesgo inminente, la suspensión puede ser inmediata. También puede suspender o no renovar ante denuncias fundadas de mala praxis o uso indebido de datos. BIOSKINTECH puede discontinuar el servicio con al menos 30 días de aviso, habilitando la exportación durante ese plazo.
 
-Al vencimiento o cancelación, los datos se conservan 30 días para renovación o recuperación por canales oficiales. La entrega anual no consumida del período terminado puede solicitarse en esa ventana; otras entregas requieren acuerdo previo sin restringir derechos legales. No se concede conservación gratuita por 90 días ni acceso ordinario por estar retenidos. Cumplidos los 30 días pueden eliminarse originales y datos activos, sin perjuicio de copias residuales y obligaciones legales. La confirmación de eliminación describe el alcance y las excepciones; no equivale a borrado inmediato de copias inmutables.
+Al vencimiento o cancelación, los datos se conservan 30 días para renovación o recuperación por canales oficiales. La entrega anual no consumida del período terminado puede solicitarse en esa ventana; otras entregas requieren acuerdo previo sin restringir derechos legales. No se concede conservación gratuita por 90 días ni acceso ordinario por estar retenidos. Cumplidos los 30 días pueden eliminarse originales y datos activos, sin perjuicio de copias residuales y obligaciones legales. Las copias automáticas cifradas de R2 tienen un bloqueo de 30 días y se eliminan a los 35 días desde su creación; una solicitud de borrado no puede acortar ese bloqueo ni reinicia el ciclo. Mientras persistan, quedan fuera del uso ordinario y solo se conservan para continuidad/recuperación. Una vez registrada la purga no se inician nuevas copias de la clínica; una ejecución que ya hubiera comenzado puede concluir durante el período de drenaje y queda sometida al mismo bloqueo y ciclo de retención. La confirmación de eliminación describe el alcance y las excepciones; no equivale a borrado inmediato de copias protegidas.
+
+Desactivar una clínica no elimina su información. La purga definitiva requiere instrucción autorizada y comprobar las obligaciones de conservación y devolución. Las copias cifradas residuales no se utilizarán para reactivar datos cuya supresión se haya confirmado.
 
 Si una cuenta de prueba no se convierte en servicio contratado, el usuario se desactiva o la cuenta puede eliminarse junto con sus fotografías; no se ofrece obligación de conservar o entregar los datos cargados en una prueba vencida. La prueba oficial es de tres días y puede ampliarse hasta diez; BIOSKINTECH puede conceder por escrito un trial comercial excepcional de hasta 30 días. El Cliente que ingrese datos reales durante la prueba asume desde ese momento sus responsabilidades de Responsable del Tratamiento.
 
@@ -168,7 +170,7 @@ Si una cuenta de prueba no se convierte en servicio contratado, el usuario se de
 
 Las limitaciones publicadas en las Condiciones de Servicio forman parte de este acuerdo y se reproducen por referencia. En la máxima medida permitida por la ley, BIOSKINTECH no responde por actos médicos o mala praxis; contenido, exactitud o base legal del Cliente; acciones u omisiones de este o sus Usuarios; fallas de proveedores externos, conectividad, fuerza mayor o ataques que superen medidas razonables; ni daños indirectos, lucro cesante, pérdida de oportunidades, reputación o clientela.
 
-Las Condiciones fijan la responsabilidad contractual total de BIOSKINTECH frente al Cliente en un máximo equivalente al valor efectivamente pagado durante los 12 meses anteriores al hecho. El límite no aplica ante dolo, culpa grave, prohibición legal ni reduce obligaciones frente a Titulares o autoridades. El Cliente mantendrá indemne a BIOSKINTECH, sus titulares y colaboradores frente a reclamaciones derivadas de la atención a pacientes, tratamiento de datos ilícito por parte del Cliente, contenido del Cliente o incumplimiento de las Condiciones, en la medida permitida por la ley.
+Las Condiciones fijan la responsabilidad contractual total de BIOSKINTECH frente al Cliente en un máximo equivalente al valor efectivamente pagado durante los 12 meses anteriores al hecho. Cuando sea legalmente admisible, comprende reclamaciones contractuales por divulgación no autorizada, vulneración de confidencialidad o protección de datos y pérdida de información imputables al Proveedor. El límite no aplica ante dolo, culpa grave o prohibición legal; no limita sanciones, derechos de Titulares ni obligaciones legalmente indisponibles. La confidencialidad continúa tras terminar el contrato; las obligaciones de prevención, contención, investigación, notificación y subsanación no se reducen por ese límite. El Cliente mantendrá indemne a BIOSKINTECH, sus titulares y colaboradores frente a reclamaciones derivadas de la atención a pacientes, tratamiento de datos ilícito por parte del Cliente, contenido del Cliente o incumplimiento de las Condiciones, en la medida permitida por la ley.
 
 ## 13. Ley aplicable, notificaciones y firma
 
@@ -184,7 +186,7 @@ Firma: ______________________________
 
 **Por el Cliente**  
 Razón social/nombre: [COMPLETAR]  
-Representante/cargo: [COMPLETAR]  
+Firmante y calidad: [POR SUS PROPIOS DERECHOS / REPRESENTANTE Y CARGO, SOLO SI ES PERSONA JURÍDICA]
 Fecha: [COMPLETAR]  
 Firma: ______________________________
 
@@ -194,9 +196,9 @@ La aceptación electrónica prevista en las Condiciones y registrada por la Plat
 
 1. Diagrama al que se refiere la solicitud: no fue recibido ni localizado.
 2. Vigencia del RUC y documento de identidad del Proveedor.
-3. Identidad, domicilio, identificación, representante y correo del Cliente.
+3. Identidad, domicilio, identificación y correo del Cliente; representante y facultades solo si contrata una persona jurídica.
 4. Cotización, módulos habilitados, precio, impuestos, método de pago, fechas exactas, renovación y versión aceptada.
-5. Cualquier límite de usuarios, almacenamiento, soporte, servicio o plazo de atención que se pretenda pactar; esos límites no constan en los documentos revisados.
+5. Límites comerciales de usuarios o almacenamiento y variaciones particulares de soporte o servicio; el horario y los objetivos generales de atención ya constan en las Condiciones.
 6. Validación jurídica de las condiciones y su aplicación a la contratación concreta.
 
 ## Anexo A. Fuentes revisadas y trazabilidad
@@ -207,7 +209,7 @@ Este borrador se preparó contrastando el texto contractual con la implementaci�
 |---|---|
 | Condiciones de Servicio | `src/pages/TermsOfService.tsx`: objeto y límites del servicio (arts. 1, 8–9); pagos y pruebas (arts. 4–5); obligaciones del Cliente y firma (arts. 7–8); propiedad, respaldos y terceros (arts. 10–12); disponibilidad y responsabilidad (arts. 13–15); suspensión, terminación y ley (arts. 17–21). |
 | Política de Privacidad | `src/pages/PrivacyPolicy.tsx`: roles (art. 1); categorías de datos y subencargados (arts. 3–5); IA y finalidades (arts. 6–7); seguridad e incidentes (arts. 10–11); conservación y fin del servicio (arts. 12–13). |
-| Versión y contacto legal | `src/components/legal/LegalLayout.tsx`: versión 2026-10-06-r2, correo y WhatsApp oficiales. |
+| Versión y contacto legal | `src/components/legal/LegalLayout.tsx`: versión 2026-10-07-r2, correo y WhatsApp oficiales. |
 | Aceptación de documentos | `src/components/layout/LegalAcceptanceGate.tsx:7-24,30-45,63-75`: gate de aceptación y registro informado al usuario. `api/admin-auth.js:1195-1206,2454-2463`: versión, persistencia y verificación de aceptación. |
 | Programación de cron | `vercel.json:39-45`: cron de respaldos configurado diariamente a las 08:00 UTC. |
 | Cifrado y alcance de respaldos | `lib/backup-service.js:9-14,22-69,152-191,214-237`: formato, cifrado AES-256-GCM, límite por tabla y recolección por clínica. |

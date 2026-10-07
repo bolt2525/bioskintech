@@ -189,6 +189,7 @@ export default function AdminBackup() {
   const [patientFile, setPatientFile] = useState('');
   const [patientReport, setPatientReport] = useState<PatientReport | null>(null);
   const [templateColumns, setTemplateColumns] = useState<TemplateColumn[]>([]);
+  const [templateError, setTemplateError] = useState<string | null>(null);
   const backupInput = useRef<HTMLInputElement>(null);
   const csvInput = useRef<HTMLInputElement>(null);
 
@@ -220,10 +221,16 @@ export default function AdminBackup() {
   }, [canManage]);
 
   useEffect(() => { if (canManage) { void loadStats(); void loadSnapshots(); } }, [canManage, loadStats, loadSnapshots]);
+  const loadTemplateInfo = useCallback(async () => {
+    if (!canManage) return;
+    setTemplateError(null);
+    try { setTemplateColumns((await api<{ columns: TemplateColumn[] }>('/api/backup?action=templateInfo')).columns); }
+    catch (failure) { setTemplateError(failure instanceof Error ? failure.message : 'No se pudo cargar la guía de columnas'); }
+  }, [canManage]);
   useEffect(() => {
     if (canManage && tab === 'import' && importMode === 'patients' && !templateColumns.length)
-      api<{ columns: TemplateColumn[] }>('/api/backup?action=templateInfo').then(d => setTemplateColumns(d.columns)).catch(() => {});
-  }, [canManage, tab, importMode, templateColumns.length]);
+      void loadTemplateInfo();
+  }, [canManage, tab, importMode, templateColumns.length, loadTemplateInfo]);
   const lastAuto = snapshots?.filter(s => s.kind === 'auto')
     .reduce<Snapshot | null>((latest, snapshot) => !latest || Date.parse(snapshot.created_at) > Date.parse(latest.created_at) ? snapshot : latest, null) || null;
   const autoStale = !!lastAuto && Date.now() - Date.parse(lastAuto.created_at) > 48 * 60 * 60 * 1000;
@@ -379,23 +386,23 @@ export default function AdminBackup() {
   return (
     <AdminLayout title="Base de Datos">
       <div className="p-4 md:p-8 max-w-3xl mx-auto">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-4">
+        <div className="flex items-center justify-between gap-3 mb-6">
+          <div className="flex min-w-0 items-center gap-4">
             <div className="p-3 bg-gradient-to-br from-blue-500 to-blue-700 rounded-2xl shadow-lg"><Database className="w-7 h-7 text-white" /></div>
             <div>
-              <h1 className="text-2xl font-bold text-white">Base de Datos</h1>
-              <p className="text-sm text-gray-400">Respaldos, exportación e importación</p>
+              <h1 className="text-2xl font-bold text-gray-900">Base de Datos</h1>
+              <p className="text-sm text-gray-600">Respaldos, exportación e importación</p>
             </div>
           </div>
           <button onClick={() => { void loadStats(); void loadSnapshots(); }} disabled={loadingStats || loadingSnapshots} aria-label="Actualizar"
-            className="p-2 bg-white/10 hover:bg-white/20 rounded-xl border border-white/20 transition-colors disabled:opacity-50">
-            {loadingStats ? <Loader2 className="w-4 h-4 animate-spin text-white" /> : <RefreshCw className="w-4 h-4 text-white" />}
+            className="shrink-0 p-3 bg-white hover:bg-gray-50 rounded-xl border border-gray-200 transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold">
+            {loadingStats ? <Loader2 className="w-4 h-4 animate-spin text-gray-700" /> : <RefreshCw className="w-4 h-4 text-gray-700" />}
           </button>
         </div>
 
         <div className="flex gap-1 bg-gray-100 rounded-xl p-1 mb-6">
           {([['export', 'Exportar', Download], ['import', 'Importar', Upload], ['cloud', 'Nube', Cloud]] as const).map(([id, label, Icon]) => (
-            <button key={id} onClick={() => setTab(id)}
+            <button key={id} onClick={() => setTab(id)} aria-pressed={tab === id}
               className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all ${tab === id ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>
               <Icon className="w-4 h-4" />{label}
             </button>
@@ -404,6 +411,17 @@ export default function AdminBackup() {
 
         {error && <div role="alert" className="mb-6 p-4 bg-red-50 border border-red-200 rounded-2xl text-red-700 text-sm flex gap-2"><AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />{error}</div>}
         {notice && <div role="status" className="mb-6 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-700 text-sm flex gap-2"><Check className="w-4 h-4 flex-shrink-0 mt-0.5" />{notice}</div>}
+
+        <div className="mb-6 rounded-2xl border border-gray-200 bg-white p-4 text-xs leading-relaxed text-gray-700">
+          <p className="font-semibold text-sm text-gray-900">Qué puedes gestionar en este módulo</p>
+          <ul className="mt-2 list-disc space-y-1 pl-4">
+            <li><strong>Exportar:</strong> JSON de los módulos seleccionados, listados CSV y consentimientos firmados legibles. El JSON conserva datos estructurados, firmas y marcaciones; no es solo texto ni contiene los archivos de fotografías.</li>
+            <li><strong>Nube:</strong> consultar copias automáticas y manuales de tu clínica, crear una copia cifrada, descargarla o simular una restauración. La copia en nube incluye datos estructurados de todos los módulos disponibles, no solo las casillas de Exportar.</li>
+            <li><strong>Importar:</strong> agregar registros faltantes desde un respaldo o cargar pacientes desde la plantilla CSV. No reemplaza registros existentes ni recupera una fotografía cuyo archivo ya fue eliminado.</li>
+            <li><strong>Fotografías originales e historias legibles:</strong> entrega anual bajo solicitud y autorización Master, separada del respaldo diario. Si el canal automático no está disponible, solicita coordinación a soporte. La conservación postcontrato es de 30 días.</li>
+          </ul>
+          <p className="mt-2">Disponible para el administrador de la clínica; los colaboradores no pueden exportar o restaurar de forma masiva. Los límites de volumen producen errores explícitos, no una descarga incompleta presentada como completa.</p>
+        </div>
 
         {tab === 'export' && (
           <>
@@ -438,11 +456,11 @@ export default function AdminBackup() {
               </div>
             )}
 
-            <Card title="¿Qué incluyen los respaldos?" subtitle="Aplica tanto a la copia automática como a las descargas">
+            <Card title="¿Qué incluyen los respaldos?" subtitle="El JSON exporta los módulos seleccionados; la copia automática recopila los módulos disponibles">
               <ul className="text-xs text-gray-700 space-y-1.5">
-                <li className="flex gap-2"><Check className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0 mt-0.5" />Toda la información escrita de fichas, consentimientos (con firmas digitalizadas y huellas de integridad), recetas, finanzas e inventario.</li>
+                <li className="flex gap-2"><Check className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0 mt-0.5" />Datos de fichas, consentimientos (con firmas digitalizadas y huellas de integridad), recetas, finanzas e inventario, según los módulos incluidos en la copia.</li>
                 <li className="flex gap-2"><Check className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0 mt-0.5" />Marcaciones de mapas faciales/corporales y del mapeo 3D de inyectables (se guardan como datos, no como imágenes).</li>
-                <li className="flex gap-2"><Info className="w-3.5 h-3.5 text-blue-600 flex-shrink-0 mt-0.5" /><span><strong>Fotografías clínicas:</strong> el JSON y los snapshots automáticos solo incluyen referencias. Los originales se entregan por el flujo anual autorizado de abajo, si está habilitado. La conservación postcontrato sigue siendo de 30 días.</span></li>
+                <li className="flex gap-2"><Info className="w-3.5 h-3.5 text-blue-600 flex-shrink-0 mt-0.5" /><span><strong>Fotografías clínicas:</strong> el JSON y las copias automáticas solo incluyen referencias. Los originales se entregan bajo solicitud anual autorizada; usa el panel de abajo o contacta a soporte si el canal automático no está disponible. La conservación postcontrato sigue siendo de 30 días.</span></li>
                 <li className="flex gap-2"><XCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" /><span><strong>Agenda:</strong> se gestiona en el Google Calendar de cada profesional, no se almacena en BioSkinTech.</span></li>
                 <li className="flex gap-2"><XCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" /><span><strong>Modelos 3D y plantillas:</strong> forman parte del software, no son datos de la clínica.</span></li>
                 <li className="flex gap-2"><XCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" /><span><strong>Contraseñas, tokens y códigos de firma remota:</strong> nunca se exportan, por seguridad.</span></li>
@@ -451,7 +469,7 @@ export default function AdminBackup() {
 
             <AnnualPhotoBackupPanel />
 
-            <Card title="Respaldo técnico completo (JSON)" subtitle="Formato técnico para restaurar datos dentro de BioSkinTech. No está pensado para leerse ni editarse en Excel.">
+            <Card title="Respaldo técnico por módulos (JSON)" subtitle="Incluye únicamente los módulos marcados. Es un formato para restaurar datos en BioSkinTech, no para leer o editar en Excel.">
               <div className="divide-y divide-gray-100 -mx-4 -mt-4 mb-4">
                 {MODULES.map(m => {
                   const on = selected.has(m.id);
@@ -491,7 +509,7 @@ export default function AdminBackup() {
             </Card>
 
             <Card title="Consentimientos firmados (documento legible)" subtitle="Consentimientos con su contenido, firmas, fechas y huella de integridad, listos para leer o imprimir">
-              <p className="text-xs text-gray-600 mb-3">Elige pacientes específicos o todos. Se descarga un archivo que se abre en cualquier navegador; desde ahí puedes usar <strong>Imprimir → Guardar como PDF</strong>.</p>
+              <p className="text-xs text-gray-600 mb-3">Elige pacientes específicos o todos. Se descargan documentos en partes de hasta 100 consentimientos; conserva todas las partes. Se abren en el navegador; desde ahí puedes usar <strong>Imprimir → Guardar como PDF</strong>.</p>
               <button onClick={openConsentPicker} disabled={!!busy}
                 className="w-full py-2.5 rounded-xl border border-gray-200 text-sm text-gray-700 hover:border-gold hover:bg-gold/5 flex items-center justify-center gap-2 disabled:opacity-50">
                 {busy === 'consents' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSignature className="w-4 h-4 text-gold-dark" />}Seleccionar y descargar consentimientos
@@ -506,7 +524,7 @@ export default function AdminBackup() {
             <div className="flex gap-2 mb-4">
               {([['restore', 'Restaurar respaldo'], ['patients', 'Importar pacientes (CSV)']] as const).map(([id, label]) => (
                 <button key={id} onClick={() => setImportMode(id)}
-                  className={`flex-1 py-2 rounded-xl text-sm font-medium border ${importMode === id ? 'bg-white text-gray-900 border-white' : 'text-gray-300 border-white/20 hover:bg-white/10'}`}>{label}</button>
+                  aria-pressed={importMode === id} className={`flex-1 py-2 rounded-xl text-sm font-medium border ${importMode === id ? 'bg-white text-gray-900 border-gray-300' : 'text-gray-600 border-gray-200 hover:bg-gray-50'}`}>{label}</button>
               ))}
             </div>
 
@@ -583,6 +601,10 @@ export default function AdminBackup() {
                   <p><strong>Antecedentes:</strong> las columnas de alergias, medicación y antecedentes se cargan directo en la pestaña Antecedentes del expediente.</p>
                   <p><strong>Identificación:</strong> el sistema valida la cédula ecuatoriana (dígito verificador) y detecta si es cédula o RUC por la cantidad de dígitos. Si ya existe un paciente con esa identificación, se omite y nunca se sobrescribe.</p>
                 </div>
+                {templateError && <div role="alert" className="mb-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-900">
+                  No se pudo cargar la guía de columnas: {templateError}. La descarga de la plantilla sigue disponible.
+                  <button type="button" onClick={() => void loadTemplateInfo()} className="ml-2 min-h-11 underline">Reintentar guía</button>
+                </div>}
                 {templateColumns.length > 0 && (
                   <details className="mb-4 text-xs">
                     <summary className="cursor-pointer font-medium text-gray-700">Ver guía de columnas ({templateColumns.length})</summary>

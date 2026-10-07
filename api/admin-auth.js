@@ -16,11 +16,22 @@
  * ponytail: PBKDF2+salt → upgrade a Argon2 si compliance crece.
  */
 
-import { sql } from '@vercel/postgres';
+import { sql as postgresSql } from '@vercel/postgres';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
-import { deleteR2Object } from '../lib/r2-service.js';
 import { getPool } from '../lib/neon-clinical-db.js';
+import { clinicPurgePreview, purgeClinic, updateClinicState } from '../lib/clinic-purge.js';
+import { lockClinicWriters, requireClinicWritable } from '../lib/clinic-lifecycle.js';
+
+const writerContext = new AsyncLocalStorage();
+const sql = (strings, ...values) => {
+  const client = writerContext.getStore()?.client;
+  return client
+    ? client.query(strings.reduce((text, part, index) => text + part + (index < values.length ? `$${index + 1}` : ''), ''), values)
+    : postgresSql(strings, ...values);
+};
+sql.query = (...args) => writerContext.getStore()?.client?.query(...args) || postgresSql.query(...args);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuración de seguridad
@@ -887,7 +898,7 @@ async function loginUser(username, password, ip, ua, req) {
            cu.failed_attempts, cu.locked_until, cu.is_active, cu.full_name, cu.email,
            cu.cedula_profesional, cu.matricula_senescyt, cu.registro_acess, cu.especialidad, cu.gentilicio, cu.profession, cu.first_name, cu.last_name,
            cu.is_demo, cu.demo_expires_at, cu.must_change_password,
-           c.slug AS clinic_slug, c.name AS clinic_name
+           c.slug AS clinic_slug, c.name AS clinic_name, c.is_active AS clinic_active
     FROM clinic_users cu
     LEFT JOIN clinics c ON c.id = cu.clinic_id
     WHERE (cu.username = ${username} OR LOWER(cu.email) = LOWER(${username}))
@@ -901,6 +912,8 @@ async function loginUser(username, password, ip, ua, req) {
 
   const u = r.rows[0];
   if (!u.is_active) return { success: false, error: 'Cuenta desactivada. Contacta al administrador.' };
+  if (u.clinic_id && u.clinic_active !== true)
+    return { success: false, error: 'Clínica desactivada. Contacta al administrador.' };
 
   // SECURITY: master_admin requiere MASTER_LOGIN_KEY adicional para autenticarse.
   // Si la variable no está configurada, el login master queda bloqueado en producción.
@@ -1067,6 +1080,7 @@ async function verifySession(token) {
         AND s.is_active       = true
         AND s.expires_at      > NOW()
         AND (s.clinic_user_id IS NULL OR cu.is_active = true)
+        AND (s.clinic_id IS NULL OR c.is_active = true)
     `;
     if (!r.rows.length) return { valid: false, error: 'Sesión inválida o expirada' };
     const s = r.rows[0];
@@ -1146,37 +1160,9 @@ async function recordTrustedDevice(userId, deviceToken, ip, ua) {
 
 // ─── Demo account cleanup ──────────────────────────────────────────────────
 
-/** Elimina todos los objetos R2 de fotos clínicas de una clínica. Non-fatal. */
-async function deleteClinicR2Objects(clinicId) {
-  try {
-    const pool = getPool();
-    const { rows } = await pool.query('SELECT r2_key FROM clinical_photos WHERE clinic_id = $1', [clinicId]);
-    await Promise.all(rows.map(r => deleteR2Object(r.r2_key).catch(() => {})));
-  } catch { /* non-fatal */ }
-}
-
 async function cleanupExpiredDemos() {
   try {
-    // Obtener demos expiradas antes de borrarlas
-    const expired = await sql`
-      SELECT id, clinic_id FROM clinic_users
-      WHERE is_demo = true AND demo_expires_at IS NOT NULL AND demo_expires_at < NOW()
-    `;
-    if (!expired.rows.length) return;
-
-    // Por cada clínica única: si no quedan usuarios activos, borrar fotos R2
-    const clinicIds = [...new Set(expired.rows.filter(r => r.clinic_id).map(r => r.clinic_id))];
-    for (const clinicId of clinicIds) {
-      const activeLeft = await sql`
-        SELECT COUNT(*) AS cnt FROM clinic_users
-        WHERE clinic_id = ${clinicId}
-          AND NOT (is_demo = true AND demo_expires_at IS NOT NULL AND demo_expires_at < NOW())
-      `;
-      if (parseInt(activeLeft.rows[0].cnt) === 0) {
-        await deleteClinicR2Objects(clinicId);
-      }
-    }
-
+    // Clinical R2 objects are only removed by the explicit, locked purge flow (lib/clinic-purge.js).
     // Borrar demos expiradas de la BD
     await sql`
       DELETE FROM clinic_users
@@ -1232,7 +1218,7 @@ async function claimSetupTokenFn(token, newPassword) {
 
 /** Extrae el usuario autenticado del header Authorization */
 // Cambiar esta fecha al publicar nuevas Condiciones/Política obliga a todos los usuarios a re-aceptar.
-export const LEGAL_VERSION = '2026-10-07';
+export const LEGAL_VERSION = '2026-10-07-r2';
 
 async function recordLegalAcceptance(userId, clinicId, req) {
   const ip = String(req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || '').split(',')[0].trim().slice(0, 100) || null;
@@ -1705,6 +1691,11 @@ async function handleGoogleCallback(code, state, ip, ua) {
     // purpose === 'register': devolver datos para completar registro
     return { success: false, needsClinicSetup: true, googleData: { email: gUser.email, name: gUser.name, given_name: gUser.given_name, family_name: gUser.family_name, picture: gUser.picture, google_id: gUser.sub } };
   }
+  if (user.clinic_id) {
+    const clinic = await sql`SELECT is_active FROM clinics WHERE id=${user.clinic_id}`;
+    if (clinic.rows[0]?.is_active !== true)
+      return { success: false, error: 'Clínica desactivada. Contacta al administrador.' };
+  }
 
   // Vincular google_id si aún no está vinculado
   if (!user.google_id) {
@@ -2014,6 +2005,7 @@ async function getInviteDetails(token) {
     FROM invite_links il
     LEFT JOIN clinics c ON c.id = il.clinic_id
     WHERE il.token = ${token}
+      AND c.is_active = true
   `;
   if (!r.rows.length) return { valid: false, error: 'Enlace no encontrado' };
   const inv = r.rows[0];
@@ -2072,6 +2064,7 @@ async function useInviteLink(token, body) {
   const claimed = await sql`
     UPDATE invite_links SET is_used = true
     WHERE token = ${token} AND is_used = false AND expires_at > NOW()
+      AND EXISTS (SELECT 1 FROM clinics c WHERE c.id=invite_links.clinic_id AND c.is_active=true)
     RETURNING *
   `;
   if (!claimed.rows.length) return { error: 'Enlace inválido, ya utilizado o expirado' };
@@ -2188,6 +2181,7 @@ async function verifyOTP(otpToken, code, ip, ua) {
     WHERE lo.otp_token = ${otpToken.trim()}
       AND lo.used = false
       AND lo.expires_at > NOW()
+      AND (cu.clinic_id IS NULL OR c.is_active=true)
   `;
   if (!r.rows.length) return { success: false, error: 'Código expirado o inválido. Inicia sesión nuevamente.' };
   const row = r.rows[0];
@@ -2315,17 +2309,7 @@ async function updateClinic(body) {
       }
     }
   }
-  await sql`
-    UPDATE clinics SET
-      name      = COALESCE(${name      ?? null}, name),
-      email     = COALESCE(${email     ?? null}, email),
-      phone     = COALESCE(${phone     ?? null}, phone),
-      address   = COALESCE(${address   ?? null}, address),
-      is_active = COALESCE(${is_active ?? null}, is_active)
-    WHERE id = ${id}
-  `;
-  const r = await sql`SELECT * FROM clinics WHERE id = ${id}`;
-  return { success: true, clinic: r.rows[0] };
+  return { success: true, clinic: await updateClinicState({ id, name, email, phone, address, is_active }) };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2360,7 +2344,11 @@ async function ensureSessionsTable() {
 // Handler principal
 // ─────────────────────────────────────────────────────────────────────────────
 
-export default async function handler(req, res) {
+export default function handler(req, res) {
+  return writerContext.run({ client: null }, () => handleAdminRequest(req, res));
+}
+
+async function handleAdminRequest(req, res) {
   // CORS — Bearer tokens no usan cookies, por lo que Allow-Credentials no aplica.
   // Allow-Credentials: true + wildcard es rechazado por spec CORS (y navegadores).
   const requestOrigin = req.headers.origin || '';
@@ -2376,6 +2364,13 @@ export default async function handler(req, res) {
   await ensureNewColumns();
 
   const action = req.query.action || req.body?.action;
+  let writerClient = null;
+  let writerClinic = null;
+  let writerFailed = false;
+  let writerResponse;
+  let writerStatus = 200;
+  const sendJson = res.json.bind(res);
+  const sendStatus = res.status.bind(res);
 
   try {
     // ── Inicialización del esquema (protegida por secret) ──────────────────
@@ -2614,7 +2609,7 @@ export default async function handler(req, res) {
                cu.public_booking_enabled, cu.multi_resource_enabled
         FROM clinic_users cu
         JOIN clinics c ON c.id = cu.clinic_id
-        WHERE c.slug = ${clinicSlug} AND cu.username = ${username} AND cu.is_active = true
+        WHERE c.slug = ${clinicSlug} AND cu.username = ${username} AND cu.is_active = true AND c.is_active = true
         LIMIT 1
       `;
       if (!rows.rows.length) return res.status(404).json({ success: false, error: 'Profesional no encontrado' });
@@ -2664,7 +2659,7 @@ export default async function handler(req, res) {
         SELECT cs.treatments, cs.agenda
         FROM clinic_settings cs
         JOIN clinics c ON c.id = cs.clinic_id
-        WHERE c.slug = ${clinicSlug}
+        WHERE c.slug = ${clinicSlug} AND c.is_active = true
         LIMIT 1
       `;
       const settings = settingsRows.rows[0] || {};
@@ -2680,7 +2675,7 @@ export default async function handler(req, res) {
                c.name AS clinic_name, c.slug AS clinic_slug
         FROM clinic_users cu
         JOIN clinics c ON c.id = cu.clinic_id
-        WHERE c.slug = ${clinicSlug} AND cu.is_active = true AND cu.public_booking_enabled = true
+        WHERE c.slug = ${clinicSlug} AND cu.is_active = true AND cu.public_booking_enabled = true AND c.is_active = true
         ORDER BY cu.full_name, cu.username
       `;
       const ownerIds = rows.rows.filter((row) => row.multi_resource_enabled).map((row) => row.id);
@@ -2726,6 +2721,42 @@ export default async function handler(req, res) {
     // ── Acciones autenticadas ──────────────────────────────────────────────
     const user = await getRequestUser(req);
     if (!user) return res.status(401).json({ success: false, error: 'No autenticado o sesión expirada' });
+    if (!['purgeClinic', 'clinicPurgePreview', 'updateClinic', 'deleteClinic', 'initFeatures'].includes(action)) {
+      const suppliedClinics = [req.body?.clinicId, req.body?.clinic_id, req.query.clinicId]
+        .filter(value => value !== undefined && value !== null && value !== '');
+      if (new Set(suppliedClinics.map(value => String(value).toLowerCase())).size > 1)
+        return res.status(400).json({ error: 'Los identificadores de clínica no coinciden.' });
+      writerClinic = user.role === 'master_admin'
+        ? req.body?.clinicId || req.body?.clinic_id || req.query.clinicId || user.clinic_id
+        : user.clinic_id;
+      if (action === 'createUser' || action === 'updateClinicSubscription' || action === 'sendSubscriptionWarning')
+        writerClinic = user.role === 'master_admin' ? req.body?.clinic_id : user.clinic_id;
+      if (['updateUser', 'deleteUser', 'resetPassword', 'sendResetCredentials',
+        'setWhatsAppBotEnabled', 'setUserModuleOverride', 'getUserModuleOverrides', 'updateDemoCredentials',
+        'oauthStart', 'oauthRevoke', 'getEmailConnectionStatus'].includes(action)) {
+        const targetId = action === 'deleteUser' ? req.query.id || req.body?.id
+          : ['getUserModuleOverrides', 'getEmailConnectionStatus'].includes(action) ? req.query.userId || user.id
+          : ['setUserModuleOverride', 'oauthStart', 'oauthRevoke', 'updateDemoCredentials'].includes(action) ? req.body?.userId || (action === 'oauthStart' ? user.id : null)
+          : req.body?.id;
+        if (targetId) {
+          const target = (await sql`SELECT clinic_id FROM clinic_users WHERE id=${targetId}`).rows[0];
+          if (!target) return res.status(404).json({ error: 'Usuario no encontrado' });
+          writerClinic = target.clinic_id;
+          if (suppliedClinics.some(value => String(value).toLowerCase() !== String(writerClinic).toLowerCase()))
+            return res.status(400).json({ error: 'La clínica indicada no corresponde al usuario.' });
+        }
+      }
+      if (writerClinic) {
+        writerClient = await getPool().connect();
+        res.status = code => { writerStatus = code; sendStatus(code); return res; };
+        res.json = data => { writerResponse = data; return res; };
+        await writerClient.query('BEGIN');
+        await writerClient.query("SET LOCAL statement_timeout = '15s'");
+        await lockClinicWriters(writerClient, [String(writerClinic)]);
+        await requireClinicWritable(writerClient, String(writerClinic));
+        writerContext.getStore().client = writerClient;
+      }
+    }
 
     // Gestión de usuarios
     if (action === 'listUsers') {
@@ -2809,7 +2840,13 @@ export default async function handler(req, res) {
     }
     if (action === 'updateClinic') {
       if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master_admin' });
-      const result = await updateClinic(req.body || {});
+      let result;
+      try { result = await updateClinic(req.body || {}); }
+      catch (error) {
+        if (!error.status) throw error;
+        console.error('[clinic:update]', error.status);
+        return res.status(error.status).json({ success: false, error: error.message });
+      }
       if (result.success) {
         await sendDeveloperAlert('Clínica actualizada desde Master Admin', {
           Clínica: result.clinic?.name,
@@ -2819,18 +2856,26 @@ export default async function handler(req, res) {
       }
       return res.status(result.error ? 400 : 200).json(result);
     }
+    if (action === 'clinicPurgePreview' || action === 'purgeClinic') {
+      res.setHeader('Cache-Control', 'no-store');
+      if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master_admin' });
+      if (req.method !== (action === 'clinicPurgePreview' ? 'GET' : 'POST'))
+        return res.status(405).json({ error: 'Método no permitido' });
+      try {
+        const result = action === 'clinicPurgePreview'
+          ? await clinicPurgePreview(req.query.id)
+          : await purgeClinic(req.body || {}, user);
+        return res.status(result.complete || action === 'clinicPurgePreview' ? 200 : 202).json(result);
+      } catch (error) {
+        console.error('[clinic-purge:api]', action, error.code || error.status || error.name);
+        return res.status(error.status || 500).json({ success: false,
+          error: error.status ? error.message : 'No se pudo procesar la purga; la clínica permanece conservada.' });
+      }
+    }
     if (action === 'deleteClinic') {
       if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master_admin' });
-      const clinicId = req.query.id || req.body?.id;
-      if (!clinicId) return res.status(400).json({ error: 'id requerido' });
-      // Borrar fotos de Cloudflare R2 antes de eliminar de la BD
-      await deleteClinicR2Objects(clinicId);
-      // Null out subscriptions.clinic_id (no CASCADE on that FK)
-      await sql`UPDATE subscriptions SET clinic_id = NULL WHERE clinic_id = ${clinicId}`;
-      // DELETE cascades to: clinic_users, clinic_features, clinic_settings,
-      // clinic_notifications, invite_links, consent_templates via clinic_consent_templates
-      await sql`DELETE FROM clinics WHERE id = ${clinicId}`;
-      return res.status(200).json({ success: true });
+      return res.status(409).json({ success: false,
+        error: 'La eliminación directa está bloqueada. Desactiva la clínica para conservar datos y revocar acceso; usa la purga explícita tras el plazo de devolución.' });
     }
     if (action === 'updateClinicSubscription') {
       if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master_admin' });
@@ -2862,8 +2907,28 @@ export default async function handler(req, res) {
     if (action === 'initFeatures') {
       if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master_admin' });
       const clinics = await sql`SELECT id FROM clinics`;
-      for (const c of clinics.rows) await seedFeatures(c.id);
-      return res.status(200).json({ success: true, message: `Features inicializados para ${clinics.rows.length} clínica(s)` });
+      let initialized = 0;
+      for (const clinic of clinics.rows) {
+        const client = await getPool().connect();
+        try {
+          await client.query('BEGIN');
+          await client.query("SET LOCAL statement_timeout = '15s'");
+          await lockClinicWriters(client, [String(clinic.id)]);
+          const state = (await client.query(`SELECT c.is_active,cs.general ? '_purge' AS purging
+            FROM clinics c LEFT JOIN clinic_settings cs ON cs.clinic_id=c.id WHERE c.id=$1`, [clinic.id])).rows[0];
+          if (state?.is_active === true && state.purging !== true) {
+            await writerContext.run({ client }, () => seedFeatures(clinic.id));
+            initialized++;
+          }
+          await client.query('COMMIT');
+        } catch (error) {
+          await client.query('ROLLBACK');
+          throw error;
+        } finally {
+          client.release();
+        }
+      }
+      return res.status(200).json({ success: true, initialized });
     }
 
     // ── OAuth Google por usuario ───────────────────────────────────────────
@@ -3010,7 +3075,6 @@ export default async function handler(req, res) {
       // master_admin puede ver cualquier clínica; clinic_admin solo la suya
       if (user.role !== 'master_admin' && String(clinicId) !== String(user.clinic_id))
         return res.status(403).json({ error: 'Sin permiso' });
-
       const r = await sql`SELECT * FROM clinic_settings WHERE clinic_id = ${clinicId}`;
       if (!r.rows.length) {
         // Crear con defaults si no existe
@@ -3057,6 +3121,11 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'section inválida' });
       if (user.role !== 'master_admin' && String(clinicId) !== String(user.clinic_id))
         return res.status(403).json({ error: 'Sin permiso' });
+      if (section === 'general' && (typeof data !== 'object' || Array.isArray(data)))
+        return res.status(400).json({ error: 'general debe ser un objeto.' });
+      const purgeState = await sql`SELECT general->'_purge' AS purge FROM clinic_settings WHERE clinic_id=${clinicId}`;
+      if (purgeState.rows[0]?.purge || (section === 'general' && Object.hasOwn(data, '_purge')))
+        return res.status(409).json({ error: 'La constancia de purga es reservada y no puede modificarse desde ajustes.' });
 
       const dataStr = JSON.stringify(data);
 
@@ -3088,7 +3157,7 @@ export default async function handler(req, res) {
 
       // ponytail: whitelist explícita — no usar eval ni dynamic SQL con el nombre de sección
       if (section === 'general')
-        await sql`INSERT INTO clinic_settings (clinic_id, general, updated_at) VALUES (${clinicId}, ${dataStr}::jsonb, NOW()) ON CONFLICT (clinic_id) DO UPDATE SET general = ${dataStr}::jsonb, updated_at = NOW()`;
+        await sql`INSERT INTO clinic_settings (clinic_id, general, updated_at) VALUES (${clinicId}, ${dataStr}::jsonb, NOW()) ON CONFLICT (clinic_id) DO UPDATE SET general = ${dataStr}::jsonb || CASE WHEN clinic_settings.general ? '_purge' THEN jsonb_build_object('_purge',clinic_settings.general->'_purge') ELSE '{}'::jsonb END, updated_at = NOW()`;
       else if (section === 'treatments')
         await sql`INSERT INTO clinic_settings (clinic_id, treatments, updated_at) VALUES (${clinicId}, ${dataStr}::jsonb, NOW()) ON CONFLICT (clinic_id) DO UPDATE SET treatments = ${dataStr}::jsonb, updated_at = NOW()`;
       else if (section === 'email')
@@ -3586,7 +3655,8 @@ export default async function handler(req, res) {
         if (gs.rows.length) {
           const g = gs.rows[0].general || {};
           const merged = { ...g, ...(n&&{name:n}), ...(p&&{phone:p}), ...(a&&{address:a}), ...(c&&{city:c}), ...(w&&{website:w}), ...(d&&{description:d}) };
-          await sql`UPDATE clinic_settings SET general = ${JSON.stringify(merged)}::jsonb WHERE clinic_id = ${clinicId}`;
+          await sql`UPDATE clinic_settings SET general = general || ${JSON.stringify(merged)}::jsonb
+            WHERE clinic_id = ${clinicId} AND NOT (general ? '_purge')`;
         }
       } catch { /* silencioso */ }
       const upd = await sql`SELECT id,name,phone,address,city,website,description FROM clinics WHERE id = ${clinicId}`;
@@ -3786,7 +3856,26 @@ export default async function handler(req, res) {
     return res.status(400).json({ success: false, error: 'Acción no válida' });
 
   } catch (error) {
+    writerFailed = true;
     console.error('❌ Error en admin-auth:', error);
-    return res.status(500).json({ success: false, error: 'Error interno del servidor' });
+    return res.status(error.status || 500).json({ success: false, error: error.status ? error.message : 'Error interno del servidor' });
+  } finally {
+    if (writerClient) {
+      try {
+        writerContext.getStore().client = null;
+        await writerClient.query(writerFailed || writerStatus >= 400 ? 'ROLLBACK' : 'COMMIT');
+        writerClient.release();
+        res.json = sendJson;
+        res.status = sendStatus;
+        if (writerResponse !== undefined) sendJson(writerResponse);
+      } catch (error) {
+        console.error('[admin:lifecycle] release failed', error.code || error.name);
+        writerClient.release(error);
+        res.json = sendJson;
+        res.status = sendStatus;
+        res.status(500);
+        sendJson({ success: false, error: 'No se confirmó la transacción; verifica el estado antes de reintentar.' });
+      }
+    }
   }
 }

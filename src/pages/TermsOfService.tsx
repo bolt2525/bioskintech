@@ -133,6 +133,7 @@ export default function TermsOfService({ embedded = false }: { embedded?: boolea
         <ul className={ul}>
           <li>Los datos principales se almacenan en la base de datos Neon. Además, <strong>cada día BIOSKINTECH genera automáticamente una copia de seguridad</strong> de la información de cada clínica y la guarda cifrada en un proveedor distinto (Cloudflare R2).</li>
           <li>Esa copia queda protegida contra borrado o modificación durante 30 días y se elimina automáticamente a los 35 días. La base de datos permite además recuperar su estado de las últimas 6 horas.</li>
+          <li>Si se solicita eliminar datos o purgar una clínica, las copias ya creadas pueden conservar temporalmente esos datos: el bloqueo impide borrarlas antes de cumplir 30 días y el ciclo automático las elimina a los 35 días desde su creación, no desde la solicitud. Durante ese período quedan fuera del uso ordinario y se conservan solo para continuidad y recuperación. Una vez registrada la purga no se inician nuevas copias de la clínica; una ejecución que ya hubiera comenzado puede concluir durante el período de drenaje y queda sometida al mismo bloqueo y ciclo de retención. La eliminación de sistemas activos no equivale a borrar inmediatamente copias protegidas.</li>
           <li>El Cliente no necesita realizar ninguna acción para que estas copias existan. Su finalidad es recuperar la Plataforma ante fallas, errores o ataques; la restauración se realiza por BIOSKINTECH o por el administrador de la clínica desde el módulo Base de Datos.</li>
           <li>El punto recuperable depende de la última copia válida disponible; si una ejecución falla, la pérdida potencial puede superar 24 horas. La restauración del módulo Base de Datos agrega registros faltantes y no sobrescribe los existentes ni revierte sus modificaciones; una recuperación integral requiere intervención técnica.</li>
         </ul>
@@ -174,6 +175,7 @@ export default function TermsOfService({ embedded = false }: { embedded?: boolea
       </Section>
 
       <Section number={14} title="Limitación de responsabilidad" icon={<AlertCircle className="w-4 h-4" />}>
+        <p>BIOSKINTECH responde por el cumplimiento de sus obligaciones de confidencialidad, seguridad y tratamiento de datos. No divulgará información del Cliente o de sus pacientes a terceros ajenos a la prestación autorizada del servicio, salvo instrucción lícita del Cliente, obligación legal o requerimiento de autoridad competente. La confidencialidad subsiste después de terminar el contrato.</p>
         <p>En la máxima medida permitida por la ley, BIOSKINTECH no responde por:</p>
         <ul className={ul}>
           <li>Actos médicos, diagnósticos, tratamientos, recetas, resultados estéticos o mala praxis de los profesionales que usan la Plataforma.</li>
@@ -183,6 +185,7 @@ export default function TermsOfService({ embedded = false }: { embedded?: boolea
           <li>Daños indirectos, lucro cesante, pérdida de oportunidades, reputación o clientela.</li>
         </ul>
         <Note tone="amber">La responsabilidad contractual total de BIOSKINTECH frente al Cliente no excederá el valor efectivamente pagado por el Cliente en los 12 meses anteriores al hecho que la origine. Esta limitación no aplica en caso de dolo, culpa grave ni cuando una norma imperativa prohíba limitarla; tampoco reduce obligaciones frente a Titulares o autoridades de protección de datos.</Note>
+        <p>En la medida en que sea legalmente admisible, este límite económico también comprende las reclamaciones contractuales del Cliente por divulgación no autorizada, vulneración de confidencialidad o protección de datos y pérdida de información imputables al Proveedor. No constituye permiso para divulgar datos ni elimina el deber de prevenir, contener, investigar, notificar y subsanar incidentes. No limita por contrato sanciones administrativas, obligaciones frente a los Titulares ni responsabilidades que la ley declare indisponibles.</p>
       </Section>
 
       <Section number={15} title="Indemnidad" icon={<Handshake className="w-4 h-4" />}>

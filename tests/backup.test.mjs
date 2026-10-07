@@ -20,6 +20,18 @@ test('encrypted snapshot round-trips and rejects tampering', () => {
   assert.throws(() => svc.decodeBackupBuffer(tampered), /alterado/);
 });
 
+test('retained copies from purged identities cannot be restored under a new clinic identity', async () => {
+  let params;
+  const blocked = { query: async (sql, args) => {
+    assert.match(sql, /clinic_id=ANY\(\$1::uuid\[\]\) AND general \? '_purge'/);
+    params = args;
+    return { rows: [{ purge: true }] };
+  } };
+  await assert.rejects(api.rejectPurgedBackup(blocked, { metadata: { clinic_id: CLINIC } }, OTHER), { status: 409 });
+  assert.deepEqual(params, [[OTHER, CLINIC]]);
+  await api.rejectPurgedBackup({ query: async () => ({ rows: [] }) }, { metadata: { clinic_id: CLINIC } }, OTHER);
+});
+
 test('decoder rejects zip bombs, binary garbage and non JSON', () => {
   assert.throws(() => svc.decodeBackupBuffer(gzipSync(Buffer.alloc(svc.MAX_JSON_BYTES + 1, 32))), /excede/);
   assert.throws(() => svc.decodeBackupBuffer(Buffer.from([0x1f, 0x8b, 1, 2, 3])), /dañado/);
@@ -185,6 +197,7 @@ function fakeRestorePool({ failPatientId } = {}) {
     query: async (statement, params) => {
       log.push(statement.trim().split(/\s+/).slice(0, 3).join(' '));
       if (statement.includes('information_schema.columns')) return { rows: ['id', 'first_name', 'clinic_id', 'rut', 'identification_number', 'patient_id'].map(column_name => ({ column_name })) };
+      if (statement.includes("SELECT c.is_active,cs.general ? '_purge'")) return { rows: [{ is_active: true, purging: false }] };
       if (statement.startsWith('SELECT clinic_id FROM patients')) return { rows: [] };
       if (statement.startsWith('INSERT INTO patients')) {
         if (params[0] === failPatientId) throw Object.assign(new Error('duplicate key value violates unique constraint "uq_patients_identification_clinic" detail Ana'), { code: '23505' });
@@ -516,7 +529,8 @@ test('targeted cron checks existence with a parameterized query and only snapsho
   await api.runCron({ ...cronRequest(), query: { clinicId: OTHER } }, res, {
     query: async (sql, params) => {
       queries.push([sql, params]);
-      assert.equal(sql, 'SELECT id FROM clinics WHERE id = $1');
+      assert.match(sql, /SELECT c\.id FROM clinics c WHERE c\.id=\$1 AND NOT EXISTS/);
+      assert.match(sql, /cs\.clinic_id=c\.id AND cs\.general \? '_purge'/);
       assert.deepEqual(params, [OTHER]);
       return { rows: [{ id: OTHER }] };
     },
@@ -560,7 +574,8 @@ test('targeted cron rejects nonexistent clinic without snapshot or maintenance',
   const res = fakeCronResponse();
   await api.runCron({ ...cronRequest(), query: { clinicId: OTHER } }, res, {
     query: async (sql, params) => {
-      assert.equal(sql, 'SELECT id FROM clinics WHERE id = $1');
+      assert.match(sql, /SELECT c\.id FROM clinics c WHERE c\.id=\$1 AND NOT EXISTS/);
+      assert.match(sql, /cs\.clinic_id=c\.id AND cs\.general \? '_purge'/);
       assert.deepEqual(params, [OTHER]);
       return { rows: [] };
     },

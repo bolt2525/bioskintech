@@ -110,6 +110,7 @@ function mockDatabase(t, { validPeriod = true } = {}) {
     connect: async () => ({
       async query(sql, params = []) {
         queries.push({ sql, params });
+        if (sql.includes("SELECT c.is_active,cs.general ? '_purge'")) return { rows: [{ is_active: true, purging: false }] };
         if (sql.includes('SELECT id FROM clinics')) return { rows: [{ id: CLINIC }] };
         if (sql.includes("$1::timestamptz + interval '12 months'")) return { rows: [{ valid: validPeriod }] };
         if (sql.includes('FROM annual_photo_backup_periods') && sql.includes('tstzrange')) return { rows: [] };
