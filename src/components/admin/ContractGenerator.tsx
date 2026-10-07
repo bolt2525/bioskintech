@@ -8,6 +8,45 @@ const PLATFORM_PRICE = 245;
 const WHATSAPP_PRICE = 100;
 const PAYPHONE_SURCHARGE = 14.95;
 
+type PartyType = 'natural' | 'juridica';
+type Jurisdiction = 'Cuenca' | 'Quito';
+
+interface ClientFormState {
+  partyType: PartyType;
+  contractReference: string;
+  name: string;
+  taxId: string;
+  address: string;
+  representative: string;
+  representativeId: string;
+  representativeRole: string;
+  email: string;
+  phone: string;
+  clinicName: string;
+  startDate: string;
+  paymentMethod: string;
+  otherPaymentMethod: string;
+  cardCommission: string;
+}
+
+interface ContractOptions {
+  jurisdiction: Jurisdiction;
+  support: boolean;
+  supportTerms: string;
+  refund: boolean;
+  refundTerms: string;
+  incidentNotice: boolean;
+  aiInstructions: boolean;
+  aiInstructionTerms: string;
+  activation: boolean;
+  activationTerms: string;
+}
+
+interface ContractPrices {
+  platform: string;
+  chatbot: string;
+}
+
 const MODULES = [
   { id: 'clinical-records', name: 'Fichas Clínicas', detail: 'Pacientes, antecedentes y tratamientos.' },
   { id: 'inventory', name: 'Inventario', detail: 'Control de stock, lotes y vencimientos.' },
@@ -19,7 +58,7 @@ const MODULES = [
   { id: 'dermoatlas', name: 'DermoAtlas 3D', detail: 'Explorador educativo interactivo de anatomía y capas de la piel.' },
 ] as const;
 
-const initialClient = {
+const initialClient: ClientFormState = {
   partyType: 'natural',
   contractReference: '',
   name: '',
@@ -62,20 +101,45 @@ function formatDate(date: Date | null): string {
 }
 
 function formatUsd(value: number): string {
-  return new Intl.NumberFormat('es-EC', { style: 'currency', currency: 'USD' }).format(value);
+  return Number.isFinite(value)
+    ? new Intl.NumberFormat('es-EC', { style: 'currency', currency: 'USD' }).format(value)
+    : '—';
 }
 
 export default function ContractGenerator() {
   const formRef = useRef<HTMLFormElement>(null);
   const [client, setClient] = useState(initialClient);
   const [chatbot, setChatbot] = useState(false);
-  const [negotiated, setNegotiated] = useState(false);
-  const [jurisdiction, setJurisdiction] = useState('Quito');
+  const [options, setOptions] = useState<ContractOptions>({
+    jurisdiction: 'Cuenca',
+    support: false,
+    supportTerms: '',
+    refund: false,
+    refundTerms: '',
+    incidentNotice: false,
+    aiInstructions: false,
+    aiInstructionTerms: '',
+    activation: false,
+    activationTerms: '',
+  });
+  const [prices, setPrices] = useState<ContractPrices>({
+    platform: String(PLATFORM_PRICE),
+    chatbot: String(WHATSAPP_PRICE),
+  });
   const [selectedModules, setSelectedModules] = useState<string[]>(MODULES.map(module => module.id));
   const [moduleError, setModuleError] = useState('');
+  const [printError, setPrintError] = useState('');
 
-  const updateClient = (field: keyof typeof initialClient, value: string) => {
+  const updateClient = (field: keyof ClientFormState, value: string) => {
     setClient(current => ({ ...current, [field]: value }));
+  };
+
+  const updateOption = <K extends keyof ContractOptions>(field: K, value: ContractOptions[K]) => {
+    setOptions(current => ({ ...current, [field]: value }));
+  };
+
+  const updatePrice = (field: keyof ContractPrices, value: string) => {
+    setPrices(current => ({ ...current, [field]: value }));
   };
 
   const toggleModule = (id: string) => {
@@ -87,15 +151,23 @@ export default function ContractGenerator() {
 
   const endDate = annualEndDate(client.startDate);
   const startDate = parseDateInput(client.startDate);
+  const platformPrice = Number(prices.platform);
+  const chatbotPrice = Number(prices.chatbot);
   const commission = client.paymentMethod === 'Tarjeta' && client.cardCommission !== ''
     ? Number(client.cardCommission)
     : 0;
-  const total = PLATFORM_PRICE + (chatbot ? WHATSAPP_PRICE : 0) + commission;
+  const total = platformPrice + (chatbot ? chatbotPrice : 0) + commission;
   const includedModules = MODULES.filter(module => selectedModules.includes(module.id));
   const naturalPerson = client.partyType === 'natural';
   const signatory = naturalPerson ? client.name : client.representative;
   const signatoryId = naturalPerson ? client.taxId : client.representativeId;
   const signatoryRole = naturalPerson ? 'Persona natural, por sus propios derechos' : client.representativeRole;
+  const hasAnnex = options.jurisdiction === 'Quito'
+    || options.support
+    || options.refund
+    || options.incidentNotice
+    || options.aiInstructions
+    || options.activation;
 
   useEffect(() => {
     const clearPrintMode = () => document.body.classList.remove('master-contract-printing');
@@ -107,16 +179,46 @@ export default function ContractGenerator() {
   }, []);
 
   const printContract = () => {
-    if (!formRef.current?.reportValidity()) return;
+    setPrintError('');
+    const form = formRef.current;
+    if (!form) return;
+    const requiredNames = ['contractReference', 'clientName', 'taxId', 'address', 'clinicName', 'email'];
+    if (!naturalPerson) requiredNames.push('representative', 'representativeId', 'representativeRole');
+    if (options.support) requiredNames.push('supportTerms');
+    if (options.refund) requiredNames.push('refundTerms');
+    if (options.aiInstructions) requiredNames.push('aiInstructionTerms');
+    if (options.activation) requiredNames.push('activationTerms');
+    const requiredFields = requiredNames
+      .map(name => form.elements.namedItem(name))
+      .filter((field): field is HTMLInputElement | HTMLTextAreaElement =>
+        field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement);
+    requiredFields.forEach(field => field.setCustomValidity(''));
+    const dateInput = form.querySelector<HTMLInputElement>('input[name="startDate"]');
+    dateInput?.setCustomValidity('');
+    const emptyField = requiredFields.find(field => !field.value.trim());
+    emptyField?.setCustomValidity('Complete este dato antes de imprimir el contrato.');
+    if (!startDate) dateInput?.setCustomValidity('Ingrese una fecha de inicio válida.');
+    if (!form.reportValidity()) return;
     if (!includedModules.length) {
       setModuleError('Seleccione al menos un módulo antes de generar el contrato.');
       return;
     }
+    const validPositiveAmount = (value: number) => Number.isFinite(value) && value > 0;
+    if (!validPositiveAmount(platformPrice)
+      || (chatbot && !validPositiveAmount(chatbotPrice))
+      || !Number.isFinite(commission)
+      || commission < 0
+      || !Number.isFinite(total)) {
+      setPrintError('Revise los importes: deben ser números finitos y los precios contratados mayores que cero.');
+      return;
+    }
+    if (!startDate || !endDate) return;
     document.body.classList.add('master-contract-printing');
     try {
       window.print();
-    } catch {
+    } catch (error) {
       document.body.classList.remove('master-contract-printing');
+      setPrintError(error instanceof Error ? `No se pudo abrir la impresión: ${error.message}` : 'No se pudo abrir la impresión.');
     }
   };
 
@@ -196,7 +298,7 @@ export default function ContractGenerator() {
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <label className="text-sm font-medium text-gray-700 sm:col-span-2">
                 Tipo de contratante
-                <select name="partyType" value={client.partyType} onChange={event => updateClient('partyType', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 font-normal">
+                <select name="partyType" value={client.partyType} onChange={event => updateClient('partyType', event.target.value === 'juridica' ? 'juridica' : 'natural')} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 font-normal">
                   <option value="natural">Persona natural, por sus propios derechos</option>
                   <option value="juridica">Persona jurídica, mediante representante</option>
                 </select>
@@ -256,7 +358,7 @@ export default function ContractGenerator() {
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <label className="text-sm font-medium text-gray-700">
                 Fecha de inicio <span aria-hidden="true">*</span>
-                <input required type="date" value={client.startDate} onChange={event => updateClient('startDate', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
+                <input required name="startDate" type="date" value={client.startDate} onChange={event => updateClient('startDate', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
               </label>
               <div className="text-sm text-gray-700">
                 Vigencia
@@ -287,8 +389,8 @@ export default function ContractGenerator() {
               {client.paymentMethod === 'Tarjeta' && (
                 <label className="text-sm font-medium text-gray-700 sm:col-span-2">
                   Recargo de pasarela PayPhone (USD) <span aria-hidden="true">*</span>
-                  <input required type="number" min="0" step="0.01" inputMode="decimal" value={client.cardCommission} onChange={event => updateClient('cardCommission', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
-                  <span className="mt-1 block text-xs font-normal text-gray-600">El valor configurado para cobrar USD 245 con tarjeta es USD 14,95. Modifíquelo solo si PayPhone confirma otro importe.</span>
+                  <input required name="cardCommission" type="number" min="0" step="0.01" inputMode="decimal" value={client.cardCommission} onChange={event => updateClient('cardCommission', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
+                  <span className="mt-1 block text-xs font-normal text-gray-600">El recargo inicial de USD 14,95 se calculó para cobrar USD 245 con tarjeta. Confirme el importe con PayPhone para cada precio acordado.</span>
                 </label>
               )}
             </div>
@@ -296,7 +398,7 @@ export default function ContractGenerator() {
 
           <fieldset className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
             <legend className="px-1 text-sm font-semibold text-gray-900">Módulos incluidos</legend>
-            <p className="mb-4 mt-2 text-xs text-gray-600">Marque los módulos acordados. El precio base anual de la plataforma permanece en USD 245 aunque desmarque módulos.</p>
+            <p className="mb-4 mt-2 text-xs text-gray-600">Marque al menos un módulo contratado. Configure los precios anuales según el plan y la oferta aceptada.</p>
             <div className="grid gap-3 sm:grid-cols-2">
               {MODULES.map(module => (
                 <label key={module.id} className="flex cursor-pointer items-start gap-3 rounded-xl border border-gray-200 p-3 hover:bg-gray-50">
@@ -313,39 +415,77 @@ export default function ContractGenerator() {
               <input type="checkbox" checked={chatbot} onChange={event => setChatbot(event.target.checked)} className="mt-1 h-4 w-4 accent-[#a77d50] focus:ring-[#a77d50]" />
               <span>
                 <span className="block text-sm font-semibold text-gray-800">Chatbot WhatsApp del sistema (opcional)</span>
-                <span className="mt-0.5 block text-xs text-gray-700">Adicional anual: USD 100, IVA incluido.</span>
+                <span className="mt-0.5 block text-xs text-gray-700">Solo se incluye si se selecciona. Precio anual configurable.</span>
               </span>
             </label>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <label className="text-sm font-medium text-gray-700">
+                Precio anual de plataforma (USD) <span aria-hidden="true">*</span>
+                <input required name="platformPrice" type="number" min="0.01" step="0.01" inputMode="decimal" value={prices.platform} onChange={event => updatePrice('platform', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
+                <span className="mt-1 block text-xs font-normal text-gray-600">Valor inicial: USD 245, IVA incluido.</span>
+              </label>
+              <label className="text-sm font-medium text-gray-700">
+                Precio anual del chatbot (USD) <span aria-hidden="true">*</span>
+                <input required={chatbot} disabled={!chatbot} name="chatbotPrice" type="number" min="0.01" step="0.01" inputMode="decimal" value={prices.chatbot} onChange={event => updatePrice('chatbot', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30 disabled:cursor-not-allowed disabled:bg-gray-100" />
+                <span className="mt-1 block text-xs font-normal text-gray-600">Valor inicial opcional: USD 100, IVA incluido.</span>
+              </label>
+            </div>
           </fieldset>
 
           <fieldset className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-            <legend className="px-1 text-sm font-semibold text-gray-900">Condiciones particulares negociadas</legend>
-            <label className="flex items-start gap-3 text-sm text-gray-700">
-              <input type="checkbox" name="negotiated" checked={negotiated} onChange={event => setNegotiated(event.target.checked)} className="mt-1 h-4 w-4 accent-gold" />
-              <span>Incluir Anexo B: soporte, devolución proporcional, jurisdicción particular y aclaración de responsabilidad.</span>
-            </label>
-            {negotiated && <div className="mt-4 space-y-4">
+            <legend className="px-1 text-sm font-semibold text-gray-900">Complementos particulares (independientes y opcionales)</legend>
+            <p className="mb-4 text-xs text-gray-600">Las condiciones comunes de soporte, devolución, aviso de incidentes en 24 horas y autorización de IA se mantienen aunque no seleccione complementos. Los textos particulares no eliminan esas garantías.</p>
+            <div className="space-y-4">
               <label className="block text-sm font-medium text-gray-700">
-                Ciudad de jurisdicción pactada
-                <select name="jurisdiction" value={jurisdiction} onChange={event => setJurisdiction(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3">
-                  <option>Quito</option>
+                Jurisdicción
+                <select name="jurisdiction" value={options.jurisdiction} onChange={event => updateOption('jurisdiction', event.target.value === 'Quito' ? 'Quito' : 'Cuenca')} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3">
                   <option>Cuenca</option>
+                  <option>Quito</option>
                 </select>
               </label>
-              <p className="rounded-lg bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">El respaldo fotográfico masivo anual y las historias clínicas completas legibles todavía no están implementados. Este anexo no los promete ni resuelve esa petición del cliente. Verifique también las autorizaciones de IA y las garantías del plan de infraestructura antes de firmar.</p>
-            </div>}
+              {([
+                ['support', 'Pactar soporte particular'],
+                ['refund', 'Pactar devolución particular'],
+                ['incidentNotice', 'Reiterar en el anexo el aviso común de incidentes en máximo 24 horas'],
+                ['aiInstructions', 'Registrar instrucciones particulares de IA'],
+                ['activation', 'Pactar activación particular'],
+              ] as const).map(([field, label]) => (
+                <label key={field} className="flex items-start gap-3 text-sm text-gray-700">
+                  <input type="checkbox" name={field} checked={options[field]} onChange={event => updateOption(field, event.target.checked)} className="mt-1 h-4 w-4 accent-[#a77d50]" />
+                  <span>{label}</span>
+                </label>
+              ))}
+              {options.support && <label className="block text-sm font-medium text-gray-700">
+                Texto acordado de soporte <span aria-hidden="true">*</span>
+                <textarea required name="supportTerms" rows={4} value={options.supportTerms} onChange={event => updateOption('supportTerms', event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
+              </label>}
+              {options.refund && <label className="block text-sm font-medium text-gray-700">
+                Texto acordado de devolución <span aria-hidden="true">*</span>
+                <textarea required name="refundTerms" rows={4} value={options.refundTerms} onChange={event => updateOption('refundTerms', event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
+              </label>}
+              {options.aiInstructions && <label className="block text-sm font-medium text-gray-700">
+                Instrucciones de IA acordadas <span aria-hidden="true">*</span>
+                <textarea required name="aiInstructionTerms" rows={4} value={options.aiInstructionTerms} onChange={event => updateOption('aiInstructionTerms', event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
+              </label>}
+              {options.activation && <label className="block text-sm font-medium text-gray-700">
+                Texto acordado de activación <span aria-hidden="true">*</span>
+                <textarea required name="activationTerms" rows={4} value={options.activationTerms} onChange={event => updateOption('activationTerms', event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
+              </label>}
+              <p className="rounded-lg bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">La entrega anual autorizada de fotografías y documentos clínicos se rige por los documentos generales y requiere infraestructura habilitada; no equivale a un respaldo fotográfico automático. Verifique disponibilidad y autorizaciones antes de pactar instrucciones de IA.</p>
+            </div>
           </fieldset>
         </div>
 
         <aside className="contract-editor h-fit rounded-2xl border border-gray-200 bg-white p-5 shadow-sm xl:sticky xl:top-5">
           <h3 className="text-sm font-semibold text-gray-900">Resumen económico</h3>
           <dl className="mt-4 space-y-3 text-sm">
-            <div className="flex justify-between gap-3"><dt className="text-gray-600">Plataforma (anual, IVA incluido)</dt><dd className="font-medium text-gray-900">{formatUsd(PLATFORM_PRICE)}</dd></div>
-            {chatbot && <div className="flex justify-between gap-3"><dt className="text-gray-600">Chatbot WhatsApp (anual, IVA incluido)</dt><dd className="font-medium text-gray-900">{formatUsd(WHATSAPP_PRICE)}</dd></div>}
+            <div className="flex justify-between gap-3"><dt className="text-gray-600">Plataforma (anual, IVA incluido)</dt><dd className="font-medium text-gray-900">{formatUsd(platformPrice)}</dd></div>
+            {chatbot && <div className="flex justify-between gap-3"><dt className="text-gray-600">Chatbot WhatsApp (anual, IVA incluido)</dt><dd className="font-medium text-gray-900">{formatUsd(chatbotPrice)}</dd></div>}
             {client.paymentMethod === 'Tarjeta' && <div className="flex justify-between gap-3"><dt className="text-gray-600">Recargo de pasarela PayPhone</dt><dd className="font-medium text-gray-900">{formatUsd(commission)}</dd></div>}
             <div className="flex justify-between gap-3 border-t border-gray-200 pt-3 text-base"><dt className="font-semibold text-gray-900">Total anual</dt><dd className="font-bold text-gray-900">{formatUsd(total)}</dd></div>
           </dl>
-          <p className="mt-4 text-xs leading-relaxed text-gray-600">La plataforma cuesta USD 245 con IVA incluido. Al pagarla mediante PayPhone se agrega el recargo indicado por la pasarela.</p>
+          <p className="mt-4 text-xs leading-relaxed text-gray-600">El precio de la plataforma y el recargo de PayPhone deben coincidir con la oferta y el importe confirmado por la pasarela.</p>
+          {printError && <p className="mt-3 text-sm text-red-600" role="alert">{printError}</p>}
           <button type="button" onClick={printContract} className="mt-5 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#a77d50] px-4 py-2 text-sm font-semibold text-white hover:bg-[#89633d] focus:outline-none focus:ring-2 focus:ring-[#a77d50] focus:ring-offset-2">
             <Printer aria-hidden="true" className="h-4 w-4" /> Imprimir / Guardar como PDF
           </button>
@@ -356,7 +496,7 @@ export default function ContractGenerator() {
         <div className="border-b border-gray-200 pb-5">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8b6945]">BIOSKINTECH · Condiciones particulares</p>
           <h2 className="mt-2 text-2xl font-bold text-gray-900">Contrato anual de acceso a la plataforma</h2>
-          <p className="mt-2 text-sm leading-relaxed text-gray-600">El presente contrato contiene las condiciones particulares del servicio, el Anexo A de Tratamiento de Datos{negotiated ? ', el Anexo B de Condiciones Negociadas' : ''} y las copias íntegras de las Condiciones de Servicio y la Política de Privacidad versión {LEGAL_VERSION}, que forman parte inseparable del acuerdo.</p>
+          <p className="mt-2 text-sm leading-relaxed text-gray-600">El presente contrato contiene las condiciones particulares del servicio, el Anexo A de Tratamiento de Datos{hasAnnex ? ' y el Anexo B de Condiciones Particulares Seleccionadas' : ''} y las copias íntegras de las Condiciones de Servicio y la Política de Privacidad versión {LEGAL_VERSION}, que forman parte inseparable del acuerdo.</p>
           <p className="mt-2 text-xs font-medium text-gray-700">Referencia: {client.contractReference || '—'} · Domicilio del Proveedor: Cuenca, Ecuador</p>
         </div>
 
@@ -403,19 +543,19 @@ export default function ContractGenerator() {
         <section className="contract-economic-section mt-6">
           <h3 className="text-sm font-bold uppercase tracking-wide text-gray-800">3. Precio, vigencia y pago</h3>
           <dl className="mt-3 space-y-2 text-sm">
-            <div className="flex justify-between gap-4"><dt className="text-gray-700">Plataforma, anual, IVA incluido</dt><dd className="shrink-0 font-medium text-gray-900">{formatUsd(PLATFORM_PRICE)}</dd></div>
-            {chatbot && <div className="flex justify-between gap-4"><dt className="text-gray-700">Chatbot WhatsApp del sistema, adicional anual, IVA incluido</dt><dd className="shrink-0 font-medium text-gray-900">{formatUsd(WHATSAPP_PRICE)}</dd></div>}
+            <div className="flex justify-between gap-4"><dt className="text-gray-700">Plataforma, anual, IVA incluido</dt><dd className="shrink-0 font-medium text-gray-900">{formatUsd(platformPrice)}</dd></div>
+            {chatbot && <div className="flex justify-between gap-4"><dt className="text-gray-700">Chatbot WhatsApp del sistema, adicional anual, IVA incluido</dt><dd className="shrink-0 font-medium text-gray-900">{formatUsd(chatbotPrice)}</dd></div>}
             {client.paymentMethod === 'Tarjeta' && <div className="flex justify-between gap-4"><dt className="text-gray-700">Recargo de pasarela PayPhone</dt><dd className="shrink-0 font-medium text-gray-900">{formatUsd(commission)}</dd></div>}
             <div className="flex justify-between gap-4 border-t border-gray-200 pt-2"><dt className="font-bold text-gray-900">Total anual</dt><dd className="shrink-0 font-bold text-gray-900">{formatUsd(total)}</dd></div>
           </dl>
           <p className="mt-3 text-sm text-gray-700"><strong>Inicio:</strong> {formatDate(startDate)} · <strong>Fin de vigencia:</strong> {formatDate(endDate)} · un año.</p>
           <p className="mt-2 text-sm text-gray-700"><strong>Método de pago registrado:</strong> {client.paymentMethod === 'Otro' ? client.otherPaymentMethod || 'Otro' : client.paymentMethod || '—'}</p>
-          {client.paymentMethod === 'Tarjeta' && <p className="mt-2 text-xs leading-relaxed text-gray-600">El precio contractual de la plataforma es USD 245 con IVA incluido. El recargo mostrado corresponde al uso de la pasarela PayPhone y eleva el cobro de la plataforma a USD 259,95 cuando su importe es USD 14,95.</p>}
+          {client.paymentMethod === 'Tarjeta' && <p className="mt-2 text-xs leading-relaxed text-gray-600">El recargo indicado corresponde al uso de la pasarela PayPhone y no modifica el precio contractual de la plataforma.</p>}
         </section>
 
         <section className="mt-6 border-t border-gray-200 pt-5">
           <h3 className="text-sm font-bold uppercase tracking-wide text-gray-800">4. Documentos integrantes y orden de prevalencia</h3>
-          <p className="mt-2 text-sm leading-relaxed text-gray-700">Forman un único acuerdo esta carátula y sus condiciones particulares, el Anexo A de Tratamiento de Datos{negotiated ? ', el Anexo B de Condiciones Negociadas' : ''}, las Condiciones de Servicio y la Política de Privacidad versión {LEGAL_VERSION}, cuyas copias se adjuntan. Las condiciones particulares prevalecen para identidad, precio, módulos y vigencia; el Anexo A para el encargo de datos; {negotiated ? 'y el Anexo B exclusivamente para las disposiciones que identifica y sustituye expresamente, incluso cuando figuren en el Anexo A. ' : ''}Los documentos generales rigen las materias restantes. Siempre prevalece la ley imperativa.</p>
+          <p className="mt-2 text-sm leading-relaxed text-gray-700">Forman un único acuerdo esta carátula y sus condiciones particulares, el Anexo A de Tratamiento de Datos{hasAnnex ? ' y el Anexo B de Condiciones Particulares Seleccionadas' : ''}, las Condiciones de Servicio y la Política de Privacidad versión {LEGAL_VERSION}, cuyas copias se adjuntan. Las condiciones particulares prevalecen para identidad, precio, módulos y vigencia; el Anexo A para el encargo de datos. Los documentos generales rigen las materias restantes. Los complementos del Anexo B no eliminan las garantías comunes de soporte, devolución, aviso de incidentes ni autorización de IA. Siempre prevalece la ley imperativa.</p>
         </section>
 
         <section className="contract-signature-section mt-6">
@@ -426,8 +566,9 @@ export default function ContractGenerator() {
 
         <section className="mt-6">
           <h3 className="text-sm font-bold uppercase tracking-wide text-gray-800">6. Disponibilidad, soporte y responsabilidad</h3>
-          <p className="mt-2 text-sm leading-relaxed text-gray-700">{negotiated ? 'Los horarios, primeras respuestas, objetivos de recuperación y excepciones de responsabilidad constan en el Anexo B.' : 'No se pacta un porcentaje de disponibilidad, tiempo de respuesta o recuperación distinto de lo descrito en los documentos adjuntos.'} Puede haber mantenimientos, fallas e indisponibilidad de terceros. Los respaldos reducen riesgos, pero no garantizan recuperación total; el Cliente debe conservar las copias exigidas por la normativa aplicable.</p>
-          <p className="mt-2 text-sm leading-relaxed text-gray-700">En la máxima medida permitida por la ley, se excluyen daños indirectos y lucro cesante. {negotiated ? 'Los límites contractuales se detallan en el Anexo B.' : 'La responsabilidad contractual total del Proveedor frente al Cliente no excederá lo efectivamente pagado bajo este contrato durante los 12 meses anteriores al hecho.'} Ningún límite opera ante dolo, culpa grave o supuestos legalmente indisponibles, ni reduce obligaciones frente a Titulares o autoridades de protección de datos.</p>
+          <p className="mt-2 text-sm leading-relaxed text-gray-700">Se mantienen las condiciones comunes de soporte y puesta en marcha, devolución proporcional, aviso de incidentes dentro de 24 horas desde su conocimiento y autorización expresa de IA descritas en los documentos adjuntos, sin necesidad de seleccionar complementos. No se pacta un porcentaje de disponibilidad distinto de lo descrito en esos documentos. Puede haber mantenimientos, fallas e indisponibilidad de terceros. Los respaldos reducen riesgos, pero no garantizan recuperación total; el Cliente debe conservar las copias exigidas por la normativa aplicable.</p>
+          <p className="mt-2 text-sm leading-relaxed text-gray-700">En la máxima medida permitida por la ley, se excluyen daños indirectos y lucro cesante. La responsabilidad contractual total del Proveedor frente al Cliente no excederá lo efectivamente pagado bajo este contrato durante los 12 meses anteriores al hecho. Ningún límite opera ante dolo, culpa grave o supuestos legalmente indisponibles, ni reduce obligaciones frente a Titulares o autoridades de protección de datos. Este límite no se aumenta ni se excluyen categorías adicionales de responsabilidad.</p>
+          <p className="mt-2 text-sm leading-relaxed text-gray-700">En ausencia de pacto particular seleccionado en el Anexo B, rige la ley ecuatoriana y serán competentes los jueces de Cuenca, Ecuador, sin alterar competencias legalmente obligatorias.</p>
         </section>
 
         <section className="mt-6">
@@ -443,18 +584,16 @@ export default function ContractGenerator() {
           </div>
         </section>
 
-        {negotiated && <section className="contract-annex mt-10">
-          <h2 className="text-2xl font-bold text-gray-900">Anexo B · Condiciones particulares negociadas</h2>
-          <p className="mt-2 text-xs text-gray-600">Vinculado a {client.contractReference || 'la referencia pendiente'}. Solo modifica este contrato; no altera las condiciones de otros clientes.</p>
+        {hasAnnex && <section className="contract-annex mt-10">
+          <h2 className="text-2xl font-bold text-gray-900">Anexo B · Condiciones particulares seleccionadas</h2>
+          <p className="mt-2 text-xs text-gray-600">Vinculado a {client.contractReference || 'la referencia pendiente'}. Solo se incorporan las opciones marcadas para este cliente. Estos complementos no eliminan las garantías comunes de soporte, devolución, aviso de incidentes ni autorización de IA.</p>
           <div className="mt-6 space-y-5 text-sm leading-relaxed text-gray-700">
-            <section><h3 className="font-bold text-gray-900">B.1. Soporte y clasificación</h3><p className="mt-1">Sustituye las reglas de soporte de la cláusula 6 de la carátula y del Art. 19 de las Condiciones. Atención de lunes a viernes, de 09:00 a 18:00, hora de Ecuador continental (UTC−5), excepto feriados nacionales y del domicilio del Proveedor. Canal de registro: soporte-tecnico@bioskintechapp.com; escalamiento: WhatsApp oficial. No se ofrece atención humana continua 24/7.</p><ul className="mt-2 list-disc space-y-1 pl-5"><li>P1: indisponibilidad total o imposibilidad general de consultar fichas, sin alternativa. Primera respuesta humana en 4 horas hábiles; actualización cada 4 horas hábiles mientras persista.</li><li>P2: función principal afectada con alternativa temporal. Primera respuesta en 8 horas hábiles; actualización al menos cada día hábil.</li><li>P3: consultas, capacitación o defectos menores. Primera respuesta en 2 días hábiles.</li></ul><p className="mt-2">El cómputo comienza al recibirse el reporte por correo y acumula únicamente horas de atención. Un acuse automático no es primera respuesta. La clasificación se comunica al Cliente y puede revisarse según el impacto.</p></section>
-            <section><h3 className="font-bold text-gray-900">B.2. Recuperación y mantenimiento</h3><p className="mt-1">Objetivos iniciales, no plazos máximos garantizados: ofrecer una alternativa o recuperar P1 en 1 día hábil y P2 en 3 días hábiles desde el reporte. No equivalen a un RTO certificado ni a una garantía de disponibilidad. Si no se alcanzan, el Proveedor informará causas, acciones, dependencias y una nueva estimación. No se suspenden las obligaciones de información, mitigación ni los remedios de B.3 por una falla de terceros. Mantenimiento planificado: aviso con 48 horas corridas, salvo urgencias de seguridad.</p><p className="mt-2">La recuperación depende de la última copia válida y del incidente. Una programación diaria no garantiza un RPO de 24 horas si una copia falla. No se ofrece recuperación de fotografías que no cuenten con copia independiente; el respaldo fotográfico anual sigue pendiente de implementación y acuerdo.</p></section>
-            <section><h3 className="font-bold text-gray-900">B.3. Terminación y devolución proporcional</h3><p className="mt-1">Sustituye los Arts. 4, 13 y 17 de las Condiciones en lo siguiente: si el Proveedor termina anticipadamente sin incumplimiento del Cliente, retira una función principal contratada sin reemplazo equivalente o mantiene un incumplimiento imputable que impida el uso esencial y no lo subsana dentro de 5 días hábiles del requerimiento escrito, el Cliente podrá terminar y recibirá el importe de suscripción efectivamente pagado, IVA incluido, multiplicado por los días naturales pendientes y dividido por los días naturales del período contratado. El remanente se calcula desde la terminación efectiva; se devuelve dentro de 15 días hábiles, con el ajuste tributario correspondiente. No incluye consumos o servicios efectivamente prestados ni recargos de terceros no recuperados, sin perjuicio de derechos imperativos. Se mantiene el aviso de 30 días para discontinuación planificada y se facilita la exportación disponible; una falla de terceros no exonera automáticamente al Proveedor.</p></section>
-            <section><h3 className="font-bold text-gray-900">B.4. Devolución de datos y conservación</h3><p className="mt-1">Se mantiene el plazo de 30 días naturales posteriores al vencimiento o terminación para solicitar por los canales oficiales la exportación de los formatos actualmente disponibles. No se concede una retención gratuita de 90 días. Una ampliación requerirá cotización, aceptación escrita y confirmación técnica antes de vencer el plazo; no se presume ni altera automáticamente el borrado programado. La entrega masiva de fotografías y de historias clínicas completas legibles no está incluida en el sistema actual y deberá acordarse por separado después de implementar y verificar ese flujo. Los archivos de papel no digitalizados no pueden exportarse. Las copias residuales inmutables mantienen sus ciclos de retención, aisladas del uso ordinario, y se respetan obligaciones legales aplicables.</p></section>
-            <section><h3 className="font-bold text-gray-900">B.5. Incidentes, IA y garantías internacionales</h3><p className="mt-1">Sustituye A.6 y el Art. 11 de la Política respecto del plazo de aviso: el Proveedor comunicará al Cliente una vulneración que afecte sus datos sin dilación indebida y, como máximo, dentro de 24 horas corridas desde que tenga conocimiento, sin esperar a concluir la investigación. El aviso inicial contendrá lo conocido, contacto, alcance preliminar y medidas; se completará progresivamente. No sustituye las notificaciones legales a autoridades o Titulares. Este plazo no es un compromiso de detección en 24 horas ni depende del horario de soporte.</p><p className="mt-2">La firma, el pago o el uso del servicio no autorizan IA. El Proveedor no habilitará ni utilizará funciones de IA sobre datos del Cliente sin su instrucción expresa, documentada y revocable, con identificación del proveedor, finalidad y datos enviados. La instrucción no sustituye la base jurídica requerida respecto de los pacientes. Antes de firmar se debe comprobar la configuración y los controles efectivos; este anexo no acredita esa comprobación.</p><p className="mt-2">Las fuentes y salvaguardas públicas de infraestructura se detallan en el Art. 5 de la Política. El Proveedor facilitará a solicitud razonable la evidencia disponible de los acuerdos aplicables, regiones, subencargados y evaluación del mecanismo de transferencia conforme a la normativa ecuatoriana. No se afirma que una certificación, cláusula extranjera o consentimiento del Cliente equivalga por sí solo a una garantía de cumplimiento de la LOPDP. Deben verificarse cobertura contractual y medidas efectivas antes de formalizar.</p></section>
-            <section><h3 className="font-bold text-gray-900">B.6. Responsabilidad y alcance del límite vigente</h3><p className="mt-1">Se mantiene, sin aumentar su importe, el límite contractual de la cláusula 6 de la carátula y del Art. 14 de las Condiciones: el valor efectivamente pagado por la suscripción en los 12 meses anteriores al hecho. No se acepta excluir con carácter general del límite los incumplimientos de confidencialidad, protección de datos o pérdida de información. Esto no exonera al Proveedor de aplicar medidas de seguridad razonables y proporcionales al riesgo ni de cumplir sus obligaciones de tratamiento, respaldo, asistencia y notificación.</p><p className="mt-2">El límite y las exclusiones no operan ante dolo, culpa grave, prohibiciones imperativas ni responsabilidades indisponibles frente a Titulares o autoridades. No constituyen un blindaje frente a toda reclamación o sanción. La imputabilidad, causalidad y cuantía se determinarán conforme a la ley; la mera intervención de un tercero no excluye la responsabilidad del Proveedor. No se garantiza la ausencia absoluta de incidentes ni recuperación total. La conservación del límite es una contrapropuesta que requiere aceptación del Cliente y revisión jurídica.</p></section>
-            <section><h3 className="font-bold text-gray-900">B.7. Ley y jurisdicción particular</h3><p className="mt-1">Sustituye el Art. 21 de las Condiciones únicamente para este contrato: rige la ley ecuatoriana; se intentará una solución directa durante 30 días desde la notificación escrita. Las partes podrán acordar mediación voluntaria, incluso a distancia, sin imponer arbitraje ni bloquear medidas urgentes. Si no hay acuerdo, conocerán los jueces competentes de {jurisdiction}, Ecuador, sin alterar competencias legalmente obligatorias. El domicilio del Proveedor y el lugar de firma no cambian por este pacto.</p></section>
-            <section><h3 className="font-bold text-gray-900">B.8. Activación y capacitación</h3><p className="mt-1">Una vez firmado el paquete completo, confirmado el pago y recibidos los datos de la cuenta y del administrador, el Proveedor activará el servicio dentro de 1 día hábil y propondrá, dentro de 3 días hábiles, fechas para la reunión inicial y capacitación. La fecha efectiva de la reunión se coordina según disponibilidad de ambas partes; el plazo de propuesta no garantiza celebrarla en ese período. El Proveedor confirmará la activación por escrito. La capacitación cubrirá acceso, permisos, fichas, consentimientos y exportaciones disponibles; las integraciones opcionales requieren su autorización y configuración.</p></section>
+            {options.support && <section><h3 className="font-bold text-gray-900">B.1. Soporte particular</h3><p className="mt-1 whitespace-pre-wrap">{options.supportTerms}</p></section>}
+            {options.refund && <section><h3 className="font-bold text-gray-900">B.2. Devolución particular</h3><p className="mt-1 whitespace-pre-wrap">{options.refundTerms}</p></section>}
+            {options.incidentNotice && <section><h3 className="font-bold text-gray-900">B.3. Aviso de incidentes</h3><p className="mt-1">El Proveedor comunicará al Cliente, sin dilación indebida y como máximo dentro de 24 horas corridas desde que tenga conocimiento, una vulneración que afecte sus datos. El aviso inicial incluirá la información disponible y se completará progresivamente. Este plazo no es un compromiso de detección en 24 horas ni de soporte continuo; no sustituye las notificaciones legales del Cliente como Responsable.</p></section>}
+            {options.aiInstructions && <section><h3 className="font-bold text-gray-900">B.4. Instrucciones particulares de IA</h3><p className="mt-1 whitespace-pre-wrap">{options.aiInstructionTerms}</p><p className="mt-2">Esta cláusula registra instrucciones particulares, pero no habilita técnicamente funciones de IA ni sustituye la base jurídica, información y autorizaciones requeridas respecto de los Titulares. La disponibilidad, configuración, proveedores y datos tratados deben verificarse antes de su uso.</p></section>}
+            {options.jurisdiction === 'Quito' && <section><h3 className="font-bold text-gray-900">B.5. Jurisdicción particular</h3><p className="mt-1">Solo para este contrato, se sustituye la ciudad de jurisdicción prevista en la cláusula 6 de la carátula por Quito, Ecuador. Rige la ley ecuatoriana y se respetan las competencias legalmente obligatorias.</p></section>}
+            {options.activation && <section><h3 className="font-bold text-gray-900">B.6. Activación particular</h3><p className="mt-1 whitespace-pre-wrap">{options.activationTerms}</p></section>}
           </div>
         </section>}
 
@@ -470,9 +609,9 @@ export default function ContractGenerator() {
             <section><h3 className="font-bold text-gray-900">A.3. Datos tratados</h3><p className="mt-1">Según los módulos usados: identificación y contacto; datos sensibles de salud, fotografías, antecedentes, diagnósticos, tratamientos, recetas y consentimientos; firma digitalizada y evidencia técnica; agenda y comunicaciones; datos económicos de la atención; credenciales protegidas, accesos, dispositivos y auditoría. El detalle vigente consta en el Art. 3 de la Política adjunta.</p></section>
             <section><h3 className="font-bold text-gray-900">A.4. Instrucciones y obligaciones</h3><p className="mt-1">El Proveedor tratará los datos solo para ejecutar este contrato, conforme a la configuración, acciones e instrucciones lícitas documentadas del Cliente; garantizará confidencialidad del personal autorizado; aplicará las medidas descritas en el Art. 10 de la Política; y avisará si una instrucción infringe manifiestamente la normativa. El Cliente determina y acredita finalidades y bases legales, informa a los Titulares, obtiene autorizaciones, configura permisos y cumple los deberes sanitarios y de conservación.</p></section>
             <section><h3 className="font-bold text-gray-900">A.5. Subencargados y transferencias</h3><p className="mt-1">El Cliente autoriza de forma general los proveedores identificados en el Art. 5 de la Política adjunta para las finalidades allí descritas. El Proveedor seguirá siendo responsable de sus obligaciones legales como Encargado, seleccionará proveedores con garantías apropiadas e informará cambios relevantes mediante una nueva versión. El Cliente podrá objetar justificadamente por riesgo de protección de datos; si no existe alternativa razonable, podrá terminar el servicio y exportar sus datos.</p></section>
-            <section><h3 className="font-bold text-gray-900">A.6. Seguridad, derechos e incidentes</h3><p className="mt-1">El Proveedor asistirá razonablemente al Cliente para atender derechos, evaluaciones e incidentes según la información disponible. Comunicará al Cliente, sin dilación indebida desde que tenga conocimiento de una violación que afecte sus datos, la naturaleza conocida, posibles consecuencias, medidas adoptadas y punto de contacto, completando la información progresivamente. El Cliente decide y realiza las notificaciones que le correspondan como Responsable.</p></section>
+            <section><h3 className="font-bold text-gray-900">A.6. Seguridad, derechos e incidentes</h3><p className="mt-1">El Proveedor asistirá razonablemente al Cliente para atender derechos, evaluaciones e incidentes según la información disponible. Comunicará al Cliente, sin dilación indebida y dentro de las primeras 24 horas naturales desde que tenga conocimiento de una violación que afecte sus datos, la naturaleza conocida, posibles consecuencias, medidas adoptadas y punto de contacto, completando la información progresivamente. El Cliente decide y realiza las notificaciones que le correspondan como Responsable.</p></section>
             <section><h3 className="font-bold text-gray-900">A.7. Evidencia y auditoría</h3><p className="mt-1">A solicitud razonable, el Proveedor facilitará información disponible para demostrar el cumplimiento de este encargo. Las auditorías deberán proteger la seguridad y confidencialidad de otros clientes, coordinarse con antelación y evitar interferencias desproporcionadas. No se concede acceso a secretos, credenciales ni datos de terceros.</p></section>
-            <section><h3 className="font-bold text-gray-900">A.8. Devolución y supresión</h3><p className="mt-1">Durante la suscripción y los 30 días posteriores, el Cliente podrá exportar los formatos disponibles descritos en la Política. Cumplido ese plazo, el Proveedor eliminará o anonimizará los datos activos conforme a sus procedimientos técnicos y obligaciones legales; las copias residuales permanecerán aisladas del uso ordinario hasta vencer sus ciclos de retención. Las fotografías y limitaciones de exportación se rigen por los Arts. 11 a 13 de los documentos adjuntos.</p></section>
+            <section><h3 className="font-bold text-gray-900">A.8. Devolución y supresión</h3><p className="mt-1">Durante la suscripción y los 30 días posteriores, el Cliente podrá exportar los formatos disponibles descritos en la Política. Cumplido ese plazo, el Proveedor eliminará o anonimizará los datos activos conforme a sus procedimientos técnicos y obligaciones legales; las copias residuales permanecerán aisladas del uso ordinario hasta vencer sus ciclos de retención. Las fotografías originales no forman parte de las copias automáticas de datos estructurados. La entrega anual autorizada de fotografías y documentos clínicos se rige por los documentos generales; no es una réplica fotográfica periódica. La cuota no consumida del período terminado puede solicitarse por los canales oficiales dentro de los 30 días posteriores, sin ampliar el acceso ordinario a la Plataforma.</p></section>
           </div>
         </section>
 

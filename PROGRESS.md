@@ -1,5 +1,13 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-06 Respaldo: 155 pruebas aprobadas.
+- ✅ 2026-10-06 Limpieza segura; caducados asistidos.
+- ✅ 2026-10-06 Respaldo anual preparado, desactivado.
+- ✅ 2026-10-06 Historias legibles y límites explícitos.
+- ✅ 2026-10-06 Contratos generales, opciones independientes.
+- ✅ 2026-10-06 Base de Datos, contexto Master.
+- ✅ 2026-10-06 Consentimientos paginados, CSV íntegros.
+- ✅ 2026-10-06 Cron parcial y reintento dirigido.
 - ✅ 2026-10-06 Contrato natural; anexo negociado.
 - ✅ 2026-10-06 Garantías internacionales y versión legal.
 - ✅ 2026-10-06 Registro exige versión aceptada.

@@ -25,7 +25,6 @@ test('legal versions stay synchronized between server and published documents', 
   const backend = readFileSync(new URL('../api/admin-auth.js', import.meta.url), 'utf8');
   const version = frontend.match(/export const LEGAL_VERSION = '([^']+)'/)[1];
   assert.equal(backend.match(/export const LEGAL_VERSION = '([^']+)'/)[1], version);
-  assert.equal(version, '2026-10-06');
 });
 
 test('default natural-person contract does not require a legal representative', () => {
@@ -35,23 +34,64 @@ test('default natural-person contract does not require a legal representative', 
   assert.doesNotMatch(html, /<input[^>]*name="representativeId"/);
   assert.doesNotMatch(html, /<input[^>]*name="representativeRole"/);
   assert.match(html, /name="clinicName"/);
+  for (const name of ['contractReference', 'clientName', 'taxId', 'clinicName', 'address', 'email']) {
+    assert.match(html, new RegExp(`<input[^>]*name="${name}"[^>]*value=""`));
+  }
 });
 
 test('default package excludes chatbot and does not silently enable negotiated annex', () => {
   const html = renderToStaticMarkup(React.createElement(ContractGenerator));
   assert.match(html, /Excluido:.*?chatbot WhatsApp del sistema/);
   assert.doesNotMatch(html, /servicio opcional contratado durante esta vigencia anual/);
-  assert.doesNotMatch(html, /B\.1\. Soporte y clasificación/);
+  assert.doesNotMatch(html, /Anexo B · Condiciones particulares seleccionadas/);
+  assert.doesNotMatch(html, /B\.1\. Soporte particular/);
+  assert.doesNotMatch(html, /B\.3\. Aviso de incidentes/);
+  assert.match(html, /jurisdicción.*?Cuenca, Ecuador/s);
   assert.match(html, /dolo, culpa grave/);
+  assert.match(html, /durante los 12 meses anteriores al hecho/);
 });
 
-test('printed privacy safeguards disclose plan coverage and do not claim photographic backups', () => {
+test('particular options are independently disabled and client pricing has editable defaults', () => {
+  const source = readFileSync(new URL('../src/components/admin/ContractGenerator.tsx', import.meta.url), 'utf8');
   const html = renderToStaticMarkup(React.createElement(ContractGenerator));
+  for (const option of ['support', 'refund', 'incidentNotice', 'aiInstructions', 'activation']) {
+    assert.match(source, new RegExp(`${option}: false`));
+    assert.match(html, new RegExp(`name="${option}"`));
+  }
+  assert.match(html, /name="platformPrice"[^>]*value="245"/);
+  assert.match(html, /name="chatbotPrice"[^>]*value="100"/);
+  assert.match(source, /jurisdiction: 'Cuenca'/);
+  assert.match(source, /if \(!includedModules\.length\)/);
+  assert.match(source, /setCustomValidity\('Ingrese una fecha de inicio válida\.'/);
+  assert.match(source, /Number\.isFinite\(value\) && value > 0/);
+  assert.doesNotMatch(source, /negotiated/);
+});
+
+test('common support refund incident notice and AI safeguards apply without a particular annex', () => {
+  const html = renderToStaticMarkup(React.createElement(ContractGenerator));
+  const text = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+  assert.doesNotMatch(html, /Anexo B · Condiciones particulares seleccionadas/);
+  assert.match(text, /09:00 a 18:00, UTC−5/);
+  assert.match(text, /primera respuesta en hasta 4 horas hábiles/);
+  assert.match(text, /devolución proporcional del período anual pagado y no prestado/);
+  assert.match(text, /dentro de las primeras 24 horas naturales/);
+  assert.match(text, /autorización expresa, documentada y específica/);
+  assert.match(text, /Contratar el plan o aceptar estas Condiciones no constituye esa autorización/);
+  assert.match(text, /no eliminan las garantías comunes de soporte, devolución, aviso de incidentes ni autorización de IA/);
+});
+
+test('printed privacy safeguards distinguish automatic backups from the authorized annual delivery', () => {
+  const html = renderToStaticMarkup(React.createElement(ContractGenerator));
+  const text = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
   assert.match(html, /vercel\.com\/legal\/dpa/);
   assert.match(html, /no se presume su cobertura en Hobby/);
   assert.match(html, /neon\.com\/platform-terms/);
   assert.match(html, /cloudflare-customer-dpa/);
-  assert.match(html, /las fotografías no forman parte de los respaldos/);
+  assert.match(text, /Las fotografías originales no forman parte de las copias automáticas de datos estructurados/);
+  assert.match(text, /una entrega fotográfica gratuita por período contractual de 12 meses registrado/);
+  assert.match(text, /cuota no consumida del período terminado puede solicitarse por los canales oficiales dentro de los 30 días posteriores/);
+  assert.match(text, /requiere infraestructura habilitada/);
+  assert.doesNotMatch(text, /Pendiente de implementación\/verificación/);
 });
 
 test('registration and invitation reject stale or missing legal versions before database operations', async () => {

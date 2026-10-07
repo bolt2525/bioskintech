@@ -32,13 +32,14 @@ import { slugify } from '../utils/slugify';
 // Tipos centralizados
 import InjectableSeedsPanel from '../components/admin/InjectableSeedsPanel';
 import ContractGenerator from '../components/admin/ContractGenerator';
+import AnnualPhotoBackupPanel from '../components/admin/AnnualPhotoBackupPanel';
 import type { Clinic, ClinicUser, FeatureRow } from '../types';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tipos locales (solo usados en este archivo)
 // ─────────────────────────────────────────────────────────────────────────────
 
-type TabKey = 'clinics' | 'users' | 'modules' | 'system' | 'templates' | 'accesos' | 'vencimientos' | 'contrato';
+type TabKey = 'clinics' | 'users' | 'modules' | 'system' | 'templates' | 'accesos' | 'vencimientos' | 'contrato' | 'photo-backups';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Componentes pequeños reutilizables dentro de este módulo
@@ -1753,6 +1754,7 @@ export default function AdminMasterDashboard() {
               ['system',    '🔧 Sistema'],
               ['accesos',      '🔑 Accesos'],
               ['vencimientos', '📅 Vencimientos'],
+              ['photo-backups', 'Respaldos anuales'],
             ] as [TabKey, string][]).map(([key, label]) => (
               <button
                 key={key}
@@ -2437,6 +2439,7 @@ export default function AdminMasterDashboard() {
         )}
 
         {tab === 'contrato' && <ContractGenerator />}
+        {tab === 'photo-backups' && <AnnualPhotoBackupPanel master clinics={clinics} />}
 
       </div>
 

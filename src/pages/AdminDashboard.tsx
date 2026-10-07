@@ -24,6 +24,7 @@ import {
 import { useEffect, useState, useRef } from 'react';
 import { Fragment } from 'react';
 import AppFooter from '../components/layout/AppFooter';
+import { Dialog } from '../components/ui/Dialog';
 
 // Módulos y tipos de constants centralizados
 import { MODULE_LIST } from '../constants/features';
@@ -77,7 +78,7 @@ function formatApt(d: string) {
 }
 
 /** Devuelve etiqueta y color del badge de urgencia según cuántos días faltan */
-function urgency(a: UpcomingAppointment) {
+function urgency(a: Pick<UpcomingAppointment, 'isToday' | 'isTomorrow' | 'daysUntil'>) {
   if (a.isToday)       return { text: 'HOY',            color: 'bg-red-500 text-white' };
   if (a.isTomorrow)    return { text: 'MAÑANA',         color: 'bg-orange-400 text-white' };
   if (a.daysUntil <= 3) return { text: `${a.daysUntil} días`, color: 'bg-yellow-400 text-white' };
@@ -92,6 +93,7 @@ export default function AdminDashboard() {
   const navigate = useNavigate();
   const location = useLocation();
   const { isAuthenticated, user, hasFeature, logout, checkAuth, userModuleOverrides } = useAuth();
+  const canManage = user?.role === 'clinic_admin' || user?.role === 'master_admin';
   const masterView = useMasterView();
   const { nav } = useAdminNav();
 
@@ -216,7 +218,7 @@ export default function AdminDashboard() {
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ action: 'getCalendarEvents', days: 5 }),
       });
-      const data = await res.json();
+      const data: { events?: DashboardCalendarEvent[] } = await res.json();
       const today = new Date();
       today.setHours(0,0,0,0);
       const appointments: DashboardAppointment[] = (data.events || [])
@@ -258,7 +260,7 @@ export default function AdminDashboard() {
     }
     setShowSettings(true);
     // Bot de WhatsApp — config propia (habilitación la controla master_admin)
-    fetch('/api/admin-auth?action=getWhatsAppBotConfig', { headers: { Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken')}` } })
+    recordsFetch('/api/admin-auth?action=getWhatsAppBotConfig')
       .then(r => r.json())
       .then(d => { if (d.config) setWhatsappBot(d.config); })
       .catch(() => {});
@@ -266,10 +268,10 @@ export default function AdminDashboard() {
     if (user?.clinic_id) {
       try {
         const [settingsRes, staffRes, resourcesRes, publicBookingRes] = await Promise.all([
-          fetch(`/api/admin-auth?action=getClinicSettings&clinicId=${user.clinic_id}`, { headers: { Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken')}` } }).then(r => r.json()),
-          fetch('/api/admin-auth?action=getPersonalStaffEmails', { headers: { Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken')}` } }).then(r => r.json()),
-          fetch('/api/admin-auth?action=listStaffResources', { headers: { Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken')}` } }).then(r => r.json()),
-          fetch('/api/admin-auth?action=getPublicBookingConfig', { headers: { Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken')}` } }).then(r => r.json()),
+          recordsFetch(`/api/admin-auth?action=getClinicSettings&clinicId=${user.clinic_id}`).then(r => r.json()),
+          recordsFetch('/api/admin-auth?action=getPersonalStaffEmails').then(r => r.json()),
+          recordsFetch('/api/admin-auth?action=listStaffResources').then(r => r.json()),
+          recordsFetch('/api/admin-auth?action=getPublicBookingConfig').then(r => r.json()),
         ]);
         if (settingsRes.settings?.treatments?.length) setClinicTreatments(settingsRes.settings.treatments);
         if (staffRes.emails) setPersonalEmails(staffRes.emails);
@@ -300,9 +302,9 @@ export default function AdminDashboard() {
   const handleSaveProfile = async () => {
     setProfileSaving(true); setProfileMsg(null);
     try {
-      const res = await fetch('/api/admin-auth?action=updateOwnProfile', {
+      const res = await recordsFetch('/api/admin-auth?action=updateOwnProfile', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken')}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(profileForm),
       });
       const d = await res.json();
@@ -317,9 +319,9 @@ export default function AdminDashboard() {
     if (pwdForm.next.length < 8) { setPwdMsg({ text: 'Mínimo 8 caracteres', ok: false }); return; }
     setPwdSaving(true); setPwdMsg(null);
     try {
-      const res = await fetch('/api/admin-auth?action=sendPasswordChangeCode', {
+      const res = await recordsFetch('/api/admin-auth?action=sendPasswordChangeCode', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken')}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ currentPassword: pwdForm.current, newPassword: pwdForm.next }),
       });
       const d = await res.json();
@@ -333,9 +335,9 @@ export default function AdminDashboard() {
     if (otpCode.length !== 6) { setPwdMsg({ text: 'El código debe tener 6 dígitos', ok: false }); return; }
     setPwdSaving(true); setPwdMsg(null);
     try {
-      const res = await fetch('/api/admin-auth?action=verifyAndChangePassword', {
+      const res = await recordsFetch('/api/admin-auth?action=verifyAndChangePassword', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken')}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ otpCode, newPassword: pwdForm.next }),
       });
       const d = await res.json();
@@ -358,24 +360,23 @@ export default function AdminDashboard() {
     if (!user?.clinic_id) return false;
     setAgendaSaving(true); setAgendaMsg(null);
     try {
-      const token = sessionStorage.getItem('adminSessionToken');
       const agendaPayload = { ...agendaSettings, treatment_durations: agendaSettings.treatment_durations || {} };
       const targetPublicBookingEnabled = publicBookingOverride ?? publicBookingEnabled;
       const tasks = [
-        fetch('/api/admin-auth?action=saveClinicSettings', {
-          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        recordsFetch('/api/admin-auth?action=saveClinicSettings', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ clinicId: user.clinic_id, section: 'agenda', data: agendaPayload }),
         }),
-        fetch('/api/admin-auth?action=saveClinicSettings', {
-          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        recordsFetch('/api/admin-auth?action=saveClinicSettings', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ clinicId: user.clinic_id, section: 'treatments', data: clinicTreatments }),
         }),
-        fetch('/api/admin-auth?action=updatePersonalStaffEmails', {
-          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        recordsFetch('/api/admin-auth?action=updatePersonalStaffEmails', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ emails: personalEmails }),
         }),
-        fetch('/api/admin-auth?action=setMultiResourceEnabled', {
-          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        recordsFetch('/api/admin-auth?action=setMultiResourceEnabled', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ enabled: multiResource }),
         }),
       ];
@@ -388,8 +389,8 @@ export default function AdminDashboard() {
         setAgendaMsg({ text: settingsError.error, ok: false });
         return false;
       }
-      const publicRes = await fetch('/api/admin-auth?action=setPublicBookingConfig', {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      const publicRes = await recordsFetch('/api/admin-auth?action=setPublicBookingConfig', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: targetPublicBookingEnabled }),
       });
       const publicData = await publicRes.json();
@@ -414,9 +415,9 @@ export default function AdminDashboard() {
   const handleSaveWhatsAppBot = async () => {
     setWhatsappBotSaving(true); setWhatsappBotMsg(null);
     try {
-      const res = await fetch('/api/admin-auth?action=saveWhatsAppBotConfig', {
+      const res = await recordsFetch('/api/admin-auth?action=saveWhatsAppBotConfig', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken')}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           confirm_enabled: whatsappBot.confirm_enabled, summary_7am: whatsappBot.summary_7am, summary_7pm: whatsappBot.summary_7pm,
           staff_phone: whatsappBot.staff_phone, finance_phone: whatsappBot.finance_phone,
@@ -429,8 +430,6 @@ export default function AdminDashboard() {
   };
 
   // ─── Agenda multi-recurso: ayudantes ────────────────────────────────────
-  const agendaAuthHeaders = () => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken')}` });
-
   const handleToggleMultiResource = async () => {
     setMultiResource(v => !v);
     setAgendaMsg(null);
@@ -450,8 +449,8 @@ export default function AdminDashboard() {
     if (!resourceDraft?.name?.trim()) return;
     setAgendaSaving(true); setAgendaMsg(null);
     try {
-      const res = await fetch('/api/admin-auth?action=saveStaffResource', {
-        method: 'POST', headers: agendaAuthHeaders(),
+      const res = await recordsFetch('/api/admin-auth?action=saveStaffResource', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: resourceDraft.id, name: resourceDraft.name.trim(),
           color: resourceDraft.color || '#deb887',
@@ -469,8 +468,8 @@ export default function AdminDashboard() {
 
   const handleDeleteResource = async (id: number) => {
     if (!window.confirm('¿Eliminar este ayudante? Las citas ya creadas no se borran.')) return;
-    const res = await fetch('/api/admin-auth?action=deleteStaffResource', {
-      method: 'POST', headers: agendaAuthHeaders(), body: JSON.stringify({ id }),
+    const res = await recordsFetch('/api/admin-auth?action=deleteStaffResource', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }),
     });
     const d = await res.json();
     if (d.success) setStaffResources(p => p.filter(r => r.id !== id));
@@ -481,9 +480,9 @@ export default function AdminDashboard() {
   const handleSaveClinic = async () => {
     setClinicSaving(true); setClinicMsg(null);
     try {
-      const res = await fetch('/api/admin-auth?action=updateClinicBasicInfo', {
+      const res = await recordsFetch('/api/admin-auth?action=updateClinicBasicInfo', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken')}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(clinicForm),
       });
       const d = await res.json();
@@ -512,7 +511,7 @@ export default function AdminDashboard() {
     userModuleOverrides.filter(o => !o.enabled).map(o => o.feature)
   );
   // hidden:true = opt-in; tile aparece solo cuando la feature está explícitamente habilitada
-  const tiles = MODULE_LIST.filter(m => effectiveHasFeature(m.feat) && !disabledByOverride.has(m.feat));
+  const tiles = MODULE_LIST.filter(m => (m.feat !== 'backup' || canManage) && effectiveHasFeature(m.feat) && !disabledByOverride.has(m.feat));
 
   return (
     <div className="min-h-screen bg-[#fafafa]">
@@ -768,7 +767,7 @@ export default function AdminDashboard() {
 
       {/* ── Modal: Ajustes tabbed ─────────────────────────────────────── */}
       {showSettings && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <Dialog open onClose={() => setShowSettings(false)} labelledBy="dashboard-settings-title" className="w-full sm:w-[42rem]">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
             <div className="h-0.5 bg-gradient-to-r from-[#deb887] to-[#c5a075]" />
             {/* Header */}
@@ -778,11 +777,11 @@ export default function AdminDashboard() {
                   {(effectiveUser?.full_name || effectiveUser?.username || '?').charAt(0).toUpperCase()}
                 </div>
                 <div>
-                  <p className="text-[10px] text-gray-400 leading-none">Configuración</p>
+                  <p id="dashboard-settings-title" className="text-[10px] text-gray-400 leading-none">Configuración</p>
                   <h3 className="font-bold text-gray-900 text-sm leading-tight">{effectiveUser?.full_name || effectiveUser?.username}</h3>
                 </div>
               </div>
-              <button onClick={() => setShowSettings(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+              <button onClick={() => setShowSettings(false)} aria-label="Cerrar configuración" className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
             </div>
 
             <div className="flex flex-1 overflow-hidden">
@@ -1281,7 +1280,7 @@ export default function AdminDashboard() {
                 </div>
 
                 {showPublicBookingModal && (
-                  <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 z-[60]" role="dialog" aria-modal="true" aria-labelledby="public-booking-title">
+                  <Dialog open onClose={() => setShowPublicBookingModal(false)} labelledBy="public-booking-title" className="w-full sm:w-[32rem]">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col">
                       <div className="h-0.5 bg-gradient-to-r from-[#deb887] to-[#c5a075]" />
                       <div className="p-4 sm:p-5 border-b border-gray-100 flex-shrink-0">
@@ -1340,7 +1339,7 @@ export default function AdminDashboard() {
                         </button>
                       </div>
                     </div>
-                  </div>
+                  </Dialog>
                 )}
 
                 {/* Footer save */}
@@ -1392,7 +1391,7 @@ export default function AdminDashboard() {
               </div>
             </div>
           </div>
-        </div>
+        </Dialog>
       )}
       <AppFooter theme="light" />
     </div>

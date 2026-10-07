@@ -9,9 +9,9 @@
 | Alejandro Codón, por sus propios derechos | Seleccionar persona natural; completar su identificación y domicilio sin inventarlos. El firmante es el titular, no un representante legal. Cuenta: Bárbara Atenea Beauty Club. |
 | Sin chatbot, USD 245 con IVA | Desmarcar chatbot: se excluye expresamente y no se cobra USD 100. Transferencia/efectivo mantienen total de USD 245; PayPhone agrega el recargo publicado, salvo acuerdo comercial distinto. No confundir precio de suscripción con cargo en tarjeta. |
 | Quito | Anexo B opcional, jurisdicción Quito solo para ese contrato. Cuenca permanece como regla general. Negociación directa y mediación voluntaria; no arbitraje obligatorio ni exclusión de competencias imperativas. |
-| Fotografías y salida de datos | No se promete una función inexistente. Hoy existen JSON, CSV y consentimientos legibles, no ZIP de originales ni historias clínicas completas legibles. El flujo anual se mantiene como propuesta técnica pendiente de aprobación. |
-| Soporte y devoluciones | Anexo B opcional con horario, prioridades y primera respuesta autorizados. Devolución por terminación injustificada del proveedor, retiro de función principal sin equivalente o incumplimiento esencial no subsanado. |
-| Garantías internacionales, 24 h, IA | Política amplía fuentes, cobertura y limitaciones; Anexo B pacta aviso inicial en 24 horas corridas desde conocimiento, y exige instrucción expresa para IA. Verificar controles y acuerdos reales antes de firmar. |
+| Fotografías y salida de datos | Derecho general a una entrega gratuita por clínica/período registrado de 12 meses, con autorización master, originales y copias clínicas HTML. La implementación queda bloqueada hasta configurar y verificar Worker, cola, correo y migración; no confundir código disponible con servicio operativo. |
+| Soporte y devoluciones | Horario, prioridades, primera respuesta y devolución proporcional pasan a las Condiciones generales. Un anexo solo expresa variaciones concretas pactadas para un cliente. |
+| Garantías internacionales, 24 h, IA | Garantías, aviso inicial en 24 horas naturales desde conocimiento y autorización expresa de IA rigen para todos. Verificar controles y acuerdos reales antes de firmar. |
 | Responsabilidad | Por decisión final del Proveedor se mantiene el límite vigente de lo pagado en los 12 meses anteriores, sin tope especial. Dolo, culpa grave y responsabilidades legalmente indisponibles quedan fuera de los límites. |
 
 El cliente pidió excluir cualquier límite en esas materias. Mantener el límite vigente es una **contrapropuesta**, no una aceptación de su solicitud. No enviar el documento como si los siete puntos estuvieran resueltos.
@@ -36,7 +36,13 @@ Se conserva la ventana de **30 días naturales**, no 90 días gratuitos. No se i
 
 Una ampliación requiere presupuesto, acuerdo escrito y confirmación técnica antes del vencimiento. Hoy existe limpieza programada de fotos por suscripción vencida: no basta un acuerdo comercial para que una extensión funcione. No ofertar 90 días hasta que el borrado respete expresamente esa extensión.
 
-La propuesta de entrega anual no debe impedir una salida razonable al terminar ni el cumplimiento de derechos legales. Recomendar una exportación final adicional sin coste o cotización acordada que no obstaculice esos derechos. Esta decisión y la entrega fotográfica final aún no están implementadas.
+La entrega anual no consumida del período terminado puede solicitarse por los canales oficiales durante esos 30 días. Es un procedimiento manual: verificar identidad y autorización, registrar fecha/referencia de solicitud, comprobar cuota y conservación, recopilar los datos y coordinar una entrega privada con destinatario y recepción verificados. No se rehabilita la cuenta ni se usa el botón automático con un período vencido. Si la cuota ya se consumió, las entregas adicionales requieren acuerdo previo de alcance y costos, sin obstaculizar derechos legales. No se ofrece una segunda entrega gratuita automática.
+
+## Condiciones generales frente a excepciones
+
+Generales: retención de 30 días, garantías de proveedores, incidentes 24 horas naturales, IA con autorización expresa, soporte por prioridad, devolución proporcional en los supuestos descritos, activación y propuesta de capacitación, entrega anual por clínica y límite ordinario con excepciones legales. No dependen de marcar un anexo.
+
+Particulares: identidad y establecimiento, módulos efectivamente contratados, chatbot incluido o excluido, oferta comercial, fechas y forma de pago; jurisdicción distinta de Cuenca o compromisos operativos especiales requieren acuerdo explícito. Alejandro Codón/Bárbara Atenea Beauty Club no son valores predeterminados de otros contratos; Quito no se generaliza.
 
 ## 4. Garantías internacionales: qué acreditar
 

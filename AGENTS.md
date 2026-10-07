@@ -69,6 +69,7 @@ Los agentes especializados deben aplicar estas combinaciones:
 - Validar al menos desktop y móvil, sin confundir una captura visual con una prueba funcional completa.
 
 ## Build and Test
+- Respaldo anual: `workers/annual-photo-backup/` es infraestructura opcional preparada y desactivada; Neon sigue siendo la única DB. No desplegar, crear colas ni contratar Workers Paid sin autorización explícita. Ver habilitación en `docs/PLAN_RESPALDO_FOTOGRAFICO_ANUAL.md`.
 - `npm run build` para validación global del frontend.
 - Usa scripts o pruebas relevantes antes de afirmar que un fix funciona.
 - No declares éxito sin evidencia fresca.

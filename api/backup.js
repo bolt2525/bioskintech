@@ -11,11 +11,12 @@ import crypto from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 import { getPool } from '../lib/neon-clinical-db.js';
 import { authenticateRequest } from '../lib/admin-auth.js';
+import { PHOTO_BACKUP_ACTIONS, handleAnnualPhotoBackup } from '../lib/annual-photo-backup.js';
 import { putR2Object, getR2ObjectBuffer, listR2Objects, generateDownloadUrl, generateUploadUrl, r2ObjectExists, deleteR2Object } from '../lib/r2-service.js';
 import {
   BACKUP_MODULES, MAX_UPLOAD_BYTES, MAX_ROWS_PER_TABLE, EXCLUDED_CONSENT_COLUMNS, PATIENT_TEMPLATE_COLUMNS,
   buildBackupDocument, collectClinicData, compressBackup, decodeBackupBuffer, encryptBackup, hasBackupKey,
-  inspectBackupDocument, buildDatasetCsv, validatePatientImportRow, buildPatientTemplateCsv, isTemplateExampleRow, buildConsentsHtml, listConsentPatients,
+  inspectBackupDocument, buildDatasetCsv, validatePatientImportRow, buildPatientTemplateCsv, isTemplateExampleRow, buildConsentsPage, listConsentPatients,
 } from '../lib/backup-service.js';
 
 const CLINIC_SCOPED_TABLES = new Set([
@@ -328,10 +329,14 @@ async function clinicName(pool, clinicId) {
   return (await pool.query('SELECT name FROM clinics WHERE id = $1', [clinicId])).rows[0]?.name || null;
 }
 
-async function createSnapshot(pool, clinicId, kind, generatedBy) {
-  const modules = await collectClinicData(pool, clinicId, BACKUP_MODULES);
+async function createSnapshot(pool, clinicId, kind, generatedBy, { signal } = {}) {
+  signal?.throwIfAborted();
+  const modules = await collectClinicData(pool, clinicId, BACKUP_MODULES, { signal });
+  signal?.throwIfAborted();
   const doc = buildBackupDocument({ clinicId, clinicName: await clinicName(pool, clinicId), generatedBy, kind, modules });
+  signal?.throwIfAborted();
   const body = encryptBackup(compressBackup(doc));
+  signal?.throwIfAborted();
   const key = `backups/${clinicId}/${kind}/${stamp()}-${crypto.randomBytes(4).toString('hex')}.json.gz.enc`;
   await putR2Object(key, body, 'application/octet-stream');
   return { key, size: body.length, counts: doc.metadata.counts };
@@ -345,6 +350,21 @@ async function publishTemporaryFile(clinicId, gzBuffer, filename) {
   const key = `backup-tmp/${clinicId}/exports/${crypto.randomUUID()}.gz`;
   await putR2Object(key, gzBuffer, 'application/gzip');
   return { url: await generateDownloadUrl(key, filename), filename };
+}
+
+/**
+ * POST ?action=consentsHtml: { patientIds?: number[], offset: 0, limit: 100 }.
+ * Continuar con la misma selección y { offset: nextOffset, limit, revision } hasta
+ * hasMore=false. count=total seleccionado, returnedCount=documentos de esta parte.
+ * Si cambia el conjunto, HTTP 409: descartar partes anteriores y reiniciar.
+ * Sin offset/limit se conserva el contrato anterior: >100 falla, nunca se trunca.
+ */
+export async function exportConsentsFile(pool, clinicId, body, publish = publishTemporaryFile) {
+  const { html, ...page } = await buildConsentsPage(pool, clinicId, body);
+  if (body.offset === undefined && body.limit === undefined && page.hasMore)
+    throw new Error('La selección supera 100 consentimientos; solicita partes con offset=0, limit=100 y continúa con nextOffset y revision');
+  return { ...(await publish(clinicId, gzipSync(Buffer.from(html, 'utf8')),
+    `consentimientos-firmados-${new Date().toISOString().split('T')[0]}-parte-${page.offset}.html.gz`)), ...page };
 }
 
 /** Política: las fotos se eliminan 30 días después de vencer la suscripción sin renovación; no se respaldan. */
@@ -376,31 +396,117 @@ async function purgeEphemeralWhatsAppRows(pool) {
   return { shortLinks: links.rowCount, botStates: states.rowCount };
 }
 
-async function runCron(req, res, pool) {
+// ponytail: presupuesto por invocación, sin cola persistente → retries operacionales explícitos.
+export const CRON_BUDGET_MS = 45_000; // deja 15 s del maxDuration=60 para responder/logs.
+const CRON_MIN_START_MS = 15_000;
+const CRON_BUDGET_EXCEEDED = Symbol('cron-budget-exceeded');
+
+/**
+ * Reintento operacional: ?action=cron&clinicId=<UUID>, con el mismo Bearer CRON_SECRET.
+ * Procesa únicamente esa clínica existente y omite mantenimiento global.
+ * Sin clinicId mantiene la ejecución general. No programa retries ni resuelve
+ * automáticamente los pendientes de otras invocaciones.
+ */
+export async function runCron(req, res, pool, {
+  snapshot = createSnapshot, purgePhotos = purgeExpiredClinicPhotos,
+  purgeWhatsApp = purgeEphemeralWhatsAppRows, now = Date.now,
+  budgetMs = CRON_BUDGET_MS,
+} = {}) {
+  const started = now();
+  const remaining = () => Math.max(0, budgetMs - (now() - started));
+  // No se confunde un timeout con fallo: una operación no cancelable puede terminar
+  // después de responder. Nunca se inicia otra clínica/limpieza tras ese timeout.
+  const withinBudget = async operation => {
+    const ms = remaining();
+    if (!ms) return CRON_BUDGET_EXCEEDED;
+    let timer;
+    const controller = new AbortController();
+    try {
+      return await Promise.race([
+        Promise.resolve().then(() => operation(controller.signal)),
+        new Promise(resolve => { timer = setTimeout(() => {
+          resolve(CRON_BUDGET_EXCEEDED);
+          controller.abort(new Error('Presupuesto del cron agotado'));
+        }, ms); }),
+      ]);
+    } finally { clearTimeout(timer); }
+  };
   const secret = (process.env.CRON_SECRET || '').trim();
   const provided = String(req.headers.authorization || '');
   const expected = `Bearer ${secret}`;
   if (!secret || provided.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(expected)))
     return res.status(401).json({ error: 'No autorizado' });
+  const targetClinicId = req.query?.clinicId;
+  const targeted = targetClinicId !== undefined;
+  if (targeted && (typeof targetClinicId !== 'string' || !UUID_RE.test(targetClinicId)))
+    return res.status(400).json({ error: 'clinicId debe ser un UUID válido' });
+  const scope = { scope: targeted ? 'clinic' : 'all', clinicId: targeted ? targetClinicId : null };
   if (!hasBackupKey()) return res.status(503).json({ error: 'BACKUP_ENCRYPTION_KEY no configurada' });
-  const clinics = (await pool.query('SELECT id FROM clinics ORDER BY id')).rows;
+  const clinicResult = await withinBudget(() => targeted
+    ? pool.query('SELECT id FROM clinics WHERE id = $1', [targetClinicId])
+    : pool.query('SELECT id FROM clinics ORDER BY id'));
+  if (clinicResult === CRON_BUDGET_EXCEEDED)
+    return res.status(503).json({ error: 'Presupuesto agotado al listar clínicas; ninguna fue iniciada',
+      ...scope, complete: false, needsRetry: true, retryScheduled: false });
+  if (targeted && !clinicResult.rows.length)
+    return res.status(404).json({ error: 'Clínica no encontrada', ...scope,
+      ok: 0, complete: false, needsRetry: false, retryScheduled: false });
+  const clinics = clinicResult.rows;
   let ok = 0;
   const failed = [];
-  for (const { id } of clinics) {
-    try { await createSnapshot(pool, id, 'auto', 'cron'); ok++; }
+  const uncertain = [];
+  const unprocessed = [];
+  let longestSnapshotMs = 0;
+  for (const [index, { id }] of clinics.entries()) {
+    if (remaining() < Math.max(CRON_MIN_START_MS, longestSnapshotMs * 2)) {
+      unprocessed.push(...clinics.slice(index).map(clinic => clinic.id));
+      break;
+    }
+    const snapshotStarted = now();
+    try {
+      const result = await withinBudget(signal => snapshot(pool, id, 'auto', 'cron', { signal }));
+      if (result === CRON_BUDGET_EXCEEDED) {
+        uncertain.push(id);
+        unprocessed.push(...clinics.slice(index + 1).map(clinic => clinic.id));
+        break;
+      }
+      ok++;
+    }
     catch (err) { failed.push(id); console.error('[backup:cron] snapshot failed', id, err?.code || err?.name || 'Error'); }
+    longestSnapshotMs = Math.max(longestSnapshotMs, now() - snapshotStarted);
   }
-  console.info('[backup:cron] done', { ok, failed: failed.length });
-  if (failed.length) {
+  const complete = failed.length + uncertain.length + unprocessed.length === 0;
+  console.info('[backup:cron] done', { ok, failed, uncertain, unprocessed, complete });
+  if (failed.length && remaining() >= CRON_MIN_START_MS) {
     const { sendDeveloperAlert } = await import('./admin-auth.js');
-    await sendDeveloperAlert('Respaldo automático con fallos', { Correctos: ok, Fallidos: failed.length, 'Clínicas': failed.join(', ') })
+    await withinBudget(() => sendDeveloperAlert('Respaldo automático con fallos', { Correctos: ok, Fallidos: failed.length, 'Clínicas': failed.join(', ') }))
       .catch(err => console.error('[backup:cron] alert error', err?.name || 'Error'));
   }
-  const photosPurged = await purgeExpiredClinicPhotos(pool).catch(err => { console.error('[backup:cron] purge error', err?.code || err?.name); return 0; });
-  if (photosPurged) console.info('[backup:cron] expired photos purged', photosPurged);
-  const whatsappPurged = await purgeEphemeralWhatsAppRows(pool).catch(err => { console.error('[backup:cron] whatsapp purge error', err?.code || err?.name); return { shortLinks: 0, botStates: 0 }; });
-  if (whatsappPurged.shortLinks || whatsappPurged.botStates) console.info('[backup:cron] whatsapp ephemeral rows purged', whatsappPurged);
-  return res.status(failed.length ? 207 : 200).json({ ok, failed, photosPurged, whatsappPurged });
+  const maintenance = {
+    photos: targeted ? 'not_requested' : 'skipped',
+    whatsapp: targeted ? 'not_requested' : 'skipped',
+  };
+  let photosPurged = null, whatsappPurged = null;
+  for (const [name, operation] of [['photos', purgePhotos], ['whatsapp', purgeWhatsApp]]) {
+    if (targeted) break;
+    if (remaining() < CRON_MIN_START_MS) break;
+    try {
+      const result = await withinBudget(() => operation(pool));
+      if (result === CRON_BUDGET_EXCEEDED) { maintenance[name] = 'uncertain'; break; }
+      maintenance[name] = 'complete';
+      if (name === 'photos') photosPurged = result;
+      else whatsappPurged = result;
+    } catch (err) {
+      maintenance[name] = 'failed';
+      console.error('[backup:cron] maintenance failed', name, err?.code || err?.name);
+    }
+  }
+  const maintenanceComplete = targeted || Object.values(maintenance).every(status => status === 'complete');
+  return res.status(complete && maintenanceComplete ? 200 : 207).json({
+    ...scope, ok, failed, uncertain, unprocessed, complete, needsRetry: !complete || !maintenanceComplete,
+    retryScheduled: false, photosPurged, whatsappPurged, maintenance,
+    elapsedMs: now() - started, budgetMs,
+  });
 }
 
 async function parseJsonBody(req) {
@@ -483,6 +589,7 @@ async function importPatients(pool, rows, clinicId, auth, dryRun) {
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   const action = String(req.query.action || 'stats');
+  if (PHOTO_BACKUP_ACTIONS.has(action)) return handleAnnualPhotoBackup(req, res, action);
   const pool = getPool();
   if (!pool) return res.status(503).json({ error: 'Base de datos no disponible' });
   if (action === 'cron') {
@@ -547,7 +654,9 @@ export default async function handler(req, res) {
 
     if (action === 'consentPatients' && req.method === 'GET') {
       if (!requireClinic()) return;
-      return res.status(200).json({ patients: await listConsentPatients(pool, clinicId) });
+      const patients = await listConsentPatients(pool, clinicId);
+      return res.status(200).json({ patients, count: patients.length,
+        totalConsents: patients.reduce((sum, patient) => sum + patient.count, 0) });
     }
 
     if (action === 'snapshots' && req.method === 'GET') {
@@ -579,17 +688,9 @@ export default async function handler(req, res) {
     }
 
     if (action === 'consentsHtml') {
-      let patientIds = null;
-      if (body.patientIds != null) {
-        if (!Array.isArray(body.patientIds) || body.patientIds.length === 0 || body.patientIds.length > 5000 ||
-            !body.patientIds.every(id => Number.isSafeInteger(id) && id > 0))
-          return res.status(400).json({ error: 'Selección de pacientes inválida' });
-        patientIds = body.patientIds;
-      }
-      const html = await buildConsentsHtml(pool, clinicId, patientIds);
-      console.info('[backup] consents html', { clinicId, user: auth.id, patients: patientIds?.length ?? 'all' });
-      return res.status(200).json(await publishTemporaryFile(clinicId, gzipSync(Buffer.from(html, 'utf8')),
-        `consentimientos-firmados-${new Date().toISOString().split('T')[0]}.html.gz`));
+      const file = await exportConsentsFile(pool, clinicId, body);
+      console.info('[backup] consents html', { clinicId, user: auth.id, offset: file.offset, count: file.returnedCount });
+      return res.status(200).json(file);
     }
 
     if (action === 'uploadUrl') {
@@ -646,6 +747,6 @@ export default async function handler(req, res) {
     // Solo los Error propios (sin código de pg ni metadatos de AWS) llevan mensajes seguros para el usuario.
     const known = error instanceof Error && error.name === 'Error' && !error.code && !error.$metadata;
     console.error('[backup] error', action, error?.code || error?.name || 'Error');
-    return res.status(known ? 400 : 500).json({ error: known ? error.message : 'No se pudo procesar el respaldo.' });
+    return res.status(known ? (error.status === 409 ? 409 : 400) : 500).json({ error: known ? error.message : 'No se pudo procesar el respaldo.' });
   }
 }

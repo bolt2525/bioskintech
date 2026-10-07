@@ -1,15 +1,15 @@
-# Plan de respaldo fotográfico anual — pendiente de aprobación
+# Respaldo fotográfico anual — implementación preparada
 
-**6 de octubre de 2026.** No se implementó la función, no se crearon tablas, workers, buckets, colas ni reglas de almacenamiento. Los ajustes legales autorizados son una entrega separada. Este plan no constituye un compromiso de disponibilidad, volumen o entrega.
+**6 de octubre de 2026.** Arquitectura aprobada e implementación en repositorio. **Procesamiento desactivado por defecto:** no se contrata Workers Paid ni se crea infraestructura remota automáticamente. El flujo es solicitud de clínica → autorización Master Admin → compilación asíncrona → descarga por la clínica; no requiere que el cliente compile desde su equipo. Migración, cola, Worker, secretos y reglas de limpieza deben verificarse antes de habilitarlo.
 
 ## 1. Arquitectura observada
 
 - React 18/Vite: módulo de Base de Datos en `src/pages/AdminBackup.tsx`; Master Admin en `src/pages/AdminMasterDashboard.tsx`.
 - `api/backup.js` autentica sesiones mediante `lib/admin-auth.js`; no usa OAuth Google como identidad del respaldo. OAuth se reserva a integraciones Google. Solo administradores gestionan el respaldo.
-- Neon guarda datos, historial y metadatos `clinical_photos`; los originales R2 no están en el JSON. Se exportan JSON, CSV y consentimientos HTML legibles. No existe exportación completa de historias clínicas legibles.
+- Neon guarda datos, historial y metadatos `clinical_photos`; los originales R2 no están en el JSON. El nuevo flujo añade originales ZIP, JSON/CSV y copias clínicas HTML a partir del mismo snapshot.
 - `lib/backup-service.js` materializa tablas en memoria y falla sobre 50.000 filas. El helper de R2 que devuelve un Buffer materializa el objeto entero: no sirve para un ZIP masivo.
 - `api/backup.js` tiene `maxDuration: 60` en `vercel.json`. Se cuentan 11 funciones locales. La inspección Vercel de solo lectura confirmó el proyecto y Node 24, no plan ni Fluid Compute.
-- La documentación registra snapshots cifrados, lock 30 días y lifecycle 35 días bajo `backups/`; no se revalidaron remotamente las reglas R2 durante esta tarea.
+- La inspección R2 de solo lectura confirmó lock 30 días solo bajo `backups/` y lifecycle 35 días para ese prefijo; no se modificaron reglas remotas.
 - El generador de contratos no persiste historial: no inferir el año contractual a partir de un PDF, el año calendario o una fecha de vencimiento aislada.
 - La suscripción vencida restringe acceso y hay limpieza de fotos a los 30 días. La devolución postcontrato necesita autorización limitada, no una reapertura de todos los módulos.
 
@@ -30,7 +30,7 @@ Fotos JPEG/PNG/WebP ya comprimidas: usar ZIP STORE y ZIP64, conservando original
 ## 3. Estrategia recomendada
 
 ```text
-Administrador de clínica -> sesión -> api/backup?action=requestAnnualPhotoBackup
+Administrador de clínica -> sesión -> api/backup?action=requestPhotoBackup
   -> transacción Neon: solicitud PENDING + aviso outbox
 Master Admin -> sesión -> aprobación condicionada
   -> transacción Neon: APPROVED + evento durable de procesamiento
@@ -53,7 +53,7 @@ Neon sigue siendo la única base de datos de la aplicación. Si se usa Cloudflar
 7. Guardar ZIP en prefijo temporal fuera de `backups/`; si el lock abarca todo el bucket, usar bucket de entrega separado **privado**. El nombre del prefijo no es una ACL.
 8. Fallar explícitamente ante una foto ausente o cambiada; no enviar archivo parcial como respaldo completo. Toda excepción requiere informe visible y aceptación explícita.
 
-### Contenido portable propuesto
+### Contenido portable
 
 ```text
 respaldo-<request-id>/
@@ -68,17 +68,50 @@ respaldo-<request-id>/
 
 Historias HTML legibles e imprimibles, sin depender de sesión ni llamadas externas. Recoger consultas, antecedentes/versiones, diagnósticos, tratamientos, inyectables, recetas, marcaciones y consentimientos/evidencias disponibles. No inventar PDF para papel no digitalizado. JSON y CSV siguen para portabilidad técnica; HTML resuelve lectura humana. Sanitizar/escapar contenido y rutas, impedir `../`, rutas absolutas e inclusión de secretos/tokens de firma. Nunca nombres de pacientes en keys, correo o logs.
 
+JSON, CSV e historias que superan el tamaño por documento se fragmentan por filas; `LEAME.html` enumera todos los documentos. Los JSON numerados se restauran en orden ascendente: primero pacientes y luego sus relaciones. Un registro individual excesivo falla explícitamente y requiere exportación asistida; no se recorta su contenido.
+
 ## 4. Presigned URLs y entrega
 
 R2 soporta presigned GET de 1 segundo a 7 días; **24 horas = 86.400 s es válido**. Reutilizar AWS SDK v3 y `getSignedUrl` ya instalados; credenciales solo server-side, `region: auto`, endpoint S3 R2 y `GetObjectCommand` para una clave previamente autorizada.
 
 Se recomienda **derecho de descarga de 24 horas**, no necesariamente un presigned de 24 horas: correo con enlace opaco de la aplicación, sesión/reautenticación del administrador solicitante, token aleatorio guardado solo como hash y GET firmado de aproximadamente 5 minutos al canjearlo. Enlace revocable en Neon, ventana y clínica verificadas en cada emisión. Tokens de correo no confieren facultades de aprobar.
 
+La implementación usa el panel con sesión ya existente y el identificador UUID de solicitud: el UUID no autoriza descargas por sí mismo. No es necesario introducir otro token en el correo. `photoBackupDownload` verifica tenant, rol, estado completo y ventana restante antes de emitir el GET firmado.
+
 Una presigned URL es un bearer token: quien la recibe puede usarla durante su vigencia; no es de un solo uso ni comprueba la sesión del receptor. Una URL ya emitida sigue válida hasta expirar salvo medidas sobre el objeto/credenciales; revocar el token de aplicación solo impide nuevas emisiones. No registrar la URL completa, ni incluir analytics en la página de canje. Configurar `no-store`, política de referrer restrictiva y nombre de descarga sin datos personales. CORS no es autorización.
+
+## Costos y decisión de operación
+
+Fuente oficial: [R2 Pricing](https://developers.cloudflare.com/r2/pricing/) y [Workers Pricing](https://developers.cloudflare.com/workers/platform/pricing/), consultadas el 6 de octubre de 2026.
+
+- R2 no cobra transferencia de salida a Internet, incluida la descarga de fotografías o ZIP. No equivale a una exportación sin costos.
+- Standard: USD 0,015/GB-mes de almacenamiento; operaciones A USD 4,50/millón y B USD 0,36/millón. Sin cargo de recuperación Standard. Franquicia publicada: 10 GB-mes, 1 millón A y 10 millones B; comprobar el consumo total de la cuenta.
+- Infrequent Access añade USD 0,01/GB de recuperación; no elegir esa clase para originales que se leerán ni ZIP temporales sin evaluar el costo.
+- ZIP temporales duplican almacenamiento mientras existen. Multipart, lectura, colas, CPU y reintentos también cuentan; 24 horas de acceso no eliminan objetos automáticamente.
+- Workers Paid tiene un mínimo de **USD 5 por mes de cuenta mientras esté activo**, incluso sin respaldos. No es pago por ZIP ni por aprobación. Los límites gratuitos no permiten prometer procesamiento masivo; no se confirmó que el plan efectivo soporte los lotes.
+- El usuario no autorizó un cargo fijo: dejar preparado el Worker, sin cambiar planes ni activar procesamiento. En el futuro verificar facturación y capacidad y obtener autorización antes de habilitar. No prometer prorrateo o un único cargo por activarlo temporalmente sin comprobar condiciones de la cuenta.
+
+## Superficies implementadas y habilitación futura
+
+- UI: `AnnualPhotoBackupPanel` en Base de Datos y tab Respaldos anuales en Master Admin. Períodos explícitos de doce meses, solicitudes, aprobación/rechazo, errores visibles y descarga por partes.
+- Backend consolidado: `api/backup.js` y `lib/annual-photo-backup.js`. No aumenta las 11 funciones Vercel.
+- Neon: migración explícita `scripts/migrate-annual-photo-backup.mjs`, con cuotas, requests, partes, notificaciones y RLS. No se ejecuta desde un request.
+- Documentación portable: `lib/portable-clinical-export.js`, snapshot coherente, sin tokens de firma ni activos externos, HTML escapado y CSV protegido contra fórmulas. Límite explícito de 4 MiB por documento y 128 MiB total; 50.000 filas por tabla del recolector existente. Un exceso falla, no trunca ni presenta una copia parcial como completa. Es un límite técnico de esta implementación, no una promesa comercial de volumen ilimitado. Las firmas se compactan solo en HTML; los originales permanecen en JSON. Una historia sintética de 20 consultas pesa aproximadamente 30 KiB sin fotografías.
+- Worker: `workers/annual-photo-backup/`, ZIP STORE/ZIP64 streaming por lotes y multipart. Los IDs en cola no contienen fichas ni nombres de pacientes.
+- Estado remoto verificado de solo lectura: sin colas registradas; `bioskin-fotos` tiene lock solo en `backups/`, no en todo el bucket. Las reglas actuales eliminan `backup-tmp/` al día y `backups/` a los 35 días, pero no cubren `annual-photo-backups/`. Agregar su limpieza temporal sin modificar las reglas anteriores y comprobar bucket privado antes de habilitar.
+- `ANNUAL_PHOTO_BACKUP_ENABLED=false` mantiene el sistema cerrado: no prometer correos ni preparar entregas hasta que exista configuración funcional. No se consumen cuotas por una entrega fallida.
+
+Validar antes de habilitar: migration/RLS y unicidad concurrente; SMTP/outbox; Worker y callbacks autenticados; ZIP real, ausencia/cambio de objetos, recuperación de leases y repetición idempotente; todos los archivos esperados; descarga con sesión correcta y expiración. Hacer una entrega end-to-end con datos ficticios antes de comunicar disponibilidad.
+
+Mantenimiento: el Worker incluye cron horario que llama a `photoBackupWorkerMaintenance` con secreto y timeout de 55 s. Resultados parciales/fallos se registran y fallan explícitamente, sin bucles de reintento dentro del cron. Antes de activarlo verificar ejecuciones y alertas. La limpieza de huérfanos requiere lifecycle independiente bajo `annual-photo-backups/` (retención temporal aprobada, por ejemplo siete días); no aplicar esa regla a originales ni a `backups/`. La expiración del enlace no equivale a borrado.
+
+Las fuentes sin entrega completada caducan a los seis días para dejar margen frente al lifecycle de siete días. Una solicitud caducada no reutiliza sus claves: el cliente debe coordinar con soporte una nueva entrega autorizada. El mantenimiento reserva las filas, invalida leases, purga snapshots y borra fuentes/partes; un error conserva la reserva y no declara limpieza exitosa.
+
+Validación local: `npm run test:backup` (Node 24, mocks de módulos experimentales) y `npx tsc --noEmit --project workers/annual-photo-backup/tsconfig.json`. Los tipos runtime provienen de `@cloudflare/workers-types`; `worker-configuration.d.ts` conserva bindings generados con Wrangler. En este equipo Windows, generar runtime mediante workerd produjo un access violation; el bundle `wrangler deploy --dry-run` y la comprobación TypeScript pueden ejecutarse sin desplegar.
 
 Separar: ventana de canje, duración del GET, fecha de borrado del archivo y periodo postcontrato. No borrar mientras una descarga permitida esté en curso; lifecycle es una red de seguridad, no eliminación exacta al segundo. Un enlace caducado puede renovarse dentro de la ventana autorizada sin compilar de nuevo ni consumir otra cuota.
 
-## 5. Neon, permisos y estados propuestos
+## 5. Neon, permisos y estados
 
 - Solicitudes con UUID, `clinic_id`, solicitante, aprobador, periodo de derecho, estado, clave de idempotencia, fecha de corte, intentos, lease/heartbeat, recuentos, bytes, hashes, claves R2, expiración y códigos de error seguros.
 - Año **por clínica/cuenta y periodo contractual de 12 meses**, no por usuario, para evitar multiplicar cuotas con cuentas. Requiere acordar definición y persistir periodos estables; no calcular únicamente con el vencimiento actual editable.
@@ -87,28 +120,23 @@ Separar: ventana de canje, duración del GET, fecha de borrado del archivo y per
 - Outbox transaccional para solicitud, ejecución y disponibilidad; eventos únicos, reintentos, backoff y estado visible. SMTP no es exactamente una vez: limitar duplicados, no prometer su ausencia absoluta. Un fallo SMTP no recompila ni consume otra cuota.
 - `clinic_admin` solicita solo para su clínica; `master_admin` aprueba/rechaza y no acepta un tenant arbitrario como autorización. Worker/callback con autenticación de servicio, protección de replay y validación de transición/tenant.
 - Usar cliente de aplicación con RLS para consultas clínicas nuevas, contexto tenant validado y filtros explícitos. Operaciones administrativas globales acotadas al master/ejecutor autorizado; no copiar el uso de pool owner del respaldo legacy como patrón general.
-- Acceso postcontrato: permiso exclusivo de devolución hasta 30 días, sin restauración, edición ni IA; por canales oficiales hoy, módulo limitado si se implementa.
+- Devolución postcontrato: procedimiento exclusivamente manual por canales oficiales dentro de 30 días; verificar identidad/autorización, registrar solicitud, cuota y entrega privada. No reactivar cuenta, restauración, edición ni IA. El botón anual exige período vigente y no implementa esa gestión manual.
 
-## 6. Modificaciones futuras, en orden
+## 6. Archivos preparados y pendientes de habilitación
 
-1. `lib/neon-clinical-db.js`: esquema/migración idempotente de solicitudes, periodos de derecho y outbox; UUID y tenant. Primero confirmar tablas existentes reutilizables.
-2. `scripts/`: migración y actualización de `TENANT_TABLES` en `setup-bioskin-role.mjs`; políticas y privilegios RLS comprobados. No ejecutar en esta fase.
-3. `api/backup.js`: elegibilidad, solicitar, listar estado, cancelar, aprobar/rechazar master y canjear descarga. No nueva función Vercel.
-4. Nuevo servicio acotado en `lib/modules/` o extensión de `lib/backup-service.js`: estados/cuota, manifest y recopilación portable. Evitar introducir un framework de trabajos.
-5. `lib/r2-service.js`: lectura streaming, multipart, verificación, abort y limpieza; no convertir ZIP completo a Buffer.
-6. Worker/cola Cloudflare con configuración aislada, o ejecutor alternativo aprobado: procesar un lote por mensaje, persistir progreso, autenticarse y reportar resultado.
-7. Extraer/reutilizar transporte SMTP de `api/sendEmail.js` en helper server-side si no existe uno equivalente. Correo master con enlace al panel; correo cliente HTML y texto con expiración, advertencia y CTA; sin pacientes ni adjuntos masivos.
-8. `src/pages/AdminBackup.tsx`: botón “Solicitar Respaldo Anual”, elegibilidad de servidor, explicación de alcance, progreso y errores; desactivar duplicados como UX, nunca como único control de cuota.
-9. `src/pages/AdminMasterDashboard.tsx`: tab de solicitudes y componente acotado con clínica, volumen estimado, cuota, estado, aprobar/rechazar y auditoría. Carga bajo demanda.
-10. `src/types/index.ts`: tipos compartidos del flujo; reutilizar feature `backup` si permite el alcance, sin duplicar módulo.
-11. `tests/backup.test.mjs` y pruebas de worker: concurrencia, aislamiento, fallos de objetos/SMTP, expiración, ZIP íntegro, recuperación de lotes, borrado y salida postcontrato.
-12. Actualizar Condiciones, Política, generador y arquitectura **solo después** de probar la entrega; no anunciar protección fotográfica automática si únicamente existe exportación anual bajo solicitud.
+1. Backend: `lib/annual-photo-backup.js`, acciones consolidadas en `api/backup.js`; períodos, snapshot, bundles documentales, leases, partes y SMTP/outbox.
+2. Migración explícita: `scripts/migrate-annual-photo-backup.mjs` y privilegios en `scripts/setup-bioskin-role.mjs`. Pendiente de aplicar y comprobar en Neon antes de activar.
+3. Documentos: `lib/portable-clinical-export.js`; bundles temporales privados bajo `annual-photo-backups/<clinic>/<request>/source/`. Worker valida hash y extrae cada documento al ZIP; el cliente no recibe el JSON del bundle.
+4. Ejecutor: `workers/annual-photo-backup/`; cola/DLQ, callbacks, ZIP streaming, multipart y abort. Configuración local preparada, sin recursos remotos creados.
+5. Interfaz: `AnnualPhotoBackupPanel` en Base de Datos y tab Master, tipos en `src/types/index.ts`; autorización y límites dependen del servidor.
+6. Habilitación separada: plan/recursos Cloudflare aprobados, secretos, SMTP, limpieza, migración y entrega integrada ficticia. No habilitar el flag antes de estos controles.
+7. Pruebas locales cubren ZIP real, hashes, callback/reintento, archivos ausentes, bundles y documentos escapados. No equivalen a una prueba productiva de concurrencia RLS, SMTP y expiración.
 
 El generador no guarda contratos: hay que definir una fuente de vigencia contractual verificable para la cuota. No crear todo un sistema de firma/contratos si una tabla mínima de derechos respaldada por los registros actuales resuelve ese requisito.
 
-## 7. Cuestiones a aprobar y pruebas de aceptación
+## 7. Decisiones y pruebas de aceptación
 
-Decidir: año contractual, una entrega por clínica, política de exportación final, volúmenes comerciales, almacenamiento temporal, ejecución Cloudflare Paid vs alternativa y precio de extensiones. Recomendación: **una entrega gratuita por año contractual, más salida final razonable**, sin equiparar esto a un DR fotográfico diario.
+Aprobado: período registrado de 12 meses, una entrega por clínica, solicitud exclusiva de `clinic_admin`, autorización Master, partes ZIP independientes y ventana de descarga de 24 horas. Se mantiene retención postcontrato de 30 días. No contratar infraestructura ni activar planes automáticamente; el Worker queda preparado. Extensiones y una segunda entrega requieren acuerdo, sin obstaculizar derechos legales de devolución.
 
 Antes de producción: medir conjunto representativo con datos ficticios, consumo pico, CPU y duración por lote; verificar margen frente a límites; comprobar archivo con herramienta ZIP independiente y hashes; ejecutar restauración/lectura de datos estructurados y HTML; demostrar dos solicitudes y aprobaciones concurrentes no duplican cuota; comprobar que clínica A nunca obtiene objetos de B; provocar objeto faltante y error SMTP sin éxito falso; ensayar expiración/revocación y purga postcontrato.
 

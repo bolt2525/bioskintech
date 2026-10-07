@@ -1,10 +1,13 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import {
   Database, Download, RefreshCw, Loader2, Users, Stethoscope, DollarSign, Package, Check, AlertCircle, Info,
   ClipboardList, Upload, FileJson, FileSpreadsheet, Cloud, ShieldCheck, History, FileSignature, Settings, MessageCircle, XCircle,
 } from 'lucide-react';
 import AdminLayout from '../components/layout/AdminLayout';
 import { useAuth } from '../hooks/useAuth';
+import AnnualPhotoBackupPanel from '../components/admin/AnnualPhotoBackupPanel';
+import { Dialog } from '../components/ui/Dialog';
+import recordsFetch from '../utils/recordsFetch';
 
 type Stat = { label: string; count: number; exists: boolean };
 type StatsData = { stats: Record<string, Stat>; totalRecords: number; clinic_id: string; is_master: boolean; encryption_ready: boolean };
@@ -15,20 +18,20 @@ type RestoreResult = { info: RestoreInfo; confirmations: string[]; report: Resto
 type PatientReport = { valid: number; created: number; withHistory: number; examplesSkipped: number; duplicates: { line: number; reason: string }[]; errors: { line: number; error: string }[]; committed: boolean };
 type TemplateColumn = { name: string; required: boolean; description: string; example: string };
 type ConsentPatient = { id: number; first_name: string; last_name: string; identification: string | null; consents: number };
+type ConsentPage = {
+  url: string; filename: string; count: number; returnedCount: number;
+  hasMore: boolean; nextOffset: number | null; revision: string;
+};
 
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  const titleId = useId();
   return (
-    <div className="fixed inset-0 z-[90] bg-black/50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={title} onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-5" onClick={e => e.stopPropagation()}>
-        <h3 className="text-lg font-bold text-gray-900 mb-3">{title}</h3>
+    <Dialog open onClose={onClose} labelledBy={titleId} className="w-full sm:w-[32rem]">
+      <div className="bg-white rounded-2xl shadow-2xl w-full p-5">
+        <h3 id={titleId} className="text-lg font-bold text-gray-900 mb-3">{title}</h3>
         {children}
       </div>
-    </div>
+    </Dialog>
   );
 }
 
@@ -53,15 +56,10 @@ const MODULES = [
   { id: 'communications', label: 'Comunicaciones WhatsApp', icon: MessageCircle, restorable: false, statKeys: [], description: 'Contactos y mensajes de recordatorios — solo referencia' },
 ];
 
-const authHeaders = (json = false): HeadersInit => ({
-  Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken') || ''}`,
-  ...(json ? { 'Content-Type': 'application/json' } : {}),
-});
-
 async function api<T>(url: string, body?: unknown): Promise<T> {
-  const res = await fetch(url, body === undefined ? { headers: authHeaders() } : { method: 'POST', headers: authHeaders(true), body: JSON.stringify(body) });
+  const res = await recordsFetch(url, body === undefined ? undefined : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw Object.assign(new Error(data.error || `Error ${res.status}`), { data });
+  if (!res.ok) throw Object.assign(new Error(data.error || `Error ${res.status}`), { data, status: res.status });
   return data as T;
 }
 
@@ -83,6 +81,37 @@ async function downloadGzip(url: string, filename: string, type: string) {
   saveBlob(new Blob([body], { type }), filename.replace(/\.gz$/, ''));
 }
 const downloadGzipAsJson = (url: string, filename: string) => downloadGzip(url, filename, 'application/json');
+
+async function downloadConsentPages(patientIds: number[] | null, onProgress: (part: number) => void) {
+  let offset = 0;
+  let parts = 0;
+  let revision: string | null = null;
+  let total: number | null = null;
+  while (true) {
+    onProgress(parts + 1);
+    const page: ConsentPage = await api<ConsentPage>('/api/backup?action=consentsHtml', {
+      ...(patientIds ? { patientIds } : {}), offset, limit: 100, ...(revision ? { revision } : {}),
+    });
+    // No aceptar el contrato antiguo: podría omitir consentimientos sin avisar.
+    const nextOffset = offset + page.returnedCount;
+    if (!Number.isSafeInteger(page.count) || page.count < offset ||
+        !Number.isSafeInteger(page.returnedCount) || page.returnedCount !== Math.min(100, page.count - offset) ||
+        typeof page.hasMore !== 'boolean' || page.hasMore !== (nextOffset < page.count) ||
+        page.nextOffset !== (page.hasMore ? nextOffset : null) ||
+        typeof page.revision !== 'string' || !/^[a-f0-9]{32}$/.test(page.revision) ||
+        (revision !== null && page.revision !== revision) || (total !== null && page.count !== total)) {
+      throw new Error('No se pudo verificar la paginación de consentimientos. No se confirma una descarga completa; contacte a soporte.');
+    }
+    revision = page.revision;
+    total = page.count;
+    if (page.returnedCount > 0) {
+      await downloadGzip(page.url, page.filename, 'text/html');
+      parts++;
+    }
+    if (page.nextOffset === null) return { count: nextOffset, parts };
+    offset = page.nextOffset;
+  }
+}
 
 function parseCsv(text: string): string[][] {
   const src = text.replace(/^\uFEFF/, '');
@@ -143,11 +172,14 @@ export default function AdminBackup() {
   const [tab, setTab] = useState<'export' | 'import' | 'cloud'>('export');
   const [stats, setStats] = useState<StatsData | null>(null);
   const [loadingStats, setLoadingStats] = useState(false);
+  const [statsError, setStatsError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set(['patients', 'finance', 'inventory']));
   const [snapshots, setSnapshots] = useState<Snapshot[] | null>(null);
+  const [loadingSnapshots, setLoadingSnapshots] = useState(true);
+  const [snapshotsError, setSnapshotsError] = useState<string | null>(null);
 
   const [importMode, setImportMode] = useState<'restore' | 'patients'>('restore');
   const [restoreTarget, setRestoreTarget] = useState<{ source: 'upload' | 'snapshot'; key: string; label: string } | null>(null);
@@ -161,6 +193,7 @@ export default function AdminBackup() {
   const csvInput = useRef<HTMLInputElement>(null);
 
   const run = async (label: string, fn: () => Promise<void>) => {
+    if (!canManage) return;
     setBusy(label); setError(null); setNotice(null);
     try { await fn(); } catch (e) { setError(e instanceof Error ? e.message : 'Ocurrió un error'); } finally { setBusy(null); }
   };
@@ -169,23 +202,36 @@ export default function AdminBackup() {
   const SENSITIVE = 'El archivo contendrá datos sensibles de salud. Guárdalo en un lugar seguro y no lo compartas por correo o chats sin protección.';
 
   const loadStats = useCallback(async () => {
+    if (!canManage) return;
     setLoadingStats(true);
+    setStatsError(null);
     try { setStats(await api<StatsData>('/api/backup?action=stats')); }
-    catch (e) { setError(e instanceof Error ? e.message : 'Error al cargar estadísticas'); }
+    catch (e) { setStats(null); setStatsError(e instanceof Error ? e.message : 'Error al cargar estadísticas'); }
     finally { setLoadingStats(false); }
-  }, []);
+  }, [canManage]);
 
   const loadSnapshots = useCallback(async () => {
+    if (!canManage) return;
+    setLoadingSnapshots(true);
+    setSnapshotsError(null);
     try { setSnapshots((await api<{ snapshots: Snapshot[] }>('/api/backup?action=snapshots')).snapshots); }
-    catch (e) { setSnapshots([]); setError(e instanceof Error ? e.message : 'No se pudo listar los respaldos en la nube'); }
-  }, []);
+    catch (e) { setSnapshots(null); setSnapshotsError(e instanceof Error ? e.message : 'No se pudo listar los respaldos en la nube'); }
+    finally { setLoadingSnapshots(false); }
+  }, [canManage]);
 
-  useEffect(() => { loadStats(); loadSnapshots(); }, [loadStats, loadSnapshots]);
+  useEffect(() => { if (canManage) { void loadStats(); void loadSnapshots(); } }, [canManage, loadStats, loadSnapshots]);
   useEffect(() => {
-    if (tab === 'import' && importMode === 'patients' && !templateColumns.length)
+    if (canManage && tab === 'import' && importMode === 'patients' && !templateColumns.length)
       api<{ columns: TemplateColumn[] }>('/api/backup?action=templateInfo').then(d => setTemplateColumns(d.columns)).catch(() => {});
-  }, [tab, importMode, templateColumns.length]);
-  const lastAuto = snapshots?.find(s => s.kind === 'auto') || null;
+  }, [canManage, tab, importMode, templateColumns.length]);
+  const lastAuto = snapshots?.filter(s => s.kind === 'auto')
+    .reduce<Snapshot | null>((latest, snapshot) => !latest || Date.parse(snapshot.created_at) > Date.parse(latest.created_at) ? snapshot : latest, null) || null;
+  const autoStale = !!lastAuto && Date.now() - Date.parse(lastAuto.created_at) > 48 * 60 * 60 * 1000;
+  const encryptionReady = !loadingStats && !statsError && stats?.encryption_ready === true;
+  const autoStatus = loadingSnapshots ? 'Última copia automática: consultando…'
+    : snapshotsError ? `No se pudo verificar la última copia automática: ${snapshotsError}`
+    : lastAuto ? `Última copia automática: ${fmtDate(lastAuto.created_at)}${autoStale ? '. Tiene más de 48 horas; solicite revisión a soporte.' : ''}`
+    : 'No hay una copia automática registrada. Consulte a soporte; no se puede confirmar la protección actual.';
 
   const count = (keys: string[]) => keys.reduce((sum, k) => sum + (stats?.stats[k]?.count || 0), 0);
 
@@ -195,16 +241,23 @@ export default function AdminBackup() {
     setNotice('Respaldo descargado. Contiene datos sensibles de salud: guárdalo cifrado y fuera del computador de uso diario.');
   });
 
-  const exportConsents = (groups: (number[] | null)[]) => run('consents', async () => {
-    for (const [index, patientIds] of groups.entries()) {
-      setNotice(groups.length > 1 ? `Generando parte ${index + 1} de ${groups.length}…` : null);
-      const { url, filename } = await api<{ url: string; filename: string }>('/api/backup?action=consentsHtml', patientIds ? { patientIds } : {});
-      await downloadGzip(url, groups.length > 1 ? filename.replace('.html.gz', `-parte-${index + 1}-de-${groups.length}.html.gz`) : filename, 'text/html');
+  const exportConsents = (patientIds: number[] | null) => run('consents', async () => {
+    try {
+      const result = await downloadConsentPages(patientIds, part => setNotice(`Generando parte ${part}… Descargue y conserve todas las partes.`));
+      setNotice(result.count
+        ? `${result.count} consentimientos descargados en ${result.parts} archivo(s). Ábrelos en el navegador y usa Imprimir → Guardar como PDF si necesitas archivarlos.`
+        : 'No hay consentimientos firmados para la selección.');
+    } catch (failure) {
+      setNotice(null);
+      if (failure instanceof Error && 'status' in failure && failure.status === 409) {
+        throw new Error('La selección de consentimientos cambió durante la descarga. Descarte todas las partes recibidas y reinicie manualmente desde la selección de pacientes. No se reintentará automáticamente.');
+      }
+      throw new Error(`${failure instanceof Error ? failure.message : 'No se pudo generar la descarga'} La descarga no se completó. Descarte las partes recibidas y reinicie la selección para obtener una copia completa.`);
     }
-    setNotice(`Consentimientos descargados${groups.length > 1 ? ` en ${groups.length} archivos` : ''}. Ábrelos en el navegador y usa Imprimir → Guardar como PDF si necesitas archivarlos.`);
   });
 
   const openConsentPicker = () => {
+    if (!canManage) return;
     setPicker({ patients: null, selected: new Set(), search: '' });
     api<{ patients: ConsentPatient[] }>('/api/backup?action=consentPatients')
       .then(d => setPicker(p => p && { ...p, patients: d.patients }))
@@ -216,22 +269,15 @@ export default function AdminBackup() {
     const all = picker.selected.size === 0 || picker.selected.size === picker.patients.length;
     const chosen = picker.patients.filter(p => all || picker.selected.has(p.id));
     const total = chosen.reduce((sum, p) => sum + p.consents, 0);
-    // El servidor acepta hasta 100 consentimientos por archivo; se agrupan pacientes completos.
-    const groups: number[][] = [];
-    let size = 0;
-    for (const p of chosen) {
-      if (!groups.length || size + p.consents > 100) { groups.push([]); size = 0; }
-      groups[groups.length - 1].push(p.id);
-      size += p.consents;
-    }
+    const parts = Math.ceil(total / 100);
     setPicker(null);
     ask('Descargar consentimientos firmados',
-      <>Se descargarán <strong>{total} consentimientos</strong> de {all ? <strong>todos los pacientes ({chosen.length})</strong> : <strong>{chosen.length} paciente(s) seleccionado(s)</strong>}{groups.length > 1 ? <>, divididos en <strong>{groups.length} archivos</strong> de hasta 100 consentimientos</> : ''}. {SENSITIVE}</>,
-      'Descargar', () => exportConsents(all && groups.length === 1 ? [null] : groups));
+      <>Se descargarán <strong>{total} consentimientos</strong> de {all ? <strong>todos los pacientes ({chosen.length})</strong> : <strong>{chosen.length} paciente(s) seleccionado(s)</strong>}{parts > 1 ? <>, en aproximadamente <strong>{parts} archivos</strong> de hasta 100 consentimientos</> : ''}. Se incluirán todas las páginas, incluso si un paciente tiene más de 100 consentimientos. {SENSITIVE}</>,
+      'Descargar', () => exportConsents(all ? null : chosen.map(patient => patient.id)));
   };
 
   const exportCsv = (dataset: string) => run(`csv-${dataset}`, async () => {
-    const res = await fetch(`/api/backup?action=csv&dataset=${dataset}`, { headers: authHeaders() });
+    const res = await recordsFetch(`/api/backup?action=csv&dataset=${dataset}`);
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'No se pudo generar el CSV');
     const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') || '')?.[1] || `${dataset}.csv`;
     saveBlob(await res.blob(), name);
@@ -274,12 +320,12 @@ export default function AdminBackup() {
     const total = Object.values(result.report.inserted).reduce((a, b) => a + b, 0);
     resetRestore();
     setNotice(`Restauración completada: ${total} registros agregados. Se creó un respaldo previo por seguridad (${result.preRestoreSnapshot ? 'disponible en la pestaña Nube' : 'no requerido'}).`);
-    setSnapshots(null);
-    loadStats();
+    void loadSnapshots();
+    void loadStats();
   });
 
   const downloadTemplate = () => run('template', async () => {
-    const res = await fetch('/api/backup?action=template', { headers: authHeaders() });
+    const res = await recordsFetch('/api/backup?action=template');
     if (!res.ok) throw new Error('No se pudo descargar la plantilla');
     saveBlob(await res.blob(), 'plantilla-pacientes-bioskintech.csv');
   });
@@ -311,6 +357,7 @@ export default function AdminBackup() {
   });
 
   const createSnapshot = () => run('snapshot', async () => {
+    if (!encryptionReady) throw new Error('Debe verificarse que el cifrado está configurado antes de crear una copia.');
     await api('/api/backup?action=snapshot', {});
     setNotice('Respaldo cifrado creado en la nube.');
     await loadSnapshots();
@@ -340,7 +387,7 @@ export default function AdminBackup() {
               <p className="text-sm text-gray-400">Respaldos, exportación e importación</p>
             </div>
           </div>
-          <button onClick={() => { loadStats(); if (tab === 'cloud') loadSnapshots(); }} disabled={loadingStats} aria-label="Actualizar"
+          <button onClick={() => { void loadStats(); void loadSnapshots(); }} disabled={loadingStats || loadingSnapshots} aria-label="Actualizar"
             className="p-2 bg-white/10 hover:bg-white/20 rounded-xl border border-white/20 transition-colors disabled:opacity-50">
             {loadingStats ? <Loader2 className="w-4 h-4 animate-spin text-white" /> : <RefreshCw className="w-4 h-4 text-white" />}
           </button>
@@ -360,18 +407,19 @@ export default function AdminBackup() {
 
         {tab === 'export' && (
           <>
-            <div className="mb-6 bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex gap-3">
-              <ShieldCheck className="w-6 h-6 text-emerald-600 flex-shrink-0" />
-              <div className="text-sm text-emerald-900">
-                <p className="font-semibold">Tu información se respalda automáticamente todos los días</p>
+            <div className={`mb-6 border rounded-2xl p-4 flex gap-3 ${snapshotsError || autoStale || (!loadingSnapshots && !lastAuto) ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-gray-50 border-gray-200 text-gray-800'}`}>
+              <ShieldCheck className="w-6 h-6 flex-shrink-0" aria-hidden="true" />
+              <div className="text-sm">
+                <p className="font-semibold">Estado del respaldo automático de datos</p>
                 <p className="text-xs mt-1 leading-relaxed">
-                  BioSkinTech guarda cada noche una copia cifrada de los datos de tu clínica en un proveedor independiente de la base de datos principal
-                  (Cloudflare, separado de Neon). Esa copia no puede borrarse ni alterarse durante 30 días. No necesitas hacer nada.
+                  El sistema tiene una programación de respaldo automático de datos. La ejecución depende de la configuración y disponibilidad del servicio.
+                  Verifique la fecha de la última copia registrada; no se garantiza una próxima ejecución ni un máximo de pérdida de un día.
                 </p>
-                <p className="text-xs mt-1 font-medium">Última copia automática: {snapshots === null ? 'consultando…' : lastAuto ? fmtDate(lastAuto.created_at) : 'se generará esta noche'}</p>
-                <p className="text-xs mt-1 text-emerald-800">Las descargas de esta página son opcionales: sirven para tener tu propia copia o llevar tus datos a otro sistema.</p>
+                <p role="status" className="text-xs mt-1 font-medium">{autoStatus}</p>
+                <p className="text-xs mt-1">Las descargas de esta página sirven para tener tu propia copia o llevar tus datos a otro sistema.</p>
               </div>
             </div>
+            {statsError && <p role="alert" className="mb-4 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">No se pudieron consultar las estadísticas: {statsError}</p>}
             {stats && (
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
                 {[
@@ -394,12 +442,14 @@ export default function AdminBackup() {
               <ul className="text-xs text-gray-700 space-y-1.5">
                 <li className="flex gap-2"><Check className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0 mt-0.5" />Toda la información escrita de fichas, consentimientos (con firmas digitalizadas y huellas de integridad), recetas, finanzas e inventario.</li>
                 <li className="flex gap-2"><Check className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0 mt-0.5" />Marcaciones de mapas faciales/corporales y del mapeo 3D de inyectables (se guardan como datos, no como imágenes).</li>
-                <li className="flex gap-2"><XCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" /><span><strong>Fotografías clínicas:</strong> no se respaldan ni se entregan copias por su tamaño; solo se conserva su referencia. Se eliminan 30 días después de terminar la suscripción sin renovación.</span></li>
+                <li className="flex gap-2"><Info className="w-3.5 h-3.5 text-blue-600 flex-shrink-0 mt-0.5" /><span><strong>Fotografías clínicas:</strong> el JSON y los snapshots automáticos solo incluyen referencias. Los originales se entregan por el flujo anual autorizado de abajo, si está habilitado. La conservación postcontrato sigue siendo de 30 días.</span></li>
                 <li className="flex gap-2"><XCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" /><span><strong>Agenda:</strong> se gestiona en el Google Calendar de cada profesional, no se almacena en BioSkinTech.</span></li>
                 <li className="flex gap-2"><XCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" /><span><strong>Modelos 3D y plantillas:</strong> forman parte del software, no son datos de la clínica.</span></li>
                 <li className="flex gap-2"><XCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" /><span><strong>Contraseñas, tokens y códigos de firma remota:</strong> nunca se exportan, por seguridad.</span></li>
               </ul>
             </Card>
+
+            <AnnualPhotoBackupPanel />
 
             <Card title="Respaldo técnico completo (JSON)" subtitle="Formato técnico para restaurar datos dentro de BioSkinTech. No está pensado para leerse ni editarse en Excel.">
               <div className="divide-y divide-gray-100 -mx-4 -mt-4 mb-4">
@@ -586,20 +636,22 @@ export default function AdminBackup() {
           <>
             <Card title="Respaldo automático protegido" subtitle="Protección ante borrados accidentales, ataques informáticos o secuestro de datos (ransomware)">
               <ul className="text-xs text-gray-700 space-y-1.5 mb-4">
-                <li className="flex gap-2"><ShieldCheck className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0 mt-0.5" />Cada noche se genera una copia automática de toda la información de la clínica, cifrada con AES-256 antes de salir del servidor.</li>
+                <li className="flex gap-2"><ShieldCheck className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0 mt-0.5" />Las copias de datos se cifran con AES-256 antes de salir del servidor. La programación automática depende de la configuración y disponibilidad del servicio.</li>
                 <li className="flex gap-2"><ShieldCheck className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0 mt-0.5" />Se guarda en un proveedor distinto a la base de datos principal (Cloudflare R2, separado de Neon) y queda <strong>bloqueada contra borrado o modificación durante 30 días</strong>, incluso ante un atacante con acceso a la aplicación.</li>
-                <li className="flex gap-2"><History className="w-3.5 h-3.5 text-blue-600 flex-shrink-0 mt-0.5" />Cada copia se elimina automáticamente a los 35 días. Ante un desastre, como máximo se pierde lo registrado desde la última copia (un día).</li>
+                <li className="flex gap-2"><History className="w-3.5 h-3.5 text-blue-600 flex-shrink-0 mt-0.5" />La retención prevista es de 35 días. Ante un incidente, podrían perderse los cambios posteriores a la última copia disponible; revise su antigüedad.</li>
               </ul>
-              {stats && !stats.encryption_ready && <p className="text-xs text-red-600 mb-3">El cifrado de respaldos no está configurado en el servidor. Contacta a soporte.</p>}
-              <button onClick={() => ask('Crear respaldo en la nube', 'Se generará ahora una copia cifrada de toda la información de la clínica. Quedará protegida 30 días y se eliminará sola a los 35.', 'Crear respaldo', createSnapshot)} disabled={!!busy || (stats ? !stats.encryption_ready : false)}
+              <p role="status" className={`text-xs mb-3 ${snapshotsError || autoStale || (!loadingSnapshots && !lastAuto) ? 'text-amber-800' : 'text-gray-700'}`}>{autoStatus}</p>
+              {!encryptionReady && <p role="status" className="text-xs text-amber-800 mb-3">{loadingStats ? 'Verificando la configuración del cifrado…' : statsError ? `No se pudo verificar el cifrado: ${statsError}. La creación está bloqueada.` : stats?.encryption_ready === false ? 'El cifrado de respaldos no está configurado en el servidor. Contacta a soporte.' : 'El cifrado aún no está verificado. Actualice el estado antes de crear una copia.'}</p>}
+              <button onClick={() => ask('Crear respaldo en la nube', 'Se solicitará una copia cifrada de los datos de la clínica, con protección contra borrado de 30 días y retención prevista de 35 días. Verifique el resultado al finalizar.', 'Crear respaldo', createSnapshot)} disabled={!!busy || !encryptionReady}
                 className="w-full py-3 rounded-xl bg-gold text-white font-semibold hover:bg-gold-dark disabled:opacity-50 flex items-center justify-center gap-2">
                 {busy === 'snapshot' ? <Loader2 className="w-5 h-5 animate-spin" /> : <Cloud className="w-5 h-5" />}Crear respaldo en la nube ahora
               </button>
             </Card>
 
             <Card title="Respaldos disponibles" subtitle="Descárgalos o restaura registros faltantes desde cualquiera de ellos">
-              {snapshots === null && <p className="text-sm text-gray-500 flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Cargando…</p>}
-              {snapshots?.length === 0 && <p className="text-sm text-gray-500">Aún no hay respaldos. El primero automático se genera esta noche.</p>}
+              {loadingSnapshots && <p role="status" className="text-sm text-gray-500 flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Cargando…</p>}
+              {snapshotsError && <p role="alert" className="text-sm text-red-700">No se pudo consultar la lista: {snapshotsError}. Use Actualizar para reintentar.</p>}
+              {!loadingSnapshots && !snapshotsError && snapshots?.length === 0 && <p className="text-sm text-gray-500">No hay respaldos registrados. Consulte la configuración con soporte o cree una copia cuando el cifrado esté verificado.</p>}
               <div className="divide-y divide-gray-100 -mx-4">
                 {snapshots?.map(s => (
                   <div key={s.key} className="flex items-center gap-3 px-4 py-3">
@@ -608,7 +660,7 @@ export default function AdminBackup() {
                       <p className="text-sm text-gray-800">{fmtDate(s.created_at)}</p>
                       <p className="text-xs text-gray-500">{KIND_LABEL[s.kind] || s.kind} · {fmtSize(s.size)}</p>
                     </div>
-                    <button onClick={() => ask('Descargar respaldo de la nube', <>Se descargará la copia del <strong>{fmtDate(s.created_at)}</strong> en formato JSON. {SENSITIVE}</>, 'Descargar', () => downloadSnapshot(s))} disabled={!!busy} title="Descargar" className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50">
+                    <button onClick={() => ask('Descargar respaldo de la nube', <>Se descargará la copia del <strong>{fmtDate(s.created_at)}</strong> en formato JSON. {SENSITIVE}</>, 'Descargar', () => downloadSnapshot(s))} disabled={!!busy} title="Descargar" aria-label={`Descargar respaldo del ${fmtDate(s.created_at)}`} className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50">
                       {busy === `dl-${s.key}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4 text-gray-600" />}
                     </button>
                     <button onClick={() => previewRestore({ source: 'snapshot', key: s.key, label: `Nube · ${fmtDate(s.created_at)}` })} disabled={!!busy}
@@ -631,7 +683,7 @@ export default function AdminBackup() {
               const toggle = (id: number) => setPicker(pk => pk && { ...pk, selected: new Set(pk.selected.has(id) ? [...pk.selected].filter(x => x !== id) : [...pk.selected, id]) });
               return (
                 <>
-                  <input value={picker.search} onChange={e => setPicker(pk => pk && { ...pk, search: e.target.value })} placeholder="Buscar por nombre o identificación"
+                  <input aria-label="Buscar pacientes por nombre o identificación" value={picker.search} onChange={e => setPicker(pk => pk && { ...pk, search: e.target.value })} placeholder="Buscar por nombre o identificación"
                     className="w-full mb-3 px-3 py-2 rounded-xl border border-gray-200 text-sm focus:border-gold outline-none" />
                   <div className="flex items-center justify-between text-xs text-gray-600 mb-2">
                     <span>{picker.selected.size ? `${picker.selected.size} seleccionado(s)` : `Sin selección = todos (${picker.patients.length} pacientes)`}</span>

@@ -61,7 +61,7 @@ export default function TermsOfService({ embedded = false }: { embedded?: boolea
           <li>El precio anual del Plan Lanzamiento es <strong>USD 245 con IVA incluido</strong>. Cuando el Cliente paga mediante PayPhone, la pasarela agrega un recargo de <strong>USD 14,95</strong>, por lo que el cargo total en tarjeta es <strong>USD 259,95</strong>. Este recargo no aumenta el precio contractual de la suscripción.</li>
           <li>Medios de pago aceptados: <strong>tarjeta</strong> de crédito o débito a través de pasarelas o plataformas de pago, <strong>transferencia interbancaria</strong> o <strong>dinero en efectivo</strong>. Los pagos por transferencia o efectivo se activan una vez confirmados por BIOSKINTECH.</li>
           <li>La Plataforma integra la API de la pasarela PayPhone para pagos con tarjeta. Los datos de la tarjeta son procesados directamente por la pasarela; <strong>BIOSKINTECH no recibe ni almacena números de tarjeta</strong>.</li>
-          <li>No hay reembolsos totales ni proporcionales, salvo falla técnica grave imputable exclusivamente a BIOSKINTECH que impida el uso del servicio durante más de 15 días consecutivos.</li>
+          <li>Si BIOSKINTECH termina anticipadamente el servicio por decisión propia no imputable al Cliente, retira una función principal sin reemplazo equivalente o incurre en un incumplimiento esencial que impida usar el servicio y no lo subsana dentro de un plazo razonable comunicado por escrito, el Cliente podrá terminar el contrato y recibirá la devolución proporcional del período anual pagado y no prestado, calculada por días. La cancelación voluntaria del Cliente o una suspensión por su incumplimiento no genera esa devolución, sin perjuicio de derechos imperativos.</li>
           <li>BIOSKINTECH puede modificar precios para renovaciones futuras con al menos <strong>30 días de aviso</strong>.</li>
         </ul>
       </Section>
@@ -115,7 +115,7 @@ export default function TermsOfService({ embedded = false }: { embedded?: boolea
         <ul className={ul}>
           <li>Las funciones de IA son opcionales y de apoyo. Sus resultados pueden ser incompletos o incorrectos y <strong>no sustituyen el juicio clínico</strong>.</li>
           <li>La Plataforma no es un dispositivo médico ni emite diagnósticos. Toda decisión clínica es responsabilidad exclusiva del profesional.</li>
-          <li>Al activarlas, el Cliente autoriza el envío del contenido seleccionado al proveedor de IA indicado en la Política de Privacidad.</li>
+          <li>Las funciones de IA deben permanecer deshabilitadas para la clínica hasta que el Cliente dé autorización expresa, documentada y específica para su habilitación y el envío del contenido seleccionado al proveedor indicado en la Política de Privacidad. Contratar el plan o aceptar estas Condiciones no constituye esa autorización.</li>
         </ul>
       </Section>
 
@@ -134,18 +134,20 @@ export default function TermsOfService({ embedded = false }: { embedded?: boolea
           <li>Los datos principales se almacenan en la base de datos Neon. Además, <strong>cada día BIOSKINTECH genera automáticamente una copia de seguridad</strong> de la información de cada clínica y la guarda cifrada en un proveedor distinto (Cloudflare R2).</li>
           <li>Esa copia queda protegida contra borrado o modificación durante 30 días y se elimina automáticamente a los 35 días. La base de datos permite además recuperar su estado de las últimas 6 horas.</li>
           <li>El Cliente no necesita realizar ninguna acción para que estas copias existan. Su finalidad es recuperar la Plataforma ante fallas, errores o ataques; la restauración se realiza por BIOSKINTECH o por el administrador de la clínica desde el módulo Base de Datos.</li>
-          <li>Los respaldos no garantizan recuperar lo registrado después de la última copia disponible (pérdida potencial de hasta 24 horas). La restauración agrega registros faltantes y no sobrescribe los existentes.</li>
+          <li>El punto recuperable depende de la última copia válida disponible; si una ejecución falla, la pérdida potencial puede superar 24 horas. La restauración del módulo Base de Datos agrega registros faltantes y no sobrescribe los existentes ni revierte sus modificaciones; una recuperación integral requiere intervención técnica.</li>
         </ul>
         <p className="font-semibold text-gray-800 mt-2">B. Exportaciones y formato de entrega</p>
         <ul className={ul}>
           <li>El administrador puede descargar sus datos en cualquier momento desde el módulo Base de Datos: (i) un <strong>respaldo técnico en formato JSON</strong>, completo y diseñado para restaurarse dentro de BIOSKINTECH; (ii) <strong>tablas CSV</strong> de pacientes, tratamientos, finanzas e inventario, que se abren en Excel o Google Sheets; y (iii) los <strong>consentimientos firmados en un documento legible e imprimible</strong>.</li>
-          <li>El formato JSON es un formato técnico estándar, no un documento de lectura. Las tablas CSV son listados simples. <strong>BIOSKINTECH no entrega fichas clínicas, formularios ni hojas de Excel diseñadas o formateadas</strong> para continuar la atención fuera de la Plataforma, ni se obliga a adaptar los datos al formato de otro sistema.</li>
+          <li>El formato JSON es técnico y las tablas CSV son listados simples. La entrega anual autorizada añade historias y consentimientos registrados en HTML legible e imprimible, con el contenido y evidencias disponibles. No implica compatibilidad automática con otros sistemas, adaptación a un software receptor ni digitalización de documentos de papel que no estén registrados.</li>
           <li>Las exportaciones contienen datos sensibles; una vez descargadas, su custodia es responsabilidad exclusiva del Cliente.</li>
         </ul>
         <p className="font-semibold text-gray-800 mt-2">C. Fotografías clínicas</p>
         <Note tone="amber">
-          Por su tipo y tamaño, <strong>las fotografías no forman parte de los respaldos ni se entregan copias</strong>; solo se conserva su referencia. Se eliminan de forma definitiva <strong>30 días después de terminar el tiempo de uso</strong> contratado si no existe renovación. Si el Cliente desea conservarlas, debe guardarlas desde cada expediente mientras su suscripción esté activa.
+          Las fotografías originales no forman parte del JSON ni de las copias automáticas de datos estructurados. Cada clínica tiene derecho a <strong>una entrega fotográfica gratuita por período contractual de 12 meses registrado</strong>, previa solicitud expresa y autorización del Master Admin. La entrega incluye datos clínicos y copias legibles de historias y consentimientos registrados; se divide en partes ZIP sin recomprimir los originales. La cuota se consume al completarse la entrega, no al solicitarla, y no se transfiere a otros períodos. El módulo solo acepta solicitudes cuando su infraestructura está habilitada; una indisponibilidad técnica no extingue el derecho y debe atenderse por los canales oficiales.
         </Note>
+        <p>La descarga permanece disponible <strong>24 horas desde la preparación completa</strong>, mediante sesión verificada y enlaces firmados de corta duración. Cada enlace es una credencial temporal: no debe compartirse. El Cliente debe descargar todas las partes y verificar su recepción; no se promete un plazo fijo de preparación independiente del volumen. Esta entrega no equivale a un respaldo fotográfico automático ni garantiza recuperar originales eliminados previamente.</p>
+        <p>Al finalizar el servicio, el Cliente dispone de <strong>30 días</strong> para solicitar recuperación por los canales oficiales; esa conservación no reactiva el servicio. Si todavía no consumió la entrega del período terminado, puede solicitarla dentro de ese plazo. La devolución postcontrato se tramita manualmente: BIOSKINTECH verifica la identidad y autorización del solicitante, registra la solicitud y coordina una entrega privada; no se realiza desde una cuenta vencida ni mediante el botón anual del panel. Si ya la consumió o solicita entregas adicionales, se acuerdan alcance y costos previamente, sin limitar los derechos legales de acceso o portabilidad. No se concede conservación gratuita por 90 días. Los originales pueden eliminarse al cumplirse los 30 días si no hay renovación.</p>
       </Section>
 
       <Section number={12} title="Servicios de terceros" icon={<Plug className="w-4 h-4" />}>
@@ -158,6 +160,15 @@ export default function TermsOfService({ embedded = false }: { embedded?: boolea
           <li>BIOSKINTECH puede implementar en cualquier momento actualizaciones, mejoras y modificaciones en el servidor (backend), en la aplicación (frontend) y en la interfaz de usuario, incluyendo agregar, cambiar, reorganizar o retirar funcionalidades, pantallas o integraciones.</li>
           <li>Los mantenimientos planificados se informarán con anticipación cuando sea razonablemente posible; los cambios urgentes por seguridad o estabilidad pueden aplicarse sin aviso previo.</li>
           <li>Si una modificación elimina una funcionalidad principal del plan contratado sin reemplazo equivalente, el Cliente podrá cancelar conforme al Art. 17.</li>
+        </ul>
+        <p className="font-semibold text-gray-800 mt-2">Soporte, incidentes y puesta en marcha</p>
+        <p>Soporte de lunes a viernes, de <strong>09:00 a 18:00, UTC−5 (Ecuador continental)</strong>, excepto feriados aplicables al Proveedor, por los canales oficiales. Fuera de esa franja los tickets se reciben, pero el cómputo hábil inicia en la siguiente apertura.</p>
+        <ul className={ul}>
+          <li><strong>P1:</strong> caída general o imposibilidad de acceder a las funciones clínicas principales: primera respuesta en hasta <strong>4 horas hábiles</strong>; objetivo de restablecimiento o alternativa operativa en 1 día hábil.</li>
+          <li><strong>P2:</strong> función importante afectada con alternativa disponible: primera respuesta en hasta <strong>8 horas hábiles</strong>; objetivo de solución en 3 días hábiles.</li>
+          <li><strong>P3:</strong> consultas, ajustes menores o capacitación: primera respuesta en hasta <strong>2 días hábiles</strong>; planificación acordada según complejidad.</li>
+          <li>La primera respuesta es una evaluación humana inicial, no un acuse automático ni necesariamente la resolución. Los objetivos de recuperación no son garantías absolutas ni un SLA de disponibilidad; si dependen de terceros o de una restauración compleja, se informa el diagnóstico, la alternativa y la siguiente actualización.</li>
+          <li>Activación en hasta <strong>1 día hábil</strong> después de recibir contrato aceptado, pago confirmado y datos completos. Propuesta de reunión de inicio o capacitación en hasta <strong>3 días hábiles</strong> desde la activación; su fecha depende de disponibilidad de ambas partes. Un anexo puede acordar condiciones particulares expresas.</li>
         </ul>
       </Section>
 
@@ -185,7 +196,7 @@ export default function TermsOfService({ embedded = false }: { embedded?: boolea
         <ul className={ul}>
           <li>BIOSKINTECH podrá suspender o terminar el servicio por falta de pago, incumplimiento grave, uso ilícito, riesgo para la seguridad de la Plataforma o de otros clientes, u orden de autoridad competente. En casos de riesgo inminente la suspensión puede ser inmediata.</li>
           <li>Ante denuncias fundadas de mala praxis o uso indebido de datos, BIOSKINTECH podrá suspender o no renovar la cuenta.</li>
-          <li>El Cliente puede cancelar en cualquier momento escribiendo a <Mail />; la cancelación no genera reembolso.</li>
+          <li>El Cliente puede cancelar en cualquier momento escribiendo a <Mail />; la cancelación voluntaria no genera reembolso, salvo los supuestos del Art. 4 y derechos imperativos.</li>
           <li>BIOSKINTECH puede discontinuar el servicio con al menos 30 días de aviso, habilitando la exportación de datos durante ese plazo.</li>
         </ul>
       </Section>
@@ -202,7 +213,7 @@ export default function TermsOfService({ embedded = false }: { embedded?: boolea
         </ul>
         <p className="font-semibold text-gray-800 mt-2">Canales oficiales de comunicación</p>
         <ContactChannels />
-        <p className="text-xs text-gray-500">Si una solicitud enviada por correo no recibe respuesta en 5 días hábiles, el Cliente puede reiterarla por WhatsApp oficial. BIOSKINTECH nunca solicitará contraseñas ni códigos de verificación por ningún canal.</p>
+        <p className="text-xs text-gray-500">Si se supera el tiempo de primera respuesta de su prioridad (Art. 13), el Cliente puede escalar por WhatsApp oficial. BIOSKINTECH nunca solicitará contraseñas ni códigos de verificación por ningún canal.</p>
       </Section>
 
       <Section number={20} title="Disposiciones generales" icon={<FileText className="w-4 h-4" />}>

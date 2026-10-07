@@ -10,6 +10,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test:security": "node --test tests/security.test.mjs tests/consent-signing.test.mjs tests/backup.test.mjs",
+    "test:backup": "node --experimental-test-module-mocks --test tests/backup.test.mjs tests/annual-photo-backup.test.mjs tests/annual-photo-dispatch.test.mjs tests/annual-photo-worker.test.mjs tests/portable-clinical-export.test.mjs tests/admin-backup-ui.test.mjs tests/legal-contract.test.mjs",
     "test:rls": "node --env-file=.env.local scripts/check-rls-isolation.mjs && node --env-file=.env.local scripts/check-app-role-queries.mjs"
   },
   "dependencies": {
@@ -22,6 +23,7 @@
     "@types/three": "^0.185.0",
     "@vercel/analytics": "^1.5.0",
     "@vercel/postgres": "^0.10.0",
+    "@zip.js/zip.js": "^2.23.0",
     "axios": "^1.13.2",
     "date-fns": "^4.1.0",
     "dotenv": "^17.2.3",
@@ -45,6 +47,7 @@
     "ws": "^8.18.0"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261007.1",
     "@eslint/js": "^9.9.1",
     "@types/node": "^22.15.19",
     "@types/react": "^18.3.5",

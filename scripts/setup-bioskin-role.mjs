@@ -44,6 +44,10 @@ const TENANT_TABLES = [
   'sharing_groups',
   'patient_audit_log',
   'clinical_photos',
+  'annual_photo_backup_periods',
+  'annual_photo_backup_requests',
+  'annual_photo_backup_parts',
+  'annual_photo_backup_notifications',
   // Migradas a tenant el 2026-09-30 por scripts/migrate-tenant-shared-tables.mjs
   'patient_assignments',
   'sharing_group_members',

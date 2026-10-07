@@ -63,6 +63,35 @@ export interface ApiResponse<T = unknown> {
   message?: string;
 }
 
+export interface AnnualPhotoBackupPart {
+  index: number;
+  size?: number;
+  sha256?: string;
+  status?: string;
+}
+
+export interface AnnualPhotoBackupRequest {
+  id: string;
+  clinic_id: string;
+  clinic_name?: string;
+  status: 'PENDING' | 'APPROVED' | 'PROCESSING' | 'READY' | 'EXPIRED' | 'REJECTED' | 'CANCELLED' | 'FAILED';
+  created_at: string;
+  expires_at?: string | null;
+  photo_count?: number;
+  total_bytes?: number;
+  error_code?: string | null;
+  notification_error?: string | null;
+  parts?: AnnualPhotoBackupPart[];
+}
+
+export interface AnnualPhotoBackupStatus {
+  configured: boolean;
+  eligible: boolean;
+  reason: string | null;
+  period: { id: string; start_date: string; end_date: string } | null;
+  requests: AnnualPhotoBackupRequest[];
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Clínicas (multi-tenant)
 // ─────────────────────────────────────────────────────────────────────────────

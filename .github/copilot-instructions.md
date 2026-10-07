@@ -20,6 +20,7 @@ No aplicar recomendaciones exclusivas de Next.js, RSC o React 19: el proyecto us
 ## Architecture & Key Patterns
 
 ### Core Structure
+- **Respaldo anual opcional**: Worker/cola en `workers/annual-photo-backup/`, preparado y desactivado. Cuotas/estado en Neon; no desplegar, provisionar ni contratar planes sin autorización. Ver `docs/PLAN_RESPALDO_FOTOGRAFICO_ANUAL.md`.
 - **Frontend**: React SPA con HashRouter (requerido para Vercel SPA sin SSR)
 - **Backend**: Vercel serverless functions en `/api/`
 - **Base de datos**: **Neon PostgreSQL ÚNICAMENTE** — no hay SQLite ni otra BD

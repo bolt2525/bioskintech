@@ -1,0 +1,44 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "bioskin-annual-photo-backup",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "observability": { "enabled": true, "head_sampling_rate": 1 },
+  "triggers": { "crons": ["0 * * * *"] },
+  // REQUIRES Workers Paid (Free = 10 ms CPU, insufficient for SHA-256/CRC-32 over a 512 MiB part).
+  // Confirm the plan before creating queues or deploying; never upgrade implicitly.
+  // Queue consumer wall clock per invocation is 15 min.
+  "limits": { "cpu_ms": 300000 },
+  "vars": {
+    // Origin of the Vercel backend that owns the job state (callbacks hit /api/backup).
+    "BACKEND_BASE_URL": "https://bioskintech.vercel.app",
+    // Must equal consumer max_retries + 1.
+    "MAX_DELIVERY_ATTEMPTS": "4"
+  },
+  "secrets": { "required": ["ANNUAL_BACKUP_SERVICE_SECRET"] },
+  "r2_buckets": [
+    // Originals (read-only use).
+    { "binding": "SOURCE", "bucket_name": "bioskin-fotos" },
+    // Generated ZIP parts (annual-photo-backups/...). Same private bucket is allowed; prefix has no object lock,
+    // so deterministic rebuilds may overwrite a part. Aborted multiparts rely on the bucket-wide 7-day rule.
+    { "binding": "ARCHIVES", "bucket_name": "bioskin-fotos" }
+  ],
+  "queues": {
+    "producers": [
+      { "binding": "PHOTO_BACKUP_QUEUE", "queue": "bioskin-annual-photo-backup" }
+    ],
+    "consumers": [
+      {
+        "queue": "bioskin-annual-photo-backup",
+        "max_batch_size": 1,
+        "max_batch_timeout": 1,
+        "max_concurrency": 1,
+        "max_retries": 3,
+        "retry_delay": 120,
+        "dead_letter_queue": "bioskin-annual-photo-backup-dlq"
+      }
+    ]
+  }
+}

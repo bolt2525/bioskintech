@@ -5,7 +5,7 @@ import BrandLogo from '../ui/BrandLogo';
 export const LEGAL_CONTACT_EMAIL = 'soporte-tecnico@bioskintechapp.com';
 export const LEGAL_WHATSAPP = '+593 984 232 889';
 // Debe coincidir con LEGAL_VERSION de api/admin-auth.js; cambiarla obliga a todos los usuarios a re-aceptar.
-export const LEGAL_VERSION = '2026-10-06';
+export const LEGAL_VERSION = '2026-10-06-r2';
 export const LEGAL_UPDATED_LABEL = '6 de octubre de 2026';
 
 export function LegalSection({ number, title, icon, children }: { number: number; title: string; icon: ReactNode; children: ReactNode }) {
