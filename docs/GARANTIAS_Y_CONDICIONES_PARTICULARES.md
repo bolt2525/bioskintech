@@ -1,6 +1,6 @@
 # Garantías y condiciones particulares — BIOSKINTECH
 
-**Revisión: 6 de octubre de 2026.** Material de negociación y verificación, no dictamen jurídico ni certificado de cumplimiento. El paquete para firma se genera desde Master Admin; este documento no sustituye sus anexos. No se ha recibido el PDF ya enviado a la interesada: se revisó el generador y sus documentos íntegros.
+**Revisión: 7 de octubre de 2026.** Guía interna de negociación y verificación, no dictamen jurídico ni certificado de cumplimiento. No se adjunta al paquete contractual para el Cliente. El paquete para firma se genera desde Master Admin; este documento no sustituye sus anexos. No se ha recibido el PDF ya enviado a la interesada: se revisó el generador y sus documentos íntegros.
 
 ## 1. Respuesta a las siete solicitudes
 
@@ -9,9 +9,9 @@
 | Alejandro Codón, por sus propios derechos | Seleccionar persona natural; completar su identificación y domicilio sin inventarlos. El firmante es el titular, no un representante legal. Cuenta: Bárbara Atenea Beauty Club. |
 | Sin chatbot, USD 245 con IVA | Desmarcar chatbot: se excluye expresamente y no se cobra USD 100. Transferencia/efectivo mantienen total de USD 245; PayPhone agrega el recargo publicado, salvo acuerdo comercial distinto. No confundir precio de suscripción con cargo en tarjeta. |
 | Quito | Anexo B opcional, jurisdicción Quito solo para ese contrato. Cuenca permanece como regla general. Negociación directa y mediación voluntaria; no arbitraje obligatorio ni exclusión de competencias imperativas. |
-| Fotografías y salida de datos | Derecho general a una entrega gratuita por clínica/período registrado de 12 meses, con autorización master, originales y copias clínicas HTML. La implementación queda bloqueada hasta configurar y verificar Worker, cola, correo y migración; no confundir código disponible con servicio operativo. |
+| Fotografías y salida de datos | Compromiso general de respaldo y entrega gratuitos una vez por clínica/período registrado de 12 meses, con solicitud, autorización master, originales y copias clínicas HTML. Puede pedirse durante la vigencia o al finalizar dentro de 30 días. El Proveedor coordina la entrega asistida si el panel no está disponible. El proceso automático Worker continúa desactivado. No se aceptan 90 días gratuitos. |
 | Soporte y devoluciones | Horario, prioridades, primera respuesta y devolución proporcional pasan a las Condiciones generales. Un anexo solo expresa variaciones concretas pactadas para un cliente. |
-| Garantías internacionales, 24 h, IA | Garantías, aviso inicial en 24 horas naturales desde conocimiento y autorización expresa de IA rigen para todos. Verificar controles y acuerdos reales antes de firmar. |
+| Garantías internacionales, 24 h, IA | Garantías de cifrado, accesos y protección publicadas por los proveedores, aviso inicial en 24 horas naturales desde conocimiento y autorización expresa de IA rigen para todos. El Art. 5 explica infraestructura de producción, sin nombres de planes ni controles atribuidos por error a BIOSKINTECH. La contratación y evidencia de acuerdos es responsabilidad del Proveedor. |
 | Responsabilidad | Por decisión final del Proveedor se mantiene el límite vigente de lo pagado en los 12 meses anteriores, sin tope especial. Dolo, culpa grave y responsabilidades legalmente indisponibles quedan fuera de los límites. |
 
 El cliente pidió excluir cualquier límite en esas materias. Mantener el límite vigente es una **contrapropuesta**, no una aceptación de su solicitud. No enviar el documento como si los siete puntos estuvieran resueltos.
@@ -43,6 +43,29 @@ La entrega anual no consumida del período terminado puede solicitarse por los c
 Generales: retención de 30 días, garantías de proveedores, incidentes 24 horas naturales, IA con autorización expresa, soporte por prioridad, devolución proporcional en los supuestos descritos, activación y propuesta de capacitación, entrega anual por clínica y límite ordinario con excepciones legales. No dependen de marcar un anexo.
 
 Particulares: identidad y establecimiento, módulos efectivamente contratados, chatbot incluido o excluido, oferta comercial, fechas y forma de pago; jurisdicción distinta de Cuenca o compromisos operativos especiales requieren acuerdo explícito. Alejandro Codón/Bárbara Atenea Beauty Club no son valores predeterminados de otros contratos; Quito no se generaliza.
+
+### Ubicación en Master Admin → Contrato
+
+| Punto | Tipo | Campo o documento |
+|---|---|---|
+| 1 | Particular; capacidad general | Datos del cliente → persona natural, nombre, identificación y nombre de clínica/cuenta. Carátula §1. |
+| 2 | Particular | Módulos incluidos → chatbot desmarcado, plataforma USD 245; método de pago. Carátula §§2–3. El total USD 245 requiere transferencia/efectivo o un recargo cero expresamente acordado. |
+| 3 | Particular | Complementos particulares → Jurisdicción Quito. Imprime Anexo B.5 solo en ese contrato. |
+| 4 | General; 90 días no aceptados | Condiciones Art. 11; Privacidad Arts. 12–13. No necesita marcar complemento. Retención 30 días y una entrega anual, no una segunda gratuita al terminar. |
+| 5 | General; ampliaciones particulares | Condiciones Arts. 4 y 13. Casillas soporte/devolución para reiterar o pactar variaciones; sugerencias editables → Anexo B.1/B.2. |
+| 6 | General; instrucciones particulares | Privacidad Arts. 5–6 y 11; Condiciones Art. 9. Reiterar aviso → B.3; instrucciones de IA → B.4. La sugerencia mantiene IA desactivada, no autoriza su uso. |
+| 7 | Se conserva; contrapropuesta | Carátula §6 y Condiciones Art. 14. No hay casilla para eliminar el límite; siguen excepciones legales. |
+| Activación/capacitación | General; variación particular | Condiciones Art. 13: activar en 1 día hábil y proponer capacitación en 3 días hábiles. Casilla activación → B.6 con texto editable. |
+
+Las sugerencias parten de las reglas generales y no se imprimen hasta marcar su opción. El botón «Restablecer sugerencia» reemplaza el texto editado; desmarcar una opción no pierde la edición. No se precargan nombres, identificación ni domicilio de este cliente en otros contratos.
+
+### Respaldo diario y entregas adicionales
+
+Verificación de solo lectura del 7 de octubre: cron de producción habilitado a las 08:00 UTC (03:00 Ecuador); metadatos R2 muestran 77 snapshots automáticos entre el 1 y el 7 de octubre UTC, 11 por día, correspondientes a las 11 clínicas registradas. No se descargaron datos clínicos ni se probó descifrado/restauración. Hay evidencia de ejecución diaria, no solo programación, pero no de recuperación integral.
+
+La tarifa adicional todavía no fue aprobada: se mantiene cotización previa según volumen y alcance. Se aplica a nueva recopilación tras consumir la cuota, corte adicional o nueva entrega tras vencer un acceso correctamente disponible; nunca a corregir fallos del Proveedor ni a condicionar derechos legales. La entrega anual gratuita incluye el costo de procesamiento a cargo del Proveedor.
+
+Workers Paid tiene un mínimo por cuenta de USD 5/mes; no es un precio por copia ni aumenta R2. Para entregas poco frecuentes puede estudiarse un ejecutor Node supervisado en equipo administrado por BIOSKINTECH, con streaming y sin mensualidad de procesamiento; no está implementado y no elimina costos de R2, conectividad y operación. La migración a esa alternativa requiere validación de seguridad y recuperación, sin exponer datos clínicos a servicios ajenos al encargo.
 
 ## 4. Garantías internacionales: qué acreditar
 
@@ -83,4 +106,4 @@ La devolución de suscripción se calcula: importe de suscripción efectivamente
 3. Recibir cuenta y administrador; activar dentro de 1 día hábil desde que se cumplan contrato firmado, pago confirmado y datos completos. Confirmar por escrito.
 4. Proponer fechas de reunión inicial/capacitación dentro de 3 días hábiles; celebración según disponibilidad de ambas partes. Cubrir permisos, fichas, consentimientos y exportaciones disponibles.
 5. Verificar exclusión del chatbot y configuración de toda IA. La firma no habilita ninguna integración.
-6. No informar que el respaldo anual está disponible hasta implementar, probar y aprobar el plan.
+6. Informar el compromiso de entrega anual bajo solicitud y su coordinación asistida por el Proveedor. No presentar el Worker o botón automático como habilitados mientras sigan desactivados; acordar preparación y entrega privada cuando llegue la solicitud.

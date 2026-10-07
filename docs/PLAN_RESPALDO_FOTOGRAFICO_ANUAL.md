@@ -2,6 +2,8 @@
 
 **6 de octubre de 2026.** Arquitectura aprobada e implementación en repositorio. **Procesamiento desactivado por defecto:** no se contrata Workers Paid ni se crea infraestructura remota automáticamente. El flujo es solicitud de clínica → autorización Master Admin → compilación asíncrona → descarga por la clínica; no requiere que el cliente compile desde su equipo. Migración, cola, Worker, secretos y reglas de limpieza deben verificarse antes de habilitarlo.
 
+**Actualización contractual 7 de octubre:** se asume el compromiso de una entrega gratuita anual bajo solicitud, durante la vigencia o habitualmente al finalizar dentro de 30 días. Si el canal automático no está disponible, el Proveedor debe coordinar entrega asistida privada; no se traslada al cliente la contratación del procesador. Entregas adicionales requieren cotización aceptada; no se cobran correcciones por fallos imputables al Proveedor ni se restringen derechos legales. No se aprobó aún una tarifa fija.
+
 ## 1. Arquitectura observada
 
 - React 18/Vite: módulo de Base de Datos en `src/pages/AdminBackup.tsx`; Master Admin en `src/pages/AdminMasterDashboard.tsx`.
@@ -89,6 +91,8 @@ Fuente oficial: [R2 Pricing](https://developers.cloudflare.com/r2/pricing/) y [W
 - Infrequent Access añade USD 0,01/GB de recuperación; no elegir esa clase para originales que se leerán ni ZIP temporales sin evaluar el costo.
 - ZIP temporales duplican almacenamiento mientras existen. Multipart, lectura, colas, CPU y reintentos también cuentan; 24 horas de acceso no eliminan objetos automáticamente.
 - Workers Paid tiene un mínimo de **USD 5 por mes de cuenta mientras esté activo**, incluso sin respaldos. No es pago por ZIP ni por aprobación. Los límites gratuitos no permiten prometer procesamiento masivo; no se confirmó que el plan efectivo soporte los lotes.
+
+Workers es un entorno de ejecución, no una ampliación del almacenamiento R2. La suscripción puede aprovecharse para tareas de fondo, limpieza, notificaciones, procesamiento de archivos y webhooks, con cuotas y cargos de los servicios asociados; no implica servicios ilimitados ni necesidad de migrar Neon o las APIs existentes. Una opción sin mensualidad de procesamiento es un ejecutor Node supervisado en un equipo administrado por BIOSKINTECH, leyendo R2 en streaming y subiendo ZIP privados por partes. Ese ejecutor no está implementado; requiere protección del equipo, credenciales server-side, mínimo almacenamiento temporal, reanudación, comprobación de integridad y limpieza. Siguen existiendo costos de almacenamiento/operaciones R2 y operación humana. No reutilizar el navegador del cliente para obligarlo a compilar sus datos.
 - El usuario no autorizó un cargo fijo: dejar preparado el Worker, sin cambiar planes ni activar procesamiento. En el futuro verificar facturación y capacidad y obtener autorización antes de habilitar. No prometer prorrateo o un único cargo por activarlo temporalmente sin comprobar condiciones de la cuenta.
 
 ## Superficies implementadas y habilitación futura

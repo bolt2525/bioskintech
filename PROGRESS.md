@@ -1,5 +1,9 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-07 Contrato: sugerencias particulares editables.
+- ✅ 2026-10-07 Garantías oficiales, versión legal sincronizada.
+- ✅ 2026-10-07 Copias diarias: 77 verificadas.
+- ✅ 2026-10-07 Entrega anual: compromiso asistido.
 - ✅ 2026-10-07 Calendar por usuario restaurado.
 - ✅ 2026-10-06 Respaldo: 155 pruebas aprobadas.
 - ✅ 2026-10-06 Limpieza segura; caducados asistidos.

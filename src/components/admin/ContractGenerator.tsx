@@ -8,6 +8,13 @@ const PLATFORM_PRICE = 245;
 const WHATSAPP_PRICE = 100;
 const PAYPHONE_SURCHARGE = 14.95;
 
+export const CONTRACT_SUGGESTIONS = {
+  supportTerms: 'Soporte de lunes a viernes, 09:00–18:00 (UTC−5), excepto feriados aplicables al Proveedor. Primera respuesta humana: P1 hasta 4 horas hábiles, P2 hasta 8 horas hábiles y P3 hasta 2 días hábiles. Objetivos de restablecimiento o alternativa: P1 1 día hábil y P2 3 días hábiles, con actualización de diagnóstico y nueva estimación si fuera necesario. Los reportes se registran por correo oficial y pueden escalarse por WhatsApp oficial.',
+  refundTerms: 'Si el Proveedor termina anticipadamente el servicio por decisión no imputable al Cliente, retira una función principal sin reemplazo equivalente o no subsana un incumplimiento esencial que impida utilizarlo dentro del plazo razonable comunicado por escrito, el Cliente podrá terminar el contrato. Se devolverá la parte de la suscripción anual pagada correspondiente a los días no prestados, conforme al Art. 4 de las Condiciones de Servicio, sin limitar derechos imperativos.',
+  aiInstructionTerms: 'Las funciones de inteligencia artificial permanecerán desactivadas para esta clínica. Cualquier habilitación posterior requerirá autorización expresa, documentada y específica del Cliente, identificando función, finalidad, proveedor y datos autorizados. La firma del contrato no constituye esa autorización ni habilita funciones de IA.',
+  activationTerms: 'Una vez recibido el contrato aceptado, confirmado el pago y completados los datos de la cuenta, el Proveedor activará el acceso en hasta 1 día hábil. En hasta 3 días hábiles desde la activación enviará una propuesta de reunión de inicio o capacitación sobre los módulos contratados. La fecha de la reunión se acordará entre las partes; las credenciales son personales y no deben compartirse.',
+} satisfies Pick<ContractOptions, 'supportTerms' | 'refundTerms' | 'aiInstructionTerms' | 'activationTerms'>;
+
 type PartyType = 'natural' | 'juridica';
 type Jurisdiction = 'Cuenca' | 'Quito';
 
@@ -113,14 +120,14 @@ export default function ContractGenerator() {
   const [options, setOptions] = useState<ContractOptions>({
     jurisdiction: 'Cuenca',
     support: false,
-    supportTerms: '',
+    supportTerms: CONTRACT_SUGGESTIONS.supportTerms,
     refund: false,
-    refundTerms: '',
+    refundTerms: CONTRACT_SUGGESTIONS.refundTerms,
     incidentNotice: false,
     aiInstructions: false,
-    aiInstructionTerms: '',
+    aiInstructionTerms: CONTRACT_SUGGESTIONS.aiInstructionTerms,
     activation: false,
-    activationTerms: '',
+    activationTerms: CONTRACT_SUGGESTIONS.activationTerms,
   });
   const [prices, setPrices] = useState<ContractPrices>({
     platform: String(PLATFORM_PRICE),
@@ -435,6 +442,7 @@ export default function ContractGenerator() {
           <fieldset className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
             <legend className="px-1 text-sm font-semibold text-gray-900">Complementos particulares (independientes y opcionales)</legend>
             <p className="mb-4 text-xs text-gray-600">Las condiciones comunes de soporte, devolución, aviso de incidentes en 24 horas y autorización de IA se mantienen aunque no seleccione complementos. Los textos particulares no eliminan esas garantías.</p>
+            <p className="mb-4 text-xs text-gray-600">Al marcar una opción aparece un texto sugerido basado en las condiciones generales. Puede editarlo antes de firmar; solo las opciones marcadas se imprimen en el Anexo B. Los datos del cliente, módulos y precio se configuran en las secciones anteriores.</p>
             <div className="space-y-4">
               <label className="block text-sm font-medium text-gray-700">
                 Jurisdicción
@@ -455,23 +463,23 @@ export default function ContractGenerator() {
                   <span>{label}</span>
                 </label>
               ))}
-              {options.support && <label className="block text-sm font-medium text-gray-700">
-                Texto acordado de soporte <span aria-hidden="true">*</span>
-                <textarea required name="supportTerms" rows={4} value={options.supportTerms} onChange={event => updateOption('supportTerms', event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
-              </label>}
-              {options.refund && <label className="block text-sm font-medium text-gray-700">
-                Texto acordado de devolución <span aria-hidden="true">*</span>
-                <textarea required name="refundTerms" rows={4} value={options.refundTerms} onChange={event => updateOption('refundTerms', event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
-              </label>}
-              {options.aiInstructions && <label className="block text-sm font-medium text-gray-700">
-                Instrucciones de IA acordadas <span aria-hidden="true">*</span>
-                <textarea required name="aiInstructionTerms" rows={4} value={options.aiInstructionTerms} onChange={event => updateOption('aiInstructionTerms', event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
-              </label>}
-              {options.activation && <label className="block text-sm font-medium text-gray-700">
-                Texto acordado de activación <span aria-hidden="true">*</span>
-                <textarea required name="activationTerms" rows={4} value={options.activationTerms} onChange={event => updateOption('activationTerms', event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
-              </label>}
-              <p className="rounded-lg bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">La entrega anual autorizada de fotografías y documentos clínicos se rige por los documentos generales y requiere infraestructura habilitada; no equivale a un respaldo fotográfico automático. Verifique disponibilidad y autorizaciones antes de pactar instrucciones de IA.</p>
+              {([
+                ['support', 'supportTerms', 'Texto acordado de soporte'],
+                ['refund', 'refundTerms', 'Texto acordado de devolución'],
+                ['aiInstructions', 'aiInstructionTerms', 'Instrucciones de IA acordadas'],
+                ['activation', 'activationTerms', 'Texto acordado de activación'],
+              ] as const).map(([enabled, field, label]) => options[enabled] ? (
+                <div key={field}>
+                  <label className="block text-sm font-medium text-gray-700">
+                    {label} <span aria-hidden="true">*</span>
+                    <textarea required name={field} rows={5} value={options[field]} onChange={event => updateOption(field, event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
+                  </label>
+                  <button type="button" onClick={() => updateOption(field, CONTRACT_SUGGESTIONS[field])} className="mt-1 min-h-11 text-xs font-medium text-gray-700 underline focus:outline-none focus:ring-2 focus:ring-gold">
+                    Restablecer sugerencia de {label.toLowerCase()}
+                  </button>
+                </div>
+              ) : null)}
+              <p className="rounded-lg bg-blue-50 p-3 text-xs leading-relaxed text-blue-900">Todos los contratos incluyen una entrega anual gratuita bajo solicitud de fotografías y documentos clínicos. Se solicita desde Base de Datos; si el canal del panel no está disponible, BIOSKINTECH la coordina por los canales oficiales. Retención posterior: 30 días. No es una réplica fotográfica automática diaria.</p>
             </div>
           </fieldset>
         </div>
@@ -591,7 +599,7 @@ export default function ContractGenerator() {
             {options.support && <section><h3 className="font-bold text-gray-900">B.1. Soporte particular</h3><p className="mt-1 whitespace-pre-wrap">{options.supportTerms}</p></section>}
             {options.refund && <section><h3 className="font-bold text-gray-900">B.2. Devolución particular</h3><p className="mt-1 whitespace-pre-wrap">{options.refundTerms}</p></section>}
             {options.incidentNotice && <section><h3 className="font-bold text-gray-900">B.3. Aviso de incidentes</h3><p className="mt-1">El Proveedor comunicará al Cliente, sin dilación indebida y como máximo dentro de 24 horas corridas desde que tenga conocimiento, una vulneración que afecte sus datos. El aviso inicial incluirá la información disponible y se completará progresivamente. Este plazo no es un compromiso de detección en 24 horas ni de soporte continuo; no sustituye las notificaciones legales del Cliente como Responsable.</p></section>}
-            {options.aiInstructions && <section><h3 className="font-bold text-gray-900">B.4. Instrucciones particulares de IA</h3><p className="mt-1 whitespace-pre-wrap">{options.aiInstructionTerms}</p><p className="mt-2">Esta cláusula registra instrucciones particulares, pero no habilita técnicamente funciones de IA ni sustituye la base jurídica, información y autorizaciones requeridas respecto de los Titulares. La disponibilidad, configuración, proveedores y datos tratados deben verificarse antes de su uso.</p></section>}
+            {options.aiInstructions && <section><h3 className="font-bold text-gray-900">B.4. Instrucciones particulares de IA</h3><p className="mt-1 whitespace-pre-wrap">{options.aiInstructionTerms}</p><p className="mt-2">Estas instrucciones no habilitan por sí solas funciones de IA. El Proveedor mantendrá esas funciones desactivadas hasta recibir la autorización expresa correspondiente; el Cliente conservará la base jurídica y las autorizaciones necesarias respecto de los Titulares.</p></section>}
             {options.jurisdiction === 'Quito' && <section><h3 className="font-bold text-gray-900">B.5. Jurisdicción particular</h3><p className="mt-1">Solo para este contrato, se sustituye la ciudad de jurisdicción prevista en la cláusula 6 de la carátula por Quito, Ecuador. Rige la ley ecuatoriana y se respetan las competencias legalmente obligatorias.</p></section>}
             {options.activation && <section><h3 className="font-bold text-gray-900">B.6. Activación particular</h3><p className="mt-1 whitespace-pre-wrap">{options.activationTerms}</p></section>}
           </div>

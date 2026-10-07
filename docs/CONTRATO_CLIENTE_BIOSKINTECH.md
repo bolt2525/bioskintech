@@ -4,11 +4,11 @@
 >
 > Este archivo es material interno de revisión y no es el documento generado para firma. El paquete final emitido por Master Admin incorpora condiciones particulares, anexo de tratamiento, Condiciones de Servicio y Política de Privacidad. Su orden de prevalencia consta en la cláusula 3 de este archivo y en el paquete generado.
 
-**Versión de referencia de los documentos publicados:** 2026-10-06-r2
-**Fecha de preparación:** 6 de octubre de 2026
+**Versión de referencia de los documentos publicados:** 2026-10-07
+**Fecha de preparación:** 7 de octubre de 2026
 **Lugar de referencia contractual en las Condiciones:** Cuenca, Ecuador
 
-**Actualización general:** soporte, devoluciones en los supuestos indicados, incidentes en 24 horas naturales, autorización expresa de IA y derecho a entrega anual pasan a las Condiciones generales. El generador distingue persona natural/jurídica y mantiene los acuerdos particulares independientes; Quito requiere acuerdo y no sustituye Cuenca para todos. Retención 30 días y límite vigente con excepciones legales. Véase [garantías y condiciones particulares](./GARANTIAS_Y_CONDICIONES_PARTICULARES.md). La función anual requiere configuración y validación operativa; la contrapropuesta de responsabilidad aún debe ser aceptada por la interesada.
+**Actualización general:** soporte, devoluciones en los supuestos indicados, incidentes en 24 horas naturales, autorización expresa de IA y compromiso de respaldo/entrega anual bajo solicitud forman parte de las Condiciones generales. El generador distingue persona natural/jurídica y mantiene los acuerdos particulares independientes, con sugerencias editables de soporte, devolución, IA y activación; Quito requiere acuerdo y no sustituye Cuenca para todos. Retención 30 días y límite vigente con excepciones legales. Véase [garantías y condiciones particulares](./GARANTIAS_Y_CONDICIONES_PARTICULARES.md). El proveedor coordina entregas asistidas cuando el canal del panel no está disponible; el Worker automático sigue desactivado. La contrapropuesta de responsabilidad aún debe ser aceptada por la interesada.
 
 ## 1. Comparecientes y datos por completar
 
@@ -57,7 +57,7 @@ El contrato se integra con:
 3. la **Política de Privacidad y Tratamiento de Datos Personales** vigente; y
 4. la cotización, plan y condiciones comerciales expresamente aceptados por el Cliente.
 
-Las Condiciones de Servicio declaran que el registro, aceptación de invitación, pago o uso de la Plataforma constituye aceptación electrónica de esas Condiciones y de la Política de Privacidad. El Cliente acepta que estas últimas se encuentran en versión **2026-10-06-r2** al celebrar este documento, salvo que la pantalla de aceptación o la oferta aceptada identifique otra versión. Las nuevas versiones se notifican en el panel y deben aceptarse para continuar el uso; el sistema registra la aceptación con versión, fecha, IP y navegador.
+Las Condiciones de Servicio declaran que el registro, aceptación de invitación, pago o uso de la Plataforma constituye aceptación electrónica de esas Condiciones y de la Política de Privacidad. El Cliente acepta que estas últimas se encuentran en versión **2026-10-07** al celebrar este documento, salvo que la pantalla de aceptación o la oferta aceptada identifique otra versión. Las nuevas versiones se notifican en el panel y deben aceptarse para continuar el uso; el sistema registra la aceptación con versión, fecha, IP y navegador.
 
 En caso de contradicción, las condiciones particulares firmadas prevalecen para identidad, precio, módulos y vigencia; el anexo de tratamiento prevalece para el encargo de datos; un Anexo B negociado sustituye solo las disposiciones que identifica expresamente para ese contrato; y las Condiciones de Servicio y la Política rigen sus materias restantes. Siempre prevalece la ley imperativa.
 
@@ -106,7 +106,7 @@ La Política de Privacidad describe como medidas de la Plataforma: comunicacione
 
 Estas medidas no constituyen garantía de invulnerabilidad. BIOSKINTECH declara una obligación de medios: aplicar medidas razonables y proporcionales al riesgo, sin garantizar la ausencia absoluta de incidentes. La seguridad también depende de la custodia de credenciales, dispositivos y cuentas conectadas por parte del Cliente.
 
-Ante una vulneración de datos de la que tenga conocimiento, BIOSKINTECH declara que adoptará medidas de contención y mitigación y notificará al Cliente afectado sin dilación indebida, con la información disponible, sin esperar a concluir la investigación. Si se pacta el Anexo B, el aviso inicial tiene un máximo de 24 horas corridas desde su conocimiento, independiente del horario de soporte. El Cliente, como Responsable de los datos de sus pacientes, efectuará las notificaciones a la autoridad y a los Titulares dentro de los plazos legales; BIOSKINTECH colaborará con la información técnica a su alcance. Las notificaciones relativas a datos de los que BIOSKINTECH es Responsable corresponden a BIOSKINTECH.
+Ante una vulneración de datos de la que tenga conocimiento, BIOSKINTECH adoptará medidas de contención y mitigación y notificará al Cliente afectado sin dilación indebida, con la información disponible, sin esperar a concluir la investigación. Para todos los contratos, el aviso inicial tiene un máximo de 24 horas naturales desde su conocimiento, independiente del horario de soporte y sin necesidad de seleccionar el Anexo B. El Cliente, como Responsable de los datos de sus pacientes, efectuará las notificaciones a la autoridad y a los Titulares dentro de los plazos legales; BIOSKINTECH colaborará con la información técnica a su alcance. Las notificaciones relativas a datos de los que BIOSKINTECH es Responsable corresponden a BIOSKINTECH.
 
 ## 8. Respaldos, recuperación y exportación
 
@@ -114,7 +114,7 @@ Ante una vulneración de datos de la que tenga conocimiento, BIOSKINTECH declara
 
 Las Condiciones de Servicio y la Política de Privacidad describen copias automáticas diarias, cifradas y separadas de la base principal, guardadas en Cloudflare R2; protección contra borrado o modificación durante 30 días; eliminación a los 35 días; y una ventana de recuperación de Neon de las últimas seis horas. La configuración de despliegue revisada programa el cron de respaldos diariamente a las 08:00 UTC.
 
-La existencia de una programación o una configuración de respaldo no equivale a una garantía de que cada copia se completó sin error ni de que todo dato se pueda recuperar. El código cancela el respaldo de una tabla que excede 50.000 filas en vez de guardar silenciosamente una copia truncada y contempla alertar al desarrollador ante fallos del cron. La restauración puede no recuperar lo registrado después de la última copia disponible; las Condiciones describen una pérdida potencial de hasta 24 horas. No se fija en este documento un tiempo máximo de respuesta, recuperación o restauración (RTO).
+La existencia de una programación o una configuración de respaldo no equivale a una garantía de que cada copia se completó sin error ni de que todo dato se pueda recuperar. El código cancela el respaldo de una tabla que excede 50.000 filas en vez de guardar silenciosamente una copia truncada y contempla alertar al desarrollador ante fallos del cron. El punto recuperable depende de la última copia válida y puede superar 24 horas si falla una ejecución. Los objetivos de soporte y recuperación se describen en el Art. 13 de las Condiciones; no constituyen un RTO absoluto.
 
 La evidencia técnica del repositorio describe el cifrado de snapshots con AES-256-GCM y una clave configurada en el servidor. El estado del bucket, bloqueo de 30 días y ciclo de vida de 35 días fueron registrados como verificados en la auditoría de arquitectura del 29 de septiembre de 2026. Esos datos documentan la evidencia disponible en esa fecha, no una certificación continua de la infraestructura ni un compromiso de disponibilidad futura de los proveedores.
 
@@ -122,9 +122,9 @@ La evidencia técnica del repositorio describe el cifrado de snapshots con AES-2
 
 El respaldo técnico puede incluir datos clínicos, pacientes, expedientes, consultas, antecedentes, exámenes, diagnósticos, tratamientos, inyectables, recetas, consentimientos, auditoría, finanzas e inventario, según módulos seleccionados y datos existentes. Las marcaciones faciales/corporales 2D/3D se incluyen como datos. En consentimientos, el respaldo excluye tokens y códigos de firma remota.
 
-Las fotografías clínicas no se incorporan como archivos al respaldo ni se entregan como copia; se conserva su referencia y metadatos. La restauración de una referencia de fotografía depende de que el objeto correspondiente todavía exista en el almacenamiento. La agenda de Google Calendar no forma parte del archivo. Los módulos de configuración y comunicaciones son informativos y no se restauran automáticamente.
+Las fotografías clínicas no se incorporan como archivos al respaldo automático de datos estructurados; ese respaldo conserva su referencia y metadatos. El respaldo anual bajo solicitud sí entrega los originales conservados y documentos legibles. La restauración de una referencia de fotografía depende de que el objeto correspondiente todavía exista en el almacenamiento. La agenda de Google Calendar no forma parte del archivo. Los módulos de configuración y comunicaciones son informativos y no se restauran automáticamente.
 
-La capacidad del Cliente para descargar una copia no elimina sus obligaciones legales de conservación. El Cliente deberá custodiar con medidas adecuadas las exportaciones sensibles. No se garantiza recuperación total ni adaptación al formato de otro sistema. La entrega anual incluye originales fotográficos y copias clínicas legibles según las Condiciones, con solicitud, autorización y disponibilidad técnica verificadas.
+La capacidad del Cliente para descargar una copia no elimina sus obligaciones legales de conservación. El Cliente deberá custodiar con medidas adecuadas las exportaciones sensibles. La entrega anual incluye originales fotográficos y copias clínicas legibles según las Condiciones, previa solicitud y autorización, por el panel o mediante coordinación asistida del Proveedor. La entrega gratuita es una por período, durante la vigencia o dentro de los 30 días posteriores; las adicionales requieren cotización aceptada y no incluyen cobros por corregir fallos del Proveedor ni restricciones a derechos legales. No supone adaptación al formato de otro sistema ni recuperación de archivos previamente eliminados.
 
 ### 8.3 Restauración y exportaciones disponibles
 
