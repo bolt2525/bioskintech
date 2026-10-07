@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { ScanFace, PersonStanding, Scissors } from 'lucide-react';
+import { ScanFace, PersonStanding, ScanSearch } from 'lucide-react';
 import type { ConsultationRef } from '../CrossConsultHistoryModal';
 import TratamientosFacial from './TratamientosFacial';
 import TratamientosCorporal from './TratamientosCorporal';
@@ -30,7 +30,7 @@ const MODE_META = {
     accent: 'from-emerald-50 to-teal-50',
   },
   capilar: {
-    icon: Scissors,
+    icon: ScanSearch,
     description: 'Cuero cabelludo y densidad',
     accent: 'from-violet-50 to-indigo-50',
   },

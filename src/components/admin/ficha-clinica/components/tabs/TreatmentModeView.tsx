@@ -1145,12 +1145,14 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                   />
                 </div>
               </div>
-              <TreatmentFinanceOptions
-                amount={Number(currentTreatment.cost) || 0}
-                patientName={patientName}
-                value={financePosting}
-                onChange={setFinancePosting}
-              />
+              <div className="sm:col-span-2">
+                <TreatmentFinanceOptions
+                  amount={Number(currentTreatment.cost) || 0}
+                  patientName={patientName}
+                  value={financePosting}
+                  onChange={setFinancePosting}
+                />
+              </div>
             </div>
           </div>
 

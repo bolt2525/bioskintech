@@ -4,7 +4,7 @@
  * `treatment.parameters[RESERVED_PARAM_KEYS[mode]]` (JSONB) — no requiere cambios de esquema.
  */
 import { useEffect, useState } from 'react';
-import { X, ClipboardList, Ruler, Scissors, CheckCircle2 } from 'lucide-react';
+import { X, ClipboardList, Ruler, ScanSearch, CheckCircle2 } from 'lucide-react';
 import { Dialog } from '../../../../ui/Dialog';
 import { Tooltip } from '../../../../ui/Tooltip';
 import type {
@@ -147,7 +147,7 @@ export default function ClinicalDataModal({ isOpen, mode, initialData, onClose, 
       <div className="flex max-h-[85dvh] w-[min(42rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-lg bg-white shadow-xl">
         <div className="flex items-center justify-between p-4 border-b border-gray-100 shrink-0">
           <h3 id="clinical-data-title" className="font-semibold text-gray-800 flex items-center gap-2">
-            {mode === 'corporal' ? <Ruler className="w-5 h-5 text-[#b8944d]" /> : mode === 'capilar' ? <Scissors className="w-5 h-5 text-[#b8944d]" /> : <ClipboardList className="w-5 h-5 text-[#b8944d]" />}
+            {mode === 'corporal' ? <Ruler className="w-5 h-5 text-[#b8944d]" /> : mode === 'capilar' ? <ScanSearch className="w-5 h-5 text-[#b8944d]" /> : <ClipboardList className="w-5 h-5 text-[#b8944d]" />}
             Datos clínicos{mode === 'facial' ? ' — Cuidados post-tratamiento' : mode === 'corporal' ? ' — Antropometría' : ' — Evaluación tricológica'}
           </h3>
           <button onClick={onClose} className="admin-focus-ring flex min-h-11 min-w-11 items-center justify-center rounded-lg hover:bg-gray-100" aria-label="Cerrar">
