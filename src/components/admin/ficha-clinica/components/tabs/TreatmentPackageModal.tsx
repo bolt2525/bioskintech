@@ -3,24 +3,27 @@ import { motion } from 'framer-motion';
 import { Package, X, DollarSign, Hash, Wallet } from 'lucide-react';
 import recordsFetch from '../../../../../utils/recordsFetch';
 import { Dialog } from '../../../../ui/Dialog';
-import type { TreatmentMode, TreatmentPackage } from '../../types/treatment';
+import TreatmentFinanceOptions from './TreatmentFinanceOptions';
+import { createFinancePostingOptions, type FinancePostingOptions, type TreatmentMode, type TreatmentPackage } from '../../types/treatment';
 
 interface TreatmentPackageModalProps {
   recordId: number;
   consultationId?: number;
+  patientName?: string;
   mode: TreatmentMode;
   onClose: () => void;
   onCreated: (pkg: TreatmentPackage) => void;
 }
 
 /** Modal único de registro de paquetes, reutilizable en los 3 modos del tab de Tratamientos */
-export default function TreatmentPackageModal({ recordId, consultationId, mode, onClose, onCreated }: TreatmentPackageModalProps) {
+export default function TreatmentPackageModal({ recordId, consultationId, patientName, mode, onClose, onCreated }: TreatmentPackageModalProps) {
   const [name, setName] = useState('');
   const [totalCost, setTotalCost] = useState('');
   const [estimatedSessions, setEstimatedSessions] = useState('1');
   const [initialPayment, setInitialPayment] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [financePosting, setFinancePosting] = useState<FinancePostingOptions>(createFinancePostingOptions);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,6 +42,10 @@ export default function TreatmentPackageModal({ recordId, consultationId, mode, 
           total_cost: parseFloat(totalCost.replace(',', '.')) || 0,
           estimated_sessions: parseInt(estimatedSessions) || 1,
           initial_payment: parseFloat(initialPayment.replace(',', '.')) || 0,
+          finance_posting: {
+            ...financePosting,
+            enabled: financePosting.enabled && (parseFloat(initialPayment.replace(',', '.')) || 0) > 0,
+          },
         }),
       });
       const resBody = await response.json().catch(() => null);
@@ -96,6 +103,7 @@ export default function TreatmentPackageModal({ recordId, consultationId, mode, 
                   placeholder="0.00"
                 />
               </div>
+
             </div>
             <div className="space-y-1.5">
               <label className="block text-sm font-medium text-gray-700">Sesiones estimadas</label>
@@ -126,6 +134,13 @@ export default function TreatmentPackageModal({ recordId, consultationId, mode, 
               />
             </div>
           </div>
+
+          <TreatmentFinanceOptions
+            amount={parseFloat(initialPayment.replace(',', '.')) || 0}
+            patientName={patientName}
+            value={financePosting}
+            onChange={setFinancePosting}
+          />
 
           {error && <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</p>}
 

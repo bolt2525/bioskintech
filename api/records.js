@@ -11,6 +11,12 @@ import { normalizeEcuadorIdentification, hashConsentEvidence, hashSigningCode, h
 console.log('✅ [API] records.js loaded');
 
 const SIGNING_TOKEN_PATTERN = /^[a-f0-9]{64}$/i;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const TREATMENT_WRITE_FIELDS = new Set([
+  'consultation_id', 'date', 'procedure_name', 'equipment_used', 'parameters',
+  'area_treated', 'area_marker', 'duration_minutes', 'cost', 'notes',
+  'performed_by', 'treatment_mode', 'package_id',
+]);
 const SIGNING_SESSION_COOKIE = 'bioskin_consent_session';
 const CONSULTATION_CHILD_TABLES = ['physical_exams', 'diagnoses', 'treatments', 'prescriptions', 'consent_forms', 'injectables'];
 const CONSENT_SAFE_COLUMNS = `id, record_id, patient_id, clinic_id, consultation_id, status, created_at, updated_at,
@@ -18,6 +24,188 @@ const CONSENT_SAFE_COLUMNS = `id, record_id, patient_id, clinic_id, consultation
   pre_care, post_care, contraindications, critical_antecedents, authorizations, declarations, signatures,
   attachments, signing_status, signing_signed_at, signing_hash, signing_copy_sent_at,
   annulled_at, annulled_by_user_id, annulled_by_name, annulment_reason, replaces_consent_id`;
+
+function normalizeMoney(value, field, { allowZero = true } = {}) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount < 0 || amount > 10_000_000 || (!allowZero && amount === 0)) {
+    throw new Error(`${field} inválido`);
+  }
+  return Math.round(amount * 100) / 100;
+}
+
+function normalizeFinancePosting(value, amount) {
+  if (!value?.enabled) return null;
+  if (!UUID_PATTERN.test(String(value.idempotency_key || ''))) {
+    throw new Error('Identificador de envío financiero inválido');
+  }
+  const total = normalizeMoney(amount, 'Monto financiero', { allowZero: false });
+  const invoiceNumber = String(value.invoice_number || '').trim();
+  if (invoiceNumber.length > 100) throw new Error('Número de factura demasiado largo');
+  return {
+    idempotencyKey: value.idempotency_key,
+    includesIva: value.includes_iva === true,
+    invoiceNumber: invoiceNumber || null,
+    total,
+  };
+}
+
+export function calculateTreatmentFinanceBreakdown(total, includesIva) {
+  const normalizedTotal = normalizeMoney(total, 'Monto financiero', { allowZero: false });
+  const totalCents = Math.round(normalizedTotal * 100);
+  const subtotalCents = includesIva ? Math.round(totalCents / 1.15) : totalCents;
+  return {
+    subtotal: subtotalCents / 100,
+    tax: (totalCents - subtotalCents) / 100,
+    total: totalCents / 100,
+    taxRate: includesIva ? 15 : 0,
+  };
+}
+
+async function assertConsultationBelongsToRecord(db, consultationId, recordId, clinicId) {
+  const result = await db.query(
+    'SELECT 1 FROM consultations WHERE id = $1 AND record_id = $2 AND clinic_id = $3',
+    [consultationId, recordId, clinicId]
+  );
+  if (result.rowCount === 0) throw new Error('La consulta no pertenece a este expediente');
+}
+
+async function assertTreatmentFinancePermission(db, sessionUser, clinicId) {
+  if (!['clinic_admin', 'master_admin'].includes(sessionUser?.role)) {
+    const error = new Error('Solo administradores con acceso a Finanzas pueden registrar cobros');
+    error.code = 'FINANCE_FORBIDDEN';
+    throw error;
+  }
+  if (sessionUser.role === 'master_admin') return;
+  const result = await db.query(
+    `SELECT
+       COALESCE((SELECT enabled FROM clinic_features WHERE clinic_id = $1 AND feature = 'finance'), true)
+       AND NOT EXISTS (
+         SELECT 1 FROM user_module_overrides
+         WHERE clinic_user_id = $2
+           AND feature IN ('finance', 'finanzas_visible')
+           AND enabled = false
+       ) AS allowed`,
+    [clinicId, sessionUser.user_id]
+  );
+  if (result.rows[0]?.allowed !== true) {
+    const error = new Error('El módulo de Finanzas no está habilitado para este usuario');
+    error.code = 'FINANCE_FORBIDDEN';
+    throw error;
+  }
+}
+
+async function findIdempotentTreatmentPosting(db, {
+  clinicId, idempotencyKey, sourceType, recordId, consultationId, sourceId = null, posting = null,
+}) {
+  const result = await db.query(
+    `SELECT id, source_type, source_id, source_record_id, source_consultation_id,
+            total, tax_rate, invoice_number
+     FROM financial_records
+     WHERE clinic_id = $1 AND idempotency_key = $2`,
+    [clinicId, idempotencyKey]
+  );
+  if (result.rowCount === 0) return null;
+  const row = result.rows[0];
+  const compatible = isCompatibleTreatmentPosting(row, {
+    sourceType, recordId, consultationId, sourceId, posting,
+  });
+  if (!compatible) {
+    const error = new Error('La clave de envío financiero ya pertenece a otra operación');
+    error.code = 'IDEMPOTENCY_CONFLICT';
+    throw error;
+  }
+  return row;
+}
+
+export function isCompatibleTreatmentPosting(row, {
+  sourceType, recordId, consultationId, sourceId = null, posting = null,
+}) {
+  return row.source_type === sourceType
+    && Number(row.source_record_id) === Number(recordId)
+    && Number(row.source_consultation_id) === Number(consultationId)
+    && (sourceId == null || Number(row.source_id) === Number(sourceId))
+    && (!posting || (
+      Number(row.total) === posting.total
+      && Number(row.tax_rate) === (posting.includesIva ? 15 : 0)
+      && (row.invoice_number || null) === posting.invoiceNumber
+    ));
+}
+
+async function assertPackagePaymentWithinBalance(db, {
+  packageId, recordId, consultationId, clinicId, treatmentMode, amount, excludeTreatmentId = null,
+}) {
+  const packageResult = await db.query(
+    `SELECT id, name, total_cost, initial_payment
+     FROM treatment_packages
+     WHERE id = $1 AND record_id = $2 AND clinic_id = $3
+       AND consultation_id = $4 AND treatment_mode = $5
+     FOR UPDATE`,
+    [packageId, recordId, clinicId, consultationId, treatmentMode]
+  );
+  if (packageResult.rowCount === 0) throw new Error('package_id inválido para esta consulta');
+  const paidResult = await db.query(
+    `SELECT COALESCE(SUM(cost), 0)::float AS paid
+     FROM treatments
+     WHERE package_id = $1 AND consultation_id = $2
+       AND ($3::int IS NULL OR id <> $3)`,
+    [packageId, consultationId, excludeTreatmentId]
+  );
+  const treatmentPackage = packageResult.rows[0];
+  const remaining = Math.round((
+    Number(treatmentPackage.total_cost)
+    - Number(treatmentPackage.initial_payment)
+    - Number(paidResult.rows[0]?.paid || 0)
+  ) * 100) / 100;
+  if (amount > remaining) {
+    throw new Error(`El abono supera el saldo pendiente del paquete ($${Math.max(0, remaining).toFixed(2)})`);
+  }
+  return treatmentPackage;
+}
+
+async function createTreatmentFinancePosting(db, {
+  posting, clinicId, sessionUser, sourceType, sourceId, packageId = null,
+  recordId, consultationId, date, description,
+}) {
+  if (!posting) return null;
+
+  const patientResult = await db.query(
+    `SELECT CONCAT_WS(' ', p.first_name, p.last_name) AS patient_name
+     FROM clinical_records cr
+     JOIN patients p ON p.id = cr.patient_id
+     WHERE cr.id = $1 AND cr.clinic_id = $2`,
+    [recordId, clinicId]
+  );
+  if (patientResult.rowCount === 0) throw new Error('Expediente no autorizado');
+
+  const { subtotal, tax, total, taxRate } = calculateTreatmentFinanceBreakdown(posting.total, posting.includesIva);
+  const entity = patientResult.rows[0].patient_name || `Expediente ${recordId}`;
+
+  const financeResult = await db.query(
+    `INSERT INTO financial_records (
+       date, invoice_number, entity, description, type, subtotal, tax, total,
+       registered_by, clinic_id, created_by_user_id, tax_rate,
+       source_module, source_type, source_id, source_package_id,
+       source_record_id, source_consultation_id, idempotency_key
+     ) VALUES (
+       $1,$2,$3,$4,'ingreso',$5,$6,$7,$8,$9,$10,$11,
+       'treatments',$12,$13,$14,$15,$16,$17
+     ) RETURNING *`,
+    [
+      date, posting.invoiceNumber, entity, description, subtotal, tax, total,
+      sessionUser?.username || 'tratamientos', clinicId, sessionUser?.user_id ?? null, taxRate,
+      sourceType, sourceId, packageId, recordId, consultationId, posting.idempotencyKey,
+    ]
+  );
+  const financeRecord = financeResult.rows[0];
+  await db.query(
+    `INSERT INTO financial_items (
+       record_id, clinic_id, description, quantity, unit_price, iva_rate,
+       subtotal, tax, total, sort_order
+     ) VALUES ($1,$2,$3,1,$4,$5,$6,$7,$8,0)`,
+    [financeRecord.id, clinicId, description, subtotal, taxRate, subtotal, tax, total]
+  );
+  return financeRecord;
+}
 
 function getSigningSessionCookie(req) {
   const prefix = `${SIGNING_SESSION_COOKIE}=`;
@@ -2414,6 +2602,19 @@ export default async function handler(req, res) {
             await client.query('ROLLBACK');
             return res.status(409).json({ error: 'No se puede eliminar una consulta con consentimientos firmados.' });
           }
+          const accountingDependencies = await pool.query(
+            `SELECT
+               EXISTS(SELECT 1 FROM treatment_packages WHERE consultation_id = $1) AS has_packages,
+               EXISTS(
+                 SELECT 1 FROM financial_records
+                 WHERE source_module = 'treatments' AND source_consultation_id = $1
+               ) AS has_finance`,
+            [dcId]
+          );
+          if (accountingDependencies.rows[0]?.has_packages || accountingDependencies.rows[0]?.has_finance) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: 'No se puede eliminar una consulta con paquetes o cobros registrados.' });
+          }
           const detachedRows = await detachConsultationChildren(pool, dcId);
           await pool.query('DELETE FROM consultations WHERE id = $1', [dcId]);
           await logAudit(pool, {
@@ -2580,17 +2781,25 @@ export default async function handler(req, res) {
       }
 
       case 'addTreatment': {
-        const { record_id: tid, ...treatData } = body;
-        // Whitelist: solo identificadores SQL válidos — previene SQL injection por nombres de columna
-        // clinic_id/id se excluyen: un tratamiento duplicado en el cliente puede traer el clinic_id de la fila original
-        const safeTreatData = Object.fromEntries(Object.entries(treatData).filter(([k]) => /^\w+$/.test(k) && k !== 'clinic_id' && k !== 'id'));
+        const { record_id: tid, finance_posting: rawFinancePosting, ...treatData } = body;
+        const safeTreatData = Object.fromEntries(Object.entries(treatData).filter(([key]) => TREATMENT_WRITE_FIELDS.has(key)));
         if (safeTreatData.treatment_mode && !TREATMENT_MODES.has(safeTreatData.treatment_mode)) {
           return res.status(400).json({ error: 'treatment_mode inválido' });
         }
-        // El paquete debe pertenecer al mismo expediente (previene vincular tratamientos a paquetes de otro paciente/clínica)
-        if (safeTreatData.package_id) {
-          const pkgCheck = await pool.query('SELECT 1 FROM treatment_packages WHERE id = $1 AND record_id = $2 AND clinic_id = $3', [safeTreatData.package_id, tid, effectiveClinicId]);
-          if (pkgCheck.rowCount === 0) return res.status(400).json({ error: 'package_id inválido para este expediente' });
+        const consultationId = Number(safeTreatData.consultation_id);
+        if (!Number.isSafeInteger(consultationId) || consultationId <= 0) {
+          return res.status(400).json({ error: 'consultation_id válido es requerido' });
+        }
+        try {
+          safeTreatData.cost = normalizeMoney(safeTreatData.cost || 0, 'Costo');
+        } catch (validationError) {
+          return res.status(400).json({ error: validationError.message });
+        }
+        let financePosting;
+        try {
+          financePosting = normalizeFinancePosting(rawFinancePosting, safeTreatData.cost);
+        } catch (validationError) {
+          return res.status(400).json({ error: validationError.message });
         }
         if (safeTreatData.parameters && typeof safeTreatData.parameters === 'object') {
           safeTreatData.parameters = JSON.stringify(safeTreatData.parameters);
@@ -2598,28 +2807,104 @@ export default async function handler(req, res) {
         if (safeTreatData.area_marker && typeof safeTreatData.area_marker === 'object') {
           safeTreatData.area_marker = JSON.stringify(safeTreatData.area_marker);
         }
-        const tFields = ['record_id', 'clinic_id', ...Object.keys(safeTreatData)];
-        const tValues = [tid, effectiveClinicId, ...Object.values(safeTreatData)];
-        const tParams = tFields.map((_, i) => `$${i + 1}`).join(', ');
-        const newTreat = await pool.query(`INSERT INTO treatments (${tFields.join(', ')}) VALUES (${tParams}) RETURNING *`, tValues);
-        await logAudit(pool, { recordId: tid, sessionUser: await getSessionUserOnce(), actionType: 'create', module: 'treatment', summary: `Agregó tratamiento: ${safeTreatData.name || safeTreatData.procedure_name || ''}` });
-        return res.status(201).json(newTreat.rows[0]);
+        try {
+          await client.query('BEGIN');
+          await assertConsultationBelongsToRecord(client, consultationId, tid, effectiveClinicId);
+          if (financePosting) {
+            await assertTreatmentFinancePermission(client, await getSessionUserOnce(), effectiveClinicId);
+            const existing = await findIdempotentTreatmentPosting(client, {
+              clinicId: effectiveClinicId,
+              idempotencyKey: financePosting.idempotencyKey,
+              sourceType: 'treatment_session',
+              recordId: tid,
+              consultationId,
+              posting: financePosting,
+            });
+            if (existing) {
+              const existingTreatment = await client.query('SELECT * FROM treatments WHERE id = $1', [existing.source_id]);
+              await client.query('COMMIT');
+              return res.status(200).json(existingTreatment.rows[0]);
+            }
+          }
+          let treatmentPackage = null;
+          if (safeTreatData.package_id) {
+            treatmentPackage = await assertPackagePaymentWithinBalance(client, {
+              packageId: safeTreatData.package_id,
+              recordId: tid,
+              consultationId,
+              clinicId: effectiveClinicId,
+              treatmentMode: safeTreatData.treatment_mode,
+              amount: safeTreatData.cost,
+            });
+          }
+          const tFields = ['record_id', 'clinic_id', ...Object.keys(safeTreatData)];
+          const tValues = [tid, effectiveClinicId, ...Object.values(safeTreatData)];
+          const tParams = tFields.map((_, i) => `$${i + 1}`).join(', ');
+          const newTreat = await client.query(`INSERT INTO treatments (${tFields.join(', ')}) VALUES (${tParams}) RETURNING *`, tValues);
+          const treatment = newTreat.rows[0];
+          if (financePosting) {
+            const packageName = treatmentPackage?.name;
+            await createTreatmentFinancePosting(client, {
+              posting: financePosting,
+              clinicId: effectiveClinicId,
+              sessionUser: await getSessionUserOnce(),
+              sourceType: 'treatment_session',
+              sourceId: treatment.id,
+              packageId: treatment.package_id || null,
+              recordId: tid,
+              consultationId,
+              date: treatment.date,
+              description: packageName
+                ? `Paquete ${packageName} · sesión ${treatment.procedure_name}`
+                : `Sesión individual · ${treatment.procedure_name}`,
+            });
+          }
+          await logAudit(client, { recordId: tid, sessionUser: await getSessionUserOnce(), actionType: 'create', module: 'treatment', summary: `Agregó tratamiento: ${safeTreatData.procedure_name || ''}` });
+          await client.query('COMMIT');
+          return res.status(201).json(treatment);
+        } catch (error) {
+          await client.query('ROLLBACK').catch(() => {});
+          if (error.code === '23505' && financePosting) {
+            try {
+              const existing = await findIdempotentTreatmentPosting(client, {
+                clinicId: effectiveClinicId,
+                idempotencyKey: financePosting.idempotencyKey,
+                sourceType: 'treatment_session',
+                recordId: tid,
+                consultationId,
+                posting: financePosting,
+              });
+              if (existing) {
+                const existingTreatment = await client.query('SELECT * FROM treatments WHERE id = $1', [existing.source_id]);
+                return res.status(200).json(existingTreatment.rows[0]);
+              }
+            } catch (idempotencyError) {
+              return res.status(409).json({ error: idempotencyError.message });
+            }
+          }
+          if (error.code === 'FINANCE_FORBIDDEN') return res.status(403).json({ error: error.message });
+          if (error.code === 'IDEMPOTENCY_CONFLICT') return res.status(409).json({ error: error.message });
+          if (error.message.includes('consulta') || error.message.includes('package_id') || error.message.includes('Expediente') || error.message.includes('abono') || error.message.includes('Finanzas')) {
+            return res.status(400).json({ error: error.message });
+          }
+          throw error;
+        }
       }
 
       case 'updateTreatment': {
-        const { id: upTreatId, ...upTreatData } = body;
+        const { id: upTreatId, finance_posting: rawFinancePosting, ...upTreatData } = body;
         if (!(await ownedByClinic(pool, 'treatments', upTreatId, effectiveClinicId)))
           return res.status(403).json({ error: 'Sin permiso' });
-        // Whitelist: solo identificadores SQL válidos — previene SQL injection por nombres de columna
-        // clinic_id/record_id se excluyen: no deben ser modificables por el cliente (aislamiento de tenant/expediente)
-        const safeUpTreat = Object.fromEntries(Object.entries(upTreatData).filter(([k]) => /^\w+$/.test(k) && k !== 'clinic_id' && k !== 'record_id'));
-        if (safeUpTreat.treatment_mode && !TREATMENT_MODES.has(safeUpTreat.treatment_mode)) {
+        const safeUpTreat = Object.fromEntries(Object.entries(upTreatData).filter(([key]) => TREATMENT_WRITE_FIELDS.has(key)));
+        if (safeUpTreat.treatment_mode && !TREATMENT_MODES.has(safeUpTreat.treatment_mode))
           return res.status(400).json({ error: 'treatment_mode inválido' });
-        }
-        if (safeUpTreat.package_id) {
-          const curTreat = await pool.query('SELECT record_id FROM treatments WHERE id = $1', [upTreatId]);
-          const pkgCheck = await pool.query('SELECT 1 FROM treatment_packages WHERE id = $1 AND record_id = $2 AND clinic_id = $3', [safeUpTreat.package_id, curTreat.rows[0]?.record_id, effectiveClinicId]);
-          if (pkgCheck.rowCount === 0) return res.status(400).json({ error: 'package_id inválido para este expediente' });
+        let financePosting;
+        if (Object.hasOwn(safeUpTreat, 'cost')) {
+          try {
+            safeUpTreat.cost = normalizeMoney(safeUpTreat.cost, 'Costo');
+          } catch (validationError) {
+            return res.status(400).json({ error: validationError.message });
+          }
         }
         if (safeUpTreat.parameters && typeof safeUpTreat.parameters === 'object') {
           safeUpTreat.parameters = JSON.stringify(safeUpTreat.parameters);
@@ -2627,13 +2912,114 @@ export default async function handler(req, res) {
         if (safeUpTreat.area_marker && typeof safeUpTreat.area_marker === 'object') {
           safeUpTreat.area_marker = JSON.stringify(safeUpTreat.area_marker);
         }
-        const upTFields = Object.keys(safeUpTreat);
-        const upTValues = Object.values(safeUpTreat);
-        if (upTFields.length > 0) {
-          const upTSet = upTFields.map((f, i) => `${f} = $${i + 2}`).join(', ');
-          await pool.query(`UPDATE treatments SET ${upTSet} WHERE id = $1`, [upTreatId, ...upTValues]);
+        try {
+          await client.query('BEGIN');
+          const currentResult = await client.query('SELECT * FROM treatments WHERE id = $1 FOR UPDATE', [upTreatId]);
+          const currentTreatment = currentResult.rows[0];
+          const mergedTreatment = { ...currentTreatment, ...safeUpTreat };
+          const recordId = currentTreatment?.record_id;
+          const consultationId = Number(mergedTreatment.consultation_id);
+          if (!Number.isSafeInteger(consultationId) || consultationId <= 0) throw new Error('consultation_id válido es requerido');
+          if (!TREATMENT_MODES.has(mergedTreatment.treatment_mode)) throw new Error('treatment_mode inválido');
+          mergedTreatment.cost = normalizeMoney(mergedTreatment.cost || 0, 'Costo');
+          financePosting = normalizeFinancePosting(rawFinancePosting, mergedTreatment.cost);
+          await assertConsultationBelongsToRecord(client, consultationId, recordId, effectiveClinicId);
+          const postedResult = await client.query(
+            `SELECT id, idempotency_key FROM financial_records
+             WHERE clinic_id = $1 AND source_module = 'treatments'
+               AND source_type = 'treatment_session' AND source_id = $2`,
+            [effectiveClinicId, upTreatId]
+          );
+          if (postedResult.rowCount) {
+            const immutableChanged = Number(mergedTreatment.cost) !== Number(currentTreatment.cost)
+              || Number(mergedTreatment.consultation_id) !== Number(currentTreatment.consultation_id)
+              || Number(mergedTreatment.package_id || 0) !== Number(currentTreatment.package_id || 0)
+              || String(mergedTreatment.date || '').slice(0, 10) !== String(currentTreatment.date || '').slice(0, 10)
+              || String(mergedTreatment.procedure_name || '') !== String(currentTreatment.procedure_name || '');
+            if (immutableChanged) {
+              const error = new Error('El cobro ya fue registrado; costo, fecha, consulta, paquete y procedimiento no pueden modificarse sin un ajuste financiero');
+              error.code = 'POSTED_SOURCE_LOCKED';
+              throw error;
+            }
+          }
+          if (financePosting) {
+            await assertTreatmentFinancePermission(client, await getSessionUserOnce(), effectiveClinicId);
+            const existing = await findIdempotentTreatmentPosting(client, {
+              clinicId: effectiveClinicId,
+              idempotencyKey: financePosting.idempotencyKey,
+              sourceType: 'treatment_session',
+              recordId,
+              consultationId,
+              sourceId: Number(upTreatId),
+              posting: financePosting,
+            });
+            if (existing) financePosting = null;
+          }
+          let treatmentPackage = null;
+          if (mergedTreatment.package_id) {
+            treatmentPackage = await assertPackagePaymentWithinBalance(client, {
+              packageId: mergedTreatment.package_id,
+              recordId,
+              consultationId,
+              clinicId: effectiveClinicId,
+              treatmentMode: mergedTreatment.treatment_mode,
+              amount: mergedTreatment.cost,
+              excludeTreatmentId: Number(upTreatId),
+            });
+          }
+          const upTFields = Object.keys(safeUpTreat);
+          const upTValues = Object.values(safeUpTreat);
+          if (upTFields.length > 0) {
+            const upTSet = upTFields.map((field, index) => `${field} = $${index + 2}`).join(', ');
+            await client.query(`UPDATE treatments SET ${upTSet} WHERE id = $1`, [upTreatId, ...upTValues]);
+          }
+          if (financePosting) {
+            const packageName = treatmentPackage?.name;
+            await createTreatmentFinancePosting(client, {
+              posting: financePosting,
+              clinicId: effectiveClinicId,
+              sessionUser: await getSessionUserOnce(),
+              sourceType: 'treatment_session',
+              sourceId: Number(upTreatId),
+              packageId: mergedTreatment.package_id || null,
+              recordId,
+              consultationId,
+              date: mergedTreatment.date,
+              description: packageName
+                ? `Paquete ${packageName} · sesión ${mergedTreatment.procedure_name}`
+                : `Sesión individual · ${mergedTreatment.procedure_name}`,
+            });
+          }
+          await client.query('COMMIT');
+          return res.status(200).json({ success: true, id: Number(upTreatId) });
+        } catch (error) {
+          await client.query('ROLLBACK').catch(() => {});
+          if (error.code === '23505' && rawFinancePosting?.idempotency_key) {
+            try {
+              const current = await client.query('SELECT record_id, consultation_id FROM treatments WHERE id = $1', [upTreatId]);
+              const existing = await findIdempotentTreatmentPosting(client, {
+                clinicId: effectiveClinicId,
+                idempotencyKey: rawFinancePosting.idempotency_key,
+                sourceType: 'treatment_session',
+                recordId: current.rows[0]?.record_id,
+                consultationId: current.rows[0]?.consultation_id,
+                sourceId: Number(upTreatId),
+                posting: financePosting,
+              });
+              if (existing) return res.status(200).json({ success: true, id: Number(upTreatId) });
+            } catch (idempotencyError) {
+              return res.status(409).json({ error: idempotencyError.message });
+            }
+          }
+          if (error.code === 'FINANCE_FORBIDDEN') return res.status(403).json({ error: error.message });
+          if (['IDEMPOTENCY_CONFLICT', 'POSTED_SOURCE_LOCKED'].includes(error.code)) {
+            return res.status(409).json({ error: error.message });
+          }
+          if (error.message.includes('consulta') || error.message.includes('package_id') || error.message.includes('abono') || error.message.includes('Finanzas')) {
+            return res.status(400).json({ error: error.message });
+          }
+          throw error;
         }
-        return res.status(200).json({ success: true });
       }
 
       case 'updateSchema':
@@ -2647,57 +3033,192 @@ export default async function handler(req, res) {
 
       case 'deleteTreatment': {
         const { id: delTreatId } = req.query;
-        if (!(await ownedByClinic(pool, 'treatments', delTreatId, effectiveClinicId)))
-          return res.status(403).json({ error: 'Sin permiso' });
-        await pool.query('DELETE FROM treatments WHERE id = $1', [delTreatId]);
-        return res.status(200).json({ success: true });
+        try {
+          await client.query('BEGIN');
+          const treatment = await client.query(
+            'SELECT id FROM treatments WHERE id = $1 AND clinic_id = $2 FOR UPDATE',
+            [delTreatId, effectiveClinicId]
+          );
+          if (treatment.rowCount === 0) {
+            await client.query('ROLLBACK');
+            return res.status(403).json({ error: 'Sin permiso' });
+          }
+          const postedTreatment = await client.query(
+            `SELECT 1 FROM financial_records
+             WHERE clinic_id = $1 AND source_module = 'treatments'
+               AND source_type = 'treatment_session' AND source_id = $2`,
+            [effectiveClinicId, delTreatId]
+          );
+          if (postedTreatment.rowCount) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: 'No se puede eliminar una sesión con un cobro registrado en Finanzas.' });
+          }
+          await client.query('DELETE FROM treatments WHERE id = $1', [delTreatId]);
+          await client.query('COMMIT');
+          return res.status(200).json({ success: true });
+        } catch (error) {
+          await client.query('ROLLBACK').catch(() => {});
+          throw error;
+        }
       }
 
       // --- PAQUETES DE TRATAMIENTO ---
 
       case 'createPackage': {
-        const { record_id: pkgRecordId, consultation_id: pkgConsultId, treatment_mode: pkgMode, name: pkgName, total_cost: pkgCost, estimated_sessions: pkgSessions, initial_payment: pkgInitial } = body;
-        if (!pkgRecordId || !pkgName?.trim() || !TREATMENT_MODES.has(pkgMode)) {
-          return res.status(400).json({ error: 'record_id, name y treatment_mode (facial/corporal/capilar) son requeridos' });
+        const {
+          record_id: pkgRecordId, consultation_id: rawPkgConsultId, treatment_mode: pkgMode,
+          name: pkgName, total_cost: rawPkgCost, estimated_sessions: rawPkgSessions,
+          initial_payment: rawPkgInitial, finance_posting: rawFinancePosting,
+        } = body;
+        const pkgConsultId = Number(rawPkgConsultId);
+        const pkgSessions = Number(rawPkgSessions);
+        if (!pkgRecordId || !pkgName?.trim() || !TREATMENT_MODES.has(pkgMode) || !Number.isSafeInteger(pkgConsultId) || pkgConsultId <= 0) {
+          return res.status(400).json({ error: 'Expediente, consulta, nombre y modo de tratamiento son requeridos' });
         }
-        const newPkg = await pool.query(
-          `INSERT INTO treatment_packages (record_id, clinic_id, consultation_id, treatment_mode, name, total_cost, estimated_sessions, initial_payment)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-          [pkgRecordId, effectiveClinicId, pkgConsultId || null, pkgMode, pkgName.trim(), Number(pkgCost) || 0, Math.max(1, parseInt(pkgSessions) || 1), Number(pkgInitial) || 0]
-        );
-        await logAudit(pool, { recordId: pkgRecordId, sessionUser: await getSessionUserOnce(), actionType: 'create', module: 'treatment_package', summary: `Creó paquete: ${pkgName.trim()}` });
-        return res.status(201).json(newPkg.rows[0]);
+        if (!Number.isSafeInteger(pkgSessions) || pkgSessions < 1 || pkgSessions > 100) {
+          return res.status(400).json({ error: 'Las sesiones estimadas deben estar entre 1 y 100' });
+        }
+        let pkgCost;
+        let pkgInitial;
+        let financePosting;
+        try {
+          pkgCost = normalizeMoney(rawPkgCost || 0, 'Costo total');
+          pkgInitial = normalizeMoney(rawPkgInitial || 0, 'Abono inicial');
+          if (pkgInitial > pkgCost) throw new Error('El abono inicial no puede superar el costo total');
+          financePosting = normalizeFinancePosting(rawFinancePosting, pkgInitial);
+        } catch (validationError) {
+          return res.status(400).json({ error: validationError.message });
+        }
+        try {
+          await client.query('BEGIN');
+          await assertConsultationBelongsToRecord(client, pkgConsultId, pkgRecordId, effectiveClinicId);
+          if (financePosting) {
+            await assertTreatmentFinancePermission(client, await getSessionUserOnce(), effectiveClinicId);
+            const existing = await findIdempotentTreatmentPosting(client, {
+              clinicId: effectiveClinicId,
+              idempotencyKey: financePosting.idempotencyKey,
+              sourceType: 'treatment_package_initial',
+              recordId: pkgRecordId,
+              consultationId: pkgConsultId,
+              posting: financePosting,
+            });
+            if (existing) {
+              const existingPackage = await client.query('SELECT * FROM treatment_packages WHERE id = $1', [existing.source_id]);
+              await client.query('COMMIT');
+              return res.status(200).json(existingPackage.rows[0]);
+            }
+          }
+          const newPkg = await client.query(
+            `INSERT INTO treatment_packages (record_id, clinic_id, consultation_id, treatment_mode, name, total_cost, estimated_sessions, initial_payment)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+            [pkgRecordId, effectiveClinicId, pkgConsultId, pkgMode, pkgName.trim(), pkgCost, pkgSessions, pkgInitial]
+          );
+          const treatmentPackage = newPkg.rows[0];
+          if (financePosting) {
+            await createTreatmentFinancePosting(client, {
+              posting: financePosting,
+              clinicId: effectiveClinicId,
+              sessionUser: await getSessionUserOnce(),
+              sourceType: 'treatment_package_initial',
+              sourceId: treatmentPackage.id,
+              packageId: treatmentPackage.id,
+              recordId: pkgRecordId,
+              consultationId: pkgConsultId,
+              date: treatmentPackage.created_at,
+              description: `Paquete ${treatmentPackage.name} · abono inicial`,
+            });
+          }
+          await logAudit(client, { recordId: pkgRecordId, sessionUser: await getSessionUserOnce(), actionType: 'create', module: 'treatment_package', summary: `Creó paquete: ${pkgName.trim()}` });
+          await client.query('COMMIT');
+          return res.status(201).json(treatmentPackage);
+        } catch (error) {
+          await client.query('ROLLBACK').catch(() => {});
+          if (error.code === '23505' && financePosting) {
+            try {
+              const existing = await findIdempotentTreatmentPosting(client, {
+                clinicId: effectiveClinicId,
+                idempotencyKey: financePosting.idempotencyKey,
+                sourceType: 'treatment_package_initial',
+                recordId: pkgRecordId,
+                consultationId: pkgConsultId,
+                posting: financePosting,
+              });
+              if (existing) {
+                const existingPackage = await client.query('SELECT * FROM treatment_packages WHERE id = $1', [existing.source_id]);
+                return res.status(200).json(existingPackage.rows[0]);
+              }
+            } catch (idempotencyError) {
+              return res.status(409).json({ error: idempotencyError.message });
+            }
+          }
+          if (error.code === 'FINANCE_FORBIDDEN') return res.status(403).json({ error: error.message });
+          if (error.code === 'IDEMPOTENCY_CONFLICT') return res.status(409).json({ error: error.message });
+          if (error.message.includes('consulta') || error.message.includes('Expediente') || error.message.includes('Finanzas')) {
+            return res.status(400).json({ error: error.message });
+          }
+          throw error;
+        }
       }
 
       case 'listPackagesByRecord': {
-        const { record_id: lpRecordId, treatment_mode: lpMode } = req.query;
-        if (!lpRecordId) return res.status(400).json({ error: 'record_id required' });
-        const lpParams = [lpRecordId];
-        let lpModeFilter = '';
-        if (lpMode && TREATMENT_MODES.has(lpMode)) {
-          lpParams.push(lpMode);
-          lpModeFilter = `AND tp.treatment_mode = $${lpParams.length}`;
+        const { record_id: lpRecordId, consultation_id: rawLpConsultId, treatment_mode: lpMode } = req.query;
+        const lpConsultId = Number(rawLpConsultId);
+        if (!lpRecordId || !Number.isSafeInteger(lpConsultId) || lpConsultId <= 0 || !TREATMENT_MODES.has(lpMode)) {
+          return res.status(400).json({ error: 'record_id, consultation_id y treatment_mode válidos son requeridos' });
+        }
+        const consultationCheck = await pool.query(
+          'SELECT 1 FROM consultations WHERE id = $1 AND record_id = $2 AND clinic_id = $3',
+          [lpConsultId, lpRecordId, effectiveClinicId]
+        );
+        if (consultationCheck.rowCount === 0) {
+          return res.status(400).json({ error: 'La consulta no pertenece a este expediente' });
         }
         const pkgs = await pool.query(
           `SELECT tp.*,
              COALESCE(SUM(t.cost), 0)::float AS sessions_paid,
              COUNT(t.id)::int AS sessions_count
            FROM treatment_packages tp
-           LEFT JOIN treatments t ON t.package_id = tp.id AND t.record_id = tp.record_id
-           WHERE tp.record_id = $1 ${lpModeFilter}
+           LEFT JOIN treatments t ON t.package_id = tp.id
+             AND t.record_id = tp.record_id
+             AND t.consultation_id = tp.consultation_id
+           WHERE tp.record_id = $1
+             AND tp.consultation_id = $2
+             AND tp.treatment_mode = $3
            GROUP BY tp.id
            ORDER BY tp.created_at DESC`,
-          lpParams
+          [lpRecordId, lpConsultId, lpMode]
         );
         return res.status(200).json(pkgs.rows);
       }
 
       case 'deletePackage': {
         const { id: delPkgId } = req.query;
-        if (!(await ownedByClinic(pool, 'treatment_packages', delPkgId, effectiveClinicId)))
-          return res.status(403).json({ error: 'Sin permiso' });
-        await pool.query('DELETE FROM treatment_packages WHERE id = $1', [delPkgId]);
-        return res.status(200).json({ success: true });
+        try {
+          await client.query('BEGIN');
+          const treatmentPackage = await client.query(
+            'SELECT id FROM treatment_packages WHERE id = $1 AND clinic_id = $2 FOR UPDATE',
+            [delPkgId, effectiveClinicId]
+          );
+          if (treatmentPackage.rowCount === 0) {
+            await client.query('ROLLBACK');
+            return res.status(403).json({ error: 'Sin permiso' });
+          }
+          const postedPackage = await client.query(
+            `SELECT 1 FROM financial_records
+             WHERE clinic_id = $1 AND source_module = 'treatments' AND source_package_id = $2`,
+            [effectiveClinicId, delPkgId]
+          );
+          if (postedPackage.rowCount) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: 'No se puede eliminar un paquete con cobros registrados en Finanzas.' });
+          }
+          await client.query('DELETE FROM treatment_packages WHERE id = $1', [delPkgId]);
+          await client.query('COMMIT');
+          return res.status(200).json({ success: true });
+        } catch (error) {
+          await client.query('ROLLBACK').catch(() => {});
+          throw error;
+        }
       }
 
       // --- INYECTABLES ---

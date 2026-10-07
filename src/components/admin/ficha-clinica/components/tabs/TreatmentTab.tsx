@@ -42,7 +42,7 @@ const MODE_META = {
  * componente correspondiente de cada modo. El historial previo a esta funcionalidad
  * pertenece íntegramente al modo Facial (treatment_mode default en la base de datos).
  */
-export default function TreatmentTab({ recordId, treatments, consultationId, consultations = [], onSave }: TreatmentTabProps) {
+export default function TreatmentTab({ recordId, treatments, patientName, consultationId, consultations = [], onSave }: TreatmentTabProps) {
   const [activeMode, setActiveMode] = useState<TreatmentMode>('facial');
 
   const ModeComponent = {
@@ -94,6 +94,7 @@ export default function TreatmentTab({ recordId, treatments, consultationId, con
       <ModeComponent
         recordId={recordId}
         treatments={treatments}
+        patientName={patientName}
         consultationId={consultationId}
         consultations={consultations}
         onSave={onSave}

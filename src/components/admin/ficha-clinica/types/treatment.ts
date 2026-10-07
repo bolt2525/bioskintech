@@ -23,6 +23,20 @@ export interface Treatment {
   notes: string;
 }
 
+export interface FinancePostingOptions {
+  enabled: boolean;
+  includes_iva: boolean;
+  invoice_number: string;
+  idempotency_key: string;
+}
+
+export const createFinancePostingOptions = (): FinancePostingOptions => ({
+  enabled: false,
+  includes_iva: false,
+  invoice_number: '',
+  idempotency_key: crypto.randomUUID(),
+});
+
 /** Normaliza area_marker (objeto único legado o arreglo) a un arreglo de marcadores */
 export const getAreaMarkers = (t: Pick<Treatment, 'area_marker'>): Marker3D[] => {
   const m = t.area_marker;

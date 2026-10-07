@@ -1,5 +1,8 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-06 Tratamientos integrados con Finanzas.
+- ✅ 2026-10-06 Paquetes aislados por consulta.
+- ✅ 2026-10-06 Presets de marcación retirados.
 - ✅ 2026-10-06 Facial sin 3D; zonas sincronizadas.
 - ✅ 2026-10-06 Tratamientos premium en tres zonas.
 - ✅ 2026-10-06 Evaluaciones y marcaciones visuales.

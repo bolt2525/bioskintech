@@ -5,6 +5,7 @@ import { Plus, Calendar, DollarSign, Clock, Save, Trash2, Copy, Check, AlertCirc
 import CrossConsultHistoryModal, { type ConsultationRef } from '../CrossConsultHistoryModal';
 import TreatmentParametersModal, { type TreatmentParameters, formatParametersAsText, upsertNotesBlock, removeNotesBlock } from './TreatmentParametersModal';
 import TreatmentPackageModal from './TreatmentPackageModal';
+import TreatmentFinanceOptions from './TreatmentFinanceOptions';
 import ClinicalDataModal from './ClinicalDataModal';
 import Clinical3DViewer from '../Clinical3DViewer';
 import type { Marker3D, MarkerType } from '../Clinical3DViewer';
@@ -17,6 +18,7 @@ import { Dialog } from '../../../../ui/Dialog';
 import { useTreatmentGrouping } from '../../hooks/useTreatmentGrouping';
 import {
   type Treatment, type TreatmentMode, type TreatmentPackage,
+  createFinancePostingOptions, type FinancePostingOptions,
   type PostCareData, type AnthropometricsData, type ScalpAssessmentData,
   getPackageDebt, getPackagePaidTotal, getAreaMarkers, RESERVED_PARAM_KEYS,
 } from '../../types/treatment';
@@ -52,29 +54,6 @@ const FORM_COPY: Record<TreatmentMode, { procedure: string; equipment: string; a
   facial: { procedure: 'Ej: Láser fraccionado facial', equipment: 'Ej: Fotona 4D, Morpheus8...', area: 'Ej: Tercio medio facial' },
   corporal: { procedure: 'Ej: Criolipólisis', equipment: 'Ej: CoolSculpting, VelaShape...', area: 'Ej: Abdomen inferior y flancos' },
   capilar: { procedure: 'Ej: PRP capilar', equipment: 'Ej: Kit PRP, Dermapen capilar...', area: 'Ej: Coronilla y línea frontal' },
-};
-
-interface MarkingPreset {
-  id: string;
-  title: string;
-  procedure: string;
-  markerType: MarkerType;
-  zones: string[];
-  description: string;
-}
-
-const MARKING_PRESETS_BY_MODE: Record<TreatmentMode, MarkingPreset[]> = {
-  facial: [],
-  corporal: [
-    { id: 'body-cryo', title: 'Criolipólisis', procedure: 'Criolipólisis', markerType: 'Zonal', zones: ['Abdomen', 'Cintura'], description: 'Prepara áreas amplias para documentar aplicadores y cobertura corporal.' },
-    { id: 'body-meso', title: 'Mesoterapia', procedure: 'Mesoterapia', markerType: 'Puntual', zones: ['Abdomen', 'Muslos'], description: 'Activa marcación puntual para registrar sitios seriados de aplicación.' },
-    { id: 'body-drainage', title: 'Drenaje', procedure: 'Drenaje Linfático', markerType: 'Zonal', zones: ['Piernas', 'Pantorrillas'], description: 'Sugiere cobertura regional para seguimiento de drenaje o presoterapia.' },
-  ],
-  capilar: [
-    { id: 'hair-prp', title: 'PRP', procedure: 'Plasma rico en plaquetas (PRP) capilar', markerType: 'Puntual', zones: ['Coronilla', 'Vértex', 'Entradas'], description: 'Prepara puntos distribuidos para documentar el patrón de aplicación de PRP.' },
-    { id: 'hair-meso', title: 'Mesoterapia', procedure: 'Mesoterapia capilar', markerType: 'Puntual', zones: ['Línea de implantación frontal', 'Temporal derecho', 'Temporal izquierdo'], description: 'Activa puntos para registrar aplicaciones en línea frontal y regiones temporales.' },
-    { id: 'hair-lllt', title: 'LLLT', procedure: 'Láser de bajo nivel (LLLT)', markerType: 'Zonal', zones: ['Difuso (toda la cabeza)'], description: 'Activa una zona amplia para documentar cobertura lumínica difusa.' },
-  ],
 };
 
 /** Resumen corto (badge) de los datos clínicos del modo, para mostrar en las tarjetas del historial */
@@ -279,7 +258,7 @@ interface TreatmentModeViewProps {
  * Contiene el formulario de registro, el visor 3D de marcación anatómica y el historial
  * con gestión de Paquetes vs Sesiones Independientes.
  */
-export default function TreatmentModeView({ mode, modelUrl, recordId, treatments, consultationId, consultations = [], onSave }: TreatmentModeViewProps) {
+export default function TreatmentModeView({ mode, modelUrl, recordId, treatments, patientName, consultationId, consultations = [], onSave }: TreatmentModeViewProps) {
   const { hasFeature } = useAuth();
   const [currentTreatment, setCurrentTreatment] = useState<Treatment>(makeEmptyTreatment(mode));
   const [dateLocked, setDateLocked] = useState(false);
@@ -295,12 +274,12 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
   // Zona activa seleccionada en los chips, aplicada a la próxima marcación que se coloque en el visor 3D
   const [activeZoneChip, setActiveZoneChip] = useState<string | null>(null);
   const [markerType, setMarkerType] = useState<MarkerType>('Puntual');
-  const [activePresetId, setActivePresetId] = useState<string | null>(null);
   const [customZone, setCustomZone] = useState('');
   const [duplicating, setDuplicating] = useState(false);
   const [highlightedId, setHighlightedId] = useState<number | null>(null);
   // ponytail: string state to allow empty field and comma-as-decimal-separator
   const [costInput, setCostInput] = useState('');
+  const [financePosting, setFinancePosting] = useState<FinancePostingOptions>(createFinancePostingOptions);
   const messageRef = useRef<HTMLDivElement>(null);
   const treatedZones = useMemo(() => parseTreatedZones(currentTreatment.area_treated), [currentTreatment.area_treated]);
   const treatedZoneKeys = useMemo(
@@ -315,12 +294,22 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
 
   const loadPackages = useCallback(async () => {
     try {
-      const response = await recordsFetch(`/api/records?action=listPackagesByRecord&record_id=${recordId}&treatment_mode=${mode}`);
+      if (!consultationId) {
+        setPackages([]);
+        return;
+      }
+      const params = new URLSearchParams({
+        action: 'listPackagesByRecord',
+        record_id: String(recordId),
+        consultation_id: String(consultationId),
+        treatment_mode: mode,
+      });
+      const response = await recordsFetch(`/api/records?${params.toString()}`);
       if (response.ok) setPackages(await response.json());
     } catch (error) {
       console.error('Error loading treatment packages:', error);
     }
-  }, [recordId, mode]);
+  }, [consultationId, mode, recordId]);
 
   useEffect(() => { loadPackages(); }, [loadPackages]);
 
@@ -356,6 +345,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
     setDateLocked(false);
     setMessage(null);
     setActiveZoneChip(null);
+    setFinancePosting(createFinancePostingOptions());
   };
 
   const handleSelect = (treatment: Treatment) => {
@@ -364,6 +354,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
     setDateLocked(true);
     setMessage(null);
     setActiveZoneChip(null);
+    setFinancePosting(createFinancePostingOptions());
   };
 
   const togglePackageExpand = (id: number) => setExpandedPackages(prev => {
@@ -377,10 +368,15 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
     setMessage(null);
     try {
       const action = currentTreatment.id ? 'updateTreatment' : 'addTreatment';
+      const shouldPostToFinance = financePosting.enabled && Number(currentTreatment.cost) > 0;
       const body = {
         record_id: recordId,
         ...currentTreatment,
-        ...(consultationId ? { consultation_id: consultationId } : {})
+        ...(consultationId ? { consultation_id: consultationId } : {}),
+        finance_posting: {
+          ...financePosting,
+          enabled: shouldPostToFinance,
+        },
       };
 
       const response = await recordsFetch(`/api/records?action=${action}`, {
@@ -404,7 +400,12 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
         setHighlightedId(savedId);
         setTimeout(() => setHighlightedId(null), 2500);
       }
-      setMessage({ type: 'success', text: 'Tratamiento guardado correctamente' });
+      setMessage({
+        type: 'success',
+        text: shouldPostToFinance
+          ? 'Tratamiento guardado y cobro registrado en Finanzas'
+          : 'Tratamiento guardado correctamente',
+      });
     } catch (error) {
       console.error('Error saving treatment:', error);
       setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Error al guardar el tratamiento' });
@@ -508,21 +509,9 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
     setCurrentTreatment(prev => ({ ...prev, area_marker: getAreaMarkers(prev).filter(m => m.id !== markerId) }));
   };
 
-  const handleApplyMarkingPreset = (preset: MarkingPreset) => {
-    setActivePresetId(preset.id);
-    setMarkerType(preset.markerType);
-    setActiveZoneChip(preset.zones[0]);
-    setCurrentTreatment(prev => ({
-      ...prev,
-      procedure_name: preset.procedure,
-      area_treated: preset.zones.join(', '),
-    }));
-  };
-
   const handleUseCustomZone = () => {
     const zone = customZone.trim();
     if (!zone) return;
-    setActivePresetId(null);
     setActiveZoneChip(zone);
     setCurrentTreatment(prev => ({
       ...prev,
@@ -538,7 +527,6 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
       ? treatedZones.filter(item => item.toLocaleLowerCase() !== zone.toLocaleLowerCase())
       : [...treatedZones, zone];
 
-    setActivePresetId(null);
     setActiveZoneChip(prev => wasSelected && prev === zone ? remainingZones.at(-1) ?? null : wasSelected ? prev : zone);
     setCurrentTreatment(prev => ({ ...prev, area_treated: toggleTreatedZone(prev.area_treated, zone) }));
   };
@@ -867,7 +855,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                     <Tooltip key={type} content={detail} position="top" className="w-full">
                       <button
                         type="button"
-                        onClick={() => { setMarkerType(type); setActivePresetId(null); }}
+                        onClick={() => setMarkerType(type)}
                         aria-pressed={markerType === type}
                         className={`admin-focus-ring relative flex w-full items-center gap-2 rounded-xl p-2.5 text-left transition-[border-color,background-color,box-shadow,transform] ${
                           markerType === type
@@ -895,36 +883,6 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                     <Undo2 className="h-4 w-4" aria-hidden="true" /> Deshacer
                   </button>
                 </div>
-                <div className="rounded-xl border border-gray-100 bg-gray-50/70 p-3">
-                  <div className="mb-2 flex items-center gap-2">
-                    <Sparkles className="h-4 w-4 text-gold-ink" aria-hidden="true" />
-                    <span className="text-xs font-semibold text-gray-700">Presets por procedimiento</span>
-                    <span className="text-[9px] text-gray-400">Preparan herramienta, procedimiento y zonas sugeridas</span>
-                  </div>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                    {MARKING_PRESETS_BY_MODE[mode].map(preset => {
-                      const selected = activePresetId === preset.id;
-                      return (
-                        <Tooltip key={preset.id} content={preset.description} position="top" className="w-full">
-                          <button
-                            type="button"
-                            onClick={() => handleApplyMarkingPreset(preset)}
-                            aria-pressed={selected}
-                            className={`admin-focus-ring relative w-full rounded-lg px-3 py-2 text-left transition-[border-color,background-color,box-shadow] ${
-                              selected
-                                ? 'border-2 border-gray-900 bg-gray-900 text-white shadow-md ring-2 ring-gray-300'
-                                : 'border border-gray-200 bg-white text-gray-700 hover:border-gold hover:bg-gold/10'
-                            }`}
-                          >
-                            <span className="block text-xs font-semibold">{preset.title}</span>
-                            <span className={`mt-0.5 block text-[9px] ${selected ? 'text-gray-300' : 'text-gray-400'}`}>{preset.markerType} · {preset.zones.length} zona(s)</span>
-                            {selected ? <CheckCircle2 className="absolute right-2 top-2 h-4 w-4 text-gold" aria-hidden="true" /> : null}
-                          </button>
-                        </Tooltip>
-                      );
-                    })}
-                  </div>
-                </div>
               </>
             ) : null}
             <div className="flex flex-wrap gap-1.5">
@@ -937,9 +895,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                   className={`admin-focus-ring rounded-full px-2.5 py-1 text-[11px] font-medium transition-[color,background-color,border-color,box-shadow] ${
                     treatedZoneKeys.has(zone.toLocaleLowerCase())
                       ? 'border-2 border-gray-900 bg-gray-900 text-white shadow-sm ring-2 ring-gray-300'
-                      : activePresetId && MARKING_PRESETS_BY_MODE[mode].find(p => p.id === activePresetId)?.zones.includes(zone)
-                        ? 'border border-gold bg-gold/10 text-gold-ink'
-                        : 'border border-gray-200 text-gray-600 hover:border-gold hover:bg-gold/10'
+                      : 'border border-gray-200 text-gray-600 hover:border-gold hover:bg-gold/10'
                   }`}
                 >
                   {zone}
@@ -1149,7 +1105,6 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                 className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
                 value={currentTreatment.area_treated}
                 onChange={e => {
-                  setActivePresetId(null);
                   setActiveZoneChip(null);
                   setCurrentTreatment({ ...currentTreatment, area_treated: e.target.value });
                 }}
@@ -1190,6 +1145,12 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                   />
                 </div>
               </div>
+              <TreatmentFinanceOptions
+                amount={Number(currentTreatment.cost) || 0}
+                patientName={patientName}
+                value={financePosting}
+                onChange={setFinancePosting}
+              />
             </div>
           </div>
 
@@ -1288,11 +1249,18 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
       <TreatmentPackageModal
         recordId={recordId}
         consultationId={consultationId}
+        patientName={patientName}
         mode={mode}
         onClose={() => setPackageModalOpen(false)}
         onCreated={(pkg) => {
           setPackages(prev => [pkg, ...prev]);
           setCurrentTreatment(prev => ({ ...prev, package_id: pkg.id ?? null }));
+          setMessage({
+            type: 'success',
+            text: Number(pkg.initial_payment) > 0
+              ? 'Paquete creado; el abono se procesó según la opción seleccionada'
+              : 'Paquete creado correctamente',
+          });
           setPackageModalOpen(false);
         }}
       />

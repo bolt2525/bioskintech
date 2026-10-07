@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import recordsFetch from "../utils/recordsFetch";
@@ -7,7 +7,7 @@ import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
 import { 
   Calendar, DollarSign, TrendingUp, TrendingDown, 
   Trash2, Edit2, Check, X, FileText, PieChart, BarChart2, Search, Filter, Info, Plus,
-  Download, ChevronDown, ChevronUp, Package, Calculator, Mail, ArrowLeft
+  Download, ChevronDown, ChevronUp, Package, Calculator, Mail, ArrowLeft, BadgeDollarSign, AlertTriangle
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer 
@@ -25,6 +25,13 @@ interface FinanceRecord {
   tax: number | string;
   total: number | string;
   registered_by?: string;
+  tax_rate?: number | string;
+  source_module?: string;
+  source_type?: string;
+  source_id?: number;
+  source_package_id?: number;
+  source_record_id?: number;
+  source_consultation_id?: number;
 }
 
 interface FinanceUser {
@@ -230,6 +237,24 @@ const AdminFinance = () => {
     
     return searchMatch && typeMatch;
   });
+  const treatmentFinanceGroups = useMemo(() => {
+    const groups = new Map<string, { key: string; label: string; total: number; count: number; packageId?: number }>();
+    for (const record of filteredRecords) {
+      if (record.source_module !== 'treatments') continue;
+      const key = record.source_package_id ? `package-${record.source_package_id}` : 'independent';
+      const current = groups.get(key) || {
+        key,
+        label: record.source_package_id ? `Paquete #${record.source_package_id}` : 'Sesiones independientes',
+        total: 0,
+        count: 0,
+        packageId: record.source_package_id,
+      };
+      current.total += parseFloat(String(record.total || 0));
+      current.count += 1;
+      groups.set(key, current);
+    }
+    return Array.from(groups.values()).sort((a, b) => b.total - a.total);
+  }, [filteredRecords]);
 
   const toggleSelection = (id: number) => {
     setSelectedIds(prev => 
@@ -920,6 +945,32 @@ const AdminFinance = () => {
           <MetricCard title="Balance IVA" amount={metrics.totalIVA} icon={PieChart} color={metrics.totalIVA >= 0 ? "orange" : "blue"} currencySymbol={currencySymbol} />
         </div>
 
+        {treatmentFinanceGroups.length > 0 ? (
+          <section className="mb-8 rounded-2xl border border-gold/40 bg-gradient-to-br from-gold/10 to-white p-5 shadow-sm">
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="flex items-center gap-2 font-bold text-gray-900">
+                  <BadgeDollarSign className="h-5 w-5 text-gold-ink" aria-hidden="true" />
+                  Cobros enviados desde Tratamientos
+                </h3>
+                <p className="mt-1 text-xs text-gray-500">Agrupados por paquete para controlar abonos iniciales y pagos por sesión.</p>
+              </div>
+              <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-gold-ink shadow-sm">
+                {treatmentFinanceGroups.reduce((sum, group) => sum + group.count, 0)} movimientos
+              </span>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {treatmentFinanceGroups.map(group => (
+                <article key={group.key} className="rounded-xl border border-white bg-white/90 p-4 shadow-sm">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">{group.label}</p>
+                  <p className="mt-2 text-2xl font-bold tabular-nums text-gray-900">{currencySymbol}{group.total.toFixed(2)}</p>
+                  <p className="mt-1 text-xs text-gray-500">{group.count} cobro{group.count === 1 ? '' : 's'} registrado{group.count === 1 ? '' : 's'}</p>
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
           <div className="bg-white p-6 rounded-2xl shadow-md border border-gray-100">
             <h3 className="text-lg font-bold text-gray-800 mb-6 flex items-center gap-2">
@@ -1018,12 +1069,20 @@ const AdminFinance = () => {
                       <div className="min-w-0">
                         <p className="truncate font-semibold text-gray-900">{record.entity}</p>
                         <p className="truncate text-xs text-gray-500">{record.description || 'Sin descripción'}</p>
+                        {record.source_module === 'treatments' ? (
+                          <span className="mt-1 inline-flex rounded-full bg-gold/15 px-2 py-0.5 text-[10px] font-semibold text-gold-ink">
+                            Tratamientos{record.source_package_id ? ` · Paquete #${record.source_package_id}` : ' · Sesión individual'}
+                          </span>
+                        ) : null}
                       </div>
                       <span className={`shrink-0 rounded-full px-2 py-1 text-xs font-semibold ${record.type === 'ingreso' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>{record.type === 'ingreso' ? 'Ingreso' : 'Egreso'}</span>
                     </div>
                     <div className="mb-3 grid grid-cols-2 gap-3 text-xs text-gray-500">
                       <div><span className="block text-[10px] font-semibold uppercase text-gray-400">Fecha</span>{formatFinanceDate(record.date)}</div>
-                      <div><span className="block text-[10px] font-semibold uppercase text-gray-400">Factura</span>{record.invoice_number || 'S/N'}</div>
+                      <div>
+                        <span className="block text-[10px] font-semibold uppercase text-gray-400">Factura</span>
+                        {record.invoice_number || <span className="inline-flex items-center gap-1 font-semibold text-amber-700"><AlertTriangle className="h-3 w-3" /> Pendiente</span>}
+                      </div>
                     </div>
                     <div className="grid grid-cols-3 rounded-xl bg-gray-50 p-3 text-right">
                       <div><span className="block text-[10px] uppercase text-gray-400">Subtotal</span><span className="text-sm tabular-nums text-gray-600">{currencySymbol}{parseFloat(String(record.subtotal || 0)).toFixed(2)}</span></div>
@@ -1107,14 +1166,19 @@ const AdminFinance = () => {
                             {formatFinanceDate(record.date)}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                            <div className="flex items-center gap-2">
-                              <FileText size={14} className="text-gray-400" />
-                              {record.invoice_number || 'S/N'}
+                            <div className={`flex items-center gap-2 ${record.invoice_number ? '' : 'text-amber-700'}`}>
+                              {record.invoice_number ? <FileText size={14} className="text-gray-400" /> : <AlertTriangle size={14} />}
+                              {record.invoice_number || 'Pendiente'}
                             </div>
                           </td>
                           <td className="px-6 py-4 text-sm text-gray-600 max-w-xs group-hover:bg-white transition-colors relative">
                              <div className="font-semibold text-gray-800 truncate">{record.entity}</div>
                              <div className="text-xs text-gray-400 truncate">{record.description}</div>
+                             {record.source_module === 'treatments' ? (
+                               <span className="mt-1 inline-flex rounded-full bg-gold/15 px-2 py-0.5 text-[10px] font-semibold text-gold-ink">
+                                 Tratamientos{record.source_package_id ? ` · Paquete #${record.source_package_id}` : ' · Sesión individual'}
+                               </span>
+                             ) : null}
                              
                              {/* Asesoría fiscal SRI — solo si hay descripción */}
                              {record.type === 'egreso' && record.description && (

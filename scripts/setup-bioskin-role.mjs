@@ -29,6 +29,7 @@ const TENANT_TABLES = [
   'physical_exams',
   'diagnoses',
   'treatments',
+  'treatment_packages',
   'prescriptions',
   'injectables',
   'consent_forms',

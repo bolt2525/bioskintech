@@ -1,6 +1,55 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+test('treatment finance breakdown keeps the charged total and only extracts selected IVA', async () => {
+  const { calculateTreatmentFinanceBreakdown, isCompatibleTreatmentPosting } = await import('../api/records.js');
+  assert.deepEqual(calculateTreatmentFinanceBreakdown(115, true), {
+    subtotal: 100,
+    tax: 15,
+    total: 115,
+    taxRate: 15,
+  });
+  assert.deepEqual(calculateTreatmentFinanceBreakdown(115, false), {
+    subtotal: 115,
+    tax: 0,
+    total: 115,
+    taxRate: 0,
+  });
+  assert.throws(() => calculateTreatmentFinanceBreakdown(-1, true), /inválido/);
+
+  const saved = {
+    source_type: 'treatment_session',
+    source_id: 9,
+    source_record_id: 4,
+    source_consultation_id: 7,
+    total: '115.00',
+    tax_rate: '15.00',
+    invoice_number: null,
+  };
+  const identity = {
+    sourceType: 'treatment_session',
+    sourceId: 9,
+    recordId: 4,
+    consultationId: 7,
+  };
+  assert.equal(isCompatibleTreatmentPosting(saved, {
+    ...identity,
+    posting: { total: 115, includesIva: true, invoiceNumber: null },
+  }), true);
+  assert.equal(isCompatibleTreatmentPosting(saved, {
+    ...identity,
+    posting: { total: 100, includesIva: true, invoiceNumber: null },
+  }), false);
+  assert.equal(isCompatibleTreatmentPosting(saved, {
+    ...identity,
+    posting: { total: 115, includesIva: false, invoiceNumber: null },
+  }), false);
+  assert.equal(isCompatibleTreatmentPosting(saved, {
+    ...identity,
+    posting: { total: 115, includesIva: true, invoiceNumber: '001-001-1' },
+  }), false);
+});
+
 test('AI patient context requires the patient to belong to the selected clinic', async () => {
   const { deleteAiConsultation, verifyPatientAccess } = await import('../api/ai-consultation.js');
   const queries = [];

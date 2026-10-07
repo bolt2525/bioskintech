@@ -5,6 +5,7 @@ import type { Treatment } from '../../types/treatment';
 interface TratamientosCorporalProps {
   recordId: number;
   treatments: Treatment[];
+  patientName?: string;
   consultationId?: number;
   consultations?: ConsultationRef[];
   onSave: () => void;
