@@ -29,7 +29,7 @@ const sql = async (strings, ...params) => {
   sqlCalls.push({ statement, params });
   return { rows: statement.includes('FROM admin_sessions s') ? [
     { username: 'master-test', role, clinic_id: null, clinic_user_id: 1, expires_at: '2099-01-01' },
-  ] : statement.includes('SELECT id FROM clinics') ? listedClinics
+  ] : statement.includes('SELECT c.id FROM clinics c') ? listedClinics
     : statement.includes('SELECT clinic_id FROM clinic_users WHERE id=') ? [{ clinic_id: ID }] : [] };
 };
 sql.query = async () => ({ rows: [] });
@@ -194,4 +194,23 @@ test('updateDemoCredentials locks the tenant resolved from the target user and r
     userId: 7, clinicId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', username: 'demo_qa' });
   assert.equal(wrong.code, 400);
   assert.equal(writerCalls.length, before);
+});
+
+test('writer tenant comes from the action field only: setFeature ignores no alias and createUser never uses clinicId', async () => {
+  const OTHER = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+  const start = writerCalls.length;
+  // createUser with only clinicId (not its field) must not lock OTHER.
+  await request('createUser', 'POST', true, { clinicId: OTHER, username: 'qa', password: 'PasswordTest123', role: 'clinic_user' });
+  assert.equal(writerCalls.slice(start).some(c => JSON.stringify(c.params || []).includes(OTHER)), false);
+  const s2 = writerCalls.length;
+  await request('setFeature', 'POST', true, { clinicId: ID, feature: 'backup', enabled: true });
+  assert.ok(writerCalls.slice(s2).some(c => c.statement.includes('pg_advisory_xact_lock_shared') && JSON.stringify(c.params).includes(ID)));
+});
+
+test('initFeatures listing excludes inactive and tombstoned clinics before per-clinic locked recheck', async () => {
+  const start = sqlCalls.length;
+  await request('initFeatures', 'POST');
+  const listing = sqlCalls.slice(start).find(c => c.statement.includes('FROM clinics c'));
+  assert.match(listing.statement, /is_active = true/);
+  assert.match(listing.statement, /_purge/);
 });

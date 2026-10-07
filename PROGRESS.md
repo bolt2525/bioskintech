@@ -1,7 +1,8 @@
 # Progreso de BioSkinTech App
 
 - ✅ 2026-10-07 Purga clínica autorizada, por lotes.
-- ✅ 2026-10-07 Regresión integrada: 199 pruebas aprobadas.
+- ✅ 2026-10-07 Regresión integrada: 203 pruebas aprobadas.
+- ✅ 2026-10-07 Rechazos anuales: notificación inactiva controlada.
 - ✅ 2026-10-07 Purga: escritores concurrentes coordinados.
 - ✅ 2026-10-07 Seguridad: bloqueantes revisados, corregidos.
 - ✅ 2026-10-07 Base de Datos: QA desktop/móvil.

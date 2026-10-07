@@ -18,6 +18,7 @@ let deleteFails = false;
 let deleteHook = null;
 let clinicActive = true;
 let clinicPurging = false;
+const tenantCalls = [];
 const client = {
   query: async (sql, params = []) => sql.includes("SELECT c.is_active,cs.general ? '_purge'")
     ? { rows: [{ is_active: clinicActive, purging: clinicPurging }] }
@@ -30,7 +31,7 @@ mock.module(url('../lib/neon-clinical-db.js'), {
   namedExports: {
     getPool: () => ({ connect: async () => client, query: (...args) => client.query(...args) }),
     getAppPool: () => { throw new Error('No se esperaba appPool'); },
-    withTenantContext: async (_clinicId, fn) => fn(client),
+    withTenantContext: async (_clinicId, fn, options = {}) => { tenantCalls.push(options); return fn(client); },
   },
 });
 mock.module(url('../lib/r2-service.js'), {
@@ -306,4 +307,31 @@ test('Inactive clinic: only the terminal Fail callback is processed; Claim/Part/
     assert.equal((await call('photoBackupWorkerFail', { code: 'LEASE_LOST' })).body.state, 'cancelled');
     assert.equal(updates.length, 1);
   } finally { clinicActive = true; clinicPurging = false; }
+});
+
+test('Inactive reject notification uses only the terminal tenant allowance and is suppressed by a tombstone', async () => {
+  clinicActive = false;
+  auth = { valid: true, id: 1, role: 'master_admin', clinic_id: null };
+  let purgedAtNotify = false;
+  const claims = [];
+  handleQuery = sql => {
+    if (sql.includes("status='REJECTED'") && sql.includes('RETURNING *'))
+      return { rows: [{ id: REQUEST, clinic_id: CLINIC, requester_email: 'qa@example.test' }] };
+    if (sql.includes("FROM clinic_settings") && sql.includes("general ? '_purge'")) return { rows: purgedAtNotify ? [{}] : [] };
+    if (sql.includes("SET status='SENDING'")) { claims.push(sql); return { rows: [] }; }
+    return { rows: [] };
+  };
+  try {
+    tenantCalls.length = 0;
+    const out = res();
+    await handleAnnualPhotoBackup({ ...approveReq(), body: { clinicId: CLINIC, requestId: REQUEST, reason: 'Cierre ficticio' } }, out, 'rejectPhotoBackup');
+    assert.equal(out.code, 200);
+    assert.deepEqual(tenantCalls, [{ lifecycleTerminal: true }]);
+    assert.equal(claims.length, 1);
+    purgedAtNotify = true;
+    const again = res();
+    await handleAnnualPhotoBackup({ ...approveReq(), body: { clinicId: CLINIC, requestId: REQUEST, reason: 'Cierre ficticio' } }, again, 'rejectPhotoBackup');
+    assert.equal(again.code, 409);
+    assert.equal(claims.length, 1);
+  } finally { clinicActive = true; }
 });

@@ -2726,11 +2726,21 @@ async function handleAdminRequest(req, res) {
         .filter(value => value !== undefined && value !== null && value !== '');
       if (new Set(suppliedClinics.map(value => String(value).toLowerCase())).size > 1)
         return res.status(400).json({ error: 'Los identificadores de clínica no coinciden.' });
+      // Explicit per-action tenant source (the same field the action handler consumes); no alias fallback.
+      const tenantSource = {
+        createUser: 'body.clinic_id', generateInvite: 'body.clinic_id', setupClinic: 'body.clinic_id', updateClinicSubscription: 'body.clinic_id', sendSubscriptionWarning: 'body.clinic_id',
+        setFeature: 'body.clinicId', saveClinicSettings: 'body.clinicId', assignConsentTemplate: 'body.clinicId',
+        sendEmailConnectionLink: 'body.clinicId', getClinicSettings: 'query.clinicId|body.clinicId',
+        getFeatures: 'query.clinicId', listUsers: 'query.clinicId', getClinicConsentTemplates: 'query.clinicId',
+        getClinicTemplateAssignments: 'query.clinicId', listDemoUsers: 'query.clinicId',
+      }[action];
+      const fromSource = source => source.split('|').map(path => {
+        const [scope, key] = path.split('.');
+        return (scope === 'body' ? req.body : req.query)?.[key];
+      }).find(value => value !== undefined && value !== null && value !== '');
       writerClinic = user.role === 'master_admin'
-        ? req.body?.clinicId || req.body?.clinic_id || req.query.clinicId || user.clinic_id
+        ? (tenantSource ? fromSource(tenantSource) : null) || user.clinic_id
         : user.clinic_id;
-      if (action === 'createUser' || action === 'updateClinicSubscription' || action === 'sendSubscriptionWarning')
-        writerClinic = user.role === 'master_admin' ? req.body?.clinic_id : user.clinic_id;
       if (['updateUser', 'deleteUser', 'resetPassword', 'sendResetCredentials',
         'setWhatsAppBotEnabled', 'setUserModuleOverride', 'getUserModuleOverrides', 'updateDemoCredentials',
         'oauthStart', 'oauthRevoke', 'getEmailConnectionStatus'].includes(action)) {
@@ -2906,7 +2916,9 @@ async function handleAdminRequest(req, res) {
     }
     if (action === 'initFeatures') {
       if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master_admin' });
-      const clinics = await sql`SELECT id FROM clinics`;
+      // Pre-filter tombstones/inactive; each clinic is re-checked under its lifecycle lock below.
+      const clinics = await sql`SELECT c.id FROM clinics c LEFT JOIN clinic_settings cs ON cs.clinic_id=c.id
+        WHERE c.is_active = true AND NOT coalesce(cs.general ? '_purge', false)`;
       let initialized = 0;
       for (const clinic of clinics.rows) {
         const client = await getPool().connect();
