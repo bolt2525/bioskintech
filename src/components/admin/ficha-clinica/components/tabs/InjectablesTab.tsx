@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import recordsFetch from "../../../../../utils/recordsFetch";
+import { escapeHtml, safeImageSrc } from '../../../../../utils/escapeHtml.js';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Droplets, Plus, Save, Trash2, Printer, Copy,
@@ -1283,8 +1284,19 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
       inferior: { bg: '#fff8e1', border: '#ffc107', text: '#e65100' },
     };
     const tercioNames: Record<string, string> = { superior: 'Tercio Superior', medio: 'Tercio Medio', inferior: 'Tercio Inferior' };
+    const clinicLogoUrl = safeImageSrc(clinic.general.logo_url);
+    const printVials = haVials.map(v => ({
+      ...v,
+      color: /^#[\da-f]{3}(?:[\da-f]{3})?$/i.test(v.color) ? v.color : '#deb887',
+      product_name: escapeHtml(v.product_name || '—'),
+      brand: escapeHtml(v.brand || '—'),
+      lot_number: escapeHtml(v.lot_number || '—'),
+    }));
     // Build a vial color map for quick lookup
-    const vialColorMap = new Map(haVials.map(v => [v.id, { color: v.color, name: v.product_name || 'Vial' }]));
+    const vialColorMap = new Map(printVials.map(v => [v.id, {
+      color: v.color,
+      name: v.product_name || 'Vial',
+    }]));
 
     let tercioBreakdownHtml = '';
     for (const t of ['superior', 'medio', 'inferior'] as const) {
@@ -1303,7 +1315,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
       tercioBreakdownHtml += `<div style="margin-bottom:12px;">
         <div style="background:${css.bg};border:1px solid ${css.border};border-radius:6px;padding:8px 12px;margin-bottom:4px;">
           <strong style="color:${css.text};font-size:12px;">${tercioNames[t]}</strong>
-          <span style="float:right;font-size:11px;color:${css.text};">${pts.length} punto(s) · ${totalT} ${unitLabel}</span>
+          <span style="float:right;font-size:11px;color:${css.text};">${pts.length} punto(s) · ${totalT} ${escapeHtml(unitLabel)}</span>
         </div>
         <table style="width:100%;border-collapse:collapse;">
           <thead><tr style="background:#faf6f0;">
@@ -1321,15 +1333,15 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
               ? `<td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;">${vialInfo ? `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${vialInfo.color};margin-right:4px;"></span>${vialInfo.name}` : '—'}</td>`
               : '';
             const extraCells = isRelleno
-              ? `<td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;">${p.technique_at_point || '—'}</td><td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;">${p.needle_at_point || '—'}</td>`
+              ? `<td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;">${escapeHtml(p.technique_at_point || '—')}</td><td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;">${escapeHtml(p.needle_at_point || '—')}</td>`
               : '';
             return `<tr>
               <td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;">${i + 1}</td>
               ${vialCell}
-              <td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;">${p.label || '—'}</td>
-              <td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;color:#7c3aed;">${p.injection_plane || '—'}</td>
+              <td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;">${escapeHtml(p.label || '—')}</td>
+              <td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;color:#7c3aed;">${escapeHtml(p.injection_plane || '—')}</td>
               ${extraCells}
-              <td style="font-size:11px;padding:4px 8px;text-align:right;border-bottom:1px solid #f0f0f0;">${p.units}</td>
+              <td style="font-size:11px;padding:4px 8px;text-align:right;border-bottom:1px solid #f0f0f0;">${escapeHtml(p.units)}</td>
               <td style="font-size:11px;padding:4px 8px;text-align:right;border-bottom:1px solid #f0f0f0;">${totalUsed > 0 ? Math.round((p.units / totalUsed) * 100) : 0}%</td>
             </tr>`;
           }).join('')}</tbody>
@@ -1340,7 +1352,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     if (tercioBreakdownHtml) {
       tercioBreakdownHtml += `<div style="margin-top:4px;padding:6px 10px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;font-size:10px;color:#6b7280;line-height:1.6;">
         <strong style="color:#4b5563;">Leyenda:</strong>
-        <strong>% Dosis</strong> = porcentaje de unidades aplicadas en cada punto respecto al total de ${unitLabel} utilizadas (${totalUsed} ${unitLabel}).
+        <strong>% Dosis</strong> = porcentaje de unidades aplicadas en cada punto respecto al total de ${escapeHtml(unitLabel)} utilizadas (${totalUsed} ${escapeHtml(unitLabel)}).
         <strong>Zona Anatómica</strong> = área facial específica donde se realizó la inyección, clasificada por tercio facial.
         ${isRelleno ? `<strong>Técnica / Cánula</strong> = registradas por punto de inyección.` : ''}
       </div>`;
@@ -1359,15 +1371,15 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
           <th style="font-size:10px;text-transform:uppercase;color:#b8944d;padding:5px 8px;text-align:right;border-bottom:1px solid #e8dcc8;">Restante</th>
           <th style="font-size:10px;text-transform:uppercase;color:#b8944d;padding:5px 8px;text-align:right;border-bottom:1px solid #e8dcc8;">Puntos</th>
         </tr></thead>
-        <tbody>${haVials.map(v => {
+        <tbody>${printVials.map(v => {
           const vPts = injectionPoints.filter(p => p.vial_id === v.id);
           const vUsed = parseFloat(vPts.reduce((s, p) => s + p.units, 0).toFixed(2));
           const vRem = parseFloat((v.volume_ml - vUsed).toFixed(2));
           return `<tr>
-            <td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${v.color};margin-right:5px;"></span>${v.product_name || '—'}</td>
-            <td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;">${v.brand || '—'}</td>
-            <td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;">${v.lot_number || '—'}</td>
-            <td style="font-size:11px;padding:4px 8px;text-align:right;border-bottom:1px solid #f0f0f0;">${v.volume_ml} ml</td>
+            <td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${v.color};margin-right:5px;"></span>${v.product_name}</td>
+            <td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;">${v.brand}</td>
+            <td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;">${v.lot_number}</td>
+            <td style="font-size:11px;padding:4px 8px;text-align:right;border-bottom:1px solid #f0f0f0;">${escapeHtml(v.volume_ml)} ml</td>
             <td style="font-size:11px;padding:4px 8px;text-align:right;border-bottom:1px solid #f0f0f0;color:#b8944d;">${vUsed} ml</td>
             <td style="font-size:11px;padding:4px 8px;text-align:right;border-bottom:1px solid #f0f0f0;color:${vRem < 0 ? '#dc2626' : '#059669'};">${vRem} ml</td>
             <td style="font-size:11px;padding:4px 8px;text-align:right;border-bottom:1px solid #f0f0f0;">${vPts.length}</td>
@@ -1379,9 +1391,9 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     // Pre-compute product info block to avoid deeply nested template literals
     let productInfoHtml = '';
     if (isRelleno && haVials.length > 0) {
-      const vialRows = haVials.map(v => {
+      const vialRows = printVials.map(v => {
         const expStr = v.expiration_date ? new Date(v.expiration_date + 'T12:00:00').toLocaleDateString('es-EC') : '—';
-        return `<tr><td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${v.color};margin-right:5px;"></span>${v.product_name || '—'}</td><td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;">${v.brand || '—'}</td><td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;">${v.lot_number || '—'}</td><td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;">${expStr}</td><td style="font-size:11px;padding:4px 8px;text-align:right;border-bottom:1px solid #f0f0f0;">${v.volume_ml} ml</td></tr>`;
+        return `<tr><td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${v.color};margin-right:5px;"></span>${v.product_name}</td><td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;">${v.brand}</td><td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;">${v.lot_number}</td><td style="font-size:11px;padding:4px 8px;border-bottom:1px solid #f0f0f0;">${expStr}</td><td style="font-size:11px;padding:4px 8px;text-align:right;border-bottom:1px solid #f0f0f0;">${escapeHtml(v.volume_ml)} ml</td></tr>`;
       }).join('');
       const subTypeLabel = rellenoSubType === 'hidratacion' ? 'Hidratación' : rellenoSubType === 'bioestimulador' ? 'Bioestimuladores' : 'Relleno (Ácido Hialurónico)';
       const dateStr = current.date ? new Date(current.date + 'T12:00:00').toLocaleDateString('es-EC') : '—';
@@ -1390,18 +1402,18 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
       const typeBadge = current.product_type === 'toxina' ? 'type-toxina' : 'type-relleno';
       const typeLabel = current.product_type === 'toxina' ? 'Toxina Botulínica' : (rellenoSubType === 'hidratacion' ? 'Hidratación' : rellenoSubType === 'bioestimulador' ? 'Bioestimuladores' : 'Relleno (Ácido Hialurónico)');
       const volLabel = current.product_type === 'toxina' ? 'Unidades (UI)' : 'Volumen (ml)';
-      const volValue = current.product_type === 'toxina' ? (current.units_used || '—') : (current.volume_used || '—');
+      const volValue = escapeHtml(current.product_type === 'toxina' ? (current.units_used || '—') : (current.volume_used || '—'));
       const expStr = current.expiration_date ? new Date(current.expiration_date + 'T12:00:00').toLocaleDateString('es-EC') : '—';
-      productInfoHtml = `<div class="grid"><div class="field"><div class="label">Tipo</div><div class="value"><span class="type-badge ${typeBadge}">${typeLabel}</span></div></div><div class="field"><div class="label">Producto</div><div class="value">${current.product_name || '—'}</div></div><div class="field"><div class="label">Marca</div><div class="value">${current.brand || '—'}</div></div></div><div class="grid"><div class="field"><div class="label">Lote</div><div class="value">${current.lot_number || '—'}</div></div><div class="field"><div class="label">Vencimiento</div><div class="value">${expStr}</div></div><div class="field"><div class="label">${volLabel}</div><div class="value">${volValue}</div></div></div>`;
+      productInfoHtml = `<div class="grid"><div class="field"><div class="label">Tipo</div><div class="value"><span class="type-badge ${typeBadge}">${typeLabel}</span></div></div><div class="field"><div class="label">Producto</div><div class="value">${escapeHtml(current.product_name || '—')}</div></div><div class="field"><div class="label">Marca</div><div class="value">${escapeHtml(current.brand || '—')}</div></div></div><div class="grid"><div class="field"><div class="label">Lote</div><div class="value">${escapeHtml(current.lot_number || '—')}</div></div><div class="field"><div class="label">Vencimiento</div><div class="value">${expStr}</div></div><div class="field"><div class="label">${volLabel}</div><div class="value">${volValue}</div></div></div>`;
       if (current.product_type === 'toxina' && current.dilution_volume) {
         const conc = (Number(current.units_used) / Number(current.dilution_volume)).toFixed(2);
-        productInfoHtml += `<div class="grid-2" style="margin-top:8px;"><div class="field"><div class="label">Dilución — Suero Fisiológico 0.9%</div><div class="value">${current.dilution_volume} ml</div></div><div class="field"><div class="label">Concentración Resultante</div><div class="value">${conc} UI/ml</div></div></div>`;
+        productInfoHtml += `<div class="grid-2" style="margin-top:8px;"><div class="field"><div class="label">Dilución — Suero Fisiológico 0.9%</div><div class="value">${escapeHtml(current.dilution_volume)} ml</div></div><div class="field"><div class="label">Concentración Resultante</div><div class="value">${escapeHtml(conc)} UI/ml</div></div></div>`;
       }
     }
 
     // Pre-compute técnica block (only for toxina)
     const tecnicaHtml = current.product_type === 'toxina'
-      ? `<div class="section"><div class="section-title">Técnica de Aplicación</div><div class="grid-2"><div class="field"><div class="label">Técnica</div><div class="value">${current.technique || '—'}</div></div><div class="field"><div class="label">Aguja / Cánula</div><div class="value">${current.needle_type || '—'}</div></div></div></div>`
+      ? `<div class="section"><div class="section-title">Técnica de Aplicación</div><div class="grid-2"><div class="field"><div class="label">Técnica</div><div class="value">${escapeHtml(current.technique || '—')}</div></div><div class="field"><div class="label">Aguja / Cánula</div><div class="value">${escapeHtml(current.needle_type || '—')}</div></div></div></div>`
       : '';
     const distributionSectionTitle = isRelleno && haVials.length > 0 ? 'Distribución por Vial' : 'Distribución del Vial';
     const remClass = remaining < 0 ? 'danger' : '';
@@ -1415,7 +1427,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     const zoneMap = new Map<string, { units: number; count: number }>();
     injectionPoints.forEach(p => {
       const existing = zoneMap.get(p.label) || { units: 0, count: 0 };
-      zoneMap.set(p.label, { units: existing.units + p.units, count: existing.count + 1 });
+      zoneMap.set(escapeHtml(p.label), { units: existing.units + p.units, count: existing.count + 1 });
     });
     let zoneSummaryHtml = '';
     if (zoneMap.size > 0) {
@@ -1471,10 +1483,10 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
 <body>
   <div class="header">
     <div class="header-left">
-      ${clinic.general.logo_url ? `<img src="${clinic.general.logo_url}" alt="Logo" style="height:48px;width:auto;object-fit:contain;margin-bottom:6px;" onerror="this.style.display='none'">` : ''}
-      <h1>${clinicDisplayName}</h1>
-      <p>${clinic.general.tagline || 'Centro de Medicina Estética'}</p>
-      ${clinic.general.address ? `<p style="font-size:10px;color:#aaa;">${clinic.general.address}${clinic.general.city ? ', ' + clinic.general.city : ''}</p>` : ''}
+      ${clinicLogoUrl ? `<img src="${clinicLogoUrl}" alt="Logo" style="height:48px;width:auto;object-fit:contain;margin-bottom:6px;" onerror="this.style.display='none'">` : ''}
+      <h1>${escapeHtml(clinicDisplayName)}</h1>
+      <p>${escapeHtml(clinic.general.tagline || 'Centro de Medicina Estética')}</p>
+      ${clinic.general.address ? `<p style="font-size:10px;color:#aaa;">${escapeHtml(clinic.general.address)}${clinic.general.city ? ', ' + escapeHtml(clinic.general.city) : ''}</p>` : ''}
     </div>
     <div class="header-right">
       <div>Ficha de Procedimiento Inyectable</div>
@@ -1483,7 +1495,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   </div>
 
   <div class="patient-bar">
-    <span><strong>Paciente:</strong> ${patientName || '—'}</span>
+    <span><strong>Paciente:</strong> ${escapeHtml(patientName || '—')}</span>
     <span><strong>Fecha del procedimiento:</strong> ${current.date ? new Date(current.date + 'T12:00:00').toLocaleDateString('es-EC') : '—'}</span>
   </div>
 
@@ -1501,7 +1513,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   </div>
   <div class="section">
     <div class="section-title">Desglose por Tercio Facial</div>
-    <p style="font-size:11px;color:#6b7280;margin-bottom:8px;">Distribución detallada de los puntos de inyección clasificados por tercio facial (superior, medio e inferior). La columna <strong>% Dosis</strong> indica el porcentaje que representa cada punto respecto al total de ${unitLabel} aplicadas.${desgloseLegendExtra}</p>
+    <p style="font-size:11px;color:#6b7280;margin-bottom:8px;">Distribución detallada de los puntos de inyección clasificados por tercio facial (superior, medio e inferior). La columna <strong>% Dosis</strong> indica el porcentaje que representa cada punto respecto al total de ${escapeHtml(unitLabel)} aplicadas.${desgloseLegendExtra}</p>
     ${tercioBreakdownHtml}
     ${zoneSummaryHtml}
   </div>` : ''}
@@ -1513,9 +1525,9 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     <div style="display:grid;grid-template-columns:repeat(${Math.min(capturedImages.length, 2)},1fr);gap:16px;">
       ${capturedImages.map((cap, idx) => `
         <div style="border:1px solid #e8dcc8;border-radius:8px;overflow:hidden;background:#faf6f0;">
-          <img src="${cap.dataUrl}" alt="${cap.label || `Vista ${idx + 1}`}" style="width:100%;display:block;" />
+          <img src="${safeImageSrc(cap.dataUrl)}" alt="${escapeHtml(cap.label || `Vista ${idx + 1}`)}" style="width:100%;display:block;" />
           <div style="padding:6px 10px;font-size:11px;color:#b8944d;font-weight:600;text-align:center;border-top:1px solid #e8dcc8;">
-            ${cap.label ? cap.label : `Vista ${idx + 1}`}
+            ${cap.label ? escapeHtml(cap.label) : `Vista ${idx + 1}`}
           </div>
         </div>
       `).join('')}
@@ -1534,16 +1546,16 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
 
   <div class="section">
     <div class="section-title">Observaciones Clínicas</div>
-    <div class="notes-box">${current.notes || 'Sin observaciones'}</div>
+    <div class="notes-box">${escapeHtml(current.notes || 'Sin observaciones')}</div>
   </div>
 
   <div class="signature">
     <div class="signature-block">
       <div class="signature-line">
-        ${[user?.gentilicio, user?.full_name].filter(Boolean).join(' ') || user?.username || 'Profesional'}
-        ${user?.especialidad ? `<br><small style="font-size:10px;font-weight:normal;color:#555;">${user.especialidad}</small>` : ''}
-        ${user?.matricula_senescyt ? `<br><small style="font-size:10px;font-weight:normal;">Matr. SENESCYT: ${user.matricula_senescyt}</small>` : ''}
-        ${user?.cedula_profesional ? `<br><small style="font-size:10px;font-weight:normal;">Cédula/RUC: ${user.cedula_profesional}</small>` : ''}
+        ${escapeHtml([user?.gentilicio, user?.full_name].filter(Boolean).join(' ') || user?.username || 'Profesional')}
+        ${user?.especialidad ? `<br><small style="font-size:10px;font-weight:normal;color:#555;">${escapeHtml(user.especialidad)}</small>` : ''}
+        ${user?.matricula_senescyt ? `<br><small style="font-size:10px;font-weight:normal;">Matr. SENESCYT: ${escapeHtml(user.matricula_senescyt)}</small>` : ''}
+        ${user?.cedula_profesional ? `<br><small style="font-size:10px;font-weight:normal;">Cédula/RUC: ${escapeHtml(user.cedula_profesional)}</small>` : ''}
       </div>
     </div>
     <div class="signature-block">
@@ -1552,7 +1564,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   </div>
 
   <div class="footer">
-    ${clinicDisplayName} — ${clinic.general.tagline || 'Centro de Medicina Estética'} · Documento generado el ${new Date().toLocaleString('es-EC')}
+    ${escapeHtml(clinicDisplayName)} — ${escapeHtml(clinic.general.tagline || 'Centro de Medicina Estética')} · Documento generado el ${new Date().toLocaleString('es-EC')}
   </div>
   <script>window.onload = () => window.print()</script>
 </body>

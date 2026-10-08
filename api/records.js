@@ -439,6 +439,8 @@ function buildSu(auth) {
     access_scope:        auth.access_scope || 'all',
     finance_scope:       auth.finance_scope || 'all',
     finance_enabled:     auth.finance_enabled === true,
+    clinical_records_enabled: auth.clinical_records_enabled === true,
+    inventory_enabled:   auth.inventory_enabled === true,
     inventory_scope:     auth.inventory_scope || 'all',
     calendar_scope:      auth.calendar_scope || 'own',
     username:            auth.username,
@@ -946,6 +948,22 @@ export default async function handler(req, res) {
 
     // Session user object compatible con código existente
     const su = buildSu(auth);
+    // Gate before pool access, schema initialization or any business query.
+    // Normal features default on only after a successful DB authorization read;
+    // absent/invalid session flags deny. Master retains its intentional bypass.
+    if (!PUBLIC_ACTIONS.has(action) && su?.role !== 'master_admin') {
+      const module = typeof action === 'string' && action.startsWith('inventory') ? 'inventory'
+        : (typeof action === 'string' && action.startsWith('finance')) || action === 'sendFinanceCsv'
+          ? 'finance' : 'clinical_records';
+      if (su?.[`${module}_enabled`] !== true) {
+        return res.status(403).json({ error: `El módulo ${module} no está habilitado para este usuario` });
+      }
+      if (['addTreatment', 'updateTreatment', 'createPackage'].includes(action) && body.finance_posting?.enabled) {
+        if (!canPostTreatmentFinance(su)) {
+          return res.status(403).json({ error: 'Solo administradores con acceso a Finanzas pueden registrar cobros' });
+        }
+      }
+    }
     // ponytail: aliases — auth ya fue verificada arriba, ambas devuelven el mismo su
     const getSessionUserOnce = async () => su;
     const getSessionUser = async (_pool, _req) => su;

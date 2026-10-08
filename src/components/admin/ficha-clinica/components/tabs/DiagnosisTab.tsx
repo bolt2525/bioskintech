@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import recordsFetch from "../../../../../utils/recordsFetch";
+import { escapeHtml, safeImageSrc } from '../../../../../utils/escapeHtml.js';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Save, AlertCircle, Plus, Trash2, Copy, Printer, Check, Edit2, History } from 'lucide-react';
 import CrossConsultHistoryModal, { type ConsultationRef } from '../CrossConsultHistoryModal';
@@ -144,11 +145,14 @@ export default function DiagnosisTab({ recordId, diagnoses, patientName, consult
 
   const handlePrint = () => {
     setMessage({ type: 'success', text: 'Abriendo vista de impresión...' });
+    const logoUrl = safeImageSrc(clinic.general.logo_url)
+      || safeImageSrc(`${window.location.origin}/images/logo/logo.png`);
+    const fallbackLogoUrl = safeImageSrc(`${window.location.origin}/images/logo/logo.png`);
     const html = `
       <html lang="es">
         <head>
           <meta charset="UTF-8">
-          <title>Diagnóstico - ${patientName}</title>
+          <title>Diagnóstico - ${escapeHtml(patientName)}</title>
           <style>
             body { font-family: Arial, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; }
             .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #000; padding-bottom: 10px; }
@@ -165,32 +169,32 @@ export default function DiagnosisTab({ recordId, diagnoses, patientName, consult
         <body>
           <div class="header">
             <div style="display:flex;align-items:center;gap:14px;justify-content:center;margin-bottom:8px;">
-              <img src="${clinic.general.logo_url || (window.location.origin + '/images/logo/logo.png')}" style="height:52px;width:auto;object-fit:contain;" onerror="this.onerror=null;this.src='${window.location.origin}/images/logo/logo.png'" alt="Logo" />
+              <img src="${logoUrl}" style="height:52px;width:auto;object-fit:contain;" onerror="this.onerror=null;this.src='${fallbackLogoUrl}'" alt="Logo" />
               <div style="text-align:left;">
-                <h1 style="margin:0;font-size:20px;color:#deb887;">${clinic.general.name || 'BioSkinTech'}</h1>
-                <p style="margin:2px 0 0;font-size:11px;color:#666;">${clinic.general.establishment_type || clinic.general.tagline || 'Dermatología y Medicina Estética'}</p>
+                <h1 style="margin:0;font-size:20px;color:#deb887;">${escapeHtml(clinic.general.name || 'BioSkinTech')}</h1>
+                <p style="margin:2px 0 0;font-size:11px;color:#666;">${escapeHtml(clinic.general.establishment_type || clinic.general.tagline || 'Dermatología y Medicina Estética')}</p>
               </div>
             </div>
-            ${clinic.general.address ? `<p style="font-size:11px;margin:2px 0;">${clinic.general.address}${clinic.general.city ? ' — ' + clinic.general.city : ''}</p>` : ''}
-            ${clinic.general.phone ? `<p style="font-size:11px;margin:2px 0;">Tel: ${clinic.general.phone}</p>` : ''}
+            ${clinic.general.address ? `<p style="font-size:11px;margin:2px 0;">${escapeHtml(clinic.general.address)}${clinic.general.city ? ' — ' + escapeHtml(clinic.general.city) : ''}</p>` : ''}
+            ${clinic.general.phone ? `<p style="font-size:11px;margin:2px 0;">Tel: ${escapeHtml(clinic.general.phone)}</p>` : ''}
           </div>
           
           <div class="info">
-            <p><strong>Paciente:</strong> ${patientName}</p>
+            <p><strong>Paciente:</strong> ${escapeHtml(patientName)}</p>
             <p><strong>Fecha:</strong> ${new Date().toLocaleDateString()}</p>
           </div>
 
           <div class="section">
             <h3>Detalle del Diagnóstico</h3>
-            <div class="field"><span class="label">Diagnóstico:</span> ${currentDiagnosis.diagnosis_text}</div>
-            <div class="field"><span class="label">CIE-10:</span> ${currentDiagnosis.cie10_code}</div>
-            <div class="field"><span class="label">Tipo:</span> ${currentDiagnosis.type}</div>
-            <div class="field"><span class="label">Severidad:</span> ${currentDiagnosis.severity}</div>
+            <div class="field"><span class="label">Diagnóstico:</span> ${escapeHtml(currentDiagnosis.diagnosis_text)}</div>
+            <div class="field"><span class="label">CIE-10:</span> ${escapeHtml(currentDiagnosis.cie10_code)}</div>
+            <div class="field"><span class="label">Tipo:</span> ${escapeHtml(currentDiagnosis.type)}</div>
+            <div class="field"><span class="label">Severidad:</span> ${escapeHtml(currentDiagnosis.severity)}</div>
           </div>
 
           <div class="section">
             <h3>Notas Adicionales</h3>
-            <p>${currentDiagnosis.notes || 'Sin notas adicionales.'}</p>
+            <p>${escapeHtml(currentDiagnosis.notes || 'Sin notas adicionales.')}</p>
           </div>
 
           <div class="footer">

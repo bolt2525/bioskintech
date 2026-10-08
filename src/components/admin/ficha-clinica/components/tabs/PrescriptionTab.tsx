@@ -1,5 +1,6 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
 import recordsFetch from "../../../../../utils/recordsFetch";
+import { escapeHtml, safeImageSrc } from '../../../../../utils/escapeHtml.js';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Trash2, Save, FileText, Copy, Printer, Calendar, Check, AlertCircle, Pill, Pencil, History, Stethoscope, Home, ShieldAlert, LockKeyhole } from 'lucide-react';
 import CrossConsultHistoryModal, { type ConsultationRef } from '../CrossConsultHistoryModal';
@@ -386,24 +387,37 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
     setMessage({ type: 'success', text: 'Abriendo vista de impresión...' });
     const dateStr = new Date().toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' }).toUpperCase();
     // Datos dinámicos de la clínica
-    const logoUrl = clinic.general.logo_url || `${window.location.origin}/images/logo/logo.png`;
-    const fallbackLogo = `${window.location.origin}/images/logo/logo.png`;
+    const fallbackLogo = safeImageSrc(`${window.location.origin}/images/logo/logo.png`);
+    const logoUrl = safeImageSrc(clinic.general.logo_url) || fallbackLogo;
     const clinicName  = clinicDisplayName;
     const clinicTagline = clinic.general.establishment_type || clinic.general.tagline || 'Centro de Medicina Estética';
     const clinicCity  = clinic.general.city    || '';
-    const clinicPhone = clinic.general.phone   || '';
-    const clinicAddr  = clinic.general.address || '';
-    const doctorLine  = [user?.gentilicio, user?.full_name].filter(Boolean).join(' ');
-    const doctorCedula = user?.cedula_profesional || '';
-    const doctorMatricula = manualMatricula || user?.matricula_senescyt || '';
-    const doctorAcess = manualAcess || user?.registro_acess || '';
+    const clinicPhone = escapeHtml(clinic.general.phone || '');
+    const clinicAddr  = escapeHtml(clinic.general.address || '');
+    const doctorLine  = escapeHtml([user?.gentilicio, user?.full_name].filter(Boolean).join(' '));
+    const doctorCedula = escapeHtml(user?.cedula_profesional || '');
+    const doctorMatricula = escapeHtml(manualMatricula || user?.matricula_senescyt || '');
+    const doctorAcess = escapeHtml(manualAcess || user?.registro_acess || '');
     const modeTitle = mode === 'prescription' ? 'RECETA MÉDICA' : 'GUÍA DE CUIDADO DOMICILIARIO';
     const validDays = validityType === 'emergency' || validityType === 'hospitalization' ? 1 : 3;
     const validUntil = new Date(Date.now() + validDays * 86400000).toLocaleDateString('es-EC');
     const validityLabel = mode === 'prescription'
       ? ({ outpatient: 'Consulta externa', emergency: 'Emergencia', hospitalization: 'Hospitalización', antimicrobial: 'Antimicrobiano' } as Record<string, string>)[validityType || 'outpatient'] || 'Consulta externa'
       : '';
-    const prescriptionItems = currentPrescription.items.filter(i => i.medicamento || i.nombre_comercial || i.indicaciones);
+    const prescriptionItems = currentPrescription.items
+      .filter(i => i.medicamento || i.nombre_comercial || i.indicaciones)
+      .map(item => ({
+        ...item,
+        medicamento: escapeHtml(item.medicamento),
+        nombre_comercial: escapeHtml(item.nombre_comercial),
+        presentacion: escapeHtml(item.presentacion),
+        dosis: escapeHtml(item.dosis),
+        via: escapeHtml(item.via),
+        cantidad: escapeHtml(item.cantidad),
+        frecuencia: escapeHtml(item.frecuencia),
+        duracion: escapeHtml(item.duracion),
+        indicaciones: escapeHtml(item.indicaciones),
+      }));
     const prescriptionLeftHtml = prescriptionItems.map((item, index) => `<div class="medicine"><strong>${index + 1}. ${item.medicamento || item.nombre_comercial || 'Medicamento'}</strong>${item.nombre_comercial ? ` <span>(${item.nombre_comercial})</span>` : ''}${item.presentacion || item.dosis ? `<br><small>${[item.presentacion, item.dosis].filter(Boolean).join(' · ')}</small>` : ''}</div>`).join('') || '<em>Sin medicamentos registrados</em>';
     const prescriptionRightHtml = prescriptionItems.map((item, index) => `<div class="medicine"><strong>${index + 1}.</strong> ${[['Vía', item.via], ['Cantidad', item.cantidad], ['Dosis', item.dosis], ['Frecuencia', item.frecuencia], ['Duración', item.duracion]].filter(([, value]) => value).map(([label, value]) => `<span>${label}: ${value}</span>`).join(' · ') || item.indicaciones || 'Sin indicaciones registradas'}</div>`).join('') || '<em>Sin indicaciones registradas</em>';
 
@@ -411,7 +425,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
       <html lang="es">
         <head>
           <meta charset="UTF-8">
-          <title>Receta Médica - ${patientName}</title>
+          <title>Receta Médica - ${escapeHtml(patientName)}</title>
           <style>
             @page { size: A4 portrait; margin: 0; }
             body { font-family: 'Arial', sans-serif; padding: 0; max-width: 100%; margin: 0; box-sizing: border-box; }
@@ -451,12 +465,12 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
           <div class="container">
             <!-- Left Column -->
             <div class="column">
-              <div class="document-title">${modeTitle}</div>
+              <div class="document-title">${escapeHtml(modeTitle)}</div>
                <div class="header">
-                 <img src="${logoUrl}" class="logo" alt="${clinicName}" onerror="this.onerror=null;this.src='${fallbackLogo}'" />
+                 <img src="${logoUrl}" class="logo" alt="${escapeHtml(clinicName)}" onerror="this.onerror=null;this.src='${fallbackLogo}'" />
                  <div class="doctor-info">
-                   <h2>${clinicTagline.toUpperCase()}</h2>
-                   <h3>${clinicName.toUpperCase()}</h3>
+                   <h2>${escapeHtml(clinicTagline.toUpperCase())}</h2>
+                   <h3>${escapeHtml(clinicName.toUpperCase())}</h3>
                    ${doctorLine ? `<p style="font-size:9px;margin:3px 0;color:#333;font-weight:500;">${doctorLine}</p>` : ''}
                    ${doctorMatricula ? `<p style="font-size:8px;margin:2px 0;color:#666;">SENESCYT: ${doctorMatricula}</p>` : ''}
                    ${doctorAcess ? `<p style="font-size:8px;margin:2px 0;color:#666;">ACESS: ${doctorAcess}</p>` : ''}
@@ -465,18 +479,18 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
                </div>
                
                <div class="patient-info">
-                 <p><strong>${clinicCity ? clinicCity + ', a ' : ''}${dateStr}</strong></p>
+                 <p><strong>${clinicCity ? escapeHtml(clinicCity) + ', a ' : ''}${dateStr}</strong></p>
                  <div class="patient-details">
-                    <span><strong>Paciente:</strong> ${patientName.toUpperCase()}</span>
-                    <span><strong>EDAD:</strong> ${patientAge || ''} AÑOS</span>
+                    <span><strong>Paciente:</strong> ${escapeHtml(patientName.toUpperCase())}</span>
+                    <span><strong>EDAD:</strong> ${escapeHtml(patientAge || '')} AÑOS</span>
                  </div>
-                 ${patientIdentification ? `<div style="font-size:9px;margin-top:3px;"><strong>Identificación:</strong> ${patientIdentification}</div>` : ''}
-                 ${currentPrescription.diagnostico ? `<div style="font-size:9px;margin-top:4px;"><strong>Diagnóstico:</strong> ${currentPrescription.diagnostico}${activeCie10 ? ' &nbsp;<span style="color:#555">(CIE-10: ' + activeCie10 + ')</span>' : ''}</div>` : ''}
-                 ${mode === 'prescription' ? `<div style="font-size:9px;margin-top:4px;"><strong>Receta:</strong> REC-${new Date().getFullYear()}-${String(currentPrescription.id || 'NUEVA').padStart(6, '0')} &nbsp; <strong>Vigencia:</strong> ${validityLabel} hasta ${validUntil}</div><div style="font-size:9px;margin-top:3px;"><strong>Alergias:</strong> ${manualAllergies || 'No registrado'}</div>` : ''}
+                 ${patientIdentification ? `<div style="font-size:9px;margin-top:3px;"><strong>Identificación:</strong> ${escapeHtml(patientIdentification)}</div>` : ''}
+                 ${currentPrescription.diagnostico ? `<div style="font-size:9px;margin-top:4px;"><strong>Diagnóstico:</strong> ${escapeHtml(currentPrescription.diagnostico)}${activeCie10 ? ' &nbsp;<span style="color:#555">(CIE-10: ' + escapeHtml(activeCie10) + ')</span>' : ''}</div>` : ''}
+                 ${mode === 'prescription' ? `<div style="font-size:9px;margin-top:4px;"><strong>Receta:</strong> REC-${new Date().getFullYear()}-${escapeHtml(String(currentPrescription.id || 'NUEVA').padStart(6, '0'))} &nbsp; <strong>Vigencia:</strong> ${escapeHtml(validityLabel)} hasta ${escapeHtml(validUntil)}</div><div style="font-size:9px;margin-top:3px;"><strong>Alergias:</strong> ${escapeHtml(manualAllergies || 'No registrado')}</div>` : ''}
                </div>
 
                <div class="section-header">INDICACIONES:</div>
-                 ${mode === 'prescription' ? `<div>${prescriptionLeftHtml}</div>` : `<ol class="product-list">${currentPrescription.items.filter(i => i.nombre_comercial || i.medicamento).map(item => `<li>${(item.nombre_comercial || item.medicamento || '')}${item.presentacion ? ' ' + item.presentacion : ''}${item.dosis ? ' — ' + item.dosis : ''}</li>`).join('') || '<li style="color:#aaa;list-style:none">Sin productos registrados</li>'}</ol>`}
+                 ${mode === 'prescription' ? `<div>${prescriptionLeftHtml}</div>` : `<ol class="product-list">${prescriptionItems.filter(i => i.nombre_comercial || i.medicamento).map(item => `<li>${(item.nombre_comercial || item.medicamento || '')}${item.presentacion ? ' ' + item.presentacion : ''}${item.dosis ? ' — ' + item.dosis : ''}</li>`).join('') || '<li style="color:#aaa;list-style:none">Sin productos registrados</li>'}</ol>`}
                ${mode === 'prescription' ? '<div style="margin-top:18px;border-top:1px solid #999;padding-top:6px;text-align:center;font-size:8px;color:#666;">Firma y sello del profesional</div>' : ''}
 
                <div class="footer">
@@ -487,12 +501,12 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
 
             <!-- Right Column -->
             <div class="column">
-              <div class="document-title">${modeTitle}</div>
+              <div class="document-title">${escapeHtml(modeTitle)}</div>
                <div class="header">
-                 <img src="${logoUrl}" class="logo" alt="${clinicName}" onerror="this.onerror=null;this.src='${fallbackLogo}'" />
+                 <img src="${logoUrl}" class="logo" alt="${escapeHtml(clinicName)}" onerror="this.onerror=null;this.src='${fallbackLogo}'" />
                  <div class="doctor-info">
-                   <h2>${clinicTagline.toUpperCase()}</h2>
-                   <h3>${clinicName.toUpperCase()}</h3>
+                   <h2>${escapeHtml(clinicTagline.toUpperCase())}</h2>
+                   <h3>${escapeHtml(clinicName.toUpperCase())}</h3>
                    ${doctorLine ? `<p style="font-size:9px;margin:3px 0;color:#333;font-weight:500;">${doctorLine}</p>` : ''}
                    ${doctorMatricula ? `<p style="font-size:8px;margin:2px 0;color:#666;">SENESCYT: ${doctorMatricula}</p>` : ''}
                    ${doctorAcess ? `<p style="font-size:8px;margin:2px 0;color:#666;">ACESS: ${doctorAcess}</p>` : ''}
@@ -501,22 +515,22 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
                </div>
                
                <div class="patient-info">
-                 <p><strong>${clinicCity ? clinicCity + ', a ' : ''}${dateStr}</strong></p>
+                 <p><strong>${clinicCity ? escapeHtml(clinicCity) + ', a ' : ''}${dateStr}</strong></p>
                  <div class="patient-details">
-                    <span><strong>Paciente:</strong> ${patientName.toUpperCase()}</span>
-                    <span><strong>EDAD:</strong> ${patientAge || ''} AÑOS</span>
+                    <span><strong>Paciente:</strong> ${escapeHtml(patientName.toUpperCase())}</span>
+                    <span><strong>EDAD:</strong> ${escapeHtml(patientAge || '')} AÑOS</span>
                  </div>
-                 ${patientIdentification ? `<div style="font-size:9px;margin-top:3px;"><strong>Identificación:</strong> ${patientIdentification}</div>` : ''}
-                 ${currentPrescription.diagnostico ? `<div style="font-size:9px;margin-top:4px;"><strong>Diagnóstico:</strong> ${currentPrescription.diagnostico}${activeCie10 ? ' &nbsp;<span style="color:#555">(CIE-10: ' + activeCie10 + ')</span>' : ''}</div>` : ''}
-                 ${mode === 'prescription' ? `<div style="font-size:9px;margin-top:4px;"><strong>Receta:</strong> REC-${new Date().getFullYear()}-${String(currentPrescription.id || 'NUEVA').padStart(6, '0')} &nbsp; <strong>Vigencia:</strong> ${validityLabel} hasta ${validUntil}</div><div style="font-size:9px;margin-top:3px;"><strong>Alergias:</strong> ${manualAllergies || 'No registrado'}</div>` : ''}
+                 ${patientIdentification ? `<div style="font-size:9px;margin-top:3px;"><strong>Identificación:</strong> ${escapeHtml(patientIdentification)}</div>` : ''}
+                 ${currentPrescription.diagnostico ? `<div style="font-size:9px;margin-top:4px;"><strong>Diagnóstico:</strong> ${escapeHtml(currentPrescription.diagnostico)}${activeCie10 ? ' &nbsp;<span style="color:#555">(CIE-10: ' + escapeHtml(activeCie10) + ')</span>' : ''}</div>` : ''}
+                 ${mode === 'prescription' ? `<div style="font-size:9px;margin-top:4px;"><strong>Receta:</strong> REC-${new Date().getFullYear()}-${escapeHtml(String(currentPrescription.id || 'NUEVA').padStart(6, '0'))} &nbsp; <strong>Vigencia:</strong> ${escapeHtml(validityLabel)} hasta ${escapeHtml(validUntil)}</div><div style="font-size:9px;margin-top:3px;"><strong>Alergias:</strong> ${escapeHtml(manualAllergies || 'No registrado')}</div>` : ''}
                </div>
 
                <div class="section-header">INDICACIONES:</div>
                
                ${mode === 'prescription' ? `<div>${prescriptionRightHtml}</div>` : (() => {
-                 const mananaItems = currentPrescription.items.filter(i => (i.rutina === 'mañana' || i.rutina === 'ambos') && (i.nombre_comercial || i.medicamento));
-                 const nocheItems  = currentPrescription.items.filter(i => (i.rutina === 'noche'  || i.rutina === 'ambos') && (i.nombre_comercial || i.medicamento));
-                 const noRutina    = currentPrescription.items.filter(i => i.rutina === '' && (i.nombre_comercial || i.medicamento) && i.indicaciones?.trim());
+                 const mananaItems = prescriptionItems.filter(i => (i.rutina === 'mañana' || i.rutina === 'ambos') && (i.nombre_comercial || i.medicamento));
+                 const nocheItems  = prescriptionItems.filter(i => (i.rutina === 'noche'  || i.rutina === 'ambos') && (i.nombre_comercial || i.medicamento));
+                 const noRutina    = prescriptionItems.filter(i => i.rutina === '' && (i.nombre_comercial || i.medicamento) && i.indicaciones?.trim());
                  const sections = [];
                  if (mananaItems.length) sections.push(`
                    <div class="routine-section">

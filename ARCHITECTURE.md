@@ -330,6 +330,8 @@ Las operaciones de fotos también validan que el expediente pertenezca al tenant
 - CORS con lista de orígenes permitidos en los handlers revisados.
 - Presigned URLs para R2; el bucket no se declara público en el código.
 - Headers de seguridad en `vercel.json`.
+- `/api/records` autoriza server-side el módulo antes de inicializar DB o ejecutar acciones: `inventory*` requiere `inventory_enabled`, `finance*`/`sendFinanceCsv` requiere `finance_enabled` y las demás acciones privadas requieren `clinical_records_enabled`. Los permisos combinan `clinic_features` y los overrides denegatorios de `user_module_overrides`; `master_admin` conserva su bypass y las acciones públicas de firma mantienen su flujo separado. Esto complementa, no sustituye, RLS ni confirma el estado desplegado de Neon.
+- Las impresiones clínicas de diagnóstico, recetas e inyectables escapan los datos dinámicos como HTML y filtran los esquemas permitidos para imágenes antes de crear el documento.
 - Auditoría de operaciones clínicas mediante `patient_audit_log`, aunque algunos fallos de auditoría se silencian.
 - Variables privadas sin prefijo `VITE_` en la configuración revisada.
 - El webhook de WhatsApp deshabilita el body parser, valida `hub.verify_token` en el challenge y verifica `X-Hub-Signature-256` sobre los bytes originales con `WHATSAPP_APP_SECRET` antes de parsear JSON.
