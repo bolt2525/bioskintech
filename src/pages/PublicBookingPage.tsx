@@ -3,7 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { CalendarDays, Check, Clock3, X } from 'lucide-react';
 
 type TurnstileApi = {
-  render: (selector: string, options: { sitekey: string; theme: string; callback: (token: string) => void; 'expired-callback': () => void; 'error-callback': () => void }) => void;
+  render: (selector: string, options: { sitekey: string; theme: string; action: string; callback: (token: string) => void; 'expired-callback': () => void; 'error-callback': () => void }) => void;
   reset: () => void;
 };
 
@@ -131,6 +131,7 @@ export default function PublicBookingPage() {
       window.turnstile.render('#turnstile-widget', {
         sitekey: turnstileSiteKey,
         theme: 'light',
+        action: 'public_booking',
         callback: (token: string) => setForm((prev) => ({ ...prev, turnstileToken: token })),
         'expired-callback': () => setForm((prev) => ({ ...prev, turnstileToken: '' })),
         'error-callback': () => setForm((prev) => ({ ...prev, turnstileToken: '' })),
@@ -223,6 +224,8 @@ export default function PublicBookingPage() {
       const data = await res.json();
       if (!res.ok || !data?.success) {
         setError(data?.error || 'No se pudo crear la cita.');
+        setForm((prev) => ({ ...prev, turnstileToken: '' }));
+        window.turnstile?.reset();
         return;
       }
       const appointmentDate = new Date(`${form.date}T${form.time}:00-05:00`);
@@ -237,6 +240,8 @@ export default function PublicBookingPage() {
       }
     } catch {
       setError('Hubo un problema al agendar. Inténtalo de nuevo.');
+      setForm((prev) => ({ ...prev, turnstileToken: '' }));
+      window.turnstile?.reset();
     } finally {
       setSubmitting(false);
     }
@@ -382,4 +387,3 @@ export default function PublicBookingPage() {
     </div>
   );
 }
-
