@@ -180,7 +180,7 @@ export default function AdminMasterLogin() {
                 <div>
                   <label className="block text-xs font-medium text-gray-400 mb-1.5">
                     <Lock className="w-3 h-3 inline mr-1 text-amber-500" />
-                    Clave de acceso maestro
+                    Clave de acceso del proveedor del sistema
                   </label>
                   <div className="relative">
                     <input

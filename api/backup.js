@@ -15,9 +15,10 @@ import { lockClinicWriters, unlockClinicWriters, requireClinicWritable } from '.
 import { PHOTO_BACKUP_ACTIONS, handleAnnualPhotoBackup } from '../lib/annual-photo-backup.js';
 import { putR2Object, getR2ObjectBuffer, listR2Objects, generateDownloadUrl, generateUploadUrl, r2ObjectExists, deleteR2Object } from '../lib/r2-service.js';
 import {
-  BACKUP_MODULES, MAX_UPLOAD_BYTES, MAX_ROWS_PER_TABLE, EXCLUDED_CONSENT_COLUMNS, PATIENT_TEMPLATE_COLUMNS,
+  BACKUP_MODULES, MAX_UPLOAD_BYTES, MAX_JSON_BYTES, MAX_ROWS_PER_TABLE, EXCLUDED_CONSENT_COLUMNS, PATIENT_TEMPLATE_COLUMNS,
   buildBackupDocument, collectClinicData, compressBackup, decodeBackupBuffer, encryptBackup, hasBackupKey,
   inspectBackupDocument, buildDatasetCsv, validatePatientImportRow, buildPatientTemplateCsv, isTemplateExampleRow, buildConsentsPage, listConsentPatients,
+  isBackupUploadSizeAllowed,
 } from '../lib/backup-service.js';
 
 const CLINIC_SCOPED_TABLES = new Set([
@@ -341,19 +342,204 @@ export const isSnapshotKey = (key, clinicId) =>
 export const isUploadKey = (key, clinicId) =>
   typeof key === 'string' && new RegExp(`^backup-tmp/${clinicId}/uploads/[0-9a-f-]{36}$`).test(key);
 
+const MANUAL_SNAPSHOT_TIME_ZONE = 'America/Guayaquil';
+const MAX_RESTORABLE_SNAPSHOT_BYTES = MAX_UPLOAD_BYTES * 2;
+const ENCRYPTED_BACKUP_HEADER_BYTES = 33;
+
+async function manualSnapshotClock(db) {
+  return (await db.query(`SELECT
+    to_char(now() AT TIME ZONE '${MANUAL_SNAPSHOT_TIME_ZONE}', 'YYYY-MM-DD') AS local_date,
+    (date_trunc('day', now() AT TIME ZONE '${MANUAL_SNAPSHOT_TIME_ZONE}') + interval '1 day')
+      AT TIME ZONE '${MANUAL_SNAPSHOT_TIME_ZONE}' AS next_allowed_at,
+    now() AS now`)).rows[0];
+}
+
+function ecuadorDate(value) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: MANUAL_SNAPSHOT_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const fields = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${fields.year}-${fields.month}-${fields.day}`;
+}
+
+function manualSnapshotQuota(clock, existingManualSnapshots, metadata = null, historyMayBeTruncated = false, processing = false) {
+  const historyIncomplete = historyMayBeTruncated || existingManualSnapshots.length >= 500;
+  const latestObject = historyIncomplete ? null : [...existingManualSnapshots]
+    .sort((a, b) => new Date(b.lastModified ?? b.created_at) - new Date(a.lastModified ?? a.created_at))[0] || null;
+  const matching = existingManualSnapshots
+    .filter(item => ecuadorDate(item.lastModified ?? item.created_at) === clock.local_date)
+    .sort((a, b) => new Date(b.lastModified ?? b.created_at) - new Date(a.lastModified ?? a.created_at));
+  const existingToday = matching[0] || null;
+  const saved = metadata && typeof metadata === 'object' ? metadata : {};
+  const savedCreatedAt = saved.last_created_at && ecuadorDate(saved.last_created_at) === clock.local_date;
+  const successToday = Boolean(existingToday || savedCreatedAt);
+  const latest = latestObject || (saved.last_created_at ? {
+    created_at: saved.last_created_at,
+    key: typeof saved.last_key === 'string' ? saved.last_key : null,
+  } : null);
+  const state = historyIncomplete ? 'HISTORY_INCOMPLETE'
+    : processing ? 'PROCESSING' : successToday ? 'USED' : 'AVAILABLE';
+  return {
+    time_zone: MANUAL_SNAPSHOT_TIME_ZONE,
+    daily_limit: 1,
+    used_today: successToday ? 1 : 0,
+    available: !successToday && !historyIncomplete && !processing,
+    state,
+    reason: historyIncomplete ? 'No se pudo verificar todo el historial; contacta a soporte.' : null,
+    next_allowed_at: historyIncomplete || processing ? null : clock.next_allowed_at,
+    last_success_at: latest?.lastModified || latest?.created_at || null,
+    last_success_key: latest?.key || null,
+  };
+}
+
+export async function getManualSnapshotQuota(pool, clinicId, {
+  manualSnapshots,
+  listManualSnapshots = listR2Objects,
+  historyMayBeTruncated = false,
+} = {}) {
+  const client = await pool.connect();
+  let lockHeld = false;
+  try {
+    const lock = await client.query(
+      'SELECT pg_try_advisory_lock(hashtextextended($1,0)) AS acquired', [`manual-snapshot:${clinicId}`]);
+    lockHeld = lock.rows[0]?.acquired === true;
+    const [clock, settings, objects] = await Promise.all([
+      manualSnapshotClock(client),
+      client.query('SELECT general->\'_manual_backup\' AS metadata FROM clinic_settings WHERE clinic_id=$1', [clinicId]),
+      lockHeld ? (manualSnapshots ??
+        listManualSnapshots(`backups/${clinicId}/manual/`, 500)) : Promise.resolve(manualSnapshots || []),
+    ]);
+    return manualSnapshotQuota(clock, objects, settings.rows[0]?.metadata, historyMayBeTruncated, !lockHeld);
+  } finally {
+    if (lockHeld) {
+      try {
+        const result = await client.query('SELECT pg_advisory_unlock(hashtextextended($1,0)) AS unlocked',
+          [`manual-snapshot:${clinicId}`]);
+        if (result.rows[0]?.unlocked !== true)
+          throw new Error('No se pudo liberar el bloqueo de consulta del respaldo manual');
+      } catch (error) {
+        client.release(error);
+        throw error;
+      }
+    }
+    client.release();
+  }
+}
+
+export function manualBackupContract(quota) {
+  return {
+    available: quota.available,
+    next_allowed_at: quota.next_allowed_at,
+    last_created_at: quota.last_success_at,
+    timezone: quota.time_zone,
+    limit: quota.daily_limit,
+    ...(quota.state === 'HISTORY_INCOMPLETE' || quota.state === 'PROCESSING'
+      ? { state: quota.state, reason: quota.reason || null } : {}),
+  };
+}
+
+export async function reserveManualSnapshot(pool, clinicId, listManualSnapshots = listR2Objects, reservationClient = null) {
+  const ownsClient = !reservationClient;
+  const client = reservationClient || await pool.connect();
+  let lockHeld = false;
+  try {
+    const lock = await client.query(
+      'SELECT pg_try_advisory_lock(hashtextextended($1,0)) AS acquired', [`manual-snapshot:${clinicId}`]);
+    lockHeld = lock.rows[0]?.acquired === true;
+    if (!lockHeld) {
+      const clock = await manualSnapshotClock(client);
+      throw Object.assign(new Error('Ya hay un respaldo manual en curso para esta clínica; espera a que termine y vuelve a intentar.'), {
+        status: 429,
+        nextAllowedAt: clock.next_allowed_at,
+      });
+    }
+    const existingManualSnapshots = await listManualSnapshots(`backups/${clinicId}/manual/`, 500);
+    const clock = await manualSnapshotClock(client);
+    const metadata = (await client.query(
+      'SELECT general->\'_manual_backup\' AS metadata FROM clinic_settings WHERE clinic_id=$1', [clinicId],
+    )).rows[0]?.metadata;
+    const quota = manualSnapshotQuota(clock, existingManualSnapshots, metadata);
+    if (quota.state === 'HISTORY_INCOMPLETE')
+      throw Object.assign(new Error(quota.reason), { status: 503 });
+    if (!quota.available) {
+      const error = Object.assign(new Error(
+        `Ya se creó o está en curso un respaldo manual hoy en Ecuador; podrás solicitar otro después de ${new Date(clock.next_allowed_at).toLocaleString('es-EC', { timeZone: MANUAL_SNAPSHOT_TIME_ZONE })}.`,
+      ), { status: 429, nextAllowedAt: clock.next_allowed_at });
+      throw error;
+    }
+    return { client, clinicId, lockHeld, clock, ownsClient };
+  } catch (error) {
+    if (lockHeld) {
+      try {
+        const unlocked = await client.query('SELECT pg_advisory_unlock(hashtextextended($1,0)) AS unlocked',
+          [`manual-snapshot:${clinicId}`]);
+        if (unlocked.rows[0]?.unlocked !== true) throw new Error('No se pudo liberar el bloqueo manual del respaldo');
+      }
+      catch (unlockError) {
+        if (ownsClient) client.release(unlockError);
+        else unlockError.destroyClient = true;
+        throw unlockError;
+      }
+    }
+    if (ownsClient) client.release();
+    throw error;
+  }
+}
+
+export async function persistManualSnapshotMetadata(reservation, snapshot) {
+  if (!reservation?.client || !reservation.lockHeld) throw new Error('Reserva manual inválida');
+  const { client, clinicId } = reservation;
+  const clock = await manualSnapshotClock(client);
+  await client.query(`INSERT INTO clinic_settings(clinic_id,general) VALUES($1,
+      jsonb_build_object('_manual_backup',$2::jsonb))
+    ON CONFLICT(clinic_id) DO UPDATE SET
+      general=jsonb_set(coalesce(clinic_settings.general,'{}'::jsonb),'{_manual_backup}',$2::jsonb,true),
+      updated_at=now()`, [
+    clinicId,
+    JSON.stringify({
+      last_created_at: new Date(clock.now).toISOString(),
+      local_date: clock.local_date,
+      last_key: snapshot.key,
+      size_bytes: snapshot.size,
+    }),
+  ]);
+}
+
+export async function releaseManualSnapshotReservation(reservation) {
+  if (!reservation?.client || !reservation.lockHeld) return;
+  const { client, clinicId, ownsClient = true } = reservation;
+  try {
+    const result = await client.query('SELECT pg_advisory_unlock(hashtextextended($1,0)) AS unlocked',
+      [`manual-snapshot:${clinicId}`]);
+    if (result.rows[0]?.unlocked !== true) throw new Error('No se pudo liberar el bloqueo del respaldo manual');
+  } catch (error) {
+    if (ownsClient) client.release(error);
+    else error.destroyClient = true;
+    throw error;
+  }
+  if (ownsClient) client.release();
+}
+
 async function clinicName(pool, clinicId) {
   return (await pool.query('SELECT name FROM clinics WHERE id = $1', [clinicId])).rows[0]?.name || null;
 }
 
 export async function createSnapshot(pool, clinicId, kind, generatedBy, {
-  signal, collect = collectClinicData, put = putR2Object,
+  signal, collect = collectClinicData, put = putR2Object, beforeUpload,
 } = {}) {
   signal?.throwIfAborted();
   const modules = await collect(pool, clinicId, BACKUP_MODULES, { signal });
   signal?.throwIfAborted();
   const doc = buildBackupDocument({ clinicId, clinicName: await clinicName(pool, clinicId), generatedBy, kind, modules });
   signal?.throwIfAborted();
-  const body = encryptBackup(compressBackup(doc));
+  const body = encryptBackup(compressBackup(doc, {
+    maxCompressedBytes: MAX_RESTORABLE_SNAPSHOT_BYTES - ENCRYPTED_BACKUP_HEADER_BYTES,
+  }));
   signal?.throwIfAborted();
   const key = `backups/${clinicId}/${kind}/${stamp()}-${crypto.randomBytes(4).toString('hex')}.json.gz.enc`;
   const client = await pool.connect();
@@ -363,6 +549,7 @@ export async function createSnapshot(pool, clinicId, kind, generatedBy, {
     await lockClinicWriters(client, [clinicId]);
     await requireClinicWritable(client, clinicId, { allowInactive: true });
     signal?.throwIfAborted();
+    if (beforeUpload) await beforeUpload();
     await put(key, body, 'application/octet-stream', {
       abortSignal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10000)]) : AbortSignal.timeout(10000),
     });
@@ -375,7 +562,8 @@ export async function createSnapshot(pool, clinicId, kind, generatedBy, {
 }
 
 async function publishTemporaryDownload(clinicId, doc, filenameBase) {
-  return publishTemporaryFile(clinicId, compressBackup(doc), `${filenameBase}-${new Date().toISOString().split('T')[0]}.json.gz`);
+  return publishTemporaryFile(clinicId, compressBackup(doc, { maxCompressedBytes: MAX_UPLOAD_BYTES }),
+    `${filenameBase}-${new Date().toISOString().split('T')[0]}.json.gz`);
 }
 
 async function publishTemporaryFile(clinicId, gzBuffer, filename) {
@@ -644,6 +832,8 @@ export default async function handler(req, res) {
   const isPost = req.method === 'POST';
   let writerClient = null;
   let writerLocked = false;
+  let writerClientFailure = null;
+  let manualSnapshotReservation = null;
 
   try {
     if (clinicId) {
@@ -676,7 +866,9 @@ export default async function handler(req, res) {
         stats[key] = { label, count: (await pool.query(query, params)).rows[0].n, exists: true };
       }
       const totalRecords = Object.entries(stats).filter(([k]) => k !== 'clinical_photos').reduce((a, [, s]) => a + s.count, 0);
-      return res.status(200).json({ stats, totalRecords, clinic_id: clinicId || 'master', is_master: isMaster && !clinicId, encryption_ready: hasBackupKey() });
+      const manualBackup = clinicId ? manualBackupContract(await getManualSnapshotQuota(pool, clinicId)) : null;
+      return res.status(200).json({ stats, totalRecords, clinic_id: clinicId || 'master',
+        is_master: isMaster && !clinicId, encryption_ready: hasBackupKey(), manual_backup: manualBackup });
     }
 
     if (action === 'csv' && req.method === 'GET') {
@@ -710,7 +902,10 @@ export default async function handler(req, res) {
         .filter(o => isSnapshotKey(o.key, clinicId))
         .map(o => ({ key: o.key, kind: o.key.split('/')[2], size: o.size, created_at: o.lastModified }))
         .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-      return res.status(200).json({ snapshots: items, encryption_ready: hasBackupKey(), retention_days: 35, immutable_days: 30 });
+      const manualQuota = await getManualSnapshotQuota(pool, clinicId);
+      return res.status(200).json({ snapshots: items, manual_quota: manualQuota,
+        manual_backup: manualBackupContract(manualQuota),
+        encryption_ready: hasBackupKey(), retention_days: 35, immutable_days: 30 });
     }
 
     if (!isPost) return res.status(405).json({ error: 'Método no permitido' });
@@ -720,7 +915,7 @@ export default async function handler(req, res) {
     if (action === 'export') {
       if (body.snapshotKey != null) {
         if (!isSnapshotKey(body.snapshotKey, clinicId)) return res.status(400).json({ error: 'Respaldo no válido para esta clínica' });
-        const doc = decodeBackupBuffer(await getR2ObjectBuffer(body.snapshotKey, MAX_UPLOAD_BYTES * 2));
+        const doc = decodeBackupBuffer(await getR2ObjectBuffer(body.snapshotKey, MAX_RESTORABLE_SNAPSHOT_BYTES));
         inspectBackupDocument(doc, clinicId);
         return res.status(200).json(await publishTemporaryDownload(clinicId, doc, 'bioskintech-respaldo-nube'));
       }
@@ -740,8 +935,8 @@ export default async function handler(req, res) {
 
     if (action === 'uploadUrl') {
       const size = Number(body.size);
-      if (!Number.isInteger(size) || size < 2 || size > MAX_UPLOAD_BYTES)
-        return res.status(413).json({ error: `El archivo debe pesar menos de ${MAX_UPLOAD_BYTES / 1048576} MB` });
+      if (!isBackupUploadSizeAllowed(size))
+        return res.status(413).json({ error: `El archivo debe pesar entre 2 bytes y ${MAX_UPLOAD_BYTES / 1048576} MiB. Para archivos mayores, comprímelos con gzip; la API limita la expansión a ${MAX_JSON_BYTES / 1048576} MiB.` });
       const key = `backup-tmp/${clinicId}/uploads/${crypto.randomUUID()}`;
       const url = await generateUploadUrl(key, 'application/octet-stream', size, 300, MAX_UPLOAD_BYTES);
       return res.status(200).json({ key, url });
@@ -749,19 +944,25 @@ export default async function handler(req, res) {
 
     if (action === 'snapshot') {
       if (!hasBackupKey()) return res.status(503).json({ error: 'El cifrado de respaldos no está configurado. Contacta a soporte.' });
-      const recent = (await listR2Objects(`backups/${clinicId}/manual/`, 500))
-        .some(o => Date.now() - new Date(o.lastModified).getTime() < 10 * 60 * 1000);
-      if (recent) return res.status(429).json({ error: 'Ya se creó un respaldo manual hace menos de 10 minutos' });
-      const snap = await createSnapshot(pool, clinicId, 'manual', auth.username);
+      const snap = await createSnapshot(pool, clinicId, 'manual', auth.username, {
+        beforeUpload: async () => {
+          manualSnapshotReservation = await reserveManualSnapshot(pool, clinicId, listR2Objects, writerClient);
+        },
+      });
+      await persistManualSnapshotMetadata(manualSnapshotReservation, snap);
+      await releaseManualSnapshotReservation(manualSnapshotReservation);
+      manualSnapshotReservation = null;
+      const manualQuota = await getManualSnapshotQuota(pool, clinicId);
       console.info('[backup] manual snapshot', { clinicId, user: auth.id });
-      return res.status(201).json(snap);
+      return res.status(201).json({ ...snap, manual_quota: manualQuota,
+        manual_backup: manualBackupContract(manualQuota) });
     }
 
     if (action === 'restore') {
       const source = body.source === 'snapshot' ? 'snapshot' : 'upload';
       const validKey = source === 'snapshot' ? isSnapshotKey(body.key, clinicId) : isUploadKey(body.key, clinicId);
       if (!validKey) return res.status(400).json({ error: 'Archivo de respaldo no válido para esta clínica' });
-      const doc = decodeBackupBuffer(await getR2ObjectBuffer(body.key, MAX_UPLOAD_BYTES * 2));
+      const doc = decodeBackupBuffer(await getR2ObjectBuffer(body.key, MAX_RESTORABLE_SNAPSHOT_BYTES));
       const info = inspectBackupDocument(doc, clinicId);
       try { await rejectPurgedBackup(pool, doc, clinicId); }
       catch (error) {
@@ -794,17 +995,27 @@ export default async function handler(req, res) {
 
     return res.status(400).json({ error: 'Acción no válida' });
   } catch (error) {
+    if (error?.destroyClient) writerClientFailure = error;
     if (error?.name === 'NoSuchKey') return res.status(404).json({ error: 'El archivo ya no está disponible; vuelve a subirlo' });
     // Solo los Error propios (sin código de pg ni metadatos de AWS) llevan mensajes seguros para el usuario.
     const known = error instanceof Error && error.name === 'Error' && !error.code && !error.$metadata;
     console.error('[backup] error', action, error?.code || error?.name || 'Error');
-    return res.status(known ? (error.status === 409 ? 409 : 400) : 500).json({ error: known ? error.message : 'No se pudo procesar el respaldo.' });
+    const status = known ? (Number.isInteger(error.status) ? error.status : 400) : 500;
+    return res.status(status).json({ error: known ? error.message : 'No se pudo procesar el respaldo.',
+      ...(status === 429 && error.nextAllowedAt ? { next_allowed_at: error.nextAllowedAt } : {}) });
   } finally {
+    if (manualSnapshotReservation) {
+      try { await releaseManualSnapshotReservation(manualSnapshotReservation); }
+      catch (error) {
+        if (error?.destroyClient) writerClientFailure = error;
+        console.error('[backup:manual-snapshot] lock release failed', error.code || error.name);
+      }
+    }
     if (writerClient) {
       try {
         if (writerLocked) await unlockClinicWriters(writerClient, [clinicId]);
         await writerClient.query('SET statement_timeout = 0');
-        writerClient.release();
+        writerClient.release(writerClientFailure || undefined);
       } catch (error) {
         console.error('[backup:lifecycle] release failed', error.code || error.name);
         writerClient.release(error);

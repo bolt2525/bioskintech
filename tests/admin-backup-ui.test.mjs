@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import test from 'node:test';
 import vm from 'node:vm';
 import ts from 'typescript';
+import { gzipSync, gunzipSync } from 'node:zlib';
 
 const require = createRequire(import.meta.url);
 const backupPath = '../src/pages/AdminBackup.tsx';
@@ -75,7 +76,7 @@ function button(tree, label) {
   assert.ok(result, `Botón no encontrado: ${label}`);
   return result;
 }
-const json = (body, ok = true) => ({ ok, status: ok ? 200 : 503, json: async () => body });
+const json = (body, ok = true, status = ok ? 200 : 503) => ({ ok, status, json: async () => body });
 
 for (const role of [null, 'clinic_user']) {
   test(`backup y anual no consultan APIs sin permiso: ${role}`, async () => {
@@ -93,14 +94,72 @@ for (const state of ['loading', 'error', 'notready', 'ready']) {
       if (url.includes('snapshots')) return json({ snapshots: [] });
       if (state === 'loading') return new Promise(() => {});
       if (state === 'error') return json({ error: 'Servicio no disponible' }, false);
-      return json({ stats: {}, encryption_ready: state === 'ready' });
+      return json({ stats: {}, encryption_ready: state === 'ready', manual_backup: { available: true } });
     });
     let tree = await harness.mount();
     button(tree, 'Nube').props.onClick();
     tree = harness.render();
     assert.equal(button(tree, 'Crear respaldo en la nube ahora').props.disabled, state !== 'ready');
+    if (state === 'notready') assert.match(text(tree), /cifrado de respaldos no está verificado/);
   });
 }
+
+for (const [quota, message] of [
+  [null, /No se pudo verificar el cupo/],
+  [{ available: false, next_allowed_at: '2026-10-08T05:00:00Z' }, /Ya se utilizó el cupo/],
+  [{ available: false, state: 'PROCESSING' }, /copia manual en curso/],
+  [{ available: false, state: 'HISTORY_INCOMPLETE', reason: 'Historial no verificado' }, /Historial no verificado/],
+  [{ available: true }, /una copia manual por clínica y día/],
+]) {
+  test(`cupo manual falla cerrado y presenta estado: ${quota?.state || quota?.available || 'missing'}`, async () => {
+    const harness = componentHarness(backupPath, 'clinic_admin', async url =>
+      json(url.includes('snapshots') ? { snapshots: [] } : { stats: {}, encryption_ready: true, manual_backup: quota }));
+    let tree = await harness.mount();
+    button(tree, 'Nube').props.onClick();
+    tree = harness.render();
+    assert.equal(button(tree, 'Crear respaldo en la nube ahora').props.disabled, quota?.available !== true);
+    assert.match(text(tree), message);
+  });
+}
+
+test('una respuesta 429 del respaldo manual vuelve a consultar cupo y nube', async () => {
+  let statsCalls = 0;
+  let snapshotCalls = 0;
+  const harness = componentHarness(backupPath, 'clinic_admin', async url => {
+    if (url.includes('snapshots')) {
+      snapshotCalls++;
+      return json({ snapshots: [] });
+    }
+    if (url.includes('action=stats')) {
+      statsCalls++;
+      return json({
+        stats: {},
+        encryption_ready: true,
+        manual_backup: statsCalls === 1 ? { available: true } : {
+          available: false,
+          next_allowed_at: '2026-10-08T05:00:00Z',
+        },
+      });
+    }
+    if (url.includes('action=snapshot'))
+      return json({ error: 'El cupo ya se utilizó.' }, false, 429);
+    throw new Error(`Solicitud inesperada: ${url}`);
+  });
+  let tree = await harness.mount();
+  button(tree, 'Nube').props.onClick();
+  tree = harness.render();
+  button(tree, 'Crear respaldo en la nube ahora').props.onClick();
+  tree = harness.render();
+  button(tree, 'Crear respaldo').props.onClick();
+  await new Promise(resolve => setImmediate(resolve));
+  await new Promise(resolve => setImmediate(resolve));
+  tree = harness.render();
+
+  assert.equal(statsCalls, 2);
+  assert.equal(snapshotCalls, 2);
+  assert.match(text(tree), /El cupo ya se utilizó/);
+  assert.equal(button(tree, 'Crear respaldo en la nube ahora').props.disabled, true);
+});
 
 test('backup distingue ausencia, error y copia automática antigua (>48 h)', async () => {
   const cases = [
@@ -133,6 +192,8 @@ test('Base de Datos distingue selección JSON, firmas, originales y copias en nu
   assert.match(text(tree), /ni contiene los archivos de fotografías/);
   assert.match(text(tree), /no solo las casillas de Exportar/);
   assert.ok(elements(tree).some(node => node.props?.title === 'Respaldo técnico por módulos (JSON)'));
+  assert.match(text(tree), /50 MiB comprimidos y 200 MiB descomprimidos/);
+  assert.match(text(tree), /no entrega una copia que no puedas cargar/);
   assert.match(text(tree), /hasta 100 consentimientos/);
   for (const label of ['Exportar', 'Importar', 'Nube']) {
     const tab = elements(tree).find(node => node.type === 'button' && text(node).endsWith(label));
@@ -168,8 +229,8 @@ test('El canal anual apagado conserva coordinación asistida sin solicitudes aut
     return json({ configured: false, eligible: false, reason: 'feature_disabled', requests: [] });
   });
   const tree = await harness.mount();
-  assert.match(text(tree), /Contacta a soporte por los canales oficiales/);
-  assert.match(text(tree), /no necesitas contratar infraestructura/);
+  assert.match(text(tree), /Contacta a soporte para registrar y coordinar una solicitud asistida/);
+  assert.match(text(tree), /canal automático todavía no está habilitado/);
   assert.equal(button(tree, 'Solicitar Respaldo Anual').props.disabled, true);
   assert.equal(calls.length, 1);
 });
@@ -188,7 +249,7 @@ for (const configured of [false, true, undefined]) {
     assert.equal(button(tree, 'Registrar período').props.disabled, configured !== true);
     assert.equal(button(tree, 'Aprobar').props.disabled, configured !== true);
     if (configured === false) {
-      assert.match(text(tree), /respaldo fotográfico anual está deshabilitado/);
+      assert.match(text(tree), /Procesamiento automático deshabilitado/);
       assert.doesNotMatch(text(tree), /feature_disabled/);
       const form = elements(tree).find(node => node.type === 'form');
       form.props.onSubmit({ preventDefault() {} });
@@ -203,6 +264,40 @@ test('panel anual Master rechaza usuarios no Master aunque sean administradores'
   const tree = await componentHarness(annualPath, 'clinic_admin', async () => { calls++; }).mount({ master: true });
   assert.equal(tree, null);
   assert.equal(calls, 0);
+});
+
+test('Master consulta la clínica UUID y carga una sugerencia editable sin registrar automáticamente períodos', async () => {
+  const id = '3f2a9c1e-7b4d-4e8a-9f10-aa11bb22cc33';
+  const calls = [];
+  const harness = componentHarness(annualPath, 'master_admin', async (url, options) => {
+    calls.push({ url, options });
+    return json(url.includes('listPhotoBackupRequests') ? { configured: true, requests: [] } : {
+      configured: true, requests: [], period_suggestion: {
+        starts_at: '2026-10-07T00:00:00Z', ends_at: '2027-10-07T00:00:00Z',
+        source: 'subscription_expires_at - subscription_days', duration_days: 365,
+        requires_master_confirmation: true,
+      },
+    });
+  });
+  const props = { master: true, clinics: [{ id, name: 'Clínica ficticia' }] };
+  let tree = await harness.mount(props);
+  elements(tree).find(node => node.type === 'select').props.onChange({ target: { value: id } });
+  tree = await harness.mount(props);
+  const query = calls.find(call => call.url.includes('photoBackupStatus'));
+  assert.equal(query.options.method, 'GET');
+  assert.equal(query.options.headers['X-Target-Clinic-Id'], id);
+  let dates = elements(tree).filter(node => node.type === 'input' && node.props.type === 'date');
+  assert.deepEqual(dates.map(node => node.props.value), ['', '']);
+  button(tree, 'Usar fechas sugeridas').props.onClick();
+  tree = harness.render(props);
+  dates = elements(tree).filter(node => node.type === 'input' && node.props.type === 'date');
+  assert.deepEqual(dates.map(node => node.props.value), ['2026-10-07', '2027-10-07']);
+  dates[0].props.onChange({ target: { value: '2026-10-08' } });
+  tree = harness.render(props);
+  assert.equal(elements(tree).find(node => node.type === 'input' && node.props.type === 'date').props.value, '2026-10-08');
+  assert.match(text(tree), /vencimiento de suscripción menos 365 días/);
+  assert.match(text(tree), /no determina el período contractual anual/);
+  assert.equal(calls.some(call => call.url.includes('setPhotoBackupPeriod')), false);
 });
 
 function consentDownloader(api, downloadGzip) {
@@ -304,7 +399,8 @@ test('APIs autenticadas usan recordsFetch; GET/PUT presigned quedan sin credenci
   assert.doesNotMatch(source(annualPath), /\bfetch\(/);
   assert.doesNotMatch(source('../src/pages/AdminDashboard.tsx'), /\bfetch\(/);
   const backup = source(backupPath);
-  assert.equal((backup.match(/\bfetch\(/g) || []).length, 2);
+  assert.equal((backup.match(/\bfetch\(/g) || []).length, 3);
+  assert.match(backup, /const response = await fetch\(url\)/);
   assert.match(backup, /const res = await fetch\(url\)/);
   assert.match(backup, /const put = await fetch\(url, \{ method: 'PUT'/);
   assert.match(backup, /recordsFetch\(`\/api\/backup\?action=csv/);
@@ -313,6 +409,53 @@ test('APIs autenticadas usan recordsFetch; GET/PUT presigned quedan sin credenci
     assert.match(source(path), /<Dialog open/);
     assert.doesNotMatch(source(path), /role="dialog"/);
   }
+});
+
+test('JSON comprimido conserva bytes, firmas y nombre sin inflar el archivo en el cliente', async () => {
+  const payload = JSON.stringify({ consent_forms: [{ signature_data: 'x'.repeat(1_000_000) }], signature: 'firma-ficticia' });
+  const original = gzipSync(payload);
+  const blob = new Blob([original]);
+  const calls = [];
+  let saved;
+  const backup = source(backupPath);
+  const code = backup.slice(backup.indexOf('async function downloadCompressedBackup'), backup.indexOf('async function downloadConsentPages'));
+  const context = {
+    fetch: async (...args) => { calls.push(args); return { ok: true, blob: async () => blob }; },
+    saveBlob: (body, name) => { saved = { body, name }; },
+  };
+  vm.createContext(context);
+  vm.runInContext(compile(code), context);
+  await context.downloadCompressedBackup('https://example.invalid/download', 'respaldo.json.gz');
+  assert.deepEqual(calls, [['https://example.invalid/download']]);
+  assert.equal(saved.body, blob);
+  assert.equal(saved.name, 'respaldo.json.gz');
+  assert.deepEqual(Buffer.from(await saved.body.arrayBuffer()), original);
+  assert.equal(gunzipSync(original).toString(), payload);
+  context.fetch = async () => ({ ok: false });
+  await assert.rejects(context.downloadCompressedBackup('https://example.invalid/fail', 'fallo.json.gz'), /No se pudo descargar/);
+});
+
+test('historial pagina todas las copias y reinicia al filtrar sin perder acceso a registros antiguos', async () => {
+  const snapshots = Array.from({ length: 24 }, (_, i) => ({
+    key: `snapshot-${i}`, kind: i < 12 ? 'auto' : 'manual', size: 6500, created_at: '2026-10-07T08:00:00Z',
+  }));
+  const harness = componentHarness(backupPath, 'clinic_admin', async url =>
+    json(url.includes('snapshots') ? { snapshots } : { stats: {}, encryption_ready: true }));
+  let tree = await harness.mount();
+  button(tree, 'Nube').props.onClick();
+  tree = harness.render();
+  const downloadCount = () => elements(tree).filter(node => node.type === 'button' && node.props.title === 'Descargar').length;
+  assert.equal(downloadCount(), 10);
+  button(tree, 'Ver 10 copias más').props.onClick();
+  tree = harness.render();
+  assert.equal(downloadCount(), 20);
+  button(tree, 'Ver 10 copias más').props.onClick();
+  tree = harness.render();
+  assert.equal(downloadCount(), 24);
+  elements(tree).find(node => node.type === 'select').props.onChange({ target: { value: 'manual' } });
+  tree = harness.render();
+  assert.equal(downloadCount(), 10);
+  assert.match(text(tree), /10 de 12 copias/);
 });
 
 test('recordsFetch propaga clínica y usuario Master también a CSV y acciones anuales', async () => {

@@ -743,7 +743,7 @@ const AdminFinance = () => {
                         </button>
                       </div>
                     )}
-                    <p className="text-[10px] text-gray-400 mt-0.5">Por defecto: {clinicTaxRate}% (MasterAdmin)</p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">Por defecto: {clinicTaxRate}% (Proveedor del sistema)</p>
                   </div>
                 </div>
               </div>

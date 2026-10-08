@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { gzipSync, gunzipSync } from 'node:zlib';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 
 process.env.BACKUP_ENCRYPTION_KEY = 'test-key-'.padEnd(48, 'x');
 const svc = await import('../lib/backup-service.js');
@@ -18,6 +18,241 @@ test('encrypted snapshot round-trips and rejects tampering', () => {
   const tampered = Buffer.from(enc);
   tampered[tampered.length - 1] ^= 1;
   assert.throws(() => svc.decodeBackupBuffer(tampered), /alterado/);
+});
+
+test('native gzip restores 6.5 MiB of clinical JSON, signatures and markings byte-for-byte', () => {
+  const clinicalText = randomBytes(6.5 * 1024 * 1024 * 3 / 4).toString('base64');
+  const doc = svc.buildBackupDocument({
+    clinicId: CLINIC,
+    generatedBy: 'qa',
+    kind: 'download',
+    modules: { patients: { tables: {
+      patients: [{ id: 1, notes: clinicalText }],
+      physical_exams: [{ id: 2, face_map_data: { marks: [{ x: 0.125, y: 0.875, zone: 'frente' }] } }],
+      consent_forms: [{ id: 3, signatures: { patient_sig_data: 'data:image/png;base64,AAECAw==' }, signing_hash: 'integrity-proof' }],
+    } } },
+  });
+  const original = Buffer.from(JSON.stringify(doc), 'utf8');
+  const compressed = svc.compressBackup(doc);
+  assert.ok(original.length > 6.5 * 1024 * 1024);
+  assert.ok(compressed.length < original.length);
+  assert.ok(compressed.length < 50 * 1024 * 1024);
+  assert.deepEqual(svc.decodeBackupBuffer(compressed), doc);
+  assert.equal(svc.decodeBackupBuffer(compressed).modules.patients.tables.patients[0].notes, clinicalText);
+});
+
+test('direct-to-R2 upload accepts exactly 50 MiB, rejects larger or invalid lengths, and allows gzip-compressed inputs', () => {
+  assert.equal(svc.MAX_UPLOAD_BYTES, 50 * 1024 * 1024);
+  assert.equal(svc.MAX_JSON_BYTES, 200 * 1024 * 1024);
+  assert.equal(svc.isBackupUploadSizeAllowed(50 * 1024 * 1024), true);
+  assert.equal(svc.isBackupUploadSizeAllowed(50 * 1024 * 1024 + 1), false);
+  assert.equal(svc.isBackupUploadSizeAllowed(1), false);
+  assert.equal(svc.isBackupUploadSizeAllowed(Number.NaN), false);
+  assert.equal(svc.isBackupUploadSizeAllowed('52428800'), false);
+  assert.deepEqual(svc.decodeBackupBuffer(gzipSync(Buffer.from('{"format":"bioskintech-backup"}'))),
+    { format: 'bioskintech-backup' });
+});
+
+test('generated backups reject expanded or compressed output beyond standard restore limits with assisted guidance', () => {
+  assert.doesNotThrow(() => svc.assertBackupJsonSize(svc.MAX_JSON_BYTES));
+  assert.throws(
+    () => svc.assertBackupJsonSize(svc.MAX_JSON_BYTES + 1),
+    error => error.status === 413 && /200 MiB descomprimidos/.test(error.message) && /asistida/.test(error.message),
+  );
+  const doc = { format: svc.BACKUP_FORMAT, modules: { patients: { notes: 'synthetic' } } };
+  assert.throws(
+    () => svc.compressBackup(doc, { maxCompressedBytes: 1 }),
+    error => error.status === 413 && /asistida/.test(error.message),
+  );
+});
+
+test('manual backup stats contract has stable UI fields and no quota dependency on encryption', () => {
+  const payload = api.manualBackupContract({
+    available: false,
+    next_allowed_at: '2026-10-08T05:00:00.000Z',
+    last_success_at: '2026-10-07T18:30:00.000Z',
+    time_zone: 'America/Guayaquil',
+    daily_limit: 1,
+    state: 'USED',
+    reason: null,
+  });
+  assert.deepEqual(payload, {
+    available: false,
+    next_allowed_at: '2026-10-08T05:00:00.000Z',
+    last_created_at: '2026-10-07T18:30:00.000Z',
+    timezone: 'America/Guayaquil',
+    limit: 1,
+  });
+});
+
+function manualQuotaPool() {
+  let lockTail = Promise.resolve();
+  let lockHeld = false;
+  let storedMetadata = null;
+  const clock = {
+    local_date: '2026-10-07',
+    next_allowed_at: '2026-10-08T05:00:00.000Z',
+    now: new Date('2026-10-07T18:00:00.000Z'),
+  };
+  const queries = [];
+  const pool = {
+    queries,
+    async query(sql) {
+      queries.push(sql);
+      if (sql.includes('to_char(now() AT TIME ZONE')) return { rows: [clock] };
+      throw new Error(`Consulta inesperada: ${sql}`);
+    },
+    async connect() {
+      let releaseLock = null;
+      const takeLock = async () => {
+        const previous = lockTail;
+        let unlock;
+        lockTail = new Promise(resolve => { unlock = resolve; });
+        await previous;
+        lockHeld = true;
+        releaseLock = () => { lockHeld = false; unlock(); };
+      };
+      return {
+        async query(sql, params = []) {
+          queries.push(sql);
+          if (sql.includes('pg_try_advisory_lock(')) {
+            if (lockHeld) return { rows: [{ acquired: false }] };
+            await takeLock();
+            return { rows: [{ acquired: true }] };
+          }
+          if (sql.includes('pg_advisory_lock(') && !sql.includes('unlock')) {
+            await takeLock();
+            return { rows: [] };
+          }
+          if (sql.includes('to_char(now() AT TIME ZONE')) return { rows: [clock] };
+          if (sql.includes("SELECT general->'_manual_backup'")) return { rows: [{ metadata: storedMetadata }] };
+          if (sql.includes('INSERT INTO clinic_settings')) {
+            storedMetadata = JSON.parse(params[1]);
+            return { rowCount: 1 };
+          }
+          if (sql.includes('pg_advisory_unlock(')) {
+            const unlocked = Boolean(releaseLock);
+            releaseLock?.();
+            releaseLock = null;
+            return { rows: [{ unlocked }] };
+          }
+          throw new Error(`Consulta inesperada: ${sql}`);
+        },
+        release(error) { if (error) releaseLock?.(); },
+      };
+    },
+  };
+  return pool;
+}
+
+test('manual snapshot reservation is serialized per clinic and returns Ecuador next-allow time as HTTP quota data', async () => {
+  const pool = manualQuotaPool();
+  const first = await api.reserveManualSnapshot(pool, CLINIC, async () => []);
+  let error;
+  try { await api.reserveManualSnapshot(pool, CLINIC, async () => []); } catch (caught) { error = caught; }
+  assert.equal(error?.status, 429);
+  assert.equal(error.nextAllowedAt, '2026-10-08T05:00:00.000Z');
+  await api.releaseManualSnapshotReservation(first);
+  assert.ok(pool.queries.some(sql => sql.includes("hashtextextended($1,0)")));
+  assert.ok(pool.queries.some(sql => sql.includes("'America/Guayaquil'")));
+});
+
+test('manual snapshot reservation reuses the caller connection to avoid nested pool acquisition', async () => {
+  const backingPool = manualQuotaPool();
+  const client = await backingPool.connect();
+  let nestedConnectionRequested = false;
+  const pool = { connect: async () => { nestedConnectionRequested = true; throw new Error('No debe pedir otra conexión'); } };
+  const reservation = await api.reserveManualSnapshot(pool, CLINIC, async () => [], client);
+
+  assert.equal(nestedConnectionRequested, false);
+  assert.equal(reservation.ownsClient, false);
+  await api.releaseManualSnapshotReservation(reservation);
+  assert.ok(backingPool.queries.some(sql => sql.includes('pg_advisory_unlock(')));
+  client.release();
+});
+
+test('manual snapshot reservation releases the lock after an R2 check failure so a retry can proceed', async () => {
+  const pool = manualQuotaPool();
+  await assert.rejects(
+    api.reserveManualSnapshot(pool, CLINIC, async () => { throw new Error('R2 no disponible'); }),
+    /R2 no disponible/,
+  );
+  const retry = await api.reserveManualSnapshot(pool, CLINIC, async () => []);
+  await api.releaseManualSnapshotReservation(retry);
+});
+
+test('manual quota reports daily status/history without resetting a used allowance', async () => {
+  const pool = manualQuotaPool();
+  const quota = await api.getManualSnapshotQuota(pool, CLINIC, {
+    manualSnapshots: [{
+      key: `backups/${CLINIC}/manual/test.json.gz.enc`,
+      lastModified: new Date('2026-10-08T04:30:00.000Z'),
+    }],
+  });
+  assert.deepEqual({
+    time_zone: quota.time_zone,
+    daily_limit: quota.daily_limit,
+    used_today: quota.used_today,
+    available: quota.available,
+    state: quota.state,
+    next_allowed_at: quota.next_allowed_at,
+    last_success_key: quota.last_success_key,
+  }, {
+    time_zone: 'America/Guayaquil',
+    daily_limit: 1,
+    used_today: 1,
+    available: false,
+    state: 'USED',
+    next_allowed_at: '2026-10-08T05:00:00.000Z',
+    last_success_key: `backups/${CLINIC}/manual/test.json.gz.enc`,
+  });
+});
+
+test('manual quota reports an active atomic reservation as unavailable while snapshot work runs', async () => {
+  const pool = manualQuotaPool();
+  const reservation = await api.reserveManualSnapshot(pool, CLINIC, async () => []);
+  const quota = await api.getManualSnapshotQuota(pool, CLINIC, { manualSnapshots: [] });
+  assert.equal(quota.available, false);
+  assert.equal(quota.state, 'PROCESSING');
+  assert.equal(quota.next_allowed_at, null);
+  await api.releaseManualSnapshotReservation(reservation);
+});
+
+test('manual snapshot success is retained in existing clinic settings metadata without schema changes', async () => {
+  const pool = manualQuotaPool();
+  const reservation = await api.reserveManualSnapshot(pool, CLINIC, async () => []);
+  await api.persistManualSnapshotMetadata(reservation, {
+    key: `backups/${CLINIC}/manual/test.json.gz.enc`,
+    size: 4096,
+  });
+  await api.releaseManualSnapshotReservation(reservation);
+  const quota = await api.getManualSnapshotQuota(pool, CLINIC, { manualSnapshots: [] });
+  assert.equal(quota.state, 'USED');
+  assert.equal(quota.last_success_key, `backups/${CLINIC}/manual/test.json.gz.enc`);
+  assert.equal(pool.queries.some(sql => /CREATE TABLE|ALTER TABLE/.test(sql)), false);
+});
+
+test('existing manual snapshots consume today quota by Ecuador calendar day during rollout', async () => {
+  const pool = manualQuotaPool();
+  await assert.rejects(
+    api.reserveManualSnapshot(pool, CLINIC, async () => [{
+      key: `backups/${CLINIC}/manual/legacy.json.gz.enc`,
+      lastModified: new Date('2026-10-08T04:30:00.000Z'),
+    }]),
+    { status: 429 },
+  );
+});
+
+test('manual quota fails closed when the R2 listing reaches its 500-object verification cap', async () => {
+  const pool = manualQuotaPool();
+  const snapshots = Array.from({ length: 500 }, (_, index) => ({
+    key: `backups/${CLINIC}/manual/${index}.json.gz.enc`,
+    lastModified: new Date('2026-10-06T18:00:00.000Z'),
+  }));
+  const quota = await api.getManualSnapshotQuota(pool, CLINIC, { manualSnapshots: snapshots });
+  assert.equal(quota.available, false);
+  assert.equal(quota.state, 'HISTORY_INCOMPLETE');
+  assert.equal(quota.next_allowed_at, null);
 });
 
 test('retained copies from purged identities cannot be restored under a new clinic identity', async () => {

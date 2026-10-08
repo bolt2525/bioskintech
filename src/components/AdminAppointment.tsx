@@ -372,7 +372,7 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
         // Error real — mostrar mensaje descriptivo
         const errMsg = result.errors?.join(' | ') || result.message || 'Error al agendar';
         setError(errMsg.includes('Gmail') || errMsg.includes('Google')
-          ? '⚠️ No hay cuenta Gmail conectada para esta clínica. Pide al Master Admin que conecte Gmail desde los Ajustes de la clínica.'
+          ? '⚠️ No hay cuenta Gmail conectada para esta clínica. Pide al proveedor del sistema que conecte Gmail desde los Ajustes de la clínica.'
           : errMsg);
       } else {
         setSubmitted(true);
@@ -427,7 +427,7 @@ const AdminAppointment: React.FC<AdminAppointmentProps> = ({ onBack }) => {
           <h3 className="text-xl font-semibold text-gray-800 mb-2">Cuenta Gmail no conectada</h3>
           <p className="text-gray-500 max-w-sm">
             Esta clínica no tiene una cuenta Gmail vinculada. Para agendar citas es necesario conectar Gmail
-            desde el panel del Master Admin → Ajustes de la clínica → Email / Gmail.
+            desde el panel del proveedor del sistema → Ajustes de la clínica → Email / Gmail.
           </p>
         </div>
       </div>

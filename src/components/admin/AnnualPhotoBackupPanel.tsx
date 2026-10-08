@@ -16,11 +16,12 @@ const REASON_LABELS: Record<string, string> = {
   migration_needed: 'El respaldo fotográfico anual requiere una actualización del servidor. Contacte a soporte.',
 };
 
-async function requestApi<T>(action: string, body?: object): Promise<T> {
+async function requestApi<T>(action: string, body?: object, targetClinic?: string): Promise<T> {
   const response = await recordsFetch(`/api/backup?action=${action}`, {
     method: body ? 'POST' : 'GET',
     headers: {
       ...(body ? { 'Content-Type': 'application/json' } : {}),
+      ...(targetClinic ? { 'X-Target-Clinic-Id': targetClinic } : {}),
     },
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
@@ -50,6 +51,9 @@ export default function AnnualPhotoBackupPanel({ master = false, clinics = [] }:
   const [endDate, setEndDate] = useState('');
   const [decision, setDecision] = useState<{ id: string; approve: boolean } | null>(null);
   const [reason, setReason] = useState('');
+  const [periodSuggestion, setPeriodSuggestion] = useState<AnnualPhotoBackupStatus['period_suggestion']>(null);
+  const [periodLoading, setPeriodLoading] = useState(false);
+  const [periodError, setPeriodError] = useState('');
 
   const load = useCallback(async () => {
     if (!canManage) return;
@@ -77,6 +81,16 @@ export default function AnnualPhotoBackupPanel({ master = false, clinics = [] }:
   }, [canManage, master]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (!master || !canManage || !clinicId || configured !== true) return;
+    let cancelled = false;
+    setPeriodLoading(true); setPeriodError(''); setPeriodSuggestion(null);
+    void requestApi<AnnualPhotoBackupStatus>('photoBackupStatus', undefined, clinicId)
+      .then(result => { if (!cancelled) setPeriodSuggestion(result.period_suggestion || null); })
+      .catch(failure => { if (!cancelled) setPeriodError(failure instanceof Error ? failure.message : 'No se pudo consultar la vigencia'); })
+      .finally(() => { if (!cancelled) setPeriodLoading(false); });
+    return () => { cancelled = true; };
+  }, [master, canManage, clinicId, configured]);
   useEffect(() => {
     if (!canManage || !requests.some(item => ['APPROVED', 'PROCESSING'].includes(item.status))) return;
     const interval = window.setInterval(() => void load(), 30_000);
@@ -134,15 +148,19 @@ export default function AnnualPhotoBackupPanel({ master = false, clinics = [] }:
       <h2 className="flex items-center gap-2 text-lg font-semibold"><ShieldCheck className="h-5 w-5 text-gold-dark" aria-hidden="true" />Respaldo fotográfico anual</h2>
       <button type="button" disabled={busy || loading} onClick={() => void load()} className={buttonClass}><RefreshCw className="h-4 w-4" aria-hidden="true" />Actualizar</button>
     </header>
-    <p className="mt-3 text-sm leading-relaxed text-gray-600">Una entrega gratuita por clínica y período de 12 meses registrado, bajo solicitud y autorización del Master Admin. Incluye fotografías originales, datos clínicos y copias legibles de historias y consentimientos registrados. Se entrega en ZIP independientes; descargue todas las partes durante las 24 horas de disponibilidad. No sustituye el respaldo automático de datos ni una copia periódica de fotografías.</p>
+    <p className="mt-3 text-sm text-gray-600">Una entrega gratuita por clínica y período de 12 meses, con autorización del proveedor del sistema. Incluye fotografías originales e historias y consentimientos legibles.</p>
+    <details className="mt-2 text-xs text-gray-600">
+      <summary className="cursor-pointer font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold-dark">Formato y plazo de descarga</summary>
+      <p className="mt-2">Se entrega en ZIP independientes; descarga todas las partes durante las 24 horas de disponibilidad. No sustituye el respaldo automático de datos ni una copia periódica de fotografías.</p>
+    </details>
     {error && <p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
     {notice && <p role="status" className="mt-3 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p>}
-    {!loading && configured !== true && <p role="status" className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{configured === false ? 'El procesamiento está deshabilitado o no configurado. El registro de períodos, las solicitudes y las aprobaciones están bloqueados.' : 'No se pudo verificar la configuración. Actualice el estado antes de registrar períodos, solicitar o aprobar entregas.'}</p>}
-    {!master && !loading && configured !== true && <p className="mt-2 text-sm text-gray-600">El derecho a la entrega anual se mantiene. Contacta a soporte por los canales oficiales para registrar y coordinar una solicitud asistida; no necesitas contratar infraestructura.</p>}
-    {configurationReason && <p className="mt-3 text-sm text-gray-600">{REASON_LABELS[configurationReason] || configurationReason}</p>}
+    {!loading && configured !== true && <p role="status" className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{configured === false ? master ? 'Procesamiento automático deshabilitado. Registro de períodos y aprobaciones bloqueados.' : 'Solicitud disponible por soporte; el canal automático todavía no está habilitado.' : 'No se pudo consultar el estado. Actualiza para reintentar.'}</p>}
+    {!master && !loading && configured !== true && <p className="mt-2 text-sm text-gray-600">El derecho a la entrega anual se mantiene. Contacta a soporte para registrar y coordinar una solicitud asistida.</p>}
+    {configurationReason && configurationReason !== 'feature_disabled' && <p className="mt-3 text-sm text-gray-600">{REASON_LABELS[configurationReason] || configurationReason}</p>}
     {loading ? <p className="mt-4 flex items-center gap-2 text-sm"><Loader2 className="h-4 w-4 animate-spin" />Consultando solicitudes…</p> : <>
       {!master && <div className="mt-4 space-y-3">
-        <p className="text-sm">{data?.period ? `Período registrado: ${data.period.start_date.slice(0, 10)} a ${data.period.end_date.slice(0, 10)}` : 'El Master Admin debe registrar el período contractual antes de solicitar la entrega.'}</p>
+        {configured === true && <p className="text-sm">{data?.period ? `Período registrado: ${data.period.start_date.slice(0, 10)} a ${data.period.end_date.slice(0, 10)}` : 'El proveedor del sistema debe registrar el período contractual antes de solicitar la entrega.'}</p>}
         <button type="button" disabled={busy || configured !== true || !data?.eligible} onClick={() => setDecision({ id: '', approve: true })} className={buttonClass}>Solicitar Respaldo Anual</button>
       </div>}
       {master && <form className="mt-5 grid gap-3 rounded-xl bg-gray-50 p-4 sm:grid-cols-3" onSubmit={event => {
@@ -150,8 +168,17 @@ export default function AnnualPhotoBackupPanel({ master = false, clinics = [] }:
         void perform('setPhotoBackupPeriod', { clinicId, startDate, endDate }, 'Período registrado. La cuota se controla por clínica, no por usuario.');
       }}>
         <fieldset disabled={busy || configured !== true} className="contents">
-        <p className="text-sm text-gray-600 sm:col-span-3">Registre las fechas del período anual aceptado. No se generan automáticamente desde una fecha de suscripción editable.</p>
-        <label className="text-sm">Clínica<select required value={clinicId} onChange={event => setClinicId(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3"><option value="">Seleccione</option>{clinics.map(clinic => <option key={clinic.id} value={String(clinic.id)}>{clinic.name}</option>)}</select></label>
+        <p className="text-sm text-gray-600 sm:col-span-3">Usa la vigencia de suscripción como sugerencia y confirma el período contractual de 12 meses. No modifica períodos registrados ni reinicia cuotas.</p>
+        <label className="text-sm min-w-0">Clínica<select required value={clinicId} onChange={event => { setClinicId(event.target.value); setStartDate(''); setEndDate(''); setPeriodSuggestion(null); setPeriodError(''); }} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3"><option value="">Seleccione</option>{clinics.map(clinic => <option key={clinic.id} value={String(clinic.id)}>{clinic.name}</option>)}</select></label>
+        {clinicId && <div className="text-sm sm:col-span-3">
+          {periodLoading ? <p role="status">Consultando vigencia…</p> : periodError ? <p role="alert" className="text-red-700">{periodError}</p> : periodSuggestion ? <>
+            <p>Vigencia sugerida: {new Date(periodSuggestion.starts_at).toLocaleDateString('es-EC', { timeZone: 'UTC' })} a {new Date(periodSuggestion.ends_at).toLocaleDateString('es-EC', { timeZone: 'UTC' })} (fechas UTC).</p>
+            <p className="mt-1 text-xs text-gray-600">Calculada como vencimiento de suscripción menos {periodSuggestion.duration_days} días registrados. Es solo una referencia de vigencia, no determina el período contractual anual; confirma las fechas del contrato. Los campos siguen editables.</p>
+            <button type="button" className={`${buttonClass} mt-2`} onClick={() => {
+              setStartDate(periodSuggestion.starts_at.slice(0, 10)); setEndDate(periodSuggestion.ends_at.slice(0, 10));
+            }}>Usar fechas sugeridas</button>
+          </> : <p>No hay vigencia válida para sugerir fechas. Registra las fechas del contrato.</p>}
+        </div>}
         <label className="text-sm">Inicio<input required type="date" value={startDate} onChange={event => setStartDate(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3" /></label>
         <label className="text-sm">Fin exclusivo (12 meses)<input required type="date" min={startDate || undefined} value={endDate} onChange={event => setEndDate(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3" /></label>
         <button disabled={busy || configured !== true} className={buttonClass}>Registrar período</button>
@@ -166,7 +193,7 @@ export default function AnnualPhotoBackupPanel({ master = false, clinics = [] }:
           <button type="button" disabled={busy || loading || (decision.approve && configured !== true) || (!master && !data?.eligible) || (master && !decision.approve && !reason.trim())} className={buttonClass} onClick={() => void perform(
             !master ? 'requestPhotoBackup' : decision.approve ? 'approvePhotoBackup' : 'rejectPhotoBackup',
             !master ? {} : { requestId: decision.id, ...(decision.approve ? {} : { reason: reason.trim() }) },
-            !master ? 'Solicitud registrada. El Master Admin recibirá la notificación.' : decision.approve ? 'Autorización registrada; consulte el progreso.' : 'Solicitud rechazada.',
+            !master ? 'Solicitud registrada. El proveedor del sistema recibirá la notificación.' : decision.approve ? 'Autorización registrada; consulte el progreso.' : 'Solicitud rechazada.',
           )}>Confirmar</button>
           <button type="button" disabled={busy} onClick={() => setDecision(null)} className={buttonClass}>Cancelar</button>
         </div>

@@ -435,7 +435,7 @@ const CalendarManager: React.FC<CalendarManagerProps> = ({ onBack }) => {
           </button>
           <Calendar className="w-16 h-16 text-amber-400 mx-auto mb-4" />
           <h3 className="text-xl font-semibold text-gray-800 mb-2">Calendario no conectado</h3>
-          <p className="text-gray-500 text-sm">Esta clínica no tiene una cuenta de Gmail vinculada. Conecta Google Calendar desde el panel del Master Admin para gestionar citas.</p>
+          <p className="text-gray-500 text-sm">Esta clínica no tiene una cuenta de Gmail vinculada. Conecta Google Calendar desde el panel del proveedor del sistema para gestionar citas.</p>
         </div>
       </section>
     );

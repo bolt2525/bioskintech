@@ -1239,7 +1239,7 @@ export default function AdminDashboard() {
                                 disabled
                                 className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-500 cursor-not-allowed"
                               />
-                              <span className="text-xs text-gray-400 whitespace-nowrap">Solo el master admin puede modificarlo</span>
+                              <span className="text-xs text-gray-400">Solo el proveedor del sistema puede modificarlo</span>
                             </div>
                           </div>
                         )}

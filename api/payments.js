@@ -95,7 +95,7 @@ async function notifyMasterAdminPayment(planName, email, amount) {
           <tr><td style="padding:6px 10px;background:#fdf8f0;">Monto</td><td style="padding:6px 10px;background:#fdf8f0;">$${(amount / 100).toFixed(2)} USD</td></tr>
         </table>
         <p style="margin-top:16px;color:#888;font-size:12px;">El cliente aún debe completar el registro de su clínica.</p>
-        <p style="margin-top:8px;"><a href="${appUrl}/gestionestetica/admin/master" style="background:#deb887;color:white;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:bold;">Ver Master Admin →</a></p>
+        <p style="margin-top:8px;"><a href="${appUrl}/gestionestetica/admin/master" style="background:#deb887;color:white;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:bold;">Ver panel del proveedor del sistema →</a></p>
       </div>
     </div>
   `;

@@ -45,6 +45,7 @@ const {
   handleAnnualPhotoBackup,
   photoBackupExpectedKey,
   safeDocumentName,
+  suggestAnnualPhotoPeriod,
 } = await import('../lib/annual-photo-backup.js');
 
 function photo(index, overrides = {}) {
@@ -139,6 +140,36 @@ test('expected storage keys are tenant-scoped and validate UUIDs and part bounds
   }
   assert.throws(() => photoBackupExpectedKey('not-a-clinic', REQUEST, 1), { status: 400 });
   assert.throws(() => photoBackupExpectedKey(CLINIC, 'not-a-request', 1), { status: 400 });
+});
+
+test('annual period suggestion derives only from stored subscription expiry and duration and requires confirmation', () => {
+  const suggestion = suggestAnnualPhotoPeriod({
+    subscription_expires_at: '2026-10-07T18:00:00.000Z',
+    subscription_days: 365,
+  });
+  assert.deepEqual(suggestion, {
+    starts_at: '2025-10-07T18:00:00.000Z',
+    ends_at: '2026-10-07T18:00:00.000Z',
+    source: 'subscription_expires_at - subscription_days',
+    duration_days: 365,
+    requires_master_confirmation: true,
+  });
+  assert.equal(suggestAnnualPhotoPeriod({ subscription_expires_at: null, subscription_days: 365 }), null);
+  assert.equal(suggestAnnualPhotoPeriod({ subscription_expires_at: '2026-10-07', subscription_days: 0 }), null);
+  assert.equal(suggestAnnualPhotoPeriod({
+    subscription_expires_at: '2024-02-29T12:00:00.000Z',
+    subscription_days: 365,
+  }), null);
+  assert.deepEqual(suggestAnnualPhotoPeriod({
+    subscription_expires_at: '2025-02-28T12:00:00.000Z',
+    subscription_days: 365,
+  }), {
+    starts_at: '2024-02-29T12:00:00.000Z',
+    ends_at: '2025-02-28T12:00:00.000Z',
+    source: 'subscription_expires_at - subscription_days',
+    duration_days: 365,
+    requires_master_confirmation: true,
+  });
 });
 
 test('photo manifests reject foreign clinics, foreign keys, traversal, and invalid sizes', () => {
@@ -269,6 +300,7 @@ test('disabled status returns without touching tenant or administrative database
     eligible: false,
     reason: 'feature_disabled',
     period: null,
+    period_suggestion: null,
     requests: [],
   });
   assert.equal(poolCalls, 0);
@@ -287,7 +319,7 @@ test('clinic admins cannot configure a master-only annual period', async t => {
     body: { clinicId: CLINIC },
   }));
   assert.equal(result.statusCode, 403);
-  assert.match(result.body.error, /administrador maestro/);
+  assert.match(result.body.error, /proveedor del sistema/);
   assert.equal(poolCalls, 0);
   poolFactory = () => null;
 });

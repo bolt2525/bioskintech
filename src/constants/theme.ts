@@ -36,7 +36,7 @@ export const COLORS = {
 
 /** Etiquetas legibles en español para cada rol */
 export const ROLE_LABELS: Record<string, string> = {
-  master_admin: 'Master Admin',
+  master_admin: 'Proveedor del sistema',
   clinic_admin:  'Admin Clínica',
   clinic_user:   'Usuario',
 } as const;

@@ -89,6 +89,13 @@ export interface AnnualPhotoBackupStatus {
   eligible: boolean;
   reason: string | null;
   period: { id: string; start_date: string; end_date: string } | null;
+  period_suggestion?: {
+    starts_at: string;
+    ends_at: string;
+    source: string;
+    duration_days: number;
+    requires_master_confirmation: boolean;
+  } | null;
   requests: AnnualPhotoBackupRequest[];
 }
 
@@ -109,6 +116,8 @@ export interface Clinic {
   patient_count: number;
   subscription_expires_at?: string | null;
   subscription_days?: number;
+  purge_state?: string | null;
+  purge_completed_at?: string | null;
 }
 
 /** Usuario de una clínica */
@@ -130,7 +139,7 @@ export interface ClinicUser {
   inventory_scope?: AccessScope;
   calendar_scope?: 'own';
   is_active: boolean;
-  last_login: string;
+  last_login: string | null;
   clinic_id: number | null;
   clinic_name: string;
   clinic_slug?: string;

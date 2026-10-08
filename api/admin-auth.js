@@ -748,7 +748,7 @@ export async function seedData() {
         INSERT INTO clinic_users
           (clinic_id, username, password_hash, salt, hash_algo, full_name, role, access_scope)
         VALUES
-          (NULL, ${mu}, ${hash}, ${salt}, 'pbkdf2', 'Master Admin', 'master_admin', 'all')
+          (NULL, ${mu}, ${hash}, ${salt}, 'pbkdf2', 'Proveedor del sistema', 'master_admin', 'all')
       `;
       console.log(`✅ master_admin creado: ${mu}`);
     }
@@ -1611,7 +1611,7 @@ async function sendMasterAdminAlert(clinicName, adminEmail, adminUsername, admin
           <tr><td style="padding:6px 10px;background:#fdf8f0;">Email</td><td style="padding:6px 10px;background:#fdf8f0;">${adminEmail}</td></tr>
           <tr><td style="padding:6px 10px;">Plan</td><td style="padding:6px 10px;">${plan || 'Código de acceso'}</td></tr>
         </table>
-        <p style="margin-top:16px;"><a href="${appUrl}/gestionestetica/admin/master" style="background:#deb887;color:white;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:bold;">Ver en Master Admin →</a></p>
+        <p style="margin-top:16px;"><a href="${appUrl}/gestionestetica/admin/master" style="background:#deb887;color:white;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:bold;">Ver en el panel del proveedor del sistema →</a></p>
       </div>
     </div>
   `;
@@ -2262,6 +2262,8 @@ async function setupClinicDetails(requestUser, body) {
 async function listClinics() {
   return (await sql`
     SELECT c.*,
+           (SELECT cs.general->'_purge'->>'state' FROM clinic_settings cs WHERE cs.clinic_id=c.id) AS purge_state,
+           (SELECT cs.general->'_purge'->>'completedAt' FROM clinic_settings cs WHERE cs.clinic_id=c.id) AS purge_completed_at,
            COUNT(DISTINCT cu.id) FILTER (WHERE cu.is_active = true)::int AS user_count,
            COALESCE((SELECT COUNT(*)::int FROM patients p WHERE p.clinic_id = c.id), 0) AS patient_count
     FROM clinics c
@@ -2840,7 +2842,7 @@ async function handleAdminRequest(req, res) {
       if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master_admin' });
       const result = await createClinic(req.body || {});
       if (result.success) {
-        await sendDeveloperAlert('Nueva clínica creada desde Master Admin', {
+        await sendDeveloperAlert('Nueva clínica creada desde el panel del proveedor del sistema', {
           Clínica: result.clinic?.name,
           Email: result.clinic?.email,
           Acción: 'createClinic',
@@ -2858,7 +2860,7 @@ async function handleAdminRequest(req, res) {
         return res.status(error.status).json({ success: false, error: error.message });
       }
       if (result.success) {
-        await sendDeveloperAlert('Clínica actualizada desde Master Admin', {
+        await sendDeveloperAlert('Clínica actualizada desde el panel del proveedor del sistema', {
           Clínica: result.clinic?.name,
           Email: result.clinic?.email,
           Acción: 'updateClinic',

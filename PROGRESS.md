@@ -1,5 +1,15 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-07 Auditoría: 231 pruebas aprobadas.
+- ✅ 2026-10-07 Copias: QA desktop y móvil.
+- ✅ 2026-10-07 Proveedor del sistema: nomenclatura visible.
+- ✅ 2026-10-07 Generación respeta límites restaurables.
+- ✅ 2026-10-07 Master: QA responsive aprobado.
+- ✅ 2026-10-07 Cupo manual diario Ecuador.
+- ✅ 2026-10-07 Vigencia anual sugerida, confirmada.
+- ✅ 2026-10-07 Master: accesos, filtros, purga.
+- ✅ 2026-10-07 Copias comprimidas; guías plegables.
+- ✅ 2026-10-07 R2: reglas vigentes verificadas.
 - ✅ 2026-10-07 Purga clínica autorizada, por lotes.
 - ✅ 2026-10-07 Regresión integrada: 203 pruebas aprobadas.
 - ✅ 2026-10-07 Rechazos anuales: notificación inactiva controlada.

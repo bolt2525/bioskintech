@@ -352,7 +352,7 @@ const AdminCalendar: React.FC<AdminCalendarProps> = ({ onBack }) => {
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <Calendar className="w-16 h-16 text-amber-400 mb-4" />
           <h3 className="text-xl font-semibold text-gray-800 mb-2">Calendario no conectado</h3>
-          <p className="text-gray-500 max-w-sm">Esta clínica no tiene una cuenta de Gmail vinculada todavía. Conecta Google Calendar desde el panel del Master Admin.</p>
+          <p className="text-gray-500 max-w-sm">Esta clínica no tiene una cuenta de Gmail vinculada todavía. Conecta Google Calendar desde el panel del proveedor del sistema.</p>
         </div>
       </div>
     );

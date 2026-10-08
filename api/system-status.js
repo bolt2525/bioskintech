@@ -31,7 +31,7 @@ export default async function handler(req, res) {
       const pool = getPool();
       if (!pool) return res.status(503).json({ success: false, error: 'DB no disponible' });
       const clinicId = auth.effective_clinic_id ?? auth.clinic_id;
-      if (!clinicId) return res.status(200).json({ success: true, status: 'master', plan_name: 'Master Admin' });
+      if (!clinicId) return res.status(200).json({ success: true, status: 'master', plan_name: 'Proveedor del sistema' });
 
       // clinics y clinic_users están en la misma BD (POSTGRES_URL / NEON_DATABASE_URL)
       const [clinicRes, userRes] = await Promise.all([
@@ -93,7 +93,7 @@ export default async function handler(req, res) {
   }
 
   if (type === 'calendar') {
-    if (!isMaster) return res.status(403).json({ success: false, error: 'Acceso restringido — solo master_admin' });
+    if (!isMaster) return res.status(403).json({ success: false, error: 'Acceso restringido — solo proveedor del sistema' });
     return res.status(200).json(await checkCalendar());
   }
 

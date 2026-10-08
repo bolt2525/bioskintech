@@ -87,7 +87,17 @@ function isClinicPurgePreview(value: unknown): value is ClinicPurgePreview {
 function formatPurgeDate(value?: string | null): string {
   if (!value) return 'No registrada';
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? 'Fecha inválida' : date.toLocaleString('es-EC');
+  return Number.isNaN(date.getTime()) ? 'Fecha inválida' : date.toLocaleString('es-EC', { timeZone: 'America/Guayaquil' });
+}
+
+function formatElapsed(value?: string | null): string {
+  const timestamp = value ? Date.parse(value) : Number.NaN;
+  if (!Number.isFinite(timestamp)) return 'Sin fecha registrada';
+  const minutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60000));
+  if (minutes < 60) return `${minutes} min`;
+  if (minutes < 1440) return `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
+  const days = Math.floor(minutes / 1440);
+  return `${days} ${days === 1 ? 'día' : 'días'} ${Math.floor((minutes % 1440) / 60)} h`;
 }
 
 function formatPurgeEligibilityDate(value?: string | null): string {
@@ -115,7 +125,10 @@ function FeatureToggle({
     <button
       type="button"
       onClick={() => !disabled && onChange(!checked)}
-      className={`relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors duration-200 focus:outline-none ${
+      role="switch"
+      aria-checked={checked}
+      aria-label="Habilitar módulo"
+      className={`relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 ${
         checked ? 'bg-[#deb887]' : 'bg-gray-200'
       } ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
     >
@@ -1311,8 +1324,10 @@ export default function AdminMasterDashboard() {
   // ── Filtros de usuarios ──────────────────────────────────────────────────
   const [userSearch, setUserSearch]           = useState('');
   const [userClinicFilter, setUserClinicFilter] = useState('');
+  const [userStatusFilter, setUserStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [userSort, setUserSort] = useState<'name' | 'recent'>('name');
   const [clinicSearch, setClinicSearch] = useState('');
-  const [clinicStatusFilter, setClinicStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [clinicStatusFilter, setClinicStatusFilter] = useState<'all' | 'active' | 'inactive' | 'purged'>('all');
 
   // ─── Helpers ─────────────────────────────────────────────────────────────
 
@@ -1829,17 +1844,20 @@ export default function AdminMasterDashboard() {
   // ─── Filtros ──────────────────────────────────────────────────────────────
 
   const filteredUsers = allUsers.filter(u => {
-    const q            = userSearch.toLowerCase();
-    const matchSearch  = !q || u.username.toLowerCase().includes(q) || (u.full_name || '').toLowerCase().includes(q);
+    const q            = userSearch.trim().toLowerCase();
+    const matchSearch  = !q || [u.username, u.full_name, u.email, u.clinic_name].some(value => value?.toLowerCase().includes(q));
     const matchClinic  = !userClinicFilter || String(u.clinic_id) === userClinicFilter;
-    return matchSearch && matchClinic;
-  });
+    const matchStatus = userStatusFilter === 'all' || (userStatusFilter === 'active' ? u.is_active : !u.is_active);
+    return matchSearch && matchClinic && matchStatus;
+  }).sort((a, b) => userSort === 'recent'
+    ? (Date.parse(b.last_login || '') || 0) - (Date.parse(a.last_login || '') || 0)
+    : a.username.localeCompare(b.username, 'es'));
   const filteredClinics = clinics.filter(clinic => {
     const query = clinicSearch.trim().toLocaleLowerCase();
     const matchesSearch = !query || [clinic.name, clinic.slug, clinic.email]
       .some(value => value?.toLocaleLowerCase().includes(query));
     const matchesStatus = clinicStatusFilter === 'all' ||
-      (clinicStatusFilter === 'active' ? clinic.is_active : !clinic.is_active);
+      (clinicStatusFilter === 'purged' ? clinic.purge_state === 'COMPLETE' : clinicStatusFilter === 'active' ? clinic.is_active : !clinic.is_active);
     return matchesSearch && matchesStatus;
   });
 
@@ -1910,7 +1928,7 @@ export default function AdminMasterDashboard() {
               <div>
                 <div className="flex items-center gap-3">
                   <h1 className="text-xl font-bold tracking-tight text-white">BIOSKINTECH</h1>
-                  <span className="bg-[#deb887]/20 text-[#deb887] border border-[#deb887]/30 px-2.5 py-0.5 rounded-full text-[10px] font-semibold tracking-widest uppercase">Master</span>
+                  <span className="bg-[#deb887]/20 text-[#deb887] border border-[#deb887]/30 px-2.5 py-0.5 rounded-full text-[10px] font-semibold tracking-widest uppercase">Proveedor del sistema</span>
                 </div>
                 <p className="text-white/50 text-xs tracking-wide">Soluciones de Bioingeniería Estética · <span className="text-[#deb887]/70">{user?.username}</span></p>
               </div>
@@ -1928,6 +1946,8 @@ export default function AdminMasterDashboard() {
                   onClick={() => setShowNotifications(v => !v)}
                   className="relative p-2 rounded-lg bg-white/5 hover:bg-[#deb887]/10 border border-white/10 hover:border-[#deb887]/30 transition-all"
                   title="Notificaciones de vencimiento"
+                  aria-label={`Notificaciones de vencimiento (${notificationItems.length})`}
+                  aria-expanded={showNotifications}
                 >
                   <Bell className={`w-4 h-4 ${notificationItems.length > 0 ? 'text-amber-400' : 'text-white/60'}`} />
                   {notificationItems.length > 0 && (
@@ -1996,7 +2016,7 @@ export default function AdminMasterDashboard() {
               { label: 'Clínicas',  value: clinics.length,                                            icon: Building2,    color: 'bg-blue-500' },
               { label: 'Usuarios',  value: allUsers.length,                                           icon: Users,         color: 'bg-purple-500' },
               { label: 'Pacientes', value: clinics.reduce((s, c) => s + (c.patient_count || 0), 0),   icon: ClipboardList, color: 'bg-pink-500' },
-              { label: 'Activos',   value: allUsers.filter(u => u.is_active).length,                  icon: Activity,      color: 'bg-emerald-500' },
+              { label: 'Usuarios activos', value: allUsers.filter(u => u.is_active).length,           icon: Activity,      color: 'bg-emerald-500' },
             ].map(s => (
               <div key={s.label} className="bg-white/5 border border-white/10 hover:border-[#deb887]/30 rounded-xl p-3 flex items-center gap-3 transition-all">
                 <div className={`w-9 h-9 ${s.color} rounded-lg flex items-center justify-center flex-shrink-0`}>
@@ -2012,8 +2032,8 @@ export default function AdminMasterDashboard() {
 
           {/* Navegación: Contrato queda como acceso destacado y siempre visible */}
           <div className="mt-5 flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
-            <nav aria-label="Secciones de administración" className="min-w-0 flex-1 overflow-x-auto rounded-xl border border-white/10 bg-white/5 p-1">
-              <div className="flex w-max flex-nowrap gap-1">
+            <nav aria-label="Secciones de administración" className="min-w-0 flex-1 rounded-xl border border-white/10 bg-white/5 p-1">
+              <div className="grid grid-cols-2 gap-1 sm:flex sm:flex-wrap">
               {([
               ['clinics',   '🏥 Clínicas'],
               ['users',     '👥 Usuarios'],
@@ -2030,8 +2050,8 @@ export default function AdminMasterDashboard() {
                 aria-current={tab === key ? 'page' : undefined}
                 className={`shrink-0 rounded-lg px-4 py-2 text-sm font-medium transition-all focus:outline-none focus:ring-2 focus:ring-[#deb887] focus:ring-offset-2 focus:ring-offset-[#1a1209] ${
                   tab === key
-                    ? 'bg-gradient-to-r from-[#deb887] to-[#c5a075] text-white shadow-md shadow-[#deb887]/20'
-                    : 'text-white/50 hover:text-white/80'
+                    ? 'bg-gradient-to-r from-[#deb887] to-[#c5a075] text-gray-950 shadow-md shadow-[#deb887]/20'
+                    : 'text-white/80 hover:text-white'
                 }`}
               >
                 {label}
@@ -2058,7 +2078,7 @@ export default function AdminMasterDashboard() {
 
       {/* Toast de feedback */}
       {msg && (
-        <div className={`fixed top-4 right-4 z-50 px-5 py-3 rounded-xl shadow-lg text-white font-medium flex items-center gap-2 ${msg.type === 'ok' ? 'bg-emerald-600' : 'bg-red-600'}`}>
+        <div role={msg.type === 'err' ? 'alert' : 'status'} className={`fixed top-4 right-4 z-50 max-w-[calc(100vw-2rem)] px-5 py-3 rounded-xl shadow-lg text-white font-medium flex items-center gap-2 ${msg.type === 'ok' ? 'bg-emerald-600' : 'bg-red-600'}`}>
           {msg.type === 'ok' ? <Check className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
           {msg.text}
         </div>
@@ -2087,7 +2107,7 @@ export default function AdminMasterDashboard() {
                   type="search"
                   value={clinicSearch}
                   onChange={e => setClinicSearch(e.target.value)}
-                  placeholder="Buscar por clínica, usuario o correo…"
+                  placeholder="Buscar por clínica, identificador o correo…"
                   className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-9 pr-3 text-sm text-gray-800 placeholder:text-gray-400 focus:border-[#c5a075] focus:outline-none focus:ring-2 focus:ring-[#deb887]/30"
                 />
               </label>
@@ -2099,6 +2119,7 @@ export default function AdminMasterDashboard() {
                   className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-700 focus:border-[#c5a075] focus:outline-none focus:ring-2 focus:ring-[#deb887]/30"
                 >
                   <option value="all">Todos los estados</option>
+                  <option value="purged">Purgadas</option>
                   <option value="active">Activas</option>
                   <option value="inactive">Inactivas</option>
                 </select>
@@ -2127,9 +2148,14 @@ export default function AdminMasterDashboard() {
                             </div>
                           </div>
                           <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${clinic.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
-                            {clinic.is_active ? 'Activa' : 'Inactiva'}
+                            {clinic.purge_state === 'COMPLETE' ? 'Purgada' : clinic.is_active ? 'Activa' : 'Inactiva'}
                           </span>
                         </div>
+
+                        {clinic.purge_completed_at && <p className="mb-3 rounded-lg bg-gray-100 p-2 text-xs text-gray-700">
+                          Purga completada: {formatPurgeDate(clinic.purge_completed_at)} (Ecuador).
+                          {' '}Tiempo transcurrido: {formatElapsed(clinic.purge_completed_at)}.
+                        </p>}
 
                         <div className="mb-4 grid grid-cols-3 gap-2">
                           {[
@@ -2191,12 +2217,12 @@ export default function AdminMasterDashboard() {
                           <button
                             type="button"
                             onClick={() => setClinicActive(clinic)}
-                            disabled={clinicActionBusyId === clinic.id}
-                            aria-label={`${clinic.is_active ? 'Desactivar' : 'Reactivar'} clínica ${clinic.name}`}
+                            disabled={clinicActionBusyId === clinic.id || !!clinic.purge_state}
+                            aria-label={clinic.purge_state ? `Purga registrada: ${clinic.name}` : `${clinic.is_active ? 'Desactivar' : 'Reactivar'} clínica ${clinic.name}`}
                             className={`inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border bg-white px-2 py-2 text-xs font-medium transition-colors focus:outline-none focus:ring-2 disabled:cursor-wait disabled:opacity-60 ${clinic.is_active ? 'border-amber-200 text-amber-800 hover:bg-amber-50 focus:ring-amber-400' : 'border-emerald-200 text-emerald-700 hover:bg-emerald-50 focus:ring-emerald-400'}`}
                           >
                             {clinic.is_active ? <EyeOff className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />}
-                            {clinicActionBusyId === clinic.id ? 'Guardando…' : clinic.is_active ? 'Desactivar' : 'Reactivar'}
+                            {clinic.purge_state ? 'Purga registrada' : clinicActionBusyId === clinic.id ? 'Guardando…' : clinic.is_active ? 'Desactivar' : 'Reactivar'}
                           </button>
                           <button
                             type="button"
@@ -2232,21 +2258,33 @@ export default function AdminMasterDashboard() {
           <div>
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
               <h2 className="text-lg font-bold text-gray-900">Gestión de Usuarios</h2>
-              <div className="flex gap-2 flex-wrap">
+              <div className="flex min-w-0 max-w-full gap-2 flex-wrap">
                 <input
                   value={userSearch}
+                  type="search"
+                  aria-label="Buscar usuarios por nombre, correo o clínica"
                   onChange={e => setUserSearch(e.target.value)}
-                  placeholder="Buscar usuario…"
-                  className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 focus:outline-none w-48"
+                  placeholder="Usuario, nombre, correo o clínica…"
+                  className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 focus:outline-none w-full min-w-0 sm:w-48"
                 />
                 <select
                   value={userClinicFilter}
+                  aria-label="Filtrar usuarios por clínica"
                   onChange={e => setUserClinicFilter(e.target.value)}
-                  className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 focus:outline-none"
+                  className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-300 focus:outline-none w-full min-w-0 sm:w-auto sm:max-w-xs"
                 >
                   <option value="">Todas las clínicas</option>
                   {clinics.map(c => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
-                  <option value="null">Sin clínica (master)</option>
+                  <option value="null">Sin clínica (proveedor del sistema)</option>
+                </select>
+                <select aria-label="Filtrar usuarios por estado" value={userStatusFilter}
+                  onChange={event => setUserStatusFilter(event.target.value as typeof userStatusFilter)}
+                  className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 focus-visible:ring-2 focus-visible:ring-indigo-500">
+                  <option value="all">Todos los estados</option><option value="active">Activos</option><option value="inactive">Inactivos</option>
+                </select>
+                <select aria-label="Ordenar usuarios" value={userSort} onChange={event => setUserSort(event.target.value as typeof userSort)}
+                  className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 focus-visible:ring-2 focus-visible:ring-indigo-500">
+                  <option value="name">Nombre de usuario</option><option value="recent">Accesos recientes</option>
                 </select>
                 <button onClick={openCreateUser} className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium">
                   <Plus className="w-4 h-4" /> Nuevo
@@ -2254,12 +2292,14 @@ export default function AdminMasterDashboard() {
               </div>
             </div>
 
+            <p role="status" className="mb-3 text-xs text-gray-600">{filteredUsers.length} de {allUsers.length} usuarios · Fechas en hora de Ecuador (UTC−5). Último acceso = inicio de sesión exitoso.</p>
+            <p className="mb-2 text-xs text-gray-500 lg:hidden">Desliza la tabla para ver todas las columnas y acciones.</p>
             <div className="bg-white rounded-2xl shadow border border-gray-100 overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead className="bg-gray-50 border-b border-gray-100">
                     <tr>
-                      {['Usuario', 'Nombre', 'Rol', 'Clínica', 'Acceso', 'Estado', 'Google Calendar', 'Acciones'].map(h => (
+                      {['Usuario', 'Nombre', 'Rol', 'Clínica', 'Acceso', 'Estado', 'Último acceso', 'Google Calendar', 'Acciones'].map(h => (
                         <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
                       ))}
                     </tr>
@@ -2303,9 +2343,12 @@ export default function AdminMasterDashboard() {
                           </span>
                         </td>
                         <td className="px-4 py-3">
-                          <button onClick={() => toggleUserActive(u)} title={u.is_active ? 'Desactivar' : 'Activar'}>
+                          <button onClick={() => toggleUserActive(u)} title={u.is_active ? 'Desactivar' : 'Activar'} aria-label={`${u.is_active ? 'Usuario activo: desactivar' : 'Usuario inactivo: activar'} ${u.username}`}>
                             {u.is_active ? <Eye className="w-4 h-4 text-green-600" /> : <EyeOff className="w-4 h-4 text-gray-400" />}
                           </button>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-gray-700 whitespace-nowrap tabular-nums">
+                          {u.last_login ? <><p>{formatPurgeDate(u.last_login)}</p><p className="mt-1 text-gray-500">Hace {formatElapsed(u.last_login)}</p></> : 'Sin acceso registrado'}
                         </td>
                         <td className="px-4 py-3 min-w-[250px]">
                           {u.role === 'master_admin' ? (
@@ -2406,7 +2449,7 @@ export default function AdminMasterDashboard() {
                           {/* Inline expiry editor — solo para demos */}
                           {u.is_demo && isEditingExpiry && (
                             <tr className="bg-amber-50/60">
-                              <td colSpan={8} className="px-6 py-3 border-l-4 border-amber-400">
+                              <td colSpan={9} className="px-6 py-3 border-l-4 border-amber-400">
                                 <div className="flex flex-wrap items-center gap-3 text-xs">
                                   <span className="font-medium text-gray-700">Nuevo tiempo para <span className="font-mono">{u.username}</span>:</span>
                                   <input type="number" min={1} max={999} value={demoExpiryEdit.value}
@@ -2460,12 +2503,13 @@ export default function AdminMasterDashboard() {
                 </div>
               </div>
               {clinics.length > 0 && (
-                <div className="flex items-center gap-2">
+                <div className="flex min-w-0 items-center gap-2">
                   <span className="text-sm text-gray-500">Contexto:</span>
                   <select
                     value={selectedModuleClinic ?? ''}
-                    onChange={e => setSelectedModuleClinic(e.target.value ? parseInt(e.target.value) : null)}
-                    className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] focus:outline-none"
+                    aria-label="Clínica para acceder a los módulos"
+                    onChange={e => setSelectedModuleClinic(clinics.find(clinic => String(clinic.id) === e.target.value)?.id ?? null)}
+                    className="min-w-0 w-full sm:w-auto px-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] focus:outline-none"
                   >
                     <option value="">Global (master)</option>
                     {clinics.map(c => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
@@ -2890,7 +2934,7 @@ export default function AdminMasterDashboard() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Rol *</label>
                 <select value={userForm.role} onChange={e => setUserForm(p => ({ ...p, role: e.target.value }))} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] focus:outline-none">
-                  <option value="master_admin">Master Admin</option>
+                  <option value="master_admin">Proveedor del sistema</option>
                   <option value="clinic_admin">Admin Clínica</option>
                   <option value="clinic_user">Usuario</option>
                 </select>
@@ -3814,7 +3858,7 @@ export default function AdminMasterDashboard() {
                       <div><dt className="inline font-medium">Fase: </dt><dd className="inline">{purgeJob.phase || '—'}</dd></div>
                       <div><dt className="inline font-medium">Objetos R2 eliminados: </dt><dd className="inline">{purgeJob.deletedObjects ?? 0}</dd></div>
                       <div><dt className="inline font-medium">Solicitud registrada: </dt><dd className="inline">{formatPurgeDate(purgeJob.requestedAt)}</dd></div>
-                      {purgeJob.completedAt && <div><dt className="inline font-medium">Completada: </dt><dd className="inline">{formatPurgeDate(purgeJob.completedAt)}</dd></div>}
+                      {purgeJob.completedAt && <><div><dt className="inline font-medium">Completada: </dt><dd className="inline">{formatPurgeDate(purgeJob.completedAt)}</dd></div><div><dt className="inline font-medium">Tiempo desde la purga: </dt><dd className="inline">{formatElapsed(purgeJob.completedAt)}</dd></div></>}
                     </dl>
                     {purgeWaiting && (
                       <p className="mt-2 text-xs text-amber-900">
@@ -3832,7 +3876,7 @@ export default function AdminMasterDashboard() {
 
                 {!clinicPurgePreview.complete && (
                   <fieldset disabled={clinicPurgeBusy} className="space-y-3 rounded-xl border border-red-200 p-3">
-                    <legend className="px-1 text-sm font-semibold text-red-800">Confirmación y autorización Master</legend>
+                    <legend className="px-1 text-sm font-semibold text-red-800">Confirmación y autorización del proveedor del sistema</legend>
                     <div>
                       <label htmlFor="clinic-purge-confirmation" className="block text-xs font-medium text-gray-700">
                         Escribe exactamente el identificador de destino: <code className="font-bold">{clinicPurgePreview.requiredConfirmation}</code>

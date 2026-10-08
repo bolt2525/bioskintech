@@ -10,7 +10,8 @@ import { Dialog } from '../components/ui/Dialog';
 import recordsFetch from '../utils/recordsFetch';
 
 type Stat = { label: string; count: number; exists: boolean };
-type StatsData = { stats: Record<string, Stat>; totalRecords: number; clinic_id: string; is_master: boolean; encryption_ready: boolean };
+type ManualBackup = { available: boolean; next_allowed_at: string | null; last_created_at: string | null; timezone: string; limit: number; state?: string; reason?: string | null };
+type StatsData = { stats: Record<string, Stat>; totalRecords: number; clinic_id: string; is_master: boolean; encryption_ready: boolean; manual_backup?: ManualBackup | null };
 type Snapshot = { key: string; kind: string; size: number; created_at: string };
 type RestoreInfo = { signature: 'valid' | 'invalid' | 'unsigned'; sameClinic: boolean; timestamp: string | null; ageDays: number | null; modules: string[]; legacy: boolean };
 type RestoreReport = { inserted: Record<string, number>; existing: Record<string, number>; errors: { table: string; id: number | null; error: string }[]; errorCount: number; committed: boolean };
@@ -35,7 +36,7 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
   );
 }
 
-const MAX_UPLOAD_MB = 50;
+const MAX_UPLOAD_MIB = 50;
 const REQUIRED_HEADERS = ['nombres', 'apellidos', 'numero_identificacion'];
 
 const TABLE_LABELS: Record<string, string> = {
@@ -49,7 +50,7 @@ const TABLE_LABELS: Record<string, string> = {
 
 const MODULES = [
   { id: 'patients', label: 'Pacientes y Fichas Clínicas', icon: Users, restorable: true, statKeys: ['patients', 'clinical_records', 'consultations', 'medical_history', 'physical_exams', 'diagnoses', 'treatments', 'injectables', 'prescriptions', 'consent_forms', 'medical_history_snapshots', 'patient_audit_log', 'clinical_photos'],
-    description: 'Pacientes, expedientes, consultas, antecedentes y sus versiones, examen físico con marcaciones 2D/3D, diagnósticos, tratamientos, inyectables, recetas, consentimientos firmados, auditoría y referencias de fotos' },
+    description: 'Fichas, consultas, firmas y marcaciones 2D/3D. Incluye versiones y referencias de fotos, no originales fotográficos' },
   { id: 'finance', label: 'Finanzas', icon: DollarSign, restorable: true, statKeys: ['finance', 'financial_items'], description: 'Ingresos, egresos y partidas de facturas' },
   { id: 'inventory', label: 'Inventario', icon: Package, restorable: true, statKeys: ['inventory_items', 'inventory_batches', 'inventory_movements', 'inventory_groups'], description: 'Productos, subcategorías, lotes, vencimientos y movimientos' },
   { id: 'config', label: 'Configuración de la clínica', icon: Settings, restorable: false, statKeys: [], description: 'Datos de la clínica, ajustes, módulos, usuarios (sin contraseñas), recursos de agenda y asignaciones — solo referencia' },
@@ -80,7 +81,11 @@ async function downloadGzip(url: string, filename: string, type: string) {
   const body = await new Response((await res.blob()).stream().pipeThrough(new DecompressionStream('gzip'))).blob();
   saveBlob(new Blob([body], { type }), filename.replace(/\.gz$/, ''));
 }
-const downloadGzipAsJson = (url: string, filename: string) => downloadGzip(url, filename, 'application/json');
+async function downloadCompressedBackup(url: string, filename: string) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error('No se pudo descargar el respaldo comprimido');
+  saveBlob(await response.blob(), filename);
+}
 
 async function downloadConsentPages(patientIds: number[] | null, onProgress: (part: number) => void) {
   let offset = 0;
@@ -140,7 +145,7 @@ function parseCsv(text: string): string[][] {
 
 const normalizeHeader = (h: string) => h.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase().replace(/\s+/g, '_');
 const fmtSize = (bytes: number) => bytes > 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
-const fmtDate = (iso: string | null) => iso ? new Date(iso).toLocaleString('es-EC', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
+const fmtDate = (iso: string | null) => iso ? new Date(iso).toLocaleString('es-EC', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'America/Guayaquil' }) : '—';
 const KIND_LABEL: Record<string, string> = { auto: 'Automático diario', manual: 'Manual', 'pre-restore': 'Antes de restaurar' };
 
 function Card({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
@@ -180,7 +185,8 @@ export default function AdminBackup() {
   const [snapshots, setSnapshots] = useState<Snapshot[] | null>(null);
   const [loadingSnapshots, setLoadingSnapshots] = useState(true);
   const [snapshotsError, setSnapshotsError] = useState<string | null>(null);
-
+  const [snapshotKind, setSnapshotKind] = useState('all');
+  const [snapshotLimit, setSnapshotLimit] = useState(10);
   const [importMode, setImportMode] = useState<'restore' | 'patients'>('restore');
   const [restoreTarget, setRestoreTarget] = useState<{ source: 'upload' | 'snapshot'; key: string; label: string } | null>(null);
   const [restore, setRestore] = useState<RestoreResult | null>(null);
@@ -206,7 +212,10 @@ export default function AdminBackup() {
     if (!canManage) return;
     setLoadingStats(true);
     setStatsError(null);
-    try { setStats(await api<StatsData>('/api/backup?action=stats')); }
+    try {
+      const result = await api<StatsData>('/api/backup?action=stats');
+      setStats(result);
+    }
     catch (e) { setStats(null); setStatsError(e instanceof Error ? e.message : 'Error al cargar estadísticas'); }
     finally { setLoadingStats(false); }
   }, [canManage]);
@@ -235,16 +244,26 @@ export default function AdminBackup() {
     .reduce<Snapshot | null>((latest, snapshot) => !latest || Date.parse(snapshot.created_at) > Date.parse(latest.created_at) ? snapshot : latest, null) || null;
   const autoStale = !!lastAuto && Date.now() - Date.parse(lastAuto.created_at) > 48 * 60 * 60 * 1000;
   const encryptionReady = !loadingStats && !statsError && stats?.encryption_ready === true;
+  const manualBackup = stats?.manual_backup;
+  const manualReady = encryptionReady && stats?.manual_backup?.available === true;
+  const manualStatus = loadingStats || statsError || !stats ? 'No se pudo verificar el cifrado y el cupo manual. Actualiza para reintentar.'
+    : !encryptionReady ? 'El cifrado de respaldos no está verificado; no se puede crear una copia manual.'
+    : !manualBackup ? 'No se pudo verificar el cupo manual. Actualiza para reintentar.'
+    : manualBackup.state === 'PROCESSING' ? 'Hay una copia manual en curso. Actualiza cuando termine.'
+    : manualBackup.reason ? manualBackup.reason
+    : manualBackup.available ? 'Disponible: una copia manual por clínica y día (hora de Ecuador).'
+    : `Ya se utilizó el cupo de hoy.${manualBackup.next_allowed_at ? ` Próxima copia desde ${fmtDate(manualBackup.next_allowed_at)} (Ecuador).` : ' Actualiza para verificar disponibilidad.'}`;
   const autoStatus = loadingSnapshots ? 'Última copia automática: consultando…'
     : snapshotsError ? `No se pudo verificar la última copia automática: ${snapshotsError}`
     : lastAuto ? `Última copia automática: ${fmtDate(lastAuto.created_at)}${autoStale ? '. Tiene más de 48 horas; solicite revisión a soporte.' : ''}`
     : 'No hay una copia automática registrada. Consulte a soporte; no se puede confirmar la protección actual.';
 
   const count = (keys: string[]) => keys.reduce((sum, k) => sum + (stats?.stats[k]?.count || 0), 0);
+  const filteredSnapshots = (snapshots || []).filter(snapshot => snapshotKind === 'all' || snapshot.kind === snapshotKind);
 
   const exportJson = () => run('export', async () => {
     const { url, filename } = await api<{ url: string; filename: string }>('/api/backup?action=export', { modules: [...selected] });
-    await downloadGzipAsJson(url, filename);
+    await downloadCompressedBackup(url, filename);
     setNotice('Respaldo descargado. Contiene datos sensibles de salud: guárdalo cifrado y fuera del computador de uso diario.');
   });
 
@@ -304,7 +323,7 @@ export default function AdminBackup() {
     e.target.value = '';
     if (!file) return;
     if (!/\.(json|gz)$/i.test(file.name)) { setError('Selecciona un archivo .json o .json.gz exportado por BioSkinTech'); return; }
-    if (file.size > MAX_UPLOAD_MB * 1048576) { setError(`El archivo supera ${MAX_UPLOAD_MB} MB`); return; }
+    if (file.size > MAX_UPLOAD_MIB * 1048576) { setError(`El archivo supera ${MAX_UPLOAD_MIB} MiB. Usa la copia .json.gz sin descomprimir; si aún supera el límite, coordina una restauración asistida con soporte.`); return; }
     run('upload', async () => {
       const { key, url } = await api<{ key: string; url: string }>('/api/backup?action=uploadUrl', { size: file.size });
       const put = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/octet-stream' }, body: file });
@@ -364,15 +383,18 @@ export default function AdminBackup() {
   });
 
   const createSnapshot = () => run('snapshot', async () => {
-    if (!encryptionReady) throw new Error('Debe verificarse que el cifrado está configurado antes de crear una copia.');
-    await api('/api/backup?action=snapshot', {});
-    setNotice('Respaldo cifrado creado en la nube.');
-    await loadSnapshots();
+    if (!manualReady) throw new Error('Debe verificarse el cifrado y el cupo diario antes de crear una copia.');
+    try {
+      await api('/api/backup?action=snapshot', {});
+      setNotice('Respaldo cifrado creado. El cupo manual de hoy está utilizado.');
+    } finally {
+      await Promise.all([loadStats(), loadSnapshots()]);
+    }
   });
 
   const downloadSnapshot = (s: Snapshot) => run(`dl-${s.key}`, async () => {
     const { url, filename } = await api<{ url: string; filename: string }>('/api/backup?action=export', { snapshotKey: s.key });
-    await downloadGzipAsJson(url, filename);
+    await downloadCompressedBackup(url, filename);
   });
 
   if (!canManage) {
@@ -412,16 +434,21 @@ export default function AdminBackup() {
         {error && <div role="alert" className="mb-6 p-4 bg-red-50 border border-red-200 rounded-2xl text-red-700 text-sm flex gap-2"><AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />{error}</div>}
         {notice && <div role="status" className="mb-6 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-700 text-sm flex gap-2"><Check className="w-4 h-4 flex-shrink-0 mt-0.5" />{notice}</div>}
 
-        <div className="mb-6 rounded-2xl border border-gray-200 bg-white p-4 text-xs leading-relaxed text-gray-700">
-          <p className="font-semibold text-sm text-gray-900">Qué puedes gestionar en este módulo</p>
+        <p className="mb-4 text-sm text-gray-700">
+          {tab === 'export' ? 'Descarga datos por módulos, tablas para Excel o consentimientos legibles. Las fotografías originales se solicitan por separado.'
+            : tab === 'cloud' ? 'Consulta tus copias cifradas, descarga una o simula una restauración. Las fotografías originales no están incluidas.'
+            : 'Restaura registros faltantes desde un respaldo o importa pacientes por CSV. Primero revisa la simulación.'}
+        </p>
+        <details className="mb-6 rounded-2xl border border-gray-200 bg-white p-4 text-xs leading-relaxed text-gray-700">
+          <summary className="cursor-pointer font-semibold text-sm text-gray-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold-dark">Alcance y límites de las copias</summary>
           <ul className="mt-2 list-disc space-y-1 pl-4">
             <li><strong>Exportar:</strong> JSON de los módulos seleccionados, listados CSV y consentimientos firmados legibles. El JSON conserva datos estructurados, firmas y marcaciones; no es solo texto ni contiene los archivos de fotografías.</li>
             <li><strong>Nube:</strong> consultar copias automáticas y manuales de tu clínica, crear una copia cifrada, descargarla o simular una restauración. La copia en nube incluye datos estructurados de todos los módulos disponibles, no solo las casillas de Exportar.</li>
             <li><strong>Importar:</strong> agregar registros faltantes desde un respaldo o cargar pacientes desde la plantilla CSV. No reemplaza registros existentes ni recupera una fotografía cuyo archivo ya fue eliminado.</li>
-            <li><strong>Fotografías originales e historias legibles:</strong> entrega anual bajo solicitud y autorización Master, separada del respaldo diario. Si el canal automático no está disponible, solicita coordinación a soporte. La conservación postcontrato es de 30 días.</li>
+            <li><strong>Fotografías originales e historias legibles:</strong> entrega anual bajo solicitud y autorización del proveedor del sistema, separada del respaldo diario. Si el canal automático no está disponible, solicita coordinación a soporte. La conservación postcontrato es de 30 días.</li>
           </ul>
           <p className="mt-2">Disponible para el administrador de la clínica; los colaboradores no pueden exportar o restaurar de forma masiva. Los límites de volumen producen errores explícitos, no una descarga incompleta presentada como completa.</p>
-        </div>
+        </details>
 
         {tab === 'export' && (
           <>
@@ -429,12 +456,8 @@ export default function AdminBackup() {
               <ShieldCheck className="w-6 h-6 flex-shrink-0" aria-hidden="true" />
               <div className="text-sm">
                 <p className="font-semibold">Estado del respaldo automático de datos</p>
-                <p className="text-xs mt-1 leading-relaxed">
-                  El sistema tiene una programación de respaldo automático de datos. La ejecución depende de la configuración y disponibilidad del servicio.
-                  Verifique la fecha de la última copia registrada; no se garantiza una próxima ejecución ni un máximo de pérdida de un día.
-                </p>
                 <p role="status" className="text-xs mt-1 font-medium">{autoStatus}</p>
-                <p className="text-xs mt-1">Las descargas de esta página sirven para tener tu propia copia o llevar tus datos a otro sistema.</p>
+                <p className="text-xs mt-1">Programación diaria. La fecha registrada indica la última copia disponible, no una garantía de recuperación total.</p>
               </div>
             </div>
             {statsError && <p role="alert" className="mb-4 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">No se pudieron consultar las estadísticas: {statsError}</p>}
@@ -456,7 +479,8 @@ export default function AdminBackup() {
               </div>
             )}
 
-            <Card title="¿Qué incluyen los respaldos?" subtitle="El JSON exporta los módulos seleccionados; la copia automática recopila los módulos disponibles">
+            <details className="mb-6 rounded-2xl border border-gray-200 bg-white p-4">
+              <summary className="cursor-pointer text-sm font-semibold text-gray-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold-dark">¿Qué incluyen los respaldos?</summary>
               <ul className="text-xs text-gray-700 space-y-1.5">
                 <li className="flex gap-2"><Check className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0 mt-0.5" />Datos de fichas, consentimientos (con firmas digitalizadas y huellas de integridad), recetas, finanzas e inventario, según los módulos incluidos en la copia.</li>
                 <li className="flex gap-2"><Check className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0 mt-0.5" />Marcaciones de mapas faciales/corporales y del mapeo 3D de inyectables (se guardan como datos, no como imágenes).</li>
@@ -465,11 +489,13 @@ export default function AdminBackup() {
                 <li className="flex gap-2"><XCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" /><span><strong>Modelos 3D y plantillas:</strong> forman parte del software, no son datos de la clínica.</span></li>
                 <li className="flex gap-2"><XCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" /><span><strong>Contraseñas, tokens y códigos de firma remota:</strong> nunca se exportan, por seguridad.</span></li>
               </ul>
-            </Card>
+            </details>
 
             <AnnualPhotoBackupPanel />
 
-            <Card title="Respaldo técnico por módulos (JSON)" subtitle="Incluye únicamente los módulos marcados. Es un formato para restaurar datos en BioSkinTech, no para leer o editar en Excel.">
+            <Card title="Respaldo técnico por módulos (JSON)" subtitle="Descarga comprimida .json.gz, sin pérdida de datos. Compatible con Importar; no es un archivo para Excel.">
+              <p className="mb-4 text-xs text-gray-600">Los conteos son registros, no pacientes: una ficha puede incluir consultas, firmas y versiones.{stats?.stats.patients?.exists && ` Pacientes registrados: ${stats.stats.patients.count}.`}</p>
+              <p className="mb-4 text-xs text-gray-600">La generación verifica que la copia quepa en los límites estándar de restauración (50 MiB comprimidos y 200 MiB descomprimidos). Si los supera, no entrega una copia que no puedas cargar; coordina un proceso asistido con soporte.</p>
               <div className="divide-y divide-gray-100 -mx-4 -mt-4 mb-4">
                 {MODULES.map(m => {
                   const on = selected.has(m.id);
@@ -478,20 +504,20 @@ export default function AdminBackup() {
                       <input type="checkbox" checked={on} className="mt-1 w-4 h-4 accent-gold"
                         onChange={() => setSelected(prev => { const n = new Set(prev); if (n.has(m.id)) n.delete(m.id); else n.add(m.id); return n; })} />
                       <m.icon className="w-4 h-4 text-gold-dark mt-1 flex-shrink-0" />
-                      <div className="flex-1">
+                      <div className="flex-1 min-w-0">
                         <p className="font-medium text-gray-800 text-sm">{m.label} {!m.restorable && <span className="ml-1 text-[10px] uppercase bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">solo consulta</span>}</p>
                         <p className="text-xs text-gray-500 leading-relaxed">{m.description}</p>
                       </div>
-                      {m.statKeys.length > 0 && <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full flex-shrink-0">{loadingStats ? '—' : count(m.statKeys).toLocaleString('es-EC')}</span>}
+                      {m.statKeys.length > 0 && <span title="Registros incluidos en el módulo" className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full flex-shrink-0">{loadingStats || !stats ? '—' : `${count(m.statKeys).toLocaleString('es-EC')} reg.`}</span>}
                     </label>
                   );
                 })}
               </div>
               <button onClick={() => ask('Descargar respaldo técnico',
-                <>Se generará un archivo JSON con: <strong>{MODULES.filter(m => selected.has(m.id)).map(m => m.label).join(', ')}</strong>. {SENSITIVE}</>,
+                <>Se generará un archivo JSON comprimido (.json.gz) con: <strong>{MODULES.filter(m => selected.has(m.id)).map(m => m.label).join(', ')}</strong>. {SENSITIVE}</>,
                 'Descargar', exportJson)} disabled={!!busy || selected.size === 0}
                 className="w-full py-3.5 rounded-xl font-semibold flex items-center justify-center gap-2 bg-gold text-white hover:bg-gold-dark disabled:opacity-50">
-                {busy === 'export' ? <><Loader2 className="w-5 h-5 animate-spin" />Generando respaldo...</> : <><FileJson className="w-5 h-5" />Descargar respaldo (.json)</>}
+                {busy === 'export' ? <><Loader2 className="w-5 h-5 animate-spin" />Generando respaldo…</> : <><FileJson className="w-5 h-5" />Descargar respaldo (.json.gz)</>}
               </button>
             </Card>
 
@@ -540,10 +566,11 @@ export default function AdminBackup() {
                 {!restore && (
                   <label className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-2xl bg-white cursor-pointer hover:border-gold ${busy ? 'opacity-50 pointer-events-none' : ''}`}>
                     {busy === 'upload' || busy === 'preview' ? <Loader2 className="w-8 h-8 text-gold animate-spin mb-2" /> : <FileJson className="w-8 h-8 text-gray-300 mb-2" />}
-                    <span className="text-sm text-gray-500">{busy === 'upload' ? 'Subiendo y analizando…' : `Selecciona un respaldo .json o .json.gz (máx. ${MAX_UPLOAD_MB} MB)`}</span>
+                    <span className="text-sm text-gray-500">{busy === 'upload' ? 'Subiendo y analizando…' : `Selecciona un respaldo .json o .json.gz (máx. ${MAX_UPLOAD_MIB} MiB)`}</span>
                     <input ref={backupInput} type="file" accept=".json,.gz,application/json,application/gzip" className="hidden" onChange={onBackupFile} />
                   </label>
                 )}
+                <p className="my-3 text-xs text-gray-600">Límite estándar: 50 MiB comprimidos y 200 MiB descomprimidos. Usa .json.gz sin extraerlo. Las copias que superen estos límites no se generan para restauración estándar; conserva el archivo completo y coordina exportación/restauración asistida con soporte. No lo recortes ni modifiques firmas.</p>
                 {restore && restoreTarget && (
                   <Card title="Resultado de la simulación" subtitle={restoreTarget.label}>
                     <div className="grid grid-cols-2 gap-2 text-xs mb-4">
@@ -656,33 +683,43 @@ export default function AdminBackup() {
 
         {tab === 'cloud' && (
           <>
-            <Card title="Respaldo automático protegido" subtitle="Protección ante borrados accidentales, ataques informáticos o secuestro de datos (ransomware)">
-              <ul className="text-xs text-gray-700 space-y-1.5 mb-4">
+            <Card title="Copias de datos en la nube" subtitle="Copias cifradas de tu clínica; originales fotográficos por solicitud anual">
+              <details className="mb-3 text-xs text-gray-700">
+              <summary className="cursor-pointer font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold-dark">Protección y conservación</summary>
+              <ul className="mt-2 space-y-1.5">
                 <li className="flex gap-2"><ShieldCheck className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0 mt-0.5" />Las copias de datos se cifran con AES-256 antes de salir del servidor. La programación automática depende de la configuración y disponibilidad del servicio.</li>
                 <li className="flex gap-2"><ShieldCheck className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0 mt-0.5" />Se guarda en un proveedor distinto a la base de datos principal (Cloudflare R2, separado de Neon) y queda <strong>bloqueada contra borrado o modificación durante 30 días</strong>, incluso ante un atacante con acceso a la aplicación.</li>
-                <li className="flex gap-2"><History className="w-3.5 h-3.5 text-blue-600 flex-shrink-0 mt-0.5" />La retención prevista es de 35 días. Ante un incidente, podrían perderse los cambios posteriores a la última copia disponible; revise su antigüedad.</li>
+                <li className="flex gap-2"><History className="w-3.5 h-3.5 text-blue-600 flex-shrink-0 mt-0.5" />Las copias automáticas, manuales y previas a restauración caducan a los 35 días desde su creación. La eliminación de Cloudflare es asíncrona; puede ocurrir después. Los cambios posteriores a la última copia no están cubiertos.</li>
               </ul>
+              </details>
               <p role="status" className={`text-xs mb-3 ${snapshotsError || autoStale || (!loadingSnapshots && !lastAuto) ? 'text-amber-800' : 'text-gray-700'}`}>{autoStatus}</p>
               {!encryptionReady && <p role="status" className="text-xs text-amber-800 mb-3">{loadingStats ? 'Verificando la configuración del cifrado…' : statsError ? `No se pudo verificar el cifrado: ${statsError}. La creación está bloqueada.` : stats?.encryption_ready === false ? 'El cifrado de respaldos no está configurado en el servidor. Contacta a soporte.' : 'El cifrado aún no está verificado. Actualice el estado antes de crear una copia.'}</p>}
-              <button onClick={() => ask('Crear respaldo en la nube', 'Se solicitará una copia cifrada de los datos de la clínica, con protección contra borrado de 30 días y retención prevista de 35 días. Verifique el resultado al finalizar.', 'Crear respaldo', createSnapshot)} disabled={!!busy || !encryptionReady}
+              <p role="status" className="mb-3 text-xs text-gray-700">{loadingStats ? 'Verificando el cupo manual…' : manualStatus}</p>
+              <button onClick={() => ask('Crear respaldo en la nube', 'Se solicitará una copia cifrada. Máximo una copia manual exitosa por clínica y día, hasta medianoche en Ecuador. Las copias automáticas, exportaciones y previas a restaurar no consumen este cupo.', 'Crear respaldo', createSnapshot)} disabled={!!busy || !manualReady}
                 className="w-full py-3 rounded-xl bg-gold text-white font-semibold hover:bg-gold-dark disabled:opacity-50 flex items-center justify-center gap-2">
                 {busy === 'snapshot' ? <Loader2 className="w-5 h-5 animate-spin" /> : <Cloud className="w-5 h-5" />}Crear respaldo en la nube ahora
               </button>
             </Card>
 
             <Card title="Respaldos disponibles" subtitle="Descárgalos o restaura registros faltantes desde cualquiera de ellos">
+              <label className="mb-3 block text-xs text-gray-700">Tipo de copia
+                <select value={snapshotKind} onChange={event => { setSnapshotKind(event.target.value); setSnapshotLimit(10); }}
+                  className="ml-2 rounded-lg border border-gray-300 bg-white px-2 py-2 text-sm text-gray-900 focus-visible:ring-2 focus-visible:ring-gold-dark">
+                  <option value="all">Todas</option>{Object.entries(KIND_LABEL).map(([kind, label]) => <option key={kind} value={kind}>{label}</option>)}
+                </select>
+              </label>
               {loadingSnapshots && <p role="status" className="text-sm text-gray-500 flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Cargando…</p>}
               {snapshotsError && <p role="alert" className="text-sm text-red-700">No se pudo consultar la lista: {snapshotsError}. Use Actualizar para reintentar.</p>}
               {!loadingSnapshots && !snapshotsError && snapshots?.length === 0 && <p className="text-sm text-gray-500">No hay respaldos registrados. Consulte la configuración con soporte o cree una copia cuando el cifrado esté verificado.</p>}
               <div className="divide-y divide-gray-100 -mx-4">
-                {snapshots?.map(s => (
+                {filteredSnapshots.slice(0, snapshotLimit).map(s => (
                   <div key={s.key} className="flex items-center gap-3 px-4 py-3">
                     <Cloud className="w-4 h-4 text-blue-500 flex-shrink-0" />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm text-gray-800">{fmtDate(s.created_at)}</p>
                       <p className="text-xs text-gray-500">{KIND_LABEL[s.kind] || s.kind} · {fmtSize(s.size)}</p>
                     </div>
-                    <button onClick={() => ask('Descargar respaldo de la nube', <>Se descargará la copia del <strong>{fmtDate(s.created_at)}</strong> en formato JSON. {SENSITIVE}</>, 'Descargar', () => downloadSnapshot(s))} disabled={!!busy} title="Descargar" aria-label={`Descargar respaldo del ${fmtDate(s.created_at)}`} className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50">
+                    <button onClick={() => ask('Descargar respaldo de la nube', <>Se descargará la copia del <strong>{fmtDate(s.created_at)}</strong> en JSON comprimido (.json.gz). {SENSITIVE}</>, 'Descargar', () => downloadSnapshot(s))} disabled={!!busy} title="Descargar" aria-label={`Descargar respaldo del ${fmtDate(s.created_at)}`} className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50">
                       {busy === `dl-${s.key}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4 text-gray-600" />}
                     </button>
                     <button onClick={() => previewRestore({ source: 'snapshot', key: s.key, label: `Nube · ${fmtDate(s.created_at)}` })} disabled={!!busy}
@@ -690,6 +727,9 @@ export default function AdminBackup() {
                   </div>
                 ))}
               </div>
+              {!loadingSnapshots && !snapshotsError && <p role="status" className="mt-3 text-xs text-gray-600">{Math.min(snapshotLimit, filteredSnapshots.length)} de {filteredSnapshots.length} copias en este filtro</p>}
+              {filteredSnapshots.length > snapshotLimit && <button onClick={() => setSnapshotLimit(limit => limit + 10)}
+                className="mt-3 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 hover:bg-gray-50 focus-visible:ring-2 focus-visible:ring-gold-dark">Ver 10 copias más</button>}
             </Card>
           </>
         )}
