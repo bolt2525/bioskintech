@@ -261,7 +261,9 @@ export default function AnnualPhotoBackupPanel({ master = false, clinics = [], d
             <div><h3 className="font-semibold">{master ? item.clinic_name || item.clinic_id : 'Solicitud anual'}</h3><p className="text-xs text-gray-500">{new Date(item.created_at).toLocaleString('es-EC')}</p></div>
             <p className="text-sm font-medium">{ANNUAL_STATUS_LABELS[item.status] || 'Estado pendiente de verificación'}</p>
           </div>
-          {item.photo_count != null && <p className="mt-2 text-sm text-gray-600">{item.photo_count} fotografías{item.total_bytes != null ? ` · ${(item.total_bytes / 1048576).toFixed(1)} MiB` : ''}</p>}
+          {item.photo_count != null && <p className="mt-2 text-sm text-gray-600">{item.photo_count} fotografías{item.total_bytes != null
+            ? ` · ${(item.total_bytes / 1048576).toFixed(1)} MiB`
+            : ' en el inventario actual · Tamaño pendiente de preparación'}</p>}
           {item.entitlement_kind && <p className="mt-2 text-sm">{item.entitlement_kind === 'FREE' ? 'Entrega gratuita del período' : 'Entrega adicional de pago'}{item.payment_status === 'PAID' ? ' · Pago confirmado por el proveedor' : item.entitlement_kind === 'PAID' ? ' · Sin pago confirmado' : ''}</p>}
           {item.entitlement_kind === 'PAID' && <p className="mt-2 text-sm">{annualOriginalSize(item.original_total_bytes)} · {annualMoney(item.quote_total_cents)}{item.quote_total_cents ? ' · USD, IVA incluido' : ''}. {item.quote_accepted_at ? 'Aceptación registrada.' : 'Sin aceptación registrada.'}</p>}
           {item.entitlement_deadline_at && <p className="mt-2 text-xs">Plazo contractual: {subscriptionDate(item.entitlement_deadline_at)} (Ecuador).</p>}

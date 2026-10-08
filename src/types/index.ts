@@ -112,7 +112,7 @@ export interface AnnualPhotoBackupRequest {
   created_at: string;
   expires_at?: string | null;
   photo_count?: number;
-  total_bytes?: number;
+  total_bytes?: number | null;
   error_code?: string | null;
   notification_error?: string | null;
   parts?: AnnualPhotoBackupPart[];

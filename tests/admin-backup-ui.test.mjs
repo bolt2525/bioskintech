@@ -310,6 +310,17 @@ test('solicitud pagada pendiente y fallo SMTP se muestran sin habilitar aprobaci
   assert.equal(elements(tree).some(node => node.type === 'button' && text(node) === 'Aprobar'), false);
 });
 
+test('solicitud pendiente muestra inventario sin afirmar que pesa cero', async () => {
+  const harness = componentHarness(annualPath, 'master_admin', async () => json({
+    configured: true, processor_ready: false, pending_count: 1, notifications: [],
+    requests: [{ id: 'pedido-ficticio', clinic_id: 'clinica-ficticia', created_at: '2026-10-01T05:00:00Z',
+      status: 'PENDING', entitlement_kind: 'FREE', photo_count: 111, total_bytes: null }],
+  }));
+  const tree = await harness.mount({ master: true });
+  assert.match(text(tree), /111 fotografías en el inventario actual · Tamaño pendiente de preparación/);
+  assert.doesNotMatch(text(tree), /0(?:[.,]0)? MiB/);
+});
+
 const paidOrder = extra => ({
   id: 'pedido-ficticio', clinic_id: 'clinica-ficticia', created_at: '2026-10-01T05:00:00Z',
   status: 'PAYMENT_PENDING', entitlement_kind: 'PAID', payment_status: 'PAYMENT_PENDING',
