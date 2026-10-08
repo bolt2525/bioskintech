@@ -77,6 +77,38 @@ export interface ScalpHairVisualization {
   layDown?: number;
 }
 
+export interface ClinicalSceneSettings {
+  backgroundColor: string;
+  exposure: number;
+  ambientIntensity: number;
+  keyLightIntensity: number;
+  fillLightIntensity: number;
+  materialColor: string;
+  roughness: number;
+  metalness: number;
+  wireframe: boolean;
+}
+
+export interface ClinicalModelMetrics {
+  meshes: number;
+  vertices: number;
+  triangles: number;
+  dimensions: { x: number; y: number; z: number };
+}
+
+const DEFAULT_SCENE_SETTINGS: ClinicalSceneSettings = {
+  backgroundColor: '#1e293b',
+  exposure: 1,
+  ambientIntensity: 0.3,
+  keyLightIntensity: 1.8,
+  fillLightIntensity: 0.9,
+  materialColor: '#fae3db',
+  roughness: 0.45,
+  metalness: 0.05,
+  wireframe: false,
+};
+const EMPTY_SCENE_SETTINGS: Partial<ClinicalSceneSettings> = {};
+
 const CAMERA_PRESETS: Record<ClinicalCameraPreset, { position: [number, number, number]; target: [number, number, number] }> = {
   default: { position: [0, 0, 12], target: [0, 0, 0] },
   face: { position: [0, 0.15, 8], target: [0, 0.15, 0] },
@@ -103,8 +135,9 @@ const disposeObject3D = (object: THREE.Object3D) => {
       ? (Array.isArray(renderable.material) ? renderable.material : [renderable.material])
       : [];
     materials.forEach(material => {
-      material.map?.dispose();
-      material.alphaMap?.dispose();
+      const texturedMaterial = material as THREE.Material & { map?: THREE.Texture; alphaMap?: THREE.Texture };
+      texturedMaterial.map?.dispose();
+      texturedMaterial.alphaMap?.dispose();
       material.dispose();
     });
   });
@@ -585,6 +618,12 @@ interface Clinical3DViewerProps {
   height?: string;
   /** URL del modelo GLB (default: /models/clinical/male_head.glb) */
   modelUrl?: string;
+  /** Contenido GLB local; tiene prioridad sobre modelUrl y no se persiste */
+  modelData?: ArrayBuffer | null;
+  /** Ajustes visuales de la escena */
+  sceneSettings?: Partial<ClinicalSceneSettings>;
+  /** Métricas calculadas al cargar el modelo */
+  onModelMetrics?: (metrics: ClinicalModelMetrics) => void;
   /** Encuadre inicial optimizado para la región clínica */
   cameraPreset?: ClinicalCameraPreset;
   /** Modo solo lectura (sin clicks) */
@@ -691,6 +730,8 @@ const ThreeEngine: React.FC<{
   onBackgroundClick?: () => void;
   cameraPreset?: ClinicalCameraPreset;
   scalpHair?: ScalpHairVisualization | null;
+  sceneSettings?: Partial<ClinicalSceneSettings>;
+  onModelMetrics?: (metrics: ClinicalModelMetrics) => void;
 }> = ({
   modelSource, markers, zones, onMeshClick, onMarkerRadiusChange, onLoaded, onError, readOnly,
   referenceLines = [], lineDrawingMode, onLinePointAnchored,
@@ -709,12 +750,17 @@ const ThreeEngine: React.FC<{
   pointMarkerScale = 1.0,
   cameraPreset = 'default',
   scalpHair = null,
+  sceneSettings = {},
+  onModelMetrics,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
+  const ambientLightRef = useRef<THREE.AmbientLight | null>(null);
+  const keyLightRef = useRef<THREE.DirectionalLight | null>(null);
+  const fillLightRef = useRef<THREE.DirectionalLight | null>(null);
   const faceMeshRef = useRef<THREE.Object3D | null>(null);
   const scalpHairGroupRef = useRef<THREE.Group | null>(null);
   const markersGroupRef = useRef<THREE.Group | null>(null);
@@ -740,6 +786,7 @@ const ThreeEngine: React.FC<{
     activeTool, selectedElementId, pendingBrushColor, pendingBrushThickness,
     onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onSurfaceShapeUpdated, onGridStepChange, onSnapPointChange,
     haShapeConfig, freehandLines, surfaceShapes, incompletePointIds, highlightedPointIds, onEditablePointHovered, onBackgroundClick,
+    onModelMetrics,
   });
   useEffect(() => {
     callbacks.current = {
@@ -748,6 +795,7 @@ const ThreeEngine: React.FC<{
       activeTool, selectedElementId, pendingBrushColor, pendingBrushThickness,
       onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onSurfaceShapeUpdated, onGridStepChange, onSnapPointChange,
       haShapeConfig, freehandLines, surfaceShapes, incompletePointIds, highlightedPointIds, onEditablePointHovered, onBackgroundClick,
+      onModelMetrics,
     };
   });
 
@@ -808,6 +856,8 @@ const ThreeEngine: React.FC<{
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true });
     renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     mountRef.current.appendChild(renderer.domElement);
@@ -826,8 +876,11 @@ const ThreeEngine: React.FC<{
     controlsRef.current = controls;
 
     // Lighting
-    scene.add(new THREE.AmbientLight(0xf0f5ff, 0.3));
+    const ambientLight = new THREE.AmbientLight(0xf0f5ff, DEFAULT_SCENE_SETTINGS.ambientIntensity);
+    ambientLightRef.current = ambientLight;
+    scene.add(ambientLight);
     const keyLight = new THREE.DirectionalLight(0xffffff, 1.8);
+    keyLightRef.current = keyLight;
     keyLight.position.set(15, 20, 15);
     keyLight.castShadow = true;
     keyLight.shadow.mapSize.width = 2048;
@@ -835,6 +888,7 @@ const ThreeEngine: React.FC<{
     keyLight.shadow.bias = -0.0001;
     scene.add(keyLight);
     const fillLight = new THREE.DirectionalLight(0xdbeafe, 0.9);
+    fillLightRef.current = fillLight;
     fillLight.position.set(-15, 5, 10);
     scene.add(fillLight);
     const rimLight = new THREE.SpotLight(0xe0e7ff, 1.5, 0, 0.8, 1);
@@ -2612,12 +2666,36 @@ const ThreeEngine: React.FC<{
     };
   }, []);
 
+  useEffect(() => {
+    const settings = { ...DEFAULT_SCENE_SETTINGS, ...sceneSettings };
+    const background = sceneRef.current?.background;
+    if (background instanceof THREE.Color) background.set(settings.backgroundColor);
+    if (rendererRef.current) rendererRef.current.toneMappingExposure = settings.exposure;
+    if (ambientLightRef.current) ambientLightRef.current.intensity = settings.ambientIntensity;
+    if (keyLightRef.current) keyLightRef.current.intensity = settings.keyLightIntensity;
+    if (fillLightRef.current) fillLightRef.current.intensity = settings.fillLightIntensity;
+    faceMeshRef.current?.traverse(child => {
+      const mesh = child as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      materials.forEach(material => {
+        if (!(material instanceof THREE.MeshPhysicalMaterial)) return;
+        material.color.set(settings.materialColor);
+        material.roughness = settings.roughness;
+        material.metalness = settings.metalness;
+        material.wireframe = settings.wireframe;
+        material.needsUpdate = true;
+      });
+    });
+  }, [sceneSettings]);
+
   // 2. Load model when source changes
   useEffect(() => {
     if (!sceneRef.current || !modelSource) return;
 
     if (faceMeshRef.current) {
       sceneRef.current.remove(faceMeshRef.current);
+      disposeObject3D(faceMeshRef.current);
       faceMeshRef.current = null;
     }
     if (scalpHairGroupRef.current) {
@@ -2639,6 +2717,26 @@ const ThreeEngine: React.FC<{
       const box = new THREE.Box3().setFromObject(model);
       const size = box.getSize(new THREE.Vector3());
       const center = box.getCenter(new THREE.Vector3());
+      let meshes = 0;
+      let vertices = 0;
+      let triangles = 0;
+      model.traverse((child: THREE.Object3D) => {
+        const mesh = child as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        const geometry = mesh.geometry;
+        const positionAttribute = geometry.getAttribute('position');
+        meshes += 1;
+        vertices += positionAttribute?.count ?? 0;
+        triangles += geometry.index
+          ? geometry.index.count / 3
+          : (positionAttribute?.count ?? 0) / 3;
+      });
+      callbacks.current.onModelMetrics?.({
+        meshes,
+        vertices,
+        triangles: Math.round(triangles),
+        dimensions: { x: size.x, y: size.y, z: size.z },
+      });
 
       // ponytail: scale first, then offset — wrong order breaks body model (center at y=90)
       const maxDim = Math.max(size.x, size.y, size.z);
@@ -2653,15 +2751,19 @@ const ThreeEngine: React.FC<{
 
       model.traverse((child: any) => {
         if (child.isMesh) {
+          const settings = { ...DEFAULT_SCENE_SETTINGS, ...sceneSettings };
           child.castShadow = true;
           child.receiveShadow = true;
+          const previousMaterials = Array.isArray(child.material) ? child.material : [child.material];
+          previousMaterials.forEach((material: THREE.Material) => material.dispose());
           child.material = new THREE.MeshPhysicalMaterial({
-            color: 0xfae3db,
-            roughness: 0.45,
-            metalness: 0.05,
+            color: settings.materialColor,
+            roughness: settings.roughness,
+            metalness: settings.metalness,
             clearcoat: 0.15,
             clearcoatRoughness: 0.3,
             side: THREE.DoubleSide,
+            wireframe: settings.wireframe,
           });
         }
       });
@@ -2691,8 +2793,8 @@ const ThreeEngine: React.FC<{
         if (!modelSource.data) return;
         loader.load(modelSource.data as string, handleLoadedModel, undefined, handleLoadError);
       }
-    } catch (err) {
-      handleLoadError(err);
+    } catch {
+      handleLoadError();
     }
   }, [modelSource, cameraPreset]);
 
@@ -3450,6 +3552,9 @@ export default function Clinical3DViewer({
   onMarkerRadiusChange,
   height = '400px',
   modelUrl = '/models/clinical/male_head.glb',
+  modelData = null,
+  sceneSettings = EMPTY_SCENE_SETTINGS,
+  onModelMetrics,
   cameraPreset = 'default',
   readOnly = false,
   skipConfirmation = false,
@@ -3495,6 +3600,14 @@ export default function Clinical3DViewer({
   const [modelError, setModelError] = useState(false);
   const [pendingMarker, setPendingMarker] = useState<any>(null);
   const [pendingZoneText, setPendingZoneText] = useState('');
+
+  useEffect(() => {
+    setModelLoaded(false);
+    setModelError(false);
+    setModelSource(modelData
+      ? { type: 'buffer', data: modelData }
+      : { type: 'url', data: modelUrl });
+  }, [modelData, modelUrl]);
 
   const handleMeshClick = (data: any) => {
     if (readOnly) return;
@@ -3581,6 +3694,8 @@ export default function Clinical3DViewer({
             pointMarkerScale={pointMarkerScale}
             cameraPreset={cameraPreset}
             scalpHair={scalpHair}
+            sceneSettings={sceneSettings}
+            onModelMetrics={onModelMetrics}
           />
         )}
       </div>
