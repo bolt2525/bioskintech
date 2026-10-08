@@ -117,6 +117,21 @@ const seededRandom = (seedText: string) => {
   };
 };
 
+const isInsideScalpBoundary = (position: THREE.Vector3): boolean => {
+  const absX = Math.abs(position.x);
+  if (position.y < 0.68 || position.z > 1.58) return false;
+
+  // La línea frontal queda por encima de cejas y sien baja.
+  if (position.z > 0.12) {
+    const frontalMinimumY = 1.2 - Math.min(absX, 1.35) * 0.08;
+    if (position.y < frontalMinimumY) return false;
+  }
+
+  // Evita emitir fibras sobre pabellones auriculares y región preauricular.
+  if (absX > 1.3 && position.y < 1.18) return false;
+  return true;
+};
+
 const getHairCoverage = (
   position: THREE.Vector3,
   visualization: ScalpHairVisualization,
@@ -131,7 +146,8 @@ const getHairCoverage = (
   }
 
   const stage = NORWOOD_STAGE_INDEX[visualization.stage] ?? 0;
-  const temporalZone = position.z > 0.15 && absX > 0.28 && position.y < 1.55;
+  const temporalThreshold = stage <= 1 ? 0.95 : stage <= 3 ? 0.62 : 0.38;
+  const temporalZone = position.z > 0.15 && absX > temporalThreshold && position.y < 1.55;
   const crownDistance = Math.hypot(position.x / 0.9, (position.z + 0.72) / 0.92);
   const centralTop = absX < 1.05 && position.z > -1.45 && position.y > 0.35;
 
@@ -182,7 +198,7 @@ const createScalpHairGroup = (
     const b = new THREE.Vector3().fromBufferAttribute(positions, bIndex).applyMatrix4(mesh.matrixWorld);
     const c = new THREE.Vector3().fromBufferAttribute(positions, cIndex).applyMatrix4(mesh.matrixWorld);
     const center = a.clone().add(b).add(c).multiplyScalar(1 / 3);
-    if (center.y < 0.38 || center.z > 1.15) continue;
+    if (!isInsideScalpBoundary(center)) continue;
     const area = new THREE.Triangle(a, b, c).getArea();
     if (area <= 0) continue;
     totalArea += area;
@@ -192,17 +208,26 @@ const createScalpHairGroup = (
 
   if (!triangles.length || totalArea === 0) return null;
 
-  const densityFactor = visualization.density === 'Alta' ? 1 : visualization.density === 'Baja' ? 0.5 : 0.72;
-  const targetCount = Math.round(1850 * densityFactor);
-  const hairLength = visualization.density === 'Baja' ? 0.06 : 0.075;
-  const coneGeometry = new THREE.ConeGeometry(0.012, hairLength, 5);
-  coneGeometry.translate(0, hairLength / 2, 0);
+  const densityStyle = visualization.density === 'Alta'
+    ? { count: 2800, length: 0.055, radius: 0.0055 }
+    : visualization.density === 'Baja'
+      ? { count: 720, length: 0.04, radius: 0.0038 }
+      : { count: 1650, length: 0.048, radius: 0.0045 };
+  const targetCount = densityStyle.count;
+  const strandGeometry = new THREE.CylinderGeometry(
+    densityStyle.radius * 0.42,
+    densityStyle.radius,
+    densityStyle.length,
+    5,
+  );
+  strandGeometry.translate(0, densityStyle.length / 2, 0);
   const hairMaterial = new THREE.MeshStandardMaterial({
-    color: 0x3d2618,
-    roughness: 0.88,
+    color: 0xffffff,
+    roughness: 0.82,
     metalness: 0,
+    vertexColors: true,
   });
-  const hair = new THREE.InstancedMesh(coneGeometry, hairMaterial, targetCount);
+  const hair = new THREE.InstancedMesh(strandGeometry, hairMaterial, targetCount);
   hair.castShadow = true;
   hair.receiveShadow = false;
   hair.frustumCulled = false;
@@ -212,6 +237,12 @@ const createScalpHairGroup = (
   const up = new THREE.Vector3(0, 1, 0);
   const position = new THREE.Vector3();
   const normal = new THREE.Vector3();
+  const edge = new THREE.Vector3();
+  const radial = new THREE.Vector3();
+  const flow = new THREE.Vector3();
+  const direction = new THREE.Vector3();
+  const instanceScale = new THREE.Vector3();
+  const color = new THREE.Color();
   const quaternion = new THREE.Quaternion();
   const matrix = new THREE.Matrix4();
   let instanceCount = 0;
@@ -237,20 +268,33 @@ const createScalpHairGroup = (
 
     if (random() > getHairCoverage(position, visualization)) continue;
 
-    normal.subVectors(selected.b, selected.a)
-      .cross(new THREE.Vector3().subVectors(selected.c, selected.a))
-      .normalize();
-    if (normal.dot(position.clone().setY(position.y - 0.55)) < 0) normal.negate();
-    quaternion.setFromUnitVectors(up, normal);
-    position.addScaledVector(normal, 0.01);
-    const scale = 0.82 + random() * 0.36;
-    matrix.compose(position, quaternion, new THREE.Vector3(scale, scale, scale));
+    edge.subVectors(selected.c, selected.a);
+    normal.subVectors(selected.b, selected.a).cross(edge).normalize();
+    radial.set(position.x, position.y - 0.58, position.z + 0.08);
+    if (normal.dot(radial) < 0) normal.negate();
+
+    // Las fibras siguen la superficie hacia atrás en vez de salir como púas.
+    flow.set(-position.x * 0.12, -0.08, -1);
+    flow.addScaledVector(normal, -flow.dot(normal)).normalize();
+    direction.copy(flow).multiplyScalar(0.94).addScaledVector(normal, 0.34);
+    direction.x += (random() - 0.5) * 0.12;
+    direction.y += (random() - 0.5) * 0.08;
+    direction.z += (random() - 0.5) * 0.12;
+    direction.normalize();
+    quaternion.setFromUnitVectors(up, direction);
+    position.addScaledVector(normal, 0.006);
+    const scale = 0.84 + random() * 0.28;
+    instanceScale.set(scale, scale, scale);
+    matrix.compose(position, quaternion, instanceScale);
     hair.setMatrixAt(instanceCount, matrix);
+    color.setHSL(0.065 + random() * 0.018, 0.4, 0.13 + random() * 0.075);
+    hair.setColorAt(instanceCount, color);
     instanceCount += 1;
   }
 
   hair.count = instanceCount;
   hair.instanceMatrix.needsUpdate = true;
+  if (hair.instanceColor) hair.instanceColor.needsUpdate = true;
   const group = new THREE.Group();
   group.name = 'scalp-hair-visualization';
   group.add(hair);
