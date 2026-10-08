@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { mock } from 'node:test';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import { createHash, randomBytes } from 'node:crypto';
+import { S3Client } from '@aws-sdk/client-s3';
 
 process.env.BACKUP_ENCRYPTION_KEY = 'test-key-'.padEnd(48, 'x');
 const svc = await import('../lib/backup-service.js');
@@ -860,4 +861,548 @@ test('targeted cron still requires cron authentication before validation or DB a
     query: () => assert.fail('Unauthenticated targeted retry queried DB'),
   });
   assert.equal(res.code, 401);
+});
+
+// ── batch-jsonl-v1 ───────────────────────────────────────────────────────────
+function fakeExportPool(data, { shortFetch, log = [] } = {}) {
+  const cursors = new Map();
+  let released = false;
+  const client = {
+    query: async (sql, params) => {
+      const s = sql.trim();
+      log.push(s.split(/\s+/).slice(0, 3).join(' '));
+      if (log.length === 1) log.first = s;
+      assert.doesNotMatch(s, /\bOFFSET\b/i);
+      if (s.startsWith('BEGIN') || s === 'COMMIT' || s === 'ROLLBACK' || s.startsWith('CLOSE')) return { rows: [] };
+      if (/^SET LOCAL statement_timeout = \d+$/.test(s)) return { rows: [] };
+      if (s.includes('information_schema.tables')) return { rows: Object.keys(data).map(table_name => ({ table_name })) };
+      if (s.startsWith('SELECT now()')) return { rows: [{ snapshot_at: new Date('2026-01-02T03:04:05Z'), clinic_name: 'Clínica QA' }] };
+      const declared = s.match(/^DECLARE (\w+) NO SCROLL CURSOR FOR SELECT (.+?) FROM \((?:SELECT .+? FROM (\w+))/s);
+      if (declared) {
+        assert.deepEqual(params, [CLINIC]);
+        const rows = data[declared[3]] || [];
+        const sizes = declared[2].startsWith('octet_length');
+        cursors.set(declared[1], { pos: 0, rows: sizes ? rows.map(r => ({ b: Buffer.byteLength(JSON.stringify(r)) })) : rows });
+        return { rows: [] };
+      }
+      const fetch = s.match(/^FETCH FORWARD (\d+) FROM (\w+)$/);
+      if (fetch) {
+        const cursor = cursors.get(fetch[2]);
+        let n = Number(fetch[1]);
+        if (shortFetch && fetch[2].startsWith('bsk_rows') && n > 1) n -= 1;
+        const rows = cursor.rows.slice(cursor.pos, cursor.pos + n);
+        cursor.pos += rows.length;
+        return { rows };
+      }
+      throw new Error(`Unexpected ${s}`);
+    },
+    release: () => { released = true; },
+  };
+  return { log, pool: { connect: async () => client }, released: () => released };
+}
+
+async function collectBatchFile(pool, options = {}) {
+  let summary = null;
+  const chunks = [];
+  for await (const chunk of svc.encodeBatchExport(svc.streamBatchExport(pool, { clinicId: CLINIC, generatedBy: 'qa',
+    onComplete: value => { summary = value; }, ...options }))) chunks.push(chunk);
+  const lines = gunzipSync(Buffer.concat(chunks)).toString('utf8').split('\n');
+  assert.equal(lines.pop(), '');
+  return { lines, summary };
+}
+
+const patientRows = (n, start = 1) => Array.from({ length: n }, (_, i) => ({ id: start + i, first_name: `P${start + i}`, clinic_id: CLINIC }));
+
+test('batch export streams manifest, bounded batches and trailer from one read-only snapshot without OFFSET', async () => {
+  const big = 'x'.repeat(200 * 1024);
+  const data = {
+    patients: patientRows(1200),
+    consent_forms: [1, 2, 3].map(id => ({ id, clinic_id: CLINIC, body: big, signing_otp_hash: 'secret', signing_token: 'tok' })),
+    clinics: [{ id: CLINIC, name: 'QA', smtp_password: 'secret' }],
+    clinic_users: [{ id: 7, username: 'ana', password_hash: 'hash', role: 'clinic_admin' }],
+  };
+  const fake = fakeExportPool(data);
+  const { lines, summary } = await collectBatchFile(fake.pool, { modules: ['patients', 'config'] });
+  assert.equal(fake.log.first, 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+  assert.ok(fake.log.includes('COMMIT') && !fake.log.includes('ROLLBACK') && fake.released());
+  const ctx = svc.inspectBatchManifest(lines[0], CLINIC);
+  assert.equal(ctx.signature, 'valid');
+  assert.deepEqual(ctx.manifest.tables.map(t => t.name), ['patients', 'consent_forms', 'clinics', 'clinic_users']);
+  assert.deepEqual(ctx.manifest.plan, [[0, 500], [0, 500], [0, 200], [1, 2], [1, 1], [2, 1], [3, 1]]);
+  assert.equal(ctx.manifest.total_batches, lines.length - 2);
+  let chain = ctx.sha256;
+  const seen = {};
+  for (let i = 1; i < lines.length - 1; i++) {
+    assert.ok(Buffer.byteLength(lines[i]) <= svc.BATCH_LIMITS.maxLineBytes);
+    const { batch, sha256 } = svc.openBatch(lines[i], ctx, i - 1);
+    seen[batch.table] = (seen[batch.table] || 0) + batch.count;
+    chain = svc.chainBatchHash(chain, sha256);
+  }
+  assert.deepEqual(seen, { patients: 1200, consent_forms: 3, clinics: 1, clinic_users: 1 });
+  assert.equal(svc.openBatchTrailer(lines.at(-1), ctx, chain).complete, true);
+  const text = lines.join('\n');
+  assert.doesNotMatch(text, /signing_otp_hash|signing_token|password_hash|smtp_password/);
+  assert.deepEqual(summary.counts, ctx.manifest.counts);
+  assert.equal(summary.manifest_sha256, ctx.sha256);
+});
+
+test('batch export rolls back and never completes when a cursor returns fewer rows than planned', async () => {
+  const fake = fakeExportPool({ patients: patientRows(10) }, { shortFetch: true });
+  let completed = false;
+  await assert.rejects(() => collectBatchFile(fake.pool, { modules: ['patients'], onComplete: () => { completed = true; } }), /no coincide con el plan/);
+  assert.equal(completed, false);
+  assert.ok(fake.log.includes('ROLLBACK') && !fake.log.includes('COMMIT') && fake.released());
+});
+
+test('batch export rolls back if cancellation arrives while BEGIN is completing', async () => {
+  const controller = new AbortController();
+  const queries = [];
+  let released = false;
+  const pool = { connect: async () => ({
+    async query(sql) {
+      queries.push(sql);
+      if (sql.startsWith('BEGIN')) controller.abort(new Error('cancel during BEGIN'));
+      return { rows: [] };
+    },
+    release() { released = true; },
+  }) };
+  const consume = async () => {
+    for await (const line of svc.streamBatchExport(pool, { clinicId: CLINIC, modules: ['patients'], signal: controller.signal })) void line;
+  };
+  await assert.rejects(consume, /cancel during BEGIN/);
+  assert.ok(queries.some(query => query === 'ROLLBACK'));
+  assert.equal(released, true);
+});
+
+test('batch export applies the remaining deadline to DB statements and reports timeout instead of hanging', async () => {
+  let statementTimeout = 0;
+  let released = false;
+  const pool = { connect: async () => ({
+    async query(sql) {
+      if (sql.startsWith('SET LOCAL statement_timeout')) {
+        statementTimeout = Number(/= (\d+)/.exec(sql)?.[1]);
+        return { rows: [] };
+      }
+      if (sql.startsWith('SELECT table_name')) {
+        return new Promise((_, reject) => setTimeout(() => reject(Object.assign(new Error('cancelled'), { code: '57014' })),
+          statementTimeout));
+      }
+      return { rows: [] };
+    },
+    release() { released = true; },
+  }) };
+  const started = Date.now();
+  await assert.rejects(() => api.exportBatchObject(pool, {
+    clinicId: CLINIC, modules: ['patients'], kind: 'download', key: 'temporary',
+    budgetMs: 30, storage: { upload: async (_key, chunks) => { for await (const chunk of chunks) void chunk; } },
+  }), error => error.status === 504 && error.details.reason === 'TIMEOUT');
+  assert.ok(statementTimeout > 0 && statementTimeout <= 30);
+  assert.ok(Date.now() - started < 250);
+  assert.equal(released, true);
+});
+
+test('batch export timeout while acquiring a DB connection releases any late connection', async () => {
+  let released = false;
+  const pool = { connect: () => new Promise(resolve => setTimeout(() => resolve({ release() { released = true; } }), 80)) };
+  const started = Date.now();
+  await assert.rejects(async () => {
+    for await (const line of svc.streamBatchExport(pool, { clinicId: CLINIC, modules: ['patients'], budgetMs: 15 })) void line;
+  }, error => error.name === 'TimeoutError');
+  assert.ok(Date.now() - started < 70);
+  await new Promise(resolve => setTimeout(resolve, 90));
+  assert.equal(released, true);
+});
+
+test('batch export fails explicitly when a single row exceeds the line limit', async () => {
+  const fake = fakeExportPool({ patients: [{ id: 1, clinic_id: CLINIC, notes: 'x'.repeat(1.1 * 1024 * 1024) }] });
+  await assert.rejects(() => collectBatchFile(fake.pool, { modules: ['patients'] }), error => error.status === 413 && error.details.reason === 'SIZE');
+  assert.ok(fake.log.includes('ROLLBACK') && fake.released());
+});
+
+test('batch multipart deletes an object when post-completion verification fails', async t => {
+  const previousAccess = process.env.R2_ACCESS_KEY_ID;
+  const previousSecret = process.env.R2_SECRET_ACCESS_KEY;
+  process.env.R2_ACCESS_KEY_ID = 'test-access';
+  process.env.R2_SECRET_ACCESS_KEY = 'test-secret';
+  t.after(() => {
+    if (previousAccess === undefined) delete process.env.R2_ACCESS_KEY_ID; else process.env.R2_ACCESS_KEY_ID = previousAccess;
+    if (previousSecret === undefined) delete process.env.R2_SECRET_ACCESS_KEY; else process.env.R2_SECRET_ACCESS_KEY = previousSecret;
+  });
+  let completed = false, deleted = false, deleteSignal;
+  t.mock.method(S3Client.prototype, 'send', async function (command, options) {
+    switch (command.constructor.name) {
+      case 'CreateMultipartUploadCommand': return { UploadId: 'upload-test' };
+      case 'UploadPartCommand': return { ETag: 'etag-test' };
+      case 'CompleteMultipartUploadCommand': completed = true; return {};
+      case 'HeadObjectCommand': throw new Error('R2 verification failed');
+      case 'DeleteObjectCommand': deleted = true; deleteSignal = options?.abortSignal; return {};
+      default: throw new Error(`Unexpected R2 command ${command.constructor.name}`);
+    }
+  });
+  const chunks = async function* () { yield Buffer.from('small test body'); };
+  await assert.rejects(() => api.r2BatchStorage.upload('backups/test/export.jsonl.gz.enc', chunks(), 'application/octet-stream'),
+    /R2 verification failed/);
+  assert.equal(completed, true);
+  assert.equal(deleted, true);
+  assert.ok(deleteSignal instanceof AbortSignal);
+});
+
+test('batch multipart surfaces uncertain publication if cleanup after verification failure also fails', async t => {
+  const previousAccess = process.env.R2_ACCESS_KEY_ID;
+  const previousSecret = process.env.R2_SECRET_ACCESS_KEY;
+  process.env.R2_ACCESS_KEY_ID = 'test-access';
+  process.env.R2_SECRET_ACCESS_KEY = 'test-secret';
+  t.after(() => {
+    if (previousAccess === undefined) delete process.env.R2_ACCESS_KEY_ID; else process.env.R2_ACCESS_KEY_ID = previousAccess;
+    if (previousSecret === undefined) delete process.env.R2_SECRET_ACCESS_KEY; else process.env.R2_SECRET_ACCESS_KEY = previousSecret;
+  });
+  let deleteSignal;
+  t.mock.method(S3Client.prototype, 'send', async function (command, options) {
+    switch (command.constructor.name) {
+      case 'CreateMultipartUploadCommand': return { UploadId: 'upload-test' };
+      case 'UploadPartCommand': return { ETag: 'etag-test' };
+      case 'CompleteMultipartUploadCommand': return {};
+      case 'HeadObjectCommand': throw new Error('R2 verification failed');
+      case 'DeleteObjectCommand': deleteSignal = options?.abortSignal; throw new Error('R2 deletion failed');
+      default: throw new Error(`Unexpected R2 command ${command.constructor.name}`);
+    }
+  });
+  const chunks = async function* () { yield Buffer.from('small test body'); };
+  await assert.rejects(() => api.r2BatchStorage.upload('backups/test/export.jsonl.gz.enc', chunks(), 'application/octet-stream'),
+    error => error.status === 502 && error.details.reason === 'PUBLICATION_UNCERTAIN' && /incierta/.test(error.message));
+  assert.ok(deleteSignal instanceof AbortSignal);
+});
+
+test('batch multipart aborts an upload when completion fails ambiguously, with bounded cleanup signals', async t => {
+  const previousAccess = process.env.R2_ACCESS_KEY_ID;
+  const previousSecret = process.env.R2_SECRET_ACCESS_KEY;
+  process.env.R2_ACCESS_KEY_ID = 'test-access';
+  process.env.R2_SECRET_ACCESS_KEY = 'test-secret';
+  t.after(() => {
+    if (previousAccess === undefined) delete process.env.R2_ACCESS_KEY_ID; else process.env.R2_ACCESS_KEY_ID = previousAccess;
+    if (previousSecret === undefined) delete process.env.R2_SECRET_ACCESS_KEY; else process.env.R2_SECRET_ACCESS_KEY = previousSecret;
+  });
+  const cleanupCalls = [];
+  t.mock.method(S3Client.prototype, 'send', async function (command, options) {
+    switch (command.constructor.name) {
+      case 'CreateMultipartUploadCommand': return { UploadId: 'upload-test' };
+      case 'UploadPartCommand': return { ETag: 'etag-test' };
+      case 'CompleteMultipartUploadCommand': throw new Error('R2 completion response lost');
+      case 'DeleteObjectCommand':
+      case 'AbortMultipartUploadCommand':
+        cleanupCalls.push({ command: command.constructor.name, signal: options?.abortSignal });
+        return {};
+      default: throw new Error(`Unexpected R2 command ${command.constructor.name}`);
+    }
+  });
+  const chunks = async function* () { yield Buffer.from('small test body'); };
+  await assert.rejects(() => api.r2BatchStorage.upload('backups/test/export.jsonl.gz.enc', chunks(), 'application/octet-stream'),
+    /R2 completion response lost/);
+  assert.deepEqual(cleanupCalls.map(call => call.command), ['DeleteObjectCommand', 'AbortMultipartUploadCommand']);
+  assert.ok(cleanupCalls.every(call => call.signal instanceof AbortSignal));
+  assert.notEqual(cleanupCalls[0].signal, cleanupCalls[1].signal);
+});
+
+test('batch multipart reports failed abort cleanup instead of masking an orphaned upload', async t => {
+  const previousAccess = process.env.R2_ACCESS_KEY_ID;
+  const previousSecret = process.env.R2_SECRET_ACCESS_KEY;
+  process.env.R2_ACCESS_KEY_ID = 'test-access';
+  process.env.R2_SECRET_ACCESS_KEY = 'test-secret';
+  t.after(() => {
+    if (previousAccess === undefined) delete process.env.R2_ACCESS_KEY_ID; else process.env.R2_ACCESS_KEY_ID = previousAccess;
+    if (previousSecret === undefined) delete process.env.R2_SECRET_ACCESS_KEY; else process.env.R2_SECRET_ACCESS_KEY = previousSecret;
+  });
+  let abortSignal;
+  t.mock.method(S3Client.prototype, 'send', async function (command, options) {
+    switch (command.constructor.name) {
+      case 'CreateMultipartUploadCommand': return { UploadId: 'upload-test' };
+      case 'UploadPartCommand': throw new Error('R2 part upload failed');
+      case 'AbortMultipartUploadCommand':
+        abortSignal = options?.abortSignal;
+        throw new Error('R2 abort failed');
+      default: throw new Error(`Unexpected R2 command ${command.constructor.name}`);
+    }
+  });
+  const chunks = async function* () { yield Buffer.from('small test body'); };
+  await assert.rejects(() => api.r2BatchStorage.upload('backups/test/export.jsonl.gz.enc', chunks(), 'application/octet-stream'),
+    error => error.status === 502 && error.details.reason === 'MULTIPART_CLEANUP_UNCERTAIN' &&
+      error.cleanupUncertain === true && /no se publicó ningún archivo/.test(error.message));
+  assert.ok(abortSignal instanceof AbortSignal);
+});
+
+test('encrypted batch stream round-trips and rejects tampering; parts have fixed size', async () => {
+  const marker = 'qa-clinical-plaintext-marker-6c1f9d9e-dbc1-4e78-bfe0-97231';
+  const fake = fakeExportPool({ patients: [{ id: 1, clinic_id: CLINIC, notes: marker }] });
+  const chunks = [];
+  for await (const c of svc.encodeBatchExport(svc.streamBatchExport(fake.pool, { clinicId: CLINIC, modules: ['patients'] }), { encrypt: true })) chunks.push(c);
+  const enc = Buffer.concat(chunks);
+  assert.equal(enc.subarray(0, 5).toString(), 'BSKE2');
+  assert.equal(enc.includes(Buffer.from(marker)), false);
+  const plain = [];
+  for await (const c of svc.decryptBatchSnapshot([enc.subarray(0, 7), enc.subarray(7)])) plain.push(c);
+  const restored = gunzipSync(Buffer.concat(plain)).toString();
+  assert.match(restored, /"type":"trailer"/);
+  assert.match(restored, new RegExp(marker));
+  const tampered = Buffer.from(enc);
+  tampered[30] ^= 1;
+  await assert.rejects(async () => { for await (const c of svc.decryptBatchSnapshot([tampered])) void c; }, /alterado/);
+  const parts = [];
+  for await (const p of svc.fixedSizeParts([Buffer.alloc(5), Buffer.alloc(9), Buffer.alloc(3)], 4)) parts.push(p.length);
+  assert.deepEqual(parts, [4, 4, 4, 4, 1]);
+});
+
+function memoryStorage({ failUpload } = {}) {
+  const objects = new Map();
+  return {
+    objects,
+    async upload(key, chunks, _type, { beforeComplete } = {}) {
+      const parts = [];
+      for await (const part of chunks) { parts.push(part); if (failUpload) throw new Error('R2 caído'); }
+      beforeComplete?.();
+      objects.set(key, Buffer.concat(parts));
+      return { key, size: objects.get(key).length };
+    },
+    async *download(key) { yield objects.get(key); },
+    downloadUrl: async key => `https://r2.test/${key}`,
+  };
+}
+
+test('batch object is published only after the trailer and releases the snapshot when upload fails', async () => {
+  const storage = memoryStorage();
+  const file = await api.exportBatchDownload(fakeExportPool({ patients: patientRows(2) }).pool, CLINIC, ['patients'], 'qa', { storage });
+  assert.equal(file.format, 'batch-jsonl-v1');
+  assert.equal(file.total_batches, 1);
+  assert.match(file.filename, /\.jsonl\.gz$/);
+  assert.equal(storage.objects.size, 1);
+  const failing = memoryStorage({ failUpload: true });
+  const noisy = Array.from({ length: 5000 }, (_, i) => ({ id: i + 1, clinic_id: CLINIC, notes: randomBytes(150).toString('base64') }));
+  const fake = fakeExportPool({ patients: noisy });
+  await assert.rejects(() => api.exportBatchDownload(fake.pool, CLINIC, ['patients'], 'qa', { storage: failing }), /R2 caído/);
+  assert.equal(failing.objects.size, 0);
+  assert.ok(fake.log.includes('ROLLBACK') && fake.released());
+  const pre = memoryStorage();
+  const snap = await api.createBatchPreRestore(fakeExportPool({ patients: patientRows(2) }).pool, CLINIC, 'qa', { storage: pre });
+  assert.ok(api.isBatchSnapshotKey(snap.key, CLINIC) && !api.isBatchSnapshotKey(snap.key, OTHER));
+  const republished = await api.republishBatchSnapshot(CLINIC, snap.key, { storage: pre });
+  assert.match(republished.url, /backup-tmp/);
+});
+
+async function exportLines(data, modules = ['patients']) {
+  return (await collectBatchFile(fakeExportPool(data).pool, { modules })).lines;
+}
+
+function statefulRestorePool({ failPatientId, missingRecords = false } = {}) {
+  const committed = new Set();
+  let pending = new Set();
+  const log = [];
+  const client = {
+    query: async (statement, params) => {
+      const s = statement.trim();
+      log.push(s.split(/\s+/).slice(0, 3).join(' '));
+      if (s === 'BEGIN') { pending = new Set(); return { rows: [] }; }
+      if (s === 'COMMIT') { pending.forEach(id => committed.add(id)); return { rows: [] }; }
+      if (s === 'ROLLBACK') { pending = new Set(); return { rows: [] }; }
+      if (s.includes('information_schema.columns')) return { rows: ['id', 'first_name', 'clinic_id', 'rut', 'identification_number', 'patient_id', 'record_id'].map(column_name => ({ column_name })) };
+      if (s.includes("SELECT c.is_active,cs.general ? '_purge'")) return { rows: [{ is_active: true, purging: false }] };
+      if (s.startsWith('SELECT 1 FROM clinical_records') || s.startsWith('SELECT 1 FROM patients')) return { rows: missingRecords ? [] : [{}] };
+      if (s.startsWith('SELECT clinic_id FROM patients')) return { rows: committed.has(params[0]) || pending.has(params[0]) ? [{ clinic_id: CLINIC }] : [] };
+      if (s.startsWith('SELECT clinic_id FROM')) return { rows: [] };
+      if (s.startsWith('INSERT INTO patients')) {
+        if (params[0] === failPatientId) throw Object.assign(new Error('dup'), { code: '23505' });
+        if (committed.has(params[0]) || pending.has(params[0])) return { rowCount: 0 };
+        pending.add(params[0]);
+        return { rowCount: 1 };
+      }
+      return { rows: [{}], rowCount: 0 };
+    },
+    release: () => {},
+  };
+  return { log, committed, pool: { connect: async () => client, query: client.query } };
+}
+
+const okPreRestore = async () => ({ key: `backups/${CLINIC}/pre-restore/x.jsonl.gz.enc`, size: 10, manifest_sha256: 'h' });
+const restoreCall = (pool, body, extra = {}) => {
+  const request = { format: 'batch-jsonl-v1', ...body };
+  return api.handleBatchRestore(pool, request, {
+    clinicId: CLINIC, userId: 9, username: 'qa', preRestore: okPreRestore,
+    contentLength: Buffer.byteLength(JSON.stringify(request)), ...extra,
+  });
+};
+
+test('batch restore requires a verified pre-restore before any write and applies idempotently with resume token', async () => {
+  const lines = await exportLines({ patients: patientRows(600) });
+  const [manifest, b0, b1, trailer] = lines;
+  const db = statefulRestorePool();
+  await assert.rejects(() => restoreCall(db.pool, { phase: 'batch', manifest, batch: b0, index: 0, dryRun: false }),
+    error => error.status === 409 && error.details.reason === 'PREPARE_REQUIRED');
+  await assert.rejects(() => restoreCall(db.pool, { phase: 'prepare', manifest }, { preRestore: async () => { throw new Error('R2 caído'); } }), /R2 caído/);
+  assert.ok(!db.log.includes('COMMIT'));
+  const prepared = await restoreCall(db.pool, { phase: 'prepare', manifest });
+  assert.equal(prepared.mode, 'apply');
+  assert.match(prepared.pre_restore_snapshot, /pre-restore/);
+  assert.deepEqual(prepared.progress, { next_index: 0, total_batches: 2, done: false });
+  const first = await restoreCall(db.pool, { phase: 'batch', manifest, batch: b0, index: 0, dryRun: false, resumeToken: prepared.resume_token });
+  assert.equal(first.committed, true);
+  assert.deepEqual(first.report.inserted, { patients: 500 });
+  assert.equal(db.committed.size, 500);
+  const setval = db.log.findIndex(entry => entry.startsWith('SELECT setval('));
+  assert.ok(setval > 0 && setval < db.log.lastIndexOf('COMMIT'));
+  // Respuesta perdida: reintentar el mismo lote con el token anterior no duplica ni sobrescribe.
+  const retry = await restoreCall(db.pool, { phase: 'batch', manifest, batch: b0, index: 0, dryRun: false, resumeToken: prepared.resume_token });
+  assert.deepEqual(retry.report.existing, { patients: 500 });
+  assert.deepEqual(retry.report.inserted, {});
+  assert.equal(db.committed.size, 500);
+  await assert.rejects(() => restoreCall(db.pool, { phase: 'batch', manifest, batch: b1, index: 1, dryRun: false, resumeToken: prepared.resume_token }),
+    error => error.status === 409 && error.details.reason === 'SEQUENCE' && error.details.expected_index === 0);
+  await assert.rejects(() => restoreCall(db.pool, { phase: 'finish', manifest, trailer, resumeToken: first.resume_token }),
+    error => error.details.reason === 'SEQUENCE');
+  const second = await restoreCall(db.pool, { phase: 'batch', manifest, batch: b1, index: 1, dryRun: false, resumeToken: first.resume_token });
+  assert.equal(db.committed.size, 600);
+  assert.equal(second.progress.done, true);
+  const done = await restoreCall(db.pool, { phase: 'finish', manifest, trailer, resumeToken: second.resume_token });
+  assert.equal(done.completed, true);
+  // Restart desde cero con el mismo archivo es seguro.
+  const again = await restoreCall(db.pool, { phase: 'prepare', manifest });
+  const replay = await restoreCall(db.pool, { phase: 'batch', manifest, batch: b0, index: 0, dryRun: false, resumeToken: again.resume_token });
+  assert.equal(replay.report.existing.patients, 500);
+  assert.equal(db.committed.size, 600);
+  // Token ligado a clínica y usuario.
+  await assert.rejects(() => restoreCall(db.pool, { phase: 'batch', manifest, batch: b1, index: 1, dryRun: false, resumeToken: first.resume_token }, { userId: 10 }),
+    error => error.details.reason === 'TOKEN');
+});
+
+test('batch restore dry run never commits, defers missing parents and its token cannot authorize writes', async () => {
+  const lines = await exportLines({ patients: patientRows(1), clinical_records: [{ id: 5, clinic_id: CLINIC, patient_id: 1 }] });
+  const [manifest, b0, b1] = lines;
+  const db = statefulRestorePool({ missingRecords: true });
+  const dry0 = await restoreCall(db.pool, { phase: 'batch', manifest, batch: b0, index: 0 });
+  assert.equal(dry0.mode, 'dry_run');
+  assert.equal(dry0.committed, false);
+  const dry1 = await restoreCall(db.pool, { phase: 'batch', manifest, batch: b1, index: 1, resumeToken: dry0.resume_token });
+  assert.deepEqual(dry1.report.deferred, { clinical_records: 1 });
+  assert.equal(dry1.report.errorCount, 0);
+  assert.ok(!db.log.includes('COMMIT') && db.committed.size === 0);
+  await assert.rejects(() => restoreCall(db.pool, { phase: 'batch', manifest, batch: b1, index: 1, dryRun: false, resumeToken: dry0.resume_token }),
+    error => error.details.reason === 'TOKEN');
+});
+
+test('batch restore needs explicit allowPartial and keeps the cursor on the failed batch', async () => {
+  const [manifest, b0] = await exportLines({ patients: patientRows(3) });
+  const db = statefulRestorePool({ failPatientId: 2 });
+  const prepared = await restoreCall(db.pool, { phase: 'prepare', manifest });
+  const blocked = await restoreCall(db.pool, { phase: 'batch', manifest, batch: b0, index: 0, dryRun: false, resumeToken: prepared.resume_token });
+  assert.equal(blocked.committed, false);
+  assert.equal(blocked.needs_allow_partial, true);
+  assert.equal(blocked.progress.next_index, 0);
+  assert.equal(blocked.resume_token, prepared.resume_token);
+  assert.equal(db.committed.size, 0);
+  const partial = await restoreCall(db.pool, { phase: 'batch', manifest, batch: b0, index: 0, dryRun: false, allowPartial: true, resumeToken: prepared.resume_token });
+  assert.equal(partial.committed, true);
+  assert.equal(partial.report.errorCount, 1);
+  assert.equal(db.committed.size, 2);
+});
+
+test('batch restore rejects tampering, cross-tenant rows, oversize requests and missing confirmations', async () => {
+  const [manifest, b0, trailer] = await exportLines({ patients: patientRows(2) });
+  const db = statefulRestorePool();
+  await assert.rejects(() => api.handleBatchRestore(db.pool, { format: 'batch-jsonl-v1', phase: 'inspect', manifest },
+    { clinicId: CLINIC }), error => error.status === 411);
+  const tamperedBatch = b0.replace('"P1"', '"PX"');
+  await assert.rejects(() => restoreCall(db.pool, { phase: 'batch', manifest, batch: tamperedBatch, index: 0 }), error => error.details.reason === 'INTEGRITY');
+  await assert.rejects(() => restoreCall(db.pool, { phase: 'batch', manifest: manifest.replace('"total_batches":1', '"total_batches":2'), batch: b0, index: 0 }),
+    error => error.status === 422);
+  // Reempaquetado sin firma con una fila de otra clínica: rechazado por tenant antes de tocar la base.
+  const parsed = JSON.parse(b0);
+  const ctx = svc.inspectBatchManifest(manifest, CLINIC);
+  const content = { ...parsed };
+  delete content.sha256;
+  delete content.signature;
+  content.rows[1].clinic_id = OTHER;
+  const forged = svc.sealBatchLine(content).line.trim();
+  assert.throws(() => svc.openBatch(forged, ctx, 0), error => error.details.reason === 'TENANT');
+  const unsignedManifest = (() => { const m = JSON.parse(manifest);
+    delete m.sha256;
+    delete m.signature;
+    const sha256 = createHash('sha256').update(JSON.stringify(m)).digest('hex'); return JSON.stringify({ ...m, sha256, signature: null }); })();
+  await assert.rejects(() => restoreCall(db.pool, { phase: 'prepare', manifest: unsignedManifest }), error => error.details.reason === 'CONFIRMATION');
+  await assert.rejects(() => restoreCall(db.pool, { phase: 'prepare', manifest }, { clinicId: OTHER }), error => error.details.reason === 'CONFIRMATION');
+  await assert.rejects(() => restoreCall(db.pool, { phase: 'batch', manifest, batch: b0, index: 0 }, { contentLength: 4 * 1024 * 1024 }),
+    error => error.status === 413);
+  await assert.rejects(() => restoreCall(db.pool, { phase: 'batch', manifest, batch: b0 + ' '.repeat(3 * 1024 * 1024), index: 0 }),
+    error => error.status === 413);
+  const dry = await restoreCall(db.pool, { phase: 'batch', manifest, batch: b0, index: 0 });
+  await assert.rejects(() => restoreCall(db.pool, { phase: 'finish', manifest, trailer: trailer.replace('"complete":true', '"complete":false'), resumeToken: dry.resume_token }),
+    error => error.status === 422);
+  assert.ok(!db.log.includes('COMMIT'));
+});
+
+test('batch restore rejects invalid HMAC signatures and measures the complete parsed request body', async () => {
+  const [manifest, batch, trailer] = await exportLines({ patients: patientRows(1) });
+  const db = statefulRestorePool();
+  const invalidSignature = line => {
+    const parsed = JSON.parse(line);
+    parsed.signature = '0'.repeat(64);
+    return JSON.stringify(parsed);
+  };
+  await assert.rejects(() => restoreCall(db.pool, { phase: 'inspect', manifest: invalidSignature(manifest) }),
+    error => error.details.reason === 'INTEGRITY');
+  const inspected = await restoreCall(db.pool, { phase: 'inspect', manifest });
+  await assert.rejects(() => restoreCall(db.pool, { phase: 'batch', manifest, batch: invalidSignature(batch),
+    index: 0, resumeToken: inspected.resume_token }),
+  error => error.details.reason === 'INTEGRITY');
+  const simulated = await restoreCall(db.pool, { phase: 'batch', manifest, batch, index: 0,
+    resumeToken: inspected.resume_token });
+  await assert.rejects(() => restoreCall(db.pool, { phase: 'finish', manifest, trailer: invalidSignature(trailer),
+    resumeToken: simulated.resume_token }),
+  error => error.details.reason === 'INTEGRITY');
+  await assert.rejects(() => restoreCall(db.pool, {
+    phase: 'inspect', manifest, unrelated: 'x'.repeat(svc.BATCH_LIMITS.maxRequestBytes),
+  }), error => error.status === 413 && error.details.reason === 'SIZE');
+  await assert.rejects(() => restoreCall(db.pool, { phase: 'inspect', manifest }, { contentLength: 'invalid' }),
+    error => error.status === 400 && error.details.reason === 'MALFORMED');
+  assert.equal(db.committed.size, 0);
+});
+
+test('batch manifests reject malformed Unicode HMAC values as integrity errors', async () => {
+  const [manifest] = await exportLines({ patients: patientRows(1) });
+  const parsed = JSON.parse(manifest);
+  parsed.signature = 'é'.repeat(64);
+  const malformed = JSON.stringify(parsed);
+  assert.equal(svc.openBatchLine(malformed, 'manifest', svc.BATCH_LIMITS.maxManifestBytes).signature, 'invalid');
+  assert.throws(() => svc.inspectBatchManifest(malformed, CLINIC),
+    error => error.status === 422 && error.details.reason === 'INTEGRITY');
+});
+
+test('batch contract limits stay below the serverless body limit', () => {
+  assert.equal(svc.BATCH_FORMAT, 'batch-jsonl-v1');
+  assert.ok(svc.BATCH_LIMITS.maxRequestBytes < 4 * 1024 * 1024);
+  assert.ok(svc.BATCH_LIMITS.maxLineBytes <= 1024 * 1024 && svc.BATCH_LIMITS.maxBatchRows === 500);
+});
+
+test('batch restore inspect is read-only, never creates pre-restore and supports an empty batch plan', async () => {
+  const [manifest, trailer, ...rest] = await exportLines({ patients: [] });
+  assert.equal(rest.length, 0);
+  const db = statefulRestorePool();
+  let preRestoreCalls = 0;
+  const preRestore = async () => { preRestoreCalls++; return okPreRestore(); };
+  const inspected = await restoreCall(db.pool, { phase: 'inspect', manifest }, { preRestore });
+  assert.equal(inspected.mode, 'dry_run');
+  assert.equal(inspected.committed, false);
+  assert.equal(inspected.pre_restore_snapshot, null);
+  assert.deepEqual(inspected.confirmations, []);
+  assert.equal(inspected.info.total_batches, 0);
+  assert.deepEqual(inspected.progress, { next_index: 0, total_batches: 0, done: true });
+  assert.equal(typeof inspected.resume_token, 'string');
+  const foreign = await restoreCall(db.pool, { phase: 'inspect', manifest }, { clinicId: OTHER, preRestore });
+  assert.deepEqual(foreign.confirmations, ['foreignClinic']);
+  assert.equal(preRestoreCalls, 0);
+  assert.ok(!db.log.some(entry => /^(BEGIN|COMMIT|INSERT|SAVEPOINT)/.test(entry)));
+  assert.equal(db.committed.size, 0);
+  // El token de inspección solo simula: no autoriza escrituras y cierra un plan vacío con finish.
+  await assert.rejects(() => restoreCall(db.pool, { phase: 'batch', manifest, batch: trailer, index: 0, dryRun: false, resumeToken: inspected.resume_token }),
+    error => error.status === 409);
+  const done = await restoreCall(db.pool, { phase: 'finish', manifest, trailer, resumeToken: inspected.resume_token }, { preRestore });
+  assert.equal(done.completed, true);
+  assert.equal(done.mode, 'dry_run');
+  assert.equal(preRestoreCalls, 0);
 });
