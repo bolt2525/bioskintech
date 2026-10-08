@@ -1,5 +1,9 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-07 ZIP: originales verificados byte a byte.
+- ✅ 2026-10-07 Fotos: 254 pruebas aprobadas.
+- ✅ 2026-10-07 Fotos: ZIP hasta quince originales.
+- ✅ 2026-10-07 Descarga individual conserva originales.
 - ✅ 2026-10-07 Auditoría: 231 pruebas aprobadas.
 - ✅ 2026-10-07 Copias: QA desktop y móvil.
 - ✅ 2026-10-07 Proveedor del sistema: nomenclatura visible.

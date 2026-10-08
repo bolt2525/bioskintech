@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import recordsFetch from '../../../../../utils/recordsFetch';
 import { Dialog } from '../../../../ui/Dialog';
+import { ClinicalPhotoDownloader, MAX_DOWNLOAD_PHOTOS } from '../../../../../utils/clinicalPhotoDownload';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -70,9 +71,14 @@ interface CardProps {
   onDelete: (p: ClinicalPhoto) => void;
   onTypeChange: (p: ClinicalPhoto, t: ClinicalPhoto['photo_type']) => void;
   onCompareSelect: (p: ClinicalPhoto) => void;
+  downloadSelected: boolean;
+  downloadSelectionDisabled: boolean;
+  downloading: boolean;
+  onDownloadToggle: (p: ClinicalPhoto) => void;
+  onDownload: (p: ClinicalPhoto) => void;
 }
 
-function PhotoCard({ photo, viewMode, compareLeft, compareRight, onOpen, onEdit, onDelete, onTypeChange, onCompareSelect }: CardProps) {
+function PhotoCard({ photo, viewMode, compareLeft, compareRight, onOpen, onEdit, onDelete, onTypeChange, onCompareSelect, downloadSelected, downloadSelectionDisabled, downloading, onDownloadToggle, onDownload }: CardProps) {
   const [showTypeMenu, setShowTypeMenu] = useState(false);
   const [imgError, setImgError] = useState(!photo.r2_url);
   const isA = compareLeft?.id === photo.id;
@@ -117,6 +123,13 @@ function PhotoCard({ photo, viewMode, compareLeft, compareRight, onOpen, onEdit,
       {/* Action bar — always visible, isolated from image click zone */}
       {viewMode !== 'compare' && (
         <div className="flex items-center justify-between px-2 py-1.5 bg-white border-t border-gray-100">
+          <label className="flex items-center gap-1 text-xs text-gray-700">
+            <input type="checkbox" checked={downloadSelected} disabled={downloadSelectionDisabled}
+              onChange={() => onDownloadToggle(photo)}
+              aria-label={`Seleccionar foto ${photo.id} para descargar`}
+              className="admin-focus-ring h-4 w-4 accent-[#8b6840]" />
+            ZIP
+          </label>
           <div className="relative">
             <button
               type="button"
@@ -146,10 +159,11 @@ function PhotoCard({ photo, viewMode, compareLeft, compareRight, onOpen, onEdit,
             <button type="button" onClick={() => onEdit(photo)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors" title="Editar">
               <Edit3 className="w-3.5 h-3.5" />
             </button>
-            <a href={photo.r2_url} target="_blank" rel="noopener noreferrer" download
-              className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors" title="Descargar">
+            <button type="button" onClick={() => onDownload(photo)} disabled={downloading}
+              aria-label={`Descargar original de la foto ${photo.id}`}
+              className="admin-focus-ring p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors disabled:opacity-50" title="Descargar original">
               <Download className="w-3.5 h-3.5" />
-            </a>
+            </button>
             <button type="button" onClick={() => onDelete(photo)} className="p-1.5 rounded-lg hover:bg-red-50 text-red-400 transition-colors" title="Eliminar">
               <Trash2 className="w-3.5 h-3.5" />
             </button>
@@ -177,6 +191,12 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
   const [filterType, setFilterType] = useState('all');
   const [dragOver, setDragOver] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
+  const [downloadSelected, setDownloadSelected] = useState<Set<number>>(new Set());
+  const [downloading, setDownloading] = useState(false);
+  const [downloadStatus, setDownloadStatus] = useState('');
+  const [downloadError, setDownloadError] = useState('');
+  const [downloader] = useState(() => new ClinicalPhotoDownloader());
+  const listGeneration = useRef(0);
 
   // Grid
   const [selectedPhoto, setSelectedPhoto] = useState<ClinicalPhoto | null>(null);
@@ -248,7 +268,54 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
 
   // ── Effects ────────────────────────────────────────────────────────────────
 
-  useEffect(() => { fetchPhotos(0); }, [recordId]);
+  const fetchPhotos = useCallback(async (startOffset: number) => {
+    const isReset = startOffset === 0;
+    const generation = listGeneration.current;
+    if (isReset) setLoading(true); else setLoadingMore(true);
+    try {
+      const res = await recordsFetch(
+        `/api/records?action=listPhotos&record_id=${recordId}&limit=${PAGE_SIZE}&offset=${startOffset}`
+      );
+      if (generation !== listGeneration.current) return;
+      if (res.ok) {
+        const d = await res.json();
+        if (generation !== listGeneration.current) return;
+        const loaded: ClinicalPhoto[] = Array.isArray(d.photos) ? d.photos : [];
+        if (isReset) setPhotos(loaded); else setPhotos(prev => [...prev, ...loaded]);
+        setTotal(d.total ?? 0);
+        setHasMore(d.hasMore ?? false);
+        setNextOffset(startOffset + PAGE_SIZE);
+      } else {
+        setMessage({ type: 'error', text: `Error al cargar las fotos (HTTP ${res.status})` });
+      }
+    } catch { if (generation === listGeneration.current) setMessage({ type: 'error', text: 'Error al cargar las fotos' }); }
+    finally {
+      if (generation === listGeneration.current) {
+        if (isReset) setLoading(false); else setLoadingMore(false);
+      }
+    }
+  }, [recordId]);
+
+  useEffect(() => {
+    const generation = ++listGeneration.current;
+    setPhotos([]);
+    setDownloadSelected(new Set());
+    setDownloadStatus('');
+    setDownloadError('');
+    setDownloading(false);
+    fetchPhotos(0);
+    return () => {
+      listGeneration.current = generation + 1;
+      downloader.cancel();
+    };
+  }, [recordId, downloader, fetchPhotos]);
+
+  useEffect(() => {
+    if (downloadSelected.size && [...downloadSelected].some(id => !filteredPhotos.some(photo => photo.id === id))) {
+      setDownloadSelected(new Set());
+      setDownloadStatus('Selección de descarga borrada: una foto fue eliminada o dejó de estar en el filtro. Vuelve a seleccionar el paquete.');
+    }
+  }, [filteredPhotos, downloadSelected]);
 
   useEffect(() => {
     if (!message) return;
@@ -298,25 +365,56 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
     return () => el.removeEventListener('wheel', handler);
   }, [compareLeft, compareRight]);
 
-  // ── Fetch ──────────────────────────────────────────────────────────────────
+  // ── Download ───────────────────────────────────────────────────────────────
 
-  const fetchPhotos = async (startOffset: number) => {
-    const isReset = startOffset === 0;
-    if (isReset) setLoading(true); else setLoadingMore(true);
+  const toggleDownloadPhoto = (photo: ClinicalPhoto) => {
+    if (downloader.busy) return;
+    setDownloadSelected(previous => {
+      const next = new Set(previous);
+      if (next.has(photo.id)) next.delete(photo.id);
+      else if (next.size < MAX_DOWNLOAD_PHOTOS) next.add(photo.id);
+      return next;
+    });
+    setDownloadError('');
+    setDownloadStatus('');
+  };
+
+  const downloadOriginals = async (individual?: ClinicalPhoto) => {
+    // Ref síncrona del helper: dos clics antes del render tampoco duplican la operación.
+    if (downloader.busy) return;
+    const generation = listGeneration.current;
+    const requested = individual ? [individual.id] : [...downloadSelected];
+    const chosen = requested.map(id => photos.find(photo => photo.id === id));
+    if (!requested.length || chosen.some(photo => !photo || photo.record_id !== recordId)) {
+      setDownloadError('La selección ya no está disponible en esta ficha. Actualiza la lista y vuelve a seleccionar.');
+      return;
+    }
+    const originals = chosen.filter((photo): photo is ClinicalPhoto => photo !== undefined);
+    setDownloading(true);
+    setDownloadError('');
+    setDownloadStatus('Preparando descarga…');
     try {
-      const res = await recordsFetch(
-        `/api/records?action=listPhotos&record_id=${recordId}&limit=${PAGE_SIZE}&offset=${startOffset}`
-      );
-      if (res.ok) {
-        const d = await res.json();
-        const loaded: ClinicalPhoto[] = Array.isArray(d.photos) ? d.photos : [];
-        if (isReset) setPhotos(loaded); else setPhotos(prev => [...prev, ...loaded]);
-        setTotal(d.total ?? 0);
-        setHasMore(d.hasMore ?? false);
-        setNextOffset(startOffset + PAGE_SIZE);
-      }
-    } catch { setMessage({ type: 'error', text: 'Error al cargar las fotos' }); }
-    finally { if (isReset) setLoading(false); else setLoadingMore(false); }
+      await downloader.download(originals, !individual, progress => {
+        if (generation !== listGeneration.current) return;
+        setDownloadStatus(`${progress.phase === 'packing' ? 'Empaquetando' : 'Leyendo originales'}: ${progress.completed}/${progress.total} fotos · ${(progress.bytes / (1024 * 1024)).toFixed(1)} / 100 MiB`);
+      });
+      if (generation === listGeneration.current) setDownloadStatus('Descarga preparada. Puedes repetirla o seleccionar otro paquete.');
+    } catch (error) {
+      if (generation !== listGeneration.current) return;
+      setDownloadStatus('');
+      if (error instanceof DOMException && error.name === 'AbortError') setDownloadStatus('Descarga cancelada. No se generó ningún archivo parcial.');
+      else setDownloadError(error instanceof Error ? error.message : 'No se pudo descargar. Actualiza la lista y vuelve a intentar.');
+    } finally {
+      if (generation === listGeneration.current) setDownloading(false);
+    }
+  };
+
+  const refreshDownloadList = () => {
+    if (downloader.busy) return;
+    setDownloadSelected(new Set());
+    setDownloadError('');
+    setDownloadStatus('Actualizando enlaces. La selección de descarga se borró; vuelve a seleccionar las fotos.');
+    fetchPhotos(0);
   };
 
   // ── Upload ─────────────────────────────────────────────────────────────────
@@ -380,7 +478,7 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
     setUploading(false); setUploadProgress('');
     if (!anyFailed) setMessage({ type: 'success', text: `${files.length} foto(s) subida(s)` });
     await fetchPhotos(0);
-  }, [recordId, consultationId]);
+  }, [recordId, consultationId, fetchPhotos]);
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault(); setDragOver(false);
@@ -468,6 +566,7 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
     viewMode, compareLeft, compareRight,
     onOpen: openLightbox, onEdit: setEditingPhoto, onDelete: handleDelete,
     onTypeChange: handleTypeChange, onCompareSelect: handleCompareSelect,
+    downloading, onDownload: downloadOriginals, onDownloadToggle: toggleDownloadPhoto,
   };
 
   // ─── RENDER ────────────────────────────────────────────────────────────────
@@ -535,11 +634,46 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
         </div>
       )}
 
+      {(viewMode === 'grid' || downloadSelected.size > 0 || downloading || downloadError || downloadStatus) && (
+        <section aria-label="Descarga de originales" aria-busy={downloading} className="rounded-xl border border-gray-200 bg-gray-50 p-3 space-y-2">
+          <p className="text-sm text-gray-700">
+            Selecciona hasta 15 fotos en la galería · Máximo 100 MiB de originales por ZIP.
+            {' '}Puedes descargar tantos paquetes como necesites. La selección es independiente de la línea de tiempo.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm text-gray-700">{downloadSelected.size}/15 seleccionadas</span>
+            <button type="button" onClick={() => downloadOriginals()} disabled={downloading || loading || downloadSelected.size === 0}
+              className="admin-focus-ring rounded-lg bg-[#8b6840] px-3 py-2 text-sm text-white disabled:opacity-50">
+              Descargar ZIP de originales
+            </button>
+            <button type="button" disabled={downloading || downloadSelected.size === 0}
+              onClick={() => { setDownloadSelected(new Set()); setDownloadStatus('Selección de descarga borrada.'); }}
+              className="admin-focus-ring rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 disabled:opacity-50">
+              Limpiar selección
+            </button>
+            <button type="button" disabled={downloading || loading} onClick={refreshDownloadList}
+              className="admin-focus-ring rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 disabled:opacity-50">
+              Actualizar lista y enlaces
+            </button>
+            {downloading && <button type="button" onClick={() => downloader.cancel()}
+              className="admin-focus-ring rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700">Cancelar descarga</button>}
+          </div>
+          {downloadStatus && <p role="status" aria-live="polite" className="text-sm text-gray-700">{downloadStatus}</p>}
+          {downloadError && <p role="alert" className="text-sm text-red-700">{downloadError} No se entregó ningún archivo parcial.</p>}
+        </section>
+      )}
+
       {/* ── Filter chips — solo en vista galería ────────────────── */}
       {viewMode === 'grid' && photos.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {FILTER_OPTIONS.map(opt => (
-            <button key={opt.value} type="button" onClick={() => setFilterType(opt.value)}
+            <button key={opt.value} type="button" onClick={() => {
+              if (filterType !== opt.value && downloadSelected.size) {
+                setDownloadSelected(new Set());
+                setDownloadStatus('Selección de descarga borrada al cambiar el filtro. Vuelve a seleccionar el paquete.');
+              }
+              setFilterType(opt.value);
+            }}
               className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
                 filterType === opt.value ? 'bg-[#deb887] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}>
@@ -587,7 +721,9 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
                     </button>
                     {!isCollapsed && (
                       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                        {group.photos.map(photo => <PhotoCard key={photo.id} photo={photo} {...cardProps} />)}
+                        {group.photos.map(photo => <PhotoCard key={photo.id} photo={photo} {...cardProps}
+                          downloadSelected={downloadSelected.has(photo.id)}
+                          downloadSelectionDisabled={downloading || (!downloadSelected.has(photo.id) && downloadSelected.size >= MAX_DOWNLOAD_PHOTOS)} />)}
                       </div>
                     )}
                   </div>
