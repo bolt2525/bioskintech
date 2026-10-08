@@ -16,6 +16,9 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Lock, ShieldAlert, Eye, EyeOff, ShieldCheck } from 'lucide-react';
 import BrandLogo from '../components/ui/BrandLogo';
+import TurnstileWidget from '../components/ui/TurnstileWidget';
+
+const TURNSTILE_SITE_KEY = String(import.meta.env.VITE_TURNSTILE_SITE_KEY || '').trim();
 
 export default function AdminMasterLogin() {
   const navigate = useNavigate();
@@ -28,6 +31,8 @@ export default function AdminMasterLogin() {
   const [showKey, setShowKey]     = useState(false);
   const [error, setError]         = useState('');
   const [loading, setLoading]     = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const [turnstileResetKey, setTurnstileResetKey] = useState(0);
 
   // Estado del 2FA OTP
   const [otpStep, setOtpStep]         = useState(false);
@@ -45,6 +50,10 @@ export default function AdminMasterLogin() {
       setError('Todos los campos son obligatorios');
       return;
     }
+    if ((import.meta.env.PROD || TURNSTILE_SITE_KEY) && !turnstileToken) {
+      setError('Completa la verificación de seguridad.');
+      return;
+    }
     setError('');
     setLoading(true);
 
@@ -52,7 +61,7 @@ export default function AdminMasterLogin() {
       const res = await fetch('/api/admin-auth?action=login', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ username, password, master_key: masterKey }),
+        body:    JSON.stringify({ username, password, master_key: masterKey, turnstileToken }),
       });
       const data = await res.json();
 
@@ -70,9 +79,13 @@ export default function AdminMasterLogin() {
         navigate('/admin/master');
       } else {
         setError(data.error || 'Acceso denegado');
+        setTurnstileToken('');
+        setTurnstileResetKey(key => key + 1);
       }
     } catch {
       setError('Error de conexión');
+      setTurnstileToken('');
+      setTurnstileResetKey(key => key + 1);
     } finally {
       setLoading(false);
     }
@@ -202,7 +215,24 @@ export default function AdminMasterLogin() {
                   </div>
                 )}
 
-                <button type="submit" disabled={loading}
+                <TurnstileWidget
+                  siteKey={TURNSTILE_SITE_KEY}
+                  action="admin_master_login"
+                  theme="dark"
+                  resetKey={turnstileResetKey}
+                  onToken={token => {
+                    setTurnstileToken(token);
+                    if (token) setError('');
+                  }}
+                  onError={() => setError('No se pudo cargar la verificación de seguridad.')}
+                />
+                {import.meta.env.PROD && !TURNSTILE_SITE_KEY && (
+                  <p className="text-center text-sm text-red-400" role="alert">
+                    La verificación de seguridad no está disponible.
+                  </p>
+                )}
+
+                <button type="submit" disabled={loading || (Boolean(TURNSTILE_SITE_KEY) && !turnstileToken) || (import.meta.env.PROD && !TURNSTILE_SITE_KEY)}
                   className="w-full py-2.5 bg-amber-600 text-white rounded-xl font-semibold text-sm hover:bg-amber-500 disabled:opacity-50 transition-all shadow-lg shadow-amber-900/30 mt-2">
                   {loading ? (
                     <span className="flex items-center justify-center gap-2">

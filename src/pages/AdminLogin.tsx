@@ -19,6 +19,9 @@ import { Lock, Mail, Eye, EyeOff, ShieldCheck } from 'lucide-react';
 import SkinExplorerButton from '../skin-explorer/SkinExplorerButton';
 import AppFooter from '../components/layout/AppFooter';
 import BrandLogo from '../components/ui/BrandLogo';
+import TurnstileWidget from '../components/ui/TurnstileWidget';
+
+const TURNSTILE_SITE_KEY = String(import.meta.env.VITE_TURNSTILE_SITE_KEY || '').trim();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Componente
@@ -33,6 +36,8 @@ export default function AdminLogin() {
   const [showPwd, setShowPwd]   = useState(false);
   const [error, setError]       = useState('');
   const [loading, setLoading]   = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const [turnstileResetKey, setTurnstileResetKey] = useState(0);
 
   // Estado del segundo paso 2FA
   const [otpStep, setOtpStep]         = useState(false);
@@ -47,11 +52,15 @@ export default function AdminLogin() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if ((import.meta.env.PROD || TURNSTILE_SITE_KEY) && !turnstileToken) {
+      setError('Completa la verificación de seguridad.');
+      return;
+    }
     setError('');
     setLoading(true);
 
     try {
-      const result = await login(username, password);
+      const result = await login(username, password, turnstileToken);
       if (result.requiresOTP) {
         setOtpStep(true); setOtpToken(result.otpToken || ''); setMaskedEmail(result.maskedEmail || '');
         setLoading(false); return;
@@ -63,9 +72,13 @@ export default function AdminLogin() {
         else navigate('/admin');
       } else {
         setError(result.error || 'Usuario o contraseña incorrectos');
+        setTurnstileToken('');
+        setTurnstileResetKey(key => key + 1);
       }
     } catch {
       setError('Error al iniciar sesión');
+      setTurnstileToken('');
+      setTurnstileResetKey(key => key + 1);
     } finally {
       setLoading(false);
     }
@@ -239,10 +252,27 @@ export default function AdminLogin() {
                 </div>
               )}
 
+              <TurnstileWidget
+                siteKey={TURNSTILE_SITE_KEY}
+                action="admin_login"
+                theme="dark"
+                resetKey={turnstileResetKey}
+                onToken={token => {
+                  setTurnstileToken(token);
+                  if (token) setError('');
+                }}
+                onError={() => setError('No se pudo cargar la verificación de seguridad.')}
+              />
+              {import.meta.env.PROD && !TURNSTILE_SITE_KEY && (
+                <p className="text-center text-sm text-red-400" role="alert">
+                  La verificación de seguridad no está disponible.
+                </p>
+              )}
+
               {/* Botón de submit */}
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || (Boolean(TURNSTILE_SITE_KEY) && !turnstileToken) || (import.meta.env.PROD && !TURNSTILE_SITE_KEY)}
                 className="w-full bg-[#c4a882] text-white py-2.5 rounded-xl font-semibold text-sm hover:bg-[#b09878] active:scale-[0.98] transition-all shadow-sm shadow-[#c4a882]/20 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? (

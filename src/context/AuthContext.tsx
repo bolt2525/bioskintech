@@ -31,7 +31,7 @@ interface AuthContextType {
   features: string[];
   /** Overrides de módulos por usuario: [{feature, enabled}]. enabled:false = módulo oculto para este usuario */
   userModuleOverrides: Array<{ feature: string; enabled: boolean }>;
-  login: (username: string, password: string) => Promise<{ ok: boolean; error?: string; user?: import('../types').AuthUser; requiresOTP?: boolean; otpToken?: string; maskedEmail?: string }>;
+  login: (username: string, password: string, turnstileToken: string) => Promise<{ ok: boolean; error?: string; user?: import('../types').AuthUser; requiresOTP?: boolean; otpToken?: string; maskedEmail?: string }>;
   logout: () => void;
   checkAuth: () => Promise<boolean>;
   hasFeature: (feature: string) => boolean;
@@ -165,12 +165,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (
     username: string,
     password: string,
+    turnstileToken: string,
   ): Promise<{ ok: boolean; error?: string; user?: AuthUser; requiresOTP?: boolean; otpToken?: string; maskedEmail?: string }> => {
     try {
       const res  = await fetch('/api/admin-auth?action=login', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ username, password, device_token: localStorage.getItem('bioskin_device_token') || '' }),
+        body:    JSON.stringify({ username, password, turnstileToken, device_token: localStorage.getItem('bioskin_device_token') || '' }),
       });
       const data = await res.json();
 

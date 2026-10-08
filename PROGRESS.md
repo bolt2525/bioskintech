@@ -1,5 +1,6 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-08 Login: Turnstile normal y proveedor.
 - ✅ 2026-10-08 Seguridad: autorización API e impresiones protegidas.
 - ✅ 2026-10-08 Respaldo: inventario pendiente veraz.
 - ✅ 2026-10-08 Base de Datos: textos concretos.

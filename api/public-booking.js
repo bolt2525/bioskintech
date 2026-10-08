@@ -3,12 +3,12 @@ import { sql } from '@vercel/postgres';
 import { getPool } from '../lib/neon-clinical-db.js';
 import { loadSubscriptionLifecycle } from '../lib/subscription-lifecycle.js';
 import { resolveResourceId, resourceExtendedProperties, rangesOverlap, eventResourceId, isWithinWorkHours, isValidFutureLocalDateTime } from '../lib/agenda-resources.js';
+import { getTurnstileAllowedHosts, verifyTurnstileToken as verifyTurnstile } from '../lib/turnstile.js';
 
 const isGoogleAuthError = (error) => error?.code === 401 || error?.response?.status === 401 || /invalid_grant|invalid authentication credentials/i.test(error?.message || '');
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
 const RATE_LIMIT_MAX_REQUESTS = 5;
 const TURNSTILE_ACTION = 'public_booking';
-const TURNSTILE_TOKEN_MAX_LENGTH = 2048;
 const rateLimitStore = new Map();
 
 function sanitizeText(value, maxLength = 160) {
@@ -40,85 +40,14 @@ function parseClock(value) {
   return match ? Number(match[1]) * 60 + Number(match[2]) : null;
 }
 
-function normalizeTurnstileHostname(value) {
-  const candidate = String(value || '').trim();
-  if (!candidate) return '';
-  try {
-    return new URL(candidate.includes('://') ? candidate : `https://${candidate}`).hostname.toLowerCase();
-  } catch {
-    return '';
-  }
-}
-
-export function getTurnstileAllowedHosts() {
-  const rawHosts = `${process.env.TURNSTILE_HOSTNAMES || ''},${process.env.APP_URL || ''}`;
-  const hosts = rawHosts
-    .split(',')
-    .map(normalizeTurnstileHostname)
-    .filter(Boolean)
-
-  const normalized = new Set(hosts);
-  if (process.env.NODE_ENV !== 'production') {
-    normalized.add('localhost');
-    normalized.add('127.0.0.1');
-  }
-  return [...normalized].filter(Boolean);
-}
+export { getTurnstileAllowedHosts };
 
 export async function verifyTurnstileToken(req, token) {
-  const secret = (process.env.TURNSTILE_SECRET || '').trim();
-  if (!secret) {
-    return process.env.NODE_ENV === 'production'
-      ? { ok: false, status: 503, error: 'La verificación de seguridad no está disponible.' }
-      : { ok: true };
-  }
-
-  if (typeof token !== 'string' || token.length > TURNSTILE_TOKEN_MAX_LENGTH) {
-    return { ok: false, status: 403, error: 'Confirma que no eres un robot para reservar.' };
-  }
-  const normalizedToken = token.trim();
-  if (!normalizedToken) {
-    return { ok: false, status: 403, error: 'Confirma que no eres un robot para reservar.' };
-  }
-
-  const allowedHosts = getTurnstileAllowedHosts();
-  if (process.env.NODE_ENV === 'production' && allowedHosts.length === 0) {
-    return { ok: false, status: 503, error: 'La verificación de seguridad no está disponible.' };
-  }
-
-  let response;
-  let result;
-  try {
-    response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      signal: AbortSignal.timeout(10_000),
-      body: new URLSearchParams({
-        secret,
-        response: normalizedToken,
-        remoteip: getClientIp(req),
-      }).toString(),
-    });
-    if (!response.ok) throw new Error(`siteverify ${response.status}`);
-    result = await response.json();
-  } catch (error) {
-    console.error('[public-booking] Turnstile Siteverify no disponible:', error instanceof Error ? error.message : 'error desconocido');
-    return { ok: false, status: 503, error: 'La verificación de seguridad falló. Inténtalo de nuevo.' };
-  }
-
-  if (!result?.success) {
-    return { ok: false, status: 403, error: 'La verificación anti-bot falló. Inténtalo de nuevo.' };
-  }
-
-  if (result.action !== TURNSTILE_ACTION) {
-    return { ok: false, status: 403, error: 'La verificación anti-bot no corresponde a esta operación.' };
-  }
-
-  if (!allowedHosts.includes(String(result.hostname || '').toLowerCase())) {
-    return { ok: false, status: 403, error: 'El host de la solicitud no está autorizado.' };
-  }
-
-  return { ok: true };
+  return verifyTurnstile(req, token, {
+    action: TURNSTILE_ACTION,
+    context: 'public-booking',
+    prompt: 'Confirma que no eres un robot para reservar.',
+  });
 }
 
 async function getUserOAuth2Client(userId) {

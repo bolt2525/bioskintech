@@ -25,6 +25,7 @@ import { clinicPurgePreview, purgeClinic, updateClinicState } from '../lib/clini
 import { lockClinicWriters, requireClinicWritable } from '../lib/clinic-lifecycle.js';
 import { sessionPolicy } from '../lib/admin-auth.js';
 import { subscriptionLifecycle, subscriptionRequestAllowed, renewClinicSubscription, requireSubscriptionOperation } from '../lib/subscription-lifecycle.js';
+import { verifyTurnstileToken } from '../lib/turnstile.js';
 
 const writerContext = new AsyncLocalStorage();
 const sql = (strings, ...values) => {
@@ -2572,9 +2573,17 @@ async function handleAdminRequest(req, res) {
 
     // ── Login ──────────────────────────────────────────────────────────────
     if (action === 'login') {
-      const { username, password } = req.body || {};
+      const { username, password, turnstileToken } = req.body || {};
       if (!username?.trim() || !password?.trim())
         return res.status(400).json({ success: false, error: 'Usuario y contraseña son requeridos' });
+      const turnstile = await verifyTurnstileToken(req, turnstileToken, {
+        action: req.body?.master_key ? 'admin_master_login' : 'admin_login',
+        context: 'admin-auth',
+        prompt: 'Confirma que no eres un robot para iniciar sesión.',
+      });
+      if (!turnstile.ok) {
+        return res.status(turnstile.status).json({ success: false, error: turnstile.error });
+      }
       const ip     = (req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || '').split(',')[0].trim();
       const ua     = req.headers['user-agent'] || '';
       const result = await loginUser(username.trim(), password.trim(), ip, ua, req);

@@ -326,6 +326,7 @@ Las operaciones de fotos también validan que el expediente pertenezca al tenant
 - Claves temporales generadas con `crypto.randomInt`, sesiones revocadas y aviso persistente de reemplazo.
 - Sesiones Bearer persistidas en `admin_sessions` con expiración.
 - Bloqueo de login después de intentos fallidos según la lógica de auth.
+- Turnstile protege el login administrativo antes de consultar credenciales, sin sustituir el bloqueo ni OTP. El login normal exige la acción `admin_login` y el acceso del proveedor `admin_master_login`; ambos usan Siteverify server-side con hostname autorizado, token máximo de 2048 caracteres, timeout de 10 segundos y fallo cerrado en producción o cualquier despliegue Vercel. El widget se reinicia después de rechazos y permite reintentar su carga sin recargar la página.
 - Consultas SQL parametrizadas en las superficies revisadas.
 - CORS con lista de orígenes permitidos en los handlers revisados.
 - Presigned URLs para R2; el bucket no se declara público en el código.
