@@ -12,6 +12,7 @@ import Clinical3DViewer, {
   type ScalpHairVisualization,
 } from '../../components/admin/ficha-clinica/components/Clinical3DViewer';
 import { useAuth } from '../../context/AuthContext';
+import { SCALP_BOUNDARY_PRESET, SCALP_BOUNDARY_PRESET_VERSION } from '../../data/scalpBoundaryPreset';
 
 type LabMode = 'hair' | 'model';
 type Density = 'Alta' | 'Media' | 'Baja';
@@ -43,6 +44,33 @@ const DEFAULT_SCENE: ClinicalSceneSettings = {
   roughness: 0.45,
   metalness: 0.05,
   wireframe: false,
+};
+
+const createPresetBoundaryMarkers = (): Marker3D[] => SCALP_BOUNDARY_PRESET.map((position, index) => {
+  const radialLength = Math.hypot(position.x, position.z);
+  return {
+    id: `scalp-preset-v${SCALP_BOUNDARY_PRESET_VERSION}-${index + 1}`,
+    type: 'Puntual',
+    pathologyId: 'lesion',
+    zone: `Trazado ${index + 1}`,
+    position: { ...position },
+    rotation: [0, 0, 0],
+    normal: radialLength
+      ? { x: position.x / radialLength, y: 0, z: position.z / radialLength }
+      : { x: 0, y: 1, z: 0 },
+    radius: 0.3,
+  };
+});
+
+const loadBoundaryMarkers = (): Marker3D[] => {
+  const stored = localStorage.getItem(SCALP_TRACE_STORAGE_KEY);
+  if (stored === null) return createPresetBoundaryMarkers();
+  try {
+    const markers = JSON.parse(stored);
+    return Array.isArray(markers) ? markers as Marker3D[] : createPresetBoundaryMarkers();
+  } catch {
+    return createPresetBoundaryMarkers();
+  }
 };
 
 const RangeControl = ({
@@ -83,20 +111,8 @@ function HairRenderLabView({ onBack }: { onBack?: () => void }) {
   const [layDown, setLayDown] = useState(DEFAULT_HAIR.layDown);
   const [traceMode, setTraceMode] = useState(false);
   const [traceStatus, setTraceStatus] = useState('');
-  const [boundaryPoints, setBoundaryPoints] = useState<Marker3D[]>(() => {
-    try {
-      return JSON.parse(localStorage.getItem(SCALP_TRACE_STORAGE_KEY) || '[]') as Marker3D[];
-    } catch {
-      return [];
-    }
-  });
-  const [traceClosed, setTraceClosed] = useState(() => {
-    try {
-      return (JSON.parse(localStorage.getItem(SCALP_TRACE_STORAGE_KEY) || '[]') as Marker3D[]).length >= 3;
-    } catch {
-      return false;
-    }
-  });
+  const [boundaryPoints, setBoundaryPoints] = useState<Marker3D[]>(loadBoundaryMarkers);
+  const [traceClosed, setTraceClosed] = useState(() => loadBoundaryMarkers().length >= 3);
   const [modelUrl, setModelUrl] = useState(MODEL_PRESETS.head.url);
   const [modelData, setModelData] = useState<ArrayBuffer | null>(null);
   const [modelName, setModelName] = useState(MODEL_PRESETS.head.label);
@@ -400,7 +416,7 @@ function HairRenderLabView({ onBack }: { onBack?: () => void }) {
                     <button
                       type="button"
                       onClick={() => {
-                        localStorage.removeItem(SCALP_TRACE_STORAGE_KEY);
+                        localStorage.setItem(SCALP_TRACE_STORAGE_KEY, '[]');
                         setBoundaryPoints([]);
                         setTraceClosed(false);
                         setTraceStatus('Trazado eliminado de este navegador.');
@@ -550,7 +566,7 @@ function HairRenderLabView({ onBack }: { onBack?: () => void }) {
             ) : null}
             <div ref={viewerRef} className="h-[560px] sm:h-[680px]">
               <Clinical3DViewer
-                markers={labMode === 'model' ? markers : boundaryPoints}
+                markers={labMode === 'model' ? markers : traceMode ? boundaryPoints : []}
                 modelUrl={labMode === 'model' ? modelUrl : MODEL_PRESETS.head.url}
                 modelData={labMode === 'model' ? modelData : null}
                 cameraPreset={labMode === 'model' ? cameraPreset : 'scalp'}

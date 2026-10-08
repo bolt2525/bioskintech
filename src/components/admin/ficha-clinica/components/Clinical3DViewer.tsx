@@ -545,7 +545,7 @@ const createScalpHairGroup = (
       );
       const trace = new THREE.Mesh(
         new THREE.TubeGeometry(traceCurve, 128, 0.012, 6, visualization.boundaryClosed === true),
-        new THREE.MeshBasicMaterial({ color: '#e7b85c', depthTest: false }),
+        new THREE.MeshBasicMaterial({ color: '#e7b85c', depthWrite: false }),
       );
       trace.renderOrder = 20;
       trace.userData.isScalpVisualization = true;
