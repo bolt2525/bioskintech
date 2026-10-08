@@ -20,7 +20,7 @@ type Density = 'Alta' | 'Media' | 'Baja';
 const NORWOOD_STAGES = ['I', 'II', 'III', 'III Vertex', 'IV', 'V', 'VI', 'VII'];
 const LUDWIG_STAGES = ['I', 'II', 'III'];
 const HAIR_COLORS = ['#160d09', '#2b1a12', '#4a2b1a', '#6b4328', '#9a744e'];
-const SCALP_TRACE_STORAGE_KEY = 'bioskin-3d-lab-scalp-trace-v1';
+const SCALP_TRACE_STORAGE_KEY = 'bioskin-3d-lab-scalp-trace-v2';
 const MODEL_PRESETS = {
   head: { label: 'Cabeza', url: '/models/clinical/male_head.glb', camera: 'scalp' as const },
   body: { label: 'Cuerpo', url: '/models/clinical/male_body.glb', camera: 'body' as const },
