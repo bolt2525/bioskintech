@@ -297,3 +297,5 @@
 - ✅ 2026-10-08 Auditoría npm verificada; residual dev requiere migración mayor compatible.
 - ✅ 2026-09-29 Pruebas automatizadas de backup ampliadas (`tests/backup.test.mjs`).
 - ⏳ Volver a subir fotos clínicas reales — el bucket quedó vacío tras el reset de pruebas.
+
+- ✅ Oct 8 Auditoría contrato: Anexo C tras A, sin proveedores/funciones futuras en textos

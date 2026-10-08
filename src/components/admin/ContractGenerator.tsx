@@ -613,7 +613,7 @@ export default function ContractGenerator() {
 
         <section className="mt-6 border-t border-gray-200 pt-5">
           <h3 className="text-sm font-bold uppercase tracking-wide text-gray-800">4. Documentos integrantes y orden de prevalencia</h3>
-          <p className="mt-2 text-sm leading-relaxed text-gray-700">Forman un único acuerdo esta carátula y sus condiciones particulares, el Anexo A de Tratamiento de Datos{hasAnnex ? ' y el Anexo B de Condiciones Particulares Seleccionadas' : ''}{options.paidPhotoBackupPolicy ? ` y el Anexo C ${PAID_PHOTO_BACKUP_POLICY_VERSION}` : ''}, las Condiciones de Servicio y la Política de Privacidad versión {LEGAL_VERSION}, cuyas copias se adjuntan. Las condiciones particulares prevalecen para identidad, precio, módulos y vigencia; el Anexo A para el encargo de datos. El Anexo C prevalece únicamente en vencimiento, recuperación, entrega fotográfica y límites técnicos de exportación que regula. Los documentos generales rigen las materias restantes. Los complementos del Anexo B no eliminan las garantías comunes de soporte, devolución, aviso de incidentes ni autorización de IA. Siempre prevalece la ley imperativa.</p>
+          <p className="mt-2 text-sm leading-relaxed text-gray-700">Forman un único acuerdo esta carátula y sus condiciones particulares, el Anexo A de Tratamiento de Datos{hasAnnex ? ' y el Anexo B de Condiciones Particulares Seleccionadas' : ''}{options.paidPhotoBackupPolicy ? ` y el Anexo C ${PAID_PHOTO_BACKUP_POLICY_VERSION}` : ''}, las Condiciones de Servicio y la Política de Privacidad versión {LEGAL_VERSION}, cuyas copias se adjuntan. Las condiciones particulares prevalecen para identidad, precio, módulos y vigencia; el Anexo A para el encargo de datos. El Anexo C prevalece únicamente en vencimiento, recuperación, entrega fotográfica y límites técnicos de exportación que regula, incluso frente a la cláusula A.8 del Anexo A. Los documentos generales rigen las materias restantes. Los complementos del Anexo B no eliminan las garantías comunes de soporte, devolución, aviso de incidentes ni autorización de IA. Siempre prevalece la ley imperativa.</p>
         </section>
 
         <section className="contract-signature-section mt-6">
@@ -655,15 +655,6 @@ export default function ContractGenerator() {
           </div>
         </section>}
 
-        {options.paidPhotoBackupPolicy && <section className="contract-annex mt-10 rounded-xl border border-gray-300 p-5">
-          <div className="border-b border-gray-300 pb-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8b6945]">Anexo C · Política contractual independiente</p>
-            <h2 className="mt-2 text-xl font-bold text-gray-900">Vencimiento, recuperación y entregas fotográficas</h2>
-            <p className="mt-1 text-xs text-gray-600">Versión {PAID_PHOTO_BACKUP_POLICY_VERSION} · Contrato {client.contractReference || 'pendiente'}</p>
-          </div>
-          <div className="mt-5 text-sm leading-relaxed text-gray-700"><PaidPhotoBackupPolicyBody /></div>
-        </section>}
-
         <section className="contract-annex mt-10">
           <div className="border-b border-gray-300 pb-5">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8b6945]">Anexo A · Encargo de tratamiento de datos personales</p>
@@ -678,9 +669,18 @@ export default function ContractGenerator() {
             <section><h3 className="font-bold text-gray-900">A.5. Subencargados y transferencias</h3><p className="mt-1">El Cliente autoriza de forma general los proveedores identificados en el Art. 5 de la Política adjunta para las finalidades allí descritas. El Proveedor seguirá siendo responsable de sus obligaciones legales como Encargado, seleccionará proveedores con garantías apropiadas e informará cambios relevantes mediante una nueva versión. El Cliente podrá objetar justificadamente por riesgo de protección de datos; si no existe alternativa razonable, podrá terminar el servicio y exportar sus datos.</p></section>
             <section><h3 className="font-bold text-gray-900">A.6. Seguridad, derechos e incidentes</h3><p className="mt-1">El Proveedor asistirá razonablemente al Cliente para atender derechos, evaluaciones e incidentes según la información disponible. Comunicará al Cliente, sin dilación indebida y dentro de las primeras 24 horas naturales desde que tenga conocimiento de una violación que afecte sus datos, la naturaleza conocida, posibles consecuencias, medidas adoptadas y punto de contacto, completando la información progresivamente. El Cliente decide y realiza las notificaciones que le correspondan como Responsable.</p></section>
             <section><h3 className="font-bold text-gray-900">A.7. Evidencia y auditoría</h3><p className="mt-1">A solicitud razonable, el Proveedor facilitará información disponible para demostrar el cumplimiento de este encargo. Las auditorías deberán proteger la seguridad y confidencialidad de otros clientes, coordinarse con antelación y evitar interferencias desproporcionadas. No se concede acceso a secretos, credenciales ni datos de terceros.</p></section>
-            <section><h3 className="font-bold text-gray-900">A.8. Devolución y supresión</h3><p className="mt-1">Durante la suscripción y los 30 días posteriores, el Cliente podrá exportar los formatos disponibles descritos en la Política. Cumplido ese plazo, el Proveedor eliminará o anonimizará los datos activos conforme a sus procedimientos técnicos y obligaciones legales; las copias residuales permanecerán aisladas del uso ordinario hasta vencer sus ciclos de retención. Las fotografías originales no forman parte de las copias automáticas de datos estructurados. La entrega anual autorizada de fotografías y documentos clínicos se rige por los documentos generales; no es una réplica fotográfica periódica. La cuota no consumida del período terminado puede solicitarse por los canales oficiales dentro de los 30 días posteriores, sin ampliar el acceso ordinario a la Plataforma.</p></section>
+            <section><h3 className="font-bold text-gray-900">A.8. Devolución y supresión</h3><p className="mt-1">Durante la suscripción y los 30 días posteriores, el Cliente podrá exportar los formatos disponibles descritos en la Política. Cumplido ese plazo, el Proveedor eliminará o anonimizará los datos activos conforme a sus procedimientos técnicos y obligaciones legales; las copias residuales permanecerán aisladas del uso ordinario hasta vencer sus ciclos de retención. Las fotografías originales no forman parte de las copias automáticas de datos estructurados. La entrega anual autorizada de fotografías y documentos clínicos se rige por los documentos generales; no es una réplica fotográfica periódica. La cuota no consumida del período terminado puede solicitarse por los canales oficiales dentro de los 30 días posteriores, sin ampliar el acceso ordinario a la Plataforma.{options.paidPhotoBackupPolicy ? ' Si se incorpora el Anexo C, sus plazos de vencimiento y recuperación sustituyen los de esta cláusula.' : ''}</p></section>
           </div>
         </section>
+
+                    {options.paidPhotoBackupPolicy && <section className="contract-annex mt-10 rounded-xl border border-gray-300 p-5">
+                      <div className="border-b border-gray-300 pb-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8b6945]">Anexo C · Política contractual independiente</p>
+                        <h2 className="mt-2 text-xl font-bold text-gray-900">Vencimiento, recuperación y entregas fotográficas</h2>
+                        <p className="mt-1 text-xs text-gray-600">Versión {PAID_PHOTO_BACKUP_POLICY_VERSION} · Contrato {client.contractReference || 'pendiente'}</p>
+                      </div>
+                      <div className="mt-5 text-sm leading-relaxed text-gray-700"><PaidPhotoBackupPolicyBody /></div>
+                    </section>}
 
         <section className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700 contract-print-summary">
           <p><strong>Documentos adjuntos al imprimir:</strong> Condiciones de Servicio y Política de Privacidad y Tratamiento de Datos Personales, versión {LEGAL_VERSION}{options.paidPhotoBackupPolicy ? `; Anexo C ${PAID_PHOTO_BACKUP_POLICY_VERSION}` : ''}.</p>
