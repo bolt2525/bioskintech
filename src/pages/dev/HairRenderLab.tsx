@@ -188,6 +188,22 @@ function HairRenderLabView({ onBack }: { onBack?: () => void }) {
     setTraceStatus(`Trazado guardado localmente con ${boundaryPoints.length} puntos.`);
   };
 
+  const exportBoundaryTrace = () => {
+    const blob = new Blob([JSON.stringify({
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      closed: traceClosed,
+      points: boundaryPoints,
+    }, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.download = `bioskin-trazado-capilar-${Date.now()}.json`;
+    link.href = url;
+    link.click();
+    URL.revokeObjectURL(url);
+    setTraceStatus(`Trazado exportado con ${boundaryPoints.length} puntos.`);
+  };
+
   const capturePng = () => {
     const canvas = viewerRef.current?.querySelector('canvas');
     if (!canvas) return;
@@ -372,7 +388,7 @@ function HairRenderLabView({ onBack }: { onBack?: () => void }) {
                     <MousePointer2 className="h-4 w-4" aria-hidden="true" />
                     {traceMode ? 'Pausar para rotar' : boundaryPoints.length ? 'Continuar trazado' : 'Activar trazado'}
                   </button>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
                       onClick={() => setBoundaryPoints(previous => previous.slice(0, -1))}
@@ -401,6 +417,14 @@ function HairRenderLabView({ onBack }: { onBack?: () => void }) {
                       className="admin-focus-ring flex min-h-9 items-center justify-center gap-1 rounded-lg bg-slate-900 text-[11px] font-semibold text-white disabled:opacity-40"
                     >
                       <Save className="h-3.5 w-3.5" aria-hidden="true" /> Guardar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={exportBoundaryTrace}
+                      disabled={boundaryPoints.length < 3}
+                      className="admin-focus-ring flex min-h-9 items-center justify-center gap-1 rounded-lg border border-gold/50 bg-white text-[11px] font-semibold text-gold-ink disabled:opacity-40"
+                    >
+                      <Download className="h-3.5 w-3.5" aria-hidden="true" /> Exportar JSON
                     </button>
                   </div>
                   <p className="text-[11px] text-slate-500" role="status">
