@@ -75,6 +75,9 @@ export interface ScalpHairVisualization {
   lengthScale?: number;
   roughness?: number;
   layDown?: number;
+  showBoundaryTrace?: boolean;
+  boundaryPoints?: Array<{ x: number; y: number; z: number }>;
+  boundaryClosed?: boolean;
 }
 
 export interface ClinicalSceneSettings {
@@ -135,9 +138,14 @@ const disposeObject3D = (object: THREE.Object3D) => {
       ? (Array.isArray(renderable.material) ? renderable.material : [renderable.material])
       : [];
     materials.forEach(material => {
-      const texturedMaterial = material as THREE.Material & { map?: THREE.Texture; alphaMap?: THREE.Texture };
+      const texturedMaterial = material as THREE.Material & {
+        map?: THREE.Texture;
+        alphaMap?: THREE.Texture;
+        bumpMap?: THREE.Texture;
+      };
       texturedMaterial.map?.dispose();
       texturedMaterial.alphaMap?.dispose();
+      texturedMaterial.bumpMap?.dispose();
       material.dispose();
     });
   });
@@ -158,19 +166,89 @@ const seededRandom = (seedText: string) => {
   };
 };
 
-const isInsideScalpBoundary = (position: THREE.Vector3): boolean => {
-  const absX = Math.abs(position.x);
-  if (position.y < 0.68 || position.z > 1.58) return false;
+const SCALP_BOUNDARY_Y = [
+  1.5, 1.48, 1.42, 1.3,
+  1.18, 0.78, 0.28, -0.52,
+  -0.96, -0.52, 0.28, 0.78,
+  1.18, 1.3, 1.42, 1.48,
+] as const;
 
-  // La línea frontal queda por encima de cejas y sien baja.
-  if (position.z > 0.12) {
-    const frontalMinimumY = 1.2 - Math.min(absX, 1.35) * 0.08;
-    if (position.y < frontalMinimumY) return false;
+const buildScalpBoundaryY = (
+  points: ScalpHairVisualization['boundaryPoints'],
+  closed: boolean,
+): number[] => {
+  if (!closed || !points || points.length < 3) return [...SCALP_BOUNDARY_Y];
+  const fullTurn = Math.PI * 2;
+  const angularPoints = points
+    .map(point => ({
+      angle: (Math.atan2(point.x, point.z) + fullTurn) % fullTurn,
+      y: point.y,
+    }))
+    .sort((a, b) => a.angle - b.angle);
+  let samples = SCALP_BOUNDARY_Y.map((_, sampleIndex) => {
+    const angle = sampleIndex / SCALP_BOUNDARY_Y.length * fullTurn;
+    const nextIndex = angularPoints.findIndex(point => point.angle >= angle);
+    const next = angularPoints[nextIndex === -1 ? 0 : nextIndex];
+    const previous = angularPoints[nextIndex <= 0 ? angularPoints.length - 1 : nextIndex - 1];
+    const previousAngle = previous.angle > angle ? previous.angle - fullTurn : previous.angle;
+    const nextAngle = next.angle < angle ? next.angle + fullTurn : next.angle;
+    return THREE.MathUtils.lerp(previous.y, next.y, (angle - previousAngle) / Math.max(0.0001, nextAngle - previousAngle));
+  });
+  for (let pass = 0; pass < 2; pass += 1) {
+    samples = samples.map((value, index) => (
+      samples[(index + samples.length - 1) % samples.length] * 0.2
+      + value * 0.6
+      + samples[(index + 1) % samples.length] * 0.2
+    ));
   }
+  return samples;
+};
 
-  // Evita emitir fibras sobre pabellones auriculares y región preauricular.
-  if (absX > 1.3 && position.y < 1.18) return false;
-  return true;
+const getScalpBoundaryY = (position: THREE.Vector3, boundaryY: readonly number[]): number => {
+  const fullTurn = Math.PI * 2;
+  const angle = (Math.atan2(position.x, position.z) + fullTurn) % fullTurn;
+  const scaled = angle / fullTurn * boundaryY.length;
+  const index = Math.floor(scaled) % boundaryY.length;
+  const nextIndex = (index + 1) % boundaryY.length;
+  return THREE.MathUtils.lerp(boundaryY[index], boundaryY[nextIndex], scaled - Math.floor(scaled));
+};
+
+const isInsideScalpBoundary = (position: THREE.Vector3, boundaryY: readonly number[]): boolean =>
+  position.y >= getScalpBoundaryY(position, boundaryY);
+
+const applyScalpBoundaryShader = (material: THREE.MeshPhysicalMaterial, boundaryY: readonly number[]) => {
+  material.onBeforeCompile = shader => {
+    shader.uniforms.scalpBoundaryY = { value: new Float32Array(boundaryY) };
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vHairWorldPosition;')
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+        #ifdef USE_INSTANCING
+          vHairWorldPosition = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
+        #else
+          vHairWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;
+        #endif`,
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vHairWorldPosition;\nuniform float scalpBoundaryY[16];')
+      .replace(
+        '#include <clipping_planes_fragment>',
+        `#include <clipping_planes_fragment>
+        float hairAngle = atan(vHairWorldPosition.x, vHairWorldPosition.z);
+        if (hairAngle < 0.0) hairAngle += PI * 2.0;
+        float hairBoundaryIndex = hairAngle / (PI * 2.0) * 16.0;
+        int hairIndex = int(floor(hairBoundaryIndex)) % 16;
+        int hairNextIndex = hairIndex == 15 ? 0 : hairIndex + 1;
+        float hairMinimumY = mix(
+          scalpBoundaryY[hairIndex],
+          scalpBoundaryY[hairNextIndex],
+          fract(hairBoundaryIndex)
+        );
+        if (vHairWorldPosition.y < hairMinimumY) discard;`,
+      );
+  };
+  material.customProgramCacheKey = () => 'bioskin-scalp-boundary-trace-v1';
 };
 
 const getHairCoverage = (
@@ -208,46 +286,42 @@ const getHairCoverage = (
   return absX > 0.82 || position.z < -1.08 || position.y < 0.32 ? 0.82 : 0;
 };
 
-const createHairCardAlphaMap = (): THREE.CanvasTexture => {
-  const canvas = document.createElement('canvas');
-  canvas.width = 64;
-  canvas.height = 256;
-  const context = canvas.getContext('2d');
-  if (!context) throw new Error('No se pudo crear la textura capilar.');
-
-  context.clearRect(0, 0, canvas.width, canvas.height);
-  const strands = [
-    [28, 3, -3],
-    [36, 2.6, 3],
-  ] as const;
-  strands.forEach(([x, width, curve], index) => {
-    const gradient = context.createLinearGradient(0, canvas.height, 0, 0);
-    gradient.addColorStop(0, 'rgba(255,255,255,0.98)');
-    gradient.addColorStop(0.72, 'rgba(255,255,255,0.88)');
-    gradient.addColorStop(1, 'rgba(255,255,255,0)');
-    context.strokeStyle = gradient;
-    context.lineWidth = width;
-    context.lineCap = 'round';
-    context.beginPath();
-    context.moveTo(x, canvas.height);
-    context.bezierCurveTo(
-      x + curve * 0.2,
-      canvas.height * 0.7,
-      x + curve,
-      canvas.height * 0.35,
-      x + curve * (index % 2 === 0 ? 0.45 : 0.7),
-      4,
+const createAnimeHairLockGeometry = (): THREE.BufferGeometry => {
+  const geometry = new THREE.BufferGeometry();
+  const vertices: number[] = [];
+  const indices: number[] = [];
+  const rings = [
+    { y: 0, width: 0.42, depth: 0.055, curve: 0 },
+    { y: 0.34, width: 0.54, depth: 0.07, curve: 0.025 },
+    { y: 0.72, width: 0.32, depth: 0.045, curve: 0.08 },
+    { y: 1, width: 0.025, depth: 0.012, curve: 0.16 },
+  ];
+  rings.forEach(ring => {
+    vertices.push(
+      -ring.width, ring.y, ring.curve - ring.depth,
+      ring.width, ring.y, ring.curve - ring.depth,
+      ring.width, ring.y, ring.curve + ring.depth,
+      -ring.width, ring.y, ring.curve + ring.depth,
     );
-    context.stroke();
   });
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.NoColorSpace;
-  texture.minFilter = THREE.LinearMipmapLinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  texture.generateMipmaps = true;
-  texture.needsUpdate = true;
-  return texture;
+  for (let ring = 0; ring < rings.length - 1; ring += 1) {
+    const current = ring * 4;
+    const next = current + 4;
+    for (let side = 0; side < 4; side += 1) {
+      const followingSide = (side + 1) % 4;
+      indices.push(
+        current + side, next + side, current + followingSide,
+        current + followingSide, next + side, next + followingSide,
+      );
+    }
+  }
+  indices.push(0, 1, 2, 0, 2, 3);
+  const tip = (rings.length - 1) * 4;
+  indices.push(tip, tip + 2, tip + 1, tip, tip + 3, tip + 2);
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
 };
 
 const createScalpHairGroup = (
@@ -266,12 +340,12 @@ const createScalpHairGroup = (
   if (!positions) return null;
 
   mesh.updateWorldMatrix(true, false);
+  const boundaryY = buildScalpBoundaryY(visualization.boundaryPoints, visualization.boundaryClosed === true);
   const index = geometry.getIndex();
   const triangles: Array<{ a: THREE.Vector3; b: THREE.Vector3; c: THREE.Vector3; area: number }> = [];
   const cumulativeAreas: number[] = [];
   let totalArea = 0;
   const triangleCount = index ? index.count / 3 : positions.count / 3;
-
   for (let triangle = 0; triangle < triangleCount; triangle += 1) {
     const offset = triangle * 3;
     const aIndex = index ? index.getX(offset) : offset;
@@ -281,50 +355,41 @@ const createScalpHairGroup = (
     const b = new THREE.Vector3().fromBufferAttribute(positions, bIndex).applyMatrix4(mesh.matrixWorld);
     const c = new THREE.Vector3().fromBufferAttribute(positions, cIndex).applyMatrix4(mesh.matrixWorld);
     const center = a.clone().add(b).add(c).multiplyScalar(1 / 3);
-    if (!isInsideScalpBoundary(center)) continue;
+    if (!isInsideScalpBoundary(center, boundaryY)) continue;
     const area = new THREE.Triangle(a, b, c).getArea();
     if (area <= 0) continue;
     totalArea += area;
     triangles.push({ a, b, c, area });
     cumulativeAreas.push(totalArea);
   }
-
   if (!triangles.length || totalArea === 0) return null;
 
   const densityStyle = visualization.density === 'Alta'
-    ? { fibers: 2500, length: 0.16, width: 0.028 }
+    ? { locks: 780, length: 0.4, width: 0.25 }
     : visualization.density === 'Baja'
-      ? { fibers: 650, length: 0.14, width: 0.024 }
-      : { fibers: 1500, length: 0.15, width: 0.026 };
+      ? { locks: 250, length: 0.3, width: 0.19 }
+      : { locks: 510, length: 0.35, width: 0.22 };
   const lengthScale = THREE.MathUtils.clamp(visualization.lengthScale ?? 1, 0.55, 1.8);
   const layDown = THREE.MathUtils.clamp(visualization.layDown ?? 0.78, 0.45, 0.96);
-  const cardLength = densityStyle.length * lengthScale;
-  const cardGeometry = new THREE.PlaneGeometry(densityStyle.width * lengthScale, cardLength, 1, 4);
-  cardGeometry.translate(0, cardLength / 2, 0);
-  const alphaMap = createHairCardAlphaMap();
   const baseColor = new THREE.Color(visualization.color ?? '#2b1a12');
-  const hairMaterial = new THREE.MeshPhysicalMaterial({
+  const lockGeometry = createAnimeHairLockGeometry();
+  const lockMaterial = new THREE.MeshPhysicalMaterial({
     color: 0xffffff,
-    roughness: THREE.MathUtils.clamp(visualization.roughness ?? 0.58, 0.25, 0.95),
+    roughness: THREE.MathUtils.clamp(visualization.roughness ?? 0.58, 0.3, 0.95),
     metalness: 0,
     vertexColors: true,
-    alphaMap,
-    alphaTest: 0.22,
-    side: THREE.DoubleSide,
-    sheen: 0.8,
-    sheenColor: baseColor.clone().offsetHSL(0.01, -0.08, 0.16),
-    sheenRoughness: 0.42,
+    sheen: 1,
+    sheenColor: baseColor.clone().offsetHSL(0.01, -0.08, 0.18),
+    sheenRoughness: 0.5,
   });
-  const cardsPerFiber = 2;
-  const hair = new THREE.InstancedMesh(cardGeometry, hairMaterial, densityStyle.fibers * cardsPerFiber);
-  hair.castShadow = true;
-  hair.receiveShadow = true;
-  hair.frustumCulled = false;
-  hair.userData.isScalpVisualization = true;
-
-  const random = seededRandom(
-    `${visualization.scale}:${visualization.stage}:${visualization.density ?? 'Media'}:${lengthScale}`,
-  );
+  applyScalpBoundaryShader(lockMaterial, boundaryY);
+  const napeLockTarget = visualization.density === 'Alta' ? 90 : visualization.density === 'Baja' ? 34 : 60;
+  const locks = new THREE.InstancedMesh(lockGeometry, lockMaterial, densityStyle.locks + napeLockTarget);
+  locks.castShadow = true;
+  locks.receiveShadow = true;
+  locks.frustumCulled = false;
+  locks.userData.isScalpVisualization = true;
+  const random = seededRandom(`${visualization.scale}:${visualization.stage}:${visualization.density ?? 'Media'}:anime`);
   const up = new THREE.Vector3(0, 1, 0);
   const position = new THREE.Vector3();
   const normal = new THREE.Vector3();
@@ -332,17 +397,14 @@ const createScalpHairGroup = (
   const radial = new THREE.Vector3();
   const flow = new THREE.Vector3();
   const direction = new THREE.Vector3();
-  const instanceScale = new THREE.Vector3();
-  const color = new THREE.Color();
+  const scale = new THREE.Vector3();
   const quaternion = new THREE.Quaternion();
-  const cardQuaternion = new THREE.Quaternion();
-  const crossRotation = new THREE.Quaternion();
+  const twist = new THREE.Quaternion();
   const matrix = new THREE.Matrix4();
-  let fiberCount = 0;
-  let instanceCount = 0;
-  const maxAttempts = densityStyle.fibers * 20;
-
-  for (let attempt = 0; attempt < maxAttempts && fiberCount < densityStyle.fibers; attempt += 1) {
+  const color = new THREE.Color();
+  let lockCount = 0;
+  const maxAttempts = densityStyle.locks * 24;
+  for (let attempt = 0; attempt < maxAttempts && lockCount < densityStyle.locks; attempt += 1) {
     const areaTarget = random() * totalArea;
     let low = 0;
     let high = cumulativeAreas.length - 1;
@@ -359,45 +421,137 @@ const createScalpHairGroup = (
     position.copy(selected.a).multiplyScalar(weightA)
       .addScaledVector(selected.b, weightB)
       .addScaledVector(selected.c, weightC);
-
     if (random() > getHairCoverage(position, visualization)) continue;
-
     edge.subVectors(selected.c, selected.a);
     normal.subVectors(selected.b, selected.a).cross(edge).normalize();
     radial.set(position.x, position.y - 0.58, position.z + 0.08);
     if (normal.dot(radial) < 0) normal.negate();
-
-    // Las fibras siguen la superficie hacia atrás en vez de salir como púas.
-    flow.set(-position.x * 0.12, -0.08, -1);
+    flow.set(-position.x * 0.14, -0.06, -1);
     flow.addScaledVector(normal, -flow.dot(normal)).normalize();
-    direction.copy(flow).multiplyScalar(layDown).addScaledVector(normal, 1 - layDown);
-    direction.x += (random() - 0.5) * 0.12;
-    direction.y += (random() - 0.5) * 0.08;
-    direction.z += (random() - 0.5) * 0.12;
-    direction.normalize();
+    const surfaceFollow = THREE.MathUtils.lerp(0.92, 0.985, (layDown - 0.45) / 0.51);
+    direction.copy(flow).multiplyScalar(surfaceFollow).addScaledVector(normal, 1 - surfaceFollow).normalize();
     quaternion.setFromUnitVectors(up, direction);
-    position.addScaledVector(normal, 0.008);
-    const scale = 0.78 + random() * 0.38;
-    instanceScale.set(scale, scale, scale);
-    color.copy(baseColor).offsetHSL((random() - 0.5) * 0.025, (random() - 0.5) * 0.08, (random() - 0.5) * 0.07);
-
-    for (let card = 0; card < cardsPerFiber; card += 1) {
-      crossRotation.setFromAxisAngle(up, card * Math.PI / 2 + (random() - 0.5) * 0.16);
-      cardQuaternion.copy(quaternion).multiply(crossRotation);
-      matrix.compose(position, cardQuaternion, instanceScale);
-      hair.setMatrixAt(instanceCount, matrix);
-      hair.setColorAt(instanceCount, color);
-      instanceCount += 1;
-    }
-    fiberCount += 1;
+    twist.setFromAxisAngle(up, (random() - 0.5) * 0.9);
+    quaternion.multiply(twist);
+    position.addScaledVector(normal, 0.006);
+    const sizeVariation = 0.82 + random() * 0.34;
+    scale.set(
+      densityStyle.width * sizeVariation,
+      densityStyle.length * lengthScale * (0.82 + random() * 0.36),
+      densityStyle.width * sizeVariation,
+    );
+    matrix.compose(position, quaternion, scale);
+    locks.setMatrixAt(lockCount, matrix);
+    color.copy(baseColor).offsetHSL((random() - 0.5) * 0.025, (random() - 0.5) * 0.07, (random() - 0.5) * 0.09);
+    locks.setColorAt(lockCount, color);
+    lockCount += 1;
   }
-
-  hair.count = instanceCount;
-  hair.instanceMatrix.needsUpdate = true;
-  if (hair.instanceColor) hair.instanceColor.needsUpdate = true;
+  const modelBounds = new THREE.Box3().setFromObject(root);
+  const modelCenter = modelBounds.getCenter(new THREE.Vector3());
+  const modelSize = modelBounds.getSize(new THREE.Vector3());
+  for (let napeLock = 0; napeLock < napeLockTarget; napeLock += 1) {
+    const horizontal = random() * 2 - 1;
+    const vertical = random();
+    position.set(
+      modelCenter.x + horizontal * modelSize.x * 0.2,
+      modelCenter.y - modelSize.y * (0.12 + vertical * 0.19),
+      modelCenter.z - modelSize.z * (0.43 - Math.abs(horizontal) * 0.035),
+    );
+    normal.set(horizontal * 0.38, -0.08, -1).normalize();
+    flow.set(-position.x * 0.08, -0.62, -0.35);
+    flow.addScaledVector(normal, -flow.dot(normal)).normalize();
+    direction.copy(flow).multiplyScalar(0.96).addScaledVector(normal, 0.04).normalize();
+    quaternion.setFromUnitVectors(up, direction);
+    twist.setFromAxisAngle(up, (random() - 0.5) * 0.65);
+    quaternion.multiply(twist);
+    position.addScaledVector(normal, 0.006);
+    const sizeVariation = 0.8 + random() * 0.3;
+    scale.set(
+      densityStyle.width * sizeVariation,
+      densityStyle.length * lengthScale * (0.72 + random() * 0.2),
+      densityStyle.width * sizeVariation,
+    );
+    matrix.compose(position, quaternion, scale);
+    locks.setMatrixAt(lockCount, matrix);
+    color.copy(baseColor).offsetHSL((random() - 0.5) * 0.02, -0.02, (random() - 0.5) * 0.07);
+    locks.setColorAt(lockCount, color);
+    lockCount += 1;
+  }
+  locks.count = lockCount;
+  locks.instanceMatrix.needsUpdate = true;
+  if (locks.instanceColor) locks.instanceColor.needsUpdate = true;
   const group = new THREE.Group();
   group.name = 'scalp-hair-visualization';
-  group.add(hair);
+  const underlayPositions: number[] = [];
+  const underlayNormals: number[] = [];
+  triangles.forEach(triangle => {
+    if (![triangle.a, triangle.b, triangle.c].every(point => isInsideScalpBoundary(point, boundaryY))) return;
+    const center = triangle.a.clone().add(triangle.b).add(triangle.c).multiplyScalar(1 / 3);
+    if (getHairCoverage(center, visualization) < 0.5) return;
+    const triangleNormal = new THREE.Triangle(triangle.a, triangle.b, triangle.c).getNormal(new THREE.Vector3());
+    radial.set(center.x, center.y - 0.58, center.z + 0.08);
+    if (triangleNormal.dot(radial) < 0) triangleNormal.negate();
+    [triangle.a, triangle.b, triangle.c].forEach(point => {
+      underlayPositions.push(
+        point.x + triangleNormal.x * 0.004,
+        point.y + triangleNormal.y * 0.004,
+        point.z + triangleNormal.z * 0.004,
+      );
+      underlayNormals.push(triangleNormal.x, triangleNormal.y, triangleNormal.z);
+    });
+  });
+  if (underlayPositions.length) {
+    const underlayGeometry = new THREE.BufferGeometry();
+    underlayGeometry.setAttribute('position', new THREE.Float32BufferAttribute(underlayPositions, 3));
+    underlayGeometry.setAttribute('normal', new THREE.Float32BufferAttribute(underlayNormals, 3));
+    const underlayMaterial = new THREE.MeshPhysicalMaterial({
+      color: baseColor.clone().offsetHSL(0, -0.03, -0.035),
+      roughness: THREE.MathUtils.clamp((visualization.roughness ?? 0.58) + 0.12, 0.4, 0.98),
+      metalness: 0,
+      sheen: 0.55,
+      sheenColor: baseColor.clone().offsetHSL(0.01, -0.08, 0.12),
+      sheenRoughness: 0.65,
+      side: THREE.DoubleSide,
+    });
+    applyScalpBoundaryShader(underlayMaterial, boundaryY);
+    const underlay = new THREE.Mesh(underlayGeometry, underlayMaterial);
+    underlay.castShadow = true;
+    underlay.receiveShadow = true;
+    underlay.userData.isScalpVisualization = true;
+    group.add(underlay);
+  }
+  group.add(locks);
+  if (visualization.showBoundaryTrace) {
+    const tracePoints = visualization.boundaryPoints && visualization.boundaryPoints.length >= 2
+      ? visualization.boundaryPoints.map(point => new THREE.Vector3(point.x, point.y, point.z))
+      : (() => {
+        const raycaster = new THREE.Raycaster();
+        return boundaryY.flatMap((sampleY, index) => {
+          const angle = index / boundaryY.length * Math.PI * 2;
+          const radialDirection = new THREE.Vector3(Math.sin(angle), 0, Math.cos(angle));
+          raycaster.set(
+            new THREE.Vector3(radialDirection.x * 4, sampleY, radialDirection.z * 4),
+            radialDirection.clone().negate(),
+          );
+          const intersection = raycaster.intersectObject(root, true)[0];
+          return intersection ? [intersection.point.addScaledVector(radialDirection, 0.012)] : [];
+        });
+      })();
+    if (tracePoints.length >= 2) {
+      const traceCurve = new THREE.CatmullRomCurve3(
+        tracePoints,
+        visualization.boundaryClosed === true,
+        'centripetal',
+      );
+      const trace = new THREE.Mesh(
+        new THREE.TubeGeometry(traceCurve, 128, 0.012, 6, visualization.boundaryClosed === true),
+        new THREE.MeshBasicMaterial({ color: '#e7b85c', depthTest: false }),
+      );
+      trace.renderOrder = 20;
+      trace.userData.isScalpVisualization = true;
+      group.add(trace);
+    }
+  }
   return group;
 };
 

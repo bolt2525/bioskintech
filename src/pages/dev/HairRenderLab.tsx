@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Download, FlaskConical, MousePointer2, Rotate3D,
-  SlidersHorizontal, Trash2, Upload,
+  Save, SlidersHorizontal, Trash2, Undo2, Upload,
 } from 'lucide-react';
 import Clinical3DViewer, {
   type ClinicalCameraPreset,
@@ -19,6 +19,7 @@ type Density = 'Alta' | 'Media' | 'Baja';
 const NORWOOD_STAGES = ['I', 'II', 'III', 'III Vertex', 'IV', 'V', 'VI', 'VII'];
 const LUDWIG_STAGES = ['I', 'II', 'III'];
 const HAIR_COLORS = ['#160d09', '#2b1a12', '#4a2b1a', '#6b4328', '#9a744e'];
+const SCALP_TRACE_STORAGE_KEY = 'bioskin-3d-lab-scalp-trace-v1';
 const MODEL_PRESETS = {
   head: { label: 'Cabeza', url: '/models/clinical/male_head.glb', camera: 'scalp' as const },
   body: { label: 'Cuerpo', url: '/models/clinical/male_body.glb', camera: 'body' as const },
@@ -80,6 +81,22 @@ function HairRenderLabView({ onBack }: { onBack?: () => void }) {
   const [lengthScale, setLengthScale] = useState(DEFAULT_HAIR.lengthScale);
   const [hairRoughness, setHairRoughness] = useState(DEFAULT_HAIR.roughness);
   const [layDown, setLayDown] = useState(DEFAULT_HAIR.layDown);
+  const [traceMode, setTraceMode] = useState(false);
+  const [traceStatus, setTraceStatus] = useState('');
+  const [boundaryPoints, setBoundaryPoints] = useState<Marker3D[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(SCALP_TRACE_STORAGE_KEY) || '[]') as Marker3D[];
+    } catch {
+      return [];
+    }
+  });
+  const [traceClosed, setTraceClosed] = useState(() => {
+    try {
+      return (JSON.parse(localStorage.getItem(SCALP_TRACE_STORAGE_KEY) || '[]') as Marker3D[]).length >= 3;
+    } catch {
+      return false;
+    }
+  });
   const [modelUrl, setModelUrl] = useState(MODEL_PRESETS.head.url);
   const [modelData, setModelData] = useState<ArrayBuffer | null>(null);
   const [modelName, setModelName] = useState(MODEL_PRESETS.head.label);
@@ -99,8 +116,10 @@ function HairRenderLabView({ onBack }: { onBack?: () => void }) {
     lengthScale,
     roughness: hairRoughness,
     layDown,
-  }), [density, hairColor, hairRoughness, layDown, lengthScale, scale, stage]);
-  const cardCount = density === 'Alta' ? 5000 : density === 'Baja' ? 1300 : 3000;
+    showBoundaryTrace: true,
+    boundaryPoints: boundaryPoints.map(point => point.position),
+    boundaryClosed: traceClosed,
+  }), [boundaryPoints, density, hairColor, hairRoughness, layDown, lengthScale, scale, stage, traceClosed]);
   const lastDistance = markers.length >= 2
     ? Math.hypot(
       markers.at(-1)!.position.x - markers.at(-2)!.position.x,
@@ -150,6 +169,23 @@ function HairRenderLabView({ onBack }: { onBack?: () => void }) {
 
   const placeMarker = (marker: Marker3D) => {
     setMarkers(previous => [...previous, { ...marker, zone: `Punto ${previous.length + 1}` }]);
+  };
+
+  const placeBoundaryPoint = (marker: Marker3D) => {
+    setBoundaryPoints(previous => [...previous, { ...marker, zone: `Trazado ${previous.length + 1}` }]);
+    setTraceClosed(false);
+    setTraceStatus('');
+  };
+
+  const saveBoundaryTrace = () => {
+    if (boundaryPoints.length < 3) {
+      setTraceStatus('Coloca al menos 3 puntos para cerrar el trazado.');
+      return;
+    }
+    localStorage.setItem(SCALP_TRACE_STORAGE_KEY, JSON.stringify(boundaryPoints));
+    setTraceClosed(true);
+    setTraceMode(false);
+    setTraceStatus(`Trazado guardado localmente con ${boundaryPoints.length} puntos.`);
   };
 
   const capturePng = () => {
@@ -289,7 +325,7 @@ function HairRenderLabView({ onBack }: { onBack?: () => void }) {
                 </fieldset>
                 <RangeControl label="Longitud" value={lengthScale} min={0.55} max={1.8} step={0.05} onChange={setLengthScale} />
                 <RangeControl label="Brillo / rugosidad" value={hairRoughness} min={0.25} max={0.95} step={0.05} onChange={setHairRoughness} />
-                <RangeControl label="Cabello recostado" value={layDown} min={0.45} max={0.96} step={0.01} onChange={setLayDown} />
+                <RangeControl label="Perfil compacto" value={layDown} min={0.45} max={0.96} step={0.01} onChange={setLayDown} />
                 <fieldset>
                   <legend className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Color</legend>
                   <div className="flex flex-wrap items-center gap-2">
@@ -316,8 +352,61 @@ function HairRenderLabView({ onBack }: { onBack?: () => void }) {
                   </div>
                 </fieldset>
                 <p className="rounded-xl bg-slate-50 p-3 text-xs text-slate-500">
-                  {cardCount.toLocaleString('es-EC')} hair cards · PBR + alpha
+                  Mechones anime 3D · PBR estilizado
                 </p>
+                <div className="space-y-2 rounded-xl border border-gold/30 bg-gold/10 p-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gold-ink">Trazado manual</p>
+                    <p className="mt-1 text-[11px] leading-4 text-slate-600">
+                      Traza una sección, pausa para rotar y continúa: cada tramo se conecta con el anterior. Guardar cierra y suaviza la curva.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    aria-pressed={traceMode}
+                    onClick={() => setTraceMode(value => !value)}
+                    className={`admin-focus-ring flex min-h-10 w-full items-center justify-center gap-2 rounded-lg text-xs font-semibold ${
+                      traceMode ? 'bg-gold-ink text-white' : 'border border-gold/50 bg-white text-gold-ink'
+                    }`}
+                  >
+                    <MousePointer2 className="h-4 w-4" aria-hidden="true" />
+                    {traceMode ? 'Pausar para rotar' : boundaryPoints.length ? 'Continuar trazado' : 'Activar trazado'}
+                  </button>
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setBoundaryPoints(previous => previous.slice(0, -1))}
+                      disabled={!boundaryPoints.length}
+                      className="admin-focus-ring flex min-h-9 items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white text-[11px] font-semibold text-slate-600 disabled:opacity-40"
+                    >
+                      <Undo2 className="h-3.5 w-3.5" aria-hidden="true" /> Deshacer
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        localStorage.removeItem(SCALP_TRACE_STORAGE_KEY);
+                        setBoundaryPoints([]);
+                        setTraceClosed(false);
+                        setTraceStatus('Trazado eliminado de este navegador.');
+                      }}
+                      disabled={!boundaryPoints.length}
+                      className="admin-focus-ring flex min-h-9 items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white text-[11px] font-semibold text-slate-600 disabled:opacity-40"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" aria-hidden="true" /> Limpiar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={saveBoundaryTrace}
+                      disabled={boundaryPoints.length < 3}
+                      className="admin-focus-ring flex min-h-9 items-center justify-center gap-1 rounded-lg bg-slate-900 text-[11px] font-semibold text-white disabled:opacity-40"
+                    >
+                      <Save className="h-3.5 w-3.5" aria-hidden="true" /> Guardar
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-slate-500" role="status">
+                    {traceStatus || `${boundaryPoints.length} punto(s) · ${traceClosed ? 'trazado cerrado' : 'trazado abierto'} · guardado local`}
+                  </p>
+                </div>
               </>
             ) : (
               <>
@@ -437,14 +526,14 @@ function HairRenderLabView({ onBack }: { onBack?: () => void }) {
             ) : null}
             <div ref={viewerRef} className="h-[560px] sm:h-[680px]">
               <Clinical3DViewer
-                markers={labMode === 'model' ? markers : []}
+                markers={labMode === 'model' ? markers : boundaryPoints}
                 modelUrl={labMode === 'model' ? modelUrl : MODEL_PRESETS.head.url}
                 modelData={labMode === 'model' ? modelData : null}
                 cameraPreset={labMode === 'model' ? cameraPreset : 'scalp'}
-                readOnly={labMode === 'hair' || !marking}
+                readOnly={labMode === 'hair' ? !traceMode : !marking}
                 skipConfirmation
                 selectedPathology="lesion"
-                onMarkerPlaced={placeMarker}
+                onMarkerPlaced={labMode === 'hair' ? placeBoundaryPoint : placeMarker}
                 onModelMetrics={setMetrics}
                 sceneSettings={labMode === 'model' ? sceneSettings : undefined}
                 height="100%"

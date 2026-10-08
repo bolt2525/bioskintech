@@ -1,5 +1,6 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-08 Laboratorio: trazado capilar manual suavizado.
 - ✅ 2026-10-08 Laboratorio: núcleo GLB aislado.
 - ✅ 2026-10-08 Master/local: laboratorio hair cards PBR.
 - ✅ 2026-10-08 Capilar: límites y densidad realistas.
