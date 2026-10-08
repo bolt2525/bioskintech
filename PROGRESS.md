@@ -4,6 +4,7 @@
 - ✅ 2026-10-07 Contratos: impresión válida verificada.
 - ✅ 2026-10-07 Neon: esquema anual con RLS aplicado.
 - ✅ 2026-10-07 Vercel: correo configurado, Worker OFF.
+- ✅ 2026-10-07 Producción: ciclo desplegado, SPA verificada.
 - ✅ 2026-10-07 Contratos: anexo prospectivo independiente.
 - ✅ 2026-10-07 Adendas conservan cláusulas originales.
 - ✅ 2026-10-07 Ciclo: 356 pruebas integradas.
