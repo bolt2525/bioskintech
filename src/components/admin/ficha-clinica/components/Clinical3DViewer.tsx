@@ -71,6 +71,10 @@ export interface ScalpHairVisualization {
   scale: 'norwood' | 'ludwig';
   stage: string;
   density: 'Alta' | 'Media' | 'Baja' | null;
+  color?: string;
+  lengthScale?: number;
+  roughness?: number;
+  layDown?: number;
 }
 
 const CAMERA_PRESETS: Record<ClinicalCameraPreset, { position: [number, number, number]; target: [number, number, number] }> = {
@@ -98,7 +102,11 @@ const disposeObject3D = (object: THREE.Object3D) => {
     const materials = renderable.material
       ? (Array.isArray(renderable.material) ? renderable.material : [renderable.material])
       : [];
-    materials.forEach(material => material.dispose());
+    materials.forEach(material => {
+      material.map?.dispose();
+      material.alphaMap?.dispose();
+      material.dispose();
+    });
   });
 };
 
@@ -167,6 +175,48 @@ const getHairCoverage = (
   return absX > 0.82 || position.z < -1.08 || position.y < 0.32 ? 0.82 : 0;
 };
 
+const createHairCardAlphaMap = (): THREE.CanvasTexture => {
+  const canvas = document.createElement('canvas');
+  canvas.width = 64;
+  canvas.height = 256;
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('No se pudo crear la textura capilar.');
+
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  const strands = [
+    [28, 3, -3],
+    [36, 2.6, 3],
+  ] as const;
+  strands.forEach(([x, width, curve], index) => {
+    const gradient = context.createLinearGradient(0, canvas.height, 0, 0);
+    gradient.addColorStop(0, 'rgba(255,255,255,0.98)');
+    gradient.addColorStop(0.72, 'rgba(255,255,255,0.88)');
+    gradient.addColorStop(1, 'rgba(255,255,255,0)');
+    context.strokeStyle = gradient;
+    context.lineWidth = width;
+    context.lineCap = 'round';
+    context.beginPath();
+    context.moveTo(x, canvas.height);
+    context.bezierCurveTo(
+      x + curve * 0.2,
+      canvas.height * 0.7,
+      x + curve,
+      canvas.height * 0.35,
+      x + curve * (index % 2 === 0 ? 0.45 : 0.7),
+      4,
+    );
+    context.stroke();
+  });
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.NoColorSpace;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = true;
+  texture.needsUpdate = true;
+  return texture;
+};
+
 const createScalpHairGroup = (
   root: THREE.Object3D,
   visualization: ScalpHairVisualization,
@@ -209,31 +259,39 @@ const createScalpHairGroup = (
   if (!triangles.length || totalArea === 0) return null;
 
   const densityStyle = visualization.density === 'Alta'
-    ? { count: 2800, length: 0.055, radius: 0.0055 }
+    ? { fibers: 2500, length: 0.16, width: 0.028 }
     : visualization.density === 'Baja'
-      ? { count: 720, length: 0.04, radius: 0.0038 }
-      : { count: 1650, length: 0.048, radius: 0.0045 };
-  const targetCount = densityStyle.count;
-  const strandGeometry = new THREE.CylinderGeometry(
-    densityStyle.radius * 0.42,
-    densityStyle.radius,
-    densityStyle.length,
-    5,
-  );
-  strandGeometry.translate(0, densityStyle.length / 2, 0);
-  const hairMaterial = new THREE.MeshStandardMaterial({
+      ? { fibers: 650, length: 0.14, width: 0.024 }
+      : { fibers: 1500, length: 0.15, width: 0.026 };
+  const lengthScale = THREE.MathUtils.clamp(visualization.lengthScale ?? 1, 0.55, 1.8);
+  const layDown = THREE.MathUtils.clamp(visualization.layDown ?? 0.78, 0.45, 0.96);
+  const cardLength = densityStyle.length * lengthScale;
+  const cardGeometry = new THREE.PlaneGeometry(densityStyle.width * lengthScale, cardLength, 1, 4);
+  cardGeometry.translate(0, cardLength / 2, 0);
+  const alphaMap = createHairCardAlphaMap();
+  const baseColor = new THREE.Color(visualization.color ?? '#2b1a12');
+  const hairMaterial = new THREE.MeshPhysicalMaterial({
     color: 0xffffff,
-    roughness: 0.82,
+    roughness: THREE.MathUtils.clamp(visualization.roughness ?? 0.58, 0.25, 0.95),
     metalness: 0,
     vertexColors: true,
+    alphaMap,
+    alphaTest: 0.22,
+    side: THREE.DoubleSide,
+    sheen: 0.8,
+    sheenColor: baseColor.clone().offsetHSL(0.01, -0.08, 0.16),
+    sheenRoughness: 0.42,
   });
-  const hair = new THREE.InstancedMesh(strandGeometry, hairMaterial, targetCount);
+  const cardsPerFiber = 2;
+  const hair = new THREE.InstancedMesh(cardGeometry, hairMaterial, densityStyle.fibers * cardsPerFiber);
   hair.castShadow = true;
-  hair.receiveShadow = false;
+  hair.receiveShadow = true;
   hair.frustumCulled = false;
   hair.userData.isScalpVisualization = true;
 
-  const random = seededRandom(`${visualization.scale}:${visualization.stage}:${visualization.density ?? 'Media'}`);
+  const random = seededRandom(
+    `${visualization.scale}:${visualization.stage}:${visualization.density ?? 'Media'}:${lengthScale}`,
+  );
   const up = new THREE.Vector3(0, 1, 0);
   const position = new THREE.Vector3();
   const normal = new THREE.Vector3();
@@ -244,11 +302,14 @@ const createScalpHairGroup = (
   const instanceScale = new THREE.Vector3();
   const color = new THREE.Color();
   const quaternion = new THREE.Quaternion();
+  const cardQuaternion = new THREE.Quaternion();
+  const crossRotation = new THREE.Quaternion();
   const matrix = new THREE.Matrix4();
+  let fiberCount = 0;
   let instanceCount = 0;
-  const maxAttempts = targetCount * 18;
+  const maxAttempts = densityStyle.fibers * 20;
 
-  for (let attempt = 0; attempt < maxAttempts && instanceCount < targetCount; attempt += 1) {
+  for (let attempt = 0; attempt < maxAttempts && fiberCount < densityStyle.fibers; attempt += 1) {
     const areaTarget = random() * totalArea;
     let low = 0;
     let high = cumulativeAreas.length - 1;
@@ -276,20 +337,26 @@ const createScalpHairGroup = (
     // Las fibras siguen la superficie hacia atrás en vez de salir como púas.
     flow.set(-position.x * 0.12, -0.08, -1);
     flow.addScaledVector(normal, -flow.dot(normal)).normalize();
-    direction.copy(flow).multiplyScalar(0.94).addScaledVector(normal, 0.34);
+    direction.copy(flow).multiplyScalar(layDown).addScaledVector(normal, 1 - layDown);
     direction.x += (random() - 0.5) * 0.12;
     direction.y += (random() - 0.5) * 0.08;
     direction.z += (random() - 0.5) * 0.12;
     direction.normalize();
     quaternion.setFromUnitVectors(up, direction);
-    position.addScaledVector(normal, 0.006);
-    const scale = 0.84 + random() * 0.28;
+    position.addScaledVector(normal, 0.008);
+    const scale = 0.78 + random() * 0.38;
     instanceScale.set(scale, scale, scale);
-    matrix.compose(position, quaternion, instanceScale);
-    hair.setMatrixAt(instanceCount, matrix);
-    color.setHSL(0.065 + random() * 0.018, 0.4, 0.13 + random() * 0.075);
-    hair.setColorAt(instanceCount, color);
-    instanceCount += 1;
+    color.copy(baseColor).offsetHSL((random() - 0.5) * 0.025, (random() - 0.5) * 0.08, (random() - 0.5) * 0.07);
+
+    for (let card = 0; card < cardsPerFiber; card += 1) {
+      crossRotation.setFromAxisAngle(up, card * Math.PI / 2 + (random() - 0.5) * 0.16);
+      cardQuaternion.copy(quaternion).multiply(crossRotation);
+      matrix.compose(position, cardQuaternion, instanceScale);
+      hair.setMatrixAt(instanceCount, matrix);
+      hair.setColorAt(instanceCount, color);
+      instanceCount += 1;
+    }
+    fiberCount += 1;
   }
 
   hair.count = instanceCount;

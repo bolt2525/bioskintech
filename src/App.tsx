@@ -50,6 +50,10 @@ const AdminFinance = lazy(() => import('./pages/AdminFinance'));
 const Clinical3D = lazy(() => import('./pages/Clinical3D'));
 const ExternalMedicalFinance = lazy(() => import('./pages/ExternalMedicalFinance'));
 const SkinExplorerPage = lazy(() => import('./skin-explorer/SkinExplorerPage'));
+const HairRenderLab = import.meta.env.DEV ? lazy(() => import('./pages/dev/HairRenderLab')) : null;
+const MasterHairRenderLab = lazy(() => import('./pages/dev/HairRenderLab').then(module => ({
+  default: module.MasterHairRenderLab,
+})));
 
 const routeFallback = (
   <div className="flex min-h-screen items-center justify-center bg-[#f4f7f6] text-sm font-medium text-slate-600" role="status">
@@ -81,6 +85,7 @@ function AdminRoutes() {
           <Route path="/admin/recover"          element={<AdminSetupPassword />} />
           <Route path="/admin/master"   element={<AdminMasterDashboard />} />
           <Route path="/admin/master/whatsapp" element={<AdminWhatsAppCRM />} />
+          <Route path="/admin/master/3d-lab" element={<MasterHairRenderLab />} />
 
           <Route path="/admin/master/:clinicSlug/:username" element={<MasterClinicWrapper />}>
             <Route index element={<AdminDashboard />} />
@@ -155,6 +160,18 @@ function AdminRoutes() {
 
 export default function App() {
   const path = window.location.pathname;
+
+  if (import.meta.env.DEV && HairRenderLab && path === '/dev/hair-lab') {
+    return (
+      <BrowserRouter>
+        <Suspense fallback={routeFallback}>
+          <Routes>
+            <Route path="/dev/hair-lab" element={<HairRenderLab />} />
+          </Routes>
+        </Suspense>
+      </BrowserRouter>
+    );
+  }
 
   // Legacy: redirigir /admin/* → /gestionestetica/admin/*
   if (path.startsWith('/admin')) {

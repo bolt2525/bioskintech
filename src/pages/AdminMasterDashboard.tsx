@@ -20,7 +20,7 @@ import {
   LogOut, Building2, Users, Shield, RefreshCw, ChevronDown, ChevronUp,
   Plus, Edit, Trash2, Eye, EyeOff, Key, X, Check, AlertCircle, Copy, Send,
   Activity, ClipboardList, ChevronRight, Sparkles, Mail, Unlink, Settings2, LayoutDashboard, UserCheck, Calendar, Clock, Bell,
-  MessageCircle, FileText, Search,
+  MessageCircle, FileText, Search, FlaskConical,
 } from 'lucide-react';
 
 // Constantes centralizadas — no duplicar aquí
@@ -2635,6 +2635,13 @@ export default function AdminMasterDashboard() {
               <div className="bg-white rounded-2xl p-5 shadow border border-gray-100">
                 <h3 className="font-semibold text-gray-900 mb-3">Acciones de Mantenimiento</h3>
                 <div className="space-y-2">
+                  <button
+                    onClick={() => navigate('/admin/master/3d-lab')}
+                    className="w-full flex items-center justify-between p-3 border border-[#deb887]/30 rounded-lg hover:bg-[#deb887]/10 text-sm text-left"
+                  >
+                    <span className="font-medium text-gray-700">Abrir laboratorio de cabello 3D</span>
+                    <FlaskConical className="w-4 h-4 text-[#b8944d]" />
+                  </button>
                   <button
                     onClick={async () => {
                       const res = await fetch('/api/admin-auth?action=initFeatures', { headers: authHeader() });
