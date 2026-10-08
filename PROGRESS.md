@@ -213,6 +213,7 @@
 - ✅ 2026-09-09 Corregido envío de alertas de registro y reconexión OAuth inválida.
 - ✅ 2026-09-09 Separadas alertas administrativas y bloqueado agendamiento sin Gmail OAuth de clínica.
 - ✅ 2026-09-09 Compactado layout visual del tab Recetas.
+- ✅ 2026-10-08 Retirado @vercel/node sin uso; Tailwind 4 descartado por regresiones visuales.
 - ✅ 2026-09-09 Implementadas claves temporales y envío seguro de credenciales.
 - ✅ 2026-09-09 Corregidos conteos visuales de módulos opt-in.
 - ✅ 2026-09-15 Añadido webhook inicial de WhatsApp Cloud API con verificación de token.
