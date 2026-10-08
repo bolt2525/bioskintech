@@ -10,6 +10,8 @@
 
 **Actualización general:** soporte, devoluciones en los supuestos indicados, incidentes en 24 horas naturales, autorización expresa de IA y compromiso de respaldo/entrega anual bajo solicitud forman parte de las Condiciones generales. El generador distingue persona natural/jurídica y mantiene los acuerdos particulares independientes, con sugerencias editables de soporte, devolución, IA y activación; Quito requiere acuerdo y no sustituye Cuenca para todos. Retención 30 días y límite vigente con excepciones legales. Véase [garantías y condiciones particulares](./GARANTIAS_Y_CONDICIONES_PARTICULARES.md). El proveedor coordina entregas asistidas cuando el canal del panel no está disponible; el Worker automático sigue desactivado. La contrapropuesta de responsabilidad aún debe ser aceptada por la interesada.
 
+**Anexo comercial prospectivo:** la política `paid-grace15-recovery30-v1` tiene versión independiente de los documentos generales. No cambia la versión 2026-10-07-r2 ni se aplica a contratos vigentes por registro, uso o renovación. Solo rige para el contrato nuevo que la incorpore expresamente o para la adenda que identifique el contrato original y sea firmada por ambas partes.
+
 ## 1. Comparecientes y datos por completar
 
 Comparecen para celebrar este contrato:
@@ -136,7 +138,7 @@ Durante la suscripción, el Cliente puede descargar:
 - tablas CSV de pacientes, tratamientos, finanzas e inventario;
 - consentimientos firmados en un documento HTML legible e imprimible, que el Cliente puede imprimir o guardar como PDF.
 
-El JSON es técnico; los CSV son listados simples. La entrega anual autorizada añade historias y consentimientos registrados en HTML legible e imprimible y originales fotográficos, divididos en ZIP independientes. No supone adaptación a otro sistema ni digitalización de papel no registrado. La descarga está disponible por 24 horas desde la entrega completa.
+El JSON es técnico y tiene límites actuales de 50 MiB comprimidos y 200 MiB expandidos; no existe actualmente exportación JSON completa por lotes para superar esos límites. La importación CSV disponible es únicamente para pacientes, con máximo de 5 MiB y 5.000 registros; no restaura datos financieros. Los CSV descargables son listados simples. La entrega anual autorizada añade historias y consentimientos registrados en HTML legible e imprimible y originales fotográficos, divididos en ZIP independientes. No supone adaptación a otro sistema ni digitalización de papel no registrado. La descarga está disponible por 24 horas desde la entrega completa.
 
 ## 9. Disponibilidad, mantenimiento y dependencias
 
@@ -165,6 +167,18 @@ Al vencimiento o cancelación, los datos se conservan 30 días para renovación 
 Desactivar una clínica no elimina su información. La purga definitiva requiere instrucción autorizada y comprobar las obligaciones de conservación y devolución. Las copias cifradas residuales no se utilizarán para reactivar datos cuya supresión se haya confirmado.
 
 Si una cuenta de prueba no se convierte en servicio contratado, el usuario se desactiva o la cuenta puede eliminarse junto con sus fotografías; no se ofrece obligación de conservar o entregar los datos cargados en una prueba vencida. La prueba oficial es de tres días y puede ampliarse hasta diez; BIOSKINTECH puede conceder por escrito un trial comercial excepcional de hasta 30 días. El Cliente que ingrese datos reales durante la prueba asume desde ese momento sus responsabilidades de Responsable del Tratamiento.
+
+### 11.1 Anexo opcional para contratos nuevos o adendas
+
+La versión `paid-grace15-recovery30-v1` solo modifica el vencimiento y la recuperación del contrato que la incorpore de forma expresa. En ese contrato, **T** es la fecha registrada de vencimiento: de T a T+15 se mantienen todos los módulos contratados; de T+15 a T+45 solo `clinic_admin` puede exportar/descargar datos existentes y solicitar una entrega gratuita válida o una adicional aprobada y pagada. En recuperación no se habilitan uso clínico, importaciones, restauraciones ni snapshots manuales.
+
+En T+45 comienza una purga automática por lotes de datos clínicos activos Neon y R2, incluidos respaldos, tan pronto como puedan eliminarse. No se promete una eliminación instantánea: pueden quedar puntos de recuperación Neon hasta 6 horas y copias R2 bajo bloqueo de 30 días y vencimiento de 35 días desde su creación. Se detienen nuevas copias programadas en T+15; por ello el bloqueo de las copias previas vence a más tardar en T+45, salvo una ejecución ya iniciada que concluya después y quede sujeta a su propio ciclo. Solo se conservan comprobantes administrativos mínimos legalmente exigibles o permitidos, sin contenido clínico.
+
+Una cuota gratuita de respaldo fotográfico solo es válida si permanece sin consumir en el período contractual registrado de 12 meses. Se solicita antes de T+45; no se acumula ni se duplica al renovar. Una entrega adicional requiere aceptación del Proveedor y pago confirmado antes de T+45; una negociación o cotización no pagada no extiende la retención. Una solicitud elegible y oportuna debe quedar lista en hasta 24 horas, tras lo cual comienza la purga de los datos fuente. El aviso comunica la ventana de descarga y una estimación de preparación, no disponibilidad instantánea. Se usa correo oficial central y aviso en panel con reintentos; si un canal falla, se coordina atención asistida por los canales oficiales.
+
+Las tarifas adicionales finales incluyen IVA y se calculan sobre originales fotográficos en GB decimal (1 GB = 1.000.000.000 bytes): hasta 5 GB, USD 10; más de 5 y hasta 20 GB, USD 20; más de 20 y hasta 50 GB, USD 35; más de 50 GB, cotización manual. Las entregas adicionales requieren aceptación y pago previo; los fallos imputables al Proveedor no generan cargos de corrección y los derechos legales no dependen de comprar una entrega.
+
+La descarga directa de fotos seleccionadas, individual o en ZIP de hasta 15 fotos/100 MiB, es independiente, repetible sin límite diario y no consume la cuota anual. No equivale a una compilación anual. Las copias automáticas diarias son estructuradas y conservan referencias, no una copia periódica de originales fotográficos.
 
 ## 12. Responsabilidad e indemnidad
 

@@ -9,6 +9,7 @@ import { gzipSync, gunzipSync } from 'node:zlib';
 const require = createRequire(import.meta.url);
 const backupPath = '../src/pages/AdminBackup.tsx';
 const annualPath = '../src/components/admin/AnnualPhotoBackupPanel.tsx';
+const orderPath = '../src/components/admin/AnnualPhotoBackupOrder.tsx';
 const source = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 const compile = code => ts.transpileModule(code, {
   compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
@@ -16,7 +17,7 @@ const compile = code => ts.transpileModule(code, {
 
 // Harness sin dependencias nuevas: ejecuta componentes y efectos con hooks controlados.
 // No sustituye una prueba de foco/teclado en un navegador real.
-function componentHarness(path, role, request) {
+function componentHarness(path, role, request, lifecycle, deliveryOnly = false) {
   const states = [];
   let cursor = 0;
   let effects = [];
@@ -38,11 +39,22 @@ function componentHarness(path, role, request) {
     require(name) {
       if (name === 'react') return hooks;
       if (name === 'react/jsx-runtime') return require(name);
-      if (name.endsWith('/useAuth')) return { useAuth: () => ({ user: role ? { role } : null }) };
+      if (name.endsWith('/useAuth')) return { useAuth: () => ({ user: role ? { role, subscription_lifecycle: lifecycle, delivery_only: deliveryOnly } : null }) };
+      if (name.endsWith('/subscriptionAccess')) {
+        const accessExports = {};
+        vm.runInNewContext(compile(source('../src/utils/subscriptionAccess.ts')), { exports: accessExports, Intl, Date });
+        return accessExports;
+      }
+      if (name.endsWith('/annualPhotoBackup')) {
+        const annualExports = {};
+        vm.runInNewContext(compile(source('../src/utils/annualPhotoBackup.ts')), { exports: annualExports, Intl, Number });
+        return annualExports;
+      }
       if (name.endsWith('/recordsFetch')) return { __esModule: true, default: request };
       return new Proxy({}, { get: () => () => null });
     },
     window: { setInterval: () => 1, clearInterval() {} },
+    Error,
     console,
   };
   vm.runInNewContext(compile(source(path)), context);
@@ -77,6 +89,224 @@ function button(tree, label) {
   return result;
 }
 const json = (body, ok = true, status = ok ? 200 : 503) => ({ ok, status, json: async () => body });
+
+test('Worker OFF permite solicitud adicional con can_request aunque la entrega gratis esté reservada', async () => {
+  const calls = [];
+  const harness = componentHarness(annualPath, 'clinic_admin', async (url, options) => {
+    calls.push({ url, options });
+    return json(url.includes('requestPhotoBackup') ? {
+      requestId: 'pedido-ficticio', status: 'PAYMENT_PENDING', entitlement_kind: 'PAID', payment_status: 'NEEDS_QUOTE', processor_ready: false,
+    } : { configured: true, processor_ready: false, eligible: false, can_request: true, additional_requires_payment: true,
+      period: { id: 'periodo-ficticio', start_date: '2026-01-01', end_date: '2027-01-01', request_deadline_at: '2027-01-16T05:00:00Z' }, requests: [] });
+  });
+  let tree = await harness.mount();
+  assert.equal(button(tree, 'Solicitar Respaldo Anual').props.disabled, false);
+  assert.match(text(tree), /Worker OFF/);
+  assert.match(text(tree), /requiere cotización y pago/);
+  button(tree, 'Solicitar Respaldo Anual').props.onClick();
+  tree = harness.render();
+  assert.match(text(tree), /Confirmar no autoriza un cargo/);
+  assert.equal(calls.length, 1, 'abrir confirmación no registra ni cobra');
+  await button(tree, 'Confirmar').props.onClick();
+  await new Promise(resolve => setImmediate(resolve));
+  tree = harness.render();
+  const post = calls.find(call => call.url.includes('requestPhotoBackup'));
+  assert.deepEqual(JSON.parse(post.options.body), {});
+  assert.match(text(tree), /No se realizó ningún cobro automático/);
+  assert.equal(calls.some(call => /Payment|approve|Quote/.test(call.url)), false);
+});
+
+test('doble confirmación inmediata no registra dos solicitudes adicionales', async () => {
+  let resolve;
+  let posts = 0;
+  const harness = componentHarness(annualPath, 'clinic_admin', async url => {
+    if (url.includes('requestPhotoBackup')) {
+      posts++;
+      return new Promise(done => { resolve = done; });
+    }
+    return json({ configured: true, processor_ready: false, eligible: false, can_request: true, additional_requires_payment: true, requests: [] });
+  });
+  let tree = await harness.mount();
+  button(tree, 'Solicitar Respaldo Anual').props.onClick();
+  tree = harness.render();
+  const confirm = button(tree, 'Confirmar');
+  confirm.props.onClick();
+  confirm.props.onClick();
+  assert.equal(posts, 1);
+  resolve(json({ entitlement_kind: 'PAID', payment_status: 'NEEDS_QUOTE' }));
+  await new Promise(done => setImmediate(done));
+});
+
+for (const status of [
+  { configured: true, eligible: true, can_request: false },
+  { configured: true, eligible: true },
+  { configured: false, eligible: true, can_request: true },
+]) {
+  test(`can_request falla cerrado sin inferir desde eligible/configured: ${JSON.stringify(status)}`, async () => {
+    const harness = componentHarness(annualPath, 'clinic_admin', async () => json({ ...status, processor_ready: true, requests: [] }));
+    assert.equal(button(await harness.mount(), 'Solicitar Respaldo Anual').props.disabled, true);
+  });
+}
+
+test('Master con registro listo y Worker OFF registra períodos sin poder aprobar', async () => {
+  const calls = [];
+  const status = { configured: true, processor_ready: false, pending_count: 1, notifications: [], requests: [
+    { id: 'pedido-ficticio', clinic_id: 'clinica-ficticia', created_at: '2026-10-01T05:00:00Z', status: 'PENDING', entitlement_kind: 'FREE' },
+  ] };
+  const harness = componentHarness(annualPath, 'master_admin', async (url, options) => { calls.push({ url, options }); return json(status); });
+  let summary;
+  const props = { master: true, onProviderStatus: next => { summary = next; } };
+  let tree = await harness.mount(props);
+  assert.equal(button(tree, 'Registrar período').props.disabled, false);
+  assert.equal(button(tree, 'Aprobar').props.disabled, true);
+  assert.equal(summary.pending_count, 1);
+  button(tree, 'Aprobar').props.onClick();
+  tree = harness.render(props);
+  assert.equal(button(tree, 'Confirmar').props.disabled, true);
+  await button(tree, 'Confirmar').props.onClick();
+  assert.equal(calls.some(call => call.url.includes('approvePhotoBackup')), false, 'handler tampoco envía aprobación con Worker OFF');
+});
+
+test('solicitud pagada pendiente y fallo SMTP se muestran sin habilitar aprobación', async () => {
+  const harness = componentHarness(annualPath, 'master_admin', async () => json({
+    configured: true, processor_ready: true, pending_count: 1,
+    notifications: [{ request_id: 'pedido-ficticio', kind: 'REQUESTED', status: 'FAILED', attempts: 2, last_error: 'no-debe-exponerse' }],
+    requests: [{ id: 'pedido-ficticio', clinic_id: 'clinica-ficticia', created_at: '2026-10-01T05:00:00Z',
+      status: 'PAYMENT_PENDING', entitlement_kind: 'PAID', payment_status: 'NEEDS_QUOTE' }],
+  }));
+  const tree = await harness.mount({ master: true });
+  assert.match(text(tree), /Cotización o pago pendiente/);
+  assert.match(text(tree), /Sin pago confirmado/);
+  assert.match(text(tree), /Envío fallido · 2 intentos/);
+  assert.doesNotMatch(text(tree), /no-debe-exponerse/);
+  assert.equal(elements(tree).some(node => node.type === 'button' && text(node) === 'Aprobar'), false);
+});
+
+const paidOrder = extra => ({
+  id: 'pedido-ficticio', clinic_id: 'clinica-ficticia', created_at: '2026-10-01T05:00:00Z',
+  status: 'PAYMENT_PENDING', entitlement_kind: 'PAID', payment_status: 'PAYMENT_PENDING',
+  original_total_bytes: 5e9, quote_total_cents: 1000, ...extra,
+});
+
+test('cotización parcial se continúa explícitamente y no permite aceptar ni pagar', async () => {
+  const commands = [];
+  const props = { item: paidOrder({ original_total_bytes: null, quote_total_cents: null, payment_status: 'NEEDS_QUOTE' }),
+    busy: false, execute: async command => { commands.push(command); return { quote_complete: false, bytes_measured: 3e9 }; } };
+  const harness = componentHarness(orderPath, 'master_admin', async () => {});
+  let tree = harness.render(props);
+  assert.equal(button(tree, 'Registrar aceptación').props.disabled, true);
+  await button(tree, 'Calcular cotización').props.onClick();
+  await new Promise(resolve => setImmediate(resolve));
+  tree = harness.render(props);
+  assert.match(text(tree), /Medición parcial/);
+  assert.equal(button(tree, 'Registrar aceptación').props.disabled, true);
+  assert.equal(button(tree, 'Confirmar pago recibido').props.disabled, true);
+  assert.equal(button(tree, 'Continuar cotización').props.disabled, false);
+  assert.equal(commands.length, 1);
+  assert.equal(commands[0].action, 'quotePhotoBackup');
+  assert.deepEqual({ ...commands[0].body }, { requestId: 'pedido-ficticio', clinicId: 'clinica-ficticia' });
+});
+
+test('aceptación y pago exigen confirmación explícita y referencia; nunca envían paid=true', async () => {
+  const commands = [];
+  const harness = componentHarness(orderPath, 'master_admin', async () => {});
+  const props = { item: paidOrder({}), busy: false, execute: async command => { commands.push(command); } };
+  let tree = harness.render(props);
+  assert.equal(button(tree, 'Confirmar pago recibido').props.disabled, true);
+  button(tree, 'Registrar aceptación').props.onClick();
+  tree = harness.render(props);
+  assert.equal(button(tree, 'Confirmar registro').props.disabled, true);
+  elements(tree).find(node => node.type === 'input' && node.props.type === 'checkbox').props.onChange({ target: { checked: true } });
+  tree = harness.render(props);
+  await button(tree, 'Confirmar registro').props.onClick();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(commands[0].action, 'acceptPhotoBackupQuote');
+  assert.equal(commands[0].body.acceptanceConfirmed, true);
+  assert.equal(commands[0].body.paymentConfirmed, undefined);
+  const accepted = { ...props, item: paidOrder({ quote_accepted_at: '2026-10-07T05:00:00Z' }) };
+  tree = harness.render(accepted);
+  button(tree, 'Confirmar pago recibido').props.onClick();
+  tree = harness.render(accepted);
+  elements(tree).find(node => node.type === 'input' && node.props.type === 'checkbox').props.onChange({ target: { checked: true } });
+  tree = harness.render(accepted);
+  assert.equal(button(tree, 'Confirmar registro').props.disabled, true);
+  elements(tree).find(node => node.type === 'input' && node.props.name === 'payment_reference').props.onChange({ target: { value: 'PAGO-FICTICIO-2026' } });
+  tree = harness.render(accepted);
+  await button(tree, 'Confirmar registro').props.onClick();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(commands[1].action, 'confirmPhotoBackupPayment');
+  assert.equal(commands[1].body.paymentConfirmed, true);
+  assert.equal(commands[1].body.paymentReference, 'PAGO-FICTICIO-2026');
+  assert.equal(commands.some(command => 'paid' in command.body || 'payment_status' in command.body), false);
+});
+
+test('cotización manual solo se presenta para originales >50GB y envía centavos USD', async () => {
+  const commands = [];
+  const harness = componentHarness(orderPath, 'master_admin', async () => {});
+  const props = { item: paidOrder({ original_total_bytes: 50e9, quote_total_cents: null }), busy: false, execute: async command => {
+    commands.push(command); return { quote_complete: true, original_total_bytes: 50e9 + 1, quote_total_cents: 5550 };
+  } };
+  assert.equal(elements(harness.render(props)).some(node => node.type === 'form'), false);
+  const large = { ...props, item: paidOrder({ original_total_bytes: 50e9 + 1, quote_total_cents: null }) };
+  let tree = harness.render(large);
+  elements(tree).find(node => node.type === 'input' && node.props.name === 'manual_quote_usd').props.onChange({ target: { value: '55,50' } });
+  tree = harness.render(large);
+  elements(tree).find(node => node.type === 'form').props.onSubmit({ preventDefault() {} });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(commands[0].body.manualTotalCents, 5550);
+  tree = harness.render(large);
+  assert.match(text(tree), /GB originales/);
+  assert.match(text(tree), /IVA incluido/);
+  assert.equal(button(tree, 'Registrar aceptación').props.disabled, false);
+});
+
+test('reintento SMTP usa acción independiente de aprobación e informa error sin simular éxito', async () => {
+  const commands = [];
+  const harness = componentHarness(orderPath, 'master_admin', async () => {});
+  const props = { item: paidOrder({ status: 'READY', notification_error: 'SMTP_FAILED' }), busy: false,
+    execute: async command => { commands.push(command); throw new Error('No se pudo enviar; intenta más tarde.'); } };
+  let tree = harness.render(props);
+  await button(tree, 'Reintentar avisos por correo').props.onClick();
+  await new Promise(resolve => setImmediate(resolve));
+  tree = harness.render(props);
+  assert.equal(commands[0].action, 'retryPhotoBackupNotifications');
+  assert.match(text(tree), /No se pudo enviar/);
+  assert.equal(commands.some(command => command.action === 'approvePhotoBackup'), false);
+});
+
+test('RECOVERY permite nube/exportación pero bloquea importación, restauración y snapshot manual', async () => {
+  const calls = [];
+  const restricted = { state: 'RECOVERY', canoperate: false, canexport: true, canimport: false, canrestore: false, can_manual_snapshot: false };
+  const harness = componentHarness(backupPath, 'clinic_admin', async url => {
+    calls.push(url);
+    return json(url.includes('snapshots') ? { snapshots: [{ key: 'ficticia', kind: 'auto', created_at: '2026-10-06T05:00:00Z' }] }
+      : { stats: {}, encryption_ready: true, manual_backup: { available: true } });
+  }, restricted);
+  let tree = await harness.mount();
+  assert.equal(button(tree, 'Importar').props.disabled, true);
+  button(tree, 'Nube').props.onClick();
+  tree = harness.render();
+  assert.equal(button(tree, 'Crear respaldo en la nube ahora').props.disabled, true);
+  const restoreButton = button(tree, 'Restaurar…');
+  assert.equal(restoreButton.props.disabled, true);
+  // Incluso un handler invocado fuera del botón no debe enviar operaciones prohibidas.
+  await restoreButton.props.onClick();
+  assert.equal(calls.some(url => url.includes('action=restore')), false);
+  assert.equal(elements(tree).some(node => node.props?.title === 'Descargar' && node.props.disabled === false), true);
+});
+
+test('delivery_only consulta solo estado anual y ofrece descargas, sin solicitud', async () => {
+  const calls = [];
+  const harness = componentHarness(annualPath, 'clinic_admin', async url => {
+    calls.push(url);
+    return json({ configured: false, eligible: true, requests: [{ id: 'ficticia', status: 'READY', created_at: '2026-10-06T05:00:00Z', parts: [{ index: 0 }] }] });
+  }, { state: 'CLOSED', canoperate: false, canexport: false }, true);
+  const tree = await harness.mount({ deliveryOnly: true });
+  assert.equal(calls.length, 1);
+  assert.match(calls[0], /photoBackupStatus/);
+  assert.equal(elements(tree).some(node => node.type === 'button' && text(node) === 'Solicitar Respaldo Anual'), false);
+  assert.equal(elements(tree).some(node => node.type === 'button' && /Descargar/.test(text(node))), true);
+});
 
 for (const role of [null, 'clinic_user']) {
   test(`backup y anual no consultan APIs sin permiso: ${role}`, async () => {
@@ -230,7 +460,7 @@ test('El canal anual apagado conserva coordinación asistida sin solicitudes aut
   });
   const tree = await harness.mount();
   assert.match(text(tree), /Contacta a soporte para registrar y coordinar una solicitud asistida/);
-  assert.match(text(tree), /canal automático todavía no está habilitado/);
+  assert.match(text(tree), /registro por correo todavía no está habilitado/);
   assert.equal(button(tree, 'Solicitar Respaldo Anual').props.disabled, true);
   assert.equal(calls.length, 1);
 });
@@ -240,7 +470,7 @@ for (const configured of [false, true, undefined]) {
     const calls = [];
     const request = async url => {
       calls.push(url);
-      return json({ configured, reason: configured === false ? 'feature_disabled' : null, requests: [
+      return json({ configured, processor_ready: configured === true, reason: configured === false ? 'feature_disabled' : null, requests: [
         { id: 'request-test', status: 'PENDING', created_at: '2026-10-01', clinic_id: 'clinic-test' },
       ] });
     };
@@ -249,7 +479,7 @@ for (const configured of [false, true, undefined]) {
     assert.equal(button(tree, 'Registrar período').props.disabled, configured !== true);
     assert.equal(button(tree, 'Aprobar').props.disabled, configured !== true);
     if (configured === false) {
-      assert.match(text(tree), /Procesamiento automático deshabilitado/);
+      assert.match(text(tree), /Registro no disponible/);
       assert.doesNotMatch(text(tree), /feature_disabled/);
       const form = elements(tree).find(node => node.type === 'form');
       form.props.onSubmit({ preventDefault() {} });

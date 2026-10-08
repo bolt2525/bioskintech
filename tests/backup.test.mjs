@@ -8,6 +8,10 @@ const svc = await import('../lib/backup-service.js');
 const api = await import('../api/backup.js');
 const CLINIC = '11111111-1111-4111-8111-111111111111';
 const OTHER = '22222222-2222-4222-8222-222222222222';
+const { subscriptionLifecycle } = await import('../lib/subscription-lifecycle.js');
+const runCron = (req, res, pool, options = {}) => api.runCron(req, res, pool, {
+  syncLifecycle: async (_pool, clinic, now) => subscriptionLifecycle(clinic, now), ...options,
+});
 
 test('encrypted snapshot round-trips and rejects tampering', () => {
   const doc = svc.buildBackupDocument({ clinicId: CLINIC, generatedBy: 'qa', kind: 'auto', modules: { patients: { tables: { patients: [{ id: 1 }] } } } });
@@ -344,15 +348,17 @@ test('readable consents escape content and only embed safe PNG signatures', asyn
   assert.match(html, /Hematoma/);
 });
 
-test('photo purge deletes storage first and keeps rows whose object could not be deleted', async () => {
-  const deletedRows = [];
-  const pool = { query: async (sql, params) => {
-    if (sql.startsWith('SELECT f.id')) { assert.match(sql, /INTERVAL '30 days'/); return { rows: [{ id: 1, r2_key: 'a' }, { id: 2, r2_key: 'b' }] }; }
-    deletedRows.push(params[0]); return { rowCount: 1 };
-  } };
-  const removed = await api.purgeExpiredClinicPhotos(pool, async key => { if (key === 'b') throw new Error('R2 down'); });
-  assert.equal(removed, 1);
-  assert.deepEqual(deletedRows, [1]);
+test('photo maintenance delegates to the locked lifecycle and never runs the old T+30 photo deletion', async () => {
+  const calls = [];
+  const pool = { connect: async () => ({
+    query: async statement => { calls.push(statement); return { rows: [] }; },
+    release() {},
+  }) };
+  const report = await api.purgeExpiredClinicPhotos(pool, async () => assert.fail('No eligible clinic'));
+  assert.equal(report.completed, 0);
+  assert.equal(report.complete, true);
+  assert.ok(calls.some(statement => statement.includes('SELECT c.id FROM clinics c')));
+  assert.equal(calls.some(statement => statement.includes('SELECT f.id') || statement.includes('DELETE FROM clinical_photos')), false);
 });
 
 test('snapshot reads inside one read-only transaction and never saves a silently truncated table', async () => {
@@ -673,7 +679,7 @@ test('cron budget reports unstarted clinics, skips expensive maintenance and nev
   const snapshots = [];
   const res = fakeCronResponse();
   const pool = { query: async () => ({ rows: [{ id: CLINIC }, { id: OTHER }, { id: 'third' }] }) };
-  await api.runCron(cronRequest(), res, pool, {
+  await runCron(cronRequest(), res, pool, {
     now: () => clock,
     snapshot: async (_pool, id) => { snapshots.push(id); clock += 20_000; return {}; },
     purgePhotos: async () => { clock += 11_000; return 4; },
@@ -693,10 +699,31 @@ test('cron reports success only after every snapshot and both maintenance operat
   process.env.CRON_SECRET = 'qa-cron-secret';
   const snapshots = [];
   const res = fakeCronResponse();
-  await api.runCron(cronRequest(), res, { query: async () => ({ rows: [{ id: CLINIC }, { id: OTHER }] }) }, {
+  await runCron(cronRequest(), res, { query: async () => ({ rows: [{ id: CLINIC }, { id: OTHER }] }) }, {
     snapshot: async (_pool, id) => { snapshots.push(id); return {}; },
     purgePhotos: async () => 2,
     purgeWhatsApp: async () => ({ shortLinks: 1, botStates: 3 }),
+  });
+
+  test('snapshot-heavy cron reserves the first slice for purging and reports both partial workloads accurately', async () => {
+    process.env.CRON_SECRET = 'qa-cron-secret';
+    let clock = 0;
+    const order = [], res = fakeCronResponse();
+    await runCron(cronRequest(), res, { query: async () => ({ rows: [{ id: CLINIC }, { id: OTHER }] }) }, {
+      now: () => clock,
+      purgePhotos: async (_pool, _remove, budget, options) => {
+        order.push('purge'); assert.equal(budget, 15000); assert.equal(options.now(), 0);
+        clock += 10000; return { complete: false, waiting: 100 };
+      },
+      snapshot: async () => { order.push('snapshot'); clock += 25000; return {}; },
+      purgeWhatsApp: async () => assert.fail('No leftover budget'),
+    });
+    assert.deepEqual(order, ['purge','snapshot']);
+    assert.equal(res.code, 207);
+    assert.equal(res.body.maintenance.photos, 'partial');
+    assert.equal(res.body.photosPurged.waiting, 100);
+    assert.deepEqual(res.body.unprocessed, [OTHER]);
+    assert.equal(res.body.complete, false);
   });
   assert.equal(res.code, 200);
   assert.deepEqual(snapshots, [CLINIC, OTHER]);
@@ -709,10 +736,10 @@ test('cron failed snapshot is distinct from unprocessed clinics and contains no 
   process.env.CRON_SECRET = 'qa-cron-secret';
   let clock = 0;
   const res = fakeCronResponse();
-  await api.runCron(cronRequest(), res, { query: async () => ({ rows: [{ id: CLINIC }, { id: OTHER }] }) }, {
+  await runCron(cronRequest(), res, { query: async () => ({ rows: [{ id: CLINIC }, { id: OTHER }] }) }, {
     now: () => clock,
     snapshot: async () => { clock += 31_000; throw new Error('SECRET DATA'); },
-    purgePhotos: async () => assert.fail('Budget exhausted'),
+    purgePhotos: async () => ({ complete: true }),
     purgeWhatsApp: async () => assert.fail('Budget exhausted'),
   });
   assert.deepEqual(res.body.failed, [CLINIC]);
@@ -728,14 +755,14 @@ test('cron timeout reports in-flight clinic as uncertain and never starts anothe
   const res = fakeCronResponse();
   let clock = 0, finish, abortSignal;
   const pending = new Promise(resolve => { finish = resolve; });
-  await api.runCron(cronRequest(), res, { query: async () => ({ rows: [{ id: CLINIC }, { id: OTHER }] }) }, {
+  await runCron(cronRequest(), res, { query: async () => ({ rows: [{ id: CLINIC }, { id: OTHER }] }) }, {
     now: () => clock,
     snapshot: async (_pool, _id, _kind, _user, { signal }) => {
       abortSignal = signal;
       clock = api.CRON_BUDGET_MS;
       return pending;
     },
-    purgePhotos: async () => assert.fail('No maintenance after timeout'),
+    purgePhotos: async () => ({ complete: true }),
     purgeWhatsApp: async () => assert.fail('No maintenance after timeout'),
   });
   assert.equal(res.code, 207);
@@ -753,7 +780,7 @@ test('cron timeout reports in-flight clinic as uncertain and never starts anothe
 test('unauthorized cron never queries or starts backup work', async () => {
   process.env.CRON_SECRET = 'qa-cron-secret';
   const res = fakeCronResponse();
-  await api.runCron({ headers: {} }, res, { query: () => assert.fail('No query allowed') });
+  await runCron({ headers: {} }, res, { query: () => assert.fail('No query allowed') });
   assert.equal(res.code, 401);
 });
 
@@ -761,11 +788,11 @@ test('targeted cron checks existence with a parameterized query and only snapsho
   process.env.CRON_SECRET = 'qa-cron-secret';
   const queries = [], snapshots = [];
   const res = fakeCronResponse();
-  await api.runCron({ ...cronRequest(), query: { clinicId: OTHER } }, res, {
+  await runCron({ ...cronRequest(), query: { clinicId: OTHER } }, res, {
     query: async (sql, params) => {
       queries.push([sql, params]);
-      assert.match(sql, /SELECT c\.id FROM clinics c WHERE c\.id=\$1 AND NOT EXISTS/);
-      assert.match(sql, /cs\.clinic_id=c\.id AND cs\.general \? '_purge'/);
+      assert.match(sql, /SELECT c\.id,[\s\S]+WHERE c\.id=\$1/);
+      assert.match(sql, /LEFT JOIN clinic_settings cs ON cs\.clinic_id=c\.id/);
       assert.deepEqual(params, [OTHER]);
       return { rows: [{ id: OTHER }] };
     },
@@ -796,7 +823,7 @@ test('targeted cron rejects malformed, repeated and empty clinic IDs before any 
   process.env.CRON_SECRET = 'qa-cron-secret';
   for (const clinicId of ['', 'invalid', `${OTHER} OR 1=1`, ` ${OTHER}`, [OTHER], null, 7, {}]) {
     const res = fakeCronResponse();
-    await api.runCron({ ...cronRequest(), query: { clinicId } }, res, {
+    await runCron({ ...cronRequest(), query: { clinicId } }, res, {
       query: () => assert.fail('Invalid ID must never reach the database'),
     }, { snapshot: () => assert.fail('Invalid ID must never start snapshot') });
     assert.equal(res.code, 400);
@@ -807,10 +834,10 @@ test('targeted cron rejects malformed, repeated and empty clinic IDs before any 
 test('targeted cron rejects nonexistent clinic without snapshot or maintenance', async () => {
   process.env.CRON_SECRET = 'qa-cron-secret';
   const res = fakeCronResponse();
-  await api.runCron({ ...cronRequest(), query: { clinicId: OTHER } }, res, {
+  await runCron({ ...cronRequest(), query: { clinicId: OTHER } }, res, {
     query: async (sql, params) => {
-      assert.match(sql, /SELECT c\.id FROM clinics c WHERE c\.id=\$1 AND NOT EXISTS/);
-      assert.match(sql, /cs\.clinic_id=c\.id AND cs\.general \? '_purge'/);
+      assert.match(sql, /SELECT c\.id,[\s\S]+WHERE c\.id=\$1/);
+      assert.match(sql, /LEFT JOIN clinic_settings cs ON cs\.clinic_id=c\.id/);
       assert.deepEqual(params, [OTHER]);
       return { rows: [] };
     },
@@ -829,7 +856,7 @@ test('targeted cron rejects nonexistent clinic without snapshot or maintenance',
 test('targeted cron still requires cron authentication before validation or DB access', async () => {
   process.env.CRON_SECRET = 'qa-cron-secret';
   const res = fakeCronResponse();
-  await api.runCron({ headers: {}, query: { clinicId: OTHER } }, res, {
+  await runCron({ headers: {}, query: { clinicId: OTHER } }, res, {
     query: () => assert.fail('Unauthenticated targeted retry queried DB'),
   });
   assert.equal(res.code, 401);

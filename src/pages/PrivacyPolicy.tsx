@@ -1,5 +1,5 @@
 import { Shield, Users, Database, Globe, Clock, UserCheck, FileText, Bell, HardDrive, Lock, AlertTriangle, Trash2, Brain, Baby, Server } from 'lucide-react';
-import { LegalShell, LegalSection as Section, Note, Mail, ContactChannels } from '../components/legal/LegalLayout';
+import { LEGAL_VERSION, LegalShell, LegalSection as Section, Note, Mail, ContactChannels } from '../components/legal/LegalLayout';
 
 const ul = 'list-disc list-inside space-y-1.5 pl-1';
 
@@ -212,6 +212,13 @@ export default function PrivacyPolicy({ embedded = false }: { embedded?: boolean
       <Section number={15} title="Cambios a esta Política" icon={<Bell className="w-4 h-4" />}>
         <p>BIOSKINTECH podrá actualizar esta Política por cambios legales, técnicos o de proveedores. Cada versión se identifica con su fecha. Los Usuarios deberán aceptar la nueva versión en el panel antes de continuar usándolo; la aceptación queda registrada con fecha, versión, IP y navegador.</p>
       </Section>
+      {!embedded && (
+        <aside aria-label="Aviso de anexo contractual prospectivo" className="rounded-2xl border border-blue-200 bg-blue-50 p-5 text-sm leading-relaxed text-blue-950">
+          <h2 className="font-semibold">Anexo contractual prospectivo sobre vencimiento y recuperación</h2>
+          <p className="mt-2">Esta Política conserva la versión global {LEGAL_VERSION}. El anexo comercial <code>paid-grace15-recovery30-v1</code>, publicado en las Condiciones de Servicio, no forma parte de esta versión ni se acepta por el uso de la Plataforma; solo rige cuando se identifica y acepta expresamente en un contrato nuevo o una adenda. Los contratos existentes no cambian automáticamente.</p>
+          <p className="mt-2"><strong>Información operativa actual:</strong> exportación JSON de hasta 50 MiB comprimidos y 200 MiB expandidos; la exportación completa JSON por lotes no está implementada. La importación CSV admite solo pacientes, hasta 5 MiB y 5.000 registros, y no restaura finanzas. Las descargas directas de fotos individuales o en ZIP de hasta 15 fotos/100 MiB son independientes, repetibles sin límite diario y no consumen la cuota anual. Estos datos operativos no sustituyen derechos legales de portabilidad ni se incorporan retroactivamente a contratos.</p>
+        </aside>
+      )}
     </LegalShell>
   );
 }

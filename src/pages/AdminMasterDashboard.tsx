@@ -19,7 +19,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   LogOut, Building2, Users, Shield, RefreshCw, ChevronDown, ChevronUp,
   Plus, Edit, Trash2, Eye, EyeOff, Key, X, Check, AlertCircle, Copy, Send,
-  Activity, ClipboardList, ChevronRight, Sparkles, Mail, Unlink, Settings2, LayoutDashboard, UserCheck, Calendar, Infinity as InfinityIcon, Clock, Bell,
+  Activity, ClipboardList, ChevronRight, Sparkles, Mail, Unlink, Settings2, LayoutDashboard, UserCheck, Calendar, Clock, Bell,
   MessageCircle, FileText, Search,
 } from 'lucide-react';
 
@@ -34,6 +34,11 @@ import InjectableSeedsPanel from '../components/admin/InjectableSeedsPanel';
 import ContractGenerator from '../components/admin/ContractGenerator';
 import AnnualPhotoBackupPanel from '../components/admin/AnnualPhotoBackupPanel';
 import type { Clinic, ClinicUser, FeatureRow } from '../types';
+import { clinicSubscriptionStatus, subscriptionDate } from '../utils/subscriptionAccess';
+import { EMPTY_ENROLLMENT, policyEnrollment } from '../utils/subscriptionEnrollment';
+import SubscriptionEnrollmentFields from '../components/admin/SubscriptionEnrollmentFields';
+import { Dialog } from '../components/ui/Dialog';
+import { useAnnualPhotoProviderStatus } from '../hooks/useAnnualPhotoProviderStatus';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tipos locales (solo usados en este archivo)
@@ -116,10 +121,12 @@ function FeatureToggle({
   checked,
   onChange,
   disabled,
+  label = 'Habilitar módulo',
 }: {
   checked: boolean;
   onChange: (v: boolean) => void;
   disabled?: boolean;
+  label?: string;
 }) {
   return (
     <button
@@ -127,7 +134,7 @@ function FeatureToggle({
       onClick={() => !disabled && onChange(!checked)}
       role="switch"
       aria-checked={checked}
-      aria-label="Habilitar módulo"
+      aria-label={label}
       className={`relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 ${
         checked ? 'bg-[#deb887]' : 'bg-gray-200'
       } ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
@@ -230,19 +237,26 @@ function ClinicFeaturesPanel({
         Módulos ({ALL_FEATURES.filter(f => isClinicFeatureEnabled(featMap, f)).length}/{ALL_FEATURES.length})
         {open ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
       </button>
+      {clinic.subscription_lifecycle && !clinic.subscription_lifecycle.canoperate && (
+        <p role="status" className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-950">
+          Acceso operativo bloqueado por suscripción. Estos interruptores representan la configuración original, no el acceso actual. Solo el proveedor puede configurarla; renovar antes de la purga la recupera sin habilitar todos los módulos.
+        </p>
+      )}
       {open && (
         <div className="mt-3 grid grid-cols-2 gap-2">
           {ALL_FEATURES.map(feat => {
             const meta    = FEATURE_META[feat];
             const Icon    = meta.icon;
             const enabled = isClinicFeatureEnabled(featMap, feat);
+            const lifecycle = clinic.subscription_lifecycle;
+            const blocked = lifecycle && !lifecycle.canoperate && !(lifecycle.state === 'RECOVERY' && feat === 'backup');
             return (
-              <div key={feat} className="flex items-center justify-between p-2 rounded-lg bg-gray-50 border border-gray-100">
+              <div key={feat} className={`flex items-center justify-between gap-2 p-2 rounded-lg border ${blocked ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-gray-100'}`}>
                 <div className="flex items-center gap-1.5 min-w-0">
-                  <Icon className={`w-3.5 h-3.5 flex-shrink-0 ${meta.color}`} />
-                  <span className="text-xs text-gray-700 truncate">{meta.label}</span>
+                  <Icon aria-hidden="true" className={`w-3.5 h-3.5 flex-shrink-0 ${blocked ? 'text-slate-500' : meta.color}`} />
+                  <span className="text-xs text-gray-700 truncate">{meta.label}{blocked && <span className="block text-amber-900">Acceso bloqueado</span>}</span>
                 </div>
-                <FeatureToggle checked={enabled} onChange={v => onToggle(clinic.id, feat, v)} />
+                <FeatureToggle label={`Configuración original de ${meta.label}`} checked={enabled} onChange={v => onToggle(clinic.id, feat, v)} />
               </div>
             );
           })}
@@ -1084,6 +1098,7 @@ function AccessCodesPanel({
 export default function AdminMasterDashboard() {
   const navigate = useNavigate();
   const { user, logout, checkAuth } = useAuth();
+  const annualProvider = useAnnualPhotoProviderStatus(user?.role === 'master_admin');
 
   // ── Estado general ───────────────────────────────────────────────────────
   const [authReady, setAuthReady] = useState(false); // evita render de UI antes de confirmar rol
@@ -1130,7 +1145,14 @@ export default function AdminMasterDashboard() {
   // ── Suscripción por clínica ────────────────────────────────────────────────
   const [subModal, setSubModal] = useState<{ open: boolean; clinic: Clinic | null }>({ open: false, clinic: null });
   const [subDays, setSubDays]   = useState(365);
-  const [subNoExpiry, setSubNoExpiry] = useState(false);
+  const [subEnrollment, setSubEnrollment] = useState(EMPTY_ENROLLMENT);
+  const [subSaving, setSubSaving] = useState(false);
+  const [subError, setSubError] = useState('');
+  const subTitleId = useId();
+  const openSubscription = (clinic: Clinic) => {
+    setSubModal({ open: true, clinic });
+    setSubDays(365); setSubEnrollment(EMPTY_ENROLLMENT); setSubError('');
+  };
   const [demoModal, setDemoModal] = useState<{ open: boolean; clinicId: number | null; clinicName: string }>({ open: false, clinicId: null, clinicName: '' });
   const [demoForm, setDemoForm]  = useState({ username: '', password: '', showPassword: false, value: 1, unit: 'days' as 'hours' | 'days' | 'weeks', changeExpiry: false, expiryValue: 1, expiryUnit: 'days' as 'hours' | 'days' | 'weeks' });
   const [demoUsers, setDemoUsers] = useState<Array<{ id: number; username: string; is_active: boolean; demo_expires_at: string | null; last_login: string | null }>>([]);
@@ -1422,23 +1444,31 @@ export default function AdminMasterDashboard() {
 
   /** Renueva o ajusta la suscripción de una clínica */
   const handleUpdateSubscription = async () => {
-    if (!subModal.clinic) return;
+    if (!subModal.clinic || subSaving) return;
+    setSubSaving(true);
+    setSubError('');
     try {
-      await fetch('/api/admin-auth?action=updateClinicSubscription', {
+      if (subEnrollment.enabled && subModal.clinic.subscription_lifecycle?.policy !== 'paid')
+        throw new Error('Se requiere evidencia de suscripción pagada validada por el servidor.');
+      const enrollment = policyEnrollment(subEnrollment, Date.now() + subDays * 86400000);
+      const response = await fetch('/api/admin-auth?action=updateClinicSubscription', {
         method: 'POST', headers: authHeader(),
         body: JSON.stringify({
           clinic_id: subModal.clinic.id,
-          subscription_days: subNoExpiry ? 0 : subDays,
-          expires_at: subNoExpiry ? null : undefined,
+          subscription_days: subDays,
+          ...(enrollment ? { subscription_kind: 'paid', policy_enrollment: enrollment } : {}),
         }),
       });
-      flash(subNoExpiry
-        ? `Suscripción de ${subModal.clinic.name} establecida sin fecha de vencimiento`
-        : `Suscripción de ${subModal.clinic.name} actualizada (${subDays} días desde hoy)`);
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || 'No se pudo actualizar la suscripción');
+      flash(`Suscripción de ${subModal.clinic.name} actualizada (${subDays} días desde hoy). Configuración de módulos conservada.`);
       setSubModal({ open: false, clinic: null });
-      setSubNoExpiry(false);
       loadAll();
-    } catch { flash('Error al actualizar suscripción', 'err'); }
+    } catch (failure) {
+      const message = failure instanceof Error ? failure.message : 'Error al actualizar suscripción';
+      setSubError(message); flash(message, 'err');
+    }
+    finally { setSubSaving(false); }
   };
 
   /** Genera contraseña legible con browser crypto */
@@ -1862,7 +1892,7 @@ export default function AdminMasterDashboard() {
   });
 
   // ─── Notificaciones de vencimiento ───────────────────────────────────────
-  type NotifItem = { key: string; type: 'demo_urgent' | 'demo_expired' | 'clinic_expiring' | 'clinic_grace' | 'clinic_expired'; label: string; detail: string };
+  type NotifItem = { key: string; type: 'demo_urgent' | 'demo_expired' | 'clinic_expiring' | 'clinic_grace' | 'clinic_recovery' | 'clinic_expired'; label: string; detail: string };
   const notificationItems: NotifItem[] = [];
   allUsers.forEach(u => {
     if (!u.is_demo || !u.demo_expires_at) return;
@@ -1874,16 +1904,11 @@ export default function AdminMasterDashboard() {
     }
   });
   clinics.forEach(c => {
-    if (!c.subscription_expires_at) return;
-    const msLeft = new Date(c.subscription_expires_at).getTime() - Date.now();
-    const daysLeft = msLeft / 86400000;
-    if (msLeft > 0 && daysLeft <= 30) {
-      notificationItems.push({ key: `clinic_exp_${c.id}`, type: 'clinic_expiring', label: c.name, detail: `${Math.ceil(daysLeft)}d restantes` });
-    } else if (msLeft <= 0 && daysLeft >= -21) {
-      notificationItems.push({ key: `clinic_grace_${c.id}`, type: 'clinic_grace', label: c.name, detail: `${Math.ceil(21 + daysLeft)}d de gracia restantes` });
-    } else if (msLeft <= 0 && daysLeft < -21) {
-      notificationItems.push({ key: `clinic_dead_${c.id}`, type: 'clinic_expired', label: c.name, detail: 'Período de gracia agotado' });
-    }
+    const status = clinicSubscriptionStatus(c, now.getTime());
+    const type = status.state === 'GRACE' ? 'clinic_grace' : status.state === 'RECOVERY' ? 'clinic_recovery'
+      : status.state === 'CLOSED' ? 'clinic_expired' : 'clinic_expiring';
+    if (status.state === 'ACTIVE' && (status.remainingdays === null || status.remainingdays > 30)) return;
+    notificationItems.push({ key: `${type}_${c.id}`, type, label: c.name, detail: `${status.message} · ${status.baseline}` });
   });
   const purgeJob = clinicPurgePreview?.purge || null;
   const purgeWaitUntil = Math.max(0, ...[purgeJob?.retryAfter, purgeJob?.leaseUntil]
@@ -1945,14 +1970,14 @@ export default function AdminMasterDashboard() {
                 <button
                   onClick={() => setShowNotifications(v => !v)}
                   className="relative p-2 rounded-lg bg-white/5 hover:bg-[#deb887]/10 border border-white/10 hover:border-[#deb887]/30 transition-all"
-                  title="Notificaciones de vencimiento"
-                  aria-label={`Notificaciones de vencimiento (${notificationItems.length})`}
+                  title="Notificaciones de suscripción y respaldos anuales"
+                  aria-label={`Notificaciones (${notificationItems.length} de suscripción, ${annualProvider.pendingCount ?? 'sin verificar'} solicitudes anuales pendientes, ${annualProvider.failedCount} avisos anuales fallidos)`}
                   aria-expanded={showNotifications}
                 >
                   <Bell className={`w-4 h-4 ${notificationItems.length > 0 ? 'text-amber-400' : 'text-white/60'}`} />
-                  {notificationItems.length > 0 && (
+                  {(notificationItems.length > 0 || (annualProvider.pendingCount ?? 0) > 0 || annualProvider.failedCount > 0) && (
                     <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
-                      {notificationItems.length > 9 ? '9+' : notificationItems.length}
+                      {notificationItems.length + (annualProvider.pendingCount ?? 0) + annualProvider.failedCount > 9 ? '9+' : notificationItems.length + (annualProvider.pendingCount ?? 0) + annualProvider.failedCount}
                     </span>
                   )}
                 </button>
@@ -1962,12 +1987,18 @@ export default function AdminMasterDashboard() {
                     <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <Bell className="w-4 h-4 text-amber-500" />
-                        <span className="font-semibold text-gray-900 text-sm">Alertas de vencimiento</span>
+                        <span className="font-semibold text-gray-900 text-sm">Alertas del proveedor</span>
                       </div>
-                      <button onClick={() => setShowNotifications(false)} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+                      <button aria-label="Cerrar notificaciones" onClick={() => setShowNotifications(false)} className="rounded p-2 text-gray-600 hover:text-gray-900 focus-visible:ring-2 focus-visible:ring-gold-dark"><X aria-hidden="true" className="w-4 h-4" /></button>
                     </div>
+                    <button type="button" onClick={() => { setTab('photo-backups'); setShowNotifications(false); void annualProvider.refresh(); }}
+                      className="w-full border-b border-slate-100 px-4 py-3 text-left text-sm text-slate-800 hover:bg-amber-50 focus-visible:ring-2 focus-visible:ring-gold-dark">
+                      <span className="block font-semibold">Respaldos anuales</span>
+                      <span className="block">{annualProvider.pendingCount === null ? 'Pendientes sin verificar' : `${annualProvider.pendingCount} solicitudes pendientes`} · {annualProvider.failedCount} avisos fallidos</span>
+                      {annualProvider.error && <span role="status" className="mt-1 block text-xs text-amber-900">{annualProvider.error}</span>}
+                    </button>
                     {notificationItems.length === 0 ? (
-                      <p className="px-4 py-5 text-sm text-gray-400 text-center">Sin alertas activas</p>
+                      <p className="px-4 py-5 text-sm text-gray-500 text-center">Sin alertas de suscripción</p>
                     ) : (
                       <div className="max-h-80 overflow-y-auto divide-y divide-gray-50">
                         {notificationItems.map(item => {
@@ -1976,6 +2007,7 @@ export default function AdminMasterDashboard() {
                             demo_urgent:     'text-amber-600 bg-amber-50',
                             clinic_expiring: 'text-orange-500 bg-orange-50',
                             clinic_grace:    'text-red-600 bg-red-50',
+                            clinic_recovery: 'text-amber-900 bg-amber-50',
                             clinic_expired:  'text-red-700 bg-red-100',
                           };
                           const icons: Record<string, string> = {
@@ -1983,6 +2015,7 @@ export default function AdminMasterDashboard() {
                             demo_urgent:     '⏱',
                             clinic_expiring: '🏥',
                             clinic_grace:    '⚠️',
+                            clinic_recovery: '📥',
                             clinic_expired:  '🚫',
                           };
                           return (
@@ -2171,17 +2204,17 @@ export default function AdminMasterDashboard() {
                         </div>
 
                         {(() => {
-                          const exp = clinic.subscription_expires_at ? new Date(clinic.subscription_expires_at) : null;
-                          const expired = exp && exp < new Date();
-                          const daysLeft = exp ? Math.ceil((exp.getTime() - Date.now()) / 86400000) : null;
+                          const status = clinicSubscriptionStatus(clinic, now.getTime());
+                          const expired = status.state === 'RECOVERY' || status.state === 'CLOSED';
+                          const warning = status.state === 'GRACE' || (status.remainingdays !== null && status.remainingdays <= 30);
                           return (
-                            <div className={`mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-xs ${expired ? 'border-red-200 bg-red-50' : exp && daysLeft! <= 30 ? 'border-amber-200 bg-amber-50' : 'border-emerald-100 bg-emerald-50'}`}>
-                              <span className={`font-semibold ${expired ? 'text-red-700' : exp && daysLeft! <= 30 ? 'text-amber-800' : 'text-emerald-800'}`}>
-                                {expired ? 'Suscripción vencida' : exp ? `Vence: ${exp.toLocaleDateString('es-EC')} · ${daysLeft} días` : 'Sin fecha de vencimiento'}
+                            <div className={`mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-xs ${expired ? 'border-red-200 bg-red-50' : warning ? 'border-amber-200 bg-amber-50' : 'border-emerald-100 bg-emerald-50'}`}>
+                              <span className={`font-semibold ${expired ? 'text-red-700' : warning ? 'text-amber-800' : 'text-emerald-800'}`}>
+                                {status.message}
                               </span>
                               <button
                                 type="button"
-                                onClick={() => { setSubModal({ open: true, clinic }); setSubDays(365); setSubNoExpiry(false); }}
+                                onClick={() => openSubscription(clinic)}
                                 className="rounded font-semibold text-[#9a7040] underline decoration-[#deb887]/50 underline-offset-2 hover:text-[#704c27] focus:outline-none focus:ring-2 focus:ring-[#c5a075]"
                               >
                                 Renovar
@@ -2709,31 +2742,23 @@ export default function AdminMasterDashboard() {
               </div>
               <div className="divide-y divide-gray-50">
                 {clinics.map(clinic => {
-                  const exp = clinic.subscription_expires_at ? new Date(clinic.subscription_expires_at) : null;
-                  const daysLeft = exp ? Math.ceil((exp.getTime() - Date.now()) / 86400000) : null;
-                  const isExpired = daysLeft !== null && daysLeft < 0;
-                  const graceLeft = isExpired && daysLeft !== null ? 21 + daysLeft : null; // días de gracia restantes
-                  const inGrace   = graceLeft !== null && graceLeft >= 0;
-                  const isWarning = daysLeft !== null && daysLeft >= 0 && daysLeft <= 30;
+                  const status = clinicSubscriptionStatus(clinic, now.getTime());
+                  const isExpired = status.state === 'CLOSED' || status.state === 'RECOVERY';
+                  const inGrace = status.state === 'GRACE';
+                  const isWarning = status.remainingdays !== null && status.remainingdays <= 30;
                   return (
                     <div key={clinic.id} className={`px-5 py-3 flex items-center gap-3 ${isExpired && !inGrace ? 'bg-red-50/40' : ''}`}>
-                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${!inGrace && isExpired ? 'bg-red-600' : inGrace ? 'bg-orange-400 animate-pulse' : isWarning ? 'bg-orange-400' : exp === null ? 'bg-emerald-500' : 'bg-emerald-400'}`} />
+                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isExpired ? 'bg-red-600' : inGrace || isWarning ? 'bg-orange-400' : 'bg-emerald-400'}`} />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-gray-800 truncate">{clinic.name}</p>
-                        {exp === null ? (
-                          <p className="text-xs text-emerald-600 flex items-center gap-1"><InfinityIcon className="w-3 h-3" /> Sin vencimiento</p>
-                        ) : inGrace ? (
-                          <p className="text-xs text-orange-600 font-medium">⚠️ Gracia: {graceLeft}d restantes · venció {exp.toLocaleDateString('es-EC')}</p>
-                        ) : isExpired ? (
-                          <p className="text-xs text-red-600 font-bold">🚫 Gracia agotada — requiere acción</p>
-                        ) : (
-                          <p className={`text-xs ${isWarning ? 'text-orange-500 font-medium' : 'text-gray-400'}`}>
-                            Vence {exp.toLocaleDateString('es-EC')} · {daysLeft}d restantes
-                          </p>
-                        )}
+                        <p className={`text-xs ${isExpired ? 'text-red-700' : 'text-slate-700'}`}>{status.message}</p>
+                        <p className="mt-1 text-xs text-slate-600">{status.baseline}</p>
+                        {clinic.subscription_lifecycle && <p className="mt-1 text-xs text-slate-600">
+                          Fin de gracia: {subscriptionDate(clinic.subscription_lifecycle.grace_ends_at)} · Fin de recuperación: {subscriptionDate(clinic.subscription_lifecycle.recovery_ends_at)} (Ecuador)
+                        </p>}
                       </div>
                       <button
-                        onClick={() => { setSubModal({ open: true, clinic }); setSubDays(365); setSubNoExpiry(false); }}
+                        onClick={() => openSubscription(clinic)}
                         className="text-xs px-3 py-1.5 border border-[#deb887]/50 text-[#c5a075] rounded-lg hover:bg-[#fdf8f0] transition-colors flex-shrink-0">
                         Renovar
                       </button>
@@ -2813,7 +2838,7 @@ export default function AdminMasterDashboard() {
         )}
 
         {tab === 'contrato' && <ContractGenerator />}
-        {tab === 'photo-backups' && <AnnualPhotoBackupPanel master clinics={clinics} />}
+        {tab === 'photo-backups' && <AnnualPhotoBackupPanel master clinics={clinics} onProviderStatus={annualProvider.update} />}
 
       </div>
 
@@ -3591,6 +3616,11 @@ export default function AdminMasterDashboard() {
                     {settingsTab === 'modules' && settingsModal && settingsData && (
                       <div className="space-y-2">
                         <p className="text-xs text-gray-400 mb-2">Habilita/deshabilita módulos y configura ajustes específicos. Solo se muestran los módulos activos para esta clínica.</p>
+                        {clinics.some(clinic => clinic.id === settingsModal.clinicId && clinic.subscription_lifecycle && !clinic.subscription_lifecycle.canoperate) && (
+                          <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950">
+                            Acceso operativo bloqueado por suscripción. El proveedor configura aquí los módulos originales, conservados para una renovación antes de la purga. Los interruptores no representan acceso actual ni aceptan la nueva política contractual.
+                          </p>
+                        )}
 
                         {/* Fichas Clínicas */}
                         {isClinicFeatureEnabled(featMap[settingsModal.clinicId], 'clinical_records') && (
@@ -3994,56 +4024,46 @@ export default function AdminMasterDashboard() {
 
       {/* ── Modal: Suscripción de clínica ─────────────────────────────── */}
       {subModal.open && subModal.clinic && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full">
+        <Dialog open onClose={() => { if (!subSaving) setSubModal({ open: false, clinic: null }); }} labelledBy={subTitleId} className="w-full max-w-lg">
+          <div className="bg-white rounded-2xl shadow-2xl w-full">
             <div className="h-0.5 bg-gradient-to-r from-[#deb887] to-[#c5a075] rounded-t-2xl" />
             <div className="p-6 space-y-4">
               <div className="flex items-center justify-between">
-                <h3 className="font-bold text-gray-900">Suscripción — {subModal.clinic.name}</h3>
-                <button onClick={() => { setSubModal({ open: false, clinic: null }); setSubNoExpiry(false); }} className="text-gray-400 hover:text-gray-600">
+                <h3 id={subTitleId} className="font-bold text-gray-900">Suscripción — {subModal.clinic.name}</h3>
+                <button aria-label="Cerrar suscripción" disabled={subSaving} onClick={() => setSubModal({ open: false, clinic: null })} className="rounded p-2 text-slate-600 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-gold-dark">
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              {subModal.clinic.subscription_expires_at && !subNoExpiry && (
+              {subModal.clinic.subscription_expires_at && (
                 <p className="text-xs text-gray-500">
-                  Vence actualmente: <strong>{new Date(subModal.clinic.subscription_expires_at).toLocaleDateString('es-EC')}</strong>
+                  Vence actualmente: <strong>{subscriptionDate(subModal.clinic.subscription_expires_at)} (Ecuador)</strong>
                 </p>
               )}
-              {/* Sin fecha de vencimiento toggle */}
-              <label className="flex items-center gap-3 cursor-pointer select-none">
-                <input type="checkbox" checked={subNoExpiry} onChange={e => setSubNoExpiry(e.target.checked)} className="w-4 h-4 accent-[#deb887]" />
-                <span className="flex items-center gap-1.5 text-sm font-medium text-gray-700">
-                  <InfinityIcon className="w-4 h-4 text-[#deb887]" /> Sin fecha de vencimiento (acceso de por vida)
-                </span>
-              </label>
-              {!subNoExpiry && (
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Días de suscripción desde hoy</label>
+              <p className="text-xs text-slate-600">La API exige una fecha de vencimiento para renovar; no admite convertir esta renovación en acceso de por vida.</p>
+              <div>
+                  <label htmlFor={`${subTitleId}-days`} className="block text-xs font-medium text-gray-600 mb-1">Días de suscripción desde hoy</label>
                   <input
-                    type="number" min={1} max={3650} value={subDays}
-                    onChange={e => setSubDays(Math.max(1, parseInt(e.target.value) || 365))}
+                    id={`${subTitleId}-days`} name="subscription_days" type="number" min={1} max={3650} value={subDays}
+                    onChange={e => setSubDays(Math.min(3650, Math.max(1, parseInt(e.target.value) || 365)))}
                     className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-[#deb887]/40 focus:border-[#deb887] outline-none" />
                   <p className="text-xs text-gray-400 mt-1">
-                    Nueva fecha: <strong>{new Date(Date.now() + subDays * 86400000).toLocaleDateString('es-EC')}</strong>
+                    Nueva fecha: <strong>{subscriptionDate(new Date(now.getTime() + subDays * 86400000).toISOString())} (Ecuador)</strong>
                   </p>
                 </div>
-              )}
-              {subNoExpiry && (
-                <p className="text-xs text-emerald-600 bg-emerald-50 rounded-lg px-3 py-2">
-                  La clínica tendrá acceso permanente sin restricción de fecha.
-                </p>
-              )}
+              <SubscriptionEnrollmentFields value={subEnrollment} onChange={setSubEnrollment}
+                eligible={subModal.clinic.subscription_lifecycle?.policy === 'paid'} />
+              {subError && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-800">{subError}</p>}
               <div className="flex gap-3 pt-2">
-                <button onClick={() => { setSubModal({ open: false, clinic: null }); setSubNoExpiry(false); }} className="flex-1 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cancelar</button>
-                <button onClick={handleUpdateSubscription}
-                  className="flex-1 py-2 text-white rounded-lg text-sm font-semibold"
+                <button disabled={subSaving} onClick={() => setSubModal({ open: false, clinic: null })} className="flex-1 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-50 focus-visible:ring-2 focus-visible:ring-gold-dark">Cancelar</button>
+                <button onClick={handleUpdateSubscription} disabled={subSaving}
+                  className="flex-1 py-2 text-white rounded-lg text-sm font-semibold disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-gold-dark"
                   style={{ background: 'linear-gradient(135deg,#deb887,#c5a075)' }}>
-                  Actualizar
+                  {subSaving ? 'Actualizando…' : 'Actualizar'}
                 </button>
               </div>
             </div>
           </div>
-        </div>
+        </Dialog>
       )}
 
       {/* ── Modal: Gestión de demo ─────────────────────────────────────── */}

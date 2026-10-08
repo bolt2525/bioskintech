@@ -1,19 +1,19 @@
-import { useCallback, useEffect, useId, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Download, Loader2, RefreshCw, ShieldCheck } from 'lucide-react';
-import type { AnnualPhotoBackupRequest, AnnualPhotoBackupStatus } from '../../types';
+import type { AnnualPhotoBackupNotification, AnnualPhotoBackupProviderStatus, AnnualPhotoBackupQuote, AnnualPhotoBackupRequest, AnnualPhotoBackupStatus } from '../../types';
 import recordsFetch from '../../utils/recordsFetch';
 import { useAuth } from '../../hooks/useAuth';
 import { Dialog } from '../ui/Dialog';
+import { subscriptionAccess } from '../../utils/subscriptionAccess';
+import { annualCanApprove, annualCanRequest, annualMoney, annualOriginalSize, ANNUAL_STATUS_LABELS } from '../../utils/annualPhotoBackup';
+import { subscriptionDate } from '../../utils/subscriptionAccess';
+import AnnualPhotoBackupOrder, { type AnnualOrderCommand } from './AnnualPhotoBackupOrder';
 
-const STATE_LABELS: Record<AnnualPhotoBackupRequest['status'], string> = {
-  PENDING: 'Pendiente de autorización', APPROVED: 'Autorizado', PROCESSING: 'Preparando archivos',
-  READY: 'Disponible para descargar', EXPIRED: 'Descarga vencida', REJECTED: 'Rechazado',
-  CANCELLED: 'Cancelado', FAILED: 'Requiere revisión',
-};
 const buttonClass = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-800 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-dark disabled:opacity-50';
 const REASON_LABELS: Record<string, string> = {
   feature_disabled: 'El respaldo fotográfico anual está deshabilitado. Contacte a soporte.',
   migration_needed: 'El respaldo fotográfico anual requiere una actualización del servidor. Contacte a soporte.',
+  registration_not_configured: 'El registro requiere configuración SMTP y esquema del servidor. Contacte a soporte.',
 };
 
 async function requestApi<T>(action: string, body?: object, targetClinic?: string): Promise<T> {
@@ -30,21 +30,30 @@ async function requestApi<T>(action: string, body?: object, targetClinic?: strin
   return result;
 }
 
-export default function AnnualPhotoBackupPanel({ master = false, clinics = [] }: {
+export default function AnnualPhotoBackupPanel({ master = false, clinics = [], deliveryOnly = false, onProviderStatus }: {
   master?: boolean;
   clinics?: { id: string | number; name: string }[];
+  deliveryOnly?: boolean;
+  onProviderStatus?: (status: AnnualPhotoBackupProviderStatus) => void;
 }) {
   const { user } = useAuth();
+  const access = subscriptionAccess(user);
+  const onlyDelivery = deliveryOnly || access.deliveryOnly;
+  const canRequest = !onlyDelivery && access.canRequestAnnual;
   const canManage = master ? user?.role === 'master_admin'
-    : user?.role === 'clinic_admin' || user?.role === 'master_admin';
+    : access.canAnnualDelivery;
   const decisionTitleId = useId();
   const [data, setData] = useState<AnnualPhotoBackupStatus | null>(null);
   const [configured, setConfigured] = useState<boolean | null>(null);
+  const [processorReady, setProcessorReady] = useState(false);
+  const [pendingCount, setPendingCount] = useState<number | null>(null);
+  const [notifications, setNotifications] = useState<AnnualPhotoBackupNotification[]>([]);
   const [configurationReason, setConfigurationReason] = useState<string | null>(null);
   const [requests, setRequests] = useState<AnnualPhotoBackupRequest[]>([]);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  const actionPending = useRef(false);
   const [loading, setLoading] = useState(true);
   const [clinicId, setClinicId] = useState('');
   const [startDate, setStartDate] = useState('');
@@ -60,8 +69,16 @@ export default function AnnualPhotoBackupPanel({ master = false, clinics = [] }:
     setLoading(true);
     try {
       if (master) {
-        const result = await requestApi<{ requests: AnnualPhotoBackupRequest[]; configured: boolean; reason?: string | null }>('listPhotoBackupRequests');
-        setRequests(result.requests);
+        const result = await requestApi<AnnualPhotoBackupProviderStatus>('listPhotoBackupRequests');
+        setRequests(result.requests.map(item => ({
+          ...item,
+          notification_error: item.notification_error || (result.notifications?.some(notification =>
+            notification.request_id === item.id && notification.status === 'FAILED') ? 'SMTP_FAILED' : null),
+        })));
+        setProcessorReady(result.processor_ready === true);
+        setPendingCount(typeof result.pending_count === 'number' ? result.pending_count : null);
+        setNotifications(result.notifications || []);
+        onProviderStatus?.(result);
         setConfigured(typeof result.configured === 'boolean' ? result.configured : null);
         setConfigurationReason(result.reason || null);
       } else {
@@ -69,16 +86,19 @@ export default function AnnualPhotoBackupPanel({ master = false, clinics = [] }:
         setData(result);
         setRequests(result.requests);
         setConfigured(result.configured === true);
+        setProcessorReady(result.processor_ready === true);
         setConfigurationReason(result.reason);
       }
       setError('');
     } catch (failure) {
       setConfigured(null);
+      setProcessorReady(false);
+      setPendingCount(null);
       setError(failure instanceof Error ? failure.message : 'No se pudo consultar el respaldo anual');
     } finally {
       setLoading(false);
     }
-  }, [canManage, master]);
+  }, [canManage, master, onProviderStatus]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
@@ -98,34 +118,73 @@ export default function AnnualPhotoBackupPanel({ master = false, clinics = [] }:
   }, [canManage, load, requests]);
 
   const perform = async (action: string, body: object, message: string) => {
-    if (!canManage) return;
+    if (!canManage || busy || actionPending.current) return;
+    if (onlyDelivery || (action === 'requestPhotoBackup' && !canRequest)) {
+      setError('Esta sesión solo permite consultar el estado y descargar la entrega anual.');
+      return;
+    }
     if (['setPhotoBackupPeriod', 'approvePhotoBackup', 'requestPhotoBackup'].includes(action) &&
-        (configured !== true || loading || (!master && !data?.eligible))) {
+        (configured !== true || loading || (!master && !annualCanRequest(data)) ||
+          (action === 'approvePhotoBackup' && !processorReady))) {
       setError('La operación está bloqueada hasta verificar que el respaldo anual esté habilitado y disponible.');
       return;
     }
+    if (action === 'approvePhotoBackup') {
+      const requestId = 'requestId' in body ? body.requestId : null;
+      const item = requests.find(request => request.id === requestId);
+      if (!item || !annualCanApprove(item, processorReady)) {
+        setError('La aprobación requiere elegibilidad y pago confirmado cuando corresponde. Actualiza el estado.');
+        return;
+      }
+    }
+    actionPending.current = true;
     setBusy(true);
     setError('');
     setNotice('');
     try {
-      await requestApi(action, body);
-      setNotice(message);
+      const result = await requestApi<{ entitlement_kind?: 'FREE' | 'PAID'; payment_status?: string }>(action, body);
+      setNotice(action === 'requestPhotoBackup'
+        ? result.entitlement_kind === 'PAID'
+          ? 'Solicitud adicional registrada: requiere cotización, aceptación y pago confirmado por el proveedor. No se realizó ningún cobro automático. Los avisos por correo quedan registrados; consulta aquí posibles fallos.'
+          : 'Solicitud registrada sin cobro automático. Los avisos por correo quedan registrados; consulta aquí posibles fallos. La preparación depende de la disponibilidad del procesador.'
+        : message);
       setDecision(null);
       setReason('');
       await load();
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : 'No se pudo completar la operación');
     } finally {
+      actionPending.current = false;
       setBusy(false);
     }
   };
 
+  const executeOrder = async (command: AnnualOrderCommand): Promise<AnnualPhotoBackupQuote | undefined> => {
+    if (!master || !canManage || onlyDelivery || busy || actionPending.current || loading || configured !== true)
+      throw new Error('La operación requiere proveedor autenticado y registro disponible.');
+    actionPending.current = true;
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const result = await requestApi<AnnualPhotoBackupQuote>(command.action, command.body);
+      setNotice(command.action === 'quotePhotoBackup'
+        ? result.quote_complete ? 'Cotización calculada sobre originales. No se cobró ni confirmó pago.' : 'Medición parcial guardada. Continúa la cotización.'
+        : command.action === 'retryPhotoBackupNotifications' ? 'Reintento solicitado. Revisa el estado persistente de los avisos.'
+          : command.action === 'acceptPhotoBackupQuote' ? 'Constancia de aceptación registrada; pago todavía pendiente.'
+            : 'Pago registrado por el servidor. La preparación aún requiere autorización y procesador disponible.');
+      await load();
+      return command.action === 'quotePhotoBackup' ? result : undefined;
+    } finally { actionPending.current = false; setBusy(false); }
+  };
+
   const download = async (requestId: string, index: number) => {
-    if (!canManage) return;
+    if (!canManage || actionPending.current) return;
+    actionPending.current = true;
     setBusy(true);
     setError('');
     try {
-      const result = await requestApi<{ url: string; filename: string }>('photoBackupDownload', { requestId, index });
+      const result = await requestApi<{ url: string; filename: string }>('photoBackupDownload', {
+        requestId, index, ...(master ? { clinicId: requests.find(item => item.id === requestId)?.clinic_id } : {}),
+      });
       const anchor = document.createElement('a');
       anchor.href = result.url;
       anchor.download = result.filename;
@@ -137,6 +196,7 @@ export default function AnnualPhotoBackupPanel({ master = false, clinics = [] }:
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : 'No se pudo emitir la descarga');
     } finally {
+      actionPending.current = false;
       setBusy(false);
     }
   };
@@ -155,13 +215,18 @@ export default function AnnualPhotoBackupPanel({ master = false, clinics = [] }:
     </details>
     {error && <p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
     {notice && <p role="status" className="mt-3 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p>}
-    {!loading && configured !== true && <p role="status" className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{configured === false ? master ? 'Procesamiento automático deshabilitado. Registro de períodos y aprobaciones bloqueados.' : 'Solicitud disponible por soporte; el canal automático todavía no está habilitado.' : 'No se pudo consultar el estado. Actualiza para reintentar.'}</p>}
+    {!loading && configured !== true && <p role="status" className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{configured === false ? master ? 'Registro no disponible: configuración SMTP o esquema pendiente. Registro de períodos y aprobaciones bloqueados.' : 'Solicitud disponible por soporte; el registro por correo todavía no está habilitado.' : 'No se pudo consultar el estado. Actualiza para reintentar.'}</p>}
     {!master && !loading && configured !== true && <p className="mt-2 text-sm text-gray-600">El derecho a la entrega anual se mantiene. Contacta a soporte para registrar y coordinar una solicitud asistida.</p>}
+    {!loading && configured === true && !processorReady && <p role="status" className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-950">Procesador automático no disponible (Worker OFF). Puedes registrar períodos, solicitudes y avisos por correo; la aprobación y preparación están bloqueadas. Registrar no activa el Worker ni garantiza una fecha de entrega.</p>}
+    {master && pendingCount !== null && <p role="status" className="mt-3 text-sm font-medium">{pendingCount} solicitudes pendientes de gestión del proveedor.</p>}
     {configurationReason && configurationReason !== 'feature_disabled' && <p className="mt-3 text-sm text-gray-600">{REASON_LABELS[configurationReason] || configurationReason}</p>}
-    {loading ? <p className="mt-4 flex items-center gap-2 text-sm"><Loader2 className="h-4 w-4 animate-spin" />Consultando solicitudes…</p> : <>
+    {loading && <p role="status" className="mt-4 flex items-center gap-2 text-sm"><Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />Consultando solicitudes…</p>}
+    {(!loading || requests.length > 0) && <>
       {!master && <div className="mt-4 space-y-3">
         {configured === true && <p className="text-sm">{data?.period ? `Período registrado: ${data.period.start_date.slice(0, 10)} a ${data.period.end_date.slice(0, 10)}` : 'El proveedor del sistema debe registrar el período contractual antes de solicitar la entrega.'}</p>}
-        <button type="button" disabled={busy || configured !== true || !data?.eligible} onClick={() => setDecision({ id: '', approve: true })} className={buttonClass}>Solicitar Respaldo Anual</button>
+        {data?.period?.request_deadline_at && <p className="text-sm">Plazo para solicitar: {subscriptionDate(data.period.request_deadline_at)} (Ecuador).</p>}
+        {data?.additional_requires_payment && !onlyDelivery && <p className="text-sm text-amber-950">La entrega gratuita ya está utilizada o reservada. Una nueva solicitud requiere cotización y pago; no se cobra automáticamente.</p>}
+        {!onlyDelivery && <button type="button" disabled={busy || !annualCanRequest(data) || !canRequest} onClick={() => setDecision({ id: '', approve: true })} className={buttonClass}>Solicitar Respaldo Anual</button>}
       </div>}
       {master && <form className="mt-5 grid gap-3 rounded-xl bg-gray-50 p-4 sm:grid-cols-3" onSubmit={event => {
         event.preventDefault();
@@ -187,12 +252,14 @@ export default function AnnualPhotoBackupPanel({ master = false, clinics = [] }:
       {decision && <Dialog open onClose={() => { if (!busy) setDecision(null); }} labelledBy={decisionTitleId} className="w-full sm:w-[32rem]">
         <div className="rounded-xl bg-white p-5">
         <h3 id={decisionTitleId} className="mb-3 text-lg font-semibold">{!master ? 'Solicitar respaldo anual' : decision.approve ? 'Autorizar respaldo anual' : 'Rechazar solicitud'}</h3>
-        <p className="text-sm">{!master ? 'Confirme que solicita una copia de los datos de su clínica y que custodiará los archivos sensibles. La cuota se consume únicamente al completarse la entrega.' : decision.approve ? 'La autorización inicia el procesamiento de datos sensibles. Verifique la clínica y el período.' : 'Indique el motivo de rechazo; no se consumirá la cuota.'}</p>
+        <p className="text-sm">{!master ? 'Al confirmar, registrarás la solicitud y sus avisos por correo. Custodia los archivos sensibles. La entrega gratuita se controla por clínica y período; una entrega adicional requiere cotización, aceptación y pago confirmado, sin cobro automático.' : decision.approve ? 'La autorización inicia el procesamiento de datos sensibles. Verifique la clínica, el período y el pago cuando corresponda.' : 'Indique el motivo de rechazo; no se consumirá la cuota.'}</p>
+        {!master && !processorReady && <p className="mt-2 text-sm text-amber-950">El Worker está OFF: registrarás la solicitud, no iniciarás la preparación.</p>}
+        {!master && data?.additional_requires_payment && <p className="mt-2 text-sm font-semibold">Esta solicitud adicional requiere cotización y pago. Confirmar no autoriza un cargo.</p>}
         {master && !decision.approve && <label className="mt-3 block text-sm">Motivo<textarea maxLength={500} value={reason} onChange={event => setReason(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 p-2" /></label>}
         <div className="mt-3 flex flex-wrap gap-2">
-          <button type="button" disabled={busy || loading || (decision.approve && configured !== true) || (!master && !data?.eligible) || (master && !decision.approve && !reason.trim())} className={buttonClass} onClick={() => void perform(
+          <button type="button" disabled={busy || loading || (decision.approve && configured !== true) || (!master && !annualCanRequest(data)) || (master && decision.approve && !processorReady) || (master && !decision.approve && !reason.trim())} className={buttonClass} onClick={() => void perform(
             !master ? 'requestPhotoBackup' : decision.approve ? 'approvePhotoBackup' : 'rejectPhotoBackup',
-            !master ? {} : { requestId: decision.id, ...(decision.approve ? {} : { reason: reason.trim() }) },
+            !master ? {} : { requestId: decision.id, clinicId: requests.find(item => item.id === decision.id)?.clinic_id, ...(decision.approve ? {} : { reason: reason.trim() }) },
             !master ? 'Solicitud registrada. El proveedor del sistema recibirá la notificación.' : decision.approve ? 'Autorización registrada; consulte el progreso.' : 'Solicitud rechazada.',
           )}>Confirmar</button>
           <button type="button" disabled={busy} onClick={() => setDecision(null)} className={buttonClass}>Cancelar</button>
@@ -204,17 +271,26 @@ export default function AnnualPhotoBackupPanel({ master = false, clinics = [] }:
         {requests.map(item => <article key={item.id} className="rounded-xl border border-gray-200 p-4">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div><h3 className="font-semibold">{master ? item.clinic_name || item.clinic_id : 'Solicitud anual'}</h3><p className="text-xs text-gray-500">{item.id} · {new Date(item.created_at).toLocaleString('es-EC')}</p></div>
-            <p className="text-sm font-medium">{STATE_LABELS[item.status]}</p>
+            <p className="text-sm font-medium">{ANNUAL_STATUS_LABELS[item.status] || 'Estado pendiente de verificación'}</p>
           </div>
           <p className="mt-2 text-sm text-gray-600">{item.photo_count ?? 0} fotografías · {((item.total_bytes ?? 0) / 1048576).toFixed(1)} MiB</p>
+          {item.entitlement_kind && <p className="mt-2 text-sm">{item.entitlement_kind === 'FREE' ? 'Entrega gratuita del período' : 'Entrega adicional de pago'}{item.payment_status === 'PAID' ? ' · Pago confirmado por el proveedor' : item.entitlement_kind === 'PAID' ? ' · Sin pago confirmado' : ''}</p>}
+          {item.entitlement_kind === 'PAID' && <p className="mt-2 text-sm">{annualOriginalSize(item.original_total_bytes)} · {annualMoney(item.quote_total_cents)}{item.quote_total_cents ? ' · USD, IVA incluido' : ''}. {item.quote_accepted_at ? 'Aceptación registrada.' : 'Sin aceptación registrada.'}</p>}
+          {item.entitlement_deadline_at && <p className="mt-2 text-xs">Plazo contractual: {subscriptionDate(item.entitlement_deadline_at)} (Ecuador).</p>}
           {item.error_code && <p className="mt-2 text-sm text-red-700">Preparación no completada: {item.error_code}. Solicite revisión; no se presenta una entrega parcial como completa.</p>}
-          {item.notification_error && <p className="mt-2 text-sm text-amber-800">El aviso por correo requiere revisión. Consulte el estado aquí.</p>}
-          {item.expires_at && <p className="mt-2 text-sm">Disponible hasta {new Date(item.expires_at).toLocaleString('es-EC')}</p>}
+          {item.notification_error && <p role="status" className="mt-2 text-sm text-amber-800">Aviso por correo fallido, registrado en el servidor. La solicitud no se perdió. {master ? 'Reintenta los avisos y verifica el resultado.' : 'Solicita al proveedor que reintente el envío; consulta el estado aquí.'}</p>}
+          {master && notifications.some(notification => notification.request_id === item.id) && <ul aria-label="Estado persistente de avisos por correo" className="mt-2 space-y-1 text-xs text-slate-700">
+            {notifications.filter(notification => notification.request_id === item.id).map(notification => <li key={`${notification.request_id}-${notification.kind}`}>
+              {notification.kind === 'REQUESTED' ? 'Aviso de solicitud' : notification.kind === 'READY' ? 'Aviso de entrega' : 'Aviso del respaldo'}: {notification.status === 'FAILED' ? 'Envío fallido' : notification.status === 'SENT' ? 'Enviado' : notification.status === 'SENDING' ? 'Enviando' : 'Pendiente'} · {notification.attempts} intentos
+            </li>)}
+          </ul>}
+          {item.expires_at && <p className="mt-2 text-sm">Disponible hasta {subscriptionDate(item.expires_at)} (Ecuador)</p>}
           <div className="mt-3 flex flex-wrap gap-2">
-            {master && ['PENDING', 'APPROVED', 'FAILED'].includes(item.status) && <button type="button" disabled={busy || configured !== true} onClick={() => setDecision({ id: item.id, approve: true })} className={buttonClass}>{item.status === 'PENDING' ? 'Aprobar' : 'Reintentar preparación'}</button>}
+            {master && ['PENDING', 'APPROVED', 'FAILED'].includes(item.status) && <button type="button" disabled={busy || configured !== true || !annualCanApprove(item, processorReady)} onClick={() => setDecision({ id: item.id, approve: true })} className={buttonClass}>{item.status === 'PENDING' ? 'Aprobar' : 'Reintentar preparación'}</button>}
             {master && item.status === 'PENDING' && <button type="button" disabled={busy} onClick={() => setDecision({ id: item.id, approve: false })} className={buttonClass}>Rechazar</button>}
             {item.status === 'READY' && item.parts?.map(part => <button type="button" key={part.index} disabled={busy} onClick={() => void download(item.id, part.index)} className={buttonClass}><Download className="h-4 w-4" aria-hidden="true" />Descargar parte {part.index + 1}</button>)}
           </div>
+          {master && <AnnualPhotoBackupOrder item={item} busy={busy || loading || configured !== true} execute={executeOrder} />}
         </article>)}
       </div>
     </>}

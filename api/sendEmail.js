@@ -3,6 +3,8 @@ import nodemailer from 'nodemailer';
 import { google } from 'googleapis';
 import { sql } from '@vercel/postgres';
 import { authenticateRequest } from '../lib/admin-auth.js';
+import { getPool } from '../lib/neon-clinical-db.js';
+import { requireSubscriptionOperation } from '../lib/subscription-lifecycle.js';
 import { sendDeveloperAlert } from './admin-auth.js';
 import { sendWhatsAppText, sendWhatsAppTemplate } from '../lib/whatsapp-service.js';
 import { isWithinCustomerServiceWindow, isSystemStaffPhone, ensureWhatsAppContactClinic } from '../lib/whatsapp-crm.js';
@@ -198,6 +200,12 @@ export default async function handler(req, res) {
 
     // Multi-tenant: usar staff de la clínica configurado en master admin
     const notifClinicId = req.body?.clinicId || authResult.effective_clinic_id || authResult.clinic_id;
+    if (authResult.role !== 'master_admin' && notifClinicId !== (authResult.effective_clinic_id || authResult.clinic_id))
+      return res.status(403).json({ success: false, message: 'Sin permiso para esa clínica' });
+    if (notifClinicId) {
+      try { await requireSubscriptionOperation(getPool(), notifClinicId); }
+      catch (error) { return res.status(error.status || 503).json({ success: false, message: 'La clínica no permite notificaciones operativas' }); }
+    }
     const notifClinic   = notifClinicId ? await getClinicConfig(notifClinicId) : null;
     const adminTo = [
       notifClinic?.staff_email || process.env.EMAIL_TO,

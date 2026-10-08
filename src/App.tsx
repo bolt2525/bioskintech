@@ -18,7 +18,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { MasterViewProvider } from './context/MasterViewContext';
 import ErrorBoundary from './pages/ErrorBoundary';
-import LegalAcceptanceGate from './components/layout/LegalAcceptanceGate';
+import SubscriptionGate from './components/layout/SubscriptionGate';
 
 import LandingPage       from './pages/LandingPage';
 import PrivacyPolicy       from './pages/PrivacyPolicy';
@@ -66,7 +66,7 @@ function AdminRoutes() {
   return (
     <AuthProvider>
       <MasterViewProvider>
-        <LegalAcceptanceGate />
+        <SubscriptionGate>
         <Suspense fallback={routeFallback}>
         <Routes>
           <Route path="/" element={<Navigate to="/admin/login" replace />} />
@@ -144,6 +144,7 @@ function AdminRoutes() {
           <Route path="*" element={<Navigate to="/admin/login" replace />} />
         </Routes>
         </Suspense>
+        </SubscriptionGate>
       </MasterViewProvider>
     </AuthProvider>
   );

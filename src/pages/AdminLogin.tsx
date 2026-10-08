@@ -14,6 +14,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { sessionUser } from '../utils/subscriptionAccess';
 import { Lock, Mail, Eye, EyeOff, ShieldCheck } from 'lucide-react';
 import SkinExplorerButton from '../skin-explorer/SkinExplorerButton';
 import AppFooter from '../components/layout/AppFooter';
@@ -25,7 +26,7 @@ import BrandLogo from '../components/ui/BrandLogo';
 
 export default function AdminLogin() {
   const navigate = useNavigate();
-  const { login, isAuthenticated } = useAuth();
+  const { login, isAuthenticated, checkAuth } = useAuth();
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -50,7 +51,7 @@ export default function AdminLogin() {
     setLoading(true);
 
     try {
-      const result = await login(username, password) as any;
+      const result = await login(username, password);
       if (result.requiresOTP) {
         setOtpStep(true); setOtpToken(result.otpToken || ''); setMaskedEmail(result.maskedEmail || '');
         setLoading(false); return;
@@ -91,8 +92,9 @@ export default function AdminLogin() {
           body: JSON.stringify({ device_token: deviceToken }),
         }).catch(() => {}); // non-fatal
         sessionStorage.setItem('adminSessionToken', d.sessionToken);
-        sessionStorage.setItem('adminUser', JSON.stringify({ ...d.user, subscriptionWarningDays: d.subscriptionWarningDays }));
+        sessionStorage.setItem('adminUser', JSON.stringify({ ...sessionUser(d), features: d.features || [] }));
         sessionStorage.setItem('adminSessionExpiry', String(d.expiresAt));
+        if (!await checkAuth()) { setError('No se pudo verificar el acceso. Intenta iniciar sesión de nuevo.'); return; }
         const u = d.user;
         if (u.role === 'master_admin') navigate('/admin/master');
         else if (u.clinic_slug) navigate(`/admin/${u.clinic_slug}/${u.username}`);

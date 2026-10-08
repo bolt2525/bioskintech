@@ -11,6 +11,8 @@ import crypto from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 import { getPool } from '../lib/neon-clinical-db.js';
 import { authenticateRequest } from '../lib/admin-auth.js';
+import { SUBSCRIPTION_FIELDS, subscriptionLifecycle, subscriptionRequestAllowed, syncSubscriptionLifecycle } from '../lib/subscription-lifecycle.js';
+import { purgeExpiredClinics } from '../lib/clinic-purge.js';
 import { lockClinicWriters, unlockClinicWriters, requireClinicWritable } from '../lib/clinic-lifecycle.js';
 import { PHOTO_BACKUP_ACTIONS, handleAnnualPhotoBackup } from '../lib/annual-photo-backup.js';
 import { putR2Object, getR2ObjectBuffer, listR2Objects, generateDownloadUrl, generateUploadUrl, r2ObjectExists, deleteR2Object } from '../lib/r2-service.js';
@@ -587,22 +589,9 @@ export async function exportConsentsFile(pool, clinicId, body, publish = publish
     `consentimientos-firmados-${new Date().toISOString().split('T')[0]}-parte-${page.offset}.html.gz`)), ...page };
 }
 
-/** Política: las fotos se eliminan 30 días después de vencer la suscripción sin renovación; no se respaldan. */
-export async function purgeExpiredClinicPhotos(pool, deleteObject = deleteR2Object, limit = 500) {
-  const { rows } = await pool.query(
-    `SELECT f.id, f.r2_key FROM clinical_photos f JOIN clinics c ON c.id = f.clinic_id
-     WHERE c.subscription_expires_at IS NOT NULL AND c.subscription_expires_at < NOW() - INTERVAL '30 days'
-       AND NOT EXISTS (SELECT 1 FROM clinic_settings cs WHERE cs.clinic_id=c.id AND cs.general ? '_purge')
-     ORDER BY f.id LIMIT ${Number(limit)}`);
-  let deleted = 0;
-  for (const photo of rows) {
-    try {
-      await deleteObject(photo.r2_key);
-      await pool.query('DELETE FROM clinical_photos WHERE id = $1', [photo.id]);
-      deleted++;
-    } catch (err) { console.error('[backup:cron] photo purge failed', photo.id, err?.name || 'Error'); }
-  }
-  return deleted;
+/** All storage deletion now belongs to the locked, resumable clinic lifecycle. */
+export async function purgeExpiredClinicPhotos(pool, deleteObject = deleteR2Object, budgetMs = 15000, options = {}) {
+  return purgeExpiredClinics({ pool, remove: deleteObject, budgetMs, ...options });
 }
 
 /**
@@ -631,14 +620,14 @@ const CRON_BUDGET_EXCEEDED = Symbol('cron-budget-exceeded');
 export async function runCron(req, res, pool, {
   snapshot = createSnapshot, purgePhotos = purgeExpiredClinicPhotos,
   purgeWhatsApp = purgeEphemeralWhatsAppRows, now = Date.now,
-  budgetMs = CRON_BUDGET_MS,
+  budgetMs = CRON_BUDGET_MS, syncLifecycle = syncSubscriptionLifecycle,
 } = {}) {
   const started = now();
   const remaining = () => Math.max(0, budgetMs - (now() - started));
   // No se confunde un timeout con fallo: una operación no cancelable puede terminar
   // después de responder. Nunca se inicia otra clínica/limpieza tras ese timeout.
-  const withinBudget = async operation => {
-    const ms = remaining();
+  const withinBudget = async (operation, maxMs = Infinity) => {
+    const ms = Math.min(remaining(), maxMs);
     if (!ms) return CRON_BUDGET_EXCEEDED;
     let timer;
     const controller = new AbortController();
@@ -662,11 +651,10 @@ export async function runCron(req, res, pool, {
   if (targeted && (typeof targetClinicId !== 'string' || !UUID_RE.test(targetClinicId)))
     return res.status(400).json({ error: 'clinicId debe ser un UUID válido' });
   const scope = { scope: targeted ? 'clinic' : 'all', clinicId: targeted ? targetClinicId : null };
-  if (!hasBackupKey()) return res.status(503).json({ error: 'BACKUP_ENCRYPTION_KEY no configurada' });
+  const encryptionReady = hasBackupKey();
   const clinicResult = await withinBudget(() => targeted
-    ? pool.query(`SELECT c.id FROM clinics c WHERE c.id=$1 AND NOT EXISTS
-        (SELECT 1 FROM clinic_settings cs WHERE cs.clinic_id=c.id AND cs.general ? '_purge')`, [targetClinicId])
-    : pool.query(`SELECT c.id FROM clinics c WHERE NOT EXISTS
+    ? pool.query(`SELECT c.id,${SUBSCRIPTION_FIELDS} FROM clinics c LEFT JOIN clinic_settings cs ON cs.clinic_id=c.id WHERE c.id=$1`, [targetClinicId])
+    : pool.query(`SELECT c.id,${SUBSCRIPTION_FIELDS} FROM clinics c LEFT JOIN clinic_settings cs ON cs.clinic_id=c.id WHERE NOT EXISTS
         (SELECT 1 FROM clinic_settings cs WHERE cs.clinic_id=c.id AND cs.general ? '_purge') ORDER BY c.id`));
   if (clinicResult === CRON_BUDGET_EXCEEDED)
     return res.status(503).json({ error: 'Presupuesto agotado al listar clínicas; ninguna fue iniciada',
@@ -679,6 +667,30 @@ export async function runCron(req, res, pool, {
   const failed = [];
   const uncertain = [];
   const unprocessed = [];
+  const skipped = [];
+  const maintenance = {
+    photos: targeted ? 'not_requested' : 'skipped',
+    whatsapp: targeted ? 'not_requested' : 'skipped',
+  };
+  let photosPurged = null, whatsappPurged = null;
+  // Purge owns the first bounded slice. A busy snapshot fleet must not postpone
+  // every closed clinic indefinitely. No subsequent work after uncertain I/O.
+  if (!targeted || clinics.some(clinic => subscriptionLifecycle(clinic, now()).state === 'CLOSED')) {
+    const purgeBudget = Math.min(remaining(), 15000);
+    try {
+      photosPurged = await withinBudget(() => purgePhotos(pool, deleteR2Object, purgeBudget,
+        { clinicId: targetClinicId, now }), purgeBudget);
+      maintenance.photos = photosPurged === CRON_BUDGET_EXCEEDED ? 'uncertain'
+        : photosPurged?.complete === false ? 'partial' : 'complete';
+      if (maintenance.photos === 'uncertain')
+        return res.status(207).json({ ...scope, ok, failed, uncertain, unprocessed: clinics.map(c => c.id), skipped,
+          complete: false, needsRetry: true, retryScheduled: false, photosPurged: null, whatsappPurged, maintenance,
+          elapsedMs: now() - started, budgetMs, encryption_ready: encryptionReady });
+    } catch (err) {
+      maintenance.photos = 'failed';
+      console.error('[backup:cron] purge failed', err?.code || err?.name);
+    }
+  }
   let longestSnapshotMs = 0;
   for (const [index, { id }] of clinics.entries()) {
     if (remaining() < Math.max(CRON_MIN_START_MS, longestSnapshotMs * 2)) {
@@ -687,6 +699,14 @@ export async function runCron(req, res, pool, {
     }
     const snapshotStarted = now();
     try {
+      const lifecycle = await withinBudget(() => syncLifecycle(pool, clinics[index], now()));
+      if (lifecycle === CRON_BUDGET_EXCEEDED) {
+        uncertain.push(id);
+        unprocessed.push(...clinics.slice(index + 1).map(clinic => clinic.id));
+        break;
+      }
+      if (!lifecycle.can_auto_backup) { skipped.push(id); continue; }
+      if (!encryptionReady) { failed.push(id); continue; }
       const result = await withinBudget(signal => snapshot(pool, id, 'auto', 'cron', { signal }));
       if (result === CRON_BUDGET_EXCEEDED) {
         uncertain.push(id);
@@ -705,30 +725,24 @@ export async function runCron(req, res, pool, {
     await withinBudget(() => sendDeveloperAlert('Respaldo automático con fallos', { Correctos: ok, Fallidos: failed.length, 'Clínicas': failed.join(', ') }))
       .catch(err => console.error('[backup:cron] alert error', err?.name || 'Error'));
   }
-  const maintenance = {
-    photos: targeted ? 'not_requested' : 'skipped',
-    whatsapp: targeted ? 'not_requested' : 'skipped',
-  };
-  let photosPurged = null, whatsappPurged = null;
-  for (const [name, operation] of [['photos', purgePhotos], ['whatsapp', purgeWhatsApp]]) {
-    if (targeted) break;
+  for (const [name, operation] of [['whatsapp', purgeWhatsApp]]) {
+    if (targeted || uncertain.length) break;
     if (remaining() < CRON_MIN_START_MS) break;
     try {
       const result = await withinBudget(() => operation(pool));
       if (result === CRON_BUDGET_EXCEEDED) { maintenance[name] = 'uncertain'; break; }
-      maintenance[name] = 'complete';
-      if (name === 'photos') photosPurged = result;
-      else whatsappPurged = result;
+      maintenance[name] = result?.complete === false ? 'partial' : 'complete';
+      whatsappPurged = result;
     } catch (err) {
       maintenance[name] = 'failed';
       console.error('[backup:cron] maintenance failed', name, err?.code || err?.name);
     }
   }
-  const maintenanceComplete = targeted || Object.values(maintenance).every(status => status === 'complete');
+  const maintenanceComplete = Object.values(maintenance).every(status => ['complete','not_requested'].includes(status));
   return res.status(complete && maintenanceComplete ? 200 : 207).json({
-    ...scope, ok, failed, uncertain, unprocessed, complete, needsRetry: !complete || !maintenanceComplete,
+    ...scope, ok, failed, uncertain, unprocessed, skipped, complete: complete && maintenanceComplete, needsRetry: !complete || !maintenanceComplete,
     retryScheduled: false, photosPurged, whatsappPurged, maintenance,
-    elapsedMs: now() - started, budgetMs,
+    elapsedMs: now() - started, budgetMs, encryption_ready: encryptionReady,
   });
 }
 
@@ -822,6 +836,8 @@ export default async function handler(req, res) {
 
   const auth = await authenticateRequest(req);
   if (!auth.valid) return res.status(401).json({ error: 'No autenticado' });
+  if (!subscriptionRequestAllowed(auth.subscription_lifecycle, auth.role === 'master_admin' ? 'clinic_admin' : auth.role, req))
+    return res.status(403).json({ error: 'Esta acción no está disponible durante recuperación.', subscription_lifecycle: auth.subscription_lifecycle });
   const isMaster = auth.role === 'master_admin';
   if (!isMaster && auth.role !== 'clinic_admin')
     return res.status(403).json({ error: 'Solo el administrador de la clínica puede gestionar respaldos' });
@@ -842,7 +858,9 @@ export default async function handler(req, res) {
       await lockClinicWriters(writerClient, [clinicId], { session: true });
       writerLocked = true;
       await writerClient.query('SET statement_timeout = 0');
-      await requireClinicWritable(writerClient, clinicId, { allowInactive: true });
+      await requireClinicWritable(writerClient, clinicId, {
+        allowInactive: true, subscriptionAccess: ['stats','csv','template','templateInfo','consentPatients','consentsHtml','snapshots','export'].includes(action) ? 'recovery' : 'operate',
+      });
     }
     if (action === 'stats' && req.method === 'GET') {
       const existing = new Set((await pool.query("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")).rows.map(r => r.table_name));

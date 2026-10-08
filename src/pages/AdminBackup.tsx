@@ -6,6 +6,7 @@ import {
 import AdminLayout from '../components/layout/AdminLayout';
 import { useAuth } from '../hooks/useAuth';
 import AnnualPhotoBackupPanel from '../components/admin/AnnualPhotoBackupPanel';
+import { subscriptionAccess } from '../utils/subscriptionAccess';
 import { Dialog } from '../components/ui/Dialog';
 import recordsFetch from '../utils/recordsFetch';
 
@@ -171,7 +172,8 @@ function Confirm({ checked, onChange, children }: { checked: boolean; onChange: 
 
 export default function AdminBackup() {
   const { user } = useAuth();
-  const canManage = user?.role === 'clinic_admin' || user?.role === 'master_admin';
+  const access = subscriptionAccess(user);
+  const canManage = access.canAccessBackup && !access.deliveryOnly;
   const [pending, setPending] = useState<{ title: string; message: React.ReactNode; confirmLabel: string; onConfirm: () => void } | null>(null);
   const [picker, setPicker] = useState<{ patients: ConsentPatient[] | null; selected: Set<number>; search: string } | null>(null);
   const [tab, setTab] = useState<'export' | 'import' | 'cloud'>('export');
@@ -201,6 +203,13 @@ export default function AdminBackup() {
 
   const run = async (label: string, fn: () => Promise<void>) => {
     if (!canManage) return;
+    if ((['preview', 'upload', 'restore'].includes(label) && !access.canRestore) ||
+        (['csv-parse', 'patients'].includes(label) && !access.canImport) ||
+        ((['export', 'consents'].includes(label) || label.startsWith('dl-') || (label.startsWith('csv-') && label !== 'csv-parse')) && !access.canExport) ||
+        (label === 'snapshot' && !access.canManualSnapshot)) {
+      setError('La suscripción solo permite consultar y descargar respaldos existentes.');
+      return;
+    }
     setBusy(label); setError(null); setNotice(null);
     try { await fn(); } catch (e) { setError(e instanceof Error ? e.message : 'Ocurrió un error'); } finally { setBusy(null); }
   };
@@ -245,8 +254,9 @@ export default function AdminBackup() {
   const autoStale = !!lastAuto && Date.now() - Date.parse(lastAuto.created_at) > 48 * 60 * 60 * 1000;
   const encryptionReady = !loadingStats && !statsError && stats?.encryption_ready === true;
   const manualBackup = stats?.manual_backup;
-  const manualReady = encryptionReady && stats?.manual_backup?.available === true;
-  const manualStatus = loadingStats || statsError || !stats ? 'No se pudo verificar el cifrado y el cupo manual. Actualiza para reintentar.'
+  const manualReady = access.canManualSnapshot && encryptionReady && stats?.manual_backup?.available === true;
+  const manualStatus = !access.canManualSnapshot ? 'La suscripción no permite crear copias manuales; solo descargar las existentes.'
+    : loadingStats || statsError || !stats ? 'No se pudo verificar el cifrado y el cupo manual. Actualiza para reintentar.'
     : !encryptionReady ? 'El cifrado de respaldos no está verificado; no se puede crear una copia manual.'
     : !manualBackup ? 'No se pudo verificar el cupo manual. Actualiza para reintentar.'
     : manualBackup.state === 'PROCESSING' ? 'Hay una copia manual en curso. Actualiza cuando termine.'
@@ -424,8 +434,8 @@ export default function AdminBackup() {
 
         <div className="flex gap-1 bg-gray-100 rounded-xl p-1 mb-6">
           {([['export', 'Exportar', Download], ['import', 'Importar', Upload], ['cloud', 'Nube', Cloud]] as const).map(([id, label, Icon]) => (
-            <button key={id} onClick={() => setTab(id)} aria-pressed={tab === id}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all ${tab === id ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>
+            <button key={id} onClick={() => setTab(id)} aria-pressed={tab === id} disabled={id === 'import' && !access.canImport}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all disabled:cursor-not-allowed disabled:opacity-50 ${tab === id ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>
               <Icon className="w-4 h-4" />{label}
             </button>
           ))}
@@ -545,7 +555,7 @@ export default function AdminBackup() {
           </>
         )}
 
-        {tab === 'import' && (
+        {tab === 'import' && access.canImport && (
           <>
             <div className="flex gap-2 mb-4">
               {([['restore', 'Restaurar respaldo'], ['patients', 'Importar pacientes (CSV)']] as const).map(([id, label]) => (
@@ -722,7 +732,7 @@ export default function AdminBackup() {
                     <button onClick={() => ask('Descargar respaldo de la nube', <>Se descargará la copia del <strong>{fmtDate(s.created_at)}</strong> en JSON comprimido (.json.gz). {SENSITIVE}</>, 'Descargar', () => downloadSnapshot(s))} disabled={!!busy} title="Descargar" aria-label={`Descargar respaldo del ${fmtDate(s.created_at)}`} className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50">
                       {busy === `dl-${s.key}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4 text-gray-600" />}
                     </button>
-                    <button onClick={() => previewRestore({ source: 'snapshot', key: s.key, label: `Nube · ${fmtDate(s.created_at)}` })} disabled={!!busy}
+                    <button onClick={() => previewRestore({ source: 'snapshot', key: s.key, label: `Nube · ${fmtDate(s.created_at)}` })} disabled={!!busy || !access.canRestore}
                       className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50">Restaurar…</button>
                   </div>
                 ))}

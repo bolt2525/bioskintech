@@ -5,6 +5,9 @@ import { sql } from '@vercel/postgres';
 import { buildAppointmentSystemNote, resolvePatientReminderContactPhone, sendWhatsAppText, sendWhatsAppTemplate } from '../lib/whatsapp-service.js';
 import { buildFinanceCsv } from '../lib/finance-csv.js';
 import { requireAuth, requireRole } from '../lib/admin-auth.js';
+import { getPool } from '../lib/neon-clinical-db.js';
+import { loadSubscriptionLifecycle } from '../lib/subscription-lifecycle.js';
+import { lockClinicWriters, unlockClinicWriters } from '../lib/clinic-lifecycle.js';
 import {
   listWhatsAppContacts,
   listWhatsAppMessages,
@@ -261,6 +264,7 @@ async function handlePatientAppointmentReply({ from, text, buttonPayload }) {
     : null;
   const appointment = await getPendingAppointmentReplyContext(from, eventId);
   if (!appointment) return false;
+  if (!(await loadSubscriptionLifecycle(getPool(), appointment.clinic_id)).canoperate) return true;
 
   if (!eventId && appointment.appointment_reply_status === 'confirmed' && !isExplicitAppointmentChangeRequest(text, buttonPayload)) {
     return true;
@@ -282,7 +286,7 @@ async function handlePatientAppointmentReply({ from, text, buttonPayload }) {
       patientPhone: from,
     });
     const contactLink = contactPhone
-      ? await createShortWaLink(contactPhone, `Hola, necesito comunicarme sobre mi cita del ${new Date(appointment.appointment_start).toLocaleString('es-EC', { timeZone: 'America/Guayaquil', dateStyle: 'short', timeStyle: 'short' })}.`)
+      ? await createShortWaLink(contactPhone, `Hola, necesito comunicarme sobre mi cita del ${new Date(appointment.appointment_start).toLocaleString('es-EC', { timeZone: 'America/Guayaquil', dateStyle: 'short', timeStyle: 'short' })}.`, appointment.clinic_id)
       : '';
     await sendWhatsAppText(from, buildClinicContactMessage({ ...appointment, contactLink }), { clinicId: appointment.clinic_id });
   }
@@ -368,6 +372,7 @@ async function sendPatientAppointmentReminders(dayOffset = 1, startIndex = 0, de
     if (Date.now() > deadline) return { patientsChecked: users.rows.length, sent, errors, nextIndex: index };
     const row = users.rows[index];
     try {
+      if (!(await loadSubscriptionLifecycle(getPool(), row.clinic_id)).canoperate) continue;
       const auth = await getUserOAuth2Client(row.user_id);
       if (!auth) continue;
       const calendar = google.calendar({ version: 'v3', auth });
@@ -399,7 +404,7 @@ async function sendPatientAppointmentReminders(dayOffset = 1, startIndex = 0, de
           patientPhone: parsed.phone,
         });
         const contactLink = contactPhone
-          ? await createShortWaLink(contactPhone, `Hola, necesito comunicarme sobre mi cita del ${dateLabel}.`)
+          ? await createShortWaLink(contactPhone, `Hola, necesito comunicarme sobre mi cita del ${dateLabel}.`, row.clinic_id)
           : 'los canales habituales de la clínica';
         const patientMessage = buildPatientReminderMessage({
           patientName: parsed.patientName,
@@ -618,6 +623,7 @@ export function buildDailySummaryMessage({ greeting, header, lines, footer, more
 }
 
 async function listAppointmentsForDate(userId, isoDate, label) {
+  const owner = (await sql`SELECT clinic_id FROM clinic_users WHERE id=${userId}`).rows[0];
   const { error, appointments } = await getAppointmentsForDate(userId, isoDate);
   if (error) return error;
   const dateLabel = new Date(`${isoDate}T00:00:00-05:00`).toLocaleDateString('es-ES', { timeZone: 'America/Guayaquil', day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -626,7 +632,7 @@ async function listAppointmentsForDate(userId, isoDate, label) {
   // insertaba filas en `wa_short_links` que nadie llegaba a abrir.
   const lines = await Promise.all(appointments.map(async (a, i) => {
     const link = a.phone
-      ? await createShortWaLink(a.phone, `Hola ${a.patientName}, te escribimos para confirmar/actualizar tu cita del ${dateLabel}${a.hora ? ` a las ${a.hora}` : ''}. Por favor responde a este mensaje si tienes alguna consulta.`)
+      ? await createShortWaLink(a.phone, `Hola ${a.patientName}, te escribimos para confirmar/actualizar tu cita del ${dateLabel}${a.hora ? ` a las ${a.hora}` : ''}. Por favor responde a este mensaje si tienes alguna consulta.`, owner?.clinic_id)
       : '';
     return `${i + 1}. ${a.hora || 'Hora pendiente'} — ${a.patientName}${a.resource ? ` (${a.resource})` : ''}${link ? `\n   Enviar recordatorio: ${link}` : ''}`;
   }));
@@ -826,7 +832,7 @@ async function notifyPatientOfAppointment(clinicUser, { kind, patientName, phone
       });
       lines.push('📱 WhatsApp enviado al paciente automáticamente.');
     } else {
-      lines.push(`📱 Avísale tú (fuera de la ventana de 24h): ${await createShortWaLink(phone, patientText)}`);
+      lines.push(`📱 Avísale tú (fuera de la ventana de 24h): ${await createShortWaLink(phone, patientText, clinicUser.clinic_id)}`);
     }
   } catch (err) {
     lines.push(`⚠️ No se pudo avisar por WhatsApp: ${err.message}`);
@@ -1104,9 +1110,10 @@ async function notifyBookingUserOfDeliveryStatus({ bookedByUserId, contactId, st
   if (!bookedByUserId || !shouldNotifyBookingUserOfDeliveryStatus(status)) return;
   try {
     const [staffRes, contact] = await Promise.all([
-      sql`SELECT phone, whatsapp_staff_phone FROM clinic_users WHERE id = ${bookedByUserId} AND is_active = true AND whatsapp_bot_enabled = true`,
+      sql`SELECT clinic_id,phone, whatsapp_staff_phone FROM clinic_users WHERE id = ${bookedByUserId} AND is_active = true AND whatsapp_bot_enabled = true`,
       getContactById(contactId),
     ]);
+    if (!staffRes.rows[0]?.clinic_id || !(await loadSubscriptionLifecycle(getPool(), staffRes.rows[0].clinic_id)).canoperate) return;
     const staffPhone = normalizeEcuadorPhone(staffRes.rows[0]?.whatsapp_staff_phone || staffRes.rows[0]?.phone || '');
     if (!staffPhone || !(await isWithinCustomerServiceWindow(staffPhone))) return;
     const patientLabel = patientName || contact?.name || contact?.phone || 'el paciente';
@@ -1122,24 +1129,71 @@ async function notifyBookingUserOfDeliveryStatus({ bookedByUserId, contactId, st
 }
 
 /** Procesa mensajes entrantes: solo responde a números registrados como staff activo (clinic_users.phone). */
+export async function processWhatsAppDeliveryStatus(event, {
+  pool = getPool(), update = updateWhatsAppMessageStatus, claim = claimMessageStatusNotification,
+  notify = notifyBookingUserOfDeliveryStatus, load = loadSubscriptionLifecycle,
+} = {}) {
+  const db = await pool.connect();
+  let lockedClinic = null;
+  try {
+    await db.query('BEGIN');
+    await db.query("SET LOCAL statement_timeout = '10s'");
+    const lookup = async (locked = false) => (await db.query(`SELECT c.clinic_id AS contact_clinic_id,u.clinic_id AS owner_clinic_id,
+      m.booked_by_user_id FROM whatsapp_messages m JOIN whatsapp_contacts c ON c.id=m.contact_id
+      LEFT JOIN clinic_users u ON u.id=m.booked_by_user_id WHERE m.provider_message_id=$1${locked ? ' FOR UPDATE OF m,c' : ''}`, [event.providerMessageId])).rows[0];
+    const target = await lookup();
+    if (!target?.contact_clinic_id || (target.booked_by_user_id != null && target.owner_clinic_id !== target.contact_clinic_id)) {
+      await db.query('ROLLBACK');
+      return { blocked: true };
+    }
+    await lockClinicWriters(db, [target.contact_clinic_id], { session: true });
+    lockedClinic = target.contact_clinic_id;
+    const current = await lookup(true);
+    if (!current || current.contact_clinic_id !== target.contact_clinic_id ||
+        (current.booked_by_user_id != null && current.owner_clinic_id !== target.contact_clinic_id) ||
+        !(await load(db, target.contact_clinic_id)).canoperate) {
+      await db.query('ROLLBACK');
+      return { blocked: true };
+    }
+    const updated = await update(event.providerMessageId, event.status, event.errorDetail, db);
+    const notifyClaimed = updated && !updated.read_notified &&
+      shouldNotifyBookingUserOfDeliveryStatus(updated.status) && await claim(updated.id, db);
+    await db.query('COMMIT');
+    // Release row locks before outbound CRM writes, but retain the common
+    // session lifecycle lock until notification and a fresh date check finish.
+    if (notifyClaimed && (await load(db, target.contact_clinic_id)).canoperate)
+      await notify({ bookedByUserId: updated.booked_by_user_id, contactId: updated.contact_id, status: updated.status,
+        patientName: updated.appointment_patient_name, appointmentStart: updated.appointment_start });
+    return { blocked: false };
+  } catch (error) {
+    await db.query('ROLLBACK');
+    throw error;
+  } finally {
+    try { if (lockedClinic) await unlockClinicWriters(db, [lockedClinic]); }
+    catch (error) { db.release(error); throw error; }
+    db.release();
+  }
+}
+
 async function handleIncomingMessages(body) {
   for (const event of extractMessageStatuses(body)) {
-    const updated = await updateWhatsAppMessageStatus(event.providerMessageId, event.status, event.errorDetail);
-    if (!updated || updated.read_notified) continue;
-    if (!shouldNotifyBookingUserOfDeliveryStatus(updated.status)) continue;
-    // Reservar ANTES de enviar: Meta reintenta el webhook y dos invocaciones en paralelo avisaban dos veces.
-    if (!(await claimMessageStatusNotification(updated.id))) continue;
-    await notifyBookingUserOfDeliveryStatus({
-      bookedByUserId: updated.booked_by_user_id,
-      contactId: updated.contact_id,
-      status: updated.status,
-      patientName: updated.appointment_patient_name,
-      appointmentStart: updated.appointment_start,
-    });
+    await processWhatsAppDeliveryStatus(event);
   }
 
   for (const { from, text, buttonPayload, mediaType, providerMessageId, timestamp, name } of extractIncomingMessages(body)) {
     if (!from) continue;
+    if (!getSystemStaffPhones().has(from)) {
+      const domestic = from.startsWith('593') ? `0${from.slice(3)}` : from;
+      const tenants = await sql`SELECT clinic_id FROM whatsapp_contacts WHERE phone=${from} AND clinic_id IS NOT NULL
+        UNION SELECT clinic_id FROM clinic_users WHERE clinic_id IS NOT NULL AND
+          (regexp_replace(coalesce(phone,''),'[^0-9]','','g') IN (${from},${domestic})
+           OR regexp_replace(coalesce(whatsapp_staff_phone,''),'[^0-9]','','g') IN (${from},${domestic}))`;
+      let blocked = false;
+      for (const tenant of tenants.rows) {
+        if (!(await loadSubscriptionLifecycle(getPool(), tenant.clinic_id)).canoperate) { blocked = true; break; }
+      }
+      if (blocked) continue;
+    }
     const audit = await recordWhatsAppMessage({
       phone: from,
       name,
@@ -1189,7 +1243,8 @@ async function handleIncomingMessages(body) {
     const matches = staff.rows.filter(row => normalizeEcuadorPhone(row.whatsapp_staff_phone || row.phone) === from);
     if (matches.length !== 1) {
       const notification = await getRecentAppointmentNotificationContext(from).catch(() => null);
-      if (notification && !(await hasRecentAppointmentSystemReply(from).catch(() => true))) {
+      if (notification && (await loadSubscriptionLifecycle(getPool(), notification.clinic_id)).canoperate &&
+          !(await hasRecentAppointmentSystemReply(from).catch(() => true))) {
         const systemNote = buildAppointmentSystemNote({
           clinicName: notification.clinic_name,
           clinicPhone: notification.clinic_phone,
@@ -1202,6 +1257,7 @@ async function handleIncomingMessages(body) {
       continue; // desconocido, ambiguo o bot no habilitado: no se revela información
     }
     const clinicUser = matches[0];
+    if (!(await loadSubscriptionLifecycle(getPool(), clinicUser.clinic_id)).canoperate) continue;
     const botState = await getBotState(from); // { flow, stage, ...datos } | null — persistente entre invocaciones serverless
     const financeChoice = resolveFinancePeriodChoice(normalizedText);
     const isAllowedAction = ALLOWED_BOT_ACTIONS.has(normalizedText) || ALLOWED_BOT_ACTIONS.has(text?.trim() || '');
@@ -1544,6 +1600,7 @@ async function sendAppointmentSummaries(dayOffset = 0, slot = 'morning', startIn
     if (isSystemStaffPhone(row.staff_phone)) continue;
     const clinicName = row.general?.name || 'la clínica';
     try {
+      if (!(await loadSubscriptionLifecycle(getPool(), row.clinic_id)).canoperate) continue;
       const auth = await getUserOAuth2Client(row.user_id);
       if (!auth) continue;
       const calendar = google.calendar({ version: 'v3', auth });
@@ -1566,7 +1623,7 @@ async function sendAppointmentSummaries(dayOffset = 0, slot = 'morning', startIn
           'Por favor confirma tu asistencia respondiendo a este mensaje o comunícate con la clínica.';
         // Enlace abre WhatsApp del staff con el chat del PACIENTE, no del número de la clínica
         const patientPhone = normalizeEcuadorPhone(appointment.phone);
-        const link = patientPhone && patientPhone !== staffPhone ? await createShortWaLink(patientPhone, patientMessage) : '';
+        const link = patientPhone && patientPhone !== staffPhone ? await createShortWaLink(patientPhone, patientMessage, row.clinic_id) : '';
         appointments.push({ ...appointment, patientName, eventId: event.id, hora, link });
       }
       if (!appointments.length) continue;

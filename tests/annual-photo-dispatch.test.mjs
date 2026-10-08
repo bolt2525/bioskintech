@@ -20,7 +20,17 @@ let clinicActive = true;
 let clinicPurging = false;
 const tenantCalls = [];
 const client = {
-  query: async (sql, params = []) => sql.includes("SELECT c.is_active,cs.general ? '_purge'")
+  query: async (sql, params = []) => sql.includes('AS annual_schema_ready')
+    ? { rows: [{ annual_schema_ready: true }] }
+    : sql.includes('AS entitled')
+    ? { rows: [{ id: REQUEST, clinic_id: CLINIC, entitled: true, entitlement_kind: 'FREE' }] }
+    : sql.includes('AS paid_subscription')
+    ? { rows: [{ is_active: clinicActive, purging: clinicPurging,
+      general: clinicPurging ? { _purge: {} } : {}, subscription_expires_at: new Date(Date.now()+86400000).toISOString() }] }
+    : sql.includes('AS request_deadline_at')
+    ? { rows: [{ id: REQUEST, starts_at: new Date(Date.now()-364*86400000).toISOString(),
+      ends_at: new Date(Date.now()+86400000).toISOString(), request_deadline_at: new Date(Date.now()+86400000).toISOString() }] }
+    : sql.includes("SELECT c.is_active,cs.general ? '_purge'")
     ? { rows: [{ is_active: clinicActive, purging: clinicPurging }] }
     : (/^(BEGIN|COMMIT|ROLLBACK|SET LOCAL)/.test(sql.trim()) ? { rows: [] } : handleQuery(sql, params)),
   release() {},

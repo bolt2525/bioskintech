@@ -15,8 +15,9 @@
  *  4. `hasFeature(f)` devuelve true si el master_admin o si la clínica tiene `f` habilitado.
  */
 
-import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useRef, ReactNode } from 'react';
 import type { AuthUser } from '../types';
+import { sessionUser, subscriptionAccess } from '../utils/subscriptionAccess';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tipos del contexto
@@ -24,6 +25,7 @@ import type { AuthUser } from '../types';
 
 interface AuthContextType {
   isAuthenticated: boolean;
+  isAuthVerified: boolean;
   username: string | null;
   user: AuthUser | null;
   features: string[];
@@ -70,9 +72,10 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  // Hydratar estado inmediatamente desde sessionStorage para evitar flash de "Clínica"
-  // checkAuth() sigue validando contra el servidor en background
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => !!sessionStorage.getItem(SS_TOKEN));
+  // Hidratar solo datos de presentación: ningún módulo se monta antes de verify.
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthVerified, setIsAuthVerified] = useState(false);
+  const verification = useRef<{ token: string | null; promise: Promise<boolean> } | null>(null);
   const [user, setUser] = useState<AuthUser | null>(() => {
     try {
       const stored = sessionStorage.getItem(SS_USER);
@@ -95,6 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [userModuleOverrides, setUserModuleOverrides] = useState<Array<{ feature: string; enabled: boolean }>>([]);
 
   const applySession = (u: AuthUser, feat: string[], overrides: Array<{ feature: string; enabled: boolean }> = []): void => {
+    setIsAuthVerified(true);
     setIsAuthenticated(true);
     setUser(u);
     setFeatures(feat);
@@ -102,6 +106,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const resetSession = (): void => {
+    setIsAuthVerified(true);
     setIsAuthenticated(false);
     setUser(null);
     setFeatures([]);
@@ -112,37 +117,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * Verifica si el token almacenado sigue siendo válido en el servidor.
    * Se llama automáticamente en el montaje del provider y desde páginas protegidas.
    */
-  const checkAuth = useCallback(async (): Promise<boolean> => {
-    try {
-      const token = sessionStorage.getItem(SS_TOKEN);
-      if (!token) { resetSession(); return false; }
+  const checkAuth = useCallback((): Promise<boolean> => {
+    const token = sessionStorage.getItem(SS_TOKEN);
+    if (verification.current?.token === token) return verification.current.promise;
+    const request = (async () => {
+      try {
+        if (!token) { resetSession(); return false; }
 
-      const res  = await fetch('/api/admin-auth?action=verify', {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      const data = await res.json();
+        const res = await fetch('/api/admin-auth?action=verify', {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        const data = await res.json();
+        // Un verify tardío no puede resucitar una sesión cerrada o reemplazada.
+        if (sessionStorage.getItem(SS_TOKEN) !== token) return false;
 
-      if (data.success && data.valid && data.user) {
-        // persistAuth keeps sessionStorage in sync with fresh DB data from verifySession
-        persistAuth(token, data.user, data.expiresAt || sessionStorage.getItem(SS_EXPIRY) || '', data.features || []);
-        applySession(data.user, data.features || [], data.user_module_overrides || []);
-        if (data.subscriptionWarningDays !== undefined) {
-          setUser(prev => prev ? { ...prev, subscriptionWarningDays: data.subscriptionWarningDays } : null);
+        if (res.ok && data.success && data.valid && data.user) {
+          const freshUser = sessionUser(data);
+          persistAuth(token, freshUser, data.expiresAt || sessionStorage.getItem(SS_EXPIRY) || '', data.features || []);
+          applySession(freshUser, data.features || [], data.user_module_overrides || []);
+          return true;
         }
-        return true;
+        clearAuth();
+        resetSession();
+        return false;
+      } catch {
+        if (sessionStorage.getItem(SS_TOKEN) === token) resetSession();
+        return false;
       }
-      clearAuth();
-      resetSession();
-      return false;
-    } catch {
-      resetSession();
-      return false;
-    }
+    })();
+    verification.current = { token, promise: request };
+    void request.finally(() => { if (verification.current?.promise === request) verification.current = null; });
+    return request;
   }, []);
+
+  useEffect(() => {
+    void checkAuth();
+    const refresh = () => { if (sessionStorage.getItem(SS_TOKEN)) void checkAuth(); };
+    window.addEventListener('focus', refresh);
+    const timer = window.setInterval(refresh, 60_000);
+    return () => { window.removeEventListener('focus', refresh); window.clearInterval(timer); };
+  }, [checkAuth]);
 
   /**
    * Realiza el login contra `/api/admin-auth?action=login`.
-   * Persiste la sesión en localStorage si es exitoso.
+   * Persiste la sesión verificada en sessionStorage si es exitoso.
    */
   const login = async (
     username: string,
@@ -157,9 +175,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = await res.json();
 
       if (data.success && data.user) {
-        persistAuth(data.sessionToken, data.user, data.expiresAt, data.features || []);
-        applySession(data.user, data.features || [], data.user_module_overrides || []);
-        return { ok: true, user: data.user };
+        const freshUser = sessionUser(data);
+        persistAuth(data.sessionToken, freshUser, data.expiresAt, data.features || []);
+        applySession(freshUser, data.features || [], data.user_module_overrides || []);
+        return { ok: true, user: freshUser };
       }
       // 2FA required — return structured data for the caller to handle OTP modal
       if (data.requiresOTP) {
@@ -192,6 +211,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * Finalmente se aplica el override a nivel usuario (si existe).
    */
   const hasFeature = (feature: string): boolean => {
+    if (!isAuthVerified) return false;
+    const access = subscriptionAccess(user);
+    if (!access.canOperate) return feature === 'backup' && access.canAccessBackup;
     if (user?.role === 'master_admin') return true;
     if (!features.includes(feature)) return false; // deshabilitado en clínica
     const override = userModuleOverrides.find(o => o.feature === feature);
@@ -201,6 +223,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return (
     <AuthContext.Provider value={{
       isAuthenticated,
+      isAuthVerified,
       username: user?.username ?? null,
       user,
       features,

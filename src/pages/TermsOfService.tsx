@@ -3,6 +3,22 @@ import { LegalShell, LegalSection as Section, Note, Mail, ContactChannels } from
 
 const ul = 'list-disc list-inside space-y-1.5 pl-1';
 
+export const PAID_PHOTO_BACKUP_POLICY_VERSION = 'paid-grace15-recovery30-v1';
+
+export function PaidPhotoBackupPolicyBody() {
+  return (
+    <div className="space-y-3">
+      <p><strong>Aplicación y vencimiento.</strong> Este régimen solo se incorpora a un contrato nuevo o a una adenda que identifique y acepte expresamente la versión {PAID_PHOTO_BACKUP_POLICY_VERSION}. No modifica contratos ya aceptados ni la versión general 2026-10-07-r2. Para un contrato que lo incorpore, T es la fecha de vencimiento registrada de la suscripción.</p>
+      <p>Desde T y durante 15 días naturales, continúan disponibles normalmente todos los módulos contratados. Desde T+15 y hasta T+45, si no se renueva, la cuenta pasa a recuperación: solo el administrador de clínica autenticado puede exportar o descargar datos existentes y solicitar la entrega fotográfica gratuita que todavía le corresponda o una entrega adicional. No se habilitan uso clínico ordinario, importaciones, restauraciones ni snapshots manuales.</p>
+      <p>En T+45 comienza la eliminación automática por lotes de los datos clínicos activos en Neon y de los objetos correspondientes en R2, incluidos los respaldos, una vez que puedan eliminarse. La eliminación es asíncrona y no se declara completada de inmediato. Se detienen las nuevas copias automáticas en T+15, por lo que el bloqueo de 30 días de las copias programadas ya creadas vence como máximo en T+45; una ejecución que ya estuviera en curso puede terminar después y se procesa bajo las mismas reglas. Pueden persistir temporalmente puntos de recuperación de Neon hasta 6 horas y copias R2 hasta su vencimiento máximo de 35 días desde la creación. Se conservan únicamente los comprobantes administrativos mínimos exigidos o permitidos legalmente, sin contenido clínico.</p>
+      <p><strong>Solicitud que permite preparar una entrega.</strong> Antes de T+45, el Cliente puede solicitar la entrega anual gratuita solo si su cuota del período contractual registrado de 12 meses está vigente y no se ha usado. La cuota no se acumula ni se duplica por renovar. Una entrega adicional requiere aceptación previa del Proveedor y pago confirmado, incluido el comprobante que el Proveedor valide, antes de T+45. Una cotización pendiente, negociación o solicitud sin pago no extiende la conservación. Una solicitud válida y oportuna se prepara para quedar disponible en un máximo de 24 horas; al quedar lista, se notifica y se inicia la purga de los datos fuente. La ventana de descarga se informa en el aviso. El Cliente recibe una estimación de preparación; no se garantiza disponibilidad instantánea.</p>
+      <p><strong>Precios finales de entregas adicionales.</strong> El volumen se calcula sobre los archivos fotográficos originales, con GB decimal (1 GB = 1.000.000.000 bytes): hasta 5 GB, USD 10; más de 5 y hasta 20 GB, USD 20; más de 20 y hasta 50 GB, USD 35. Todos los importes incluyen IVA. Más de 50 GB requiere cotización manual, aceptación del Proveedor y pago confirmado antes de T+45. No se cobran correcciones o reintentos por fallos imputables al Proveedor. Estos precios no condicionan derechos legales de acceso o portabilidad.</p>
+      <p><strong>Notificaciones y descarga directa.</strong> BIOSKINTECH notifica el vencimiento, la recuperación y el estado de solicitudes mediante el correo oficial central y el panel, con reintentos persistentes de notificación y asistencia por los canales oficiales si un medio falla. Los avisos muestran una estimación y no prometen entrega instantánea. La descarga directa ya disponible de fotografías seleccionadas, individualmente o en ZIP de hasta 15 fotos y 100 MiB, puede repetirse sin límite diario y no consume la cuota anual ni equivale a la compilación anual completa; no supone que los archivos sigan disponibles después de su eliminación.</p>
+      <p>El respaldo automático diario contiene datos estructurados y referencias fotográficas; no es una compilación automática diaria de los originales. La entrega anual bajo solicitud es un servicio distinto. La exportación JSON disponible está sujeta a límites técnicos actuales de 50 MiB comprimidos y 200 MiB expandidos; la importación CSV corresponde únicamente a pacientes, hasta 5 MiB y 5.000 registros, y no restaura datos financieros. Estos límites no restringen derechos legales de portabilidad ni describen futuras funciones de exportación por lotes.</p>
+    </div>
+  );
+}
+
 export default function TermsOfService({ embedded = false }: { embedded?: boolean }) {
   return (
     <LegalShell
@@ -233,6 +249,21 @@ export default function TermsOfService({ embedded = false }: { embedded?: boolea
         <p>Estas Condiciones se rigen por las leyes de la <strong>República del Ecuador</strong>. Las partes intentarán resolver cualquier controversia de forma directa durante 30 días desde su notificación escrita; de no lograrlo, se someten a los <strong>jueces competentes de la ciudad de Cuenca, Ecuador</strong>.</p>
         <Note>Consultas y reclamos: ver canales oficiales del Art. 19.</Note>
       </Section>
+      {!embedded && (
+        <aside aria-label="Información operativa actual sobre descargas" className="rounded-2xl border border-gray-200 bg-gray-50 p-5 text-sm leading-relaxed text-gray-700">
+          <h2 className="font-semibold text-gray-900">Información operativa actual: exportaciones y fotos</h2>
+          <p className="mt-2">El JSON del módulo Base de Datos tiene límites técnicos de 50 MiB comprimidos y 200 MiB expandidos; no está implementada una exportación general JSON por lotes. La importación CSV disponible solo admite pacientes, hasta 5 MiB y 5.000 registros, y no restaura datos financieros.</p>
+          <p className="mt-2">La descarga directa de fotografías seleccionadas, individualmente o en ZIP de hasta 15 fotos y 100 MiB, es independiente de la compilación anual de toda la clínica, puede repetirse sin límite diario y no consume cuota anual. Esta información describe las funciones actuales y no modifica los contratos ni la versión global 2026-10-07-r2.</p>
+        </aside>
+      )}
+      {!embedded && (
+        <section aria-labelledby="paid-photo-policy-title" className="rounded-2xl border border-blue-200 bg-blue-50 p-6 text-sm leading-relaxed text-blue-950">
+          <p className="text-xs font-bold uppercase tracking-wider text-blue-800">Anexo comercial prospectivo · {PAID_PHOTO_BACKUP_POLICY_VERSION}</p>
+          <h2 id="paid-photo-policy-title" className="mt-2 text-lg font-semibold">Vencimiento, recuperación y entregas fotográficas</h2>
+          <p className="my-3">Este anexo se publica para revisión y no se incorpora por el uso de la Plataforma, el registro ni la aceptación de las Condiciones versión 2026-10-07-r2. Solo será vinculante para un Cliente cuando se incluya con esta versión identificada en un contrato nuevo o en una adenda firmada expresamente. Los acuerdos ya vigentes conservan sus condiciones hasta que ambas partes acepten una adenda.</p>
+          <PaidPhotoBackupPolicyBody />
+        </section>
+      )}
     </LegalShell>
   );
 }

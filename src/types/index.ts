@@ -26,6 +26,30 @@ export type UserRole = 'master_admin' | 'clinic_admin' | 'clinic_user';
 /** Alcance de acceso a registros */
 export type AccessScope = 'all' | 'own';
 
+/** Contrato de login/verify; permisos de clínica, aún intersectados con el rol. */
+export interface SubscriptionLifecycle {
+  state: 'ACTIVE' | 'GRACE' | 'RECOVERY' | 'CLOSED';
+  policy: 'paid' | 'demo' | 'legacy' | 'invalid';
+  policyVersion: string | null;
+  policy_accepted: boolean;
+  enrollment_status: 'ENROLLED' | 'SCHEDULED' | 'EXCLUDED' | 'REQUIRES_CONTRACT_REVIEW';
+  opt_in: boolean;
+  effective_at: string | null;
+  expires_at: string | null;
+  grace_ends_at: string | null;
+  recovery_ends_at: string | null;
+  purge_after: string | null;
+  remainingdays: number | null;
+  auto_purge_eligible: boolean;
+  canoperate: boolean;
+  canexport: boolean;
+  canlogin: boolean;
+  can_auto_backup: boolean;
+  canimport: boolean;
+  canrestore: boolean;
+  can_manual_snapshot: boolean;
+}
+
 /** Usuario autenticado (payload del token) */
 export interface AuthUser {
   id?: number;
@@ -53,6 +77,8 @@ export interface AuthUser {
   demo_expires_at?: string | null;
   must_change_password?: boolean;
   subscriptionWarningDays?: number | null;
+  subscription_lifecycle?: SubscriptionLifecycle | null;
+  delivery_only?: boolean;
 }
 
 /** Respuesta genérica de éxito/error de la API */
@@ -74,7 +100,15 @@ export interface AnnualPhotoBackupRequest {
   id: string;
   clinic_id: string;
   clinic_name?: string;
-  status: 'PENDING' | 'APPROVED' | 'PROCESSING' | 'READY' | 'EXPIRED' | 'REJECTED' | 'CANCELLED' | 'FAILED';
+  status: 'PENDING' | 'PAYMENT_PENDING' | 'NEEDS_QUOTE' | 'APPROVED' | 'PROCESSING' | 'READY' | 'EXPIRED' | 'REJECTED' | 'CANCELLED' | 'FAILED';
+  entitlement_kind?: 'FREE' | 'PAID';
+  payment_status?: 'NOT_REQUIRED' | 'NEEDS_QUOTE' | 'PAYMENT_PENDING' | 'PAID';
+  needs_quote?: boolean;
+  original_total_bytes?: number | null;
+  quote_total_cents?: number | null;
+  quote_accepted_at?: string | null;
+  paid_at?: string | null;
+  entitlement_deadline_at?: string | null;
   created_at: string;
   expires_at?: string | null;
   photo_count?: number;
@@ -86,9 +120,12 @@ export interface AnnualPhotoBackupRequest {
 
 export interface AnnualPhotoBackupStatus {
   configured: boolean;
+  processor_ready?: boolean;
+  can_request?: boolean;
+  additional_requires_payment?: boolean;
   eligible: boolean;
   reason: string | null;
-  period: { id: string; start_date: string; end_date: string } | null;
+  period: { id: string; start_date: string; end_date: string; request_deadline_at?: string | null } | null;
   period_suggestion?: {
     starts_at: string;
     ends_at: string;
@@ -97,6 +134,35 @@ export interface AnnualPhotoBackupStatus {
     requires_master_confirmation: boolean;
   } | null;
   requests: AnnualPhotoBackupRequest[];
+}
+
+export interface AnnualPhotoBackupQuote {
+  requestId: string;
+  quote_complete: boolean;
+  original_total_bytes?: number;
+  bytes_measured?: number;
+  quote_total_cents?: number | null;
+  currency?: 'USD';
+  iva_included?: boolean;
+  gb_unit_bytes?: number;
+  needs_prior_quote?: boolean;
+}
+
+export interface AnnualPhotoBackupNotification {
+  request_id: string;
+  kind: string;
+  status: 'PENDING' | 'SENDING' | 'SENT' | 'FAILED';
+  attempts: number;
+  last_error?: string | null;
+}
+
+export interface AnnualPhotoBackupProviderStatus {
+  configured: boolean;
+  processor_ready?: boolean;
+  reason?: string | null;
+  requests: AnnualPhotoBackupRequest[];
+  pending_count?: number;
+  notifications?: AnnualPhotoBackupNotification[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -116,6 +182,7 @@ export interface Clinic {
   patient_count: number;
   subscription_expires_at?: string | null;
   subscription_days?: number;
+  subscription_lifecycle?: SubscriptionLifecycle | null;
   purge_state?: string | null;
   purge_completed_at?: string | null;
 }

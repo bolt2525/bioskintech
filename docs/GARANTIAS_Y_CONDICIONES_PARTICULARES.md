@@ -44,9 +44,17 @@ La entrega anual no consumida del período terminado puede solicitarse por los c
 
 Desactivar desde Master Admin conserva los datos; no significa eliminarlos. Antes de una purga, comprobar la entrega acordada, la instrucción autorizada y cualquier deber de conservación. El panel debe distinguir la supresión de datos activos de las copias cifradas residuales: el bloqueo de 30 días y la caducidad de 35 días se computan desde la creación de cada copia, no desde la solicitud de borrado. Esas copias quedan fuera de uso ordinario; no se utilizarán para reactivar información ya suprimida.
 
+### Política prospectiva para contratos pagados
+
+La versión independiente `paid-grace15-recovery30-v1` aplica únicamente cuando se incorpora y acepta expresamente en un contrato nuevo o en una adenda firmada. No reemplaza 2026-10-07-r2 ni fuerza aceptación a cuentas o contratos existentes. En los acuerdos que sí la incorporen, T es el vencimiento: T a T+15 mantiene acceso normal a los módulos contratados; T+15 a T+45 permite solo a `clinic_admin` exportar/descargar y solicitar una entrega elegible. No se permite uso clínico, importación, restauración ni snapshot manual. En T+45 empieza una purga automática y asíncrona por lotes de datos clínicos activos Neon y objetos R2, respaldos incluidos, después de vencer los bloqueos. Se detienen nuevas copias automáticas en T+15, por lo que el bloqueo de las copias ya creadas vence como máximo en T+45; una ejecución en curso puede concluir después y queda sujeta a su propio ciclo. Neon puede mantener recuperación hasta 6 horas y R2 tiene lock 30 días y ciclo de vida 35 días desde cada copia; solo quedan recibos mínimos no clínicos cuando la ley lo permita.
+
+La entrega gratuita exige cuota válida y sin usar del período contractual de 12 meses registrado, solicitud anterior a T+45 y no se acumula ni duplica al renovar. Una entrega adicional requiere aceptación del Proveedor y pago confirmado antes del mismo corte; negociar o tener una cotización impaga no prorroga la retención. Las solicitudes elegibles deben quedar listas en hasta 24 horas, se notifican con estimación y luego comienza la purga de datos fuente. El aviso utiliza correo oficial central y el panel con reintentos; soporte coordina una alternativa asistida cuando un canal falla, sin prometer disponibilidad instantánea.
+
+Precios adicionales finales con IVA incluido por originales en GB decimal (1 GB = 1.000.000.000 bytes): hasta 5 GB USD 10; más de 5 y hasta 20 GB USD 20; más de 20 y hasta 50 GB USD 35; más de 50 GB requiere cotización manual, aceptación y pago previo. Los reintentos por fallo del Proveedor son gratuitos y los derechos legales no dependen de contratar el servicio. La descarga directa individual o ZIP de hasta 15 fotos/100 MiB es aparte, repetible sin límite diario y no consume la cuota anual.
+
 ## Condiciones generales frente a excepciones
 
-Generales: retención de 30 días, garantías de proveedores, incidentes 24 horas naturales, IA con autorización expresa, soporte por prioridad, devolución proporcional en los supuestos descritos, activación y propuesta de capacitación, entrega anual por clínica y límite ordinario con excepciones legales. No dependen de marcar un anexo.
+Generales de la versión publicada: retención de 30 días, garantías de proveedores, incidentes 24 horas naturales, IA con autorización expresa, soporte por prioridad, devolución proporcional en los supuestos descritos, activación y propuesta de capacitación, entrega anual por clínica y límite ordinario con excepciones legales. La política prospectiva de vencimiento no es parte de esa versión.
 
 Particulares: identidad y establecimiento, módulos efectivamente contratados, chatbot incluido o excluido, oferta comercial, fechas y forma de pago; jurisdicción distinta de Cuenca o compromisos operativos especiales requieren acuerdo explícito. Alejandro Codón/Bárbara Atenea Beauty Club no son valores predeterminados de otros contratos; Quito no se generaliza.
 
@@ -62,6 +70,7 @@ Particulares: identidad y establecimiento, módulos efectivamente contratados, c
 | 6 | General; instrucciones particulares | Privacidad Arts. 5–6 y 11; Condiciones Art. 9. Reiterar aviso → B.3; instrucciones de IA → B.4. La sugerencia mantiene IA desactivada, no autoriza su uso. |
 | 7 | Se conserva; contrapropuesta | Carátula §6 y Condiciones Art. 14. No hay casilla para eliminar el límite; siguen excepciones legales. |
 | Activación/capacitación | General; variación particular | Condiciones Art. 13: activar en 1 día hábil y proponer capacitación en 3 días hábiles. Casilla activación → B.6 con texto editable. |
+| Vencimiento y entregas con plazo extendido | Prospectivo, aceptación expresa | Anexo C `paid-grace15-recovery30-v1`; seleccionarlo en contrato nuevo o generar adenda que identifique el contrato vigente. No cambia los demás acuerdos. |
 
 Las sugerencias parten de las reglas generales y no se imprimen hasta marcar su opción. El botón «Restablecer sugerencia» reemplaza el texto editado; desmarcar una opción no pierde la edición. No se precargan nombres, identificación ni domicilio de este cliente en otros contratos.
 
@@ -69,7 +78,7 @@ Las sugerencias parten de las reglas generales y no se imprimen hasta marcar su 
 
 Verificación de solo lectura del 7 de octubre: cron de producción habilitado a las 08:00 UTC (03:00 Ecuador); metadatos R2 muestran 77 snapshots automáticos entre el 1 y el 7 de octubre UTC, 11 por día, correspondientes a las 11 clínicas registradas. No se descargaron datos clínicos ni se probó descifrado/restauración. Hay evidencia de ejecución diaria, no solo programación, pero no de recuperación integral.
 
-La tarifa adicional todavía no fue aprobada: se mantiene cotización previa según volumen y alcance. Se aplica a nueva recopilación tras consumir la cuota, corte adicional o nueva entrega tras vencer un acceso correctamente disponible; nunca a corregir fallos del Proveedor ni a condicionar derechos legales. La entrega anual gratuita incluye el costo de procesamiento a cargo del Proveedor.
+La tabla USD 10/20/35 y cotización manual superior a 50 GB rige exclusivamente para contratos que acepten el nuevo Anexo C. Para contratos bajo la versión anterior continúa la cotización previa según volumen y alcance. En ambos casos, las nuevas recopilaciones no se confunden con fallos del Proveedor ni condicionan derechos legales. La entrega anual gratuita incluye el costo de procesamiento a cargo del Proveedor.
 
 Workers Paid tiene un mínimo por cuenta de USD 5/mes; no es un precio por copia ni aumenta R2. Para entregas poco frecuentes puede estudiarse un ejecutor Node supervisado en equipo administrado por BIOSKINTECH, con streaming y sin mensualidad de procesamiento; no está implementado y no elimina costos de R2, conectividad y operación. La migración a esa alternativa requiere validación de seguridad y recuperación, sin exponer datos clínicos a servicios ajenos al encargo.
 

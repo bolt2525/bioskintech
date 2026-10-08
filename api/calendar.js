@@ -2,6 +2,8 @@ import { google } from 'googleapis';
 import sendEmailHandler from './sendEmail.js';
 import { sql } from '@vercel/postgres';
 import { authenticateRequest } from '../lib/admin-auth.js';
+import { getPool } from '../lib/neon-clinical-db.js';
+import { requireSubscriptionOperation } from '../lib/subscription-lifecycle.js';
 import { sendDeveloperAlert } from './admin-auth.js';
 import { eventResourceId, resolveResourceId, resourceExtendedProperties } from '../lib/agenda-resources.js';
 
@@ -62,6 +64,7 @@ export default async function handler(req, res) {
       const targetUser = await sql`SELECT clinic_id FROM clinic_users WHERE id = ${userId} AND is_active = true`;
       if (!targetUser.rows.length) throw new Error('Usuario no disponible');
       const clinicId = targetUser.rows[0].clinic_id;
+      await requireSubscriptionOperation(getPool(), clinicId);
       const clientId     = (process.env.GOOGLE_CLIENT_ID     || '').trim();
       const clientSecret = (process.env.GOOGLE_CLIENT_SECRET || '').trim();
       const redirectUri  = (process.env.APP_URL || `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app'}`).replace(/\/$/, '').trim() + '/api/calendar';

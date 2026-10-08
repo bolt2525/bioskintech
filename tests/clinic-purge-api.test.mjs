@@ -18,6 +18,9 @@ const writer = {
       throw new Error('duplicate fictitious username');
     if (statement.includes("SELECT c.is_active,cs.general ? '_purge'"))
       return { rows: [{ is_active: true, purging }] };
+    if (statement.includes('pg_try_advisory_xact_lock')) return { rows: [{ acquired: true }] };
+    if (statement.includes('SELECT c.id,cs.general FROM clinics'))
+      return { rows: [{ id: ID, general: purging ? { _purge: { state: 'COMPLETE' } } : {} }] };
     if (statement.includes('RETURNING')) return { rows: [{ id: 2 }] };
     return { rows: [] };
   },
@@ -107,7 +110,7 @@ test('real admin createUser/setFeature writers cannot target a COMPLETE tombston
     assert.equal(result.code, 409);
     const calls = writerCalls.slice(start).map(c => c.statement);
     assert.equal(calls[0], 'BEGIN');
-    assert.ok(calls.some(c => c.includes('pg_advisory_xact_lock_shared')));
+    assert.ok(calls.some(c => c.includes(action === 'updateClinicSubscription' ? 'pg_try_advisory_xact_lock' : 'pg_advisory_xact_lock_shared')));
     assert.equal(calls.at(-1), 'ROLLBACK');
     assert.equal(calls.some(c => /^\s*(INSERT|UPDATE|DELETE)/.test(c)), false);
   }

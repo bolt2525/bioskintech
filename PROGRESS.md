@@ -1,5 +1,15 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-07 Ciclo: QA desktop y móvil.
+- ✅ 2026-10-07 Contratos: impresión válida verificada.
+- ✅ 2026-10-07 Neon: esquema anual con RLS aplicado.
+- ✅ 2026-10-07 Vercel: correo configurado, Worker OFF.
+- ✅ 2026-10-07 Contratos: anexo prospectivo independiente.
+- ✅ 2026-10-07 Adendas conservan cláusulas originales.
+- ✅ 2026-10-07 Ciclo: 356 pruebas integradas.
+- ✅ 2026-10-07 Recepción: destino Neon verificado.
+- ✅ 2026-10-07 Ciclo: seguridad backend aprobada.
+- ✅ 2026-10-07 Integración provisional: 337 pruebas.
 - ✅ 2026-10-07 ZIP: originales verificados byte a byte.
 - ✅ 2026-10-07 Fotos: 254 pruebas aprobadas.
 - ✅ 2026-10-07 Fotos: ZIP hasta quince originales.

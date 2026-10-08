@@ -111,6 +111,7 @@ function mockDatabase(t, { validPeriod = true } = {}) {
     connect: async () => ({
       async query(sql, params = []) {
         queries.push({ sql, params });
+        if (sql.includes('AS annual_schema_ready')) return { rows: [{ annual_schema_ready: true }] };
         if (sql.includes("SELECT c.is_active,cs.general ? '_purge'")) return { rows: [{ is_active: true, purging: false }] };
         if (sql.includes('SELECT id FROM clinics')) return { rows: [{ id: CLINIC }] };
         if (sql.includes("$1::timestamptz + interval '12 months'")) return { rows: [{ valid: validPeriod }] };
@@ -297,8 +298,9 @@ test('disabled status returns without touching tenant or administrative database
   assert.deepEqual(result.body, {
     success: true,
     configured: false,
+    processor_ready: false,
     eligible: false,
-    reason: 'feature_disabled',
+    reason: 'registration_not_configured',
     period: null,
     period_suggestion: null,
     requests: [],

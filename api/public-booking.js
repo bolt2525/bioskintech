@@ -1,5 +1,7 @@
 import { google } from 'googleapis';
 import { sql } from '@vercel/postgres';
+import { getPool } from '../lib/neon-clinical-db.js';
+import { loadSubscriptionLifecycle } from '../lib/subscription-lifecycle.js';
 import { resolveResourceId, resourceExtendedProperties, rangesOverlap, eventResourceId, isWithinWorkHours, isValidFutureLocalDateTime } from '../lib/agenda-resources.js';
 
 const isGoogleAuthError = (error) => error?.code === 401 || error?.response?.status === 401 || /invalid_grant|invalid authentication credentials/i.test(error?.message || '');
@@ -152,6 +154,8 @@ async function getPublicAvailability(req, res) {
   `;
   if (!userRow.rows.length) return res.status(404).json({ success: false, error: 'El enlace de agendamiento no existe o no está activo.' });
   const professional = userRow.rows[0];
+  if (!(await loadSubscriptionLifecycle(getPool(), professional.clinic_id)).canoperate)
+    return res.status(403).json({ success: false, error: 'El agendamiento no está disponible.' });
   if (!professional.public_booking_enabled) return res.status(403).json({ success: false, error: 'Este profesional no tiene habilitado el agendamiento público.' });
 
   const settingsRows = await sql`SELECT treatments, agenda FROM clinic_settings WHERE clinic_id = ${professional.clinic_id} LIMIT 1`;
@@ -382,6 +386,8 @@ export default async function handler(req, res) {
   }
 
   const professional = userRow.rows[0];
+  if (!(await loadSubscriptionLifecycle(getPool(), professional.clinic_id)).canoperate)
+    return res.status(403).json({ success: false, error: 'El agendamiento no está disponible.' });
   if (!professional.public_booking_enabled) {
     return res.status(403).json({ success: false, error: 'Este profesional no tiene habilitado el agendamiento público.' });
   }
@@ -523,4 +529,3 @@ export default async function handler(req, res) {
     },
   });
 }
-

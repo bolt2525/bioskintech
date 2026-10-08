@@ -698,6 +698,7 @@ async function sendScheduledFinanceCsvs() {
     if (!range) continue;
     const client = await appPool.connect();
     try {
+      await requireClinicWritable(getPool(), row.clinic_id);
       await client.query("SELECT set_config('app.current_tenant', $1, false)", [String(row.clinic_id)]);
       const tenantPool = { query: (...a) => client.query(...a) };
       await sendFinanceCsvToAdmin({ pool: tenantPool, clinicId: row.clinic_id, userId: row.clinic_user_id, financeScope: row.finance_scope, ...range });

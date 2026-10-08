@@ -23,6 +23,8 @@ import nodemailer from 'nodemailer';
 import { getPool } from '../lib/neon-clinical-db.js';
 import { clinicPurgePreview, purgeClinic, updateClinicState } from '../lib/clinic-purge.js';
 import { lockClinicWriters, requireClinicWritable } from '../lib/clinic-lifecycle.js';
+import { sessionPolicy } from '../lib/admin-auth.js';
+import { subscriptionLifecycle, subscriptionRequestAllowed, renewClinicSubscription, requireSubscriptionOperation } from '../lib/subscription-lifecycle.js';
 
 const writerContext = new AsyncLocalStorage();
 const sql = (strings, ...values) => {
@@ -898,9 +900,16 @@ async function loginUser(username, password, ip, ua, req) {
            cu.failed_attempts, cu.locked_until, cu.is_active, cu.full_name, cu.email,
            cu.cedula_profesional, cu.matricula_senescyt, cu.registro_acess, cu.especialidad, cu.gentilicio, cu.profession, cu.first_name, cu.last_name,
            cu.is_demo, cu.demo_expires_at, cu.must_change_password,
-           c.slug AS clinic_slug, c.name AS clinic_name, c.is_active AS clinic_active
+           c.slug AS clinic_slug, c.name AS clinic_name, c.is_active AS clinic_active,
+           c.subscription_expires_at,cs.general,
+           EXISTS(SELECT 1 FROM subscriptions sub WHERE sub.clinic_id=c.id
+             AND sub.status IN ('paid','registered') AND sub.paid_at IS NOT NULL AND sub.amount_cents>0
+             AND coalesce(sub.plan_name,'') !~* '(trial|demo|prueba)') AS paid_subscription,
+           EXISTS(SELECT 1 FROM subscriptions sub WHERE sub.clinic_id=c.id
+             AND coalesce(sub.plan_name,'') ~* '(trial|demo|prueba)') AS trial_subscription
     FROM clinic_users cu
     LEFT JOIN clinics c ON c.id = cu.clinic_id
+    LEFT JOIN clinic_settings cs ON cs.clinic_id=c.id
     WHERE (cu.username = ${username} OR LOWER(cu.email) = LOWER(${username}))
   `;
   if (!r.rows.length) return { success: false, error: 'Credenciales inválidas' };
@@ -954,6 +963,10 @@ async function loginUser(username, password, ip, ua, req) {
     await sql`UPDATE clinic_users SET failed_attempts = ${attempts} WHERE id = ${u.id}`;
     return { success: false, error: `Credenciales inválidas. Intentos restantes: ${LOCK_ATTEMPTS - attempts}` };
   }
+
+  const loginPolicy = await sessionPolicy(u, req, { login: true });
+  if (!loginPolicy.allowed) return { success: false, error: 'Acceso limitado por la suscripción.',
+    subscription_lifecycle: loginPolicy.lifecycle };
 
   // Migrar hash SHA-256 legacy → PBKDF2 en el primer login exitoso
   if (u.hash_algo === 'sha256') {
@@ -1072,10 +1085,16 @@ async function verifySession(token) {
              cu.is_demo, cu.demo_expires_at, cu.must_change_password,
              cu.cedula_profesional, cu.matricula_senescyt, cu.registro_acess, cu.especialidad, cu.gentilicio, cu.profession, cu.first_name, cu.last_name,
              c.name as clinic_name, c.slug as clinic_slug,
-             c.subscription_expires_at
+             c.subscription_expires_at,c.is_active AS clinic_active,cs.general,
+             EXISTS(SELECT 1 FROM subscriptions sub WHERE sub.clinic_id=c.id
+               AND sub.status IN ('paid','registered') AND sub.paid_at IS NOT NULL AND sub.amount_cents>0
+               AND coalesce(sub.plan_name,'') !~* '(trial|demo|prueba)') AS paid_subscription,
+             EXISTS(SELECT 1 FROM subscriptions sub WHERE sub.clinic_id=c.id
+               AND coalesce(sub.plan_name,'') ~* '(trial|demo|prueba)') AS trial_subscription
       FROM admin_sessions s
       LEFT JOIN clinic_users cu ON cu.id = s.clinic_user_id
       LEFT JOIN clinics c ON c.id = s.clinic_id
+      LEFT JOIN clinic_settings cs ON cs.clinic_id=c.id
       WHERE s.session_token  = ${token}
         AND s.is_active       = true
         AND s.expires_at      > NOW()
@@ -1084,18 +1103,16 @@ async function verifySession(token) {
     `;
     if (!r.rows.length) return { valid: false, error: 'Sesión inválida o expirada' };
     const s = r.rows[0];
-    // Bloquear acceso si la suscripción de la clínica está vencida (master_admin siempre pasa)
-    if (s.role !== 'master_admin' && s.clinic_id && s.subscription_expires_at) {
-      if (new Date(s.subscription_expires_at) < new Date()) {
-        return { valid: false, error: 'Suscripción vencida. Contacta al administrador para renovarla.', subscriptionExpired: true };
-      }
-    }
-    // Block demo users whose account has expired
     if (s.is_demo && s.demo_expires_at && new Date(s.demo_expires_at) < new Date()) {
       return { valid: false, error: 'Cuenta demo expirada.', demoExpired: true };
     }
+    const policy = await sessionPolicy(s, { query: {}, headers: {} }, { login: true });
+    if (!policy.allowed) return { valid: false, error: 'Acceso limitado por la suscripción.',
+      subscriptionExpired: true, subscription_lifecycle: policy.lifecycle };
     return {
       valid: true,
+      subscription_lifecycle: policy.lifecycle,
+      delivery_only: policy.delivery_only,
       user: {
         id: s.clinic_user_id, username: s.username, full_name: s.full_name,
         email: s.email, role: s.role || 'clinic_admin', clinic_id: s.clinic_id,
@@ -1117,7 +1134,8 @@ async function verifySession(token) {
       })(),
     };
   } catch {
-    // Fallback para tablas pre-migración — incluye role para no romper permisos
+    // Legacy schema fallback is reserved to platform administration. Never
+    // turn a failed contractual-policy read into tenant operational access.
     try {
       const r = await sql`
         SELECT username, expires_at, role, clinic_id, access_scope FROM admin_sessions
@@ -1125,6 +1143,7 @@ async function verifySession(token) {
       `;
       if (!r.rows.length) return { valid: false, error: 'Sesión inválida o expirada' };
       const s = r.rows[0];
+      if (s.role !== 'master_admin') return { valid: false, error: 'No se pudo verificar la suscripción.' };
       return {
         valid: true,
         user: { username: s.username, role: s.role || 'clinic_admin', clinic_id: s.clinic_id, access_scope: s.access_scope || 'all' },
@@ -1236,7 +1255,7 @@ async function getRequestUser(req) {
   const token = (req.headers.authorization || '').replace('Bearer ', '').trim() || req.body?.sessionToken;
   if (!token) return null;
   const r = await verifySession(token);
-  return r.valid ? r.user : null;
+  return r.valid ? { ...r.user, subscription_lifecycle: r.subscription_lifecycle } : null;
 }
 
 /** Verifica que el usuario tenga al menos uno de los roles indicados */
@@ -1880,7 +1899,7 @@ async function registerClinic(body) {
   }
   // Marcar suscripción como usada (previene double-use del mismo subscription_id)
   if (subscription_id) {
-    await sql`UPDATE subscriptions SET status='registered' WHERE id=${subscription_id} AND status='paid'`;
+    await sql`UPDATE subscriptions SET status='registered',clinic_id=${clinicId} WHERE id=${subscription_id} AND status='paid'`;
   }
 
   // Esperar ambos envíos: Vercel puede finalizar una función serverless después de responder.
@@ -2057,6 +2076,25 @@ async function revokeInvite(requestUser, id) {
 
 /** Usa un invite link para registrar un nuevo usuario en una clínica existente */
 async function useInviteLink(token, body) {
+  if (typeof token !== 'string' || !/^[0-9a-f]{64}$/.test(token)) return { error: 'Token inválido' };
+  const target = (await sql`SELECT clinic_id FROM invite_links WHERE token=${token} AND is_used=false AND expires_at>NOW()`).rows[0];
+  if (!target?.clinic_id) return { error: 'Enlace inválido, ya utilizado o expirado' };
+  const client = await getPool().connect();
+  try {
+    await client.query('BEGIN');
+    await client.query("SET LOCAL statement_timeout = '15s'");
+    await lockClinicWriters(client, [target.clinic_id]);
+    await requireClinicWritable(client, target.clinic_id);
+    const result = await writerContext.run({ client }, () => consumeInviteLink(token, body));
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally { client.release(); }
+}
+
+async function consumeInviteLink(token, body) {
   if (!token || typeof token !== 'string') return { error: 'Token requerido' };
   if (!/^[0-9a-f]{64}$/.test(token)) return { error: 'Token inválido' };
 
@@ -2174,13 +2212,21 @@ async function verifyOTP(otpToken, code, ip, ua) {
            cu.username, cu.full_name, cu.email, cu.role, cu.clinic_id, cu.access_scope,
            cu.cedula_profesional, cu.matricula_senescyt, cu.registro_acess, cu.especialidad, cu.gentilicio, cu.profession, cu.first_name, cu.last_name,
            cu.is_demo, cu.demo_expires_at, cu.must_change_password,
-           c.slug AS clinic_slug, c.name AS clinic_name
+           c.slug AS clinic_slug, c.name AS clinic_name,c.is_active AS clinic_active,
+           c.subscription_expires_at,cs.general,
+           EXISTS(SELECT 1 FROM subscriptions sub WHERE sub.clinic_id=c.id
+             AND sub.status IN ('paid','registered') AND sub.paid_at IS NOT NULL AND sub.amount_cents>0
+             AND coalesce(sub.plan_name,'') !~* '(trial|demo|prueba)') AS paid_subscription,
+           EXISTS(SELECT 1 FROM subscriptions sub WHERE sub.clinic_id=c.id
+             AND coalesce(sub.plan_name,'') ~* '(trial|demo|prueba)') AS trial_subscription
     FROM login_otp lo
     JOIN clinic_users cu ON cu.id = lo.user_id
     LEFT JOIN clinics c ON c.id = cu.clinic_id
+    LEFT JOIN clinic_settings cs ON cs.clinic_id=c.id
     WHERE lo.otp_token = ${otpToken.trim()}
       AND lo.used = false
       AND lo.expires_at > NOW()
+      AND cu.is_active = true
       AND (cu.clinic_id IS NULL OR c.is_active=true)
   `;
   if (!r.rows.length) return { success: false, error: 'Código expirado o inválido. Inicia sesión nuevamente.' };
@@ -2197,6 +2243,12 @@ async function verifyOTP(otpToken, code, ip, ua) {
   const expectedBuf = Buffer.from(row.code);
   if (inputBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(inputBuf, expectedBuf))
     return { success: false, error: 'Código incorrecto' };
+
+  // An OTP issued before a boundary does not grant access after it. Check
+  // policy before consuming the OTP or creating any session/trusted state.
+  const policy = await sessionPolicy(row, { query: {}, headers: {} }, { login: true });
+  if (!policy.allowed) return { success: false, error: 'Acceso limitado por la suscripción.',
+    subscription_lifecycle: policy.lifecycle };
 
   // UPDATE atómico — previene replay si dos requests llegan simultáneamente
   const marked = await sql`UPDATE login_otp SET used=true WHERE id=${row.id} AND used=false RETURNING id`;
@@ -2260,8 +2312,14 @@ async function setupClinicDetails(requestUser, body) {
 }
 
 async function listClinics() {
-  return (await sql`
+  const result = await sql`
     SELECT c.*,
+           (SELECT cs.general->'_subscription_policy' FROM clinic_settings cs WHERE cs.clinic_id=c.id) AS subscription_policy,
+           EXISTS(SELECT 1 FROM subscriptions sub WHERE sub.clinic_id=c.id AND sub.status IN ('paid','registered')
+             AND sub.paid_at IS NOT NULL AND sub.amount_cents>0
+             AND coalesce(sub.plan_name,'') !~* '(trial|demo|prueba)') AS paid_subscription,
+           EXISTS(SELECT 1 FROM subscriptions sub WHERE sub.clinic_id=c.id
+             AND coalesce(sub.plan_name,'') ~* '(trial|demo|prueba)') AS trial_subscription,
            (SELECT cs.general->'_purge'->>'state' FROM clinic_settings cs WHERE cs.clinic_id=c.id) AS purge_state,
            (SELECT cs.general->'_purge'->>'completedAt' FROM clinic_settings cs WHERE cs.clinic_id=c.id) AS purge_completed_at,
            COUNT(DISTINCT cu.id) FILTER (WHERE cu.is_active = true)::int AS user_count,
@@ -2269,7 +2327,10 @@ async function listClinics() {
     FROM clinics c
     LEFT JOIN clinic_users cu ON cu.clinic_id = c.id
     GROUP BY c.id ORDER BY c.name
-  `).rows;
+  `;
+  return result.rows.map(clinic => ({ ...clinic, subscription_lifecycle: subscriptionLifecycle({
+    ...clinic, general: { _subscription_policy: clinic.subscription_policy, _purge: clinic.purge_state || null },
+  }) }));
 }
 
 async function createClinic(body) {
@@ -2517,6 +2578,12 @@ async function handleAdminRequest(req, res) {
       const ip     = (req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || '').split(',')[0].trim();
       const ua     = req.headers['user-agent'] || '';
       const result = await loginUser(username.trim(), password.trim(), ip, ua, req);
+      if (result.success && result.sessionToken) {
+        const verified = await verifySession(result.sessionToken);
+        if (!verified.valid) return res.status(401).json({ success: false, ...verified });
+        result.subscription_lifecycle = verified.subscription_lifecycle;
+        result.delivery_only = verified.delivery_only;
+      }
       return res.status(result.success ? 200 : 401).json(result);
     }
 
@@ -2581,7 +2648,14 @@ async function handleAdminRequest(req, res) {
       const { otpToken, code } = req.body || {};
       const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim();
       const ua = req.headers['user-agent'] || '';
-      return res.status(200).json(await verifyOTP(otpToken, code, ip, ua));
+      const result = await verifyOTP(otpToken, code, ip, ua);
+      if (result.success && result.sessionToken) {
+        const verified = await verifySession(result.sessionToken);
+        if (!verified.valid) return res.status(401).json({ success: false, ...verified });
+        result.subscription_lifecycle = verified.subscription_lifecycle;
+        result.delivery_only = verified.delivery_only;
+      }
+      return res.status(200).json(result);
     }
 
     if (action === 'register') {
@@ -2616,6 +2690,7 @@ async function handleAdminRequest(req, res) {
       `;
       if (!rows.rows.length) return res.status(404).json({ success: false, error: 'Profesional no encontrado' });
       const professional = rows.rows[0];
+      await requireSubscriptionOperation(getPool(), professional.clinic_id);
       if (!professional.public_booking_enabled) return res.status(403).json({ success: false, error: 'Este enlace no está habilitado' });
       const settingsRows = await sql`
         SELECT treatments, agenda
@@ -2673,7 +2748,7 @@ async function handleAdminRequest(req, res) {
       });
       if (!hasPublicTreatments) return res.status(200).json({ success: true, professionals: [] });
       const rows = await sql`
-        SELECT cu.id, cu.username, cu.full_name, cu.gentilicio, cu.multi_resource_enabled,
+        SELECT cu.id,cu.clinic_id, cu.username, cu.full_name, cu.gentilicio, cu.multi_resource_enabled,
                c.name AS clinic_name, c.slug AS clinic_slug
         FROM clinic_users cu
         JOIN clinics c ON c.id = cu.clinic_id
@@ -2681,6 +2756,7 @@ async function handleAdminRequest(req, res) {
         ORDER BY cu.full_name, cu.username
       `;
       const ownerIds = rows.rows.filter((row) => row.multi_resource_enabled).map((row) => row.id);
+      if (rows.rows.length) await requireSubscriptionOperation(getPool(), rows.rows[0].clinic_id);
       const staffRows = ownerIds.length
         ? { rows: (await Promise.all(ownerIds.map(async (ownerId) => {
           const result = await sql`
@@ -2723,7 +2799,10 @@ async function handleAdminRequest(req, res) {
     // ── Acciones autenticadas ──────────────────────────────────────────────
     const user = await getRequestUser(req);
     if (!user) return res.status(401).json({ success: false, error: 'No autenticado o sesión expirada' });
-    if (!['purgeClinic', 'clinicPurgePreview', 'updateClinic', 'deleteClinic', 'initFeatures'].includes(action)) {
+    if (user.role !== 'master_admin' && user.clinic_id &&
+        !subscriptionRequestAllowed(user.subscription_lifecycle, user.role, req))
+      return res.status(403).json({ success: false, error: 'Solo recuperación de datos disponible.' });
+    if (!['purgeClinic', 'clinicPurgePreview', 'updateClinic', 'deleteClinic', 'initFeatures', 'updateClinicSubscription'].includes(action)) {
       const suppliedClinics = [req.body?.clinicId, req.body?.clinic_id, req.query.clinicId]
         .filter(value => value !== undefined && value !== null && value !== '');
       if (new Set(suppliedClinics.map(value => String(value).toLowerCase())).size > 1)
@@ -2765,7 +2844,7 @@ async function handleAdminRequest(req, res) {
         await writerClient.query('BEGIN');
         await writerClient.query("SET LOCAL statement_timeout = '15s'");
         await lockClinicWriters(writerClient, [String(writerClinic)]);
-        await requireClinicWritable(writerClient, String(writerClinic));
+        await requireClinicWritable(writerClient, String(writerClinic), { subscriptionAccess: user.role === 'master_admin' ? 'admin' : 'operate' });
         writerContext.getStore().client = writerClient;
       }
     }
@@ -2891,12 +2970,16 @@ async function handleAdminRequest(req, res) {
     }
     if (action === 'updateClinicSubscription') {
       if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master_admin' });
-      const { clinic_id, expires_at, subscription_days } = req.body || {};
+      const { clinic_id, expires_at, subscription_days, subscription_kind, policy_enrollment } = req.body || {};
       if (!clinic_id) return res.status(400).json({ error: 'clinic_id requerido' });
+      if (expires_at !== undefined && (typeof expires_at !== 'string' ||
+          !/^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(expires_at) ||
+          !Number.isFinite(Date.parse(expires_at)) || new Date(expires_at).toISOString().slice(0,10) !== expires_at.slice(0,10)))
+        return res.status(400).json({ error: 'expires_at debe ser una fecha ISO válida.' });
       const newExp = expires_at ? new Date(expires_at) : (subscription_days > 0 ? new Date(Date.now() + subscription_days * 86400000) : null);
       const days   = subscription_days ?? 365;
-      await sql`UPDATE clinics SET subscription_expires_at=${newExp}, subscription_days=${days} WHERE id=${clinic_id}`;
-      return res.status(200).json({ success: true, subscription_expires_at: newExp });
+      const lifecycle = await renewClinicSubscription(getPool(), clinic_id, newExp, days, subscription_kind, policy_enrollment, user);
+      return res.status(200).json({ success: true, subscription_expires_at: newExp, subscription_lifecycle: lifecycle });
     }
 
     // Gestión de features
@@ -3137,6 +3220,8 @@ async function handleAdminRequest(req, res) {
         return res.status(403).json({ error: 'Sin permiso' });
       if (section === 'general' && (typeof data !== 'object' || Array.isArray(data)))
         return res.status(400).json({ error: 'general debe ser un objeto.' });
+      if (section === 'general' && ['_subscription_policy','_subscription_lifecycle'].some(key => Object.hasOwn(data, key)))
+        return res.status(409).json({ error: 'La política contractual es reservada; usa la acción de suscripción con aceptación explícita.' });
       const purgeState = await sql`SELECT general->'_purge' AS purge FROM clinic_settings WHERE clinic_id=${clinicId}`;
       if (purgeState.rows[0]?.purge || (section === 'general' && Object.hasOwn(data, '_purge')))
         return res.status(409).json({ error: 'La constancia de purga es reservada y no puede modificarse desde ajustes.' });
@@ -3171,7 +3256,9 @@ async function handleAdminRequest(req, res) {
 
       // ponytail: whitelist explícita — no usar eval ni dynamic SQL con el nombre de sección
       if (section === 'general')
-        await sql`INSERT INTO clinic_settings (clinic_id, general, updated_at) VALUES (${clinicId}, ${dataStr}::jsonb, NOW()) ON CONFLICT (clinic_id) DO UPDATE SET general = ${dataStr}::jsonb || CASE WHEN clinic_settings.general ? '_purge' THEN jsonb_build_object('_purge',clinic_settings.general->'_purge') ELSE '{}'::jsonb END, updated_at = NOW()`;
+        await sql`INSERT INTO clinic_settings (clinic_id, general, updated_at) VALUES (${clinicId}, ${dataStr}::jsonb, NOW()) ON CONFLICT (clinic_id) DO UPDATE SET general = ${dataStr}::jsonb ||
+          (SELECT coalesce(jsonb_object_agg(key,value),'{}'::jsonb) FROM jsonb_each(clinic_settings.general)
+            WHERE key IN ('_purge','_subscription_policy','_subscription_lifecycle')), updated_at = NOW()`;
       else if (section === 'treatments')
         await sql`INSERT INTO clinic_settings (clinic_id, treatments, updated_at) VALUES (${clinicId}, ${dataStr}::jsonb, NOW()) ON CONFLICT (clinic_id) DO UPDATE SET treatments = ${dataStr}::jsonb, updated_at = NOW()`;
       else if (section === 'email')

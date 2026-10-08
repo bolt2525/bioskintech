@@ -88,16 +88,6 @@ export default function AdminLayout({
         </div>
       )}
 
-      {/* Subscription warning banner */}
-      {!user?.is_demo && typeof user?.subscriptionWarningDays === 'number' && user.subscriptionWarningDays <= 21 && (
-        <div className={`text-white text-center text-xs py-2 px-4 font-medium sticky top-0 z-[60] flex items-center justify-center gap-2 ${user.subscriptionWarningDays <= 7 ? 'bg-red-500' : 'bg-orange-500'}`}>
-          <span>
-            ⚠️ Tu suscripción vence en <strong>{user.subscriptionWarningDays} días</strong>
-          </span>
-          <span className="opacity-80">· Contacta al administrador para renovar</span>
-        </div>
-      )}
-
       {/* ── Header fijo ───────────────────────────────────────────────── */}
       <div className="sticky top-0 z-50 border-b border-white/70 bg-white/95 shadow-sm backdrop-blur-xl">
         <div className="container-custom py-3 md:py-4">

@@ -2,6 +2,8 @@ import pg from 'pg';
 import { createAnnualPhotoBackupSchema } from '../lib/annual-photo-backup.js';
 
 // Explicit operator invocation only. Uses the existing Neon database.
+if (!process.argv.includes('--apply'))
+  throw new Error('Migración NO ejecutada. Requiere invocación explícita --apply; no activar Worker.');
 const connectionString = process.env.NEON_DATABASE_URL || process.env.POSTGRES_URL;
 if (!connectionString) throw new Error('NEON_DATABASE_URL / POSTGRES_URL requerida');
 const pool = new pg.Pool({ connectionString });
