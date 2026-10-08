@@ -13,7 +13,7 @@ import recordsFetch from '../utils/recordsFetch';
 type Stat = { label: string; count: number; exists: boolean };
 type ManualBackup = { available: boolean; next_allowed_at: string | null; last_created_at: string | null; timezone: string; limit: number; state?: string; reason?: string | null };
 type StatsData = { stats: Record<string, Stat>; totalRecords: number; clinic_id: string; is_master: boolean; encryption_ready: boolean; manual_backup?: ManualBackup | null };
-type Snapshot = { key: string; kind: string; size: number; created_at: string };
+type Snapshot = { key: string; kind: string; size: number; created_at: string; format?: string };
 type RestoreInfo = { signature: 'valid' | 'invalid' | 'unsigned'; sameClinic: boolean; timestamp: string | null; ageDays: number | null; modules: string[]; legacy: boolean };
 type RestoreReport = { inserted: Record<string, number>; existing: Record<string, number>; errors: { table: string; id: number | null; error: string }[]; errorCount: number; committed: boolean };
 type RestoreResult = { info: RestoreInfo; confirmations: string[]; report: RestoreReport; preRestoreSnapshot: string | null };
@@ -23,6 +23,27 @@ type ConsentPatient = { id: number; first_name: string; last_name: string; ident
 type ConsentPage = {
   url: string; filename: string; count: number; returnedCount: number;
   hasMore: boolean; nextOffset: number | null; revision: string;
+};
+type BatchSource = { file: File } | { snapshotKey: string };
+type BatchManifestInfo = {
+  signature: 'valid' | 'invalid' | 'unsigned'; sameClinic: boolean; timestamp: string | null;
+  ageDays: number | null; modules: string[]; total_batches: number; counts: Record<string, number>;
+};
+type BatchReport = {
+  inserted: Record<string, number>; existing: Record<string, number>; deferred: Record<string, number>;
+  skipped: Record<string, number>; errors: { table: string; id: number | null; error: string }[];
+  errorCount: number; deferredCount: number;
+};
+type BatchRestorePreview = {
+  source: BatchSource; label: string; info: BatchManifestInfo; confirmations: string[];
+  report: BatchReport; trailer: string;
+  outcome?: { completed: boolean; committedBatches: number; uncertain: boolean };
+};
+type BatchRestoreResponse = {
+  phase: 'inspect' | 'batch' | 'finish' | 'prepare'; info: BatchManifestInfo; confirmations: string[];
+  progress: { next_index: number; total_batches: number; done: boolean };
+  resume_token: string | null; completed: boolean; committed: boolean;
+  report?: BatchReport;
 };
 
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
@@ -87,6 +108,49 @@ async function downloadCompressedBackup(url: string, filename: string) {
   if (!response.ok) throw new Error('No se pudo descargar el respaldo comprimido');
   saveBlob(await response.blob(), filename);
 }
+
+async function* readGzipNdjson(stream: ReadableStream<Uint8Array>) {
+  // The DOM lib types DecompressionStream's writable input as BufferSource, while this browser stream supplies Uint8Array.
+  const gzip = new DecompressionStream('gzip') as unknown as TransformStream<Uint8Array, Uint8Array>;
+  const reader = stream.pipeThrough(gzip).getReader();
+  const decoder = new TextDecoder();
+  let pending = '';
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      pending += decoder.decode(value, { stream: !done });
+      let newline = pending.indexOf('\n');
+      while (newline >= 0) {
+        const line = pending.slice(0, newline).replace(/\r$/, '');
+        pending = pending.slice(newline + 1);
+        if (!line) throw new Error('El respaldo por lotes contiene una línea vacía');
+        if (new TextEncoder().encode(line).length > 1024 * 1024) throw new Error('Una línea del respaldo supera 1 MiB');
+        yield line;
+        newline = pending.indexOf('\n');
+      }
+      if (new TextEncoder().encode(pending).length > 1024 * 1024)
+        throw new Error('Una línea del respaldo supera 1 MiB');
+      if (done) break;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  if (pending) throw new Error('El respaldo por lotes está truncado: falta el cierre de línea final');
+}
+
+const emptyBatchReport = (): BatchReport => ({
+  inserted: {}, existing: {}, deferred: {}, skipped: {}, errors: [], errorCount: 0, deferredCount: 0,
+});
+const addBatchReport = (total: BatchReport, part?: BatchReport) => {
+  if (!part) return;
+  for (const key of ['inserted', 'existing', 'deferred', 'skipped'] as const) {
+    for (const [table, count] of Object.entries(part[key] || {}))
+      total[key][table] = (total[key][table] || 0) + count;
+  }
+  total.errors.push(...part.errors);
+  total.errorCount += part.errorCount;
+  total.deferredCount += part.deferredCount;
+};
 
 async function downloadConsentPages(patientIds: number[] | null, onProgress: (part: number) => void) {
   let offset = 0;
@@ -192,6 +256,9 @@ export default function AdminBackup() {
   const [importMode, setImportMode] = useState<'restore' | 'patients'>('restore');
   const [restoreTarget, setRestoreTarget] = useState<{ source: 'upload' | 'snapshot'; key: string; label: string } | null>(null);
   const [restore, setRestore] = useState<RestoreResult | null>(null);
+  const [batchRestore, setBatchRestore] = useState<BatchRestorePreview | null>(null);
+  const [batchConfirm, setBatchConfirm] = useState({ unsigned: false, foreign: false, partial: false, understood: false });
+  const [batchProgress, setBatchProgress] = useState<string | null>(null);
   const [confirm, setConfirm] = useState({ unsigned: false, foreign: false, partial: false, understood: false });
   const [patientRows, setPatientRows] = useState<Record<string, string>[] | null>(null);
   const [patientFile, setPatientFile] = useState('');
@@ -203,15 +270,18 @@ export default function AdminBackup() {
 
   const run = async (label: string, fn: () => Promise<void>) => {
     if (!canManage) return;
-    if ((['preview', 'upload', 'restore'].includes(label) && !access.canRestore) ||
+    if ((['preview', 'upload', 'restore', 'batch-preview', 'batch-restore'].includes(label) && !access.canRestore) ||
         (['csv-parse', 'patients'].includes(label) && !access.canImport) ||
-        ((['export', 'consents'].includes(label) || label.startsWith('dl-') || (label.startsWith('csv-') && label !== 'csv-parse')) && !access.canExport) ||
+        ((['export', 'batch-export', 'consents'].includes(label) || label.startsWith('dl-') || (label.startsWith('csv-') && label !== 'csv-parse')) && !access.canExport) ||
         (label === 'snapshot' && !access.canManualSnapshot)) {
       setError('La suscripción solo permite consultar y descargar respaldos existentes.');
       return;
     }
     setBusy(label); setError(null); setNotice(null);
-    try { await fn(); } catch (e) { setError(e instanceof Error ? e.message : 'Ocurrió un error'); } finally { setBusy(null); }
+    try { await fn(); } catch (e) { setError(e instanceof Error ? e.message : 'Ocurrió un error'); } finally {
+      setBusy(null);
+      if (label === 'batch-preview' || label === 'batch-restore') setBatchProgress(null);
+    }
   };
   const ask = (title: string, message: React.ReactNode, confirmLabel: string, onConfirm: () => void) =>
     setPending({ title, message, confirmLabel, onConfirm });
@@ -233,7 +303,10 @@ export default function AdminBackup() {
     if (!canManage) return;
     setLoadingSnapshots(true);
     setSnapshotsError(null);
-    try { setSnapshots((await api<{ snapshots: Snapshot[] }>('/api/backup?action=snapshots')).snapshots); }
+    try {
+      const result = await api<{ snapshots: Snapshot[]; batch_snapshots?: Snapshot[] }>('/api/backup?action=snapshots');
+      setSnapshots([...result.snapshots, ...(result.batch_snapshots || [])].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)));
+    }
     catch (e) { setSnapshots(null); setSnapshotsError(e instanceof Error ? e.message : 'No se pudo listar los respaldos en la nube'); }
     finally { setLoadingSnapshots(false); }
   }, [canManage]);
@@ -272,9 +345,19 @@ export default function AdminBackup() {
   const filteredSnapshots = (snapshots || []).filter(snapshot => snapshotKind === 'all' || snapshot.kind === snapshotKind);
 
   const exportJson = () => run('export', async () => {
+    setBatchRestore(null);
     const { url, filename } = await api<{ url: string; filename: string }>('/api/backup?action=export', { modules: [...selected] });
     await downloadCompressedBackup(url, filename);
     setNotice('Respaldo descargado. Contiene datos sensibles de salud: guárdalo cifrado y fuera del computador de uso diario.');
+  });
+
+  const exportBatchJson = () => run('batch-export', async () => {
+    setBatchRestore(null);
+    const result = await api<{ url: string; filename: string; total_batches: number; size_bytes: number }>(
+      '/api/backup?action=export', { modules: [...selected], format: 'batch-jsonl-v1' },
+    );
+    await downloadCompressedBackup(result.url, result.filename);
+    setNotice(`Respaldo completo descargado: ${result.total_batches.toLocaleString('es-EC')} lotes, ${fmtSize(result.size_bytes)}. Conserva el archivo íntegro.`);
   });
 
   const exportConsents = (patientIds: number[] | null) => run('consents', async () => {
@@ -320,8 +403,153 @@ export default function AdminBackup() {
   });
 
   const resetRestore = () => { setRestore(null); setRestoreTarget(null); setConfirm({ unsigned: false, foreign: false, partial: false, understood: false }); };
+  const resetBatchRestore = () => {
+    setBatchRestore(null);
+    setBatchConfirm({ unsigned: false, foreign: false, partial: false, understood: false });
+    setBatchProgress(null);
+  };
+
+  const openBatchStream = async (source: BatchSource) => {
+    if ('file' in source) return source.file.stream();
+    const download = await api<{ url: string }>('/api/backup?action=export', { snapshotKey: source.snapshotKey });
+    const response = await fetch(download.url);
+    if (!response.ok || !response.body) throw new Error('No se pudo abrir el respaldo por lotes de la nube');
+    return response.body;
+  };
+
+  const previewBatchRestore = (source: BatchSource, label: string) => run('batch-preview', async () => {
+    setBatchRestore(null);
+    setBatchConfirm({ unsigned: false, foreign: false, partial: false, understood: false });
+    setRestore(null); setRestoreTarget(null);
+    let manifestLine: string | null = null;
+    let trailerLine: string | null = null;
+    let info: BatchManifestInfo | null = null;
+    let token: string | null = null;
+    let nextIndex = 0;
+    let finished = false;
+    const report = emptyBatchReport();
+
+    for await (const line of readGzipNdjson(await openBatchStream(source))) {
+      let parsed: { type?: string };
+      try { parsed = JSON.parse(line) as { type?: string }; }
+      catch { throw new Error('El archivo contiene una línea JSON inválida; no se restauró nada.'); }
+      if (!manifestLine) {
+        if (parsed.type !== 'manifest') throw new Error('El archivo no comienza con un manifiesto de respaldo por lotes.');
+        manifestLine = line;
+        const inspected = await api<BatchRestoreResponse>('/api/backup?action=restore', {
+          format: 'batch-jsonl-v1', phase: 'inspect', manifest: line,
+        });
+        info = inspected.info;
+        token = inspected.resume_token;
+        continue;
+      }
+      if (finished) throw new Error('El archivo contiene datos después de su trailer; no se considera completo.');
+      if (parsed.type === 'batch') {
+        if (!info || nextIndex >= info.total_batches) throw new Error('El archivo contiene más lotes de los declarados.');
+        const result: BatchRestoreResponse = await api<BatchRestoreResponse>('/api/backup?action=restore', {
+          format: 'batch-jsonl-v1', phase: 'batch', manifest: manifestLine, batch: line,
+          index: nextIndex, dryRun: true, ...(token ? { resumeToken: token } : {}),
+        });
+        if (result.progress.next_index !== nextIndex + 1) throw new Error('La simulación no verificó la secuencia completa de lotes.');
+        token = result.resume_token;
+        addBatchReport(report, result.report);
+        nextIndex++;
+        setBatchProgress(`Simulación: ${nextIndex.toLocaleString('es-EC')} de ${info.total_batches.toLocaleString('es-EC')} lotes`);
+        continue;
+      }
+      if (parsed.type !== 'trailer' || !info || nextIndex !== info.total_batches)
+        throw new Error('El archivo está incompleto o el trailer no sigue a todos los lotes declarados.');
+      trailerLine = line;
+      const completed = await api<BatchRestoreResponse>('/api/backup?action=restore', {
+        format: 'batch-jsonl-v1', phase: 'finish', manifest: manifestLine, trailer: line,
+        ...(token ? { resumeToken: token } : {}),
+      });
+      if (!completed.completed || !completed.progress.done) throw new Error('No se pudo verificar el trailer final del respaldo.');
+      finished = true;
+    }
+    setBatchProgress(null);
+    if (!finished || !manifestLine || !trailerLine || !info)
+      throw new Error('El respaldo por lotes terminó antes del manifiesto o trailer completo.');
+    setBatchRestore({ source, label, info, confirmations: info.signature === 'valid' ? [] : ['unsigned', ...(info.sameClinic ? [] : ['foreignClinic'])],
+      report, trailer: trailerLine });
+    setTab('import');
+    setImportMode('restore');
+  });
+
+  const commitBatchRestore = () => batchRestore && run('batch-restore', async () => {
+    let manifestLine: string | null = null;
+    let token: string | null = null;
+    let nextIndex = 0;
+    let finished = false;
+    let writeAttempted = false;
+    let committedBatches = 0;
+    const appliedReport = emptyBatchReport();
+    try {
+      for await (const line of readGzipNdjson(await openBatchStream(batchRestore.source))) {
+        let parsed: { type?: string };
+        try { parsed = JSON.parse(line) as { type?: string }; }
+        catch { throw new Error('El archivo cambió desde la simulación o contiene una línea JSON inválida.'); }
+        if (!manifestLine) {
+          if (parsed.type !== 'manifest') throw new Error('El respaldo ya no comienza con un manifiesto válido.');
+          manifestLine = line;
+          const prepared = await api<BatchRestoreResponse>('/api/backup?action=restore', {
+            format: 'batch-jsonl-v1', phase: 'prepare', manifest: line,
+            acceptUnsigned: batchConfirm.unsigned, confirmForeignClinic: batchConfirm.foreign,
+          });
+          if (!prepared.resume_token) throw new Error('No se verificó el respaldo previo; no se aplicaron lotes.');
+          token = prepared.resume_token;
+          continue;
+        }
+        if (finished) throw new Error('El archivo cambió: contiene datos después de su trailer.');
+        if (parsed.type === 'batch') {
+          if (nextIndex >= batchRestore.info.total_batches) throw new Error('El archivo contiene más lotes que la simulación.');
+          writeAttempted = true;
+          const result: BatchRestoreResponse = await api<BatchRestoreResponse>('/api/backup?action=restore', {
+            format: 'batch-jsonl-v1', phase: 'batch', manifest: manifestLine, batch: line, index: nextIndex,
+            dryRun: false, allowPartial: batchConfirm.partial, resumeToken: token,
+          });
+          addBatchReport(appliedReport, result.report);
+          if (!result.committed && (result.report?.errorCount || 0) > 0)
+            throw new Error(`El lote ${nextIndex + 1} tiene errores y no se aplicó. Confirma la opción de restauración parcial y reinicia desde el mismo archivo; los lotes confirmados son idempotentes.`);
+          if (result.progress.next_index !== nextIndex + 1 || !result.resume_token)
+            throw new Error(`El lote ${nextIndex + 1} no confirmó el avance esperado. Reinicia desde el mismo archivo para reanudar de forma idempotente.`);
+          token = result.resume_token;
+          nextIndex++;
+          committedBatches++;
+          setBatchProgress(`Aplicación: ${nextIndex.toLocaleString('es-EC')} de ${batchRestore.info.total_batches.toLocaleString('es-EC')} lotes`);
+          continue;
+        }
+        if (parsed.type !== 'trailer' || nextIndex !== batchRestore.info.total_batches || line !== batchRestore.trailer)
+          throw new Error('El trailer no coincide con la simulación; el proceso no se considera completo.');
+        const complete = await api<BatchRestoreResponse>('/api/backup?action=restore', {
+          format: 'batch-jsonl-v1', phase: 'finish', manifest: manifestLine, trailer: line, resumeToken: token,
+        });
+        if (!complete.completed || !complete.progress.done) throw new Error('El servidor no confirmó todos los lotes y el trailer.');
+        finished = true;
+      }
+      if (!finished) throw new Error('La restauración quedó incompleta: falta verificar el trailer.');
+      const omitted = appliedReport.errorCount + appliedReport.deferredCount +
+        Object.values(appliedReport.skipped).reduce((sum, count) => sum + count, 0);
+      setBatchRestore(current => current && { ...current, report: appliedReport,
+        outcome: { completed: true, committedBatches, uncertain: false } });
+      setBatchConfirm({ unsigned: false, foreign: false, partial: false, understood: false });
+      setBatchProgress(null);
+      if (!omitted)
+        setNotice(`Restauración por lotes completada sin errores; trailer verificado (${committedBatches.toLocaleString('es-EC')} lotes). Respaldo previo: ${batchRestore.info.total_batches === 0 ? 'no se requerían lotes' : 'creado y verificado antes de aplicar'}.`);
+      void loadSnapshots();
+      void loadStats();
+    } catch (failure) {
+      setBatchProgress(null);
+      if (writeAttempted) {
+        setBatchRestore(current => current && { ...current, report: appliedReport,
+          outcome: { completed: false, committedBatches, uncertain: true } });
+      }
+      throw failure;
+    }
+  });
 
   const previewRestore = (target: { source: 'upload' | 'snapshot'; key: string; label: string }) => run('preview', async () => {
+    setBatchRestore(null);
     setRestoreTarget(target); setRestore(null);
     setConfirm({ unsigned: false, foreign: false, partial: false, understood: false });
     setRestore(await api<RestoreResult>('/api/backup?action=restore', { source: target.source, key: target.key, dryRun: true }));
@@ -333,6 +561,10 @@ export default function AdminBackup() {
     e.target.value = '';
     if (!file) return;
     if (!/\.(json|gz)$/i.test(file.name)) { setError('Selecciona un archivo .json o .json.gz exportado por BioSkinTech'); return; }
+    if (/\.jsonl\.gz$/i.test(file.name)) {
+      void previewBatchRestore({ file }, file.name);
+      return;
+    }
     if (file.size > MAX_UPLOAD_MIB * 1048576) { setError(`El archivo supera ${MAX_UPLOAD_MIB} MiB. Usa la copia .json.gz sin descomprimir; si aún supera el límite, coordina una restauración asistida con soporte.`); return; }
     run('upload', async () => {
       const { key, url } = await api<{ key: string; url: string }>('/api/backup?action=uploadUrl', { size: file.size });
@@ -505,7 +737,7 @@ export default function AdminBackup() {
 
             <Card title="Respaldo técnico por módulos (JSON)" subtitle="Descarga comprimida .json.gz, sin pérdida de datos. Compatible con Importar; no es un archivo para Excel.">
               <p className="mb-4 text-xs text-gray-600">Los conteos son registros, no pacientes: una ficha puede incluir consultas, firmas y versiones.{stats?.stats.patients?.exists && ` Pacientes registrados: ${stats.stats.patients.count}.`}</p>
-              <p className="mb-4 text-xs text-gray-600">La generación verifica que la copia quepa en los límites estándar de restauración (50 MiB comprimidos y 200 MiB descomprimidos). Si los supera, no entrega una copia que no puedas cargar; coordina un proceso asistido con soporte.</p>
+              <p className="mb-4 text-xs text-gray-600">La descarga estándar verifica sus límites de restauración (50 MiB comprimidos y 200 MiB descomprimidos). Para conjuntos grandes, usa el formato por lotes: transmite tablas bajo un snapshot consistente y permite restauración reanudable con límites de memoria acotados. El servidor cancela exportaciones que superen su ventana máxima de ejecución; no entrega archivos incompletos.</p>
               <div className="divide-y divide-gray-100 -mx-4 -mt-4 mb-4">
                 {MODULES.map(m => {
                   const on = selected.has(m.id);
@@ -528,6 +760,12 @@ export default function AdminBackup() {
                 'Descargar', exportJson)} disabled={!!busy || selected.size === 0}
                 className="w-full py-3.5 rounded-xl font-semibold flex items-center justify-center gap-2 bg-gold text-white hover:bg-gold-dark disabled:opacity-50">
                 {busy === 'export' ? <><Loader2 className="w-5 h-5 animate-spin" />Generando respaldo…</> : <><FileJson className="w-5 h-5" />Descargar respaldo (.json.gz)</>}
+              </button>
+              <button onClick={() => ask('Descargar respaldo completo por lotes',
+                <>Se generará un archivo .jsonl.gz con manifiesto, checksums y todos los lotes de: <strong>{MODULES.filter(m => selected.has(m.id)).map(m => m.label).join(', ')}</strong>. Si la exportación no termina dentro del límite del servidor, fallará sin publicar un archivo parcial. {SENSITIVE}</>,
+                'Descargar', exportBatchJson)} disabled={!!busy || selected.size === 0}
+                className="w-full mt-2 py-3.5 rounded-xl font-semibold flex items-center justify-center gap-2 border border-gold text-gold-dark hover:bg-gold/5 disabled:opacity-50">
+                {busy === 'batch-export' ? <><Loader2 className="w-5 h-5 animate-spin" />Transmitiendo tablas…</> : <><FileJson className="w-5 h-5" />Exportar sin límites de archivo (.jsonl.gz)</>}
               </button>
             </Card>
 
@@ -573,14 +811,85 @@ export default function AdminBackup() {
                   <p>3. Antes de aplicar, el sistema guarda un respaldo automático del estado actual.</p>
                   <p>4. Cada referencia se valida contra tu clínica; archivos dañados, alterados o de otra clínica se rechazan o requieren confirmación explícita.</p>
                 </div>
-                {!restore && (
+                {!restore && !batchRestore && (
                   <label className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-2xl bg-white cursor-pointer hover:border-gold ${busy ? 'opacity-50 pointer-events-none' : ''}`}>
-                    {busy === 'upload' || busy === 'preview' ? <Loader2 className="w-8 h-8 text-gold animate-spin mb-2" /> : <FileJson className="w-8 h-8 text-gray-300 mb-2" />}
-                    <span className="text-sm text-gray-500">{busy === 'upload' ? 'Subiendo y analizando…' : `Selecciona un respaldo .json o .json.gz (máx. ${MAX_UPLOAD_MIB} MiB)`}</span>
-                    <input ref={backupInput} type="file" accept=".json,.gz,application/json,application/gzip" className="hidden" onChange={onBackupFile} />
+                    {busy === 'upload' || busy === 'preview' || busy === 'batch-preview' ? <Loader2 className="w-8 h-8 text-gold animate-spin mb-2" /> : <FileJson className="w-8 h-8 text-gray-300 mb-2" />}
+                    <span className="text-sm text-gray-500">{busy === 'upload' ? 'Subiendo y analizando…' : busy === 'batch-preview' ? batchProgress || 'Verificando lotes y trailer…' : `Selecciona un respaldo .json, .json.gz o .jsonl.gz (estándar máx. ${MAX_UPLOAD_MIB} MiB)`}</span>
+                    <input ref={backupInput} type="file" accept=".json,.gz,.jsonl.gz,application/json,application/gzip" className="hidden" onChange={onBackupFile} />
                   </label>
                 )}
                 <p className="my-3 text-xs text-gray-600">Límite estándar: 50 MiB comprimidos y 200 MiB descomprimidos. Usa .json.gz sin extraerlo. Las copias que superen estos límites no se generan para restauración estándar; conserva el archivo completo y coordina exportación/restauración asistida con soporte. No lo recortes ni modifiques firmas.</p>
+                <p role="status" className="my-2 text-xs text-gray-600">Los archivos .jsonl.gz por lotes se procesan en streaming desde tu navegador, verificando manifiesto, firma/checksums y trailer sin subir el archivo completo.</p>
+                {batchProgress && busy !== 'batch-preview' && <p role="status" className="my-2 text-xs text-blue-800">{batchProgress}</p>}
+                {batchRestore && (
+                  <Card title={batchRestore.outcome ? (batchRestore.outcome.completed ? 'Resultado de restauración por lotes' : 'Restauración por lotes interrumpida') : 'Simulación completa por lotes'} subtitle={batchRestore.label}>
+                    <div className="grid grid-cols-2 gap-2 text-xs mb-4">
+                      <div className="p-2 bg-gray-50 rounded-lg"><span className="text-gray-500">Generado:</span> {fmtDate(batchRestore.info.timestamp)}{batchRestore.info.ageDays != null && ` (${batchRestore.info.ageDays} días)`}</div>
+                      <div className={`p-2 rounded-lg ${batchRestore.info.signature === 'valid' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>
+                        {batchRestore.info.signature === 'valid' ? 'Firma de integridad válida' : batchRestore.info.signature === 'invalid' ? 'Firma inválida: requiere confirmación explícita' : 'Sin firma de integridad: requiere confirmación explícita'}
+                      </div>
+                      <div className={`p-2 rounded-lg col-span-2 ${batchRestore.info.sameClinic ? 'bg-gray-50' : 'bg-red-50 text-red-700'}`}>{batchRestore.info.sameClinic ? 'Pertenece a esta clínica' : 'Atención: el respaldo proviene de otra clínica'}</div>
+                      <div className="p-2 bg-gray-50 rounded-lg col-span-2">{batchRestore.info.total_batches.toLocaleString('es-EC')} lotes verificados; el trailer acredita el archivo completo.</div>
+                    </div>
+                    <table className="w-full text-xs mb-3">
+                      <thead className="text-gray-500"><tr><th className="text-left py-1">Sección</th><th className="text-right">Nuevos</th><th className="text-right">Ya existen</th><th className="text-right">Diferidos*</th></tr></thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {[...new Set([...Object.keys(batchRestore.report.inserted), ...Object.keys(batchRestore.report.existing),
+                          ...Object.keys(batchRestore.report.deferred), ...Object.keys(batchRestore.report.skipped)])].map(table => (
+                          <tr key={table}><td className="py-1">{TABLE_LABELS[table] || table}</td>
+                            <td className="text-right font-semibold text-emerald-700">{batchRestore.report.inserted[table] || 0}</td>
+                            <td className="text-right text-gray-500">{batchRestore.report.existing[table] || 0}</td>
+                            <td className="text-right text-amber-700">{batchRestore.report.deferred[table] || batchRestore.report.skipped[table] || 0}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {batchRestore.report.deferredCount > 0 && <p className="text-xs text-amber-800 mb-3">*Las filas diferidas dependen de registros anteriores simulados sin escribir. Se revalidarán en orden durante la aplicación.</p>}
+                    {batchRestore.report.errorCount > 0 && (
+                      <div className="mb-3 p-3 bg-red-50 border border-red-100 rounded-xl text-xs text-red-700 max-h-40 overflow-auto">
+                        <p className="font-semibold mb-1">{batchRestore.report.errorCount} filas con errores{batchRestore.outcome ? '; revisa el resultado parcial.' : '; la opción parcial requiere confirmación explícita.'}</p>
+                        {batchRestore.report.errors.slice(0, 50).map((item, index) => <p key={`${item.table}-${item.id}-${index}`}>{TABLE_LABELS[item.table] || item.table} #{item.id ?? '?'}: {item.error}</p>)}
+                      </div>
+                    )}
+                    {batchRestore.outcome && (
+                      <div role="status" className={`mb-4 p-3 rounded-xl text-xs ${batchRestore.outcome.completed &&
+                        !batchRestore.report.errorCount && !batchRestore.report.deferredCount &&
+                        !Object.values(batchRestore.report.skipped).some(Boolean) ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-900'}`}>
+                        {batchRestore.outcome.completed
+                          ? batchRestore.report.errorCount || batchRestore.report.deferredCount || Object.values(batchRestore.report.skipped).some(Boolean)
+                            ? `Restauración finalizada con resultado parcial en ${batchRestore.outcome.committedBatches} lotes. El trailer del archivo sí fue verificado; quedan filas con errores, diferidas u omitidas en el resumen.`
+                            : `Restauración completa: ${batchRestore.outcome.committedBatches} lotes confirmados y trailer verificado.`
+                          : `Restauración incompleta: ${batchRestore.outcome.committedBatches} lotes confirmados. ${batchRestore.outcome.uncertain ? 'El lote interrumpido pudo haberse aplicado aunque se perdiera su respuesta. ' : ''}No se verificó el trailer. Reinicia con el mismo archivo para reanudar idempotentemente; los registros existentes no se sobrescriben.`}
+                      </div>
+                    )}
+                    {(!batchRestore.outcome || !batchRestore.outcome.completed) && (
+                      <>
+                        <div className="space-y-2 mb-4">
+                          {batchRestore.confirmations.includes('unsigned') && <Confirm checked={batchConfirm.unsigned} onChange={value => setBatchConfirm(current => ({ ...current, unsigned: value }))}>Entiendo que el archivo no tiene firma válida de este sistema y autorizo explícitamente su uso.</Confirm>}
+                          {batchRestore.confirmations.includes('foreignClinic') && <Confirm checked={batchConfirm.foreign} onChange={value => setBatchConfirm(current => ({ ...current, foreign: value }))}>Confirmo que quiero importar datos de otra clínica a esta clínica.</Confirm>}
+                          {batchRestore.report.errorCount > 0 && <Confirm checked={batchConfirm.partial} onChange={value => setBatchConfirm(current => ({ ...current, partial: value }))}>Permito confirmar por lote las filas válidas aunque otras fallen; la clínica puede quedar parcialmente restaurada hasta reanudar.</Confirm>}
+                          {!batchRestore.outcome && <Confirm checked={batchConfirm.understood} onChange={value => setBatchConfirm(current => ({ ...current, understood: value }))}>Revisé la simulación completa y autorizo restaurar por lotes.</Confirm>}
+                        </div>
+                        {batchRestore.outcome && <p className="mb-3 text-xs text-amber-800">El reinicio procesará nuevamente el mismo archivo; no vuelve a sobrescribir los registros que ya existan.</p>}
+                      </>
+                    )}
+                    <div className="flex gap-2">
+                      <button onClick={resetBatchRestore} disabled={!!busy} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-600">{batchRestore.outcome?.completed ? 'Nueva restauración' : 'Cancelar'}</button>
+                      {(!batchRestore.outcome || !batchRestore.outcome.completed) && (
+                        <button onClick={() => ask(batchRestore.outcome ? 'Reanudar restauración por lotes' : 'Confirmar restauración por lotes',
+                          <>Se creará y verificará un respaldo previo antes del primer cambio. Después, <strong>{batchRestore.info.total_batches.toLocaleString('es-EC')} lotes</strong> se confirmarán en transacciones separadas. Si el proceso se interrumpe, algunos lotes podrían quedar aplicados; reiniciar con el mismo archivo es idempotente y no sobrescribe registros existentes.</>,
+                          batchRestore.outcome ? 'Reanudar por lotes' : 'Restaurar por lotes', () => { void commitBatchRestore(); })}
+                          disabled={!!busy || (!batchRestore.outcome && !batchConfirm.understood) ||
+                            (batchRestore.confirmations.includes('unsigned') && !batchConfirm.unsigned) ||
+                            (batchRestore.confirmations.includes('foreignClinic') && !batchConfirm.foreign) ||
+                            (batchRestore.report.errorCount > 0 && !batchConfirm.partial)}
+                          className="flex-1 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2">
+                          {busy === 'batch-restore' ? <Loader2 className="w-4 h-4 animate-spin" /> : null}{batchRestore.outcome ? 'Reanudar por lotes' : 'Restaurar todos los lotes'}
+                        </button>
+                      )}
+                    </div>
+                  </Card>
+                )}
                 {restore && restoreTarget && (
                   <Card title="Resultado de la simulación" subtitle={restoreTarget.label}>
                     <div className="grid grid-cols-2 gap-2 text-xs mb-4">
@@ -729,10 +1038,13 @@ export default function AdminBackup() {
                       <p className="text-sm text-gray-800">{fmtDate(s.created_at)}</p>
                       <p className="text-xs text-gray-500">{KIND_LABEL[s.kind] || s.kind} · {fmtSize(s.size)}</p>
                     </div>
-                    <button onClick={() => ask('Descargar respaldo de la nube', <>Se descargará la copia del <strong>{fmtDate(s.created_at)}</strong> en JSON comprimido (.json.gz). {SENSITIVE}</>, 'Descargar', () => downloadSnapshot(s))} disabled={!!busy} title="Descargar" aria-label={`Descargar respaldo del ${fmtDate(s.created_at)}`} className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50">
+                    <button onClick={() => ask('Descargar respaldo de la nube', <>Se descargará la copia del <strong>{fmtDate(s.created_at)}</strong> en formato {s.format === 'batch-jsonl-v1' ? '.jsonl.gz por lotes' : '.json.gz'}. {SENSITIVE}</>, 'Descargar', () => downloadSnapshot(s))} disabled={!!busy} title="Descargar" aria-label={`Descargar respaldo del ${fmtDate(s.created_at)}`} className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50">
                       {busy === `dl-${s.key}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4 text-gray-600" />}
                     </button>
-                    <button onClick={() => previewRestore({ source: 'snapshot', key: s.key, label: `Nube · ${fmtDate(s.created_at)}` })} disabled={!!busy || !access.canRestore}
+                    <button onClick={() => s.format === 'batch-jsonl-v1'
+                      ? previewBatchRestore({ snapshotKey: s.key }, `Nube por lotes · ${fmtDate(s.created_at)}`)
+                      : previewRestore({ source: 'snapshot', key: s.key, label: `Nube · ${fmtDate(s.created_at)}` })}
+                      disabled={!!busy || !access.canRestore}
                       className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50">Restaurar…</button>
                   </div>
                 ))}

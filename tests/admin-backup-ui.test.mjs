@@ -14,6 +14,9 @@ const source = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 const compile = code => ts.transpileModule(code, {
   compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
 }).outputText;
+class TestDecompressionStream {
+  constructor(format) { assert.equal(format, 'gzip'); }
+}
 
 // Harness sin dependencias nuevas: ejecuta componentes y efectos con hooks controlados.
 // No sustituye una prueba de foco/teclado en un navegador real.
@@ -56,6 +59,10 @@ function componentHarness(path, role, request, lifecycle, deliveryOnly = false) 
     window: { setInterval: () => 1, clearInterval() {} },
     Error,
     console,
+    Blob: globalThis.Blob,
+    TextEncoder: globalThis.TextEncoder,
+    TextDecoder: globalThis.TextDecoder,
+    DecompressionStream: TestDecompressionStream,
   };
   vm.runInNewContext(compile(source(path)), context);
   return {
@@ -89,6 +96,111 @@ function button(tree, label) {
   return result;
 }
 const json = (body, ok = true, status = ok ? 200 : 503) => ({ ok, status, json: async () => body });
+const tick = () => new Promise(resolve => setTimeout(resolve, 10));
+async function waitFor(predicate, message) {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (predicate()) return;
+    await tick();
+  }
+  assert.fail(message);
+}
+
+const batchFile = count => {
+  const content = Buffer.from([
+    JSON.stringify({ type: 'manifest' }),
+    ...Array.from({ length: count }, (_, index) => JSON.stringify({ type: 'batch', index })),
+    JSON.stringify({ type: 'trailer' }),
+    '',
+  ].join('\n'));
+  const bytes = new Uint8Array(content);
+  return {
+    name: 'respaldo-qa.jsonl.gz',
+    size: bytes.byteLength,
+    stream: () => ({
+      pipeThrough: () => ({
+        getReader: () => {
+          let read = false;
+          return {
+            read: async () => read ? { done: true } : (read = true, { done: false, value: bytes }),
+            releaseLock() {},
+          };
+        },
+      }),
+    }),
+  };
+};
+
+function batchApi(totalBatches, { partial = false, loseFirstResponse = false } = {}) {
+  const calls = [];
+  const applied = new Map();
+  let responseLost = false;
+  const info = {
+    signature: 'valid', sameClinic: true, timestamp: '2026-01-01T00:00:00.000Z', ageDays: 1,
+    modules: ['patients'], total_batches: totalBatches, counts: { patients: totalBatches },
+  };
+  const report = (index, existing = false) => ({
+    inserted: existing ? {} : { patients: 1 }, existing: existing ? { patients: 1 } : {},
+    deferred: {}, skipped: {}, errors: partial ? [{ table: 'patients', id: 7, error: 'Validación de QA' }] : [],
+    errorCount: partial ? 1 : 0, deferredCount: 0,
+  });
+  const request = async (url, options) => {
+    if (!options?.body) return json(url.includes('snapshots') ? { snapshots: [] } : { stats: {}, encryption_ready: true });
+    const body = JSON.parse(options.body);
+    calls.push(body);
+    if (body.phase === 'inspect') return json({ phase: 'inspect', info, confirmations: [], resume_token: 'dry-0',
+      progress: { next_index: 0, total_batches: totalBatches, done: false }, completed: false, committed: false });
+    if (body.phase === 'prepare') return json({ phase: 'prepare', info, confirmations: [],
+      resume_token: 'apply-0', progress: { next_index: 0, total_batches: totalBatches, done: false }, completed: false, committed: false });
+    if (body.phase === 'batch') {
+      const next = body.index + 1;
+      if (body.dryRun) return json({ phase: 'batch', info, confirmations: [], resume_token: `dry-${next}`,
+        progress: { next_index: next, total_batches: totalBatches, done: next === totalBatches },
+        completed: false, committed: false, report: report(body.index) });
+      const wasApplied = applied.has(body.index);
+      applied.set(body.index, true);
+      if (loseFirstResponse && body.index === 1 && !responseLost) {
+        responseLost = true;
+        throw new Error('Respuesta perdida tras confirmar el lote');
+      }
+      return json({ phase: 'batch', info, confirmations: [], resume_token: `apply-${next}`,
+        progress: { next_index: next, total_batches: totalBatches, done: next === totalBatches },
+        completed: false, committed: true, report: report(body.index, wasApplied) });
+    }
+    if (body.phase === 'finish') return json({ phase: 'finish', info, confirmations: [],
+      resume_token: null, progress: { next_index: totalBatches, total_batches: totalBatches, done: true },
+      completed: true, committed: false });
+    assert.fail(`Fase de respaldo inesperada: ${body.phase}`);
+  };
+  return { request, calls };
+}
+
+function confirmBatch(tree, pattern) {
+  const component = elements(tree).find(node => typeof node.type === 'function' &&
+    node.type.name === 'Confirm' && pattern.test(text(node.props.children)));
+  assert.ok(component, `Confirmación no encontrada: ${pattern}`);
+  component.props.onChange(true);
+}
+
+function hasCard(tree, title) {
+  return elements(tree).some(node => node.type?.name === 'Card' && node.props.title === title);
+}
+
+function selectBatchFile(tree, file) {
+  const input = elements(tree).find(node => node.type === 'input' && node.props.type === 'file' &&
+    node.props.accept.includes('.jsonl.gz'));
+  assert.ok(input, 'No se encontró el selector de respaldos por lotes');
+  input.props.onChange({ target: { files: [file], value: file.name } });
+}
+
+function approveBatchRestore(harness, buttonLabel) {
+  let tree = harness.render();
+  button(tree, buttonLabel).props.onClick();
+  tree = harness.render();
+  const confirmation = elements(tree).filter(node => node.type === 'button' &&
+    text(node) === (buttonLabel === 'Restaurar todos los lotes' ? 'Restaurar por lotes' : 'Reanudar por lotes')).at(-1);
+  assert.ok(confirmation, 'No se encontró la confirmación modal de restauración');
+  confirmation.props.onClick();
+}
 
 test('Worker OFF permite solicitud adicional con can_request aunque la entrega gratis esté reservada', async () => {
   const calls = [];
@@ -423,7 +535,8 @@ test('Base de Datos distingue selección JSON, firmas, originales y copias en nu
   assert.match(text(tree), /no solo las casillas de Exportar/);
   assert.ok(elements(tree).some(node => node.props?.title === 'Respaldo técnico por módulos (JSON)'));
   assert.match(text(tree), /50 MiB comprimidos y 200 MiB descomprimidos/);
-  assert.match(text(tree), /no entrega una copia que no puedas cargar/);
+  assert.match(text(tree), /no una descarga incompleta presentada como completa/);
+  assert.match(text(tree), /Exportar sin límites de archivo/);
   assert.match(text(tree), /hasta 100 consentimientos/);
   for (const label of ['Exportar', 'Importar', 'Nube']) {
     const tab = elements(tree).find(node => node.type === 'button' && text(node).endsWith(label));
@@ -450,6 +563,81 @@ test('La guía de importación informa errores y permite reintentar', async () =
   tree = harness.render();
   assert.doesNotMatch(text(tree), /No se pudo cargar la guía de columnas/);
   assert.match(text(tree), /Ver guía de columnas \(1\)/);
+});
+
+test('la restauración por lotes conserva y muestra un resultado final parcial', async () => {
+  const { request, calls } = batchApi(1, { partial: true });
+  const harness = componentHarness(backupPath, 'clinic_admin', request);
+  let tree = await harness.mount();
+  button(tree, 'Importar').props.onClick();
+  selectBatchFile(harness.render(), batchFile(1));
+  await waitFor(() => calls.length >= 3 && hasCard(harness.render(), 'Simulación completa por lotes'),
+    `La simulación no verificó el trailer: ${JSON.stringify(calls)} ${text(harness.render())}`);
+  tree = harness.render();
+  assert.match(text(tree), /1 lotes verificados/);
+  confirmBatch(tree, /Permito confirmar por lote/);
+  tree = harness.render();
+  confirmBatch(tree, /Revisé la simulación completa/);
+  approveBatchRestore(harness, 'Restaurar todos los lotes');
+  await waitFor(() => calls.some(call => call.phase === 'finish' && call.resumeToken === 'apply-1') &&
+    text(harness.render()).includes('Restauración finalizada con resultado parcial'),
+    'La aplicación por lotes no terminó');
+
+  tree = harness.render();
+  assert.match(text(tree), /Restauración finalizada con resultado parcial/);
+  assert.match(text(tree), /El trailer del archivo sí fue verificado/);
+  assert.match(text(tree), /Validación de QA/);
+  const partialStatus = elements(tree).find(node => node.props?.role === 'status' &&
+    text(node).includes('Restauración finalizada con resultado parcial'));
+  assert.ok(partialStatus?.props.className.includes('bg-amber-50'));
+  assert.equal(elements(tree).some(node => node.props?.role === 'status' &&
+    node.props.className?.includes('bg-emerald-50') && /restauración/i.test(text(node))), false);
+  assert.equal(elements(tree).some(node => node.type === 'button' && text(node) === 'Restaurar todos los lotes'), false,
+    'Una restauración completa no debe ofrecer repetir la operación desde el mismo resumen');
+  assert.ok(elements(tree).some(node => node.type === 'button' && text(node) === 'Nueva restauración'));
+});
+
+test('restauración interrumpida informa incertidumbre y reiniciar el mismo archivo es idempotente', async () => {
+  const { request, calls } = batchApi(2, { loseFirstResponse: true });
+  const harness = componentHarness(backupPath, 'clinic_admin', request);
+  const file = batchFile(2);
+  let tree = await harness.mount();
+  button(tree, 'Importar').props.onClick();
+  selectBatchFile(harness.render(), file);
+  await waitFor(() => calls.length >= 4 && hasCard(harness.render(), 'Simulación completa por lotes'),
+    `La simulación no verificó el trailer: ${JSON.stringify(calls)} ${text(harness.render())}`);
+  tree = harness.render();
+  confirmBatch(tree, /Revisé la simulación completa/);
+  approveBatchRestore(harness, 'Restaurar todos los lotes');
+  await waitFor(() => text(harness.render()).includes('Restauración incompleta:'),
+    'La interfaz no informó la restauración interrumpida');
+  tree = harness.render();
+  assert.match(text(tree), /El lote interrumpido pudo haberse aplicado/);
+  assert.match(text(tree), /No se verificó el trailer/);
+  const interruptedStatus = elements(tree).find(node => node.props?.role === 'status' &&
+    text(node).includes('Restauración incompleta:'));
+  assert.ok(interruptedStatus?.props.className.includes('bg-amber-50'));
+  assert.equal(elements(tree).some(node => node.props?.role === 'status' &&
+    node.props.className?.includes('bg-emerald-50') && /restauración/i.test(text(node))), false);
+  assert.ok(elements(tree).some(node => node.type === 'button' && text(node) === 'Reanudar por lotes'));
+
+  button(tree, 'Cancelar').props.onClick();
+  selectBatchFile(harness.render(), file);
+  await waitFor(() => calls.filter(call => call.phase === 'finish' && call.resumeToken === 'dry-2').length === 2 &&
+    hasCard(harness.render(), 'Simulación completa por lotes'),
+    'No se pudo volver a simular el archivo al reintentar');
+  tree = harness.render();
+  confirmBatch(tree, /Revisé la simulación completa/);
+  approveBatchRestore(harness, 'Restaurar todos los lotes');
+  await waitFor(() => calls.some(call => call.phase === 'finish' && call.resumeToken === 'apply-2') &&
+    text(harness.render()).includes('Restauración completa: 2 lotes confirmados'),
+    'El reintento idempotente no terminó');
+
+  const appliedIndexes = calls.filter(call => call.phase === 'batch' && !call.dryRun).map(call => call.index);
+  assert.deepEqual(appliedIndexes, [0, 1, 0, 1]);
+  tree = harness.render();
+  assert.match(text(tree), /Restauración completa: 2 lotes confirmados y trailer verificado/);
+  assert.doesNotMatch(text(tree), /Restauración por lotes interrumpida/);
 });
 
 test('El canal anual apagado conserva coordinación asistida sin solicitudes automáticas', async () => {
@@ -629,7 +817,7 @@ test('APIs autenticadas usan recordsFetch; GET/PUT presigned quedan sin credenci
   assert.doesNotMatch(source(annualPath), /\bfetch\(/);
   assert.doesNotMatch(source('../src/pages/AdminDashboard.tsx'), /\bfetch\(/);
   const backup = source(backupPath);
-  assert.equal((backup.match(/\bfetch\(/g) || []).length, 3);
+  assert.equal((backup.match(/\bfetch\(/g) || []).length, 4);
   assert.match(backup, /const response = await fetch\(url\)/);
   assert.match(backup, /const res = await fetch\(url\)/);
   assert.match(backup, /const put = await fetch\(url, \{ method: 'PUT'/);

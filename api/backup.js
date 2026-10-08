@@ -9,6 +9,10 @@
 
 import crypto from 'node:crypto';
 import { gzipSync } from 'node:zlib';
+import {
+  S3Client, CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand, DeleteObjectCommand,
+  GetObjectCommand, HeadObjectCommand,
+} from '@aws-sdk/client-s3';
 import { getPool } from '../lib/neon-clinical-db.js';
 import { authenticateRequest } from '../lib/admin-auth.js';
 import { SUBSCRIPTION_FIELDS, subscriptionLifecycle, subscriptionRequestAllowed, syncSubscriptionLifecycle } from '../lib/subscription-lifecycle.js';
@@ -20,7 +24,10 @@ import {
   BACKUP_MODULES, MAX_UPLOAD_BYTES, MAX_JSON_BYTES, MAX_ROWS_PER_TABLE, EXCLUDED_CONSENT_COLUMNS, PATIENT_TEMPLATE_COLUMNS,
   buildBackupDocument, collectClinicData, compressBackup, decodeBackupBuffer, encryptBackup, hasBackupKey,
   inspectBackupDocument, buildDatasetCsv, validatePatientImportRow, buildPatientTemplateCsv, isTemplateExampleRow, buildConsentsPage, listConsentPatients,
-  isBackupUploadSizeAllowed,
+  isBackupUploadSizeAllowed, CLINICAL_TABLES, BATCH_FORMAT, BATCH_LIMITS, BATCH_EXPORT_BUDGET_MS,
+  batchError, streamBatchExport, encodeBatchExport,
+  decryptBatchSnapshot, fixedSizeParts, inspectBatchManifest, openBatch, openBatchTrailer, chainBatchHash,
+  signRestoreToken, openRestoreToken,
 } from '../lib/backup-service.js';
 
 const CLINIC_SCOPED_TABLES = new Set([
@@ -112,6 +119,10 @@ async function getTableColumns(pool, table) {
   return tableColumnsCache.get(table);
 }
 
+// Padre no encontrado en la clínica destino. En la simulación por lotes el padre puede venir en un lote anterior
+// aún no aplicado; esas filas se informan como `deferred` y se validan al aplicar. v3 no cambia: sigue siendo error.
+const missingParent = message => Object.assign(new Error(message), { missingParent: true });
+
 export async function insertBackupRow(pool, table, inputRow, clinicId, isMaster, { financialRecordTable = 'financial_records', photoExists = r2ObjectExists } = {}) {
   const tableColumns = await getTableColumns(pool, table);
   const row = { ...inputRow };
@@ -145,14 +156,14 @@ export async function insertBackupRow(pool, table, inputRow, clinicId, isMaster,
     return 0;
   } else if (table === 'clinical_records') {
     const patient = await pool.query('SELECT 1 FROM patients WHERE id = $1 AND clinic_id IS NOT DISTINCT FROM $2', [row.patient_id, tenantId]);
-    if (!patient.rows.length) throw new Error('El expediente referencia un paciente fuera de la clínica destino');
+    if (!patient.rows.length) throw missingParent('El expediente referencia un paciente fuera de la clínica destino');
     await clearForeignOwner('created_by_user_id');
   } else if (table === 'consultations') {
     const record = await pool.query('SELECT 1 FROM clinical_records WHERE id = $1 AND clinic_id IS NOT DISTINCT FROM $2', [row.record_id, tenantId]);
-    if (!record.rows.length) throw new Error('La consulta referencia un expediente fuera de la clínica destino');
+    if (!record.rows.length) throw missingParent('La consulta referencia un expediente fuera de la clínica destino');
   } else if (RECORD_CHILD_TABLES.has(table)) {
     const record = await pool.query('SELECT patient_id FROM clinical_records WHERE id = $1 AND clinic_id IS NOT DISTINCT FROM $2', [row.record_id, tenantId]);
-    if (!record.rows.length) throw new Error(`La fila de ${table} referencia un expediente fuera de la clínica destino`);
+    if (!record.rows.length) throw missingParent(`La fila de ${table} referencia un expediente fuera de la clínica destino`);
     if (table === 'consent_forms' && Number(record.rows[0].patient_id) !== Number(row.patient_id))
       throw new Error('El consentimiento referencia un paciente distinto al expediente');
     if (table === 'consent_forms') {
@@ -162,8 +173,10 @@ export async function insertBackupRow(pool, table, inputRow, clinicId, isMaster,
           'SELECT 1 FROM consent_forms WHERE id = $1 AND patient_id = $2 AND record_id = $3 AND clinic_id IS NOT DISTINCT FROM $4 AND status = $5',
           [row.replaces_consent_id, row.patient_id, row.record_id, tenantId, 'annulled']
         );
-        if (!original.rows.length || Number(row.replaces_consent_id) === Number(row.id))
+        if (Number(row.replaces_consent_id) === Number(row.id))
           throw new Error('El reemplazo referencia un consentimiento anulado distinto o fuera de la clínica destino');
+        if (!original.rows.length)
+          throw missingParent('El reemplazo referencia un consentimiento anulado distinto o fuera de la clínica destino');
       }
     }
     if (table === 'clinical_photos') {
@@ -174,36 +187,36 @@ export async function insertBackupRow(pool, table, inputRow, clinicId, isMaster,
     }
     if (row.consultation_id != null) {
       const consultation = await pool.query('SELECT 1 FROM consultations WHERE id = $1 AND record_id = $2 AND clinic_id IS NOT DISTINCT FROM $3', [row.consultation_id, row.record_id, tenantId]);
-      if (!consultation.rows.length) throw new Error(`La fila de ${table} referencia una consulta fuera del expediente o la clínica destino`);
+      if (!consultation.rows.length) throw missingParent(`La fila de ${table} referencia una consulta fuera del expediente o la clínica destino`);
     }
     if (table === 'injectables' && row.treatment_id != null) {
       const treatment = await pool.query(
         'SELECT 1 FROM treatments WHERE id = $1 AND record_id = $2 AND clinic_id IS NOT DISTINCT FROM $3',
         [row.treatment_id, row.record_id, tenantId]
       );
-      if (!treatment.rows.length) throw new Error('El inyectable referencia un tratamiento fuera del expediente o la clínica destino');
+      if (!treatment.rows.length) throw missingParent('El inyectable referencia un tratamiento fuera del expediente o la clínica destino');
     }
   } else if (table === 'patient_audit_log') {
     if (row.patient_id != null) {
       const patient = await pool.query('SELECT 1 FROM patients WHERE id = $1 AND clinic_id IS NOT DISTINCT FROM $2', [row.patient_id, tenantId]);
-      if (!patient.rows.length) throw new Error('La auditoría referencia un paciente fuera de la clínica destino');
+      if (!patient.rows.length) throw missingParent('La auditoría referencia un paciente fuera de la clínica destino');
     }
     if (row.record_id != null) {
       const record = await pool.query('SELECT 1 FROM clinical_records WHERE id = $1 AND clinic_id IS NOT DISTINCT FROM $2', [row.record_id, tenantId]);
-      if (!record.rows.length) throw new Error('La auditoría referencia un expediente fuera de la clínica destino');
+      if (!record.rows.length) throw missingParent('La auditoría referencia un expediente fuera de la clínica destino');
     }
     await clearForeignOwner('clinic_user_id');
   } else if (table === 'inventory_batches') {
     const item = await pool.query('SELECT 1 FROM inventory_items WHERE id = $1 AND clinic_id IS NOT DISTINCT FROM $2', [row.item_id, tenantId]);
-    if (!item.rows.length) throw new Error('El lote referencia un ítem fuera de la clínica destino');
+    if (!item.rows.length) throw missingParent('El lote referencia un ítem fuera de la clínica destino');
   } else if (table === 'financial_items') {
     if (!['financial_records', 'external_finance_records'].includes(financialRecordTable))
       throw new Error('Tabla financiera de backup no permitida');
     const record = await pool.query(`SELECT 1 FROM ${financialRecordTable} WHERE id = $1 AND clinic_id IS NOT DISTINCT FROM $2`, [row.record_id, tenantId]);
-    if (!record.rows.length) throw new Error('La partida referencia un registro financiero fuera de la clínica destino');
+    if (!record.rows.length) throw missingParent('La partida referencia un registro financiero fuera de la clínica destino');
   } else if (table === 'inventory_movements') {
     const batch = await pool.query('SELECT 1 FROM inventory_batches WHERE id = $1 AND clinic_id IS NOT DISTINCT FROM $2', [row.batch_id, tenantId]);
-    if (!batch.rows.length) throw new Error('El movimiento referencia un lote fuera de la clínica destino');
+    if (!batch.rows.length) throw missingParent('El movimiento referencia un lote fuera de la clínica destino');
     await clearForeignOwner('user_id');
   }
 
@@ -247,12 +260,9 @@ const PG_ERRORS = {
 export const describeRestoreError = err =>
   err?.code ? (PG_ERRORS[err.code] || `Error de base de datos (${err.code})`) : String(err?.message || 'Error desconocido').slice(0, 200);
 
-/** Restaura en una transacción; cada fila en su SAVEPOINT. Confirma solo si no es simulación y no hay errores (o se aceptan parciales). */
-export async function restoreBackupDocument(pool, doc, clinicId, { dryRun = true, allowPartial = false } = {}) {
-  const client = await pool.connect();
-  const report = { inserted: {}, existing: {}, errors: [], errorCount: 0, committed: false };
-  const touched = new Set();
-  const insertRows = async (table, rows, inserter) => {
+/** Inserta filas con SAVEPOINT por fila y acumula el reporte (compartido por v3 y por lotes). */
+function rowRestorer(client, report, touched, { deferMissingParents = false } = {}) {
+  return async (table, rows, inserter) => {
     if (rows == null) return;
     if (!Array.isArray(rows) || rows.length > MAX_ROWS_PER_TABLE) throw new Error(`La sección ${table} es inválida o demasiado grande`);
     for (const raw of rows) {
@@ -265,11 +275,46 @@ export async function restoreBackupDocument(pool, doc, clinicId, { dryRun = true
         if (n) touched.add(table);
       } catch (err) {
         await client.query('ROLLBACK TO SAVEPOINT backup_row');
+        if (deferMissingParents && err?.missingParent) {
+          report.deferred[table] = (report.deferred[table] || 0) + 1;
+          report.deferredCount++;
+          continue;
+        }
         report.errorCount++;
         if (report.errors.length < 200) report.errors.push({ table, id: raw?.id ?? null, error: describeRestoreError(err) });
       }
     }
   };
+}
+
+/** Normalizaciones por tabla idénticas a la restauración v3. */
+function restoreInserter(client, table, clinicId, { legacyWithoutConsultations = false, financeTable = 'financial_records', photoExists } = {}) {
+  const options = photoExists ? { photoExists } : undefined;
+  if (table === 'patients') return row => insertBackupRow(client, 'patients',
+    { ...row, rut: row?.rut || row?.identification_number, identification_number: row?.identification_number || row?.rut }, clinicId, false, options);
+  if (table === 'inventory_groups') return row => restoreInventoryGroups(client, [row], clinicId, false);
+  if (table === 'financial_items') return row => insertBackupRow(client, table, row, clinicId, false, { ...options, financialRecordTable: financeTable });
+  if (legacyWithoutConsultations && CLINICAL_TABLES.includes(table) && table !== 'consultations')
+    return row => insertBackupRow(client, table, row?.consultation_id != null ? { ...row, consultation_id: null } : row, clinicId, false, options);
+  return row => insertBackupRow(client, table, row, clinicId, false, options);
+}
+
+// Con IDs explícitos las secuencias no avanzan; sin esto el próximo INSERT normal chocaría.
+async function fixSequences(client, touched) {
+  for (const table of touched) {
+    if (table === 'inventory_groups') continue;
+    await client.query(
+      `SELECT setval(s, GREATEST(COALESCE((SELECT MAX(id) FROM ${table}), 1), COALESCE(pg_sequence_last_value(s::regclass), 1)))
+       FROM (SELECT pg_get_serial_sequence($1, 'id') AS s) seq WHERE s IS NOT NULL`, [table]);
+  }
+}
+
+/** Restaura en una transacción; cada fila en su SAVEPOINT. Confirma solo si no es simulación y no hay errores (o se aceptan parciales). */
+export async function restoreBackupDocument(pool, doc, clinicId, { dryRun = true, allowPartial = false } = {}) {
+  const client = await pool.connect();
+  const report = { inserted: {}, existing: {}, errors: [], errorCount: 0, committed: false };
+  const touched = new Set();
+  const insertRows = rowRestorer(client, report, touched);
   const rowsOf = (table, value) => {
     if (value != null && !Array.isArray(value)) throw new Error(`La sección ${table} es inválida`);
     return value;
@@ -287,15 +332,10 @@ export async function restoreBackupDocument(pool, doc, clinicId, { dryRun = true
     const modules = doc.modules;
     const t = modules.patients?.tables;
     if (t && typeof t === 'object') {
-      await insertRows('patients', rowsOf('patients', t.patients), row => insertBackupRow(client, 'patients',
-        { ...row, rut: row?.rut || row?.identification_number, identification_number: row?.identification_number || row?.rut }, clinicId, false));
-      for (const table of ['clinical_records', 'consultations', 'medical_history', 'consultation_info', 'consultation_history',
-        'physical_exams', 'diagnoses', 'treatments', 'injectables', 'prescriptions', 'consent_forms',
-        'medical_history_snapshots', 'clinical_photos', 'patient_audit_log']) {
-        const legacyWithoutConsultations = table !== 'consultations' && !Array.isArray(t.consultations);
-        await insertRows(table, rowsOf(table, t[table]), row => insertBackupRow(client, table,
-          legacyWithoutConsultations && row?.consultation_id != null ? { ...row, consultation_id: null } : row, clinicId, false));
-      }
+      await insertRows('patients', rowsOf('patients', t.patients), restoreInserter(client, 'patients', clinicId));
+      const legacyWithoutConsultations = !Array.isArray(t.consultations);
+      for (const table of CLINICAL_TABLES.filter(name => name !== 'patients'))
+        await insertRows(table, rowsOf(table, t[table]), restoreInserter(client, table, clinicId, { legacyWithoutConsultations }));
     }
     if (modules.finance?.records) {
       const finTable = resolveFinanceSourceTable(modules.finance);
@@ -316,13 +356,7 @@ export async function restoreBackupDocument(pool, doc, clinicId, { dryRun = true
 
     const commit = !dryRun && (report.errorCount === 0 || allowPartial);
     if (commit) {
-      // Con IDs explícitos las secuencias no avanzan; sin esto el próximo INSERT normal chocaría.
-      for (const table of touched) {
-        if (table === 'inventory_groups') continue;
-        await client.query(
-          `SELECT setval(s, GREATEST(COALESCE((SELECT MAX(id) FROM ${table}), 1), COALESCE(pg_sequence_last_value(s::regclass), 1)))
-           FROM (SELECT pg_get_serial_sequence($1, 'id') AS s) seq WHERE s IS NOT NULL`, [table]);
-      }
+      await fixSequences(client, touched);
       await client.query('COMMIT');
     } else {
       await client.query('ROLLBACK');
@@ -561,6 +595,293 @@ export async function createSnapshot(pool, clinicId, kind, generatedBy, {
     throw error;
   } finally { client.release(); }
   return { key, size: body.length, counts: doc.metadata.counts };
+}
+
+// ── Respaldo por lotes batch-jsonl-v1 ─────────────────────────────────────────
+export { BATCH_EXPORT_BUDGET_MS };
+const R2_PART_BYTES = 8 * 1024 * 1024;
+const R2_CLEANUP_TIMEOUT_MS = 5000;
+const RESTORE_TOKEN_TTL_MS = 24 * 3600 * 1000;
+export const isBatchSnapshotKey = (key, clinicId) =>
+  typeof key === 'string' && new RegExp(`^backups/${clinicId}/(${SNAPSHOT_KINDS.join('|')})/[\\w.-]+\\.jsonl\\.gz\\.enc$`).test(key);
+
+// lib/r2-service.js no expone su cliente ni multipart: mismo endpoint, bucket y credenciales, solo para streaming.
+// PutObject requiere Content-Length conocido; un stream de longitud desconocida exige multipart (ya incluido en @aws-sdk/client-s3).
+let r2StreamingClient = null;
+function r2Streaming() {
+  if (!r2StreamingClient) {
+    const accessKeyId = process.env.R2_ACCESS_KEY_ID, secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
+    if (!accessKeyId || !secretAccessKey) throw new Error('R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY no configuradas');
+    r2StreamingClient = new S3Client({ region: 'auto', endpoint: 'https://9ea0b8c60134a90584195bf8954ad235.r2.cloudflarestorage.com',
+      credentials: { accessKeyId, secretAccessKey } });
+  }
+  return { client: r2StreamingClient, Bucket: process.env.R2_BUCKET_NAME || 'bioskin-fotos' };
+}
+
+export const r2BatchStorage = {
+  /** Multipart: publica solo tras completar y verificar; limpia los objetos cuya publicación no pudo verificarse. */
+  async upload(key, chunks, contentType, { signal, beforeComplete } = {}) {
+    const { client, Bucket } = r2Streaming();
+    const options = signal ? { abortSignal: signal } : {};
+    const { UploadId } = await client.send(new CreateMultipartUploadCommand({
+      Bucket, Key: key, ContentType: contentType, CacheControl: 'private, no-store' }), options);
+    const parts = [];
+    let size = 0;
+    let completionAttempted = false;
+    let completionSucceeded = false;
+    try {
+      for await (const body of fixedSizeParts(chunks, R2_PART_BYTES)) {
+        const PartNumber = parts.length + 1;
+        if (PartNumber > 10_000) throw new Error('El archivo supera el máximo de partes permitido');
+        const { ETag } = await client.send(new UploadPartCommand({
+          Bucket, Key: key, UploadId, PartNumber, Body: body, ContentLength: body.length }), options);
+        parts.push({ ETag, PartNumber });
+        size += body.length;
+      }
+      beforeComplete?.();
+      completionAttempted = true;
+      await client.send(new CompleteMultipartUploadCommand({ Bucket, Key: key, UploadId, MultipartUpload: { Parts: parts } }), options);
+      completionSucceeded = true;
+      const head = await client.send(new HeadObjectCommand({ Bucket, Key: key }), options);
+      if (Number(head.ContentLength) !== size) throw new Error('El tamaño del objeto publicado no coincide');
+      return { key, size };
+    } catch (error) {
+      let cleanupError = null;
+      if (completionAttempted) {
+        try {
+          await client.send(new DeleteObjectCommand({ Bucket, Key: key }), {
+            abortSignal: AbortSignal.timeout(R2_CLEANUP_TIMEOUT_MS),
+          });
+        } catch (deleteError) {
+          console.error('[backup:batch] published object cleanup failed', deleteError?.name || 'Error');
+          cleanupError = deleteError;
+        }
+      }
+      if (!completionSucceeded) {
+        try {
+          await client.send(new AbortMultipartUploadCommand({ Bucket, Key: key, UploadId }), {
+            abortSignal: AbortSignal.timeout(R2_CLEANUP_TIMEOUT_MS),
+          });
+        } catch (abortError) {
+          if (abortError?.name !== 'NoSuchUpload' && abortError?.Code !== 'NoSuchUpload' && abortError?.code !== 'NoSuchUpload') {
+            console.error('[backup:batch] multipart abort failed', abortError?.name || 'Error');
+            cleanupError ||= abortError;
+          }
+        }
+      }
+      if (cleanupError) {
+        const publicationUncertain = completionAttempted;
+        throw Object.assign(batchError(502,
+          publicationUncertain ? 'PUBLICATION_UNCERTAIN' : 'MULTIPART_CLEANUP_UNCERTAIN',
+          publicationUncertain
+            ? 'La publicación del respaldo es incierta: no se pudo confirmar la limpieza del objeto o de la carga multipart. Contacta a soporte antes de reintentar.'
+            : 'No se pudo limpiar la carga multipart en R2; no se publicó ningún archivo. Contacta a soporte antes de reintentar.'),
+        { publicationUncertain, cleanupUncertain: true, cause: error, cleanupCause: cleanupError });
+      }
+      throw error;
+    }
+  },
+  async *download(key, { signal } = {}) {
+    const { client, Bucket } = r2Streaming();
+    const out = await client.send(new GetObjectCommand({ Bucket, Key: key }), signal ? { abortSignal: signal } : {});
+    yield* out.Body;
+  },
+  downloadUrl: (key, filename) => generateDownloadUrl(key, filename),
+};
+
+const timeoutError = cause => Object.assign(batchError(504, 'TIMEOUT',
+  `La exportación no terminó en ${BATCH_EXPORT_BUDGET_MS / 1000} s; no se publicó ningún archivo. Coordina una exportación asistida con soporte.`), { cause });
+
+/** Exporta el snapshot por lotes a R2; publica solo si el stream terminó con trailer y el objeto se verificó. */
+export async function exportBatchObject(pool, { clinicId, modules, generatedBy, kind, key, encrypt = false,
+  budgetMs = BATCH_EXPORT_BUDGET_MS, signal = AbortSignal.timeout(budgetMs), storage = r2BatchStorage }) {
+  let summary = null;
+  const lines = streamBatchExport(pool, { clinicId, modules, generatedBy, kind, signal, budgetMs,
+    onComplete: value => { summary = value; } });
+  try {
+    const { size } = await storage.upload(key, encodeBatchExport(lines, { encrypt }), encrypt ? 'application/octet-stream' : 'application/gzip', {
+      signal,
+      beforeComplete: () => { if (!summary) throw new Error('La exportación por lotes no terminó con su trailer; no se publicó el archivo'); },
+    });
+    return { key, size, ...summary };
+  } catch (error) {
+    if (signal?.aborted || error?.code === '57014') {
+      if (error?.publicationUncertain || error?.cleanupUncertain) throw error;
+      throw timeoutError(error);
+    }
+    throw error;
+  }
+}
+
+export async function exportBatchDownload(pool, clinicId, modules, generatedBy, options = {}) {
+  const storage = options.storage || r2BatchStorage;
+  const key = `backup-tmp/${clinicId}/exports/${crypto.randomUUID()}.gz`;
+  const result = await exportBatchObject(pool, { clinicId, modules, generatedBy, kind: 'download', key, ...options, storage });
+  const filename = `bioskintech-respaldo-lotes-${new Date().toISOString().split('T')[0]}.jsonl.gz`;
+  return { url: await storage.downloadUrl(key, filename), filename, format: BATCH_FORMAT, export_id: result.export_id,
+    manifest_sha256: result.manifest_sha256, total_batches: result.total_batches, counts: result.counts,
+    signed: result.signed, size_bytes: result.size };
+}
+
+/** Respaldo previo obligatorio para restauración por lotes: dataset completo, cifrado en streaming (BSKE2). */
+export async function createBatchPreRestore(pool, clinicId, generatedBy, options = {}) {
+  if (!hasBackupKey()) throw batchError(503, 'KEY', 'No se puede restaurar sin generar antes un respaldo de seguridad (cifrado no configurado)');
+  const key = `backups/${clinicId}/pre-restore/${stamp()}-${crypto.randomBytes(4).toString('hex')}.jsonl.gz.enc`;
+  const result = await exportBatchObject(pool, { clinicId, modules: BACKUP_MODULES, generatedBy, kind: 'pre-restore', key, encrypt: true, ...options });
+  if (result.key !== key || !(result.size > 0) || !result.manifest_sha256)
+    throw new Error('No se pudo verificar el respaldo previo; no se restauró ningún lote');
+  return result;
+}
+
+/** Descarga un respaldo BSKE2: descifra en streaming y publica solo si el tag GCM es válido. */
+export async function republishBatchSnapshot(clinicId, snapshotKey, { storage = r2BatchStorage, signal = AbortSignal.timeout(BATCH_EXPORT_BUDGET_MS) } = {}) {
+  if (!isBatchSnapshotKey(snapshotKey, clinicId)) throw new Error('Respaldo no válido para esta clínica');
+  const key = `backup-tmp/${clinicId}/exports/${crypto.randomUUID()}.gz`;
+  try {
+    const { size } = await storage.upload(key, decryptBatchSnapshot(storage.download(snapshotKey, { signal })), 'application/gzip', { signal });
+    const filename = `bioskintech-respaldo-nube-lotes-${new Date().toISOString().split('T')[0]}.jsonl.gz`;
+    return { url: await storage.downloadUrl(key, filename), filename, format: BATCH_FORMAT, size_bytes: size };
+  } catch (error) {
+    if (signal?.aborted && !error?.publicationUncertain && !error?.cleanupUncertain) throw timeoutError(error);
+    throw error;
+  }
+}
+
+/** Aplica o simula un lote verificado en su propia transacción; idempotente (ON CONFLICT DO NOTHING / existentes). */
+export async function restoreBackupBatch(pool, { manifest, batch, table, clinicId, dryRun = true, allowPartial = false, photoExists }) {
+  const report = { inserted: {}, existing: {}, deferred: {}, skipped: {}, errors: [], errorCount: 0, deferredCount: 0, committed: false };
+  if (!table.restorable) {
+    // Módulos de referencia (config/communications): igual que v3, nunca se escriben.
+    report.skipped[table.name] = batch.rows.length;
+    report.committed = !dryRun;
+    return report;
+  }
+  const client = await pool.connect();
+  const touched = new Set();
+  let open = false;
+  let releaseError;
+  try {
+    await client.query('BEGIN');
+    open = true;
+    await client.query("SET LOCAL statement_timeout = '15s'");
+    await lockClinicWriters(client, [clinicId, manifest.clinic_id]);
+    await requireClinicWritable(client, clinicId);
+    await rejectPurgedBackup(client, { metadata: { clinic_id: manifest.clinic_id } }, clinicId);
+    if (table.name === manifest.finance_source_table) {
+      const exists = await client.query('SELECT to_regclass($1) IS NOT NULL AS ok', [`public.${table.name}`]);
+      if (!exists.rows[0]?.ok) throw new Error('La tabla financiera del respaldo no existe en esta instalación');
+    }
+    const insertRows = rowRestorer(client, report, touched, { deferMissingParents: dryRun });
+    await insertRows(table.name, batch.rows, restoreInserter(client, table.name, clinicId, {
+      legacyWithoutConsultations: !manifest.tables.some(t => t.name === 'consultations'),
+      financeTable: manifest.finance_source_table ?? 'financial_records', photoExists }));
+    const commit = !dryRun && (report.errorCount === 0 || allowPartial);
+    if (commit) {
+      await fixSequences(client, touched);
+      await client.query('COMMIT');
+    } else {
+      await client.query('ROLLBACK');
+    }
+    open = false;
+    report.committed = commit;
+    return report;
+  } finally {
+    if (open) {
+      try { await client.query('ROLLBACK'); }
+      catch (error) { releaseError = error; console.error('[backup:batch] rollback failed', error?.code || error?.name); }
+    }
+    client.release(releaseError);
+  }
+}
+
+/**
+ * POST ?action=restore con format='batch-jsonl-v1'. Fases:
+ *  inspect → solo lectura: info/confirmations + resume_token de simulación (next_index 0); nunca crea respaldo previo.
+ *  prepare → crea y verifica el respaldo previo; devuelve resume_token (apply, next_index 0).
+ *  batch   → manifest + un lote; dryRun (default true) no requiere token en el lote 0; apply exige token de prepare.
+ *  finish  → valida trailer contra la cadena de hashes del token; completed=true.
+ */
+export async function handleBatchRestore(pool, body, { clinicId, userId = null, username = null, contentLength,
+  now = Date.now, preRestore = createBatchPreRestore, photoExists } = {}) {
+  if (!body || typeof body !== 'object' || Array.isArray(body))
+    throw batchError(400, 'MALFORMED', 'La solicitud de restauración debe ser un objeto JSON');
+  if (contentLength == null)
+    throw batchError(411, 'MALFORMED', 'Content-Length es obligatorio para la restauración por lotes');
+  const declaredBytes = Number(contentLength);
+  if (!Number.isSafeInteger(declaredBytes) || declaredBytes < 0)
+    throw batchError(400, 'MALFORMED', 'Content-Length inválido');
+  const payloadBytes = Buffer.byteLength(JSON.stringify(body), 'utf8');
+  if (declaredBytes > BATCH_LIMITS.maxRequestBytes || payloadBytes > BATCH_LIMITS.maxRequestBytes)
+    throw batchError(413, 'SIZE', `La solicitud supera ${BATCH_LIMITS.maxRequestBytes / 1048576} MiB; envía un lote por llamada`);
+  if (!hasBackupKey()) throw batchError(503, 'KEY', 'La restauración por lotes requiere el cifrado de respaldos configurado. Contacta a soporte.');
+  const phase = body.phase;
+  if (!['inspect', 'prepare', 'batch', 'finish'].includes(phase)) throw batchError(400, 'MALFORMED', 'phase debe ser inspect, prepare, batch o finish');
+  const ctx = inspectBatchManifest(body.manifest, clinicId);
+  const { manifest, info } = ctx;
+  await rejectPurgedBackup(pool, { metadata: { clinic_id: manifest.clinic_id } }, clinicId);
+  const confirmations = [...(info.signature !== 'valid' ? ['unsigned'] : []), ...(!info.sameClinic ? ['foreignClinic'] : [])];
+  const total = manifest.total_batches;
+  const progress = n => ({ next_index: n, total_batches: total, done: n === total });
+  const issue = (mode, n, chain, preRestoreKey) => signRestoreToken({ v: 1, m: mode, c: clinicId, u: userId ?? null,
+    h: ctx.sha256, n, ch: chain, p: preRestoreKey ?? null, exp: now() + RESTORE_TOKEN_TTL_MS });
+  const base = { format: BATCH_FORMAT, phase, info, confirmations };
+
+  // Solo lectura: verifica el manifiesto y entrega un token de simulación (también válido para finish si total_batches=0).
+  if (phase === 'inspect') {
+    return { ...base, mode: 'dry_run', committed: false, completed: false, pre_restore_snapshot: null,
+      progress: progress(0), resume_token: issue('dry', 0, ctx.sha256, null) };
+  }
+
+  if (phase === 'prepare') {
+    if (confirmations.includes('unsigned') && body.acceptUnsigned !== true)
+      throw batchError(409, 'CONFIRMATION', 'El archivo no tiene una firma válida de este sistema; confirma explícitamente para continuar', { info, confirmations });
+    if (confirmations.includes('foreignClinic') && body.confirmForeignClinic !== true)
+      throw batchError(409, 'CONFIRMATION', 'El respaldo pertenece a otra clínica; confirma explícitamente para continuar', { info, confirmations });
+    const snapshot = await preRestore(pool, clinicId, username);
+    return { ...base, mode: 'apply', committed: false, completed: false, pre_restore_snapshot: snapshot.key,
+      progress: progress(0), resume_token: issue('apply', 0, ctx.sha256, snapshot.key) };
+  }
+
+  const dryRun = phase === 'batch' && body.dryRun !== false;
+  let state;
+  if (body.resumeToken == null) {
+    if (!dryRun || phase !== 'batch')
+      throw batchError(409, 'PREPARE_REQUIRED', 'Primero ejecuta phase=prepare (respaldo previo) y usa su resume_token; la simulación empieza en el lote 0 sin token');
+    state = { m: 'dry', n: 0, ch: ctx.sha256, p: null };
+  } else {
+    state = openRestoreToken(body.resumeToken, now());
+    if (state.c !== clinicId || state.u !== (userId ?? null) || state.h !== ctx.sha256)
+      throw batchError(409, 'TOKEN', 'El token no corresponde a esta clínica, usuario o manifiesto');
+    if (phase === 'batch' && state.m !== (dryRun ? 'dry' : 'apply'))
+      throw batchError(409, 'TOKEN', 'Un token de simulación no autoriza escrituras, ni uno de aplicación sirve para simular');
+    if (state.m === 'apply' && !state.p) throw batchError(409, 'TOKEN', 'El token no acredita un respaldo previo');
+  }
+  const mode = state.m === 'apply' ? 'apply' : 'dry_run';
+
+  if (phase === 'finish') {
+    if (state.n !== total)
+      throw batchError(409, 'SEQUENCE', `Faltan lotes: se esperaba el lote ${state.n} de ${total}`, { expected_index: state.n, progress: progress(state.n) });
+    openBatchTrailer(body.trailer, ctx, state.ch);
+    return { ...base, mode, committed: false, completed: true, pre_restore_snapshot: state.p, progress: progress(total), resume_token: null };
+  }
+
+  if (!Number.isSafeInteger(body.index) || body.index < 0) throw batchError(400, 'MALFORMED', 'index debe ser un entero >= 0');
+  if (state.n >= total)
+    throw batchError(409, 'SEQUENCE', 'Todos los lotes ya fueron procesados; envía phase=finish con el trailer', { expected_index: state.n });
+  if (body.index !== state.n)
+    throw batchError(409, 'SEQUENCE', `Se esperaba el lote ${state.n}; no se permiten lotes omitidos ni repetidos`, { expected_index: state.n });
+  const opened = openBatch(body.batch, ctx, state.n);
+  const report = await restoreBackupBatch(pool, { manifest, batch: opened.batch, table: opened.table, clinicId,
+    dryRun, allowPartial: body.allowPartial === true, photoExists });
+  const advanced = dryRun || report.committed;
+  const next = advanced ? state.n + 1 : state.n;
+  return {
+    ...base, mode, committed: report.committed, completed: false,
+    batch: { index: state.n, table: opened.table.name, count: opened.batch.count },
+    report, needs_allow_partial: !dryRun && !report.committed && report.errorCount > 0,
+    pre_restore_snapshot: state.p, progress: progress(next),
+    resume_token: advanced ? issue(state.m, next, chainBatchHash(state.ch, opened.sha256), state.p) : body.resumeToken ?? null,
+  };
 }
 
 async function publishTemporaryDownload(clinicId, doc, filenameBase) {
@@ -916,12 +1237,14 @@ export default async function handler(req, res) {
 
     if (action === 'snapshots' && req.method === 'GET') {
       if (!requireClinic()) return;
-      const items = (await listR2Objects(`backups/${clinicId}/`, 500))
-        .filter(o => isSnapshotKey(o.key, clinicId))
-        .map(o => ({ key: o.key, kind: o.key.split('/')[2], size: o.size, created_at: o.lastModified }))
-        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      const objects = await listR2Objects(`backups/${clinicId}/`, 500);
+      const describe = format => o => ({ key: o.key, kind: o.key.split('/')[2], size: o.size, created_at: o.lastModified, format });
+      const newestFirst = (a, b) => new Date(b.created_at) - new Date(a.created_at);
+      const items = objects.filter(o => isSnapshotKey(o.key, clinicId)).map(describe('v3')).sort(newestFirst);
+      // Aditivo: respaldos previos por lotes (BSKE2). Se descargan con export+snapshotKey; no se restauran por la ruta v3.
+      const batchItems = objects.filter(o => isBatchSnapshotKey(o.key, clinicId)).map(describe(BATCH_FORMAT)).sort(newestFirst);
       const manualQuota = await getManualSnapshotQuota(pool, clinicId);
-      return res.status(200).json({ snapshots: items, manual_quota: manualQuota,
+      return res.status(200).json({ snapshots: items, batch_snapshots: batchItems, manual_quota: manualQuota,
         manual_backup: manualBackupContract(manualQuota),
         encryption_ready: hasBackupKey(), retention_days: 35, immutable_days: 30 });
     }
@@ -932,6 +1255,11 @@ export default async function handler(req, res) {
 
     if (action === 'export') {
       if (body.snapshotKey != null) {
+        if (isBatchSnapshotKey(body.snapshotKey, clinicId)) {
+          const file = await republishBatchSnapshot(clinicId, body.snapshotKey);
+          console.info('[backup] batch snapshot download', { clinicId, user: auth.id });
+          return res.status(200).json(file);
+        }
         if (!isSnapshotKey(body.snapshotKey, clinicId)) return res.status(400).json({ error: 'Respaldo no válido para esta clínica' });
         const doc = decodeBackupBuffer(await getR2ObjectBuffer(body.snapshotKey, MAX_RESTORABLE_SNAPSHOT_BYTES));
         inspectBackupDocument(doc, clinicId);
@@ -939,6 +1267,12 @@ export default async function handler(req, res) {
       }
       const selected = Array.isArray(body.modules) ? body.modules.filter(m => BACKUP_MODULES.includes(m)) : [];
       if (!selected.length) return res.status(400).json({ error: 'Selecciona al menos un módulo' });
+      if (body.format !== undefined && body.format !== BATCH_FORMAT) return res.status(400).json({ error: 'Formato de exportación no soportado' });
+      if (body.format === BATCH_FORMAT) {
+        const file = await exportBatchDownload(pool, clinicId, selected, auth.username);
+        console.info('[backup] batch export', { clinicId, user: auth.id, modules: selected, batches: file.total_batches, bytes: file.size_bytes });
+        return res.status(200).json(file);
+      }
       const modules = await collectClinicData(pool, clinicId, selected);
       const doc = buildBackupDocument({ clinicId, clinicName: await clinicName(pool, clinicId), generatedBy: auth.username, kind: 'download', modules });
       console.info('[backup] export', { clinicId, user: auth.id, modules: selected });
@@ -977,6 +1311,14 @@ export default async function handler(req, res) {
     }
 
     if (action === 'restore') {
+      if (body.format !== undefined) {
+        if (body.format !== BATCH_FORMAT) return res.status(400).json({ error: 'Formato de restauración no soportado' });
+        const result = await handleBatchRestore(pool, body, { clinicId, userId: auth.id ?? null, username: auth.username,
+          contentLength: req.headers?.['content-length'] });
+        console.info('[backup] batch restore', { clinicId, user: auth.id, phase: result.phase, mode: result.mode,
+          index: result.batch?.index ?? null, committed: result.committed, completed: result.completed, errors: result.report?.errorCount ?? 0 });
+        return res.status(200).json(result);
+      }
       const source = body.source === 'snapshot' ? 'snapshot' : 'upload';
       const validKey = source === 'snapshot' ? isSnapshotKey(body.key, clinicId) : isUploadKey(body.key, clinicId);
       if (!validKey) return res.status(400).json({ error: 'Archivo de respaldo no válido para esta clínica' });
@@ -1020,6 +1362,7 @@ export default async function handler(req, res) {
     console.error('[backup] error', action, error?.code || error?.name || 'Error');
     const status = known ? (Number.isInteger(error.status) ? error.status : 400) : 500;
     return res.status(status).json({ error: known ? error.message : 'No se pudo procesar el respaldo.',
+      ...(known && error.details && typeof error.details === 'object' ? error.details : {}),
       ...(status === 429 && error.nextAllowedAt ? { next_allowed_at: error.nextAllowedAt } : {}) });
   } finally {
     if (manualSnapshotReservation) {

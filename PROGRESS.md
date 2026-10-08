@@ -1,5 +1,13 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-08 Vite: entrada 250 KiB; Three diferido.
+- ✅ 2026-10-08 npm: 15 paquetes, 21 avisos GHSA dev; cero runtime.
+- ✅ 2026-10-08 SMTP: mocks; sin envíos reales.
+- ✅ 2026-10-08 JSON por lotes: reanudable; parcialidad aceptada.
+- ✅ 2026-10-08 Multipart R2: limpieza acotada y verificada.
+- ✅ 2026-10-08 Neon/R2: snapshot consistente e integridad verificada.
+- ✅ 2026-10-08 UI: simulación y parcialidad explícitas.
+- ✅ 2026-10-08 QA: 179 pruebas backup; 113 seguridad.
 - ✅ 2026-10-07 Ciclo: QA desktop y móvil.
 - ✅ 2026-10-07 Contratos: impresión válida verificada.
 - ✅ 2026-10-07 Neon: esquema anual con RLS aplicado.
@@ -205,6 +213,7 @@
 - ✅ 2026-09-09 Corregido envío de alertas de registro y reconexión OAuth inválida.
 - ✅ 2026-09-09 Separadas alertas administrativas y bloqueado agendamiento sin Gmail OAuth de clínica.
 - ✅ 2026-09-09 Compactado layout visual del tab Recetas.
+- ✅ 2026-10-08 Retirado @vercel/node sin uso; Tailwind 4 descartado por regresiones visuales.
 - ✅ 2026-09-09 Implementadas claves temporales y envío seguro de credenciales.
 - ✅ 2026-09-09 Corregidos conteos visuales de módulos opt-in.
 - ✅ 2026-09-15 Añadido webhook inicial de WhatsApp Cloud API con verificación de token.
@@ -275,7 +284,7 @@
 - ✅ 2026-10-01 Reordenados y acortados los mensajes libres del chatbot de WhatsApp; los resúmenes de staff ya no se aplanan en párrafos extensos y los valores dinámicos rechazan controles visuales. La plantilla aprobada de confirmación al paciente permanece intacta.
 
 ## Pendientes verificables
-- ⏳ Resolver o registrar la deuda de lint global: 471 errores y 54 warnings en la línea base.
-- ⏳ Revisar vulnerabilidades restantes exclusivamente en herramientas dev/build; `npm audit --force` propone downgrades incompatibles.
+- ⏳ Resolver deuda de lint global: 286 errores y 50 warnings.
+- ✅ 2026-10-08 Auditoría npm verificada; residual dev requiere migración mayor compatible.
 - ✅ 2026-09-29 Pruebas automatizadas de backup ampliadas (`tests/backup.test.mjs`).
 - ⏳ Volver a subir fotos clínicas reales — el bucket quedó vacío tras el reset de pruebas.

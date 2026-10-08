@@ -5,6 +5,16 @@ import react from '@vitejs/plugin-react';
 // El proxy en desarrollo apunta a la URL de producción de Vercel (o a vercel dev local).
 export default defineConfig({
   plugins: [react()],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('/node_modules/three/build/three.module.js')) return 'three-core';
+          if (id.includes('/node_modules/three/examples/jsm/')) return 'three-addons';
+        },
+      },
+    },
+  },
   optimizeDeps: {
     // lucide-react causa problemas si se pre-bundlea; se excluye para que Vite lo sirva directamente
     exclude: ['lucide-react'],
