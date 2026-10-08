@@ -29,7 +29,7 @@ const TURNSTILE_SITE_KEY = String(import.meta.env.VITE_TURNSTILE_SITE_KEY || '')
 
 export default function AdminLogin() {
   const navigate = useNavigate();
-  const { login, isAuthenticated, checkAuth } = useAuth();
+  const { login, isAuthenticated, user, checkAuth } = useAuth();
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -47,8 +47,11 @@ export default function AdminLogin() {
 
   // Redirigir si ya está autenticado
   useEffect(() => {
-    if (isAuthenticated) navigate('/admin');
-  }, [isAuthenticated, navigate]);
+    if (!isAuthenticated || !user) return;
+    if (user.role === 'master_admin') navigate('/admin/master');
+    else if (user.clinic_slug && user.username) navigate(`/admin/${user.clinic_slug}/${user.username}`);
+    else navigate('/admin');
+  }, [isAuthenticated, navigate, user]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

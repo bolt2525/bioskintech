@@ -85,3 +85,10 @@ test('normal and master login send the token and render the scoped widget', () =
     assert.match(source, /setTurnstileResetKey/);
   }
 });
+
+test('master login synchronizes AuthContext before opening the protected dashboard', () => {
+  const source = readFileSync(new URL('../src/pages/AdminMasterLogin.tsx', import.meta.url), 'utf8');
+  assert.match(source, /const \{ isAuthenticated, user, checkAuth \} = useAuth\(\)/);
+  assert.equal((source.match(/if \(!await checkAuth\(\)\)/g) || []).length, 2);
+  assert.match(source, /navigate\(user\.role === 'master_admin' \? '\/admin\/master' : '\/admin'\)/);
+});

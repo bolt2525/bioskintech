@@ -22,7 +22,7 @@ const TURNSTILE_SITE_KEY = String(import.meta.env.VITE_TURNSTILE_SITE_KEY || '')
 
 export default function AdminMasterLogin() {
   const navigate = useNavigate();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user, checkAuth } = useAuth();
 
   const [username, setUsername]   = useState('');
   const [password, setPassword]   = useState('');
@@ -41,8 +41,9 @@ export default function AdminMasterLogin() {
   const [maskedEmail, setMaskedEmail] = useState('');
 
   useEffect(() => {
-    if (isAuthenticated) navigate('/admin/master');
-  }, [isAuthenticated, navigate]);
+    if (!isAuthenticated || !user) return;
+    navigate(user.role === 'master_admin' ? '/admin/master' : '/admin');
+  }, [isAuthenticated, navigate, user]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -76,6 +77,10 @@ export default function AdminMasterLogin() {
         sessionStorage.setItem('adminSessionToken', data.sessionToken);
         sessionStorage.setItem('adminUser', JSON.stringify(data.user));
         sessionStorage.setItem('adminSessionExpiry', String(data.expiresAt));
+        if (!await checkAuth()) {
+          setError('No se pudo verificar el acceso. Intenta iniciar sesión de nuevo.');
+          return;
+        }
         navigate('/admin/master');
       } else {
         setError(data.error || 'Acceso denegado');
@@ -106,6 +111,10 @@ export default function AdminMasterLogin() {
         sessionStorage.setItem('adminSessionToken', d.sessionToken);
         sessionStorage.setItem('adminUser', JSON.stringify(d.user));
         sessionStorage.setItem('adminSessionExpiry', String(d.expiresAt));
+        if (!await checkAuth()) {
+          setError('No se pudo verificar el acceso. Intenta iniciar sesión de nuevo.');
+          return;
+        }
         navigate('/admin/master');
       } else {
         setError(d.error || 'Código incorrecto o acceso no autorizado');
