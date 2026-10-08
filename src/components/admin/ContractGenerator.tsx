@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { FileText, Printer } from 'lucide-react';
 import { LEGAL_VERSION } from '../legal/LegalLayout';
 import PrivacyPolicy from '../../pages/PrivacyPolicy';
-import TermsOfService, { PAID_PHOTO_BACKUP_POLICY_VERSION, PaidPhotoBackupPolicyBody } from '../../pages/TermsOfService';
+import TermsOfService from '../../pages/TermsOfService';
 
 const PLATFORM_PRICE = 245;
 const WHATSAPP_PRICE = 100;
@@ -17,12 +17,10 @@ export const CONTRACT_SUGGESTIONS = {
 
 type PartyType = 'natural' | 'juridica';
 type Jurisdiction = 'Cuenca' | 'Quito';
-type DocumentMode = 'new-contract' | 'addendum';
 
 interface ClientFormState {
   partyType: PartyType;
   contractReference: string;
-  baseContractDate: string;
   name: string;
   taxId: string;
   address: string;
@@ -49,7 +47,6 @@ interface ContractOptions {
   aiInstructionTerms: string;
   activation: boolean;
   activationTerms: string;
-  paidPhotoBackupPolicy: boolean;
 }
 
 interface ContractPrices {
@@ -71,7 +68,6 @@ const MODULES = [
 const initialClient: ClientFormState = {
   partyType: 'natural',
   contractReference: '',
-  baseContractDate: '',
   name: '',
   taxId: '',
   address: '',
@@ -120,7 +116,6 @@ function formatUsd(value: number): string {
 export default function ContractGenerator() {
   const formRef = useRef<HTMLFormElement>(null);
   const [client, setClient] = useState(initialClient);
-  const [documentMode, setDocumentMode] = useState<DocumentMode>('new-contract');
   const [chatbot, setChatbot] = useState(false);
   const [options, setOptions] = useState<ContractOptions>({
     jurisdiction: 'Cuenca',
@@ -133,7 +128,6 @@ export default function ContractGenerator() {
     aiInstructionTerms: CONTRACT_SUGGESTIONS.aiInstructionTerms,
     activation: false,
     activationTerms: CONTRACT_SUGGESTIONS.activationTerms,
-    paidPhotoBackupPolicy: false,
   });
   const [prices, setPrices] = useState<ContractPrices>({
     platform: String(PLATFORM_PRICE),
@@ -196,7 +190,6 @@ export default function ContractGenerator() {
     const form = formRef.current;
     if (!form) return;
     const requiredNames = ['contractReference', 'clientName', 'taxId', 'address', 'clinicName', 'email'];
-    if (documentMode === 'addendum') requiredNames.push('baseContractDate');
     if (!naturalPerson) requiredNames.push('representative', 'representativeId', 'representativeRole');
     if (options.support) requiredNames.push('supportTerms');
     if (options.refund) requiredNames.push('refundTerms');
@@ -209,32 +202,24 @@ export default function ContractGenerator() {
     requiredFields.forEach(field => field.setCustomValidity(''));
     const dateInput = form.querySelector<HTMLInputElement>('input[name="startDate"]');
     dateInput?.setCustomValidity('');
-    const existingContractDate = form.querySelector<HTMLInputElement>('input[name="baseContractDate"]');
-    existingContractDate?.setCustomValidity('');
     const emptyField = requiredFields.find(field => !field.value.trim());
     emptyField?.setCustomValidity('Complete este dato antes de imprimir el contrato.');
-    if (documentMode === 'new-contract' && !startDate) dateInput?.setCustomValidity('Ingrese una fecha de inicio válida.');
-    if (!options.paidPhotoBackupPolicy) {
-      setPrintError(documentMode === 'addendum'
-        ? 'Seleccione e incorpore expresamente la versión del anexo que se firmará.'
-        : 'Para un contrato nuevo, incorpore y acepte expresamente el anexo contractual vigente.');
-      return;
-    }
+    if (!startDate) dateInput?.setCustomValidity('Ingrese una fecha de inicio válida.');
     if (!form.reportValidity()) return;
-    if (documentMode === 'new-contract' && !includedModules.length) {
+    if (!includedModules.length) {
       setModuleError('Seleccione al menos un módulo antes de generar el contrato.');
       return;
     }
     const validPositiveAmount = (value: number) => Number.isFinite(value) && value > 0;
-    if (documentMode === 'new-contract' && (!validPositiveAmount(platformPrice)
+    if (!validPositiveAmount(platformPrice)
       || (chatbot && !validPositiveAmount(chatbotPrice))
       || !Number.isFinite(commission)
       || commission < 0
-      || !Number.isFinite(total))) {
+      || !Number.isFinite(total)) {
       setPrintError('Revise los importes: deben ser números finitos y los precios contratados mayores que cero.');
       return;
     }
-    if (documentMode === 'new-contract' && (!startDate || !endDate)) return;
+    if (!startDate || !endDate) return;
     document.body.classList.add('master-contract-printing');
     try {
       window.print();
@@ -313,22 +298,6 @@ export default function ContractGenerator() {
       <form ref={formRef} onSubmit={event => event.preventDefault()} className="contract-editor grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(300px,0.8fr)]">
         <div className="space-y-6">
           <fieldset className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-            <legend className="px-1 text-sm font-semibold text-gray-900">Documento que se preparará</legend>
-            <label className="block text-sm font-medium text-gray-700">
-              Tipo de documento
-              <select name="documentMode" value={documentMode} onChange={event => setDocumentMode(event.target.value === 'addendum' ? 'addendum' : 'new-contract')} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 font-normal">
-                <option value="new-contract">Contrato nuevo</option>
-                <option value="addendum">Adenda a contrato vigente</option>
-              </select>
-            </label>
-            <p className="mt-2 text-xs leading-relaxed text-gray-600">
-              {documentMode === 'new-contract'
-                ? 'El contrato nuevo incorpora la política prospectiva solo si se selecciona y firma expresamente como anexo separado.'
-                : 'La adenda solo añade la política identificada que se seleccione y firmen ambas partes. No reabre, renueva ni reemplaza el contrato vigente ni obliga a otros clientes.'}
-            </p>
-          </fieldset>
-
-          <fieldset className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
             <legend className="px-1 text-sm font-semibold text-gray-900">Datos del cliente y la clínica</legend>
             <p className="mt-2 text-xs leading-relaxed text-gray-600">
               Identifique a quien contrata y a la cuenta que usará el servicio. Si contrata una persona natural, puede repetir su nombre como persona que firma y escribir “por sus propios derechos” como calidad.
@@ -342,14 +311,10 @@ export default function ContractGenerator() {
                 </select>
               </label>
               <label className="text-sm font-medium text-gray-700 sm:col-span-2">
-                {documentMode === 'addendum' ? 'Referencia del contrato vigente' : 'Referencia de oferta o contrato'} <span aria-hidden="true">*</span>
+                Referencia de oferta o contrato <span aria-hidden="true">*</span>
                 <input required name="contractReference" autoComplete="off" placeholder="Ej.: BIOSKIN-2026-001…" value={client.contractReference} onChange={event => updateClient('contractReference', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
-                <span className="mt-1 block text-xs font-normal text-gray-600">{documentMode === 'addendum' ? 'Identificador exacto del contrato que ambas partes modificarán únicamente en el alcance expresado en la adenda.' : 'Identificador único de esta oferta para relacionar contrato, factura y comprobante de pago.'}</span>
+                <span className="mt-1 block text-xs font-normal text-gray-600">Identificador único de esta oferta para relacionar contrato, factura y comprobante de pago.</span>
               </label>
-              {documentMode === 'addendum' && <label className="text-sm font-medium text-gray-700 sm:col-span-2">
-                Fecha de firma del contrato vigente <span aria-hidden="true">*</span>
-                <input required name="baseContractDate" type="date" value={client.baseContractDate} onChange={event => updateClient('baseContractDate', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
-              </label>}
               <label className="text-sm font-medium text-gray-700 sm:col-span-2">
                 Titular del contrato <span aria-hidden="true">*</span>
                 <input required name="clientName" autoComplete="organization" value={client.name} onChange={event => updateClient('name', event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3 font-normal focus:border-[#a77d50] focus:outline-none focus:ring-2 focus:ring-[#a77d50]/30" />
@@ -395,7 +360,7 @@ export default function ContractGenerator() {
             </div>
           </fieldset>
 
-          {documentMode === 'new-contract' && <fieldset className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+          <fieldset className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
             <legend className="px-1 text-sm font-semibold text-gray-900">Vigencia y pago</legend>
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <label className="text-sm font-medium text-gray-700">
@@ -436,9 +401,9 @@ export default function ContractGenerator() {
                 </label>
               )}
             </div>
-          </fieldset>}
+          </fieldset>
 
-          {documentMode === 'new-contract' && <fieldset className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+          <fieldset className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
             <legend className="px-1 text-sm font-semibold text-gray-900">Módulos incluidos</legend>
             <p className="mb-4 mt-2 text-xs text-gray-600">Marque al menos un módulo contratado. Configure los precios anuales según el plan y la oferta aceptada.</p>
             <div className="grid gap-3 sm:grid-cols-2">
@@ -472,7 +437,7 @@ export default function ContractGenerator() {
                 <span className="mt-1 block text-xs font-normal text-gray-600">Valor inicial opcional: USD 100, IVA incluido.</span>
               </label>
             </div>
-          </fieldset>}
+          </fieldset>
 
           <fieldset className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
             <legend className="px-1 text-sm font-semibold text-gray-900">Complementos particulares (independientes y opcionales)</legend>
@@ -514,25 +479,12 @@ export default function ContractGenerator() {
                   </button>
                 </div>
               ) : null)}
-              <p className="rounded-lg bg-blue-50 p-3 text-xs leading-relaxed text-blue-900">Todos los contratos incluyen una entrega anual gratuita bajo solicitud de fotografías y documentos clínicos. Se solicita desde Base de Datos; si el canal del panel no está disponible, BIOSKINTECH la coordina por los canales oficiales. Retención posterior: 30 días. No es una réplica fotográfica automática diaria.</p>
-              <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950">
-                <input type="checkbox" name="paidPhotoBackupPolicy" checked={options.paidPhotoBackupPolicy} onChange={event => updateOption('paidPhotoBackupPolicy', event.target.checked)} className="mt-1 h-4 w-4 accent-[#a77d50] focus:ring-[#a77d50]" />
-                <span>
-                  <span className="block font-semibold">Incorporar y aceptar el anexo {PAID_PHOTO_BACKUP_POLICY_VERSION}</span>
-                  <span className="mt-1 block text-xs leading-relaxed">Para emitir el documento debe marcar esta casilla y firmar el anexo. Añade 15 días de acceso normal y 30 días de recuperación restringida después del vencimiento. Los contratos existentes solo lo incorporan mediante adenda firmada.</span>
-                </span>
-              </label>
+              <p className="rounded-lg bg-blue-50 p-3 text-xs leading-relaxed text-blue-900">Las Condiciones de Servicio incluyen una entrega anual gratuita bajo solicitud de fotografías y documentos clínicos, 15 días de acceso normal tras el vencimiento y 30 días adicionales de recuperación restringida. No es una réplica fotográfica automática diaria.</p>
             </div>
           </fieldset>
         </div>
 
         <aside className="contract-editor h-fit rounded-2xl border border-gray-200 bg-white p-5 shadow-sm xl:sticky xl:top-5">
-          {documentMode === 'addendum' ? (
-            <>
-              <h3 className="text-sm font-semibold text-gray-900">Adenda limitada</h3>
-              <p className="mt-3 text-sm leading-relaxed text-gray-700">La adenda impresa solo incorpora la versión seleccionada y el contrato vigente que se identifique. No cambia el precio ni las demás cláusulas.</p>
-            </>
-          ) : <>
           <h3 className="text-sm font-semibold text-gray-900">Resumen económico</h3>
           <dl className="mt-4 space-y-3 text-sm">
             <div className="flex justify-between gap-3"><dt className="text-gray-600">Plataforma (anual, IVA incluido)</dt><dd className="font-medium text-gray-900">{formatUsd(platformPrice)}</dd></div>
@@ -541,7 +493,6 @@ export default function ContractGenerator() {
             <div className="flex justify-between gap-3 border-t border-gray-200 pt-3 text-base"><dt className="font-semibold text-gray-900">Total anual</dt><dd className="font-bold text-gray-900">{formatUsd(total)}</dd></div>
           </dl>
           <p className="mt-4 text-xs leading-relaxed text-gray-600">El precio de la plataforma y el recargo de PayPhone deben coincidir con la oferta y el importe confirmado por la pasarela.</p>
-          </>}
           {printError && <p className="mt-3 text-sm text-red-600" role="alert">{printError}</p>}
           <button type="button" onClick={printContract} className="mt-5 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#a77d50] px-4 py-2 text-sm font-semibold text-white hover:bg-[#89633d] focus:outline-none focus:ring-2 focus:ring-[#a77d50] focus:ring-offset-2">
             <Printer aria-hidden="true" className="h-4 w-4" /> Imprimir / Guardar como PDF
@@ -550,11 +501,10 @@ export default function ContractGenerator() {
       </form>
 
       <article className="master-contract-preview mx-auto max-w-4xl rounded-2xl border border-gray-200 bg-white p-6 shadow-sm sm:p-10">
-        {documentMode === 'new-contract' ? <>
         <div className="border-b border-gray-200 pb-5">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8b6945]">BIOSKINTECH · Condiciones particulares</p>
           <h2 className="mt-2 text-2xl font-bold text-gray-900">Contrato anual de acceso a la plataforma</h2>
-          <p className="mt-2 text-sm leading-relaxed text-gray-600">El presente contrato contiene las condiciones particulares del servicio, el Anexo A de Tratamiento de Datos{hasAnnex ? ' y el Anexo B de Condiciones Particulares Seleccionadas' : ''}{options.paidPhotoBackupPolicy ? ` y el Anexo C ${PAID_PHOTO_BACKUP_POLICY_VERSION}` : ''} y las copias íntegras de las Condiciones de Servicio y la Política de Privacidad versión {LEGAL_VERSION}, que forman parte inseparable del acuerdo.</p>
+          <p className="mt-2 text-sm leading-relaxed text-gray-600">El presente contrato contiene las condiciones particulares del servicio, el Anexo A de Tratamiento de Datos{hasAnnex ? ' y el Anexo B de Condiciones Particulares Seleccionadas' : ''} y las copias íntegras de las Condiciones de Servicio y la Política de Privacidad versión {LEGAL_VERSION}, que forman parte inseparable del acuerdo.</p>
           <p className="mt-2 text-xs font-medium text-gray-700">Referencia: {client.contractReference || '—'} · Domicilio del Proveedor: Cuenca, Ecuador</p>
         </div>
 
@@ -613,7 +563,7 @@ export default function ContractGenerator() {
 
         <section className="mt-6 border-t border-gray-200 pt-5">
           <h3 className="text-sm font-bold uppercase tracking-wide text-gray-800">4. Documentos integrantes y orden de prevalencia</h3>
-          <p className="mt-2 text-sm leading-relaxed text-gray-700">Forman un único acuerdo esta carátula y sus condiciones particulares, el Anexo A de Tratamiento de Datos{hasAnnex ? ' y el Anexo B de Condiciones Particulares Seleccionadas' : ''}{options.paidPhotoBackupPolicy ? ` y el Anexo C ${PAID_PHOTO_BACKUP_POLICY_VERSION}` : ''}, las Condiciones de Servicio y la Política de Privacidad versión {LEGAL_VERSION}, cuyas copias se adjuntan. Las condiciones particulares prevalecen para identidad, precio, módulos y vigencia; el Anexo A para el encargo de datos. El Anexo C prevalece únicamente en vencimiento, recuperación, entrega fotográfica y límites técnicos de exportación que regula, incluso frente a la cláusula A.8 del Anexo A. Los documentos generales rigen las materias restantes. Los complementos del Anexo B no eliminan las garantías comunes de soporte, devolución, aviso de incidentes ni autorización de IA. Siempre prevalece la ley imperativa.</p>
+          <p className="mt-2 text-sm leading-relaxed text-gray-700">Forman un único acuerdo esta carátula y sus condiciones particulares, el Anexo A de Tratamiento de Datos{hasAnnex ? ' y el Anexo B de Condiciones Particulares Seleccionadas' : ''}, las Condiciones de Servicio y la Política de Privacidad versión {LEGAL_VERSION}, cuyas copias se adjuntan. Las condiciones particulares prevalecen para identidad, precio, módulos y vigencia; el Anexo A para el encargo de datos; y las Condiciones de Servicio para vencimiento, recuperación, entrega fotográfica y límites técnicos de exportación. Los complementos del Anexo B no eliminan las garantías comunes de soporte, devolución, aviso de incidentes ni autorización de IA. Siempre prevalece la ley imperativa.</p>
         </section>
 
         <section className="contract-signature-section mt-6">
@@ -631,7 +581,7 @@ export default function ContractGenerator() {
 
         <section className="mt-6">
           <h3 className="text-sm font-bold uppercase tracking-wide text-gray-800">7. Aceptación y firma</h3>
-          <p className="mt-2 text-sm leading-relaxed text-gray-700">Las partes declaran haber verificado su identificación, facultades, alcance, importes y anexos antes de suscribir. El Cliente confirma haber recibido, leído y aceptado los documentos adjuntos versión {LEGAL_VERSION}{options.paidPhotoBackupPolicy ? ` y el Anexo C ${PAID_PHOTO_BACKUP_POLICY_VERSION}` : ''}. La firma manuscrita o electrónica válida de este paquete expresa la aceptación del acuerdo completo.</p>
+          <p className="mt-2 text-sm leading-relaxed text-gray-700">Las partes declaran haber verificado su identificación, facultades, alcance, importes y anexos antes de suscribir. El Cliente confirma haber recibido, leído y aceptado los documentos adjuntos versión {LEGAL_VERSION}. La firma manuscrita o electrónica válida de este paquete expresa la aceptación del acuerdo completo.</p>
           <div className="signature-block mt-12 grid gap-10 sm:grid-cols-2">
             <div className="border-t border-gray-400 pt-2 text-sm text-gray-700">Firma del cliente · {signatory || 'Nombre'}</div>
             <div className="border-t border-gray-400 pt-2 text-sm text-gray-700">Firma del proveedor · Rafael Israel Larrea Galindo</div>
@@ -669,60 +619,17 @@ export default function ContractGenerator() {
             <section><h3 className="font-bold text-gray-900">A.5. Subencargados y transferencias</h3><p className="mt-1">El Cliente autoriza de forma general los proveedores identificados en el Art. 5 de la Política adjunta para las finalidades allí descritas. El Proveedor seguirá siendo responsable de sus obligaciones legales como Encargado, seleccionará proveedores con garantías apropiadas e informará cambios relevantes mediante una nueva versión. El Cliente podrá objetar justificadamente por riesgo de protección de datos; si no existe alternativa razonable, podrá terminar el servicio y exportar sus datos.</p></section>
             <section><h3 className="font-bold text-gray-900">A.6. Seguridad, derechos e incidentes</h3><p className="mt-1">El Proveedor asistirá razonablemente al Cliente para atender derechos, evaluaciones e incidentes según la información disponible. Comunicará al Cliente, sin dilación indebida y dentro de las primeras 24 horas naturales desde que tenga conocimiento de una violación que afecte sus datos, la naturaleza conocida, posibles consecuencias, medidas adoptadas y punto de contacto, completando la información progresivamente. El Cliente decide y realiza las notificaciones que le correspondan como Responsable.</p></section>
             <section><h3 className="font-bold text-gray-900">A.7. Evidencia y auditoría</h3><p className="mt-1">A solicitud razonable, el Proveedor facilitará información disponible para demostrar el cumplimiento de este encargo. Las auditorías deberán proteger la seguridad y confidencialidad de otros clientes, coordinarse con antelación y evitar interferencias desproporcionadas. No se concede acceso a secretos, credenciales ni datos de terceros.</p></section>
-            <section><h3 className="font-bold text-gray-900">A.8. Devolución y supresión</h3><p className="mt-1">Durante la suscripción y los 30 días posteriores, el Cliente podrá exportar los formatos disponibles descritos en la Política. Cumplido ese plazo, el Proveedor eliminará o anonimizará los datos activos conforme a sus procedimientos técnicos y obligaciones legales; las copias residuales permanecerán aisladas del uso ordinario hasta vencer sus ciclos de retención. Las fotografías originales no forman parte de las copias automáticas de datos estructurados. La entrega anual autorizada de fotografías y documentos clínicos se rige por los documentos generales; no es una réplica fotográfica periódica. La cuota no consumida del período terminado puede solicitarse por los canales oficiales dentro de los 30 días posteriores, sin ampliar el acceso ordinario a la Plataforma.{options.paidPhotoBackupPolicy ? ' Si se incorpora el Anexo C, sus plazos de vencimiento y recuperación sustituyen los de esta cláusula.' : ''}</p></section>
+            <section><h3 className="font-bold text-gray-900">A.8. Devolución y supresión</h3><p className="mt-1">Durante la suscripción y el período posterior de recuperación, el Cliente podrá exportar los formatos disponibles descritos en las Condiciones de Servicio y la Política. Cumplido ese plazo, el Proveedor eliminará o anonimizará los datos activos conforme a sus procedimientos técnicos y obligaciones legales; las copias residuales permanecerán aisladas del uso ordinario hasta vencer sus ciclos de retención. Las fotografías originales no forman parte de las copias automáticas de datos estructurados. La entrega anual autorizada de fotografías y documentos clínicos se rige por las Condiciones de Servicio; no es una réplica fotográfica periódica.</p></section>
           </div>
         </section>
 
-                    {options.paidPhotoBackupPolicy && <section className="contract-annex mt-10 rounded-xl border border-gray-300 p-5">
-                      <div className="border-b border-gray-300 pb-4">
-                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8b6945]">Anexo C · Política contractual independiente</p>
-                        <h2 className="mt-2 text-xl font-bold text-gray-900">Vencimiento, recuperación y entregas fotográficas</h2>
-                        <p className="mt-1 text-xs text-gray-600">Versión {PAID_PHOTO_BACKUP_POLICY_VERSION} · Contrato {client.contractReference || 'pendiente'}</p>
-                      </div>
-                      <div className="mt-5 text-sm leading-relaxed text-gray-700"><PaidPhotoBackupPolicyBody /></div>
-                    </section>}
-
         <section className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700 contract-print-summary">
-          <p><strong>Documentos adjuntos al imprimir:</strong> Condiciones de Servicio y Política de Privacidad y Tratamiento de Datos Personales, versión {LEGAL_VERSION}{options.paidPhotoBackupPolicy ? `; Anexo C ${PAID_PHOTO_BACKUP_POLICY_VERSION}` : ''}.</p>
+          <p><strong>Documentos adjuntos al imprimir:</strong> Condiciones de Servicio y Política de Privacidad y Tratamiento de Datos Personales, versión {LEGAL_VERSION}.</p>
         </section>
         <div className="contract-print-only hidden">
           <TermsOfService embedded />
           <PrivacyPolicy embedded />
         </div>
-        </> : options.paidPhotoBackupPolicy ? (
-          <div className="contract-annex">
-            <div className="border-b border-gray-300 pb-5">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8b6945]">BIOSKINTECH · Adenda de alcance limitado</p>
-              <h2 className="mt-2 text-2xl font-bold text-gray-900">Adenda de vencimiento, recuperación y entregas fotográficas</h2>
-              <p className="mt-2 text-sm leading-relaxed text-gray-700">Se incorpora únicamente la versión {PAID_PHOTO_BACKUP_POLICY_VERSION} al contrato identificado a continuación. Las demás cláusulas, precio, vigencia y derechos del contrato original permanecen sin modificación.</p>
-            </div>
-            <dl className="mt-5 grid gap-3 text-sm sm:grid-cols-2">
-              <div><dt className="text-gray-500">Titular del contrato</dt><dd className="font-medium text-gray-900">{client.name || '—'}</dd></div>
-              <div><dt className="text-gray-500">Identificación</dt><dd className="font-medium text-gray-900">{client.taxId || '—'}</dd></div>
-              <div><dt className="text-gray-500">Clínica o cuenta</dt><dd className="font-medium text-gray-900">{client.clinicName || '—'}</dd></div>
-              <div><dt className="text-gray-500">Correo de contacto</dt><dd className="font-medium text-gray-900">{client.email || '—'}</dd></div>
-              <div><dt className="text-gray-500">Referencia del contrato original</dt><dd className="font-medium text-gray-900">{client.contractReference || '—'}</dd></div>
-              <div><dt className="text-gray-500">Fecha del contrato original</dt><dd className="font-medium text-gray-900">{formatDate(parseDateInput(client.baseContractDate))}</dd></div>
-            </dl>
-            <section className="mt-6 rounded-xl border border-gray-300 p-5 text-sm leading-relaxed text-gray-700">
-              <h3 className="mb-3 font-bold text-gray-900">Anexo aceptado · {PAID_PHOTO_BACKUP_POLICY_VERSION}</h3>
-              <PaidPhotoBackupPolicyBody />
-            </section>
-            <p className="mt-5 text-sm leading-relaxed text-gray-700">El Cliente declara haber leído y aceptar expresamente el anexo identificado. Esta adenda solo modifica el contrato arriba identificado en la materia descrita; no implica aceptación por otros clientes ni altera contratos distintos.</p>
-            <div className="signature-block mt-14 grid gap-10 sm:grid-cols-2">
-              <div className="border-t border-gray-400 pt-2 text-sm text-gray-700">Firma del cliente · {signatory || 'Nombre'}</div>
-              <div className="border-t border-gray-400 pt-2 text-sm text-gray-700">Firma del proveedor · Rafael Israel Larrea Galindo</div>
-            </div>
-            <div className="signature-block mt-8 grid gap-6 text-xs text-gray-600 sm:grid-cols-2">
-              <p>Fecha de aceptación: ____________________<br />Lugar: ____________________</p>
-              <p>Fecha de aceptación: ____________________<br />RUC: 0105872600001</p>
-            </div>
-          </div>
-        ) : (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900" role="status">
-            Para emitir una adenda, incorpore primero la versión contractual propuesta y revise su texto completo.
-          </div>
-        )}
       </article>
     </section>
   );
