@@ -48,7 +48,7 @@ export default function AnnualPhotoBackupOrder({ item, busy, execute }: Props) {
   return <div className="mt-3 space-y-3">
     {unpaid && <>
       <p className="text-sm">{annualOriginalSize(bytes)} · {annualMoney(total)}{complete && ' · USD, IVA incluido'}</p>
-      {quote && !quote.quote_complete && <p role="status" className="text-sm text-amber-950">Medición parcial de originales. Continúa la cotización; todavía no hay un precio final ni se puede registrar aceptación o pago.</p>}
+      {quote && !quote.quote_complete && <p role="status" className="text-sm text-amber-950">Medición parcial. Continúa para obtener la cotización final.</p>}
       <div className="flex flex-wrap gap-2">
         {!item.quote_accepted_at && <button type="button" disabled={disabled} className={buttonClass} onClick={() => void run('quotePhotoBackup')}>{quote && !quote.quote_complete ? 'Continuar cotización' : 'Calcular cotización'}</button>}
         {!item.quote_accepted_at && <button type="button" disabled={disabled || !complete} className={buttonClass} onClick={() => { setConfirmation('accept'); setConfirmed(false); }}>Registrar aceptación</button>}
@@ -70,7 +70,7 @@ export default function AnnualPhotoBackupOrder({ item, busy, execute }: Props) {
     {confirmation && <Dialog open onClose={() => { if (!disabled) setConfirmation(null); }} labelledBy={titleId} className="w-full sm:w-[32rem]">
       <div className="space-y-3 rounded-xl bg-white p-5">
         <h3 id={titleId} className="text-lg font-semibold">{confirmation === 'accept' ? 'Registrar aceptación de la cotización' : 'Confirmar pago recibido'}</h3>
-        <p className="text-sm">{annualMoney(total)} · USD, IVA incluido. Esta acción registra evidencia del proveedor; no cobra automáticamente ni inicia la preparación.</p>
+        <p className="text-sm">{annualMoney(total)} · USD, IVA incluido. No se realizará ningún cobro automático.</p>
         <label className="flex items-start gap-2 text-sm">
           <input type="checkbox" name="provider_confirmation" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} className="mt-1 focus-visible:ring-2 focus-visible:ring-gold-dark" />
           {confirmation === 'accept' ? 'Confirmo que la clínica aceptó esta cotización y conservo la constancia verificable.' : 'Confirmo que verifiqué la recepción del pago y su referencia.'}

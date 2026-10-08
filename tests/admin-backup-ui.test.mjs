@@ -213,7 +213,7 @@ test('Worker OFF permite solicitud adicional con can_request aunque la entrega g
   });
   let tree = await harness.mount();
   assert.equal(button(tree, 'Solicitar Respaldo Anual').props.disabled, false);
-  assert.match(text(tree), /Worker OFF/);
+  assert.doesNotMatch(text(tree), /Worker|SMTP|procesador|esquema/);
   assert.match(text(tree), /requiere cotización y pago/);
   button(tree, 'Solicitar Respaldo Anual').props.onClick();
   tree = harness.render();
@@ -224,7 +224,7 @@ test('Worker OFF permite solicitud adicional con can_request aunque la entrega g
   tree = harness.render();
   const post = calls.find(call => call.url.includes('requestPhotoBackup'));
   assert.deepEqual(JSON.parse(post.options.body), {});
-  assert.match(text(tree), /No se realizó ningún cobro automático/);
+  assert.match(text(tree), /no se realizó ningún cobro automático/i);
   assert.equal(calls.some(call => /Payment|approve|Quote/.test(call.url)), false);
 });
 
@@ -247,6 +247,22 @@ test('doble confirmación inmediata no registra dos solicitudes adicionales', as
   assert.equal(posts, 1);
   resolve(json({ entitlement_kind: 'PAID', payment_status: 'NEEDS_QUOTE' }));
   await new Promise(done => setImmediate(done));
+});
+
+test('vigencia habilitada no exige otro registro y fallos no muestran códigos internos', async () => {
+  const harness = componentHarness(annualPath, 'clinic_admin', async () => json({
+    configured: true, processor_ready: false, can_request: true, period: null,
+    period_suggestion: { starts_at: '2026-10-07T18:00:00Z', ends_at: '2027-10-07T18:00:00Z',
+      source: 'subscription_expires_at - 12 months', duration_days: 365, requires_master_confirmation: false },
+    requests: [{ id: 'pedido-ficticio', created_at: '2026-10-01T05:00:00Z', status: 'FAILED',
+      error_code: 'R2_INTERNAL_FAILURE', notification_error: 'SMTP_FAILED' }],
+  }));
+  const tree = await harness.mount();
+  assert.equal(button(tree, 'Solicitar Respaldo Anual').props.disabled, false);
+  assert.match(text(tree), /Vigencia hasta 7 oct 2027/);
+  assert.match(text(tree), /No se pudo preparar el respaldo/);
+  assert.match(text(tree), /Tu solicitud sigue registrada/);
+  assert.doesNotMatch(text(tree), /registrar el período|revisar la vigencia|Worker|SMTP|R2_INTERNAL_FAILURE|0 fotografías/);
 });
 
 for (const status of [
@@ -442,16 +458,16 @@ for (const state of ['loading', 'error', 'notready', 'ready']) {
     button(tree, 'Nube').props.onClick();
     tree = harness.render();
     assert.equal(button(tree, 'Crear respaldo en la nube ahora').props.disabled, state !== 'ready');
-    if (state === 'notready') assert.match(text(tree), /cifrado de respaldos no está verificado/);
+    if (state === 'notready') assert.match(text(tree), /No se pudo verificar la disponibilidad/);
   });
 }
 
 for (const [quota, message] of [
-  [null, /No se pudo verificar el cupo/],
-  [{ available: false, next_allowed_at: '2026-10-08T05:00:00Z' }, /Ya se utilizó el cupo/],
+  [null, /No se pudo verificar la disponibilidad/],
+  [{ available: false, next_allowed_at: '2026-10-08T05:00:00Z' }, /Ya creaste una copia hoy/],
   [{ available: false, state: 'PROCESSING' }, /copia manual en curso/],
-  [{ available: false, state: 'HISTORY_INCOMPLETE', reason: 'Historial no verificado' }, /Historial no verificado/],
-  [{ available: true }, /una copia manual por clínica y día/],
+  [{ available: false, state: 'HISTORY_INCOMPLETE', reason: 'Historial no verificado' }, /Copia no disponible/],
+  [{ available: true }, /Puedes crear una copia ahora/],
 ]) {
   test(`cupo manual falla cerrado y presenta estado: ${quota?.state || quota?.available || 'missing'}`, async () => {
     const harness = componentHarness(backupPath, 'clinic_admin', async url =>
@@ -505,7 +521,7 @@ test('una respuesta 429 del respaldo manual vuelve a consultar cupo y nube', asy
 
 test('backup distingue ausencia, error y copia automática antigua (>48 h)', async () => {
   const cases = [
-    { response: json({ snapshots: [] }), expected: /No hay una copia automática registrada/ },
+    { response: json({ snapshots: [] }), expected: /No hay copias automáticas registradas/ },
     { response: json({ error: 'Error de consulta' }, false), expected: /No se pudo verificar la última copia automática/ },
     { response: json({ snapshots: [
       { key: 'old', kind: 'auto', created_at: new Date(Date.now() - 72 * 3600000).toISOString() },
@@ -526,18 +542,16 @@ test('backup distingue ausencia, error y copia automática antigua (>48 h)', asy
   assert.doesNotMatch(text(await harness.mount()), /Tiene más de 48 horas/);
 });
 
-test('Base de Datos distingue selección JSON, firmas, originales y copias en nube', async () => {
+test('Base de Datos muestra acciones concretas sin límites ni detalles internos', async () => {
   const harness = componentHarness(backupPath, 'clinic_admin', async url =>
     json(url.includes('snapshots') ? { snapshots: [] } : { stats: {}, encryption_ready: true }));
   const tree = await harness.mount();
-  assert.match(text(tree), /El JSON conserva datos estructurados, firmas y marcaciones/);
-  assert.match(text(tree), /ni contiene los archivos de fotografías/);
-  assert.match(text(tree), /no solo las casillas de Exportar/);
-  assert.ok(elements(tree).some(node => node.props?.title === 'Respaldo técnico por módulos (JSON)'));
-  assert.match(text(tree), /50 MiB comprimidos y 200 MiB descomprimidos/);
-  assert.match(text(tree), /no una descarga incompleta presentada como completa/);
-  assert.match(text(tree), /Exportar sin límites de archivo/);
-  assert.match(text(tree), /hasta 100 consentimientos/);
+  assert.match(text(tree), /fotografías originales se solicitan por separado/);
+  assert.match(text(tree), /todos los módulos de tu clínica/);
+  assert.ok(hasCard(tree, 'Respaldo por módulos'));
+  assert.doesNotMatch(text(tree), /límites|50 MiB|200 MiB|snapshot|checksums|Worker|SMTP/);
+  assert.match(text(tree), /Descargar respaldo por lotes/);
+  assert.match(text(tree), /conserva todas las partes descargadas/);
   for (const label of ['Exportar', 'Importar', 'Nube']) {
     const tab = elements(tree).find(node => node.type === 'button' && text(node).endsWith(label));
     assert.equal(tab.props['aria-pressed'], label === 'Exportar');
@@ -647,8 +661,8 @@ test('El canal anual apagado conserva coordinación asistida sin solicitudes aut
     return json({ configured: false, eligible: false, reason: 'feature_disabled', requests: [] });
   });
   const tree = await harness.mount();
-  assert.match(text(tree), /Contacta a soporte para registrar y coordinar una solicitud asistida/);
-  assert.match(text(tree), /registro por correo todavía no está habilitado/);
+  assert.match(text(tree), /Contacta a soporte para solicitar tu respaldo anual/);
+  assert.doesNotMatch(text(tree), /Worker|SMTP|esquema|todavía no está habilitado|feature_disabled/);
   assert.equal(button(tree, 'Solicitar Respaldo Anual').props.disabled, true);
   assert.equal(calls.length, 1);
 });
@@ -667,7 +681,7 @@ for (const configured of [false, true, undefined]) {
     assert.equal(button(tree, 'Registrar período').props.disabled, configured !== true);
     assert.equal(button(tree, 'Aprobar').props.disabled, configured !== true);
     if (configured === false) {
-      assert.match(text(tree), /Registro no disponible/);
+      assert.match(text(tree), /Contacta a soporte para solicitar tu respaldo anual/);
       assert.doesNotMatch(text(tree), /feature_disabled/);
       const form = elements(tree).find(node => node.type === 'form');
       form.props.onSubmit({ preventDefault() {} });
@@ -713,8 +727,8 @@ test('Master consulta la clínica UUID y carga una sugerencia editable sin regis
   dates[0].props.onChange({ target: { value: '2026-10-08' } });
   tree = harness.render(props);
   assert.equal(elements(tree).find(node => node.type === 'input' && node.props.type === 'date').props.value, '2026-10-08');
-  assert.match(text(tree), /vencimiento de suscripción menos 365 días/);
-  assert.match(text(tree), /no determina el período contractual anual/);
+  assert.match(text(tree), /Vigencia sugerida/);
+  assert.doesNotMatch(text(tree), /vencimiento de suscripción menos|no determina el período contractual anual/);
   assert.equal(calls.some(call => call.url.includes('setPhotoBackupPeriod')), false);
 });
 

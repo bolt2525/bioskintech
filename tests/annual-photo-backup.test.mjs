@@ -143,7 +143,7 @@ test('expected storage keys are tenant-scoped and validate UUIDs and part bounds
   assert.throws(() => photoBackupExpectedKey(CLINIC, 'not-a-request', 1), { status: 400 });
 });
 
-test('annual period suggestion derives only from stored subscription expiry and duration and requires confirmation', () => {
+test('annual period suggestion uses stored expiry, not subscription_days, and preserves exact calendar years', () => {
   const suggestion = suggestAnnualPhotoPeriod({
     subscription_expires_at: '2026-10-07T18:00:00.000Z',
     subscription_days: 365,
@@ -151,12 +151,19 @@ test('annual period suggestion derives only from stored subscription expiry and 
   assert.deepEqual(suggestion, {
     starts_at: '2025-10-07T18:00:00.000Z',
     ends_at: '2026-10-07T18:00:00.000Z',
-    source: 'subscription_expires_at - subscription_days',
+    source: 'subscription_expires_at - 12 months',
     duration_days: 365,
-    requires_master_confirmation: true,
+    requires_master_confirmation: false,
   });
   assert.equal(suggestAnnualPhotoPeriod({ subscription_expires_at: null, subscription_days: 365 }), null);
-  assert.equal(suggestAnnualPhotoPeriod({ subscription_expires_at: '2026-10-07', subscription_days: 0 }), null);
+  for (const subscription_days of [undefined, null, 0, 30, 3650]) {
+    assert.deepEqual(suggestAnnualPhotoPeriod({
+      subscription_expires_at: '2026-10-07T18:00:00.000Z', subscription_days,
+    }), suggestion);
+  }
+  for (const subscription_expires_at of ['', 'invalid', '2025-02-30T12:00:00.000Z', 0, {}]) {
+    assert.equal(suggestAnnualPhotoPeriod({ subscription_expires_at }), null);
+  }
   assert.equal(suggestAnnualPhotoPeriod({
     subscription_expires_at: '2024-02-29T12:00:00.000Z',
     subscription_days: 365,
@@ -165,11 +172,11 @@ test('annual period suggestion derives only from stored subscription expiry and 
     subscription_expires_at: '2025-02-28T12:00:00.000Z',
     subscription_days: 365,
   }), {
-    starts_at: '2024-02-29T12:00:00.000Z',
+    starts_at: '2024-02-28T12:00:00.000Z',
     ends_at: '2025-02-28T12:00:00.000Z',
-    source: 'subscription_expires_at - subscription_days',
-    duration_days: 365,
-    requires_master_confirmation: true,
+    source: 'subscription_expires_at - 12 months',
+    duration_days: 366,
+    requires_master_confirmation: false,
   });
 });
 

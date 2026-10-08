@@ -1,5 +1,8 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-08 Base de Datos: textos concretos.
+- ✅ 2026-10-08 Respaldo anual usa vigencia.
+- ✅ 2026-10-08 Respaldos: 131 pruebas aprobadas.
 - ✅ 2026-10-08 Vite: entrada 250 KiB; Three diferido.
 - ✅ 2026-10-08 npm: 15 paquetes, 21 avisos GHSA dev; cero runtime.
 - ✅ 2026-10-08 SMTP: mocks; sin envíos reales.

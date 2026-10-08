@@ -7,6 +7,7 @@ const CLINIC='11111111-2222-4333-8444-555555555555';
 const PERIOD='aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
 const T=Date.parse('2026-08-01T00:00:00Z'), DAY=86400000;
 let now=T, actor, clinic, periods, orders, notices, parts, schema, smtpFail, deliveries, photoRows, r2Metadata;
+let tenantDepth=0;
 const statements=[];
 mock.method(Date,'now',()=>now);
 const url=path=>new URL(path,import.meta.url).href;
@@ -40,10 +41,28 @@ const db={
     if(sql.includes('SELECT subscription_expires_at,subscription_days')) return {rows:[clinic]};
     if(sql.includes('AS request_deadline_at')) {
       assert.ok(sql.includes('NOT EXISTS (SELECT 1 FROM annual_photo_backup_periods newer'));
-      const period=periods.filter(row=>Date.parse(row.starts_at)<=now &&
+      assert.equal(p[0],CLINIC);
+      if(sql.includes('FROM (SELECT $1::uuid')) {
+        assert.ok(sql.includes("p.ends_at=p.starts_at+interval '12 months'"));
+        assert.ok(sql.includes("tstzrange(existing.starts_at,existing.ends_at,'[)')"));
+        const start=Date.parse(p[3]),end=Date.parse(p[1]);
+        const overlapping=periods.some(row=>row.clinic_id===p[0] &&
+          Date.parse(row.starts_at)<end && start<Date.parse(row.ends_at));
+        const newer=periods.some(row=>row.clinic_id===p[0] && Date.parse(row.starts_at)>start && Date.parse(row.starts_at)<=now);
+        const valid=start<=now && (end>now || (p[2] && now<end+45*DAY)) && !overlapping && !newer;
+        return {rows:valid?[{clinic_id:p[0],starts_at:p[3],ends_at:p[1],
+          request_deadline_at:new Date(end+(p[2]?45*DAY:0)).toISOString()}]:[]};
+      }
+      const period=periods.filter(row=>row.clinic_id===p[0] && Date.parse(row.starts_at)<=now &&
         (Date.parse(row.ends_at)>now || (p[2] && row.ends_at===p[1] && now<Date.parse(row.ends_at)+45*DAY)))
         .sort((a,b)=>Date.parse(b.starts_at)-Date.parse(a.starts_at))[0];
       return {rows:period?[{...period,request_deadline_at:new Date(Date.parse(period.ends_at)+(p[2]?45*DAY:0)).toISOString()}]:[]};
+    }
+    if(sql.includes('INSERT INTO annual_photo_backup_periods')) {
+      assert.ok(tenantDepth>0,'automatic periods must be persisted inside tenant/RLS context');
+      assert.equal(p[1],CLINIC);
+      const row={id:p[0],clinic_id:p[1],starts_at:p[2],ends_at:p[3],created_by:p[4],consumed_at:null};
+      periods.push(row); return {rows:[row]};
     }
     if(sql.includes('AS entitled') && sql.includes('WHERE r.id=')) {
       const row=orders.find(order=>order.id===p[0]);
@@ -62,6 +81,7 @@ const db={
     if(sql.includes('SELECT 1 FROM annual_photo_backup_requests'))
       return {rows:orders.filter(row=>row.period_id===p[1] && row.entitlement_kind==='FREE' && row.status!=='REJECTED')};
     if(sql.includes('INSERT INTO annual_photo_backup_requests')) {
+      assert.ok(tenantDepth>0); assert.equal(p[1],CLINIC);
       const row={id:p[0],clinic_id:p[1],period_id:p[2],requester_email:p[4],entitlement_kind:p[5],
         payment_status:p[6],entitlement_deadline_at:p[7],recovery_allowed:p[8],created_at:new Date(now).toISOString(),
         status:'REQUESTED',quote_cursor:0,quote_bytes_progress:0};
@@ -120,7 +140,11 @@ const db={
 };
 const pool={query:(...args)=>db.query(...args),connect:async()=>db};
 mock.module(url('../lib/neon-clinical-db.js'),{namedExports:{
-  getPool:()=>pool,getAppPool:()=>pool,withTenantContext:async(_id,fn)=>fn(db),
+  getPool:()=>pool,getAppPool:()=>pool,withTenantContext:async(id,fn)=>{
+    assert.equal(id,CLINIC);
+    tenantDepth++;
+    try { return await fn(db); } finally { tenantDepth--; }
+  },
 }});
 const {handleAnnualPhotoBackup,annualPhotoQuote,createAnnualPhotoBackupSchema}=await import('../lib/annual-photo-backup.js');
 const {annualPurgeProtection,SUBSCRIPTION_POLICY_VERSION}=await import('../lib/subscription-lifecycle.js');
@@ -143,6 +167,123 @@ async function invoke(action,body=null) {
   await handleAnnualPhotoBackup({method:body?'POST':'GET',headers:{},query:{},body:body||undefined},res,action);
   return res;
 }
+test('Master expiry without separate period enables status and persists exactly one FREE quota on request',async()=>{
+  reset(-DAY/2); periods=[]; clinic.subscription_days=30;
+  const status=await invoke('photoBackupStatus');
+  assert.equal(status.code,200); assert.equal(status.body.can_request,true); assert.equal(status.body.eligible,true);
+  assert.equal(status.body.processor_ready,false); assert.equal(status.body.period,null);
+  assert.equal(status.body.period_suggestion.ends_at,clinic.subscription_expires_at);
+  assert.equal(periods.length,0,'status must not persist or consume quotas');
+  // Client-supplied tenant, dates and payment flags cannot change the entitlement.
+  const first=await invoke('requestPhotoBackup',{clinicId:'99999999-2222-4333-8444-555555555555',
+    startsAt:'2000-01-01',endsAt:'2099-01-01',entitlement_kind:'PAID',paid:true});
+  assert.equal(first.code,200); assert.equal(first.body.entitlement_kind,'FREE');
+  assert.equal(first.body.processor_ready,false); assert.equal(periods.length,1);
+  assert.equal(periods[0].ends_at,clinic.subscription_expires_at);
+  assert.equal(periods[0].starts_at,'2025-08-01T00:00:00.000Z');
+  assert.equal(orders[0].period_id,periods[0].id);
+  const lockIndex=statements.findIndex(({sql})=>sql.includes('pg_advisory_xact_lock(hashtextextended($1,0))'));
+  const insertIndex=statements.findIndex(({sql})=>sql.includes('INSERT INTO annual_photo_backup_periods'));
+  assert.ok(lockIndex>=0 && lockIndex<insertIndex);
+  assert.ok(statements.some(({sql})=>sql.includes('FOR UPDATE OF p')));
+  const reserved=await invoke('photoBackupStatus');
+  assert.equal(reserved.body.eligible,false); assert.equal(reserved.body.additional_requires_payment,true);
+  const second=await invoke('requestPhotoBackup',{paid:true});
+  assert.equal(second.body.entitlement_kind,'PAID'); assert.equal(second.body.payment_status,'NEEDS_QUOTE');
+  assert.equal(periods.length,1); assert.equal(orders[1].period_id,orders[0].period_id);
+  actor={valid:true,role:'master_admin',id:1,clinic_id:null};
+  const approval=await invoke('approvePhotoBackup',{clinicId:CLINIC,requestId:orders[0].id});
+  assert.equal(approval.code,503,'registration must not bypass processor readiness');
+  assert.equal(orders[0].status,'REQUESTED');
+});
+test('moving Master expiry never resizes an active consumed period or resets its quota',async()=>{
+  reset(-DAY/2); periods[0].consumed_at=new Date(T-DAY).toISOString();
+  const original={...periods[0]};
+  clinic.subscription_expires_at=new Date(T+30*DAY).toISOString();
+  const status=await invoke('photoBackupStatus');
+  assert.equal(status.body.period.id,PERIOD); assert.equal(status.body.can_request,true);
+  assert.equal(status.body.eligible,false); assert.equal(status.body.additional_requires_payment,true);
+  const paid=await invoke('requestPhotoBackup',{});
+  assert.equal(paid.code,200); assert.equal(paid.body.entitlement_kind,'PAID');
+  assert.deepEqual(periods,[original]);
+});
+test('expired overlapping persisted periods block implicit creation instead of granting another FREE quota',async()=>{
+  reset(1); periods[0].consumed_at=new Date(T).toISOString();
+  clinic.subscription_expires_at=new Date(T+30*DAY).toISOString();
+  const status=await invoke('photoBackupStatus');
+  assert.equal(status.code,200); assert.equal(status.body.can_request,false);
+  assert.equal(status.body.eligible,false); assert.equal(status.body.period,null);
+  const refused=await invoke('requestPhotoBackup',{});
+  assert.equal(refused.code,409); assert.equal(orders.length,0); assert.equal(periods.length,1);
+  assert.equal(statements.some(({sql})=>sql.includes('INSERT INTO annual_photo_backup_periods')),false);
+});
+test('adjacent renewal persists a new quota without changing the old consumed period',async()=>{
+  reset(1); periods[0].consumed_at=new Date(T).toISOString();
+  clinic.subscription_expires_at=new Date(T+365*DAY).toISOString();
+  const original={...periods[0]};
+  assert.equal((await invoke('photoBackupStatus')).body.can_request,true);
+  const renewed=await invoke('requestPhotoBackup',{});
+  assert.equal(renewed.code,200); assert.equal(renewed.body.entitlement_kind,'FREE');
+  assert.equal(periods.length,2); assert.deepEqual(periods[0],original);
+  assert.equal(periods[1].starts_at,periods[0].ends_at);
+});
+test('future overlapping registrations also block implicit periods and foreign tenant periods do not',async()=>{
+  reset(-DAY/2);
+  periods=[{id:PERIOD,clinic_id:CLINIC,starts_at:new Date(T).toISOString(),
+    ends_at:new Date(T+365*DAY).toISOString(),consumed_at:null}];
+  clinic.subscription_expires_at=new Date(T+DAY).toISOString();
+  assert.equal((await invoke('photoBackupStatus')).body.can_request,false);
+  assert.equal((await invoke('requestPhotoBackup',{})).code,409);
+  assert.equal(orders.length,0); assert.equal(periods.length,1);
+  periods[0].clinic_id='99999999-2222-4333-8444-555555555555';
+  assert.equal((await invoke('photoBackupStatus')).body.can_request,true);
+  const own=await invoke('requestPhotoBackup',{});
+  assert.equal(own.code,200); assert.equal(own.body.entitlement_kind,'FREE');
+  assert.equal(periods.length,2); assert.equal(periods[1].clinic_id,CLINIC);
+});
+test('implicit period honors recovery lifecycle boundaries without processor activation',async()=>{
+  reset(45*DAY-1); periods=[];
+  const status=await invoke('photoBackupStatus');
+  assert.equal(status.body.can_request,true); assert.equal(status.body.processor_ready,false);
+  const registered=await invoke('requestPhotoBackup',{});
+  assert.equal(registered.code,200); assert.equal(registered.body.entitlement_kind,'FREE');
+  assert.equal(orders[0].recovery_allowed,true);
+  assert.equal(orders[0].entitlement_deadline_at,new Date(T+45*DAY).toISOString());
+  now=T+45*DAY;
+  assert.equal((await invoke('requestPhotoBackup',{})).code,403);
+  assert.equal(periods.length,1); assert.equal(orders.length,1);
+  reset(1); periods=[]; clinic.general._subscription_policy={kind:'legacy'};
+  assert.equal((await invoke('requestPhotoBackup',{})).code,403);
+  assert.equal(periods.length,0);
+});
+test('missing or invalid Master expiry never invents an implicit period',async()=>{
+  for(const expiry of [null,'','not-a-date']) {
+    reset(-DAY/2); periods=[]; clinic.subscription_expires_at=expiry;
+    clinic.paid_subscription=false; clinic.general._subscription_policy={kind:'legacy'};
+    const status=await invoke('photoBackupStatus');
+    if(expiry==='not-a-date') assert.equal(status.code,403);
+    else {
+      assert.equal(status.code,200); assert.equal(status.body.can_request,false);
+      assert.equal(status.body.period_suggestion,null); assert.equal(status.body.eligible,false);
+    }
+    const refused=await invoke('requestPhotoBackup',{});
+    assert.equal(refused.code,expiry==='not-a-date'?403:409);
+    assert.equal(periods.length,0); assert.equal(orders.length,0);
+  }
+});
+test('calendar derivation persists Feb 28 exact year but does not invent a Feb 29 expiry-compatible start',async()=>{
+  reset(); periods=[]; now=Date.parse('2025-02-27T12:00:00.000Z');
+  clinic.subscription_expires_at='2025-02-28T12:00:00.000Z';
+  assert.equal((await invoke('requestPhotoBackup',{})).code,200);
+  assert.equal(periods[0].starts_at,'2024-02-28T12:00:00.000Z');
+  assert.equal(periods[0].ends_at,clinic.subscription_expires_at);
+  reset(); periods=[]; now=Date.parse('2024-02-28T12:00:00.000Z');
+  clinic.subscription_expires_at='2024-02-29T12:00:00.000Z';
+  const status=await invoke('photoBackupStatus');
+  assert.equal(status.body.can_request,false); assert.equal(status.body.period_suggestion,null);
+  assert.equal((await invoke('requestPhotoBackup',{})).code,409);
+  assert.equal(periods.length,0); assert.equal(orders.length,0);
+});
 test('expired annual free period survives through T+45-1; exact T+45 blocks new registration',async()=>{
   reset(45*DAY-1);
   let status=await invoke('photoBackupStatus'); assert.equal(status.body.eligible,true); assert.equal(status.body.processor_ready,false);
@@ -166,7 +307,10 @@ test('a newer registered annual period prevents accumulated old free eligibility
   reset(1); clinic.subscription_expires_at=new Date(T+365*DAY).toISOString();
   periods.push({...periods[0],id:'bbbbbbbb-bbbb-4ccc-8ddd-eeeeeeeeeeee',starts_at:new Date(T).toISOString(),ends_at:new Date(T+365*DAY).toISOString()});
   const current=await invoke('photoBackupStatus'); assert.equal(current.body.period.id,periods[1].id);
-  periods.pop(); assert.equal((await invoke('photoBackupStatus')).body.eligible,false);
+  periods.pop();
+  const renewed=await invoke('photoBackupStatus');
+  assert.equal(renewed.body.eligible,true); assert.equal(renewed.body.period,null);
+  assert.equal(renewed.body.period_suggestion.starts_at,new Date(T).toISOString());
   reset(1); clinic.general._subscription_policy={kind:'legacy'};
   assert.equal((await invoke('requestPhotoBackup',{})).code,403);
 });

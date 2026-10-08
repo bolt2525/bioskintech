@@ -18,8 +18,8 @@ export function annualMoney(cents: number | null | undefined): string {
 
 export function annualOriginalSize(bytes: number | null | undefined): string {
   return typeof bytes === 'number' && Number.isSafeInteger(bytes) && bytes >= 0
-    ? `${new Intl.NumberFormat('es-EC', { maximumFractionDigits: 3 }).format(bytes / 1e9)} GB originales (1 GB = 1.000.000.000 bytes)`
-    : 'Volumen original aún no verificado';
+    ? `${new Intl.NumberFormat('es-EC', { maximumFractionDigits: 3 }).format(bytes / 1e9)} GB originales`
+    : 'Tamaño pendiente';
 }
 
 export function manualQuoteCents(value: string): number {
