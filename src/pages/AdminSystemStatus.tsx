@@ -44,7 +44,7 @@ const ServiceCard = ({
           <div className={`p-2.5 rounded-xl ${iconBg}`}><Icon className="w-5 h-5" /></div>
           <div>
             <p className="font-semibold text-gray-800">{name}</p>
-            {result?.latency_ms !== undefined && <p className="text-xs text-gray-400">{result.latency_ms}ms</p>}
+            {result?.latency_ms !== undefined && <p className="text-xs text-gray-600">{result.latency_ms}ms</p>}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -54,7 +54,7 @@ const ServiceCard = ({
             </span>
           )}
           {!result && <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-500">Sin verificar</span>}
-          <button onClick={onCheck} disabled={loading} className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50">
+          <button type="button" onClick={onCheck} disabled={loading} aria-label={`Verificar ${name}`} className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50">
             {loading ? <Loader2 className="w-4 h-4 animate-spin text-gray-400" /> : <RefreshCw className="w-4 h-4 text-gray-500" />}
           </button>
         </div>
@@ -181,10 +181,10 @@ function UserStatusView({ user }: { user: any }) {
             <div>
               <p className="font-semibold text-gray-800">Suscripción</p>
               {userStatus?.is_demo && userStatus.demo_expires_at && (
-                <p className="text-xs text-gray-400">Demo hasta {expiresDate(userStatus.demo_expires_at)}</p>
+                <p className="text-xs text-gray-600">Demo hasta {expiresDate(userStatus.demo_expires_at)}</p>
               )}
               {!userStatus?.is_demo && userStatus?.subscription_expires_at && (
-                <p className="text-xs text-gray-400">Vence el {expiresDate(userStatus.subscription_expires_at)}</p>
+                <p className="text-xs text-gray-600">Vence el {expiresDate(userStatus.subscription_expires_at)}</p>
               )}
             </div>
           </div>
@@ -195,7 +195,7 @@ function UserStatusView({ user }: { user: any }) {
               </span>
             )}
             {!badge && <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-500">Sin verificar</span>}
-            <button onClick={fetchUserStatus} disabled={loadingStatus} className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50">
+            <button type="button" onClick={fetchUserStatus} disabled={loadingStatus} aria-label="Actualizar estado de suscripción" className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50">
               {loadingStatus ? <Loader2 className="w-4 h-4 animate-spin text-gray-400" /> : <RefreshCw className="w-4 h-4 text-gray-500" />}
             </button>
           </div>
@@ -221,8 +221,8 @@ function UserStatusView({ user }: { user: any }) {
             </div>
             <div>
               <p className="font-semibold text-gray-800">Mi cuenta Google</p>
-              {emailConn?.email && <p className="text-xs text-gray-400">{emailConn.email}</p>}
-              {!emailConn?.connected && emailConn?.clinic_email && <p className="text-xs text-gray-400">Registrado: {emailConn.clinic_email}</p>}
+              {emailConn?.email && <p className="text-xs text-gray-600">{emailConn.email}</p>}
+              {!emailConn?.connected && emailConn?.clinic_email && <p className="text-xs text-gray-600">Registrado: {emailConn.clinic_email}</p>}
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -234,7 +234,7 @@ function UserStatusView({ user }: { user: any }) {
               </span>
             )}
             {emailConn === null && <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-500">Sin verificar</span>}
-            <button onClick={fetchEmailConn} disabled={loadingEmailConn} className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50">
+            <button type="button" onClick={fetchEmailConn} disabled={loadingEmailConn} aria-label="Actualizar estado de la cuenta Google" className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50">
               {loadingEmailConn ? <Loader2 className="w-4 h-4 animate-spin text-gray-400" /> : <RefreshCw className="w-4 h-4 text-gray-500" />}
             </button>
           </div>

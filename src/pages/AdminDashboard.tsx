@@ -536,7 +536,7 @@ export default function AdminDashboard() {
                 >
                   {effectiveUser?.clinic_name || 'BioSkinTech'}
                 </h1>
-                <p className="text-xs text-gray-400 leading-tight">
+                <p className="text-xs text-gray-600 leading-tight">
                   {ROLE_BADGE[effectiveUser?.role || ''] || 'Usuario'} · {effectiveUser?.full_name || effectiveUser?.username}
                 </p>
               </div>
@@ -641,8 +641,9 @@ export default function AdminDashboard() {
               <div className="relative" ref={settingsMenuRef}>
                 <button
                   onClick={() => setShowSettingsMenu(s => !s)}
-                  className="p-2 text-gray-400 hover:text-[#deb887] hover:bg-[#deb887]/10 rounded-xl transition-colors"
-                  title="Ajustes"
+                  className="p-2 text-gray-600 hover:text-gold-ink hover:bg-[#deb887]/10 rounded-xl transition-colors"
+                  aria-label="Ajustes"
+                  aria-expanded={showSettingsMenu}
                 >
                   <Settings className="w-5 h-5" />
                 </button>
@@ -675,7 +676,7 @@ export default function AdminDashboard() {
               {/* Cerrar sesión */}
               <button
                 onClick={() => { logout(); navigate('/admin/login'); }}
-                className="flex items-center gap-1.5 px-3 py-2 text-red-500 bg-red-50 hover:bg-red-100 rounded-xl transition-colors text-sm font-medium"
+                className="flex items-center gap-1.5 px-3 py-2 text-red-700 bg-red-50 hover:bg-red-100 rounded-xl transition-colors text-sm font-medium"
               >
                 <LogOut className="w-4 h-4" /> Salir
               </button>
@@ -685,7 +686,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* ── Cuerpo ──────────────────────────────────────────────────────── */}
-      <div className="container-custom admin-page-enter py-5 sm:py-8">
+      <main className="container-custom admin-page-enter py-5 sm:py-8">
 
         {!masterView.isActive && user?.must_change_password && (
           <div className="mb-6 flex flex-col gap-3 border-l-4 border-amber-500 bg-amber-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
@@ -763,7 +764,7 @@ export default function AdminDashboard() {
             </div>
           </>
         )}
-      </div>
+      </main>
 
       {/* ── Modal: Ajustes tabbed ─────────────────────────────────────── */}
       {showSettings && (

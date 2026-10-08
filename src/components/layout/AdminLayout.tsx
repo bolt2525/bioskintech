@@ -89,7 +89,7 @@ export default function AdminLayout({
       )}
 
       {/* ── Header fijo ───────────────────────────────────────────────── */}
-      <div className="sticky top-0 z-50 border-b border-white/70 bg-white/95 shadow-sm backdrop-blur-xl">
+      <header className="sticky top-0 z-50 border-b border-white/70 bg-white/95 shadow-sm backdrop-blur-xl">
         <div className="container-custom py-3 md:py-4">
           <div className="flex items-center justify-between">
 
@@ -145,14 +145,14 @@ export default function AdminLayout({
 
           </div>
         </div>
-      </div>
+      </header>
 
       {/* ── Contenido ─────────────────────────────────────────────────── */}
-      <div className="container-custom admin-page-enter py-5 sm:py-8">
+      <main className="container-custom admin-page-enter py-5 sm:py-8">
         <MotionConfig reducedMotion="user">
           {children}
         </MotionConfig>
-      </div>
+      </main>
       <AppFooter theme="light" />
     </div>
   );

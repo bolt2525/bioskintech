@@ -173,7 +173,7 @@ function ClinicalSummaryPanel({
         <span className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-gold/10 text-gold-ink">
           <ClipboardList className="h-5 w-5" aria-hidden="true" />
         </span>
-        <h3 className="font-semibold text-gray-900">{titles[mode][0]}</h3>
+        <h2 className="font-semibold text-gray-900">{titles[mode][0]}</h2>
         <p className="mt-1 text-xs text-gray-500">{titles[mode][1]}</p>
       </div>
       {renderContent()}
@@ -974,11 +974,12 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">Fecha</label>
+              <label htmlFor="treatment-date" className="block text-sm font-medium text-gray-700">Fecha</label>
               <div className="flex items-center gap-2">
                 <div className="relative flex-1">
                   <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <input
+                    id="treatment-date"
                     type="date"
                     disabled={dateLocked}
                     className={`w-full pl-10 p-2.5 border rounded-lg outline-none transition-all ${
@@ -1021,10 +1022,11 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
               </datalist>
             </div>
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">
+              <label htmlFor="treatment-package" className="block text-sm font-medium text-gray-700">
                 Paquete <span className="text-gray-400 font-normal">(opcional)</span>
               </label>
               <select
+                id="treatment-package"
                 className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
                 value={currentTreatment.package_id ?? ''}
                 onChange={e => setCurrentTreatment({ ...currentTreatment, package_id: e.target.value ? Number(e.target.value) : null })}
@@ -1113,10 +1115,11 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700">Duración (min)<FieldHelp text={HELP.treatment.duration_minutes} /></label>
+                <label htmlFor="treatment-duration" className="block text-sm font-medium text-gray-700">Duración (min)<FieldHelp text={HELP.treatment.duration_minutes} /></label>
                 <div className="relative">
                   <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <input
+                    id="treatment-duration"
                     type="number"
                     className="w-full pl-10 p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
                     value={currentTreatment.duration_minutes}

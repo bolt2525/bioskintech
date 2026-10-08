@@ -510,7 +510,7 @@ const AdminFinance = () => {
 
   return (
     <MotionConfig reducedMotion="user">
-    <div className="admin-page-enter min-h-screen bg-[#eef3f2] pb-20">
+    <main className="admin-page-enter min-h-screen bg-[#eef3f2] pb-20">
       <div className="bg-[#172522] px-4 pb-20 pt-8 text-white shadow-xl sm:pb-24 sm:pt-10">
         <div className="container-custom mx-auto">
           <div className="mb-6 flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
@@ -1335,7 +1335,7 @@ const AdminFinance = () => {
           </div>
         </div>
       )}
-    </div>
+    </main>
     </MotionConfig>
   );
 };
