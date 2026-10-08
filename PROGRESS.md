@@ -1,5 +1,6 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-08 Capilar: Norwood/Ludwig 3D.
 - ✅ 2026-10-08 Contrato: ciclo integrado; proveedores transparentes.
 - ✅ 2026-10-08 Master: sesión sincronizada sin salto.
 - ✅ 2026-10-08 Login: Turnstile normal y proveedor.

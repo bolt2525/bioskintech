@@ -67,11 +67,194 @@ export interface ProjectedPosition {
 
 export type ClinicalCameraPreset = 'default' | 'face' | 'body' | 'scalp';
 
+export interface ScalpHairVisualization {
+  scale: 'norwood' | 'ludwig';
+  stage: string;
+  density: 'Alta' | 'Media' | 'Baja' | null;
+}
+
 const CAMERA_PRESETS: Record<ClinicalCameraPreset, { position: [number, number, number]; target: [number, number, number] }> = {
   default: { position: [0, 0, 12], target: [0, 0, 0] },
   face: { position: [0, 0.15, 8], target: [0, 0.15, 0] },
   body: { position: [0, 0, 8.5], target: [0, 0, 0] },
   scalp: { position: [0, 3.7, 5.8], target: [0, 0.75, 0] },
+};
+
+const NORWOOD_STAGE_INDEX: Record<string, number> = {
+  I: 0,
+  II: 1,
+  III: 2,
+  'III Vertex': 3,
+  IV: 4,
+  V: 5,
+  VI: 6,
+  VII: 7,
+};
+
+const disposeObject3D = (object: THREE.Object3D) => {
+  object.traverse((child) => {
+    const renderable = child as THREE.Mesh;
+    renderable.geometry?.dispose();
+    const materials = renderable.material
+      ? (Array.isArray(renderable.material) ? renderable.material : [renderable.material])
+      : [];
+    materials.forEach(material => material.dispose());
+  });
+};
+
+const seededRandom = (seedText: string) => {
+  let seed = 2166136261;
+  for (let index = 0; index < seedText.length; index += 1) {
+    seed ^= seedText.charCodeAt(index);
+    seed = Math.imul(seed, 16777619);
+  }
+  return () => {
+    seed += 0x6d2b79f5;
+    let value = seed;
+    value = Math.imul(value ^ (value >>> 15), value | 1);
+    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+  };
+};
+
+const getHairCoverage = (
+  position: THREE.Vector3,
+  visualization: ScalpHairVisualization,
+): number => {
+  const absX = Math.abs(position.x);
+
+  if (visualization.scale === 'ludwig') {
+    if (position.z > 0.18) return 0.95;
+    const centralTop = absX < 0.85 && position.z > -1.45 && position.y > 0.35;
+    if (!centralTop) return 0.92;
+    return visualization.stage === 'III' ? 0.13 : visualization.stage === 'II' ? 0.38 : 0.68;
+  }
+
+  const stage = NORWOOD_STAGE_INDEX[visualization.stage] ?? 0;
+  const temporalZone = position.z > 0.15 && absX > 0.28 && position.y < 1.55;
+  const crownDistance = Math.hypot(position.x / 0.9, (position.z + 0.72) / 0.92);
+  const centralTop = absX < 1.05 && position.z > -1.45 && position.y > 0.35;
+
+  if (stage === 0) return 1;
+  if (stage === 1) return temporalZone ? 0.28 : 0.98;
+  if (stage === 2) return temporalZone || (position.z > 0.45 && absX < 0.55) ? 0.12 : 0.95;
+  if (stage === 3) {
+    if (crownDistance < 0.78) return 0.1;
+    return temporalZone ? 0.18 : 0.95;
+  }
+  if (stage === 4) {
+    if (crownDistance < 0.92 || (position.z > 0.05 && absX < 0.9)) return 0.08;
+    return 0.92;
+  }
+  if (stage === 5) return centralTop ? 0.09 : 0.9;
+  if (stage === 6) return absX > 0.88 || position.z < -1.18 || position.y < 0.38 ? 0.88 : 0;
+  return absX > 0.82 || position.z < -1.08 || position.y < 0.32 ? 0.82 : 0;
+};
+
+const createScalpHairGroup = (
+  root: THREE.Object3D,
+  visualization: ScalpHairVisualization,
+): THREE.Group | null => {
+  let sourceMesh: THREE.Mesh | null = null;
+  root.traverse((child) => {
+    if (!sourceMesh && (child as THREE.Mesh).isMesh) sourceMesh = child as THREE.Mesh;
+  });
+  if (!sourceMesh) return null;
+
+  const mesh = sourceMesh as THREE.Mesh;
+  const geometry = mesh.geometry as THREE.BufferGeometry;
+  const positions = geometry.getAttribute('position');
+  if (!positions) return null;
+
+  mesh.updateWorldMatrix(true, false);
+  const index = geometry.getIndex();
+  const triangles: Array<{ a: THREE.Vector3; b: THREE.Vector3; c: THREE.Vector3; area: number }> = [];
+  const cumulativeAreas: number[] = [];
+  let totalArea = 0;
+  const triangleCount = index ? index.count / 3 : positions.count / 3;
+
+  for (let triangle = 0; triangle < triangleCount; triangle += 1) {
+    const offset = triangle * 3;
+    const aIndex = index ? index.getX(offset) : offset;
+    const bIndex = index ? index.getX(offset + 1) : offset + 1;
+    const cIndex = index ? index.getX(offset + 2) : offset + 2;
+    const a = new THREE.Vector3().fromBufferAttribute(positions, aIndex).applyMatrix4(mesh.matrixWorld);
+    const b = new THREE.Vector3().fromBufferAttribute(positions, bIndex).applyMatrix4(mesh.matrixWorld);
+    const c = new THREE.Vector3().fromBufferAttribute(positions, cIndex).applyMatrix4(mesh.matrixWorld);
+    const center = a.clone().add(b).add(c).multiplyScalar(1 / 3);
+    if (center.y < 0.38 || center.z > 1.15) continue;
+    const area = new THREE.Triangle(a, b, c).getArea();
+    if (area <= 0) continue;
+    totalArea += area;
+    triangles.push({ a, b, c, area });
+    cumulativeAreas.push(totalArea);
+  }
+
+  if (!triangles.length || totalArea === 0) return null;
+
+  const densityFactor = visualization.density === 'Alta' ? 1 : visualization.density === 'Baja' ? 0.5 : 0.72;
+  const targetCount = Math.round(1850 * densityFactor);
+  const hairLength = visualization.density === 'Baja' ? 0.06 : 0.075;
+  const coneGeometry = new THREE.ConeGeometry(0.012, hairLength, 5);
+  coneGeometry.translate(0, hairLength / 2, 0);
+  const hairMaterial = new THREE.MeshStandardMaterial({
+    color: 0x3d2618,
+    roughness: 0.88,
+    metalness: 0,
+  });
+  const hair = new THREE.InstancedMesh(coneGeometry, hairMaterial, targetCount);
+  hair.castShadow = true;
+  hair.receiveShadow = false;
+  hair.frustumCulled = false;
+  hair.userData.isScalpVisualization = true;
+
+  const random = seededRandom(`${visualization.scale}:${visualization.stage}:${visualization.density ?? 'Media'}`);
+  const up = new THREE.Vector3(0, 1, 0);
+  const position = new THREE.Vector3();
+  const normal = new THREE.Vector3();
+  const quaternion = new THREE.Quaternion();
+  const matrix = new THREE.Matrix4();
+  let instanceCount = 0;
+  const maxAttempts = targetCount * 18;
+
+  for (let attempt = 0; attempt < maxAttempts && instanceCount < targetCount; attempt += 1) {
+    const areaTarget = random() * totalArea;
+    let low = 0;
+    let high = cumulativeAreas.length - 1;
+    while (low < high) {
+      const middle = (low + high) >>> 1;
+      if (cumulativeAreas[middle] < areaTarget) low = middle + 1;
+      else high = middle;
+    }
+    const selected = triangles[low];
+    const sqrtR1 = Math.sqrt(random());
+    const weightA = 1 - sqrtR1;
+    const weightB = sqrtR1 * (1 - random());
+    const weightC = 1 - weightA - weightB;
+    position.copy(selected.a).multiplyScalar(weightA)
+      .addScaledVector(selected.b, weightB)
+      .addScaledVector(selected.c, weightC);
+
+    if (random() > getHairCoverage(position, visualization)) continue;
+
+    normal.subVectors(selected.b, selected.a)
+      .cross(new THREE.Vector3().subVectors(selected.c, selected.a))
+      .normalize();
+    if (normal.dot(position.clone().setY(position.y - 0.55)) < 0) normal.negate();
+    quaternion.setFromUnitVectors(up, normal);
+    position.addScaledVector(normal, 0.01);
+    const scale = 0.82 + random() * 0.36;
+    matrix.compose(position, quaternion, new THREE.Vector3(scale, scale, scale));
+    hair.setMatrixAt(instanceCount, matrix);
+    instanceCount += 1;
+  }
+
+  hair.count = instanceCount;
+  hair.instanceMatrix.needsUpdate = true;
+  const group = new THREE.Group();
+  group.name = 'scalp-hair-visualization';
+  group.add(hair);
+  return group;
 };
 
 // ==========================================
@@ -344,6 +527,8 @@ interface Clinical3DViewerProps {
   onBackgroundClick?: () => void;
   /** Escala multiplicadora del tamaño de marcaciones puntuales (1.0 = default) */
   pointMarkerScale?: number;
+  /** Representación clínica opcional de patrón y densidad capilar */
+  scalpHair?: ScalpHairVisualization | null;
 }
 
 // ==========================================
@@ -394,6 +579,7 @@ const ThreeEngine: React.FC<{
   onEditablePointHovered?: (id: string | null) => void;
   onBackgroundClick?: () => void;
   cameraPreset?: ClinicalCameraPreset;
+  scalpHair?: ScalpHairVisualization | null;
 }> = ({
   modelSource, markers, zones, onMeshClick, onMarkerRadiusChange, onLoaded, onError, readOnly,
   referenceLines = [], lineDrawingMode, onLinePointAnchored,
@@ -411,6 +597,7 @@ const ThreeEngine: React.FC<{
   onBackgroundClick,
   pointMarkerScale = 1.0,
   cameraPreset = 'default',
+  scalpHair = null,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -418,6 +605,7 @@ const ThreeEngine: React.FC<{
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
   const faceMeshRef = useRef<THREE.Object3D | null>(null);
+  const scalpHairGroupRef = useRef<THREE.Group | null>(null);
   const markersGroupRef = useRef<THREE.Group | null>(null);
   const linesGroupRef = useRef<THREE.Group | null>(null);
   const boundariesGroupRef = useRef<THREE.Group | null>(null);
@@ -2321,6 +2509,11 @@ const ThreeEngine: React.FC<{
       sceneRef.current.remove(faceMeshRef.current);
       faceMeshRef.current = null;
     }
+    if (scalpHairGroupRef.current) {
+      sceneRef.current.remove(scalpHairGroupRef.current);
+      disposeObject3D(scalpHairGroupRef.current);
+      scalpHairGroupRef.current = null;
+    }
 
     const loader = new GLTFLoader();
 
@@ -2392,7 +2585,28 @@ const ThreeEngine: React.FC<{
     }
   }, [modelSource, cameraPreset]);
 
-  // 3. Render markers
+  // 3. Render optional scalp visualization
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    if (scalpHairGroupRef.current) {
+      scene.remove(scalpHairGroupRef.current);
+      disposeObject3D(scalpHairGroupRef.current);
+      scalpHairGroupRef.current = null;
+    }
+    if (!scalpHair || !faceMeshRef.current) return;
+    const group = createScalpHairGroup(faceMeshRef.current, scalpHair);
+    if (!group) return;
+    scene.add(group);
+    scalpHairGroupRef.current = group;
+    return () => {
+      scene.remove(group);
+      disposeObject3D(group);
+      if (scalpHairGroupRef.current === group) scalpHairGroupRef.current = null;
+    };
+  }, [scalpHair, modelVersion]);
+
+  // 4. Render markers
   useEffect(() => {
     const group = markersGroupRef.current;
     const faceMesh = faceMeshRef.current;
@@ -3160,6 +3374,7 @@ export default function Clinical3DViewer({
   onEditablePointHovered,
   onBackgroundClick,
   pointMarkerScale = 1.0,
+  scalpHair = null,
 }: Clinical3DViewerProps) {
   const [modelSource, setModelSource] = useState<{ type: 'url' | 'buffer'; data: string | ArrayBuffer }>({
     type: 'url',
@@ -3254,6 +3469,7 @@ export default function Clinical3DViewer({
             onBackgroundClick={onBackgroundClick}
             pointMarkerScale={pointMarkerScale}
             cameraPreset={cameraPreset}
+            scalpHair={scalpHair}
           />
         )}
       </div>

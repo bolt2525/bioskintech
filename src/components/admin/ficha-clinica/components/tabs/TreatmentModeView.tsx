@@ -8,7 +8,7 @@ import TreatmentPackageModal from './TreatmentPackageModal';
 import TreatmentFinanceOptions from './TreatmentFinanceOptions';
 import ClinicalDataModal from './ClinicalDataModal';
 import Clinical3DViewer from '../Clinical3DViewer';
-import type { Marker3D, MarkerType } from '../Clinical3DViewer';
+import type { Marker3D, MarkerType, ScalpHairVisualization } from '../Clinical3DViewer';
 import { useAuth } from '../../../../../context/AuthContext';
 import treatmentOptions from '../../data/treatment_options.json';
 import { Tooltip } from '../../../../ui/Tooltip';
@@ -286,6 +286,16 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
     () => new Set(treatedZones.map(zone => zone.toLocaleLowerCase())),
     [treatedZones]
   );
+  const scalpHair = useMemo<ScalpHairVisualization | null>(() => {
+    if (mode !== 'capilar') return null;
+    const assessment = currentTreatment.parameters?.[RESERVED_PARAM_KEYS.capilar] as ScalpAssessmentData | undefined;
+    if (!assessment?.scale || !assessment.stage) return null;
+    return {
+      scale: assessment.scale,
+      stage: assessment.stage,
+      density: assessment.density,
+    };
+  }, [currentTreatment.parameters, mode]);
 
   // ── Paquetes ─────────────────────────────────────────────────────────────
   const [packages, setPackages] = useState<TreatmentPackage[]>([]);
@@ -947,7 +957,18 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                     onMarkerPlaced={handleMarkerPlaced}
                     height="360px"
                     pointMarkerScale={0.6}
+                    scalpHair={scalpHair}
                   />
+                  {scalpHair ? (
+                    <div className="pointer-events-none absolute left-3 top-3 z-10 rounded-xl border border-white/15 bg-slate-950/70 px-3 py-2 text-white shadow-lg backdrop-blur-sm">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-gold">Patrón capilar 3D</p>
+                      <p className="mt-0.5 text-xs font-semibold">
+                        {scalpHair.scale === 'norwood' ? 'Norwood' : 'Ludwig'} {scalpHair.stage}
+                        {scalpHair.density ? ` · Densidad ${scalpHair.density.toLowerCase()}` : ''}
+                      </p>
+                      <p className="mt-0.5 text-[9px] text-slate-300">Representación clínica orientativa</p>
+                    </div>
+                  ) : null}
                   {getAreaMarkers(currentTreatment).length > 0 ? (
                     <button
                       type="button"
