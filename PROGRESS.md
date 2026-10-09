@@ -1,5 +1,7 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-09 Norwood/Ludwig: patrones y densidad.
+- ✅ 2026-10-09 Ludwig: peinado femenino procedural.
 - ✅ 2026-10-09 Capilar: centro y normales corregidos.
 - ✅ 2026-10-08 Capilar: trazado simétrico sobre X=0.
 - ✅ 2026-10-08 Capilar: preset manual de 42 puntos.

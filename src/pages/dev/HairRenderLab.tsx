@@ -13,12 +13,11 @@ import Clinical3DViewer, {
 } from '../../components/admin/ficha-clinica/components/Clinical3DViewer';
 import { useAuth } from '../../context/AuthContext';
 import { SCALP_BOUNDARY_PRESET, SCALP_BOUNDARY_PRESET_VERSION } from '../../data/scalpBoundaryPreset';
+import { NORWOOD_STAGES, LUDWIG_STAGES, NORWOOD_DESCRIPTIONS, LUDWIG_DESCRIPTIONS } from '../../data/scalpPatterns';
 
 type LabMode = 'hair' | 'model';
 type Density = 'Alta' | 'Media' | 'Baja';
 
-const NORWOOD_STAGES = ['I', 'II', 'III', 'III Vertex', 'IV', 'V', 'VI', 'VII'];
-const LUDWIG_STAGES = ['I', 'II', 'III'];
 const HAIR_COLORS = ['#160d09', '#2b1a12', '#4a2b1a', '#6b4328', '#9a744e'];
 const SCALP_TRACE_STORAGE_KEY = 'bioskin-3d-lab-scalp-trace-v2';
 const MODEL_PRESETS = {
@@ -132,10 +131,10 @@ function HairRenderLabView({ onBack }: { onBack?: () => void }) {
     lengthScale,
     roughness: hairRoughness,
     layDown,
-    showBoundaryTrace: true,
+    showBoundaryTrace: traceMode,
     boundaryPoints: boundaryPoints.map(point => point.position),
     boundaryClosed: traceClosed,
-  }), [boundaryPoints, density, hairColor, hairRoughness, layDown, lengthScale, scale, stage, traceClosed]);
+  }), [boundaryPoints, density, hairColor, hairRoughness, layDown, lengthScale, scale, stage, traceClosed, traceMode]);
   const lastDistance = markers.length >= 2
     ? Math.hypot(
       markers.at(-1)!.position.x - markers.at(-2)!.position.x,
@@ -337,6 +336,9 @@ function HairRenderLabView({ onBack }: { onBack?: () => void }) {
                     {stages.map(item => <option key={item}>{item}</option>)}
                   </select>
                 </label>
+                <p className="text-xs leading-5 text-slate-600" role="status">
+                  {(scale === 'norwood' ? NORWOOD_DESCRIPTIONS : LUDWIG_DESCRIPTIONS)[stages.indexOf(stage)]}
+                </p>
                 <fieldset>
                   <legend className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Densidad</legend>
                   <div className="grid grid-cols-3 gap-2">
@@ -384,7 +386,9 @@ function HairRenderLabView({ onBack }: { onBack?: () => void }) {
                   </div>
                 </fieldset>
                 <p className="rounded-xl bg-slate-50 p-3 text-xs text-slate-500">
-                  Fibras capilares 3D · PBR
+                  {scale === 'ludwig' ? 'Peinado femenino corto con raya central' : 'Peinado masculino corto'} · PBR.
+                  {' '}La densidad cambia la cantidad de fibras y la visibilidad del cuero cabelludo.
+                  {' '}Representación orientativa, no simulación diagnóstica.
                 </p>
                 <div className="space-y-2 rounded-xl border border-gold/30 bg-gold/10 p-3">
                   <div>

@@ -10,6 +10,8 @@ import { Tooltip } from '../../../../ui/Tooltip';
 import type {
   TreatmentMode, PostCareData, AnthropometricsData, ScalpAssessmentData, SeverityScale, HairLossScale,
 } from '../../types/treatment';
+import { NORWOOD_STAGES, LUDWIG_STAGES, NORWOOD_DESCRIPTIONS, LUDWIG_DESCRIPTIONS, getScalpCoverage } from '../../../../../data/scalpPatterns';
+export { NORWOOD_STAGES, LUDWIG_STAGES } from '../../../../../data/scalpPatterns';
 
 const SEVERITY_META: Record<SeverityScale, { label: string; description: string; detail: string }> = {
   0: { label: 'Sin reacción', description: 'Piel sin cambios visibles', detail: 'No se aprecia respuesta inmediata relevante. Registra igualmente las indicaciones entregadas y cualquier sensación referida.' },
@@ -34,23 +36,6 @@ const ANTHRO_FIELDS: Array<{ key: keyof AnthropometricsData['before']; label: st
   { key: 'weight', label: 'Peso', unit: 'kg' },
 ];
 const ALOPECIA_TYPES = ['Androgenética', 'Areata', 'Telógena', 'Cicatricial', 'Otra'];
-export const NORWOOD_STAGES = ['I', 'II', 'III', 'III Vertex', 'IV', 'V', 'VI', 'VII'];
-export const LUDWIG_STAGES = ['I', 'II', 'III'];
-const NORWOOD_DESCRIPTIONS = [
-  'Línea frontal conservada',
-  'Retroceso temporal leve',
-  'Entradas más definidas',
-  'Compromiso predominante de vértex',
-  'Pérdida frontal y coronilla',
-  'Puente capilar reducido',
-  'Áreas frontal y superior unidas',
-  'Cabello lateral y occipital residual',
-];
-const LUDWIG_DESCRIPTIONS = [
-  'Ensanchamiento leve de la raya',
-  'Disminución visible de densidad',
-  'Aclaramiento difuso avanzado',
-];
 
 function SeverityIllustration({ level, kind }: { level: SeverityScale; kind: 'erythema' | 'edema' }) {
   const color = level === 0 ? '#d1fae5' : level === 1 ? '#fde68a' : level === 2 ? '#fdba74' : '#fda4af';
@@ -86,23 +71,24 @@ function BodyMeasureIllustration({ measure }: { measure: keyof AnthropometricsDa
 /** Ilustración esquemática (SVG generado, no una foto clínica) de la silueta craneal con el patrón
  *  de pérdida capilar aproximado para la escala/etapa seleccionada — solo referencial. */
 function ScalpStageIllustration({ scale, stageIndex }: { scale: HairLossScale; stageIndex: number }) {
-  const total = scale === 'norwood' ? NORWOOD_STAGES.length : LUDWIG_STAGES.length;
-  const progress = stageIndex / Math.max(1, total - 1); // 0 (sin pérdida) .. 1 (máxima pérdida)
-  // Norwood: la línea de implantación retrocede desde la frente; Ludwig: la corona se aclara de forma difusa
-  const hairlineY = scale === 'norwood' ? 14 + progress * 16 : 14;
-  const crownOpacity = scale === 'ludwig' ? Math.max(0.08, 0.6 - progress * 0.55) : 0.6;
+  const stage = (scale === 'norwood' ? NORWOOD_STAGES : LUDWIG_STAGES)[stageIndex];
+  const samples = [];
+  for (let row = 0; row < 28; row += 1) {
+    for (let column = 0; column < 24; column += 1) {
+      const x = (column / 23 - 0.5) * 2.3;
+      const z = 1.5 - row / 27 * 2.9;
+      const radius = (x / 1.15) ** 2 + ((z - 0.05) / 1.5) ** 2;
+      if (radius > 1) continue;
+      const y = Math.min(2.5, 0.8 + 1.7 * Math.sqrt(1 - radius) + 0.7 * Math.max(0, (z - 0.2) / 1.3));
+      const opacity = getScalpCoverage({ x, y, z }, { scale, stage });
+      samples.push(<rect key={`${row}-${column}`} x={12 + column * 2} y={9 + row * 2} width="2.1" height="2.1" fill="#3b271c" opacity={opacity} />);
+    }
+  }
   return (
     <svg viewBox="0 0 72 72" className="h-16 w-16 shrink-0" aria-hidden="true">
-      <circle cx="36" cy="39" r="26" fill="#fde9d7" stroke="#b8944d" strokeWidth="1.5" />
-      {scale === 'norwood' ? (
-        <path d={`M10,${hairlineY + 4} Q36,${hairlineY - 8 + progress * 6} 62,${hairlineY + 4}`} fill="none" stroke="#5b3a1e" strokeWidth="6" strokeLinecap="round" />
-      ) : (
-        <ellipse cx="36" cy="24" rx="19" ry="11" fill="#5b3a1e" opacity={crownOpacity} />
-      )}
-      {scale === 'norwood' && progress > 0.3 && (
-        <ellipse cx="36" cy="22" rx={7 + progress * 12} ry={5 + progress * 7} fill="#fde9d7" />
-      )}
-      <path d="M29 47q7 5 14 0" fill="none" stroke="#c0846a" strokeWidth="1.5" strokeLinecap="round" />
+      <ellipse cx="36" cy="36" rx="25" ry="29" fill="#fde9d7" stroke="#b8944d" strokeWidth="1.5" />
+      {samples}
+      <path d="M32 5h8l-4-3Z" fill="#b8944d" />
     </svg>
   );
 }
