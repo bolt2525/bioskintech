@@ -6,6 +6,7 @@ import {
   Loader2, AlertCircle, Upload, MousePointer2, Rotate3D, ZoomIn
 } from 'lucide-react';
 import type { ReferenceLine, LineType } from './ReferenceLinePanel';
+import { createScalpGroomGroup } from './scalpGroom';
 export type { ReferenceLine, LineType };
 
 // ==========================================
@@ -2962,7 +2963,7 @@ const ThreeEngine: React.FC<{
       scalpHairGroupRef.current = null;
     }
     if (!scalpHair || !faceMeshRef.current) return;
-    const group = createScalpHairGroup(faceMeshRef.current, scalpHair);
+    const group = createScalpGroomGroup(scalpHair);
     if (!group) return;
     scene.add(group);
     scalpHairGroupRef.current = group;

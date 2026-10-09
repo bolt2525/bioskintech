@@ -4,6 +4,7 @@
 - ✅ 2026-10-08 Capilar: preset manual de 42 puntos.
 - ✅ 2026-10-08 Laboratorio: exportación JSON del trazado.
 - ✅ 2026-10-08 Laboratorio: trazado capilar manual suavizado.
+- ✅ 2026-10-09 Laboratorio: scalp proxy independiente.
 - ✅ 2026-10-08 Laboratorio: núcleo GLB aislado.
 - ✅ 2026-10-08 Master/local: laboratorio hair cards PBR.
 - ✅ 2026-10-08 Capilar: límites y densidad realistas.
