@@ -11,11 +11,7 @@ interface TratamientosCapilarProps {
   onSave: () => void;
 }
 
-/**
- * Modo Capilar — ponytail: no existe aún un modelo .glb dedicado de cuero cabelludo;
- * se reutiliza male_head.glb como aproximación temporal (decisión confirmada con el usuario).
- * Upgrade path: reemplazar modelUrl cuando se provea un modelo de cráneo/cuero cabelludo.
- */
+/** Modo Capilar — cabeza clínica con malla capilar estilizada para el groom dinámico. */
 export default function TratamientosCapilar(props: TratamientosCapilarProps) {
-  return <TreatmentModeView mode="capilar" modelUrl="/models/clinical/male_head.glb" {...props} />;
+  return <TreatmentModeView mode="capilar" modelUrl="/models/clinical/male_head_hair.glb" {...props} />;
 }

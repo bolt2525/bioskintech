@@ -2868,17 +2868,26 @@ const ThreeEngine: React.FC<{
         return;
       }
 
+      model.traverse(child => {
+        if (child.name === 'SCALP_HAIR_SOURCE') child.visible = false;
+      });
       model.updateMatrixWorld(true);
-      const box = new THREE.Box3().setFromObject(model);
-      const size = box.getSize(new THREE.Vector3());
-      const center = box.getCenter(new THREE.Vector3());
+      const box = new THREE.Box3();
       let meshes = 0;
       let vertices = 0;
       let triangles = 0;
       model.traverse((child: THREE.Object3D) => {
         const mesh = child as THREE.Mesh;
         if (!mesh.isMesh) return;
+        if (mesh.name === 'SCALP_HAIR_SOURCE') {
+          mesh.visible = false;
+          return;
+        }
         const geometry = mesh.geometry;
+        if (!geometry.boundingBox) geometry.computeBoundingBox();
+        if (geometry.boundingBox) {
+          box.union(geometry.boundingBox.clone().applyMatrix4(mesh.matrixWorld));
+        }
         const positionAttribute = geometry.getAttribute('position');
         meshes += 1;
         vertices += positionAttribute?.count ?? 0;
@@ -2886,6 +2895,12 @@ const ThreeEngine: React.FC<{
           ? geometry.index.count / 3
           : (positionAttribute?.count ?? 0) / 3;
       });
+      if (box.isEmpty()) {
+        callbacks.current.onError("El modelo no contiene geometría visible.");
+        return;
+      }
+      const size = box.getSize(new THREE.Vector3());
+      const center = box.getCenter(new THREE.Vector3());
       callbacks.current.onModelMetrics?.({
         meshes,
         vertices,
@@ -2906,6 +2921,7 @@ const ThreeEngine: React.FC<{
 
       model.traverse((child: any) => {
         if (child.isMesh) {
+          if (child.name === 'SCALP_HAIR_SOURCE') return;
           const settings = { ...DEFAULT_SCENE_SETTINGS, ...sceneSettings };
           child.castShadow = true;
           child.receiveShadow = true;
@@ -2963,7 +2979,7 @@ const ThreeEngine: React.FC<{
       scalpHairGroupRef.current = null;
     }
     if (!scalpHair || !faceMeshRef.current) return;
-    const group = createScalpGroomGroup(scalpHair);
+    const group = createScalpGroomGroup(scalpHair, faceMeshRef.current);
     if (!group) return;
     scene.add(group);
     scalpHairGroupRef.current = group;

@@ -22,7 +22,7 @@ const LUDWIG_STAGES = ['I', 'II', 'III'];
 const HAIR_COLORS = ['#160d09', '#2b1a12', '#4a2b1a', '#6b4328', '#9a744e'];
 const SCALP_TRACE_STORAGE_KEY = 'bioskin-3d-lab-scalp-trace-v2';
 const MODEL_PRESETS = {
-  head: { label: 'Cabeza', url: '/models/clinical/male_head.glb', camera: 'scalp' as const },
+  head: { label: 'Cabeza', url: '/models/clinical/male_head_hair.glb', camera: 'scalp' as const },
   body: { label: 'Cuerpo', url: '/models/clinical/male_body.glb', camera: 'body' as const },
 };
 const DEFAULT_HAIR = {
@@ -30,7 +30,7 @@ const DEFAULT_HAIR = {
   stage: 'II',
   density: 'Media' as Density,
   color: '#2b1a12',
-  lengthScale: 1,
+  lengthScale: 0.82,
   roughness: 0.58,
   layDown: 0.78,
 };
@@ -384,7 +384,7 @@ function HairRenderLabView({ onBack }: { onBack?: () => void }) {
                   </div>
                 </fieldset>
                 <p className="rounded-xl bg-slate-50 p-3 text-xs text-slate-500">
-                  Mechones anime 3D · PBR estilizado
+                  Fibras capilares 3D · PBR
                 </p>
                 <div className="space-y-2 rounded-xl border border-gold/30 bg-gold/10 p-3">
                   <div>

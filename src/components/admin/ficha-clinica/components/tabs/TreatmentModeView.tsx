@@ -8,9 +8,10 @@ import TreatmentPackageModal from './TreatmentPackageModal';
 import TreatmentFinanceOptions from './TreatmentFinanceOptions';
 import ClinicalDataModal from './ClinicalDataModal';
 import Clinical3DViewer from '../Clinical3DViewer';
-import type { Marker3D, MarkerType } from '../Clinical3DViewer';
+import type { Marker3D, MarkerType, ScalpHairVisualization } from '../Clinical3DViewer';
 import { useAuth } from '../../../../../context/AuthContext';
 import treatmentOptions from '../../data/treatment_options.json';
+import { SCALP_BOUNDARY_PRESET } from '../../../../../data/scalpBoundaryPreset';
 import { Tooltip } from '../../../../ui/Tooltip';
 import FieldHelp from '../FieldHelp';
 import { HELP } from '../../data/fieldHelpTexts';
@@ -482,6 +483,24 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
   };
 
   const equipmentNames = parseEquipmentNames(currentTreatment.equipment_used);
+  const scalpAssessment = currentTreatment.parameters?.[RESERVED_PARAM_KEYS.capilar] as ScalpAssessmentData | undefined;
+  const scalpScale = scalpAssessment?.scale ?? 'norwood';
+  const scalpStage = scalpAssessment?.stage ?? 'I';
+  const scalpDensity = scalpAssessment?.density ?? 'Media';
+  const scalpHair = useMemo<ScalpHairVisualization | null>(() => (
+    mode === 'capilar'
+      ? {
+        scale: scalpScale,
+        stage: scalpStage,
+        density: scalpDensity,
+        color: '#2b1a12',
+        lengthScale: 0.82,
+        showBoundaryTrace: false,
+        boundaryPoints: SCALP_BOUNDARY_PRESET,
+        boundaryClosed: true,
+      }
+      : null
+  ), [mode, scalpDensity, scalpScale, scalpStage]);
 
   /** Guarda los datos clínicos adicionales del modo (cuidados post-tratamiento, antropometría o evaluación tricológica) bajo la clave reservada de `parameters` */
   const handleSaveClinicalData = (data: PostCareData | AnthropometricsData | ScalpAssessmentData) => {
@@ -942,6 +961,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                     selectedPathology="lesion"
                     modelUrl={modelUrl}
                     cameraPreset={mode === 'capilar' ? 'scalp' : 'body'}
+                    scalpHair={scalpHair}
                     skipConfirmation={true}
                     onMarkerPlaced={handleMarkerPlaced}
                     height="360px"
