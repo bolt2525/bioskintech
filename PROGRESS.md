@@ -1,5 +1,7 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-10 Facial: mapa 3D opcional.
+- ✅ 2026-10-10 Modales: persistencia de sesión aclarada.
 - ✅ 2026-10-10 Tratamientos: zonas clínicas agrupadas.
 - ✅ 2026-10-10 Corporal: mapa 3D opcional.
 - ✅ 2026-10-10 Tratamientos: registro guiado por modo.

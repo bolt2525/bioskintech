@@ -1069,19 +1069,19 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                 <Plus className="h-3.5 w-3.5" aria-hidden="true" /> Usar zona
               </button>
             </div></> : null}
-            {mode !== 'facial' && (mode !== 'capilar' || scalpHair) ? (
+            {mode !== 'capilar' || scalpHair ? (
               <details className="group rounded-2xl border border-gray-200 bg-gray-50/70" defaultOpen={mode === 'capilar'}>
                 <summary className="admin-focus-ring flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 rounded-2xl px-4 py-3 text-sm font-semibold text-gray-800 [&::-webkit-details-marker]:hidden">
                   <span>
-                    {mode === 'corporal' ? 'Precisar ubicación en mapa 3D' : 'Herramientas y visor 3D'}
+                    {mode === 'capilar' ? 'Herramientas y visor 3D' : 'Precisar ubicación en mapa 3D'}
                     <span className="ml-2 font-normal text-gray-500">(opcional)</span>
                   </span>
                   <ChevronDown className="h-4 w-4 shrink-0 text-gray-500 transition-transform group-open:rotate-180" aria-hidden="true" />
                 </summary>
                 <div className="space-y-3 border-t border-gray-200 p-3">
                   <p className="text-xs leading-5 text-gray-600">
-                    {mode === 'corporal'
-                      ? 'Úsalo solo si necesitas indicar un punto exacto o un área de cobertura. Las zonas seleccionadas arriba son suficientes para un registro general.'
+                    {mode !== 'capilar'
+                      ? `Úsalo solo si necesitas indicar un punto exacto o un área de cobertura. Las zonas ${mode === 'facial' ? 'faciales' : 'corporales'} seleccionadas arriba son suficientes para un registro general.`
                       : 'Elige el tipo de marca y ubícala sobre el modelo para documentar la referencia clínica.'}
                   </p>
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto]">
@@ -1125,7 +1125,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                     markers={getAreaMarkers(currentTreatment)}
                     selectedPathology="lesion"
                     modelUrl={modelUrl}
-                    cameraPreset={mode === 'capilar' ? 'scalp' : 'body'}
+                    cameraPreset={mode === 'capilar' ? 'scalp' : mode === 'facial' ? 'face' : 'body'}
                     scalpHair={scalpHair}
                     skipConfirmation={true}
                     onMarkerPlaced={handleMarkerPlaced}

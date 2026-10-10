@@ -316,11 +316,16 @@ export default function ClinicalDataModal({ isOpen, mode, initialData, onClose, 
           </div>
         </div>
 
-        <div className="flex gap-3 p-4 border-t border-gray-100 shrink-0">
-          <button type="button" onClick={onClose} className="flex-1 p-2.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 font-medium">
-            {mode === 'corporal' ? 'Omitir por ahora' : 'Cancelar'}
-          </button>
-          <button type="button" onClick={handleSave} className="flex-1 p-2.5 rounded-lg bg-[#deb887] text-white hover:bg-[#c5a075] font-medium">Guardar datos clínicos</button>
+        <div className="shrink-0 space-y-3 border-t border-gray-100 p-4">
+          <p className="text-center text-xs leading-5 text-gray-500">
+            Los datos se aplicarán a este registro. Para conservarlos en el historial, guarda también la sesión.
+          </p>
+          <div className="flex gap-3">
+            <button type="button" onClick={onClose} className="flex-1 p-2.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 font-medium">
+              {mode === 'corporal' ? 'Omitir por ahora' : 'Cancelar'}
+            </button>
+            <button type="button" onClick={handleSave} className="flex-1 p-2.5 rounded-lg bg-[#deb887] text-white hover:bg-[#c5a075] font-medium">Aplicar al registro</button>
+          </div>
         </div>
       </div>
     </Dialog>
