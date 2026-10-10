@@ -1,5 +1,6 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-10 Visores 3D: carga bajo demanda.
 - ✅ 2026-10-10 Resumen: detalle clínico por modo.
 - ✅ 2026-10-10 Historial: resumen integral por sesión.
 - ✅ 2026-10-10 Seguimiento: decisión clínica simplificada.

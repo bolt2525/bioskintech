@@ -393,6 +393,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
   const [notesModalOpen, setNotesModalOpen] = useState(false);
   const [paramsModalOpen, setParamsModalOpen] = useState(false);
   const [clinicalDataModalOpen, setClinicalDataModalOpen] = useState(false);
+  const [viewerOpen, setViewerOpen] = useState(false);
   const [editingEquipmentName, setEditingEquipmentName] = useState('');
   // Zona activa seleccionada en los chips, aplicada a la próxima marcación que se coloque en el visor 3D
   const [activeZoneChip, setActiveZoneChip] = useState<string | null>(null);
@@ -468,6 +469,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
     setDateLocked(false);
     setMessage(null);
     setActiveZoneChip(null);
+    setViewerOpen(false);
     setFinancePosting(createFinancePostingOptions());
   };
 
@@ -478,6 +480,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
     setDateLocked(true);
     setMessage(null);
     setActiveZoneChip(null);
+    setViewerOpen(false);
     setFinancePosting(createFinancePostingOptions());
   };
 
@@ -1178,7 +1181,11 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
               </button>
             </div></> : null}
             {mode !== 'capilar' || scalpHair ? (
-              <details className="group rounded-2xl border border-gray-200 bg-gray-50/70" defaultOpen={mode === 'capilar'}>
+              <details
+                className="group rounded-2xl border border-gray-200 bg-gray-50/70"
+                open={viewerOpen}
+                onToggle={event => setViewerOpen(event.currentTarget.open)}
+              >
                 <summary className="admin-focus-ring flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 rounded-2xl px-4 py-3 text-sm font-semibold text-gray-800 [&::-webkit-details-marker]:hidden">
                   <span>
                     {mode === 'capilar' ? 'Herramientas y visor 3D' : 'Precisar ubicación en mapa 3D'}
@@ -1186,7 +1193,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                   </span>
                   <ChevronDown className="h-4 w-4 shrink-0 text-gray-500 transition-transform group-open:rotate-180" aria-hidden="true" />
                 </summary>
-                <div className="space-y-3 border-t border-gray-200 p-3">
+                {viewerOpen ? <div className="space-y-3 border-t border-gray-200 p-3">
                   <p className="text-xs leading-5 text-gray-600">
                     {mode !== 'capilar'
                       ? `Úsalo solo si necesitas indicar un punto exacto o un área de cobertura. Las zonas ${mode === 'facial' ? 'faciales' : 'corporales'} seleccionadas arriba son suficientes para un registro general.`
@@ -1279,7 +1286,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                     ))}
                   </div>
                 ) : null}
-                </div>
+                </div> : null}
               </details>
             ) : null}
           </div>

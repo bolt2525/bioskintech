@@ -202,8 +202,16 @@ test('UI: cambiar evaluación actualiza el groom Savin de Tratamientos Capilares
   const stepButtons = h.all(tree).filter(node => node.type === 'button' && String(node.props.className).includes('min-h-16'));
   stepButtons[1].props.onClick();
   tree = h.render();
+  const details = h.all(tree).find(node => node.type === 'details');
+  assert.equal(details.props.open, false);
+  assert.equal(h.all(tree).some(node => node.type === '../Clinical3DViewer'), false);
+  details.props.onToggle({ currentTarget: { open: true } });
+  tree = h.render();
   const viewer = h.all(tree).find(node => node.type === '../Clinical3DViewer');
   assert.equal(viewer.props.scalpHair.scale, 'savin');
   assert.equal(viewer.props.scalpHair.stage, 'II-1');
   assert.equal(viewer.props.modelUrl, '/models/clinical/male_head.glb');
+  h.all(tree).find(node => node.type === 'details').props.onToggle({ currentTarget: { open: false } });
+  tree = h.render();
+  assert.equal(h.all(tree).some(node => node.type === '../Clinical3DViewer'), false);
 });
