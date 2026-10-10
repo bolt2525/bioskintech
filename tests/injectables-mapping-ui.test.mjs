@@ -156,6 +156,7 @@ function saveFixture(overrides = {}, response = { ok: true, json: async () => ({
   const details = { open: false };
   const environment = {
     current: { product_name: 'QA', product_type: 'toxina', date: '2026-10-10', units_used: 20, dilution_volume: 2.5, ...overrides },
+    sessionUnits: overrides.units_used ?? 20, unitsFromMap: false,
     toxinaVialUnits: '100', recordId: 19, consultationId: 51,
     injectionPoints: [applied('free-1')], referenceLines: [], editablePoints: [point('free-1')],
     freehandLines: [], surfaceShapes: [], haVials: [],
@@ -211,7 +212,7 @@ test('reabrir recupera preparación del JSON y carga legacy sin inventar unidade
     [null, ''],
   ]) {
     let units;
-    const names = ['setInjectionPoints', 'setMarkers3D', 'setReferenceLines', 'setEditablePoints',
+    const names = ['setToxinaUnitsFromMap', 'setInjectionPoints', 'setMarkers3D', 'setReferenceLines', 'setEditablePoints',
       'setRefJsonLoaded', 'setFreehandLines', 'setSurfaceShapes', 'setHaVials', 'setActiveVialId', 'setShow3D'];
     const environment = {
       current: { mapping_data: mapping == null ? null : JSON.stringify(mapping) },
@@ -305,7 +306,7 @@ test('formulario renderiza campos históricos, errores asociados y plegables nat
       needle_type: 'Aguja histórica', follow_up_date: '', notes: 'Nota QA',
     },
     onChange: () => {}, brands: [], needles: [], dateLocked: false, onUnlockDate: () => {},
-    vialUnits: '100', onVialUnitsChange: () => {}, concentration: 40, mappedUnits: 2,
+    vialUnits: '100', onVialUnitsChange: () => {}, concentration: 40, mappedUnits: 2, unitsFromMap: false, onManualUnits: () => {},
     error: { field: 'units_used', text: 'Revisar total' },
   }));
   assert.match(html, /Técnica histórica/);
@@ -317,29 +318,48 @@ test('formulario renderiza campos históricos, errores asociados y plegables nat
   assert.doesNotMatch(html, /<details[^>]*\sopen[=> ]/);
 });
 
-test('usar suma del mapa requiere acción explícita y no cambia dosis por punto', () => {
-  let patch = null;
-  const tree = formExports.default({
+test('formulario presenta total automático de solo lectura y desplegables con opciones y ayuda', () => {
+  const html = renderToStaticMarkup(formExports.default({
     value: {
       date: '', product_name: '', brand: '', lot_number: '', expiration_date: '', units_used: '',
       dilution_volume: '', technique: '', injection_plane: '', needle_type: '', follow_up_date: '', notes: '',
     },
-    onChange: value => { patch = value; }, brands: [], needles: [], dateLocked: false,
+    onChange: () => {}, brands: [], needles: ['30G x 13mm'], dateLocked: false,
     onUnlockDate: () => {}, vialUnits: '', onVialUnitsChange: () => {},
-    concentration: null, mappedUnits: 7.5, error: null,
-  });
-  let action;
-  function visit(node) {
-    if (!node || typeof node !== 'object') return;
-    if (node.type === 'button' && Array.isArray(node.props.children) && node.props.children.includes('Usar ')) action = node.props.onClick;
-    const children = node.props?.children;
-    if (Array.isArray(children)) children.forEach(visit);
-    else visit(children);
+    concentration: null, mappedUnits: 7.5, unitsFromMap: true, onManualUnits: () => {}, error: null,
+  }));
+  assert.match(html, /readonly=""/i);
+  assert.match(html, /Suma automática/);
+  assert.equal((html.match(/<select /g) || []).length, 3);
+  assert.match(html, /value="Intramuscular"/);
+  assert.match(html, /value="Inyección puntual"/);
+  assert.match(html, /value="30G x 13mm"/);
+  assert.match(html, /Escribir valor personalizado/);
+  for (const field of ['product', 'date', 'brand', 'lot', 'expiration', 'injection_plane', 'technique', 'needle_type', 'follow-up', 'notes']) {
+    assert.match(html, new RegExp(`toxina-${field}-help`));
   }
-  visit(tree);
-  assert.equal(patch, null);
-  assert.ok(action);
-  action();
-  assert.equal(patch.units_used, 7.5);
-  assert.deepEqual(Object.keys(patch), ['units_used']);
+});
+
+test('total del mapa deriva de puntos actuales, incluido borrado final y deshacer', () => {
+  const unitsFromMap = current => loadFunction('unitsFromMap', current);
+  for (const points of [[{ units: 2 }, { units: 3.5 }], [{ units: 4 }], [], [{ units: 2 }]]) {
+    const environment = { current: { product_type: 'toxina', units_used: 20 }, toxinaUnitsFromMap: true, injectionPoints: points };
+    environment.totalUsed = loadFunction('totalUsed', environment);
+    environment.unitsFromMap = unitsFromMap(environment);
+    assert.equal(loadFunction('sessionUnits', environment), points.reduce((sum, point) => sum + point.units, 0));
+  }
+  assert.equal(loadFunction('sessionUnits', { current: { units_used: 20 }, unitsFromMap: false, totalUsed: 0 }), 20);
+});
+
+test('guardar usa el total automático y mantiene origen mapa aunque se elimine el último punto', async () => {
+  for (const total of [2, 0]) {
+    const fixture = saveFixture();
+    fixture.environment.unitsFromMap = true;
+    fixture.environment.sessionUnits = total;
+    if (total === 0) fixture.environment.injectionPoints = [];
+    assert.equal(await loadFunction('handleSave', fixture.environment)(), true);
+    assert.equal(fixture.result.payload.units_used, total);
+    assert.equal(fixture.result.saved.units_used, total);
+    assert.equal(fixture.result.payload.mapping_data.toxinaUnitsSource, 'map');
+  }
 });

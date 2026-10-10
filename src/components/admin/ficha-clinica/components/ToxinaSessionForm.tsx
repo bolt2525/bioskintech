@@ -1,4 +1,5 @@
 import { ChevronDown, Info } from 'lucide-react';
+import { useState } from 'react';
 
 export interface ToxinaSessionFields {
   date: string;
@@ -26,16 +27,47 @@ interface Props {
   onVialUnitsChange: (value: string) => void;
   concentration: number | null;
   mappedUnits: number;
+  unitsFromMap: boolean;
+  onManualUnits: () => void;
   error: { field: string; text: string } | null;
 }
 
 const inputClass = 'w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:border-gold focus:outline-none focus:ring-2 focus:ring-gold/30 disabled:bg-slate-100 disabled:text-slate-500';
 const labelClass = 'mb-1.5 block text-sm font-medium text-slate-700';
 const TOXINA_TECHNIQUES = ['Inyección puntual', 'Microinyecciones'];
+const TOXINA_PLANES = ['Intramuscular', 'Intradérmico', 'Subdérmico', 'Subcutáneo'];
+
+function DocumentedSelect({ id, label, value, options, help, onChange }: {
+  id: string; label: string; value: string; options: string[]; help: string; onChange: (value: string) => void;
+}) {
+  const [custom, setCustom] = useState(false);
+  const isCustom = custom || (value !== '' && !options.includes(value));
+  return (
+    <div>
+      <label className={labelClass} htmlFor={id}>{label}</label>
+      <select id={id} className={inputClass} value={isCustom ? '__custom__' : value}
+        aria-describedby={`${id}-help`} onChange={event => {
+          const next = event.target.value;
+          setCustom(next === '__custom__');
+          onChange(next === '__custom__' ? '' : next);
+        }}>
+        <option value="">Seleccionar…</option>
+        {options.map(option => <option key={option} value={option}>{option}</option>)}
+        <option value="__custom__">Escribir valor personalizado…</option>
+      </select>
+      {isCustom && <>
+        <label className="sr-only" htmlFor={`${id}-custom`}>{label}: valor personalizado</label>
+        <input id={`${id}-custom`} className={`${inputClass} mt-2`} value={value} aria-describedby={`${id}-help`}
+          onChange={event => onChange(event.target.value)} placeholder="Describe lo utilizado…" />
+      </>}
+      <p id={`${id}-help`} className="mt-1.5 text-xs leading-relaxed text-slate-500">{help}</p>
+    </div>
+  );
+}
 
 export default function ToxinaSessionForm({
   value, onChange, brands, needles, dateLocked, onUnlockDate,
-  vialUnits, onVialUnitsChange, concentration, mappedUnits, error,
+  vialUnits, onVialUnitsChange, concentration, mappedUnits, unitsFromMap, onManualUnits, error,
 }: Props) {
   const fieldError = (field: string) => error?.field === field ? (
     <p id={`toxina-${field}-error`} className="mt-1 text-sm text-red-700" role="alert">{error.text}</p>
@@ -53,8 +85,9 @@ export default function ToxinaSessionForm({
             <input id="toxina-product_name" name="product_name" autoComplete="off" className={inputClass}
               value={value.product_name} onChange={event => onChange({ product_name: event.target.value })}
               placeholder="Nombre exacto del producto…" aria-required="true" aria-invalid={error?.field === 'product_name'}
-              aria-describedby={error?.field === 'product_name' ? 'toxina-product_name-error' : undefined} />
+              aria-describedby={`toxina-product-help${error?.field === 'product_name' ? ' toxina-product_name-error' : ''}`} />
             {fieldError('product_name')}
+            <p id="toxina-product-help" className="mt-1.5 text-xs text-slate-500">Nombre comercial exacto del producto aplicado, según su etiqueta.</p>
           </div>
           <div>
             <label className={labelClass} htmlFor="toxina-date">Fecha de aplicación *</label>
@@ -62,26 +95,30 @@ export default function ToxinaSessionForm({
               <input id="toxina-date" name="date" type="date" className={inputClass} value={value.date}
                 disabled={dateLocked} onChange={event => onChange({ date: event.target.value })}
                 aria-required="true" aria-invalid={error?.field === 'date'}
-                aria-describedby={error?.field === 'date' ? 'toxina-date-error' : undefined} />
+                aria-describedby={`toxina-date-help${error?.field === 'date' ? ' toxina-date-error' : ''}`} />
               {dateLocked && <button type="button" onClick={onUnlockDate} className="text-xs font-medium text-gold-ink hover:underline">Editar</button>}
             </div>
             {fieldError('date')}
+            <p id="toxina-date-help" className="mt-1.5 text-xs text-slate-500">Día en que se realizó la aplicación, no la fecha de control.</p>
           </div>
           <div>
             <label className={labelClass} htmlFor="toxina-brand">Marca / presentación</label>
             <input id="toxina-brand" name="brand" autoComplete="off" list="toxina-brands" className={inputClass}
-              value={value.brand} onChange={event => onChange({ brand: event.target.value })} placeholder="Según etiqueta del vial…" />
+              value={value.brand} onChange={event => onChange({ brand: event.target.value })} placeholder="Según etiqueta del vial…" aria-describedby="toxina-brand-help" />
             <datalist id="toxina-brands">{brands.map(brand => <option key={brand} value={brand} />)}</datalist>
+            <p id="toxina-brand-help" className="mt-1.5 text-xs text-slate-500">Identifica la marca y presentación. Sus unidades no se convierten entre productos.</p>
           </div>
           <div>
             <label className={labelClass} htmlFor="toxina-lot_number">Lote</label>
             <input id="toxina-lot_number" name="lot_number" autoComplete="off" spellCheck={false} className={inputClass}
-              value={value.lot_number} onChange={event => onChange({ lot_number: event.target.value })} placeholder="Lote del producto…" />
+              value={value.lot_number} onChange={event => onChange({ lot_number: event.target.value })} placeholder="Lote del producto…" aria-describedby="toxina-lot-help" />
+            <p id="toxina-lot-help" className="mt-1.5 text-xs text-slate-500">Código del envase para identificar el lote utilizado.</p>
           </div>
           <div>
             <label className={labelClass} htmlFor="toxina-expiration_date">Vencimiento</label>
             <input id="toxina-expiration_date" name="expiration_date" type="date" className={inputClass}
-              value={value.expiration_date} onChange={event => onChange({ expiration_date: event.target.value })} />
+              value={value.expiration_date} onChange={event => onChange({ expiration_date: event.target.value })} aria-describedby="toxina-expiration-help" />
+            <p id="toxina-expiration-help" className="mt-1.5 text-xs text-slate-500">Caducidad indicada en el envase; no equivale al plazo tras reconstituir.</p>
           </div>
         </div>
       </section>
@@ -90,36 +127,29 @@ export default function ToxinaSessionForm({
         <h3 id="toxina-application-heading" className="mb-4 text-base font-semibold text-slate-900">2. Aplicación registrada</h3>
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className={labelClass} htmlFor="toxina-units_used">Total declarado en sesión (U)</label>
-            <input id="toxina-units_used" name="units_used" type="number" min="0" step="any" inputMode="decimal" className={inputClass}
+            <label className={labelClass} htmlFor="toxina-units_used">Total aplicado en sesión (U) {unitsFromMap && <span className="ml-1 text-xs text-gold-ink">Automático</span>}</label>
+            <input id="toxina-units_used" name="units_used" type="number" min="0" step="any" inputMode="decimal" readOnly={unitsFromMap} className={inputClass}
               value={value.units_used} onChange={event => onChange({ units_used: event.target.value })} placeholder="Total aplicado…"
               aria-invalid={error?.field === 'units_used'} aria-describedby={`toxina-units-note${error?.field === 'units_used' ? ' toxina-units_used-error' : ''}`} />
             {fieldError('units_used')}
-            <p id="toxina-units-note" className="mt-1.5 text-xs text-slate-500">El mapa registra {mappedUnits} U. Este total no indica la capacidad del vial.</p>
-            {mappedUnits > 0 && <button type="button" onClick={() => onChange({ units_used: mappedUnits })}
-              className="mt-2 rounded-lg border border-gold/40 bg-gold-light px-3 py-2 text-xs font-semibold text-gold-ink hover:border-gold">
-              Usar {mappedUnits} U del mapa
+            <p id="toxina-units-note" className="mt-1.5 text-xs leading-relaxed text-slate-500">{unitsFromMap
+              ? 'Suma automática de las unidades de cada punto del modelo 3D. Se actualiza al añadir, editar, eliminar o deshacer puntos. No es la capacidad del vial.'
+              : 'Si no usas el modelo 3D, escribe el total realmente aplicado. Al registrar puntos, este campo pasa a sumar sus unidades automáticamente.'}</p>
+            {unitsFromMap && mappedUnits === 0 && <button type="button" onClick={onManualUnits}
+              className="mt-2 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700">
+              Registrar total sin mapa
             </button>}
           </div>
-          <div>
-            <label className={labelClass} htmlFor="toxina-injection_plane">Plano anatómico utilizado</label>
-            <input id="toxina-injection_plane" name="injection_plane" className={inputClass} value={value.injection_plane}
-              onChange={event => onChange({ injection_plane: event.target.value })} placeholder="Tejido / plano realmente utilizado…" />
-          </div>
-          <div>
-            <label className={labelClass} htmlFor="toxina-technique">Técnica utilizada</label>
-            <input id="toxina-technique" name="technique" autoComplete="off" list="toxina-techniques" className={inputClass}
-              value={value.technique} onChange={event => onChange({ technique: event.target.value })} placeholder="Registrar técnica realizada…" />
-            <datalist id="toxina-techniques">{TOXINA_TECHNIQUES.map(technique => <option key={technique} value={technique} />)}</datalist>
-          </div>
-          <div>
-            <label className={labelClass} htmlFor="toxina-needle_type">Aguja utilizada</label>
-            <input id="toxina-needle_type" name="needle_type" autoComplete="off" list="toxina-needles" className={inputClass}
-              value={value.needle_type} onChange={event => onChange({ needle_type: event.target.value })} placeholder="Calibre y longitud…" />
-            <datalist id="toxina-needles">{needles.filter(needle => !/cánula|canula/i.test(needle)).map(needle => <option key={needle} value={needle} />)}</datalist>
-          </div>
+          <DocumentedSelect id="toxina-injection_plane" label="Plano anatómico utilizado" value={value.injection_plane}
+            options={TOXINA_PLANES} onChange={next => onChange({ injection_plane: next })}
+            help="Tejido en el que se realizó la aplicación. Selecciona solo el plano realmente utilizado; la lista no recomienda una vía ni sustituye la ficha técnica." />
+          <DocumentedSelect id="toxina-technique" label="Técnica utilizada" value={value.technique}
+            options={TOXINA_TECHNIQUES} onChange={next => onChange({ technique: next })}
+            help="Forma de aplicación realizada. Las opciones facilitan documentar, no sugieren dosis ni un protocolo. Puedes escribir una técnica distinta." />
+          <DocumentedSelect id="toxina-needle_type" label="Aguja utilizada" value={value.needle_type}
+            options={needles.filter(needle => !/cánula|canula/i.test(needle))} onChange={next => onChange({ needle_type: next })}
+            help="Calibre y longitud del dispositivo utilizado. G identifica el calibre y mm la longitud; verifica ambos en el envase. No se elige una aguja automáticamente." />
         </div>
-        <p className="mt-3 text-xs leading-relaxed text-slate-500">Registra lo realizado, sin recomendaciones automáticas. Las unidades de distintas toxinas no son intercambiables. Las líneas y formas del visor no representan dosis.</p>
       </section>
 
       <details className="rounded-xl border border-slate-200">
@@ -132,15 +162,17 @@ export default function ToxinaSessionForm({
               <label className={labelClass} htmlFor="toxina-vial_units">Unidades originales del vial (U)</label>
               <input id="toxina-vial_units" name="vial_units" type="number" min="0" step="any" className={inputClass}
                 value={vialUnits} onChange={event => onVialUnitsChange(event.target.value)} placeholder="Según presentación del fabricante…"
-                aria-invalid={error?.field === 'vial_units'} aria-describedby={error?.field === 'vial_units' ? 'toxina-vial_units-error' : undefined} />
+                aria-invalid={error?.field === 'vial_units'} aria-describedby={`toxina-vial-units-help${error?.field === 'vial_units' ? ' toxina-vial_units-error' : ''}`} />
               {fieldError('vial_units')}
+              <p id="toxina-vial-units-help" className="mt-1.5 text-xs text-slate-500">Cantidad de unidades de la presentación original, antes de la aplicación. No es el total usado en esta sesión.</p>
             </div>
             <div>
               <label className={labelClass} htmlFor="toxina-dilution_volume">Diluyente añadido al vial (ml)</label>
               <input id="toxina-dilution_volume" name="dilution_volume" type="number" min="0" step="any" className={inputClass}
                 value={value.dilution_volume} onChange={event => onChange({ dilution_volume: event.target.value })} placeholder="Volumen real de reconstitución…"
-                aria-invalid={error?.field === 'dilution_volume'} aria-describedby={error?.field === 'dilution_volume' ? 'toxina-dilution_volume-error' : undefined} />
+                aria-invalid={error?.field === 'dilution_volume'} aria-describedby={`toxina-dilution-help${error?.field === 'dilution_volume' ? ' toxina-dilution_volume-error' : ''}`} />
               {fieldError('dilution_volume')}
+              <p id="toxina-dilution-help" className="mt-1.5 text-xs text-slate-500">Volumen real añadido para reconstituir este vial. Junto con sus unidades originales permite calcular U/ml.</p>
             </div>
           </div>
           <p className="flex items-start gap-2 rounded-lg bg-slate-50 p-3 text-sm text-slate-600">
@@ -159,12 +191,14 @@ export default function ToxinaSessionForm({
           <div>
             <label className={labelClass} htmlFor="toxina-follow_up_date">Fecha de control</label>
             <input id="toxina-follow_up_date" name="follow_up_date" type="date" className={inputClass}
-              value={value.follow_up_date} onChange={event => onChange({ follow_up_date: event.target.value })} />
+              value={value.follow_up_date} onChange={event => onChange({ follow_up_date: event.target.value })} aria-describedby="toxina-follow-up-help" />
+            <p id="toxina-follow-up-help" className="mt-1.5 text-xs text-slate-500">Fecha acordada para revisar la evolución, cuando corresponda.</p>
           </div>
           <div className="col-span-2">
             <label className={labelClass} htmlFor="toxina-notes">Observaciones clínicas</label>
             <textarea id="toxina-notes" name="notes" rows={3} className={inputClass} value={value.notes}
-              onChange={event => onChange({ notes: event.target.value })} placeholder="Incidencias y seguimiento de la sesión…" />
+              onChange={event => onChange({ notes: event.target.value })} placeholder="Incidencias y seguimiento de la sesión…" aria-describedby="toxina-notes-help" />
+            <p id="toxina-notes-help" className="mt-1.5 text-xs text-slate-500">Observaciones, incidencias y particularidades que no quedan descritas en los otros campos.</p>
           </div>
         </div>
       </details>

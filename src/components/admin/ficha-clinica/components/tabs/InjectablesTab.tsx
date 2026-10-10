@@ -240,6 +240,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   const [current, setCurrent] = useState<Injectable>({ ...EMPTY_INJECTABLE });
   const [dateLocked, setDateLocked] = useState(false);
   const [toxinaVialUnits, setToxinaVialUnits] = useState('');
+  const [toxinaUnitsFromMap, setToxinaUnitsFromMap] = useState(false);
   const [formError, setFormError] = useState<{ field: string; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [highlightedId, setHighlightedId] = useState<number | null>(null);
@@ -450,6 +451,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
           && (typeof preparation.vial_units === 'number' || typeof preparation.vial_units === 'string')
           ? String(preparation.vial_units) : '');
         const rawPoints = Array.isArray(mapping.injectionPoints) ? mapping.injectionPoints : [];
+        setToxinaUnitsFromMap(mapping.toxinaUnitsSource === 'map' || rawPoints.length > 0);
         const rawLines = Array.isArray(mapping.referenceLines) ? mapping.referenceLines : [];
 
         const points: InjectionPoint[] = rawPoints.map((item: any) => ({
@@ -479,6 +481,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
         setActiveVialId(rawHaVials.length > 0 ? rawHaVials[0].id : null);
         if (points.length > 0 || rawLines.length > 0 || rawEditablePoints.length > 0 || rawFreehand.length > 0 || rawShapes.length > 0) setShow3D(true);
       } catch {
+        setToxinaUnitsFromMap(false);
         setToxinaVialUnits('');
         setInjectionPoints([]);
         setMarkers3D([]);
@@ -491,6 +494,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
         setActiveVialId(null);
       }
     } else {
+      setToxinaUnitsFromMap(false);
       setToxinaVialUnits('');
       setInjectionPoints([]);
       setMarkers3D([]);
@@ -516,10 +520,12 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
 
   // Computed values
   // Para multi-vial relleno: sumar todos los viales; para toxina/relleno simple: usar el campo del formulario
+  const totalUsed = parseFloat(injectionPoints.reduce((sum, p) => sum + p.units, 0).toFixed(2));
+  const unitsFromMap = current.product_type === 'toxina' && (toxinaUnitsFromMap || injectionPoints.length > 0);
+  const sessionUnits = unitsFromMap ? totalUsed : current.units_used;
   const totalVial = haVials.length > 0
     ? parseFloat(haVials.reduce((s, v) => s + v.volume_ml, 0).toFixed(2))
-    : Number(current.product_type === 'toxina' ? current.units_used : current.volume_used) || 0;
-  const totalUsed = parseFloat(injectionPoints.reduce((sum, p) => sum + p.units, 0).toFixed(2));
+    : Number(current.product_type === 'toxina' ? sessionUnits : current.volume_used) || 0;
   const remaining = parseFloat((totalVial - totalUsed).toFixed(2));
   const unitLabel = current.product_type === 'toxina' ? 'UI' : 'ml';
   const toxinaConcentration = getToxinaConcentration(toxinaVialUnits, current.dilution_volume);
@@ -739,11 +745,12 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     if (current.product_type === 'toxina') {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(current.date)) return rejectField('date', 'Indica la fecha de aplicación.');
       for (const [field, value, label] of [
-        ['units_used', current.units_used, 'El total de unidades'],
+        ['units_used', sessionUnits, 'El total de unidades'],
         ['dilution_volume', current.dilution_volume, 'El volumen de diluyente'],
         ['vial_units', toxinaVialUnits, 'Las unidades del vial'],
       ] as const) {
-        if (value !== '' && (!Number.isFinite(Number(value)) || Number(value) <= 0)) {
+        if (value !== '' && !(field === 'units_used' && unitsFromMap && value === 0)
+          && (!Number.isFinite(Number(value)) || Number(value) <= 0)) {
           return rejectField(field, `${label} debe ser un número mayor que cero, o dejarse sin completar.`);
         }
       }
@@ -756,15 +763,17 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
 
       // Nuevo formato de mapping_data: incluye referenceLines, editablePoints, freehandLines y surfaceShapes
       const hasData = injectionPoints.length > 0 || referenceLines.length > 0 || editablePoints.length > 0
-        || freehandLines.length > 0 || surfaceShapes.length > 0 || haVials.length > 0 || toxinaVialUnits !== '';
+        || freehandLines.length > 0 || surfaceShapes.length > 0 || haVials.length > 0 || toxinaVialUnits !== '' || unitsFromMap;
       const mappingData = hasData
         ? { injectionPoints, referenceLines, editablePoints, freehandLines, surfaceShapes, haVials,
+          ...(unitsFromMap ? { toxinaUnitsSource: 'map' } : {}),
           ...(current.product_type === 'toxina' && toxinaVialUnits !== ''
             ? { toxinaPreparation: { vial_units: Number(toxinaVialUnits) } } : {}) }
         : null;
 
       const payload = {
         ...current,
+        ...(current.product_type === 'toxina' ? { units_used: sessionUnits } : {}),
         record_id: recordId,
         treatment_id: current.treatment_id || null,
         mapping_data: mappingData,
@@ -783,7 +792,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
         const savedId = current.id ?? (resData && typeof resData === 'object' && 'id' in resData
           && typeof resData.id === 'number' ? resData.id : null);
         if (savedId == null) throw new Error('El servidor no devolvió el identificador del registro guardado.');
-        setCurrent(prev => ({ ...prev, id: savedId, mapping_data: mappingData }));
+        setCurrent(prev => ({ ...prev, id: savedId, mapping_data: mappingData,
+          ...(current.product_type === 'toxina' ? { units_used: sessionUnits } : {}) }));
         setDateLocked(true);
         setIsPendingDuplicate(false);
         setMessage({ type: 'success', text: current.id ? 'Inyectable actualizado' : 'Inyectable registrado correctamente' });
@@ -860,6 +870,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     setDateLocked(false);
     setFormError(null);
     setToxinaVialUnits('');
+    setToxinaUnitsFromMap(false);
     setMarkers3D([]);
     setInjectionPoints([]);
     setReferenceLines([]);
@@ -947,9 +958,10 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   const handleDuplicate = () => {
     if (!current.id) return;
     const hasData = injectionPoints.length > 0 || referenceLines.length > 0 || editablePoints.length > 0
-      || freehandLines.length > 0 || surfaceShapes.length > 0 || haVials.length > 0 || toxinaVialUnits !== '';
+      || freehandLines.length > 0 || surfaceShapes.length > 0 || haVials.length > 0 || toxinaVialUnits !== '' || unitsFromMap;
     const currentMappingData = hasData
       ? { injectionPoints, referenceLines, editablePoints, freehandLines, surfaceShapes, haVials,
+        ...(unitsFromMap ? { toxinaUnitsSource: 'map' } : {}),
         ...(current.product_type === 'toxina' && toxinaVialUnits !== ''
           ? { toxinaPreparation: { vial_units: Number(toxinaVialUnits) } } : {}) }
       : current.mapping_data;
@@ -1203,6 +1215,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
 
   /** Punto editable eliminado en el visor 3D */
   const handleEditablePointDeleted = (id: string) => {
+    if (unitsFromMap) setToxinaUnitsFromMap(true);
     pushUndo(injectionPoints, markers3D, editablePoints);
     setEditablePoints(prev => prev.filter(p => p.id !== id));
     setInjectionPoints(prev => prev.filter(ip => ip.editablePointId !== id));
@@ -1220,6 +1233,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
       document.getElementById('toxina-point-units')?.focus();
       return;
     }
+    if (current.product_type === 'toxina') setToxinaUnitsFromMap(true);
 
     if (unitsModal.isNewPoint && pendingFreePoint) {
       // ── Punto libre nuevo (free-click o add-mode) ──────────────────────
@@ -1351,6 +1365,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   };
 
   const handleRemovePoint = (index: number) => {
+    if (unitsFromMap) setToxinaUnitsFromMap(true);
     const point = injectionPoints[index];
     pushUndo(injectionPoints, markers3D, editablePoints);
     setInjectionPoints(prev => prev.filter((_, i) => i !== index));
@@ -1497,8 +1512,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     } else {
       const typeBadge = current.product_type === 'toxina' ? 'type-toxina' : 'type-relleno';
       const typeLabel = current.product_type === 'toxina' ? 'Toxina Botulínica' : (rellenoSubType === 'hidratacion' ? 'Hidratación' : rellenoSubType === 'bioestimulador' ? 'Bioestimuladores' : 'Relleno (Ácido Hialurónico)');
-      const volLabel = current.product_type === 'toxina' ? 'Total declarado de sesión (U)' : 'Volumen (ml)';
-      const volValue = escapeHtml(current.product_type === 'toxina' ? (current.units_used || '—') : (current.volume_used || '—'));
+      const volLabel = current.product_type === 'toxina' ? 'Total aplicado en sesión (U)' : 'Volumen (ml)';
+      const volValue = escapeHtml(current.product_type === 'toxina' ? (sessionUnits ?? '—') : (current.volume_used || '—'));
       const expStr = current.expiration_date ? new Date(current.expiration_date + 'T12:00:00').toLocaleDateString('es-EC') : '—';
       productInfoHtml = `<div class="grid"><div class="field"><div class="label">Tipo</div><div class="value"><span class="type-badge ${typeBadge}">${typeLabel}</span></div></div><div class="field"><div class="label">Producto</div><div class="value">${escapeHtml(current.product_name || '—')}</div></div><div class="field"><div class="label">Marca</div><div class="value">${escapeHtml(current.brand || '—')}</div></div></div><div class="grid"><div class="field"><div class="label">Lote</div><div class="value">${escapeHtml(current.lot_number || '—')}</div></div><div class="field"><div class="label">Vencimiento</div><div class="value">${expStr}</div></div><div class="field"><div class="label">${volLabel}</div><div class="value">${volValue}</div></div></div>`;
       if (current.product_type === 'toxina' && (current.dilution_volume || toxinaVialUnits)) {
@@ -1515,11 +1530,13 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     const remClass = remaining < 0 ? 'danger' : '';
     const distributionSectionDesc = isRelleno && haVials.length > 0
       ? 'Resumen del producto inyectado por jeringa. <strong>Utilizado</strong>: suma de ml aplicados en sus puntos. <strong>Restante</strong>: sobrante de esa jeringa.'
-      : !isRelleno ? 'Total declarado de sesión frente a las unidades registradas en el mapa. La diferencia no es sobrante del vial. Los valores históricos no se recalculan ni se convierten entre marcas.'
+      : !isRelleno ? (unitsFromMap ? 'Total obtenido de la suma de unidades registradas en los puntos del mapa 3D.' : 'Total documentado manualmente para una sesión sin mapa 3D.')
       : `Resumen de la distribución del producto inyectado. <strong>Total Vial</strong>: cantidad disponible. <strong>Utilizadas</strong>: suma de unidades aplicadas. <strong>Restantes</strong>: sobrante en el vial. <strong>Puntos</strong>: sitios de inyección.`;
     const distributionBody = isRelleno && haVials.length > 0
       ? vialSummaryHtml + `<div class="summary-bar" style="margin-top:8px;"><div class="summary-card"><div class="sc-label">Total Sesión</div><div class="sc-value">${totalVial} ml</div></div><div class="summary-card"><div class="sc-label">Utilizado</div><div class="sc-value">${totalUsed} ml</div></div><div class="summary-card ${remClass}"><div class="sc-label">Restante</div><div class="sc-value">${remaining} ml</div></div><div class="summary-card"><div class="sc-label">Puntos</div><div class="sc-value">${injectionPoints.length}</div></div></div>`
-      : `<div class="summary-bar"><div class="summary-card"><div class="sc-label">${isRelleno ? 'Total Vial' : 'Declarado en sesión'}</div><div class="sc-value">${totalVial} ${unitLabel}</div></div><div class="summary-card"><div class="sc-label">${isRelleno ? 'Utilizadas' : 'Registradas en mapa'}</div><div class="sc-value">${totalUsed} ${unitLabel}</div></div><div class="summary-card ${remClass}"><div class="sc-label">${isRelleno ? 'Restantes' : 'Diferencia con mapa'}</div><div class="sc-value">${remaining} ${unitLabel}</div></div><div class="summary-card"><div class="sc-label">Puntos</div><div class="sc-value">${injectionPoints.length}</div></div></div>`;
+      : !isRelleno
+        ? `<div class="summary-bar"><div class="summary-card"><div class="sc-label">Total aplicado en sesión</div><div class="sc-value">${escapeHtml(sessionUnits === '' ? '—' : sessionUnits)} U</div></div><div class="summary-card"><div class="sc-label">Puntos registrados</div><div class="sc-value">${injectionPoints.length}</div></div></div>`
+        : `<div class="summary-bar"><div class="summary-card"><div class="sc-label">Total Vial</div><div class="sc-value">${totalVial} ${unitLabel}</div></div><div class="summary-card"><div class="sc-label">Utilizadas</div><div class="sc-value">${totalUsed} ${unitLabel}</div></div><div class="summary-card ${remClass}"><div class="sc-label">Restantes</div><div class="sc-value">${remaining} ${unitLabel}</div></div><div class="summary-card"><div class="sc-label">Puntos</div><div class="sc-value">${injectionPoints.length}</div></div></div>`;
     const desgloseLegendExtra = isRelleno ? ' Las columnas Técnica y Cánula/Aguja corresponden a los valores registrados por punto.' : '';
     const zoneMap = new Map<string, { units: number; count: number }>();
     injectionPoints.forEach(p => {
@@ -1686,6 +1703,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   useEffect(() => {
     setFormError(null);
     setToxinaVialUnits('');
+    setToxinaUnitsFromMap(false);
     setRellenoSubType('relleno_ha');
     setCurrent({ ...EMPTY_INJECTABLE, date: getLocalDate(), product_type: activeType });
     setInjectionPoints([]);
@@ -2190,7 +2208,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
         {current.product_type === 'toxina' ? (
           <ToxinaSessionForm
             key={current.id ?? 'new-toxina'}
-            value={current}
+            value={{ ...current, units_used: sessionUnits }}
             onChange={patch => {
               setCurrent(prev => ({ ...prev, ...patch }));
               if (formError && formError.field in patch) {
@@ -2212,6 +2230,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
             }}
             concentration={toxinaConcentration}
             mappedUnits={totalUsed}
+            unitsFromMap={unitsFromMap}
+            onManualUnits={() => { setToxinaUnitsFromMap(false); setCurrent(prev => ({ ...prev, units_used: '' })); }}
             error={formError}
           />
         ) : (
@@ -2341,7 +2361,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
       </div>
 
       {/* Vial Summary Bar */}
-      {injectionPoints.length > 0 && (
+      {activeType === 'relleno' && injectionPoints.length > 0 && (
         <div className="space-y-2">
           <div className="flex items-center gap-1.5">
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{current.product_type === 'toxina' ? 'Sesión y registro en mapa' : 'Distribución del Vial'}</p>
@@ -3057,6 +3077,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                               <button
                                 onClick={() => {
                                   pushUndo(injectionPoints, markers3D, editablePoints);
+                                  if (unitsFromMap) setToxinaUnitsFromMap(true);
                                   setMarkers3D([]);
                                   setInjectionPoints([]);
                                   setEditablePoints([]);
