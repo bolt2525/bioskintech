@@ -11,10 +11,9 @@ interface Props {
   current: Treatment;
   history: Treatment[];
   onChange: (followUp: TreatmentFollowUp) => void;
-  onAssess: () => void;
 }
 
-export default function TreatmentFollowUpPanel({ mode, current, history, onChange, onAssess }: Props) {
+export default function TreatmentFollowUpPanel({ mode, current, history, onChange }: Props) {
   const followUp = getTreatmentFollowUp(current);
   const referenceId = followUp.referenceId ?? '';
   const sessions = useMemo(() => getFollowUpSessions(current, history, mode), [current, history, mode]);
@@ -83,10 +82,6 @@ export default function TreatmentFollowUpPanel({ mode, current, history, onChang
           <p className="font-semibold text-gray-700">{current.id ? 'Sesión seleccionada' : 'Nueva sesión (sin guardar)'}</p>
           <p>{formatTreatmentDate(current.date)} · {getFollowUpLabel(current)}</p>
           <p>{describeTreatmentAssessment(current, mode)}</p>
-          <button type="button" onClick={onAssess}
-            className="admin-focus-ring mt-2 min-h-10 rounded-lg border border-gold/50 bg-white px-3 font-semibold text-gold-ink">
-            Registrar evaluación de esta sesión
-          </button>
         </div>
       </div>
       {reference ? <p className="rounded-lg border border-gray-100 p-3 text-xs leading-5 text-gray-600" role="status">

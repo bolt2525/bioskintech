@@ -1,5 +1,6 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-10 Tratamientos: registro guiado por modo.
 - ✅ 2026-10-10 Capilar: contexto clínico sobre visor.
 - ✅ 2026-10-10 Capilar: evaluación integrada al visor.
 - ✅ 2026-10-10 Tratamientos: flujo visual y modales.

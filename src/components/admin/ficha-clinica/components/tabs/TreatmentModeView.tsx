@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Calendar, DollarSign, Clock, Save, Trash2, Copy, Check, AlertCircle, FileText, Pencil, Layers, History, Eye, X, ChevronDown, ChevronRight, Sparkles, Wrench, Package, Wallet, ClipboardList, MapPin, CircleDashed, Undo2, CheckCircle2, ScanSearch } from 'lucide-react';
+import { Plus, Calendar, DollarSign, Clock, Save, Trash2, Copy, Check, AlertCircle, FileText, Pencil, Layers, History, Eye, X, ChevronDown, ChevronLeft, ChevronRight, Sparkles, Wrench, Package, Wallet, ClipboardList, MapPin, CircleDashed, Undo2, CheckCircle2, ScanSearch } from 'lucide-react';
 import CrossConsultHistoryModal, { type ConsultationRef } from '../CrossConsultHistoryModal';
 import TreatmentParametersModal, { type TreatmentParameters, formatParametersAsText, upsertNotesBlock, removeNotesBlock } from './TreatmentParametersModal';
 import TreatmentPackageModal from './TreatmentPackageModal';
@@ -267,6 +267,7 @@ interface TreatmentModeViewProps {
  */
 export default function TreatmentModeView({ mode, modelUrl, recordId, treatments, patientName, consultationId, consultations = [], onSave }: TreatmentModeViewProps) {
   const { hasFeature } = useAuth();
+  const [activeStep, setActiveStep] = useState<1 | 2 | 3 | 4>(1);
   const [currentTreatment, setCurrentTreatment] = useState<Treatment>(makeEmptyTreatment(mode));
   const [dateLocked, setDateLocked] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -346,6 +347,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
   }, [message]);
 
   const handleNew = () => {
+    setActiveStep(1);
     setCurrentTreatment(makeEmptyTreatment(mode));
     setCostInput('');
     setDateLocked(false);
@@ -355,6 +357,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
   };
 
   const handleSelect = (treatment: Treatment) => {
+    setActiveStep(1);
     setCurrentTreatment({ ...treatment, date: toDateOnly(treatment.date) });
     setCostInput(treatment.cost > 0 ? String(treatment.cost) : '');
     setDateLocked(true);
@@ -469,6 +472,12 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
 
   const equipmentNames = parseEquipmentNames(currentTreatment.equipment_used);
   const scalpAssessment = currentTreatment.parameters?.[RESERVED_PARAM_KEYS.capilar] as ScalpAssessmentData | undefined;
+  const anthropometrics = currentTreatment.parameters?.[RESERVED_PARAM_KEYS.corporal] as AnthropometricsData | undefined;
+  const anthropometryCount = anthropometrics
+    ? Object.values(anthropometrics.before || {}).filter(Boolean).length
+      + Object.values(anthropometrics.after || {}).filter(Boolean).length
+      + (anthropometrics.custom?.length || 0)
+    : 0;
   const scalpHair = useMemo<ScalpHairVisualization | null>(() => (
     mode === 'capilar' ? getScalpVisualization(scalpAssessment) : null
   ), [mode, scalpAssessment]);
@@ -576,6 +585,25 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
 
   const selectedPackage = packages.find(p => p.id === currentTreatment.package_id);
   const isEmpty = independentSessions.length === 0 && packages.length === 0;
+  const flowSteps = [
+    { id: 1 as const, label: 'Sesión', description: 'Fecha, procedimiento y paquete' },
+    {
+      id: 2 as const,
+      label: mode === 'facial' ? 'Zonas' : mode === 'corporal' ? 'Evaluación corporal' : 'Evaluación capilar',
+      description: mode === 'facial' ? 'Áreas tratadas' : mode === 'corporal' ? 'Antropometría y mapa 3D' : 'Escala, etapa y mapa 3D',
+    },
+    { id: 3 as const, label: 'Aplicación', description: 'Equipo, tiempo y cobro' },
+    { id: 4 as const, label: 'Evolución', description: 'Notas, seguimiento y guardado' },
+  ];
+  const activeFlowStep = flowSteps[activeStep - 1];
+  const goToStep = (step: 1 | 2 | 3 | 4) => {
+    if (step > 1 && !currentTreatment.procedure_name.trim()) {
+      setMessage({ type: 'error', text: 'Completa el procedimiento para continuar con el registro.' });
+      return;
+    }
+    setMessage(null);
+    setActiveStep(step);
+  };
 
   const renderSessionCard = (t: Treatment, index: number) => (
     <motion.div
@@ -740,7 +768,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
       </div>
 
       {/* Main Form */}
-      <div className="relative order-1 flex min-w-0 flex-col gap-5 overflow-visible xl:order-2">
+      <div className={`relative order-1 flex min-w-0 flex-col gap-5 overflow-visible xl:order-2 ${activeStep === 4 ? '' : '2xl:col-span-2'}`}>
         {/* Toolbar */}
         <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-100 bg-white p-3 shadow-sm sm:p-4">
           <div className="min-w-0">
@@ -767,16 +795,16 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
               </motion.button>
             </Tooltip>
 
-            <Tooltip content="Guardar">
+            <Tooltip content={activeStep === 4 ? 'Guardar' : 'Continuar al siguiente paso'}>
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={() => handleSave()}
+                onClick={() => activeStep === 4 ? handleSave() : goToStep((activeStep + 1) as 2 | 3 | 4)}
                 disabled={saving}
                 className="admin-focus-ring flex min-h-11 items-center gap-2 rounded-lg bg-gold-dark px-3 text-white shadow-sm hover:bg-gold-ink disabled:opacity-70"
               >
-                {saving ? <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" /> : <Save className="h-4 w-4" aria-hidden="true" />}
-                <span className="text-xs font-semibold">{saving ? 'Guardando…' : 'Guardar sesión'}</span>
+                {saving ? <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" /> : activeStep === 4 ? <Save className="h-4 w-4" aria-hidden="true" /> : <ChevronRight className="h-4 w-4" aria-hidden="true" />}
+                <span className="text-xs font-semibold">{saving ? 'Guardando…' : activeStep === 4 ? 'Guardar sesión' : 'Continuar'}</span>
               </motion.button>
             </Tooltip>
 
@@ -844,15 +872,50 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
           )}
         </AnimatePresence>
 
+        <nav className="rounded-2xl border border-gray-100 bg-white p-3 shadow-sm" aria-label="Progreso del registro">
+          <ol className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+            {flowSteps.map(step => {
+              const active = activeStep === step.id;
+              const completed = activeStep > step.id;
+              return (
+                <li key={step.id}>
+                  <button
+                    type="button"
+                    onClick={() => goToStep(step.id)}
+                    aria-current={active ? 'step' : undefined}
+                    className={`admin-focus-ring flex min-h-16 w-full items-center gap-3 rounded-xl border p-3 text-left transition-[border-color,background-color,box-shadow] ${
+                      active
+                        ? 'border-gold-dark bg-gold/10 shadow-sm'
+                        : completed
+                          ? 'border-emerald-200 bg-emerald-50/60 hover:bg-emerald-50'
+                          : 'border-gray-100 bg-gray-50/60 hover:border-gold/50 hover:bg-white'
+                    }`}
+                  >
+                    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                      active ? 'bg-gold-dark text-white' : completed ? 'bg-emerald-600 text-white' : 'bg-white text-gray-500 ring-1 ring-gray-200'
+                    }`}>
+                      {completed ? <Check className="h-4 w-4" aria-hidden="true" /> : step.id}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-xs font-semibold text-gray-900">{step.label}</span>
+                      <span className="mt-0.5 block truncate text-[10px] text-gray-500">{step.description}</span>
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+        </nav>
+
         {/* Form Fields */}
         <div className="space-y-6 overflow-y-auto rounded-xl border border-gray-100 bg-white p-4 shadow-sm custom-scrollbar sm:p-6">
           <div className="border-b border-gray-100 pb-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-ink">Paso 1</p>
-            <h2 className="mt-1 text-lg font-semibold text-gray-900">Datos y aplicación de la sesión</h2>
-            <p className="mt-1 text-xs leading-5 text-gray-500">Registra procedimiento, zonas, equipo, duración y valor antes de documentar la evolución.</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-ink">Paso {activeStep} de 4</p>
+            <h2 className="mt-1 text-lg font-semibold text-gray-900">{activeFlowStep.label}</h2>
+            <p className="mt-1 text-xs leading-5 text-gray-500">{activeFlowStep.description}</p>
           </div>
           {/* Visor 3D de marcación anatómica (múltiples zonas por sesión) */}
-          <div className="space-y-2">
+          <div className={activeStep === 2 ? 'space-y-3' : 'hidden'}>
             <label className="block text-sm font-medium text-gray-700">
               {mode === 'facial' ? 'Zonas tratadas' : mode === 'capilar' ? 'Evaluación capilar y marcación 3D' : 'Marcación Anatómica (referencial)'}
             </label>
@@ -863,7 +926,61 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                   ? 'Configura primero el patrón de cabello; después selecciona zonas y marca el modelo.'
                   : 'Elige el tipo de herramienta, selecciona una zona y haz clic sobre el modelo.'}
             </p>
-            {mode !== 'facial' ? (
+            {mode === 'capilar' ? (
+              <div className={`rounded-2xl border p-4 ${scalpHair ? 'border-emerald-200 bg-emerald-50/70' : 'border-amber-200 bg-amber-50/70'}`} role="status">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${scalpHair ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                      <ScanSearch className="h-5 w-5" aria-hidden="true" />
+                    </span>
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="font-semibold text-gray-900">1. Evaluación obligatoria para activar el visor</h3>
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${scalpHair ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                          {scalpHair ? 'Completada' : 'Pendiente'}
+                        </span>
+                      </div>
+                      {scalpHair ? (
+                        <p className="mt-1 text-sm text-gray-700">
+                          {SCALP_SCALE_LABELS[scalpHair.scale]} · {getScalpStageLabel(scalpHair.stage)}
+                          {scalpAssessment?.density ? ` · Densidad ${scalpAssessment.density.toLocaleLowerCase()}` : ''}
+                        </p>
+                      ) : (
+                        <p className="mt-1 text-sm leading-6 text-gray-700">
+                          Selecciona escala y etapa. Al guardar la evaluación aparecerán el cabello, las zonas y las herramientas de marcación.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setClinicalDataModalOpen(true)}
+                    className="admin-focus-ring inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-gold/50 bg-white px-4 text-sm font-semibold text-gold-ink shadow-sm hover:bg-gold/10"
+                  >
+                    <ScanSearch className="h-4 w-4" aria-hidden="true" />
+                    {scalpHair ? 'Editar evaluación' : 'Completar evaluación'}
+                  </button>
+                </div>
+              </div>
+            ) : mode === 'corporal' ? (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h3 className="font-semibold text-gray-900">Antropometría de la sesión</h3>
+                    <p className="mt-1 text-sm leading-6 text-gray-600">
+                      {anthropometryCount
+                        ? `${anthropometryCount} medida(s) registrada(s). Puedes actualizarlas antes de marcar el modelo.`
+                        : 'Registra medidas antes/después si son relevantes; luego delimita las zonas tratadas en el modelo.'}
+                    </p>
+                  </div>
+                  <button type="button" onClick={() => setClinicalDataModalOpen(true)}
+                    className="admin-focus-ring min-h-11 shrink-0 rounded-xl border border-emerald-300 bg-white px-4 text-sm font-semibold text-emerald-800 hover:bg-emerald-50">
+                    {anthropometryCount ? 'Editar antropometría' : 'Registrar antropometría'}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+            {mode !== 'facial' && (mode !== 'capilar' || scalpHair) ? (
               <>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto]">
                   {([
@@ -903,7 +1020,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                 </div>
               </>
             ) : null}
-            <div className="flex flex-wrap gap-1.5">
+            {mode !== 'capilar' || scalpHair ? <><div className="flex flex-wrap gap-1.5">
               {(ZONE_CHIPS_BY_MODE[mode] || []).map(zone => (
                 <button
                   key={zone}
@@ -952,50 +1069,9 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
               >
                 <Plus className="h-3.5 w-3.5" aria-hidden="true" /> Usar zona
               </button>
-            </div>
-            {mode !== 'facial' ? (
+            </div></> : null}
+            {mode !== 'facial' && (mode !== 'capilar' || scalpHair) ? (
               <>
-                {mode === 'capilar' ? (
-                  <div className={`rounded-2xl border p-4 ${scalpHair ? 'border-emerald-200 bg-emerald-50/70' : 'border-amber-200 bg-amber-50/70'}`} role="status">
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="flex min-w-0 items-start gap-3">
-                        <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${scalpHair ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                          <ScanSearch className="h-5 w-5" aria-hidden="true" />
-                        </span>
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="font-semibold text-gray-900">Cabello del modelo</h3>
-                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${scalpHair ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
-                              {scalpHair ? 'Configurado' : 'Pendiente'}
-                            </span>
-                          </div>
-                          {scalpHair ? (
-                            <>
-                              <p className="mt-1 text-sm font-medium text-gray-800">
-                                {SCALP_SCALE_LABELS[scalpHair.scale]} · {getScalpStageLabel(scalpHair.stage)}
-                                {scalpAssessment?.density ? ` · Densidad ${scalpAssessment.density.toLocaleLowerCase()}` : ''}
-                              </p>
-                              <p className="mt-1 text-xs leading-5 text-gray-600">El visor representa esta evaluación de la sesión; es orientativo y no una medición diagnóstica.</p>
-                            </>
-                          ) : (
-                            <>
-                              <p className="mt-1 text-sm font-medium text-gray-800">Define escala y etapa para mostrar el cabello.</p>
-                              <p className="mt-1 text-xs leading-5 text-gray-600">Sin evaluación, el visor conserva la cabeza limpia en lugar de inventar un patrón por defecto.</p>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setClinicalDataModalOpen(true)}
-                        className="admin-focus-ring inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-gold/50 bg-white px-4 text-sm font-semibold text-gold-ink shadow-sm hover:bg-gold/10"
-                      >
-                        <ScanSearch className="h-4 w-4" aria-hidden="true" />
-                        {scalpHair ? 'Editar evaluación' : 'Configurar cabello'}
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
                 <div className="relative overflow-hidden rounded-2xl border border-gray-100 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.8)]" style={{ height: '360px' }}>
                   <Clinical3DViewer
                     markers={getAreaMarkers(currentTreatment)}
@@ -1051,8 +1127,8 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
             ) : null}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-2">
+          {activeStep <= 3 ? <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+            <div className={activeStep === 1 ? 'space-y-2' : 'hidden'}>
               <label htmlFor="treatment-date" className="block text-sm font-medium text-gray-700">Fecha</label>
               <div className="flex items-center gap-2">
                 <div className="relative flex-1">
@@ -1083,7 +1159,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                 )}
               </div>
             </div>
-            <div className="space-y-2">
+            <div className={activeStep === 1 ? 'space-y-2' : 'hidden'}>
               <label className="block text-sm font-medium text-gray-700">Procedimiento<FieldHelp text={HELP.treatment.procedure_name} /></label>
               <input
                 type="text"
@@ -1100,7 +1176,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                 ))}
               </datalist>
             </div>
-            <div className="space-y-2">
+            <div className={activeStep === 1 ? 'space-y-2 md:col-span-2' : 'hidden'}>
               <label htmlFor="treatment-package" className="block text-sm font-medium text-gray-700">
                 Paquete <span className="text-gray-400 font-normal">(opcional)</span>
               </label>
@@ -1124,7 +1200,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                 </p>
               )}
             </div>
-            <div className="space-y-2">
+            <div className={activeStep === 3 ? 'space-y-2 md:col-span-2' : 'hidden'}>
               <label className="block text-sm font-medium text-gray-700">Equipo Utilizado<FieldHelp text={HELP.treatment.equipment_used} /></label>
               {equipmentNames.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
@@ -1182,7 +1258,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
               </datalist>
               <p className="text-[11px] text-gray-400">Puedes escribir varios equipos separados por coma. El botón "Añadir" es opcional y solo registra parámetros detallados en "Notas".</p>
             </div>
-            <div className="space-y-2">
+            <div className={activeStep === 2 ? 'space-y-2 md:col-span-2' : 'hidden'}>
               <label className="block text-sm font-medium text-gray-700">Zona Tratada<FieldHelp text={HELP.treatment.area_treated} /></label>
               <input
                 type="text"
@@ -1195,7 +1271,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                 placeholder={FORM_COPY[mode].area}
               />
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className={activeStep === 3 ? 'grid grid-cols-1 gap-4 sm:grid-cols-2 md:col-span-2' : 'hidden'}>
               <div className="space-y-2">
                 <label htmlFor="treatment-duration" className="block text-sm font-medium text-gray-700">Duración (min)<FieldHelp text={HELP.treatment.duration_minutes} /></label>
                 <div className="relative">
@@ -1239,26 +1315,79 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                 />
               </div>
             </div>
-          </div>
+          </div> : null}
 
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-gray-700">Notas / Parámetros<FieldHelp text={HELP.treatment.notes} /></label>
+          {activeStep === 4 ? (
+            <section className="rounded-2xl border border-gray-200 bg-gray-50/70 p-4" aria-labelledby="treatment-review-title">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gold-ink">Revisión antes de guardar</p>
+                  <h3 id="treatment-review-title" className="mt-1 font-semibold text-gray-900">
+                    {currentTreatment.procedure_name || 'Procedimiento pendiente'}
+                  </h3>
+                </div>
+                <button type="button" onClick={() => setActiveStep(1)}
+                  className="admin-focus-ring min-h-10 rounded-lg border border-gray-200 bg-white px-3 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+                  Editar datos principales
+                </button>
+              </div>
+              <dl className="mt-4 grid grid-cols-2 gap-3 text-xs sm:grid-cols-3">
+                {[
+                  ['Fecha', currentTreatment.date],
+                  ['Registro', selectedPackage?.name || 'Sesión independiente'],
+                  ['Zonas', currentTreatment.area_treated || 'Sin zonas'],
+                  ['Equipo', currentTreatment.equipment_used || 'Sin equipo'],
+                  ['Duración', `${currentTreatment.duration_minutes || 0} min`],
+                  [selectedPackage ? 'Abono' : 'Costo', `$${(Number(currentTreatment.cost) || 0).toFixed(2)}`],
+                ].map(([label, value]) => (
+                  <div key={label} className="min-w-0 rounded-xl bg-white p-3 ring-1 ring-gray-100">
+                    <dt className="font-medium text-gray-400">{label}</dt>
+                    <dd className="mt-1 truncate font-semibold text-gray-800" title={value}>{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+          ) : null}
+
+          <div className={activeStep === 4 ? 'space-y-2' : 'hidden'}>
+            <label className="block text-sm font-medium text-gray-700">Observaciones de la sesión<FieldHelp text={HELP.treatment.notes} /></label>
             <textarea
               rows={5}
               className="w-full p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none resize-none transition-all bg-gray-50/50 focus:bg-white"
               value={currentTreatment.notes}
               onChange={e => setCurrentTreatment({ ...currentTreatment, notes: e.target.value })}
-              placeholder="Detalles de la sesión, parámetros del equipo..."
+              placeholder="Respuesta observada, tolerancia, incidencias e indicaciones entregadas…"
             />
           </div>
 
+          <div className="flex flex-col-reverse gap-2 border-t border-gray-100 pt-5 sm:flex-row sm:items-center sm:justify-between">
+            <button
+              type="button"
+              onClick={() => goToStep(Math.max(1, activeStep - 1) as 1 | 2 | 3)}
+              disabled={activeStep === 1}
+              className="admin-focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:invisible"
+            >
+              <ChevronLeft className="h-4 w-4" aria-hidden="true" /> Anterior
+            </button>
+            {activeStep < 4 ? (
+              <button type="button" onClick={() => goToStep((activeStep + 1) as 2 | 3 | 4)}
+                className="admin-focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-gold-dark px-5 text-sm font-semibold text-white hover:bg-gold-ink">
+                Continuar a {flowSteps[activeStep].label} <ChevronRight className="h-4 w-4" aria-hidden="true" />
+              </button>
+            ) : (
+              <button type="button" onClick={() => void handleSave()} disabled={saving}
+                className="admin-focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-gold-dark px-5 text-sm font-semibold text-white hover:bg-gold-ink disabled:opacity-60">
+                {saving ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" aria-hidden="true" /> : <Save className="h-4 w-4" aria-hidden="true" />}
+                {saving ? 'Guardando…' : 'Guardar sesión'}
+              </button>
+            )}
+          </div>
         </div>
 
-        <div>
+        {activeStep === 4 ? <div>
           <div className="mb-3 px-1">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-ink">Paso 2</p>
-            <h2 className="mt-1 text-lg font-semibold text-gray-900">Seguimiento y comparación</h2>
-            <p className="mt-1 text-xs leading-5 text-gray-500">Ábrelo cuando necesites comparar la evolución con una sesión previa o documentar el próximo control.</p>
+            <h2 className="text-lg font-semibold text-gray-900">Seguimiento opcional</h2>
+            <p className="mt-1 text-xs leading-5 text-gray-500">Relaciona esta sesión con una anterior solo cuando corresponda a una evaluación inicial o control.</p>
           </div>
           <TreatmentFollowUpPanel
             key={`${mode}-${currentTreatment.id ?? 'new'}-${currentTreatment.package_id ?? currentTreatment.procedure_name}`}
@@ -1268,16 +1397,15 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
             onChange={followUp => setCurrentTreatment(previous => ({
               ...previous, parameters: { ...previous.parameters, [FOLLOW_UP_KEY]: followUp },
             }))}
-            onAssess={() => setClinicalDataModalOpen(true)}
           />
-        </div>
+        </div> : null}
       </div>
 
-      <ClinicalSummaryPanel
+      {activeStep === 4 ? <ClinicalSummaryPanel
         mode={mode}
         data={currentTreatment.parameters?.[RESERVED_PARAM_KEYS[mode]] as PostCareData | AnthropometricsData | ScalpAssessmentData | undefined}
         onEdit={() => setClinicalDataModalOpen(true)}
-      />
+      /> : null}
     </motion.div>
     <CrossConsultHistoryModal
       isOpen={crossHistOpen}

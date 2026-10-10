@@ -167,13 +167,17 @@ test('UI: siguiente sesión es borrador sin request; Guardar persiste control co
   h.all(tree).find(node => node.props?.['aria-label'] === 'Preparar siguiente sesión').props.onClick();
   assert.equal(h.requests.length, 0);
   tree = h.render();
-  const panel = h.all(tree).find(node => node.type === './TreatmentFollowUpPanel');
-  assert.equal(panel.props.current.id, undefined);
-  assert.equal(panel.props.current.parameters.__scalp_assessment, undefined);
-  panel.props.onChange({ purpose: 'control', observations: 'Control ficticio, sin pacientes reales', referenceId: '1' });
-  tree = h.render();
   const modal = h.all(tree).find(node => node.type === './ClinicalDataModal');
   modal.props.onSave({ ...assessment, stage: 'II-2' });
+  tree = h.render();
+  const stepButtons = h.all(tree).filter(node => node.type === 'button' && String(node.props.className).includes('min-h-16'));
+  assert.equal(stepButtons.length, 4);
+  stepButtons[3].props.onClick();
+  tree = h.render();
+  const panel = h.all(tree).find(node => node.type === './TreatmentFollowUpPanel');
+  assert.equal(panel.props.current.id, undefined);
+  assert.equal(panel.props.current.parameters.__scalp_assessment.stage, 'II-2');
+  panel.props.onChange({ purpose: 'control', observations: 'Control ficticio, sin pacientes reales', referenceId: '1' });
   tree = h.render();
   const saveTooltip = h.all(tree).find(node => node.type === 'Tooltip' && node.props.content === 'Guardar');
   await saveTooltip.props.children.props.onClick();
@@ -191,8 +195,12 @@ test('UI: siguiente sesión es borrador sin request; Guardar persiste control co
 test('UI: cambiar evaluación actualiza el groom Savin de Tratamientos Capilares', () => {
   const h = harness();
   let tree = h.render();
+  assert.equal(h.all(tree).some(node => node.type === '../Clinical3DViewer'), false);
   const modal = h.all(tree).find(node => node.type === './ClinicalDataModal');
   modal.props.onSave(assessment);
+  tree = h.render();
+  const stepButtons = h.all(tree).filter(node => node.type === 'button' && String(node.props.className).includes('min-h-16'));
+  stepButtons[1].props.onClick();
   tree = h.render();
   const viewer = h.all(tree).find(node => node.type === '../Clinical3DViewer');
   assert.equal(viewer.props.scalpHair.scale, 'savin');
