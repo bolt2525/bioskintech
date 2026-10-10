@@ -12,7 +12,7 @@ import Clinical3DViewer from '../Clinical3DViewer';
 import type { Marker3D, MarkerType, ScalpHairVisualization } from '../Clinical3DViewer';
 import { useAuth } from '../../../../../context/AuthContext';
 import treatmentOptions from '../../data/treatment_options.json';
-import { SCALP_SCALE_LABELS, getScalpStageLabel } from '../../../../../data/scalpPatterns';
+import { SCALP_SCALE_LABELS, getScalpDescriptions, getScalpStageLabel, getScalpStages } from '../../../../../data/scalpPatterns';
 import {
   FOLLOW_UP_KEY, getFollowUpLabel, getScalpVisualization, prepareNextTreatment, describeTreatmentAssessment,
 } from '../../types/treatmentFollowUp';
@@ -472,6 +472,11 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
   const scalpHair = useMemo<ScalpHairVisualization | null>(() => (
     mode === 'capilar' ? getScalpVisualization(scalpAssessment) : null
   ), [mode, scalpAssessment]);
+  const scalpStageDescription = useMemo(() => {
+    if (!scalpHair) return null;
+    const index = getScalpStages(scalpHair.scale).indexOf(scalpHair.stage);
+    return index >= 0 ? getScalpDescriptions(scalpHair.scale)[index] : null;
+  }, [scalpHair]);
 
   /** Guarda los datos clínicos adicionales del modo (cuidados post-tratamiento, antropometría o evaluación tricológica) bajo la clave reservada de `parameters` */
   const handleSaveClinicalData = (data: PostCareData | AnthropometricsData | ScalpAssessmentData) => {
@@ -1003,6 +1008,25 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                     height="360px"
                     pointMarkerScale={0.6}
                   />
+                  {mode === 'capilar' && scalpHair ? (
+                    <div className="pointer-events-none absolute bottom-3 left-3 right-3 max-w-sm rounded-xl border border-white/70 bg-slate-950/85 p-3 text-white shadow-xl backdrop-blur-md sm:right-auto" role="note" aria-label="Evaluación capilar representada">
+                      <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-gold-light">
+                        <span>{SCALP_SCALE_LABELS[scalpHair.scale]}</span>
+                        <span aria-hidden="true">·</span>
+                        <span>{getScalpStageLabel(scalpHair.stage)}</span>
+                        {scalpAssessment?.density ? (
+                          <>
+                            <span aria-hidden="true">·</span>
+                            <span>Densidad {scalpAssessment.density.toLocaleLowerCase()}</span>
+                          </>
+                        ) : null}
+                      </div>
+                      {scalpStageDescription ? <p className="mt-1 text-xs leading-5 text-white/90">{scalpStageDescription}.</p> : null}
+                      <p className="mt-1 text-[10px] leading-4 text-white/65">
+                        Referencia visual para comparar evolución; define el plan con diagnóstico, antecedentes y respuesta clínica.
+                      </p>
+                    </div>
+                  ) : null}
                   {getAreaMarkers(currentTreatment).length > 0 ? (
                     <button
                       type="button"
