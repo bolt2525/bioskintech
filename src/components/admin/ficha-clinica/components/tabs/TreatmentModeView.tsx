@@ -368,6 +368,14 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
   });
 
   const handleSave = async () => {
+    if (selectedPackage) {
+      const amount = Number(currentTreatment.cost) || 0;
+      const action = currentTreatment.id ? 'actualizará' : 'guardará';
+      if (!confirm(
+        `Esta sesión se ${action} dentro del paquete "${selectedPackage.name}".\n\n` +
+        `El valor de $${amount.toFixed(2)} se contabilizará como abono al paquete.\n\n¿Deseas continuar?`
+      )) return;
+    }
     setSaving(true);
     setMessage(null);
     try {
@@ -419,24 +427,29 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
   };
 
   const handleDelete = async () => {
-    if (!currentTreatment.id || !confirm('¿Eliminar este tratamiento?')) return;
+    if (!currentTreatment.id || !confirm(
+      `¿Eliminar esta sesión${selectedPackage ? ` del paquete "${selectedPackage.name}"` : ' independiente'}?\n\n` +
+      'Si tiene un cobro asociado, también se eliminará de Finanzas. Esta acción no se puede deshacer.'
+    )) return;
     setDeleting(true);
+    setMessage(null);
     try {
       const response = await recordsFetch(`/api/records?action=deleteTreatment&id=${currentTreatment.id}`, {
         method: 'DELETE'
       });
+      const resBody = await response.json().catch(() => null);
 
       if (response.ok) {
         onSave();
         if (currentTreatment.package_id) loadPackages();
         handleNew();
-        setMessage({ type: 'success', text: 'Tratamiento eliminado correctamente' });
+        setMessage({ type: 'success', text: resBody?.message || 'Tratamiento eliminado correctamente' });
       } else {
-        throw new Error('Error al eliminar');
+        throw new Error(resBody?.error || `Error al eliminar (HTTP ${response.status})`);
       }
     } catch (error) {
       console.error('Error deleting:', error);
-      setMessage({ type: 'error', text: 'Error al eliminar el tratamiento' });
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Error al eliminar el tratamiento' });
     } finally {
       setDeleting(false);
     }
@@ -1043,8 +1056,11 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                 ))}
               </select>
               {selectedPackage && (
-                <p className="text-[11px] text-amber-600 flex items-center gap-1 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-100">
-                  <Wallet size={11} /> El campo "Costo" de esta sesión se registrará como abono al paquete.
+                <p className="text-[11px] text-amber-700 flex items-start gap-1.5 bg-amber-50 px-2.5 py-2 rounded-lg border border-amber-200">
+                  <Wallet size={13} className="mt-0.5 shrink-0" />
+                  <span>
+                    Esta sesión se guardará dentro de <strong>{selectedPackage.name}</strong>. El campo "Costo" se registrará como abono y se confirmará antes de guardar.
+                  </span>
                 </p>
               )}
             </div>

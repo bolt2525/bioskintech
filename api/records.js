@@ -62,6 +62,58 @@ export function calculateTreatmentFinanceBreakdown(total, includesIva) {
   };
 }
 
+export async function deleteTreatmentWithFinance(db, {
+  treatmentId, clinicId, sessionUser,
+}) {
+  const treatmentResult = await db.query(
+    `SELECT id, record_id, procedure_name
+     FROM treatments
+     WHERE id = $1 AND clinic_id = $2
+     FOR UPDATE`,
+    [treatmentId, clinicId]
+  );
+  if (treatmentResult.rowCount === 0) {
+    const error = new Error('Sin permiso');
+    error.code = 'TREATMENT_FORBIDDEN';
+    throw error;
+  }
+
+  const postingResult = await db.query(
+    `SELECT id
+     FROM financial_records
+     WHERE clinic_id = $1 AND source_module = 'treatments'
+       AND source_type = 'treatment_session' AND source_id = $2
+     FOR UPDATE`,
+    [clinicId, treatmentId]
+  );
+  if (postingResult.rowCount && !canPostTreatmentFinance(sessionUser)) {
+    const error = new Error('Solo administradores con acceso a Finanzas pueden eliminar una sesión con cobro registrado');
+    error.code = 'FINANCE_FORBIDDEN';
+    throw error;
+  }
+
+  const postingIds = postingResult.rows.map(row => row.id);
+  if (postingIds.length) {
+    await db.query(
+      'DELETE FROM financial_items WHERE clinic_id = $1 AND record_id = ANY($2::int[])',
+      [clinicId, postingIds]
+    );
+  }
+  const deletedPosting = await db.query(
+    `DELETE FROM financial_records
+     WHERE clinic_id = $1 AND source_module = 'treatments'
+       AND source_type = 'treatment_session' AND source_id = $2
+     RETURNING id`,
+    [clinicId, treatmentId]
+  );
+  await db.query('DELETE FROM treatments WHERE id = $1 AND clinic_id = $2', [treatmentId, clinicId]);
+
+  return {
+    treatment: treatmentResult.rows[0],
+    financeDeleted: deletedPosting.rowCount > 0,
+  };
+}
+
 async function assertConsultationBelongsToRecord(db, consultationId, recordId, clinicId) {
   const result = await db.query(
     'SELECT 1 FROM consultations WHERE id = $1 AND record_id = $2 AND clinic_id = $3',
@@ -3067,30 +3119,35 @@ export default async function handler(req, res) {
         const { id: delTreatId } = req.query;
         try {
           await client.query('BEGIN');
-          const treatment = await client.query(
-            'SELECT id FROM treatments WHERE id = $1 AND clinic_id = $2 FOR UPDATE',
-            [delTreatId, effectiveClinicId]
-          );
-          if (treatment.rowCount === 0) {
-            await client.query('ROLLBACK');
-            return res.status(403).json({ error: 'Sin permiso' });
-          }
-          const postedTreatment = await client.query(
-            `SELECT 1 FROM financial_records
-             WHERE clinic_id = $1 AND source_module = 'treatments'
-               AND source_type = 'treatment_session' AND source_id = $2`,
-            [effectiveClinicId, delTreatId]
-          );
-          if (postedTreatment.rowCount) {
-            await client.query('ROLLBACK');
-            return res.status(409).json({ error: 'No se puede eliminar una sesión con un cobro registrado en Finanzas.' });
-          }
-          await client.query('DELETE FROM treatments WHERE id = $1', [delTreatId]);
+          const deletion = await deleteTreatmentWithFinance(client, {
+            treatmentId: delTreatId,
+            clinicId: effectiveClinicId,
+            sessionUser: await getSessionUserOnce(),
+          });
+          await logAudit(client, {
+            recordId: deletion.treatment.record_id,
+            clinicId: effectiveClinicId,
+            sessionUser: await getSessionUserOnce(),
+            actionType: 'delete',
+            module: 'treatment',
+            summary: deletion.financeDeleted
+              ? `Eliminó tratamiento y cobro asociado: ${deletion.treatment.procedure_name || delTreatId}`
+              : `Eliminó tratamiento: ${deletion.treatment.procedure_name || delTreatId}`,
+          });
           await client.query('COMMIT');
-          return res.status(200).json({ success: true });
+          return res.status(200).json({
+            success: true,
+            finance_deleted: deletion.financeDeleted,
+            message: deletion.financeDeleted
+              ? 'Tratamiento y cobro asociado eliminados correctamente'
+              : 'Tratamiento eliminado correctamente',
+          });
         } catch (error) {
           await client.query('ROLLBACK').catch(() => {});
-          throw error;
+          if (error.code === 'TREATMENT_FORBIDDEN') return res.status(403).json({ error: error.message });
+          if (error.code === 'FINANCE_FORBIDDEN') return res.status(403).json({ error: error.message });
+          console.error('Error deleting treatment:', error);
+          return res.status(500).json({ error: 'No se pudo eliminar el tratamiento' });
         }
       }
 

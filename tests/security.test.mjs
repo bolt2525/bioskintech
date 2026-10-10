@@ -58,6 +58,47 @@ test('treatment finance breakdown keeps the charged total and only extracts sele
   assert.equal(canPostTreatmentFinance({ role: 'clinic_user', finance_enabled: true }), false);
 });
 
+test('treatment deletion removes its finance posting transactionally and respects finance permissions', async () => {
+  const { deleteTreatmentWithFinance } = await import('../api/records.js');
+  const queries = [];
+  const db = {
+    query: async (sql, params) => {
+      queries.push({ sql, params });
+      if (sql.includes('FROM treatments') && sql.includes('FOR UPDATE')) {
+        return { rowCount: 1, rows: [{ id: 9, record_id: 4, procedure_name: 'PRP capilar' }] };
+      }
+      if (sql.includes('FROM financial_records') && sql.includes('FOR UPDATE')) {
+        return { rowCount: 1, rows: [{ id: 30 }] };
+      }
+      if (sql.includes('DELETE FROM financial_items')) return { rowCount: 1, rows: [] };
+      if (sql.includes('DELETE FROM financial_records')) return { rowCount: 1, rows: [{ id: 30 }] };
+      if (sql.includes('DELETE FROM treatments')) return { rowCount: 1, rows: [] };
+      throw new Error(`Unexpected query: ${sql}`);
+    },
+  };
+
+  const result = await deleteTreatmentWithFinance(db, {
+    treatmentId: 9,
+    clinicId: 'clinic-a',
+    sessionUser: { role: 'clinic_admin', finance_enabled: true },
+  });
+  assert.equal(result.financeDeleted, true);
+  assert.equal(result.treatment.record_id, 4);
+  assert.deepEqual(queries[0].params, [9, 'clinic-a']);
+  assert.deepEqual(queries[1].params, ['clinic-a', 9]);
+  assert.deepEqual(queries[2].params, ['clinic-a', [30]]);
+  assert.match(queries[2].sql, /DELETE FROM financial_items/);
+  assert.match(queries[3].sql, /DELETE FROM financial_records/);
+  assert.match(queries[4].sql, /DELETE FROM treatments/);
+
+  await assert.rejects(() => deleteTreatmentWithFinance(db, {
+    treatmentId: 9,
+    clinicId: 'clinic-a',
+    sessionUser: { role: 'clinic_user', finance_enabled: true },
+  }), error => error.code === 'FINANCE_FORBIDDEN');
+  assert.equal(queries.filter(({ sql }) => sql.includes('DELETE FROM')).length, 3);
+});
+
 test('AI patient context requires the patient to belong to the selected clinic', async () => {
   const { deleteAiConsultation, verifyPatientAccess } = await import('../api/ai-consultation.js');
   const queries = [];

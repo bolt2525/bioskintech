@@ -1,5 +1,6 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-10 Tratamientos: confirmación y borrado financiero.
 - ✅ 2026-10-10 Savin: nueve patrones integrados.
 - ✅ 2026-10-10 Capilar: caché y buffers indexados.
 - ✅ 2026-10-10 Tratamientos: seguimiento por sesión.
