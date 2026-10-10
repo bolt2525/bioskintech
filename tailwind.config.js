@@ -15,6 +15,7 @@ export default {
         // Design token principal: gold BIOSKIN — ver también src/constants/theme.ts
         gold: '#deb887',
         'gold-dark': '#d4a574',
+        'gold-light': '#f5e6d3',
         'gold-ink': '#8b6840',
       },
     },

@@ -1,5 +1,6 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-10 Inyectables: navegación y dibujo separados.
 - ✅ 2026-10-10 Inyectables: trazado conserva puntos aplicados.
 - ✅ 2026-10-10 Inyectables: recuperación visual de marcaciones.
 - ✅ 2026-10-10 Capilar: escalas agrupadas y nota reubicada.

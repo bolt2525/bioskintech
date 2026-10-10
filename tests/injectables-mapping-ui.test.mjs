@@ -58,3 +58,58 @@ test('la conciliación cubre carga del registro y carga del trazado', () => {
   assert.match(source, /setEditablePoints\(reconcileEditablePoints\(\[\], rawEditablePoints, points\)\)/);
   assert.match(source, /setEditablePoints\(prev => reconcileEditablePoints\(points, prev, injectionPoints\)\)/);
 });
+
+function jsxAttribute(name, containingText) {
+  let result;
+  function visit(node) {
+    if ((ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node)) && node.getText(ast).includes(containingText)) {
+      const opening = ts.isJsxElement(node) ? node.openingElement : node;
+      const attribute = opening.attributes.properties.find(item => ts.isJsxAttribute(item) && item.name.getText(ast) === name);
+      if (attribute?.initializer && ts.isJsxExpression(attribute.initializer)) result = attribute.initializer.expression;
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(ast);
+  assert.ok(result, `Atributo ${name}: ${containingText}`);
+  return result.getText(ast);
+}
+
+test('Navegar y dibujar no habilitan la creación de puntos al pulsar la piel', () => {
+  const callback = jsxAttribute('onMarkerPlaced', 'interactionHint');
+  const handler = () => 'point';
+  for (const mode of ['none', 'delete']) {
+    assert.equal(vm.runInNewContext(callback, { pointMode: mode, handleMarkerPlaced: handler }), undefined);
+  }
+  assert.equal(vm.runInNewContext(callback, { pointMode: 'add', handleMarkerPlaced: handler }), handler);
+});
+
+test('Navegar desactiva herramientas, selección y menús de dibujo', () => {
+  const changes = {};
+  const names = ['setActiveTool', 'setPointMode', 'setActiveLineType', 'setSelectedElement', 'setShowShapesDropdown', 'setShowHaShapesDropdown'];
+  const environment = Object.fromEntries(names.map(name => [name, value => { changes[name] = value; }]));
+  const handler = jsxAttribute('onClick', 'Navegar / Rotar');
+  vm.runInNewContext(`(${handler})()`, environment);
+  assert.deepEqual(changes, {
+    setActiveTool: 'none', setPointMode: 'none', setActiveLineType: null,
+    setSelectedElement: null, setShowShapesDropdown: false, setShowHaShapesDropdown: false,
+  });
+});
+
+test('ayuda contextual distingue navegar, añadir, eliminar y dibujar', () => {
+  const expression = jsxAttribute('interactionHint', 'Clinical3DViewer');
+  for (const [tool, mode, expected] of [
+    ['none', 'none', 'Arrastra para rotar'],
+    ['none', 'add', 'Clic para añadir punto'],
+    ['none', 'delete', 'Clic para eliminar punto'],
+    ['freehand-brush', 'none', 'Dibujo activo'],
+    ['shape-circle', 'none', 'Dibujo activo'],
+    ['ha-grid', 'none', 'Dibujo activo'],
+  ]) {
+    assert.ok(vm.runInNewContext(expression, { activeTool: tool, pointMode: mode }).startsWith(expected));
+  }
+});
+
+test('los nuevos trazos usan el token dorado sin recolorear el historial', () => {
+  assert.match(source, /useState<string>\(COLORS\.gold\)/);
+  assert.match(source, /setFreehandLines\(rawFreehand\)/);
+});

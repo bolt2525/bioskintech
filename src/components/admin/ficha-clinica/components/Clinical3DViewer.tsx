@@ -357,6 +357,7 @@ interface Clinical3DViewerProps {
   onMarkerRadiusChange?: (id: string, radius: number) => void;
   /** Altura CSS del contenedor (default: 400px) */
   height?: string;
+  interactionHint?: string;
   /** URL del modelo GLB (default: /models/clinical/male_head.glb) */
   modelUrl?: string;
   /** Contenido GLB local; tiene prioridad sobre modelUrl y no se persiste */
@@ -3312,6 +3313,7 @@ export default function Clinical3DViewer({
   onMarkerPlaced,
   onMarkerRadiusChange,
   height = '400px',
+  interactionHint,
   modelUrl = '/models/clinical/male_head.glb',
   modelData = null,
   sceneSettings = EMPTY_SCENE_SETTINGS,
@@ -3486,13 +3488,19 @@ export default function Clinical3DViewer({
 
       {!isLoading && !modelError && (
         <div className="pointer-events-none absolute bottom-3 left-3 right-3 z-10 flex flex-wrap items-center gap-2 text-[10px] font-medium text-white/90">
-          <span className="inline-flex items-center gap-1 rounded-full bg-slate-950/65 px-2.5 py-1.5 backdrop-blur-sm">
-            <Rotate3D className="h-3.5 w-3.5" aria-hidden="true" /> Arrastra para rotar
-          </span>
+          {interactionHint ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-slate-950/85 px-2.5 py-1.5 backdrop-blur-sm">
+              <MousePointer2 className="h-3.5 w-3.5" aria-hidden="true" /> {interactionHint}
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 rounded-full bg-slate-950/65 px-2.5 py-1.5 backdrop-blur-sm">
+              <Rotate3D className="h-3.5 w-3.5" aria-hidden="true" /> Arrastra para rotar
+            </span>
+          )}
           <span className="inline-flex items-center gap-1 rounded-full bg-slate-950/65 px-2.5 py-1.5 backdrop-blur-sm">
             <ZoomIn className="h-3.5 w-3.5" aria-hidden="true" /> Rueda para acercar
           </span>
-          {!readOnly ? (
+          {!readOnly && !interactionHint ? (
             <span className="inline-flex items-center gap-1 rounded-full bg-gold-ink/85 px-2.5 py-1.5 backdrop-blur-sm">
               <MousePointer2 className="h-3.5 w-3.5" aria-hidden="true" /> Clic para marcar
             </span>
