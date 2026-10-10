@@ -87,6 +87,28 @@ interface InjectionPoint extends Marker3D {
   vial_id?: string;            // ID del vial HA activo al momento de marcar
 }
 
+function reconcileEditablePoints(template: EditablePoint[], existing: EditablePoint[], applied: InjectionPoint[]): EditablePoint[] {
+  const assignedIds = new Set(applied.map(point => point.editablePointId).filter(Boolean));
+  const templateIds = new Set(template.map(point => point.id));
+  const points = new Map(template.map(point => [point.id, point]));
+  existing.forEach(point => {
+    if (!templateIds.has(point.id) || assignedIds.has(point.id)) points.set(point.id, point);
+  });
+  applied.forEach(point => {
+    if (!point.editablePointId || points.has(point.editablePointId)) return;
+    points.set(point.editablePointId, {
+      id: point.editablePointId,
+      type: 'free',
+      x: point.position.x,
+      y: point.position.y,
+      z: point.position.z,
+      lineIds: [],
+      name: point.label || point.zone,
+    });
+  });
+  return [...points.values()];
+}
+
 interface InjectablesTabProps {
   recordId: number;
   injectables: Injectable[];
@@ -417,7 +439,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
         setReferenceLines(rawLines);
         // Restaurar puntos editables si existen en mapping_data
         const rawEditablePoints = Array.isArray(mapping.editablePoints) ? mapping.editablePoints : [];
-        setEditablePoints(rawEditablePoints);
+        setEditablePoints(reconcileEditablePoints([], rawEditablePoints, points));
         setRefJsonLoaded(rawEditablePoints.length > 0);
         // Restaurar freehand lines y shapes
         const rawFreehand: FreehandLine[] = Array.isArray(mapping.freehandLines) ? mapping.freehandLines : [];
@@ -1069,7 +1091,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
       const manual = prev.filter(l => !l.id.startsWith('line-'));
       return [...manual, ...lines];
     });
-    setEditablePoints(points);
+    setEditablePoints(prev => reconcileEditablePoints(points, prev, injectionPoints));
     setRefJsonLoaded(true);
     setShow3D(true);
   };
