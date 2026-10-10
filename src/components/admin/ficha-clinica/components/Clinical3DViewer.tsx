@@ -418,6 +418,8 @@ interface Clinical3DViewerProps {
   onBackgroundClick?: () => void;
   /** Escala multiplicadora del tamaño de marcaciones puntuales (1.0 = default) */
   pointMarkerScale?: number;
+  /** Mostrar etiquetas flotantes junto a las marcaciones */
+  showMarkerLabels?: boolean;
   /** Representación clínica opcional de patrón y densidad capilar */
   scalpHair?: ScalpHairVisualization | null;
 }
@@ -469,6 +471,7 @@ const ThreeEngine: React.FC<{
   highlightedPointIds?: string[];
   onEditablePointHovered?: (id: string | null) => void;
   onBackgroundClick?: () => void;
+  showMarkerLabels?: boolean;
   cameraPreset?: ClinicalCameraPreset;
   scalpHair?: ScalpHairVisualization | null;
   sceneSettings?: Partial<ClinicalSceneSettings>;
@@ -488,6 +491,7 @@ const ThreeEngine: React.FC<{
   highlightedPointIds = [],
   onEditablePointHovered,
   onBackgroundClick,
+  showMarkerLabels = true,
   pointMarkerScale = 1.0,
   cameraPreset = 'default',
   scalpHair = null,
@@ -2709,7 +2713,7 @@ const ThreeEngine: React.FC<{
           transparent: true, opacity: 0.8, roughness: 0, transmission: 0.9, thickness: 0.5,
         });
         markerGroup.add(new THREE.Mesh(outerGeo, outerMat));
-        const label = createLabelSprite(marker.label || marker.zone);
+        const label = showMarkerLabels ? createLabelSprite(marker.label || marker.zone) : null;
         if (label) {
           positionMarkerLabel(label, pos, new THREE.Vector3(0, 0, 1), 0.12 * pointMarkerScale, 'Puntual');
           markerGroup.add(label);
@@ -2757,7 +2761,7 @@ const ThreeEngine: React.FC<{
         });
         markerGroup.add(new THREE.Mesh(hitGeo, hitMat));
 
-        const label = createLabelSprite(marker.label || marker.zone);
+        const label = showMarkerLabels ? createLabelSprite(marker.label || marker.zone) : null;
         if (label) {
           positionMarkerLabel(label, pos, normal, radius, 'Zonal');
           markerGroup.userData.labelSprite = label;
@@ -2768,7 +2772,7 @@ const ThreeEngine: React.FC<{
         group.add(markerGroup);
       }
     });
-  }, [markers, modelVersion, pointMarkerScale]);
+  }, [markers, modelVersion, pointMarkerScale, showMarkerLabels]);
 
   // 4b. Renderizar puntos editables (trazado de referencia)
   useEffect(() => {
@@ -3347,6 +3351,7 @@ export default function Clinical3DViewer({
   onEditablePointHovered,
   onBackgroundClick,
   pointMarkerScale = 1.0,
+  showMarkerLabels = true,
   scalpHair = null,
 }: Clinical3DViewerProps) {
   const [modelSource, setModelSource] = useState<{ type: 'url' | 'buffer'; data: string | ArrayBuffer }>({
@@ -3449,6 +3454,7 @@ export default function Clinical3DViewer({
             onEditablePointHovered={onEditablePointHovered}
             onBackgroundClick={onBackgroundClick}
             pointMarkerScale={pointMarkerScale}
+            showMarkerLabels={showMarkerLabels}
             cameraPreset={cameraPreset}
             scalpHair={scalpHair}
             sceneSettings={sceneSettings}

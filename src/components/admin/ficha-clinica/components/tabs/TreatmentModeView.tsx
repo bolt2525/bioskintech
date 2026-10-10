@@ -1280,6 +1280,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                     onMarkerPlaced={handleMarkerPlaced}
                     height="360px"
                     pointMarkerScale={0.6}
+                    showMarkerLabels={mode !== 'capilar'}
                   />
                   {mode === 'capilar' && scalpHair ? (
                     <div className="pointer-events-none absolute bottom-3 left-3 right-3 max-w-sm rounded-xl border border-white/70 bg-slate-950/85 p-3 text-white shadow-xl backdrop-blur-md sm:right-auto" role="note" aria-label="Evaluación capilar representada">

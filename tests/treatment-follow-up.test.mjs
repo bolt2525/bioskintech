@@ -212,6 +212,7 @@ test('UI: cambiar evaluación actualiza el groom Savin de Tratamientos Capilares
   assert.equal(viewer.props.scalpHair.scale, 'savin');
   assert.equal(viewer.props.scalpHair.stage, 'II-1');
   assert.equal(viewer.props.modelUrl, '/models/clinical/male_head.glb');
+  assert.equal(viewer.props.showMarkerLabels, false);
   assert.ok(h.all(tree).some(node => node.type === 'p' && node.props.children === '2. Revisa el modelo capilar'));
   assert.ok(h.all(tree).some(node => node.type === 'p' && node.props.children === 'Se genera con la evaluación; las marcaciones son opcionales'));
   stepButtons[0].props.onClick();
@@ -232,7 +233,7 @@ test('UI: mapas Facial y Corporal conservan su carga opcional bajo demanda', () 
     assert.equal(toggle.props['aria-expanded'], false);
     toggle.props.onClick();
     tree = h.render();
-    assert.ok(h.all(tree).find(node => node.type === '../Clinical3DViewer'));
+    assert.equal(h.all(tree).find(node => node.type === '../Clinical3DViewer').props.showMarkerLabels, true);
     h.all(tree).find(node => node.props?.['aria-controls'] === `treatment-viewer-${mode}`).props.onClick();
     tree = h.render();
     assert.equal(h.all(tree).some(node => node.type === '../Clinical3DViewer'), false);
