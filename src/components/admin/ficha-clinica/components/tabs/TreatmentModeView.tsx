@@ -1435,8 +1435,8 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
 
         {activeStep === 4 ? <div>
           <div className="mb-3 px-1">
-            <h2 className="text-lg font-semibold text-gray-900">Seguimiento opcional</h2>
-            <p className="mt-1 text-xs leading-5 text-gray-500">Relaciona esta sesión con una anterior solo cuando corresponda a una evaluación inicial o control.</p>
+            <h2 className="text-lg font-semibold text-gray-900">Comparación opcional</h2>
+            <p className="mt-1 text-xs leading-5 text-gray-500">Crea una línea base o compara la evolución solo cuando sea clínicamente útil.</p>
           </div>
           <TreatmentFollowUpPanel
             key={`${mode}-${currentTreatment.id ?? 'new'}-${currentTreatment.package_id ?? currentTreatment.procedure_name}`}
