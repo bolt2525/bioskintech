@@ -213,6 +213,102 @@ function ClinicalSummaryPanel({
   );
 }
 
+const ANTHROPOMETRIC_SUMMARY_FIELDS = [
+  ['waist', 'Cintura', 'cm'],
+  ['hip', 'Cadera', 'cm'],
+  ['thigh', 'Muslo', 'cm'],
+  ['arm', 'Brazo', 'cm'],
+  ['abdomen', 'Abdomen', 'cm'],
+  ['weight', 'Peso', 'kg'],
+] as const;
+const REACTION_LABELS = ['Sin reacción', 'Leve', 'Moderado', 'Intenso'] as const;
+
+function SavedClinicalDataSummary({ treatment, mode }: { treatment: Treatment; mode: TreatmentMode }) {
+  const data = treatment.parameters?.[RESERVED_PARAM_KEYS[mode]] as PostCareData | AnthropometricsData | ScalpAssessmentData | undefined;
+  if (!data) return <p className="mt-2 text-sm text-gray-500">Sin datos clínicos adicionales.</p>;
+
+  if (mode === 'facial') {
+    const postCare = data as PostCareData;
+    return (
+      <div className="mt-3 space-y-3">
+        <dl className="grid grid-cols-2 gap-2 text-xs">
+          {[
+            ['Eritema', postCare.erythema == null ? 'Sin registrar' : `${REACTION_LABELS[postCare.erythema]} (${postCare.erythema}/3)`],
+            ['Edema', postCare.edema == null ? 'Sin registrar' : `${REACTION_LABELS[postCare.edema]} (${postCare.edema}/3)`],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-lg bg-white p-3 ring-1 ring-gold/20">
+              <dt className="text-gray-500">{label}</dt>
+              <dd className="mt-1 font-semibold text-gray-900">{value}</dd>
+            </div>
+          ))}
+        </dl>
+        <div>
+          <p className="text-xs font-semibold text-gray-700">Indicaciones entregadas</p>
+          {postCare.indications?.length ? (
+            <ul className="mt-2 flex flex-wrap gap-1.5">
+              {postCare.indications.map(indication => <li key={indication} className="rounded-full bg-white px-2.5 py-1 text-xs text-gray-700 ring-1 ring-gold/20">{indication}</li>)}
+            </ul>
+          ) : <p className="mt-1 text-xs text-gray-500">Sin indicaciones registradas.</p>}
+        </div>
+        {postCare.notes?.trim() ? <p className="whitespace-pre-wrap text-sm leading-6 text-gray-700">{postCare.notes}</p> : null}
+      </div>
+    );
+  }
+
+  if (mode === 'corporal') {
+    const anthropometrics = data as AnthropometricsData;
+    const rows = ANTHROPOMETRIC_SUMMARY_FIELDS.flatMap(([key, label, unit]) => {
+      const before = anthropometrics.before?.[key];
+      const after = anthropometrics.after?.[key];
+      if (!before && !after) return [];
+      const beforeNumber = Number.parseFloat(before || '');
+      const afterNumber = Number.parseFloat(after || '');
+      const delta = Number.isFinite(beforeNumber) && Number.isFinite(afterNumber) ? afterNumber - beforeNumber : null;
+      return [{ label, unit, before, after, delta }];
+    });
+    const customRows = (anthropometrics.custom || [])
+      .filter(row => row.label || row.before || row.after)
+      .map(row => ({ label: row.label || 'Medida personalizada', unit: '', before: row.before, after: row.after, delta: null }));
+    return rows.length || customRows.length ? (
+      <div className="mt-3 overflow-hidden rounded-xl border border-gold/20 bg-white">
+        <div className="grid grid-cols-[1fr_5rem_5rem_5rem] gap-2 bg-gold/10 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+          <span>Medida</span><span>Antes</span><span>Después</span><span>Cambio</span>
+        </div>
+        {[...rows, ...customRows].map(row => (
+          <div key={`${row.label}-${row.unit}`} className="grid grid-cols-[1fr_5rem_5rem_5rem] gap-2 border-t border-gray-100 px-3 py-2.5 text-xs">
+            <span className="font-semibold text-gray-800">{row.label}</span>
+            <span>{row.before ? `${row.before}${row.unit ? ` ${row.unit}` : ''}` : '—'}</span>
+            <span>{row.after ? `${row.after}${row.unit ? ` ${row.unit}` : ''}` : '—'}</span>
+            <span className={row.delta != null && row.delta <= 0 ? 'font-semibold text-emerald-700' : 'text-gray-600'}>
+              {row.delta == null ? '—' : `${row.delta > 0 ? '+' : ''}${row.delta.toFixed(1)} ${row.unit}`}
+            </span>
+          </div>
+        ))}
+      </div>
+    ) : <p className="mt-2 text-sm text-gray-500">Sin medidas antropométricas registradas.</p>;
+  }
+
+  const scalp = data as ScalpAssessmentData;
+  return (
+    <div className="mt-3 space-y-3">
+      <dl className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
+        {[
+          ['Escala y etapa', scalp.scale ? `${SCALP_SCALE_LABELS[scalp.scale]} · ${getScalpStageLabel(scalp.stage || '')}` : 'Sin clasificar'],
+          ['Densidad', scalp.density || 'Sin registrar'],
+          ['Tipo de alopecia', scalp.alopecia_type || 'Sin registrar'],
+          ['Prurito / descamación', scalp.itching_flaking ? 'Sí' : 'No'],
+        ].map(([label, value]) => (
+          <div key={label} className="rounded-lg bg-white p-3 ring-1 ring-gold/20">
+            <dt className="text-gray-500">{label}</dt>
+            <dd className="mt-1 font-semibold text-gray-900">{value}</dd>
+          </div>
+        ))}
+      </dl>
+      {scalp.notes?.trim() ? <p className="whitespace-pre-wrap text-sm leading-6 text-gray-700">{scalp.notes}</p> : null}
+    </div>
+  );
+}
+
 /** Divide el string "equipment_used" (separado por comas) en una lista de nombres limpios y sin duplicados */
 const parseEquipmentNames = (equipmentUsed: string): string[] => {
   const seen = new Set<string>();
@@ -1510,9 +1606,26 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
             </dl>
           </section>
 
+          <section aria-labelledby="summary-location-title">
+            <h3 id="summary-location-title" className="text-sm font-semibold text-gray-900">Ubicación y marcaciones</h3>
+            <p className="mt-2 text-sm leading-6 text-gray-700">
+              <span className="font-medium">Zonas tratadas:</span> {currentTreatment.area_treated || 'Sin zonas registradas.'}
+            </p>
+            {getAreaMarkers(currentTreatment).length ? (
+              <ul className="mt-3 grid gap-2 sm:grid-cols-2">
+                {getAreaMarkers(currentTreatment).map((marker, index) => (
+                  <li key={marker.id || index} className="rounded-xl border border-gray-100 bg-gray-50/70 p-3 text-xs">
+                    <span className="font-semibold text-gray-900">{marker.zone || 'Zona sin nombre'}</span>
+                    <span className="ml-2 text-gray-500">· {marker.type === 'Zonal' ? 'Área de cobertura' : 'Punto preciso'}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : <p className="mt-2 text-xs text-gray-500">Sin marcaciones sobre el modelo 3D.</p>}
+          </section>
+
           <section className="rounded-xl border border-gold/30 bg-gold/10 p-4" aria-labelledby="summary-clinical-title">
             <h3 id="summary-clinical-title" className="text-sm font-semibold text-gray-900">Datos clínicos</h3>
-            <p className="mt-2 text-sm leading-6 text-gray-700">{describeTreatmentAssessment(currentTreatment, mode)}</p>
+            <SavedClinicalDataSummary treatment={currentTreatment} mode={mode} />
           </section>
 
           <section aria-labelledby="summary-notes-title">
