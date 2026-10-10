@@ -14,7 +14,7 @@ import { useAuth } from '../../../../../context/AuthContext';
 import treatmentOptions from '../../data/treatment_options.json';
 import { SCALP_SCALE_LABELS, getScalpDescriptions, getScalpStageLabel, getScalpStages } from '../../../../../data/scalpPatterns';
 import {
-  FOLLOW_UP_KEY, getFollowUpLabel, getScalpVisualization, prepareNextTreatment, describeTreatmentAssessment,
+  FOLLOW_UP_KEY, getFollowUpLabel, getScalpVisualization, getTreatmentFollowUp, prepareNextTreatment, describeTreatmentAssessment,
 } from '../../types/treatmentFollowUp';
 import { Tooltip } from '../../../../ui/Tooltip';
 import { ConfirmationDialog } from '../../../../ui/ConfirmationDialog';
@@ -26,7 +26,7 @@ import {
   type Treatment, type TreatmentMode, type TreatmentPackage,
   createFinancePostingOptions, type FinancePostingOptions,
   type PostCareData, type AnthropometricsData, type ScalpAssessmentData,
-  getPackageDebt, getPackagePaidTotal, getAreaMarkers, RESERVED_PARAM_KEYS,
+  getPackageDebt, getPackagePaidTotal, getAreaMarkers, RESERVED_PARAM_KEYS, TREATMENT_MODE_LABELS,
 } from '../../types/treatment';
 
 /** Zonas sugeridas por modo (chips clickeables para etiquetar cada marcación anatómica) */
@@ -287,6 +287,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
   const { hasFeature } = useAuth();
   const [activeStep, setActiveStep] = useState<1 | 2 | 3 | 4>(1);
   const [currentTreatment, setCurrentTreatment] = useState<Treatment>(makeEmptyTreatment(mode));
+  const [summaryOpen, setSummaryOpen] = useState(false);
   const [dateLocked, setDateLocked] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -812,6 +813,17 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                 <span className="text-xs font-semibold">Nueva</span>
               </motion.button>
             </Tooltip>
+
+            {currentTreatment.id ? (
+              <button
+                type="button"
+                onClick={() => setSummaryOpen(true)}
+                className="admin-focus-ring flex min-h-11 items-center gap-2 rounded-lg border border-gold/50 bg-gold/10 px-3 text-gold-ink hover:bg-gold/20"
+              >
+                <Eye className="h-4 w-4" aria-hidden="true" />
+                <span className="text-xs font-semibold">Resumen</span>
+              </button>
+            ) : null}
 
             <Tooltip content={activeStep === 4 ? 'Guardar' : 'Continuar al siguiente paso'}>
               <motion.button
@@ -1456,6 +1468,89 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
         onEdit={() => setClinicalDataModalOpen(true)}
       /> : null}
     </motion.div>
+    <Dialog open={summaryOpen} onClose={() => setSummaryOpen(false)} labelledBy="treatment-summary-title">
+      <div className="flex max-h-[88dvh] w-[min(48rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-gray-100 p-5">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-ink">Sesión guardada · {TREATMENT_MODE_LABELS[mode]}</p>
+            <h2 id="treatment-summary-title" className="mt-1 truncate text-xl font-semibold text-gray-900">
+              {currentTreatment.procedure_name || 'Tratamiento sin nombre'}
+            </h2>
+            <p className="mt-1 text-sm text-gray-500">
+              {currentTreatment.date ? new Date(`${toDateOnly(currentTreatment.date)}T12:00:00`).toLocaleDateString('es-EC') : 'Fecha no registrada'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSummaryOpen(false)}
+            className="admin-focus-ring flex min-h-11 min-w-11 items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100"
+            aria-label="Cerrar resumen"
+          >
+            <X className="h-5 w-5" aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="space-y-5 overflow-y-auto p-5">
+          <section aria-labelledby="summary-session-title">
+            <h3 id="summary-session-title" className="text-sm font-semibold text-gray-900">Datos de la sesión</h3>
+            <dl className="mt-3 grid grid-cols-2 gap-3 text-xs sm:grid-cols-3">
+              {[
+                ['Registro', selectedPackage?.name || 'Sesión independiente'],
+                ['Zonas', currentTreatment.area_treated || 'Sin zonas registradas'],
+                ['Equipo', currentTreatment.equipment_used || 'Sin equipo'],
+                ['Duración', `${currentTreatment.duration_minutes || 0} min`],
+                [selectedPackage ? 'Abono' : 'Costo', `$${(Number(currentTreatment.cost) || 0).toFixed(2)}`],
+                ['Marcaciones 3D', String(getAreaMarkers(currentTreatment).length)],
+              ].map(([label, value]) => (
+                <div key={label} className="min-w-0 rounded-xl border border-gray-100 bg-gray-50/70 p-3">
+                  <dt className="font-medium text-gray-500">{label}</dt>
+                  <dd className="mt-1 break-words font-semibold text-gray-900">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+
+          <section className="rounded-xl border border-gold/30 bg-gold/10 p-4" aria-labelledby="summary-clinical-title">
+            <h3 id="summary-clinical-title" className="text-sm font-semibold text-gray-900">Datos clínicos</h3>
+            <p className="mt-2 text-sm leading-6 text-gray-700">{describeTreatmentAssessment(currentTreatment, mode)}</p>
+          </section>
+
+          <section aria-labelledby="summary-notes-title">
+            <h3 id="summary-notes-title" className="text-sm font-semibold text-gray-900">Observaciones</h3>
+            <p className="mt-2 whitespace-pre-wrap rounded-xl border border-gray-100 bg-gray-50/70 p-4 text-sm leading-6 text-gray-700">
+              {currentTreatment.notes?.trim() || 'Sin observaciones registradas.'}
+            </p>
+          </section>
+
+          {getTreatmentFollowUp(currentTreatment).purpose ? (
+            <section className="rounded-xl border border-gray-100 p-4" aria-labelledby="summary-follow-up-title">
+              <h3 id="summary-follow-up-title" className="text-sm font-semibold text-gray-900">Seguimiento</h3>
+              <p className="mt-2 text-sm font-medium text-gray-700">{getFollowUpLabel(currentTreatment)}</p>
+              <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-gray-600">
+                {getTreatmentFollowUp(currentTreatment).observations || 'Sin hallazgos de seguimiento registrados.'}
+              </p>
+            </section>
+          ) : null}
+        </div>
+
+        <div className="flex flex-col-reverse gap-2 border-t border-gray-100 p-4 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={() => setSummaryOpen(false)}
+            className="admin-focus-ring min-h-11 rounded-xl border border-gray-200 px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+          >
+            Cerrar
+          </button>
+          <button
+            type="button"
+            onClick={() => { setSummaryOpen(false); setActiveStep(1); }}
+            className="admin-focus-ring min-h-11 rounded-xl bg-gray-900 px-4 text-sm font-semibold text-white hover:bg-gold-ink"
+          >
+            Editar tratamiento
+          </button>
+        </div>
+      </div>
+    </Dialog>
     <CrossConsultHistoryModal
       isOpen={crossHistOpen}
       onClose={() => setCrossHistOpen(false)}
