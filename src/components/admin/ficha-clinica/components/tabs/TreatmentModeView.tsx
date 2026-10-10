@@ -1181,19 +1181,33 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
               </button>
             </div></> : null}
             {mode !== 'capilar' || scalpHair ? (
-              <details
-                className="group rounded-2xl border border-gray-200 bg-gray-50/70"
-                open={viewerOpen}
-                onToggle={event => setViewerOpen(event.currentTarget.open)}
-              >
-                <summary className="admin-focus-ring flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 rounded-2xl px-4 py-3 text-sm font-semibold text-gray-800 [&::-webkit-details-marker]:hidden">
+              <section className="rounded-2xl border border-gray-200 bg-gray-50/70">
+                {mode === 'capilar' ? (
+                  <div className="flex min-h-12 items-center justify-between gap-3 rounded-2xl px-4 py-3">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-800">2. Modelo capilar y marcación</p>
+                      <p className="mt-0.5 text-xs font-normal text-gray-500">Representación obligatoria de la evaluación registrada</p>
+                    </div>
+                    <span className="rounded-full bg-gold/15 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-gold-ink">
+                      Parte del registro
+                    </span>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setViewerOpen(open => !open)}
+                    aria-expanded={viewerOpen}
+                    aria-controls={`treatment-viewer-${mode}`}
+                    className="admin-focus-ring flex min-h-12 w-full cursor-pointer items-center justify-between gap-3 rounded-2xl px-4 py-3 text-left text-sm font-semibold text-gray-800"
+                  >
                   <span>
-                    {mode === 'capilar' ? 'Herramientas y visor 3D' : 'Precisar ubicación en mapa 3D'}
+                    Precisar ubicación en mapa 3D
                     <span className="ml-2 font-normal text-gray-500">(opcional)</span>
                   </span>
-                  <ChevronDown className="h-4 w-4 shrink-0 text-gray-500 transition-transform group-open:rotate-180" aria-hidden="true" />
-                </summary>
-                {viewerOpen ? <div className="space-y-3 border-t border-gray-200 p-3">
+                    <ChevronDown className={`h-4 w-4 shrink-0 text-gray-500 transition-transform ${viewerOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
+                  </button>
+                )}
+                {activeStep === 2 && (mode === 'capilar' || viewerOpen) ? <div id={`treatment-viewer-${mode}`} className="space-y-3 border-t border-gray-200 p-3">
                   <p className="text-xs leading-5 text-gray-600">
                     {mode !== 'capilar'
                       ? `Úsalo solo si necesitas indicar un punto exacto o un área de cobertura. Las zonas ${mode === 'facial' ? 'faciales' : 'corporales'} seleccionadas arriba son suficientes para un registro general.`
@@ -1287,7 +1301,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                   </div>
                 ) : null}
                 </div> : null}
-              </details>
+              </section>
             ) : null}
           </div>
 

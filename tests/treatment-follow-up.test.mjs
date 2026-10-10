@@ -98,7 +98,7 @@ test('Medidas corporales aceptan coma decimal, no interpretan vacío como cero',
   assert.match(followUp.compareTreatmentAssessments(first, session({ parameters: {} }), 'corporal'), /registra el valor/);
 });
 
-function harness() {
+function harness(mode = 'capilar') {
   const states = [];
   let cursor = 0;
   const requests = [];
@@ -145,8 +145,11 @@ function harness() {
   const render = () => {
     cursor = 0;
     return exports.default({
-      mode: 'capilar', modelUrl: '/models/clinical/male_head.glb',
-      recordId: 7, consultationId: 10, treatments: [session()],
+      mode, modelUrl: mode === 'corporal' ? '/models/clinical/male_body.glb' : '/models/clinical/male_head.glb',
+      recordId: 7, consultationId: 10, treatments: [session({
+        treatment_mode: mode,
+        parameters: mode === 'capilar' ? { __scalp_assessment: assessment } : {},
+      })],
       onSave: () => { saved += 1; },
     });
   };
@@ -196,22 +199,40 @@ test('UI: cambiar evaluación actualiza el groom Savin de Tratamientos Capilares
   const h = harness();
   let tree = h.render();
   assert.equal(h.all(tree).some(node => node.type === '../Clinical3DViewer'), false);
+  h.all(tree).find(node => node.type === 'motion.div' && node.props.onClick).props.onClick();
+  tree = h.render();
   const modal = h.all(tree).find(node => node.type === './ClinicalDataModal');
   modal.props.onSave(assessment);
   tree = h.render();
+  assert.equal(h.all(tree).some(node => node.type === '../Clinical3DViewer'), false);
   const stepButtons = h.all(tree).filter(node => node.type === 'button' && String(node.props.className).includes('min-h-16'));
   stepButtons[1].props.onClick();
-  tree = h.render();
-  const details = h.all(tree).find(node => node.type === 'details');
-  assert.equal(details.props.open, false);
-  assert.equal(h.all(tree).some(node => node.type === '../Clinical3DViewer'), false);
-  details.props.onToggle({ currentTarget: { open: true } });
   tree = h.render();
   const viewer = h.all(tree).find(node => node.type === '../Clinical3DViewer');
   assert.equal(viewer.props.scalpHair.scale, 'savin');
   assert.equal(viewer.props.scalpHair.stage, 'II-1');
   assert.equal(viewer.props.modelUrl, '/models/clinical/male_head.glb');
-  h.all(tree).find(node => node.type === 'details').props.onToggle({ currentTarget: { open: false } });
+  stepButtons[0].props.onClick();
   tree = h.render();
   assert.equal(h.all(tree).some(node => node.type === '../Clinical3DViewer'), false);
+});
+test('UI: mapas Facial y Corporal conservan su carga opcional bajo demanda', () => {
+  for (const mode of ['facial', 'corporal']) {
+    const h = harness(mode);
+    let tree = h.render();
+    h.all(tree).find(node => node.type === 'motion.div' && node.props.onClick).props.onClick();
+    tree = h.render();
+    const stepButtons = h.all(tree).filter(node => node.type === 'button' && String(node.props.className).includes('min-h-16'));
+    stepButtons[1].props.onClick();
+    tree = h.render();
+    assert.equal(h.all(tree).some(node => node.type === '../Clinical3DViewer'), false);
+    const toggle = h.all(tree).find(node => node.type === 'button' && node.props['aria-controls'] === `treatment-viewer-${mode}`);
+    assert.equal(toggle.props['aria-expanded'], false);
+    toggle.props.onClick();
+    tree = h.render();
+    assert.ok(h.all(tree).find(node => node.type === '../Clinical3DViewer'));
+    h.all(tree).find(node => node.props?.['aria-controls'] === `treatment-viewer-${mode}`).props.onClick();
+    tree = h.render();
+    assert.equal(h.all(tree).some(node => node.type === '../Clinical3DViewer'), false);
+  }
 });
