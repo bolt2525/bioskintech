@@ -17,6 +17,7 @@ import {
   FOLLOW_UP_KEY, getFollowUpLabel, getScalpVisualization, prepareNextTreatment, describeTreatmentAssessment,
 } from '../../types/treatmentFollowUp';
 import { Tooltip } from '../../../../ui/Tooltip';
+import { ConfirmationDialog } from '../../../../ui/ConfirmationDialog';
 import FieldHelp from '../FieldHelp';
 import { HELP } from '../../data/fieldHelpTexts';
 import { Dialog } from '../../../../ui/Dialog';
@@ -173,7 +174,7 @@ function ClinicalSummaryPanel({
   };
 
   return (
-    <aside className="admin-surface h-fit p-4 xl:sticky xl:top-4">
+    <aside className="admin-surface order-3 h-fit p-4 xl:col-span-2 xl:sticky xl:top-4 2xl:order-3 2xl:col-span-1">
       <div className="mb-4">
         <span className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-gold/10 text-gold-ink">
           <ClipboardList className="h-5 w-5" aria-hidden="true" />
@@ -285,6 +286,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
   // ponytail: string state to allow empty field and comma-as-decimal-separator
   const [costInput, setCostInput] = useState('');
   const [financePosting, setFinancePosting] = useState<FinancePostingOptions>(createFinancePostingOptions);
+  const [confirmation, setConfirmation] = useState<'package-save' | 'delete' | null>(null);
   const messageRef = useRef<HTMLDivElement>(null);
   const treatedZones = useMemo(() => parseTreatedZones(currentTreatment.area_treated), [currentTreatment.area_treated]);
   const treatedZoneKeys = useMemo(
@@ -367,14 +369,10 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
     return next;
   });
 
-  const handleSave = async () => {
-    if (selectedPackage) {
-      const amount = Number(currentTreatment.cost) || 0;
-      const action = currentTreatment.id ? 'actualizará' : 'guardará';
-      if (!confirm(
-        `Esta sesión se ${action} dentro del paquete "${selectedPackage.name}".\n\n` +
-        `El valor de $${amount.toFixed(2)} se contabilizará como abono al paquete.\n\n¿Deseas continuar?`
-      )) return;
+  const handleSave = async (packageConfirmed = false) => {
+    if (selectedPackage && !packageConfirmed) {
+      setConfirmation('package-save');
+      return;
     }
     setSaving(true);
     setMessage(null);
@@ -423,14 +421,16 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
       setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Error al guardar el tratamiento' });
     } finally {
       setSaving(false);
+      setConfirmation(null);
     }
   };
 
-  const handleDelete = async () => {
-    if (!currentTreatment.id || !confirm(
-      `¿Eliminar esta sesión${selectedPackage ? ` del paquete "${selectedPackage.name}"` : ' independiente'}?\n\n` +
-      'Si tiene un cobro asociado, también se eliminará de Finanzas. Esta acción no se puede deshacer.'
-    )) return;
+  const handleDelete = async (confirmed = false) => {
+    if (!currentTreatment.id) return;
+    if (!confirmed) {
+      setConfirmation('delete');
+      return;
+    }
     setDeleting(true);
     setMessage(null);
     try {
@@ -452,6 +452,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
       setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Error al eliminar el tratamiento' });
     } finally {
       setDeleting(false);
+      setConfirmation(null);
     }
   };
 
@@ -605,10 +606,10 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="grid grid-cols-1 gap-5 xl:grid-cols-[15rem_minmax(0,1fr)_19rem]"
+      className="grid grid-cols-1 gap-5 xl:grid-cols-[15rem_minmax(0,1fr)] 2xl:grid-cols-[15rem_minmax(0,1fr)_19rem]"
     >
       {/* Sidebar List */}
-      <div className="admin-surface flex max-h-[36rem] w-full flex-col gap-4 border-b border-gray-100 p-4 xl:sticky xl:top-4 xl:max-h-[calc(100dvh-12rem)]">
+      <div className="admin-surface order-2 flex max-h-[32rem] w-full flex-col gap-4 border-b border-gray-100 p-4 xl:order-1 xl:sticky xl:top-4 xl:max-h-[calc(100dvh-12rem)]">
         <div className="font-bold text-gray-800 flex items-center gap-2 flex-wrap">
           <div className="w-1 h-5 bg-[#deb887] rounded-full" />
           Historial
@@ -734,18 +735,30 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
       </div>
 
       {/* Main Form */}
-      <div className="relative flex min-w-0 flex-col gap-5 overflow-visible">
+      <div className="relative order-1 flex min-w-0 flex-col gap-5 overflow-visible xl:order-2">
         {/* Toolbar */}
-        <div className="flex flex-wrap gap-4 justify-between items-center bg-white p-4 rounded-xl border border-gray-100 shadow-sm sticky top-0 z-10">
-          <div className="flex gap-2 items-center">
+        <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-100 bg-white p-3 shadow-sm sm:p-4">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gold-ink">
+              {currentTreatment.id ? 'Editando sesión' : 'Nueva sesión'}
+            </p>
+            <p className="truncate text-sm font-semibold text-gray-900">
+              {currentTreatment.procedure_name || 'Completa los datos del tratamiento'}
+            </p>
+            <p className="mt-0.5 text-xs text-gray-500">
+              {selectedPackage ? `Paquete: ${selectedPackage.name}` : 'Sesión independiente'}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <Tooltip content="Nuevo Tratamiento">
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={handleNew}
-                className="p-2 hover:bg-gray-100 rounded-lg text-gray-600 border border-gray-200"
+                className="admin-focus-ring flex min-h-11 items-center gap-2 rounded-lg border border-gray-200 px-3 text-gray-700 hover:bg-gray-50"
               >
-                <Plus className="w-5 h-5" />
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                <span className="text-xs font-semibold">Nueva</span>
               </motion.button>
             </Tooltip>
 
@@ -753,11 +766,12 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={handleSave}
+                onClick={() => handleSave()}
                 disabled={saving}
-                className="p-2 bg-[#deb887] text-white rounded-lg hover:bg-[#c5a075] shadow-lg shadow-[#deb887]/20 disabled:opacity-70"
+                className="admin-focus-ring flex min-h-11 items-center gap-2 rounded-lg bg-gold-dark px-3 text-white shadow-sm hover:bg-gold-ink disabled:opacity-70"
               >
-                {saving ? <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full" /> : <Save className="w-5 h-5" />}
+                {saving ? <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" /> : <Save className="h-4 w-4" aria-hidden="true" />}
+                <span className="text-xs font-semibold">{saving ? 'Guardando…' : 'Guardar sesión'}</span>
               </motion.button>
             </Tooltip>
 
@@ -779,8 +793,9 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={handleDelete}
+                onClick={() => void handleDelete()}
                 disabled={!currentTreatment.id || deleting}
+                aria-label="Eliminar sesión"
                 className="p-2 hover:bg-red-50 rounded-lg text-red-500 border border-red-100 disabled:opacity-50"
               >
                 {deleting ? <div className="animate-spin w-5 h-5 border-2 border-red-300 border-t-red-500 rounded-full" /> : <Trash2 className="w-5 h-5" />}
@@ -824,19 +839,13 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
           )}
         </AnimatePresence>
 
-        <TreatmentFollowUpPanel
-          key={`${mode}-${currentTreatment.id ?? 'new'}-${currentTreatment.package_id ?? currentTreatment.procedure_name}`}
-          mode={mode}
-          current={currentTreatment}
-          history={modeTreatments}
-          onChange={followUp => setCurrentTreatment(previous => ({
-            ...previous, parameters: { ...previous.parameters, [FOLLOW_UP_KEY]: followUp },
-          }))}
-          onAssess={() => setClinicalDataModalOpen(true)}
-        />
-
         {/* Form Fields */}
-        <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm space-y-6 overflow-y-auto custom-scrollbar">
+        <div className="space-y-6 overflow-y-auto rounded-xl border border-gray-100 bg-white p-4 shadow-sm custom-scrollbar sm:p-6">
+          <div className="border-b border-gray-100 pb-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-ink">Paso 1</p>
+            <h2 className="mt-1 text-lg font-semibold text-gray-900">Datos y aplicación de la sesión</h2>
+            <p className="mt-1 text-xs leading-5 text-gray-500">Registra procedimiento, zonas, equipo, duración y valor antes de documentar la evolución.</p>
+          </div>
           {/* Visor 3D de marcación anatómica (múltiples zonas por sesión) */}
           <div className="space-y-2">
             <label className="block text-sm font-medium text-gray-700">
@@ -1193,6 +1202,24 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
           </div>
 
         </div>
+
+        <div>
+          <div className="mb-3 px-1">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-ink">Paso 2</p>
+            <h2 className="mt-1 text-lg font-semibold text-gray-900">Seguimiento y evaluación</h2>
+            <p className="mt-1 text-xs leading-5 text-gray-500">Ábrelo cuando necesites comparar evolución o registrar hallazgos clínicos.</p>
+          </div>
+          <TreatmentFollowUpPanel
+            key={`${mode}-${currentTreatment.id ?? 'new'}-${currentTreatment.package_id ?? currentTreatment.procedure_name}`}
+            mode={mode}
+            current={currentTreatment}
+            history={modeTreatments}
+            onChange={followUp => setCurrentTreatment(previous => ({
+              ...previous, parameters: { ...previous.parameters, [FOLLOW_UP_KEY]: followUp },
+            }))}
+            onAssess={() => setClinicalDataModalOpen(true)}
+          />
+        </div>
       </div>
 
       <ClinicalSummaryPanel
@@ -1300,6 +1327,34 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
       initialData={currentTreatment.parameters?.[RESERVED_PARAM_KEYS[mode]] as PostCareData | AnthropometricsData | ScalpAssessmentData | undefined}
       onClose={() => setClinicalDataModalOpen(false)}
       onSave={handleSaveClinicalData}
+    />
+    <ConfirmationDialog
+      open={confirmation === 'package-save'}
+      title={currentTreatment.id ? 'Actualizar sesión del paquete' : 'Guardar sesión en el paquete'}
+      description={<>La sesión quedará vinculada a <strong>{selectedPackage?.name}</strong>.</>}
+      detail={
+        <div className="flex items-center justify-between gap-4">
+          <span>Abono de esta sesión</span>
+          <strong className="tabular-nums">${(Number(currentTreatment.cost) || 0).toFixed(2)}</strong>
+        </div>
+      }
+      confirmLabel={currentTreatment.id ? 'Actualizar sesión' : 'Guardar en el paquete'}
+      busy={saving}
+      onClose={() => setConfirmation(null)}
+      onConfirm={() => void handleSave(true)}
+    />
+    <ConfirmationDialog
+      open={confirmation === 'delete'}
+      variant="danger"
+      title="Eliminar sesión de tratamiento"
+      description={selectedPackage
+        ? <>Se eliminará esta sesión del paquete <strong>{selectedPackage.name}</strong>.</>
+        : 'Se eliminará esta sesión independiente.'}
+      detail="Si existe un cobro asociado, también se eliminarán el registro y sus partidas en Finanzas."
+      confirmLabel="Eliminar sesión"
+      busy={deleting}
+      onClose={() => setConfirmation(null)}
+      onConfirm={() => void handleDelete(true)}
     />
     </>
   );

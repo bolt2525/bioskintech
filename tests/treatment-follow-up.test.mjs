@@ -138,7 +138,7 @@ function harness() {
         __esModule: true, default: name, formatParametersAsText: () => '', upsertNotesBlock: text => text, removeNotesBlock: text => text,
       };
       return { __esModule: true, default: name,
-        Tooltip: 'Tooltip', FieldHelp: 'FieldHelp', Dialog: 'Dialog',
+        Tooltip: 'Tooltip', FieldHelp: 'FieldHelp', Dialog: 'Dialog', ConfirmationDialog: 'ConfirmationDialog',
       };
     },
   });

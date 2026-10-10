@@ -28,6 +28,7 @@ export const Tooltip: React.FC<TooltipProps> = ({
   const [isVisible, setIsVisible] = useState(false);
   const tooltipId = useId();
   const [coords, setCoords] = useState({ top: 0, left: 0 });
+  const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
   const triggerRef = useRef<HTMLDivElement>(null);
   const timeoutRef = useRef<NodeJS.Timeout>();
 
@@ -63,6 +64,7 @@ export const Tooltip: React.FC<TooltipProps> = ({
 
   const showTooltip = () => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    setPortalRoot(triggerRef.current?.closest('dialog') || document.body);
     updatePosition();
     setIsVisible(true);
   };
@@ -104,7 +106,7 @@ export const Tooltip: React.FC<TooltipProps> = ({
       >
         {describedChild}
       </div>
-      {typeof document !== 'undefined' && createPortal(
+      {portalRoot && createPortal(
         <AnimatePresence>
           {isVisible && (
             <motion.div
@@ -152,7 +154,7 @@ export const Tooltip: React.FC<TooltipProps> = ({
             </motion.div>
           )}
         </AnimatePresence>,
-        document.body
+        portalRoot
       )}
     </>
   );

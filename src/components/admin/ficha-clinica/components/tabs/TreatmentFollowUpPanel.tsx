@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { ChevronDown } from 'lucide-react';
 import type { Treatment, TreatmentMode } from '../../types/treatment';
 import {
   type TreatmentFollowUp, getTreatmentFollowUp, getFollowUpLabel, getFollowUpSessions,
@@ -24,14 +25,25 @@ export default function TreatmentFollowUpPanel({ mode, current, history, onChang
     ? candidates.find(session => String(session.id) === referenceId)
     : initial ?? candidates[0];
   return (
-    <section className="admin-surface space-y-4 p-4" aria-label="Seguimiento del tratamiento">
-      <div>
-        <h3 className="font-semibold text-gray-800">Seguimiento y evolución</h3>
-        <p className="mt-1 text-xs leading-5 text-gray-500">
+    <details
+      className="admin-surface group overflow-hidden"
+      aria-label="Seguimiento del tratamiento"
+      defaultOpen={Boolean(current.id || followUp.purpose || followUp.observations)}
+    >
+      <summary className="admin-focus-ring flex cursor-pointer list-none items-center justify-between gap-4 p-4 [&::-webkit-details-marker]:hidden">
+        <span>
+          <span className="block font-semibold text-gray-800">Seguimiento clínico de la sesión</span>
+          <span className="mt-1 block text-xs leading-5 text-gray-500">
+            {current.id || followUp.purpose ? 'Revisa la referencia, comparación y evolución registrada.' : 'Opcional: define una evaluación inicial o compara este control con una sesión previa.'}
+          </span>
+        </span>
+        <ChevronDown className="h-5 w-5 shrink-0 text-gray-400 transition-transform group-open:rotate-180" aria-hidden="true" />
+      </summary>
+      <div className="space-y-4 border-t border-gray-100 p-4">
+        <p className="text-xs leading-5 text-gray-500">
           Sesiones del mismo {current.package_id ? 'paquete' : 'procedimiento independiente'} y modo,
           incluidas otras consultas de este expediente. No se fusionan paquetes ni procedimientos distintos.
         </p>
-      </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="text-xs font-medium text-gray-700">
           Tipo de registro
@@ -102,6 +114,7 @@ export default function TreatmentFollowUpPanel({ mode, current, history, onChang
           </li>)}
         </ol>
       </details> : null}
-    </section>
+      </div>
+    </details>
   );
 }

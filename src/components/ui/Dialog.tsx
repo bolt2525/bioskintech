@@ -33,7 +33,7 @@ export function Dialog({ open, onClose, children, className = '', labelledBy, de
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
-      className={`m-auto max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-2rem)] overflow-x-hidden overflow-y-auto border-0 bg-transparent p-0 backdrop:bg-black/50 backdrop:backdrop-blur-sm ${className}`}
+      className={`m-auto max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-2rem)] overflow-x-hidden overflow-y-auto overscroll-contain border-0 bg-transparent p-0 backdrop:bg-black/50 backdrop:backdrop-blur-sm ${className}`}
     >
       {children}
     </dialog>
