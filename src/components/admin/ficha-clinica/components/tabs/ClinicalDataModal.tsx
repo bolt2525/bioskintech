@@ -6,18 +6,17 @@
 import { useEffect, useState } from 'react';
 import { X, ClipboardList, Ruler, ScanSearch, CheckCircle2 } from 'lucide-react';
 import { Dialog } from '../../../../ui/Dialog';
-import { Tooltip } from '../../../../ui/Tooltip';
 import type {
   TreatmentMode, PostCareData, AnthropometricsData, ScalpAssessmentData, SeverityScale, HairLossScale,
 } from '../../types/treatment';
 import { getScalpStages, getScalpDescriptions, getScalpStageLabel, SCALP_SCALE_LABELS, getScalpCoverage } from '../../../../../data/scalpPatterns';
 export { NORWOOD_STAGES, LUDWIG_STAGES } from '../../../../../data/scalpPatterns';
 
-const SEVERITY_META: Record<SeverityScale, { label: string; description: string; detail: string }> = {
-  0: { label: 'Sin reacción', description: 'Piel sin cambios visibles', detail: 'No se aprecia respuesta inmediata relevante. Registra igualmente las indicaciones entregadas y cualquier sensación referida.' },
-  1: { label: 'Leve', description: 'Respuesta localizada discreta', detail: 'Cambio tenue y localizado. Documenta la zona y controla su evolución según el procedimiento realizado.' },
-  2: { label: 'Moderado', description: 'Respuesta visible y delimitada', detail: 'Cambio claramente visible y delimitado. Conviene describir extensión, síntomas asociados y cuidados indicados.' },
-  3: { label: 'Intenso', description: 'Respuesta marcada; vigilar evolución', detail: 'Respuesta marcada que requiere documentación detallada, seguimiento y criterio clínico antes de dar por finalizado el control.' },
+const SEVERITY_META: Record<SeverityScale, { label: string; description: string }> = {
+  0: { label: 'Sin reacción', description: 'Piel sin cambios visibles' },
+  1: { label: 'Leve', description: 'Respuesta localizada discreta' },
+  2: { label: 'Moderado', description: 'Respuesta visible y delimitada' },
+  3: { label: 'Intenso', description: 'Respuesta marcada; vigilar evolución' },
 };
 const POST_CARE_INDICATIONS = [
   'Protección solar FPS50+',
@@ -151,16 +150,14 @@ export default function ClinicalDataModal({ isOpen, mode, initialData, onClose, 
                     {([0, 1, 2, 3] as SeverityScale[]).map(level => {
                       const selected = postCare[field] === level;
                       return (
-                        <Tooltip key={level} content={SEVERITY_META[level].detail} position="top" className="w-full">
-                          <button type="button" onClick={() => setPostCare(prev => ({ ...prev, [field]: level }))}
-                            aria-pressed={selected}
-                            className={`admin-focus-ring relative w-full rounded-xl p-2 text-left transition-[border-color,background-color,box-shadow,transform] ${selected ? 'border-2 border-gold-dark bg-gold/10 shadow-md ring-2 ring-gold/30' : 'border border-gray-200 hover:-translate-y-0.5 hover:border-gold hover:bg-gold/10 hover:shadow-sm'}`}>
-                            {selected ? <CheckCircle2 className="absolute right-2 top-2 h-4 w-4 text-gold-ink" aria-hidden="true" /> : null}
-                            <SeverityIllustration level={level} kind={field} />
-                            <span className="block text-xs font-semibold text-gray-800">{SEVERITY_META[level].label}</span>
-                            <span className="mt-0.5 block text-[9px] leading-3 text-gray-500">{SEVERITY_META[level].description}</span>
-                          </button>
-                        </Tooltip>
+                        <button key={level} type="button" onClick={() => setPostCare(prev => ({ ...prev, [field]: level }))}
+                          aria-pressed={selected}
+                          className={`admin-focus-ring relative w-full rounded-xl p-2 text-left transition-[border-color,background-color,box-shadow,transform] ${selected ? 'border-2 border-gold-dark bg-gold/10 shadow-md ring-2 ring-gold/30' : 'border border-gray-200 hover:-translate-y-0.5 hover:border-gold hover:bg-gold/10 hover:shadow-sm'}`}>
+                          {selected ? <CheckCircle2 className="absolute right-2 top-2 h-4 w-4 text-gold-ink" aria-hidden="true" /> : null}
+                          <SeverityIllustration level={level} kind={field} />
+                          <span className="block text-xs font-semibold text-gray-800">{SEVERITY_META[level].label}</span>
+                          <span className="mt-0.5 block text-[9px] leading-3 text-gray-500">{SEVERITY_META[level].description}</span>
+                        </button>
                       );
                     })}
                   </div>
@@ -262,16 +259,14 @@ export default function ClinicalDataModal({ isOpen, mode, initialData, onClose, 
                       const description = getScalpDescriptions(scalp.scale!)[idx];
                       const selected = scalp.stage === label;
                       return (
-                        <Tooltip key={label} content={`Etapa ${label}: ${description}. Ilustración orientativa; complementa la selección con densidad, tipo de alopecia, síntomas y notas clínicas.`} position="top" className="w-full">
-                          <button type="button" onClick={() => setScalp(prev => ({ ...prev, stage: label }))}
-                            aria-pressed={selected}
-                            className={`admin-focus-ring relative flex min-h-36 w-full flex-col items-center gap-1 rounded-xl p-2 text-center transition-[border-color,background-color,box-shadow,transform] ${selected ? 'border-2 border-gold-dark bg-gold/10 shadow-md ring-2 ring-gold/30' : 'border border-gray-200 hover:-translate-y-0.5 hover:border-gold hover:bg-gold/10 hover:shadow-sm'}`}>
-                            {selected ? <CheckCircle2 className="absolute right-2 top-2 h-4 w-4 text-gold-ink" aria-hidden="true" /> : null}
-                            <ScalpStageIllustration scale={scalp.scale as HairLossScale} stageIndex={idx} />
-                            <span className="text-xs font-semibold text-gray-700">{getScalpStageLabel(label)}</span>
-                            <span className="text-[9px] leading-3 text-gray-500">{description}</span>
-                          </button>
-                        </Tooltip>
+                        <button key={label} type="button" onClick={() => setScalp(prev => ({ ...prev, stage: label }))}
+                          aria-pressed={selected}
+                          className={`admin-focus-ring relative flex min-h-36 w-full flex-col items-center gap-1 rounded-xl p-2 text-center transition-[border-color,background-color,box-shadow,transform] ${selected ? 'border-2 border-gold-dark bg-gold/10 shadow-md ring-2 ring-gold/30' : 'border border-gray-200 hover:-translate-y-0.5 hover:border-gold hover:bg-gold/10 hover:shadow-sm'}`}>
+                          {selected ? <CheckCircle2 className="absolute right-2 top-2 h-4 w-4 text-gold-ink" aria-hidden="true" /> : null}
+                          <ScalpStageIllustration scale={scalp.scale as HairLossScale} stageIndex={idx} />
+                          <span className="text-xs font-semibold text-gray-700">{getScalpStageLabel(label)}</span>
+                          <span className="text-[9px] leading-3 text-gray-500">{description}</span>
+                        </button>
                       );
                     })}
                   </div>
