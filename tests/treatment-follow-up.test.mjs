@@ -23,6 +23,7 @@ const load = (path, dependencies = {}) => {
 const patterns = load('../src/data/scalpPatterns.ts');
 const boundary = load('../src/data/scalpBoundaryPreset.ts');
 const types = load('../src/components/admin/ficha-clinica/types/treatment.ts');
+const clinicalDataModalSource = readFileSync(new URL('../src/components/admin/ficha-clinica/components/tabs/ClinicalDataModal.tsx', import.meta.url), 'utf8');
 const followUp = load('../src/components/admin/ficha-clinica/types/treatmentFollowUp.ts', {
   './treatment': types,
   '../../../../data/scalpPatterns': patterns,
@@ -84,6 +85,10 @@ test('Render clínico usa Savin, no muestra Norwood I por ausencia de evaluació
   assert.equal(visualization.stage, 'II-1');
   assert.equal(visualization.density, 'Media');
   assert.equal(visualization.boundaryPoints, boundary.SCALP_BOUNDARY_PRESET);
+});
+test('Modal capilar agrupa escalas en patrones masculino y femenino', () => {
+  assert.match(clinicalDataModalSource, /label: 'Masculino'.*scales: \['norwood'\]/);
+  assert.match(clinicalDataModalSource, /label: 'Femenino'.*scales: \['ludwig', 'savin'\]/);
 });
 test('Comparación descriptiva: no equivalencias entre escalas ni porcentajes de mejoría', () => {
   assert.match(followUp.compareTreatmentAssessments(session(), session({ parameters: { __scalp_assessment: { ...assessment, scale: 'ludwig', stage: 'II' } } }), 'capilar'), /Escalas distintas/);
@@ -215,6 +220,9 @@ test('UI: cambiar evaluación actualiza el groom Savin de Tratamientos Capilares
   assert.equal(viewer.props.showMarkerLabels, false);
   assert.ok(h.all(tree).some(node => node.type === 'p' && node.props.children === '2. Revisa el modelo capilar'));
   assert.ok(h.all(tree).some(node => node.type === 'p' && node.props.children === 'Se genera con la evaluación; las marcaciones son opcionales'));
+  const clinicalNote = h.all(tree).find(node => node.props?.['aria-label'] === 'Evaluación capilar representada');
+  assert.match(clinicalNote.props.className, /top-3/);
+  assert.doesNotMatch(clinicalNote.props.className, /bottom-3/);
   stepButtons[0].props.onClick();
   tree = h.render();
   assert.equal(h.all(tree).some(node => node.type === '../Clinical3DViewer'), false);

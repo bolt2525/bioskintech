@@ -35,6 +35,10 @@ const ANTHRO_FIELDS: Array<{ key: keyof AnthropometricsData['before']; label: st
   { key: 'weight', label: 'Peso', unit: 'kg' },
 ];
 const ALOPECIA_TYPES = ['Androgenética', 'Areata', 'Telógena', 'Cicatricial', 'Otra'];
+const SCALP_SCALE_GROUPS: Array<{ label: string; description: string; scales: HairLossScale[] }> = [
+  { label: 'Masculino', description: 'Patrón androgenético masculino', scales: ['norwood'] },
+  { label: 'Femenino', description: 'Patrones de aclaramiento femenino', scales: ['ludwig', 'savin'] },
+];
 
 function SeverityIllustration({ level, kind }: { level: SeverityScale; kind: 'erythema' | 'edema' }) {
   const color = level === 0 ? '#d1fae5' : level === 1 ? '#fde68a' : level === 2 ? '#fdba74' : '#fda4af';
@@ -233,14 +237,28 @@ export default function ClinicalDataModal({ isOpen, mode, initialData, onClose, 
           {mode === 'capilar' && (
             <>
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700">Escala de evaluación</label>
-                <div className="flex gap-2">
-                  {(['norwood', 'ludwig', 'savin'] as HairLossScale[]).map(s => (
-                    <button key={s} type="button" onClick={() => setScalp(prev => ({ ...prev, scale: s, stage: null }))}
-                      aria-pressed={scalp.scale === s}
-                      className={`inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium capitalize transition-[color,background-color,border-color,box-shadow] ${scalp.scale === s ? 'border-2 border-gray-900 bg-gray-900 text-white shadow-sm ring-2 ring-gray-300' : 'border border-gray-200 text-gray-600 hover:border-gold hover:bg-gold/10'}`}>
-                      {scalp.scale === s ? <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> : null}{SCALP_SCALE_LABELS[s]}
-                    </button>
+                <p className="text-sm font-medium text-gray-700">Escala de evaluación</p>
+                <p className="text-xs leading-5 text-gray-500">Elige primero el patrón de referencia y luego la escala clínica correspondiente.</p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {SCALP_SCALE_GROUPS.map(group => (
+                    <fieldset key={group.label} className="rounded-xl border border-gray-200 bg-gray-50/60 p-3">
+                      <legend className="px-1 text-xs font-semibold text-gray-800">{group.label}</legend>
+                      <p className="mb-2 text-[10px] leading-4 text-gray-500">{group.description}</p>
+                      <div className="flex flex-wrap gap-2">
+                        {group.scales.map(scale => (
+                          <button
+                            key={scale}
+                            type="button"
+                            onClick={() => setScalp(prev => ({ ...prev, scale, stage: null }))}
+                            aria-pressed={scalp.scale === scale}
+                            className={`admin-focus-ring inline-flex min-h-9 items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium transition-[color,background-color,border-color,box-shadow] ${scalp.scale === scale ? 'border-2 border-gray-900 bg-gray-900 text-white shadow-sm ring-2 ring-gray-300' : 'border border-gray-200 bg-white text-gray-600 hover:border-gold hover:bg-gold/10'}`}
+                          >
+                            {scalp.scale === scale ? <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> : null}
+                            {SCALP_SCALE_LABELS[scale]}
+                          </button>
+                        ))}
+                      </div>
+                    </fieldset>
                   ))}
                 </div>
               </div>
@@ -253,7 +271,7 @@ export default function ClinicalDataModal({ isOpen, mode, initialData, onClose, 
                       Frontal no es una etapa posterior. Ludwig clásico conserva I–III sin reinterpretar registros previos.
                     </p>
                   ) : null}
-                  <label className="block text-sm font-medium text-gray-700">Etapa (tarjetas ilustrativas, haz clic para seleccionar)</label>
+                  <p className="text-sm font-medium text-gray-700">Etapa de {SCALP_SCALE_LABELS[scalp.scale]} <span className="font-normal text-gray-500">(selecciona una tarjeta)</span></p>
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                     {stages.map((label, idx) => {
                       const description = getScalpDescriptions(scalp.scale!)[idx];

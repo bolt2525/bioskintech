@@ -1283,7 +1283,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                     showMarkerLabels={mode !== 'capilar'}
                   />
                   {mode === 'capilar' && scalpHair ? (
-                    <div className="pointer-events-none absolute bottom-3 left-3 right-3 max-w-sm rounded-xl border border-white/70 bg-slate-950/85 p-3 text-white shadow-xl backdrop-blur-md sm:right-auto" role="note" aria-label="Evaluación capilar representada">
+                    <div className="pointer-events-none absolute left-3 top-3 max-w-[calc(100%-9rem)] rounded-xl border border-white/70 bg-slate-950/85 p-3 text-white shadow-xl backdrop-blur-md sm:max-w-sm" role="note" aria-label="Evaluación capilar representada">
                       <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-gold-light">
                         <span>{SCALP_SCALE_LABELS[scalpHair.scale]}</span>
                         <span aria-hidden="true">·</span>
