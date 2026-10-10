@@ -1,5 +1,8 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-10 Toxina: formulario guiado y concentración.
+- ✅ 2026-10-10 Inyectables: guardado conserva sesión seleccionada.
+- ✅ 2026-10-10 Inyectables: guías separadas de dosis.
 - ✅ 2026-10-10 Inyectables: navegación y dibujo separados.
 - ✅ 2026-10-10 Inyectables: trazado conserva puntos aplicados.
 - ✅ 2026-10-10 Inyectables: recuperación visual de marcaciones.

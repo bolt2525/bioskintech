@@ -22,6 +22,7 @@ import FieldHelp from '../FieldHelp';
 import { HELP } from '../../data/fieldHelpTexts';
 import { Dialog } from '../../../../ui/Dialog';
 import { COLORS } from '../../../../../constants/theme';
+import ToxinaSessionForm from '../ToxinaSessionForm';
 
 // ==========================================
 // TYPES
@@ -110,6 +111,14 @@ function reconcileEditablePoints(template: EditablePoint[], existing: EditablePo
   return [...points.values()];
 }
 
+function getToxinaConcentration(vialUnits: string, dilution: number | string): number | null {
+  const units = Number(vialUnits);
+  const volume = Number(dilution);
+  const concentration = units / volume;
+  return Number.isFinite(units) && units > 0 && Number.isFinite(volume) && volume > 0
+    && Number.isFinite(concentration) ? concentration : null;
+}
+
 interface InjectablesTabProps {
   recordId: number;
   injectables: Injectable[];
@@ -154,6 +163,18 @@ const ALL_HA_ZONES = [
 ];
 
 const HA_PLANES = ['Dérmico superficial', 'Dérmico medio', 'Dérmico profundo', 'Subcutáneo', 'Supraperióstico'];
+const DRAWING_GUIDE: Record<DrawingTool, string> = {
+  none: 'Las anotaciones ayudan a describir zonas y referencias de la sesión; no añaden unidades ni recomiendan dónde inyectar.',
+  'freehand-brush': 'Pincel: delimita una zona u observación libre. Mantén pulsado y arrastra sobre la piel; arrastra desde el fondo para girar.',
+  'freehand-poly': 'Polilínea: describe un contorno con varios vértices. Haz clic por vértice y doble clic para terminar.',
+  'straight-line': 'Recta: añade una referencia visual. Arrastra desde el inicio hasta el final sobre la piel.',
+  'shape-arrow': 'Flecha: señala una observación o dirección documentada. Arrastra hasta el lugar al que apunta.',
+  'shape-circle': 'Círculo: resalta una zona de interés. Arrastra sobre la piel para definir su tamaño.',
+  'shape-rect': 'Rectángulo: encuadra una región que deseas documentar. Arrastra para definir su tamaño.',
+  'ha-fan': 'Abanico: documenta un patrón gráfico. No calcula volumen ni selecciona dosis; configura el patrón y arrastra sobre la piel.',
+  'ha-grid': 'Malla: documenta un patrón gráfico. Define esquina, ancho y largo con tres clics; no representa dosis.',
+  'ha-fern': 'Helecho: documenta un patrón gráfico ramificado. Configura las ramas y arrastra el eje principal.',
+};
 
 /** Paleta fija de colores para diferenciar viales en el visor 3D */
 const VIAL_COLORS = ['#8b5cf6', '#06b6d4', '#f59e0b', '#10b981', '#ef4444'];
@@ -218,6 +239,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   const [injectables, setInjectables] = useState<Injectable[]>([]);
   const [current, setCurrent] = useState<Injectable>({ ...EMPTY_INJECTABLE });
   const [dateLocked, setDateLocked] = useState(false);
+  const [toxinaVialUnits, setToxinaVialUnits] = useState('');
+  const [formError, setFormError] = useState<{ field: string; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [highlightedId, setHighlightedId] = useState<number | null>(null);
   const [show3D, setShow3D] = useState(false);
@@ -422,6 +445,10 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
           : parsed && typeof parsed === 'object'
             ? parsed as Record<string, unknown>
             : {};
+        const preparation = mapping.toxinaPreparation;
+        setToxinaVialUnits(preparation && typeof preparation === 'object' && 'vial_units' in preparation
+          && (typeof preparation.vial_units === 'number' || typeof preparation.vial_units === 'string')
+          ? String(preparation.vial_units) : '');
         const rawPoints = Array.isArray(mapping.injectionPoints) ? mapping.injectionPoints : [];
         const rawLines = Array.isArray(mapping.referenceLines) ? mapping.referenceLines : [];
 
@@ -452,6 +479,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
         setActiveVialId(rawHaVials.length > 0 ? rawHaVials[0].id : null);
         if (points.length > 0 || rawLines.length > 0 || rawEditablePoints.length > 0 || rawFreehand.length > 0 || rawShapes.length > 0) setShow3D(true);
       } catch {
+        setToxinaVialUnits('');
         setInjectionPoints([]);
         setMarkers3D([]);
         setReferenceLines([]);
@@ -463,6 +491,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
         setActiveVialId(null);
       }
     } else {
+      setToxinaVialUnits('');
       setInjectionPoints([]);
       setMarkers3D([]);
       setReferenceLines([]);
@@ -479,6 +508,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   useEffect(() => {
     if (message) {
       messageRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      if (message.type === 'error') return;
       const t = setTimeout(() => setMessage(null), 4000);
       return () => clearTimeout(t);
     }
@@ -492,12 +522,10 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   const totalUsed = parseFloat(injectionPoints.reduce((sum, p) => sum + p.units, 0).toFixed(2));
   const remaining = parseFloat((totalVial - totalUsed).toFixed(2));
   const unitLabel = current.product_type === 'toxina' ? 'UI' : 'ml';
+  const toxinaConcentration = getToxinaConcentration(toxinaVialUnits, current.dilution_volume);
 
-  // Validation: require product name + units before 3D marking
-  const hasUnits = current.product_type === 'toxina'
-    ? Number(current.units_used) > 0
-    : Number(current.volume_used) > 0;
-  const canMark = current.product_name.trim() !== '' && hasUnits;
+  const canMark = current.product_name.trim() !== ''
+    && (current.product_type === 'toxina' || Number(current.volume_used) > 0);
 
   // Group points by tercio
   const pointsByTercio = injectionPoints.reduce((acc, p) => {
@@ -514,6 +542,10 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
 
   // Puntos seleccionados en modo selección masiva (para iluminar en el visor)
   const highlightedPointIds = bulkApplyMode ? Array.from(bulkApplySelected) : [];
+  const appliedPointIds = new Set(injectionPoints.map(point => point.editablePointId));
+  const visibleEditablePoints = showEditablePoints
+    ? editablePoints
+    : editablePoints.filter(point => appliedPointIds.has(point.id));
 
   // ==========================================
   // HANDLERS
@@ -692,10 +724,31 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     : null;
 
   const handleSave = async () => {
+    const rejectField = (field: string, text: string) => {
+      setFormError({ field, text });
+      setMessage({ type: 'error', text });
+      const input = document.getElementById(`toxina-${field}`);
+      const details = input?.closest('details');
+      if (details) details.open = true;
+      input?.focus();
+      return false;
+    };
     if (!current.product_name.trim()) {
-      setMessage({ type: 'error', text: 'El nombre del producto es obligatorio' });
-      return;
+      return rejectField('product_name', 'Escribe el nombre comercial del producto.');
     }
+    if (current.product_type === 'toxina') {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(current.date)) return rejectField('date', 'Indica la fecha de aplicación.');
+      for (const [field, value, label] of [
+        ['units_used', current.units_used, 'El total de unidades'],
+        ['dilution_volume', current.dilution_volume, 'El volumen de diluyente'],
+        ['vial_units', toxinaVialUnits, 'Las unidades del vial'],
+      ] as const) {
+        if (value !== '' && (!Number.isFinite(Number(value)) || Number(value) <= 0)) {
+          return rejectField(field, `${label} debe ser un número mayor que cero, o dejarse sin completar.`);
+        }
+      }
+    }
+    setFormError(null);
     setSaving(true);
     try {
       const action = current.id ? 'updateInjectable' : 'addInjectable';
@@ -703,9 +756,11 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
 
       // Nuevo formato de mapping_data: incluye referenceLines, editablePoints, freehandLines y surfaceShapes
       const hasData = injectionPoints.length > 0 || referenceLines.length > 0 || editablePoints.length > 0
-        || freehandLines.length > 0 || surfaceShapes.length > 0 || haVials.length > 0;
+        || freehandLines.length > 0 || surfaceShapes.length > 0 || haVials.length > 0 || toxinaVialUnits !== '';
       const mappingData = hasData
-        ? { injectionPoints, referenceLines, editablePoints, freehandLines, surfaceShapes, haVials }
+        ? { injectionPoints, referenceLines, editablePoints, freehandLines, surfaceShapes, haVials,
+          ...(current.product_type === 'toxina' && toxinaVialUnits !== ''
+            ? { toxinaPreparation: { vial_units: Number(toxinaVialUnits) } } : {}) }
         : null;
 
       const payload = {
@@ -724,21 +779,27 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
       });
 
       if (res.ok) {
-        const resData = await res.json().catch(() => null);
-        const savedId = current.id ?? resData?.id ?? null;
+        const resData: unknown = await res.json();
+        const savedId = current.id ?? (resData && typeof resData === 'object' && 'id' in resData
+          && typeof resData.id === 'number' ? resData.id : null);
+        if (savedId == null) throw new Error('El servidor no devolvió el identificador del registro guardado.');
+        setCurrent(prev => ({ ...prev, id: savedId, mapping_data: mappingData }));
+        setDateLocked(true);
+        setIsPendingDuplicate(false);
         setMessage({ type: 'success', text: current.id ? 'Inyectable actualizado' : 'Inyectable registrado correctamente' });
         onSave();
-        if (!current.id) handleNew();
         if (savedId != null) {
           setHighlightedId(savedId);
           setTimeout(() => setHighlightedId(null), 2500);
         }
+        return true;
       } else {
         throw new Error('Error al guardar');
       }
     } catch (error) {
       console.error('Error saving injectable:', error);
       setMessage({ type: 'error', text: 'Error al guardar el inyectable' });
+      return false;
     } finally {
       setSaving(false);
     }
@@ -797,6 +858,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
       ...(activeType === 'relleno' ? { relleno_subtype: subtype } : {}),
     });
     setDateLocked(false);
+    setFormError(null);
+    setToxinaVialUnits('');
     setMarkers3D([]);
     setInjectionPoints([]);
     setReferenceLines([]);
@@ -883,9 +946,12 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   // ── handleDuplicate: copia el registro actual sin ID (nuevo) ───────────
   const handleDuplicate = () => {
     if (!current.id) return;
-    const hasData = injectionPoints.length > 0 || referenceLines.length > 0 || editablePoints.length > 0;
+    const hasData = injectionPoints.length > 0 || referenceLines.length > 0 || editablePoints.length > 0
+      || freehandLines.length > 0 || surfaceShapes.length > 0 || haVials.length > 0 || toxinaVialUnits !== '';
     const currentMappingData = hasData
-      ? { injectionPoints, referenceLines, editablePoints }
+      ? { injectionPoints, referenceLines, editablePoints, freehandLines, surfaceShapes, haVials,
+        ...(current.product_type === 'toxina' && toxinaVialUnits !== ''
+          ? { toxinaPreparation: { vial_units: Number(toxinaVialUnits) } } : {}) }
       : current.mapping_data;
     setCurrent({
       ...current,
@@ -1148,7 +1214,12 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
 
   const handleUnitsModalConfirm = () => {
     if (!unitsModal) return;
-    const units = Number(unitsModalInput) || 0;
+    const units = Number(unitsModalInput);
+    if (!Number.isFinite(units) || units <= 0) {
+      setMessage({ type: 'error', text: 'Indica una cantidad mayor que cero para registrar el punto.' });
+      document.getElementById('toxina-point-units')?.focus();
+      return;
+    }
 
     if (unitsModal.isNewPoint && pendingFreePoint) {
       // ── Punto libre nuevo (free-click o add-mode) ──────────────────────
@@ -1230,6 +1301,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   };
 
   const handleSelect = (inj: Injectable) => {
+    setFormError(null);
     setCurrent({
       ...inj,
       date: toDateOnly(inj.date),
@@ -1425,28 +1497,29 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     } else {
       const typeBadge = current.product_type === 'toxina' ? 'type-toxina' : 'type-relleno';
       const typeLabel = current.product_type === 'toxina' ? 'Toxina Botulínica' : (rellenoSubType === 'hidratacion' ? 'Hidratación' : rellenoSubType === 'bioestimulador' ? 'Bioestimuladores' : 'Relleno (Ácido Hialurónico)');
-      const volLabel = current.product_type === 'toxina' ? 'Unidades (UI)' : 'Volumen (ml)';
+      const volLabel = current.product_type === 'toxina' ? 'Total declarado de sesión (U)' : 'Volumen (ml)';
       const volValue = escapeHtml(current.product_type === 'toxina' ? (current.units_used || '—') : (current.volume_used || '—'));
       const expStr = current.expiration_date ? new Date(current.expiration_date + 'T12:00:00').toLocaleDateString('es-EC') : '—';
       productInfoHtml = `<div class="grid"><div class="field"><div class="label">Tipo</div><div class="value"><span class="type-badge ${typeBadge}">${typeLabel}</span></div></div><div class="field"><div class="label">Producto</div><div class="value">${escapeHtml(current.product_name || '—')}</div></div><div class="field"><div class="label">Marca</div><div class="value">${escapeHtml(current.brand || '—')}</div></div></div><div class="grid"><div class="field"><div class="label">Lote</div><div class="value">${escapeHtml(current.lot_number || '—')}</div></div><div class="field"><div class="label">Vencimiento</div><div class="value">${expStr}</div></div><div class="field"><div class="label">${volLabel}</div><div class="value">${volValue}</div></div></div>`;
-      if (current.product_type === 'toxina' && current.dilution_volume) {
-        const conc = (Number(current.units_used) / Number(current.dilution_volume)).toFixed(2);
-        productInfoHtml += `<div class="grid-2" style="margin-top:8px;"><div class="field"><div class="label">Dilución — Suero Fisiológico 0.9%</div><div class="value">${escapeHtml(current.dilution_volume)} ml</div></div><div class="field"><div class="label">Concentración Resultante</div><div class="value">${escapeHtml(conc)} UI/ml</div></div></div>`;
+      if (current.product_type === 'toxina' && (current.dilution_volume || toxinaVialUnits)) {
+        const concentrationText = toxinaConcentration === null ? 'No calculada: requiere unidades del vial y diluyente' : `${toxinaConcentration.toFixed(2)} U/ml`;
+        productInfoHtml += `<div class="grid" style="margin-top:8px;"><div class="field"><div class="label">Unidades originales del vial</div><div class="value">${escapeHtml(toxinaVialUnits || '—')} U</div></div><div class="field"><div class="label">Diluyente añadido al vial</div><div class="value">${escapeHtml(current.dilution_volume || '—')} ml</div></div><div class="field"><div class="label">Concentración documentada</div><div class="value">${escapeHtml(concentrationText)}</div></div></div>`;
       }
     }
 
     // Pre-compute técnica block (only for toxina)
     const tecnicaHtml = current.product_type === 'toxina'
-      ? `<div class="section"><div class="section-title">Técnica de Aplicación</div><div class="grid-2"><div class="field"><div class="label">Técnica</div><div class="value">${escapeHtml(current.technique || '—')}</div></div><div class="field"><div class="label">Aguja / Cánula</div><div class="value">${escapeHtml(current.needle_type || '—')}</div></div></div></div>`
+      ? `<div class="section"><div class="section-title">Técnica de Aplicación</div><div class="grid"><div class="field"><div class="label">Técnica</div><div class="value">${escapeHtml(current.technique || '—')}</div></div><div class="field"><div class="label">Plano anatómico utilizado</div><div class="value">${escapeHtml(current.injection_plane || '—')}</div></div><div class="field"><div class="label">Aguja utilizada</div><div class="value">${escapeHtml(current.needle_type || '—')}</div></div></div></div>`
       : '';
-    const distributionSectionTitle = isRelleno && haVials.length > 0 ? 'Distribución por Vial' : 'Distribución del Vial';
+    const distributionSectionTitle = !isRelleno ? 'Registro de sesión y mapa' : haVials.length > 0 ? 'Distribución por Vial' : 'Distribución del Vial';
     const remClass = remaining < 0 ? 'danger' : '';
     const distributionSectionDesc = isRelleno && haVials.length > 0
       ? 'Resumen del producto inyectado por jeringa. <strong>Utilizado</strong>: suma de ml aplicados en sus puntos. <strong>Restante</strong>: sobrante de esa jeringa.'
+      : !isRelleno ? 'Total declarado de sesión frente a las unidades registradas en el mapa. La diferencia no es sobrante del vial. Los valores históricos no se recalculan ni se convierten entre marcas.'
       : `Resumen de la distribución del producto inyectado. <strong>Total Vial</strong>: cantidad disponible. <strong>Utilizadas</strong>: suma de unidades aplicadas. <strong>Restantes</strong>: sobrante en el vial. <strong>Puntos</strong>: sitios de inyección.`;
     const distributionBody = isRelleno && haVials.length > 0
       ? vialSummaryHtml + `<div class="summary-bar" style="margin-top:8px;"><div class="summary-card"><div class="sc-label">Total Sesión</div><div class="sc-value">${totalVial} ml</div></div><div class="summary-card"><div class="sc-label">Utilizado</div><div class="sc-value">${totalUsed} ml</div></div><div class="summary-card ${remClass}"><div class="sc-label">Restante</div><div class="sc-value">${remaining} ml</div></div><div class="summary-card"><div class="sc-label">Puntos</div><div class="sc-value">${injectionPoints.length}</div></div></div>`
-      : `<div class="summary-bar"><div class="summary-card"><div class="sc-label">Total Vial</div><div class="sc-value">${totalVial} ${unitLabel}</div></div><div class="summary-card"><div class="sc-label">Utilizadas</div><div class="sc-value">${totalUsed} ${unitLabel}</div></div><div class="summary-card ${remClass}"><div class="sc-label">Restantes</div><div class="sc-value">${remaining} ${unitLabel}</div></div><div class="summary-card"><div class="sc-label">Puntos</div><div class="sc-value">${injectionPoints.length}</div></div></div>`;
+      : `<div class="summary-bar"><div class="summary-card"><div class="sc-label">${isRelleno ? 'Total Vial' : 'Declarado en sesión'}</div><div class="sc-value">${totalVial} ${unitLabel}</div></div><div class="summary-card"><div class="sc-label">${isRelleno ? 'Utilizadas' : 'Registradas en mapa'}</div><div class="sc-value">${totalUsed} ${unitLabel}</div></div><div class="summary-card ${remClass}"><div class="sc-label">${isRelleno ? 'Restantes' : 'Diferencia con mapa'}</div><div class="sc-value">${remaining} ${unitLabel}</div></div><div class="summary-card"><div class="sc-label">Puntos</div><div class="sc-value">${injectionPoints.length}</div></div></div>`;
     const desgloseLegendExtra = isRelleno ? ' Las columnas Técnica y Cánula/Aguja corresponden a los valores registrados por punto.' : '';
     const zoneMap = new Map<string, { units: number; count: number }>();
     injectionPoints.forEach(p => {
@@ -1611,6 +1684,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
 
   // Resetear COMPLETAMENTE al cambiar de sub-tab (aislamiento botox vs HA)
   useEffect(() => {
+    setFormError(null);
+    setToxinaVialUnits('');
     setRellenoSubType('relleno_ha');
     setCurrent({ ...EMPTY_INJECTABLE, date: getLocalDate(), product_type: activeType });
     setInjectionPoints([]);
@@ -1649,7 +1724,22 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   /** Detecta si hay trabajo en progreso sin guardar en el tab actual */
   const hasUnsavedWork = () =>
     current.product_name.trim() !== '' ||
+    current.brand.trim() !== '' ||
+    current.lot_number.trim() !== '' ||
+    current.units_used !== '' ||
+    current.volume_used !== '' ||
+    current.dilution_volume !== '' ||
+    current.technique.trim() !== '' ||
+    current.injection_plane.trim() !== '' ||
+    current.needle_type.trim() !== '' ||
+    current.notes.trim() !== '' ||
+    current.expiration_date !== '' ||
+    current.follow_up_date !== '' ||
+    toxinaVialUnits !== '' ||
     injectionPoints.length > 0 ||
+    referenceLines.length > 0 ||
+    editablePoints.length > 0 ||
+    haVials.length > 0 ||
     freehandLines.length > 0 ||
     surfaceShapes.length > 0;
 
@@ -1666,9 +1756,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   const confirmTabSwitch = async (saveFirst: boolean) => {
     const target = pendingTabSwitch!;
     setPendingTabSwitch(null);
-    if (saveFirst && current.product_name.trim()) {
-      await handleSave();
-    }
+    if (saveFirst && !(await handleSave())) return;
     setActiveType(target);
   };
 
@@ -1686,7 +1774,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   const confirmSubTypeSwitch = async (saveFirst: boolean) => {
     const target = pendingSubTypeSwitch!;
     setPendingSubTypeSwitch(null);
-    if (saveFirst && current.product_name.trim()) await handleSave();
+    if (saveFirst && !(await handleSave())) return;
     setRellenoSubType(target);
     handleNew(target);
   };
@@ -1769,7 +1857,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
       {/* ── Layout principal: sidebar + formulario ── */}
       <div className="flex flex-col md:flex-row h-auto md:min-h-[620px] gap-6">
       {/* ========== SIDEBAR — Historial de Inyectables ========== */}
-      <div className="w-full md:w-72 border-r-0 md:border-r border-b md:border-b-0 border-gray-100 pr-0 md:pr-6 pb-4 md:pb-0 flex flex-col gap-4 shrink-0">
+      <div className="w-full md:w-56 border-r-0 md:border-r border-b md:border-b-0 border-gray-100 pr-0 md:pr-4 pb-4 md:pb-0 flex flex-col gap-4 shrink-0">
         <div className="font-bold text-gray-800 flex items-center gap-2">
           <div className="w-1 h-5 rounded-full" style={{ background: activeType === 'toxina' ? '#deb887' : '#a855f7' }} />
           {activeType === 'toxina' ? 'Historial Toxina' : `Historial · ${RELLENO_SUBTYPE_LABELS[rellenoSubType]}`}
@@ -1928,9 +2016,11 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => handleNew()}
-                className="p-2 hover:bg-gray-100 rounded-lg text-gray-600 border border-gray-200"
+                aria-label="Nuevo registro de inyectable"
+                className="flex items-center gap-2 px-3 py-2 hover:bg-gray-100 rounded-lg text-gray-600 border border-gray-200"
               >
                 <Plus className="w-5 h-5" />
+                Nuevo
               </motion.button>
             </Tooltip>
 
@@ -1938,11 +2028,12 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={handleSave}
+                onClick={() => { void handleSave(); }}
                 disabled={saving}
-                className="p-2 bg-[#deb887] text-white rounded-lg hover:bg-[#c5a075] shadow-lg shadow-[#deb887]/20 disabled:opacity-70"
+                className="flex items-center gap-2 px-4 py-2 bg-gold text-slate-900 font-semibold rounded-lg hover:bg-gold-dark disabled:opacity-70"
               >
                 {saving ? <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full" /> : <Save className="w-5 h-5" />}
+                {saving ? 'Guardando…' : current.id ? 'Guardar cambios' : 'Guardar sesión'}
               </motion.button>
             </Tooltip>
 
@@ -1951,6 +2042,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={handleDelete}
+                aria-label="Eliminar registro seleccionado"
                 disabled={!current.id}
                 className="p-2 hover:bg-red-50 rounded-lg text-red-500 border border-red-100 disabled:opacity-30"
               >
@@ -1963,6 +2055,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={handleDuplicate}
+                aria-label="Duplicar registro seleccionado"
                 disabled={!current.id}
                 className="p-2 hover:bg-amber-50 rounded-lg text-amber-600 border border-amber-100 disabled:opacity-30"
               >
@@ -1975,6 +2068,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={handleUndo}
+                aria-label="Deshacer última marcación"
                 disabled={undoStack.length === 0}
                 className="p-2 hover:bg-blue-50 rounded-lg text-blue-500 border border-blue-100 disabled:opacity-30"
               >
@@ -1989,6 +2083,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={handleOpenCaptures}
+                aria-label="Capturas del registro"
                 className="relative p-2 hover:bg-gray-100 rounded-lg text-gray-600 border border-gray-200"
               >
                 <Images className="w-5 h-5" />
@@ -2005,6 +2100,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={handleOpenPrint}
+                aria-label="Imprimir registro"
                 className="p-2 hover:bg-gray-100 rounded-lg text-gray-600 border border-gray-200"
               >
                 <Printer className="w-5 h-5" />
@@ -2091,6 +2187,34 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
           )}
         </div>
 
+        {current.product_type === 'toxina' ? (
+          <ToxinaSessionForm
+            key={current.id ?? 'new-toxina'}
+            value={current}
+            onChange={patch => {
+              setCurrent(prev => ({ ...prev, ...patch }));
+              if (formError && formError.field in patch) {
+                setFormError(null);
+                setMessage(null);
+              }
+            }}
+            brands={brands}
+            needles={needles}
+            dateLocked={dateLocked}
+            onUnlockDate={() => setDateLocked(false)}
+            vialUnits={toxinaVialUnits}
+            onVialUnitsChange={value => {
+              setToxinaVialUnits(value);
+              if (formError?.field === 'vial_units') {
+                setFormError(null);
+                setMessage(null);
+              }
+            }}
+            concentration={toxinaConcentration}
+            mappedUnits={totalUsed}
+            error={formError}
+          />
+        ) : (
         <div className="p-5 space-y-5">
           {/* Row 1: Date + Brand + Product Name */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -2125,21 +2249,21 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
               </div>
             </div>
             <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-gray-700">Marca / Producto{current.product_type === 'toxina' && <FieldHelp text={HELP.toxina.brand} />}</label>
+              <label className="block text-sm font-medium text-gray-700">Marca / Producto</label>
               <input
                 type="text"
                 list="inj-tab-brands"
                 className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
                 value={current.brand}
                 onChange={e => setCurrent({ ...current, brand: e.target.value })}
-                placeholder={current.product_type === 'toxina' ? 'Ej: BOTOX® 100UI' : 'Ej: Juvederm Ultra'}
+                placeholder="Ej: Juvederm Ultra"
               />
               <datalist id="inj-tab-brands">
                 {brands.map((b, i) => <option key={i} value={b} />)}
               </datalist>
             </div>
             <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-gray-700">Nombre del Producto <span className="text-red-400">*</span><FieldHelp text={current.product_type === 'toxina' ? HELP.toxina.product_name : HELP.relleno.product_name} /></label>
+              <label className="block text-sm font-medium text-gray-700">Nombre del Producto <span className="text-red-400">*</span><FieldHelp text={HELP.relleno.product_name} /></label>
               <input
                 type="text"
                 className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
@@ -2172,17 +2296,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
               />
             </div>
             <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-gray-700">{current.product_type === 'toxina' ? 'Unidades (UI)' : 'Volumen (ml)'}<FieldHelp text={current.product_type === 'toxina' ? HELP.toxina.units_used : HELP.relleno.volume_used} /></label>
-              {current.product_type === 'toxina' ? (
-                <input
-                  type="number"
-                  step="0.5"
-                  className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
-                  value={current.units_used}
-                  onChange={e => setCurrent({ ...current, units_used: e.target.value })}
-                  placeholder="Ej: 20"
-                />
-              ) : (
+              <label className="block text-sm font-medium text-gray-700">Volumen (ml)<FieldHelp text={HELP.relleno.volume_used} /></label>
                 <input
                   type="number"
                   step="0.1"
@@ -2191,76 +2305,16 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                   onChange={e => setCurrent({ ...current, volume_used: e.target.value })}
                   placeholder="Ej: 1.0"
                 />
-              )}
             </div>
           </div>
 
-          {/* Row 3: Technique + Needle — solo para Toxina */}
-          {current.product_type === 'toxina' && (
+          {/* Fecha de control */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-gray-700">Técnica<FieldHelp text={HELP.toxina.technique} /></label>
-              <input
-                type="text"
-                list="inj-tab-techniques"
-                className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
-                value={current.technique}
-                onChange={e => setCurrent({ ...current, technique: e.target.value })}
-                placeholder="Técnica de inyección"
-              />
-              <datalist id="inj-tab-techniques">
-                {techniques.map((t, i) => <option key={i} value={t} />)}
-              </datalist>
-            </div>
-            <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-gray-700">Aguja / Cánula<FieldHelp text={HELP.toxina.needle_type} /></label>
-              <input
-                type="text"
-                list="inj-tab-needles"
-                className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
-                value={current.needle_type}
-                onChange={e => setCurrent({ ...current, needle_type: e.target.value })}
-                placeholder="Tipo de aguja"
-              />
-              <datalist id="inj-tab-needles">
-                {needles.map((n, i) => <option key={i} value={n} />)}
-              </datalist>
-            </div>
-          </div>
-          )} {/* fin condicional toxina Row 3 */}
-
-          {/* Row 4: Dilución (toxina only) + Fecha de control */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {current.product_type === 'toxina' && (
-              <div className="space-y-1.5">
-                <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide">
-                  Dilución (ml SS 0.9%)
-                  <span className="ml-1 text-[10px] font-normal text-gray-400 normal-case">— concentración resultante</span>
-                  <FieldHelp text={HELP.toxina.dilution_volume} />
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    step="0.5"
-                    min="0"
-                    className="flex-1 px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#deb887] outline-none bg-gray-50/50 focus:bg-white transition-all"
-                    value={current.dilution_volume}
-                    onChange={e => setCurrent({ ...current, dilution_volume: e.target.value })}
-                    placeholder="Ej: 2.5"
-                  />
-                  {Number(current.dilution_volume) > 0 && Number(current.units_used) > 0 && (
-                    <span className="text-xs text-[#b8944d] font-semibold shrink-0 bg-[#deb887]/10 px-2.5 py-1.5 rounded-lg border border-[#deb887]/30">
-                      {(Number(current.units_used) / Number(current.dilution_volume)).toFixed(1)} UI/ml
-                    </span>
-                  )}
-                </div>
-              </div>
-            )}
             <div className="space-y-1.5">
               <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide">
                 <Calendar className="w-3.5 h-3.5 text-gray-400" />
                 Fecha de Control
-                <FieldHelp text={current.product_type === 'toxina' ? HELP.toxina.follow_up_date : HELP.relleno.follow_up_date} />
+                <FieldHelp text={HELP.relleno.follow_up_date} />
               </label>
               <input
                 type="date"
@@ -2283,36 +2337,37 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
             />
           </div>
         </div>
+        )}
       </div>
 
       {/* Vial Summary Bar */}
       {injectionPoints.length > 0 && (
         <div className="space-y-2">
           <div className="flex items-center gap-1.5">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Distribución del Vial</p>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{current.product_type === 'toxina' ? 'Sesión y registro en mapa' : 'Distribución del Vial'}</p>
             <div className="group relative">
               <Info className="w-3.5 h-3.5 text-gray-300 hover:text-[#deb887] cursor-help transition-colors" />
               <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-64 p-2.5 bg-gray-800 text-white text-[11px] rounded-lg shadow-xl z-50 leading-relaxed">
                 <p className="font-semibold mb-1">¿Qué significa cada valor?</p>
-                <p><strong>Total Vial:</strong> Cantidad total de producto disponible en el vial.</p>
+                <p><strong>{current.product_type === 'toxina' ? 'Declaradas:' : 'Total Vial:'}</strong> {current.product_type === 'toxina' ? 'Total informado para esta sesión; los registros históricos no se reinterpretan.' : 'Cantidad total de producto disponible en el vial.'}</p>
                 <p><strong>Utilizadas:</strong> Suma de unidades aplicadas en todos los puntos marcados.</p>
-                <p><strong>Restantes:</strong> Producto sobrante en el vial (Total − Utilizadas).</p>
+                <p><strong>{current.product_type === 'toxina' ? 'Diferencia con mapa:' : 'Restantes:'}</strong> {current.product_type === 'toxina' ? 'Declaradas menos registradas. No representa sobrante del vial.' : 'Producto sobrante en el vial (Total − Utilizadas).'}</p>
                 <p><strong>Puntos:</strong> Cantidad de sitios de inyección registrados en el mapeo 3D.</p>
                 <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-px border-4 border-transparent border-t-gray-800" />
               </div>
             </div>
           </div>
           <div className="grid grid-cols-4 gap-3">
-            <div className="bg-white rounded-xl p-3 text-center border border-gray-100 shadow-sm" title="Cantidad total de producto en el vial">
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Total Vial</p>
+            <div className="bg-white rounded-xl p-3 text-center border border-gray-100 shadow-sm" title={current.product_type === 'toxina' ? 'Total declarado para la sesión' : 'Cantidad total de producto en el vial'}>
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">{current.product_type === 'toxina' ? 'Declaradas en sesión' : 'Total Vial'}</p>
               <p className="text-lg font-bold text-gray-800">{totalVial} <span className="text-xs font-normal text-gray-400">{unitLabel}</span></p>
             </div>
             <div className="bg-white rounded-xl p-3 text-center border border-gray-100 shadow-sm" title="Suma de unidades aplicadas en todos los puntos">
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Utilizadas</p>
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">{current.product_type === 'toxina' ? 'Registradas en mapa' : 'Utilizadas'}</p>
               <p className="text-lg font-bold text-[#b8944d]">{totalUsed} <span className="text-xs font-normal text-gray-400">{unitLabel}</span></p>
             </div>
-            <div className={`rounded-xl p-3 text-center border shadow-sm ${remaining < 0 ? 'bg-red-50 border-red-200' : 'bg-white border-gray-100'}`} title="Producto restante en el vial (Total − Utilizadas)">
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Restantes</p>
+            <div className={`rounded-xl p-3 text-center border shadow-sm ${remaining < 0 ? 'bg-red-50 border-red-200' : 'bg-white border-gray-100'}`} title={current.product_type === 'toxina' ? 'Diferencia entre el total declarado y el mapa, no sobrante del vial' : 'Producto restante en el vial (Total − Utilizadas)'}>
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">{current.product_type === 'toxina' ? 'Diferencia con mapa' : 'Restantes'}</p>
               <p className={`text-lg font-bold ${remaining < 0 ? 'text-red-600' : 'text-emerald-600'}`}>{remaining} <span className="text-xs font-normal text-gray-400">{unitLabel}</span></p>
             </div>
             <div className="bg-white rounded-xl p-3 text-center border border-gray-100 shadow-sm" title="Cantidad de sitios de inyección marcados">
@@ -2328,7 +2383,9 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
         <button
           onClick={() => {
             if (!canMark && !show3D) {
-              setMessage({ type: 'error', text: `Complete el nombre del producto y las ${unitLabel} antes de abrir el mapeo 3D` });
+              setMessage({ type: 'error', text: current.product_type === 'toxina'
+                ? 'Escribe el producto antes de abrir el mapa. Puedes registrar las unidades punto a punto.'
+                : `Complete el nombre del producto y las ${unitLabel} antes de abrir el mapeo 3D` });
               return;
             }
             setShow3D(!show3D);
@@ -2340,8 +2397,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
               <Box className={`w-4 h-4 transition-colors ${show3D ? 'text-[#b8944d]' : 'text-gray-500'}`} />
             </div>
             <div className="text-left">
-              <span className="text-sm font-semibold text-gray-800">Mapeo Facial 3D</span>
-              <p className="text-xs text-gray-500">Líneas de referencia + marcación de puntos de inyección</p>
+              <span className="text-sm font-semibold text-gray-800">{current.product_type === 'toxina' ? '3. Mapa de aplicación' : 'Mapeo Facial 3D'}</span>
+              <p className="text-xs text-gray-500">Opcional · registra puntos y unidades; las anotaciones no añaden dosis</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -2396,6 +2453,13 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     <MousePointer2 className="h-4 w-4" aria-hidden="true" />
                     Navegar / Rotar
                   </button>
+                  <button type="button" aria-pressed={pointMode === 'add'}
+                    onClick={() => { setActiveTool('none'); setPointMode(mode => mode === 'add' ? 'none' : 'add'); }}
+                    className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-gold ${
+                      pointMode === 'add' ? 'border-gold bg-gold-light text-gold-ink' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
+                    }`}>
+                    <Plus className="h-4 w-4" aria-hidden="true" /> Añadir punto
+                  </button>
                   <p className="min-w-0 flex-1 text-sm text-slate-700" role="status" aria-live="polite">
                     {activeTool === 'none' && pointMode === 'none'
                       ? 'Arrastra para rotar. Haz clic en un punto o trazo para editarlo; la piel no añade puntos.'
@@ -2406,27 +2470,21 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                           : 'Modo dibujo activo: arrastrar sobre la piel dibuja, no rota. Usa Navegar / Rotar o Escape antes de girar.'}
                   </p>
                 </div>
+                <details className="mb-3 rounded-xl border border-slate-200 bg-white"
+                  onToggle={event => {
+                    if (!event.currentTarget.open) {
+                      setActiveTool('none');
+                      setShowShapesDropdown(false);
+                      setShowHaShapesDropdown(false);
+                    }
+                  }}>
+                  <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-700">
+                    Anotaciones gráficas <span className="ml-2 text-xs font-normal text-slate-500">Opcional · no registran dosis</span>
+                  </summary>
+                  <p className="px-4 pb-3 text-sm leading-relaxed text-slate-600" role="status" aria-live="polite">{DRAWING_GUIDE[activeTool]}</p>
                 {/* ── Toolbar secundaria: Herramientas de Dibujo HA ─────────────── */}
                 <div className="mb-2 flex flex-wrap items-center gap-2 p-3 bg-slate-900 rounded-xl border border-slate-700" aria-label="Herramientas de marcación y dibujo">
-                  <span className="text-xs text-slate-200 uppercase tracking-wide font-semibold mr-1">Marcar:</span>
-
-                  {/* Punto de inyección */}
-                  <Tooltip content="Punto de inyección (clic en modelo)">
-                    <button
-                      aria-pressed={pointMode === 'add' && activeTool === 'none'}
-                      onClick={() => { setActiveTool('none'); setPointMode(prev => prev === 'add' ? 'none' : 'add'); setShowShapesDropdown(false); setShowHaShapesDropdown(false); }}
-                      className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold border transition-colors focus-visible:ring-2 focus-visible:ring-white ${
-                        pointMode === 'add' && activeTool === 'none'
-                          ? 'bg-gold-light text-gold-ink border-gold'
-                          : 'bg-slate-800 text-slate-100 border-slate-600 hover:bg-slate-700'
-                      }`}
-                    >
-                      <Pipette className="w-3 h-3" />
-                      Añadir punto
-                    </button>
-                  </Tooltip>
-
-                  <span className="ml-2 border-l border-slate-600 pl-3 text-xs font-semibold uppercase tracking-wide text-slate-200">Dibujar:</span>
+                  <span className="text-xs font-semibold uppercase tracking-wide text-slate-200">Dibujar:</span>
                   {/* Pincel libre */}
                   <Tooltip content="Pincel: mantener y arrastrar para trazar una línea sobre la piel">
                     <button
@@ -2616,9 +2674,13 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     )
                   )}
                 </div>
+                </details>
 
+                <details className="mb-3 rounded-xl border border-slate-200">
+                  <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-700">Guías y visibilidad <span className="ml-2 text-xs font-normal text-slate-500">Referencia visual opcional</span></summary>
+                  <p className="px-4 pb-3 text-xs leading-relaxed text-slate-500">La guía ayuda a ubicar referencias del rostro, no prescribe sitios de aplicación. Ocultar puntos de la guía conserva visibles los puntos con unidades registradas.</p>
                 {/* Toolbar: Trazado de Referencia Superior (solo para toxina) */}
-                <div className="mb-3 flex flex-wrap items-center gap-2 p-3 bg-slate-800/60 rounded-xl border border-slate-700">
+                <div className="mb-3 flex flex-wrap items-center gap-2 p-3 bg-slate-900 rounded-xl border border-slate-700">
                   {/* Botón Cargar Trazado: solo para toxina */}
                   {activeType === 'toxina' && (
                   <button
@@ -2631,7 +2693,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     title="Cargar puntos y líneas del trazado de referencia superior"
                   >
                     <Crosshair className="w-3.5 h-3.5" />
-                    {refJsonLoaded ? 'Trazado cargado ✓' : 'Cargar Trazado Superior'}
+                    {refJsonLoaded ? 'Recargar guía superior' : 'Guía de referencia superior'}
                   </button>
                   )}
 
@@ -2648,7 +2710,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                         title={showEditablePoints ? 'Ocultar puntos del trazado' : 'Mostrar puntos del trazado'}
                       >
                         <span className="w-2 h-2 rounded-full bg-current inline-block" />
-                        {showEditablePoints ? 'Puntos visibles' : 'Puntos ocultos'}
+                        {showEditablePoints ? 'Guías visibles' : 'Guías ocultas'}
                         <span className="text-[10px] opacity-70">({editablePoints.length})</span>
                       </button>
 
@@ -2673,19 +2735,6 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                       ))}
                     </>
                   )}
-
-                  {/* Botón + Añadir: siempre disponible para marcar puntos de inyección libres */}
-                  <button
-                    onClick={() => { setActiveTool('none'); setPointMode(prev => prev === 'add' ? 'none' : 'add'); }}
-                    className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
-                      pointMode === 'add'
-                        ? 'bg-emerald-500/25 text-emerald-300 border-emerald-500/40'
-                        : 'bg-slate-700/50 text-slate-400 border-slate-600 hover:bg-slate-700'
-                    }`}
-                    title="Añadir punto de inyección en el rostro 3D"
-                  >
-                    + Añadir
-                  </button>
 
                   {/* Dropdown visibilidad */}
                   <div className="ml-auto flex items-center gap-2">
@@ -2715,7 +2764,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                             </button>
                             <button onMouseDown={() => { setShowEditablePoints(v => !v); }}
                               className="w-full flex items-center justify-between px-3 py-2.5 text-xs text-slate-200 hover:bg-slate-700 transition-colors border-t border-slate-700">
-                              <span>Puntos del trazado</span>
+                              <span>Puntos de guía</span>
                               {showEditablePoints ? <Eye className="w-3.5 h-3.5 text-yellow-400" /> : <EyeOff className="w-3.5 h-3.5 text-slate-500" />}
                             </button>
                             <button onMouseDown={() => { setShowFreehandLines(v => !v); }}
@@ -2733,7 +2782,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                             <button
                               onMouseDown={() => { const newVal = !(showLines && showEditablePoints && showFreehandLines); setShowLines(newVal); setShowEditablePoints(newVal); setShowFreehandLines(newVal); }}
                               className="w-full flex items-center justify-between px-3 py-2.5 text-xs text-slate-200 hover:bg-slate-700 transition-colors border-t border-slate-700">
-                              <span className="font-semibold">{showLines && showEditablePoints && showFreehandLines ? 'Ocultar todo' : 'Mostrar todo'}</span>
+                              <span className="font-semibold">{showLines && showEditablePoints && showFreehandLines ? 'Ocultar anotaciones' : 'Mostrar anotaciones'}</span>
                               {showLines && showEditablePoints && showFreehandLines ? <EyeOff className="w-3.5 h-3.5 text-slate-400" /> : <Eye className="w-3.5 h-3.5 text-emerald-400" />}
                             </button>
                           </div>
@@ -2745,6 +2794,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     )}
                   </div>
                 </div>
+                </details>
 
                 {/* Two-column layout: 3D viewer left, panel right */}
                 <div className="flex flex-col lg:flex-row gap-4">
@@ -2761,8 +2811,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                         lineDrawingMode={null}
                         onLinePointAnchored={handleLinePointAnchored}
                         height="420px"
-                        editablePoints={editablePoints}
-                        showEditablePoints={showEditablePoints}
+                        editablePoints={visibleEditablePoints}
+                        showEditablePoints={true}
                         pointMode={activeTool === 'none' ? pointMode : 'none'}
                         onEditablePointMoved={handleEditablePointMoved}
                         onEditablePointDeleted={handleEditablePointDeleted}
@@ -3598,8 +3648,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     <button
                       onClick={async () => {
                         setCaptureAlert(null);
-                        await handleSave();
-                        setCaptureModalOpen(true);
+                        if (await handleSave()) setCaptureModalOpen(true);
                       }}
                       className="w-full flex items-center gap-2 px-4 py-3 rounded-xl bg-[#deb887] text-white font-semibold text-sm hover:bg-[#c5a075] transition-colors"
                     >
@@ -3786,13 +3835,14 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
               {/* Step 1: Units — Quick Save */}
               {current.product_type === 'toxina' && unitsModalStep === 1 && (
                 <div className="mb-4">
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
+                  <label htmlFor="toxina-point-units" className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">
                     Unidades aplicadas (UI)
                   </label>
                   <input
+                    id="toxina-point-units"
                     type="number"
                     min="0"
-                    step="1"
+                    step="any"
                     value={unitsModalInput}
                     onChange={e => setUnitsModalInput(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') handleUnitsModalConfirm(); }}
@@ -3951,7 +4001,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                       className="flex-1 px-4 py-2.5 rounded-xl bg-[#deb887] text-white text-sm font-semibold hover:bg-[#c5a075] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
                     >
                       <Check className="w-4 h-4" />
-                      Guardar
+                      {unitsModal.isNewPoint ? 'Añadir punto' : 'Actualizar punto'}
                     </button>
                   )}
 

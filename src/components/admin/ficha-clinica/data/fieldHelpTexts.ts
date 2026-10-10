@@ -54,13 +54,13 @@ export const HELP = {
   // ── Inyectables — Toxina Botulínica ────────────────────────────────────────
   toxina: {
     product_name: 'Nombre comercial de la toxina botulínica tipo A. Ejemplo: Botox® (onabotulinumtoxinA), Dysport® (abobotulinumtoxinA), Xeomin® (incobotulinumtoxinA).',
-    brand: 'Laboratorio fabricante de la toxina. Relevante para la equivalencia de unidades entre marcas (1 U Botox ≈ 2.5-3 U Dysport).',
-    units_used: 'Unidades totales de toxina aplicadas en la sesión. Dosis habitual: frente 10–20 U, entrecejo 20–30 U, patas de gallo 10–15 U por lado.',
+    brand: 'Marca y presentación según la etiqueta del producto. Las unidades de distintas toxinas no son intercambiables: no convertir ni asumir equivalencias entre marcas.',
+    units_used: 'Total declarado de unidades aplicadas en esta sesión. No es la capacidad original del vial. El mapa permite contrastarlo con la suma de puntos documentados; no prescribe dosis.',
     dilution_volume: 'Volumen en mL de solución fisiológica (NaCl 0.9%) utilizado para reconstituir el vial. Afecta la difusión: menor volumen = mayor concentración.',
     areas_treated: 'Músculos o zonas de aplicación: frontal, corrugador, procerus, orbicular ocular, mentalis, platisma, masetero, etc.',
-    injection_plane: 'Plano de la inyección: intramuscular (efecto motor, standard), subdérmico (wrinkle relaxer) o subcutáneo (menor difusión).',
-    technique: 'Técnica de aplicación utilizada. Ejemplo: inyección puntual, técnica de microgotas, protocolo baby botox.',
-    needle_type: 'Calibre y tipo de aguja. Estándar: 30G×½" o 32G. Agujas más finas reducen dolor y equimosis.',
+    injection_plane: 'Documenta el plano anatómico realmente utilizado. La selección depende del producto, indicación y criterio profesional; el modelo no lo determina automáticamente.',
+    technique: 'Documenta la técnica realizada. Las líneas, flechas y formas del mapa son anotaciones, no técnicas prescritas ni unidades aplicadas.',
+    needle_type: 'Registra el calibre y la longitud de la aguja realmente utilizada, según el producto y procedimiento. No se selecciona automáticamente un dispositivo.',
     follow_up_date: 'Fecha para control post-aplicación. Habitualmente a las 2 semanas para evaluar resultado y aplicar retoques si es necesario.',
   },
 
