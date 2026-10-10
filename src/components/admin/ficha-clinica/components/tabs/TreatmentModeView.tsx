@@ -35,6 +35,24 @@ const ZONE_CHIPS_BY_MODE: Record<TreatmentMode, string[]> = {
   corporal: treatmentOptions.procedures.corporal,
   capilar: (treatmentOptions.procedures as Record<string, string[]>).capilar || [],
 };
+const ZONE_GROUPS_BY_MODE: Record<TreatmentMode, { label: string; zones: string[] }[]> = {
+  facial: [
+    { label: 'Tercio superior', zones: ['Frente', 'Entrecejo', 'Párpados superiores', 'Párpados inferiores'] },
+    { label: 'Tercio medio', zones: ['Mejillas', 'Pómulos', 'Nariz', 'Surco nasogeniano'] },
+    { label: 'Tercio inferior', zones: ['Labio superior', 'Labio inferior', 'Comisuras', 'Mentón', 'Mandíbula'] },
+    { label: 'Zonas adyacentes', zones: ['Cuello', 'Escote'] },
+  ],
+  corporal: [
+    { label: 'Tronco', zones: ['Tórax', 'Abdomen', 'Espalda', 'Cintura', 'Caderas'] },
+    { label: 'Extremidades superiores', zones: ['Brazos', 'Antebrazos', 'Axilas'] },
+    { label: 'Extremidades inferiores', zones: ['Glúteos', 'Muslos', 'Rodillas', 'Piernas', 'Pantorrillas', 'Tobillos'] },
+  ],
+  capilar: [
+    { label: 'Frontal y temporal', zones: ['Entradas', 'Línea de implantación frontal', 'Temporal derecho', 'Temporal izquierdo'] },
+    { label: 'Superior', zones: ['Coronilla', 'Vértex', 'Difuso (toda la cabeza)'] },
+    { label: 'Posterior', zones: ['Occipital'] },
+  ],
+};
 
 const PROCEDURES = treatmentOptions.procedures as Record<string, string[]>;
 const PROCEDURE_SUGGESTIONS_BY_MODE: Record<TreatmentMode, string[]> = {
@@ -589,8 +607,8 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
     { id: 1 as const, label: 'Sesión', description: 'Fecha, procedimiento y paquete' },
     {
       id: 2 as const,
-      label: mode === 'facial' ? 'Zonas' : mode === 'corporal' ? 'Evaluación corporal' : 'Evaluación capilar',
-      description: mode === 'facial' ? 'Áreas tratadas' : mode === 'corporal' ? 'Antropometría y mapa 3D' : 'Escala, etapa y mapa 3D',
+      label: mode === 'facial' ? 'Zonas' : mode === 'corporal' ? 'Zonas y medidas' : 'Evaluación capilar',
+      description: mode === 'facial' ? 'Ubicación opcional' : mode === 'corporal' ? 'Documentación corporal opcional' : 'Escala, etapa y mapa 3D',
     },
     { id: 3 as const, label: 'Aplicación', description: 'Equipo, tiempo y cobro' },
     { id: 4 as const, label: 'Evolución', description: 'Notas, seguimiento y guardado' },
@@ -917,14 +935,14 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
           {/* Visor 3D de marcación anatómica (múltiples zonas por sesión) */}
           <div className={activeStep === 2 ? 'space-y-3' : 'hidden'}>
             <label className="block text-sm font-medium text-gray-700">
-              {mode === 'facial' ? 'Zonas tratadas' : mode === 'capilar' ? 'Evaluación capilar y marcación 3D' : 'Marcación Anatómica (referencial)'}
+              {mode === 'facial' ? 'Zonas tratadas' : mode === 'capilar' ? 'Evaluación capilar y marcación 3D' : 'Documentación corporal'}
             </label>
             <p className="text-xs text-gray-400">
               {mode === 'facial'
-                ? 'Selecciona una o varias zonas para completar automáticamente el campo Zona Tratada.'
+                ? 'Selecciona las zonas que ayuden a ubicar el procedimiento. Puedes continuar sin elegir ninguna.'
                 : mode === 'capilar'
                   ? 'Configura primero el patrón de cabello; después selecciona zonas y marca el modelo.'
-                  : 'Elige el tipo de herramienta, selecciona una zona y haz clic sobre el modelo.'}
+                  : 'Selecciona las zonas tratadas. Las medidas y el mapa 3D son opcionales y sirven para comparar la evolución o precisar la ubicación.'}
             </p>
             {mode === 'capilar' ? (
               <div className={`rounded-2xl border p-4 ${scalpHair ? 'border-emerald-200 bg-emerald-50/70' : 'border-amber-200 bg-amber-50/70'}`} role="status">
@@ -969,8 +987,8 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                     <h3 className="font-semibold text-gray-900">Antropometría de la sesión</h3>
                     <p className="mt-1 text-sm leading-6 text-gray-600">
                       {anthropometryCount
-                        ? `${anthropometryCount} medida(s) registrada(s). Puedes actualizarlas antes de marcar el modelo.`
-                        : 'Registra medidas antes/después si son relevantes; luego delimita las zonas tratadas en el modelo.'}
+                        ? `${anthropometryCount} medida(s) registrada(s). Puedes actualizarlas antes de continuar.`
+                        : 'Registra medidas antes/después solo cuando aporten valor al seguimiento.'}
                     </p>
                   </div>
                   <button type="button" onClick={() => setClinicalDataModalOpen(true)}
@@ -980,61 +998,42 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                 </div>
               </div>
             ) : null}
-            {mode !== 'facial' && (mode !== 'capilar' || scalpHair) ? (
-              <>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto]">
-                  {([
-                    ['Puntual', MapPin, 'Punto preciso', 'Ideal para sitios de aplicación', 'Crea una marca pequeña y exacta. Úsala para inyecciones, punciones o referencias anatómicas localizadas.'],
-                    ['Zonal', CircleDashed, 'Área de cobertura', 'Delimita regiones más amplias', 'Crea una región circular ajustable. Úsala para aparatología, láser o tratamientos de cobertura continua.'],
-                  ] as const).map(([type, Icon, title, description, detail]) => (
-                    <Tooltip key={type} content={detail} position="top" className="w-full">
-                      <button
-                        type="button"
-                        onClick={() => setMarkerType(type)}
-                        aria-pressed={markerType === type}
-                        className={`admin-focus-ring relative flex w-full items-center gap-2 rounded-xl p-2.5 text-left transition-[border-color,background-color,box-shadow,transform] ${
-                          markerType === type
-                            ? 'border-2 border-gold-dark bg-gold/10 shadow-md ring-2 ring-gold/30'
-                            : 'border border-gray-200 hover:-translate-y-0.5 hover:border-gold hover:bg-gold/10 hover:shadow-sm'
-                        }`}
-                      >
-                        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${markerType === type ? 'bg-gold-dark text-white' : 'bg-gray-50 text-gray-500'}`}>
-                          <Icon className="h-4 w-4" aria-hidden="true" />
-                        </span>
-                        <span className="pr-5">
-                          <span className="block text-xs font-semibold text-gray-800">{title}</span>
-                          <span className="block text-[9px] text-gray-500">{description}</span>
-                        </span>
-                        {markerType === type ? <CheckCircle2 className="absolute right-2 top-2 h-4 w-4 text-gold-ink" aria-hidden="true" /> : null}
-                      </button>
-                    </Tooltip>
-                  ))}
+            {mode !== 'capilar' || scalpHair ? <><div className="space-y-3">
+              <div className="flex min-h-6 items-center justify-between gap-3">
+                <p className="text-xs font-medium text-gray-600">
+                  {treatedZones.length ? `${treatedZones.length} zona${treatedZones.length === 1 ? '' : 's'} seleccionada${treatedZones.length === 1 ? '' : 's'}` : 'Sin zonas seleccionadas'}
+                </p>
+                {treatedZones.length ? (
                   <button
                     type="button"
-                    onClick={() => setCurrentTreatment(prev => ({ ...prev, area_marker: getAreaMarkers(prev).slice(0, -1) }))}
-                    disabled={getAreaMarkers(currentTreatment).length === 0}
-                    className="admin-focus-ring inline-flex min-h-12 items-center justify-center gap-1 rounded-xl border border-gray-200 px-3 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    onClick={() => setCurrentTreatment(prev => ({ ...prev, area_treated: '' }))}
+                    className="admin-focus-ring rounded-lg px-2 py-1 text-xs font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-800"
                   >
-                    <Undo2 className="h-4 w-4" aria-hidden="true" /> Deshacer
+                    Limpiar selección
                   </button>
-                </div>
-              </>
-            ) : null}
-            {mode !== 'capilar' || scalpHair ? <><div className="flex flex-wrap gap-1.5">
-              {(ZONE_CHIPS_BY_MODE[mode] || []).map(zone => (
-                <button
-                  key={zone}
-                  type="button"
-                  onClick={() => handleToggleZone(zone)}
-                  aria-pressed={treatedZoneKeys.has(zone.toLocaleLowerCase())}
-                  className={`admin-focus-ring rounded-full px-2.5 py-1 text-[11px] font-medium transition-[color,background-color,border-color,box-shadow] ${
-                    treatedZoneKeys.has(zone.toLocaleLowerCase())
-                      ? 'border-2 border-gray-900 bg-gray-900 text-white shadow-sm ring-2 ring-gray-300'
-                      : 'border border-gray-200 text-gray-600 hover:border-gold hover:bg-gold/10'
-                  }`}
-                >
-                  {zone}
-                </button>
+                ) : null}
+              </div>
+              {ZONE_GROUPS_BY_MODE[mode].map(group => (
+                <fieldset key={group.label} className="rounded-xl border border-gray-100 bg-gray-50/60 p-3">
+                  <legend className="px-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-500">{group.label}</legend>
+                  <div className="flex flex-wrap gap-2">
+                    {group.zones.map(zone => (
+                      <button
+                        key={zone}
+                        type="button"
+                        onClick={() => handleToggleZone(zone)}
+                        aria-pressed={treatedZoneKeys.has(zone.toLocaleLowerCase())}
+                        className={`admin-focus-ring min-h-9 rounded-lg px-3 py-1.5 text-xs font-medium transition-[color,background-color,border-color,box-shadow] ${
+                          treatedZoneKeys.has(zone.toLocaleLowerCase())
+                            ? 'border-2 border-gray-900 bg-gray-900 text-white shadow-sm ring-2 ring-gray-300'
+                            : 'border border-gray-200 bg-white text-gray-700 hover:border-gold hover:bg-gold/10'
+                        }`}
+                      >
+                        {zone}
+                      </button>
+                    ))}
+                  </div>
+                </fieldset>
               ))}
               {treatedZones.filter(zone => !(ZONE_CHIPS_BY_MODE[mode] || []).includes(zone)).map(zone => (
                 <button
@@ -1071,7 +1070,56 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
               </button>
             </div></> : null}
             {mode !== 'facial' && (mode !== 'capilar' || scalpHair) ? (
-              <>
+              <details className="group rounded-2xl border border-gray-200 bg-gray-50/70" defaultOpen={mode === 'capilar'}>
+                <summary className="admin-focus-ring flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 rounded-2xl px-4 py-3 text-sm font-semibold text-gray-800 [&::-webkit-details-marker]:hidden">
+                  <span>
+                    {mode === 'corporal' ? 'Precisar ubicación en mapa 3D' : 'Herramientas y visor 3D'}
+                    <span className="ml-2 font-normal text-gray-500">(opcional)</span>
+                  </span>
+                  <ChevronDown className="h-4 w-4 shrink-0 text-gray-500 transition-transform group-open:rotate-180" aria-hidden="true" />
+                </summary>
+                <div className="space-y-3 border-t border-gray-200 p-3">
+                  <p className="text-xs leading-5 text-gray-600">
+                    {mode === 'corporal'
+                      ? 'Úsalo solo si necesitas indicar un punto exacto o un área de cobertura. Las zonas seleccionadas arriba son suficientes para un registro general.'
+                      : 'Elige el tipo de marca y ubícala sobre el modelo para documentar la referencia clínica.'}
+                  </p>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                    {([
+                      ['Puntual', MapPin, 'Punto preciso', 'Ideal para sitios de aplicación', 'Crea una marca pequeña y exacta. Úsala para inyecciones, punciones o referencias anatómicas localizadas.'],
+                      ['Zonal', CircleDashed, 'Área de cobertura', 'Delimita regiones más amplias', 'Crea una región circular ajustable. Úsala para aparatología, láser o tratamientos de cobertura continua.'],
+                    ] as const).map(([type, Icon, title, description, detail]) => (
+                      <Tooltip key={type} content={detail} position="top" className="w-full">
+                        <button
+                          type="button"
+                          onClick={() => setMarkerType(type)}
+                          aria-pressed={markerType === type}
+                          className={`admin-focus-ring relative flex w-full items-center gap-2 rounded-xl bg-white p-2.5 text-left transition-[border-color,background-color,box-shadow,transform] ${
+                            markerType === type
+                              ? 'border-2 border-gold-dark bg-gold/10 shadow-md ring-2 ring-gold/30'
+                              : 'border border-gray-200 hover:-translate-y-0.5 hover:border-gold hover:bg-gold/10 hover:shadow-sm'
+                          }`}
+                        >
+                          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${markerType === type ? 'bg-gold-dark text-white' : 'bg-gray-50 text-gray-500'}`}>
+                            <Icon className="h-4 w-4" aria-hidden="true" />
+                          </span>
+                          <span className="pr-5">
+                            <span className="block text-xs font-semibold text-gray-800">{title}</span>
+                            <span className="block text-[9px] text-gray-500">{description}</span>
+                          </span>
+                          {markerType === type ? <CheckCircle2 className="absolute right-2 top-2 h-4 w-4 text-gold-ink" aria-hidden="true" /> : null}
+                        </button>
+                      </Tooltip>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setCurrentTreatment(prev => ({ ...prev, area_marker: getAreaMarkers(prev).slice(0, -1) }))}
+                      disabled={getAreaMarkers(currentTreatment).length === 0}
+                      className="admin-focus-ring inline-flex min-h-12 items-center justify-center gap-1 rounded-xl border border-gray-200 bg-white px-3 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <Undo2 className="h-4 w-4" aria-hidden="true" /> Deshacer
+                    </button>
+                  </div>
                 <div className="relative overflow-hidden rounded-2xl border border-gray-100 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.8)]" style={{ height: '360px' }}>
                   <Clinical3DViewer
                     markers={getAreaMarkers(currentTreatment)}
@@ -1123,7 +1171,8 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                     ))}
                   </div>
                 ) : null}
-              </>
+                </div>
+              </details>
             ) : null}
           </div>
 

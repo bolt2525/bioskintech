@@ -317,7 +317,9 @@ export default function ClinicalDataModal({ isOpen, mode, initialData, onClose, 
         </div>
 
         <div className="flex gap-3 p-4 border-t border-gray-100 shrink-0">
-          <button type="button" onClick={onClose} className="flex-1 p-2.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 font-medium">Cancelar</button>
+          <button type="button" onClick={onClose} className="flex-1 p-2.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 font-medium">
+            {mode === 'corporal' ? 'Omitir por ahora' : 'Cancelar'}
+          </button>
           <button type="button" onClick={handleSave} className="flex-1 p-2.5 rounded-lg bg-[#deb887] text-white hover:bg-[#c5a075] font-medium">Guardar datos clínicos</button>
         </div>
       </div>

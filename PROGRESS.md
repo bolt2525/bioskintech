@@ -1,5 +1,7 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-10 Tratamientos: zonas clínicas agrupadas.
+- ✅ 2026-10-10 Corporal: mapa 3D opcional.
 - ✅ 2026-10-10 Tratamientos: registro guiado por modo.
 - ✅ 2026-10-10 Capilar: contexto clínico sobre visor.
 - ✅ 2026-10-10 Capilar: evaluación integrada al visor.
