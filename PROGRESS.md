@@ -1,5 +1,6 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-10 Capilar: jerarquía y marcaciones agrupadas.
 - ✅ 2026-10-10 Capilar: visor obligatorio contextual.
 - ✅ 2026-10-10 Visores 3D: carga bajo demanda.
 - ✅ 2026-10-10 Resumen: detalle clínico por modo.

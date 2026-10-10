@@ -604,6 +604,16 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
     const index = getScalpStages(scalpHair.scale).indexOf(scalpHair.stage);
     return index >= 0 ? getScalpDescriptions(scalpHair.scale)[index] : null;
   }, [scalpHair]);
+  const markerGroups = useMemo(() => {
+    const groups = new Map<string, { zone: string; count: number }>();
+    getAreaMarkers(currentTreatment).forEach(marker => {
+      const zone = marker.zone?.trim() || 'Sin zona';
+      const key = zone.toLocaleLowerCase();
+      const group = groups.get(key);
+      groups.set(key, { zone: group?.zone || zone, count: (group?.count || 0) + 1 });
+    });
+    return [...groups.values()];
+  }, [currentTreatment]);
 
   /** Guarda los datos clínicos adicionales del modo (cuidados post-tratamiento, antropometría o evaluación tricológica) bajo la clave reservada de `parameters` */
   const handleSaveClinicalData = (data: PostCareData | AnthropometricsData | ScalpAssessmentData) => {
@@ -626,8 +636,12 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
     }));
   };
 
-  const handleRemoveMarker = (markerId: string | undefined) => {
-    setCurrentTreatment(prev => ({ ...prev, area_marker: getAreaMarkers(prev).filter(m => m.id !== markerId) }));
+  const handleRemoveMarkerGroup = (zone: string) => {
+    const zoneKey = zone.toLocaleLowerCase();
+    setCurrentTreatment(prev => ({
+      ...prev,
+      area_marker: getAreaMarkers(prev).filter(marker => (marker.zone?.trim() || 'Sin zona').toLocaleLowerCase() !== zoneKey),
+    }));
   };
 
   const handleUseCustomZone = () => {
@@ -1045,14 +1059,16 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
           </div>
           {/* Visor 3D de marcación anatómica (múltiples zonas por sesión) */}
           <div className={activeStep === 2 ? 'space-y-3' : 'hidden'}>
-            <label className="block text-sm font-medium text-gray-700">
-              {mode === 'facial' ? 'Zonas tratadas' : mode === 'capilar' ? 'Evaluación capilar y marcación 3D' : 'Documentación corporal'}
-            </label>
+            {mode !== 'capilar' ? (
+              <p className="text-sm font-medium text-gray-700">
+                {mode === 'facial' ? 'Zonas tratadas' : 'Documentación corporal'}
+              </p>
+            ) : null}
             <p className="text-xs text-gray-400">
               {mode === 'facial'
                 ? 'Selecciona las zonas que ayuden a ubicar el procedimiento. Puedes continuar sin elegir ninguna.'
                 : mode === 'capilar'
-                  ? 'Configura primero el patrón de cabello; después selecciona zonas y marca el modelo.'
+                  ? 'Define escala y etapa para generar el modelo. Añade zonas o marcaciones solo cuando aporten información clínica.'
                   : 'Selecciona las zonas tratadas. Las medidas y el mapa 3D son opcionales y sirven para comparar la evolución o precisar la ubicación.'}
             </p>
             {mode === 'capilar' ? (
@@ -1064,19 +1080,23 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                     </span>
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="font-semibold text-gray-900">1. Evaluación obligatoria para activar el visor</h3>
+                        <h3 className="font-semibold text-gray-900">1. Define escala y etapa</h3>
                         <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${scalpHair ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
                           {scalpHair ? 'Completada' : 'Pendiente'}
                         </span>
                       </div>
                       {scalpHair ? (
-                        <p className="mt-1 text-sm text-gray-700">
-                          {SCALP_SCALE_LABELS[scalpHair.scale]} · {getScalpStageLabel(scalpHair.stage)}
-                          {scalpAssessment?.density ? ` · Densidad ${scalpAssessment.density.toLocaleLowerCase()}` : ''}
-                        </p>
+                        <>
+                          <div className="mt-2 flex flex-wrap gap-2 text-xs font-medium text-gray-700">
+                            <span className="rounded-lg border border-emerald-200 bg-white px-2.5 py-1">Escala: {SCALP_SCALE_LABELS[scalpHair.scale]}</span>
+                            <span className="rounded-lg border border-emerald-200 bg-white px-2.5 py-1">Etapa: {getScalpStageLabel(scalpHair.stage)}</span>
+                            <span className="rounded-lg border border-emerald-200 bg-white px-2.5 py-1">Densidad: {scalpAssessment?.density || 'Sin registrar'}</span>
+                          </div>
+                          {scalpStageDescription ? <p className="mt-2 text-xs leading-5 text-gray-600">{scalpStageDescription}.</p> : null}
+                        </>
                       ) : (
                         <p className="mt-1 text-sm leading-6 text-gray-700">
-                          Selecciona escala y etapa. Al guardar la evaluación aparecerán el cabello, las zonas y las herramientas de marcación.
+                          Selecciona una escala y su etapa. Al aplicar la evaluación aparecerá automáticamente el modelo correspondiente.
                         </p>
                       )}
                     </div>
@@ -1087,7 +1107,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                     className="admin-focus-ring inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-gold/50 bg-white px-4 text-sm font-semibold text-gold-ink shadow-sm hover:bg-gold/10"
                   >
                     <ScanSearch className="h-4 w-4" aria-hidden="true" />
-                    {scalpHair ? 'Editar evaluación' : 'Completar evaluación'}
+                    {scalpHair ? 'Editar escala y etapa' : 'Definir escala y etapa'}
                   </button>
                 </div>
               </div>
@@ -1185,11 +1205,11 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                 {mode === 'capilar' ? (
                   <div className="flex min-h-12 items-center justify-between gap-3 rounded-2xl px-4 py-3">
                     <div>
-                      <p className="text-sm font-semibold text-gray-800">2. Modelo capilar y marcación</p>
-                      <p className="mt-0.5 text-xs font-normal text-gray-500">Representación obligatoria de la evaluación registrada</p>
+                      <p className="text-sm font-semibold text-gray-800">2. Revisa el modelo capilar</p>
+                      <p className="mt-0.5 text-xs font-normal text-gray-500">Se genera con la evaluación; las marcaciones son opcionales</p>
                     </div>
                     <span className="rounded-full bg-gold/15 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-gold-ink">
-                      Parte del registro
+                      Modelo clínico
                     </span>
                   </div>
                 ) : (
@@ -1211,7 +1231,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                   <p className="text-xs leading-5 text-gray-600">
                     {mode !== 'capilar'
                       ? `Úsalo solo si necesitas indicar un punto exacto o un área de cobertura. Las zonas ${mode === 'facial' ? 'faciales' : 'corporales'} seleccionadas arriba son suficientes para un registro general.`
-                      : 'Elige el tipo de marca y ubícala sobre el modelo para documentar la referencia clínica.'}
+                      : 'Si necesitas documentar una ubicación exacta, elige el tipo de marca y colócala sobre el modelo.'}
                   </p>
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto]">
                     {([
@@ -1290,12 +1310,20 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                     </button>
                   ) : null}
                 </div>
-                {getAreaMarkers(currentTreatment).length > 0 ? (
-                  <div className="flex flex-wrap gap-1.5">
-                    {getAreaMarkers(currentTreatment).map(m => (
-                      <span key={m.id} className="flex items-center gap-1 text-[11px] bg-[#deb887]/10 text-[#b8944d] rounded-full px-2 py-0.5">
-                        {m.zone || 'Sin zona'}
-                        <button type="button" onClick={() => handleRemoveMarker(m.id)} className="hover:text-red-600"><X size={10} /></button>
+                {markerGroups.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5" aria-label="Resumen de marcaciones">
+                    {markerGroups.map(group => (
+                      <span key={group.zone} className="flex items-center gap-1.5 rounded-full bg-gold/10 px-2.5 py-1 text-[11px] text-gold-ink">
+                        <span>{group.zone}</span>
+                        <span className="rounded-full bg-white/80 px-1.5 font-semibold">{group.count}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveMarkerGroup(group.zone)}
+                          aria-label={`Quitar ${group.count} marcación${group.count === 1 ? '' : 'es'} de ${group.zone}`}
+                          className="admin-focus-ring rounded-full p-0.5 hover:bg-red-50 hover:text-red-600"
+                        >
+                          <X size={10} aria-hidden="true" />
+                        </button>
                       </span>
                     ))}
                   </div>
