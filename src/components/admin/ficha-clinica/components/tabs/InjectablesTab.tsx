@@ -22,7 +22,7 @@ import FieldHelp from '../FieldHelp';
 import { HELP } from '../../data/fieldHelpTexts';
 import { Dialog } from '../../../../ui/Dialog';
 import { COLORS } from '../../../../../constants/theme';
-import ToxinaSessionForm, { ToxinaApplicationTotal, ToxinaFollowUpForm } from '../ToxinaSessionForm';
+import ToxinaSessionForm, { ToxinaApplicationTotal, ToxinaFollowUpForm, ToxinaStepHeading } from '../ToxinaSessionForm';
 
 // ==========================================
 // TYPES
@@ -2396,7 +2396,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
       )}
 
       {/* 3D Mapping Section */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className={`bg-white border overflow-hidden ${current.product_type === 'toxina' ? 'rounded-2xl border-gold/30 shadow-md shadow-slate-900/5' : 'rounded-xl border-gray-100 shadow-sm'}`}>
         <button
           onClick={() => {
             if (!canMark && !show3D) {
@@ -2407,16 +2407,20 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
             }
             setShow3D(!show3D);
           }}
-          className="w-full flex items-center justify-between p-4 hover:bg-gray-50/50 transition-colors"
+          className={`w-full flex items-center justify-between transition-colors ${current.product_type === 'toxina' ? 'p-5 hover:bg-gold-light/20' : 'p-4 hover:bg-gray-50/50'}`}
         >
           <div className="flex items-center gap-3">
+            {current.product_type === 'toxina' ? (
+              <ToxinaStepHeading step="4" title="Mapa y total aplicado" description="Documenta dónde se aplicó y cuántas unidades se usaron." />
+            ) : (<>
             <div className={`p-2 rounded-lg transition-colors ${show3D ? 'bg-[#deb887]/15' : 'bg-gray-100'}`}>
               <Box className={`w-4 h-4 transition-colors ${show3D ? 'text-[#b8944d]' : 'text-gray-500'}`} />
             </div>
             <div className="text-left">
-              <span className="text-sm font-semibold text-gray-800">{current.product_type === 'toxina' ? '4. Mapa y total aplicado' : 'Mapeo Facial 3D'}</span>
+              <span className="text-sm font-semibold text-gray-800">Mapeo Facial 3D</span>
               <p className="text-xs text-gray-500">Opcional · registra puntos y unidades; las anotaciones no añaden dosis</p>
             </div>
+            </>)}
           </div>
           <div className="flex items-center gap-2">
             {referenceLines.length > 0 && (

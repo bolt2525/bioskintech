@@ -342,9 +342,9 @@ test('formulario presenta total automático de solo lectura y desplegables con o
   assert.match(html, /Suma automática/);
   assert.equal((html.match(/role="combobox"/g) || []).length, 3);
   assert.doesNotMatch(html, /<select /);
-  assert.ok(html.indexOf('2. Preparación del vial') < html.indexOf('3. Técnica de aplicación'));
-  assert.ok(html.indexOf('3. Técnica de aplicación') < html.indexOf('Total aplicado en sesión'));
-  assert.ok(html.indexOf('Total aplicado en sesión') < html.indexOf('5. Seguimiento'));
+  assert.ok(html.indexOf('Preparación del vial') < html.indexOf('Técnica de aplicación'));
+  assert.ok(html.indexOf('Técnica de aplicación') < html.indexOf('Total aplicado en sesión'));
+  assert.ok(html.indexOf('Total aplicado en sesión') < html.indexOf('Seguimiento y observaciones'));
   for (const field of ['product', 'date', 'brand', 'lot', 'expiration', 'injection_plane', 'technique', 'needle_type', 'follow-up', 'notes']) {
     assert.match(html, new RegExp(`toxina-${field}-help`));
   }

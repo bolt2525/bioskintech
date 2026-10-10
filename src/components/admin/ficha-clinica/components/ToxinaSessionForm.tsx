@@ -29,10 +29,25 @@ interface Props {
   error: { field: string; text: string } | null;
 }
 
-const inputClass = 'w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:border-gold focus:outline-none focus:ring-2 focus:ring-gold/30 disabled:bg-slate-100 disabled:text-slate-500';
+const inputClass = 'w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 shadow-sm shadow-slate-900/5 transition-colors hover:border-gold/60 focus:border-gold focus:bg-white focus:outline-none focus:ring-2 focus:ring-gold/30 disabled:bg-slate-100 disabled:text-slate-500';
 const labelClass = 'mb-1.5 block text-sm font-medium text-slate-700';
+const sectionClass = 'rounded-2xl border border-slate-200/80 bg-white shadow-md shadow-slate-900/5';
 const TOXINA_TECHNIQUES = ['Inyección puntual', 'Microinyecciones'];
 const TOXINA_PLANES = ['Intramuscular', 'Intradérmico', 'Subdérmico', 'Subcutáneo'];
+
+export function ToxinaStepHeading({ step, title, description, id }: {
+  step: string; title: string; description: string; id?: string;
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-gold/40 bg-gold-light text-base font-bold text-gold-ink shadow-sm" aria-hidden="true">{step}</span>
+      <div className="text-left">
+        <h3 id={id} className="text-base font-semibold text-slate-900"><span className="sr-only">{step}. </span>{title}</h3>
+        <p className="mt-0.5 text-xs font-normal leading-relaxed text-slate-500">{description}</p>
+      </div>
+    </div>
+  );
+}
 
 function DocumentedSelect({ id, label, value, options, help, onChange }: {
   id: string; label: string; value: string; options: string[]; help: string; onChange: (value: string) => void;
@@ -60,7 +75,7 @@ function DocumentedSelect({ id, label, value, options, help, onChange }: {
         <button id={id} ref={trigger} type="button" role="combobox" aria-expanded={open}
           aria-controls={`${id}-options`} aria-haspopup="listbox" aria-describedby={`${id}-help`}
           aria-activedescendant={open ? `${id}-option-${active}` : undefined}
-          className={`${inputClass} flex items-center justify-between gap-2 text-left hover:border-gold`}
+          className={`${inputClass} flex items-center justify-between gap-2 text-left hover:border-gold ${open ? 'border-gold bg-white ring-2 ring-gold/20' : ''}`}
           onClick={() => { setActive(Math.max(0, choices.indexOf(selected))); setOpen(previous => !previous); }}
           onKeyDown={event => {
             if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
@@ -86,12 +101,12 @@ function DocumentedSelect({ id, label, value, options, help, onChange }: {
           <ChevronDown className={`h-4 w-4 shrink-0 text-gold-ink ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
         </button>
         {open && <ul id={`${id}-options`} role="listbox" aria-label={label}
-          className="absolute left-0 right-0 top-full z-40 mt-1 max-h-56 overflow-y-auto rounded-xl border border-gold/40 bg-white p-1 shadow-xl">
+          className="absolute left-0 right-0 top-full z-40 mt-2 max-h-56 overflow-y-auto rounded-xl border border-gold/40 bg-white p-1.5 shadow-xl shadow-slate-900/15">
           {choices.map((choice, index) => (
             <li id={`${id}-option-${index}`} key={choice} role="option" aria-selected={choice === selected}
               onMouseDown={event => event.preventDefault()} onClick={() => choose(choice)} onMouseEnter={() => setActive(index)}
               className={`flex cursor-pointer items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-sm ${
-                index === active ? 'bg-gold-light text-gold-ink' : 'text-slate-700 hover:bg-gold-light'
+                index === active ? 'bg-gold-light text-gold-ink font-semibold' : 'text-slate-700 hover:bg-gold-light'
               }`}>
               {choiceLabel(choice)}{choice === selected && <Check className="h-4 w-4 shrink-0 text-gold-ink" aria-hidden="true" />}
             </li>
@@ -116,11 +131,11 @@ export default function ToxinaSessionForm({
     <p id={`toxina-${field}-error`} className="mt-1 text-sm text-red-700" role="alert">{error.text}</p>
   ) : null;
   return (
-    <div className="space-y-5 p-5">
-      <section aria-labelledby="toxina-product-heading">
-        <div className="mb-4 flex items-baseline justify-between gap-3">
-          <h3 id="toxina-product-heading" className="text-base font-semibold text-slate-900">1. Producto y sesión</h3>
-          <span className="text-xs text-slate-500">* Obligatorio</span>
+    <div className="space-y-5 rounded-b-2xl bg-slate-50/80 p-5">
+      <section className={`${sectionClass} p-5`} aria-labelledby="toxina-product-heading">
+        <div className="mb-5 flex items-center justify-between gap-3 border-b border-slate-100 pb-4">
+          <ToxinaStepHeading step="1" id="toxina-product-heading" title="Producto y sesión" description="Identifica qué se aplicó y cuándo." />
+          <span className="rounded-full border border-gold/30 bg-gold-light/60 px-2.5 py-1 text-xs text-gold-ink">* Obligatorio</span>
         </div>
         <div className="grid grid-cols-3 gap-4">
           <div className="col-span-2">
@@ -166,11 +181,12 @@ export default function ToxinaSessionForm({
         </div>
       </section>
 
-      <details className="rounded-xl border border-slate-200">
-        <summary className="flex cursor-pointer items-center justify-between gap-3 p-3 text-sm font-medium text-slate-700">
-          2. Preparación del vial <span className="flex items-center gap-2 text-xs text-slate-500">{vialUnits !== '' || value.dilution_volume !== '' ? 'Con datos' : 'Opcional'} <ChevronDown className="h-4 w-4" aria-hidden="true" /></span>
+      <details className={`${sectionClass} group`}>
+        <summary className="flex cursor-pointer items-center justify-between gap-3 rounded-2xl p-5 transition-colors hover:bg-gold-light/20">
+          <ToxinaStepHeading step="2" title="Preparación del vial" description="Presentación original, diluyente y concentración." />
+          <span className="flex items-center gap-2 rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600">{vialUnits !== '' || value.dilution_volume !== '' ? 'Con datos' : 'Opcional'} <ChevronDown className="h-4 w-4 text-gold-ink transition-transform group-open:rotate-180" aria-hidden="true" /></span>
         </summary>
-        <div className="space-y-3 border-t border-slate-100 p-4">
+        <div className="space-y-3 border-t border-slate-100 p-5">
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className={labelClass} htmlFor="toxina-vial_units">Unidades originales del vial (U)</label>
@@ -189,7 +205,7 @@ export default function ToxinaSessionForm({
               <p id="toxina-dilution-help" className="mt-1.5 text-xs text-slate-500">Volumen real añadido para reconstituir este vial. Junto con sus unidades originales permite calcular U/ml.</p>
             </div>
           </div>
-          <p className="flex items-start gap-2 rounded-lg bg-slate-50 p-3 text-sm text-slate-600">
+          <p className="flex items-start gap-2 rounded-xl border border-gold/25 bg-gold-light/40 p-3 text-sm text-gold-ink">
             <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
             {concentration === null
               ? 'La concentración requiere las unidades originales del vial y el diluyente. No se calcula usando el total aplicado en la sesión.'
@@ -199,8 +215,10 @@ export default function ToxinaSessionForm({
         </div>
       </details>
 
-      <section className="border-t border-slate-100 pt-4" aria-labelledby="toxina-application-heading">
-        <h3 id="toxina-application-heading" className="mb-4 text-base font-semibold text-slate-900">3. Técnica de aplicación</h3>
+      <section className={`${sectionClass} p-5`} aria-labelledby="toxina-application-heading">
+        <div className="mb-5 border-b border-slate-100 pb-4">
+          <ToxinaStepHeading step="3" id="toxina-application-heading" title="Técnica de aplicación" description="Describe cómo se realizó el procedimiento." />
+        </div>
         <div className="grid grid-cols-3 gap-4">
           <DocumentedSelect id="toxina-technique" label="Técnica utilizada" value={value.technique}
             options={TOXINA_TECHNIQUES} onChange={next => onChange({ technique: next })}
@@ -222,17 +240,18 @@ export function ToxinaApplicationTotal({ units, unitsFromMap, mappedUnits, onCha
   onManualUnits: () => void; error: Props['error'];
 }) {
   return (
-    <div className="grid grid-cols-[14rem_1fr] items-start gap-5 border-t border-slate-100 bg-gold-light/30 p-4">
+    <div className="mx-4 mb-4 grid grid-cols-[14rem_1fr] items-center gap-5 rounded-2xl border border-gold/35 bg-gradient-to-br from-gold-light/70 to-white p-5 shadow-sm">
       <div>
         <label className={labelClass} htmlFor="toxina-units_used">Total aplicado en sesión (U)</label>
         <input id="toxina-units_used" name="units_used" type="number" min="0" step="any" inputMode="decimal"
-          readOnly={unitsFromMap} className={inputClass} value={units} onChange={event => onChange(event.target.value)}
+          readOnly={unitsFromMap} className="w-full rounded-xl border border-gold/40 bg-white px-3 py-2.5 text-2xl font-bold text-gold-ink shadow-sm focus:outline-none focus:ring-2 focus:ring-gold/30"
+          value={units} onChange={event => onChange(event.target.value)}
           placeholder="Total aplicado…" aria-invalid={error?.field === 'units_used'}
           aria-describedby={`toxina-units-note${error?.field === 'units_used' ? ' toxina-units_used-error' : ''}`} />
         {error?.field === 'units_used' && <p id="toxina-units_used-error" className="mt-1 text-sm text-red-700" role="alert">{error.text}</p>}
       </div>
       <div>
-        <span className="text-xs font-semibold text-gold-ink">{unitsFromMap ? 'Automático · desde el mapa 3D' : 'Registro manual · sin mapa 3D'}</span>
+        <span className="inline-flex rounded-full border border-gold/30 bg-white/80 px-3 py-1 text-xs font-semibold text-gold-ink">{unitsFromMap ? 'Automático · desde el mapa 3D' : 'Registro manual · sin mapa 3D'}</span>
         <p id="toxina-units-note" className="mt-1.5 text-xs leading-relaxed text-slate-600">{unitsFromMap
           ? 'Suma automática de las unidades de cada punto. Cambia al añadir, editar, eliminar o deshacer puntos. No es la capacidad del vial.'
           : 'Si no usas el modelo 3D, escribe el total realmente aplicado. Al registrar puntos, este campo pasa a sumar sus unidades automáticamente.'}</p>
@@ -247,9 +266,12 @@ export function ToxinaApplicationTotal({ units, unitsFromMap, mappedUnits, onCha
 
 export function ToxinaFollowUpForm({ value, onChange }: Pick<Props, 'value' | 'onChange'>) {
   return (
-      <details className="rounded-xl border border-slate-200">
-        <summary className="cursor-pointer p-3 text-sm font-medium text-slate-700">5. Seguimiento y observaciones <span className="ml-2 text-xs font-normal text-slate-500">{value.follow_up_date || value.notes ? 'Con datos' : 'Opcional'}</span></summary>
-        <div className="grid grid-cols-3 gap-4 border-t border-slate-100 p-4">
+      <details className={`${sectionClass} group`}>
+        <summary className="flex cursor-pointer items-center justify-between gap-3 rounded-2xl p-5 transition-colors hover:bg-gold-light/20">
+          <ToxinaStepHeading step="5" title="Seguimiento y observaciones" description="Anota incidencias y acuerda el control." />
+          <span className="flex items-center gap-2 rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600">{value.follow_up_date || value.notes ? 'Con datos' : 'Opcional'} <ChevronDown className="h-4 w-4 text-gold-ink transition-transform group-open:rotate-180" aria-hidden="true" /></span>
+        </summary>
+        <div className="grid grid-cols-3 gap-4 border-t border-slate-100 p-5">
           <div>
             <label className={labelClass} htmlFor="toxina-follow_up_date">Fecha de control</label>
             <input id="toxina-follow_up_date" name="follow_up_date" type="date" className={inputClass}
