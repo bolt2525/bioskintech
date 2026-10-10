@@ -1,5 +1,5 @@
-import { ChevronDown, Info } from 'lucide-react';
-import { useState } from 'react';
+import { Check, ChevronDown, Info } from 'lucide-react';
+import { useRef, useState } from 'react';
 
 export interface ToxinaSessionFields {
   date: string;
@@ -26,9 +26,6 @@ interface Props {
   vialUnits: string;
   onVialUnitsChange: (value: string) => void;
   concentration: number | null;
-  mappedUnits: number;
-  unitsFromMap: boolean;
-  onManualUnits: () => void;
   error: { field: string; text: string } | null;
 }
 
@@ -41,20 +38,66 @@ function DocumentedSelect({ id, label, value, options, help, onChange }: {
   id: string; label: string; value: string; options: string[]; help: string; onChange: (value: string) => void;
 }) {
   const [custom, setCustom] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const trigger = useRef<HTMLButtonElement>(null);
   const isCustom = custom || (value !== '' && !options.includes(value));
+  const choices = ['', ...options, '__custom__'];
+  const selected = isCustom ? '__custom__' : value;
+  const choiceLabel = (choice: string) => choice === '__custom__' ? 'Escribir valor personalizado…' : choice || 'Sin especificar';
+  const choose = (choice: string) => {
+    setCustom(choice === '__custom__');
+    if (choice !== '__custom__') onChange(choice);
+    setOpen(false);
+    trigger.current?.focus();
+  };
   return (
     <div>
       <label className={labelClass} htmlFor={id}>{label}</label>
-      <select id={id} className={inputClass} value={isCustom ? '__custom__' : value}
-        aria-describedby={`${id}-help`} onChange={event => {
-          const next = event.target.value;
-          setCustom(next === '__custom__');
-          onChange(next === '__custom__' ? '' : next);
-        }}>
-        <option value="">Seleccionar…</option>
-        {options.map(option => <option key={option} value={option}>{option}</option>)}
-        <option value="__custom__">Escribir valor personalizado…</option>
-      </select>
+      <div className="relative" onBlur={event => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+      }}>
+        <button id={id} ref={trigger} type="button" role="combobox" aria-expanded={open}
+          aria-controls={`${id}-options`} aria-haspopup="listbox" aria-describedby={`${id}-help`}
+          aria-activedescendant={open ? `${id}-option-${active}` : undefined}
+          className={`${inputClass} flex items-center justify-between gap-2 text-left hover:border-gold`}
+          onClick={() => { setActive(Math.max(0, choices.indexOf(selected))); setOpen(previous => !previous); }}
+          onKeyDown={event => {
+            if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+              event.preventDefault();
+              setOpen(true);
+              const next = event.key === 'Home' ? 0 : event.key === 'End' ? choices.length - 1
+                : !open ? Math.max(0, choices.indexOf(selected))
+                : Math.max(0, Math.min(choices.length - 1, active + (event.key === 'ArrowDown' ? 1 : -1)));
+              setActive(next);
+              document.getElementById(`${id}-option-${next}`)?.scrollIntoView({ block: 'nearest' });
+            } else if (event.key === 'Escape') {
+              event.preventDefault();
+              event.stopPropagation();
+              setOpen(false);
+            } else if (open && (event.key === 'Enter' || event.key === ' ')) {
+              event.preventDefault();
+              choose(choices[active]);
+            }
+          }}>
+          <span className={value || isCustom ? 'text-slate-800' : 'text-slate-400'}>
+            {isCustom ? value || 'Valor personalizado…' : value || 'Seleccionar…'}
+          </span>
+          <ChevronDown className={`h-4 w-4 shrink-0 text-gold-ink ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
+        </button>
+        {open && <ul id={`${id}-options`} role="listbox" aria-label={label}
+          className="absolute left-0 right-0 top-full z-40 mt-1 max-h-56 overflow-y-auto rounded-xl border border-gold/40 bg-white p-1 shadow-xl">
+          {choices.map((choice, index) => (
+            <li id={`${id}-option-${index}`} key={choice} role="option" aria-selected={choice === selected}
+              onMouseDown={event => event.preventDefault()} onClick={() => choose(choice)} onMouseEnter={() => setActive(index)}
+              className={`flex cursor-pointer items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-sm ${
+                index === active ? 'bg-gold-light text-gold-ink' : 'text-slate-700 hover:bg-gold-light'
+              }`}>
+              {choiceLabel(choice)}{choice === selected && <Check className="h-4 w-4 shrink-0 text-gold-ink" aria-hidden="true" />}
+            </li>
+          ))}
+        </ul>}
+      </div>
       {isCustom && <>
         <label className="sr-only" htmlFor={`${id}-custom`}>{label}: valor personalizado</label>
         <input id={`${id}-custom`} className={`${inputClass} mt-2`} value={value} aria-describedby={`${id}-help`}
@@ -67,7 +110,7 @@ function DocumentedSelect({ id, label, value, options, help, onChange }: {
 
 export default function ToxinaSessionForm({
   value, onChange, brands, needles, dateLocked, onUnlockDate,
-  vialUnits, onVialUnitsChange, concentration, mappedUnits, unitsFromMap, onManualUnits, error,
+  vialUnits, onVialUnitsChange, concentration, error,
 }: Props) {
   const fieldError = (field: string) => error?.field === field ? (
     <p id={`toxina-${field}-error`} className="mt-1 text-sm text-red-700" role="alert">{error.text}</p>
@@ -123,38 +166,9 @@ export default function ToxinaSessionForm({
         </div>
       </section>
 
-      <section className="border-t border-slate-100 pt-4" aria-labelledby="toxina-application-heading">
-        <h3 id="toxina-application-heading" className="mb-4 text-base font-semibold text-slate-900">2. Aplicación registrada</h3>
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className={labelClass} htmlFor="toxina-units_used">Total aplicado en sesión (U) {unitsFromMap && <span className="ml-1 text-xs text-gold-ink">Automático</span>}</label>
-            <input id="toxina-units_used" name="units_used" type="number" min="0" step="any" inputMode="decimal" readOnly={unitsFromMap} className={inputClass}
-              value={value.units_used} onChange={event => onChange({ units_used: event.target.value })} placeholder="Total aplicado…"
-              aria-invalid={error?.field === 'units_used'} aria-describedby={`toxina-units-note${error?.field === 'units_used' ? ' toxina-units_used-error' : ''}`} />
-            {fieldError('units_used')}
-            <p id="toxina-units-note" className="mt-1.5 text-xs leading-relaxed text-slate-500">{unitsFromMap
-              ? 'Suma automática de las unidades de cada punto del modelo 3D. Se actualiza al añadir, editar, eliminar o deshacer puntos. No es la capacidad del vial.'
-              : 'Si no usas el modelo 3D, escribe el total realmente aplicado. Al registrar puntos, este campo pasa a sumar sus unidades automáticamente.'}</p>
-            {unitsFromMap && mappedUnits === 0 && <button type="button" onClick={onManualUnits}
-              className="mt-2 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700">
-              Registrar total sin mapa
-            </button>}
-          </div>
-          <DocumentedSelect id="toxina-injection_plane" label="Plano anatómico utilizado" value={value.injection_plane}
-            options={TOXINA_PLANES} onChange={next => onChange({ injection_plane: next })}
-            help="Tejido en el que se realizó la aplicación. Selecciona solo el plano realmente utilizado; la lista no recomienda una vía ni sustituye la ficha técnica." />
-          <DocumentedSelect id="toxina-technique" label="Técnica utilizada" value={value.technique}
-            options={TOXINA_TECHNIQUES} onChange={next => onChange({ technique: next })}
-            help="Forma de aplicación realizada. Las opciones facilitan documentar, no sugieren dosis ni un protocolo. Puedes escribir una técnica distinta." />
-          <DocumentedSelect id="toxina-needle_type" label="Aguja utilizada" value={value.needle_type}
-            options={needles.filter(needle => !/cánula|canula/i.test(needle))} onChange={next => onChange({ needle_type: next })}
-            help="Calibre y longitud del dispositivo utilizado. G identifica el calibre y mm la longitud; verifica ambos en el envase. No se elige una aguja automáticamente." />
-        </div>
-      </section>
-
       <details className="rounded-xl border border-slate-200">
         <summary className="flex cursor-pointer items-center justify-between gap-3 p-3 text-sm font-medium text-slate-700">
-          Preparación del vial <span className="flex items-center gap-2 text-xs text-slate-500">{vialUnits !== '' || value.dilution_volume !== '' ? 'Con datos' : 'Opcional'} <ChevronDown className="h-4 w-4" aria-hidden="true" /></span>
+          2. Preparación del vial <span className="flex items-center gap-2 text-xs text-slate-500">{vialUnits !== '' || value.dilution_volume !== '' ? 'Con datos' : 'Opcional'} <ChevronDown className="h-4 w-4" aria-hidden="true" /></span>
         </summary>
         <div className="space-y-3 border-t border-slate-100 p-4">
           <div className="grid grid-cols-2 gap-4">
@@ -185,8 +199,56 @@ export default function ToxinaSessionForm({
         </div>
       </details>
 
+      <section className="border-t border-slate-100 pt-4" aria-labelledby="toxina-application-heading">
+        <h3 id="toxina-application-heading" className="mb-4 text-base font-semibold text-slate-900">3. Técnica de aplicación</h3>
+        <div className="grid grid-cols-3 gap-4">
+          <DocumentedSelect id="toxina-technique" label="Técnica utilizada" value={value.technique}
+            options={TOXINA_TECHNIQUES} onChange={next => onChange({ technique: next })}
+            help="Forma de aplicación realizada. Puedes elegir una opción o describir otra técnica; no se prescribe un protocolo." />
+          <DocumentedSelect id="toxina-injection_plane" label="Plano anatómico utilizado" value={value.injection_plane}
+            options={TOXINA_PLANES} onChange={next => onChange({ injection_plane: next })}
+            help="Tejido donde se realizó la aplicación. Documenta lo utilizado según el producto y procedimiento, sin recomendaciones automáticas." />
+          <DocumentedSelect id="toxina-needle_type" label="Aguja utilizada" value={value.needle_type}
+            options={needles.filter(needle => !/cánula|canula/i.test(needle))} onChange={next => onChange({ needle_type: next })}
+            help="Calibre y longitud del dispositivo: G indica calibre y mm longitud. Comprueba ambos en el envase." />
+        </div>
+      </section>
+    </div>
+  );
+}
+
+export function ToxinaApplicationTotal({ units, unitsFromMap, mappedUnits, onChange, onManualUnits, error }: {
+  units: number | string; unitsFromMap: boolean; mappedUnits: number; onChange: (units: string) => void;
+  onManualUnits: () => void; error: Props['error'];
+}) {
+  return (
+    <div className="grid grid-cols-[14rem_1fr] items-start gap-5 border-t border-slate-100 bg-gold-light/30 p-4">
+      <div>
+        <label className={labelClass} htmlFor="toxina-units_used">Total aplicado en sesión (U)</label>
+        <input id="toxina-units_used" name="units_used" type="number" min="0" step="any" inputMode="decimal"
+          readOnly={unitsFromMap} className={inputClass} value={units} onChange={event => onChange(event.target.value)}
+          placeholder="Total aplicado…" aria-invalid={error?.field === 'units_used'}
+          aria-describedby={`toxina-units-note${error?.field === 'units_used' ? ' toxina-units_used-error' : ''}`} />
+        {error?.field === 'units_used' && <p id="toxina-units_used-error" className="mt-1 text-sm text-red-700" role="alert">{error.text}</p>}
+      </div>
+      <div>
+        <span className="text-xs font-semibold text-gold-ink">{unitsFromMap ? 'Automático · desde el mapa 3D' : 'Registro manual · sin mapa 3D'}</span>
+        <p id="toxina-units-note" className="mt-1.5 text-xs leading-relaxed text-slate-600">{unitsFromMap
+          ? 'Suma automática de las unidades de cada punto. Cambia al añadir, editar, eliminar o deshacer puntos. No es la capacidad del vial.'
+          : 'Si no usas el modelo 3D, escribe el total realmente aplicado. Al registrar puntos, este campo pasa a sumar sus unidades automáticamente.'}</p>
+        {unitsFromMap && mappedUnits === 0 && <button type="button" onClick={onManualUnits}
+          className="mt-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700">
+          Registrar total sin mapa
+        </button>}
+      </div>
+    </div>
+  );
+}
+
+export function ToxinaFollowUpForm({ value, onChange }: Pick<Props, 'value' | 'onChange'>) {
+  return (
       <details className="rounded-xl border border-slate-200">
-        <summary className="cursor-pointer p-3 text-sm font-medium text-slate-700">Seguimiento y observaciones <span className="ml-2 text-xs font-normal text-slate-500">{value.follow_up_date || value.notes ? 'Con datos' : 'Opcional'}</span></summary>
+        <summary className="cursor-pointer p-3 text-sm font-medium text-slate-700">5. Seguimiento y observaciones <span className="ml-2 text-xs font-normal text-slate-500">{value.follow_up_date || value.notes ? 'Con datos' : 'Opcional'}</span></summary>
         <div className="grid grid-cols-3 gap-4 border-t border-slate-100 p-4">
           <div>
             <label className={labelClass} htmlFor="toxina-follow_up_date">Fecha de control</label>
@@ -202,6 +264,5 @@ export default function ToxinaSessionForm({
           </div>
         </div>
       </details>
-    </div>
   );
 }

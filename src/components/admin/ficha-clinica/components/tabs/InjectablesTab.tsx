@@ -22,7 +22,7 @@ import FieldHelp from '../FieldHelp';
 import { HELP } from '../../data/fieldHelpTexts';
 import { Dialog } from '../../../../ui/Dialog';
 import { COLORS } from '../../../../../constants/theme';
-import ToxinaSessionForm from '../ToxinaSessionForm';
+import ToxinaSessionForm, { ToxinaApplicationTotal, ToxinaFollowUpForm } from '../ToxinaSessionForm';
 
 // ==========================================
 // TYPES
@@ -2182,9 +2182,9 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
         )}
 
         {/* Main Form */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
         {/* Type Header - indica el tipo activo del sub-tab */}
-        <div className={`p-4 border-b flex items-center gap-3 bg-gradient-to-r ${
+        <div className={`p-4 rounded-t-2xl border-b flex items-center gap-3 bg-gradient-to-r ${
           activeType === 'toxina'
             ? 'from-amber-50 to-amber-50/30 border-amber-100'
             : RELLENO_SUBTYPE_COLORS[rellenoSubType].header
@@ -2229,9 +2229,6 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
               }
             }}
             concentration={toxinaConcentration}
-            mappedUnits={totalUsed}
-            unitsFromMap={unitsFromMap}
-            onManualUnits={() => { setToxinaUnitsFromMap(false); setCurrent(prev => ({ ...prev, units_used: '' })); }}
             error={formError}
           />
         ) : (
@@ -2417,7 +2414,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
               <Box className={`w-4 h-4 transition-colors ${show3D ? 'text-[#b8944d]' : 'text-gray-500'}`} />
             </div>
             <div className="text-left">
-              <span className="text-sm font-semibold text-gray-800">{current.product_type === 'toxina' ? '3. Mapa de aplicación' : 'Mapeo Facial 3D'}</span>
+              <span className="text-sm font-semibold text-gray-800">{current.product_type === 'toxina' ? '4. Mapa y total aplicado' : 'Mapeo Facial 3D'}</span>
               <p className="text-xs text-gray-500">Opcional · registra puntos y unidades; las anotaciones no añaden dosis</p>
             </div>
           </div>
@@ -2440,6 +2437,18 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
           </div>
         </button>
 
+        {current.product_type === 'toxina' && (
+          <ToxinaApplicationTotal units={sessionUnits} unitsFromMap={unitsFromMap} mappedUnits={totalUsed}
+            onChange={units => {
+              setCurrent(prev => ({ ...prev, units_used: units }));
+              if (formError?.field === 'units_used') { setFormError(null); setMessage(null); }
+            }}
+            onManualUnits={() => {
+              setToxinaUnitsFromMap(false);
+              setCurrent(prev => ({ ...prev, units_used: '' }));
+            }}
+            error={formError} />
+        )}
         <AnimatePresence>
           {show3D && (
             <motion.div
@@ -3416,6 +3425,9 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
           )}
         </AnimatePresence>
       </div>
+      {current.product_type === 'toxina' && (
+        <ToxinaFollowUpForm value={current} onChange={patch => setCurrent(prev => ({ ...prev, ...patch }))} />
+      )}
       </div>
 
       {/* ========== MODAL: CONFIRMAR CAMBIO DE TAB ========== */}

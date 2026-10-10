@@ -294,12 +294,22 @@ test('ocultar guías conserva esferas de puntos aplicados', () => {
 
 const formSource = readFileSync(new URL('../src/components/admin/ficha-clinica/components/ToxinaSessionForm.tsx', import.meta.url), 'utf8');
 const formExports = {};
-vm.runInNewContext(ts.transpileModule(formSource, {
+const formCode = ts.transpileModule(formSource, {
   compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
-}).outputText, { exports: formExports, require: createRequire(import.meta.url), Intl });
+}).outputText;
+vm.runInNewContext(formCode, { exports: formExports, require: createRequire(import.meta.url), Intl });
+
+function renderFormSections(props) {
+  return renderToStaticMarkup(formExports.default(props))
+    + renderToStaticMarkup(formExports.ToxinaApplicationTotal({
+      units: props.value.units_used, unitsFromMap: props.unitsFromMap, mappedUnits: props.mappedUnits,
+      onChange: () => {}, onManualUnits: () => {}, error: props.error,
+    }))
+    + renderToStaticMarkup(formExports.ToxinaFollowUpForm(props));
+}
 
 test('formulario renderiza campos históricos, errores asociados y plegables nativos', () => {
-  const html = renderToStaticMarkup(formExports.default({
+  const html = renderFormSections({
     value: {
       date: '2026-10-10', product_name: 'QA', brand: 'Marca QA', lot_number: 'LOTE-QA', expiration_date: '',
       units_used: 20, dilution_volume: 2.5, technique: 'Técnica histórica', injection_plane: 'Plano histórico',
@@ -308,7 +318,7 @@ test('formulario renderiza campos históricos, errores asociados y plegables nat
     onChange: () => {}, brands: [], needles: [], dateLocked: false, onUnlockDate: () => {},
     vialUnits: '100', onVialUnitsChange: () => {}, concentration: 40, mappedUnits: 2, unitsFromMap: false, onManualUnits: () => {},
     error: { field: 'units_used', text: 'Revisar total' },
-  }));
+  });
   assert.match(html, /Técnica histórica/);
   assert.match(html, /Plano histórico/);
   assert.match(html, /Nota QA/);
@@ -319,7 +329,7 @@ test('formulario renderiza campos históricos, errores asociados y plegables nat
 });
 
 test('formulario presenta total automático de solo lectura y desplegables con opciones y ayuda', () => {
-  const html = renderToStaticMarkup(formExports.default({
+  const html = renderFormSections({
     value: {
       date: '', product_name: '', brand: '', lot_number: '', expiration_date: '', units_used: '',
       dilution_volume: '', technique: '', injection_plane: '', needle_type: '', follow_up_date: '', notes: '',
@@ -327,17 +337,79 @@ test('formulario presenta total automático de solo lectura y desplegables con o
     onChange: () => {}, brands: [], needles: ['30G x 13mm'], dateLocked: false,
     onUnlockDate: () => {}, vialUnits: '', onVialUnitsChange: () => {},
     concentration: null, mappedUnits: 7.5, unitsFromMap: true, onManualUnits: () => {}, error: null,
-  }));
+  });
   assert.match(html, /readonly=""/i);
   assert.match(html, /Suma automática/);
-  assert.equal((html.match(/<select /g) || []).length, 3);
-  assert.match(html, /value="Intramuscular"/);
-  assert.match(html, /value="Inyección puntual"/);
-  assert.match(html, /value="30G x 13mm"/);
-  assert.match(html, /Escribir valor personalizado/);
+  assert.equal((html.match(/role="combobox"/g) || []).length, 3);
+  assert.doesNotMatch(html, /<select /);
+  assert.ok(html.indexOf('2. Preparación del vial') < html.indexOf('3. Técnica de aplicación'));
+  assert.ok(html.indexOf('3. Técnica de aplicación') < html.indexOf('Total aplicado en sesión'));
+  assert.ok(html.indexOf('Total aplicado en sesión') < html.indexOf('5. Seguimiento'));
   for (const field of ['product', 'date', 'brand', 'lot', 'expiration', 'injection_plane', 'technique', 'needle_type', 'follow-up', 'notes']) {
     assert.match(html, new RegExp(`toxina-${field}-help`));
   }
+});
+
+function findElement(tree, predicate) {
+  if (!tree || typeof tree !== 'object') return undefined;
+  if (predicate(tree)) return tree;
+  const children = tree.props?.children;
+  for (const child of Array.isArray(children) ? children : [children]) {
+    const found = findElement(child, predicate);
+    if (found) return found;
+  }
+}
+
+test('menú dorado abre opciones, selecciona con teclado y conserva valores personalizados', () => {
+  const require = createRequire(import.meta.url);
+  const state = [];
+  let cursor = 0;
+  let focused = false;
+  let scrolled = false;
+  const exports = {};
+  vm.runInNewContext(formCode + '\nexports.DocumentedSelect = DocumentedSelect;', {
+    exports, Intl, document: { getElementById: () => ({ scrollIntoView: () => { scrolled = true; } }) },
+    require: name => name === 'react' ? {
+      useState: initial => {
+        const index = cursor++;
+        if (!(index in state)) state[index] = initial;
+        return [state[index], next => { state[index] = typeof next === 'function' ? next(state[index]) : next; }];
+      },
+      useRef: () => ({ current: { focus: () => { focused = true; } } }),
+    } : require(name),
+  });
+  const props = { id: 'qa-select', label: 'Técnica', value: '', options: ['Puntual', 'Microinyecciones'], help: 'Documentar', onChange: next => { props.value = next; } };
+  const render = () => { cursor = 0; return exports.DocumentedSelect(props); };
+  let tree = render();
+  findElement(tree, node => node.props?.role === 'combobox').props.onClick();
+  tree = render();
+  const list = findElement(tree, node => node.props?.role === 'listbox');
+  assert.ok(list);
+  assert.match(list.props.className, /bg-white/);
+  assert.match(renderToStaticMarkup(tree), /bg-gold-light/);
+  const key = key => findElement(render(), node => node.props?.role === 'combobox').props.onKeyDown({ key, preventDefault() {}, stopPropagation() {} });
+  key('ArrowDown');
+  key('Enter');
+  assert.equal(props.value, 'Puntual');
+  assert.equal(findElement(render(), node => node.props?.role === 'combobox').props['aria-expanded'], false);
+  assert.equal(focused, true);
+  assert.equal(scrolled, true);
+  findElement(render(), node => node.props?.role === 'combobox').props.onClick();
+  key('End');
+  key('Enter');
+  assert.equal(props.value, 'Puntual', 'Elegir entrada personalizada no borra lo previamente documentado');
+  const input = findElement(render(), node => node.type === 'input');
+  input.props.onChange({ target: { value: 'Técnica histórica QA' } });
+  assert.equal(props.value, 'Técnica histórica QA');
+  findElement(render(), node => node.props?.role === 'combobox').props.onClick();
+  key('Escape');
+  assert.equal(findElement(render(), node => node.props?.role === 'combobox').props['aria-expanded'], false);
+});
+
+test('orden real sitúa total junto al mapa y seguimiento después del visor', () => {
+  assert.ok(source.indexOf('<ToxinaSessionForm') < source.indexOf('<ToxinaApplicationTotal'));
+  assert.ok(source.indexOf('<ToxinaApplicationTotal') < source.indexOf('<Clinical3DViewer'));
+  assert.ok(source.indexOf('<Clinical3DViewer') < source.indexOf('<ToxinaFollowUpForm'));
 });
 
 test('total del mapa deriva de puntos actuales, incluido borrado final y deshacer', () => {
