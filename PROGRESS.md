@@ -1,5 +1,6 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-10 Capilar: evaluación integrada al visor.
 - ✅ 2026-10-10 Tratamientos: flujo visual y modales.
 - ✅ 2026-10-10 Tratamientos: confirmación y borrado financiero.
 - ✅ 2026-10-10 Savin: nueve patrones integrados.

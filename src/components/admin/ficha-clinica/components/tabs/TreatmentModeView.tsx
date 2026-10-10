@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Calendar, DollarSign, Clock, Save, Trash2, Copy, Check, AlertCircle, FileText, Pencil, Layers, History, Eye, X, ChevronDown, ChevronRight, Sparkles, Wrench, Package, Wallet, ClipboardList, MapPin, CircleDashed, Undo2, CheckCircle2 } from 'lucide-react';
+import { Plus, Calendar, DollarSign, Clock, Save, Trash2, Copy, Check, AlertCircle, FileText, Pencil, Layers, History, Eye, X, ChevronDown, ChevronRight, Sparkles, Wrench, Package, Wallet, ClipboardList, MapPin, CircleDashed, Undo2, CheckCircle2, ScanSearch } from 'lucide-react';
 import CrossConsultHistoryModal, { type ConsultationRef } from '../CrossConsultHistoryModal';
 import TreatmentParametersModal, { type TreatmentParameters, formatParametersAsText, upsertNotesBlock, removeNotesBlock } from './TreatmentParametersModal';
 import TreatmentPackageModal from './TreatmentPackageModal';
@@ -849,12 +849,14 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
           {/* Visor 3D de marcación anatómica (múltiples zonas por sesión) */}
           <div className="space-y-2">
             <label className="block text-sm font-medium text-gray-700">
-              {mode === 'facial' ? 'Zonas tratadas' : 'Marcación Anatómica (referencial)'}
+              {mode === 'facial' ? 'Zonas tratadas' : mode === 'capilar' ? 'Evaluación capilar y marcación 3D' : 'Marcación Anatómica (referencial)'}
             </label>
             <p className="text-xs text-gray-400">
               {mode === 'facial'
                 ? 'Selecciona una o varias zonas para completar automáticamente el campo Zona Tratada.'
-                : 'Elige el tipo de herramienta, selecciona una zona y haz clic sobre el modelo.'}
+                : mode === 'capilar'
+                  ? 'Configura primero el patrón de cabello; después selecciona zonas y marca el modelo.'
+                  : 'Elige el tipo de herramienta, selecciona una zona y haz clic sobre el modelo.'}
             </p>
             {mode !== 'facial' ? (
               <>
@@ -948,6 +950,47 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
             </div>
             {mode !== 'facial' ? (
               <>
+                {mode === 'capilar' ? (
+                  <div className={`rounded-2xl border p-4 ${scalpHair ? 'border-emerald-200 bg-emerald-50/70' : 'border-amber-200 bg-amber-50/70'}`} role="status">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${scalpHair ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                          <ScanSearch className="h-5 w-5" aria-hidden="true" />
+                        </span>
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="font-semibold text-gray-900">Cabello del modelo</h3>
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${scalpHair ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                              {scalpHair ? 'Configurado' : 'Pendiente'}
+                            </span>
+                          </div>
+                          {scalpHair ? (
+                            <>
+                              <p className="mt-1 text-sm font-medium text-gray-800">
+                                {SCALP_SCALE_LABELS[scalpHair.scale]} · {getScalpStageLabel(scalpHair.stage)}
+                                {scalpAssessment?.density ? ` · Densidad ${scalpAssessment.density.toLocaleLowerCase()}` : ''}
+                              </p>
+                              <p className="mt-1 text-xs leading-5 text-gray-600">El visor representa esta evaluación de la sesión; es orientativo y no una medición diagnóstica.</p>
+                            </>
+                          ) : (
+                            <>
+                              <p className="mt-1 text-sm font-medium text-gray-800">Define escala y etapa para mostrar el cabello.</p>
+                              <p className="mt-1 text-xs leading-5 text-gray-600">Sin evaluación, el visor conserva la cabeza limpia en lugar de inventar un patrón por defecto.</p>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setClinicalDataModalOpen(true)}
+                        className="admin-focus-ring inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-gold/50 bg-white px-4 text-sm font-semibold text-gold-ink shadow-sm hover:bg-gold/10"
+                      >
+                        <ScanSearch className="h-4 w-4" aria-hidden="true" />
+                        {scalpHair ? 'Editar evaluación' : 'Configurar cabello'}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
                 <div className="relative overflow-hidden rounded-2xl border border-gray-100 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.8)]" style={{ height: '360px' }}>
                   <Clinical3DViewer
                     markers={getAreaMarkers(currentTreatment)}
@@ -970,22 +1013,6 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                     </button>
                   ) : null}
                 </div>
-                {mode === 'capilar' ? (
-                  <div className="rounded-xl border border-gold/30 bg-gold/10 p-3 text-xs leading-5 text-gray-600" role="status">
-                    {scalpHair ? <>
-                      {describeTreatmentAssessment(currentTreatment, mode)}. Modelo orientativo de la sesión seleccionada,
-                      no una fotografía ni una medición diagnóstica.
-                      {!scalpAssessment?.density ? ' Densidad no registrada: el render usa una referencia media, no una valoración del paciente.' : ''}
-                    </> : <>
-                      No hay una clasificación capilar completa para esta sesión. La cabeza se muestra sin simular
-                      una etapa por defecto; registra escala y patrón en la evaluación tricológica.
-                    </>}
-                    <button type="button" onClick={() => setClinicalDataModalOpen(true)}
-                      className="admin-focus-ring mt-2 block min-h-10 rounded-lg border border-gold/50 bg-white px-3 font-semibold text-gold-ink">
-                      Evaluar cuero cabelludo
-                    </button>
-                  </div>
-                ) : null}
                 {getAreaMarkers(currentTreatment).length > 0 ? (
                   <div className="flex flex-wrap gap-1.5">
                     {getAreaMarkers(currentTreatment).map(m => (
@@ -1206,8 +1233,8 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
         <div>
           <div className="mb-3 px-1">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-ink">Paso 2</p>
-            <h2 className="mt-1 text-lg font-semibold text-gray-900">Seguimiento y evaluación</h2>
-            <p className="mt-1 text-xs leading-5 text-gray-500">Ábrelo cuando necesites comparar evolución o registrar hallazgos clínicos.</p>
+            <h2 className="mt-1 text-lg font-semibold text-gray-900">Seguimiento y comparación</h2>
+            <p className="mt-1 text-xs leading-5 text-gray-500">Ábrelo cuando necesites comparar la evolución con una sesión previa o documentar el próximo control.</p>
           </div>
           <TreatmentFollowUpPanel
             key={`${mode}-${currentTreatment.id ?? 'new'}-${currentTreatment.package_id ?? currentTreatment.procedure_name}`}
