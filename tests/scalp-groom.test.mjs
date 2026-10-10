@@ -62,6 +62,17 @@ test('Ludwig: aclaramiento difuso progresivo, raya central y banda frontal prese
     assert.ok(coverage(stage, 0, 2.4, 0.3, 'ludwig') < coverage(stage, 0.3, 2.4, 0.3, 'ludwig'));
   }
 });
+test('Savin incorpora nueve patrones sin reinterpretar Ludwig clásico', () => {
+  assert.deepEqual(Array.from(patterns.LUDWIG_STAGES), ['I', 'II', 'III']);
+  assert.deepEqual(Array.from(patterns.SAVIN_STAGES), ['I-1', 'I-2', 'I-3', 'I-4', 'II-1', 'II-2', 'III', 'Advanced', 'Frontal']);
+  const values = patterns.SAVIN_STAGES.slice(0, 8).map(stage => coverage(stage, 0.2, 2.4, 0, 'savin'));
+  for (let i = 1; i < values.length; i += 1) assert.ok(values[i] < values[i - 1]);
+  for (const stage of patterns.SAVIN_STAGES.slice(0, 8)) {
+    assert.equal(coverage(stage, 0, 1.6, 1.45, 'savin'), 1);
+  }
+  assert.ok(coverage('Frontal', 0, 1.6, 1.45, 'savin') < 0.01);
+  assert.ok(coverage('Advanced', 0, 2.4, -0.1, 'savin') < 0.02);
+});
 
 test('Tarjetas clínicas comparten patrones; VI no conserva una franja frontal artificial', () => {
   const { ScalpStageIllustration } = loadTS(
@@ -73,8 +84,8 @@ test('Tarjetas clínicas comparten patrones; VI no conserva una franja frontal a
     },
     '\nexport { ScalpStageIllustration };',
   );
-  for (const scale of ['norwood', 'ludwig']) {
-    const stages = scale === 'norwood' ? patterns.NORWOOD_STAGES : patterns.LUDWIG_STAGES;
+  for (const scale of ['norwood', 'ludwig', 'savin']) {
+    const stages = patterns.getScalpStages(scale);
     const signatures = new Set();
     stages.forEach((_, stageIndex) => {
       const svg = ScalpStageIllustration({ scale, stageIndex });
@@ -125,10 +136,10 @@ head.traverse(mesh => {
 });
 
 test('Todas las etapas producen máscaras distintas sobre el GLB real', () => {
-  for (const scale of ['norwood', 'ludwig']) {
+  for (const scale of ['norwood', 'ludwig', 'savin']) {
     const signatures = [];
     const averages = [];
-    const stages = scale === 'norwood' ? patterns.NORWOOD_STAGES : patterns.LUDWIG_STAGES;
+    const stages = patterns.getScalpStages(scale);
     for (const stage of stages) {
       const group = createScalpGroomGroup({ ...options, scale, stage, density: 'Baja' }, head);
       assert.ok(group);
@@ -141,6 +152,7 @@ test('Todas las etapas producen máscaras distintas sobre el GLB real', () => {
       dispose(group);
     }
     for (let index = 1; index < averages.length; index += 1) {
+      if (stages[index] === 'Frontal') continue;
       assert.ok(averages[index - 1] - averages[index] > 0.005,
         `${scale} ${stages[index]} needs a measurable decrease on the actual head`);
     }

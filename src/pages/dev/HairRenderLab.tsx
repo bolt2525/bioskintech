@@ -13,7 +13,7 @@ import Clinical3DViewer, {
 } from '../../components/admin/ficha-clinica/components/Clinical3DViewer';
 import { useAuth } from '../../context/AuthContext';
 import { SCALP_BOUNDARY_PRESET, SCALP_BOUNDARY_PRESET_VERSION } from '../../data/scalpBoundaryPreset';
-import { NORWOOD_STAGES, LUDWIG_STAGES, NORWOOD_DESCRIPTIONS, LUDWIG_DESCRIPTIONS } from '../../data/scalpPatterns';
+import { getScalpStages, getScalpDescriptions, getScalpStageLabel, SCALP_SCALE_LABELS, type ScalpScale } from '../../data/scalpPatterns';
 
 type LabMode = 'hair' | 'model';
 type Density = 'Alta' | 'Media' | 'Baja';
@@ -101,7 +101,7 @@ const RangeControl = ({
 function HairRenderLabView({ onBack }: { onBack?: () => void }) {
   const viewerRef = useRef<HTMLDivElement>(null);
   const [labMode, setLabMode] = useState<LabMode>('hair');
-  const [scale, setScale] = useState<'norwood' | 'ludwig'>(DEFAULT_HAIR.scale);
+  const [scale, setScale] = useState<ScalpScale>(DEFAULT_HAIR.scale);
   const [stage, setStage] = useState(DEFAULT_HAIR.stage);
   const [density, setDensity] = useState<Density>(DEFAULT_HAIR.density);
   const [hairColor, setHairColor] = useState(DEFAULT_HAIR.color);
@@ -122,7 +122,7 @@ function HairRenderLabView({ onBack }: { onBack?: () => void }) {
   const [marking, setMarking] = useState(false);
   const [fileError, setFileError] = useState('');
 
-  const stages = scale === 'norwood' ? NORWOOD_STAGES : LUDWIG_STAGES;
+  const stages = getScalpStages(scale);
   const hairVisualization = useMemo<ScalpHairVisualization>(() => ({
     scale,
     stage,
@@ -311,17 +311,17 @@ function HairRenderLabView({ onBack }: { onBack?: () => void }) {
                 <fieldset>
                   <legend className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Escala clínica</legend>
                   <div className="grid grid-cols-2 gap-2">
-                    {(['norwood', 'ludwig'] as const).map(item => (
+                    {(['norwood', 'ludwig', 'savin'] as const).map(item => (
                       <button
                         key={item}
                         type="button"
                         aria-pressed={scale === item}
-                        onClick={() => { setScale(item); setStage('I'); }}
+                        onClick={() => { setScale(item); setStage(getScalpStages(item)[0]); }}
                         className={`admin-focus-ring min-h-11 rounded-xl border text-sm font-semibold ${
                           scale === item ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 text-slate-600'
                         }`}
                       >
-                        {item === 'norwood' ? 'Norwood' : 'Ludwig'}
+                        {SCALP_SCALE_LABELS[item]}
                       </button>
                     ))}
                   </div>
@@ -333,11 +333,11 @@ function HairRenderLabView({ onBack }: { onBack?: () => void }) {
                     onChange={event => setStage(event.target.value)}
                     className="admin-focus-ring min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold"
                   >
-                    {stages.map(item => <option key={item}>{item}</option>)}
+                    {stages.map(item => <option key={item} value={item}>{getScalpStageLabel(item)}</option>)}
                   </select>
                 </label>
                 <p className="text-xs leading-5 text-slate-600" role="status">
-                  {(scale === 'norwood' ? NORWOOD_DESCRIPTIONS : LUDWIG_DESCRIPTIONS)[stages.indexOf(stage)]}
+                  {getScalpDescriptions(scale)[stages.indexOf(stage)]}
                 </p>
                 <fieldset>
                   <legend className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Densidad</legend>
@@ -386,7 +386,7 @@ function HairRenderLabView({ onBack }: { onBack?: () => void }) {
                   </div>
                 </fieldset>
                 <p className="rounded-xl bg-slate-50 p-3 text-xs text-slate-500">
-                  {scale === 'ludwig' ? 'Peinado femenino corto con raya central' : 'Peinado masculino corto'} · PBR.
+                  {scale !== 'norwood' ? 'Peinado femenino corto con raya central' : 'Peinado masculino corto'} · PBR.
                   {' '}La densidad cambia la cantidad de fibras y la visibilidad del cuero cabelludo.
                   {' '}Representación orientativa, no simulación diagnóstica.
                 </p>
@@ -552,7 +552,7 @@ function HairRenderLabView({ onBack }: { onBack?: () => void }) {
                 </p>
                 <p className="text-sm font-semibold">
                   {labMode === 'hair'
-                    ? `${scale === 'norwood' ? 'Norwood' : 'Ludwig'} ${stage} · Densidad ${density.toLowerCase()}`
+                    ? `${SCALP_SCALE_LABELS[scale]} ${getScalpStageLabel(stage)} · Densidad ${density.toLowerCase()}`
                     : modelName}
                 </p>
               </div>

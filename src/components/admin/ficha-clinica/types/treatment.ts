@@ -1,4 +1,5 @@
 import type { Marker3D } from '../components/Clinical3DViewer';
+import type { ScalpScale } from '../../../../data/scalpPatterns';
 
 /** Modo del tab de Tratamientos — el historial previo a esta migración pertenece a 'facial' */
 export type TreatmentMode = 'facial' | 'corporal' | 'capilar';
@@ -68,7 +69,7 @@ export interface AnthropometricsData {
   custom: Array<{ label: string; before: string; after: string }>;
 }
 
-export type HairLossScale = 'norwood' | 'ludwig';
+export type HairLossScale = ScalpScale;
 export interface ScalpAssessmentData {
   scale: HairLossScale | null;
   stage: string | null;

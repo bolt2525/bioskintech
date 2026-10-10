@@ -11,7 +11,7 @@ interface TratamientosCapilarProps {
   onSave: () => void;
 }
 
-/** Modo Capilar — cabeza clínica con malla capilar estilizada para el groom dinámico. */
+/** Modo Capilar — cabeza clínica y groom dinámico a partir de la evaluación de cada sesión. */
 export default function TratamientosCapilar(props: TratamientosCapilarProps) {
-  return <TreatmentModeView mode="capilar" modelUrl="/models/clinical/male_head_hair.glb" {...props} />;
+  return <TreatmentModeView mode="capilar" modelUrl="/models/clinical/male_head.glb" {...props} />;
 }

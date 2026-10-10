@@ -10,7 +10,7 @@ import { Tooltip } from '../../../../ui/Tooltip';
 import type {
   TreatmentMode, PostCareData, AnthropometricsData, ScalpAssessmentData, SeverityScale, HairLossScale,
 } from '../../types/treatment';
-import { NORWOOD_STAGES, LUDWIG_STAGES, NORWOOD_DESCRIPTIONS, LUDWIG_DESCRIPTIONS, getScalpCoverage } from '../../../../../data/scalpPatterns';
+import { getScalpStages, getScalpDescriptions, getScalpStageLabel, SCALP_SCALE_LABELS, getScalpCoverage } from '../../../../../data/scalpPatterns';
 export { NORWOOD_STAGES, LUDWIG_STAGES } from '../../../../../data/scalpPatterns';
 
 const SEVERITY_META: Record<SeverityScale, { label: string; description: string; detail: string }> = {
@@ -71,7 +71,7 @@ function BodyMeasureIllustration({ measure }: { measure: keyof AnthropometricsDa
 /** Ilustración esquemática (SVG generado, no una foto clínica) de la silueta craneal con el patrón
  *  de pérdida capilar aproximado para la escala/etapa seleccionada — solo referencial. */
 function ScalpStageIllustration({ scale, stageIndex }: { scale: HairLossScale; stageIndex: number }) {
-  const stage = (scale === 'norwood' ? NORWOOD_STAGES : LUDWIG_STAGES)[stageIndex];
+  const stage = getScalpStages(scale)[stageIndex];
   const samples = [];
   for (let row = 0; row < 28; row += 1) {
     for (let column = 0; column < 24; column += 1) {
@@ -126,7 +126,7 @@ export default function ClinicalDataModal({ isOpen, mode, initialData, onClose, 
     onClose();
   };
 
-  const stages = scalp.scale === 'ludwig' ? LUDWIG_STAGES : NORWOOD_STAGES;
+  const stages = getScalpStages(scalp.scale ?? 'norwood');
 
   return (
     <Dialog open={isOpen} onClose={onClose} labelledBy="clinical-data-title">
@@ -238,11 +238,11 @@ export default function ClinicalDataModal({ isOpen, mode, initialData, onClose, 
               <div className="space-y-2">
                 <label className="block text-sm font-medium text-gray-700">Escala de evaluación</label>
                 <div className="flex gap-2">
-                  {(['norwood', 'ludwig'] as HairLossScale[]).map(s => (
+                  {(['norwood', 'ludwig', 'savin'] as HairLossScale[]).map(s => (
                     <button key={s} type="button" onClick={() => setScalp(prev => ({ ...prev, scale: s, stage: null }))}
                       aria-pressed={scalp.scale === s}
                       className={`inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium capitalize transition-[color,background-color,border-color,box-shadow] ${scalp.scale === s ? 'border-2 border-gray-900 bg-gray-900 text-white shadow-sm ring-2 ring-gray-300' : 'border border-gray-200 text-gray-600 hover:border-gold hover:bg-gold/10'}`}>
-                      {scalp.scale === s ? <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> : null}{s === 'norwood' ? 'Norwood (masculino)' : 'Ludwig (femenino)'}
+                      {scalp.scale === s ? <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> : null}{SCALP_SCALE_LABELS[s]}
                     </button>
                   ))}
                 </div>
@@ -250,10 +250,16 @@ export default function ClinicalDataModal({ isOpen, mode, initialData, onClose, 
 
               {scalp.scale && (
                 <div className="space-y-2">
+                  {scalp.scale === 'savin' ? (
+                    <p className="text-xs leading-5 text-gray-500">
+                      Nueve patrones de Savin, ampliación de Ludwig. Avanzada y Frontal son variantes;
+                      Frontal no es una etapa posterior. Ludwig clásico conserva I–III sin reinterpretar registros previos.
+                    </p>
+                  ) : null}
                   <label className="block text-sm font-medium text-gray-700">Etapa (tarjetas ilustrativas, haz clic para seleccionar)</label>
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                     {stages.map((label, idx) => {
-                      const description = (scalp.scale === 'norwood' ? NORWOOD_DESCRIPTIONS : LUDWIG_DESCRIPTIONS)[idx];
+                      const description = getScalpDescriptions(scalp.scale!)[idx];
                       const selected = scalp.stage === label;
                       return (
                         <Tooltip key={label} content={`Etapa ${label}: ${description}. Ilustración orientativa; complementa la selección con densidad, tipo de alopecia, síntomas y notas clínicas.`} position="top" className="w-full">
@@ -262,7 +268,7 @@ export default function ClinicalDataModal({ isOpen, mode, initialData, onClose, 
                             className={`admin-focus-ring relative flex min-h-36 w-full flex-col items-center gap-1 rounded-xl p-2 text-center transition-[border-color,background-color,box-shadow,transform] ${selected ? 'border-2 border-gold-dark bg-gold/10 shadow-md ring-2 ring-gold/30' : 'border border-gray-200 hover:-translate-y-0.5 hover:border-gold hover:bg-gold/10 hover:shadow-sm'}`}>
                             {selected ? <CheckCircle2 className="absolute right-2 top-2 h-4 w-4 text-gold-ink" aria-hidden="true" /> : null}
                             <ScalpStageIllustration scale={scalp.scale as HairLossScale} stageIndex={idx} />
-                            <span className="text-xs font-semibold text-gray-700">Etapa {label}</span>
+                            <span className="text-xs font-semibold text-gray-700">{getScalpStageLabel(label)}</span>
                             <span className="text-[9px] leading-3 text-gray-500">{description}</span>
                           </button>
                         </Tooltip>

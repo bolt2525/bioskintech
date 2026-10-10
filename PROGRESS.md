@@ -1,5 +1,8 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-10 Savin: nueve patrones integrados.
+- ✅ 2026-10-10 Capilar: caché y buffers indexados.
+- ✅ 2026-10-10 Tratamientos: seguimiento por sesión.
 - ✅ 2026-10-09 Norwood/Ludwig: patrones y densidad.
 - ✅ 2026-10-09 Ludwig: peinado femenino procedural.
 - ✅ 2026-10-09 Capilar: centro y normales corregidos.

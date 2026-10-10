@@ -7,11 +7,15 @@ import TreatmentParametersModal, { type TreatmentParameters, formatParametersAsT
 import TreatmentPackageModal from './TreatmentPackageModal';
 import TreatmentFinanceOptions from './TreatmentFinanceOptions';
 import ClinicalDataModal from './ClinicalDataModal';
+import TreatmentFollowUpPanel from './TreatmentFollowUpPanel';
 import Clinical3DViewer from '../Clinical3DViewer';
 import type { Marker3D, MarkerType, ScalpHairVisualization } from '../Clinical3DViewer';
 import { useAuth } from '../../../../../context/AuthContext';
 import treatmentOptions from '../../data/treatment_options.json';
-import { SCALP_BOUNDARY_PRESET } from '../../../../../data/scalpBoundaryPreset';
+import { SCALP_SCALE_LABELS, getScalpStageLabel } from '../../../../../data/scalpPatterns';
+import {
+  FOLLOW_UP_KEY, getFollowUpLabel, getScalpVisualization, prepareNextTreatment, describeTreatmentAssessment,
+} from '../../types/treatmentFollowUp';
 import { Tooltip } from '../../../../ui/Tooltip';
 import FieldHelp from '../FieldHelp';
 import { HELP } from '../../data/fieldHelpTexts';
@@ -78,7 +82,7 @@ function getClinicalDataBadge(t: Treatment, mode: TreatmentMode): string | null 
   }
   const d = data as ScalpAssessmentData;
   if (!d.scale) return null;
-  return `${d.scale === 'norwood' ? 'Norwood' : 'Ludwig'} ${d.stage ?? ''} · ${d.density ?? 'sin densidad'}`;
+  return describeTreatmentAssessment(t, mode);
 }
 
 function ClinicalSummaryPanel({
@@ -151,7 +155,7 @@ function ClinicalSummaryPanel({
         <div className="rounded-xl border border-violet-100 bg-violet-50/70 p-3">
           <p className="text-[10px] font-semibold uppercase tracking-wide text-violet-500">Clasificación</p>
           <p className="mt-1 font-semibold text-gray-800">
-            {scalp.scale ? `${scalp.scale === 'norwood' ? 'Norwood' : 'Ludwig'} ${scalp.stage || ''}` : 'Sin clasificar'}
+            {scalp.scale ? `${SCALP_SCALE_LABELS[scalp.scale] ?? 'Escala no reconocida'} ${getScalpStageLabel(scalp.stage || '')}` : 'Sin clasificar'}
           </p>
         </div>
         <div className="grid grid-cols-2 gap-2 text-xs">
@@ -232,6 +236,7 @@ const makeEmptyTreatment = (mode: TreatmentMode): Treatment => ({
 
 const parseTreatedZones = (value: string): string[] =>
   value.split(',').map(zone => zone.trim()).filter(Boolean);
+const getTreatmentProcedure = (treatment: Treatment): string => treatment.procedure_name;
 
 const toggleTreatedZone = (value: string, zone: string): string => {
   const zones = parseTreatedZones(value);
@@ -276,7 +281,6 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
   const [activeZoneChip, setActiveZoneChip] = useState<string | null>(null);
   const [markerType, setMarkerType] = useState<MarkerType>('Puntual');
   const [customZone, setCustomZone] = useState('');
-  const [duplicating, setDuplicating] = useState(false);
   const [highlightedId, setHighlightedId] = useState<number | null>(null);
   // ponytail: string state to allow empty field and comma-as-decimal-separator
   const [costInput, setCostInput] = useState('');
@@ -320,15 +324,15 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
   );
 
   // Sort treatments by date descending for the history list
-  const sortedTreatments = [...modeTreatments]
+  const sortedTreatments = useMemo(() => [...modeTreatments]
     .filter(t => Number(t.consultation_id) === Number(consultationId))
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [modeTreatments, consultationId]);
   const otherTreatCount = modeTreatments.filter(t => Number(t.consultation_id) !== Number(consultationId)).length;
 
-  const independentSessions = sortedTreatments.filter(t => !t.package_id);
-  const { groups: procedureGroups, expandedGroups, toggleGroup, expandGroup } = useTreatmentGrouping(
+  const independentSessions = useMemo(() => sortedTreatments.filter(t => !t.package_id), [sortedTreatments]);
+  const { groups: procedureGroups, expandedGroups, toggleGroup } = useTreatmentGrouping(
     independentSessions,
-    t => t.procedure_name
+    getTreatmentProcedure
   );
 
   useEffect(() => {
@@ -438,69 +442,22 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
     }
   };
 
-  /** Duplica el tratamiento actual: lo guarda de inmediato como una nueva sesión (nuevo id) y la selecciona/resalta en el historial */
-  const handleDuplicate = async () => {
+  const handlePrepareNext = () => {
     if (!currentTreatment.id) return;
-    const rest = { ...currentTreatment };
-    delete rest.id;
-    setDuplicating(true);
-    setMessage(null);
-    try {
-      const body = {
-        record_id: recordId,
-        ...rest,
-        date: getLocalDate(),
-        ...(consultationId ? { consultation_id: consultationId } : {}),
-      };
-      const response = await recordsFetch('/api/records?action=addTreatment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const resBody = await response.json().catch(() => null);
-      if (!response.ok) {
-        throw new Error(resBody?.error || `Error al duplicar (HTTP ${response.status})`);
-      }
-
-      onSave();
-      if (rest.package_id) loadPackages();
-      const newTreatment: Treatment = { ...resBody, date: toDateOnly(resBody.date) };
-      setCurrentTreatment(newTreatment);
-      setCostInput(newTreatment.cost > 0 ? String(newTreatment.cost) : '');
-      setDateLocked(false);
-      if (groupByProcedure && !newTreatment.package_id) {
-        expandGroup((newTreatment.procedure_name || 'Sin procedimiento').trim().toLowerCase());
-      }
-      setHighlightedId(newTreatment.id ?? null);
-      setTimeout(() => setHighlightedId(null), 2500);
-      setMessage({ type: 'success', text: 'Tratamiento duplicado y guardado como nueva sesión. Ajusta la fecha u otros datos y guarda los cambios.' });
-    } catch (error) {
-      console.error('Error duplicating treatment:', error);
-      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Error al duplicar el tratamiento' });
-    } finally {
-      setDuplicating(false);
-    }
+    const next = prepareNextTreatment(currentTreatment, getLocalDate());
+    setCurrentTreatment(next);
+    setCostInput(next.cost > 0 ? String(next.cost) : '');
+    setDateLocked(false);
+    setActiveZoneChip(null);
+    setFinancePosting(createFinancePostingOptions());
+    setMessage({ type: 'success', text: 'Control preparado, aún sin guardar. Revisa fecha, costo y parámetros; registra los hallazgos nuevos antes de guardar.' });
   };
 
   const equipmentNames = parseEquipmentNames(currentTreatment.equipment_used);
   const scalpAssessment = currentTreatment.parameters?.[RESERVED_PARAM_KEYS.capilar] as ScalpAssessmentData | undefined;
-  const scalpScale = scalpAssessment?.scale ?? 'norwood';
-  const scalpStage = scalpAssessment?.stage ?? 'I';
-  const scalpDensity = scalpAssessment?.density ?? 'Media';
   const scalpHair = useMemo<ScalpHairVisualization | null>(() => (
-    mode === 'capilar'
-      ? {
-        scale: scalpScale,
-        stage: scalpStage,
-        density: scalpDensity,
-        color: '#2b1a12',
-        lengthScale: 0.82,
-        showBoundaryTrace: false,
-        boundaryPoints: SCALP_BOUNDARY_PRESET,
-        boundaryClosed: true,
-      }
-      : null
-  ), [mode, scalpDensity, scalpScale, scalpStage]);
+    mode === 'capilar' ? getScalpVisualization(scalpAssessment) : null
+  ), [mode, scalpAssessment]);
 
   /** Guarda los datos clínicos adicionales del modo (cuidados post-tratamiento, antropometría o evaluación tricológica) bajo la clave reservada de `parameters` */
   const handleSaveClinicalData = (data: PostCareData | AnthropometricsData | ScalpAssessmentData) => {
@@ -621,6 +578,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
       </div>
       <div className="text-xs font-semibold truncate mt-0.5">{t.procedure_name || 'Sin procedimiento'}</div>
       <div className="text-xs opacity-75 truncate">{t.equipment_used || 'Sin equipo'}</div>
+      <div className="mt-1 text-[10px]">{getFollowUpLabel(t)}</div>
       {getClinicalDataBadge(t, mode) && (
         <div className={`text-[10px] mt-1 truncate rounded px-1.5 py-0.5 inline-block ${currentTreatment.id === t.id ? 'bg-white/20' : 'bg-[#deb887]/10 text-[#b8944d]'}`}>
           {getClinicalDataBadge(t, mode)}
@@ -790,15 +748,17 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
               </motion.button>
             </Tooltip>
 
-            <Tooltip content="Duplicar como nueva sesión">
+            <Tooltip content="Preparar siguiente sesión sin copiar hallazgos ni guardar automáticamente">
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={handleDuplicate}
-                disabled={!currentTreatment.id || duplicating}
-                className="p-2 hover:bg-gray-100 rounded-lg text-gray-600 border border-gray-200 disabled:opacity-50"
+                onClick={handlePrepareNext}
+                disabled={!currentTreatment.id || saving}
+                aria-label="Preparar siguiente sesión"
+                className="admin-focus-ring flex min-h-11 items-center gap-2 p-2 hover:bg-gray-100 rounded-lg text-gray-600 border border-gray-200 disabled:opacity-50"
               >
-                {duplicating ? <div className="animate-spin w-5 h-5 border-2 border-gray-300 border-t-gray-500 rounded-full" /> : <Copy className="w-5 h-5" />}
+                <Copy className="w-5 h-5" aria-hidden="true" />
+                <span className="text-xs font-semibold">Siguiente sesión</span>
               </motion.button>
             </Tooltip>
 
@@ -850,6 +810,17 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
             </motion.div>
           )}
         </AnimatePresence>
+
+        <TreatmentFollowUpPanel
+          key={`${mode}-${currentTreatment.id ?? 'new'}-${currentTreatment.package_id ?? currentTreatment.procedure_name}`}
+          mode={mode}
+          current={currentTreatment}
+          history={modeTreatments}
+          onChange={followUp => setCurrentTreatment(previous => ({
+            ...previous, parameters: { ...previous.parameters, [FOLLOW_UP_KEY]: followUp },
+          }))}
+          onAssess={() => setClinicalDataModalOpen(true)}
+        />
 
         {/* Form Fields */}
         <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm space-y-6 overflow-y-auto custom-scrollbar">
@@ -977,6 +948,22 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                     </button>
                   ) : null}
                 </div>
+                {mode === 'capilar' ? (
+                  <div className="rounded-xl border border-gold/30 bg-gold/10 p-3 text-xs leading-5 text-gray-600" role="status">
+                    {scalpHair ? <>
+                      {describeTreatmentAssessment(currentTreatment, mode)}. Modelo orientativo de la sesión seleccionada,
+                      no una fotografía ni una medición diagnóstica.
+                      {!scalpAssessment?.density ? ' Densidad no registrada: el render usa una referencia media, no una valoración del paciente.' : ''}
+                    </> : <>
+                      No hay una clasificación capilar completa para esta sesión. La cabeza se muestra sin simular
+                      una etapa por defecto; registra escala y patrón en la evaluación tricológica.
+                    </>}
+                    <button type="button" onClick={() => setClinicalDataModalOpen(true)}
+                      className="admin-focus-ring mt-2 block min-h-10 rounded-lg border border-gold/50 bg-white px-3 font-semibold text-gold-ink">
+                      Evaluar cuero cabelludo
+                    </button>
+                  </div>
+                ) : null}
                 {getAreaMarkers(currentTreatment).length > 0 ? (
                   <div className="flex flex-wrap gap-1.5">
                     {getAreaMarkers(currentTreatment).map(m => (
@@ -1219,6 +1206,8 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
           {t.duration_minutes > 0 && <div><span className="text-gray-400">Duración:</span> {t.duration_minutes} min</div>}
           {t.cost > 0 && <div><span className="text-gray-400">Costo:</span> ${t.cost}</div>}
           {t.notes && <div><span className="text-gray-400">Notas:</span> {t.notes}</div>}
+          <div><span className="text-gray-400">Seguimiento:</span> {getFollowUpLabel(t)}</div>
+          <div>{describeTreatmentAssessment(t, mode)}</div>
           {t.date && <div><span className="text-gray-400">Fecha:</span> {new Date(toDateOnly(t.date) + 'T12:00:00').toLocaleDateString('es-EC')}</div>}
         </>
       )}
