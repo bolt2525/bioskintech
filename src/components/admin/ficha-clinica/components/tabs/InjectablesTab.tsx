@@ -2708,251 +2708,253 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
               {/* ── SIN tabs — la vista es siempre de marcación ── */}
 
               <div ref={viewerRef} className="p-4">
-                <div className="sticky top-20 z-40 mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/95 p-2 shadow-md backdrop-blur">
-                  <div role="group" aria-label="Navegación y puntos" className="flex shrink-0 items-center gap-2">
-                    <button
-                      type="button"
-                      aria-pressed={activeTool === 'none' && pointMode === 'none'}
-                      onClick={() => {
-                        setActiveTool('none');
-                        setPointMode('none');
-                        setActiveLineType(null);
-                        setSelectedElement(null);
-                        setShowShapesDropdown(false);
-                        setShowHaShapesDropdown(false);
-                      }}
-                      className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold ${
-                        activeTool === 'none' && pointMode === 'none'
-                          ? 'border-slate-800 bg-slate-800 text-white'
-                          : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
-                      }`}
-                    >
-                      <MousePointer2 className="h-4 w-4" aria-hidden="true" />
-                      Navegar / Rotar
-                    </button>
-                    <button type="button" aria-pressed={pointMode === 'add'}
-                      onClick={() => { setActiveTool('none'); setPointMode(mode => mode === 'add' ? 'none' : 'add'); }}
-                      className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-gold ${
-                        pointMode === 'add' ? 'border-gold bg-gold-light text-gold-ink' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
-                      }`}>
-                      <Plus className="h-4 w-4" aria-hidden="true" /> Añadir punto
-                    </button>
-                  </div>
-                  <p className="min-w-0 flex-1 text-sm text-slate-700" role="status" aria-live="polite">
-                    {activeTool === 'none' && pointMode === 'none'
-                      ? 'Arrastra para rotar. Haz clic en un punto o trazo para editarlo; la piel no añade puntos.'
-                      : pointMode === 'add'
-                        ? 'Añadir punto: haz clic en la piel. Para rotar, pulsa Navegar / Rotar o Escape.'
-                        : pointMode === 'delete'
-                          ? 'Eliminar punto: selecciona el punto que deseas quitar. Escape vuelve a navegar.'
-                          : 'Modo dibujo activo: arrastrar sobre la piel dibuja, no rota. Usa Navegar / Rotar o Escape antes de girar.'}
-                  </p>
-                </div>
-                <details className="mb-3 rounded-xl border border-slate-200 bg-white"
-                  onToggle={event => {
-                    if (!event.currentTarget.open) {
-                      setActiveTool('none');
-                      setShowShapesDropdown(false);
-                      setShowHaShapesDropdown(false);
-                    }
-                  }}>
-                  <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-700">
-                    Anotaciones gráficas <span className="ml-2 text-xs font-normal text-slate-500">Opcional · no registran dosis</span>
-                  </summary>
-                  <p className="px-4 pb-3 text-sm leading-relaxed text-slate-600" role="status" aria-live="polite">{DRAWING_GUIDE[activeTool]}</p>
-                {/* ── Toolbar secundaria: Herramientas de Dibujo HA ─────────────── */}
-                <div className="mb-2 flex flex-wrap items-center gap-2 p-3 bg-slate-900 rounded-xl border border-slate-700" aria-label="Herramientas de marcación y dibujo">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-slate-200">Dibujar:</span>
-                  {/* Pincel libre */}
-                  <Tooltip content="Pincel: mantener y arrastrar para trazar una línea sobre la piel">
-                    <button
-                      aria-pressed={activeTool === 'freehand-brush'}
-                      onClick={() => { setActiveTool(activeTool === 'freehand-brush' ? 'none' : 'freehand-brush'); setPointMode('none'); setShowShapesDropdown(false); setShowHaShapesDropdown(false); }}
-                      className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold border transition-colors focus-visible:ring-2 focus-visible:ring-white ${
-                        activeTool === 'freehand-brush'
-                          ? 'bg-gold-light text-gold-ink border-gold'
-                          : 'bg-slate-800 text-slate-100 border-slate-600 hover:bg-slate-700'
-                      }`}
-                    >
-                      <PenLine className="w-3 h-3" />
-                      Pincel
-                    </button>
-                  </Tooltip>
-
-                  {/* Polilínea */}
-                  <Tooltip content="Polilínea: clic por vértice, doble-clic para finalizar">
-                    <button
-                      aria-pressed={activeTool === 'freehand-poly'}
-                      onClick={() => { setActiveTool(activeTool === 'freehand-poly' ? 'none' : 'freehand-poly'); setPointMode('none'); setShowShapesDropdown(false); setShowHaShapesDropdown(false); }}
-                      className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold border transition-colors focus-visible:ring-2 focus-visible:ring-white ${
-                        activeTool === 'freehand-poly'
-                          ? 'bg-gold-light text-gold-ink border-gold'
-                          : 'bg-slate-800 text-slate-100 border-slate-600 hover:bg-slate-700'
-                      }`}
-                    >
-                      <Pentagon className="w-3 h-3" />
-                      Polilínea
-                    </button>
-                  </Tooltip>
-
-                  {/* Grupo: Formas (Círculo + Rectángulo) */}
-                  <div className="relative">
-                    <button
-                      aria-expanded={showShapesDropdown}
-                      onClick={() => { setShowShapesDropdown(v => !v); setShowHaShapesDropdown(false); }}
-                      className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold border transition-colors focus-visible:ring-2 focus-visible:ring-white ${
-                        activeTool === 'shape-circle' || activeTool === 'shape-rect'
-                          ? 'bg-gold-light text-gold-ink border-gold'
-                          : 'bg-slate-800 text-slate-100 border-slate-600 hover:bg-slate-700'
-                      }`}
-                    >
-                      <Circle className="w-3 h-3" />
-                      Formas
-                      <ChevronDown className="w-2.5 h-2.5 opacity-60" />
-                    </button>
-                    {showShapesDropdown && (
-                      <div className="absolute left-0 top-full mt-1 z-50 w-36 bg-slate-800 border border-slate-600 rounded-xl shadow-2xl overflow-hidden">
-                        <button
-                          aria-pressed={activeTool === 'shape-circle'}
-                          onClick={() => { setActiveTool(activeTool === 'shape-circle' ? 'none' : 'shape-circle'); setPointMode('none'); setShowShapesDropdown(false); }}
-                          className={`w-full flex items-center gap-2 px-3 py-2 text-[11px] font-semibold hover:bg-slate-700 transition-colors ${activeTool === 'shape-circle' ? 'text-violet-300' : 'text-slate-300'}`}
-                        >
-                          <Circle className="w-3 h-3" /> Círculo
-                        </button>
-                        <button
-                          onClick={() => { setActiveTool(activeTool === 'shape-rect' ? 'none' : 'shape-rect'); setPointMode('none'); setShowShapesDropdown(false); }}
-                          aria-pressed={activeTool === 'shape-rect'}
-                          className={`w-full flex items-center gap-2 px-3 py-2 text-[11px] font-semibold hover:bg-slate-700 transition-colors border-t border-slate-700 ${activeTool === 'shape-rect' ? 'text-violet-300' : 'text-slate-300'}`}
-                        >
-                          <Square className="w-3 h-3" /> Rectángulo
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Herramientas de línea y flecha — disponibles en toxina y relleno */}
-                  <>
-                    <div className="w-px h-5 bg-slate-600 mx-0.5" />
-                    <Tooltip content="Línea recta: arrastrar de A a B sobre la piel">
+                <div className="sticky top-20 z-40 -mx-4 mb-3 space-y-2 bg-white/95 px-4 pb-1 pt-1 backdrop-blur">
+                  <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/95 p-2 shadow-md">
+                    <div role="group" aria-label="Navegación y puntos" className="flex shrink-0 items-center gap-2">
                       <button
-                        onClick={() => { setActiveTool(activeTool === 'straight-line' ? 'none' : 'straight-line'); setPointMode('none'); setShowHaShapesDropdown(false); }}
-                        aria-pressed={activeTool === 'straight-line'}
-                        className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold border transition-colors focus-visible:ring-2 focus-visible:ring-white ${
-                          activeTool === 'straight-line' ? 'bg-gold-light text-gold-ink border-gold' : 'bg-slate-800 text-slate-100 border-slate-600 hover:bg-slate-700'
+                        type="button"
+                        aria-pressed={activeTool === 'none' && pointMode === 'none'}
+                        onClick={() => {
+                          setActiveTool('none');
+                          setPointMode('none');
+                          setActiveLineType(null);
+                          setSelectedElement(null);
+                          setShowShapesDropdown(false);
+                          setShowHaShapesDropdown(false);
+                        }}
+                        className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold ${
+                          activeTool === 'none' && pointMode === 'none'
+                            ? 'border-slate-800 bg-slate-800 text-white'
+                            : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
                         }`}
                       >
-                        <Minus className="w-3 h-3" />
-                        Recta
+                        <MousePointer2 className="h-4 w-4" aria-hidden="true" />
+                        Navegar / Rotar
                       </button>
-                    </Tooltip>
-                    <Tooltip content="Flecha: arrastrar de A a B, punta en B">
-                      <button
-                        aria-pressed={activeTool === 'shape-arrow'}
-                        onClick={() => { setActiveTool(activeTool === 'shape-arrow' ? 'none' : 'shape-arrow'); setPointMode('none'); setShowHaShapesDropdown(false); setShowShapesDropdown(false); }}
-                        className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold border transition-colors focus-visible:ring-2 focus-visible:ring-white ${
-                          activeTool === 'shape-arrow' ? 'bg-gold-light text-gold-ink border-gold' : 'bg-slate-800 text-slate-100 border-slate-600 hover:bg-slate-700'
-                        }`}
-                      >
-                        <MoveRight className="w-3 h-3" />
-                        Flecha
-                      </button>
-                    </Tooltip>
-                  </>
-
-                  {/* Patrones HA (solo para relleno) */}
-                  {activeType === 'relleno' && (
-                    <>
-                      {/* Grupo Patrones HA */}
-                      <div className="relative">
-                        <button
-                          aria-expanded={showHaShapesDropdown}
-                          onClick={() => { setShowHaShapesDropdown(v => !v); setShowShapesDropdown(false); }}
-                          className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold border transition-colors focus-visible:ring-2 focus-visible:ring-white ${
-                            activeTool === 'ha-fan' || activeTool === 'ha-grid' || activeTool === 'ha-fern'
-                              ? 'bg-gold-light text-gold-ink border-gold'
-                              : 'bg-slate-800 text-slate-100 border-slate-600 hover:bg-slate-700'
-                          }`}
-                        >
-                          <Pentagon className="h-4 w-4" aria-hidden="true" />
-                          Patrones
-                          <ChevronDown className="w-2.5 h-2.5 opacity-60" />
-                        </button>
-                        {showHaShapesDropdown && (
-                          <div className="absolute left-0 top-full mt-1 z-50 w-36 bg-slate-800 border border-slate-600 rounded-xl shadow-2xl overflow-hidden">
-                            <button onClick={() => { setHaShapeConfigTool('ha-fan'); setHaShapeConfigOpen(true); setPointMode('none'); setShowHaShapesDropdown(false); }}
-                              className={`w-full flex items-center gap-2 px-3 py-2 text-[11px] font-semibold hover:bg-slate-700 transition-colors ${activeTool === 'ha-fan' ? 'text-violet-300' : 'text-slate-300'}`}>
-                              <span className="text-xs">扇</span> Abanico
-                            </button>
-                            <button onClick={() => { setHaShapeConfigTool('ha-grid'); setHaShapeConfigOpen(true); setPointMode('none'); setShowHaShapesDropdown(false); }}
-                              className={`w-full flex items-center gap-2 px-3 py-2 text-[11px] font-semibold hover:bg-slate-700 transition-colors border-t border-slate-700 ${activeTool === 'ha-grid' ? 'text-violet-300' : 'text-slate-300'}`}>
-                              <span className="text-xs">⊞</span> Malla
-                            </button>
-                            <button onClick={() => { setHaShapeConfigTool('ha-fern'); setHaShapeConfigOpen(true); setPointMode('none'); setShowHaShapesDropdown(false); }}
-                              className={`w-full flex items-center gap-2 px-3 py-2 text-[11px] font-semibold hover:bg-slate-700 transition-colors border-t border-slate-700 ${activeTool === 'ha-fern' ? 'text-violet-300' : 'text-slate-300'}`}>
-                              <span className="text-xs">☘</span> Helecho
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </>
-                  )}
-
-                  <div className="w-px h-5 bg-slate-700 mx-1" />
-
-                  {/* Color del pincel */}
-                  <Tooltip content="Color para nuevas líneas y formas">
-                    <label className="flex items-center gap-1.5 cursor-pointer">
-                      <span className="text-xs text-slate-200">Color del trazo</span>
-                      <div className="relative">
-                        <div className="w-5 h-5 rounded border border-slate-500 cursor-pointer" style={{ backgroundColor: brushColor }} />
-                        <input type="color" className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" value={brushColor} onChange={e => setBrushColor(e.target.value)} />
-                      </div>
-                    </label>
-                  </Tooltip>
-
-                  {/* Grosor del pincel */}
-                  <Tooltip content="Grosor de las líneas y formas">
-                    <label className="flex items-center gap-1.5">
-                      <span className="text-xs text-slate-200">Grosor</span>
-                      <input type="range" min={1} max={4} step={0.1} value={brushThickness} onChange={e => setBrushThickness(Number(e.target.value))} className="w-16 accent-violet-400" />
-                      <span className="text-[10px] text-slate-500 w-5">{brushThickness.toFixed(1)}x</span>
-                    </label>
-                  </Tooltip>
-
-                  {/* Botón deseleccionar / estado activo */}
-                  {(activeTool !== 'none' || pointMode === 'add') ? (
-                    <div className="ml-auto flex items-center gap-2">
-                      <span className="text-xs text-gold-light font-semibold">
-                        {activeTool === 'freehand-brush' && '● Pincel'}
-                        {activeTool === 'freehand-poly' && '● Polilínea'}
-                        {activeTool === 'straight-line' && '● Recta'}
-                        {activeTool === 'shape-arrow' && '● Flecha'}
-                        {activeTool === 'shape-circle' && '● Círculo'}
-                        {activeTool === 'shape-rect' && '● Rect.'}
-                        {activeTool === 'ha-fan' && '● Abanico'}
-                        {activeTool === 'ha-grid' && '● Malla'}
-                        {activeTool === 'ha-fern' && '● Helecho'}
-                        {activeTool === 'none' && pointMode === 'add' && '● Añadir punto'}
-                      </span>
-                      <button
-                        onClick={() => { setActiveTool('none'); setPointMode('none'); }}
-                        className="flex items-center gap-1 text-[10px] text-white bg-slate-600 hover:bg-slate-500 border border-slate-500 px-2 py-1 rounded-lg transition-colors font-semibold"
-                        title="Deseleccionar herramienta (Escape)"
-                      >
-                        <MousePointer2 className="w-3.5 h-3.5" /> Volver a navegar
+                      <button type="button" aria-pressed={pointMode === 'add'}
+                        onClick={() => { setActiveTool('none'); setPointMode(mode => mode === 'add' ? 'none' : 'add'); }}
+                        className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-gold ${
+                          pointMode === 'add' ? 'border-gold bg-gold-light text-gold-ink' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
+                        }`}>
+                        <Plus className="h-4 w-4" aria-hidden="true" /> Añadir punto
                       </button>
                     </div>
-                  ) : (
-                    (freehandLines.length > 0 || surfaceShapes.length > 0) && (
-                      <span className="ml-auto text-[10px] text-violet-400">
-                        {freehandLines.length > 0 && `${freehandLines.length} línea(s)`}
-                        {freehandLines.length > 0 && surfaceShapes.length > 0 && ' · '}
-                        {surfaceShapes.length > 0 && `${surfaceShapes.length} forma(s)`}
-                      </span>
-                    )
-                  )}
+                    <p className="min-w-0 flex-1 text-sm text-slate-700" role="status" aria-live="polite">
+                      {activeTool === 'none' && pointMode === 'none'
+                        ? 'Arrastra para rotar. Haz clic en un punto o trazo para editarlo; la piel no añade puntos.'
+                        : pointMode === 'add'
+                          ? 'Añadir punto: haz clic en la piel. Para rotar, pulsa Navegar / Rotar o Escape.'
+                          : pointMode === 'delete'
+                            ? 'Eliminar punto: selecciona el punto que deseas quitar. Escape vuelve a navegar.'
+                            : 'Modo dibujo activo: arrastrar sobre la piel dibuja, no rota. Usa Navegar / Rotar o Escape antes de girar.'}
+                    </p>
+                  </div>
+                  <details className="rounded-xl border border-slate-200 bg-white"
+                    onToggle={event => {
+                      if (!event.currentTarget.open) {
+                        setActiveTool('none');
+                        setShowShapesDropdown(false);
+                        setShowHaShapesDropdown(false);
+                      }
+                    }}>
+                    <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-700">
+                      Anotaciones gráficas <span className="ml-2 text-xs font-normal text-slate-500">Opcional · no registran dosis</span>
+                    </summary>
+                    <p className="px-4 pb-3 text-sm leading-relaxed text-slate-600" role="status" aria-live="polite">{DRAWING_GUIDE[activeTool]}</p>
+                  {/* ── Toolbar secundaria: Herramientas de Dibujo HA ─────────────── */}
+                  <div className="mb-2 flex flex-wrap items-center gap-2 p-3 bg-slate-900 rounded-xl border border-slate-700" aria-label="Herramientas de marcación y dibujo">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-200">Dibujar:</span>
+                    {/* Pincel libre */}
+                    <Tooltip content="Pincel: mantener y arrastrar para trazar una línea sobre la piel">
+                      <button
+                        aria-pressed={activeTool === 'freehand-brush'}
+                        onClick={() => { setActiveTool(activeTool === 'freehand-brush' ? 'none' : 'freehand-brush'); setPointMode('none'); setShowShapesDropdown(false); setShowHaShapesDropdown(false); }}
+                        className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold border transition-colors focus-visible:ring-2 focus-visible:ring-white ${
+                          activeTool === 'freehand-brush'
+                            ? 'bg-gold-light text-gold-ink border-gold'
+                            : 'bg-slate-800 text-slate-100 border-slate-600 hover:bg-slate-700'
+                        }`}
+                      >
+                        <PenLine className="w-3 h-3" />
+                        Pincel
+                      </button>
+                    </Tooltip>
+
+                    {/* Polilínea */}
+                    <Tooltip content="Polilínea: clic por vértice, doble-clic para finalizar">
+                      <button
+                        aria-pressed={activeTool === 'freehand-poly'}
+                        onClick={() => { setActiveTool(activeTool === 'freehand-poly' ? 'none' : 'freehand-poly'); setPointMode('none'); setShowShapesDropdown(false); setShowHaShapesDropdown(false); }}
+                        className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold border transition-colors focus-visible:ring-2 focus-visible:ring-white ${
+                          activeTool === 'freehand-poly'
+                            ? 'bg-gold-light text-gold-ink border-gold'
+                            : 'bg-slate-800 text-slate-100 border-slate-600 hover:bg-slate-700'
+                        }`}
+                      >
+                        <Pentagon className="w-3 h-3" />
+                        Polilínea
+                      </button>
+                    </Tooltip>
+
+                    {/* Grupo: Formas (Círculo + Rectángulo) */}
+                    <div className="relative">
+                      <button
+                        aria-expanded={showShapesDropdown}
+                        onClick={() => { setShowShapesDropdown(v => !v); setShowHaShapesDropdown(false); }}
+                        className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold border transition-colors focus-visible:ring-2 focus-visible:ring-white ${
+                          activeTool === 'shape-circle' || activeTool === 'shape-rect'
+                            ? 'bg-gold-light text-gold-ink border-gold'
+                            : 'bg-slate-800 text-slate-100 border-slate-600 hover:bg-slate-700'
+                        }`}
+                      >
+                        <Circle className="w-3 h-3" />
+                        Formas
+                        <ChevronDown className="w-2.5 h-2.5 opacity-60" />
+                      </button>
+                      {showShapesDropdown && (
+                        <div className="absolute left-0 top-full mt-1 z-50 w-36 bg-slate-800 border border-slate-600 rounded-xl shadow-2xl overflow-hidden">
+                          <button
+                            aria-pressed={activeTool === 'shape-circle'}
+                            onClick={() => { setActiveTool(activeTool === 'shape-circle' ? 'none' : 'shape-circle'); setPointMode('none'); setShowShapesDropdown(false); }}
+                            className={`w-full flex items-center gap-2 px-3 py-2 text-[11px] font-semibold hover:bg-slate-700 transition-colors ${activeTool === 'shape-circle' ? 'text-violet-300' : 'text-slate-300'}`}
+                          >
+                            <Circle className="w-3 h-3" /> Círculo
+                          </button>
+                          <button
+                            onClick={() => { setActiveTool(activeTool === 'shape-rect' ? 'none' : 'shape-rect'); setPointMode('none'); setShowShapesDropdown(false); }}
+                            aria-pressed={activeTool === 'shape-rect'}
+                            className={`w-full flex items-center gap-2 px-3 py-2 text-[11px] font-semibold hover:bg-slate-700 transition-colors border-t border-slate-700 ${activeTool === 'shape-rect' ? 'text-violet-300' : 'text-slate-300'}`}
+                          >
+                            <Square className="w-3 h-3" /> Rectángulo
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Herramientas de línea y flecha — disponibles en toxina y relleno */}
+                    <>
+                      <div className="w-px h-5 bg-slate-600 mx-0.5" />
+                      <Tooltip content="Línea recta: arrastrar de A a B sobre la piel">
+                        <button
+                          onClick={() => { setActiveTool(activeTool === 'straight-line' ? 'none' : 'straight-line'); setPointMode('none'); setShowHaShapesDropdown(false); }}
+                          aria-pressed={activeTool === 'straight-line'}
+                          className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold border transition-colors focus-visible:ring-2 focus-visible:ring-white ${
+                            activeTool === 'straight-line' ? 'bg-gold-light text-gold-ink border-gold' : 'bg-slate-800 text-slate-100 border-slate-600 hover:bg-slate-700'
+                          }`}
+                        >
+                          <Minus className="w-3 h-3" />
+                          Recta
+                        </button>
+                      </Tooltip>
+                      <Tooltip content="Flecha: arrastrar de A a B, punta en B">
+                        <button
+                          aria-pressed={activeTool === 'shape-arrow'}
+                          onClick={() => { setActiveTool(activeTool === 'shape-arrow' ? 'none' : 'shape-arrow'); setPointMode('none'); setShowHaShapesDropdown(false); setShowShapesDropdown(false); }}
+                          className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold border transition-colors focus-visible:ring-2 focus-visible:ring-white ${
+                            activeTool === 'shape-arrow' ? 'bg-gold-light text-gold-ink border-gold' : 'bg-slate-800 text-slate-100 border-slate-600 hover:bg-slate-700'
+                          }`}
+                        >
+                          <MoveRight className="w-3 h-3" />
+                          Flecha
+                        </button>
+                      </Tooltip>
+                    </>
+
+                    {/* Patrones HA (solo para relleno) */}
+                    {activeType === 'relleno' && (
+                      <>
+                        {/* Grupo Patrones HA */}
+                        <div className="relative">
+                          <button
+                            aria-expanded={showHaShapesDropdown}
+                            onClick={() => { setShowHaShapesDropdown(v => !v); setShowShapesDropdown(false); }}
+                            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold border transition-colors focus-visible:ring-2 focus-visible:ring-white ${
+                              activeTool === 'ha-fan' || activeTool === 'ha-grid' || activeTool === 'ha-fern'
+                                ? 'bg-gold-light text-gold-ink border-gold'
+                                : 'bg-slate-800 text-slate-100 border-slate-600 hover:bg-slate-700'
+                            }`}
+                          >
+                            <Pentagon className="h-4 w-4" aria-hidden="true" />
+                            Patrones
+                            <ChevronDown className="w-2.5 h-2.5 opacity-60" />
+                          </button>
+                          {showHaShapesDropdown && (
+                            <div className="absolute left-0 top-full mt-1 z-50 w-36 bg-slate-800 border border-slate-600 rounded-xl shadow-2xl overflow-hidden">
+                              <button onClick={() => { setHaShapeConfigTool('ha-fan'); setHaShapeConfigOpen(true); setPointMode('none'); setShowHaShapesDropdown(false); }}
+                                className={`w-full flex items-center gap-2 px-3 py-2 text-[11px] font-semibold hover:bg-slate-700 transition-colors ${activeTool === 'ha-fan' ? 'text-violet-300' : 'text-slate-300'}`}>
+                                <span className="text-xs">扇</span> Abanico
+                              </button>
+                              <button onClick={() => { setHaShapeConfigTool('ha-grid'); setHaShapeConfigOpen(true); setPointMode('none'); setShowHaShapesDropdown(false); }}
+                                className={`w-full flex items-center gap-2 px-3 py-2 text-[11px] font-semibold hover:bg-slate-700 transition-colors border-t border-slate-700 ${activeTool === 'ha-grid' ? 'text-violet-300' : 'text-slate-300'}`}>
+                                <span className="text-xs">⊞</span> Malla
+                              </button>
+                              <button onClick={() => { setHaShapeConfigTool('ha-fern'); setHaShapeConfigOpen(true); setPointMode('none'); setShowHaShapesDropdown(false); }}
+                                className={`w-full flex items-center gap-2 px-3 py-2 text-[11px] font-semibold hover:bg-slate-700 transition-colors border-t border-slate-700 ${activeTool === 'ha-fern' ? 'text-violet-300' : 'text-slate-300'}`}>
+                                <span className="text-xs">☘</span> Helecho
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    )}
+
+                    <div className="w-px h-5 bg-slate-700 mx-1" />
+
+                    {/* Color del pincel */}
+                    <Tooltip content="Color para nuevas líneas y formas">
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <span className="text-xs text-slate-200">Color del trazo</span>
+                        <div className="relative">
+                          <div className="w-5 h-5 rounded border border-slate-500 cursor-pointer" style={{ backgroundColor: brushColor }} />
+                          <input type="color" className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" value={brushColor} onChange={e => setBrushColor(e.target.value)} />
+                        </div>
+                      </label>
+                    </Tooltip>
+
+                    {/* Grosor del pincel */}
+                    <Tooltip content="Grosor de las líneas y formas">
+                      <label className="flex items-center gap-1.5">
+                        <span className="text-xs text-slate-200">Grosor</span>
+                        <input type="range" min={1} max={4} step={0.1} value={brushThickness} onChange={e => setBrushThickness(Number(e.target.value))} className="w-16 accent-violet-400" />
+                        <span className="text-[10px] text-slate-500 w-5">{brushThickness.toFixed(1)}x</span>
+                      </label>
+                    </Tooltip>
+
+                    {/* Botón deseleccionar / estado activo */}
+                    {(activeTool !== 'none' || pointMode === 'add') ? (
+                      <div className="ml-auto flex items-center gap-2">
+                        <span className="text-xs text-gold-light font-semibold">
+                          {activeTool === 'freehand-brush' && '● Pincel'}
+                          {activeTool === 'freehand-poly' && '● Polilínea'}
+                          {activeTool === 'straight-line' && '● Recta'}
+                          {activeTool === 'shape-arrow' && '● Flecha'}
+                          {activeTool === 'shape-circle' && '● Círculo'}
+                          {activeTool === 'shape-rect' && '● Rect.'}
+                          {activeTool === 'ha-fan' && '● Abanico'}
+                          {activeTool === 'ha-grid' && '● Malla'}
+                          {activeTool === 'ha-fern' && '● Helecho'}
+                          {activeTool === 'none' && pointMode === 'add' && '● Añadir punto'}
+                        </span>
+                        <button
+                          onClick={() => { setActiveTool('none'); setPointMode('none'); }}
+                          className="flex items-center gap-1 text-[10px] text-white bg-slate-600 hover:bg-slate-500 border border-slate-500 px-2 py-1 rounded-lg transition-colors font-semibold"
+                          title="Deseleccionar herramienta (Escape)"
+                        >
+                          <MousePointer2 className="w-3.5 h-3.5" /> Volver a navegar
+                        </button>
+                      </div>
+                    ) : (
+                      (freehandLines.length > 0 || surfaceShapes.length > 0) && (
+                        <span className="ml-auto text-[10px] text-violet-400">
+                          {freehandLines.length > 0 && `${freehandLines.length} línea(s)`}
+                          {freehandLines.length > 0 && surfaceShapes.length > 0 && ' · '}
+                          {surfaceShapes.length > 0 && `${surfaceShapes.length} forma(s)`}
+                        </span>
+                      )
+                    )}
+                  </div>
+                  </details>
                 </div>
-                </details>
 
                 <details className="mb-3 rounded-xl border border-slate-200">
                   <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-700">Guías y visibilidad <span className="ml-2 text-xs font-normal text-slate-500">Referencia visual opcional</span></summary>
