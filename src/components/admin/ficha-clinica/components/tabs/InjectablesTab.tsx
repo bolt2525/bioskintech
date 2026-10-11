@@ -4,7 +4,7 @@ import { escapeHtml, safeImageSrc } from '../../../../../utils/escapeHtml.js';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Droplets, Plus, Save, Trash2, Printer, Copy,
-  ChevronDown, ChevronUp, Box, Calendar,
+  ChevronDown, ChevronUp, Calendar,
   FlaskConical, Crosshair, X, Check, Info, Images, Minus, Eye, EyeOff, Pencil, AlertCircle, Undo2,
   PenLine, Pentagon, Circle, Square, Pipette, History, MoveRight, MousePointer2
 } from 'lucide-react';
@@ -66,7 +66,7 @@ interface Injectable {
   follow_up_date: string;
 }
 
-/** Jeringa / vial de relleno HA dentro de una sesión */
+/** Presentación de producto asociada a un punto del mapeo. */
 interface HaVial {
   id: string;
   product_name: string;
@@ -247,6 +247,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   const [show3D, setShow3D] = useState(false);
   const [markers3D, setMarkers3D] = useState<Marker3D[]>([]);
   const [injectionPoints, setInjectionPoints] = useState<InjectionPoint[]>([]);
+  const [mappingPrerequisiteAttempted, setMappingPrerequisiteAttempted] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [crossHistOpen, setCrossHistOpen] = useState(false);
   const viewerRef = useRef<HTMLDivElement>(null);
@@ -362,7 +363,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     type: 'reference-line' | 'freehand' | 'shape';
   } | null>(null);
 
-  // ── Multi-vial (HA) ────────────────────────────────────────────────────
+  // ── Presentaciones múltiples de relleno ───────────────────────────────
   const [haVials, setHaVials] = useState<HaVial[]>([]);
   const [activeVialId, setActiveVialId] = useState<string | null>(null);
   // ── Sidebar edición inline de puntos ──────────────────────────────────
@@ -507,6 +508,10 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
       setActiveVialId(null);
     }
   }, [current.id, current.mapping_data]);
+
+  useEffect(() => {
+    setMappingPrerequisiteAttempted(false);
+  }, [current.id, activeType, rellenoSubType]);
 
   // Auto-dismiss messages
   useEffect(() => {
@@ -2127,60 +2132,6 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
           </div>
         </div>
 
-        {/* ── Multi-vial manager (solo para Relleno HA) ── */}
-        {activeType === 'relleno' && (
-          <div className="bg-white rounded-2xl border border-purple-100 shadow-sm p-4 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-purple-700 uppercase tracking-wide flex items-center gap-1.5">
-                <Droplets className="w-3.5 h-3.5" />
-                Jeringas / Viales
-              </span>
-              <button
-                onClick={handleAddVial}
-                disabled={!current.product_name.trim() || !Number(current.volume_used)}
-                className="flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-lg bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                title="Añadir vial con el producto y volumen del formulario"
-              >
-                <Plus className="w-3 h-3" />
-                Añadir vial
-              </button>
-            </div>
-            {haVials.length === 0 ? (
-              <p className="text-[11px] text-gray-400 italic">Llena el producto y volumen, luego añade el vial. Puedes añadir varios para una sesión multi-jeringa.</p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {haVials.map((v, idx) => {
-                  const used = usedMlByVial(v.id);
-                  const remaining = v.volume_ml - used;
-                  const isActive = v.id === activeVialId;
-                  return (
-                    <div
-                      key={v.id}
-                      onClick={() => setActiveVialId(v.id)}
-                      className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 cursor-pointer transition-all ${
-                        isActive
-                          ? 'border-purple-400 bg-purple-50 shadow-sm'
-                          : 'border-gray-200 bg-white hover:border-purple-200'
-                      }`}
-                    >
-                      <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: v.color }} />
-                      <div className="min-w-0">
-                        <p className="text-[11px] font-semibold text-gray-800 truncate max-w-[100px]">{v.product_name || `Vial ${idx + 1}`}</p>
-                        <p className="text-[10px] text-gray-400">{remaining.toFixed(1)} / {v.volume_ml} ml</p>
-                      </div>
-                      {isActive && <span className="text-[9px] bg-purple-200 text-purple-700 rounded px-1 font-bold">ACTIVO</span>}
-                      <button
-                        onClick={e => { e.stopPropagation(); handleRemoveVial(v.id); }}
-                        className="text-red-300 hover:text-red-500 ml-1"
-                      ><X className="w-3 h-3" /></button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
         {/* Main Form */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
         {/* Type Header - indica el tipo activo del sub-tab */}
@@ -2232,127 +2183,200 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
             error={formError}
           />
         ) : (
-        <div className="p-5 space-y-5">
-          {/* Row 1: Date + Brand + Product Name */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-gray-700">Fecha</label>
-              <div className="flex items-center gap-2">
-                <div className="relative flex-1">
-                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
-                    type="date"
-                    disabled={dateLocked}
-                    className={`w-full pl-10 p-2.5 border rounded-lg outline-none transition-all ${
-                      dateLocked
-                        ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'
-                        : 'border-gray-200 focus:ring-2 focus:ring-[#deb887] bg-gray-50/50 focus:bg-white'
-                    }`}
-                    value={current.date}
-                    onChange={e => setCurrent({ ...current, date: e.target.value })}
-                  />
+        <div className="space-y-5 rounded-b-2xl bg-slate-50/80 p-5">
+          <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-md shadow-slate-900/5" aria-labelledby="relleno-product-heading">
+            <div className="mb-5 flex items-center justify-between gap-3 border-b border-slate-100 pb-4">
+              <ToxinaStepHeading step="1" id="relleno-product-heading" title="Producto y sesión" description="Identifica el producto utilizado y cuándo se registró." />
+              <span className="rounded-full border border-gold/30 bg-gold-light/60 px-2.5 py-1 text-xs text-gold-ink">* Obligatorio</span>
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <div className="space-y-1.5">
+                <label className="block text-sm font-medium text-slate-700" htmlFor="relleno-date">Fecha de aplicación</label>
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" aria-hidden="true" />
+                    <input
+                      id="relleno-date"
+                      name="date"
+                      type="date"
+                      disabled={dateLocked}
+                      className={`w-full rounded-xl border px-3 py-2.5 pl-10 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-gold/30 ${
+                        dateLocked
+                          ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500'
+                          : 'border-slate-200 bg-slate-50/70 text-slate-800 hover:border-gold/60 focus:border-gold focus:bg-white'
+                      }`}
+                      value={current.date}
+                      onChange={e => setCurrent({ ...current, date: e.target.value })}
+                    />
+                  </div>
+                  {current.id && dateLocked && (
+                    <Tooltip content="Actualizar fecha">
+                      <button
+                        type="button"
+                        onClick={() => setDateLocked(false)}
+                        aria-label="Editar fecha de aplicación"
+                        className="shrink-0 rounded-lg border border-amber-200 bg-amber-50 p-2 text-amber-600 hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                      >
+                        <Pencil className="h-4 w-4" aria-hidden="true" />
+                      </button>
+                    </Tooltip>
+                  )}
                 </div>
-                {current.id && dateLocked && (
-                  <Tooltip content="Actualizar fecha">
-                    <button
-                      type="button"
-                      onClick={() => setDateLocked(false)}
-                      className="p-2 rounded-lg border border-amber-200 bg-amber-50 text-amber-600 hover:bg-amber-100 transition-colors shrink-0"
-                    >
-                      <Pencil className="w-4 h-4" />
-                    </button>
-                  </Tooltip>
-                )}
+              </div>
+              <div className="space-y-1.5">
+                <label className="block text-sm font-medium text-slate-700" htmlFor="relleno-brand">Marca y presentación</label>
+                <input
+                  id="relleno-brand"
+                  name="brand"
+                  autoComplete="off"
+                  type="text"
+                  list="inj-tab-brands"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2.5 text-sm text-slate-800 outline-none transition-colors hover:border-gold/60 focus:border-gold focus:bg-white focus-visible:ring-2 focus-visible:ring-gold/30"
+                  value={current.brand}
+                  onChange={e => setCurrent({ ...current, brand: e.target.value })}
+                  placeholder="Según la etiqueta del producto…"
+                />
+                <datalist id="inj-tab-brands">
+                  {brands.map((b, i) => <option key={i} value={b} />)}
+                </datalist>
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <label className="block text-sm font-medium text-slate-700" htmlFor="relleno-product-name">
+                  Producto comercial <span className="text-red-500">*</span>
+                  <FieldHelp text={HELP.relleno.product_name} />
+                </label>
+                <input
+                  id="relleno-product-name"
+                  name="product_name"
+                  autoComplete="off"
+                  type="text"
+                  aria-required="true"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2.5 text-sm text-slate-800 outline-none transition-colors hover:border-gold/60 focus:border-gold focus:bg-white focus-visible:ring-2 focus-visible:ring-gold/30"
+                  value={current.product_name}
+                  onChange={e => setCurrent({ ...current, product_name: e.target.value })}
+                  placeholder="Nombre comercial exacto…"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="block text-sm font-medium text-slate-700" htmlFor="relleno-lot-number">Lote</label>
+                <input
+                  id="relleno-lot-number"
+                  name="lot_number"
+                  autoComplete="off"
+                  spellCheck={false}
+                  type="text"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2.5 text-sm text-slate-800 outline-none transition-colors hover:border-gold/60 focus:border-gold focus:bg-white focus-visible:ring-2 focus-visible:ring-gold/30"
+                  value={current.lot_number}
+                  onChange={e => setCurrent({ ...current, lot_number: e.target.value })}
+                  placeholder="Según la etiqueta…"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="block text-sm font-medium text-slate-700" htmlFor="relleno-expiration-date">Vencimiento</label>
+                <input
+                  id="relleno-expiration-date"
+                  name="expiration_date"
+                  type="date"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2.5 text-sm text-slate-800 outline-none transition-colors hover:border-gold/60 focus:border-gold focus:bg-white focus-visible:ring-2 focus-visible:ring-gold/30"
+                  value={current.expiration_date}
+                  onChange={e => setCurrent({ ...current, expiration_date: e.target.value })}
+                />
               </div>
             </div>
-            <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-gray-700">Marca / Producto</label>
-              <input
-                type="text"
-                list="inj-tab-brands"
-                className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
-                value={current.brand}
-                onChange={e => setCurrent({ ...current, brand: e.target.value })}
-                placeholder="Ej: Juvederm Ultra"
-              />
-              <datalist id="inj-tab-brands">
-                {brands.map((b, i) => <option key={i} value={b} />)}
-              </datalist>
-            </div>
-            <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-gray-700">Nombre del Producto <span className="text-red-400">*</span><FieldHelp text={HELP.relleno.product_name} /></label>
-              <input
-                type="text"
-                className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
-                value={current.product_name}
-                onChange={e => setCurrent({ ...current, product_name: e.target.value })}
-                placeholder="Nombre comercial"
-              />
-            </div>
-          </div>
+          </section>
 
-          {/* Row 2: Lot + Expiration + Units/Volume */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-gray-700">Lote</label>
-              <input
-                type="text"
-                className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
-                value={current.lot_number}
-                onChange={e => setCurrent({ ...current, lot_number: e.target.value })}
-                placeholder="Nro. de lote"
-              />
+          <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-md shadow-slate-900/5" aria-labelledby="relleno-volume-heading">
+            <div className="mb-5 border-b border-slate-100 pb-4">
+              <ToxinaStepHeading step="2" id="relleno-volume-heading" title="Volumen y presentaciones" description="Registra el volumen y añade presentaciones cuando corresponda." />
             </div>
-            <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-gray-700">Vencimiento</label>
-              <input
-                type="date"
-                className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
-                value={current.expiration_date}
-                onChange={e => setCurrent({ ...current, expiration_date: e.target.value })}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-gray-700">Volumen (ml)<FieldHelp text={HELP.relleno.volume_used} /></label>
-                <input
-                  type="number"
-                  step="0.1"
-                  className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
-                  value={current.volume_used}
-                  onChange={e => setCurrent({ ...current, volume_used: e.target.value })}
-                  placeholder="Ej: 1.0"
-                />
-            </div>
-          </div>
-
-          {/* Fecha de control */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide">
-                <Calendar className="w-3.5 h-3.5 text-gray-400" />
-                Fecha de Control
-                <FieldHelp text={HELP.relleno.follow_up_date} />
+            <div className="max-w-sm space-y-1.5">
+              <label className="block text-sm font-medium text-slate-700" htmlFor="relleno-volume">
+                {show3D || injectionPoints.length > 0 ? 'Volumen de referencia (ml)' : 'Volumen registrado (ml)'}
+                <FieldHelp text={HELP.relleno.volume_used} />
               </label>
               <input
-                type="date"
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#deb887] outline-none bg-gray-50/50 focus:bg-white transition-all"
-                value={current.follow_up_date}
-                onChange={e => setCurrent({ ...current, follow_up_date: e.target.value })}
+                id="relleno-volume"
+                name="volume_used"
+                type="number"
+                step="0.1"
+                inputMode="decimal"
+                aria-describedby="relleno-volume-context"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2.5 text-sm text-slate-800 outline-none transition-colors hover:border-gold/60 focus:border-gold focus:bg-white focus-visible:ring-2 focus-visible:ring-gold/30"
+                value={current.volume_used}
+                onChange={e => setCurrent({ ...current, volume_used: e.target.value })}
+                placeholder="Volumen en ml…"
               />
+              <p id="relleno-volume-context" className="text-xs leading-relaxed text-slate-500">
+                Sin mapa, registra aquí el volumen de la sesión. Con mapa, este valor sirve de referencia y las cantidades de los puntos se muestran aparte.
+              </p>
             </div>
-          </div>
 
-          {/* Notes */}
-          <div className="space-y-1.5">
-            <label className="block text-sm font-medium text-gray-700">Observaciones Clínicas</label>
-            <textarea
-              rows={3}
-              className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none resize-none transition-all bg-gray-50/50 focus:bg-white"
-              value={current.notes}
-              onChange={e => setCurrent({ ...current, notes: e.target.value })}
-              placeholder="Notas clínicas, reacciones adversas, seguimiento..."
-            />
-          </div>
+            <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                    <Droplets className="h-4 w-4 text-gold-ink" aria-hidden="true" />
+                    Presentaciones adicionales
+                    <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-medium text-slate-600">Opcional</span>
+                  </p>
+                  <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                    Añade otra presentación si corresponde. Completa producto y volumen para activarlo; luego puedes asociar los puntos registrados.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAddVial}
+                  disabled={!current.product_name.trim() || !Number(current.volume_used)}
+                  aria-describedby="relleno-add-presentation-help"
+                  className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold disabled:cursor-not-allowed disabled:opacity-40 ${RELLENO_SUBTYPE_COLORS[rellenoSubType].text}`}
+                >
+                  <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                  Añadir presentación
+                </button>
+                <span id="relleno-add-presentation-help" className="sr-only">
+                  Completa el producto y el volumen del formulario para añadir otra presentación.
+                </span>
+              </div>
+              {haVials.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {haVials.map((v, idx) => {
+                    const used = usedMlByVial(v.id);
+                    const remaining = v.volume_ml - used;
+                    const isActive = v.id === activeVialId;
+                    const label = v.product_name || `Presentación ${idx + 1}`;
+                    return (
+                      <div key={v.id} className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1">
+                        <button
+                          type="button"
+                          aria-pressed={isActive}
+                          onClick={() => setActiveVialId(v.id)}
+                          className={`flex min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold ${
+                            isActive ? RELLENO_SUBTYPE_COLORS[rellenoSubType].active : 'text-slate-700 hover:bg-slate-50'
+                          }`}
+                        >
+                          <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: v.color }} aria-hidden="true" />
+                          <span className="min-w-0">
+                            <span className="block max-w-[140px] truncate text-xs font-semibold">{label}</span>
+                            <span className="block text-[10px] text-slate-500">{remaining.toFixed(1)} / {v.volume_ml} ml</span>
+                          </span>
+                          {isActive && <span className="shrink-0 rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-700">ACTIVA</span>}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveVial(v.id)}
+                          aria-label={`Eliminar ${label}`}
+                          className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+                        >
+                          <X className="h-3.5 w-3.5" aria-hidden="true" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </section>
+
         </div>
         )}
       </div>
@@ -2361,33 +2385,33 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
       {activeType === 'relleno' && injectionPoints.length > 0 && (
         <div className="space-y-2">
           <div className="flex items-center gap-1.5">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{current.product_type === 'toxina' ? 'Sesión y registro en mapa' : 'Distribución del Vial'}</p>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Resumen del mapeo</p>
             <div className="group relative">
-              <Info className="w-3.5 h-3.5 text-gray-300 hover:text-[#deb887] cursor-help transition-colors" />
+              <Info className="w-3.5 h-3.5 text-gray-300 hover:text-[#deb887] cursor-help transition-colors" aria-hidden="true" />
               <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-64 p-2.5 bg-gray-800 text-white text-[11px] rounded-lg shadow-xl z-50 leading-relaxed">
                 <p className="font-semibold mb-1">¿Qué significa cada valor?</p>
-                <p><strong>{current.product_type === 'toxina' ? 'Declaradas:' : 'Total Vial:'}</strong> {current.product_type === 'toxina' ? 'Total informado para esta sesión; los registros históricos no se reinterpretan.' : 'Cantidad total de producto disponible en el vial.'}</p>
-                <p><strong>Utilizadas:</strong> Suma de unidades aplicadas en todos los puntos marcados.</p>
-                <p><strong>{current.product_type === 'toxina' ? 'Diferencia con mapa:' : 'Restantes:'}</strong> {current.product_type === 'toxina' ? 'Declaradas menos registradas. No representa sobrante del vial.' : 'Producto sobrante en el vial (Total − Utilizadas).'}</p>
-                <p><strong>Puntos:</strong> Cantidad de sitios de inyección registrados en el mapeo 3D.</p>
+                <p><strong>Total:</strong> {current.product_type === 'toxina' ? 'Cantidad declarada para la sesión.' : 'Volumen de referencia registrado para el producto.'}</p>
+                <p><strong>En puntos:</strong> Suma de los valores documentados en los puntos del mapa.</p>
+                <p><strong>Diferencia:</strong> Cálculo entre el total de referencia y lo anotado en puntos; no representa inventario físico.</p>
+                <p><strong>Puntos:</strong> Cantidad de puntos documentados en el mapa.</p>
                 <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-px border-4 border-transparent border-t-gray-800" />
               </div>
             </div>
           </div>
           <div className="grid grid-cols-4 gap-3">
-            <div className="bg-white rounded-xl p-3 text-center border border-gray-100 shadow-sm" title={current.product_type === 'toxina' ? 'Total declarado para la sesión' : 'Cantidad total de producto en el vial'}>
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">{current.product_type === 'toxina' ? 'Declaradas en sesión' : 'Total Vial'}</p>
+            <div className="bg-white rounded-xl p-3 text-center border border-gray-100 shadow-sm" title="Volumen registrado en el formulario o en las presentaciones adicionales">
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Volumen de referencia</p>
               <p className="text-lg font-bold text-gray-800">{totalVial} <span className="text-xs font-normal text-gray-400">{unitLabel}</span></p>
             </div>
-            <div className="bg-white rounded-xl p-3 text-center border border-gray-100 shadow-sm" title="Suma de unidades aplicadas en todos los puntos">
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">{current.product_type === 'toxina' ? 'Registradas en mapa' : 'Utilizadas'}</p>
+            <div className="bg-white rounded-xl p-3 text-center border border-gray-100 shadow-sm" title="Suma de los valores registrados en los puntos">
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Valores en puntos</p>
               <p className="text-lg font-bold text-[#b8944d]">{totalUsed} <span className="text-xs font-normal text-gray-400">{unitLabel}</span></p>
             </div>
-            <div className={`rounded-xl p-3 text-center border shadow-sm ${remaining < 0 ? 'bg-red-50 border-red-200' : 'bg-white border-gray-100'}`} title={current.product_type === 'toxina' ? 'Diferencia entre el total declarado y el mapa, no sobrante del vial' : 'Producto restante en el vial (Total − Utilizadas)'}>
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">{current.product_type === 'toxina' ? 'Diferencia con mapa' : 'Restantes'}</p>
+            <div className={`rounded-xl p-3 text-center border shadow-sm ${remaining < 0 ? 'bg-red-50 border-red-200' : 'bg-white border-gray-100'}`} title="Diferencia calculada entre el volumen de referencia y los valores en puntos; no representa inventario físico">
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Diferencia calculada</p>
               <p className={`text-lg font-bold ${remaining < 0 ? 'text-red-600' : 'text-emerald-600'}`}>{remaining} <span className="text-xs font-normal text-gray-400">{unitLabel}</span></p>
             </div>
-            <div className="bg-white rounded-xl p-3 text-center border border-gray-100 shadow-sm" title="Cantidad de sitios de inyección marcados">
+            <div className="bg-white rounded-xl p-3 text-center border border-gray-100 shadow-sm" title="Cantidad de puntos documentados">
               <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Puntos</p>
               <p className="text-lg font-bold text-gray-800">{injectionPoints.length}</p>
             </div>
@@ -2400,27 +2424,26 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
         <button
           onClick={() => {
             if (!canMark && !show3D) {
-              setMessage({ type: 'error', text: current.product_type === 'toxina'
-                ? 'Escribe el producto antes de abrir el mapa. Puedes registrar las unidades punto a punto.'
-                : `Complete el nombre del producto y las ${unitLabel} antes de abrir el mapeo 3D` });
+              if (current.product_type === 'toxina') {
+                setMessage({ type: 'error', text: 'Escribe el producto antes de abrir el mapa. Puedes registrar las unidades punto a punto.' });
+              } else {
+                setMappingPrerequisiteAttempted(true);
+              }
               return;
             }
+            setMappingPrerequisiteAttempted(false);
             setShow3D(!show3D);
           }}
+          type="button"
+          aria-expanded={show3D}
           className={`w-full flex items-center justify-between transition-colors ${current.product_type === 'toxina' ? 'p-5 hover:bg-gold-light/20' : 'p-4 hover:bg-gray-50/50'}`}
         >
           <div className="flex items-center gap-3">
             {current.product_type === 'toxina' ? (
               <ToxinaStepHeading step="4" title="Mapa y total aplicado" description="Documenta dónde se aplicó y cuántas unidades se usaron." />
-            ) : (<>
-            <div className={`p-2 rounded-lg transition-colors ${show3D ? 'bg-[#deb887]/15' : 'bg-gray-100'}`}>
-              <Box className={`w-4 h-4 transition-colors ${show3D ? 'text-[#b8944d]' : 'text-gray-500'}`} />
-            </div>
-            <div className="text-left">
-              <span className="text-sm font-semibold text-gray-800">Mapeo Facial 3D</span>
-              <p className="text-xs text-gray-500">Opcional · registra puntos y unidades; las anotaciones no añaden dosis</p>
-            </div>
-            </>)}
+            ) : (
+              <ToxinaStepHeading step="3" title="Mapeo y registro" description="Opcional · los puntos suman valores documentados; las anotaciones gráficas no los modifican." />
+            )}
           </div>
           <div className="flex items-center gap-2">
             {referenceLines.length > 0 && (
@@ -2440,6 +2463,12 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
             )}
           </div>
         </button>
+
+        {current.product_type === 'relleno' && mappingPrerequisiteAttempted && !canMark && !show3D && (
+          <p className="mx-4 mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="alert">
+            Completa el nombre del producto y registra el volumen en ml para abrir el mapeo.
+          </p>
+        )}
 
         {current.product_type === 'toxina' && (
           <ToxinaApplicationTotal units={sessionUnits} unitsFromMap={unitsFromMap} mappedUnits={totalUsed}
@@ -3431,6 +3460,45 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
           )}
         </AnimatePresence>
       </div>
+      {current.product_type === 'relleno' && (
+        <details className="group rounded-2xl border border-slate-200/80 bg-white shadow-md shadow-slate-900/5">
+          <summary className="flex cursor-pointer items-center justify-between gap-3 rounded-2xl p-5 transition-colors hover:bg-gold-light/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold">
+            <ToxinaStepHeading step="4" title="Seguimiento y observaciones" description="Anota datos de seguimiento de la sesión, si corresponde." />
+            <span className="flex shrink-0 items-center gap-2 rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600">
+              {current.follow_up_date || current.notes ? 'Con datos' : 'Opcional'}
+              <ChevronDown className="h-4 w-4 text-gold-ink transition-transform group-open:rotate-180" aria-hidden="true" />
+            </span>
+          </summary>
+          <div className="grid grid-cols-1 gap-4 border-t border-slate-100 p-5 md:grid-cols-3">
+            <div className="space-y-1.5">
+              <label className="block text-sm font-medium text-slate-700" htmlFor="relleno-follow-up-date">
+                Fecha de control
+                <FieldHelp text={HELP.relleno.follow_up_date} />
+              </label>
+              <input
+                id="relleno-follow-up-date"
+                name="follow_up_date"
+                type="date"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2.5 text-sm text-slate-800 outline-none transition-colors hover:border-gold/60 focus:border-gold focus:bg-white focus-visible:ring-2 focus-visible:ring-gold/30"
+                value={current.follow_up_date}
+                onChange={e => setCurrent({ ...current, follow_up_date: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5 md:col-span-2">
+              <label className="block text-sm font-medium text-slate-700" htmlFor="relleno-notes">Observaciones clínicas</label>
+              <textarea
+                id="relleno-notes"
+                name="notes"
+                rows={3}
+                className="w-full resize-y rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2.5 text-sm text-slate-800 outline-none transition-colors hover:border-gold/60 focus:border-gold focus:bg-white focus-visible:ring-2 focus-visible:ring-gold/30"
+                value={current.notes}
+                onChange={e => setCurrent({ ...current, notes: e.target.value })}
+                placeholder="Observaciones documentadas de la sesión…"
+              />
+            </div>
+          </div>
+        </details>
+      )}
       {current.product_type === 'toxina' && (
         <ToxinaFollowUpForm value={current} onChange={patch => setCurrent(prev => ({ ...prev, ...patch }))} />
       )}

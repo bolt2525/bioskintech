@@ -66,13 +66,13 @@ export const HELP = {
 
   // ── Inyectables — Rellenos ─────────────────────────────────────────────────
   relleno: {
-    product_name: 'Nombre del producto de relleno. Ejemplo: ácido hialurónico (Juvéderm, Restylane), hidroxiapatita cálcica (Radiesse), PLLA (Sculptra).',
-    volume_used: 'Volumen total de relleno aplicado en la sesión en mL. El relleno labial suele requerir 0.5–1 mL por labio.',
-    areas_treated: 'Zonas de relleno: labios, surcos nasogenianos, pómulos, mentón, ojeras, ángulo mandibular, manos.',
-    technique: 'Técnica de infiltración: retrógrada (lineal), anterógrada, abanico (fanning), reticulado (cross-hatching), depósito puntual (bolus).',
-    needle_type: 'Instrumento utilizado: aguja (mayor precisión, mayor riesgo vascular) o microcánula (menor trauma, menor riesgo vascular).',
-    injection_plane: 'Plano de inyección: subdérmico profundo (relleno volumétrico), supraperióstico (proyección ósea), intradérmico superficial (líneas finas).',
-    follow_up_date: 'Fecha para control. Algunos rellenos requieren moldeado a las 2 semanas o sesiones adicionales de PLLA a los 4–6 semanas.',
+    product_name: 'Nombre comercial exacto según la etiqueta del producto.',
+    volume_used: 'Sin mapa, registra el volumen documentado para la sesión. Con mapa, este valor sirve de referencia y las cantidades de los puntos se muestran aparte.',
+    areas_treated: 'Documenta las zonas asociadas al procedimiento realizado.',
+    technique: 'Documenta la técnica realizada, si corresponde.',
+    needle_type: 'Documenta el instrumento utilizado, si corresponde.',
+    injection_plane: 'Documenta el plano registrado durante el procedimiento, si corresponde.',
+    follow_up_date: 'Fecha de control registrada para esta sesión, si corresponde.',
   },
 
   // ── Consentimientos ────────────────────────────────────────────────────────

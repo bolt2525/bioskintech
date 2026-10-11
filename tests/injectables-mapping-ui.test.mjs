@@ -10,6 +10,7 @@ const source = readFileSync(new URL('../src/components/admin/ficha-clinica/compo
 const ast = ts.createSourceFile('InjectablesTab.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const viewerSource = readFileSync(new URL('../src/components/admin/ficha-clinica/components/Clinical3DViewer.tsx', import.meta.url), 'utf8');
 const viewerAst = ts.createSourceFile('Clinical3DViewer.tsx', viewerSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+const fieldHelpSource = readFileSync(new URL('../src/components/admin/ficha-clinica/data/fieldHelpTexts.ts', import.meta.url), 'utf8');
 const declaration = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'reconcileEditablePoints');
 assert.ok(declaration, 'La conciliación de puntos debe existir');
 const script = ts.transpileModule(declaration.getText(ast), {
@@ -472,4 +473,26 @@ test('guardar usa el total automático y mantiene origen mapa aunque se elimine 
     assert.equal(fixture.result.saved.units_used, total);
     assert.equal(fixture.result.payload.mapping_data.toxinaUnitsSource, 'map');
   }
+});
+
+test('rellenos presentan producto, volumen, mapa y seguimiento en orden', () => {
+  const steps = [
+    'title="Producto y sesión"',
+    'title="Volumen y presentaciones"',
+    'title="Mapeo y registro"',
+    'title="Seguimiento y observaciones"',
+  ].map(title => source.indexOf(title));
+  assert.ok(steps.every(index => index >= 0), 'Secciones numeradas de relleno');
+  assert.deepEqual(steps, [...steps].sort((left, right) => left - right));
+  assert.match(source, /title="Añadir presentación|Añadir presentación/);
+  assert.match(source, /Presentaciones adicionales/);
+  assert.match(source, /mappingPrerequisiteAttempted && !canMark/);
+  assert.match(source, /Completa el nombre del producto y registra el volumen en ml para abrir el mapeo/);
+  assert.doesNotMatch(source, /placeholder="Ej: Juvederm Ultra"/);
+});
+
+test('ayudas de relleno describen registro sin indicar cantidades, zonas ni protocolos', () => {
+  assert.match(fieldHelpSource, /volume_used: 'Sin mapa, registra el volumen documentado para la sesión/);
+  assert.match(fieldHelpSource, /follow_up_date: 'Fecha de control registrada para esta sesión/);
+  assert.doesNotMatch(fieldHelpSource, /relleno labial suele requerir|Algunos rellenos requieren|Zonas de relleno:/);
 });
