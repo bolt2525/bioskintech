@@ -27,6 +27,8 @@ export interface FaceFrame {
   /** Caja del rostro y eje de simetría, en coordenadas normalizadas de la foto. */
   top: number; bottom: number; left: number; right: number;
   axisTop: { x: number; y: number }; axisBottom: { x: number; y: number };
+  /** Contorno facial detectado; permite adaptar el ancho de la proyección a cada altura. */
+  outline?: P2[];
   source: 'landmarks' | 'manual';
 }
 
@@ -35,13 +37,21 @@ export const DEFAULT_FRAME: FaceFrame = {
   axisTop: { x: 0.5, y: 0.15 }, axisBottom: { x: 0.5, y: 0.85 }, source: 'manual',
 };
 
-/** Landmarks de MediaPipe Face Mesh → marco facial. */
+const FACE_OVAL = [
+  10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377,
+  152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109,
+];
+
+/** Landmarks de MediaPipe Face Mesh → marco facial y contorno completo. */
 export function frameFromLandmarks(lm: { x: number; y: number }[]): FaceFrame {
-  const g = (i: number) => ({ x: lm[i].x, y: lm[i].y });
+  if (lm.length <= Math.max(...FACE_OVAL)) throw new Error('Landmarks faciales incompletos.');
+  const g = (i: number) => ({ x: Math.min(1, Math.max(0, lm[i].x)), y: Math.min(1, Math.max(0, lm[i].y)) });
   const top = g(10), chin = g(152), l = g(234), r = g(454), glab = g(168);
+  const outline = FACE_OVAL.map(g);
   return {
-    top: top.y, bottom: chin.y, left: Math.min(l.x, r.x), right: Math.max(l.x, r.x),
-    axisTop: glab, axisBottom: chin, source: 'landmarks',
+    top: Math.min(top.y, chin.y), bottom: Math.max(top.y, chin.y),
+    left: Math.min(l.x, r.x), right: Math.max(l.x, r.x),
+    axisTop: glab, axisBottom: chin, outline, source: 'landmarks',
   };
 }
 
@@ -269,12 +279,38 @@ export const defaultFrame = (view: ViewKind): FaceFrame => (view === 'frontal'
   ? DEFAULT_FRAME
   : { top: 0.12, bottom: 0.88, left: 0.15, right: 0.85, axisTop: { x: 0.5, y: 0.12 }, axisBottom: { x: 0.5, y: 0.88 }, source: 'manual' });
 
-export function projectModel(p: Vec3, view: ViewKind, frame: FaceFrame, flip: boolean): P2 | null {
-  const y = frame.top + ((Y_TOP - p.y) / Y_SPAN) * (frame.bottom - frame.top);
+export function projectModel(p: Vec3, view: ViewKind, frame: FaceFrame, flip: boolean, aspect = 1): P2 | null {
+  const t = (Y_TOP - p.y) / Y_SPAN;
+  const y = frame.top + t * (frame.bottom - frame.top);
   if (view === 'frontal') {
     if (p.z < -0.5) return null;
-    const t = Math.max(-1.3, Math.min(1.3, (flip ? -p.x : p.x) / X_HALF));
-    return { x: (frame.left + frame.right) / 2 + t * ((frame.right - frame.left) / 2), y };
+    const side = Math.max(-1.3, Math.min(1.3, (flip ? -p.x : p.x) / X_HALF));
+    const rowY = frame.top + Math.min(1, Math.max(0, t)) * (frame.bottom - frame.top);
+    const crossings: number[] = [];
+    frame.outline?.forEach((a, i, outline) => {
+      const b = outline[(i + 1) % outline.length];
+      if ((a.y <= rowY && b.y > rowY) || (b.y <= rowY && a.y > rowY)) {
+        crossings.push(a.x + ((rowY - a.y) / (b.y - a.y)) * (b.x - a.x));
+      }
+    });
+    const halfWidth = crossings.length >= 2
+      ? (Math.max(...crossings) - Math.min(...crossings)) / 2
+      : (frame.right - frame.left) / 2;
+    const axisStart = (frame.axisTop.y - frame.top) / Math.max(frame.bottom - frame.top, 0.05);
+    const axisSpan = Math.max(1 - axisStart, 0.05);
+    const centerX = frame.axisTop.x + ((t - axisStart) / axisSpan) * (frame.axisBottom.x - frame.axisTop.x);
+    const dx = (frame.axisBottom.x - frame.axisTop.x);
+    const dy = (frame.axisBottom.y - frame.axisTop.y);
+    const physicalDx = dx * aspect;
+    const axisLength = Math.hypot(physicalDx, dy) || 1;
+    const normalX = dy / axisLength;
+    const normalY = -physicalDx / axisLength;
+    const centerY = frame.top + t * (frame.bottom - frame.top);
+    const offset = side * halfWidth;
+    return {
+      x: centerX + offset * normalX,
+      y: centerY + offset * aspect * normalY,
+    };
   }
   const side = (view === 'derecha' ? 1 : -1) * (flip ? -1 : 1);
   if (p.x * side < -0.15) return null; // cara opuesta, no visible
@@ -295,7 +331,7 @@ export const lineKind = (l: { points: Vec3[]; segments?: Vec3[][]; technique_pre
 /** Convierte los trazos del visor 3D en elementos 2D para la vista activa. */
 export function elemsFrom3D(st: Store3D, view: ViewKind, frame: FaceFrame, aspect: number, flip: boolean): Elem[] {
   const out: Elem[] = [];
-  const proj = (pts: Vec3[]) => pts.map(p => projectModel(p, view, frame, flip)).filter((q): q is P2 => q !== null);
+  const proj = (pts: Vec3[]) => pts.map(p => projectModel(p, view, frame, flip, aspect)).filter((q): q is P2 => q !== null);
   const sy = (frame.bottom - frame.top) / Y_SPAN; // alto de imagen por unidad de modelo
   st.markers.forEach(m => {
     const meta = m.id ? st.meta[m.id] : undefined, q = proj([m.position])[0];

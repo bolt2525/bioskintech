@@ -141,7 +141,7 @@ export default function FaceSimLab() {
   const [dose, setDose] = useState(SIM_MODES.toxina.defaultDose);
   const [intensity, setIntensity] = useState(1);
   const [split, setSplit] = useState(0);
-  const [correct, setCorrect] = useState({ enabled: true, linear: true, mirror: true, tolerance: 0.02 });
+  const [correct, setCorrect] = useState({ enabled: false, linear: true, mirror: true, tolerance: 0.02 });
   const [flipX, setFlipX] = useState(false);
   const [showMarks, setShowMarks] = useState(true);
   const [status, setStatus] = useState('Marca en el modelo 3D o en la foto; la simulación se actualiza en tiempo real.');
@@ -198,12 +198,11 @@ export default function FaceSimLab() {
     c.getContext('2d')!.drawImage(bmp, 0, 0, c.width, c.height); bmp.close();
     setPhotos(p => ({ ...p, [target]: { canvas: c, aspect: c.width / c.height, frame: defaultFrame(target) } }));
     setView(target);
-    if (target !== 'frontal') { setStatus('Lateral cargada: ajusta el marco (cabeza completa) para alinear los trazos 3D.'); return; }
-    setStatus('Detectando rostro…');
+    setStatus(`Detectando rostro en la vista ${VIEWS.find(v => v.id === target)?.label ?? target}…`);
     const f = await detectFrame(c);
-    if (f) setPhotos(p => (p.frontal?.canvas === c ? { ...p, frontal: { ...p.frontal, frame: f } } : p));
-    setStatus(f ? 'Rostro detectado (MediaPipe, 478 landmarks).'
-      : 'Marco facial manual (sin modelo MediaPipe: ejecuta npm run lab:face-assets). Ajusta el marco.');
+    if (f) setPhotos(p => (p[target]?.canvas === c ? { ...p, [target]: { ...p[target]!, frame: f } } : p));
+    setStatus(f ? `Rostro delimitado con MediaPipe; proyección adaptada al contorno en vista ${VIEWS.find(v => v.id === target)?.label ?? target}.`
+      : 'No se pudo detectar el rostro. Verifica los assets de MediaPipe con npm run lab:face-assets y ajusta el marco manualmente.');
   };
   const updateFrame = (k: 'top' | 'bottom' | 'left' | 'right', v: number) => setPhotos(p => {
     const s = p[view]; if (!s) return p;
@@ -458,6 +457,12 @@ export default function FaceSimLab() {
             onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onContextMenu={e => e.preventDefault()}>
             <canvas ref={glRef} className="h-full w-full" aria-label="Simulación del rostro" />
             {split > 0 && <div className="pointer-events-none absolute inset-y-0 w-0.5 bg-white/80" style={{ left: `${split * 100}%` }} />}
+            {hasImage && frame.outline && (
+              <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 1 1" preserveAspectRatio="none" aria-label="Contorno facial detectado">
+                <polygon points={poly(frame.outline)} fill="rgba(56,189,248,0.06)" stroke="#38bdf8" strokeWidth="0.0025" strokeDasharray="0.01 0.006" />
+                <line x1={frame.axisTop.x} y1={frame.axisTop.y} x2={frame.axisBottom.x} y2={frame.axisBottom.y} stroke="#38bdf8" strokeWidth="0.002" strokeDasharray="0.008 0.006" />
+              </svg>
+            )}
             {showMarks && (
               <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
                 {renderShapes(elems)}
