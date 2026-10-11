@@ -1,5 +1,7 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-11 Inyectables: desglose legible, menús estables.
+- ✅ 2026-10-11 Guías flotantes; patrones con transición.
 - ✅ 2026-10-11 Inyectables: paleta lateral, atajos, ampliación.
 - ✅ 2026-10-11 Puntos: edición directa de cantidad.
 - ✅ 2026-10-10 Fotos: contrato de descarga corregido.

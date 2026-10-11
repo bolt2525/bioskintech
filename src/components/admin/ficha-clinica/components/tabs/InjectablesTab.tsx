@@ -7,7 +7,7 @@ import {
   Droplets, Plus, Save, Trash2, Printer, Copy,
   ChevronDown, ChevronUp, Calendar,
   FlaskConical, Crosshair, X, Check, Info, Images, Minus, Eye, EyeOff, Pencil, AlertCircle, Undo2,
-  PenLine, Pentagon, Circle, Square, Pipette, History, MoveRight, MousePointer2, Maximize2, Minimize2
+  PenLine, Pentagon, Circle, Square, Pipette, History, MoveRight, MousePointer2, Maximize2, Minimize2, Settings2
 } from 'lucide-react';
 import CrossConsultHistoryModal, { type ConsultationRef } from '../CrossConsultHistoryModal';
 import { Tooltip } from '../../../../ui/Tooltip';
@@ -193,20 +193,16 @@ function PointFieldSelect({ id, label, value, options, onChange }: {
     const availableBelow = window.innerHeight - rect.bottom - 8;
     const availableAbove = rect.top - 8;
     const opensAbove = availableBelow < 180 && availableAbove > availableBelow;
-    const maxHeight = Math.max(120, Math.min(224, opensAbove ? availableAbove : availableBelow));
+    const maxHeight = Math.max(48, Math.min(224, opensAbove ? availableAbove : availableBelow));
+    const width = Math.min(Math.max(240, rect.width), window.innerWidth - 16);
     setPosition({
       top: opensAbove ? rect.top - maxHeight - 4 : rect.bottom + 4,
-      left: Math.max(8, Math.min(rect.left, window.innerWidth - rect.width - 8)),
-      width: rect.width,
+      left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)),
+      width,
       maxHeight,
     });
     setActiveIndex(index);
     setOpen(true);
-  };
-
-  const closeOnOutsideClick = (event: MouseEvent) => {
-    const target = event.target as Node;
-    if (!containerRef.current?.contains(target) && !document.getElementById(optionsId)?.contains(target)) setOpen(false);
   };
 
   const choose = (option: string) => {
@@ -214,7 +210,7 @@ function PointFieldSelect({ id, label, value, options, onChange }: {
     setShowAllOptions(false);
     onChange(option);
     setOpen(false);
-    inputRef.current?.focus();
+    inputRef.current?.focus({ preventScroll: true });
   };
 
   const toggleOptions = () => {
@@ -224,11 +220,15 @@ function PointFieldSelect({ id, label, value, options, onChange }: {
     }
     setShowAllOptions(true);
     openOptions(Math.max(0, ['', ...options].indexOf(value)));
-    inputRef.current?.focus();
+    inputRef.current?.focus({ preventScroll: true });
   };
 
   useEffect(() => {
     if (!open) return;
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      const target = event.target;
+      if (target instanceof Node && !containerRef.current?.contains(target) && !document.getElementById(optionsId)?.contains(target)) setOpen(false);
+    };
     const closeOnScroll = (event: Event) => {
       const listbox = document.getElementById(optionsId);
       if (listbox && event.target instanceof Node && listbox.contains(event.target)) return;
@@ -246,8 +246,15 @@ function PointFieldSelect({ id, label, value, options, onChange }: {
   }, [open, optionsId]);
 
   useEffect(() => {
-    if (open) document.getElementById(`${id}-option-${activeIndex}`)?.scrollIntoView({ block: 'nearest' });
-  }, [activeIndex, id, open]);
+    if (!open) return;
+    const listbox = document.getElementById(optionsId);
+    const option = document.getElementById(`${id}-option-${activeIndex}`);
+    if (!listbox || !option) return;
+    const top = option.offsetTop;
+    const bottom = top + option.offsetHeight;
+    if (top < listbox.scrollTop) listbox.scrollTop = top;
+    else if (bottom > listbox.scrollTop + listbox.clientHeight) listbox.scrollTop = bottom - listbox.clientHeight;
+  }, [activeIndex, id, open, optionsId]);
 
   return (
     <div>
@@ -320,7 +327,7 @@ function PointFieldSelect({ id, label, value, options, onChange }: {
           id={optionsId}
           role="listbox"
           aria-labelledby={`${id}-label`}
-          className="fixed z-[9999] max-h-56 overflow-y-auto rounded-xl border border-[#deb887]/50 bg-white p-1.5 shadow-xl shadow-gray-900/15"
+          className="fixed z-[9999] max-h-56 overflow-x-hidden overflow-y-auto overscroll-contain rounded-xl border border-[#deb887]/50 bg-white p-1.5 shadow-xl shadow-gray-900/15"
           style={{ top: position.top, left: position.left, width: position.width, maxHeight: position.maxHeight }}
         >
           {choices.map((option, index) => (
@@ -336,15 +343,62 @@ function PointFieldSelect({ id, label, value, options, onChange }: {
                 index === activeIndex ? 'bg-[#deb887]/20 font-semibold text-[#725b2d]' : 'text-gray-700 hover:bg-amber-50'
               }`}
             >
-              <span>{option || '—'}</span>
-              {option === query && <Check aria-hidden="true" className="h-4 w-4 text-[#b8944d]" />}
+              <span className="min-w-0 break-words leading-relaxed">{option || 'Sin registrar'}</span>
+              {option === query && <Check aria-hidden="true" className="h-4 w-4 shrink-0 text-[#b8944d]" />}
             </li>
           ))}
           {choices.length === 0 && (
             <li role="presentation" className="px-3 py-2 text-sm text-gray-500">Sin coincidencias; se conserva el texto escrito.</li>
           )}
         </ul>,
-        document.body,
+        document.fullscreenElement ?? document.body,
+      )}
+    </div>
+  );
+}
+
+type PointDetailField = 'technique_at_point' | 'needle_at_point' | 'injection_plane' | 'notes_at_point';
+
+function PointDetailsEditor({ point, index, planes, canCopy, onChange, onCopyAll, onChoosePoints, onEditEnd }: {
+  point: InjectionPoint;
+  index: number;
+  planes: string[];
+  canCopy: boolean;
+  onChange: (field: PointDetailField, value: string) => void;
+  onCopyAll: () => void;
+  onChoosePoints: () => void;
+  onEditEnd: () => void;
+}) {
+  return (
+    <div className="space-y-2 border-t border-gold/20 bg-gold-light/20 px-3 pb-3 pt-2"
+      onBlur={event => {
+        const target = event.relatedTarget;
+        if (!(target instanceof Element) || (!event.currentTarget.contains(target)
+          && !target.closest('[id^="point-"][role="listbox"]'))) onEditEnd();
+      }}>
+      <PointFieldSelect id={`point-technique-${index}`} label="Técnica" value={point.technique_at_point || ''} options={techniques} onChange={value => onChange('technique_at_point', value)} />
+      <PointFieldSelect id={`point-needle-${index}`} label="Aguja / cánula" value={point.needle_at_point || ''} options={needles} onChange={value => onChange('needle_at_point', value)} />
+      <PointFieldSelect id={`point-plane-${index}`} label="Plano" value={point.injection_plane || ''} options={planes} onChange={value => onChange('injection_plane', value)} />
+      <details className="group">
+        <summary className="cursor-pointer rounded py-1 text-xs font-medium text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold">Nota del punto</summary>
+        <label htmlFor={`point-notes-${index}`} className="sr-only">Nota del punto {index + 1}</label>
+        <input id={`point-notes-${index}`} type="text" value={point.notes_at_point || ''}
+          onChange={event => onChange('notes_at_point', event.target.value)} placeholder="Observación…"
+          className="mt-1 min-h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold" />
+      </details>
+      {canCopy && (
+        <details className="group" onClick={event => event.stopPropagation()}>
+          <summary className="cursor-pointer rounded py-1 text-xs font-medium text-gold-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold">Copiar campos…</summary>
+          <p className="my-2 text-[11px] leading-relaxed text-slate-600">
+            Reemplaza técnica, aguja y plano en destino. Un campo vacío también puede borrar el valor existente. Puedes deshacer.
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            <button type="button" onClick={event => { onCopyAll(); event.currentTarget.closest('details')?.removeAttribute('open'); }}
+              className="min-h-9 flex-1 rounded-lg bg-gold-light px-2 text-xs font-semibold text-gold-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold">Copiar a todos</button>
+            <button type="button" onClick={onChoosePoints}
+              className="min-h-9 flex-1 rounded-lg border border-gold/40 bg-white px-2 text-xs font-semibold text-gold-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold">Elegir puntos</button>
+          </div>
+        </details>
       )}
     </div>
   );
@@ -484,6 +538,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   const [showBoundaryLines, setShowBoundaryLines] = useState(true);
   const [showFreehandLines, setShowFreehandLines] = useState(true);
   const [showVisibilityDropdown, setShowVisibilityDropdown] = useState(false);
+  const visibilityPanelRef = useRef<HTMLDivElement>(null);
   const [refJsonLoaded, setRefJsonLoaded] = useState(false);
   const [pointMode, setPointMode] = useState<'none' | 'add' | 'delete'>('none');
   // Modal de unidades para puntos del trazado
@@ -564,6 +619,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   const [haShapeConfig, setHaShapeConfig] = useState({ fanLines: 5, fanAngle: 25, gridCells: 4, fernBranches: 5 });
   const [haShapeConfigOpen, setHaShapeConfigOpen] = useState(false);
   const [haShapeConfigTool, setHaShapeConfigTool] = useState<'ha-fan' | 'ha-grid' | 'ha-fern'>('ha-fan');
+  const [markAfterPattern, setMarkAfterPattern] = useState(false);
   /** Tab al que el usuario intenta cambiar; null = ningún switch pendiente */
   const [pendingTabSwitch, setPendingTabSwitch] = useState<'toxina' | 'relleno' | null>(null);
   /** Sub-tipo activo dentro del tab Relleno */
@@ -582,6 +638,15 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   /** Punto snap activo del imán (null = sin snap) */
   const [snapPoint, setSnapPoint] = useState<{ x: number; y: number; z: number } | null>(null);
   const [workspaceFullscreen, setWorkspaceFullscreen] = useState(false);
+
+  useEffect(() => {
+    if (!showVisibilityDropdown) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !visibilityPanelRef.current?.contains(event.target)) setShowVisibilityDropdown(false);
+    };
+    document.addEventListener('pointerdown', closeOutside);
+    return () => document.removeEventListener('pointerdown', closeOutside);
+  }, [showVisibilityDropdown]);
 
   useEffect(() => {
     const updateFullscreen = () => setWorkspaceFullscreen(document.fullscreenElement !== null && document.fullscreenElement === viewerRef.current);
@@ -819,12 +884,14 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
 
   // ── HANDLERS: Sidebar edición inline por punto ────────────────────────────
 
-  const handlePointFieldChange = (idx: number, field: keyof InjectionPoint, value: any) => {
+  const handlePointFieldChange = (idx: number, field: PointDetailField, value: string) => {
+    beginSelectedPropertyUndo();
     setInjectionPoints(prev => prev.map((p, i) => i === idx ? { ...p, [field]: value } : p));
   };
 
   const handleBulkApply = (sourceIdx: number) => {
     const src = injectionPoints[sourceIdx];
+    pushUndo();
     setInjectionPoints(prev => prev.map((p, i) => i === sourceIdx ? p : {
       ...p,
       technique_at_point: src.technique_at_point ?? p.technique_at_point,
@@ -862,6 +929,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   const handleApplyBulkSelected = () => {
     if (bulkApplySourceIdx === null || bulkApplySelected.size === 0) return;
     const src = injectionPoints[bulkApplySourceIdx];
+    pushUndo();
     setInjectionPoints(prev => prev.map(p => {
       if (!p.editablePointId || !bulkApplySelected.has(p.editablePointId)) return p;
       return {
@@ -887,8 +955,13 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   const handleFreehandComplete = useCallback((line: FreehandLine) => {
     pushUndo();
     setFreehandLines(prev => [...prev, line]);
+    if (markAfterPattern && ['Abanico', 'Malla', 'Helecho'].includes(line.technique_preset || '')) {
+      setActiveTool('none');
+      setPointMode('add');
+      setSelectedElement(null);
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [markAfterPattern]);
 
   /** Actualiza los puntos (y opcionalmente segmentos) de una línea existente después de resize/move */
   const handleFreehandLineUpdated = useCallback((id: string, points: { x: number; y: number; z: number }[], segments?: { x: number; y: number; z: number }[][]) => {
@@ -2966,21 +3039,26 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                           </button>
                           {showHaShapesDropdown && (
                             <div className="absolute left-0 top-full mt-1 z-50 w-36 bg-slate-800 border border-slate-600 rounded-xl shadow-2xl overflow-hidden">
-                              <button onClick={() => { setHaShapeConfigTool('ha-fan'); setHaShapeConfigOpen(true); setPointMode('none'); setShowHaShapesDropdown(false); }}
+                              <button onClick={() => { setHaShapeConfigTool('ha-fan'); setActiveTool('ha-fan'); setPointMode('none'); setSelectedElement(null); setShowHaShapesDropdown(false); }}
                                 className={`w-full flex items-center gap-2 px-3 py-2 text-[11px] font-semibold hover:bg-slate-700 transition-colors ${activeTool === 'ha-fan' ? 'text-violet-300' : 'text-slate-300'}`}>
                                 <span className="text-xs">扇</span> Abanico
                               </button>
-                              <button onClick={() => { setHaShapeConfigTool('ha-grid'); setHaShapeConfigOpen(true); setPointMode('none'); setShowHaShapesDropdown(false); }}
+                              <button onClick={() => { setHaShapeConfigTool('ha-grid'); setActiveTool('ha-grid'); setPointMode('none'); setSelectedElement(null); setShowHaShapesDropdown(false); }}
                                 className={`w-full flex items-center gap-2 px-3 py-2 text-[11px] font-semibold hover:bg-slate-700 transition-colors border-t border-slate-700 ${activeTool === 'ha-grid' ? 'text-violet-300' : 'text-slate-300'}`}>
                                 <span className="text-xs">⊞</span> Malla
                               </button>
-                              <button onClick={() => { setHaShapeConfigTool('ha-fern'); setHaShapeConfigOpen(true); setPointMode('none'); setShowHaShapesDropdown(false); }}
+                              <button onClick={() => { setHaShapeConfigTool('ha-fern'); setActiveTool('ha-fern'); setPointMode('none'); setSelectedElement(null); setShowHaShapesDropdown(false); }}
                                 className={`w-full flex items-center gap-2 px-3 py-2 text-[11px] font-semibold hover:bg-slate-700 transition-colors border-t border-slate-700 ${activeTool === 'ha-fern' ? 'text-violet-300' : 'text-slate-300'}`}>
                                 <span className="text-xs">☘</span> Helecho
                               </button>
                             </div>
                           )}
                         </div>
+                        <button type="button" onClick={() => { setShowHaShapesDropdown(false); setHaShapeConfigOpen(true); }}
+                          aria-label="Configurar patrón" title="Configurar el último patrón elegido"
+                          className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-600 bg-slate-800 text-slate-100 hover:bg-slate-700 focus-visible:ring-2 focus-visible:ring-white">
+                          <Settings2 className="h-4 w-4" aria-hidden="true" />
+                        </button>
                         </div>
                       </div>
                     )}
@@ -3044,111 +3122,59 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     )}
                   </div>
                   </details>
-                <details className="rounded-xl border border-slate-200 bg-white">
-                  <summary className="cursor-pointer px-4 py-3 text-xs font-semibold text-slate-700">Guías y visibilidad</summary>
-                  <p className="px-4 pb-3 text-xs leading-relaxed text-slate-500">La guía ayuda a ubicar referencias del rostro, no prescribe sitios de aplicación. Ocultar puntos de la guía conserva visibles los puntos con unidades registradas.</p>
-                {/* Toolbar: Trazado de Referencia Superior (solo para toxina) */}
-                <div className="mb-3 flex flex-wrap items-center gap-2 p-3 bg-slate-900 rounded-xl border border-slate-700">
-                  {/* Botón Cargar Trazado: solo para toxina */}
-                  {activeType === 'toxina' && (
-                  <button
-                    onClick={handleLoadReferenceJson}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                      refJsonLoaded
-                        ? 'bg-[#deb887]/20 text-[#deb887] border border-[#deb887]/40 hover:bg-[#deb887]/30'
-                        : 'bg-[#deb887] text-white hover:bg-[#c5a075] shadow-md'
-                    }`}
-                    title="Cargar puntos y líneas del trazado de referencia superior"
-                  >
-                    <Crosshair className="w-3.5 h-3.5" />
-                    {refJsonLoaded ? 'Recargar guía superior' : 'Guía de referencia superior'}
+                <div ref={visibilityPanelRef} className="relative"
+                  onBlur={event => { if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) setShowVisibilityDropdown(false); }}>
+                  <button type="button" aria-expanded={showVisibilityDropdown} aria-controls="injectable-visibility-panel"
+                    onClick={() => setShowVisibilityDropdown(open => !open)}
+                    className="flex min-h-9 w-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold">
+                    <span className="flex items-center gap-2"><Eye className="h-4 w-4" aria-hidden="true" />Guías y visibilidad</span>
+                    <ChevronDown className={`h-3 w-3 ${showVisibilityDropdown ? 'rotate-180' : ''}`} aria-hidden="true" />
                   </button>
-                  )}
-
-                  {refJsonLoaded && (
-                    <>
-                      {/* Toggle visibilidad de puntos */}
-                      <button
-                        onClick={() => setShowEditablePoints(v => !v)}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
-                          showEditablePoints
-                            ? 'bg-yellow-400/20 text-yellow-300 border-yellow-500/40 hover:bg-yellow-400/30'
-                            : 'bg-gray-600/40 text-gray-400 border-gray-600 hover:bg-gray-600/60'
-                        }`}
-                        title={showEditablePoints ? 'Ocultar puntos del trazado' : 'Mostrar puntos del trazado'}
-                      >
-                        <span className="w-2 h-2 rounded-full bg-current inline-block" />
-                        {showEditablePoints ? 'Guías visibles' : 'Guías ocultas'}
-                        <span className="text-[10px] opacity-70">({editablePoints.length})</span>
-                      </button>
-
-                    </>
-                  )}
-
-                  {/* Dropdown visibilidad */}
-                  <div className="ml-auto flex items-center gap-2">
-                    {(referenceLines.length > 0 || editablePoints.length > 0 || injectionPoints.some(ip => ip.units > 0)) && (
-                      <div className="relative">
-                        <button
-                          onClick={() => setShowVisibilityDropdown(v => !v)}
-                          onBlur={() => setTimeout(() => setShowVisibilityDropdown(false), 150)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all bg-slate-700/50 text-slate-300 border-slate-600 hover:bg-slate-600"
-                          title="Visibilidad del trazado"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          Visibilidad
-                          <ChevronDown className="w-3 h-3 opacity-60" />
+                  {showVisibilityDropdown && (
+                    <div id="injectable-visibility-panel" role="group" aria-label="Guías y visibilidad"
+                      className="absolute bottom-full left-0 z-50 mb-2 max-h-[min(24rem,calc(100dvh-8rem))] w-[min(18rem,calc(100vw-3rem))] overflow-y-auto rounded-xl border border-slate-200 bg-white p-3 shadow-xl md:bottom-0 md:left-full md:mb-0 md:ml-2">
+                      {activeType === 'toxina' && (
+                        <button type="button" onClick={handleLoadReferenceJson}
+                          className="mb-2 flex min-h-9 w-full items-center justify-center gap-1 rounded-lg bg-gold-light px-2 text-xs font-semibold text-gold-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold">
+                          <Crosshair className="h-4 w-4" aria-hidden="true" />{refJsonLoaded ? 'Recargar guía superior' : 'Guía de referencia superior'}
                         </button>
-                        {showVisibilityDropdown && (
-                          <div className="absolute right-0 top-full mt-1 z-50 w-48 bg-slate-800 border border-slate-600 rounded-xl shadow-2xl overflow-hidden">
-                            <button onMouseDown={() => { setShowLines(v => !v); }}
-                              className="w-full flex items-center justify-between px-3 py-2.5 text-xs text-slate-200 hover:bg-slate-700 transition-colors">
-                              <span>Líneas de ref.</span>
-                              {showLines ? <Eye className="w-3.5 h-3.5 text-[#deb887]" /> : <EyeOff className="w-3.5 h-3.5 text-slate-500" />}
-                            </button>
-                            <button onMouseDown={() => { setShowBoundaryLines(v => !v); }}
-                              className="w-full flex items-center justify-between px-3 py-2.5 text-xs text-slate-200 hover:bg-slate-700 transition-colors border-t border-slate-700">
-                              <span>Líneas de tercios</span>
-                              {showBoundaryLines ? <Eye className="w-3.5 h-3.5 text-slate-400" /> : <EyeOff className="w-3.5 h-3.5 text-slate-500" />}
-                            </button>
-                            <button onMouseDown={() => { setShowEditablePoints(v => !v); }}
-                              className="w-full flex items-center justify-between px-3 py-2.5 text-xs text-slate-200 hover:bg-slate-700 transition-colors border-t border-slate-700">
-                              <span>Puntos de guía</span>
-                              {showEditablePoints ? <Eye className="w-3.5 h-3.5 text-yellow-400" /> : <EyeOff className="w-3.5 h-3.5 text-slate-500" />}
-                            </button>
-                            <button onMouseDown={() => { setShowFreehandLines(v => !v); }}
-                              className="w-full flex items-center justify-between px-3 py-2.5 text-xs text-slate-200 hover:bg-slate-700 transition-colors border-t border-slate-700">
-                              <span>Líneas de trazado</span>
-                              {showFreehandLines ? <Eye className="w-3.5 h-3.5 text-violet-400" /> : <EyeOff className="w-3.5 h-3.5 text-slate-500" />}
-                            </button>
-                            {injectionPoints.some(ip => ip.units > 0) && (
-                              <button onMouseDown={() => { setShowUnitNumbers(v => !v); }}
-                                className="w-full flex items-center justify-between px-3 py-2.5 text-xs text-slate-200 hover:bg-slate-700 transition-colors border-t border-slate-700">
-                                <span>Números de UI</span>
-                                {showUnitNumbers ? <Eye className="w-3.5 h-3.5 text-emerald-400" /> : <EyeOff className="w-3.5 h-3.5 text-slate-500" />}
-                              </button>
-                            )}
-                            <button
-                              onMouseDown={() => { const newVal = !(showLines && showEditablePoints && showFreehandLines); setShowLines(newVal); setShowEditablePoints(newVal); setShowFreehandLines(newVal); }}
-                              className="w-full flex items-center justify-between px-3 py-2.5 text-xs text-slate-200 hover:bg-slate-700 transition-colors border-t border-slate-700">
-                              <span className="font-semibold">{showLines && showEditablePoints && showFreehandLines ? 'Ocultar anotaciones' : 'Mostrar anotaciones'}</span>
-                              {showLines && showEditablePoints && showFreehandLines ? <EyeOff className="w-3.5 h-3.5 text-slate-400" /> : <Eye className="w-3.5 h-3.5 text-emerald-400" />}
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    {referenceLines.length > 0 && (
-                      <span className="text-[10px] text-slate-400">{referenceLines.length} línea(s)</span>
-                    )}
-                  </div>
+                      )}
+                      {[
+                        { label: 'Líneas de referencia', visible: showLines, toggle: () => setShowLines(value => !value) },
+                        { label: 'Líneas de tercios', visible: showBoundaryLines, toggle: () => setShowBoundaryLines(value => !value) },
+                        { label: 'Puntos de guía', visible: showEditablePoints, toggle: () => setShowEditablePoints(value => !value) },
+                        { label: 'Trazos y patrones', visible: showFreehandLines, toggle: () => setShowFreehandLines(value => !value) },
+                        { label: `Cantidades (${unitLabel})`, visible: showUnitNumbers, toggle: () => setShowUnitNumbers(value => !value) },
+                      ].map(item => (
+                        <button key={item.label} type="button" aria-pressed={item.visible} onClick={item.toggle}
+                          className="flex min-h-9 w-full items-center justify-between gap-2 rounded-lg px-2 text-xs text-slate-700 hover:bg-gold-light/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold">
+                          {item.label}{item.visible ? <Eye className="h-4 w-4 text-gold-ink" aria-hidden="true" /> : <EyeOff className="h-4 w-4 text-slate-400" aria-hidden="true" />}
+                        </button>
+                      ))}
+                      <button type="button" onClick={() => { const visible = !(showLines && showEditablePoints && showFreehandLines); setShowLines(visible); setShowEditablePoints(visible); setShowFreehandLines(visible); }}
+                        className="mt-2 min-h-9 w-full rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold">
+                        {showLines && showEditablePoints && showFreehandLines ? 'Ocultar anotaciones' : 'Mostrar anotaciones'}
+                      </button>
+                      <p className="mt-2 text-[10px] leading-relaxed text-slate-500">Ocultar guías conserva los puntos con cantidades. Las guías no indican sitios de aplicación.</p>
+                    </div>
+                  )}
                 </div>
-                </details>
                 </div>
 
                 <div className="flex min-w-0 flex-col gap-3 xl:flex-row">
                   {/* Left: 3D Viewer (full width; drawer de líneas se superpone) */}
                   <div className="flex-1 min-w-0">
+                    {activeTool !== 'none' && (
+                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                        <p role="status" className="min-w-0 flex-1">{DRAWING_GUIDE[activeTool]}</p>
+                        {activeTool.startsWith('ha-') && (
+                          <button type="button" onClick={() => { setActiveTool('none'); setPointMode('add'); setSelectedElement(null); }}
+                            className="min-h-8 rounded-lg border border-gold/40 bg-white px-2 font-semibold text-gold-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold">
+                            Registrar puntos
+                          </button>
+                        )}
+                      </div>
+                    )}
                     <div className="relative">
                       <Clinical3DViewer
                         markers={markers3D}
@@ -3474,17 +3500,18 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                           );
                         })()}
 
-                        <div className="overflow-y-scroll h-[400px] pr-1.5 space-y-2 scrollbar-gold">
+                        <div className="max-h-[clamp(360px,calc(100dvh-180px),560px)] overflow-y-auto overscroll-contain space-y-2 scrollbar-gold">
 
                         {/* ── Agrupación por vial (relleno HA) ── */}
                         {current.product_type === 'relleno' && haVials.length > 0
-                          ? haVials.map(vial => {
-                              const vialPts = injectionPoints.filter(p => p.vial_id === vial.id);
+                          ? [...haVials, null].map(vial => {
+                              const vialPts = injectionPoints.filter(p => vial ? p.vial_id === vial.id : !haVials.some(item => item.id === p.vial_id));
+                              if (!vial && vialPts.length === 0) return null;
                               const vialUsed = vialPts.reduce((s, p) => s + p.units, 0);
                               const vialEpIds = vialPts.map(p => p.editablePointId).filter(Boolean) as string[];
                               const allVialSelected = vialEpIds.length > 0 && vialEpIds.every(id => bulkApplySelected.has(id));
                               return (
-                                <div key={vial.id} className="rounded-xl border border-gray-200 overflow-hidden">
+                                <div key={vial?.id ?? 'unassigned'} className="rounded-xl border border-gray-200 overflow-hidden">
                                   <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border-b border-gray-100">
                                     {bulkApplyMode && vialEpIds.length > 0 && (
                                       <button
@@ -3494,10 +3521,10 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                                         {allVialSelected && <Check className="w-2.5 h-2.5 text-white" />}
                                       </button>
                                     )}
-                                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: vial.color }} />
-                                    <span className="text-xs font-bold text-gray-700 truncate">{vial.product_name || 'Vial'}</span>
+                                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-slate-400" style={{ backgroundColor: vial?.color }} />
+                                    <span className="text-xs font-bold text-gray-700 truncate">{vial ? (vial.product_name || 'Vial') : 'Sin presentación asignada'}</span>
                                     <div className="ml-auto flex items-center gap-1.5">
-                                      <span className="text-[10px] font-semibold text-gray-500">{vialUsed.toFixed(1)} / {vial.volume_ml} ml</span>
+                                      <span className="text-[10px] font-semibold text-gray-500">{vialUsed.toFixed(1)}{vial ? ` / ${vial.volume_ml}` : ''} ml</span>
                                     </div>
                                   </div>
                                   {vialPts.length > 0 ? (
@@ -3512,20 +3539,24 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                                         return (
                                           <div key={globalIdx} className="border-b border-gray-50 last:border-0">
                                             <div
-                                              className={`flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer transition-colors ${
+                                              className={`flex items-center gap-1 px-2 py-1 text-xs transition-colors ${
                                                 bulkApplyMode
                                                   ? (isBulkSelected ? 'bg-orange-50' : 'hover:bg-orange-50/50')
                                                   : (isSelected ? 'bg-violet-50' : 'hover:bg-gray-50')
                                               }`}
-                                              onClick={() => {
+                                            >
+                                              <button type="button"
+                                                aria-expanded={!bulkApplyMode ? isExpanded : undefined}
+                                                aria-pressed={bulkApplyMode ? isBulkSelected : isSelected}
+                                                className="flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded px-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                                                onClick={() => {
                                                 if (bulkApplyMode) {
                                                   if (epId) handleToggleBulkPoint(epId);
                                                 } else {
                                                   if (epId) setSelectedPointId(isSelected ? null : epId);
                                                   setExpandedPointId(isExpanded ? null : expandKey);
                                                 }
-                                              }}
-                                            >
+                                                }}>
                                               {bulkApplyMode && epId && (
                                                 <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${isBulkSelected ? 'bg-orange-500 border-orange-500' : 'border-gray-300'}`}>
                                                   {isBulkSelected && <Check className="w-2.5 h-2.5 text-white" />}
@@ -3533,80 +3564,35 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                                               )}
                                               <div className="flex items-center gap-2 min-w-0 flex-1">
                                                 <span className={`font-mono w-4 flex-shrink-0 ${isSelected ? 'text-violet-600 font-bold' : 'text-gray-400'}`}>{globalIdx + 1}</span>
-                                                <span className={`font-medium truncate ${isBulkSelected ? 'text-orange-700' : isSelected ? 'text-violet-700' : 'text-gray-700'}`}>{p.label || '—'}</span>
+                                                <div className="min-w-0">
+                                                  <span className={`block font-medium truncate ${isBulkSelected ? 'text-orange-700' : isSelected ? 'text-violet-700' : 'text-gray-700'}`}>{p.label || '—'}</span>
+                                                  <span className="block truncate text-[10px] text-slate-500" title={[p.technique_at_point, p.needle_at_point, p.injection_plane].filter(Boolean).join(' · ')}>
+                                                    {[p.technique_at_point, p.needle_at_point, p.injection_plane].filter(Boolean).join(' · ') || 'Sin detalles'}
+                                                  </span>
+                                                </div>
                                               </div>
                                               <div className="flex items-center gap-1.5 flex-shrink-0">
                                                 <span className="font-semibold text-gray-800">{p.units} ml</span>
                                                 {!bulkApplyMode && <ChevronDown className={`w-3 h-3 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />}
+                                              </div>
+                                              </button>
                                                 {!bulkApplyMode && epId && (
-                                                  <button onClick={e => { e.stopPropagation(); handleEditablePointClicked(epId); }} className="p-0.5 text-violet-400 hover:text-violet-600 rounded" title="Editar zona/plano">
+                                                  <button type="button" onClick={() => handleEditablePointClicked(epId)} className="h-9 w-9 shrink-0 flex items-center justify-center text-gold-ink hover:bg-gold-light rounded focus-visible:ring-2 focus-visible:ring-gold" aria-label={`Editar punto ${globalIdx + 1}`} title="Editar cantidad y clasificación">
                                                     <Pencil className="w-3 h-3" />
                                                   </button>
                                                 )}
                                                 {!bulkApplyMode && (
-                                                  <button onClick={e => { e.stopPropagation(); handleRemovePoint(globalIdx); }} className="p-0.5 text-red-300 hover:text-red-500 rounded">
+                                                  <button type="button" onClick={() => handleRemovePoint(globalIdx)} className="h-9 w-9 shrink-0 flex items-center justify-center text-red-400 hover:bg-red-50 rounded focus-visible:ring-2 focus-visible:ring-gold" aria-label={`Eliminar punto ${globalIdx + 1}`}>
                                                     <X className="w-3 h-3" />
                                                   </button>
                                                 )}
-                                              </div>
                                             </div>
                                             {/* Inline editor */}
                                             {isExpanded && !bulkApplyMode && (
-                                              <div className="px-3 pb-3 pt-1 bg-violet-50/50 space-y-2 border-t border-violet-100">
-                                                <div className="grid grid-cols-2 gap-1.5">
-                                                  <div>
-                                                    <p className="text-[9px] text-gray-400 mb-0.5">Técnica</p>
-                                                    <select
-                                                      className="w-full text-[11px] border border-gray-200 rounded-lg px-2 py-1 bg-white focus:ring-1 focus:ring-violet-300 outline-none"
-                                                      value={p.technique_at_point || ''}
-                                                      onChange={e => handlePointFieldChange(globalIdx, 'technique_at_point', e.target.value)}
-                                                    >
-                                                      <option value="">Por definir</option>
-                                                      {techniques.map(t => <option key={t} value={t}>{t}</option>)}
-                                                    </select>
-                                                  </div>
-                                                  <div>
-                                                    <p className="text-[9px] text-gray-400 mb-0.5">Cánula/Aguja</p>
-                                                    <select
-                                                      className="w-full text-[11px] border border-gray-200 rounded-lg px-2 py-1 bg-white focus:ring-1 focus:ring-violet-300 outline-none"
-                                                      value={p.needle_at_point || ''}
-                                                      onChange={e => handlePointFieldChange(globalIdx, 'needle_at_point', e.target.value)}
-                                                    >
-                                                      <option value="">Por definir</option>
-                                                      {needles.map(n => <option key={n} value={n}>{n}</option>)}
-                                                    </select>
-                                                  </div>
-                                                </div>
-                                                <div>
-                                                  <p className="text-[9px] text-gray-400 mb-0.5">Plano</p>
-                                                  <select
-                                                    className="w-full text-[11px] border border-gray-200 rounded-lg px-2 py-1 bg-white focus:ring-1 focus:ring-violet-300 outline-none"
-                                                    value={p.injection_plane || ''}
-                                                    onChange={e => handlePointFieldChange(globalIdx, 'injection_plane', e.target.value)}
-                                                  >
-                                                    <option value="">Por definir</option>
-                                                    {HA_PLANES.map(pl => <option key={pl} value={pl}>{pl}</option>)}
-                                                  </select>
-                                                </div>
-                                                <div>
-                                                  <p className="text-[9px] text-gray-400 mb-0.5">Nota</p>
-                                                  <input
-                                                    type="text"
-                                                    className="w-full text-[11px] border border-gray-200 rounded-lg px-2 py-1 bg-white focus:ring-1 focus:ring-violet-300 outline-none"
-                                                    placeholder="Observación..."
-                                                    value={p.notes_at_point || ''}
-                                                    onChange={e => handlePointFieldChange(globalIdx, 'notes_at_point', e.target.value)}
-                                                  />
-                                                </div>
-                                                <div className="flex gap-1.5">
-                                                  <button onClick={() => handleBulkApply(globalIdx)} className="flex-1 text-[10px] py-1 rounded-lg bg-violet-100 text-violet-700 hover:bg-violet-200 font-semibold transition-colors">
-                                                    Todos →
-                                                  </button>
-                                                  <button onClick={() => handleEnterBulkApplyMode(globalIdx)} className="flex-1 text-[10px] py-1 rounded-lg bg-orange-100 text-orange-700 hover:bg-orange-200 font-semibold transition-colors">
-                                                    Selección →
-                                                  </button>
-                                                </div>
-                                              </div>
+                                              <PointDetailsEditor point={p} index={globalIdx} planes={HA_PLANES} canCopy={injectionPoints.length > 1}
+                                                onChange={(field, value) => handlePointFieldChange(globalIdx, field, value)}
+                                                onCopyAll={() => handleBulkApply(globalIdx)} onChoosePoints={() => handleEnterBulkApplyMode(globalIdx)}
+                                                onEditEnd={endSelectedPropertyUndo} />
                                             )}
                                           </div>
                                         );
@@ -3623,7 +3609,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                           const pts = pointsByTercio[tercio];
                           if (!pts || pts.length === 0) return null;
                           const colors = TERCIO_COLORS[tercio];
-                          const tercioTotal = pts.reduce((s, p) => s + p.units, 0);
+                          const tercioTotal = parseFloat(pts.reduce((s, p) => s + p.units, 0).toFixed(2));
                           const tercioEpIds = pts.map(p => p.editablePointId).filter(Boolean) as string[];
                           const allTercioSelected = tercioEpIds.length > 0 && tercioEpIds.every(id => bulkApplySelected.has(id));
                           return (
@@ -3667,13 +3653,13 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                                         <button
                                           type="button"
                                           aria-pressed={bulkApplyMode ? isBulkSelected : isSelected}
-                                          aria-expanded={!bulkApplyMode && current.product_type !== 'toxina' ? isExpanded : undefined}
+                                          aria-expanded={!bulkApplyMode ? isExpanded : undefined}
                                           onClick={() => {
                                             if (bulkApplyMode) {
                                               if (rowEpId) handleToggleBulkPoint(rowEpId);
                                             } else {
                                               if (rowEpId) setSelectedPointId(isSelected ? null : rowEpId);
-                                              if (current.product_type !== 'toxina') setExpandedPointId(isExpanded ? null : expandKey);
+                                              setExpandedPointId(isExpanded ? null : expandKey);
                                             }
                                           }}
                                           className="flex min-w-0 flex-1 items-center gap-2 rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b8944d] focus-visible:ring-inset"
@@ -3681,17 +3667,13 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                                           <span className={`font-mono w-4 flex-shrink-0 ${isBulkSelected ? 'text-orange-600 font-bold' : isSelected ? 'text-[#b8944d] font-bold' : 'text-gray-400'}`}>{globalIndex + 1}</span>
                                           <span className="flex min-w-0 flex-1 flex-col">
                                             <span className={`font-medium truncate ${isBulkSelected ? 'text-orange-700' : isSelected ? 'text-[#b8944d]' : 'text-gray-700'}`}>{p.label || '—'}</span>
-                                            <span className="flex min-w-0 flex-col text-[10px] leading-tight text-gray-500">
-                                              {p.technique_at_point && <span className="truncate" title={`Técnica: ${p.technique_at_point}`}>Técnica: {p.technique_at_point}</span>}
-                                              {p.needle_at_point && <span className="truncate" title={`Aguja: ${p.needle_at_point}`}>Aguja: {p.needle_at_point}</span>}
-                                              {p.injection_plane && <span className="truncate text-[#b8944d]" title={`Plano: ${p.injection_plane}`}>Plano: {p.injection_plane}</span>}
-                                              {!p.technique_at_point && !p.needle_at_point && !p.injection_plane && <span className="text-gray-400">Técnica, aguja y plano sin registrar</span>}
+                                            <span className="truncate text-[10px] text-slate-500" title={[p.technique_at_point, p.needle_at_point, p.injection_plane].filter(Boolean).join(' · ')}>
+                                              {[p.technique_at_point, p.needle_at_point, p.injection_plane].filter(Boolean).join(' · ') || 'Sin detalles'}
                                             </span>
                                           </span>
                                           <span className="flex flex-shrink-0 items-center gap-1.5">
                                             <span className="font-semibold text-gray-800">{p.units} {unitLabel}</span>
-                                            {!bulkApplyMode && <span className="text-gray-400 w-9 text-right">{totalUsed > 0 ? Math.round((p.units / totalUsed) * 100) : 0}%</span>}
-                                            {!bulkApplyMode && current.product_type !== 'toxina' && <ChevronDown className={`w-3 h-3 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />}
+                                            {!bulkApplyMode && <ChevronDown className={`w-3 h-3 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />}
                                           </span>
                                         </button>
                                         <div className="flex flex-shrink-0 items-center gap-1.5">
@@ -3707,26 +3689,13 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                                           )}
                                         </div>
                                       </div>
-                                      {/* Inline editor — solo relleno; en toxina, técnica/aguja van en el producto y plano en el modal */}
-                                      {isExpanded && !bulkApplyMode && current.product_type !== 'toxina' && (
-                                        <div className="px-3 pb-3 pt-1 bg-amber-50/50 space-y-2 border-t border-amber-100">
-                                          <div className="grid grid-cols-1 gap-2 xl:grid-cols-2">
-                                            <PointFieldSelect id={`point-technique-${globalIndex}`} label="Técnica" value={p.technique_at_point || ''} options={techniques} onChange={value => handlePointFieldChange(globalIndex, 'technique_at_point', value)} />
-                                            <PointFieldSelect id={`point-needle-${globalIndex}`} label="Aguja" value={p.needle_at_point || ''} options={needles} onChange={value => handlePointFieldChange(globalIndex, 'needle_at_point', value)} />
-                                          </div>
-                                          <PointFieldSelect id={`point-plane-${globalIndex}`} label="Plano" value={p.injection_plane || ''} options={HA_PLANES} onChange={value => handlePointFieldChange(globalIndex, 'injection_plane', value)} />
-                                          <p className="rounded-lg border border-amber-100 bg-white/70 p-2 text-xs leading-relaxed text-amber-900">
-                                            Al copiar, los campos de este punto reemplazan los mismos campos en destino. Un campo vacío también puede borrar el valor existente.
-                                          </p>
-                                          <div className="flex gap-1.5">
-                                            <button type="button" onClick={() => handleBulkApply(globalIndex)} className="min-h-9 flex-1 rounded-lg bg-amber-100 px-2 py-2 text-xs text-amber-800 hover:bg-amber-200 font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b8944d]" aria-label={`Copiar campos del punto ${globalIndex + 1} a los demás puntos`}>
-                                              Copiar a todos
-                                            </button>
-                                            <button type="button" onClick={() => handleEnterBulkApplyMode(globalIndex)} className="min-h-9 flex-1 rounded-lg bg-orange-100 px-2 py-2 text-xs text-orange-800 hover:bg-orange-200 font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500" aria-label={`Elegir puntos para copiar campos del punto ${globalIndex + 1}`}>
-                                              Elegir puntos
-                                            </button>
-                                          </div>
-                                        </div>
+                                      {isExpanded && !bulkApplyMode && (
+                                        <PointDetailsEditor point={p} index={globalIndex}
+                                          planes={current.product_type === 'toxina' ? ['Superficial', 'Medio', 'Profundo'] : HA_PLANES}
+                                          canCopy={injectionPoints.length > 1}
+                                          onChange={(field, value) => handlePointFieldChange(globalIndex, field, value)}
+                                          onCopyAll={() => handleBulkApply(globalIndex)} onChoosePoints={() => handleEnterBulkApplyMode(globalIndex)}
+                                          onEditEnd={endSelectedPropertyUndo} />
                                       )}
                                     </div>
                                   );
@@ -3908,45 +3877,45 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     {haShapeConfigTool === 'ha-fan' ? 'Configurar Abanico' : haShapeConfigTool === 'ha-grid' ? 'Configurar Malla' : 'Configurar Helecho'}
                   </h3>
                   <p className="text-[11px] text-gray-500 mt-0.5">
-                    {haShapeConfigTool === 'ha-fan' ? 'Líneas radiales divergentes desde un punto de entrada' :
+                    {haShapeConfigTool === 'ha-fan' ? 'Líneas radiales desde un origen gráfico' :
                      haShapeConfigTool === 'ha-grid' ? 'Cuadrícula de líneas perpendiculares sobre la piel' :
                      'Línea central con ramificaciones laterales alternadas'}
                   </p>
                 </div>
-                <button onClick={() => setHaShapeConfigOpen(false)} className="p-1 text-gray-400 hover:text-gray-600 rounded-lg">
+                <button type="button" aria-label="Cerrar configuración del patrón" onClick={() => setHaShapeConfigOpen(false)} className="p-1 text-gray-400 hover:text-gray-600 rounded-lg">
                   <X className="w-4 h-4" />
                 </button>
               </div>
 
               {/* Vista previa SVG */}
               <div className="flex justify-center mb-4">
-                <svg viewBox="0 0 120 120" width="140" height="140" className="border border-gray-200 rounded-xl bg-slate-50">
+                <svg viewBox="0 0 120 120" width="140" height="140" role="img" aria-label="Vista previa del patrón gráfico" className="border border-gray-200 rounded-xl bg-slate-50">
                   {haShapeConfigTool === 'ha-fan' && Array.from({ length: haShapeConfig.fanLines }, (_, i) => {
                     const t = haShapeConfig.fanLines === 1 ? 0 : (i / (haShapeConfig.fanLines - 1) - 0.5) * 2;
                     const angleDeg = t * haShapeConfig.fanAngle;
                     const rad = (angleDeg - 90) * Math.PI / 180;
                     const x2 = 60 + Math.cos(rad) * 48;
                     const y2 = 100 + Math.sin(rad) * 48;
-                    return <line key={i} x1="60" y1="100" x2={x2} y2={y2} stroke="#8b5cf6" strokeWidth="1.8" strokeLinecap="round" />;
+                    return <line key={i} x1="60" y1="100" x2={x2} y2={y2} stroke={brushColor} strokeWidth={brushThickness} strokeLinecap="round" />;
                   })}
                   {haShapeConfigTool === 'ha-grid' && (<>
                     {Array.from({ length: haShapeConfig.gridCells + 1 }, (_, i) => {
                       const x = 15 + (i / haShapeConfig.gridCells) * 90;
-                      return <line key={`v${i}`} x1={x} y1="15" x2={x} y2="105" stroke="#8b5cf6" strokeWidth="1.5" />;
+                      return <line key={`v${i}`} x1={x} y1="15" x2={x} y2="105" stroke={brushColor} strokeWidth={brushThickness} />;
                     })}
                     {Array.from({ length: haShapeConfig.gridCells + 1 }, (_, i) => {
                       const y = 15 + (i / haShapeConfig.gridCells) * 90;
-                      return <line key={`h${i}`} x1="15" y1={y} x2="105" y2={y} stroke="#8b5cf6" strokeWidth="1.5" />;
+                      return <line key={`h${i}`} x1="15" y1={y} x2="105" y2={y} stroke={brushColor} strokeWidth={brushThickness} />;
                     })}
                   </>)}
                   {haShapeConfigTool === 'ha-fern' && (<>
-                    <line x1="60" y1="105" x2="60" y2="15" stroke="#8b5cf6" strokeWidth="2" strokeLinecap="round" />
+                    <line x1="60" y1="105" x2="60" y2="15" stroke={brushColor} strokeWidth={brushThickness} strokeLinecap="round" />
                     {Array.from({ length: haShapeConfig.fernBranches }, (_, i) => {
                       const t = (i + 1) / (haShapeConfig.fernBranches + 1);
                       const y = 105 - t * 90;
-                      const sign = i % 2 === 0 ? 1 : -1;
-                      const bLen = 25 * (1 - t * 0.5);
-                      return <line key={i} x1="60" y1={y} x2={60 + sign * bLen} y2={y - 16} stroke="#8b5cf6" strokeWidth="1.3" strokeLinecap="round" />;
+                      const sign = (i + 1) % 2 === 0 ? 1 : -1;
+                      const bLen = 90 * 0.25 * (1 - t * 0.5);
+                      return <line key={i} x1="60" y1={y} x2={60 + sign * bLen} y2={y} stroke={brushColor} strokeWidth={brushThickness * 0.7} strokeLinecap="round" />;
                     })}
                   </>)}
                 </svg>
@@ -3959,16 +3928,16 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     <div className="flex justify-between text-[11px] text-gray-600 mb-1">
                       <span>Número de líneas</span><span className="font-bold">{haShapeConfig.fanLines}</span>
                     </div>
-                    <input type="range" min={3} max={12} step={1} value={haShapeConfig.fanLines}
+                    <input aria-label="Número de líneas del abanico" type="range" min={3} max={12} step={1} value={haShapeConfig.fanLines}
                       onChange={e => setHaShapeConfig(c => ({ ...c, fanLines: Number(e.target.value) }))}
                       className="w-full accent-violet-500" />
                   </div>
                   <div>
                     <div className="flex justify-between text-[11px] text-gray-600 mb-1">
-                      <span>Ángulo de apertura</span><span className="font-bold">{haShapeConfig.fanAngle}°</span>
+                      <span>Apertura total</span><span className="font-bold">{haShapeConfig.fanAngle * 2}°</span>
                     </div>
-                    <input type="range" min={10} max={60} step={5} value={haShapeConfig.fanAngle}
-                      onChange={e => setHaShapeConfig(c => ({ ...c, fanAngle: Number(e.target.value) }))}
+                    <input aria-label="Apertura total del abanico" type="range" min={20} max={120} step={10} value={haShapeConfig.fanAngle * 2}
+                      onChange={e => setHaShapeConfig(c => ({ ...c, fanAngle: Number(e.target.value) / 2 }))}
                       className="w-full accent-violet-500" />
                   </div>
                 </>)}
@@ -3977,7 +3946,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     <div className="flex justify-between text-[11px] text-gray-600 mb-1">
                       <span>Celdas por lado</span><span className="font-bold">{haShapeConfig.gridCells}</span>
                     </div>
-                    <input type="range" min={2} max={8} step={1} value={haShapeConfig.gridCells}
+                    <input aria-label="Celdas por lado de la malla" type="range" min={2} max={8} step={1} value={haShapeConfig.gridCells}
                       onChange={e => setHaShapeConfig(c => ({ ...c, gridCells: Number(e.target.value) }))}
                       className="w-full accent-violet-500" />
                     <p className="text-[10px] text-gray-400 mt-1">
@@ -3990,12 +3959,17 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     <div className="flex justify-between text-[11px] text-gray-600 mb-1">
                       <span>Número de ramificaciones</span><span className="font-bold">{haShapeConfig.fernBranches}</span>
                     </div>
-                    <input type="range" min={2} max={10} step={1} value={haShapeConfig.fernBranches}
+                    <input aria-label="Número de ramas del helecho" type="range" min={2} max={10} step={1} value={haShapeConfig.fernBranches}
                       onChange={e => setHaShapeConfig(c => ({ ...c, fernBranches: Number(e.target.value) }))}
                       className="w-full accent-violet-500" />
                   </div>
                 )}
               </div>
+
+              <label className="mt-4 flex cursor-pointer items-start gap-2 rounded-lg border border-gold/30 bg-gold-light/20 p-3 text-xs text-slate-700">
+                <input type="checkbox" checked={markAfterPattern} onChange={event => setMarkAfterPattern(event.target.checked)} className="mt-0.5 accent-gold-dark" />
+                <span>Pasar a Añadir punto al terminar el patrón. Cada punto y su cantidad se registran manualmente.</span>
+              </label>
 
               {/* Instrucción + Botones */}
               <p className="text-[10px] text-gray-400 mt-3 text-center">

@@ -506,7 +506,7 @@ test('rellenos presentan producto, volumen, mapa y seguimiento en orden', () => 
 
 test('edición por punto usa selectores accesibles dorados y aclara la copia masiva', () => {
   for (const field of ['technique', 'needle', 'plane']) {
-    assert.ok(source.includes(`<PointFieldSelect id={\`point-${field}-\${globalIndex}\`}`));
+    assert.ok(source.includes(`<PointFieldSelect id={\`point-${field}-\${index}\`}`));
   }
   const selector = source.slice(source.indexOf('function PointFieldSelect'), source.indexOf('const DRAWING_GUIDE'));
   assert.match(selector, /role="combobox"/);
@@ -520,13 +520,134 @@ test('edición por punto usa selectores accesibles dorados y aclara la copia mas
   assert.match(selector, /bg-\[#deb887\]\/20/);
   assert.match(selector, /focus-visible:ring-\[#b8944d\]/);
   assert.match(selector, /event\.key === 'ArrowDown'/);
-  assert.match(source, /focus-visible:ring-2 focus-visible:ring-\[#b8944d\]/);
-  assert.match(source, /Técnica, aguja y plano sin registrar/);
+  assert.match(source, /focus-visible:ring-2 focus-visible:ring-gold/);
+  assert.match(source, /Sin detalles/);
   assert.match(source, /aria-pressed=\{bulkApplyMode \? isBulkSelected : isSelected\}/);
   assert.match(source, /Copiar a todos/);
   assert.match(source, /Elegir puntos/);
   assert.match(source, /Un campo vacío también puede borrar el valor existente/);
   assert.match(source, /aria-label=\{`Eliminar punto \$\{globalIndex \+ 1\}`\}/);
+});
+
+test('hover de opciones desplaza solamente la lista, sin scroll de ancestros', () => {
+  let effect;
+  function visit(node) {
+    if (ts.isCallExpression(node) && node.expression.getText(ast) === 'useEffect'
+      && node.arguments[0]?.getText(ast).includes('const bottom = top + option.offsetHeight')) effect = node.arguments[0];
+    ts.forEachChild(node, visit);
+  }
+  visit(ast);
+  assert.ok(effect);
+  assert.doesNotMatch(effect.getText(ast), /scrollIntoView/);
+  const listbox = { scrollTop: 40, clientHeight: 100 };
+  const option = { offsetTop: 160, offsetHeight: 36 };
+  const sandbox = vm.createContext({
+    open: true, id: 'point-technique-0', optionsId: 'point-technique-0-options', activeIndex: 5,
+    document: { getElementById: id => id.endsWith('options') ? listbox : option },
+  });
+  vm.runInContext(`globalThis.adjust = ${effect.getText(ast)};`, sandbox);
+  sandbox.adjust();
+  assert.equal(listbox.scrollTop, 96);
+  option.offsetTop = 20;
+  sandbox.adjust();
+  assert.equal(listbox.scrollTop, 20);
+  option.offsetTop = 30;
+  sandbox.adjust();
+  assert.equal(listbox.scrollTop, 20);
+  assert.match(source, /Math\.max\(240, rect\.width\)/);
+  assert.match(source, /overflow-x-hidden overflow-y-auto overscroll-contain/);
+  assert.match(source, /document\.fullscreenElement \?\? document\.body/);
+});
+
+test('editor compartido muestra tres campos completos y mantiene nota y copia plegadas', () => {
+  const editor = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'PointDetailsEditor');
+  const require = createRequire(import.meta.url);
+  const sandbox = vm.createContext({
+    require, exports: {}, techniques: [], needles: [],
+    PointFieldSelect: ({ id }) => require('react').createElement('input', { id }),
+  });
+  const code = ts.transpileModule(`${editor.getText(ast)}\nglobalThis.editor = PointDetailsEditor;`, {
+    compilerOptions: { jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS },
+  }).outputText;
+  vm.runInContext(code, sandbox);
+  const props = { point: {}, index: 0, planes: [], canCopy: true, onChange() {}, onCopyAll() {}, onChoosePoints() {}, onEditEnd() {} };
+  const html = renderToStaticMarkup(sandbox.editor(props));
+  assert.equal((html.match(/<input id="point-(technique|needle|plane)-0"/g) || []).length, 3);
+  assert.equal((html.match(/<details/g) || []).length, 2);
+  assert.doesNotMatch(html, /<details[^>]*\bopen\b|grid-cols-2/);
+  assert.match(html, /Copiar campos/);
+  const singleHtml = renderToStaticMarkup(sandbox.editor({ ...props, canCopy: false }));
+  assert.doesNotMatch(singleHtml, /Copiar campos|Reemplaza técnica/);
+  assert.equal((source.match(/<PointDetailsEditor point=\{p\}/g) || []).length, 2);
+});
+
+test('copiar a todos o a selección registra undo y preserva cantidades, notas y vial', () => {
+  for (const selected of [false, true]) {
+    let points = [
+      { editablePointId: 'a', units: 0.3, vial_id: 'v1', notes_at_point: 'Origen', technique_at_point: '', needle_at_point: '25G', injection_plane: 'Medio' },
+      { editablePointId: 'b', units: 0.5, vial_id: 'v2', notes_at_point: 'Destino', technique_at_point: 'Lineal', needle_at_point: '', injection_plane: 'Profundo' },
+      { editablePointId: 'c', units: 0.7, vial_id: 'v3', notes_at_point: 'Otro', technique_at_point: 'Puntual' },
+    ];
+    const original = structuredClone(points);
+    let snapshots = 0;
+    const handler = loadFunction(selected ? 'handleApplyBulkSelected' : 'handleBulkApply', {
+      injectionPoints: points, bulkApplySourceIdx: 0, bulkApplySelected: new Set(['b']),
+      pushUndo: () => snapshots++, setInjectionPoints: fn => { points = fn(points); },
+      setBulkApplyMode() {}, setBulkApplySourceIdx() {}, setBulkApplySelected() {},
+    });
+    handler(0);
+    assert.equal(snapshots, 1);
+    assert.equal(points[1].technique_at_point, '');
+    assert.equal(points[1].needle_at_point, '25G');
+    for (let i = 0; i < points.length; i++) {
+      for (const field of ['units', 'notes_at_point', 'vial_id']) assert.equal(points[i][field], original[i][field]);
+    }
+    if (selected) assert.deepEqual(JSON.parse(JSON.stringify(points[2])), original[2]);
+  }
+});
+
+test('terminar patrones cambia a registro manual solamente con la opción activada', () => {
+  for (const enabled of [false, true]) {
+    for (const preset of ['Abanico', 'Malla', 'Helecho', 'Pincel', undefined]) {
+      let lines = [], tool = 'drawing', pointMode = 'none', snapshots = 0;
+      const handler = loadFunction('handleFreehandComplete', {
+        useCallback: fn => fn, markAfterPattern: enabled, pushUndo: () => snapshots++,
+        setFreehandLines: fn => { lines = fn(lines); }, setActiveTool: next => { tool = next; },
+        setPointMode: next => { pointMode = next; }, setSelectedElement() {},
+      });
+      const line = { id: 'pattern', technique_preset: preset, segments: [[{ x: 0, y: 0, z: 1 }]] };
+      handler(line);
+      assert.equal(snapshots, 1);
+      assert.equal(lines.length, 1);
+      assert.equal(lines[0], line);
+      const shouldSwitch = enabled && ['Abanico', 'Malla', 'Helecho'].includes(preset);
+      assert.equal(pointMode, shouldSwitch ? 'add' : 'none');
+      assert.equal(tool, shouldSwitch ? 'none' : 'drawing');
+    }
+  }
+});
+
+test('guías flotan sin expandir el grid y viales no ocultan puntos sin asignación', () => {
+  assert.match(source, /role="group" aria-label="Guías y visibilidad"\s+className="absolute/);
+  assert.doesNotMatch(source, /<summary[^>]*>Guías y visibilidad/);
+  assert.match(source, /Sin presentación asignada/);
+  assert.match(source, /!haVials\.some\(item => item\.id === p\.vial_id\)/);
+  assert.match(source, /Apertura total/);
+  assert.match(source, /fanAngle: Number\(e\.target\.value\) \/ 2/);
+});
+
+test('subtotal visible evita ruido decimal sin modificar cantidades guardadas', () => {
+  let initializer;
+  function visit(node) {
+    if (ts.isVariableDeclaration(node) && node.name.getText(ast) === 'tercioTotal') initializer = node.initializer;
+    ts.forEachChild(node, visit);
+  }
+  visit(ast);
+  const pts = [{ units: 0.3 }, { units: 0.3 }, { units: 0.3 }];
+  const sandbox = vm.createContext({ pts });
+  vm.runInContext(`globalThis.total = ${initializer.getText(ast)};`, sandbox);
+  assert.equal(sandbox.total, 0.9);
+  assert.deepEqual(pts.map(p => p.units), [0.3, 0.3, 0.3]);
 });
 
 test('ayudas de relleno describen registro sin indicar cantidades, zonas ni protocolos', () => {
