@@ -87,7 +87,7 @@ export default function InjectableCaptureModal({
   const handleProjectedPositions = useCallback((positions: ProjectedPosition[]) => {
     const overlay = unitOverlayRef.current;
     if (!overlay) return;
-    positions.forEach(({ id, x, y }) => {
+    positions.forEach(({ id, x, y, visible }) => {
       if (id === '__zoom__') {
         const REF_DIST = 12;
         const BASE_PX = 9;
@@ -99,7 +99,10 @@ export default function InjectableCaptureModal({
         return;
       }
       const el = overlay.querySelector(`[data-pid="${id}"]`) as HTMLElement | null;
-      if (el) el.style.transform = `translate(${Math.round(x + 5)}px, ${Math.round(y - 12)}px)`;
+      if (el) {
+        el.style.visibility = visible === false ? 'hidden' : 'visible';
+        el.style.transform = `translate(${Math.round(x + 5)}px, ${Math.round(y - 12)}px)`;
+      }
     });
   }, []);
 
@@ -300,6 +303,7 @@ export default function InjectableCaptureModal({
                 {/* Viewer container with flash overlay */}
                 <div className="relative flex-1 min-h-[260px]" ref={viewerContainerRef}>
                   <Clinical3DViewer
+                    occludeAnnotations
                     markers={showMarkers ? markers : []}
                     selectedPathology={selectedPathology}
                     readOnly

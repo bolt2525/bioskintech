@@ -10,6 +10,95 @@ const source = readFileSync(new URL('../src/components/admin/ficha-clinica/compo
 const ast = ts.createSourceFile('InjectablesTab.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const viewerSource = readFileSync(new URL('../src/components/admin/ficha-clinica/components/Clinical3DViewer.tsx', import.meta.url), 'utf8');
 const viewerAst = ts.createSourceFile('Clinical3DViewer.tsx', viewerSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+const THREE = createRequire(import.meta.url)('three');
+function loadOcclusionFunction(name) {
+  const declaration = viewerAst.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === name);
+  assert.ok(declaration);
+  const code = ts.transpileModule(`${declaration.getText(viewerAst)}\nglobalThis.result = ${name};`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS },
+  }).outputText;
+  const sandbox = vm.createContext({ THREE });
+  vm.runInContext(code, sandbox);
+  return sandbox.result;
+}
+
+test('oclusión real: el rostro bloquea puntos del lado opuesto y conserva los del lado visible', () => {
+  const visible = loadOcclusionFunction('isSurfacePositionVisible');
+  const surface = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 24), new THREE.MeshBasicMaterial());
+  surface.updateMatrixWorld(true);
+  const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
+  camera.position.set(0, 0, 5);
+  camera.lookAt(0, 0, 0);
+  camera.updateMatrixWorld(true);
+  assert.equal(visible(new THREE.Vector3(0, 0, 1.03), camera, surface), true);
+  assert.equal(visible(new THREE.Vector3(0, 0, -1.03), camera, surface), false);
+  assert.equal(visible(new THREE.Vector3(0, 0, 6), camera, surface), false);
+  assert.equal(visible(new THREE.Vector3(20, 0, 0), camera, surface), false);
+  camera.position.set(0, 0, -5);
+  camera.lookAt(0, 0, 0);
+  camera.updateMatrixWorld(true);
+  assert.equal(visible(new THREE.Vector3(0, 0, -1.03), camera, surface), true);
+  assert.equal(visible(new THREE.Vector3(0, 0, 1.03), camera, surface), false);
+  assert.equal(visible(new THREE.Vector3(0, 0, 1.03), camera, null), false);
+});
+
+test('raycast no selecciona hitboxes ocultos por el modelo ni grupos invisibles', () => {
+  const filter = loadOcclusionFunction('visibleSurfaceHits');
+  const surface = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 24), new THREE.MeshBasicMaterial());
+  const makeHitbox = z => {
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.06), new THREE.MeshBasicMaterial({ visible: false }));
+    mesh.position.z = z;
+    mesh.updateMatrixWorld(true);
+    return mesh;
+  };
+  const front = makeHitbox(1.03), back = makeHitbox(-1.03);
+  surface.updateMatrixWorld(true);
+  const ray = new THREE.Raycaster(new THREE.Vector3(0, 0, 5), new THREE.Vector3(0, 0, -1));
+  assert.equal(filter(ray, [back], surface, true).length, 0);
+  assert.equal(filter(ray, [back], surface, false).length, 1, 'Otros consumidores mantienen el comportamiento anterior');
+  assert.equal(filter(ray, [front, back], surface, true)[0].object, front);
+  const hidden = new THREE.Group();
+  hidden.visible = false;
+  hidden.add(front);
+  hidden.updateMatrixWorld(true);
+  assert.equal(filter(ray, [front], surface, true).length, 0);
+  assert.equal(filter(ray, [back], null, true).length, 0);
+});
+
+test('trazos, halos y labels respetan profundidad sin perder colores y restauran modo anterior', () => {
+  const apply = loadOcclusionFunction('applyAnnotationDepth');
+  const defaults = new WeakMap();
+  const group = new THREE.Group();
+  const material = new THREE.MeshBasicMaterial({ color: 'red', depthTest: false, depthWrite: true });
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.03), material);
+  const spriteMaterial = new THREE.SpriteMaterial({ depthTest: false });
+  group.add(mesh, new THREE.Sprite(spriteMaterial));
+  apply(group, true, defaults);
+  assert.equal(material.depthTest, true);
+  assert.equal(material.depthWrite, false);
+  assert.equal(spriteMaterial.depthTest, true);
+  assert.equal(material.color.getHexString(), 'ff0000');
+  apply(group, true, defaults);
+  apply(group, false, defaults);
+  assert.equal(material.depthTest, false);
+  assert.equal(material.depthWrite, true);
+  assert.equal(spriteMaterial.depthTest, false);
+});
+
+test('oclusión está conectada a hover, arrastre, borrar, selección, snap, cantidades y capturas', () => {
+  for (const meshes of ['handleMeshes', 'zonalMeshes', 'epMeshes', 'fhMeshes', 'shMeshes', 'lineMeshes', 'hoverMeshes']) {
+    assert.ok(viewerSource.includes(`visibleSurfaceHits(${meshes === 'hoverMeshes' ? 'hoverRc' : 'raycaster'}, ${meshes}, faceMeshRef.current, callbacks.current.occludeAnnotations)`));
+  }
+  assert.match(viewerSource, /visibleSurfaceHits\(hoverRc, epMeshes/);
+  assert.match(viewerSource, /visibleSurfaceHits\(raycaster, \[editablePointsGroupRef\.current\]/);
+  assert.match(viewerSource, /const snapVisible = currentSnapPt &&/);
+  assert.match(viewerSource, /isSurfacePositionVisible\(wp, cam, faceMeshRef\.current\)/);
+  assert.match(viewerSource, /occludeAnnotations = false/);
+  assert.match(source, /<Clinical3DViewer\s+occludeAnnotations/);
+  const capture = readFileSync(new URL('../src/components/admin/ficha-clinica/components/InjectableCaptureModal.tsx', import.meta.url), 'utf8');
+  assert.match(capture, /<Clinical3DViewer\s+occludeAnnotations/);
+  for (const contents of [source, capture]) assert.match(contents, /el\.style\.visibility = visible === false \? 'hidden' : 'visible'/);
+});
 const gridLayoutDeclaration = viewerAst.statements
   .flatMap(statement => ts.isVariableStatement(statement) ? statement.declarationList.declarations : [])
   .find(item => ts.isIdentifier(item.name) && item.name.text === 'createScreenGridLayout');
@@ -1014,11 +1103,16 @@ test('Añadir edita puntos visibles sin duplicarlos ni seleccionar puntos oculto
   }).outputText;
   for (const [distance, readOnly, expected] of [[1, false, 'qa'], [2, false, undefined], [1, true, undefined]]) {
     let edited;
-    const object = { userData: { isEditablePoint: true, editableId: 'qa' } };
+    const object = { visible: true, userData: { isEditablePoint: true, editableId: 'qa' } };
     const environment = {
       editablePointsGroupRef: { current: {} },
-      callbacks: { current: { readOnly, onEditablePointClicked: id => { edited = id; } } },
-      raycaster: { intersectObject: () => [{ distance, object }] }, intersect: { distance: 1 },
+      faceMeshRef: { current: {} },
+      visibleSurfaceHits: loadOcclusionFunction('visibleSurfaceHits'),
+      callbacks: { current: { readOnly, occludeAnnotations: true, onEditablePointClicked: id => { edited = id; } } },
+      raycaster: {
+        intersectObjects: () => [{ distance, object }],
+        intersectObject: () => [{ distance: 1 }],
+      }, intersect: { distance: 1 },
     };
     const sandbox = vm.createContext(environment);
     vm.runInContext(code, sandbox);

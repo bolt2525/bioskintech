@@ -826,7 +826,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   const handleProjectedPositions = useCallback((positions: ProjectedPosition[]) => {
     const overlay = unitOverlayRef.current;
     if (!overlay) return;
-    positions.forEach(({ id, x, y }) => {
+    positions.forEach(({ id, x, y, visible }) => {
       if (id === '__zoom__') {
         // x = camera distance; derive a clamped font size so numbers scale with zoom
         const REF_DIST = 12;   // default camera distance
@@ -839,7 +839,10 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
         return;
       }
       const el = overlay.querySelector(`[data-pid="${id}"]`) as HTMLElement | null;
-      if (el) el.style.transform = `translate(${Math.round(x + 5)}px, ${Math.round(y - 12)}px)`;
+      if (el) {
+        el.style.visibility = visible === false ? 'hidden' : 'visible';
+        el.style.transform = `translate(${Math.round(x + 5)}px, ${Math.round(y - 12)}px)`;
+      }
     });
   }, []);
 
@@ -3306,6 +3309,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     )}
                     <div className="relative">
                       <Clinical3DViewer
+                        occludeAnnotations
                         markers={markers3D}
                         selectedPathology={current.product_type === 'toxina' ? 'botox' : 'filler'}
                         onMarkerPlaced={pointMode === 'add' ? handleMarkerPlaced : undefined}

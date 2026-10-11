@@ -1,5 +1,6 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-11 Inyectables: oclusión visual e interacción.
 - ✅ 2026-10-11 Inyectables: encuadre magnético responsive.
 - ✅ 2026-10-11 Guías: portal sobre visor corregido.
 - ✅ 2026-10-11 Inyectables: desglose legible, menús estables.

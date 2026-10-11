@@ -66,6 +66,46 @@ export interface ProjectedPosition {
   id: string;
   x: number;
   y: number;
+  visible?: boolean;
+}
+
+function visibleSurfaceHits(raycaster: THREE.Raycaster, objects: THREE.Object3D[], surface: THREE.Object3D | null, occlude: boolean, recursive = false) {
+  const hits = raycaster.intersectObjects(objects, recursive);
+  if (!occlude) return hits;
+  if (!surface) return [];
+  const surfaceHit = raycaster.intersectObject(surface, true)[0];
+  return hits.filter(hit => {
+    let object: THREE.Object3D | null = hit.object;
+    while (object) {
+      if (!object.visible) return false;
+      object = object.parent;
+    }
+    return !surfaceHit || hit.distance <= surfaceHit.distance + 0.01;
+  });
+}
+
+function isSurfacePositionVisible(position: THREE.Vector3, camera: THREE.Camera, surface: THREE.Object3D | null) {
+  if (!surface) return false;
+  const projected = position.clone().project(camera);
+  if (projected.z < -1 || projected.z > 1 || Math.abs(projected.x) > 1 || Math.abs(projected.y) > 1) return false;
+  const origin = camera.getWorldPosition(new THREE.Vector3());
+  const raycaster = new THREE.Raycaster(origin, position.clone().sub(origin).normalize());
+  const hit = raycaster.intersectObject(surface, true)[0];
+  return !hit || origin.distanceTo(position) <= hit.distance + 0.01;
+}
+
+function applyAnnotationDepth(group: THREE.Object3D | null, occlude: boolean, defaults: WeakMap<THREE.Material, { depthTest: boolean; depthWrite: boolean }>) {
+  group?.traverse(object => {
+    const drawable = object as THREE.Mesh | THREE.Sprite;
+    if (!drawable.material) return;
+    const materials = Array.isArray(drawable.material) ? drawable.material : [drawable.material];
+    for (const material of materials) {
+      if (!defaults.has(material)) defaults.set(material, { depthTest: material.depthTest, depthWrite: material.depthWrite });
+      const original = defaults.get(material)!;
+      material.depthTest = occlude ? true : original.depthTest;
+      material.depthWrite = occlude ? false : original.depthWrite;
+    }
+  });
 }
 
 export type ClinicalCameraPreset = 'default' | 'face' | 'body' | 'scalp';
@@ -451,6 +491,7 @@ interface Clinical3DViewerProps {
   cameraPreset?: ClinicalCameraPreset;
   /** Modo solo lectura (sin clicks) */
   readOnly?: boolean;
+  occludeAnnotations?: boolean;
   /** Saltar el diálogo interno de confirmación (el padre maneja su propio diálogo) */
   skipConfirmation?: boolean;
   // ── Líneas de referencia ─────────────────────────────────────────────────
@@ -530,6 +571,7 @@ const ThreeEngine: React.FC<{
   onEditablePointDeleted?: (id: string) => void;
   onEditablePointClicked?: (id: string) => void;
   onProjectedPositions?: (positions: ProjectedPosition[]) => void;
+  occludeAnnotations?: boolean;
   tercioBoundaries?: { topY: number; bottomY: number; tercioMedioBottomY: number; tercioInferiorBottomY: number } | null;
   selectedPointId?: string;
   // ── Herramientas de dibujo libre (HA) ──────────────────────────────────
@@ -563,7 +605,7 @@ const ThreeEngine: React.FC<{
   referenceLines = [], lineDrawingMode, onLinePointAnchored,
   editablePoints = [], showEditablePoints = true, pointMode = 'none',
   onEditablePointMoved, onEditablePointDeleted, onEditablePointClicked,
-  onProjectedPositions, tercioBoundaries = null, selectedPointId,
+  onProjectedPositions, occludeAnnotations = false, tercioBoundaries = null, selectedPointId,
   freehandLines = [], surfaceShapes = [],
   activeTool = 'none', selectedElementId = null,
   pendingBrushColor = COLORS.annotation, pendingBrushThickness = 1.0,
@@ -602,6 +644,8 @@ const ThreeEngine: React.FC<{
   const handlesGroupRef = useRef<THREE.Group | null>(null);
   // Indicador visual del snap point (imán)
   const snapIndicatorRef = useRef<THREE.Mesh | null>(null);
+  const annotationDepthDefaults = useRef(new WeakMap<THREE.Material, { depthTest: boolean; depthWrite: boolean }>());
+  const annotationDepthApplied = useRef(false);
   // Increments each time the model finishes loading so the markers effect re-runs
   const [modelVersion, setModelVersion] = useState(0);
   // Track two-point step inside engine for cursor feedback
@@ -613,7 +657,7 @@ const ThreeEngine: React.FC<{
     activeTool, selectedElementId, pendingBrushColor, pendingBrushThickness,
     onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onSurfaceShapeUpdated, onGridStepChange, onSnapPointChange,
     haShapeConfig, freehandLines, surfaceShapes, incompletePointIds, highlightedPointIds, onEditablePointHovered, onBackgroundClick,
-    onModelMetrics,
+    onModelMetrics, occludeAnnotations,
   });
   useEffect(() => {
     callbacks.current = {
@@ -622,7 +666,7 @@ const ThreeEngine: React.FC<{
       activeTool, selectedElementId, pendingBrushColor, pendingBrushThickness,
       onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onSurfaceShapeUpdated, onGridStepChange, onSnapPointChange,
       haShapeConfig, freehandLines, surfaceShapes, incompletePointIds, highlightedPointIds, onEditablePointHovered, onBackgroundClick,
-      onModelMetrics,
+      onModelMetrics, occludeAnnotations,
     };
   });
 
@@ -992,7 +1036,7 @@ const ThreeEngine: React.FC<{
         // Cada "handle" es ahora un Group (visual + hitbox); colectar todos los meshes
         const handleMeshes: THREE.Object3D[] = [];
         handlesGroupRef.current.children.forEach(grpH => grpH.traverse(c => { if ((c as THREE.Mesh).isMesh) handleMeshes.push(c); }));
-        const handleHits = raycaster.intersectObjects(handleMeshes, false);
+        const handleHits = visibleSurfaceHits(raycaster, handleMeshes, faceMeshRef.current, callbacks.current.occludeAnnotations);
         if (handleHits.length > 0) {
           // Subir al Group del handle para obtener role y lineId
           let hitGrp: THREE.Object3D | null = handleHits[0].object;
@@ -1080,7 +1124,7 @@ const ThreeEngine: React.FC<{
             markerGroup.traverse(child => { if ((child as THREE.Mesh).isMesh) zonalMeshes.push(child); });
           }
         });
-        const zonalHits = raycaster.intersectObjects(zonalMeshes, false);
+        const zonalHits = visibleSurfaceHits(raycaster, zonalMeshes, faceMeshRef.current, callbacks.current.occludeAnnotations);
         const surfaceHits = faceMeshRef.current ? raycaster.intersectObject(faceMeshRef.current, true) : [];
         const markerIsVisible = zonalHits.length > 0
           && (surfaceHits.length === 0 || zonalHits[0].distance <= surfaceHits[0].distance + 0.03);
@@ -1122,7 +1166,7 @@ const ThreeEngine: React.FC<{
         raycaster.setFromCamera(mouse, cameraRef.current);
         const epMeshes: THREE.Object3D[] = [];
         editablePointsGroupRef.current.children.forEach(g => g.traverse(c => { if ((c as THREE.Mesh).isMesh) epMeshes.push(c); }));
-        const hits = raycaster.intersectObjects(epMeshes, false);
+        const hits = visibleSurfaceHits(raycaster, epMeshes, faceMeshRef.current, callbacks.current.occludeAnnotations);
         if (hits.length > 0) {
           let obj: THREE.Object3D | null = hits[0].object;
           while (obj && !obj.userData.isEditablePoint) obj = obj.parent;
@@ -2065,7 +2109,7 @@ const ThreeEngine: React.FC<{
         const fhMeshes: THREE.Object3D[] = [];
         freehandGroupRef.current?.children.forEach(g => g.traverse(c => { if ((c as THREE.Mesh).isMesh) fhMeshes.push(c); }));
         if (fhMeshes.length > 0) {
-          const fhHits = raycaster.intersectObjects(fhMeshes, false);
+          const fhHits = visibleSurfaceHits(raycaster, fhMeshes, faceMeshRef.current, callbacks.current.occludeAnnotations);
           if (fhHits.length > 0) {
             let obj: THREE.Object3D | null = fhHits[0].object;
             while (obj && !obj.userData.freehandId) obj = obj.parent;
@@ -2079,7 +2123,7 @@ const ThreeEngine: React.FC<{
         const shMeshes: THREE.Object3D[] = [];
         shapesGroupRef.current?.children.forEach(g => g.traverse(c => { if ((c as THREE.Mesh).isMesh) shMeshes.push(c); }));
         if (shMeshes.length > 0) {
-          const shHits = raycaster.intersectObjects(shMeshes, false);
+          const shHits = visibleSurfaceHits(raycaster, shMeshes, faceMeshRef.current, callbacks.current.occludeAnnotations);
           if (shHits.length > 0) {
             let obj: THREE.Object3D | null = shHits[0].object;
             while (obj && !obj.userData.shapeId) obj = obj.parent;
@@ -2093,7 +2137,7 @@ const ThreeEngine: React.FC<{
         const lineMeshes: THREE.Object3D[] = [];
         linesGroupRef.current?.children.forEach(g => g.traverse(c => { if ((c as THREE.Mesh).isMesh) lineMeshes.push(c); }));
         if (lineMeshes.length > 0) {
-          const lineHits = raycaster.intersectObjects(lineMeshes, false);
+          const lineHits = visibleSurfaceHits(raycaster, lineMeshes, faceMeshRef.current, callbacks.current.occludeAnnotations);
           if (lineHits.length > 0) {
             let obj: THREE.Object3D | null = lineHits[0].object;
             while (obj && !obj.userData.lineId) obj = obj.parent;
@@ -2167,7 +2211,7 @@ const ThreeEngine: React.FC<{
       // ── Modo añadir punto libre (con snap/imán si hay punto activo) ──────
       if (callbacks.current.pointMode === 'add') {
         if (editablePointsGroupRef.current && callbacks.current.onEditablePointClicked && !callbacks.current.readOnly) {
-          const hits = raycaster.intersectObject(editablePointsGroupRef.current, true);
+          const hits = visibleSurfaceHits(raycaster, [editablePointsGroupRef.current], faceMeshRef.current, callbacks.current.occludeAnnotations, true);
           if (hits.length > 0 && hits[0].distance <= intersect.distance + 0.03) {
             let object: THREE.Object3D | null = hits[0].object;
             while (object && !object.userData.isEditablePoint) object = object.parent;
@@ -2178,7 +2222,8 @@ const ThreeEngine: React.FC<{
           }
         }
         // Si hay un snap point activo sobre una línea, usar ese punto
-        const usePt = currentSnapPt ? currentSnapPt.clone() : point;
+        const snapVisible = currentSnapPt && (!callbacks.current.occludeAnnotations || isSurfacePositionVisible(currentSnapPt, cameraRef.current, faceMeshRef.current));
+        const usePt = snapVisible && currentSnapPt ? currentSnapPt.clone() : point;
         const nAdd = intersect.face ? intersect.face.normal.clone().applyMatrix3(new THREE.Matrix3().getNormalMatrix(intersect.object.matrixWorld)).normalize() : new THREE.Vector3(0, 1, 0);
         const ptAdd = usePt.clone().addScaledVector(nAdd, 0.03);
         callbacks.current.onMeshClick({
@@ -2287,7 +2332,7 @@ const ThreeEngine: React.FC<{
           let newHoveredId: string | null = null;
           let newHoveredGroup: THREE.Object3D | null = null;
           if (hoverMeshes.length > 0) {
-            const hoverHits = hoverRc.intersectObjects(hoverMeshes, false);
+            const hoverHits = visibleSurfaceHits(hoverRc, hoverMeshes, faceMeshRef.current, callbacks.current.occludeAnnotations);
             if (hoverHits.length > 0) {
               const lineGrp = meshToLineGrp.get(hoverHits[0].object);
               if (lineGrp) {
@@ -2320,7 +2365,7 @@ const ThreeEngine: React.FC<{
             });
             let newHoveredEpId: string | null = null;
             if (epMeshes.length > 0) {
-              const epHits = hoverRc.intersectObjects(epMeshes, false);
+              const epHits = visibleSurfaceHits(hoverRc, epMeshes, faceMeshRef.current, callbacks.current.occludeAnnotations);
               if (epHits.length > 0) {
                 const epGrp = meshToEpGrp.get(epHits[0].object);
                 newHoveredEpId = epGrp?.userData.editableId ?? null;
@@ -2378,7 +2423,7 @@ const ThreeEngine: React.FC<{
                 const VERTEX_DIST = 0.25; // distancia de snap a vértice
                 const LINE_DIST   = 0.18; // distancia de snap a segmento
                 const result = closestPointOnFreehandLine(snapLine, query3D, VERTEX_DIST, LINE_DIST);
-                if (result) {
+                if (result && (!callbacks.current.occludeAnnotations || isSurfacePositionVisible(new THREE.Vector3(result.pt.x, result.pt.y, result.pt.z), cameraRef.current, faceMeshRef.current))) {
                   currentSnapPt = new THREE.Vector3(result.pt.x, result.pt.y, result.pt.z);
                   snapPtIsVertex = result.isVertex;
                   if (snapIndicatorRef.current) {
@@ -2401,6 +2446,14 @@ const ThreeEngine: React.FC<{
           }
         }
 
+        if (callbacks.current.occludeAnnotations || annotationDepthApplied.current) {
+          for (const group of [markersGroupRef.current, editablePointsGroupRef.current, linesGroupRef.current,
+            boundariesGroupRef.current, freehandGroupRef.current, shapesGroupRef.current, handlesGroupRef.current,
+            brushPreviewGroupRef.current, snapIndicatorRef.current]) {
+            applyAnnotationDepth(group, callbacks.current.occludeAnnotations, annotationDepthDefaults.current);
+          }
+          annotationDepthApplied.current = callbacks.current.occludeAnnotations;
+        }
         rendererRef.current.render(sceneRef.current, cameraRef.current);
         // Project point positions to 2D for unit-number overlay
         if (callbacks.current.onProjectedPositions) {
@@ -2413,7 +2466,10 @@ const ThreeEngine: React.FC<{
             const wp = new THREE.Vector3();
             group.getWorldPosition(wp);
             const ndc = wp.clone().project(cam);
-            projected.push({ id, x: (ndc.x * 0.5 + 0.5) * w, y: (-ndc.y * 0.5 + 0.5) * h });
+            let groupVisible = group.visible;
+            group.traverseAncestors(ancestor => { if (!ancestor.visible) groupVisible = false; });
+            const visible = !callbacks.current.occludeAnnotations || (groupVisible && isSurfacePositionVisible(wp, cam, faceMeshRef.current));
+            projected.push({ id, x: (ndc.x * 0.5 + 0.5) * w, y: (-ndc.y * 0.5 + 0.5) * h, visible });
           };
           markersGroupRef.current?.children.forEach(c => {
             const id = (c as THREE.Group).userData.markerId;
@@ -3391,6 +3447,7 @@ export default function Clinical3DViewer({
   onModelMetrics,
   cameraPreset = 'default',
   readOnly = false,
+  occludeAnnotations = false,
   skipConfirmation = false,
   referenceLines = [],
   lineDrawingMode = null,
@@ -3492,6 +3549,7 @@ export default function Clinical3DViewer({
             markers={markers}
             zones={zones}
             readOnly={readOnly}
+            occludeAnnotations={occludeAnnotations}
             onMeshClick={handleMeshClick}
             onMarkerRadiusChange={onMarkerRadiusChange}
             onLoaded={() => { setModelLoaded(true); setModelError(false); }}
