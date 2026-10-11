@@ -576,6 +576,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   const [inlineVialForm, setInlineVialForm] = useState<{ open: boolean; name: string; vol: string }>({ open: false, name: '', vol: '' });
   /** Paso actual del dibujo de malla (0=inicio, 1=ancho, 2=largo) */
   const [gridDrawStep, setGridDrawStep] = useState(0);
+  const [gridDrawMessage, setGridDrawMessage] = useState<string | null>(null);
   /** Punto snap activo del imán (null = sin snap) */
   const [snapPoint, setSnapPoint] = useState<{ x: number; y: number; z: number } | null>(null);
 
@@ -588,6 +589,11 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   useEffect(() => { injectionPointsRef.current = injectionPoints; }, [injectionPoints]);
   useEffect(() => { markers3DRef.current = markers3D; }, [markers3D]);
   useEffect(() => { editablePointsRef.current = editablePoints; }, [editablePoints]);
+
+  const handleGridStepChange = useCallback((step: number, message?: string) => {
+    setGridDrawStep(step);
+    setGridDrawMessage(message ?? null);
+  }, []);
 
   // Fetch extra catalog items managed by master admin (non-blocking)
   useEffect(() => {
@@ -3101,7 +3107,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                         onElementSelected={handleElementSelected}
                         onFreehandLineUpdated={handleFreehandLineUpdated}
                         onSurfaceShapeUpdated={handleSurfaceShapeUpdated}
-                        onGridStepChange={setGridDrawStep}
+                        onGridStepChange={handleGridStepChange}
                         onSnapPointChange={setSnapPoint}
                         haShapeConfig={haShapeConfig}
                         incompletePointIds={incompletePointIds}
@@ -3129,9 +3135,13 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                       {/* ── Hint visual del Grid 3-step ── */}
                       {activeTool === 'ha-grid' && gridDrawStep >= 0 && (
                         <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-30 bg-slate-800/90 backdrop-blur-sm text-white text-[11px] font-semibold px-4 py-2 rounded-xl shadow-lg border border-slate-600 pointer-events-none">
-                          {gridDrawStep === 0 && '① Haz clic en el centro del borde inicial'}
-                          {gridDrawStep === 1 && '② Mueve el cursor para previsualizar el ancho — clic para fijarlo'}
-                          {gridDrawStep === 2 && '③ Mueve el cursor para previsualizar el largo — clic para finalizar'}
+                          {gridDrawMessage || (
+                            <>
+                              {gridDrawStep === 0 && '① Haz clic en el centro del borde inicial'}
+                              {gridDrawStep === 1 && '② Mueve el cursor para previsualizar el ancho — clic para fijarlo'}
+                              {gridDrawStep === 2 && '③ Mueve el cursor para previsualizar el largo — clic para finalizar'}
+                            </>
+                          )}
                         </div>
                       )}
 

@@ -10,6 +10,16 @@ const source = readFileSync(new URL('../src/components/admin/ficha-clinica/compo
 const ast = ts.createSourceFile('InjectablesTab.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const viewerSource = readFileSync(new URL('../src/components/admin/ficha-clinica/components/Clinical3DViewer.tsx', import.meta.url), 'utf8');
 const viewerAst = ts.createSourceFile('Clinical3DViewer.tsx', viewerSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+const gridLayoutDeclaration = viewerAst.statements
+  .flatMap(statement => ts.isVariableStatement(statement) ? statement.declarationList.declarations : [])
+  .find(item => ts.isIdentifier(item.name) && item.name.text === 'createScreenGridLayout');
+assert.ok(gridLayoutDeclaration, 'El diseño de Malla debe existir');
+const gridLayoutScript = ts.transpileModule(`${gridLayoutDeclaration.getText(viewerAst)}\nglobalThis.createScreenGridLayout = createScreenGridLayout;`, {
+  compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS },
+}).outputText;
+const gridLayoutContext = vm.createContext({});
+vm.runInContext(gridLayoutScript, gridLayoutContext);
+const createScreenGridLayout = (...args) => JSON.parse(JSON.stringify(gridLayoutContext.createScreenGridLayout(...args)));
 const themeSource = readFileSync(new URL('../src/constants/theme.ts', import.meta.url), 'utf8');
 const fieldHelpSource = readFileSync(new URL('../src/components/admin/ficha-clinica/data/fieldHelpTexts.ts', import.meta.url), 'utf8');
 const declaration = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'reconcileEditablePoints');
@@ -530,14 +540,28 @@ test('Malla explica sus tres clics y el recuento de líneas coincide con la form
   assert.match(source, /centro del borde inicial/);
   assert.match(source, /líneas por dirección · \{\(haShapeConfig\.gridCells \+ 1\) \* 2\} en total/);
   assert.doesNotMatch(source, /Clic en esquina → arrastrar para definir la diagonal opuesta/);
-  assert.match(viewerSource, /ha-grid: flujo 3-step basado en clicks/);
+  assert.match(viewerSource, /ha-grid: flujo de tres clics/);
+  assert.match(viewerSource, /if \(gridStep === 0\)[^]*?gridAnchorScreen = clickPt;[^]*?gridStep = 1/);
+  assert.match(viewerSource, /else if \(gridStep === 1 && gridAnchorScreen\)[^]*?gridWidthEndScreen = clickPt;[^]*?gridStep = 2/);
+  assert.match(viewerSource, /else if \(gridStep === 2 && gridAnchorScreen && gridWidthEndScreen\)[^]*?createScreenGridLayout/);
+  assert.match(viewerSource, /screenSurfaceLine\(line\.start, line\.end, 12\)/);
+});
+
+test('geometría de Malla conserva ancho, largo, perpendicularidad y divisiones', () => {
+  const layout = createScreenGridLayout({ x: 10, y: 20 }, { x: 110, y: 20 }, { x: 110, y: 120 }, 4);
+  assert.equal(layout.lines.length, 10);
+  assert.deepEqual(layout.end, { x: 10, y: 120 });
+  assert.deepEqual(layout.lines[0], { start: { x: 10, y: 20 }, end: { x: 10, y: 120 } });
+  assert.deepEqual(layout.lines[5], { start: { x: 10, y: 20 }, end: { x: 110, y: 20 } });
+  assert.equal(createScreenGridLayout({ x: 0, y: 0 }, { x: 5, y: 0 }, { x: 0, y: 30 }, 4), null);
+  assert.equal(createScreenGridLayout({ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 50, y: 5 }, 4), null);
 });
 
 test('cambiar de herramienta cancela el estado y la previsualización de Malla', () => {
-  assert.match(viewerSource, /const resetGridDrawing = \(\) => \{\s*gridStep = 0;\s*gridAnchorA = null;/);
+  assert.match(viewerSource, /const resetGridDrawing = \(\) => \{\s*gridStep = 0;\s*gridAnchorScreen = null;\s*gridWidthEndScreen = null;/);
   assert.match(viewerSource, /if \(gridStep > 0 && tool !== 'ha-grid'\) resetGridDrawing\(\)/);
   assert.match(viewerSource, /if \(gridStep > 0 && callbacks\.current\.activeTool !== 'ha-grid'\) resetGridDrawing\(\)/);
-  assert.match(viewerSource, /if \(Math\.abs\(gridLen\) < 0\.05\) \{ resetGridDrawing\(\); return; \}/);
+  assert.match(viewerSource, /if \(controlsRef\.current\) controlsRef\.current\.enabled = true;\s*callbacks\.current\.onGridStepChange\?\.\(0\)/);
 });
 
 test('edición y limpieza de anotaciones del visor se pueden deshacer', () => {

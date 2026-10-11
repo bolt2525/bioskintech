@@ -225,6 +225,42 @@ export interface SurfaceShape {
   label?: string;
 }
 
+type GridScreenPoint = { x: number; y: number };
+
+const createScreenGridLayout = (
+  anchor: GridScreenPoint,
+  widthEnd: GridScreenPoint,
+  lengthCursor: GridScreenPoint,
+  divisions: number,
+): { lines: { start: GridScreenPoint; end: GridScreenPoint }[]; end: GridScreenPoint } | null => {
+  const width = { x: widthEnd.x - anchor.x, y: widthEnd.y - anchor.y };
+  const widthLength = Math.hypot(width.x, width.y);
+  if (widthLength < 12 || divisions < 1) return null;
+
+  const widthDirection = { x: width.x / widthLength, y: width.y / widthLength };
+  const lengthDirection = { x: -widthDirection.y, y: widthDirection.x };
+  const rawLength = { x: lengthCursor.x - anchor.x, y: lengthCursor.y - anchor.y };
+  const signedLength = rawLength.x * lengthDirection.x + rawLength.y * lengthDirection.y;
+  if (Math.abs(signedLength) < 12) return null;
+
+  const length = { x: lengthDirection.x * signedLength, y: lengthDirection.y * signedLength };
+  const end = { x: anchor.x + length.x, y: anchor.y + length.y };
+  const lines: { start: GridScreenPoint; end: GridScreenPoint }[] = [];
+
+  for (let i = 0; i <= divisions; i++) {
+    const t = i / divisions;
+    const start = { x: anchor.x + width.x * t, y: anchor.y + width.y * t };
+    lines.push({ start, end: { x: start.x + length.x, y: start.y + length.y } });
+  }
+  for (let i = 0; i <= divisions; i++) {
+    const t = i / divisions;
+    const start = { x: anchor.x + length.x * t, y: anchor.y + length.y * t };
+    lines.push({ start, end: { x: start.x + width.x, y: start.y + width.y } });
+  }
+
+  return { lines, end };
+};
+
 export type DrawingTool =
   | 'none'
   | 'freehand-brush'   // mantener+arrastrar para pintar
@@ -449,7 +485,7 @@ interface Clinical3DViewerProps {
   onFreehandLineUpdated?: (id: string, points: { x: number; y: number; z: number }[], segments?: { x: number; y: number; z: number }[][]) => void;
   /** Callback cuando el usuario mueve o redimensiona una forma en superficie */
   onSurfaceShapeUpdated?: (id: string, update: { center?: { x: number; y: number; z: number }; normal?: { x: number; y: number; z: number }; tangent?: { x: number; y: number; z: number }; radius?: number; width?: number; height?: number }) => void;
-  onGridStepChange?: (step: number) => void;
+  onGridStepChange?: (step: number, message?: string) => void;
   /** Callback cuando el cursor snap a un punto en una línea (imán); null = sin snap */
   onSnapPointChange?: (pt: { x: number; y: number; z: number } | null) => void;
   /** Configuración de formas HA (abanico, malla, helecho) */
@@ -508,7 +544,7 @@ const ThreeEngine: React.FC<{
   onElementSelected?: (id: string | null, type: string | null) => void;
   onFreehandLineUpdated?: (id: string, points: { x: number; y: number; z: number }[], segments?: { x: number; y: number; z: number }[][]) => void;
   onSurfaceShapeUpdated?: (id: string, update: { center?: { x: number; y: number; z: number }; normal?: { x: number; y: number; z: number }; tangent?: { x: number; y: number; z: number }; radius?: number; width?: number; height?: number }) => void;
-  onGridStepChange?: (step: number) => void;
+  onGridStepChange?: (step: number, message?: string) => void;
   /** Callback cuando el cursor snap a un punto en una línea (imán); null = sin snap */
   onSnapPointChange?: (pt: { x: number; y: number; z: number } | null) => void;
   /** Configuración de formas HA (abanico, malla, helecho) */
@@ -731,13 +767,10 @@ const ThreeEngine: React.FC<{
     let shapeCurrentW = 0;
     let shapeCurrentH = 0;
 
-    // ── Grid 3-click state ────────────────────────────────────────────────
-    let gridStep = 0; // 0=inicio, 1=ancho, 2=largo
-    let gridAnchorA: THREE.Vector3 | null = null;
-    let gridDirMain: THREE.Vector3 | null = null;   // dirección principal (primer click → segundo)
-    let gridDirPerp: THREE.Vector3 | null = null;   // dirección perpendicular (para el ancho)
-    let gridHalfWidth = 0;
-    let gridLen = 0;
+    // ── Grid 3-click state (in screen space so preview matches the clicks) ─
+    let gridStep = 0; // 0=esquina inicial, 1=ancho, 2=largo
+    let gridAnchorScreen: GridScreenPoint | null = null;
+    let gridWidthEndScreen: GridScreenPoint | null = null;
 
     // ── Estado snap / imán ────────────────────────────────────────────────
     let currentSnapPt: THREE.Vector3 | null = null; // punto snap activo
@@ -754,12 +787,10 @@ const ThreeEngine: React.FC<{
 
     const resetGridDrawing = () => {
       gridStep = 0;
-      gridAnchorA = null;
-      gridDirMain = null;
-      gridDirPerp = null;
-      gridHalfWidth = 0;
-      gridLen = 0;
+      gridAnchorScreen = null;
+      gridWidthEndScreen = null;
       clearBrushPreview();
+      if (controlsRef.current) controlsRef.current.enabled = true;
       callbacks.current.onGridStepChange?.(0);
     };
 
@@ -819,6 +850,26 @@ const ThreeEngine: React.FC<{
         pts.push(projectToSurface(from.clone().lerp(to, s / steps)));
       }
       return bridgeZ(pts, 0.20);
+    };
+
+    const screenSurfaceLine = (from: GridScreenPoint, to: GridScreenPoint, steps = 12): THREE.Vector3[] => {
+      const rect = renderer.domElement.getBoundingClientRect();
+      if (!cameraRef.current || !faceMeshRef.current || rect.width === 0 || rect.height === 0) return [];
+
+      const pts: THREE.Vector3[] = [];
+      for (let s = 0; s <= steps; s++) {
+        const t = s / steps;
+        const screen = new THREE.Vector2(
+          from.x + (to.x - from.x) * t,
+          from.y + (to.y - from.y) * t,
+        );
+        const ndc = new THREE.Vector2((screen.x / rect.width) * 2 - 1, -(screen.y / rect.height) * 2 + 1);
+        raycaster.setFromCamera(ndc, cameraRef.current);
+        const hits = raycaster.intersectObject(faceMeshRef.current, true);
+        if (hits.length === 0) return [];
+        pts.push(hits[0].point.clone());
+      }
+      return pts;
     };
 
     // ── Hover highlight — variables de estado puro (no React) ─────────────
@@ -1093,7 +1144,8 @@ const ThreeEngine: React.FC<{
         isDragging = true;
         return;
       }
-      // ── Grid 3-step: preview en tiempo real ───────────────────────────────
+      if (gridStep > 0 && callbacks.current.activeTool !== 'ha-grid') resetGridDrawing();
+      // ── Grid 3-click: preview on the visible surface ──────────────────────
       if (gridStep > 0 && faceMeshRef.current && cameraRef.current) {
         const rect = renderer.domElement.getBoundingClientRect();
         mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
@@ -1101,32 +1153,24 @@ const ThreeEngine: React.FC<{
         raycaster.setFromCamera(mouse, cameraRef.current);
         const gridHovHits = raycaster.intersectObject(faceMeshRef.current, true);
         if (gridHovHits.length > 0 && brushPreviewGroupRef.current) {
-          const hoverPt = gridHovHits[0].point.clone();
+          const cursor = { x: e.clientX - rect.left, y: e.clientY - rect.top };
           clearBrushPreview();
           const col = new THREE.Color(callbacks.current.pendingBrushColor || '#8b5cf6');
           const th = (callbacks.current.pendingBrushThickness || 1.0) * 0.003;
-          if (gridStep === 1 && gridAnchorA) {
-            // Preview: línea de ancho (dirección perpendicular)
-            brushPreviewGroupRef.current.add(buildSurfaceTube(
-              surfaceLine(gridAnchorA, hoverPt, 6), col, 0.45, th, false
-            ));
-          } else if (gridStep === 2 && gridAnchorA && gridDirPerp && gridDirMain) {
-            // Preview: mallado completo con ancho fijado y nuevo largo
+          if (gridStep === 1 && gridAnchorScreen) {
+            const widthPreview = screenSurfaceLine(gridAnchorScreen, cursor, 6);
+            if (widthPreview.length >= 2) {
+              brushPreviewGroupRef.current.add(buildSurfaceTube(widthPreview, col, 0.55, th, false));
+            }
+          } else if (gridStep === 2 && gridAnchorScreen && gridWidthEndScreen) {
             const cfg = callbacks.current.haShapeConfig || { fanLines: 5, fanAngle: 25, gridCells: 4, fernBranches: 5 };
-            const N = cfg.gridCells;
-            const rawLen = hoverPt.clone().sub(gridAnchorA).dot(gridDirMain);
-            const previewLen = Math.abs(rawLen);
-            if (previewLen > 0.05) {
-              const dirM = gridDirMain.clone().multiplyScalar(rawLen > 0 ? 1 : -1);
-              for (let i = 0; i <= N; i++) {
-                const base = gridAnchorA.clone().addScaledVector(gridDirPerp, ((i / N) - 0.5) * gridHalfWidth * 2);
-                brushPreviewGroupRef.current.add(buildSurfaceTube(surfaceLine(base, base.clone().addScaledVector(dirM, previewLen), 8), col, 0.4, th, false));
-              }
-              for (let j = 0; j <= N; j++) {
-                const base = gridAnchorA.clone().addScaledVector(dirM, (j / N) * previewLen);
-                const p1 = base.clone().addScaledVector(gridDirPerp, -gridHalfWidth);
-                const p2 = base.clone().addScaledVector(gridDirPerp, gridHalfWidth);
-                brushPreviewGroupRef.current.add(buildSurfaceTube(surfaceLine(p1, p2, 8), col, 0.4, th, false));
+            const layout = createScreenGridLayout(gridAnchorScreen, gridWidthEndScreen, cursor, cfg.gridCells);
+            if (layout) {
+              for (const line of layout.lines) {
+                const points = screenSurfaceLine(line.start, line.end, 4);
+                if (points.length >= 2) {
+                  brushPreviewGroupRef.current.add(buildSurfaceTube(points, col, 0.5, th, false));
+                }
               }
             }
           }
@@ -1940,7 +1984,7 @@ const ThreeEngine: React.FC<{
       if (tool === 'freehand-brush' || tool === 'shape-circle' || tool === 'shape-rect'
         || tool === 'straight-line' || tool === 'shape-arrow' || tool === 'ha-fan' || tool === 'ha-fern') return;
 
-      // ── ha-grid: flujo 3-step basado en clicks ─────────────────────────────
+      // ── ha-grid: flujo de tres clics ──────────────────────────────────────
       if (tool === 'ha-grid') {
         if (!faceMeshRef.current || !cameraRef.current) return;
         const rect2 = renderer.domElement.getBoundingClientRect();
@@ -1949,57 +1993,46 @@ const ThreeEngine: React.FC<{
         raycaster.setFromCamera(mouse, cameraRef.current);
         const gridHits = raycaster.intersectObject(faceMeshRef.current, true);
         if (gridHits.length === 0) return;
-        const clickPt = gridHits[0].point.clone();
+        const clickPt = { x: event.clientX - rect2.left, y: event.clientY - rect2.top };
 
         if (gridStep === 0) {
-          // 1er clic: fijar el punto medio del borde inicial
-          gridAnchorA = clickPt;
+          gridAnchorScreen = clickPt;
           gridStep = 1;
+          if (controlsRef.current) controlsRef.current.enabled = false;
           callbacks.current.onGridStepChange?.(1);
-        } else if (gridStep === 1 && gridAnchorA) {
-          // 2do clic: fijar dirección y ancho
-          const raw = clickPt.clone().sub(gridAnchorA);
-          gridDirPerp = raw.clone().normalize(); // perpendicular al grid (ancho)
-          gridHalfWidth = raw.length() / 2;
-          // La dirección principal es perpendicular al ancho
-          let mainDir = new THREE.Vector3().crossVectors(gridDirPerp, new THREE.Vector3(0, 1, 0)).normalize();
-          if (mainDir.lengthSq() < 0.001) mainDir = new THREE.Vector3().crossVectors(gridDirPerp, new THREE.Vector3(0, 0, 1)).normalize();
-          gridDirMain = mainDir;
+        } else if (gridStep === 1 && gridAnchorScreen) {
+          if (Math.hypot(clickPt.x - gridAnchorScreen.x, clickPt.y - gridAnchorScreen.y) < 12) {
+            callbacks.current.onGridStepChange?.(1, 'El ancho es muy corto; elige un punto más distante.');
+            return;
+          }
+          gridWidthEndScreen = clickPt;
           gridStep = 2;
           callbacks.current.onGridStepChange?.(2);
-        } else if (gridStep === 2 && gridAnchorA && gridDirMain && gridDirPerp) {
-          // 3er clic: fijar longitud y generar el grid
-          const rawLen = clickPt.clone().sub(gridAnchorA);
-          gridLen = rawLen.dot(gridDirMain);
-          if (Math.abs(gridLen) < 0.05) { resetGridDrawing(); return; }
-          const lenSign = gridLen > 0 ? 1 : -1;
-          gridLen = Math.abs(gridLen);
-          const ptA = gridAnchorA;
-          const dirM = gridDirMain.clone().multiplyScalar(lenSign);
-
+        } else if (gridStep === 2 && gridAnchorScreen && gridWidthEndScreen) {
           const cfg = callbacks.current.haShapeConfig || { fanLines: 5, fanAngle: 25, gridCells: 4, fernBranches: 5 };
-          const N = cfg.gridCells;
+          const layout = createScreenGridLayout(gridAnchorScreen, gridWidthEndScreen, clickPt, cfg.gridCells);
+          if (!layout) {
+            callbacks.current.onGridStepChange?.(2, 'El largo es muy corto; mueve el cursor y vuelve a hacer clic.');
+            return;
+          }
           const col = callbacks.current.pendingBrushColor || '#8b5cf6';
           const th = callbacks.current.pendingBrushThickness || 1.0;
           const gridSegs3: { x: number; y: number; z: number }[][] = [];
 
-          // Líneas a lo largo de dirM (N+1 líneas)
-          for (let i = 0; i <= N; i++) {
-            const t = i / N;
-            const base = ptA.clone().addScaledVector(gridDirPerp, (t - 0.5) * gridHalfWidth * 2);
-            gridSegs3.push(surfaceLine(base, base.clone().addScaledVector(dirM, gridLen), 12).map(p => ({x:p.x,y:p.y,z:p.z})));
+          for (const line of layout.lines) {
+            const points = screenSurfaceLine(line.start, line.end, 12);
+            if (points.length >= 2) {
+              gridSegs3.push(points.map(p => ({ x: p.x, y: p.y, z: p.z })));
+            }
           }
-          // Líneas a lo largo de gridDirPerp (N+1 líneas)
-          for (let j = 0; j <= N; j++) {
-            const t = j / N;
-            const base = ptA.clone().addScaledVector(dirM, t * gridLen);
-            const p1 = base.clone().addScaledVector(gridDirPerp, -gridHalfWidth);
-            const p2 = base.clone().addScaledVector(gridDirPerp, gridHalfWidth);
-            gridSegs3.push(surfaceLine(p1, p2, 12).map(p => ({x:p.x,y:p.y,z:p.z})));
+          const centerline = screenSurfaceLine(gridAnchorScreen, layout.end, 12);
+          if (gridSegs3.length !== layout.lines.length || centerline.length < 2) {
+            callbacks.current.onGridStepChange?.(2, 'No se pudo seguir esa superficie; ajusta el ancho o el largo.');
+            return;
           }
           callbacks.current.onFreehandLineComplete?.({
             id: `fh-${Date.now()}-grid3`,
-            points: [ptA, ptA.clone().addScaledVector(dirM, gridLen)].map(p => ({x:p.x,y:p.y,z:p.z})),
+            points: [centerline[0], centerline[centerline.length - 1]].map(p => ({ x: p.x, y: p.y, z: p.z })),
             segments: gridSegs3,
             color: col, thickness: th, technique_preset: 'Malla',
           });
