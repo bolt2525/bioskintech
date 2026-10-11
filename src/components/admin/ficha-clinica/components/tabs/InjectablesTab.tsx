@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import recordsFetch from "../../../../../utils/recordsFetch";
 import { escapeHtml, safeImageSrc } from '../../../../../utils/escapeHtml.js';
@@ -359,6 +359,95 @@ function PointFieldSelect({ id, label, value, options, onChange }: {
 
 type PointDetailField = 'technique_at_point' | 'needle_at_point' | 'injection_plane' | 'notes_at_point';
 
+function enableWorkspaceMagnet(workspace: HTMLElement) {
+  let scroller: HTMLElement | Window = window;
+  let armed = true;
+  let downwardIntent = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let previousTop = workspace.getBoundingClientRect().top;
+
+  const viewport = () => {
+    let top = scroller instanceof HTMLElement ? scroller.getBoundingClientRect().top : 0;
+    const bottom = scroller instanceof HTMLElement ? Math.min(window.innerHeight, scroller.getBoundingClientRect().bottom) : window.innerHeight;
+    for (const element of document.querySelectorAll<HTMLElement>('header, [data-injectables-toolbar]')) {
+      const style = getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      if ((style.position === 'sticky' || style.position === 'fixed') && rect.top <= top + (parseFloat(style.top) || 0) + 2 && rect.bottom > top) {
+        top = rect.bottom;
+      }
+    }
+    return { top: top + 12, bottom: bottom - 12 };
+  };
+  const resize = () => {
+    const { top, bottom } = viewport();
+    const height = Math.max(240, bottom - top - 24);
+    const reserved = window.innerWidth >= 1280 ? 80 : window.innerWidth >= 768 ? 260 : 450;
+    workspace.style.setProperty('--injectables-workspace-height', `${height}px`);
+    workspace.style.setProperty('--injectables-viewer-height', `${Math.max(240, Math.min(560, height - reserved))}px`);
+  };
+  const cancel = () => {
+    clearTimeout(timer);
+    downwardIntent = false;
+  };
+  const intent = (event: Event) => {
+    const target = event.target;
+    if (target instanceof Element && (target.closest('canvas, input, textarea, select, [role="listbox"], [contenteditable="true"]')
+      || (workspace.contains(target) && target.closest('[data-workspace-scroll]')))) { cancel(); return; }
+    if (event instanceof WheelEvent) downwardIntent = event.deltaY > 0;
+    else if (event instanceof KeyboardEvent) {
+      if (!['ArrowDown', 'PageDown', ' '].includes(event.key) || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) { cancel(); return; }
+      downwardIntent = true;
+    } else downwardIntent = true;
+    clearTimeout(timer);
+  };
+  const scroll = (event: Event) => {
+    const target = event.target;
+    if (target instanceof HTMLElement && !target.contains(workspace)) return;
+    if (target !== document && !(target instanceof HTMLElement)) return;
+    const nextScroller = target instanceof HTMLElement ? target : window;
+    if (nextScroller !== scroller) { scroller = nextScroller; resize(); }
+    clearTimeout(timer);
+    const { top, bottom } = viewport();
+    const rect = workspace.getBoundingClientRect();
+    const movingDown = rect.top < previousTop;
+    previousTop = rect.top;
+    if (rect.top >= bottom || rect.bottom <= top) armed = true;
+    if (!armed || !movingDown) { downwardIntent = false; return; }
+    if (!downwardIntent) return;
+    timer = setTimeout(() => {
+      downwardIntent = false;
+      const bounds = viewport();
+      const area = workspace.getBoundingClientRect();
+      if (document.fullscreenElement || document.querySelector('dialog[open], [role="listbox"]')
+        || workspace.querySelector('[aria-expanded="true"][aria-controls]')
+        || document.activeElement?.matches('input, textarea, select, [contenteditable="true"]')
+        || area.top < bounds.top - 80 || area.top > bounds.top + (bounds.bottom - bounds.top) * 0.45) return;
+      armed = false;
+      const distance = area.top - bounds.top;
+      if (Math.abs(distance) < 4) return;
+      scroller.scrollBy({ top: distance, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
+    }, 180);
+  };
+  resize();
+  window.addEventListener('scroll', scroll, { passive: true, capture: true });
+  window.addEventListener('wheel', intent, { passive: true });
+  window.addEventListener('touchmove', intent, { passive: true });
+  document.addEventListener('keydown', intent);
+  document.addEventListener('pointerdown', cancel);
+  window.addEventListener('resize', resize);
+  return () => {
+    cancel();
+    window.removeEventListener('scroll', scroll, true);
+    window.removeEventListener('wheel', intent);
+    window.removeEventListener('touchmove', intent);
+    document.removeEventListener('keydown', intent);
+    document.removeEventListener('pointerdown', cancel);
+    window.removeEventListener('resize', resize);
+    workspace.style.removeProperty('--injectables-workspace-height');
+    workspace.style.removeProperty('--injectables-viewer-height');
+  };
+}
+
 function PointDetailsEditor({ point, index, planes, canCopy, onChange, onCopyAll, onChoosePoints, onEditEnd }: {
   point: InjectionPoint;
   index: number;
@@ -539,6 +628,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   const [showFreehandLines, setShowFreehandLines] = useState(true);
   const [showVisibilityDropdown, setShowVisibilityDropdown] = useState(false);
   const visibilityPanelRef = useRef<HTMLDivElement>(null);
+  const visibilityPopupRef = useRef<HTMLDivElement>(null);
+  const [visibilityPosition, setVisibilityPosition] = useState({ top: 0, left: 0, maxHeight: 360 });
   const [refJsonLoaded, setRefJsonLoaded] = useState(false);
   const [pointMode, setPointMode] = useState<'none' | 'add' | 'delete'>('none');
   // Modal de unidades para puntos del trazado
@@ -640,9 +731,42 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   const [workspaceFullscreen, setWorkspaceFullscreen] = useState(false);
 
   useEffect(() => {
+    if (!show3D || !viewerRef.current || workspaceFullscreen) return;
+    return enableWorkspaceMagnet(viewerRef.current);
+  }, [show3D, workspaceFullscreen]);
+
+  useLayoutEffect(() => {
+    if (!showVisibilityDropdown) return;
+    const position = () => {
+      const anchor = visibilityPanelRef.current;
+      const popup = visibilityPopupRef.current;
+      if (!anchor || !popup) return;
+      const rect = anchor.getBoundingClientRect();
+      const width = Math.min(288, window.innerWidth - 24);
+      const headerBottom = document.fullscreenElement ? 0 : Math.max(0, ...Array.from(document.querySelectorAll('header'), header => {
+        const bounds = header.getBoundingClientRect();
+        return bounds.top <= 2 ? bounds.bottom : 0;
+      }));
+      const minTop = headerBottom + 12;
+      const height = Math.min(popup.scrollHeight, window.innerHeight - minTop - 12);
+      const left = rect.right + width + 8 <= window.innerWidth - 12 ? rect.right + 8 : Math.max(12, Math.min(rect.left, window.innerWidth - width - 12));
+      const top = Math.max(minTop, Math.min(rect.bottom - height, window.innerHeight - height - 12));
+      setVisibilityPosition({ top, left, maxHeight: window.innerHeight - top - 12 });
+    };
+    position();
+    visibilityPopupRef.current?.querySelector('button')?.focus({ preventScroll: true });
+    window.addEventListener('resize', position);
+    window.addEventListener('scroll', position, true);
+    return () => {
+      window.removeEventListener('resize', position);
+      window.removeEventListener('scroll', position, true);
+    };
+  }, [showVisibilityDropdown, workspaceFullscreen]);
+
+  useEffect(() => {
     if (!showVisibilityDropdown) return;
     const closeOutside = (event: PointerEvent) => {
-      if (event.target instanceof Node && !visibilityPanelRef.current?.contains(event.target)) setShowVisibilityDropdown(false);
+      if (event.target instanceof Node && !visibilityPanelRef.current?.contains(event.target) && !visibilityPopupRef.current?.contains(event.target)) setShowVisibilityDropdown(false);
     };
     document.addEventListener('pointerdown', closeOutside);
     return () => document.removeEventListener('pointerdown', closeOutside);
@@ -1265,6 +1389,9 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
         handleUndo();
       }
       if (e.key === 'Escape') {
+        if (visibilityPopupRef.current?.contains(document.activeElement)) {
+          visibilityPanelRef.current?.querySelector('button')?.focus({ preventScroll: true });
+        }
         setActiveTool('none');
         setPointMode('none');
         setActiveLineType(null);
@@ -2359,7 +2486,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
         </AnimatePresence>
 
         {/* Toolbar */}
-        <div className="flex flex-wrap gap-4 justify-between items-center bg-white p-4 rounded-xl border border-gray-100 shadow-sm sticky top-0 z-10">
+        <div data-injectables-toolbar className="flex flex-wrap gap-4 justify-between items-center bg-white p-4 rounded-xl border border-gray-100 shadow-sm sticky top-0 z-10">
           <div className="flex flex-wrap gap-2 items-center">
             <Tooltip content="Nuevo Inyectable">
               <motion.button
@@ -2820,8 +2947,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
             >
               {/* ── SIN tabs — la vista es siempre de marcación ── */}
 
-              <div ref={viewerRef} className="grid items-start gap-3 p-3 md:grid-cols-[14rem_minmax(0,1fr)] [&:fullscreen]:overflow-y-auto [&:fullscreen]:bg-white">
-                <div className={`grid gap-2 md:sticky ${workspaceFullscreen ? 'md:top-3' : 'md:top-20'} [&_summary]:px-2 [&_summary]:py-2`}>
+              <div ref={viewerRef} data-injectables-workspace className="grid items-start gap-3 p-3 md:grid-cols-[14rem_minmax(0,1fr)] [&:fullscreen]:overflow-y-auto [&:fullscreen]:bg-white [&:fullscreen]:[--injectables-workspace-height:calc(100dvh-24px)]">
+                <div data-workspace-scroll className="grid max-h-48 content-start gap-2 overflow-y-auto overscroll-contain md:max-h-[var(--injectables-workspace-height,calc(100dvh-120px))] [&_summary]:px-2 [&_summary]:py-2">
                   <div role="group" aria-label="Navegación y puntos" className="rounded-xl border border-slate-200 bg-slate-50/95 p-2 shadow-sm">
                     <div className="mb-1 flex items-center justify-between gap-1">
                       <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Interacción · Esc</span>
@@ -2971,7 +3098,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                         <ChevronDown className="w-2.5 h-2.5 opacity-60" />
                       </button>
                       {showShapesDropdown && (
-                        <div className="absolute left-0 top-full mt-1 z-50 w-36 bg-slate-800 border border-slate-600 rounded-xl shadow-2xl overflow-hidden">
+                        <div className="mt-1 w-36 bg-slate-800 border border-slate-600 rounded-xl shadow-xl overflow-hidden">
                           <button
                             aria-pressed={activeTool === 'shape-circle'}
                             onClick={() => { setActiveTool(activeTool === 'shape-circle' ? 'none' : 'shape-circle'); setPointMode('none'); setShowShapesDropdown(false); }}
@@ -3038,7 +3165,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                             <ChevronDown className="w-2.5 h-2.5 opacity-60" />
                           </button>
                           {showHaShapesDropdown && (
-                            <div className="absolute left-0 top-full mt-1 z-50 w-36 bg-slate-800 border border-slate-600 rounded-xl shadow-2xl overflow-hidden">
+                            <div className="mt-1 w-36 bg-slate-800 border border-slate-600 rounded-xl shadow-xl overflow-hidden">
                               <button onClick={() => { setHaShapeConfigTool('ha-fan'); setActiveTool('ha-fan'); setPointMode('none'); setSelectedElement(null); setShowHaShapesDropdown(false); }}
                                 className={`w-full flex items-center gap-2 px-3 py-2 text-[11px] font-semibold hover:bg-slate-700 transition-colors ${activeTool === 'ha-fan' ? 'text-violet-300' : 'text-slate-300'}`}>
                                 <span className="text-xs">扇</span> Abanico
@@ -3123,16 +3250,17 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                   </div>
                   </details>
                 <div ref={visibilityPanelRef} className="relative"
-                  onBlur={event => { if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) setShowVisibilityDropdown(false); }}>
+                  onBlur={event => { if (!(event.relatedTarget instanceof Node) || (!event.currentTarget.contains(event.relatedTarget) && !visibilityPopupRef.current?.contains(event.relatedTarget))) setShowVisibilityDropdown(false); }}>
                   <button type="button" aria-expanded={showVisibilityDropdown} aria-controls="injectable-visibility-panel"
                     onClick={() => setShowVisibilityDropdown(open => !open)}
                     className="flex min-h-9 w-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold">
                     <span className="flex items-center gap-2"><Eye className="h-4 w-4" aria-hidden="true" />Guías y visibilidad</span>
                     <ChevronDown className={`h-3 w-3 ${showVisibilityDropdown ? 'rotate-180' : ''}`} aria-hidden="true" />
                   </button>
-                  {showVisibilityDropdown && (
-                    <div id="injectable-visibility-panel" role="group" aria-label="Guías y visibilidad"
-                      className="absolute bottom-full left-0 z-50 mb-2 max-h-[min(24rem,calc(100dvh-8rem))] w-[min(18rem,calc(100vw-3rem))] overflow-y-auto rounded-xl border border-slate-200 bg-white p-3 shadow-xl md:bottom-0 md:left-full md:mb-0 md:ml-2">
+                  {showVisibilityDropdown && createPortal(
+                    <div ref={visibilityPopupRef} id="injectable-visibility-panel" role="group" aria-label="Guías y visibilidad"
+                      style={visibilityPosition}
+                      className="fixed z-[9999] w-[min(18rem,calc(100vw-24px))] overflow-y-auto overscroll-contain rounded-xl border border-slate-200 bg-white p-3 shadow-xl">
                       {activeType === 'toxina' && (
                         <button type="button" onClick={handleLoadReferenceJson}
                           className="mb-2 flex min-h-9 w-full items-center justify-center gap-1 rounded-lg bg-gold-light px-2 text-xs font-semibold text-gold-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold">
@@ -3156,7 +3284,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                         {showLines && showEditablePoints && showFreehandLines ? 'Ocultar anotaciones' : 'Mostrar anotaciones'}
                       </button>
                       <p className="mt-2 text-[10px] leading-relaxed text-slate-500">Ocultar guías conserva los puntos con cantidades. Las guías no indican sitios de aplicación.</p>
-                    </div>
+                    </div>,
+                    document.fullscreenElement ?? document.body,
                   )}
                 </div>
                 </div>
@@ -3185,7 +3314,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                         referenceLines={showLines ? referenceLines : []}
                         lineDrawingMode={null}
                         onLinePointAnchored={handleLinePointAnchored}
-                        height="clamp(360px, calc(100dvh - 180px), 560px)"
+                        height="var(--injectables-viewer-height, clamp(240px, calc(var(--injectables-workspace-height, 100dvh - 120px) - 80px), 560px))"
                         editablePoints={visibleEditablePoints}
                         showEditablePoints={true}
                         pointMode={activeTool === 'none' ? pointMode : 'none'}
@@ -3467,7 +3596,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
               </div>{/* /flex-1 */}
 
                   {/* Right Panel: Desglose de Puntos de Inyección */}
-                  <div className="flex w-full min-h-0 flex-shrink-0 flex-col xl:w-60">
+                  <div className="flex w-full min-h-0 flex-shrink-0 flex-col xl:max-h-[var(--injectables-workspace-height,calc(100dvh-120px))] xl:w-60">
                       {injectionPoints.length > 0 ? (
                       <>
                         <div className="flex items-center gap-1.5 mb-2 flex-shrink-0">
@@ -3500,7 +3629,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                           );
                         })()}
 
-                        <div className="max-h-[clamp(360px,calc(100dvh-180px),560px)] overflow-y-auto overscroll-contain space-y-2 scrollbar-gold">
+                        <div data-workspace-scroll className="min-h-0 max-h-40 overflow-y-auto overscroll-contain space-y-2 scrollbar-gold xl:max-h-[var(--injectables-workspace-height,calc(100dvh-120px))]">
 
                         {/* ── Agrupación por vial (relleno HA) ── */}
                         {current.product_type === 'relleno' && haVials.length > 0

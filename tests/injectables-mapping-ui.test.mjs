@@ -628,12 +628,155 @@ test('terminar patrones cambia a registro manual solamente con la opción activa
 });
 
 test('guías flotan sin expandir el grid y viales no ocultan puntos sin asignación', () => {
-  assert.match(source, /role="group" aria-label="Guías y visibilidad"\s+className="absolute/);
+  const panel = findElementNode('injectable-visibility-panel');
+  assert.match(panel.getText(ast), /className="fixed z-\[9999\]/);
+  assert.match(source, /showVisibilityDropdown && createPortal/);
+  assert.match(source, /!visibilityPopupRef\.current\?\.contains\(event\.target\)/);
   assert.doesNotMatch(source, /<summary[^>]*>Guías y visibilidad/);
   assert.match(source, /Sin presentación asignada/);
   assert.match(source, /!haVials\.some\(item => item\.id === p\.vial_id\)/);
   assert.match(source, /Apertura total/);
   assert.match(source, /fanAngle: Number\(e\.target\.value\) \/ 2/);
+});
+
+function findElementNode(id) {
+  let result;
+  function visit(node) {
+    if (ts.isJsxElement(node) && node.openingElement.attributes.properties.some(attribute =>
+      ts.isJsxAttribute(attribute) && attribute.name.getText(ast) === 'id' && attribute.initializer?.text === id)) result = node;
+    ts.forEachChild(node, visit);
+  }
+  visit(ast);
+  assert.ok(result);
+  return result;
+}
+
+function magnetHarness({ reduced = false } = {}) {
+  const windowListeners = new Map(), documentListeners = new Map(), timers = new Map(), moves = [];
+  let timerId = 0, areaTop = 1000;
+  class Element {
+    constructor(kind = '') { this.kind = kind; }
+    closest() { return ['canvas', 'input', 'list', 'tools'].includes(this.kind) ? this : null; }
+    contains(element) { return this === workspace || this.kind === 'scroller' ? element !== header : this === element; }
+    matches() { return this.kind === 'input'; }
+    getBoundingClientRect() {
+      if (this.kind === 'header') return { top: 0, bottom: 96 };
+      if (this.kind === 'scroller') return { top: 96, bottom: 900 };
+      return { top: areaTop, bottom: areaTop + 620 };
+    }
+  }
+  class WheelEvent { constructor(target, deltaY = 40) { this.target = target; this.deltaY = deltaY; } }
+  class KeyboardEvent { constructor(key, target) { this.key = key; this.target = target; } }
+  const header = new Element('header'), workspace = new Element('workspace'), scroller = new Element('scroller');
+  workspace.querySelector = () => null;
+  const css = new Map();
+  workspace.style = { setProperty: (key, value) => css.set(key, value), removeProperty: key => css.delete(key) };
+  const window = {
+    innerHeight: 900, innerWidth: 1366, scrollY: 0, matchMedia: () => ({ matches: reduced }),
+    addEventListener: (name, callback) => windowListeners.set(name, callback),
+    removeEventListener: name => windowListeners.delete(name),
+    scrollBy: options => moves.push({ ...options }),
+  };
+  scroller.scrollBy = options => moves.push({ ...options, nested: true });
+  const document = {
+    querySelectorAll: () => [header], querySelector: () => null, activeElement: null, fullscreenElement: null,
+    addEventListener: (name, callback) => documentListeners.set(name, callback),
+    removeEventListener: name => documentListeners.delete(name),
+  };
+  const setup = loadFunction('enableWorkspaceMagnet', {
+    window, document, Element, HTMLElement: Element, WheelEvent, KeyboardEvent,
+    getComputedStyle: element => ({ position: element === header ? 'sticky' : 'static', top: '0px' }),
+    setTimeout: callback => { timers.set(++timerId, callback); return timerId; },
+    clearTimeout: id => timers.delete(id),
+  });
+  const cleanup = setup(workspace);
+  const scroll = (top, target = document) => { areaTop = top; windowListeners.get('scroll')?.({ target }); };
+  const wheel = (target = document, deltaY = 40) => windowListeners.get('wheel')?.(new WheelEvent(target, deltaY));
+  const flush = () => { const callbacks = [...timers.values()]; timers.clear(); callbacks.forEach(callback => callback()); };
+  return { workspace, scroller, window, document, windowListeners, documentListeners, timers, moves, css, cleanup, scroll, wheel, flush, Element, KeyboardEvent };
+}
+
+test('imán ajusta una vez tras pausa, respeta encabezado y permite continuar libremente', () => {
+  const h = magnetHarness();
+  h.scroll(300);
+  h.flush();
+  assert.equal(h.moves.length, 0, 'El scroll programático no activa el imán');
+  h.wheel();
+  h.scroll(240);
+  assert.equal(h.moves.length, 0, 'No ajustar mientras el usuario sigue desplazándose');
+  h.flush();
+  assert.deepEqual(h.moves, [{ top: 132, behavior: 'smooth' }]);
+  assert.equal(h.css.get('--injectables-workspace-height'), '756px');
+  assert.equal(h.css.get('--injectables-viewer-height'), '560px');
+  h.wheel(); h.scroll(108); h.flush();
+  h.wheel(); h.scroll(48); h.flush();
+  assert.equal(h.moves.length, 1, 'No volver a atraer durante la misma visita');
+  h.scroll(1200);
+  h.wheel(); h.scroll(240); h.flush();
+  assert.equal(h.moves.length, 2, 'Una nueva visita desde fuera permite encuadrar');
+  h.cleanup();
+  assert.equal(h.windowListeners.size, 0);
+  assert.equal(h.documentListeners.size, 0);
+  assert.equal(h.css.size, 0);
+});
+
+test('imán no interrumpe edición, modelo, listas, diálogos ni desplazamiento ascendente', () => {
+  for (const kind of ['input', 'canvas', 'list', 'tools']) {
+    const h = magnetHarness();
+    h.scroll(300);
+    h.wheel(new h.Element(kind)); h.scroll(240); h.flush();
+    assert.equal(h.moves.length, 0, kind);
+  }
+  for (const blocked of ['dialog', 'focus', 'fullscreen', 'menu']) {
+    const h = magnetHarness();
+    h.scroll(300);
+    if (blocked === 'dialog') h.document.querySelector = () => ({});
+    if (blocked === 'focus') h.document.activeElement = new h.Element('input');
+    if (blocked === 'fullscreen') h.document.fullscreenElement = {};
+    if (blocked === 'menu') h.workspace.querySelector = () => ({});
+    h.wheel(); h.scroll(240); h.flush();
+    assert.equal(h.moves.length, 0, blocked);
+  }
+  const h = magnetHarness();
+  h.scroll(200);
+  h.wheel(h.document, -40); h.scroll(240); h.flush();
+  assert.equal(h.moves.length, 0);
+  h.wheel(); h.scroll(200);
+  h.documentListeners.get('pointerdown')();
+  h.flush();
+  assert.equal(h.moves.length, 0, 'Interactuar cancela el ajuste pendiente');
+});
+
+test('imán funciona en scroll anidado, teclado y movimiento reducido sin afectar listas internas', () => {
+  const h = magnetHarness({ reduced: true });
+  h.scroll(300, h.scroller);
+  h.documentListeners.get('keydown')(new h.KeyboardEvent('PageDown', h.document));
+  h.scroll(240, h.scroller); h.flush();
+  assert.deepEqual(h.moves, [{ top: 132, behavior: 'instant', nested: true }]);
+  const list = new h.Element('list');
+  list.contains = () => false;
+  h.scroll(1000, list);
+  h.wheel(); h.scroll(200, h.scroller); h.flush();
+  assert.equal(h.moves.length, 1);
+  h.cleanup();
+});
+
+test('encuadre reserva espacio para herramientas y desglose en tablet y móvil', () => {
+  const h = magnetHarness();
+  h.window.innerWidth = 900;
+  h.windowListeners.get('resize')();
+  assert.equal(h.css.get('--injectables-viewer-height'), '496px');
+  h.window.innerWidth = 390;
+  h.window.innerHeight = 844;
+  h.windowListeners.get('resize')();
+  assert.equal(h.css.get('--injectables-workspace-height'), '700px');
+  assert.equal(h.css.get('--injectables-viewer-height'), '250px');
+  h.scroll(200);
+  h.windowListeners.get('touchmove')({ target: h.document });
+  h.scroll(260); h.flush();
+  h.scroll(240); h.flush();
+  assert.equal(h.moves.length, 0, 'Un gesto ascendente no deja armado un scroll programático posterior');
+  h.cleanup();
 });
 
 test('subtotal visible evita ruido decimal sin modificar cantidades guardadas', () => {
@@ -788,8 +931,11 @@ test('Escape captura el evento y respeta los diálogos abiertos', () => {
     'setGridDrawStep', 'setGridDrawMessage', 'setShowShapesDropdown', 'setShowHaShapesDropdown',
     'setShowVisibilityDropdown', 'setBulkApplyMode', 'setBulkApplySelected'];
   let dialogOpen = false;
+  let focusOptions;
   const environment = {
     show3D: true, document: { querySelector: () => dialogOpen },
+    visibilityPopupRef: { current: { contains: () => true } },
+    visibilityPanelRef: { current: { querySelector: () => ({ focus: options => { focusOptions = options; } }) } },
     ...Object.fromEntries(setters.map(name => [name, value => { changes[name] = value; }])),
   };
   const handler = loadFunction('onKeyDown', environment);
@@ -799,6 +945,7 @@ test('Escape captura el evento y respeta los diálogos abiertos', () => {
   assert.equal(changes.setSelectedElement, null);
   assert.equal(changes.setSnapPoint, null);
   assert.equal(changes.setGridDrawStep, 0);
+  assert.equal(focusOptions.preventScroll, true);
   for (const key of Object.keys(changes)) delete changes[key];
   dialogOpen = true;
   handler({ key: 'Escape' });
