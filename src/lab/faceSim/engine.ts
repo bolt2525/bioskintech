@@ -19,6 +19,8 @@ export interface SimPoint {
   dose: number;
   zone: string;
   product?: string;
+  /** Radio absoluto (alto de imagen) y escala de radio; dirección de flecha (vector unitario en alto de imagen). */
+  rad?: number; rs?: number; vx?: number; vy?: number;
 }
 
 export interface FaceFrame {
@@ -174,6 +176,7 @@ export function correctPoints(points: SimPoint[], opt: CorrectionOptions): Corre
 
 // ── Efectos → uniformes del shader ────────────────────────────────────────
 export const MAX_EFFECTS = 64;
+const ARROW_LIFT = 0.02;
 
 interface Profile { radius: number; bulge: number; lift: [number, number]; smooth: number; glow: number }
 
@@ -218,55 +221,226 @@ export function buildEffects(points: CorrectedPoint[], frame: FaceFrame, aspect:
     const pr = profileFor(p.mode, p.zone, side as -1 | 0 | 1);
     const gain = doseGain(p.mode, p.dose) * intensity;
     // Radio en unidades de alto de imagen (el shader mide distancias con x·aspecto)
-    const radius = pr.radius * fw * aspect;
+    const radius = p.rad ?? pr.radius * fw * aspect * (p.rs ?? 1);
+    const arrow = ARROW_LIFT * fh;
     a.set([p.x, p.y, radius, gain], i * 4);
-    b.set([pr.bulge, pr.lift[0] * fh, pr.lift[1] * fh, pr.smooth], i * 4);
+    b.set([pr.bulge, pr.lift[0] * fh + (p.vx ?? 0) * arrow, pr.lift[1] * fh + (p.vy ?? 0) * arrow, pr.smooth], i * 4);
     c.set([pr.glow, 0, 0, 0], i * 4);
   });
   return { count: list.length, a, b, c };
 }
 
-// ── Puente con la ficha clínica (pestaña Inyectables) ─────────────────────
-const FORM_Y = { top: 1.9, bottom: -1 }; // trazado-referencia-superior.json (hairline → límite inferior)
-const FORM_X_HALF = 1;
+// ── Elementos unificados (modelo 3D y foto) ───────────────────────────────
+export type ViewKind = 'frontal' | 'izquierda' | 'derecha';
+export type ElemKind = 'point' | 'line' | 'arrow' | 'free' | 'pattern' | 'circle' | 'rect';
+export interface P2 { x: number; y: number }
+export interface Vec3 { x: number; y: number; z: number }
+export interface Meta { mode: SimMode; dose: number; zone: string; product?: string }
+export interface Elem extends Meta {
+  id: string; kind: ElemKind; paths: P2[][];
+  /** Semiejes (coordenadas normalizadas) para circle/rect */
+  rx?: number; ry?: number;
+}
+/** Elemento dibujado directamente sobre una foto. */
+export interface PhotoEl extends Meta { id: string; view: ViewKind; kind: ElemKind; pts: P2[] }
 
-/** Convierte un punto del modelo GLB (x,y) al espacio de la foto usando el marco facial. */
-export function modelToPhoto(pos: { x: number; y: number }, frame: FaceFrame, flipX: boolean): { x: number; y: number } {
-  const tx = Math.max(-1.3, Math.min(1.3, (flipX ? -pos.x : pos.x) / FORM_X_HALF));
-  const ty = (FORM_Y.top - pos.y) / (FORM_Y.top - FORM_Y.bottom);
-  const cx = (frame.left + frame.right) / 2, hw = (frame.right - frame.left) / 2;
-  return { x: cx + tx * hw, y: frame.top + ty * (frame.bottom - frame.top) };
+export const AUTO_ZONE = 'Auto';
+
+/** Zona estimada por posición dentro del marco facial (referencial). */
+export function inferZone(p: P2, frame: FaceFrame): string {
+  const cx = (frame.left + frame.right) / 2, hw = Math.max((frame.right - frame.left) / 2, 0.01);
+  const nx = Math.abs(p.x - cx) / hw, ny = (p.y - frame.top) / Math.max(frame.bottom - frame.top, 0.01);
+  if (ny < 0.22) return nx > 0.8 ? 'Región temporal' : 'Frente';
+  if (ny < 0.30) return nx < 0.18 ? 'Glabela' : nx > 0.6 ? 'Cola de ceja' : 'Frente';
+  if (ny < 0.42) return nx > 0.75 ? 'Patas de gallo' : nx < 0.2 ? 'Dorso nasal' : 'Ojeras';
+  if (ny < 0.62) return nx < 0.15 ? 'Dorso nasal' : nx > 0.45 ? 'Pómulos' : 'Surco nasogeniano';
+  if (ny < 0.70) return nx > 0.6 ? 'Línea mandibular' : 'Mejillas';
+  if (ny < 0.80) return nx < 0.3 ? 'Labios' : nx < 0.55 ? 'Surco marioneta' : 'Línea mandibular';
+  if (ny < 0.92) return nx < 0.3 ? 'Mentón' : 'Línea mandibular';
+  return 'Papada';
 }
 
+// ── Proyección modelo 3D → foto ───────────────────────────────────────────
+const X_HALF = 1.1, Z_MIN = -1, Z_MAX = 1.6; // extensión del GLB base (male_head)
+const Y_TOP = 1.9, Y_BOTTOM = -1;             // trazado-referencia-superior.json
+const Y_SPAN = Y_TOP - Y_BOTTOM;
+
+export const defaultFrame = (view: ViewKind): FaceFrame => (view === 'frontal'
+  ? DEFAULT_FRAME
+  : { top: 0.12, bottom: 0.88, left: 0.15, right: 0.85, axisTop: { x: 0.5, y: 0.12 }, axisBottom: { x: 0.5, y: 0.88 }, source: 'manual' });
+
+export function projectModel(p: Vec3, view: ViewKind, frame: FaceFrame, flip: boolean): P2 | null {
+  const y = frame.top + ((Y_TOP - p.y) / Y_SPAN) * (frame.bottom - frame.top);
+  if (view === 'frontal') {
+    if (p.z < -0.5) return null;
+    const t = Math.max(-1.3, Math.min(1.3, (flip ? -p.x : p.x) / X_HALF));
+    return { x: (frame.left + frame.right) / 2 + t * ((frame.right - frame.left) / 2), y };
+  }
+  const side = (view === 'derecha' ? 1 : -1) * (flip ? -1 : 1);
+  if (p.x * side < -0.15) return null; // cara opuesta, no visible
+  const t = Math.max(0, Math.min(1, (p.z - Z_MIN) / (Z_MAX - Z_MIN)));
+  return { x: view === 'derecha' ? frame.left + t * (frame.right - frame.left) : frame.right - t * (frame.right - frame.left), y };
+}
+
+export interface Store3D {
+  markers: { id?: string; position: Vec3 }[];
+  lines: { id: string; points: Vec3[]; segments?: Vec3[][]; technique_preset?: string }[];
+  shapes: { id: string; shapeType: 'circle' | 'rectangle'; center: Vec3; radius?: number; width?: number; height?: number }[];
+  meta: Record<string, Meta>;
+}
+
+export const lineKind = (l: { points: Vec3[]; segments?: Vec3[][]; technique_preset?: string }): ElemKind =>
+  l.technique_preset === 'Flecha' ? 'arrow' : l.segments?.length ? 'pattern' : l.points.length === 2 ? 'line' : 'free';
+
+/** Convierte los trazos del visor 3D en elementos 2D para la vista activa. */
+export function elemsFrom3D(st: Store3D, view: ViewKind, frame: FaceFrame, aspect: number, flip: boolean): Elem[] {
+  const out: Elem[] = [];
+  const proj = (pts: Vec3[]) => pts.map(p => projectModel(p, view, frame, flip)).filter((q): q is P2 => q !== null);
+  const sy = (frame.bottom - frame.top) / Y_SPAN; // alto de imagen por unidad de modelo
+  st.markers.forEach(m => {
+    const meta = m.id ? st.meta[m.id] : undefined, q = proj([m.position])[0];
+    if (meta && q) out.push({ ...meta, id: m.id!, kind: 'point', paths: [[q]] });
+  });
+  st.lines.forEach(l => {
+    const meta = st.meta[l.id]; if (!meta) return;
+    const kind = lineKind(l);
+    const raw = kind === 'pattern' ? (l.segments ?? []) : [l.points];
+    const paths = raw.map(proj).filter(p => p.length >= 2);
+    if (paths.length) out.push({ ...meta, id: l.id, kind, paths });
+  });
+  st.shapes.forEach(sh => {
+    const meta = st.meta[sh.id], c = proj([sh.center])[0]; if (!meta || !c) return;
+    const circle = sh.shapeType === 'circle';
+    const hy = circle ? (sh.radius ?? 0.1) * sy : ((sh.height ?? 0.2) / 2) * sy;
+    const hx = (circle ? (sh.radius ?? 0.1) * sy : ((sh.width ?? 0.2) / 2) * sy) / aspect;
+    out.push({ ...meta, id: sh.id, kind: circle ? 'circle' : 'rect', paths: [[c]], rx: hx, ry: hy });
+  });
+  return out;
+}
+
+export function elemsFromPhoto(list: PhotoEl[], aspect: number): Elem[] {
+  return list.map(e => {
+    const { pts, view: _v, ...rest } = e; void _v;
+    if (e.kind === 'circle' || e.kind === 'rect') {
+      const [a, b] = [pts[0], pts[1] ?? pts[0]];
+      if (e.kind === 'circle') {
+        const d = Math.hypot((b.x - a.x) * aspect, b.y - a.y);
+        return { ...rest, paths: [[a]], rx: d / aspect, ry: d };
+      }
+      return { ...rest, paths: [[{ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }]], rx: Math.abs(b.x - a.x) / 2, ry: Math.abs(b.y - a.y) / 2 };
+    }
+    return { ...rest, paths: [pts] };
+  });
+}
+
+// ── Expansión de elementos a puntos de efecto ─────────────────────────────
+const sampleDose = (dose: number, n: number) => Math.max(dose / Math.max(n, 1) * 2, 0.01);
+
+function along(path: P2[], count: number, aspect: number): { x: number; y: number; dx: number; dy: number }[] {
+  const seg: number[] = [0];
+  for (let i = 1; i < path.length; i++) seg.push(seg[i - 1] + Math.hypot((path[i].x - path[i - 1].x) * aspect, path[i].y - path[i - 1].y));
+  const L = seg[seg.length - 1];
+  const res: { x: number; y: number; dx: number; dy: number }[] = [];
+  for (let k = 0; k < count; k++) {
+    const d = count === 1 ? L / 2 : (k / (count - 1)) * L;
+    let i = 1; while (i < path.length - 1 && seg[i] < d) i++;
+    const a = path[i - 1], b = path[i], span = seg[i] - seg[i - 1] || 1, t = Math.min(1, Math.max(0, (d - seg[i - 1]) / span));
+    const dx = (b.x - a.x) * aspect, dy = b.y - a.y, n = Math.hypot(dx, dy) || 1;
+    res.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, dx: dx / n, dy: dy / n });
+  }
+  return res;
+}
+const pathLen = (p: P2[], aspect: number) => p.slice(1).reduce((s, q, i) => s + Math.hypot((q.x - p[i].x) * aspect, q.y - p[i].y), 0);
+
+export function expandElems(elems: Elem[], frame: FaceFrame, aspect: number): { points: SimPoint[]; derived: SimPoint[] } {
+  const fh = Math.max(frame.bottom - frame.top, 0.05);
+  const zoneAt = (e: Elem, p: P2) => (e.zone === AUTO_ZONE || !e.zone ? inferZone(p, frame) : e.zone);
+  const points: SimPoint[] = [], derived: SimPoint[] = [];
+  const base = (e: Elem, p: P2, extra: Partial<SimPoint>): SimPoint =>
+    ({ id: `${e.id}:${derived.length}`, mode: e.mode, x: p.x, y: p.y, dose: e.dose, zone: zoneAt(e, p), product: e.product, ...extra });
+  const areaElems = elems.filter(e => e.kind !== 'point');
+  const share = Math.max(4, Math.floor(Math.max(MAX_EFFECTS - elems.filter(e => e.kind === 'point').length, 8) / Math.max(areaElems.length, 1)));
+
+  elems.forEach(e => {
+    if (e.kind === 'point') {
+      const p = e.paths[0]?.[0]; if (p) points.push({ id: e.id, mode: e.mode, x: p.x, y: p.y, dose: e.dose, zone: zoneAt(e, p), product: e.product });
+      return;
+    }
+    const mine: SimPoint[] = [];
+    if (e.kind === 'circle' || e.kind === 'rect') {
+      const c = e.paths[0][0], rx = e.rx ?? 0.05, ry = e.ry ?? 0.05;
+      const cell = Math.max(ry / 2.5, fh * 0.04), n = Math.min(5, Math.max(1, Math.ceil((2 * ry) / cell)));
+      const nx = Math.min(5, Math.max(1, Math.ceil((2 * rx * aspect) / cell)));
+      for (let i = 0; i < nx; i++) for (let j = 0; j < n; j++) {
+        const u = -1 + (2 * i + 1) / nx, v = -1 + (2 * j + 1) / n;
+        if (e.kind === 'circle' && u * u + v * v > 1.2) continue;
+        mine.push(base(e, { x: c.x + u * rx, y: c.y + v * ry }, { rad: Math.max(Math.min(rx * aspect / nx, ry / n) * 1.6, fh * 0.03) }));
+      }
+    } else {
+      const step = fh * 0.05;
+      const paths = e.kind === 'arrow' ? [e.paths[0]] : e.paths;
+      paths.forEach(path => {
+        const cnt = Math.max(2, Math.ceil(pathLen(path, aspect) / step));
+        along(path, cnt, aspect).forEach(s => mine.push(base(e, s, { rs: 0.6, ...(e.kind === 'arrow' ? { vx: s.dx, vy: s.dy } : {}) })));
+      });
+    }
+    const stride = Math.max(1, Math.ceil(mine.length / share));
+    const kept = mine.filter((_, i) => i % stride === 0).slice(0, share);
+    kept.forEach(p => { p.dose = sampleDose(e.dose, kept.length); });
+    derived.push(...kept);
+  });
+  return { points, derived };
+}
+
+// ── Importar registro de Inyectables al almacén 3D ────────────────────────
 const toMode = (productType?: string, subtype?: string): SimMode =>
   productType === 'toxina' ? 'toxina'
     : subtype === 'bioestimulador' ? 'bioestimulador'
       : subtype === 'hidratacion' ? 'hidratacion' : 'relleno_ha';
 
+type Json = Record<string, unknown>;
+const isVec = (p: unknown): p is Vec3 => !!p && typeof p === 'object'
+  && ['x', 'y', 'z'].every(k => Number.isFinite((p as Json)[k]));
+
 /**
- * Acepta un registro de inyectable completo ({product_type, relleno_subtype, mapping_data})
- * o solo su mapping_data (array de puntos o {injectionPoints}).
+ * Acepta el registro de inyectable completo ({product_type, relleno_subtype, mapping_data})
+ * o solo su mapping_data (array de puntos o {injectionPoints, freehandLines, surfaceShapes}).
  */
-export function importInjectable(raw: unknown, frame: FaceFrame, flipX: boolean): SimPoint[] {
-  const rec = (typeof raw === 'string' ? JSON.parse(raw) : raw) as Record<string, any> | null; // eslint-disable-line @typescript-eslint/no-explicit-any
-  if (!rec || typeof rec !== 'object') return [];
-  const mappingRaw = Array.isArray(rec) ? rec : (rec.mapping_data ?? rec);
-  const mapping = typeof mappingRaw === 'string' ? JSON.parse(mappingRaw) : mappingRaw;
-  const pts: Record<string, any>[] =  // eslint-disable-line @typescript-eslint/no-explicit-any
-     Array.isArray(mapping) ? mapping : Array.isArray(mapping?.injectionPoints) ? mapping.injectionPoints : [];
-  const mode = toMode(rec.product_type, rec.relleno_subtype);
-  return pts
-    .filter(p => p?.position && Number.isFinite(p.position.x) && Number.isFinite(p.position.y))
-    .map((p, i) => {
-      const xy = modelToPhoto(p.position, frame, flipX);
-      const dose = Number(p.units);
-      return {
-        id: `imp-${Date.now()}-${i}`,
-        mode,
-        x: xy.x, y: xy.y,
-        dose: Number.isFinite(dose) && dose > 0 ? dose : SIM_MODES[mode].defaultDose,
-        zone: String(p.label || p.zone || ''),
-        product: rec.product_name,
-      };
-    });
+export function importInjectable(raw: unknown, knownZones: string[]): Store3D & { markersFull: Json[] } {
+  const rec = (typeof raw === 'string' ? JSON.parse(raw) : raw) as Json | Json[] | null;
+  const empty = { markers: [], lines: [], shapes: [], meta: {}, markersFull: [] };
+  if (!rec || typeof rec !== 'object') return empty;
+  const holder = Array.isArray(rec) ? ({} as Json) : rec;
+  let mapping = (Array.isArray(rec) ? rec : holder.mapping_data ?? rec) as unknown;
+  if (typeof mapping === 'string') mapping = JSON.parse(mapping);
+  const m = (Array.isArray(mapping) ? { injectionPoints: mapping } : mapping) as Json;
+  const mode = toMode(holder.product_type as string, holder.relleno_subtype as string);
+  const product = typeof holder.product_name === 'string' ? holder.product_name : undefined;
+  const stamp = Date.now(), res = { ...empty, markers: [] as Store3D['markers'], lines: [] as Store3D['lines'], shapes: [] as Store3D['shapes'], meta: {} as Store3D['meta'], markersFull: [] as Json[] };
+  const zoneOf = (label: unknown) => {
+    const z = typeof label === 'string' ? label : '';
+    return knownZones.find(k => k.toLowerCase() === z.toLowerCase()) ?? AUTO_ZONE;
+  };
+  const dose = (v: unknown) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : SIM_MODES[mode].defaultDose);
+  ((m.injectionPoints as Json[]) ?? []).forEach((p, i) => {
+    if (!isVec(p.position)) return;
+    const id = `imp-${stamp}-p${i}`;
+    res.markersFull.push({ ...p, id, type: 'Puntual', pathologyId: p.pathologyId ?? 'filler', zone: p.zone ?? '',
+      rotation: p.rotation ?? [0, 0, 0], normal: isVec(p.normal) ? p.normal : { x: 0, y: 0, z: 1 } });
+    res.markers.push({ id, position: p.position });
+    res.meta[id] = { mode, dose: dose(p.units), zone: zoneOf(p.label || p.zone), product };
+  });
+  ((m.freehandLines as Json[]) ?? []).forEach((l, i) => {
+    if (!Array.isArray(l.points) || !l.points.every(isVec)) return;
+    const id = `imp-${stamp}-l${i}`;
+    res.lines.push({ ...(l as unknown as Store3D['lines'][number]), id });
+    res.meta[id] = { mode, dose: dose(l.units), zone: AUTO_ZONE, product };
+  });
+  ((m.surfaceShapes as Json[]) ?? []).forEach((sh, i) => {
+    if (!isVec(sh.center)) return;
+    const id = `imp-${stamp}-s${i}`;
+    res.shapes.push({ ...(sh as unknown as Store3D['shapes'][number]), id });
+    res.meta[id] = { mode, dose: dose(sh.units), zone: AUTO_ZONE, product };
+  });
+  return res;
 }
