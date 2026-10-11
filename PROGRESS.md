@@ -1,5 +1,6 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-11 3DLab: modelo y WASM verificados en build.
 - ✅ 2026-10-11 3DLab: alineación facial adaptativa.
 - ✅ 2026-10-11 3DLab: calibración por anclajes y límites.
 - ✅ 2026-10-11 Inyectables: oclusión visual e interacción.

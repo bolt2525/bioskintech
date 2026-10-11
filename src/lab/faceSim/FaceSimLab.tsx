@@ -86,7 +86,11 @@ async function detectFrame(img: HTMLCanvasElement): Promise<{ frame: FaceFrame |
   let landmarker: import('@mediapipe/tasks-vision').FaceLandmarker | null = null;
   try {
     const head = await fetch('/models/face/face_landmarker.task', { method: 'HEAD' });
-    if (!head.ok) return { frame: null, reason: `No está disponible el modelo facial (HTTP ${head.status}).` };
+    const contentType = head.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase();
+    const contentLength = Number(head.headers.get('content-length'));
+    if (!head.ok || contentType === 'text/html' || contentLength < 1_000_000) {
+      return { frame: null, reason: `El modelo facial no está disponible o es inválido (HTTP ${head.status}).` };
+    }
     const { FaceLandmarker, FilesetResolver } = await import('@mediapipe/tasks-vision');
     const fileset = await FilesetResolver.forVisionTasks('/mediapipe/wasm');
     landmarker = await FaceLandmarker.createFromOptions(fileset, {
@@ -96,8 +100,9 @@ async function detectFrame(img: HTMLCanvasElement): Promise<{ frame: FaceFrame |
     return result.faceLandmarks[0]
       ? { frame: frameFromLandmarks(result.faceLandmarks[0]), reason: '' }
       : { frame: null, reason: 'MediaPipe no encontró un rostro en esta imagen.' };
-  } catch {
-    return { frame: null, reason: 'Falló la inicialización o validación del detector facial.' };
+  } catch (error) {
+    const detail = error instanceof Error ? ` ${error.message}` : '';
+    return { frame: null, reason: `Falló la inicialización o validación del detector facial.${detail}` };
   } finally {
     landmarker?.close();
   }
