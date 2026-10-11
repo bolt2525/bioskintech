@@ -2634,7 +2634,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
       )}
 
       {/* 3D Mapping Section */}
-      <div className={`bg-white border overflow-hidden ${current.product_type === 'toxina' ? 'rounded-2xl border-gold/30 shadow-md shadow-slate-900/5' : 'rounded-xl border-gray-100 shadow-sm'}`}>
+      <div className={`bg-white border overflow-clip ${current.product_type === 'toxina' ? 'rounded-2xl border-gold/30 shadow-md shadow-slate-900/5' : 'rounded-xl border-gray-100 shadow-sm'}`}>
         <button
           onClick={() => {
             if (!canMark && !show3D) {
@@ -2708,34 +2708,36 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
               {/* ── SIN tabs — la vista es siempre de marcación ── */}
 
               <div ref={viewerRef} className="p-4">
-                <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <button
-                    type="button"
-                    aria-pressed={activeTool === 'none' && pointMode === 'none'}
-                    onClick={() => {
-                      setActiveTool('none');
-                      setPointMode('none');
-                      setActiveLineType(null);
-                      setSelectedElement(null);
-                      setShowShapesDropdown(false);
-                      setShowHaShapesDropdown(false);
-                    }}
-                    className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold ${
-                      activeTool === 'none' && pointMode === 'none'
-                        ? 'border-slate-800 bg-slate-800 text-white'
-                        : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
-                    }`}
-                  >
-                    <MousePointer2 className="h-4 w-4" aria-hidden="true" />
-                    Navegar / Rotar
-                  </button>
-                  <button type="button" aria-pressed={pointMode === 'add'}
-                    onClick={() => { setActiveTool('none'); setPointMode(mode => mode === 'add' ? 'none' : 'add'); }}
-                    className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-gold ${
-                      pointMode === 'add' ? 'border-gold bg-gold-light text-gold-ink' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
-                    }`}>
-                    <Plus className="h-4 w-4" aria-hidden="true" /> Añadir punto
-                  </button>
+                <div className="sticky top-20 z-40 mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/95 p-2 shadow-md backdrop-blur">
+                  <div role="group" aria-label="Navegación y puntos" className="flex shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      aria-pressed={activeTool === 'none' && pointMode === 'none'}
+                      onClick={() => {
+                        setActiveTool('none');
+                        setPointMode('none');
+                        setActiveLineType(null);
+                        setSelectedElement(null);
+                        setShowShapesDropdown(false);
+                        setShowHaShapesDropdown(false);
+                      }}
+                      className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold ${
+                        activeTool === 'none' && pointMode === 'none'
+                          ? 'border-slate-800 bg-slate-800 text-white'
+                          : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      <MousePointer2 className="h-4 w-4" aria-hidden="true" />
+                      Navegar / Rotar
+                    </button>
+                    <button type="button" aria-pressed={pointMode === 'add'}
+                      onClick={() => { setActiveTool('none'); setPointMode(mode => mode === 'add' ? 'none' : 'add'); }}
+                      className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-gold ${
+                        pointMode === 'add' ? 'border-gold bg-gold-light text-gold-ink' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
+                      }`}>
+                      <Plus className="h-4 w-4" aria-hidden="true" /> Añadir punto
+                    </button>
+                  </div>
                   <p className="min-w-0 flex-1 text-sm text-slate-700" role="status" aria-live="polite">
                     {activeTool === 'none' && pointMode === 'none'
                       ? 'Arrastra para rotar. Haz clic en un punto o trazo para editarlo; la piel no añade puntos.'
