@@ -280,12 +280,12 @@ export const defaultFrame = (view: ViewKind): FaceFrame => (view === 'frontal'
   : { top: 0.12, bottom: 0.88, left: 0.15, right: 0.85, axisTop: { x: 0.5, y: 0.12 }, axisBottom: { x: 0.5, y: 0.88 }, source: 'manual' });
 
 export function projectModel(p: Vec3, view: ViewKind, frame: FaceFrame, flip: boolean, aspect = 1): P2 | null {
-  const t = (Y_TOP - p.y) / Y_SPAN;
-  const y = frame.top + t * (frame.bottom - frame.top);
+  const yRatio = (Y_TOP - p.y) / Y_SPAN;
+  const y = frame.top + yRatio * (frame.bottom - frame.top);
   if (view === 'frontal') {
     if (p.z < -0.5) return null;
     const side = Math.max(-1.3, Math.min(1.3, (flip ? -p.x : p.x) / X_HALF));
-    const rowY = frame.top + Math.min(1, Math.max(0, t)) * (frame.bottom - frame.top);
+    const rowY = frame.top + Math.min(1, Math.max(0, yRatio)) * (frame.bottom - frame.top);
     const crossings: number[] = [];
     frame.outline?.forEach((a, i, outline) => {
       const b = outline[(i + 1) % outline.length];
@@ -298,14 +298,14 @@ export function projectModel(p: Vec3, view: ViewKind, frame: FaceFrame, flip: bo
       : (frame.right - frame.left) / 2;
     const axisStart = (frame.axisTop.y - frame.top) / Math.max(frame.bottom - frame.top, 0.05);
     const axisSpan = Math.max(1 - axisStart, 0.05);
-    const centerX = frame.axisTop.x + ((t - axisStart) / axisSpan) * (frame.axisBottom.x - frame.axisTop.x);
+    const centerX = frame.axisTop.x + ((yRatio - axisStart) / axisSpan) * (frame.axisBottom.x - frame.axisTop.x);
     const dx = (frame.axisBottom.x - frame.axisTop.x);
     const dy = (frame.axisBottom.y - frame.axisTop.y);
     const physicalDx = dx * aspect;
     const axisLength = Math.hypot(physicalDx, dy) || 1;
     const normalX = dy / axisLength;
     const normalY = -physicalDx / axisLength;
-    const centerY = frame.top + t * (frame.bottom - frame.top);
+    const centerY = frame.top + yRatio * (frame.bottom - frame.top);
     const offset = side * halfWidth;
     return {
       x: centerX + offset * normalX,
