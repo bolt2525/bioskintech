@@ -49,6 +49,14 @@ test('mantiene la escala manual cuando no hay contorno detectado', () => {
 
 test('convierte los landmarks del óvalo en un contorno normalizado', () => {
   const landmarks = Array.from({ length: 478 }, () => ({ x: 0.5, y: 0.5 }));
+  const ovalIndices = [
+    10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377,
+    152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109,
+  ];
+  ovalIndices.forEach((index, i) => {
+    const angle = -Math.PI / 2 + (2 * Math.PI * i) / ovalIndices.length;
+    landmarks[index] = { x: 0.5 + Math.cos(angle) * 0.3, y: 0.5 + Math.sin(angle) * 0.4 };
+  });
   landmarks[10] = { x: 0.5, y: 0.1 };
   landmarks[152] = { x: 0.5, y: 0.9 };
   landmarks[168] = { x: 0.52, y: 0.45 };
@@ -86,6 +94,9 @@ test('calibra modelo→foto con varios anclajes y reporta residuos', () => {
   assert.ok(Math.abs(applyRegistration(source[0], registration).x - target[0].x) < 1e-6);
   assert.equal(fitAffineRegistration(source.slice(0, 4), target.slice(0, 4), 1, 0.8), null);
   assert.equal(fitAffineRegistration(source, source.map(p => ({ ...p, x: Number.NaN })), 1, 0.8), null);
+  const discordant = target.map(p => ({ ...p }));
+  discordant[0].x += 0.2;
+  assert.ok((fitAffineRegistration(source, discordant, 1, 0.8)?.rmse ?? 0) > 0.025);
 });
 
 test('valida que el punto proyectado quede dentro del contorno facial calibrado', () => {

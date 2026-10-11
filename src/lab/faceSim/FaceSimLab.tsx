@@ -284,7 +284,7 @@ export default function FaceSimLab() {
         return;
       }
       setPhotos(p => p[view]?.canvas === slot.canvas ? { ...p, [view]: { ...p[view]!, modelAnchors: next, registration, registrationFlip: flipX } } : p);
-      setStatus(`Alineación revisada: error medio ${(registration.rmse * 100).toFixed(1)}% y máximo ${(registration.maxError * 100).toFixed(1)}% de la altura facial. Proyección orientativa, no clínica.`);
+      setStatus(`Alineación manual aceptada; error de validación cruzada: RMS ${(registration.rmse * 100).toFixed(1)}%, máximo ${(registration.maxError * 100).toFixed(1)}% del alto facial. Proyección orientativa.`);
       return;
     }
     snap(); setMarkers(p => [...p, m]); addMeta(m.id);
@@ -501,7 +501,7 @@ export default function FaceSimLab() {
                 </>
               )}
               {slot.registration && slot.registrationFlip === flipX && (
-                <p className="text-emerald-700">Alineación revisada · error RMS {(slot.registration.rmse * 100).toFixed(1)}% · máximo {(slot.registration.maxError * 100).toFixed(1)}% del alto facial.</p>
+                <p className="text-emerald-700">Alineación manual aceptada · validación cruzada RMS {(slot.registration.rmse * 100).toFixed(1)}% · máximo {(slot.registration.maxError * 100).toFixed(1)}% del alto facial.</p>
               )}
               <p className="text-slate-500">Sin detección o calibración aceptada, las marcas 3D no se proyectan a la foto. Una marca hecha en foto permanece solo en la imagen.</p>
             </div>
@@ -576,6 +576,13 @@ export default function FaceSimLab() {
               <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
                 <polygon points={poly(frame.outline)} fill="rgba(56,189,248,0.06)" stroke="#38bdf8" strokeWidth="0.0025" strokeDasharray="0.01 0.006" />
                 <line x1={frame.axisTop.x} y1={frame.axisTop.y} x2={frame.axisBottom.x} y2={frame.axisBottom.y} stroke="#38bdf8" strokeWidth="0.002" strokeDasharray="0.008 0.006" />
+                {frame.anchors?.map((point, index) => (
+                  <g key={index}>
+                    <circle cx={point.x} cy={point.y} r="0.009" fill="#38bdf8" stroke="white" strokeWidth="0.002" />
+                    <text x={point.x + 0.012} y={point.y - 0.01} fill="white" stroke="#0f172a" strokeWidth="0.004" paintOrder="stroke" fontSize="0.025" fontWeight="bold">{index + 1}</text>
+                    <title>{REGISTRATION_ANCHORS[index]}</title>
+                  </g>
+                ))}
               </svg>
             )}
             {showMarks && (

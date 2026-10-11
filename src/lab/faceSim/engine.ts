@@ -87,35 +87,47 @@ export interface AffineRegistration {
 
 /** Ajusta modelo→foto por mínimos cuadrados; requiere referencias no colineales y mide residuos en alturas faciales. */
 export function fitAffineRegistration(source: P2[], target: P2[], aspect: number, faceHeight: number): AffineRegistration | null {
-  if (source.length < 5 || source.length !== target.length || !Number.isFinite(aspect) || aspect <= 0 || faceHeight <= 0) return null;
+  if (source.length < 5 || source.length !== target.length || !Number.isFinite(aspect) || aspect <= 0
+    || !Number.isFinite(faceHeight) || faceHeight <= 0) return null;
   if ([...source, ...target].some(p => !Number.isFinite(p.x) || !Number.isFinite(p.y))) return null;
-  const rows = source.map(p => [p.x, p.y, 1]);
-  const normal = Array.from({ length: 3 }, (_, i) => Array.from({ length: 3 }, (_, j) =>
-    rows.reduce((sum, row) => sum + row[i] * row[j], 0)));
-  const solve = (values: number[]) => {
-    const matrix = normal.map((row, i) => [...row, rows.reduce((sum, p, j) => sum + p[i] * values[j], 0)]);
-    for (let col = 0; col < 3; col++) {
-      let pivot = col;
-      for (let row = col + 1; row < 3; row++) if (Math.abs(matrix[row][col]) > Math.abs(matrix[pivot][col])) pivot = row;
-      if (Math.abs(matrix[pivot][col]) < 1e-8) return null;
-      [matrix[col], matrix[pivot]] = [matrix[pivot], matrix[col]];
-      const divisor = matrix[col][col];
-      for (let j = col; j < 4; j++) matrix[col][j] /= divisor;
-      for (let row = 0; row < 3; row++) {
-        if (row === col) continue;
-        const factor = matrix[row][col];
-        for (let j = col; j < 4; j++) matrix[row][j] -= factor * matrix[col][j];
+  const solve = (indices: number[]) => {
+    const rows = indices.map(index => [source[index].x, source[index].y, 1]);
+    const normal = Array.from({ length: 3 }, (_, i) => Array.from({ length: 3 }, (_, j) =>
+      rows.reduce((sum, row) => sum + row[i] * row[j], 0)));
+    const fitAxis = (axis: 'x' | 'y') => {
+      const matrix = normal.map((row, i) => [...row, rows.reduce((sum, p, j) => sum + p[i] * target[indices[j]][axis], 0)]);
+      for (let col = 0; col < 3; col++) {
+        let pivot = col;
+        for (let row = col + 1; row < 3; row++) if (Math.abs(matrix[row][col]) > Math.abs(matrix[pivot][col])) pivot = row;
+        if (Math.abs(matrix[pivot][col]) < 1e-8) return null;
+        [matrix[col], matrix[pivot]] = [matrix[pivot], matrix[col]];
+        const divisor = matrix[col][col];
+        for (let j = col; j < 4; j++) matrix[col][j] /= divisor;
+        for (let row = 0; row < 3; row++) {
+          if (row === col) continue;
+          const factor = matrix[row][col];
+          for (let j = col; j < 4; j++) matrix[row][j] -= factor * matrix[col][j];
+        }
       }
-    }
-    return matrix.map(row => row[3]);
+      return matrix.map(row => row[3]);
+    };
+    const x = fitAxis('x'), y = fitAxis('y');
+    return x && y ? { x, y } : null;
   };
-  const x = solve(target.map(p => p.x)), y = solve(target.map(p => p.y));
-  if (!x || !y) return null;
-  const errors = rows.map((p, i) => Math.hypot((x[0] * p[0] + x[1] * p[1] + x[2] - target[i].x) * aspect,
-    y[0] * p[0] + y[1] * p[1] + y[2] - target[i].y) / faceHeight);
+  const indices = source.map((_, index) => index);
+  const fit = solve(indices);
+  if (!fit) return null;
+  const errors = indices.map(heldOut => {
+    const validated = solve(indices.filter(index => index !== heldOut));
+    if (!validated) return Number.POSITIVE_INFINITY;
+    const p = source[heldOut], q = target[heldOut];
+    return Math.hypot((validated.x[0] * p.x + validated.x[1] * p.y + validated.x[2] - q.x) * aspect,
+      validated.y[0] * p.x + validated.y[1] * p.y + validated.y[2] - q.y) / faceHeight;
+  });
+  const { x, y } = fit;
   const determinant = x[0] * y[1] - x[1] * y[0];
   if (!Number.isFinite(determinant) || Math.abs(determinant) < 0.0025 || Math.abs(determinant) > 25
-    || [...x, ...y].some(value => Math.abs(value) > 20)) return null;
+    || [...x, ...y].some(value => Math.abs(value) > 20) || errors.some(error => !Number.isFinite(error))) return null;
   return {
     a: x[0], b: x[1], c: x[2], d: y[0], e: y[1], f: y[2],
     rmse: Math.sqrt(errors.reduce((sum, error) => sum + error * error, 0) / errors.length),
