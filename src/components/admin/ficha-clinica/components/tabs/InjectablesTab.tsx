@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import recordsFetch from "../../../../../utils/recordsFetch";
 import { escapeHtml, safeImageSrc } from '../../../../../utils/escapeHtml.js';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -163,6 +164,141 @@ const ALL_HA_ZONES = [
 ];
 
 const HA_PLANES = ['Dérmico superficial', 'Dérmico medio', 'Dérmico profundo', 'Subcutáneo', 'Supraperióstico'];
+
+function PointFieldSelect({ id, label, value, options, onChange }: {
+  id: string;
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [position, setPosition] = useState({ top: 0, left: 0, width: 0, maxHeight: 224 });
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const choices = value && !options.includes(value) ? ['', value, ...options] : ['', ...options];
+  const selectedIndex = Math.max(0, choices.indexOf(value));
+  const optionsId = `${id}-options`;
+
+  const openOptions = (index = selectedIndex) => {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const availableBelow = window.innerHeight - rect.bottom - 8;
+    const availableAbove = rect.top - 8;
+    const opensAbove = availableBelow < 180 && availableAbove > availableBelow;
+    const maxHeight = Math.max(120, Math.min(224, opensAbove ? availableAbove : availableBelow));
+    setPosition({
+      top: opensAbove ? rect.top - maxHeight - 4 : rect.bottom + 4,
+      left: Math.max(8, Math.min(rect.left, window.innerWidth - rect.width - 8)),
+      width: rect.width,
+      maxHeight,
+    });
+    setActiveIndex(index);
+    setOpen(true);
+  };
+
+  const choose = (option: string) => {
+    onChange(option);
+    setOpen(false);
+    triggerRef.current?.focus();
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (!triggerRef.current?.contains(target) && !document.getElementById(optionsId)?.contains(target)) close();
+    };
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    document.addEventListener('mousedown', closeOnOutsideClick);
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+      document.removeEventListener('mousedown', closeOnOutsideClick);
+    };
+  }, [open, optionsId]);
+
+  useEffect(() => {
+    if (open) document.getElementById(`${id}-option-${activeIndex}`)?.scrollIntoView({ block: 'nearest' });
+  }, [activeIndex, id, open]);
+
+  return (
+    <div>
+      <label id={`${id}-label`} htmlFor={id} className="mb-1 block text-xs font-medium text-gray-600">{label}</label>
+      <button
+        id={id}
+        ref={triggerRef}
+        type="button"
+        role="combobox"
+        aria-labelledby={`${id}-label ${id}-value`}
+        aria-expanded={open}
+        aria-controls={open ? optionsId : undefined}
+        aria-haspopup="listbox"
+        aria-activedescendant={open ? `${id}-option-${activeIndex}` : undefined}
+        onClick={() => open ? setOpen(false) : openOptions()}
+        onKeyDown={event => {
+          if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+            event.preventDefault();
+            if (!open) {
+              openOptions(event.key === 'Home' ? 0 : event.key === 'End' ? choices.length - 1 : selectedIndex);
+            } else {
+              const next = event.key === 'Home' ? 0 : event.key === 'End' ? choices.length - 1
+                : Math.max(0, Math.min(choices.length - 1, activeIndex + (event.key === 'ArrowDown' ? 1 : -1)));
+              setActiveIndex(next);
+            }
+          } else if (event.key === 'Escape' && open) {
+            event.preventDefault();
+            event.stopPropagation();
+            setOpen(false);
+          } else if ((event.key === 'Enter' || event.key === ' ') && open) {
+            event.preventDefault();
+            choose(choices[activeIndex]);
+          } else if ((event.key === 'Enter' || event.key === ' ') && !open) {
+            event.preventDefault();
+            openOptions();
+          }
+        }}
+        className={`flex min-h-10 w-full items-center justify-between gap-2 rounded-lg border px-2 py-2 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b8944d] focus-visible:ring-offset-1 ${
+          open ? 'border-[#b8944d] bg-white ring-2 ring-[#deb887]/40' : 'border-gray-200 bg-white hover:border-[#b8944d]'
+        }`}
+      >
+        <span id={`${id}-value`} className={`truncate ${value ? 'text-gray-800' : 'text-gray-400'}`}>{value || '—'}</span>
+        <ChevronDown aria-hidden="true" className={`h-4 w-4 flex-shrink-0 text-[#b8944d] transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && createPortal(
+        <ul
+          id={optionsId}
+          role="listbox"
+          aria-labelledby={`${id}-label`}
+          className="fixed z-[9999] max-h-56 overflow-y-auto rounded-xl border border-[#deb887]/50 bg-white p-1.5 shadow-xl shadow-gray-900/15"
+          style={{ top: position.top, left: position.left, width: position.width, maxHeight: position.maxHeight }}
+        >
+          {choices.map((option, index) => (
+            <li
+              id={`${id}-option-${index}`}
+              key={`${option}-${index}`}
+              role="option"
+              aria-selected={option === value}
+              onMouseDown={event => event.preventDefault()}
+              onMouseEnter={() => setActiveIndex(index)}
+              onClick={() => choose(option)}
+              className={`flex min-h-9 cursor-pointer items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm ${
+                index === activeIndex ? 'bg-[#deb887]/20 font-semibold text-[#725b2d]' : 'text-gray-700 hover:bg-amber-50'
+              }`}
+            >
+              <span>{option || '—'}</span>
+              {option === value && <Check aria-hidden="true" className="h-4 w-4 text-[#b8944d]" />}
+            </li>
+          ))}
+        </ul>,
+        document.body,
+      )}
+    </div>
+  );
+}
+
 const DRAWING_GUIDE: Record<DrawingTool, string> = {
   none: 'Las anotaciones ayudan a describir zonas y referencias de la sesión; no añaden unidades ni recomiendan dónde inyectar.',
   'freehand-brush': 'Pincel: delimita una zona u observación libre. Mantén pulsado y arrastra sobre la piel; arrastra desde el fondo para girar.',
@@ -3416,29 +3552,11 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                                       {/* Inline editor — solo relleno; en toxina, técnica/aguja van en el producto y plano en el modal */}
                                       {isExpanded && !bulkApplyMode && current.product_type !== 'toxina' && (
                                         <div className="px-3 pb-3 pt-1 bg-amber-50/50 space-y-2 border-t border-amber-100">
-                                          <div className="grid grid-cols-2 gap-1.5">
-                                            <div>
-                                              <label htmlFor={`point-technique-${globalIndex}`} className="mb-1 block text-xs font-medium text-gray-600">Técnica</label>
-                                              <select id={`point-technique-${globalIndex}`} className="min-h-10 w-full bg-white text-sm text-gray-800 border border-gray-200 rounded-lg px-2 py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b8944d] focus-visible:ring-offset-1" value={p.technique_at_point || ''} onChange={e => handlePointFieldChange(globalIndex, 'technique_at_point', e.target.value)}>
-                                                <option value="">—</option>
-                                                {techniques.map(t => <option key={t} value={t}>{t}</option>)}
-                                              </select>
-                                            </div>
-                                            <div>
-                                              <label htmlFor={`point-needle-${globalIndex}`} className="mb-1 block text-xs font-medium text-gray-600">Aguja</label>
-                                              <select id={`point-needle-${globalIndex}`} className="min-h-10 w-full bg-white text-sm text-gray-800 border border-gray-200 rounded-lg px-2 py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b8944d] focus-visible:ring-offset-1" value={p.needle_at_point || ''} onChange={e => handlePointFieldChange(globalIndex, 'needle_at_point', e.target.value)}>
-                                                <option value="">—</option>
-                                                {needles.map(n => <option key={n} value={n}>{n}</option>)}
-                                              </select>
-                                            </div>
+                                          <div className="grid grid-cols-1 gap-2 xl:grid-cols-2">
+                                            <PointFieldSelect id={`point-technique-${globalIndex}`} label="Técnica" value={p.technique_at_point || ''} options={techniques} onChange={value => handlePointFieldChange(globalIndex, 'technique_at_point', value)} />
+                                            <PointFieldSelect id={`point-needle-${globalIndex}`} label="Aguja" value={p.needle_at_point || ''} options={needles} onChange={value => handlePointFieldChange(globalIndex, 'needle_at_point', value)} />
                                           </div>
-                                          <div>
-                                            <label htmlFor={`point-plane-${globalIndex}`} className="mb-1 block text-xs font-medium text-gray-600">Plano</label>
-                                            <select id={`point-plane-${globalIndex}`} className="min-h-10 w-full bg-white text-sm text-gray-800 border border-gray-200 rounded-lg px-2 py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b8944d] focus-visible:ring-offset-1" value={p.injection_plane || ''} onChange={e => handlePointFieldChange(globalIndex, 'injection_plane', e.target.value)}>
-                                              <option value="">—</option>
-                                              {HA_PLANES.map(pl => <option key={pl} value={pl}>{pl}</option>)}
-                                            </select>
-                                          </div>
+                                          <PointFieldSelect id={`point-plane-${globalIndex}`} label="Plano" value={p.injection_plane || ''} options={HA_PLANES} onChange={value => handlePointFieldChange(globalIndex, 'injection_plane', value)} />
                                           <p className="rounded-lg border border-amber-100 bg-white/70 p-2 text-xs leading-relaxed text-amber-900">
                                             Al copiar, los campos de este punto reemplazan los mismos campos en destino. Un campo vacío también puede borrar el valor existente.
                                           </p>

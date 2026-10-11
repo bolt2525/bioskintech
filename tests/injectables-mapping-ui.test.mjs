@@ -491,11 +491,17 @@ test('rellenos presentan producto, volumen, mapa y seguimiento en orden', () => 
   assert.doesNotMatch(source, /placeholder="Ej: Juvederm Ultra"/);
 });
 
-test('edición por punto es accesible y aclara la copia masiva', () => {
+test('edición por punto usa selectores accesibles dorados y aclara la copia masiva', () => {
   for (const field of ['technique', 'needle', 'plane']) {
-    assert.ok(source.includes(`htmlFor={\`point-${field}-\${globalIndex}\`}`));
-    assert.ok(source.includes(`id={\`point-${field}-\${globalIndex}\`}`));
+    assert.ok(source.includes(`<PointFieldSelect id={\`point-${field}-\${globalIndex}\`}`));
   }
+  const selector = source.slice(source.indexOf('function PointFieldSelect'), source.indexOf('const DRAWING_GUIDE'));
+  assert.match(selector, /role="combobox"/);
+  assert.match(selector, /role="listbox"/);
+  assert.match(selector, /role="option"/);
+  assert.match(selector, /bg-\[#deb887\]\/20/);
+  assert.match(selector, /focus-visible:ring-\[#b8944d\]/);
+  assert.match(selector, /event\.key === 'ArrowDown'/);
   assert.match(source, /focus-visible:ring-2 focus-visible:ring-\[#b8944d\]/);
   assert.match(source, /Técnica, aguja y plano sin registrar/);
   assert.match(source, /aria-pressed=\{bulkApplyMode \? isBulkSelected : isSelected\}/);
