@@ -408,7 +408,7 @@ function tabHarness(listRequest, Downloader = ClinicalPhotoDownloader) {
 }
 
 const clinicalPhotos = count => photos(count).map(photo => ({
-  ...photo, record_id: 1, photo_type: photo.id % 2 ? 'before' : 'after',
+  ...photo, photo_type: photo.id % 2 ? 'before' : 'after',
   created_at: '2026-10-07T12:00:00Z',
 }));
 const listResponse = entries => ({
@@ -602,4 +602,56 @@ test('foto ampliada ofrece descarga original y muestra el error dentro del diál
   harness.render();
   assert.match(harness.text(), /Error de red de prueba/);
   assert.ok(harness.button('Actualizar lista y enlaces'));
+});
+
+test('contrato listPhotos sin record_id: descarga individual, tras actualizar y ZIP reales', async t => {
+  let expired = false;
+  const env = browser(t, () => expired ? new Response('', { status: 403 }) : streamed(3));
+  const harness = tabHarness(async () => listResponse(clinicalPhotos(2)));
+  t.after(() => harness.unmount());
+  harness.render();
+  await harness.settle();
+  assert.equal('record_id' in harness.cards()[0].props.photo, false);
+  let card = harness.cards()[0];
+  await card.props.onDownload(card.props.photo);
+  harness.render();
+  assert.equal(env.blobs.length, 1);
+  assert.equal(env.links[0].download, 'foto-1.jpg');
+  assert.doesNotMatch(harness.text(), /La selección ya no está disponible/);
+
+  expired = true;
+  await card.props.onDownload(card.props.photo);
+  harness.render();
+  assert.match(harness.text(), /HTTP 403/);
+  expired = false;
+  harness.button('Actualizar lista y enlaces').props.onClick();
+  harness.render();
+  await harness.settle();
+  card = harness.cards()[0];
+  await card.props.onDownload(card.props.photo);
+  harness.render();
+  assert.equal(env.blobs.length, 2);
+  harness.button('Seleccionar para ZIP').props.onClick();
+  harness.render();
+  harness.button('Seleccionar todas').props.onClick();
+  harness.render();
+  await harness.button('Descargar ZIP de originales').props.onClick();
+  harness.render();
+  assert.equal(env.blobs.length, 3);
+  const entries = await readZip(env.blobs[2]);
+  assert.deepEqual(entries.map(entry => entry.name), ['foto-1.jpg', 'foto-2.jpg']);
+  assert.match(harness.text(), /Descarga preparada/);
+  env.cleanup();
+});
+
+test('foto ajena a la lista autorizada no inicia una descarga', async t => {
+  const env = browser(t, () => streamed(3));
+  const harness = tabHarness(async () => listResponse(clinicalPhotos(1)));
+  t.after(() => harness.unmount());
+  harness.render();
+  await harness.settle();
+  await harness.cards()[0].props.onDownload({ ...clinicalPhotos(1)[0], id: 99 });
+  harness.render();
+  assert.equal(env.requests.length, 0);
+  assert.match(harness.text(), /La selección ya no está disponible/);
 });

@@ -14,7 +14,6 @@ import { ClinicalPhotoDownloader, MAX_DOWNLOAD_PHOTOS } from '../../../../../uti
 
 interface ClinicalPhoto {
   id: number;
-  record_id: number;
   consultation_id?: number;
   consultation_date?: string;
   consultation_reason?: string;
@@ -403,7 +402,7 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
     const generation = listGeneration.current;
     const requested = individual ? [individual.id] : [...downloadSelected];
     const chosen = requested.map(id => photos.find(photo => photo.id === id));
-    if (!requested.length || chosen.some(photo => !photo || photo.record_id !== recordId)) {
+    if (!requested.length || chosen.some(photo => !photo)) {
       setDownloadError('La selección ya no está disponible en esta ficha. Actualiza la lista y vuelve a seleccionar.');
       return;
     }
