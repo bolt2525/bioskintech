@@ -234,7 +234,7 @@ export type DrawingTool =
   | 'shape-circle'     // clic+arrastrar para definir radio
   | 'shape-rect'       // clic+arrastrar para definir tamaño
   | 'ha-fan'           // Abanico: clic centro + drag longitud
-  | 'ha-grid'          // Malla: clic esquina1 + drag esquina2
+  | 'ha-grid'          // Malla: tres clics para inicio, ancho y largo
   | 'ha-fern';         // Helecho: drag línea central
 
 // ==========================================
@@ -731,8 +731,8 @@ const ThreeEngine: React.FC<{
     let shapeCurrentW = 0;
     let shapeCurrentH = 0;
 
-    // ── Grid 3-step state ─────────────────────────────────────────────────
-    let gridStep = 0; // 0=esperando 1er clic, 1=arrastrando ancho, 2=arrastrando largo
+    // ── Grid 3-click state ────────────────────────────────────────────────
+    let gridStep = 0; // 0=inicio, 1=ancho, 2=largo
     let gridAnchorA: THREE.Vector3 | null = null;
     let gridDirMain: THREE.Vector3 | null = null;   // dirección principal (primer click → segundo)
     let gridDirPerp: THREE.Vector3 | null = null;   // dirección perpendicular (para el ancho)
@@ -750,6 +750,17 @@ const ThreeEngine: React.FC<{
         if (snapIndicatorRef.current) (snapIndicatorRef.current.material as THREE.MeshBasicMaterial).opacity = 0;
         callbacks.current.onSnapPointChange?.(null);
       }
+    };
+
+    const resetGridDrawing = () => {
+      gridStep = 0;
+      gridAnchorA = null;
+      gridDirMain = null;
+      gridDirPerp = null;
+      gridHalfWidth = 0;
+      gridLen = 0;
+      clearBrushPreview();
+      callbacks.current.onGridStepChange?.(0);
     };
 
     const clearBrushPreview = () => {
@@ -902,6 +913,7 @@ const ThreeEngine: React.FC<{
     const onPointerDown = (e: MouseEvent) => {
       startPos = { x: e.clientX, y: e.clientY };
       const tool = callbacks.current.activeTool;
+      if (gridStep > 0 && tool !== 'ha-grid') resetGridDrawing();
 
       // ── Prioridad 0: handle drag (resize/move de línea seleccionada) ───────
       if (handlesGroupRef.current && handlesGroupRef.current.children.length > 0 && cameraRef.current) {
@@ -1940,7 +1952,7 @@ const ThreeEngine: React.FC<{
         const clickPt = gridHits[0].point.clone();
 
         if (gridStep === 0) {
-          // 1er clic: fijar esquina A
+          // 1er clic: fijar el punto medio del borde inicial
           gridAnchorA = clickPt;
           gridStep = 1;
           callbacks.current.onGridStepChange?.(1);
@@ -1959,7 +1971,7 @@ const ThreeEngine: React.FC<{
           // 3er clic: fijar longitud y generar el grid
           const rawLen = clickPt.clone().sub(gridAnchorA);
           gridLen = rawLen.dot(gridDirMain);
-          if (Math.abs(gridLen) < 0.05) { gridStep = 0; return; }
+          if (Math.abs(gridLen) < 0.05) { resetGridDrawing(); return; }
           const lenSign = gridLen > 0 ? 1 : -1;
           gridLen = Math.abs(gridLen);
           const ptA = gridAnchorA;
@@ -1991,15 +2003,7 @@ const ThreeEngine: React.FC<{
             segments: gridSegs3,
             color: col, thickness: th, technique_preset: 'Malla',
           });
-          // Reset
-          gridStep = 0;
-          gridAnchorA = null;
-          gridDirMain = null;
-          gridDirPerp = null;
-          gridHalfWidth = 0;
-          gridLen = 0;
-          clearBrushPreview();
-          callbacks.current.onGridStepChange?.(0);
+          resetGridDrawing();
         }
         return;
       }
@@ -2184,6 +2188,7 @@ const ThreeEngine: React.FC<{
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
       if (controlsRef.current) controlsRef.current.update();
+      if (gridStep > 0 && callbacks.current.activeTool !== 'ha-grid') resetGridDrawing();
       if (rendererRef.current && sceneRef.current && cameraRef.current) {
         const pulse = (Math.sin(performance.now() * 0.0035) + 1) / 2;
         markersGroupRef.current?.children.forEach(markerGroup => {

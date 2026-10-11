@@ -1,5 +1,6 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-10 Visor 3D: Malla y deshacer
 - ✅ 2026-10-10 Inyectables: selectores por punto dorados.
 - ✅ 2026-10-10 Inyectables: trazos iniciales rojo contrastante.
 - ✅ 2026-10-10 Inyectables: escritura y despliegue corregidos.

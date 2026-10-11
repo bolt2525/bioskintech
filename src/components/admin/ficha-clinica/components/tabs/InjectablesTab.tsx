@@ -503,11 +503,12 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   const [unitsModalPlane, setUnitsModalPlane] = useState('');
   const [unitsModalTecnica, setUnitsModalTecnica] = useState(''); // HA: técnica puntual
   const [, setDialogPlane] = useState('');
-  // Undo stack: snapshots of {injectionPoints, markers3D, editablePoints, freehandLines, surfaceShapes} before each mutation
+  // Undo stack snapshots all model annotations and point state before each mutation.
   const [undoStack, setUndoStack] = useState<Array<{
     injectionPoints: InjectionPoint[];
     markers3D: Marker3D[];
     editablePoints: EditablePoint[];
+    referenceLines: ReferenceLine[];
     freehandLines: FreehandLine[];
     surfaceShapes: SurfaceShape[];
   }>>([]);
@@ -519,7 +520,9 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   const unitOverlayRef = useRef<HTMLDivElement>(null);
   // Timer ref to push undo only once per drag gesture on point-move
   const moveUndoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const selectedPropertyUndoRef = useRef(false);
   // Refs so pushUndo can snapshot all drawing state without stale closures
+  const referenceLinesRef = useRef<ReferenceLine[]>([]);
   const freehandLinesRef = useRef<FreehandLine[]>([]);
   const surfaceShapesRef = useRef<SurfaceShape[]>([]);
   const injectionPointsRef = useRef<InjectionPoint[]>([]);
@@ -571,7 +574,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   const [unitsModalVialStep, setUnitsModalVialStep] = useState(false);
   /** Quick Save HA: mini-form inline para registrar una nueva jeringa */
   const [inlineVialForm, setInlineVialForm] = useState<{ open: boolean; name: string; vol: string }>({ open: false, name: '', vol: '' });
-  /** Paso actual del dibujo de malla (0=inactivo, 1=ancho, 2=largo) */
+  /** Paso actual del dibujo de malla (0=inicio, 1=ancho, 2=largo) */
   const [gridDrawStep, setGridDrawStep] = useState(0);
   /** Punto snap activo del imán (null = sin snap) */
   const [snapPoint, setSnapPoint] = useState<{ x: number; y: number; z: number } | null>(null);
@@ -579,6 +582,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   // Keep ref in sync with state to avoid closure issues in the RAF callback
   useEffect(() => { showUnitNumbersRef.current = showUnitNumbers; }, [showUnitNumbers]);
   // Keep undo-snapshot refs in sync — placed here so all state vars above are already declared
+  useEffect(() => { referenceLinesRef.current = referenceLines; }, [referenceLines]);
   useEffect(() => { freehandLinesRef.current = freehandLines; }, [freehandLines]);
   useEffect(() => { surfaceShapesRef.current = surfaceShapes; }, [surfaceShapes]);
   useEffect(() => { injectionPointsRef.current = injectionPoints; }, [injectionPoints]);
@@ -852,6 +856,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
 
   /** Actualiza los puntos (y opcionalmente segmentos) de una línea existente después de resize/move */
   const handleFreehandLineUpdated = useCallback((id: string, points: { x: number; y: number; z: number }[], segments?: { x: number; y: number; z: number }[][]) => {
+    pushUndo();
     setFreehandLines(prev => prev.map(l => l.id === id ? { ...l, points, ...(segments !== undefined ? { segments } : {}) } : l));
   }, []);
 
@@ -875,6 +880,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
 
   const handleSelectedColor = (color: string) => {
     if (!selectedElement) return;
+    beginSelectedPropertyUndo();
     if (selectedElement.type === 'reference-line')
       setReferenceLines(prev => prev.map(l => l.id === selectedElement.id ? { ...l, color } : l));
     else if (selectedElement.type === 'freehand')
@@ -885,6 +891,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
 
   const handleSelectedThickness = (thickness: number) => {
     if (!selectedElement) return;
+    beginSelectedPropertyUndo();
     if (selectedElement.type === 'reference-line')
       setReferenceLines(prev => prev.map(l => l.id === selectedElement.id ? { ...l, thickness } : l));
     else if (selectedElement.type === 'freehand')
@@ -1105,10 +1112,21 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
         injectionPoints: pts ?? injectionPointsRef.current,
         markers3D: m3d ?? markers3DRef.current,
         editablePoints: eps ?? editablePointsRef.current,
+        referenceLines: referenceLinesRef.current,
         freehandLines: freehandLinesRef.current,
         surfaceShapes: surfaceShapesRef.current,
       },
     ]);
+  }, []);
+
+  const beginSelectedPropertyUndo = useCallback(() => {
+    if (selectedPropertyUndoRef.current) return;
+    pushUndo();
+    selectedPropertyUndoRef.current = true;
+  }, [pushUndo]);
+
+  const endSelectedPropertyUndo = useCallback(() => {
+    selectedPropertyUndoRef.current = false;
   }, []);
 
   // ── handleUndo: restore last snapshot ─────────────────────────────────
@@ -1116,9 +1134,11 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     setUndoStack(prev => {
       if (prev.length === 0) return prev;
       const last = prev[prev.length - 1];
+      selectedPropertyUndoRef.current = false;
       setInjectionPoints(last.injectionPoints);
       setMarkers3D(last.markers3D);
       setEditablePoints(last.editablePoints);
+      setReferenceLines(last.referenceLines);
       setFreehandLines(last.freehandLines);
       setSurfaceShapes(last.surfaceShapes);
       setShowClearConfirm(false);
@@ -1243,6 +1263,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   };
 
   const handleLineOffsetChange = (id: string, offset: number) => {
+    beginSelectedPropertyUndo();
     setReferenceLines(prev => prev.map(l => l.id === id ? { ...l, offset } : l));
   };
 
@@ -3108,9 +3129,9 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                       {/* ── Hint visual del Grid 3-step ── */}
                       {activeTool === 'ha-grid' && gridDrawStep >= 0 && (
                         <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-30 bg-slate-800/90 backdrop-blur-sm text-white text-[11px] font-semibold px-4 py-2 rounded-xl shadow-lg border border-slate-600 pointer-events-none">
-                          {gridDrawStep === 0 && '① Haz clic para fijar la primera esquina del mallado'}
-                          {gridDrawStep === 1 && '② Mueve el mouse para definir el ancho — clic para confirmar'}
-                          {gridDrawStep === 2 && '③ Mueve el mouse para definir el largo — clic para finalizar'}
+                          {gridDrawStep === 0 && '① Haz clic en el centro del borde inicial'}
+                          {gridDrawStep === 1 && '② Mueve el cursor para previsualizar el ancho — clic para fijarlo'}
+                          {gridDrawStep === 2 && '③ Mueve el cursor para previsualizar el largo — clic para finalizar'}
                         </div>
                       )}
 
@@ -3144,6 +3165,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                                 className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
                                 value={(selectedElementData as any).color || '#ffffff'}
                                 onChange={e => handleSelectedColor(e.target.value)}
+                                onBlur={endSelectedPropertyUndo}
                               />
                             </div>
                           </div>
@@ -3160,6 +3182,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                               step={0.1}
                               value={(selectedElementData as any).thickness || 1}
                               onChange={e => handleSelectedThickness(Number(e.target.value))}
+                              onBlur={endSelectedPropertyUndo}
                               className="w-full accent-violet-400"
                             />
                           </div>
@@ -3177,6 +3200,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                                 step={0.05}
                                 value={(selectedElementData as any).offset || 0}
                                 onChange={e => handleLineOffsetChange(selectedElement.id, Number(e.target.value))}
+                                onBlur={endSelectedPropertyUndo}
                                 className="w-full accent-yellow-400"
                               />
                             </div>
@@ -3279,9 +3303,9 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                       {/* Limpiar trazado libre HA */}
                       {(freehandLines.length > 0 || surfaceShapes.length > 0) && (
                         <button
-                          onClick={() => { setFreehandLines([]); setSurfaceShapes([]); setSelectedElement(null); }}
+                          onClick={() => { pushUndo(); setFreehandLines([]); setSurfaceShapes([]); setSelectedElement(null); }}
                           className="text-xs text-violet-400 hover:text-violet-600 transition-colors"
-                          title="Limpiar líneas y formas trazadas"
+                          title="Limpiar líneas y formas trazadas; puedes deshacer esta acción"
                         >
                           Limpiar trazado
                         </button>
@@ -3874,7 +3898,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                       onChange={e => setHaShapeConfig(c => ({ ...c, gridCells: Number(e.target.value) }))}
                       className="w-full accent-violet-500" />
                     <p className="text-[10px] text-gray-400 mt-1">
-                      Generará {haShapeConfig.gridCells + 1} × {haShapeConfig.gridCells + 1} = {(haShapeConfig.gridCells + 1) * 2} líneas en total
+                      {haShapeConfig.gridCells + 1} líneas por dirección · {(haShapeConfig.gridCells + 1) * 2} en total
                     </p>
                   </div>
                 )}
@@ -3892,9 +3916,9 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
 
               {/* Instrucción + Botones */}
               <p className="text-[10px] text-gray-400 mt-3 text-center">
-                {haShapeConfigTool === 'ha-fan' ? 'Clic en la piel → arrastrar para definir longitud y dirección' :
-                 haShapeConfigTool === 'ha-grid' ? 'Clic en esquina → arrastrar para definir la diagonal opuesta' :
-                 'Clic inicio → arrastrar hasta el extremo del eje central'}
+                {haShapeConfigTool === 'ha-fan' ? 'Clic en la piel y arrastra para definir longitud y dirección' :
+                 haShapeConfigTool === 'ha-grid' ? 'Tres clics: punto inicial → ancho → largo. Mueve el cursor para previsualizar.' :
+                 'Clic en la piel y arrastra para definir el eje central'}
               </p>
               <div className="flex gap-2 mt-4">
                 <button onClick={() => setHaShapeConfigOpen(false)}

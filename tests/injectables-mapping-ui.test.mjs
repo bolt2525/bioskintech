@@ -524,3 +524,27 @@ test('ayudas de relleno describen registro sin indicar cantidades, zonas ni prot
   assert.match(fieldHelpSource, /follow_up_date: 'Fecha de control registrada para esta sesión/);
   assert.doesNotMatch(fieldHelpSource, /relleno labial suele requerir|Algunos rellenos requieren|Zonas de relleno:/);
 });
+
+test('Malla explica sus tres clics y el recuento de líneas coincide con la forma generada', () => {
+  assert.match(source, /Tres clics: punto inicial → ancho → largo/);
+  assert.match(source, /centro del borde inicial/);
+  assert.match(source, /líneas por dirección · \{\(haShapeConfig\.gridCells \+ 1\) \* 2\} en total/);
+  assert.doesNotMatch(source, /Clic en esquina → arrastrar para definir la diagonal opuesta/);
+  assert.match(viewerSource, /ha-grid: flujo 3-step basado en clicks/);
+});
+
+test('cambiar de herramienta cancela el estado y la previsualización de Malla', () => {
+  assert.match(viewerSource, /const resetGridDrawing = \(\) => \{\s*gridStep = 0;\s*gridAnchorA = null;/);
+  assert.match(viewerSource, /if \(gridStep > 0 && tool !== 'ha-grid'\) resetGridDrawing\(\)/);
+  assert.match(viewerSource, /if \(gridStep > 0 && callbacks\.current\.activeTool !== 'ha-grid'\) resetGridDrawing\(\)/);
+  assert.match(viewerSource, /if \(Math\.abs\(gridLen\) < 0\.05\) \{ resetGridDrawing\(\); return; \}/);
+});
+
+test('edición y limpieza de anotaciones del visor se pueden deshacer', () => {
+  assert.match(source, /handleFreehandLineUpdated = useCallback\([^]*?\{\s*pushUndo\(\);/);
+  assert.match(source, /handleSelectedColor = \(color: string\) => \{\s*if \(!selectedElement\) return;\s*beginSelectedPropertyUndo\(\)/);
+  assert.match(source, /handleSelectedThickness = \(thickness: number\) => \{\s*if \(!selectedElement\) return;\s*beginSelectedPropertyUndo\(\)/);
+  assert.match(source, /onClick=\{\(\) => \{ pushUndo\(\); setFreehandLines\(\[\]\); setSurfaceShapes\(\[\]\); setSelectedElement\(null\); \}\}/);
+  assert.match(source, /referenceLines: referenceLinesRef\.current/);
+  assert.match(source, /setReferenceLines\(last\.referenceLines\)/);
+});
