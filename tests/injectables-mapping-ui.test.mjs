@@ -572,3 +572,208 @@ test('edición y limpieza de anotaciones del visor se pueden deshacer', () => {
   assert.match(source, /referenceLines: referenceLinesRef\.current/);
   assert.match(source, /setReferenceLines\(last\.referenceLines\)/);
 });
+
+test('editar puntos sin zona comienza por cantidad y recupera la técnica del punto', () => {
+  for (const product_type of ['toxina', 'relleno']) {
+    const changes = {};
+    const setters = ['setSelectedPointId', 'setUnitsModal', 'setUnitsModalInput', 'setUnitsModalTercio',
+      'setUnitsModalZone', 'setUnitsModalPlane', 'setUnitsModalTecnica', 'setUnitsModalZoneFilter', 'setUnitsModalStep'];
+    const environment = {
+      current: { product_type }, editablePoints: [point('qa')],
+      injectionPoints: [{ editablePointId: 'qa', units: 0.3, label: '', tercio: 'medio', technique_at_point: 'Puntual' }],
+      tercioBoundaries: null,
+      ...Object.fromEntries(setters.map(name => [name, value => { changes[name] = value; }])),
+    };
+    loadFunction('handleEditablePointClicked', environment)('qa');
+    assert.equal(changes.setUnitsModalStep, 1);
+    assert.equal(changes.setUnitsModalInput, '0.3');
+    assert.equal(changes.setUnitsModalTecnica, 'Puntual');
+    assert.equal(changes.setUnitsModal.isNewPoint, false);
+  }
+});
+
+test('guardar solamente cantidad conserva zona, técnica, aguja, plano y vial en todos los modos', () => {
+  for (const [product_type, relleno_subtype] of [
+    ['toxina', undefined], ['relleno', 'relleno_ha'], ['relleno', 'hidratacion'], ['relleno', 'bioestimulador'],
+  ]) {
+    const original = {
+      ...applied('qa'), technique_at_point: 'Puntual', needle_at_point: 'QA',
+      injection_plane: 'Medio', vial_id: 'vial-qa', notes_at_point: 'Anotación QA', tercio: 'medio',
+    };
+    let updated;
+    const environment = {
+      current: { product_type, relleno_subtype }, unitsModal: { pointId: 'qa', isNewPoint: false },
+      unitsModalInput: '0.35', unitsModalTercio: '', unitsModalZone: '', unitsModalPlane: '',
+      unitsModalTecnica: '', injectionPoints: [original], editablePoints: [point('qa')], markers3D: [],
+      pushUndo() {}, setToxinaUnitsFromMap() {},
+      setInjectionPoints: fn => { updated = fn([original])[0]; },
+      ...Object.fromEntries(['setUnitsModal', 'setUnitsModalInput', 'setUnitsModalStep', 'setUnitsModalTercio',
+        'setUnitsModalZone', 'setUnitsModalZoneFilter', 'setUnitsModalPlane', 'setUnitsModalTecnica',
+        'setSelectedPointId'].map(name => [name, () => {}])),
+    };
+    loadFunction('handleUnitsModalConfirm', environment)();
+    assert.equal(updated.units, 0.35);
+    for (const key of ['label', 'tercio', 'technique_at_point', 'needle_at_point', 'injection_plane', 'vial_id', 'notes_at_point']) {
+      assert.equal(updated[key], original[key], `${product_type}/${relleno_subtype}: ${key}`);
+    }
+  }
+});
+
+test('cantidad inválida mantiene el modal, muestra error y devuelve foco al campo', () => {
+  for (const input of ['', '0', '-1', 'Infinity', 'NaN']) {
+    let error;
+    let focused = false;
+    const environment = {
+      unitsModal: { pointId: 'qa' }, unitsModalInput: input,
+      setPointAmountError: value => { error = value; },
+      setUnitsModalStep: step => { assert.equal(step, 1); },
+      pointAmountRef: { current: { focus() { focused = true; } } },
+    };
+    loadFunction('handleUnitsModalConfirm', environment)();
+    assert.match(error, /mayor que cero/);
+    assert.equal(focused, true);
+  }
+});
+
+test('Enter tiene un único submit y clasificar no envía el formulario', () => {
+  let form;
+  function visit(node) {
+    if (ts.isJsxElement(node) && node.openingElement.tagName.getText(ast) === 'form'
+      && node.getText(ast).includes('injectable-point-volume')) form = node;
+    ts.forEachChild(node, visit);
+  }
+  visit(ast);
+  assert.ok(form);
+  assert.match(form.getText(ast), /onSubmit=\{event => \{ event\.preventDefault\(\); handleUnitsModalConfirm\(\); \}\}/);
+  assert.doesNotMatch(form.getText(ast), /onKeyDown=[^\n]*handleUnitsModalConfirm/);
+  let submitButtons = 0;
+  function checkButtons(node) {
+    if (ts.isJsxElement(node) && node.openingElement.tagName.getText(ast) === 'button') {
+      const type = node.openingElement.attributes.properties.find(item => ts.isJsxAttribute(item) && item.name.text === 'type');
+      assert.ok(type, 'Cada botón del modal debe declarar type');
+      if (type.initializer.text === 'submit') submitButtons++;
+    }
+    ts.forEachChild(node, checkButtons);
+  }
+  checkButtons(form);
+  assert.equal(submitButtons, 1);
+  assert.match(source, /pointAmountRef\.current\?\.focus\(\);\s*pointAmountRef\.current\?\.select\(\)/);
+});
+
+test('Escape captura el evento y respeta los diálogos abiertos', () => {
+  const changes = {};
+  const setters = ['setActiveTool', 'setPointMode', 'setActiveLineType', 'setPendingLineMeta',
+    'setFirstLineAnchor', 'setTwoPointStep', 'setSelectedElement', 'setHoveredPointId', 'setSnapPoint',
+    'setGridDrawStep', 'setGridDrawMessage', 'setShowShapesDropdown', 'setShowHaShapesDropdown',
+    'setShowVisibilityDropdown', 'setBulkApplyMode', 'setBulkApplySelected'];
+  let dialogOpen = false;
+  const environment = {
+    show3D: true, document: { querySelector: () => dialogOpen },
+    ...Object.fromEntries(setters.map(name => [name, value => { changes[name] = value; }])),
+  };
+  const handler = loadFunction('onKeyDown', environment);
+  handler({ key: 'Escape' });
+  assert.equal(changes.setActiveTool, 'none');
+  assert.equal(changes.setPointMode, 'none');
+  assert.equal(changes.setSelectedElement, null);
+  assert.equal(changes.setSnapPoint, null);
+  assert.equal(changes.setGridDrawStep, 0);
+  for (const key of Object.keys(changes)) delete changes[key];
+  dialogOpen = true;
+  handler({ key: 'Escape' });
+  assert.deepEqual(changes, {});
+  assert.match(source, /addEventListener\('keydown', onKeyDown, true\)/);
+});
+
+test('cambiar de herramienta descarta borradores de pincel, polilínea, formas y malla', () => {
+  let declaration;
+  function visit(node) {
+    if (ts.isVariableDeclaration(node) && node.name.getText(viewerAst) === 'syncDrawingTool') declaration = node;
+    ts.forEachChild(node, visit);
+  }
+  visit(viewerAst);
+  assert.ok(declaration);
+  for (const tool of ['freehand-brush', 'freehand-poly', 'shape-circle', 'shape-rect', 'ha-fan', 'ha-grid', 'ha-fern']) {
+    const state = {
+      drawingTool: tool, callbacks: { current: { activeTool: 'none' } },
+      brushActive: true, brushPoints: [1], polyPoints: [1, 2], polyLastClickTime: 100,
+      shapeAnchor: {}, shapeCurrentRadius: 2, shapeCurrentW: 3, shapeCurrentH: 4,
+      resetGridDrawing() { state.gridCleared = true; }, clearSnap() { state.snapCleared = true; },
+    };
+    vm.runInNewContext(`(${declaration.initializer.getText(viewerAst)})()`, state);
+    assert.equal(state.brushActive, false);
+    assert.equal(state.brushPoints.length, 0);
+    assert.equal(state.polyPoints.length, 0);
+    assert.equal(state.shapeAnchor, null);
+    assert.equal(state.gridCleared, true);
+    assert.equal(state.snapCleared, true);
+  }
+});
+
+test('ampliar usa pantalla completa nativa y comunica rechazos del navegador', async () => {
+  const element = { requestFullscreen: async () => { entered = true; } };
+  let entered = false;
+  let exited = false;
+  let message;
+  const environment = {
+    viewerRef: { current: element }, document: { fullscreenElement: null, exitFullscreen: async () => { exited = true; } },
+    setMessage: value => { message = value; }, console: { error() {} },
+  };
+  const toggle = loadFunction('toggleWorkspaceFullscreen', environment);
+  await toggle();
+  assert.equal(entered, true);
+  environment.document.fullscreenElement = element;
+  await toggle();
+  assert.equal(exited, true);
+  environment.document.fullscreenElement = null;
+  element.requestFullscreen = async () => { throw new Error('Bloqueado para QA'); };
+  await toggle();
+  assert.equal(message.type, 'error');
+  assert.match(message.text, /no permitió ampliar/);
+});
+
+test('Añadir edita puntos visibles sin duplicarlos ni seleccionar puntos ocultos', () => {
+  let branch;
+  function visit(node) {
+    if (ts.isIfStatement(node) && node.expression.getText(viewerAst)
+      === 'editablePointsGroupRef.current && callbacks.current.onEditablePointClicked && !callbacks.current.readOnly') branch = node;
+    ts.forEachChild(node, visit);
+  }
+  visit(viewerAst);
+  assert.ok(branch);
+  const code = ts.transpileModule(`globalThis.run = () => { ${branch.getText(viewerAst)} return 'add'; };`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS },
+  }).outputText;
+  for (const [distance, readOnly, expected] of [[1, false, 'qa'], [2, false, undefined], [1, true, undefined]]) {
+    let edited;
+    const object = { userData: { isEditablePoint: true, editableId: 'qa' } };
+    const environment = {
+      editablePointsGroupRef: { current: {} },
+      callbacks: { current: { readOnly, onEditablePointClicked: id => { edited = id; } } },
+      raycaster: { intersectObject: () => [{ distance, object }] }, intersect: { distance: 1 },
+    };
+    const sandbox = vm.createContext(environment);
+    vm.runInContext(code, sandbox);
+    const result = sandbox.run();
+    assert.equal(edited, expected);
+    assert.equal(result, expected ? undefined : 'add');
+  }
+});
+
+test('visor desmontado no se confunde con pantalla completa al salir', () => {
+  let fullscreen;
+  const environment = {
+    document: { fullscreenElement: null }, viewerRef: { current: null },
+    setWorkspaceFullscreen: value => { fullscreen = value; },
+  };
+  const update = loadFunction('updateFullscreen', environment);
+  update();
+  assert.equal(fullscreen, false);
+  environment.viewerRef.current = {};
+  environment.document.fullscreenElement = environment.viewerRef.current;
+  update();
+  assert.equal(fullscreen, true);
+  environment.document.fullscreenElement = null;
+  update();
+  assert.equal(fullscreen, false);
+});

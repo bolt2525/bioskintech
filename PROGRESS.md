@@ -1,5 +1,7 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-11 Inyectables: paleta lateral, atajos, ampliación.
+- ✅ 2026-10-11 Puntos: edición directa de cantidad.
 - ✅ 2026-10-10 Fotos: contrato de descarga corregido.
 - ✅ 2026-10-10 Fotos: descarga y selección contextual.
 - ✅ 2026-10-10 Inyectables: controles fijos al mapear.

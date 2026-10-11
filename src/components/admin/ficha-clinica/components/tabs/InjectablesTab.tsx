@@ -7,7 +7,7 @@ import {
   Droplets, Plus, Save, Trash2, Printer, Copy,
   ChevronDown, ChevronUp, Calendar,
   FlaskConical, Crosshair, X, Check, Info, Images, Minus, Eye, EyeOff, Pencil, AlertCircle, Undo2,
-  PenLine, Pentagon, Circle, Square, Pipette, History, MoveRight, MousePointer2
+  PenLine, Pentagon, Circle, Square, Pipette, History, MoveRight, MousePointer2, Maximize2, Minimize2
 } from 'lucide-react';
 import CrossConsultHistoryModal, { type ConsultationRef } from '../CrossConsultHistoryModal';
 import { Tooltip } from '../../../../ui/Tooltip';
@@ -495,6 +495,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     isNewPoint?: boolean;
   } | null>(null);
   const [unitsModalInput, setUnitsModalInput] = useState('');
+  const pointAmountRef = useRef<HTMLInputElement>(null);
+  const [pointAmountError, setPointAmountError] = useState<string | null>(null);
   // Multi-step states for trazado point modal
   const [unitsModalStep, setUnitsModalStep] = useState<1 | 2 | 3 | 4>(1);
   const [unitsModalTercio, setUnitsModalTercio] = useState<'superior' | 'medio' | 'inferior' | ''>('');
@@ -579,6 +581,34 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   const [gridDrawMessage, setGridDrawMessage] = useState<string | null>(null);
   /** Punto snap activo del imán (null = sin snap) */
   const [snapPoint, setSnapPoint] = useState<{ x: number; y: number; z: number } | null>(null);
+  const [workspaceFullscreen, setWorkspaceFullscreen] = useState(false);
+
+  useEffect(() => {
+    const updateFullscreen = () => setWorkspaceFullscreen(document.fullscreenElement !== null && document.fullscreenElement === viewerRef.current);
+    document.addEventListener('fullscreenchange', updateFullscreen);
+    return () => document.removeEventListener('fullscreenchange', updateFullscreen);
+  }, []);
+
+  const toggleWorkspaceFullscreen = async () => {
+    try {
+      if (document.fullscreenElement === viewerRef.current) await document.exitFullscreen();
+      else await viewerRef.current?.requestFullscreen();
+    } catch (error) {
+      console.error('No se pudo ampliar el área de inyectables:', error);
+      setMessage({ type: 'error', text: 'El navegador no permitió ampliar el área. Puedes continuar en la vista actual.' });
+    }
+  };
+
+  useEffect(() => {
+    if (!unitsModal?.open || unitsModalStep !== 1) return;
+    const frame = requestAnimationFrame(() => {
+      pointAmountRef.current?.focus();
+      pointAmountRef.current?.select();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [unitsModal, unitsModalStep]);
+
+  useEffect(() => { setPointAmountError(null); }, [unitsModal]);
 
   // Keep ref in sync with state to avoid closure issues in the RAF callback
   useEffect(() => { showUnitNumbersRef.current = showUnitNumbers; }, [showUnitNumbers]);
@@ -1155,6 +1185,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   // Ctrl+Z / Cmd+Z → deshacer última acción sobre puntos
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (!show3D || document.querySelector('dialog[open]')) return;
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
         if (e.target instanceof HTMLElement && (e.target.isContentEditable || e.target.closest('input, textarea, select'))) return;
         e.preventDefault();
@@ -1164,13 +1195,24 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
         setActiveTool('none');
         setPointMode('none');
         setActiveLineType(null);
+        setPendingLineMeta(null);
+        setFirstLineAnchor(null);
+        setTwoPointStep(0);
+        setSelectedElement(null);
+        setHoveredPointId(null);
+        setSnapPoint(null);
+        setGridDrawStep(0);
+        setGridDrawMessage(null);
         setShowShapesDropdown(false);
         setShowHaShapesDropdown(false);
+        setShowVisibilityDropdown(false);
+        setBulkApplyMode(false);
+        setBulkApplySelected(new Set());
       }
     };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [handleUndo]);
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [handleUndo, show3D]);
 
   // ── handleDuplicate: copia el registro actual sin ID (nuevo) ───────────
   const handleDuplicate = () => {
@@ -1402,10 +1444,6 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     const existing = injectionPoints.find(ip => ip.editablePointId === id);
     const autoTercio = tercioBoundaries ? detectTercioFromY(pt.y) : (existing?.tercio || '');
     setSelectedPointId(id);
-    // Si ya tiene volumen pero no zona → abrir en paso 2 (zona/tercio)
-    const hasVolume = existing && existing.units > 0;
-    const hasZone = existing && !!existing.label;
-    const startStep: 1 | 2 | 3 = (hasVolume && !hasZone) ? 2 : 1;
     setUnitsModal({
       open: true,
       pointId: id,
@@ -1417,8 +1455,9 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     setUnitsModalTercio((existing?.tercio || autoTercio) as 'superior' | 'medio' | 'inferior' | '');
     setUnitsModalZone(existing?.label || '');
     setUnitsModalPlane(existing?.injection_plane || '');
+    setUnitsModalTecnica(existing?.technique_at_point || '');
     setUnitsModalZoneFilter('');
-    setUnitsModalStep(startStep as 1 | 2 | 3 | 4);
+    setUnitsModalStep(1);
   };
 
   /** Punto editable movido en el visor 3D → actualizar posición */
@@ -1448,8 +1487,9 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
     if (!unitsModal) return;
     const units = Number(unitsModalInput);
     if (!Number.isFinite(units) || units <= 0) {
-      setMessage({ type: 'error', text: 'Indica una cantidad mayor que cero para registrar el punto.' });
-      document.getElementById('toxina-point-units')?.focus();
+      setPointAmountError('Indica una cantidad mayor que cero para registrar el punto.');
+      setUnitsModalStep(1);
+      pointAmountRef.current?.focus();
       return;
     }
     if (current.product_type === 'toxina') setToxinaUnitsFromMap(true);
@@ -2028,7 +2068,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
       className="flex flex-col gap-0"
     >
       {/* ── Sub-tab Selector: Toxina / Relleno ── */}
-      <div className="flex gap-1 mb-5 bg-gray-100 p-1 rounded-xl w-fit shadow-inner">
+      <div className="flex max-w-full flex-wrap gap-1 mb-5 bg-gray-100 p-1 rounded-xl w-fit shadow-inner">
         <button
           onClick={() => requestTabSwitch('toxina')}
           className={`flex items-center gap-2 px-5 py-2.5 text-sm font-semibold rounded-lg transition-all duration-200 ${
@@ -2065,7 +2105,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
 
       {/* ── Sub-tipo selector (solo cuando activo = relleno) ── */}
       {activeType === 'relleno' && (
-        <div className="flex gap-1 mb-4 bg-purple-50/60 p-1 rounded-xl w-fit shadow-inner border border-purple-100">
+        <div className="flex max-w-full flex-wrap gap-1 mb-4 bg-purple-50/60 p-1 rounded-xl w-fit shadow-inner border border-purple-100">
           {(['relleno_ha', 'hidratacion', 'bioestimulador'] as RellenoSubType[]).map(st => {
             const isActive = rellenoSubType === st;
             const colors = RELLENO_SUBTYPE_COLORS[st];
@@ -2247,7 +2287,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
 
         {/* Toolbar */}
         <div className="flex flex-wrap gap-4 justify-between items-center bg-white p-4 rounded-xl border border-gray-100 shadow-sm sticky top-0 z-10">
-          <div className="flex gap-2 items-center">
+          <div className="flex flex-wrap gap-2 items-center">
             <Tooltip content="Nuevo Inyectable">
               <motion.button
                 whileHover={{ scale: 1.05 }}
@@ -2707,10 +2747,18 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
             >
               {/* ── SIN tabs — la vista es siempre de marcación ── */}
 
-              <div ref={viewerRef} className="p-4">
-                <div className="sticky top-20 z-40 -mx-4 mb-3 grid items-start gap-2 bg-white/95 px-4 pb-1 pt-1 backdrop-blur lg:grid-cols-[minmax(14rem,0.8fr)_minmax(0,2fr)]">
-                  <div role="group" aria-label="Navegación y puntos" className="rounded-xl border border-slate-200 bg-slate-50/95 p-3 shadow-md lg:col-start-1 lg:row-start-1">
-                    <span className="mb-2 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">Interacción</span>
+              <div ref={viewerRef} className="grid items-start gap-3 p-3 md:grid-cols-[14rem_minmax(0,1fr)] [&:fullscreen]:overflow-y-auto [&:fullscreen]:bg-white">
+                <div className={`grid gap-2 md:sticky ${workspaceFullscreen ? 'md:top-3' : 'md:top-20'} [&_summary]:px-2 [&_summary]:py-2`}>
+                  <div role="group" aria-label="Navegación y puntos" className="rounded-xl border border-slate-200 bg-slate-50/95 p-2 shadow-sm">
+                    <div className="mb-1 flex items-center justify-between gap-1">
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Interacción · Esc</span>
+                      <button type="button" onClick={toggleWorkspaceFullscreen}
+                        aria-label={workspaceFullscreen ? 'Reducir área de trabajo' : 'Ampliar área de trabajo'}
+                        title={workspaceFullscreen ? 'Reducir área de trabajo' : 'Ampliar área de trabajo a pantalla completa'}
+                        className="flex min-h-8 min-w-8 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold">
+                        {workspaceFullscreen ? <Minimize2 className="h-4 w-4" aria-hidden="true" /> : <Maximize2 className="h-4 w-4" aria-hidden="true" />}
+                      </button>
+                    </div>
                     <div className="flex flex-col gap-2">
                       <button
                         type="button"
@@ -2723,7 +2771,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                           setShowShapesDropdown(false);
                           setShowHaShapesDropdown(false);
                         }}
-                        className={`inline-flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold ${
+                        className={`inline-flex w-full items-center justify-center gap-2 rounded-lg border px-2 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold ${
                           activeTool === 'none' && pointMode === 'none'
                             ? 'border-slate-800 bg-slate-800 text-white'
                             : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
@@ -2734,15 +2782,15 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                       </button>
                       <button type="button" aria-pressed={pointMode === 'add'}
                         onClick={() => { setActiveTool('none'); setPointMode(mode => mode === 'add' ? 'none' : 'add'); }}
-                        className={`inline-flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-gold ${
+                        className={`inline-flex w-full items-center justify-center gap-2 rounded-lg border px-2 py-1.5 text-xs font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-gold ${
                           pointMode === 'add' ? 'border-gold bg-gold-light text-gold-ink' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
                         }`}>
                         <Plus className="h-4 w-4" aria-hidden="true" /> Añadir punto
                       </button>
                     </div>
                     {refJsonLoaded && (
-                      <div role="group" aria-label="Edición de puntos guía" className="mt-3 border-t border-slate-200 pt-3">
-                        <span className="mb-2 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">Puntos de guía</span>
+                      <div role="group" aria-label="Edición de puntos guía" className="mt-2 border-t border-slate-200 pt-2">
+                        <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">Puntos de guía</span>
                         <div className="grid grid-cols-2 gap-2">
                           {(['none', 'delete'] as const).map(mode => (
                             <button
@@ -2769,7 +2817,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                         </div>
                       </div>
                     )}
-                    <p className="mt-2 text-xs leading-relaxed text-slate-600" role="status" aria-live="polite">
+                    <p className="sr-only" role="status" aria-live="polite">
                       {activeTool === 'none' && pointMode === 'none'
                         ? 'Arrastra para rotar. Haz clic en un punto o trazo para editarlo; la piel no añade puntos.'
                         : pointMode === 'add'
@@ -2779,7 +2827,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                             : 'Modo dibujo activo: arrastrar sobre la piel dibuja, no rota. Usa Navegar / Rotar o Escape antes de girar.'}
                     </p>
                   </div>
-                  <details className="rounded-xl border border-slate-200 bg-white lg:col-start-2 lg:row-span-2 lg:row-start-1"
+                  <details open className="rounded-xl border border-slate-200 bg-white"
                     onToggle={event => {
                       if (!event.currentTarget.open) {
                         setActiveTool('none');
@@ -2788,11 +2836,12 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                       }
                     }}>
                     <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-700">
-                      Anotaciones gráficas <span className="ml-2 text-xs font-normal text-slate-500">Opcional · no registran dosis</span>
+                      Anotaciones gráficas
                     </summary>
-                    <p className="px-4 pb-3 text-sm leading-relaxed text-slate-600" role="status" aria-live="polite">{DRAWING_GUIDE[activeTool]}</p>
+                    <p className="px-2 pb-2 text-[10px] text-slate-500">Opcionales · no registran dosis</p>
+                    <p className="sr-only" role="status" aria-live="polite">{DRAWING_GUIDE[activeTool]}</p>
                   {/* ── Toolbar secundaria: Herramientas de Dibujo HA ─────────────── */}
-                  <div className="mb-2 grid grid-cols-1 gap-2 rounded-xl border border-slate-700 bg-slate-900 p-3 sm:grid-cols-2" aria-label="Herramientas de marcación y dibujo">
+                  <div className="grid grid-cols-2 gap-1 rounded-lg border border-slate-700 bg-slate-900 p-1.5 md:grid-cols-1 [&_button]:!px-2 [&_button]:!py-1.5 [&_button]:!text-xs [&_button]:min-h-8 [&_button]:focus-visible:outline-none [&_button]:focus-visible:ring-2 [&_button]:focus-visible:ring-gold [&_div[role=group]]:p-1 [&_div[role=group]>span]:mb-1" aria-label="Herramientas de marcación y dibujo">
                     <div role="group" aria-label="Trazos" className="min-w-0 rounded-lg border border-slate-700/80 bg-slate-800/50 p-2">
                       <span className="mb-2 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">Trazos</span>
                       <div className="flex flex-wrap items-center gap-2">
@@ -2942,10 +2991,10 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     {/* Color del pincel */}
                     <Tooltip content="Color para nuevas líneas y formas">
                       <label className="flex items-center gap-1.5 cursor-pointer">
-                        <span className="text-xs text-slate-200">Color del trazo</span>
+                        <span className="text-xs text-slate-200">Color</span>
                         <div className="relative">
                           <div className="w-5 h-5 rounded border border-slate-500 cursor-pointer" style={{ backgroundColor: brushColor }} />
-                          <input type="color" className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" value={brushColor} onChange={e => setBrushColor(e.target.value)} />
+                          <input type="color" aria-label="Color del trazo" className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" value={brushColor} onChange={e => setBrushColor(e.target.value)} />
                         </div>
                       </label>
                     </Tooltip>
@@ -2995,8 +3044,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     )}
                   </div>
                   </details>
-                <details className="rounded-xl border border-slate-200 bg-white lg:col-start-1 lg:row-start-2">
-                  <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-700">Guías y visibilidad <span className="ml-2 text-xs font-normal text-slate-500">Referencia visual opcional</span></summary>
+                <details className="rounded-xl border border-slate-200 bg-white">
+                  <summary className="cursor-pointer px-4 py-3 text-xs font-semibold text-slate-700">Guías y visibilidad</summary>
                   <p className="px-4 pb-3 text-xs leading-relaxed text-slate-500">La guía ayuda a ubicar referencias del rostro, no prescribe sitios de aplicación. Ocultar puntos de la guía conserva visibles los puntos con unidades registradas.</p>
                 {/* Toolbar: Trazado de Referencia Superior (solo para toxina) */}
                 <div className="mb-3 flex flex-wrap items-center gap-2 p-3 bg-slate-900 rounded-xl border border-slate-700">
@@ -3097,8 +3146,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 </details>
                 </div>
 
-                {/* Two-column layout: 3D viewer left, panel right */}
-                <div className="flex flex-col lg:flex-row gap-4">
+                <div className="flex min-w-0 flex-col gap-3 xl:flex-row">
                   {/* Left: 3D Viewer (full width; drawer de líneas se superpone) */}
                   <div className="flex-1 min-w-0">
                     <div className="relative">
@@ -3111,7 +3159,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                         referenceLines={showLines ? referenceLines : []}
                         lineDrawingMode={null}
                         onLinePointAnchored={handleLinePointAnchored}
-                        height="420px"
+                        height="clamp(360px, calc(100dvh - 180px), 560px)"
                         editablePoints={visibleEditablePoints}
                         showEditablePoints={true}
                         pointMode={activeTool === 'none' ? pointMode : 'none'}
@@ -3393,7 +3441,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
               </div>{/* /flex-1 */}
 
                   {/* Right Panel: Desglose de Puntos de Inyección */}
-                  <div className="w-full lg:w-72 xl:w-80 flex-shrink-0 flex flex-col min-h-0">
+                  <div className="flex w-full min-h-0 flex-shrink-0 flex-col xl:w-60">
                       {injectionPoints.length > 0 ? (
                       <>
                         <div className="flex items-center gap-1.5 mb-2 flex-shrink-0">
@@ -4082,6 +4130,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
               transition={{ duration: 0.18 }}
               className="w-[min(20rem,calc(100vw-2rem))] rounded-lg bg-white p-6 shadow-2xl"
             >
+              <form noValidate onSubmit={event => { event.preventDefault(); handleUnitsModalConfirm(); }}>
               {/* Header */}
               <div className="flex items-start justify-between mb-3">
                 <div>
@@ -4094,6 +4143,8 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                   <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{unitsModal.pointName}</p>
                 </div>
                 <button
+                  type="button"
+                  aria-label="Cerrar edición del punto"
                   onClick={() => { setPendingFreePoint(null); setSelectedPointId(null); setUnitsModal(null); setUnitsModalInput(''); setUnitsModalStep(1); setUnitsModalTercio(''); setUnitsModalZone(''); setUnitsModalPlane(''); setUnitsModalZoneFilter(''); setUnitsModalTecnica(''); }}
                   className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
                 >
@@ -4125,21 +4176,26 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                   )}
                   {/* ml input */}
                   <div>
-                    <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Volumen (ml)</label>
+                    <label htmlFor="injectable-point-volume" className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Volumen (ml)</label>
                     <input
+                      ref={pointAmountRef}
+                      id="injectable-point-volume"
+                      name="point-volume"
                       type="number"
+                      inputMode="decimal"
                       min="0"
-                      step="0.1"
+                      step="any"
                       autoFocus
                       value={unitsModalInput}
-                      onChange={e => setUnitsModalInput(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter') handleUnitsModalConfirm(); }}
+                      aria-invalid={!!pointAmountError}
+                      aria-describedby={pointAmountError ? 'injectable-point-amount-error' : undefined}
+                      onChange={e => { setUnitsModalInput(e.target.value); setPointAmountError(null); }}
                       className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300 text-center font-bold text-lg text-gray-800"
                       placeholder="0.0"
                     />
                     {unitsModal.isNewPoint && (
                       <p className="text-[10px] text-gray-400 text-center mt-1">
-                        💡 Guarda el volumen y después haz clic sobre el punto para clasificar zona y plano
+                        Enter guarda el volumen. La zona y el plano son opcionales.
                       </p>
                     )}
                   </div>
@@ -4189,20 +4245,24 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     Unidades aplicadas (UI)
                   </label>
                   <input
+                    ref={pointAmountRef}
                     id="toxina-point-units"
+                    name="point-units"
                     type="number"
+                    inputMode="decimal"
                     min="0"
                     step="any"
                     value={unitsModalInput}
-                    onChange={e => setUnitsModalInput(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') handleUnitsModalConfirm(); }}
+                    aria-invalid={!!pointAmountError}
+                    aria-describedby={pointAmountError ? 'injectable-point-amount-error' : undefined}
+                    onChange={e => { setUnitsModalInput(e.target.value); setPointAmountError(null); }}
                     autoFocus
                     className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#deb887] focus:border-transparent text-center font-bold text-lg text-gray-800"
                     placeholder="0"
                   />
                   {unitsModal.isNewPoint && (
                     <p className="text-[10px] text-gray-400 text-center mt-1.5">
-                      💡 Guarda rápido y haz clic sobre el punto para clasificar zona
+                      Enter guarda las unidades. La zona es opcional.
                     </p>
                   )}
                   {!unitsModal.isNewPoint && unitsModal.existingUnits > 0 && (
@@ -4218,6 +4278,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 <div className="mb-4 space-y-2">
                   {(['superior', 'medio', 'inferior'] as const).map(t => (
                     <button
+                      type="button"
                       key={t}
                       onClick={() => setUnitsModalTercio(t)}
                       className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 text-left text-sm font-semibold transition-all ${
@@ -4239,6 +4300,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                 <div className="mb-4 space-y-2">
                   {(['Superficial', 'Medio', 'Profundo'] as const).map(plane => (
                     <button
+                      type="button"
                       key={plane}
                       onClick={() => setUnitsModalPlane(p => p === plane ? '' : plane)}
                       className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 text-left text-sm font-semibold transition-all ${
@@ -4275,6 +4337,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                       .filter(z => !unitsModalZoneFilter || z.toLowerCase().includes(unitsModalZoneFilter.toLowerCase()))
                       .map(z => (
                         <button
+                          type="button"
                           key={z}
                           onClick={() => setUnitsModalZone(z)}
                           className={`px-2.5 py-1.5 rounded-lg text-[11px] font-medium border transition-all ${
@@ -4289,6 +4352,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                   </div>
                   {unitsModalZoneFilter.trim() && (
                     <button
+                      type="button"
                       onClick={() => setUnitsModalZone(unitsModalZoneFilter.trim())}
                       className="mt-1.5 w-full px-3 py-2 rounded-lg text-xs font-semibold bg-violet-50 border border-violet-200 text-violet-700 hover:bg-violet-100 transition-colors text-left"
                     >
@@ -4299,12 +4363,17 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
               )}
 
               {/* Action buttons */}
+              {pointAmountError && (
+                <p id="injectable-point-amount-error" role="alert" className="mb-3 text-xs text-red-600">{pointAmountError}</p>
+              )}
+              <p className="mb-3 text-[10px] text-slate-500">Enter: guardar punto · Esc: cancelar. Guarda la sesión al terminar el mapa.</p>
               <div className="flex flex-col gap-2">
                 {/* Fila secundaria: Eliminar + Cancelar (solo paso 1) */}
                 {unitsModalStep === 1 && (
                   <div className="flex gap-2">
                     {!unitsModal.isNewPoint && (
                       <button
+                        type="button"
                         onClick={() => {
                           handleEditablePointDeleted(unitsModal.pointId);
                           setSelectedPointId(null);
@@ -4323,6 +4392,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                       </button>
                     )}
                     <button
+                      type="button"
                       onClick={() => { setPendingFreePoint(null); setSelectedPointId(null); setUnitsModal(null); setUnitsModalInput(''); setUnitsModalStep(1); setUnitsModalTercio(''); setUnitsModalZone(''); setUnitsModalPlane(''); setUnitsModalZoneFilter(''); setUnitsModalTecnica(''); }}
                       className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50 transition-colors"
                     >
@@ -4336,6 +4406,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                   {/* Volver — pasos 2+ */}
                   {unitsModalStep > 1 && (
                     <button
+                      type="button"
                       onClick={() => setUnitsModalStep(prev => (prev - 1) as 1 | 2 | 3 | 4)}
                       className="px-3 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50 transition-colors"
                     >
@@ -4343,21 +4414,18 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     </button>
                   )}
 
-                  {/* Guardar — paso 1, paso 3 relleno, paso 4 toxina */}
-                  {(unitsModalStep === 1 || (unitsModalStep === 3 && current.product_type !== 'toxina') || unitsModalStep === 4) && (
-                    <button
-                      onClick={handleUnitsModalConfirm}
-                      disabled={!unitsModalInput || Number(unitsModalInput) <= 0}
-                      className="flex-1 px-4 py-2.5 rounded-xl bg-[#deb887] text-white text-sm font-semibold hover:bg-[#c5a075] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
-                    >
-                      <Check className="w-4 h-4" />
-                      {unitsModal.isNewPoint ? 'Añadir punto' : 'Actualizar punto'}
-                    </button>
-                  )}
+                  <button
+                    type="submit"
+                    className="flex-1 px-4 py-2.5 rounded-xl bg-[#deb887] text-white text-sm font-semibold hover:bg-[#c5a075] transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <Check className="w-4 h-4" />
+                    {unitsModal.isNewPoint ? 'Añadir punto' : 'Actualizar punto'}
+                  </button>
 
                   {/* Siguiente — paso 2 */}
                   {unitsModalStep === 2 && (
                     <button
+                      type="button"
                       onClick={() => { if (!unitsModalTercio) return; setUnitsModalStep(3); setUnitsModalZoneFilter(''); }}
                       disabled={!unitsModalTercio}
                       className="flex-1 px-4 py-2.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-semibold hover:bg-gray-200 transition-colors disabled:opacity-40 flex items-center justify-center gap-1"
@@ -4369,6 +4437,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                   {/* Siguiente → Plano — paso 3 solo toxina */}
                   {unitsModalStep === 3 && current.product_type === 'toxina' && (
                     <button
+                      type="button"
                       onClick={() => setUnitsModalStep(4)}
                       className="flex-1 px-4 py-2.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-semibold hover:bg-gray-200 transition-colors flex items-center justify-center gap-1"
                     >
@@ -4379,6 +4448,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                   {/* Paso 1: botón para ir a clasificar zona */}
                   {unitsModalStep === 1 && (
                     <button
+                      type="button"
                       onClick={() => { setUnitsModalStep(2); setUnitsModalZoneFilter(''); }}
                       className="flex-1 px-4 py-2.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-medium hover:bg-gray-200 transition-colors flex items-center justify-center gap-1 text-xs"
                     >
@@ -4387,6 +4457,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                   )}
                 </div>
               </div>
+              </form>
             </motion.div>
           </Dialog>
         )}

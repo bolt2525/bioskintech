@@ -808,6 +808,22 @@ const ThreeEngine: React.FC<{
       }
     };
 
+    let drawingTool = callbacks.current.activeTool;
+    const syncDrawingTool = () => {
+      if (drawingTool === callbacks.current.activeTool) return;
+      drawingTool = callbacks.current.activeTool;
+      brushActive = false;
+      brushPoints = [];
+      polyPoints = [];
+      polyLastClickTime = 0;
+      shapeAnchor = null;
+      shapeCurrentRadius = 0;
+      shapeCurrentW = 0;
+      shapeCurrentH = 0;
+      resetGridDrawing();
+      clearSnap();
+    };
+
     // ── Proyectar punto 3D sobre la superficie real del modelo ─────────────
     const projectToSurface = (pt: THREE.Vector3): THREE.Vector3 => {
       if (!faceMeshRef.current) return pt;
@@ -962,6 +978,7 @@ const ThreeEngine: React.FC<{
     };
 
     const onPointerDown = (e: MouseEvent) => {
+      syncDrawingTool();
       startPos = { x: e.clientX, y: e.clientY };
       const tool = callbacks.current.activeTool;
       if (gridStep > 0 && tool !== 'ha-grid') resetGridDrawing();
@@ -1592,6 +1609,7 @@ const ThreeEngine: React.FC<{
     };
 
     const onPointerUp = (e: MouseEvent) => {
+      syncDrawingTool();
       if (resizingZonalGroup && resizingZonalId) {
         if ((e as PointerEvent).pointerId !== resizingZonalPointerId) return;
         const markerId = resizingZonalId;
@@ -2148,6 +2166,17 @@ const ThreeEngine: React.FC<{
 
       // ── Modo añadir punto libre (con snap/imán si hay punto activo) ──────
       if (callbacks.current.pointMode === 'add') {
+        if (editablePointsGroupRef.current && callbacks.current.onEditablePointClicked && !callbacks.current.readOnly) {
+          const hits = raycaster.intersectObject(editablePointsGroupRef.current, true);
+          if (hits.length > 0 && hits[0].distance <= intersect.distance + 0.03) {
+            let object: THREE.Object3D | null = hits[0].object;
+            while (object && !object.userData.isEditablePoint) object = object.parent;
+            if (object?.userData.isEditablePoint) {
+              callbacks.current.onEditablePointClicked(object.userData.editableId);
+              return;
+            }
+          }
+        }
         // Si hay un snap point activo sobre una línea, usar ese punto
         const usePt = currentSnapPt ? currentSnapPt.clone() : point;
         const nAdd = intersect.face ? intersect.face.normal.clone().applyMatrix3(new THREE.Matrix3().getNormalMatrix(intersect.object.matrixWorld)).normalize() : new THREE.Vector3(0, 1, 0);
@@ -2220,6 +2249,7 @@ const ThreeEngine: React.FC<{
     let animationFrameId: number;
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
+      syncDrawingTool();
       if (controlsRef.current) controlsRef.current.update();
       if (gridStep > 0 && callbacks.current.activeTool !== 'ha-grid') resetGridDrawing();
       if (rendererRef.current && sceneRef.current && cameraRef.current) {
