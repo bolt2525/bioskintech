@@ -358,7 +358,7 @@ function tabHarness(listRequest, Downloader = ClinicalPhotoDownloader) {
     setTimeout: () => 1, clearTimeout: () => undefined,
     window: { addEventListener() {}, removeEventListener() {} },
     confirm: () => true,
-    DOMException,
+    DOMException, Error,
     require(name) {
       if (name === 'react') return hooks;
       if (name === 'react/jsx-runtime') return require(name);
@@ -421,6 +421,8 @@ test('galería: límite de 15 selectores y cambio de filtro limpia explícitamen
   t.after(() => harness.unmount());
   harness.render();
   await harness.settle();
+  harness.button('Seleccionar para ZIP').props.onClick();
+  harness.render();
   for (let index = 0; index < 15; index++) {
     const card = harness.cards()[index];
     card.props.onDownloadToggle(card.props.photo);
@@ -452,6 +454,8 @@ test('eliminar una foto seleccionada no excluye silenciosamente una entrada: bor
   t.after(() => harness.unmount());
   harness.render();
   await harness.settle();
+  harness.button('Seleccionar para ZIP').props.onClick();
+  harness.render();
   for (const card of harness.cards()) card.props.onDownloadToggle(card.props.photo);
   harness.render();
   const card = harness.cards()[0];
@@ -464,22 +468,32 @@ test('eliminar una foto seleccionada no excluye silenciosamente una entrada: bor
 
 test('actualizar enlaces usa listPhotos existente y requiere reselección, sin fetch R2 automático', async t => {
   const requests = [];
+  class FailedDownloader {
+    busy = false;
+    cancel() {}
+    async download() { throw new Error('Enlace caducado'); }
+  }
   const harness = tabHarness(async url => {
     requests.push(url);
     return listResponse(clinicalPhotos(2));
-  });
+  }, FailedDownloader);
   t.after(() => harness.unmount());
   harness.render();
   await harness.settle();
+  harness.button('Seleccionar para ZIP').props.onClick();
+  harness.render();
   const card = harness.cards()[0];
   card.props.onDownloadToggle(card.props.photo);
+  harness.render();
+  await harness.button('Descargar ZIP de originales').props.onClick();
   harness.render();
   harness.button('Actualizar lista y enlaces').props.onClick();
   harness.render();
   await harness.settle();
   assert.equal(requests.length, 2);
   assert.ok(requests.every(url => url.startsWith('/api/records?action=listPhotos')));
-  assert.match(harness.text(), /0\/15 seleccionadas/);
+  assert.equal(harness.cards()[0].props.downloadSelected, false);
+  assert.equal(harness.cards()[0].props.downloadSelectionMode, true);
   assert.match(harness.text(), /vuelve a seleccionar las fotos/);
 });
 
@@ -496,7 +510,8 @@ test('cambio de ficha descarta respuestas tardías; cancela descarga activa y no
   resolveOld(listResponse(clinicalPhotos(2)));
   await harness.settle();
   assert.deepEqual(harness.cards().map(card => card.props.photo.id), [22]);
-  assert.match(harness.text(), /0\/15 seleccionadas/);
+  assert.equal(harness.cards().every(card => !card.props.downloadSelected), true);
+  assert.doesNotMatch(harness.text(), /Descargar fotos seleccionadas/);
 
   let began;
   const started = new Promise(resolve => { began = resolve; });
@@ -514,7 +529,8 @@ test('cambio de ficha descarta respuestas tardías; cancela descarga activa y no
   harness.render();
   assert.equal(canceled, 1);
   assert.equal(env.blobs.length, 0);
-  assert.match(harness.text(), /0\/15 seleccionadas/);
+  assert.equal(harness.cards().every(card => !card.props.downloadSelected), true);
+  assert.doesNotMatch(harness.text(), /Descargar fotos seleccionadas/);
   assert.doesNotMatch(harness.text(), /Descarga preparada/);
 });
 
@@ -528,6 +544,8 @@ test('desmontaje aborta descarga activa sin actualizar UX ni producir ZIP parcia
   const harness = tabHarness(async () => listResponse(clinicalPhotos(1)));
   harness.render();
   await harness.settle();
+  harness.button('Seleccionar para ZIP').props.onClick();
+  harness.render();
   const card = harness.cards()[0];
   card.props.onDownloadToggle(card.props.photo);
   harness.render();
@@ -537,4 +555,51 @@ test('desmontaje aborta descarga activa sin actualizar UX ni producir ZIP parcia
   await pending;
   assert.equal(canceled, 1);
   assert.equal(env.blobs.length, 0);
+});
+
+test('ZIP contextual: modo explícito, selección masiva limitada al filtro y salida limpia', async t => {
+  const harness = tabHarness(async () => listResponse(clinicalPhotos(18)));
+  t.after(() => harness.unmount());
+  harness.render();
+  await harness.settle();
+  assert.doesNotMatch(harness.text(), /Descargar fotos seleccionadas/);
+  assert.equal(harness.cards().every(card => !card.props.downloadSelectionMode), true);
+  harness.button('Seleccionar para ZIP').props.onClick();
+  harness.render();
+  assert.equal(harness.cards().every(card => card.props.downloadSelectionMode), true);
+  assert.equal(harness.button('Descargar ZIP de originales').props.disabled, true);
+  harness.button('Seleccionar primeras 15').props.onClick();
+  harness.render();
+  assert.equal(harness.cards().filter(card => card.props.downloadSelected).length, 15);
+  assert.equal(harness.button('Descargar ZIP de originales').props.disabled, false);
+  harness.button('Después(9)').props.onClick();
+  harness.render();
+  harness.button('Seleccionar todas').props.onClick();
+  harness.render();
+  assert.equal(harness.cards().length, 9);
+  assert.equal(harness.cards().every(card => card.props.downloadSelected && card.props.photo.photo_type === 'after'), true);
+  harness.button('Salir de selección').props.onClick();
+  harness.render();
+  assert.equal(harness.cards().every(card => !card.props.downloadSelected && !card.props.downloadSelectionMode), true);
+  assert.ok(harness.button('Seleccionar para ZIP'));
+  assert.doesNotMatch(harness.text(), /Descargar fotos seleccionadas/);
+});
+
+test('foto ampliada ofrece descarga original y muestra el error dentro del diálogo', async t => {
+  class FailedDownloader {
+    busy = false;
+    cancel() {}
+    async download() { throw new Error('Error de red de prueba'); }
+  }
+  const harness = tabHarness(async () => listResponse(clinicalPhotos(1)), FailedDownloader);
+  t.after(() => harness.unmount());
+  harness.render();
+  await harness.settle();
+  const card = harness.cards()[0];
+  card.props.onOpen(card.props.photo);
+  harness.render();
+  await harness.button('Descargar original').props.onClick();
+  harness.render();
+  assert.match(harness.text(), /Error de red de prueba/);
+  assert.ok(harness.button('Actualizar lista y enlaces'));
 });

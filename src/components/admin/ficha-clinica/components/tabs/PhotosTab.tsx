@@ -4,7 +4,7 @@ import {
   Camera, Upload, X, Trash2, Edit3, Download,
   CheckCircle, AlertCircle, ChevronLeft, ChevronRight,
   Save, Tag, Calendar, LayoutGrid, Clock,
-  SplitSquareHorizontal, ZoomIn, ZoomOut, ImageOff,
+  SplitSquareHorizontal, ZoomIn, ZoomOut, ImageOff, Loader2,
 } from 'lucide-react';
 import recordsFetch from '../../../../../utils/recordsFetch';
 import { Dialog } from '../../../../ui/Dialog';
@@ -72,13 +72,14 @@ interface CardProps {
   onTypeChange: (p: ClinicalPhoto, t: ClinicalPhoto['photo_type']) => void;
   onCompareSelect: (p: ClinicalPhoto) => void;
   downloadSelected: boolean;
+  downloadSelectionMode: boolean;
   downloadSelectionDisabled: boolean;
   downloading: boolean;
   onDownloadToggle: (p: ClinicalPhoto) => void;
   onDownload: (p: ClinicalPhoto) => void;
 }
 
-function PhotoCard({ photo, viewMode, compareLeft, compareRight, onOpen, onEdit, onDelete, onTypeChange, onCompareSelect, downloadSelected, downloadSelectionDisabled, downloading, onDownloadToggle, onDownload }: CardProps) {
+function PhotoCard({ photo, viewMode, compareLeft, compareRight, onOpen, onEdit, onDelete, onTypeChange, onCompareSelect, downloadSelected, downloadSelectionMode, downloadSelectionDisabled, downloading, onDownloadToggle, onDownload }: CardProps) {
   const [showTypeMenu, setShowTypeMenu] = useState(false);
   const [imgError, setImgError] = useState(!photo.r2_url);
   const isA = compareLeft?.id === photo.id;
@@ -87,33 +88,48 @@ function PhotoCard({ photo, viewMode, compareLeft, compareRight, onOpen, onEdit,
 
   const handleImageClick = () => {
     if (viewMode === 'compare') onCompareSelect(photo);
+    else if (downloadSelectionMode) onDownloadToggle(photo);
     else onOpen(photo);
   };
 
   return (
     <div className={`rounded-xl overflow-hidden border-2 transition-all shadow-sm bg-white ${
-      isSelected ? 'border-[#deb887] ring-2 ring-[#deb887]/30' : 'border-gray-100 hover:border-gray-300'
+      isSelected || (downloadSelectionMode && downloadSelected) ? 'border-gold ring-2 ring-gold/30' : 'border-gray-100 hover:border-gray-300'
     }`}>
       {/* Image zone — sole click target for lightbox/compare */}
-      <div className="aspect-square bg-gray-100 cursor-pointer relative overflow-hidden" onClick={handleImageClick}>
-        {imgError ? (
+      <div className="aspect-square bg-gray-100 relative overflow-hidden">
+        <button type="button" onClick={handleImageClick}
+          disabled={downloadSelectionMode && downloadSelectionDisabled}
+          aria-label={viewMode === 'compare' ? `Seleccionar foto ${photo.id} para comparar` : downloadSelectionMode ? `${downloadSelected ? 'Deseleccionar' : 'Seleccionar'} foto ${photo.id} para descargar` : `Abrir foto ${photo.id}: ${TYPE_LABELS[photo.photo_type]}`}
+          aria-pressed={viewMode === 'compare' ? isSelected : downloadSelectionMode ? downloadSelected : undefined}
+          className="admin-focus-ring block h-full w-full disabled:cursor-not-allowed">
+         {imgError ? (
           <div className="w-full h-full flex flex-col items-center justify-center gap-1 text-gray-400">
             <ImageOff className="w-8 h-8" />
             <span className="text-[10px]">No disponible</span>
           </div>
         ) : (
           <img src={photo.r2_url!} alt={TYPE_LABELS[photo.photo_type]} className="w-full h-full object-cover" loading="lazy" onError={() => setImgError(true)} />
+         )}
+        </button>
+        {downloadSelectionMode && (
+          <label className="absolute right-1 top-1 flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-lg bg-white/95 shadow-sm">
+            <input type="checkbox" checked={downloadSelected} disabled={downloadSelectionDisabled}
+              onChange={() => onDownloadToggle(photo)}
+              aria-label={`Incluir foto ${photo.id} en el ZIP`}
+              className="admin-focus-ring h-5 w-5 accent-gold-ink" />
+          </label>
         )}
-        <span className={`absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${TYPE_BADGE[photo.photo_type]}`}>
+        <span className={`pointer-events-none absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${TYPE_BADGE[photo.photo_type]}`}>
           {TYPE_LABELS[photo.photo_type]}
         </span>
         {viewMode === 'compare' && (isA || isB) && (
-          <div className={`absolute top-1.5 right-1.5 w-6 h-6 rounded-full flex items-center justify-center text-white font-bold text-xs shadow ${isA ? 'bg-blue-500' : 'bg-green-500'}`}>
+          <div className={`pointer-events-none absolute top-1.5 right-1.5 w-6 h-6 rounded-full flex items-center justify-center text-white font-bold text-xs shadow ${isA ? 'bg-blue-500' : 'bg-green-500'}`}>
             {isA ? 'A' : 'B'}
           </div>
         )}
         {(photo.session_label || photo.face_zone) && (
-          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 px-2 py-1">
+          <div className="pointer-events-none absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 px-2 py-1">
             {photo.session_label && <p className="text-white text-[10px] truncate">{photo.session_label}</p>}
             {photo.face_zone && <p className="text-white/80 text-[9px] truncate italic">{photo.face_zone}</p>}
           </div>
@@ -121,20 +137,25 @@ function PhotoCard({ photo, viewMode, compareLeft, compareRight, onOpen, onEdit,
       </div>
 
       {/* Action bar — always visible, isolated from image click zone */}
-      {viewMode !== 'compare' && (
-        <div className="flex items-center justify-between px-2 py-1.5 bg-white border-t border-gray-100">
-          <label className="flex items-center gap-1 text-xs text-gray-700">
-            <input type="checkbox" checked={downloadSelected} disabled={downloadSelectionDisabled}
-              onChange={() => onDownloadToggle(photo)}
-              aria-label={`Seleccionar foto ${photo.id} para descargar`}
-              className="admin-focus-ring h-4 w-4 accent-[#8b6840]" />
-            ZIP
-          </label>
+      {viewMode !== 'compare' && (downloadSelectionMode ? (
+        <div className="flex flex-wrap items-center justify-between gap-1 border-t border-gold/20 bg-gold-light/30 px-2 py-1">
+          <span className="text-xs font-medium text-gold-ink">{downloadSelected ? 'Seleccionada' : 'Sin seleccionar'}</span>
+          <button type="button" onClick={() => onOpen(photo)} className="admin-focus-ring min-h-11 rounded-lg px-2 text-xs text-gray-700 hover:bg-gold-light">Ver foto</button>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center justify-between px-1 py-1 bg-white border-t border-gray-100">
+          <button type="button" onClick={() => onDownload(photo)} disabled={downloading || !photo.r2_url}
+            aria-label={`Descargar original de la foto ${photo.id}`}
+            className="admin-focus-ring flex min-h-11 items-center gap-1 rounded-lg px-2 text-xs font-medium text-gold-ink hover:bg-gold-light/50 disabled:opacity-50">
+            <Download aria-hidden="true" className="h-4 w-4" />
+            Descargar
+          </button>
           <div className="relative">
             <button
               type="button"
               onClick={() => setShowTypeMenu(m => !m)}
-              className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors"
+              className="admin-focus-ring min-h-11 min-w-11 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors"
+              aria-label="Cambiar categoría"
               title="Cambiar categoría"
             >
               <Tag className="w-3.5 h-3.5" />
@@ -156,20 +177,15 @@ function PhotoCard({ photo, viewMode, compareLeft, compareRight, onOpen, onEdit,
             )}
           </div>
           <div className="flex items-center gap-0.5">
-            <button type="button" onClick={() => onEdit(photo)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors" title="Editar">
+            <button type="button" onClick={() => onEdit(photo)} aria-label="Editar foto" className="admin-focus-ring flex min-h-11 min-w-11 items-center justify-center rounded-lg hover:bg-gray-100 text-gray-500 transition-colors" title="Editar">
               <Edit3 className="w-3.5 h-3.5" />
             </button>
-            <button type="button" onClick={() => onDownload(photo)} disabled={downloading}
-              aria-label={`Descargar original de la foto ${photo.id}`}
-              className="admin-focus-ring p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors disabled:opacity-50" title="Descargar original">
-              <Download className="w-3.5 h-3.5" />
-            </button>
-            <button type="button" onClick={() => onDelete(photo)} className="p-1.5 rounded-lg hover:bg-red-50 text-red-400 transition-colors" title="Eliminar">
+            <button type="button" onClick={() => onDelete(photo)} aria-label="Eliminar foto" className="admin-focus-ring flex min-h-11 min-w-11 items-center justify-center rounded-lg hover:bg-red-50 text-red-400 transition-colors" title="Eliminar">
               <Trash2 className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
-      )}
+      ))}
     </div>
   );
 }
@@ -192,6 +208,7 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
   const [dragOver, setDragOver] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [downloadSelected, setDownloadSelected] = useState<Set<number>>(new Set());
+  const [downloadSelectionMode, setDownloadSelectionMode] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [downloadStatus, setDownloadStatus] = useState('');
   const [downloadError, setDownloadError] = useState('');
@@ -300,6 +317,7 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
     const generation = ++listGeneration.current;
     setPhotos([]);
     setDownloadSelected(new Set());
+    setDownloadSelectionMode(false);
     setDownloadStatus('');
     setDownloadError('');
     setDownloading(false);
@@ -566,7 +584,8 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
     viewMode, compareLeft, compareRight,
     onOpen: openLightbox, onEdit: setEditingPhoto, onDelete: handleDelete,
     onTypeChange: handleTypeChange, onCompareSelect: handleCompareSelect,
-    downloading, onDownload: downloadOriginals, onDownloadToggle: toggleDownloadPhoto,
+    downloading, downloadSelectionMode: downloadSelectionMode && viewMode === 'grid',
+    onDownload: downloadOriginals, onDownloadToggle: toggleDownloadPhoto,
   };
 
   // ─── RENDER ────────────────────────────────────────────────────────────────
@@ -603,6 +622,16 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
               ))}
             </div>
           )}
+          {viewMode === 'grid' && photos.length > 0 && !downloadSelectionMode && (
+            <button type="button" disabled={loading || downloading} onClick={() => {
+              setDownloadSelectionMode(true);
+              setDownloadStatus('');
+              setDownloadError('');
+            }} className="admin-focus-ring flex min-h-11 items-center gap-2 rounded-xl border border-gold/50 px-3 py-2 text-sm font-medium text-gold-ink hover:bg-gold-light/50 disabled:opacity-50">
+              <Download aria-hidden="true" className="h-4 w-4" />
+              Seleccionar para ZIP
+            </button>
+          )}
           <button type="button" disabled={uploading} onClick={() => fileInputRef.current?.click()}
             className="admin-focus-ring admin-interactive flex min-h-10 items-center gap-1.5 rounded-xl bg-[#8b6840] px-3 py-2 text-sm font-medium text-white hover:bg-[#755632] disabled:opacity-60">
             <Upload className="w-4 h-4" />
@@ -634,35 +663,6 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
         </div>
       )}
 
-      {(viewMode === 'grid' || downloadSelected.size > 0 || downloading || downloadError || downloadStatus) && (
-        <section aria-label="Descarga de originales" aria-busy={downloading} className="rounded-xl border border-gray-200 bg-gray-50 p-3 space-y-2">
-          <p className="text-sm text-gray-700">
-            Selecciona hasta 15 fotos en la galería · Máximo 100 MiB de originales por ZIP.
-            {' '}Puedes descargar tantos paquetes como necesites. La selección es independiente de la línea de tiempo.
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm text-gray-700">{downloadSelected.size}/15 seleccionadas</span>
-            <button type="button" onClick={() => downloadOriginals()} disabled={downloading || loading || downloadSelected.size === 0}
-              className="admin-focus-ring rounded-lg bg-[#8b6840] px-3 py-2 text-sm text-white disabled:opacity-50">
-              Descargar ZIP de originales
-            </button>
-            <button type="button" disabled={downloading || downloadSelected.size === 0}
-              onClick={() => { setDownloadSelected(new Set()); setDownloadStatus('Selección de descarga borrada.'); }}
-              className="admin-focus-ring rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 disabled:opacity-50">
-              Limpiar selección
-            </button>
-            <button type="button" disabled={downloading || loading} onClick={refreshDownloadList}
-              className="admin-focus-ring rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 disabled:opacity-50">
-              Actualizar lista y enlaces
-            </button>
-            {downloading && <button type="button" onClick={() => downloader.cancel()}
-              className="admin-focus-ring rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700">Cancelar descarga</button>}
-          </div>
-          {downloadStatus && <p role="status" aria-live="polite" className="text-sm text-gray-700">{downloadStatus}</p>}
-          {downloadError && <p role="alert" className="text-sm text-red-700">{downloadError} No se entregó ningún archivo parcial.</p>}
-        </section>
-      )}
-
       {/* ── Filter chips — solo en vista galería ────────────────── */}
       {viewMode === 'grid' && photos.length > 0 && (
         <div className="flex flex-wrap gap-2">
@@ -674,14 +674,79 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
               }
               setFilterType(opt.value);
             }}
-              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                filterType === opt.value ? 'bg-[#deb887] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              disabled={downloading}
+              aria-pressed={filterType === opt.value}
+              className={`admin-focus-ring min-h-11 px-3 py-1 rounded-full text-xs font-medium transition-colors disabled:opacity-50 ${
+                filterType === opt.value ? 'bg-gold-light text-gold-ink' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}>
               {opt.label}
               {opt.value !== 'all' && <span className="ml-1 opacity-70">({photos.filter(p => p.photo_type === opt.value).length})</span>}
             </button>
           ))}
         </div>
+      )}
+
+      {(downloadSelectionMode || downloading || downloadError || downloadStatus) && (
+        <section aria-label="Descarga de originales" className="space-y-3 rounded-xl border border-gold/40 bg-gold-light/20 p-3 sm:p-4">
+          {downloadSelectionMode && (
+            <>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h4 className="text-sm font-semibold text-gray-800">Descargar fotos seleccionadas</h4>
+                  <p className="mt-1 text-xs text-gray-600">Marca las fotos en la galería. Originales sin pérdida de calidad.</p>
+                </div>
+                <button type="button" disabled={downloading} onClick={() => {
+                  setDownloadSelectionMode(false);
+                  setDownloadSelected(new Set());
+                  setDownloadStatus('');
+                  setDownloadError('');
+                }} className="admin-focus-ring min-h-11 rounded-lg px-3 text-sm text-gray-700 hover:bg-gold-light disabled:opacity-50">Salir de selección</button>
+              </div>
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+                <span role="status" className="text-sm font-semibold tabular-nums text-gold-ink">{downloadSelected.size}/{MAX_DOWNLOAD_PHOTOS} seleccionadas</span>
+                {viewMode === 'grid' ? (
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" disabled={downloading || loading || filteredPhotos.length === 0} onClick={() => {
+                      setDownloadSelected(new Set(filteredPhotos.slice(0, MAX_DOWNLOAD_PHOTOS).map(photo => photo.id)));
+                      setDownloadError('');
+                      setDownloadStatus('');
+                      setCollapsedGroups(new Set());
+                    }} className="admin-focus-ring min-h-11 rounded-lg px-3 text-sm text-gold-ink hover:bg-gold-light disabled:opacity-50">
+                      {filteredPhotos.length > MAX_DOWNLOAD_PHOTOS ? `Seleccionar primeras ${MAX_DOWNLOAD_PHOTOS}` : 'Seleccionar todas'}
+                    </button>
+                    <button type="button" disabled={downloading || downloadSelected.size === 0}
+                      onClick={() => { setDownloadSelected(new Set()); setDownloadStatus('Selección de descarga borrada.'); }}
+                      className="admin-focus-ring min-h-11 rounded-lg px-3 text-sm text-gray-700 hover:bg-gold-light disabled:opacity-50">Limpiar selección</button>
+                  </div>
+                ) : (
+                  <button type="button" onClick={() => setViewMode('grid')} className="admin-focus-ring min-h-11 rounded-lg px-3 text-sm text-gold-ink hover:bg-gold-light">Editar selección en galería</button>
+                )}
+                {!downloading && (
+                  <button type="button" onClick={() => downloadOriginals()} disabled={loading || downloadSelected.size === 0}
+                    aria-label="Descargar ZIP de originales"
+                    className="admin-focus-ring flex min-h-11 items-center justify-center gap-2 rounded-lg bg-gold-ink px-4 py-2 text-sm font-medium text-white hover:bg-gold-ink/90 disabled:opacity-50 sm:ml-auto">
+                    <Download aria-hidden="true" className="h-4 w-4" />
+                    Descargar ZIP{downloadSelected.size > 0 ? ` (${downloadSelected.size})` : ''}
+                  </button>
+                )}
+              </div>
+              <p className="text-xs text-gray-500">Hasta {MAX_DOWNLOAD_PHOTOS} fotos y 100 MiB por ZIP. La selección incluye solo fotos cargadas del filtro actual.</p>
+            </>
+          )}
+          {downloading && (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="flex items-center gap-2 text-sm font-medium text-gold-ink"><Loader2 aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" />Preparando archivo…</span>
+              <button type="button" onClick={() => downloader.cancel()} className="admin-focus-ring min-h-11 rounded-lg border border-gray-300 px-3 text-sm text-gray-700 hover:bg-white">Cancelar descarga</button>
+            </div>
+          )}
+          {downloadStatus && <p role="status" aria-live="polite" className="text-sm text-gray-700">{downloadStatus}</p>}
+          {downloadError && (
+            <div className="space-y-2">
+              <p role="alert" className="text-sm text-red-700">{downloadError} No se entregó ningún archivo parcial.</p>
+              <button type="button" disabled={downloading || loading} onClick={refreshDownloadList} className="admin-focus-ring min-h-11 rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 disabled:opacity-50">Actualizar lista y enlaces</button>
+            </div>
+          )}
+        </section>
       )}
 
       {/* ════════════════════════════════════════════════════════════
@@ -1050,6 +1115,15 @@ export default function PhotosTab({ recordId, consultationId }: PhotosTabProps) 
                 </>
               )}
               <img src={selectedPhoto.r2_url} alt={TYPE_LABELS[selectedPhoto.photo_type]} className="w-full max-h-[65vh] object-contain rounded-xl" />
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <button type="button" onClick={() => downloadOriginals(selectedPhoto)} disabled={downloading || !selectedPhoto.r2_url}
+                  className="admin-focus-ring flex min-h-11 items-center gap-2 rounded-lg bg-white px-4 text-sm font-medium text-gold-ink disabled:opacity-50">
+                  <Download aria-hidden="true" className="h-4 w-4" />Descargar original
+                </button>
+                {downloading && <button type="button" onClick={() => downloader.cancel()} className="admin-focus-ring min-h-11 rounded-lg px-3 text-sm text-white hover:bg-white/10">Cancelar descarga</button>}
+              </div>
+              {downloadStatus && <p role="status" aria-live="polite" className="text-sm text-white">{downloadStatus}</p>}
+              {downloadError && <p role="alert" className="text-sm text-red-200">{downloadError} No se entregó ningún archivo parcial.</p>}
               <div className="bg-white/10 backdrop-blur rounded-xl p-4 text-white text-sm flex flex-wrap gap-4">
                 <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${TYPE_BADGE[selectedPhoto.photo_type]}`}>
                   {TYPE_LABELS[selectedPhoto.photo_type]}
