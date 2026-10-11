@@ -22,6 +22,7 @@ export const COLORS = {
   goldDark:   '#d4a574',
   goldLight:  '#f5e6d3',
   goldInk:    '#8b6840',
+  annotation: '#c62828',
 
   // Estados
   success: 'text-emerald-600',

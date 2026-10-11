@@ -491,7 +491,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
   const [freehandLines, setFreehandLines] = useState<FreehandLine[]>([]);
   const [surfaceShapes, setSurfaceShapes] = useState<SurfaceShape[]>([]);
   const [activeTool, setActiveTool] = useState<DrawingTool>('none');
-  const [brushColor, setBrushColor] = useState<string>(COLORS.gold);
+  const [brushColor, setBrushColor] = useState<string>(COLORS.annotation);
   const [brushThickness, setBrushThickness] = useState(1.5);
   // Elemento seleccionado en el visor 3D para editar propiedades
   const [selectedElement, setSelectedElement] = useState<{

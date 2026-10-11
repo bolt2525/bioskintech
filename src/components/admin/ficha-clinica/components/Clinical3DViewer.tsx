@@ -8,6 +8,7 @@ import {
 import type { ReferenceLine, LineType } from './ReferenceLinePanel';
 import { createScalpGroomGroup } from './scalpGroom';
 import type { ScalpScale } from '../../../../data/scalpPatterns';
+import { COLORS } from '../../../../constants/theme';
 export type { ReferenceLine, LineType };
 
 // ==========================================
@@ -529,7 +530,7 @@ const ThreeEngine: React.FC<{
   onProjectedPositions, tercioBoundaries = null, selectedPointId,
   freehandLines = [], surfaceShapes = [],
   activeTool = 'none', selectedElementId = null,
-  pendingBrushColor = '#8b5cf6', pendingBrushThickness = 1.0,
+  pendingBrushColor = COLORS.annotation, pendingBrushThickness = 1.0,
   onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onSurfaceShapeUpdated, onGridStepChange, onSnapPointChange,
   haShapeConfig = { fanLines: 5, fanAngle: 25, gridCells: 4, fernBranches: 5 },
   incompletePointIds = [],
@@ -3340,7 +3341,7 @@ export default function Clinical3DViewer({
   surfaceShapes = [],
   activeTool = 'none',
   selectedElementId = null,
-  pendingBrushColor = '#8b5cf6',
+  pendingBrushColor = COLORS.annotation,
   pendingBrushThickness = 1.0,
   onFreehandLineComplete,
   onShapeComplete,

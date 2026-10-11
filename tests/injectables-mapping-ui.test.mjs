@@ -10,6 +10,7 @@ const source = readFileSync(new URL('../src/components/admin/ficha-clinica/compo
 const ast = ts.createSourceFile('InjectablesTab.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const viewerSource = readFileSync(new URL('../src/components/admin/ficha-clinica/components/Clinical3DViewer.tsx', import.meta.url), 'utf8');
 const viewerAst = ts.createSourceFile('Clinical3DViewer.tsx', viewerSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+const themeSource = readFileSync(new URL('../src/constants/theme.ts', import.meta.url), 'utf8');
 const fieldHelpSource = readFileSync(new URL('../src/components/admin/ficha-clinica/data/fieldHelpTexts.ts', import.meta.url), 'utf8');
 const declaration = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'reconcileEditablePoints');
 assert.ok(declaration, 'La conciliación de puntos debe existir');
@@ -119,8 +120,10 @@ test('ayuda contextual distingue navegar, añadir con y sin trazos, eliminar y d
   }).startsWith('Clic en la piel para añadir punto'));
 });
 
-test('los nuevos trazos usan el token dorado sin recolorear el historial', () => {
-  assert.match(source, /useState<string>\(COLORS\.gold\)/);
+test('los nuevos trazos usan el token de alto contraste sin recolorear el historial', () => {
+  assert.match(themeSource, /annotation:\s*'#c62828'/);
+  assert.match(source, /useState<string>\(COLORS\.annotation\)/);
+  assert.equal((viewerSource.match(/pendingBrushColor = COLORS\.annotation/g) || []).length, 2);
   assert.match(source, /setFreehandLines\(rawFreehand\)/);
 });
 
