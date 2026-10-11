@@ -174,14 +174,21 @@ function PointFieldSelect({ id, label, value, options, onChange }: {
 }) {
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [query, setQuery] = useState(value);
+  const [showAllOptions, setShowAllOptions] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0, width: 0, maxHeight: 224 });
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const choices = value && !options.includes(value) ? ['', value, ...options] : ['', ...options];
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const choices = !showAllOptions && query.trim()
+    ? options.filter(option => option.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
+    : ['', ...options];
   const selectedIndex = Math.max(0, choices.indexOf(value));
   const optionsId = `${id}-options`;
 
+  useEffect(() => setQuery(value), [value]);
+
   const openOptions = (index = selectedIndex) => {
-    const rect = triggerRef.current?.getBoundingClientRect();
+    const rect = inputRef.current?.getBoundingClientRect();
     if (!rect) return;
     const availableBelow = window.innerHeight - rect.bottom - 8;
     const availableAbove = rect.top - 8;
@@ -197,25 +204,43 @@ function PointFieldSelect({ id, label, value, options, onChange }: {
     setOpen(true);
   };
 
+  const closeOnOutsideClick = (event: MouseEvent) => {
+    const target = event.target as Node;
+    if (!containerRef.current?.contains(target) && !document.getElementById(optionsId)?.contains(target)) setOpen(false);
+  };
+
   const choose = (option: string) => {
+    setQuery(option);
+    setShowAllOptions(false);
     onChange(option);
     setOpen(false);
-    triggerRef.current?.focus();
+    inputRef.current?.focus();
+  };
+
+  const toggleOptions = () => {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    setShowAllOptions(true);
+    openOptions(Math.max(0, ['', ...options].indexOf(value)));
+    inputRef.current?.focus();
   };
 
   useEffect(() => {
     if (!open) return;
-    const close = () => setOpen(false);
-    const closeOnOutsideClick = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (!triggerRef.current?.contains(target) && !document.getElementById(optionsId)?.contains(target)) close();
+    const closeOnScroll = (event: Event) => {
+      const listbox = document.getElementById(optionsId);
+      if (listbox && event.target instanceof Node && listbox.contains(event.target)) return;
+      setOpen(false);
     };
-    window.addEventListener('scroll', close, true);
-    window.addEventListener('resize', close);
+    const closeOnResize = () => setOpen(false);
+    window.addEventListener('scroll', closeOnScroll, true);
+    window.addEventListener('resize', closeOnResize);
     document.addEventListener('mousedown', closeOnOutsideClick);
     return () => {
-      window.removeEventListener('scroll', close, true);
-      window.removeEventListener('resize', close);
+      window.removeEventListener('scroll', closeOnScroll, true);
+      window.removeEventListener('resize', closeOnResize);
       document.removeEventListener('mousedown', closeOnOutsideClick);
     };
   }, [open, optionsId]);
@@ -227,46 +252,69 @@ function PointFieldSelect({ id, label, value, options, onChange }: {
   return (
     <div>
       <label id={`${id}-label`} htmlFor={id} className="mb-1 block text-xs font-medium text-gray-600">{label}</label>
-      <button
-        id={id}
-        ref={triggerRef}
-        type="button"
-        role="combobox"
-        aria-labelledby={`${id}-label ${id}-value`}
-        aria-expanded={open}
-        aria-controls={open ? optionsId : undefined}
-        aria-haspopup="listbox"
-        aria-activedescendant={open ? `${id}-option-${activeIndex}` : undefined}
-        onClick={() => open ? setOpen(false) : openOptions()}
-        onKeyDown={event => {
-          if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
-            event.preventDefault();
-            if (!open) {
-              openOptions(event.key === 'Home' ? 0 : event.key === 'End' ? choices.length - 1 : selectedIndex);
-            } else {
-              const next = event.key === 'Home' ? 0 : event.key === 'End' ? choices.length - 1
-                : Math.max(0, Math.min(choices.length - 1, activeIndex + (event.key === 'ArrowDown' ? 1 : -1)));
-              setActiveIndex(next);
-            }
-          } else if (event.key === 'Escape' && open) {
-            event.preventDefault();
-            event.stopPropagation();
-            setOpen(false);
-          } else if ((event.key === 'Enter' || event.key === ' ') && open) {
-            event.preventDefault();
-            choose(choices[activeIndex]);
-          } else if ((event.key === 'Enter' || event.key === ' ') && !open) {
-            event.preventDefault();
-            openOptions();
-          }
+      <div
+        ref={containerRef}
+        className="relative"
+        onBlur={event => {
+          const target = event.relatedTarget;
+          if (!(target instanceof Node) || (!event.currentTarget.contains(target) && !document.getElementById(optionsId)?.contains(target))) setOpen(false);
         }}
-        className={`flex min-h-10 w-full items-center justify-between gap-2 rounded-lg border px-2 py-2 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b8944d] focus-visible:ring-offset-1 ${
-          open ? 'border-[#b8944d] bg-white ring-2 ring-[#deb887]/40' : 'border-gray-200 bg-white hover:border-[#b8944d]'
-        }`}
       >
-        <span id={`${id}-value`} className={`truncate ${value ? 'text-gray-800' : 'text-gray-400'}`}>{value || '—'}</span>
-        <ChevronDown aria-hidden="true" className={`h-4 w-4 flex-shrink-0 text-[#b8944d] transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
+        <input
+          id={id}
+          ref={inputRef}
+          type="text"
+          role="combobox"
+          autoComplete="off"
+          aria-labelledby={`${id}-label`}
+          aria-expanded={open}
+          aria-controls={open ? optionsId : undefined}
+          aria-haspopup="listbox"
+          aria-autocomplete="list"
+          aria-activedescendant={open && choices.length > 0 ? `${id}-option-${activeIndex}` : undefined}
+          value={query}
+          placeholder="Escribe o selecciona…"
+          onChange={event => {
+            const nextQuery = event.target.value;
+            setQuery(nextQuery);
+            setShowAllOptions(false);
+            onChange(nextQuery);
+            setActiveIndex(0);
+            if (!open) openOptions(0);
+          }}
+          onKeyDown={event => {
+            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+              event.preventDefault();
+              if (!open) {
+                openOptions(selectedIndex);
+              } else if (choices.length > 0) {
+                setActiveIndex(index => Math.max(0, Math.min(choices.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1))));
+              }
+            } else if (event.key === 'Escape' && open) {
+              event.preventDefault();
+              event.stopPropagation();
+              setOpen(false);
+            } else if (event.key === 'Enter') {
+              if (open && choices.length > 0) choose(choices[activeIndex]);
+              else if (open) setOpen(false);
+              event.preventDefault();
+            }
+          }}
+          className={`min-h-10 w-full rounded-lg border bg-white px-2 py-2 pr-10 text-sm text-gray-800 placeholder:text-gray-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b8944d] focus-visible:ring-offset-1 ${
+            open ? 'border-[#b8944d] ring-2 ring-[#deb887]/40' : 'border-gray-200 hover:border-[#b8944d]'
+          }`}
+        />
+        <button
+          type="button"
+          aria-label={`Mostrar opciones de ${label}`}
+          aria-expanded={open}
+          aria-controls={open ? optionsId : undefined}
+          onClick={toggleOptions}
+          className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-1.5 text-[#b8944d] hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b8944d]"
+        >
+          <ChevronDown aria-hidden="true" className={`h-4 w-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+        </button>
+      </div>
       {open && createPortal(
         <ul
           id={optionsId}
@@ -280,7 +328,7 @@ function PointFieldSelect({ id, label, value, options, onChange }: {
               id={`${id}-option-${index}`}
               key={`${option}-${index}`}
               role="option"
-              aria-selected={option === value}
+              aria-selected={option === query}
               onMouseDown={event => event.preventDefault()}
               onMouseEnter={() => setActiveIndex(index)}
               onClick={() => choose(option)}
@@ -289,9 +337,12 @@ function PointFieldSelect({ id, label, value, options, onChange }: {
               }`}
             >
               <span>{option || '—'}</span>
-              {option === value && <Check aria-hidden="true" className="h-4 w-4 text-[#b8944d]" />}
+              {option === query && <Check aria-hidden="true" className="h-4 w-4 text-[#b8944d]" />}
             </li>
           ))}
+          {choices.length === 0 && (
+            <li role="presentation" className="px-3 py-2 text-sm text-gray-500">Sin coincidencias; se conserva el texto escrito.</li>
+          )}
         </ul>,
         document.body,
       )}

@@ -502,6 +502,11 @@ test('edición por punto usa selectores accesibles dorados y aclara la copia mas
   assert.match(selector, /role="combobox"/);
   assert.match(selector, /role="listbox"/);
   assert.match(selector, /role="option"/);
+  assert.match(selector, /type="text"/);
+  assert.match(selector, /placeholder="Escribe o selecciona…"/);
+  assert.match(selector, /onChange\(nextQuery\)/);
+  assert.match(selector, /setShowAllOptions\(true\)/);
+  assert.match(selector, /listbox\.contains\(event\.target\)\) return/);
   assert.match(selector, /bg-\[#deb887\]\/20/);
   assert.match(selector, /focus-visible:ring-\[#b8944d\]/);
   assert.match(selector, /event\.key === 'ArrowDown'/);
