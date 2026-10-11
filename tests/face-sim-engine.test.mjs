@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  applyRegistration, fitAffineRegistration, frameFromLandmarks, isWithinFace, projectModel,
+  MODEL_REGISTRATION_ANCHORS, applyRegistration, autoRegistration, fitAffineRegistration, frameFromLandmarks, isRegistrationAccepted,
+  isWithinFace, projectModel,
 } from '../src/lab/faceSim/engine.ts';
 
 const frame = {
@@ -113,4 +114,17 @@ test('valida que el punto proyectado quede dentro del contorno facial calibrado'
   assert.equal(isWithinFace({ x: 0.1, y: 0.5 }, detected), false);
   const registration = { a: 1, b: 0, c: -0.4, d: 0, e: 1, f: 0, rmse: 0, maxError: 0 };
   assert.equal(projectModel({ x: 0, y: 0.45, z: 0 }, 'frontal', detected, false, 1, registration), null);
+});
+
+test('alinea autom?ticamente el modelo con anclajes detectados y rechaza poses discordantes', () => {
+  const base = { ...frame, axisTop: { x: 0.5, y: 0.1 } };
+  const scaled = MODEL_REGISTRATION_ANCHORS.map(p => projectModel(p, 'frontal', base, false, 0.75))
+    .map(p => ({ x: 0.5 + (p.x - 0.5) * 0.9, y: 0.12 + p.y * 0.85 }));
+  const registration = autoRegistration('frontal', { ...base, anchors: scaled }, 0.75, false);
+  assert.ok(isRegistrationAccepted(registration));
+  const nose = applyRegistration(projectModel(MODEL_REGISTRATION_ANCHORS[4], 'frontal', base, false, 0.75), registration);
+  assert.ok(Math.hypot(nose.x - scaled[4].x, nose.y - scaled[4].y) < 1e-6);
+  assert.equal(autoRegistration('frontal', base, 0.75, false), null);
+  const skewed = scaled.map((p, i) => (i === 4 ? { ...p, x: p.x + 0.15 } : p));
+  assert.equal(isRegistrationAccepted(autoRegistration('frontal', { ...base, anchors: skewed }, 0.75, false)), false);
 });

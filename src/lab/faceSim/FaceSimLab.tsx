@@ -5,8 +5,8 @@ import Clinical3DViewer, {
   type DrawingTool, type FreehandLine, type Marker3D, type SurfaceShape,
 } from '../../components/admin/ficha-clinica/components/Clinical3DViewer';
 import {
-  AUTO_ZONE, MAX_EFFECTS, REGISTRATION_ANCHORS, SIM_MODES, buildEffects, correctPoints, defaultFrame,
-  elemsFrom3D, elemsFromPhoto, expandElems, fitAffineRegistration, frameFromLandmarks, importInjectable, isWithinFace, projectModel,
+  AUTO_ZONE, MAX_EFFECTS, REGISTRATION_ANCHORS, SIM_MODES, autoRegistration, buildEffects, correctPoints, defaultFrame,
+  elemsFrom3D, elemsFromPhoto, expandElems, fitAffineRegistration, frameFromLandmarks, importInjectable, isRegistrationAccepted, isWithinFace, projectModel,
   registrationAnchorIndices,
   type AffineRegistration, type CorrectedPoint, type Elem, type ElemKind, type FaceFrame, type Meta, type P2, type PhotoEl, type SimMode, type Vec3, type ViewKind,
 } from './engine';
@@ -87,8 +87,8 @@ async function detectFrame(img: HTMLCanvasElement): Promise<{ frame: FaceFrame |
   try {
     const head = await fetch('/models/face/face_landmarker.task', { method: 'HEAD' });
     const contentType = head.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase();
-    const contentLength = Number(head.headers.get('content-length'));
-    if (!head.ok || contentType === 'text/html' || contentLength < 1_000_000) {
+    // Content-Length puede faltar con compresión (br); el tipo HTML delata el fallback de la SPA.
+    if (!head.ok || contentType === 'text/html') {
       return { frame: null, reason: `El modelo facial no está disponible o es inválido (HTTP ${head.status}).` };
     }
     const { FaceLandmarker, FilesetResolver } = await import('@mediapipe/tasks-vision');
@@ -131,6 +131,7 @@ interface Slot {
   modelAnchors?: Vec3[];
   registration?: AffineRegistration;
   registrationFlip?: boolean;
+  registrationSource?: 'auto' | 'manual';
 }
 interface Snapshot { markers: Marker3D[]; lines: FreehandLine[]; shapes: SurfaceShape[]; meta: Record<string, Meta>; photoEls: PhotoEl[] }
 
@@ -252,10 +253,23 @@ export default function FaceSimLab() {
     setStatus(`Detectando rostro en la vista ${VIEWS.find(v => v.id === target)?.label ?? target}…`);
     const detected = await detectFrame(c);
     if (requestId !== uploadRequestRef.current) return;
-    if (detected.frame) setPhotos(p => (p[target]?.canvas === c ? { ...p, [target]: { ...p[target]!, frame: detected.frame! } } : p));
-    setStatus(detected.frame
-      ? `Rostro delimitado con MediaPipe en vista ${VIEWS.find(v => v.id === target)?.label ?? target}; falta revisar la alineación con el modelo.`
-      : `${detected.reason} Ajusta el marco manualmente; no se proyectarán marcas 3D sin alineación revisada.`);
+    const label = VIEWS.find(v => v.id === target)?.label ?? target;
+    if (!detected.frame) {
+      setStatus(`${detected.reason} Sin rostro detectado no se proyectan las marcas 3D; usa una foto nítida con el rostro descubierto o marca directamente sobre la foto.`);
+      return;
+    }
+    const auto = autoRegistration(target, detected.frame, c.width / c.height, flipX);
+    const accepted = isRegistrationAccepted(auto);
+    setPhotos(p => (p[target]?.canvas === c ? {
+      ...p,
+      [target]: {
+        ...p[target]!, frame: detected.frame!, modelAnchors: undefined,
+        ...(accepted ? { registration: auto, registrationFlip: flipX, registrationSource: 'auto' as const } : { registration: undefined }),
+      },
+    } : p));
+    setStatus(accepted
+      ? `Rostro detectado en vista ${label}; modelo 3D alineado automáticamente (RMS ${(auto.rmse * 100).toFixed(1)}%). Las marcas del modelo ya se proyectan en la foto.`
+      : `Rostro detectado en vista ${label}, pero la pose no coincide con el modelo${auto ? ` (RMS ${(auto.rmse * 100).toFixed(1)}%)` : ''}. Usa una foto ${target === 'frontal' ? 'frontal sin giro' : 'de perfil'} o «Alinear manualmente».`);
   };
   const updateFrame = (k: 'top' | 'bottom' | 'left' | 'right', v: number) => setPhotos(p => {
     const s = p[view]; if (!s) return p;
@@ -283,12 +297,14 @@ export default function FaceSimLab() {
       const targets = anchorIndices.map(index => frame.anchors?.[index]).filter((point): point is P2 => !!point);
       const registration = fitAffineRegistration(source, targets, aspect, frame.bottom - frame.top);
       setCalibrating(false);
-      if (!registration || registration.rmse > 0.025 || registration.maxError > 0.05) {
-        setPhotos(p => p[view]?.canvas === slot.canvas ? { ...p, [view]: { ...p[view]!, modelAnchors: undefined, registration: undefined } } : p);
-        setStatus('Alineación rechazada: los anclajes de foto y modelo no coinciden lo suficiente. Revisa la vista y vuelve a calibrar; no se proyectarán las marcas 3D.');
+      if (!isRegistrationAccepted(registration)) {
+        const auto = autoRegistration(view, frame, aspect, flipX);
+        const fallback = isRegistrationAccepted(auto) ? { registration: auto, registrationFlip: flipX, registrationSource: 'auto' as const } : { registration: undefined };
+        setPhotos(p => p[view]?.canvas === slot.canvas ? { ...p, [view]: { ...p[view]!, modelAnchors: undefined, ...fallback } } : p);
+        setStatus(`Alineación manual rechazada: los anclajes de foto y modelo no coinciden lo suficiente.${fallback.registration ? ' Se mantiene la alineación automática.' : ' No se proyectarán las marcas 3D.'}`);
         return;
       }
-      setPhotos(p => p[view]?.canvas === slot.canvas ? { ...p, [view]: { ...p[view]!, modelAnchors: next, registration, registrationFlip: flipX } } : p);
+      setPhotos(p => p[view]?.canvas === slot.canvas ? { ...p, [view]: { ...p[view]!, modelAnchors: next, registration, registrationFlip: flipX, registrationSource: 'manual' } } : p);
       setStatus(`Alineación manual aceptada; error de validación cruzada: RMS ${(registration.rmse * 100).toFixed(1)}%, máximo ${(registration.maxError * 100).toFixed(1)}% del alto facial. Proyección orientativa.`);
       return;
     }
@@ -482,7 +498,7 @@ export default function FaceSimLab() {
           <summary className="flex cursor-pointer items-center gap-1 font-semibold uppercase text-slate-500"><ScanFace className="h-3.5 w-3.5" aria-hidden="true" /> Marco / alineación ({VIEWS.find(v => v.id === view)?.label})</summary>
           {slot?.frame.anchors && (
             <div className="mt-2 space-y-2">
-              <p className="text-slate-600">La detección ubica referencias en la foto, pero no conoce por sí sola su correspondencia con este modelo genérico.</p>
+              <p className="text-slate-600">Al detectar el rostro, el modelo se alinea automáticamente con los landmarks. Si la proyección no coincide, refínala marcando las referencias en el modelo.</p>
               <button
                 type="button"
                 disabled={calibrating}
@@ -497,18 +513,24 @@ export default function FaceSimLab() {
                 }}
                 className="w-full rounded-lg bg-slate-800 px-2 py-1.5 font-semibold text-white disabled:opacity-50"
               >
-                {slot.registration && slot.registrationFlip === flipX ? 'Recalibrar modelo y foto' : 'Alinear modelo con la foto'}
+                {slot.registration && slot.registrationFlip === flipX ? 'Refinar alineación manualmente' : 'Alinear manualmente'}
               </button>
               {calibrating && (
                 <>
                   <p className="font-semibold text-amber-700">Marca {Math.min((slot.modelAnchors?.length ?? 0) + 1, anchorCount)}/{anchorCount} en el modelo: {anchorName(slot.modelAnchors?.length ?? 0)}.</p>
-                  <button type="button" onClick={() => { setCalibrating(false); setPhotos(p => p[view] ? { ...p, [view]: { ...p[view]!, modelAnchors: undefined, registration: undefined } } : p); setStatus('Calibración cancelada; no se proyectarán marcas 3D.'); }} className="w-full rounded border border-slate-300 px-2 py-1 text-slate-700">Cancelar alineación</button>
+                  <button type="button" onClick={() => {
+                    setCalibrating(false);
+                    const auto = autoRegistration(view, frame, aspect, flipX);
+                    const ok = isRegistrationAccepted(auto);
+                    setPhotos(p => p[view] ? { ...p, [view]: { ...p[view]!, modelAnchors: undefined, ...(ok ? { registration: auto, registrationFlip: flipX, registrationSource: 'auto' as const } : { registration: undefined }) } } : p);
+                    setStatus(ok ? 'Calibración cancelada; se mantiene la alineación automática.' : 'Calibración cancelada; no se proyectarán marcas 3D.');
+                  }} className="w-full rounded border border-slate-300 px-2 py-1 text-slate-700">Cancelar alineación</button>
                 </>
               )}
               {slot.registration && slot.registrationFlip === flipX && (
-                <p className="text-emerald-700">Alineación manual aceptada · validación cruzada RMS {(slot.registration.rmse * 100).toFixed(1)}% · máximo {(slot.registration.maxError * 100).toFixed(1)}% del alto facial.</p>
+                <p className="text-emerald-700">Alineación {slot.registrationSource === 'manual' ? 'manual' : 'automática'} aceptada · validación cruzada RMS {(slot.registration.rmse * 100).toFixed(1)}% · máximo {(slot.registration.maxError * 100).toFixed(1)}% del alto facial.</p>
               )}
-              <p className="text-slate-500">Sin detección o calibración aceptada, las marcas 3D no se proyectan a la foto. Una marca hecha en foto permanece solo en la imagen.</p>
+              <p className="text-slate-500">Las marcas del modelo 3D se proyectan solo con una alineación aceptada. Una marca hecha en foto permanece solo en la imagen.</p>
             </div>
           )}
           {(['top', 'bottom', 'left', 'right'] as const).map(k => (
@@ -518,8 +540,11 @@ export default function FaceSimLab() {
           ))}
           <label className="mt-2 flex items-center gap-2"><input type="checkbox" checked={flipX} onChange={e => {
             setCalibrating(false);
-            setFlipX(e.target.checked);
-            setPhotos(p => p[view] ? { ...p, [view]: { ...p[view]!, registration: undefined, modelAnchors: undefined } } : p);
+            const nextFlip = e.target.checked;
+            setFlipX(nextFlip);
+            const auto = slot ? autoRegistration(view, frame, aspect, nextFlip) : null;
+            const ok = isRegistrationAccepted(auto);
+            setPhotos(p => p[view] ? { ...p, [view]: { ...p[view]!, modelAnchors: undefined, ...(ok ? { registration: auto, registrationFlip: nextFlip, registrationSource: 'auto' as const } : { registration: undefined }) } } : p);
           }} />Invertir lado del modelo 3D</label>
         </details>
 
@@ -566,7 +591,7 @@ export default function FaceSimLab() {
               height="clamp(380px, 78vh, 720px)"
               interactionHint={calibrating
                 ? `Anclaje ${Math.min((slot?.modelAnchors?.length ?? 0) + 1, anchorCount)}/${anchorCount}: ${anchorName(slot?.modelAnchors?.length ?? 0)}`
-                : tool3d === 'navigate' ? 'Arrastra para rotar' : slot?.registration ? 'Alineación revisada; proyección orientativa' : 'Calibra primero para proyectar marcas en la foto'}
+                : tool3d === 'navigate' ? 'Arrastra para rotar' : slot?.registration ? 'Alineado con la foto; proyección orientativa' : 'Sin alineación: carga una foto con el rostro visible'}
             />
           </section>
         )}

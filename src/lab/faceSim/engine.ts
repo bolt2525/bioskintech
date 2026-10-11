@@ -50,6 +50,26 @@ export const REGISTRATION_ANCHORS = [
 const LANDMARK_ANCHORS = [10, 168, 33, 263, 1, 13, 152];
 export const registrationAnchorIndices = (view: ViewKind) =>
   view === 'frontal' ? [0, 1, 2, 3, 4, 5, 6] : [0, 1, 4, 5, 6];
+/** Mismos anclajes sobre male_head.glb normalizado (raycast de la malla); el ojo A es el canto externo derecho del paciente. */
+export const MODEL_REGISTRATION_ANCHORS: Vec3[] = [
+  { x: 0, y: 1.65, z: 1.44 }, { x: 0, y: 0.9, z: 1.58 }, { x: -0.71, y: 0.8, z: 1.17 }, { x: 0.72, y: 0.8, z: 1.17 },
+  { x: 0, y: 0.25, z: 1.9 }, { x: 0, y: -0.2, z: 1.66 }, { x: 0, y: -1, z: 1.42 },
+];
+
+/** Umbral de aceptación (fracción del alto facial, validación cruzada); tolera ~10° de giro con el modelo genérico. */
+export const REGISTRATION_LIMITS = { rmse: 0.035, maxError: 0.06 };
+export const isRegistrationAccepted = (r: AffineRegistration | null): r is AffineRegistration =>
+  !!r && r.rmse <= REGISTRATION_LIMITS.rmse && r.maxError <= REGISTRATION_LIMITS.maxError;
+
+/** Alinea automáticamente el modelo genérico con los landmarks detectados; null si no hay landmarks o el ajuste no es válido. */
+export function autoRegistration(view: ViewKind, frame: FaceFrame, aspect: number, flip: boolean): AffineRegistration | null {
+  const anchors = frame.anchors;
+  if (!anchors) return null;
+  const indices = registrationAnchorIndices(view);
+  const source = indices.map(index => projectModel(MODEL_REGISTRATION_ANCHORS[index], view, frame, flip, aspect)
+    ?? { x: Number.NaN, y: Number.NaN });
+  return fitAffineRegistration(source, indices.map(index => anchors[index]), aspect, frame.bottom - frame.top);
+}
 
 /** Landmarks de MediaPipe Face Mesh → marco facial y contorno completo. */
 export function frameFromLandmarks(lm: { x: number; y: number }[]): FaceFrame {
