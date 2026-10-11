@@ -3359,43 +3359,55 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                                   return (
                                     <div key={i} className="border-b border-gray-50 last:border-0">
                                       <div
-                                        className={`flex items-center gap-2 px-3 py-1.5 text-xs transition-colors cursor-pointer ${
+                                        className={`flex items-center gap-2 px-3 py-1.5 text-xs transition-colors ${
                                           bulkApplyMode
                                             ? (isBulkSelected ? 'bg-orange-50' : 'hover:bg-orange-50/50')
                                             : (isSelected ? 'bg-[#deb887]/10' : 'hover:bg-gray-50')
                                         }`}
-                                        onClick={() => {
-                                          if (bulkApplyMode) {
-                                            if (rowEpId) handleToggleBulkPoint(rowEpId);
-                                          } else {
-                                            if (rowEpId) setSelectedPointId(isSelected ? null : rowEpId);
-                                            if (current.product_type !== 'toxina') setExpandedPointId(isExpanded ? null : expandKey);
-                                          }
-                                        }}
                                       >
                                         {bulkApplyMode && rowEpId && (
-                                          <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${isBulkSelected ? 'bg-orange-500 border-orange-500' : 'border-gray-300'}`}>
+                                          <span aria-hidden="true" className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${isBulkSelected ? 'bg-orange-500 border-orange-500' : 'border-gray-300'}`}>
                                             {isBulkSelected && <Check className="w-2.5 h-2.5 text-white" />}
-                                          </div>
+                                          </span>
                                         )}
-                                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                                        <button
+                                          type="button"
+                                          aria-pressed={bulkApplyMode ? isBulkSelected : isSelected}
+                                          aria-expanded={!bulkApplyMode && current.product_type !== 'toxina' ? isExpanded : undefined}
+                                          onClick={() => {
+                                            if (bulkApplyMode) {
+                                              if (rowEpId) handleToggleBulkPoint(rowEpId);
+                                            } else {
+                                              if (rowEpId) setSelectedPointId(isSelected ? null : rowEpId);
+                                              if (current.product_type !== 'toxina') setExpandedPointId(isExpanded ? null : expandKey);
+                                            }
+                                          }}
+                                          className="flex min-w-0 flex-1 items-center gap-2 rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b8944d] focus-visible:ring-inset"
+                                        >
                                           <span className={`font-mono w-4 flex-shrink-0 ${isBulkSelected ? 'text-orange-600 font-bold' : isSelected ? 'text-[#b8944d] font-bold' : 'text-gray-400'}`}>{globalIndex + 1}</span>
-                                          <div className="flex flex-col min-w-0">
+                                          <span className="flex min-w-0 flex-1 flex-col">
                                             <span className={`font-medium truncate ${isBulkSelected ? 'text-orange-700' : isSelected ? 'text-[#b8944d]' : 'text-gray-700'}`}>{p.label || '—'}</span>
-                                            {p.injection_plane && <span className="text-[10px] text-[#b8944d]/70 truncate">{p.injection_plane}</span>}
-                                          </div>
-                                        </div>
-                                        <div className="flex items-center gap-1.5 flex-shrink-0">
-                                          <span className="font-semibold text-gray-800">{p.units} {unitLabel}</span>
-                                          {!bulkApplyMode && <span className="text-gray-400 w-9 text-right">{totalUsed > 0 ? Math.round((p.units / totalUsed) * 100) : 0}%</span>}
-                                          {!bulkApplyMode && current.product_type !== 'toxina' && <ChevronDown className={`w-3 h-3 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />}
+                                            <span className="flex min-w-0 flex-col text-[10px] leading-tight text-gray-500">
+                                              {p.technique_at_point && <span className="truncate" title={`Técnica: ${p.technique_at_point}`}>Técnica: {p.technique_at_point}</span>}
+                                              {p.needle_at_point && <span className="truncate" title={`Aguja: ${p.needle_at_point}`}>Aguja: {p.needle_at_point}</span>}
+                                              {p.injection_plane && <span className="truncate text-[#b8944d]" title={`Plano: ${p.injection_plane}`}>Plano: {p.injection_plane}</span>}
+                                              {!p.technique_at_point && !p.needle_at_point && !p.injection_plane && <span className="text-gray-400">Técnica, aguja y plano sin registrar</span>}
+                                            </span>
+                                          </span>
+                                          <span className="flex flex-shrink-0 items-center gap-1.5">
+                                            <span className="font-semibold text-gray-800">{p.units} {unitLabel}</span>
+                                            {!bulkApplyMode && <span className="text-gray-400 w-9 text-right">{totalUsed > 0 ? Math.round((p.units / totalUsed) * 100) : 0}%</span>}
+                                            {!bulkApplyMode && current.product_type !== 'toxina' && <ChevronDown className={`w-3 h-3 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />}
+                                          </span>
+                                        </button>
+                                        <div className="flex flex-shrink-0 items-center gap-1.5">
                                           {!bulkApplyMode && rowEpId && (
-                                            <button onClick={e => { e.stopPropagation(); handleEditablePointClicked(rowEpId); }} className="p-0.5 text-[#deb887] hover:text-[#b8944d] rounded" title="Editar">
+                                            <button type="button" onClick={() => handleEditablePointClicked(rowEpId)} className="min-h-8 min-w-8 p-1 text-[#deb887] hover:text-[#b8944d] rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b8944d]" title="Editar" aria-label={`Editar punto ${globalIndex + 1}`}>
                                               <Pencil className="w-3 h-3" />
                                             </button>
                                           )}
                                           {!bulkApplyMode && (
-                                            <button onClick={e => { e.stopPropagation(); handleRemovePoint(globalIndex); }} className="p-0.5 text-red-300 hover:text-red-500 rounded">
+                                            <button type="button" onClick={() => handleRemovePoint(globalIndex)} className="min-h-8 min-w-8 p-1 text-red-300 hover:text-red-500 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400" aria-label={`Eliminar punto ${globalIndex + 1}`}>
                                               <X className="w-3 h-3" />
                                             </button>
                                           )}
@@ -3406,33 +3418,36 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                                         <div className="px-3 pb-3 pt-1 bg-amber-50/50 space-y-2 border-t border-amber-100">
                                           <div className="grid grid-cols-2 gap-1.5">
                                             <div>
-                                              <p className="text-[9px] text-gray-400 mb-0.5">Técnica</p>
-                                              <select className="w-full text-[11px] border border-gray-200 rounded-lg px-2 py-1 bg-white outline-none" value={p.technique_at_point || ''} onChange={e => handlePointFieldChange(globalIndex, 'technique_at_point', e.target.value)}>
+                                              <label htmlFor={`point-technique-${globalIndex}`} className="mb-1 block text-xs font-medium text-gray-600">Técnica</label>
+                                              <select id={`point-technique-${globalIndex}`} className="min-h-10 w-full bg-white text-sm text-gray-800 border border-gray-200 rounded-lg px-2 py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b8944d] focus-visible:ring-offset-1" value={p.technique_at_point || ''} onChange={e => handlePointFieldChange(globalIndex, 'technique_at_point', e.target.value)}>
                                                 <option value="">—</option>
                                                 {techniques.map(t => <option key={t} value={t}>{t}</option>)}
                                               </select>
                                             </div>
                                             <div>
-                                              <p className="text-[9px] text-gray-400 mb-0.5">Aguja</p>
-                                              <select className="w-full text-[11px] border border-gray-200 rounded-lg px-2 py-1 bg-white outline-none" value={p.needle_at_point || ''} onChange={e => handlePointFieldChange(globalIndex, 'needle_at_point', e.target.value)}>
+                                              <label htmlFor={`point-needle-${globalIndex}`} className="mb-1 block text-xs font-medium text-gray-600">Aguja</label>
+                                              <select id={`point-needle-${globalIndex}`} className="min-h-10 w-full bg-white text-sm text-gray-800 border border-gray-200 rounded-lg px-2 py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b8944d] focus-visible:ring-offset-1" value={p.needle_at_point || ''} onChange={e => handlePointFieldChange(globalIndex, 'needle_at_point', e.target.value)}>
                                                 <option value="">—</option>
                                                 {needles.map(n => <option key={n} value={n}>{n}</option>)}
                                               </select>
                                             </div>
                                           </div>
                                           <div>
-                                            <p className="text-[9px] text-gray-400 mb-0.5">Plano</p>
-                                            <select className="w-full text-[11px] border border-gray-200 rounded-lg px-2 py-1 bg-white outline-none" value={p.injection_plane || ''} onChange={e => handlePointFieldChange(globalIndex, 'injection_plane', e.target.value)}>
+                                            <label htmlFor={`point-plane-${globalIndex}`} className="mb-1 block text-xs font-medium text-gray-600">Plano</label>
+                                            <select id={`point-plane-${globalIndex}`} className="min-h-10 w-full bg-white text-sm text-gray-800 border border-gray-200 rounded-lg px-2 py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b8944d] focus-visible:ring-offset-1" value={p.injection_plane || ''} onChange={e => handlePointFieldChange(globalIndex, 'injection_plane', e.target.value)}>
                                               <option value="">—</option>
                                               {HA_PLANES.map(pl => <option key={pl} value={pl}>{pl}</option>)}
                                             </select>
                                           </div>
+                                          <p className="rounded-lg border border-amber-100 bg-white/70 p-2 text-xs leading-relaxed text-amber-900">
+                                            Al copiar, los campos de este punto reemplazan los mismos campos en destino. Un campo vacío también puede borrar el valor existente.
+                                          </p>
                                           <div className="flex gap-1.5">
-                                            <button onClick={() => handleBulkApply(globalIndex)} className="flex-1 text-[10px] py-1 rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200 font-semibold transition-colors">
-                                              Todos →
+                                            <button type="button" onClick={() => handleBulkApply(globalIndex)} className="min-h-9 flex-1 rounded-lg bg-amber-100 px-2 py-2 text-xs text-amber-800 hover:bg-amber-200 font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b8944d]" aria-label={`Copiar campos del punto ${globalIndex + 1} a los demás puntos`}>
+                                              Copiar a todos
                                             </button>
-                                            <button onClick={() => handleEnterBulkApplyMode(globalIndex)} className="flex-1 text-[10px] py-1 rounded-lg bg-orange-100 text-orange-700 hover:bg-orange-200 font-semibold transition-colors">
-                                              Selección →
+                                            <button type="button" onClick={() => handleEnterBulkApplyMode(globalIndex)} className="min-h-9 flex-1 rounded-lg bg-orange-100 px-2 py-2 text-xs text-orange-800 hover:bg-orange-200 font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500" aria-label={`Elegir puntos para copiar campos del punto ${globalIndex + 1}`}>
+                                              Elegir puntos
                                             </button>
                                           </div>
                                         </div>

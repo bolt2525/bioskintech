@@ -491,6 +491,20 @@ test('rellenos presentan producto, volumen, mapa y seguimiento en orden', () => 
   assert.doesNotMatch(source, /placeholder="Ej: Juvederm Ultra"/);
 });
 
+test('edición por punto es accesible y aclara la copia masiva', () => {
+  for (const field of ['technique', 'needle', 'plane']) {
+    assert.ok(source.includes(`htmlFor={\`point-${field}-\${globalIndex}\`}`));
+    assert.ok(source.includes(`id={\`point-${field}-\${globalIndex}\`}`));
+  }
+  assert.match(source, /focus-visible:ring-2 focus-visible:ring-\[#b8944d\]/);
+  assert.match(source, /Técnica, aguja y plano sin registrar/);
+  assert.match(source, /aria-pressed=\{bulkApplyMode \? isBulkSelected : isSelected\}/);
+  assert.match(source, /Copiar a todos/);
+  assert.match(source, /Elegir puntos/);
+  assert.match(source, /Un campo vacío también puede borrar el valor existente/);
+  assert.match(source, /aria-label=\{`Eliminar punto \$\{globalIndex \+ 1\}`\}/);
+});
+
 test('ayudas de relleno describen registro sin indicar cantidades, zonas ni protocolos', () => {
   assert.match(fieldHelpSource, /volume_used: 'Sin mapa, registra el volumen documentado para la sesión/);
   assert.match(fieldHelpSource, /follow_up_date: 'Fecha de control registrada para esta sesión/);
