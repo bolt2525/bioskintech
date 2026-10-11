@@ -3,6 +3,7 @@
 - ✅ 2026-10-10 Fotos: contrato de descarga corregido.
 - ✅ 2026-10-10 Fotos: descarga y selección contextual.
 - ✅ 2026-10-10 Inyectables: controles fijos al mapear.
+- ✅ 2026-10-10 Inyectables: herramientas gráficas agrupadas.
 - ✅ 2026-10-10 Visor 3D: Malla y guía unificadas.
 - ✅ 2026-10-10 Visor 3D: Malla y deshacer
 - ✅ 2026-10-10 Inyectables: selectores por punto dorados.

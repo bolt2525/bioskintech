@@ -2762,8 +2762,10 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     </summary>
                     <p className="px-4 pb-3 text-sm leading-relaxed text-slate-600" role="status" aria-live="polite">{DRAWING_GUIDE[activeTool]}</p>
                   {/* ── Toolbar secundaria: Herramientas de Dibujo HA ─────────────── */}
-                  <div className="mb-2 flex flex-wrap items-center gap-2 p-3 bg-slate-900 rounded-xl border border-slate-700" aria-label="Herramientas de marcación y dibujo">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-200">Dibujar:</span>
+                  <div className={`mb-2 grid grid-cols-2 gap-2 rounded-xl border border-slate-700 bg-slate-900 p-3 ${activeType === 'relleno' ? 'xl:grid-cols-4' : 'xl:grid-cols-3'}`} aria-label="Herramientas de marcación y dibujo">
+                    <div role="group" aria-label="Trazos" className="min-w-0 rounded-lg border border-slate-700/80 bg-slate-800/50 p-2">
+                      <span className="mb-2 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">Trazos</span>
+                      <div className="flex flex-wrap items-center gap-2">
                     {/* Pincel libre */}
                     <Tooltip content="Pincel: mantener y arrastrar para trazar una línea sobre la piel">
                       <button
@@ -2795,7 +2797,12 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                         Polilínea
                       </button>
                     </Tooltip>
+                      </div>
+                    </div>
 
+                    <div role="group" aria-label="Formas y flechas" className="min-w-0 rounded-lg border border-slate-700/80 bg-slate-800/50 p-2">
+                      <span className="mb-2 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">Formas y flechas</span>
+                      <div className="flex flex-wrap items-center gap-2">
                     {/* Grupo: Formas (Círculo + Rectángulo) */}
                     <div className="relative">
                       <button
@@ -2832,8 +2839,6 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     </div>
 
                     {/* Herramientas de línea y flecha — disponibles en toxina y relleno */}
-                    <>
-                      <div className="w-px h-5 bg-slate-600 mx-0.5" />
                       <Tooltip content="Línea recta: arrastrar de A a B sobre la piel">
                         <button
                           onClick={() => { setActiveTool(activeTool === 'straight-line' ? 'none' : 'straight-line'); setPointMode('none'); setShowHaShapesDropdown(false); }}
@@ -2858,12 +2863,14 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                           Flecha
                         </button>
                       </Tooltip>
-                    </>
+                      </div>
+                    </div>
 
                     {/* Patrones HA (solo para relleno) */}
                     {activeType === 'relleno' && (
-                      <>
-                        {/* Grupo Patrones HA */}
+                      <div role="group" aria-label="Patrones HA" className="min-w-0 rounded-lg border border-slate-700/80 bg-slate-800/50 p-2">
+                        <span className="mb-2 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">Patrones HA</span>
+                        <div className="flex flex-wrap items-center gap-2">
                         <div className="relative">
                           <button
                             aria-expanded={showHaShapesDropdown}
@@ -2895,11 +2902,13 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                             </div>
                           )}
                         </div>
-                      </>
+                        </div>
+                      </div>
                     )}
 
-                    <div className="w-px h-5 bg-slate-700 mx-1" />
-
+                    <div role="group" aria-label="Estilo del trazo" className="min-w-0 rounded-lg border border-slate-700/80 bg-slate-800/50 p-2">
+                      <span className="mb-2 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">Estilo</span>
+                      <div className="flex flex-wrap items-center gap-4">
                     {/* Color del pincel */}
                     <Tooltip content="Color para nuevas líneas y formas">
                       <label className="flex items-center gap-1.5 cursor-pointer">
@@ -2919,10 +2928,12 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                         <span className="text-[10px] text-slate-500 w-5">{brushThickness.toFixed(1)}x</span>
                       </label>
                     </Tooltip>
+                      </div>
+                    </div>
 
                     {/* Botón deseleccionar / estado activo */}
                     {(activeTool !== 'none' || pointMode === 'add') ? (
-                      <div className="ml-auto flex items-center gap-2">
+                      <div className="col-span-full flex flex-wrap items-center justify-end gap-2 border-t border-slate-700 pt-2">
                         <span className="text-xs text-gold-light font-semibold">
                           {activeTool === 'freehand-brush' && '● Pincel'}
                           {activeTool === 'freehand-poly' && '● Polilínea'}
@@ -2945,7 +2956,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                       </div>
                     ) : (
                       (freehandLines.length > 0 || surfaceShapes.length > 0) && (
-                        <span className="ml-auto text-[10px] text-violet-400">
+                        <span className="col-span-full text-right text-[10px] text-violet-400">
                           {freehandLines.length > 0 && `${freehandLines.length} línea(s)`}
                           {freehandLines.length > 0 && surfaceShapes.length > 0 && ' · '}
                           {surfaceShapes.length > 0 && `${surfaceShapes.length} forma(s)`}
