@@ -357,3 +357,4 @@
 - ✅ Oct 8 Auditoría contrato: Anexo C tras A, sin proveedores/funciones futuras en textos
 
 - ✅ Oct 11 Lab 3D: modo "Simulación facial" (WebGL tiempo real, corrección robusta Tukey, import Inyectables)
+- ✅ Oct 11 Lab simulación facial: marcación con Clinical3DViewer o sobre fotos, trazos/flechas/patrones
