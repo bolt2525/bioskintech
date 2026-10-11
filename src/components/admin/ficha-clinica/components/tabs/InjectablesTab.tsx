@@ -359,7 +359,7 @@ const DRAWING_GUIDE: Record<DrawingTool, string> = {
   'shape-circle': 'Círculo: resalta una zona de interés. Arrastra sobre la piel para definir su tamaño.',
   'shape-rect': 'Rectángulo: encuadra una región que deseas documentar. Arrastra para definir su tamaño.',
   'ha-fan': 'Abanico: documenta un patrón gráfico. No calcula volumen ni selecciona dosis; configura el patrón y arrastra sobre la piel.',
-  'ha-grid': 'Malla: documenta un patrón gráfico. Define esquina, ancho y largo con tres clics; no representa dosis.',
+  'ha-grid': 'Malla: documenta un patrón gráfico. Elige una esquina inicial, define el ancho y luego el largo con tres clics; no representa dosis.',
   'ha-fern': 'Helecho: documenta un patrón gráfico ramificado. Configura las ramas y arrastra el eje principal.',
 };
 
@@ -3137,7 +3137,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                         <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-30 bg-slate-800/90 backdrop-blur-sm text-white text-[11px] font-semibold px-4 py-2 rounded-xl shadow-lg border border-slate-600 pointer-events-none">
                           {gridDrawMessage || (
                             <>
-                              {gridDrawStep === 0 && '① Haz clic en el centro del borde inicial'}
+                              {gridDrawStep === 0 && '① Haz clic en una esquina inicial'}
                               {gridDrawStep === 1 && '② Mueve el cursor para previsualizar el ancho — clic para fijarlo'}
                               {gridDrawStep === 2 && '③ Mueve el cursor para previsualizar el largo — clic para finalizar'}
                             </>

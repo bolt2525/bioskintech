@@ -537,7 +537,7 @@ test('ayudas de relleno describen registro sin indicar cantidades, zonas ni prot
 
 test('Malla explica sus tres clics y el recuento de líneas coincide con la forma generada', () => {
   assert.match(source, /Tres clics: punto inicial → ancho → largo/);
-  assert.match(source, /centro del borde inicial/);
+  assert.match(source, /Haz clic en una esquina inicial/);
   assert.match(source, /líneas por dirección · \{\(haShapeConfig\.gridCells \+ 1\) \* 2\} en total/);
   assert.doesNotMatch(source, /Clic en esquina → arrastrar para definir la diagonal opuesta/);
   assert.match(viewerSource, /ha-grid: flujo de tres clics/);
