@@ -2874,7 +2874,9 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                         interactionHint={activeTool === 'none' && pointMode === 'none'
                           ? 'Arrastra para rotar · Clic en punto o trazo para editar'
                           : pointMode === 'add'
-                            ? 'Clic para añadir punto · Escape para navegar'
+                            ? freehandLines.length > 0
+                              ? 'Pasa sobre un trazo para ajustar el punto, incluidos sus extremos · Clic para añadir · Escape para navegar'
+                              : 'Clic en la piel para añadir punto · Escape para navegar'
                             : pointMode === 'delete'
                               ? 'Clic para eliminar punto · Escape para navegar'
                               : 'Dibujo activo · Escape para volver a rotar'}

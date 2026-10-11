@@ -162,6 +162,50 @@ export interface FreehandLine {
   technique_preset?: string;
 }
 
+const closestPointOnFreehandLine = (
+  line: Pick<FreehandLine, 'points' | 'segments'>,
+  query: { x: number; y: number; z: number },
+  vertexSnapDist: number,
+  lineDist: number
+): { pt: { x: number; y: number; z: number }; isVertex: boolean } | null => {
+  const paths = [line.points, ...(line.segments ?? [])].filter(path => path.length >= 2);
+  let bestPt: { x: number; y: number; z: number } | null = null;
+  let bestDist = Infinity;
+
+  for (const path of paths) {
+    for (const point of path) {
+      const distance = Math.hypot(point.x - query.x, point.y - query.y, point.z - query.z);
+      if (distance < vertexSnapDist && distance < bestDist) {
+        bestDist = distance;
+        bestPt = point;
+      }
+    }
+  }
+  if (bestPt) return { pt: bestPt, isVertex: true };
+
+  for (const path of paths) {
+    for (let i = 0; i < path.length - 1; i++) {
+      const a = path[i];
+      const b = path[i + 1];
+      const ab = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
+      const abLengthSquared = ab.x * ab.x + ab.y * ab.y + ab.z * ab.z;
+      if (abLengthSquared < 0.00000001) continue;
+
+      const t = Math.max(0, Math.min(1, (
+        (query.x - a.x) * ab.x + (query.y - a.y) * ab.y + (query.z - a.z) * ab.z
+      ) / abLengthSquared));
+      const point = { x: a.x + ab.x * t, y: a.y + ab.y * t, z: a.z + ab.z * t };
+      const distance = Math.hypot(point.x - query.x, point.y - query.y, point.z - query.z);
+      if (distance < lineDist && distance < bestDist) {
+        bestDist = distance;
+        bestPt = point;
+      }
+    }
+  }
+
+  return bestPt ? { pt: bestPt, isVertex: false } : null;
+};
+
 export interface SurfaceShape {
   id: string;
   shapeType: 'circle' | 'rectangle';
@@ -705,48 +749,6 @@ const ThreeEngine: React.FC<{
         if (snapIndicatorRef.current) (snapIndicatorRef.current.material as THREE.MeshBasicMaterial).opacity = 0;
         callbacks.current.onSnapPointChange?.(null);
       }
-    };
-
-    /** Encuentra el punto más cercano de un conjunto de segmentos al cursor 3D */
-    const closestPointOnSegments = (
-      pts: { x: number; y: number; z: number }[],
-      query: THREE.Vector3,
-      vertexSnapDist: number,
-      lineDist: number
-    ): { pt: THREE.Vector3; isVertex: boolean } | null => {
-      if (pts.length < 2) return null;
-      let bestPt: THREE.Vector3 | null = null;
-      let bestDist = Infinity;
-      let bestIsVertex = false;
-      const q = query;
-      // Check vertices first (stronger magnet)
-      for (const raw of pts) {
-        const v = new THREE.Vector3(raw.x, raw.y, raw.z);
-        const d = v.distanceTo(q);
-        if (d < vertexSnapDist && d < bestDist) {
-          bestDist = d;
-          bestPt = v.clone();
-          bestIsVertex = true;
-        }
-      }
-      if (bestPt) return { pt: bestPt, isVertex: true };
-      // Check segments
-      for (let i = 0; i < pts.length - 1; i++) {
-        const a = new THREE.Vector3(pts[i].x, pts[i].y, pts[i].z);
-        const b = new THREE.Vector3(pts[i + 1].x, pts[i + 1].y, pts[i + 1].z);
-        const ab = b.clone().sub(a);
-        const abLen = ab.length();
-        if (abLen < 0.0001) continue;
-        const t = Math.max(0, Math.min(1, q.clone().sub(a).dot(ab) / (abLen * abLen)));
-        const closest = a.clone().addScaledVector(ab, t);
-        const d = closest.distanceTo(q);
-        if (d < lineDist && d < bestDist) {
-          bestDist = d;
-          bestPt = closest.clone();
-          bestIsVertex = false;
-        }
-      }
-      return bestPt ? { pt: bestPt, isVertex: bestIsVertex } : null;
     };
 
     const clearBrushPreview = () => {
@@ -2303,21 +2305,21 @@ const ThreeEngine: React.FC<{
               const snapLine = callbacks.current.freehandLines?.find((l: FreehandLine) =>
                 l.id === prevHoveredId
               );
-              if (snapLine && snapLine.points.length >= 2) {
+              if (snapLine) {
                 const VERTEX_DIST = 0.25; // distancia de snap a vértice
                 const LINE_DIST   = 0.18; // distancia de snap a segmento
-                const result = closestPointOnSegments(snapLine.points, query3D, VERTEX_DIST, LINE_DIST);
+                const result = closestPointOnFreehandLine(snapLine, query3D, VERTEX_DIST, LINE_DIST);
                 if (result) {
-                  currentSnapPt = result.pt;
+                  currentSnapPt = new THREE.Vector3(result.pt.x, result.pt.y, result.pt.z);
                   snapPtIsVertex = result.isVertex;
                   if (snapIndicatorRef.current) {
                     const mat = snapIndicatorRef.current.material as THREE.MeshBasicMaterial;
-                    snapIndicatorRef.current.position.copy(result.pt);
+                    snapIndicatorRef.current.position.copy(currentSnapPt);
                     mat.color.setHex(result.isVertex ? 0xffff00 : 0x00ffff);
                     mat.opacity = result.isVertex ? 0.9 : 0.7;
                     snapIndicatorRef.current.scale.setScalar(result.isVertex ? 1.4 : 1.0);
                   }
-                  callbacks.current.onSnapPointChange?.({ x: result.pt.x, y: result.pt.y, z: result.pt.z });
+                  callbacks.current.onSnapPointChange?.({ x: currentSnapPt.x, y: currentSnapPt.y, z: currentSnapPt.z });
                 } else {
                   clearSnap();
                 }

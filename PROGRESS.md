@@ -1,5 +1,6 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-10 Inyectables: snap Abanico
 - ✅ 2026-10-10 Toxina: tarjetas y jerarquía dorada.
 - ✅ 2026-10-10 Toxina: flujo ordenado, menús dorados.
 - ✅ 2026-10-10 Toxina: total automático y sugerencias.

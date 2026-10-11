@@ -8,6 +8,8 @@ import ts from 'typescript';
 
 const source = readFileSync(new URL('../src/components/admin/ficha-clinica/components/tabs/InjectablesTab.tsx', import.meta.url), 'utf8');
 const ast = ts.createSourceFile('InjectablesTab.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+const viewerSource = readFileSync(new URL('../src/components/admin/ficha-clinica/components/Clinical3DViewer.tsx', import.meta.url), 'utf8');
+const viewerAst = ts.createSourceFile('Clinical3DViewer.tsx', viewerSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const declaration = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'reconcileEditablePoints');
 assert.ok(declaration, 'La conciliación de puntos debe existir');
 const script = ts.transpileModule(declaration.getText(ast), {
@@ -97,18 +99,23 @@ test('Navegar desactiva herramientas, selección y menús de dibujo', () => {
   });
 });
 
-test('ayuda contextual distingue navegar, añadir, eliminar y dibujar', () => {
+test('ayuda contextual distingue navegar, añadir con y sin trazos, eliminar y dibujar', () => {
   const expression = jsxAttribute('interactionHint', 'Clinical3DViewer');
   for (const [tool, mode, expected] of [
     ['none', 'none', 'Arrastra para rotar'],
-    ['none', 'add', 'Clic para añadir punto'],
+    ['none', 'add', 'Pasa sobre un trazo'],
     ['none', 'delete', 'Clic para eliminar punto'],
     ['freehand-brush', 'none', 'Dibujo activo'],
     ['shape-circle', 'none', 'Dibujo activo'],
     ['ha-grid', 'none', 'Dibujo activo'],
   ]) {
-    assert.ok(vm.runInNewContext(expression, { activeTool: tool, pointMode: mode }).startsWith(expected));
+    assert.ok(vm.runInNewContext(expression, {
+      activeTool: tool, pointMode: mode, freehandLines: [{ id: 'qa' }],
+    }).startsWith(expected));
   }
+  assert.ok(vm.runInNewContext(expression, {
+    activeTool: 'none', pointMode: 'add', freehandLines: [],
+  }).startsWith('Clic en la piel para añadir punto'));
 });
 
 test('los nuevos trazos usan el token dorado sin recolorear el historial', () => {
@@ -134,6 +141,37 @@ function loadFunction(name, environment = {}) {
   vm.runInContext(code, sandbox);
   return sandbox.result;
 }
+
+function loadViewerFunction(name) {
+  let expression;
+  function visit(node) {
+    if (ts.isVariableDeclaration(node) && node.name.getText(viewerAst) === name) {
+      expression = `const ${name} = ${node.initializer.getText(viewerAst)};`;
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(viewerAst);
+  assert.ok(expression, `Función del visor ${name}`);
+  const code = ts.transpileModule(`${expression}\nglobalThis.result = ${name};`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS },
+  }).outputText;
+  const sandbox = vm.createContext({});
+  vm.runInContext(code, sandbox);
+  return sandbox.result;
+}
+
+test('el ajuste de trazos compuestos incluye los extremos de cada línea del Abanico', () => {
+  const closest = loadViewerFunction('closestPointOnFreehandLine');
+  const fan = {
+    points: [{ x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }],
+    segments: [
+      [{ x: 0, y: 0, z: 0 }, { x: 0, y: 1, z: 0 }],
+      [{ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 }],
+    ],
+  };
+  const result = JSON.parse(JSON.stringify(closest(fan, { x: 0, y: 0.98, z: 0 }, 0.25, 0.18)));
+  assert.deepEqual(result, { pt: { x: 0, y: 1, z: 0 }, isVertex: true });
+});
 
 test('concentración usa unidades originales del vial, no el total de sesión', () => {
   const concentration = loadFunction('getToxinaConcentration');
