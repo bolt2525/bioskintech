@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Download, FlaskConical, MousePointer2, Rotate3D,
@@ -15,7 +15,9 @@ import { useAuth } from '../../context/AuthContext';
 import { SCALP_BOUNDARY_PRESET, SCALP_BOUNDARY_PRESET_VERSION } from '../../data/scalpBoundaryPreset';
 import { getScalpStages, getScalpDescriptions, getScalpStageLabel, SCALP_SCALE_LABELS, type ScalpScale } from '../../data/scalpPatterns';
 
-type LabMode = 'hair' | 'model';
+const FaceSimLab = lazy(() => import('../../lab/faceSim/FaceSimLab'));
+
+type LabMode = 'hair' | 'model' | 'face';
 type Density = 'Alta' | 'Media' | 'Baja';
 
 const HAIR_COLORS = ['#160d09', '#2b1a12', '#4a2b1a', '#6b4328', '#9a744e'];
@@ -277,10 +279,11 @@ function HairRenderLabView({ onBack }: { onBack?: () => void }) {
               Restablecer laboratorio
             </button>
           </div>
-          <div className="mt-4 grid gap-2 rounded-xl bg-slate-100 p-1 sm:inline-grid sm:grid-cols-2">
+          <div className="mt-4 grid gap-2 rounded-xl bg-slate-100 p-1 sm:inline-grid sm:grid-cols-3">
             {([
               ['hair', 'Cabello PBR'],
               ['model', 'Núcleo GLB'],
+              ['face', 'Simulación facial'],
             ] as const).map(([value, label]) => (
               <button
                 key={value}
@@ -297,6 +300,9 @@ function HairRenderLabView({ onBack }: { onBack?: () => void }) {
           </div>
         </header>
 
+        {labMode === 'face' ? (
+          <Suspense fallback={<p className="p-6 text-sm text-slate-500" role="status">Cargando simulador…</p>}><FaceSimLab /></Suspense>
+        ) : (
         <div className="grid gap-4 xl:grid-cols-[350px_minmax(0,1fr)]">
           <aside className="space-y-5 rounded-2xl border border-white/80 bg-white p-5 shadow-sm">
             <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
@@ -594,6 +600,7 @@ function HairRenderLabView({ onBack }: { onBack?: () => void }) {
             ) : null}
           </section>
         </div>
+        )}
       </div>
     </main>
   );
