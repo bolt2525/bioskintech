@@ -355,3 +355,5 @@
 - ⏳ Volver a subir fotos clínicas reales — el bucket quedó vacío tras el reset de pruebas.
 
 - ✅ Oct 8 Auditoría contrato: Anexo C tras A, sin proveedores/funciones futuras en textos
+
+- ✅ Oct 11 Lab 3D: modo "Simulación facial" (WebGL tiempo real, corrección robusta Tukey, import Inyectables)

@@ -425,3 +425,6 @@ Los números de `WHATSAPP_SYSTEM_STAFF_PHONES` quedan excluidos de toda notifica
 - Rotación de credenciales R2: nuevo Access Key ID (32 hex) y Secret Access Key (64 hex) cargados en Vercel Production y Preview.
 - Prueba funcional real end-to-end (`scripts/verify-r2-e2e.mjs`) contra Production — pasa: PUT, GET (200, contenido íntegro), DELETE, GET posterior (404).
 - Redeploy de Production tras cada cambio de variables de entorno R2 — `Ready` ambas veces.
+
+### Laboratorio 3D — Simulación facial (src/lab/faceSim)
+`engine.ts` (puro: dosis→efecto, corrección lineal/espejo con biponderado de Tukey, puente 3D→foto) + `FaceSimLab.tsx` (shader WebGL en tiempo real). Landmarks opcionales con `@mediapipe/tasks-vision` servido same-origin (`npm run lab:face-assets`). Fotos solo en el navegador; sin cambios de BD ni de funciones API.
