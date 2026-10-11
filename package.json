@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "npm run lab:face-assets",
     "build": "vite build",
     "lint": "eslint .",
     "lab:face-assets": "node scripts/setup-face-lab-assets.mjs",

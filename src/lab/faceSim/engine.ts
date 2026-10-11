@@ -27,6 +27,10 @@ export interface FaceFrame {
   /** Caja del rostro y eje de simetría, en coordenadas normalizadas de la foto. */
   top: number; bottom: number; left: number; right: number;
   axisTop: { x: number; y: number }; axisBottom: { x: number; y: number };
+  /** Contorno facial detectado; permite adaptar el ancho de la proyección a cada altura. */
+  outline?: P2[];
+  /** Anclajes faciales MediaPipe: frente, glabela, ojos, nariz, labio y mentón. */
+  anchors?: P2[];
   source: 'landmarks' | 'manual';
 }
 
@@ -35,14 +39,120 @@ export const DEFAULT_FRAME: FaceFrame = {
   axisTop: { x: 0.5, y: 0.15 }, axisBottom: { x: 0.5, y: 0.85 }, source: 'manual',
 };
 
-/** Landmarks de MediaPipe Face Mesh → marco facial. */
+const FACE_OVAL = [
+  10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377,
+  152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109,
+];
+export const REGISTRATION_ANCHORS = [
+  'Centro de la frente', 'Glabela', 'Ojo lado A', 'Ojo lado B',
+  'Punta nasal', 'Centro del labio superior', 'Mentón',
+];
+const LANDMARK_ANCHORS = [10, 168, 33, 263, 1, 13, 152];
+export const registrationAnchorIndices = (view: ViewKind) =>
+  view === 'frontal' ? [0, 1, 2, 3, 4, 5, 6] : [0, 1, 4, 5, 6];
+
+/** Landmarks de MediaPipe Face Mesh → marco facial y contorno completo. */
 export function frameFromLandmarks(lm: { x: number; y: number }[]): FaceFrame {
-  const g = (i: number) => ({ x: lm[i].x, y: lm[i].y });
-  const top = g(10), chin = g(152), l = g(234), r = g(454), glab = g(168);
-  return {
-    top: top.y, bottom: chin.y, left: Math.min(l.x, r.x), right: Math.max(l.x, r.x),
-    axisTop: glab, axisBottom: chin, source: 'landmarks',
+  if (lm.length <= Math.max(...FACE_OVAL)) throw new Error('Landmarks faciales incompletos.');
+  const g = (i: number) => {
+    const point = lm[i];
+    if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)
+      || point.x < 0 || point.x > 1 || point.y < 0 || point.y > 1) {
+      throw new Error('Landmarks faciales fuera de rango.');
+    }
+    return { x: point.x, y: point.y };
   };
+  const top = g(10), chin = g(152), l = g(234), r = g(454), glab = g(168);
+  const outline = FACE_OVAL.map(g);
+  const anchors = LANDMARK_ANCHORS.map(g);
+  const outlineArea = Math.abs(outline.reduce((area, point, index) => {
+    const next = outline[(index + 1) % outline.length];
+    return area + point.x * next.y - next.x * point.y;
+  }, 0)) / 2;
+  if (chin.y - top.y < 0.15 || Math.abs(l.x - r.x) < 0.08 || outlineArea < 0.01) {
+    throw new Error('Geometría facial no válida.');
+  }
+  return {
+    top: Math.min(top.y, chin.y), bottom: Math.max(top.y, chin.y),
+    left: Math.min(l.x, r.x), right: Math.max(l.x, r.x),
+    axisTop: glab, axisBottom: chin, outline, anchors, source: 'landmarks',
+  };
+}
+
+export interface AffineRegistration {
+  a: number; b: number; c: number;
+  d: number; e: number; f: number;
+  rmse: number; maxError: number;
+}
+
+/** Ajusta modelo→foto por mínimos cuadrados; requiere referencias no colineales y mide residuos en alturas faciales. */
+export function fitAffineRegistration(source: P2[], target: P2[], aspect: number, faceHeight: number): AffineRegistration | null {
+  if (source.length < 5 || source.length !== target.length || !Number.isFinite(aspect) || aspect <= 0
+    || !Number.isFinite(faceHeight) || faceHeight <= 0) return null;
+  if ([...source, ...target].some(p => !Number.isFinite(p.x) || !Number.isFinite(p.y))) return null;
+  const solve = (indices: number[]) => {
+    const rows = indices.map(index => [source[index].x, source[index].y, 1]);
+    const normal = Array.from({ length: 3 }, (_, i) => Array.from({ length: 3 }, (_, j) =>
+      rows.reduce((sum, row) => sum + row[i] * row[j], 0)));
+    const fitAxis = (axis: 'x' | 'y') => {
+      const matrix = normal.map((row, i) => [...row, rows.reduce((sum, p, j) => sum + p[i] * target[indices[j]][axis], 0)]);
+      for (let col = 0; col < 3; col++) {
+        let pivot = col;
+        for (let row = col + 1; row < 3; row++) if (Math.abs(matrix[row][col]) > Math.abs(matrix[pivot][col])) pivot = row;
+        if (Math.abs(matrix[pivot][col]) < 1e-8) return null;
+        [matrix[col], matrix[pivot]] = [matrix[pivot], matrix[col]];
+        const divisor = matrix[col][col];
+        for (let j = col; j < 4; j++) matrix[col][j] /= divisor;
+        for (let row = 0; row < 3; row++) {
+          if (row === col) continue;
+          const factor = matrix[row][col];
+          for (let j = col; j < 4; j++) matrix[row][j] -= factor * matrix[col][j];
+        }
+      }
+      return matrix.map(row => row[3]);
+    };
+    const x = fitAxis('x'), y = fitAxis('y');
+    return x && y ? { x, y } : null;
+  };
+  const indices = source.map((_, index) => index);
+  const fit = solve(indices);
+  if (!fit) return null;
+  const errors = indices.map(heldOut => {
+    const validated = solve(indices.filter(index => index !== heldOut));
+    if (!validated) return Number.POSITIVE_INFINITY;
+    const p = source[heldOut], q = target[heldOut];
+    return Math.hypot((validated.x[0] * p.x + validated.x[1] * p.y + validated.x[2] - q.x) * aspect,
+      validated.y[0] * p.x + validated.y[1] * p.y + validated.y[2] - q.y) / faceHeight;
+  });
+  const { x, y } = fit;
+  const determinant = x[0] * y[1] - x[1] * y[0];
+  if (!Number.isFinite(determinant) || Math.abs(determinant) < 0.0025 || Math.abs(determinant) > 25
+    || [...x, ...y].some(value => Math.abs(value) > 20) || errors.some(error => !Number.isFinite(error))) return null;
+  return {
+    a: x[0], b: x[1], c: x[2], d: y[0], e: y[1], f: y[2],
+    rmse: Math.sqrt(errors.reduce((sum, error) => sum + error * error, 0) / errors.length),
+    maxError: Math.max(...errors),
+  };
+}
+
+export function applyRegistration(point: P2, registration: AffineRegistration): P2 {
+  return {
+    x: registration.a * point.x + registration.b * point.y + registration.c,
+    y: registration.d * point.x + registration.e * point.y + registration.f,
+  };
+}
+
+export function isWithinFace(point: P2, frame: FaceFrame): boolean {
+  if (point.x < frame.left || point.x > frame.right || point.y < frame.top || point.y > frame.bottom) return false;
+  const outline = frame.outline;
+  if (!outline?.length) return true;
+  let inside = false;
+  for (let i = 0, j = outline.length - 1; i < outline.length; j = i++) {
+    const a = outline[i], b = outline[j];
+    if ((a.y > point.y) !== (b.y > point.y)
+      && point.x < ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
 }
 
 /** Intensidad con saturación (ley de rendimientos decrecientes) 0..1. */
@@ -269,17 +379,49 @@ export const defaultFrame = (view: ViewKind): FaceFrame => (view === 'frontal'
   ? DEFAULT_FRAME
   : { top: 0.12, bottom: 0.88, left: 0.15, right: 0.85, axisTop: { x: 0.5, y: 0.12 }, axisBottom: { x: 0.5, y: 0.88 }, source: 'manual' });
 
-export function projectModel(p: Vec3, view: ViewKind, frame: FaceFrame, flip: boolean): P2 | null {
-  const y = frame.top + ((Y_TOP - p.y) / Y_SPAN) * (frame.bottom - frame.top);
+export function projectModel(
+  p: Vec3, view: ViewKind, frame: FaceFrame, flip: boolean, aspect = 1, registration?: AffineRegistration,
+): P2 | null {
+  const yRatio = (Y_TOP - p.y) / Y_SPAN;
+  const y = frame.top + yRatio * (frame.bottom - frame.top);
+  const map = (point: P2): P2 | null => {
+    const result = registration ? applyRegistration(point, registration) : point;
+    return registration && !isWithinFace(result, frame) ? null : result;
+  };
   if (view === 'frontal') {
     if (p.z < -0.5) return null;
-    const t = Math.max(-1.3, Math.min(1.3, (flip ? -p.x : p.x) / X_HALF));
-    return { x: (frame.left + frame.right) / 2 + t * ((frame.right - frame.left) / 2), y };
+    const side = Math.max(-1.3, Math.min(1.3, (flip ? -p.x : p.x) / X_HALF));
+    const rowY = frame.top + Math.min(1, Math.max(0, yRatio)) * (frame.bottom - frame.top);
+    const crossings: number[] = [];
+    frame.outline?.forEach((a, i, outline) => {
+      const b = outline[(i + 1) % outline.length];
+      if ((a.y <= rowY && b.y > rowY) || (b.y <= rowY && a.y > rowY)) {
+        crossings.push(a.x + ((rowY - a.y) / (b.y - a.y)) * (b.x - a.x));
+      }
+    });
+    const halfWidth = crossings.length >= 2
+      ? (Math.max(...crossings) - Math.min(...crossings)) / 2
+      : (frame.right - frame.left) / 2;
+    const axisStart = (frame.axisTop.y - frame.top) / Math.max(frame.bottom - frame.top, 0.05);
+    const axisSpan = Math.max(1 - axisStart, 0.05);
+    const centerX = frame.axisTop.x + ((yRatio - axisStart) / axisSpan) * (frame.axisBottom.x - frame.axisTop.x);
+    const dx = (frame.axisBottom.x - frame.axisTop.x);
+    const dy = (frame.axisBottom.y - frame.axisTop.y);
+    const physicalDx = dx * aspect;
+    const axisLength = Math.hypot(physicalDx, dy) || 1;
+    const normalX = dy / axisLength;
+    const normalY = -physicalDx / axisLength;
+    const centerY = frame.top + yRatio * (frame.bottom - frame.top);
+    const offset = side * halfWidth;
+    return map({
+      x: centerX + offset * normalX,
+      y: centerY + offset * aspect * normalY,
+    });
   }
   const side = (view === 'derecha' ? 1 : -1) * (flip ? -1 : 1);
   if (p.x * side < -0.15) return null; // cara opuesta, no visible
   const t = Math.max(0, Math.min(1, (p.z - Z_MIN) / (Z_MAX - Z_MIN)));
-  return { x: view === 'derecha' ? frame.left + t * (frame.right - frame.left) : frame.right - t * (frame.right - frame.left), y };
+  return map({ x: view === 'derecha' ? frame.left + t * (frame.right - frame.left) : frame.right - t * (frame.right - frame.left), y });
 }
 
 export interface Store3D {
@@ -293,9 +435,25 @@ export const lineKind = (l: { points: Vec3[]; segments?: Vec3[][]; technique_pre
   l.technique_preset === 'Flecha' ? 'arrow' : l.segments?.length ? 'pattern' : l.points.length === 2 ? 'line' : 'free';
 
 /** Convierte los trazos del visor 3D en elementos 2D para la vista activa. */
-export function elemsFrom3D(st: Store3D, view: ViewKind, frame: FaceFrame, aspect: number, flip: boolean): Elem[] {
+export function elemsFrom3D(
+  st: Store3D, view: ViewKind, frame: FaceFrame, aspect: number, flip: boolean, registration?: AffineRegistration,
+): Elem[] {
   const out: Elem[] = [];
-  const proj = (pts: Vec3[]) => pts.map(p => projectModel(p, view, frame, flip)).filter((q): q is P2 => q !== null);
+  const proj = (pts: Vec3[]) => pts.map(p => projectModel(p, view, frame, flip, aspect, registration)).filter((q): q is P2 => q !== null);
+  const projectPaths = (pts: Vec3[]) => {
+    const paths: P2[][] = [];
+    let current: P2[] = [];
+    pts.forEach(point => {
+      const projected = projectModel(point, view, frame, flip, aspect, registration);
+      if (projected) current.push(projected);
+      else {
+        if (current.length >= 2) paths.push(current);
+        current = [];
+      }
+    });
+    if (current.length >= 2) paths.push(current);
+    return paths;
+  };
   const sy = (frame.bottom - frame.top) / Y_SPAN; // alto de imagen por unidad de modelo
   st.markers.forEach(m => {
     const meta = m.id ? st.meta[m.id] : undefined, q = proj([m.position])[0];
@@ -305,7 +463,7 @@ export function elemsFrom3D(st: Store3D, view: ViewKind, frame: FaceFrame, aspec
     const meta = st.meta[l.id]; if (!meta) return;
     const kind = lineKind(l);
     const raw = kind === 'pattern' ? (l.segments ?? []) : [l.points];
-    const paths = raw.map(proj).filter(p => p.length >= 2);
+    const paths = raw.flatMap(projectPaths);
     if (paths.length) out.push({ ...meta, id: l.id, kind, paths });
   });
   st.shapes.forEach(sh => {

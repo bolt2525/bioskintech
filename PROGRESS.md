@@ -1,5 +1,7 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-11 3DLab: alineación facial adaptativa.
+- ✅ 2026-10-11 3DLab: calibración por anclajes y límites.
 - ✅ 2026-10-11 Inyectables: oclusión visual e interacción.
 - ✅ 2026-10-11 Inyectables: encuadre magnético responsive.
 - ✅ 2026-10-11 Guías: portal sobre visor corregido.

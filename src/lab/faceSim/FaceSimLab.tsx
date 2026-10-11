@@ -5,15 +5,18 @@ import Clinical3DViewer, {
   type DrawingTool, type FreehandLine, type Marker3D, type SurfaceShape,
 } from '../../components/admin/ficha-clinica/components/Clinical3DViewer';
 import {
-  AUTO_ZONE, MAX_EFFECTS, SIM_MODES, buildEffects, correctPoints, defaultFrame, elemsFrom3D, elemsFromPhoto, expandElems,
-  frameFromLandmarks, importInjectable,
-  type CorrectedPoint, type Elem, type ElemKind, type FaceFrame, type Meta, type P2, type PhotoEl, type SimMode, type ViewKind,
+  AUTO_ZONE, MAX_EFFECTS, REGISTRATION_ANCHORS, SIM_MODES, buildEffects, correctPoints, defaultFrame,
+  elemsFrom3D, elemsFromPhoto, expandElems, fitAffineRegistration, frameFromLandmarks, importInjectable, isWithinFace, projectModel,
+  registrationAnchorIndices,
+  type AffineRegistration, type CorrectedPoint, type Elem, type ElemKind, type FaceFrame, type Meta, type P2, type PhotoEl, type SimMode, type Vec3, type ViewKind,
 } from './engine';
 
 const catalog = (cat: string) => (injectablesCatalog as { categoria: string; elemento: string }[])
   .filter(i => i.categoria === cat).map(i => i.elemento);
 const ZONES = ['tercio_superior', 'tercio_medio', 'tercio_inferior'].flatMap(catalog);
 const MAX_SIDE = 1400;
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+const MAX_IMAGE_PIXELS = 40_000_000;
 
 const VERT = `attribute vec2 p;varying vec2 uv;void main(){uv=p*0.5+0.5;uv.y=1.0-uv.y;gl_Position=vec4(p,0.0,1.0);}`;
 const FRAG = `precision highp float;
@@ -79,18 +82,25 @@ function createRenderer(canvas: HTMLCanvasElement, img: HTMLCanvasElement): Rend
 }
 
 /** Detecta landmarks con MediaPipe si el modelo local existe (npm run lab:face-assets). */
-async function detectFrame(img: HTMLCanvasElement): Promise<FaceFrame | null> {
+async function detectFrame(img: HTMLCanvasElement): Promise<{ frame: FaceFrame | null; reason: string }> {
+  let landmarker: import('@mediapipe/tasks-vision').FaceLandmarker | null = null;
   try {
     const head = await fetch('/models/face/face_landmarker.task', { method: 'HEAD' });
-    if (!head.ok) return null;
+    if (!head.ok) return { frame: null, reason: `No está disponible el modelo facial (HTTP ${head.status}).` };
     const { FaceLandmarker, FilesetResolver } = await import('@mediapipe/tasks-vision');
     const fileset = await FilesetResolver.forVisionTasks('/mediapipe/wasm');
-    const lm = await FaceLandmarker.createFromOptions(fileset, {
+    landmarker = await FaceLandmarker.createFromOptions(fileset, {
       baseOptions: { modelAssetPath: '/models/face/face_landmarker.task' }, runningMode: 'IMAGE', numFaces: 1,
     });
-    const res = lm.detect(img); lm.close();
-    return res.faceLandmarks[0] ? frameFromLandmarks(res.faceLandmarks[0]) : null;
-  } catch { return null; }
+    const result = landmarker.detect(img);
+    return result.faceLandmarks[0]
+      ? { frame: frameFromLandmarks(result.faceLandmarks[0]), reason: '' }
+      : { frame: null, reason: 'MediaPipe no encontró un rostro en esta imagen.' };
+  } catch {
+    return { frame: null, reason: 'Falló la inicialización o validación del detector facial.' };
+  } finally {
+    landmarker?.close();
+  }
 }
 
 const uid = () => `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
@@ -109,7 +119,14 @@ const TOOLS_PHOTO: { id: ElemKind; label: string }[] = [
 ];
 const HA_CONFIG = { fanLines: 5, fanAngle: 25, gridCells: 4, fernBranches: 5 };
 
-interface Slot { canvas: HTMLCanvasElement; aspect: number; frame: FaceFrame }
+interface Slot {
+  canvas: HTMLCanvasElement;
+  aspect: number;
+  frame: FaceFrame;
+  modelAnchors?: Vec3[];
+  registration?: AffineRegistration;
+  registrationFlip?: boolean;
+}
 interface Snapshot { markers: Marker3D[]; lines: FreehandLine[]; shapes: SurfaceShape[]; meta: Record<string, Meta>; photoEls: PhotoEl[] }
 
 const segDist = (p: P2, a: P2, b: P2, k: number) => {
@@ -122,6 +139,7 @@ export default function FaceSimLab() {
   const glRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<Renderer | null>(null);
   const dragRef = useRef<string | null>(null);
+  const uploadRequestRef = useRef(0);
   const [photos, setPhotos] = useState<Partial<Record<ViewKind, Slot>>>({});
   const [view, setView] = useState<ViewKind>('frontal');
   const [renderTick, setRenderTick] = useState(0);
@@ -135,32 +153,42 @@ export default function FaceSimLab() {
   const [photoEls, setPhotoEls] = useState<PhotoEl[]>([]);
   const [history, setHistory] = useState<Snapshot[]>([]);
   const [draft, setDraft] = useState<{ kind: ElemKind; pts: P2[] } | null>(null);
+  const [calibrating, setCalibrating] = useState(false);
   const [mode, setMode] = useState<SimMode>('toxina');
   const [zone, setZone] = useState(AUTO_ZONE);
   const [product, setProduct] = useState('');
   const [dose, setDose] = useState(SIM_MODES.toxina.defaultDose);
   const [intensity, setIntensity] = useState(1);
   const [split, setSplit] = useState(0);
-  const [correct, setCorrect] = useState({ enabled: true, linear: true, mirror: true, tolerance: 0.02 });
+  const [correct, setCorrect] = useState({ enabled: false, linear: true, mirror: true, tolerance: 0.02 });
   const [flipX, setFlipX] = useState(false);
   const [showMarks, setShowMarks] = useState(true);
   const [status, setStatus] = useState('Marca en el modelo 3D o en la foto; la simulación se actualiza en tiempo real.');
   const [importText, setImportText] = useState('');
 
   const slot = photos[view];
+  const anchorIndices = registrationAnchorIndices(view);
+  const anchorCount = anchorIndices.length;
+  const anchorName = (index: number) => REGISTRATION_ANCHORS[anchorIndices[index]] ?? 'finalizando';
   const aspect = slot?.aspect ?? 0.75;
   const frame = slot?.frame ?? defaultFrame(view);
   const hasImage = !!slot;
   const curMeta = (): Meta => ({ mode, dose, zone, product: product || undefined });
 
   const elems = useMemo<Elem[]>(() => [
-    ...elemsFrom3D({ markers, lines, shapes, meta }, view, frame, aspect, flipX),
+    ...(slot?.registration && slot.registrationFlip === flipX
+      ? elemsFrom3D({ markers, lines, shapes, meta }, view, frame, aspect, flipX, slot.registration)
+      : []),
     ...elemsFromPhoto(photoEls.filter(e => e.view === view), aspect),
-  ], [markers, lines, shapes, meta, photoEls, view, frame, aspect, flipX]);
+  ], [markers, lines, shapes, meta, photoEls, view, frame, aspect, flipX, slot?.registration, slot?.registrationFlip]);
   const corrected = useMemo<CorrectedPoint[]>(() => {
     const { points, derived } = expandElems(elems, frame, aspect);
     const fixed = correctPoints(points, { ...correct, aspect, frame });
-    return [...fixed, ...derived.map(d => ({ ...d, rawX: d.x, rawY: d.y, corrected: null, shift: 0 }))];
+    return [
+      ...fixed.map(p => isWithinFace({ x: p.x, y: p.y }, frame)
+        ? p : { ...p, x: p.rawX, y: p.rawY, corrected: null, shift: 0 }),
+      ...derived.map(d => ({ ...d, rawX: d.x, rawY: d.y, corrected: null, shift: 0 })),
+    ];
   }, [elems, correct, aspect, frame]);
   const stats = useMemo(() => {
     const fixed = corrected.filter(p => p.corrected);
@@ -179,7 +207,9 @@ export default function FaceSimLab() {
   // Render en tiempo real
   useEffect(() => {
     if (!rendererRef.current) return;
-    const id = requestAnimationFrame(() => rendererRef.current?.draw(buildEffects(corrected, frame, aspect, intensity), aspect, split));
+    const id = requestAnimationFrame(() => rendererRef.current?.draw(
+      buildEffects(corrected.filter(p => isWithinFace({ x: p.x, y: p.y }, frame)), frame, aspect, intensity), aspect, split,
+    ));
     return () => cancelAnimationFrame(id);
   }, [corrected, frame, aspect, intensity, split, renderTick]);
 
@@ -191,34 +221,76 @@ export default function FaceSimLab() {
   const clearAll = () => { snap(); setMarkers([]); setLines([]); setShapes([]); setMeta({}); setPhotoEls([]); };
 
   const loadFile = async (file: File, target: ViewKind) => {
+    const requestId = ++uploadRequestRef.current;
     if (!file.type.startsWith('image/')) { setStatus('El archivo debe ser una imagen.'); return; }
-    const bmp = await createImageBitmap(file);
-    const k = Math.min(1, MAX_SIDE / Math.max(bmp.width, bmp.height));
-    const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
-    c.getContext('2d')!.drawImage(bmp, 0, 0, c.width, c.height); bmp.close();
+    if (file.size > MAX_IMAGE_BYTES) { setStatus('La imagen supera el límite de 20 MiB.'); return; }
+    let bmp: ImageBitmap | null = null;
+    let c: HTMLCanvasElement;
+    try {
+      bmp = await createImageBitmap(file);
+      if (bmp.width * bmp.height > MAX_IMAGE_PIXELS) { setStatus('La imagen supera el límite de 40 megapíxeles.'); return; }
+      const k = Math.min(1, MAX_SIDE / Math.max(bmp.width, bmp.height));
+      c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+      const context = c.getContext('2d');
+      if (!context) { setStatus('No se pudo preparar la imagen en este navegador.'); return; }
+      context.drawImage(bmp, 0, 0, c.width, c.height);
+    } catch {
+      setStatus('No se pudo decodificar la imagen. Selecciona otra fotografía.');
+      return;
+    } finally {
+      bmp?.close();
+    }
+    if (requestId !== uploadRequestRef.current) return;
     setPhotos(p => ({ ...p, [target]: { canvas: c, aspect: c.width / c.height, frame: defaultFrame(target) } }));
+    setCalibrating(false);
     setView(target);
-    if (target !== 'frontal') { setStatus('Lateral cargada: ajusta el marco (cabeza completa) para alinear los trazos 3D.'); return; }
-    setStatus('Detectando rostro…');
-    const f = await detectFrame(c);
-    if (f) setPhotos(p => (p.frontal?.canvas === c ? { ...p, frontal: { ...p.frontal, frame: f } } : p));
-    setStatus(f ? 'Rostro detectado (MediaPipe, 478 landmarks).'
-      : 'Marco facial manual (sin modelo MediaPipe: ejecuta npm run lab:face-assets). Ajusta el marco.');
+    setStatus(`Detectando rostro en la vista ${VIEWS.find(v => v.id === target)?.label ?? target}…`);
+    const detected = await detectFrame(c);
+    if (requestId !== uploadRequestRef.current) return;
+    if (detected.frame) setPhotos(p => (p[target]?.canvas === c ? { ...p, [target]: { ...p[target]!, frame: detected.frame! } } : p));
+    setStatus(detected.frame
+      ? `Rostro delimitado con MediaPipe en vista ${VIEWS.find(v => v.id === target)?.label ?? target}; falta revisar la alineación con el modelo.`
+      : `${detected.reason} Ajusta el marco manualmente; no se proyectarán marcas 3D sin alineación revisada.`);
   };
   const updateFrame = (k: 'top' | 'bottom' | 'left' | 'right', v: number) => setPhotos(p => {
     const s = p[view]; if (!s) return p;
-    const n = { ...s.frame, [k]: v, source: 'manual' as const }, mid = (n.left + n.right) / 2;
-    return { ...p, [view]: { ...s, frame: { ...n, axisTop: { x: mid, y: n.top }, axisBottom: { x: mid, y: n.bottom } } } };
+    const { anchors: _anchors, outline: _outline, ...manualFrame } = s.frame;
+    void _anchors; void _outline;
+    const n = { ...manualFrame, [k]: v, source: 'manual' as const }, mid = (n.left + n.right) / 2;
+    return { ...p, [view]: { ...s, registration: undefined, modelAnchors: undefined, frame: { ...n, axisTop: { x: mid, y: n.top }, axisBottom: { x: mid, y: n.bottom } } } };
   });
 
   // ── Marcación en modelo 3D ──
   const addMeta = (id: string) => setMeta(m => ({ ...m, [id]: curMeta() }));
   const onMarker = (m: Marker3D) => {
     if (tool3d !== 'point' || !m.id) return;
+    if (calibrating) {
+      const current = slot?.modelAnchors ?? [];
+      if (!slot || current.length >= anchorCount) return;
+      const next = [...current, m.position];
+      if (next.length < anchorCount) {
+        setPhotos(p => p[view]?.canvas === slot.canvas ? { ...p, [view]: { ...p[view]!, modelAnchors: next } } : p);
+        setStatus(`Anclaje ${next.length}/${anchorCount} guardado. Ahora marca en el modelo: ${anchorName(next.length)}.`);
+        return;
+      }
+      const source = next.map(position => projectModel(position, view, frame, flipX, aspect))
+        .map(point => point ?? { x: Number.NaN, y: Number.NaN });
+      const targets = anchorIndices.map(index => frame.anchors?.[index]).filter((point): point is P2 => !!point);
+      const registration = fitAffineRegistration(source, targets, aspect, frame.bottom - frame.top);
+      setCalibrating(false);
+      if (!registration || registration.rmse > 0.025 || registration.maxError > 0.05) {
+        setPhotos(p => p[view]?.canvas === slot.canvas ? { ...p, [view]: { ...p[view]!, modelAnchors: undefined, registration: undefined } } : p);
+        setStatus('Alineación rechazada: los anclajes de foto y modelo no coinciden lo suficiente. Revisa la vista y vuelve a calibrar; no se proyectarán las marcas 3D.');
+        return;
+      }
+      setPhotos(p => p[view]?.canvas === slot.canvas ? { ...p, [view]: { ...p[view]!, modelAnchors: next, registration, registrationFlip: flipX } } : p);
+      setStatus(`Alineación manual aceptada; error de validación cruzada: RMS ${(registration.rmse * 100).toFixed(1)}%, máximo ${(registration.maxError * 100).toFixed(1)}% del alto facial. Proyección orientativa.`);
+      return;
+    }
     snap(); setMarkers(p => [...p, m]); addMeta(m.id);
   };
-  const onLine = (l: FreehandLine) => { snap(); setLines(p => [...p, l]); addMeta(l.id); };
-  const onShape = (s: SurfaceShape) => { snap(); setShapes(p => [...p, s]); addMeta(s.id); };
+  const onLine = (l: FreehandLine) => { if (calibrating) return; snap(); setLines(p => [...p, l]); addMeta(l.id); };
+  const onShape = (s: SurfaceShape) => { if (calibrating) return; snap(); setShapes(p => [...p, s]); addMeta(s.id); };
 
   // ── Marcación sobre la foto ──
   const toNorm = (e: React.PointerEvent) => {
@@ -238,6 +310,7 @@ export default function FaceSimLab() {
   const onDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!hasImage || workMode !== 'foto') return;
     const n = toNorm(e), id = hitPhoto(n);
+    if (!isWithinFace(n, frame)) { setStatus('Marca dentro del contorno facial detectado o del marco manual.'); return; }
     if (e.button === 2 || e.altKey) { if (id) { snap(); removeEl(id); } return; }
     const hitEl = photoEls.find(p => p.id === id);
     if (hitEl?.kind === 'point') { snap(); dragRef.current = id; e.currentTarget.setPointerCapture(e.pointerId); return; }
@@ -246,6 +319,10 @@ export default function FaceSimLab() {
   };
   const onMove = (e: React.PointerEvent) => {
     const n = toNorm(e);
+    if (!isWithinFace(n, frame)) {
+      if (draft) setDraft(null);
+      return;
+    }
     if (dragRef.current) { setPhotoEls(ps => ps.map(p => (p.id === dragRef.current ? { ...p, pts: [n] } : p))); return; }
     setDraft(d => {
       if (!d || d.kind === 'point') return d;
@@ -284,7 +361,7 @@ export default function FaceSimLab() {
       snap();
       setMarkers(p => [...p, ...(r.markersFull as unknown as Marker3D[])]); setLines(p => [...p, ...(r.lines as unknown as FreehandLine[])]);
       setShapes(p => [...p, ...(r.shapes as unknown as SurfaceShape[])]); setMeta(m => ({ ...m, ...r.meta }));
-      setStatus(`${n} elementos importados desde la ficha de inyectables (visibles en el modelo 3D y proyectados a la foto).`);
+      setStatus(`${n} elementos importados al modelo 3D.${slot?.registration ? ' La vista cuenta con alineación fotográfica revisada.' : ' La foto no mostrará esas marcas hasta completar y aprobar la alineación.'}`);
     } catch { setStatus('JSON inválido.'); }
   };
   const exportPng = () => {
@@ -330,7 +407,7 @@ export default function FaceSimLab() {
             ))}
           </div>
           <div className="mt-1 grid grid-cols-3 gap-1">
-            {VIEWS.map(v => <button key={v.id} type="button" disabled={!photos[v.id]} aria-pressed={view === v.id} onClick={() => setView(v.id)}
+            {VIEWS.map(v => <button key={v.id} type="button" disabled={!photos[v.id]} aria-pressed={view === v.id} onClick={() => { setCalibrating(false); setView(v.id); }}
               className={`rounded px-1 py-1 text-[11px] ${view === v.id ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'} disabled:opacity-40`}>Ver</button>)}
           </div>
         </div>
@@ -340,11 +417,11 @@ export default function FaceSimLab() {
           <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Marcar sobre</span>
           <div className="grid grid-cols-2 gap-1">
             <button type="button" aria-pressed={workMode === '3d'} onClick={() => setWorkMode('3d')} className={`flex items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold ${workMode === '3d' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'}`}><Box className="h-3.5 w-3.5" aria-hidden="true" />Modelo 3D</button>
-            <button type="button" aria-pressed={workMode === 'foto'} onClick={() => setWorkMode('foto')} className={`flex items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold ${workMode === 'foto' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'}`}><ImageIcon className="h-3.5 w-3.5" aria-hidden="true" />Foto</button>
+            <button type="button" disabled={calibrating} aria-pressed={workMode === 'foto'} onClick={() => setWorkMode('foto')} className={`flex items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold ${workMode === 'foto' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'} disabled:opacity-50`}><ImageIcon className="h-3.5 w-3.5" aria-hidden="true" />Foto</button>
           </div>
           <div className="mt-2 flex flex-wrap gap-1">
             {workMode === '3d'
-              ? TOOLS_3D.map(t => <button key={t.id} type="button" aria-pressed={tool3d === t.id} onClick={() => setTool3d(t.id)} className={`rounded-md px-2 py-1 text-[11px] font-semibold ${tool3d === t.id ? 'bg-[#b8944d] text-white' : 'bg-slate-100 text-slate-600'}`}>{t.label}</button>)
+              ? TOOLS_3D.map(t => <button key={t.id} type="button" disabled={calibrating && t.id !== 'point'} aria-pressed={tool3d === t.id} onClick={() => setTool3d(t.id)} className={`rounded-md px-2 py-1 text-[11px] font-semibold ${tool3d === t.id ? 'bg-[#b8944d] text-white' : 'bg-slate-100 text-slate-600'} disabled:opacity-50`}>{t.label}</button>)
               : TOOLS_PHOTO.map(t => <button key={t.id} type="button" aria-pressed={toolPhoto === t.id} onClick={() => setToolPhoto(t.id)} className={`rounded-md px-2 py-1 text-[11px] font-semibold ${toolPhoto === t.id ? 'bg-[#b8944d] text-white' : 'bg-slate-100 text-slate-600'}`}>{t.label}</button>)}
           </div>
         </div>
@@ -398,17 +475,52 @@ export default function FaceSimLab() {
 
         <details className="rounded-xl bg-slate-50 p-3 text-xs">
           <summary className="flex cursor-pointer items-center gap-1 font-semibold uppercase text-slate-500"><ScanFace className="h-3.5 w-3.5" aria-hidden="true" /> Marco / alineación ({VIEWS.find(v => v.id === view)?.label})</summary>
+          {slot?.frame.anchors && (
+            <div className="mt-2 space-y-2">
+              <p className="text-slate-600">La detección ubica referencias en la foto, pero no conoce por sí sola su correspondencia con este modelo genérico.</p>
+              <button
+                type="button"
+                disabled={calibrating}
+                onClick={() => {
+                  setPhotos(p => p[view]?.canvas === slot.canvas
+                    ? { ...p, [view]: { ...p[view]!, modelAnchors: [], registration: undefined } }
+                    : p);
+                  setCalibrating(true);
+                  setTool3d('point');
+                  setWorkMode('3d');
+                  setStatus(`Calibración manual: marca en el modelo «${REGISTRATION_ANCHORS[0]}» (${REGISTRATION_ANCHORS.length} referencias).`);
+                }}
+                className="w-full rounded-lg bg-slate-800 px-2 py-1.5 font-semibold text-white disabled:opacity-50"
+              >
+                {slot.registration && slot.registrationFlip === flipX ? 'Recalibrar modelo y foto' : 'Alinear modelo con la foto'}
+              </button>
+              {calibrating && (
+                <>
+                  <p className="font-semibold text-amber-700">Marca {Math.min((slot.modelAnchors?.length ?? 0) + 1, anchorCount)}/{anchorCount} en el modelo: {anchorName(slot.modelAnchors?.length ?? 0)}.</p>
+                  <button type="button" onClick={() => { setCalibrating(false); setPhotos(p => p[view] ? { ...p, [view]: { ...p[view]!, modelAnchors: undefined, registration: undefined } } : p); setStatus('Calibración cancelada; no se proyectarán marcas 3D.'); }} className="w-full rounded border border-slate-300 px-2 py-1 text-slate-700">Cancelar alineación</button>
+                </>
+              )}
+              {slot.registration && slot.registrationFlip === flipX && (
+                <p className="text-emerald-700">Alineación manual aceptada · validación cruzada RMS {(slot.registration.rmse * 100).toFixed(1)}% · máximo {(slot.registration.maxError * 100).toFixed(1)}% del alto facial.</p>
+              )}
+              <p className="text-slate-500">Sin detección o calibración aceptada, las marcas 3D no se proyectan a la foto. Una marca hecha en foto permanece solo en la imagen.</p>
+            </div>
+          )}
           {(['top', 'bottom', 'left', 'right'] as const).map(k => (
             <label key={k} className="mt-2 block capitalize">{k}
               <input type="range" min={0} max={1} step={0.005} value={frame[k]} disabled={!slot} onChange={e => updateFrame(k, Number(e.target.value))} className="w-full accent-[#b8944d]" />
             </label>
           ))}
-          <label className="mt-2 flex items-center gap-2"><input type="checkbox" checked={flipX} onChange={e => setFlipX(e.target.checked)} />Invertir lado del modelo 3D</label>
+          <label className="mt-2 flex items-center gap-2"><input type="checkbox" checked={flipX} onChange={e => {
+            setCalibrating(false);
+            setFlipX(e.target.checked);
+            setPhotos(p => p[view] ? { ...p, [view]: { ...p[view]!, registration: undefined, modelAnchors: undefined } } : p);
+          }} />Invertir lado del modelo 3D</label>
         </details>
 
         <details className="rounded-xl bg-slate-50 p-3 text-xs">
           <summary className="flex cursor-pointer items-center gap-1 font-semibold uppercase text-slate-500"><FileJson className="h-3.5 w-3.5" aria-hidden="true" /> Importar de Inyectables</summary>
-          <p className="mt-2 text-slate-500">Pega el registro de inyectable (o su <code>mapping_data</code>): puntos, líneas, flechas, patrones y formas pasan al modelo 3D y a la foto.</p>
+          <p className="mt-2 text-slate-500">Pega el registro de inyectable (o su <code>mapping_data</code>): puntos, líneas, flechas, patrones y formas pasan al modelo; la foto requiere alineación revisada.</p>
           <textarea value={importText} onChange={e => setImportText(e.target.value)} rows={4} className="mt-2 w-full rounded border border-slate-300 p-1 font-mono text-[10px]" />
           <button type="button" onClick={doImport} className="mt-2 w-full rounded-lg bg-slate-800 px-2 py-1.5 font-semibold text-white">Importar</button>
         </details>
@@ -447,7 +559,9 @@ export default function FaceSimLab() {
               cameraPreset="face"
               pointMarkerScale={0.7}
               height="clamp(380px, 78vh, 720px)"
-              interactionHint={tool3d === 'navigate' ? 'Arrastra para rotar' : 'Marca sobre el modelo; se proyecta a la foto en tiempo real'}
+              interactionHint={calibrating
+                ? `Anclaje ${Math.min((slot?.modelAnchors?.length ?? 0) + 1, anchorCount)}/${anchorCount}: ${anchorName(slot?.modelAnchors?.length ?? 0)}`
+                : tool3d === 'navigate' ? 'Arrastra para rotar' : slot?.registration ? 'Alineación revisada; proyección orientativa' : 'Calibra primero para proyectar marcas en la foto'}
             />
           </section>
         )}
@@ -458,6 +572,19 @@ export default function FaceSimLab() {
             onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onContextMenu={e => e.preventDefault()}>
             <canvas ref={glRef} className="h-full w-full" aria-label="Simulación del rostro" />
             {split > 0 && <div className="pointer-events-none absolute inset-y-0 w-0.5 bg-white/80" style={{ left: `${split * 100}%` }} />}
+            {hasImage && frame.outline && (
+              <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
+                <polygon points={poly(frame.outline)} fill="rgba(56,189,248,0.06)" stroke="#38bdf8" strokeWidth="0.0025" strokeDasharray="0.01 0.006" />
+                <line x1={frame.axisTop.x} y1={frame.axisTop.y} x2={frame.axisBottom.x} y2={frame.axisBottom.y} stroke="#38bdf8" strokeWidth="0.002" strokeDasharray="0.008 0.006" />
+                {frame.anchors?.map((point, index) => (
+                  <g key={index}>
+                    <circle cx={point.x} cy={point.y} r="0.009" fill="#38bdf8" stroke="white" strokeWidth="0.002" />
+                    <text x={point.x + 0.012} y={point.y - 0.01} fill="white" stroke="#0f172a" strokeWidth="0.004" paintOrder="stroke" fontSize="0.025" fontWeight="bold">{index + 1}</text>
+                    <title>{REGISTRATION_ANCHORS[index]}</title>
+                  </g>
+                ))}
+              </svg>
+            )}
             {showMarks && (
               <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
                 {renderShapes(elems)}
