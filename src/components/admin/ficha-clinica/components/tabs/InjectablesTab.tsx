@@ -2708,9 +2708,10 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
               {/* ── SIN tabs — la vista es siempre de marcación ── */}
 
               <div ref={viewerRef} className="p-4">
-                <div className="sticky top-20 z-40 -mx-4 mb-3 space-y-2 bg-white/95 px-4 pb-1 pt-1 backdrop-blur">
-                  <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/95 p-2 shadow-md">
-                    <div role="group" aria-label="Navegación y puntos" className="flex shrink-0 items-center gap-2">
+                <div className="sticky top-20 z-40 -mx-4 mb-3 grid items-start gap-2 bg-white/95 px-4 pb-1 pt-1 backdrop-blur lg:grid-cols-[minmax(14rem,0.8fr)_minmax(0,2fr)]">
+                  <div role="group" aria-label="Navegación y puntos" className="rounded-xl border border-slate-200 bg-slate-50/95 p-3 shadow-md lg:col-start-1 lg:row-start-1">
+                    <span className="mb-2 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">Interacción</span>
+                    <div className="flex flex-col gap-2">
                       <button
                         type="button"
                         aria-pressed={activeTool === 'none' && pointMode === 'none'}
@@ -2722,7 +2723,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                           setShowShapesDropdown(false);
                           setShowHaShapesDropdown(false);
                         }}
-                        className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold ${
+                        className={`inline-flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold ${
                           activeTool === 'none' && pointMode === 'none'
                             ? 'border-slate-800 bg-slate-800 text-white'
                             : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
@@ -2733,13 +2734,42 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                       </button>
                       <button type="button" aria-pressed={pointMode === 'add'}
                         onClick={() => { setActiveTool('none'); setPointMode(mode => mode === 'add' ? 'none' : 'add'); }}
-                        className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-gold ${
+                        className={`inline-flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-gold ${
                           pointMode === 'add' ? 'border-gold bg-gold-light text-gold-ink' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
                         }`}>
                         <Plus className="h-4 w-4" aria-hidden="true" /> Añadir punto
                       </button>
                     </div>
-                    <p className="min-w-0 flex-1 text-sm text-slate-700" role="status" aria-live="polite">
+                    {refJsonLoaded && (
+                      <div role="group" aria-label="Edición de puntos guía" className="mt-3 border-t border-slate-200 pt-3">
+                        <span className="mb-2 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">Puntos de guía</span>
+                        <div className="grid grid-cols-2 gap-2">
+                          {(['none', 'delete'] as const).map(mode => (
+                            <button
+                              key={mode}
+                              type="button"
+                              aria-pressed={pointMode === mode}
+                              onClick={() => {
+                                setActiveTool('none');
+                                setPointMode(prev => prev === mode ? 'none' : mode);
+                                setShowShapesDropdown(false);
+                                setShowHaShapesDropdown(false);
+                              }}
+                              className={`rounded-lg border px-2.5 py-2 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold ${
+                                pointMode === mode
+                                  ? mode === 'delete'
+                                    ? 'border-red-500/50 bg-red-500/10 text-red-700'
+                                    : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700'
+                                  : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-100'
+                              }`}
+                            >
+                              {mode === 'none' ? '↔ Mover' : '✕ Eliminar'}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <p className="mt-2 text-xs leading-relaxed text-slate-600" role="status" aria-live="polite">
                       {activeTool === 'none' && pointMode === 'none'
                         ? 'Arrastra para rotar. Haz clic en un punto o trazo para editarlo; la piel no añade puntos.'
                         : pointMode === 'add'
@@ -2749,7 +2779,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                             : 'Modo dibujo activo: arrastrar sobre la piel dibuja, no rota. Usa Navegar / Rotar o Escape antes de girar.'}
                     </p>
                   </div>
-                  <details className="rounded-xl border border-slate-200 bg-white"
+                  <details className="rounded-xl border border-slate-200 bg-white lg:col-start-2 lg:row-span-2 lg:row-start-1"
                     onToggle={event => {
                       if (!event.currentTarget.open) {
                         setActiveTool('none');
@@ -2762,7 +2792,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     </summary>
                     <p className="px-4 pb-3 text-sm leading-relaxed text-slate-600" role="status" aria-live="polite">{DRAWING_GUIDE[activeTool]}</p>
                   {/* ── Toolbar secundaria: Herramientas de Dibujo HA ─────────────── */}
-                  <div className={`mb-2 grid grid-cols-2 gap-2 rounded-xl border border-slate-700 bg-slate-900 p-3 ${activeType === 'relleno' ? 'xl:grid-cols-4' : 'xl:grid-cols-3'}`} aria-label="Herramientas de marcación y dibujo">
+                  <div className="mb-2 grid grid-cols-1 gap-2 rounded-xl border border-slate-700 bg-slate-900 p-3 sm:grid-cols-2" aria-label="Herramientas de marcación y dibujo">
                     <div role="group" aria-label="Trazos" className="min-w-0 rounded-lg border border-slate-700/80 bg-slate-800/50 p-2">
                       <span className="mb-2 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">Trazos</span>
                       <div className="flex flex-wrap items-center gap-2">
@@ -2965,9 +2995,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                     )}
                   </div>
                   </details>
-                </div>
-
-                <details className="mb-3 rounded-xl border border-slate-200">
+                <details className="rounded-xl border border-slate-200 bg-white lg:col-start-1 lg:row-start-2">
                   <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-700">Guías y visibilidad <span className="ml-2 text-xs font-normal text-slate-500">Referencia visual opcional</span></summary>
                   <p className="px-4 pb-3 text-xs leading-relaxed text-slate-500">La guía ayuda a ubicar referencias del rostro, no prescribe sitios de aplicación. Ocultar puntos de la guía conserva visibles los puntos con unidades registradas.</p>
                 {/* Toolbar: Trazado de Referencia Superior (solo para toxina) */}
@@ -3005,25 +3033,6 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                         <span className="text-[10px] opacity-70">({editablePoints.length})</span>
                       </button>
 
-                      {/* Modo de interacción — Mover y Eliminar (solo con trazado cargado) */}
-                      <div className="w-px h-5 bg-slate-600" />
-                      <span className="text-xs text-slate-400 font-medium">Modo:</span>
-                      {(['none', 'delete'] as const).map(mode => (
-                        <button
-                          key={mode}
-                          onClick={() => setPointMode(prev => prev === mode ? 'none' : mode)}
-                          className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
-                            pointMode === mode
-                              ? mode === 'delete'
-                                ? 'bg-red-500/30 text-red-300 border-red-500/50'
-                                : 'bg-emerald-500/25 text-emerald-300 border-emerald-500/40'
-                              : 'bg-slate-700/50 text-slate-400 border-slate-600 hover:bg-slate-700'
-                          }`}
-                          title={mode === 'none' ? 'Mover puntos (drag)' : 'Eliminar punto al clic'}
-                        >
-                          {mode === 'none' ? '↔ Mover' : '✕ Eliminar'}
-                        </button>
-                      ))}
                     </>
                   )}
 
@@ -3086,6 +3095,7 @@ export default function InjectablesTab({ recordId, injectables: initialInjectabl
                   </div>
                 </div>
                 </details>
+                </div>
 
                 {/* Two-column layout: 3D viewer left, panel right */}
                 <div className="flex flex-col lg:flex-row gap-4">
