@@ -25,3 +25,7 @@ Thumbs.db
 .vercel
 .env*.local
 .env*
+
+# Assets del simulador facial (npm run lab:face-assets)
+/public/mediapipe/
+/public/models/face/
