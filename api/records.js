@@ -1138,6 +1138,7 @@ export default async function handler(req, res) {
         updateTreatment: ['treatments', body.id],
         deleteTreatment: ['treatments', req.query.id],
         deletePackage: ['treatment_packages', req.query.id],
+        updatePackage: ['treatment_packages', body.id],
         getInjectablesByTreatment: ['treatments', req.query.treatment_id],
         updateInjectable: ['injectables', body.id],
         deleteInjectable: ['injectables', req.query.id],
@@ -3304,6 +3305,91 @@ export default async function handler(req, res) {
           await client.query('DELETE FROM treatment_packages WHERE id = $1', [delPkgId]);
           await client.query('COMMIT');
           return res.status(200).json({ success: true });
+        } catch (error) {
+          await client.query('ROLLBACK').catch(() => {});
+          throw error;
+        }
+      }
+
+      case 'updatePackage': {
+        const {
+          id: rawPkgId,
+          name: pkgName,
+          total_cost: rawPkgCost,
+          estimated_sessions: rawPkgSessions,
+        } = body;
+        const pkgId = Number(rawPkgId);
+        const pkgSessions = Number(rawPkgSessions);
+        if (!Number.isSafeInteger(pkgId) || pkgId <= 0 || !pkgName?.trim()) {
+          return res.status(400).json({ error: 'ID y nombre del paquete son requeridos' });
+        }
+        if (!Number.isSafeInteger(pkgSessions) || pkgSessions < 1 || pkgSessions > 100) {
+          return res.status(400).json({ error: 'Las sesiones estimadas deben estar entre 1 y 100' });
+        }
+        let pkgCost;
+        try {
+          pkgCost = normalizeMoney(rawPkgCost || 0, 'Costo total');
+        } catch (validationError) {
+          return res.status(400).json({ error: validationError.message });
+        }
+
+        try {
+          await client.query('BEGIN');
+          const existingRes = await client.query(
+            `SELECT tp.*,
+               COALESCE(SUM(t.cost), 0)::float AS sessions_paid,
+               COUNT(t.id)::int AS sessions_count
+             FROM treatment_packages tp
+             LEFT JOIN treatments t ON t.package_id = tp.id
+               AND t.record_id = tp.record_id
+               AND t.consultation_id = tp.consultation_id
+             WHERE tp.id = $1 AND tp.clinic_id = $2
+             GROUP BY tp.id
+             FOR UPDATE`,
+            [pkgId, effectiveClinicId]
+          );
+          if (existingRes.rowCount === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Paquete no encontrado o sin permisos' });
+          }
+          const currentPkg = existingRes.rows[0];
+          const sessionsCount = currentPkg.sessions_count || 0;
+          if (pkgSessions < sessionsCount) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({
+              error: `No puedes reducir las sesiones estimadas (${pkgSessions}) a menos de las sesiones ya registradas (${sessionsCount})`
+            });
+          }
+          const totalPaid = Number(currentPkg.initial_payment || 0) + Number(currentPkg.sessions_paid || 0);
+          if (pkgCost < totalPaid) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({
+              error: `El costo total ($${pkgCost.toFixed(2)}) no puede ser menor al monto ya pagado ($${totalPaid.toFixed(2)})`
+            });
+          }
+
+          const updated = await client.query(
+            `UPDATE treatment_packages
+             SET name = $1, total_cost = $2, estimated_sessions = $3
+             WHERE id = $4 AND clinic_id = $5
+             RETURNING *`,
+            [pkgName.trim(), pkgCost, pkgSessions, pkgId, effectiveClinicId]
+          );
+
+          await logAudit(client, {
+            recordId: currentPkg.record_id,
+            sessionUser: await getSessionUserOnce(),
+            actionType: 'update',
+            module: 'treatment_package',
+            summary: `Modificó paquete: ${pkgName.trim()}`,
+          });
+
+          await client.query('COMMIT');
+          return res.status(200).json({
+            ...updated.rows[0],
+            sessions_paid: currentPkg.sessions_paid,
+            sessions_count: currentPkg.sessions_count,
+          });
         } catch (error) {
           await client.query('ROLLBACK').catch(() => {});
           throw error;

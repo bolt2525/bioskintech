@@ -413,7 +413,9 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
   // ── Paquetes ─────────────────────────────────────────────────────────────
   const [packages, setPackages] = useState<TreatmentPackage[]>([]);
   const [packageModalOpen, setPackageModalOpen] = useState(false);
+  const [editingPackage, setEditingPackage] = useState<TreatmentPackage | null>(null);
   const [expandedPackages, setExpandedPackages] = useState<Set<number>>(new Set());
+  const [duplicating, setDuplicating] = useState(false);
 
   const loadPackages = useCallback(async () => {
     try {
@@ -574,6 +576,78 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
     } finally {
       setDeleting(false);
       setConfirmation(null);
+    }
+  };
+
+  /** Duplica una sesión (del paquete o independiente) y la registra de inmediato con la fecha actual */
+  const handleDuplicate = async (treatmentToDup?: Treatment) => {
+    const target = treatmentToDup || currentTreatment;
+    if (!target.id) return;
+    setDuplicating(true);
+    setMessage(null);
+    try {
+      const rest = { ...target };
+      delete rest.id;
+      delete rest.created_at;
+      delete rest.updated_at;
+
+      // Si pertenece a un paquete, asegurar que el costo no supere el saldo pendiente del paquete
+      let safeCost = Number(rest.cost) || 0;
+      if (rest.package_id) {
+        const pkg = packages.find(p => p.id === rest.package_id);
+        const debt = pkg ? getPackageDebt(pkg) : 0;
+        safeCost = Math.min(safeCost, Math.max(0, debt));
+      }
+
+      const body = {
+        record_id: recordId,
+        treatment_mode: mode,
+        consultation_id: consultationId,
+        ...rest,
+        cost: safeCost,
+        date: getLocalDate(),
+      };
+
+      const response = await recordsFetch('/api/records?action=addTreatment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      const resBody = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(resBody?.error || `Error al duplicar (HTTP ${response.status})`);
+      }
+
+      onSave();
+      if (rest.package_id) {
+        await loadPackages();
+        setExpandedPackages(prev => new Set(prev).add(rest.package_id!));
+      }
+      const newTreatment: Treatment = { ...resBody, date: toDateOnly(resBody.date) };
+      setCurrentTreatment(newTreatment);
+      setCostInput(newTreatment.cost > 0 ? String(newTreatment.cost) : '');
+      setDateLocked(false);
+      if (groupByProcedure && !rest.package_id) {
+        const normalKey = (newTreatment.procedure_name || 'Sin procedimiento').trim().toLowerCase();
+        setExpandedGroups(prev => new Set(prev).add(normalKey));
+      }
+      setHighlightedId(newTreatment.id ?? null);
+      setTimeout(() => setHighlightedId(null), 2500);
+      setMessage({
+        type: 'success',
+        text: rest.package_id
+          ? 'Tratamiento duplicado dentro del paquete como nueva sesión. Puedes ajustar fecha y datos.'
+          : 'Tratamiento duplicado como nueva sesión independiente. Puedes ajustar fecha y datos.',
+      });
+    } catch (error) {
+      console.error('Error duplicating treatment:', error);
+      setMessage({
+        type: 'error',
+        text: error instanceof Error ? error.message : 'Error al duplicar el tratamiento',
+      });
+    } finally {
+      setDuplicating(false);
     }
   };
 
@@ -753,7 +827,23 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
     >
       <div className="flex justify-between items-center text-xs">
         <span className="font-medium">{new Date(toDateOnly(t.date) + 'T12:00:00').toLocaleDateString('es-EC')}</span>
-        <FileText className="w-3.5 h-3.5 opacity-60" />
+        <div className="flex items-center gap-1">
+          <Tooltip content="Duplicar como nueva sesión">
+            <button
+              type="button"
+              disabled={duplicating}
+              onClick={(e) => {
+                e.stopPropagation();
+                void handleDuplicate(t);
+              }}
+              className="p-1 rounded hover:bg-black/10 text-inherit opacity-70 hover:opacity-100 transition-opacity"
+              aria-label="Duplicar tratamiento"
+            >
+              <Copy className="w-3.5 h-3.5" />
+            </button>
+          </Tooltip>
+          <FileText className="w-3.5 h-3.5 opacity-60" />
+        </div>
       </div>
       <div className="text-xs font-semibold truncate mt-0.5">{t.procedure_name || 'Sin procedimiento'}</div>
       <div className="text-xs opacity-75 truncate">{t.equipment_used || 'Sin equipo'}</div>
@@ -780,7 +870,10 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
           Historial
           <Tooltip content="Crear Paquete">
             <button
-              onClick={() => setPackageModalOpen(true)}
+              onClick={() => {
+                setEditingPackage(null);
+                setPackageModalOpen(true);
+              }}
               className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-[#deb887]/10 hover:text-[#b8944d] hover:border-[#deb887]/40 transition-colors"
             >
               <Package className="w-4 h-4" />
@@ -817,24 +910,46 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                 const pkgSessions = sortedTreatments.filter(t => t.package_id === pkg.id);
                 return (
                   <div key={pkg.id} className="space-y-1.5">
-                    <button
-                      type="button"
-                      onClick={() => togglePackageExpand(pkg.id!)}
-                      className="w-full flex flex-col gap-1 px-2.5 py-2 bg-amber-50 hover:bg-amber-100/70 rounded-lg border border-amber-200 transition-colors text-left"
-                    >
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        {isCollapsed ? <ChevronRight className="w-3.5 h-3.5 text-amber-700 shrink-0" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-700 shrink-0" />}
-                        <Package className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-                        <span className="text-xs font-bold text-amber-800 truncate">{pkg.name}</span>
+                    <div className="w-full flex flex-col gap-1 px-2.5 py-2 bg-amber-50 hover:bg-amber-100/70 rounded-lg border border-amber-200 transition-colors text-left">
+                      <div className="flex items-center justify-between gap-1.5 min-w-0">
+                        <button
+                          type="button"
+                          onClick={() => togglePackageExpand(pkg.id!)}
+                          className="flex items-center gap-1.5 min-w-0 flex-1 text-left"
+                        >
+                          {isCollapsed ? <ChevronRight className="w-3.5 h-3.5 text-amber-700 shrink-0" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-700 shrink-0" />}
+                          <Package className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                          <span className="text-xs font-bold text-amber-800 truncate">{pkg.name}</span>
+                        </button>
+                        <Tooltip content="Modificar paquete">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingPackage(pkg);
+                              setPackageModalOpen(true);
+                            }}
+                            className="p-1 rounded text-amber-700 hover:text-amber-950 hover:bg-amber-200/70 transition-colors shrink-0"
+                            aria-label="Modificar paquete"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                        </Tooltip>
                       </div>
-                      <div className="flex items-center justify-between text-[10px] text-amber-700 pl-5">
-                        <span>{pkg.sessions_count ?? pkgSessions.length} de {pkg.estimated_sessions} sesiones</span>
-                        <span className={`font-semibold ${debt > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                          {debt > 0 ? `Debe $${debt.toFixed(2)}` : 'Pagado'}
-                        </span>
-                      </div>
-                      <div className="pl-5 text-[10px] text-amber-600">Pagado: ${paid.toFixed(2)} / ${Number(pkg.total_cost).toFixed(2)}</div>
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => togglePackageExpand(pkg.id!)}
+                        className="text-left w-full space-y-0.5"
+                      >
+                        <div className="flex items-center justify-between text-[10px] text-amber-700 pl-5">
+                          <span>{pkg.sessions_count ?? pkgSessions.length} de {pkg.estimated_sessions} sesiones</span>
+                          <span className={`font-semibold ${debt > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                            {debt > 0 ? `Debe $${debt.toFixed(2)}` : 'Pagado'}
+                          </span>
+                        </div>
+                        <div className="pl-5 text-[10px] text-amber-600">Pagado: ${paid.toFixed(2)} / ${Number(pkg.total_cost).toFixed(2)}</div>
+                      </button>
+                    </div>
                     <AnimatePresence initial={false}>
                       {!isCollapsed && (
                         <motion.div
@@ -951,16 +1066,34 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
               </motion.button>
             </Tooltip>
 
+            <Tooltip content="Duplicar como nueva sesión (dentro del paquete o independiente)">
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => void handleDuplicate()}
+                disabled={!currentTreatment.id || duplicating || saving}
+                aria-label="Duplicar tratamiento"
+                className="admin-focus-ring flex min-h-11 items-center gap-2 rounded-lg border border-gray-200 px-3 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                {duplicating ? (
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />
+                ) : (
+                  <Copy className="h-4 w-4" aria-hidden="true" />
+                )}
+                <span className="text-xs font-semibold">{duplicating ? 'Duplicando…' : 'Duplicar'}</span>
+              </motion.button>
+            </Tooltip>
+
             <Tooltip content="Preparar siguiente sesión sin copiar hallazgos ni guardar automáticamente">
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={handlePrepareNext}
-                disabled={!currentTreatment.id || saving}
+                disabled={!currentTreatment.id || saving || duplicating}
                 aria-label="Preparar siguiente sesión"
                 className="admin-focus-ring flex min-h-11 items-center gap-2 p-2 hover:bg-gray-100 rounded-lg text-gray-600 border border-gray-200 disabled:opacity-50"
               >
-                <Copy className="w-5 h-5" aria-hidden="true" />
+                <Plus className="h-4 w-4" aria-hidden="true" />
                 <span className="text-xs font-semibold">Siguiente sesión</span>
               </motion.button>
             </Tooltip>
@@ -1399,12 +1532,25 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                 ))}
               </select>
               {selectedPackage && (
-                <p className="text-[11px] text-amber-700 flex items-start gap-1.5 bg-amber-50 px-2.5 py-2 rounded-lg border border-amber-200">
-                  <Wallet size={13} className="mt-0.5 shrink-0" />
-                  <span>
-                    Esta sesión se guardará dentro de <strong>{selectedPackage.name}</strong>. El campo "Costo" se registrará como abono y se confirmará antes de guardar.
-                  </span>
-                </p>
+                <div className="text-[11px] text-amber-700 flex items-center justify-between gap-1.5 bg-amber-50 px-2.5 py-2 rounded-lg border border-amber-200">
+                  <p className="flex items-start gap-1.5 min-w-0">
+                    <Wallet size={13} className="mt-0.5 shrink-0" />
+                    <span>
+                      Esta sesión se guardará dentro de <strong>{selectedPackage.name}</strong>. El campo "Costo" se registrará como abono y se confirmará antes de guardar.
+                    </span>
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingPackage(selectedPackage);
+                      setPackageModalOpen(true);
+                    }}
+                    className="shrink-0 inline-flex items-center gap-1 font-semibold text-amber-800 hover:text-amber-950 underline ml-2"
+                  >
+                    <Pencil size={11} />
+                    Modificar
+                  </button>
+                </div>
               )}
             </div>
             <div className={activeStep === 3 ? 'space-y-2 md:col-span-2' : 'hidden'}>
@@ -1793,7 +1939,11 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
         consultationId={consultationId}
         patientName={patientName}
         mode={mode}
-        onClose={() => setPackageModalOpen(false)}
+        packageToEdit={editingPackage}
+        onClose={() => {
+          setPackageModalOpen(false);
+          setEditingPackage(null);
+        }}
         onCreated={(pkg) => {
           setPackages(prev => [pkg, ...prev]);
           setCurrentTreatment(prev => ({ ...prev, package_id: pkg.id ?? null }));
@@ -1804,6 +1954,16 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
               : 'Paquete creado correctamente',
           });
           setPackageModalOpen(false);
+          setEditingPackage(null);
+        }}
+        onUpdated={(pkg) => {
+          setPackages(prev => prev.map(p => (p.id === pkg.id ? { ...p, ...pkg } : p)));
+          setMessage({
+            type: 'success',
+            text: `Paquete "${pkg.name}" actualizado correctamente`,
+          });
+          setPackageModalOpen(false);
+          setEditingPackage(null);
         }}
       />
     )}

@@ -31,6 +31,8 @@ Guardar conserva el registro seleccionado y su ID para continuar editando o capt
 
 `AdminFinance` usa una consola local verde carbón sobre ese lienzo, retorno al panel, presets de periodo (`Todo`, `Hoy`, `Semana`, `Mes`, `Personalizado`), configuración de reportes plegable, KPI agrupados y tarjetas de registros en móvil; escritorio conserva la tabla financiera completa. Los presets reutilizan `financeList` con `startDate`/`endDate` y no cambian API, persistencia ni permisos.
 
+`AdminDashboard` incorpora `SeasonalEventWidget` con configuración desacoplada en `src/components/admin/dashboard/seasonalEvents.ts`. Permite desplegar banners temáticos y dongles interactivos para eventos y fechas especiales (Halloween, Navidad, Año Nuevo, Black Friday, San Valentín) según rangos de fecha o activación manual, minimizable a un dongle flotante y sin requerir modificaciones en la vista del dashboard.
+
 El borrador contractual de cliente está en `docs/CONTRATO_CLIENTE_BIOSKINTECH.md`. El generador Master Admin produce un paquete único con condiciones particulares, anexo de encargo de tratamiento y copias completas de las Condiciones de Servicio y Política de Privacidad versionadas. El borrador Markdown sigue siendo material de revisión y no sustituye la validación jurídica del caso concreto.
 
 La vista Master Admin mantiene el generador **Contrato** como acceso destacado independiente de la navegación desplazable. Las clínicas se presentan en lista de tarjetas adaptables con búsqueda/filtro local; estas mejoras son solo de presentación y estado cliente, sin cambios de API ni persistencia.
@@ -190,7 +192,7 @@ Navegador React/Vite
 - `external-finance.js`: finanzas externas.
 - `payments.js`: flujo PayPhone.
 - `public-booking.js`: agendamiento público sin sesión, validado por `public_booking_enabled`, `resourceId`, `rate limit`, honeypot y Turnstile. Antes de insertar cada cita se valida conflicto real en Google Calendar y se exige un sitio seguro y autorizado por `TURNSTILE_HOSTNAMES`/`APP_URL`.
-- `records.js`: pacientes, expedientes, módulos clínicos, inventario y fotografías.
+- `records.js`: pacientes, expedientes, módulos clínicos, inventario y fotografías. En Tratamientos expone `createPackage`, `listPackagesByRecord`, `updatePackage` (modificación de nombre, costo total y sesiones estimadas de paquetes con validación de saldo y auditoría) y `deletePackage` (con bloqueo preventivo si existen cobros financieros). Soporta duplicación de sesiones clínicas (tanto dentro de paquetes respetando el saldo pendiente como sesiones independientes).
 - `sendEmail.js`: correo y notificaciones con conflict validation por recurso.
 - `whatsapp-chatbot.js`: verifica webhooks de WhatsApp Cloud API sobre el cuerpo crudo, autoriza por el teléfono canónico de un usuario activo y expone al `master_admin` el historial CRM. Consultas, reportes y recordatorios usan el OAuth, calendario y scopes del usuario identificado, no una cuenta compartida de clínica. El recordatorio del paciente enlaza exclusivamente al teléfono público de la clínica; los resúmenes del profesional enlazan al teléfono de cada paciente.
 - `system-status.js`: diagnósticos de servicios.

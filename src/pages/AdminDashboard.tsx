@@ -25,6 +25,7 @@ import { useEffect, useState, useRef } from 'react';
 import { Fragment } from 'react';
 import AppFooter from '../components/layout/AppFooter';
 import { Dialog } from '../components/ui/Dialog';
+import SeasonalEventWidget from '../components/admin/dashboard/SeasonalEventWidget';
 
 // Módulos y tipos de constants centralizados
 import { MODULE_LIST } from '../constants/features';
@@ -702,6 +703,9 @@ export default function AdminDashboard() {
             </button>
           </div>
         )}
+
+        {/* Widget / Dongle de eventos estacionales (configurable en seasonalEvents.ts) */}
+        <SeasonalEventWidget />
 
         {/* Saludo */}
         <section className="dashboard-hero mb-8 rounded-3xl border border-white/80 p-5 shadow-sm sm:p-7">

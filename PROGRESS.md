@@ -1,5 +1,7 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-12 Tratamientos: modificación de paquetes y duplicación de sesiones (paquete/independiente).
+- ✅ 2026-10-12 Dashboard: plantilla reutilizable de eventos estacionales (SeasonalEventWidget).
 - ✅ 2026-10-11 3DLab: cejas + thin-plate spline; fotos recortadas.
 - ✅ 2026-10-11 3DLab: alineación automática 3D→foto; corregido falso HTTP 200.
 - ✅ 2026-10-11 3DLab: modelo y WASM verificados en build.
