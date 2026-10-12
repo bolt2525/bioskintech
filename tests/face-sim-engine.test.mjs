@@ -78,7 +78,15 @@ test('rechaza landmarks no finitos y límites faciales degenerados', () => {
   landmarks[454] = { x: 0.5, y: 0.5 };
   assert.throws(() => frameFromLandmarks(landmarks), /Geometría/);
   landmarks[454] = { x: 0.8, y: 0.5 };
+  [338, 297, 332, 284, 251, 389, 356, 323, 361, 288, 397, 365, 379, 378, 400, 377].forEach(i => { landmarks[i] = { x: 0.7, y: 0.5 }; });
+  [148, 176, 149, 150, 136, 172, 58, 132, 93, 127, 162, 21, 54, 103, 67, 109].forEach(i => { landmarks[i] = { x: 0.3, y: 0.5 }; });
+  landmarks[234] = { x: 0.2, y: 0.5 };
   landmarks[33] = { x: Number.NaN, y: 0.4 };
+  assert.throws(() => frameFromLandmarks(landmarks), /fuera de rango/);
+  landmarks[33] = { x: 0.3, y: 0.4 };
+  landmarks[152] = { x: 0.5, y: 1.08 };
+  assert.equal(frameFromLandmarks(landmarks).bottom, 1.08);
+  landmarks[152] = { x: 0.5, y: 3 };
   assert.throws(() => frameFromLandmarks(landmarks), /fuera de rango/);
 });
 
@@ -116,7 +124,7 @@ test('valida que el punto proyectado quede dentro del contorno facial calibrado'
   assert.equal(projectModel({ x: 0, y: 0.45, z: 0 }, 'frontal', detected, false, 1, registration), null);
 });
 
-test('alinea autom?ticamente el modelo con anclajes detectados y rechaza poses discordantes', () => {
+test('alinea automáticamente el modelo con anclajes detectados y rechaza poses discordantes', () => {
   const base = { ...frame, axisTop: { x: 0.5, y: 0.1 } };
   const scaled = MODEL_REGISTRATION_ANCHORS.map(p => projectModel(p, 'frontal', base, false, 0.75))
     .map(p => ({ x: 0.5 + (p.x - 0.5) * 0.9, y: 0.12 + p.y * 0.85 }));
@@ -125,6 +133,23 @@ test('alinea autom?ticamente el modelo con anclajes detectados y rechaza poses d
   const nose = applyRegistration(projectModel(MODEL_REGISTRATION_ANCHORS[4], 'frontal', base, false, 0.75), registration);
   assert.ok(Math.hypot(nose.x - scaled[4].x, nose.y - scaled[4].y) < 1e-6);
   assert.equal(autoRegistration('frontal', base, 0.75, false), null);
-  const skewed = scaled.map((p, i) => (i === 4 ? { ...p, x: p.x + 0.15 } : p));
-  assert.equal(isRegistrationAccepted(autoRegistration('frontal', { ...base, anchors: skewed }, 0.75, false)), false);
+  // Punta nasal por encima de la glabela: orden anatómico imposible.
+  const inverted = scaled.map((p, i) => (i === 4 ? { ...p, y: scaled[1].y - 0.05 } : p));
+  assert.equal(autoRegistration('frontal', { ...base, anchors: inverted }, 0.75, false), null);
+  // Ojos cruzados: la deformación plegaría la imagen y debe rechazarse.
+  const crossed = scaled.map((p, i) => (i === 2 ? scaled[3] : i === 3 ? scaled[2] : p));
+  assert.equal(isRegistrationAccepted(autoRegistration('frontal', { ...base, anchors: crossed }, 0.75, false)), false);
+});
+
+test('la deformación thin-plate lleva cada anclaje a su landmark sin plegar el rostro', () => {
+  const base = { ...frame, axisTop: { x: 0.5, y: 0.1 } };
+  const projected = MODEL_REGISTRATION_ANCHORS.map(p => projectModel(p, 'frontal', base, false, 0.75));
+  // Cejas más altas y nariz/labio más bajos que el modelo, como en pacientes reales.
+  const target = projected.map((p, i) => ({ x: p.x, y: p.y + (i >= 7 ? -0.05 : i === 4 || i === 5 ? 0.04 : 0) }));
+  const registration = autoRegistration('frontal', { ...base, anchors: target }, 0.75, false);
+  assert.ok(registration?.warp);
+  projected.forEach((p, i) => {
+    const mapped = applyRegistration(p, registration);
+    assert.ok(Math.hypot(mapped.x - target[i].x, mapped.y - target[i].y) < 1e-6, `anclaje ${i}`);
+  });
 });

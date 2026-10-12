@@ -1,5 +1,6 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-11 3DLab: cejas + thin-plate spline; fotos recortadas.
 - ✅ 2026-10-11 3DLab: alineación automática 3D→foto; corregido falso HTTP 200.
 - ✅ 2026-10-11 3DLab: modelo y WASM verificados en build.
 - ✅ 2026-10-11 3DLab: alineación facial adaptativa.

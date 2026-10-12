@@ -509,7 +509,7 @@ export default function FaceSimLab() {
                   setCalibrating(true);
                   setTool3d('point');
                   setWorkMode('3d');
-                  setStatus(`Calibración manual: marca en el modelo «${REGISTRATION_ANCHORS[0]}» (${REGISTRATION_ANCHORS.length} referencias).`);
+                  setStatus(`Calibración manual: marca en el modelo «${REGISTRATION_ANCHORS[0]}» (${anchorCount} referencias).`);
                 }}
                 className="w-full rounded-lg bg-slate-800 px-2 py-1.5 font-semibold text-white disabled:opacity-50"
               >

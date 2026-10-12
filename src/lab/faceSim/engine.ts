@@ -46,26 +46,43 @@ const FACE_OVAL = [
 export const REGISTRATION_ANCHORS = [
   'Centro de la frente', 'Glabela', 'Ojo lado A', 'Ojo lado B',
   'Punta nasal', 'Centro del labio superior', 'Mentón',
+  'Cola de ceja A', 'Cola de ceja B', 'Centro de ceja A', 'Centro de ceja B',
 ];
-const LANDMARK_ANCHORS = [10, 168, 33, 263, 1, 13, 152];
+/** Índices MediaPipe por anclaje; los grupos se promedian (cejas: borde superior + inferior). */
+const LANDMARK_ANCHORS = [[10], [168], [33], [263], [1], [13], [152], [70, 46], [300, 276], [105, 52], [334, 282]];
+/** Anclajes para calibración manual (clics en el modelo). */
 export const registrationAnchorIndices = (view: ViewKind) =>
   view === 'frontal' ? [0, 1, 2, 3, 4, 5, 6] : [0, 1, 4, 5, 6];
-/** Mismos anclajes sobre male_head.glb normalizado (raycast de la malla); el ojo A es el canto externo derecho del paciente. */
+/** La alineación automática suma las cejas en frontal: su altura varía mucho entre pacientes. */
+const autoAnchorIndices = (view: ViewKind) =>
+  view === 'frontal' ? [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10] : registrationAnchorIndices(view);
+/**
+ * Mismos anclajes sobre male_head.glb normalizado (raycast de la malla; cejas según trazado-referencia-superior.json).
+ * El lado A es el derecho del paciente (izquierda de la imagen).
+ */
 export const MODEL_REGISTRATION_ANCHORS: Vec3[] = [
   { x: 0, y: 1.65, z: 1.44 }, { x: 0, y: 0.9, z: 1.58 }, { x: -0.71, y: 0.8, z: 1.17 }, { x: 0.72, y: 0.8, z: 1.17 },
   { x: 0, y: 0.25, z: 1.9 }, { x: 0, y: -0.2, z: 1.66 }, { x: 0, y: -1, z: 1.42 },
+  { x: -0.72, y: 0.97, z: 1.36 }, { x: 0.73, y: 0.96, z: 1.35 }, { x: -0.5, y: 1.15, z: 1.52 }, { x: 0.5, y: 1.15, z: 1.51 },
 ];
 
-/** Umbral de aceptación (fracción del alto facial, validación cruzada); tolera ~10° de giro con el modelo genérico. */
-export const REGISTRATION_LIMITS = { rmse: 0.035, maxError: 0.06 };
+/**
+ * rmse/maxError: validación cruzada del ajuste afín global (fracción del alto facial). Con la corrección local RBF
+ * los anclajes coinciden exactamente, así que estos límites solo descartan poses o detecciones incompatibles.
+ */
+export const REGISTRATION_LIMITS = { rmse: 0.1, maxError: 0.2 };
 export const isRegistrationAccepted = (r: AffineRegistration | null): r is AffineRegistration =>
   !!r && r.rmse <= REGISTRATION_LIMITS.rmse && r.maxError <= REGISTRATION_LIMITS.maxError;
 
-/** Alinea automáticamente el modelo genérico con los landmarks detectados; null si no hay landmarks o el ajuste no es válido. */
+/** Alinea automáticamente el modelo genérico con los landmarks detectados; null si no hay landmarks, el orden anatómico falla o el ajuste no es válido. */
 export function autoRegistration(view: ViewKind, frame: FaceFrame, aspect: number, flip: boolean): AffineRegistration | null {
   const anchors = frame.anchors;
   if (!anchors) return null;
-  const indices = registrationAnchorIndices(view);
+  // frente → glabela → punta nasal → labio → mentón deben descender a lo largo del eje facial.
+  const axis = { x: (frame.axisBottom.x - frame.axisTop.x) * aspect, y: frame.axisBottom.y - frame.axisTop.y };
+  const along = [0, 1, 4, 5, 6].map(index => anchors[index].x * aspect * axis.x + anchors[index].y * axis.y);
+  if (along.some((value, i) => i > 0 && value <= along[i - 1])) return null;
+  const indices = autoAnchorIndices(view);
   const source = indices.map(index => projectModel(MODEL_REGISTRATION_ANCHORS[index], view, frame, flip, aspect)
     ?? { x: Number.NaN, y: Number.NaN });
   return fitAffineRegistration(source, indices.map(index => anchors[index]), aspect, frame.bottom - frame.top);
@@ -77,14 +94,18 @@ export function frameFromLandmarks(lm: { x: number; y: number }[]): FaceFrame {
   const g = (i: number) => {
     const point = lm[i];
     if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)
-      || point.x < 0 || point.x > 1 || point.y < 0 || point.y > 1) {
+      // Fotos recortadas (frente/mentón en el borde): MediaPipe extrapola landmarks fuera del encuadre.
+      || point.x < -0.5 || point.x > 1.5 || point.y < -0.5 || point.y > 1.5) {
       throw new Error('Landmarks faciales fuera de rango.');
     }
     return { x: point.x, y: point.y };
   };
   const top = g(10), chin = g(152), l = g(234), r = g(454), glab = g(168);
   const outline = FACE_OVAL.map(g);
-  const anchors = LANDMARK_ANCHORS.map(g);
+  const anchors = LANDMARK_ANCHORS.map(group => {
+    const points = group.map(g);
+    return { x: points.reduce((s, p) => s + p.x, 0) / points.length, y: points.reduce((s, p) => s + p.y, 0) / points.length };
+  });
   const outlineArea = Math.abs(outline.reduce((area, point, index) => {
     const next = outline[(index + 1) % outline.length];
     return area + point.x * next.y - next.x * point.y;
@@ -103,6 +124,8 @@ export interface AffineRegistration {
   a: number; b: number; c: number;
   d: number; e: number; f: number;
   rmse: number; maxError: number;
+  /** Corrección thin-plate spline sobre la afín: centros en coordenadas modelo-proyectadas y pesos de desplazamiento. */
+  warp?: { centers: P2[]; weights: P2[]; scale: number; aspect: number };
 }
 
 /** Ajusta modelo→foto por mínimos cuadrados; requiere referencias no colineales y mide residuos en alturas faciales. */
@@ -148,18 +171,80 @@ export function fitAffineRegistration(source: P2[], target: P2[], aspect: number
   const determinant = x[0] * y[1] - x[1] * y[0];
   if (!Number.isFinite(determinant) || Math.abs(determinant) < 0.0025 || Math.abs(determinant) > 25
     || [...x, ...y].some(value => Math.abs(value) > 20) || errors.some(error => !Number.isFinite(error))) return null;
-  return {
-    a: x[0], b: x[1], c: x[2], d: y[0], e: y[1], f: y[2],
+  const base = { a: x[0], b: x[1], c: x[2], d: y[0], e: y[1], f: y[2], rmse: 0, maxError: 0 };
+  const n = source.length;
+  const residuals = source.map((p, i) => {
+    const mapped = applyRegistration(p, base);
+    return { x: target[i].x - mapped.x, y: target[i].y - mapped.y };
+  });
+  // Thin-plate spline sobre el residuo afín: cada anclaje cae exactamente en su landmark con mínima curvatura.
+  const scale = faceHeight;
+  const matrix = Array.from({ length: n + 3 }, (_, i) => Array.from({ length: n + 3 }, (_, j) => {
+    if (i < n && j < n) return tpsKernel(source[i], source[j], aspect, scale) + (i === j ? 1e-9 : 0);
+    if (i < n) return [source[i].x, source[i].y, 1][j - n];
+    if (j < n) return [source[j].x, source[j].y, 1][i - n];
+    return 0;
+  }));
+  const solution = solveLinear(matrix, [...residuals, ...Array.from({ length: 3 }, () => ({ x: 0, y: 0 }))]);
+  if (!solution) return null;
+  const [ax, ay, a1] = solution.slice(n);
+  const registration: AffineRegistration = {
+    ...base,
+    a: base.a + ax.x, b: base.b + ay.x, c: base.c + a1.x,
+    d: base.d + ax.y, e: base.e + ay.y, f: base.f + a1.y,
+    warp: { centers: source, weights: solution.slice(0, n), scale, aspect },
     rmse: Math.sqrt(errors.reduce((sum, error) => sum + error * error, 0) / errors.length),
     maxError: Math.max(...errors),
   };
+  const xs = source.map(p => p.x), ys = source.map(p => p.y), h = 1e-4;
+  const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+  for (let i = 0; i <= 8; i++) for (let j = 0; j <= 8; j++) {
+    const p = { x: x0 + (x1 - x0) * (i / 8), y: y0 + (y1 - y0) * (j / 8) };
+    const o = applyRegistration(p, registration), u = applyRegistration({ x: p.x + h, y: p.y }, registration), v = applyRegistration({ x: p.x, y: p.y + h }, registration);
+    const jac = ((u.x - o.x) * (v.y - o.y) - (u.y - o.y) * (v.x - o.x)) / (h * h);
+    if (jac * determinant < 0.15 * determinant * determinant) return null; // pliegue o compresión extrema
+  }
+  return registration;
+}
+
+/** Núcleo TPS U(r) = r² log r, con r medido en alturas faciales y corrigiendo el aspecto de la imagen. */
+function tpsKernel(p: P2, q: P2, aspect: number, scale: number): number {
+  const r2 = (((p.x - q.x) * aspect) ** 2 + (p.y - q.y) ** 2) / (scale * scale);
+  return r2 < 1e-12 ? 0 : 0.5 * r2 * Math.log(r2);
+}
+
+/** Eliminación gaussiana con pivoteo para matrices pequeñas (N×N, columnas x/y simultáneas). */
+function solveLinear(matrix: number[][], rhs: P2[]): P2[] | null {
+  const n = matrix.length;
+  const m = matrix.map((row, i) => [...row, rhs[i].x, rhs[i].y]);
+  for (let col = 0; col < n; col++) {
+    let pivot = col;
+    for (let row = col + 1; row < n; row++) if (Math.abs(m[row][col]) > Math.abs(m[pivot][col])) pivot = row;
+    if (Math.abs(m[pivot][col]) < 1e-10) return null;
+    [m[col], m[pivot]] = [m[pivot], m[col]];
+    for (let row = 0; row < n; row++) {
+      if (row === col) continue;
+      const factor = m[row][col] / m[col][col];
+      for (let j = col; j < n + 2; j++) m[row][j] -= factor * m[col][j];
+    }
+  }
+  const out = m.map((row, i) => ({ x: row[n] / row[i], y: row[n + 1] / row[i] }));
+  return out.every(p => Number.isFinite(p.x) && Number.isFinite(p.y)) ? out : null;
 }
 
 export function applyRegistration(point: P2, registration: AffineRegistration): P2 {
-  return {
+  const out = {
     x: registration.a * point.x + registration.b * point.y + registration.c,
     y: registration.d * point.x + registration.e * point.y + registration.f,
   };
+  const warp = registration.warp;
+  if (!warp) return out;
+  warp.centers.forEach((center, i) => {
+    const k = tpsKernel(point, center, warp.aspect, warp.scale);
+    out.x += warp.weights[i].x * k;
+    out.y += warp.weights[i].y * k;
+  });
+  return out;
 }
 
 export function isWithinFace(point: P2, frame: FaceFrame): boolean {
