@@ -61,11 +61,19 @@ export interface SeasonalEventConfig {
     /** Acento temático */
     accentColor: string;
   };
-  /** Configuración del dongle flotante / pestaña visual */
+  /** Configuración del dongle flotante y su interacción con el branding del dashboard */
   dongle: {
     emoji: string;
     label: string;
     sublabel?: string;
+    /** Emoji decorativo en la esquina del contenedor (ej. '🕸️' para Halloween, '⭐' para Navidad) */
+    cornerEmoji?: string;
+    /** Partículas visuales que vuelan al interactuar o hacer clic */
+    clickParticles?: string[];
+    /** Mensaje corto o consejo clínico que aparece en el tooltip interactivo */
+    tooltipTip?: string;
+    /** Clases para el badge sutil al lado del nombre */
+    badgeClass?: string;
   };
   /** Elementos flotantes decorativos animados */
   decorations?: SeasonalDecoration[];
@@ -102,6 +110,10 @@ export const SEASONAL_EVENTS: SeasonalEventConfig[] = [
       emoji: '🎃',
       label: 'Halloween',
       sublabel: 'Edición Especial',
+      cornerEmoji: '🕸️',
+      clickParticles: ['🎃', '🦇', '✨', '👻', '🕷️'],
+      tooltipTip: 'Temporada ideal para peelings revitalizantes, luminosidad y protocolos pre-fiestas.',
+      badgeClass: 'bg-orange-500/10 text-orange-600 border-orange-500/20 hover:bg-orange-500/20',
     },
     decorations: [
       { char: '🦇', className: 'top-2 right-12 text-lg animate-pulse opacity-70' },
@@ -136,6 +148,10 @@ export const SEASONAL_EVENTS: SeasonalEventConfig[] = [
       emoji: '🏷️',
       label: 'Black Days',
       sublabel: 'Promociones',
+      cornerEmoji: '✨',
+      clickParticles: ['🏷️', '✨', '💎', '🔥'],
+      tooltipTip: 'Impulsa paquetes de tratamientos y promociones exclusivas para fidelizar pacientes.',
+      badgeClass: 'bg-amber-500/10 text-amber-600 border-amber-500/20 hover:bg-amber-500/20',
     },
     decorations: [
       { char: '✨', className: 'top-2 right-8 text-sm opacity-80 animate-ping' },
@@ -167,6 +183,10 @@ export const SEASONAL_EVENTS: SeasonalEventConfig[] = [
       emoji: '🎄',
       label: 'Navidad',
       sublabel: 'Bienestar',
+      cornerEmoji: '❄️',
+      clickParticles: ['🎄', '❄️', '⭐', '🎁', '✨'],
+      tooltipTip: 'Alta demanda en armonización facial y bienestar para las celebraciones de fin de año.',
+      badgeClass: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20 hover:bg-emerald-500/20',
     },
     decorations: [
       { char: '❄️', className: 'top-2 right-10 text-base animate-pulse opacity-80' },
@@ -198,6 +218,10 @@ export const SEASONAL_EVENTS: SeasonalEventConfig[] = [
       emoji: '🥂',
       label: 'Año Nuevo',
       sublabel: 'Renovación',
+      cornerEmoji: '⭐',
+      clickParticles: ['🥂', '✨', '🎉', '🌟'],
+      tooltipTip: 'Inicia el año con nuevos protocolos de renovación celular y planes personalizados.',
+      badgeClass: 'bg-amber-500/10 text-amber-600 border-amber-500/20 hover:bg-amber-500/20',
     },
     decorations: [
       { char: '✨', className: 'top-2 right-12 text-base animate-bounce opacity-80' },
@@ -230,6 +254,10 @@ export const SEASONAL_EVENTS: SeasonalEventConfig[] = [
       emoji: '💖',
       label: 'San Valentín',
       sublabel: 'Amor Propio',
+      cornerEmoji: '🌹',
+      clickParticles: ['💖', '🌹', '✨', '💕'],
+      tooltipTip: 'Días propicios para planes de rejuvenecimiento facial, labios y protocolos de autocuidado.',
+      badgeClass: 'bg-pink-500/10 text-pink-600 border-pink-500/20 hover:bg-pink-500/20',
     },
     decorations: [
       { char: '🌹', className: 'top-2 right-10 text-base opacity-80' },

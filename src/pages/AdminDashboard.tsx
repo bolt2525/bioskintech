@@ -25,7 +25,7 @@ import { useEffect, useState, useRef } from 'react';
 import { Fragment } from 'react';
 import AppFooter from '../components/layout/AppFooter';
 import { Dialog } from '../components/ui/Dialog';
-import SeasonalEventWidget from '../components/admin/dashboard/SeasonalEventWidget';
+import SeasonalBrandDongle from '../components/admin/dashboard/SeasonalBrandDongle';
 
 // Módulos y tipos de constants centralizados
 import { MODULE_LIST } from '../constants/features';
@@ -527,21 +527,12 @@ export default function AdminDashboard() {
         <div className="container-custom py-3.5">
           <div className="flex items-center justify-between gap-3 flex-wrap">
 
-            {/* Logo + nombre de clínica */}
-            <div className="flex items-center gap-3">
-              <div className="w-2 h-9 bg-[#deb887] rounded-full" />
-              <div>
-                <h1
-                  className="text-xl font-bold text-gray-900 leading-tight"
-                  style={{ fontFamily: 'Playfair Display, serif' }}
-                >
-                  {effectiveUser?.clinic_name || 'BioSkinTech'}
-                </h1>
-                <p className="text-xs text-gray-600 leading-tight">
-                  {ROLE_BADGE[effectiveUser?.role || ''] || 'Usuario'} · {effectiveUser?.full_name || effectiveUser?.username}
-                </p>
-              </div>
-            </div>
+            {/* Logo + nombre de clínica con dongle estacional interactivo */}
+            <SeasonalBrandDongle
+              clinicName={effectiveUser?.clinic_name || 'BioSkinTech'}
+              subtitle={`${ROLE_BADGE[effectiveUser?.role || ''] || 'Usuario'} · ${effectiveUser?.full_name || effectiveUser?.username}`}
+              onNavigate={(path) => nav(path.replace(/^\/admin\//, ''))}
+            />
 
             {/* Acciones del header */}
             <div className="flex items-center gap-2">
@@ -703,9 +694,6 @@ export default function AdminDashboard() {
             </button>
           </div>
         )}
-
-        {/* Widget / Dongle de eventos estacionales (configurable en seasonalEvents.ts) */}
-        <SeasonalEventWidget />
 
         {/* Saludo */}
         <section className="dashboard-hero mb-8 rounded-3xl border border-white/80 p-5 shadow-sm sm:p-7">
