@@ -25,6 +25,26 @@ export interface SeasonalAtmosphereConfig {
   color: string;
 }
 
+/** Mascotas clicables disponibles (registro MASCOTS en SeasonalHeroInteraction.tsx). Ej. futuro: 'santa'. */
+export type HeroMascotKind = 'spider';
+/** Criaturas/objetos invocados (registro SUMMONS en SeasonalHeroInteraction.tsx). Ej. futuro: 'gift'. */
+export type HeroSummonKind = 'ghost' | 'skull';
+
+/**
+ * Interacción lúdica del hero: clic en la mascota → aparece `summon`, vuela hacia el nombre del usuario
+ * (`[data-hero-name]`) y se posa sobre él. Guía completa en docs/SEASONAL_EVENTS.md.
+ */
+export interface HeroInteractionConfig {
+  mascot: HeroMascotKind;
+  summon: HeroSummonKind;
+  /** Pista visible al hover/foco de la mascota (ej. '¡Aplástame!') */
+  hint: string;
+  /** Etiqueta accesible del botón de la mascota */
+  ariaLabel: string;
+  /** Milisegundos que la criatura permanece posada (por defecto 4500) */
+  perchMs?: number;
+}
+
 export interface SeasonalEventConfig {
   /** Identificador único (ej: 'halloween', 'navidad', 'black-friday') */
   id: string;
@@ -81,6 +101,8 @@ export interface SeasonalEventConfig {
     clickParticles?: string[];
     /** Mensaje corto o consejo clínico que aparece en el tooltip interactivo */
     tooltipTip?: string;
+    /** Título llamativo del popover (por defecto, el nombre del evento) */
+    popoverTitle?: string;
     /** Clases para el badge sutil al lado del nombre */
     badgeClass?: string;
   };
@@ -88,6 +110,8 @@ export interface SeasonalEventConfig {
   decorations?: SeasonalDecoration[];
   /** Ambientación sutil de fondo para el hero de bienvenida */
   atmosphere?: SeasonalAtmosphereConfig;
+  /** Mascota clicable en el hero que invoca una criatura que vuela hacia el nombre (requiere `atmosphere`) */
+  heroInteraction?: HeroInteractionConfig;
 }
 
 /**
@@ -98,14 +122,14 @@ export const SEASONAL_EVENTS: SeasonalEventConfig[] = [
   {
     id: 'halloween',
     name: 'Halloween & Día de Muertos',
-    // Desde el 10 de octubre hasta el 3 de noviembre
+    // Desde el 10 de octubre hasta el 1 de noviembre (inclusive)
     startDate: '10-10',
-    endDate: '11-03',
+    endDate: '11-01',
     tag: 'Temporada Halloween 🎃',
     title: '¡Especial de Halloween en BIOSKIN! 🦇',
     description:
-      'Días ideales para promover tratamientos de luminosidad facial, hidratación profunda y peeling revitalizante antes de los eventos de fin de mes.',
-    actionLabel: 'Ver Agenda',
+      'Los tratamientos de luminosidad, hidratación profunda y peeling revitalizante tienen alta demanda antes de fin de mes. Revisa tu agenda y asegura las citas de tus pacientes.',
+    actionLabel: 'Agendar pacientes',
     actionPath: '/admin/agenda',
     theme: {
       bgGradient: 'bg-gradient-to-br from-[#1a0f2e] via-[#2d1238] to-[#160c24]',
@@ -123,7 +147,9 @@ export const SEASONAL_EVENTS: SeasonalEventConfig[] = [
       sublabel: 'Edición Especial',
       cornerEmoji: '🕸️',
       clickParticles: ['🎃', '🦇', '✨', '👻', '🕷️'],
-      tooltipTip: 'Temporada ideal para peelings revitalizantes, luminosidad y protocolos pre-fiestas.',
+      tooltipTip:
+        'Los peelings y tratamientos de luminosidad se agotan antes de las fiestas. Agenda hoy a tus pacientes y asegura sus citas de fin de mes.',
+      popoverTitle: '¡Agenda a tus pacientes!',
       badgeClass: 'bg-orange-500/10 text-orange-600 border-orange-500/20 hover:bg-orange-500/20',
     },
     decorations: [
@@ -134,6 +160,12 @@ export const SEASONAL_EVENTS: SeasonalEventConfig[] = [
       { char: '🕷️', className: 'top-1 left-24 text-xs opacity-50' },
     ],
     atmosphere: { variant: 'cobweb-spider', color: '#b8a07a' },
+    heroInteraction: {
+      mascot: 'spider',
+      summon: 'ghost',
+      hint: '¡Aplástame!',
+      ariaLabel: 'Aplastar la arañita: aparece un fantasmita que saluda junto a tu nombre',
+    },
   },
   {
     id: 'black-friday',

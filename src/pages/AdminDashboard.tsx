@@ -706,7 +706,7 @@ export default function AdminDashboard() {
             <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-ink">Tu espacio de trabajo</p>
               <h2 className="mt-1 text-xl font-semibold text-gray-900 sm:text-2xl">
-                Bienvenido, {effectiveUser?.full_name?.split(' ')[0] || effectiveUser?.username}
+                Bienvenido, <span data-hero-name>{effectiveUser?.full_name?.split(' ')[0] || effectiveUser?.username}</span>
               </h2>
               <p className="mt-1 text-sm text-gray-600">Elige un módulo para continuar con la gestión de tu clínica.</p>
             </div>

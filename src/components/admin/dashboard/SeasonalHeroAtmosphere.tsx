@@ -6,13 +6,16 @@
  *   <section className="relative isolate overflow-hidden"> <SeasonalHeroAtmosphere /> ... </section>
  *
  * La variante visual se define por evento en `seasonalEvents.ts` (campo `atmosphere`):
- *  - 'cobweb-spider': telarañas finas en las esquinas + arañita colgando de un hilo (sube al hover).
+ *  - 'cobweb-spider': telarañas finas en las esquinas.
  *  - 'snow': copos diminutos cayendo lentamente.
  *  - 'stardust': destellos dorados que titilan.
+ * La mascota clicable + criatura invocada se configuran con `heroInteraction` (ver SeasonalHeroInteraction.tsx
+ * y docs/SEASONAL_EVENTS.md); el nombre del usuario debe llevar `data-hero-name` para ser el destino del vuelo.
  * Solo anima transform/opacity y respeta `prefers-reduced-motion`.
  */
 
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
+import SeasonalHeroInteraction from './SeasonalHeroInteraction';
 import { motion, useReducedMotion } from 'framer-motion';
 import {
   getActiveSeasonalEvent,
@@ -75,67 +78,6 @@ function CornerWeb({ color, className }: { color: string; className: string }) {
   );
 }
 
-/* ───────────────────────── Arañita ───────────────────────── */
-
-const THREAD_LENGTH = 54;
-const IDLE_DROP = 12;
-const CLIMB_RISE = -26;
-
-function Spider({ color, reduced }: { color: string; reduced: boolean }) {
-  const [hovered, setHovered] = useState(false);
-  const transition = reduced
-    ? { duration: 0 }
-    : hovered
-      ? { duration: 0.9, ease: 'easeOut' as const }
-      : { duration: 5, ease: 'easeInOut' as const, repeat: Infinity, repeatType: 'mirror' as const };
-  // En reposo el hilo "respira" entre dos largos; al hover sube y se encoge
-  const spiderY = reduced ? 0 : hovered ? CLIMB_RISE : [0, IDLE_DROP];
-  const threadScale = reduced ? 1 : hovered ? (THREAD_LENGTH + CLIMB_RISE) / THREAD_LENGTH : [1, (THREAD_LENGTH + IDLE_DROP) / THREAD_LENGTH];
-
-  return (
-    <motion.div
-      className="absolute right-12 top-0 origin-top sm:right-24"
-      style={{ width: 22, height: THREAD_LENGTH + 40 }}
-      animate={reduced ? undefined : { rotate: [-2.2, 2.2] }}
-      transition={{ duration: 6, ease: 'easeInOut', repeat: Infinity, repeatType: 'mirror' }}
-    >
-      {/* Hilo de seda */}
-      <motion.div
-        className="mx-auto origin-top"
-        style={{ width: 1, height: THREAD_LENGTH, background: `linear-gradient(${color}00, ${color}b0)` }}
-        animate={{ scaleY: threadScale }}
-        transition={transition}
-      />
-      {/* Araña (área interactiva mínima) */}
-      <motion.div
-        className="pointer-events-auto absolute left-0 cursor-default"
-        style={{ top: THREAD_LENGTH - 2, width: 22 }}
-        animate={{ y: spiderY }}
-        transition={transition}
-        onHoverStart={() => setHovered(true)}
-        onHoverEnd={() => setHovered(false)}
-      >
-        <svg viewBox="0 0 24 22" width="22" height="20" aria-hidden="true">
-          <g stroke={color} strokeWidth="0.9" strokeLinecap="round" strokeLinejoin="round" fill="none" opacity="0.9">
-            <path d="M9.5 9 L4 5 L1.5 8" />
-            <path d="M9.5 10.5 L3 11 L1 15" />
-            <path d="M10 12 L4.5 16 L3.5 20" />
-            <path d="M11 13 L8.5 18 L8.5 21" />
-            <path d="M14.5 9 L20 5 L22.5 8" />
-            <path d="M14.5 10.5 L21 11 L23 15" />
-            <path d="M14 12 L19.5 16 L20.5 20" />
-            <path d="M13 13 L15.5 18 L15.5 21" />
-          </g>
-          <ellipse cx="12" cy="14" rx="3.6" ry="4.4" fill={color} opacity="0.75" />
-          <circle cx="12" cy="8.6" r="2.7" fill={color} opacity="0.9" />
-          <circle cx="11" cy="8.2" r="0.6" fill="#fff" opacity="0.9" />
-          <circle cx="13" cy="8.2" r="0.6" fill="#fff" opacity="0.9" />
-        </svg>
-      </motion.div>
-    </motion.div>
-  );
-}
-
 /* ───────────────────────── Partículas ───────────────────────── */
 
 // Posiciones deterministas (evita saltos entre renders)
@@ -195,7 +137,6 @@ function renderVariant({ variant, color }: SeasonalAtmosphereConfig, reduced: bo
         <>
           <CornerWeb color={color} className="right-0 top-0 h-24 w-24 -scale-x-100 opacity-30 sm:h-32 sm:w-32" />
           <CornerWeb color={color} className="bottom-0 left-0 hidden h-20 w-20 -scale-y-100 opacity-[0.16] sm:block" />
-          <Spider color={color} reduced={reduced} />
         </>
       );
     case 'snow':
@@ -214,11 +155,16 @@ export default function SeasonalHeroAtmosphere({ event, className = '' }: Season
   if (!active?.atmosphere) return null;
 
   return (
-    <div
-      className={`pointer-events-none absolute inset-0 z-0 overflow-hidden rounded-[inherit] ${className}`}
-      aria-hidden="true"
-    >
-      {renderVariant(active.atmosphere, reduced)}
-    </div>
+    <>
+      <div
+        className={`pointer-events-none absolute inset-0 z-0 overflow-hidden rounded-[inherit] ${className}`}
+        aria-hidden="true"
+      >
+        {renderVariant(active.atmosphere, reduced)}
+      </div>
+      {active.heroInteraction && (
+        <SeasonalHeroInteraction config={active.heroInteraction} color={active.atmosphere.color} />
+      )}
+    </>
   );
 }

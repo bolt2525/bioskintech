@@ -1,5 +1,7 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-12 Dashboard: interacción del hero (`SeasonalHeroInteraction`): clic en la arañita → se aplasta, sale un fantasmita (o calaverita) que vuela a la izquierda y se posa sobre el nombre; configurable por evento (`heroInteraction`). Halloween ahora termina el 1 de nov. y el popover del dongle invita a «Agendar pacientes». Documentado en `docs/SEASONAL_EVENTS.md`.
+
 - ✅ 2026-10-12 Dashboard: ultra-refinamiento de dongle (brazo/argolla joya) y ambientación estacional sutil con telaraña y arañita interactiva en sección de usuario (SeasonalHeroAtmosphere).
 - ✅ 2026-10-12 Dashboard: dongle estacional integrado directamente al contenedor de marca (nombre y barra vertical de la clínica) con micro-interacciones minimalistas.
 - ✅ 2026-10-12 Tratamientos: modificación de paquetes y duplicación de sesiones (paquete/independiente).

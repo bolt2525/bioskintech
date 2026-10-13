@@ -298,7 +298,7 @@ export default function SeasonalBrandDongle({
                     {event.dongle.sublabel || 'Temporada'}
                   </p>
                   <p className="text-sm font-semibold leading-tight text-gray-900" style={{ fontFamily: 'Playfair Display, serif' }}>
-                    {event.name}
+                    {event.dongle.popoverTitle || event.name}
                   </p>
                 </div>
               </div>
@@ -318,7 +318,7 @@ export default function SeasonalBrandDongle({
 
             {event.actionPath && onNavigate && (
               <div className="mt-3 pt-2.5 border-t border-gray-100 flex items-center justify-between">
-                <span className="text-[10px] text-gray-400 font-medium">Recomendación médica</span>
+                <span className="text-[10px] text-gray-400 font-medium">Sugerencia de temporada</span>
                 <button
                   type="button"
                   onClick={() => {
