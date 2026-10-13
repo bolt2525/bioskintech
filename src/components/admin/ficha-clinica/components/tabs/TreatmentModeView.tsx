@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Calendar, DollarSign, Clock, Save, Trash2, Copy, Check, AlertCircle, FileText, Pencil, Layers, History, Eye, X, ChevronDown, ChevronLeft, ChevronRight, Sparkles, Wrench, Package, Wallet, ClipboardList, MapPin, CircleDashed, Undo2, CheckCircle2, ScanSearch } from 'lucide-react';
+import { Plus, Calendar, DollarSign, Clock, Save, Trash2, Copy, Check, AlertCircle, FileText, Pencil, Layers, History, Eye, X, ChevronDown, ChevronLeft, ChevronRight, Sparkles, Wrench, Package, Wallet, ClipboardList, MapPin, CircleDashed, Undo2, CheckCircle2, ScanSearch, ScanFace, PersonStanding, Archive } from 'lucide-react';
 import CrossConsultHistoryModal, { type ConsultationRef } from '../CrossConsultHistoryModal';
 import TreatmentParametersModal, { type TreatmentParameters, formatParametersAsText, upsertNotesBlock, removeNotesBlock } from './TreatmentParametersModal';
 import TreatmentPackageModal from './TreatmentPackageModal';
@@ -79,6 +79,19 @@ const FORM_COPY: Record<TreatmentMode, { procedure: string; equipment: string; a
   corporal: { procedure: 'Ej: Criolipólisis', equipment: 'Ej: CoolSculpting, VelaShape...', area: 'Ej: Abdomen inferior y flancos' },
   capilar: { procedure: 'Ej: PRP capilar', equipment: 'Ej: Kit PRP, Dermapen capilar...', area: 'Ej: Coronilla y línea frontal' },
 };
+const MODES: TreatmentMode[] = ['facial', 'corporal', 'capilar'];
+const MODE_META = {
+  facial: { icon: ScanFace, badge: 'bg-rose-50 text-rose-800 border-rose-200', description: 'Rostro, cuello y escote' },
+  corporal: { icon: PersonStanding, badge: 'bg-emerald-50 text-emerald-800 border-emerald-200', description: 'Cuerpo y antropometría' },
+  capilar: { icon: ScanSearch, badge: 'bg-violet-50 text-violet-800 border-violet-200', description: 'Cuero cabelludo y densidad' },
+};
+
+function ModeBadge({ mode }: { mode: TreatmentMode }) {
+  const Icon = MODE_META[mode].icon;
+  return <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${MODE_META[mode].badge}`}>
+    <Icon className="h-3 w-3" aria-hidden="true" />{TREATMENT_MODE_LABELS[mode]}
+  </span>;
+}
 
 /** Resumen corto (badge) de los datos clínicos del modo, para mostrar en las tarjetas del historial */
 function getClinicalDataBadge(t: Treatment, mode: TreatmentMode): string | null {
@@ -363,7 +376,7 @@ const toggleTreatedZone = (value: string, zone: string): string => {
 };
 
 interface TreatmentModeViewProps {
-  mode: TreatmentMode;
+  mode?: TreatmentMode;
   /** Modelo .glb a usar en el visor 3D de marcaciones anatómicas de este modo */
   modelUrl?: string;
   recordId: number;
@@ -379,10 +392,20 @@ interface TreatmentModeViewProps {
  * Contiene el formulario de registro, el visor 3D de marcación anatómica y el historial
  * con gestión de Paquetes vs Sesiones Independientes.
  */
-export default function TreatmentModeView({ mode, modelUrl, recordId, treatments, patientName, consultationId, consultations = [], onSave }: TreatmentModeViewProps) {
+export default function TreatmentModeView({ mode: initialMode = 'facial', modelUrl: initialModelUrl, recordId, treatments, patientName, consultationId, consultations = [], onSave }: TreatmentModeViewProps) {
   const { hasFeature } = useAuth();
   const [activeStep, setActiveStep] = useState<1 | 2 | 3 | 4>(1);
-  const [currentTreatment, setCurrentTreatment] = useState<Treatment>(makeEmptyTreatment(mode));
+  const [currentTreatment, setCurrentTreatment] = useState<Treatment>(() => makeEmptyTreatment(initialMode));
+  const mode = currentTreatment.treatment_mode || 'facial';
+  const modelUrl = mode === initialMode && initialModelUrl
+    ? initialModelUrl : mode === 'corporal' ? '/models/clinical/male_body.glb' : '/models/clinical/male_head.glb';
+  const [historyFilter, setHistoryFilter] = useState<TreatmentMode | 'all'>('all');
+  const [pendingMode, setPendingMode] = useState<TreatmentMode | null>(null);
+  const [retiringPackage, setRetiringPackage] = useState<TreatmentPackage | null>(null);
+  const [packageBusy, setPackageBusy] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const [archivedPackages, setArchivedPackages] = useState<TreatmentPackage[]>([]);
+  const [packagesLoading, setPackagesLoading] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [dateLocked, setDateLocked] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -412,46 +435,65 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
   );
   // ── Paquetes ─────────────────────────────────────────────────────────────
   const [packages, setPackages] = useState<TreatmentPackage[]>([]);
+  const packageRequestId = useRef(0);
   const [packageModalOpen, setPackageModalOpen] = useState(false);
   const [editingPackage, setEditingPackage] = useState<TreatmentPackage | null>(null);
   const [expandedPackages, setExpandedPackages] = useState<Set<number>>(new Set());
   const [duplicating, setDuplicating] = useState(false);
 
   const loadPackages = useCallback(async () => {
+    const requestId = ++packageRequestId.current;
+    setPackagesLoading(true);
     try {
       if (!consultationId) {
         setPackages([]);
-        return;
+        setArchivedPackages([]);
+        return true;
       }
       const params = new URLSearchParams({
         action: 'listPackagesByRecord',
         record_id: String(recordId),
         consultation_id: String(consultationId),
-        treatment_mode: mode,
       });
-      const response = await recordsFetch(`/api/records?${params.toString()}`);
-      if (response.ok) setPackages(await response.json());
+      const [response, archiveResponse] = await Promise.all([
+        recordsFetch(`/api/records?${params.toString()}`),
+        recordsFetch(`/api/records?${params.toString()}&include_archived=true`),
+      ]);
+      const [activeBody, archiveBody] = await Promise.all([response.json(), archiveResponse.json()]);
+      if (requestId !== packageRequestId.current) return false;
+      if (!response.ok || !archiveResponse.ok) throw new Error(activeBody?.error || archiveBody?.error || 'No se pudieron cargar los paquetes');
+      setPackages(activeBody);
+      setArchivedPackages(archiveBody);
+      return true;
     } catch (error) {
+      if (requestId !== packageRequestId.current) return false;
       console.error('Error loading treatment packages:', error);
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Error al cargar paquetes' });
+      return false;
+    } finally {
+      if (requestId === packageRequestId.current) setPackagesLoading(false);
     }
-  }, [consultationId, mode, recordId]);
+  }, [consultationId, recordId]);
 
-  useEffect(() => { loadPackages(); }, [loadPackages]);
-
-  // Solo los tratamientos de este modo (el historial previo a la migración ya quedó asignado a 'facial')
-  const modeTreatments = useMemo(
-    () => treatments.filter(t => (t.treatment_mode || 'facial') === mode),
-    [treatments, mode]
-  );
+  useEffect(() => {
+    const requestCounter = packageRequestId;
+    setPackages([]);
+    setArchivedPackages([]);
+    void loadPackages();
+    return () => { requestCounter.current++; };
+  }, [loadPackages]);
 
   // Sort treatments by date descending for the history list
-  const sortedTreatments = useMemo(() => [...modeTreatments]
+  const consultationTreatments = useMemo(() => [...treatments]
     .filter(t => Number(t.consultation_id) === Number(consultationId))
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [modeTreatments, consultationId]);
-  const otherTreatCount = modeTreatments.filter(t => Number(t.consultation_id) !== Number(consultationId)).length;
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [treatments, consultationId]);
+  const sortedTreatments = useMemo(() => consultationTreatments.filter(t => historyFilter === 'all'
+    || (t.treatment_mode || 'facial') === historyFilter), [consultationTreatments, historyFilter]);
+  const modeTreatments = treatments;
+  const otherTreatCount = treatments.filter(t => Number(t.consultation_id) !== Number(consultationId)).length;
 
   const independentSessions = useMemo(() => sortedTreatments.filter(t => !t.package_id), [sortedTreatments]);
-  const { groups: procedureGroups, expandedGroups, toggleGroup } = useTreatmentGrouping(
+  const { groups: procedureGroups, expandedGroups, toggleGroup, expandGroup } = useTreatmentGrouping(
     independentSessions,
     getTreatmentProcedure
   );
@@ -484,6 +526,52 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
     setActiveZoneChip(null);
     setViewerOpen(false);
     setFinancePosting(createFinancePostingOptions());
+  };
+
+  const changeMode = (nextMode: TreatmentMode) => {
+    setCurrentTreatment(prev => {
+      const parameters = { ...(prev.parameters || {}) };
+      for (const key of Object.values(RESERVED_PARAM_KEYS)) delete parameters[key];
+      delete parameters[FOLLOW_UP_KEY];
+      return { ...prev, treatment_mode: nextMode, area_treated: '', area_marker: null,
+        parameters: Object.keys(parameters).length ? parameters : null };
+    });
+    setPendingMode(null);
+    setActiveZoneChip(null);
+    setCustomZone('');
+    setViewerOpen(false);
+    setClinicalDataModalOpen(false);
+  };
+  const requestModeChange = (nextMode: TreatmentMode) => {
+    if (nextMode === mode) return;
+    if (currentTreatment.area_treated || getAreaMarkers(currentTreatment).length
+      || Object.values(RESERVED_PARAM_KEYS).some(key => currentTreatment.parameters?.[key])
+      || currentTreatment.parameters?.[FOLLOW_UP_KEY]) setPendingMode(nextMode);
+    else changeMode(nextMode);
+  };
+  const handlePackageAction = async (pkg: TreatmentPackage, restore = false) => {
+    setPackageBusy(true);
+    setMessage(null);
+    try {
+      const response = await recordsFetch(restore
+        ? '/api/records?action=restorePackage' : `/api/records?action=deletePackage&id=${pkg.id}`, {
+        method: restore ? 'POST' : 'DELETE',
+        ...(restore ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: pkg.id }) } : {}),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'No se pudo actualizar el paquete');
+      if (!restore && currentTreatment.package_id === pkg.id) {
+        setCurrentTreatment(prev => ({ ...prev, package_id: null }));
+      }
+      setRetiringPackage(null);
+      const refreshed = await loadPackages();
+      if (refreshed) setMessage({ type: 'success', text: result.message || (restore ? 'Paquete restaurado' : 'Paquete retirado') });
+    } catch (error) {
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Error al actualizar el paquete' });
+      setRetiringPackage(null);
+    } finally {
+      setPackageBusy(false);
+    }
   };
 
   const togglePackageExpand = (id: number) => setExpandedPackages(prev => {
@@ -588,8 +676,6 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
     try {
       const rest = { ...target };
       delete rest.id;
-      delete rest.created_at;
-      delete rest.updated_at;
 
       // Si pertenece a un paquete, asegurar que el costo no supere el saldo pendiente del paquete
       let safeCost = Number(rest.cost) || 0;
@@ -601,9 +687,9 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
 
       const body = {
         record_id: recordId,
-        treatment_mode: mode,
         consultation_id: consultationId,
         ...rest,
+        treatment_mode: target.treatment_mode || 'facial',
         cost: safeCost,
         date: getLocalDate(),
       };
@@ -625,12 +711,11 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
         setExpandedPackages(prev => new Set(prev).add(rest.package_id!));
       }
       const newTreatment: Treatment = { ...resBody, date: toDateOnly(resBody.date) };
-      setCurrentTreatment(newTreatment);
-      setCostInput(newTreatment.cost > 0 ? String(newTreatment.cost) : '');
+      handleSelect(newTreatment);
       setDateLocked(false);
       if (groupByProcedure && !rest.package_id) {
         const normalKey = (newTreatment.procedure_name || 'Sin procedimiento').trim().toLowerCase();
-        setExpandedGroups(prev => new Set(prev).add(normalKey));
+        expandGroup(normalKey);
       }
       setHighlightedId(newTreatment.id ?? null);
       setTimeout(() => setHighlightedId(null), 2500);
@@ -736,7 +821,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
       ? treatedZones.filter(item => item.toLocaleLowerCase() !== zone.toLocaleLowerCase())
       : [...treatedZones, zone];
 
-    setActiveZoneChip(prev => wasSelected && prev === zone ? remainingZones.at(-1) ?? null : wasSelected ? prev : zone);
+    setActiveZoneChip(prev => wasSelected && prev === zone ? remainingZones[remainingZones.length - 1] ?? null : wasSelected ? prev : zone);
     setCurrentTreatment(prev => ({ ...prev, area_treated: toggleTreatedZone(prev.area_treated, zone) }));
   };
 
@@ -814,6 +899,15 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
   const renderSessionCard = (t: Treatment, index: number) => (
     <motion.div
       key={t.id || index}
+      role="button"
+      tabIndex={0}
+      aria-label={`Abrir sesión ${t.procedure_name || 'Sin procedimiento'} (${TREATMENT_MODE_LABELS[t.treatment_mode || 'facial']})`}
+      onKeyDown={event => {
+        if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
+          event.preventDefault();
+          handleSelect(t);
+        }
+      }}
       whileHover={{ scale: 1.02 }}
       whileTap={{ scale: 0.98 }}
       onClick={() => handleSelect(t)}
@@ -848,9 +942,10 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
       <div className="text-xs font-semibold truncate mt-0.5">{t.procedure_name || 'Sin procedimiento'}</div>
       <div className="text-xs opacity-75 truncate">{t.equipment_used || 'Sin equipo'}</div>
       <div className="mt-1 text-[10px]">{getFollowUpLabel(t)}</div>
-      {getClinicalDataBadge(t, mode) && (
+      <div className="mt-1"><ModeBadge mode={t.treatment_mode || 'facial'} /></div>
+      {getClinicalDataBadge(t, t.treatment_mode || 'facial') && (
         <div className={`text-[10px] mt-1 truncate rounded px-1.5 py-0.5 inline-block ${currentTreatment.id === t.id ? 'bg-white/20' : 'bg-[#deb887]/10 text-[#b8944d]'}`}>
-          {getClinicalDataBadge(t, mode)}
+          {getClinicalDataBadge(t, t.treatment_mode || 'facial')}
         </div>
       )}
     </motion.div>
@@ -892,9 +987,36 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
               <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-[#b8944d] text-white text-[8px] rounded-full flex items-center justify-center font-bold">{otherTreatCount > 9 ? '9+' : otherTreatCount}</span>
             </button>
           )}
-          <span className="ml-auto text-xs bg-gray-100 text-gray-500 rounded-full px-2 py-0.5">{sortedTreatments.length}</span>
+          <span className="ml-auto text-xs bg-gray-100 text-gray-500 rounded-full px-2 py-0.5" title="Sesiones de la consulta activa">{consultationTreatments.length}</span>
         </div>
+        <div className="flex flex-wrap gap-1" role="group" aria-label="Filtrar historial por modo">
+          {(['all', ...MODES] as const).map(filter => (
+            <button key={filter} type="button" aria-pressed={historyFilter === filter}
+              onClick={() => setHistoryFilter(filter)}
+              className={`admin-focus-ring min-h-9 rounded-lg border px-2 py-1 text-xs ${historyFilter === filter ? 'border-gold bg-gold/15 text-gold-ink' : 'border-gray-200 text-gray-600'}`}>
+              {filter === 'all' ? 'Todos' : TREATMENT_MODE_LABELS[filter]} ({filter === 'all' ? consultationTreatments.length
+                : consultationTreatments.filter(t => (t.treatment_mode || 'facial') === filter).length})
+            </button>
+          ))}
+        </div>
+        <button type="button" aria-pressed={showArchived} onClick={() => setShowArchived(value => !value)}
+          className="admin-focus-ring flex min-h-9 items-center gap-2 rounded-lg px-2 text-xs text-gray-600 hover:bg-gray-50">
+          <Archive className="h-4 w-4" aria-hidden="true" />Archivados ({archivedPackages.length})
+        </button>
+        {packagesLoading ? <p className="text-xs text-gray-500" role="status">Actualizando paquetes…</p> : null}
+        {showArchived ? <div className="space-y-2">
+          <p className="text-xs text-gray-600">Conservan pagos y saldo. Archivar no realiza devoluciones.</p>
+          {archivedPackages.map(pkg => <div key={pkg.id} className="rounded-lg border border-gray-200 bg-gray-50 p-2 text-xs">
+            <p className="font-semibold">{pkg.name}</p>
+            <p>Pagado: ${getPackagePaidTotal(pkg).toFixed(2)} · Saldo: ${getPackageDebt(pkg).toFixed(2)}</p>
+            <button type="button" disabled={packageBusy} onClick={() => void handlePackageAction(pkg, true)}
+              className="admin-focus-ring mt-1 min-h-9 rounded-lg border border-gold px-2 font-semibold text-gold-ink disabled:opacity-50">Restaurar paquete</button>
+          </div>)}
+          {!archivedPackages.length ? <p className="text-xs text-gray-400">Sin paquetes archivados</p> : null}
+        </div> : null}
         <div className="flex-1 overflow-y-auto space-y-3 max-h-[260px] md:max-h-none pr-2 custom-scrollbar">
+          {historyFilter !== 'all' && !sortedTreatments.length
+            ? <p className="text-xs text-gray-500">Sin sesiones de este modo en la consulta activa.</p> : null}
           {isEmpty ? (
             <div className="text-gray-400 text-sm text-center py-8 flex flex-col items-center gap-2">
               <AlertCircle className="w-8 h-8 opacity-20" />
@@ -908,6 +1030,8 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                 const debt = getPackageDebt(pkg);
                 const paid = getPackagePaidTotal(pkg);
                 const pkgSessions = sortedTreatments.filter(t => t.package_id === pkg.id);
+                const allPkgSessions = consultationTreatments.filter(t => t.package_id === pkg.id);
+                if (historyFilter !== 'all' && !pkgSessions.length) return null;
                 return (
                   <div key={pkg.id} className="space-y-1.5">
                     <div className="w-full flex flex-col gap-1 px-2.5 py-2 bg-amber-50 hover:bg-amber-100/70 rounded-lg border border-amber-200 transition-colors text-left">
@@ -935,6 +1059,11 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                             <Pencil className="w-3.5 h-3.5" />
                           </button>
                         </Tooltip>
+                        {!allPkgSessions.length ? <Tooltip content="Retirar paquete vacío">
+                          <button type="button" disabled={packageBusy} aria-label={`Retirar paquete ${pkg.name}`}
+                            onClick={() => setRetiringPackage(pkg)}
+                            className="admin-focus-ring rounded p-1 text-red-600 hover:bg-red-50 disabled:opacity-50"><Trash2 className="h-3.5 w-3.5" /></button>
+                        </Tooltip> : null}
                       </div>
                       <button
                         type="button"
@@ -942,7 +1071,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
                         className="text-left w-full space-y-0.5"
                       >
                         <div className="flex items-center justify-between text-[10px] text-amber-700 pl-5">
-                          <span>{pkg.sessions_count ?? pkgSessions.length} de {pkg.estimated_sessions} sesiones</span>
+                          <span>{pkg.sessions_count ?? allPkgSessions.length} de {pkg.estimated_sessions} sesiones</span>
                           <span className={`font-semibold ${debt > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
                             {debt > 0 ? `Debe $${debt.toFixed(2)}` : 'Pagado'}
                           </span>
@@ -1468,6 +1597,22 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
           </div>
 
           {activeStep <= 3 ? <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+            {activeStep === 1 ? <fieldset className="space-y-2 md:col-span-2">
+              <legend className="mb-2 text-sm font-semibold text-gray-800">Modo de esta sesión</legend>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                {MODES.map(value => {
+                  const Icon = MODE_META[value].icon;
+                  return <button key={value} type="button" disabled={saving || deleting || duplicating}
+                    aria-pressed={mode === value} onClick={() => requestModeChange(value)}
+                    className={`admin-focus-ring flex min-h-[4rem] items-center gap-3 rounded-xl border p-3 text-left disabled:opacity-50 ${mode === value ? 'border-gold bg-gold/10 ring-1 ring-gold' : 'border-gray-200 bg-white hover:border-gold'}`}>
+                    <Icon className="h-5 w-5 shrink-0 text-gold-ink" aria-hidden="true" />
+                    <span><span className="block text-sm font-semibold">{TREATMENT_MODE_LABELS[value]}</span>
+                      <span className="block text-[11px] text-gray-500">{MODE_META[value].description}</span></span>
+                  </button>;
+                })}
+              </div>
+              <p className="text-xs text-gray-500">El modo define la evaluación y el mapa de esta sesión. Todos los paquetes admiten los tres modos.</p>
+            </fieldset> : null}
             <div className={activeStep === 1 ? 'space-y-2' : 'hidden'}>
               <label htmlFor="treatment-date" className="block text-sm font-medium text-gray-700">Fecha</label>
               <div className="flex items-center gap-2">
@@ -1869,6 +2014,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
       currentConsultationId={consultationId}
       renderItem={t => (
         <div>
+          <ModeBadge mode={t.treatment_mode || 'facial'} />
           <p className="font-medium text-gray-800">{t.procedure_name}</p>
           <p className="text-gray-400">{t.date ? new Date(toDateOnly(t.date) + 'T12:00:00').toLocaleDateString('es-EC') : ''}{t.equipment_used ? ` — ${t.equipment_used}` : ''}</p>
         </div>
@@ -1882,7 +2028,7 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
           {t.cost > 0 && <div><span className="text-gray-400">Costo:</span> ${t.cost}</div>}
           {t.notes && <div><span className="text-gray-400">Notas:</span> {t.notes}</div>}
           <div><span className="text-gray-400">Seguimiento:</span> {getFollowUpLabel(t)}</div>
-          <div>{describeTreatmentAssessment(t, mode)}</div>
+          <div>{describeTreatmentAssessment(t, t.treatment_mode || 'facial')}</div>
           {t.date && <div><span className="text-gray-400">Fecha:</span> {new Date(toDateOnly(t.date) + 'T12:00:00').toLocaleDateString('es-EC')}</div>}
         </>
       )}
@@ -1973,6 +2119,26 @@ export default function TreatmentModeView({ mode, modelUrl, recordId, treatments
       initialData={currentTreatment.parameters?.[RESERVED_PARAM_KEYS[mode]] as PostCareData | AnthropometricsData | ScalpAssessmentData | undefined}
       onClose={() => setClinicalDataModalOpen(false)}
       onSave={handleSaveClinicalData}
+    />
+    <ConfirmationDialog
+      open={pendingMode !== null}
+      title="Cambiar modo de la sesión"
+      description={<>Se cambiará a <strong>{pendingMode ? TREATMENT_MODE_LABELS[pendingMode] : ''}</strong>.</>}
+      detail="Se quitarán las zonas, marcaciones, evaluación y referencia de seguimiento del modo anterior. Se conservarán el paquete, fecha, procedimiento, equipo, notas y abono. El cambio no se guarda hasta pulsar Guardar sesión."
+      confirmLabel="Cambiar modo"
+      onClose={() => setPendingMode(null)}
+      onConfirm={() => { if (pendingMode) changeMode(pendingMode); }}
+    />
+    <ConfirmationDialog
+      open={retiringPackage !== null}
+      variant="danger"
+      title="Retirar paquete vacío"
+      description={<>Se retirará <strong>{retiringPackage?.name}</strong> de los paquetes activos.</>}
+      detail="Si no tiene pagos se eliminará. Si tiene abonos o cobros en Finanzas se archivará y podrá restaurarse: pagos y saldo se conservan. Esto no devuelve dinero, no cancela deuda ni transfiere pagos a otro paquete."
+      confirmLabel="Retirar paquete"
+      busy={packageBusy}
+      onClose={() => setRetiringPackage(null)}
+      onConfirm={() => { if (retiringPackage) void handlePackageAction(retiringPackage); }}
     />
     <ConfirmationDialog
       open={confirmation === 'package-save'}

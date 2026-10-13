@@ -131,6 +131,7 @@ export default function TreatmentPackageModal({
             <X className="w-5 h-5" />
           </button>
         </div>
+        <p className="mb-4 text-xs text-gray-500">Disponible para sesiones faciales, corporales y capilares de esta consulta.</p>
 
         {isEditing && (
           <div className="mb-4 p-3 bg-amber-50/70 border border-amber-200/80 rounded-lg text-xs space-y-1 text-amber-800">

@@ -88,6 +88,7 @@ export interface TreatmentPackage {
   total_cost: number;
   estimated_sessions: number;
   initial_payment: number;
+  archived_at?: string | null;
   created_at?: string;
   /** Calculados por el backend (join con treatments vinculados) */
   sessions_paid?: number;

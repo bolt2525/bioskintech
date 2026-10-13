@@ -1,5 +1,7 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-12 Tratamientos: selector y filtros verificados.
+
 - ✅ 2026-10-12 Dashboard: criaturas del hero variadas (fantasmita, calaverita, calabacita, murciélago; pool `summon: [...]`) e interactivas: al pasar el mouse escapan a otro punto aleatorio del hero y desaparecen tras 5 s sin interacción (`idleMs`); la arañita sigue disponible.
 
 - ✅ 2026-10-12 Tratamientos: historial único, paquetes universales.

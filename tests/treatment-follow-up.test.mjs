@@ -103,7 +103,7 @@ test('Medidas corporales aceptan coma decimal, no interpretan vacío como cero',
   assert.match(followUp.compareTreatmentAssessments(first, session({ parameters: {} }), 'corporal'), /registra el valor/);
 });
 
-function harness(mode = 'capilar') {
+function harness(mode = 'capilar', history = null) {
   const states = [];
   let cursor = 0;
   const requests = [];
@@ -133,7 +133,7 @@ function harness(mode = 'capilar') {
       if (name.endsWith('/AuthContext')) return { useAuth: () => ({ hasFeature: () => false }) };
       if (name.endsWith('/treatment_options.json')) return { procedures: {} };
       if (name.endsWith('/useTreatmentGrouping')) return { useTreatmentGrouping: items => ({
-        groups: [{ key: 'prp', displayName: 'PRP', items }], expandedGroups: new Set(['prp']), toggleGroup() {},
+        groups: [{ key: 'prp', displayName: 'PRP', items }], expandedGroups: new Set(['prp']), toggleGroup() {}, expandGroup() {},
       }) };
       if (name.endsWith('/types/treatment')) return types;
       if (name.endsWith('/types/treatmentFollowUp')) return followUp;
@@ -151,7 +151,7 @@ function harness(mode = 'capilar') {
     cursor = 0;
     return exports.default({
       mode, modelUrl: mode === 'corporal' ? '/models/clinical/male_body.glb' : '/models/clinical/male_head.glb',
-      recordId: 7, consultationId: 10, treatments: [session({
+      recordId: 7, consultationId: 10, treatments: history || [session({
         treatment_mode: mode,
         parameters: mode === 'capilar' ? { __scalp_assessment: assessment } : {},
       })],
@@ -165,6 +165,70 @@ function harness(mode = 'capilar') {
   };
   return { render, all, requests, saved: () => saved };
 }
+    test('UI: historial unificado filtra sin cambiar ni perder el borrador y carga modo de cada sesión', () => {
+      const h = harness('facial', [
+        session({ id: 1, treatment_mode: 'facial', procedure_name: 'Facial ficticio' }),
+        session({ id: 2, treatment_mode: 'corporal', procedure_name: 'Corporal ficticio', parameters: {} }),
+        session({ id: 3, treatment_mode: 'capilar', procedure_name: 'Capilar ficticio' }),
+        session({ id: 4, consultation_id: 11, procedure_name: 'Consulta anterior' }),
+      ]);
+      const cards = tree => h.all(tree).filter(node => node.type === 'motion.div' && node.props.onClick);
+      let tree = h.render();
+      assert.equal(cards(tree).length, 3);
+      cards(tree)[1].props.onClick();
+      tree = h.render();
+      const modal = h.all(tree).find(node => node.type === './ClinicalDataModal');
+      assert.equal(modal.props.mode, 'corporal');
+      const filterGroup = h.all(tree).find(node => node.props?.['aria-label'] === 'Filtrar historial por modo');
+      h.all(filterGroup).filter(node => node.type === 'button')[1].props.onClick();
+      tree = h.render();
+      assert.equal(cards(tree).length, 1);
+      assert.equal(h.all(tree).find(node => node.type === './ClinicalDataModal').props.mode, 'corporal');
+      assert.equal(h.all(tree).find(node => node.props?.id === 'treatment-date').props.value, '2026-10-01');
+      assert.equal(h.all(tree).find(node => node.props?.value === 'Corporal ficticio').props.value, 'Corporal ficticio');
+      assert.equal(h.requests.length, 0);
+    });
+
+    test('UI: cambio anatómico requiere confirmación y conserva procedimiento, notas y abono', () => {
+      const h = harness('facial');
+      let tree = h.render();
+      h.all(tree).find(node => node.type === 'motion.div' && node.props.onClick).props.onClick();
+      tree = h.render();
+      const modeButton = h.all(tree).find(node => node.type === 'button'
+        && node.props['aria-pressed'] === false && String(node.props.className).includes('min-h-[4rem]'));
+      modeButton.props.onClick();
+      tree = h.render();
+      const confirm = h.all(tree).find(node => node.type === 'ConfirmationDialog' && node.props.title === 'Cambiar modo de la sesión');
+      assert.equal(confirm.props.open, true);
+      assert.equal(h.all(tree).find(node => node.type === './ClinicalDataModal').props.mode, 'facial');
+      confirm.props.onConfirm();
+      tree = h.render();
+      assert.equal(h.all(tree).find(node => node.type === './ClinicalDataModal').props.mode, 'corporal');
+      assert.equal(h.all(tree).find(node => node.type === './ClinicalDataModal').props.initialData, undefined);
+      assert.equal(h.all(tree).find(node => node.props?.value === 'PRP').props.value, 'PRP');
+      h.all(tree).filter(node => node.type === 'button' && String(node.props.className).includes('min-h-16'))[3].props.onClick();
+      tree = h.render();
+      const panel = h.all(tree).find(node => node.type === './TreatmentFollowUpPanel');
+      assert.equal(panel.props.current.cost, 50);
+      assert.equal(panel.props.current.notes, 'Hallazgos de la sesión previa');
+      assert.equal(panel.props.current.area_treated, '');
+      assert.equal(h.requests.length, 0);
+    });
+
+    test('UI: duplicación desde historial corporal conserva modo aunque formulario esté en facial', async () => {
+      const h = harness('facial', [session({ treatment_mode: 'corporal', parameters: {} })]);
+      const tree = h.render();
+      const duplicate = h.all(tree).find(node => node.props?.['aria-label'] === 'Duplicar tratamiento'
+        && String(node.props.className).includes('opacity-70'));
+      await duplicate.props.onClick({ stopPropagation() {} });
+      await new Promise(resolve => setImmediate(resolve));
+      assert.equal(h.requests.length, 1);
+      const body = JSON.parse(h.requests[0].options.body);
+      assert.equal(body.treatment_mode, 'corporal');
+      assert.equal(body.id, undefined);
+      assert.equal(body.consultation_id, 10);
+      assert.equal(h.saved(), 1);
+    });
 test('UI: siguiente sesión es borrador sin request; Guardar persiste control con JSONB existente', async () => {
   const h = harness();
   let tree = h.render();

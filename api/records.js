@@ -177,24 +177,24 @@ export function isCompatibleTreatmentPosting(row, {
     ));
 }
 
-async function assertPackagePaymentWithinBalance(db, {
-  packageId, recordId, consultationId, clinicId, treatmentMode, amount, excludeTreatmentId = null,
+export async function assertPackagePaymentWithinBalance(db, {
+  packageId, recordId, consultationId, clinicId, amount, excludeTreatmentId = null,
 }) {
   const packageResult = await db.query(
     `SELECT id, name, total_cost, initial_payment
      FROM treatment_packages
      WHERE id = $1 AND record_id = $2 AND clinic_id = $3
-       AND consultation_id = $4 AND treatment_mode = $5
+       AND consultation_id = $4 AND archived_at IS NULL
      FOR UPDATE`,
-    [packageId, recordId, clinicId, consultationId, treatmentMode]
+    [packageId, recordId, clinicId, consultationId]
   );
   if (packageResult.rowCount === 0) throw new Error('package_id inválido para esta consulta');
   const paidResult = await db.query(
     `SELECT COALESCE(SUM(cost), 0)::float AS paid
      FROM treatments
-     WHERE package_id = $1 AND consultation_id = $2
-       AND ($3::int IS NULL OR id <> $3)`,
-    [packageId, consultationId, excludeTreatmentId]
+     WHERE package_id = $1 AND consultation_id = $2 AND clinic_id = $3 AND record_id = $4
+       AND ($5::int IS NULL OR id <> $5)`,
+    [packageId, consultationId, clinicId, recordId, excludeTreatmentId]
   );
   const treatmentPackage = packageResult.rows[0];
   const remaining = Math.round((
@@ -206,6 +206,46 @@ async function assertPackagePaymentWithinBalance(db, {
     throw new Error(`El abono supera el saldo pendiente del paquete ($${Math.max(0, remaining).toFixed(2)})`);
   }
   return treatmentPackage;
+}
+
+export async function retireTreatmentPackage(db, { packageId, clinicId }) {
+  const result = await db.query(
+    'SELECT id, record_id, name, initial_payment, archived_at FROM treatment_packages WHERE id = $1 AND clinic_id = $2 FOR UPDATE',
+    [packageId, clinicId]
+  );
+  if (!result.rowCount) {
+    const error = new Error('Paquete no encontrado o sin permisos');
+    error.code = 'PACKAGE_NOT_FOUND';
+    throw error;
+  }
+  const treatmentPackage = result.rows[0];
+  const sessions = await db.query(
+    'SELECT 1 FROM treatments WHERE package_id = $1 LIMIT 1',
+    [packageId]
+  );
+  if (sessions.rowCount) {
+    const error = new Error('El paquete tiene sesiones. No se puede retirar ni eliminar; conserva sus sesiones y utiliza el mismo paquete en cualquier modo.');
+    error.code = 'PACKAGE_HAS_SESSIONS';
+    throw error;
+  }
+  const postings = await db.query(
+    `SELECT 1 FROM financial_records
+     WHERE clinic_id = $1 AND source_module = 'treatments'
+       AND (source_package_id = $2 OR (source_type = 'treatment_package_initial' AND source_id = $2))
+     LIMIT 1`,
+    [clinicId, packageId]
+  );
+  const archived = Boolean(treatmentPackage.archived_at)
+    || Number(treatmentPackage.initial_payment) > 0 || postings.rowCount > 0;
+  if (archived) {
+    await db.query(
+      'UPDATE treatment_packages SET archived_at = COALESCE(archived_at, NOW()) WHERE id = $1 AND clinic_id = $2',
+      [packageId, clinicId]
+    );
+  } else {
+    await db.query('DELETE FROM treatment_packages WHERE id = $1 AND clinic_id = $2', [packageId, clinicId]);
+  }
+  return { treatmentPackage, archived };
 }
 
 async function createTreatmentFinancePosting(db, {
@@ -501,9 +541,9 @@ function buildSu(auth) {
 
 /**
  * Registra un evento de auditoría en patient_audit_log.
- * Silencioso si falla — la auditoría nunca debe interrumpir la operación principal.
+ * Los cambios que requieren evidencia atómica usan required para propagar errores.
  */
-async function logAudit(client, { patientId, recordId, clinicId, sessionUser, actionType, module, summary, fieldChanges }) {
+async function logAudit(client, { patientId, recordId, clinicId, sessionUser, actionType, module, summary, fieldChanges, required = false }) {
   try {
     await client.query(
       `INSERT INTO patient_audit_log (patient_id, record_id, clinic_id, clinic_user_id, user_display_name, action_type, module, summary, field_changes)
@@ -520,7 +560,9 @@ async function logAudit(client, { patientId, recordId, clinicId, sessionUser, ac
         fieldChanges ? JSON.stringify(fieldChanges) : null,
       ]
     );
-  } catch { /* silencioso — auditoría no bloquea operaciones */ }
+  } catch (error) {
+    if (required) throw error;
+  }
 }
 
 /** IDOR guard — returns false if item doesn't belong to the current clinic */
@@ -1092,6 +1134,22 @@ export default async function handler(req, res) {
       // ponytail: pool alias para los pocos handlers que usan pool.connect() internamente
       const pool = { query: (...a) => client.query(...a), connect: () => appPool.connect() };
 
+      if (['deletePackage', 'restorePackage', 'updatePackage'].includes(action)) {
+        const rawId = action === 'deletePackage' ? req.query.id : body.id;
+        const packageId = Number(rawId);
+        if (!['string', 'number'].includes(typeof rawId) || !Number.isSafeInteger(packageId) || packageId <= 0) {
+          return res.status(400).json({ error: 'ID de paquete inválido' });
+        }
+      }
+      if (action === 'listPackagesByRecord') {
+        const { record_id, consultation_id, include_archived } = req.query;
+        if ([record_id, consultation_id].some(id => !['string', 'number'].includes(typeof id)
+          || !Number.isSafeInteger(Number(id)) || Number(id) <= 0)
+          || (include_archived !== undefined && !['true', 'false'].includes(include_archived))) {
+          return res.status(400).json({ error: 'Expediente, consulta y filtro de archivados inválidos' });
+        }
+      }
+
       const patientIdByAction = {
         getPatient: req.query.id,
         listRecords: req.query.patient_id,
@@ -1138,6 +1196,7 @@ export default async function handler(req, res) {
         updateTreatment: ['treatments', body.id],
         deleteTreatment: ['treatments', req.query.id],
         deletePackage: ['treatment_packages', req.query.id],
+        restorePackage: ['treatment_packages', body.id],
         updatePackage: ['treatment_packages', body.id],
         getInjectablesByTreatment: ['treatments', req.query.treatment_id],
         updateInjectable: ['injectables', body.id],
@@ -2918,7 +2977,6 @@ export default async function handler(req, res) {
               recordId: tid,
               consultationId,
               clinicId: effectiveClinicId,
-              treatmentMode: safeTreatData.treatment_mode,
               amount: safeTreatData.cost,
             });
           }
@@ -3047,7 +3105,6 @@ export default async function handler(req, res) {
               recordId,
               consultationId,
               clinicId: effectiveClinicId,
-              treatmentMode: mergedTreatment.treatment_mode,
               amount: mergedTreatment.cost,
               excludeTreatmentId: Number(upTreatId),
             });
@@ -3156,13 +3213,13 @@ export default async function handler(req, res) {
 
       case 'createPackage': {
         const {
-          record_id: pkgRecordId, consultation_id: rawPkgConsultId, treatment_mode: pkgMode,
+          record_id: pkgRecordId, consultation_id: rawPkgConsultId, treatment_mode: pkgMode = 'facial',
           name: pkgName, total_cost: rawPkgCost, estimated_sessions: rawPkgSessions,
           initial_payment: rawPkgInitial, finance_posting: rawFinancePosting,
         } = body;
         const pkgConsultId = Number(rawPkgConsultId);
         const pkgSessions = Number(rawPkgSessions);
-        if (!pkgRecordId || !pkgName?.trim() || !TREATMENT_MODES.has(pkgMode) || !Number.isSafeInteger(pkgConsultId) || pkgConsultId <= 0) {
+        if (!pkgRecordId || typeof pkgName !== 'string' || !pkgName.trim() || pkgName.trim().length > 150 || !TREATMENT_MODES.has(pkgMode) || !Number.isSafeInteger(pkgConsultId) || pkgConsultId <= 0) {
           return res.status(400).json({ error: 'Expediente, consulta, nombre y modo de tratamiento son requeridos' });
         }
         if (!Number.isSafeInteger(pkgSessions) || pkgSessions < 1 || pkgSessions > 100) {
@@ -3251,11 +3308,9 @@ export default async function handler(req, res) {
       }
 
       case 'listPackagesByRecord': {
-        const { record_id: lpRecordId, consultation_id: rawLpConsultId, treatment_mode: lpMode } = req.query;
+        const { record_id: rawLpRecordId, consultation_id: rawLpConsultId, include_archived: includeArchived } = req.query;
+        const lpRecordId = Number(rawLpRecordId);
         const lpConsultId = Number(rawLpConsultId);
-        if (!lpRecordId || !Number.isSafeInteger(lpConsultId) || lpConsultId <= 0 || !TREATMENT_MODES.has(lpMode)) {
-          return res.status(400).json({ error: 'record_id, consultation_id y treatment_mode válidos son requeridos' });
-        }
         const consultationCheck = await pool.query(
           'SELECT 1 FROM consultations WHERE id = $1 AND record_id = $2 AND clinic_id = $3',
           [lpConsultId, lpRecordId, effectiveClinicId]
@@ -3271,40 +3326,68 @@ export default async function handler(req, res) {
            LEFT JOIN treatments t ON t.package_id = tp.id
              AND t.record_id = tp.record_id
              AND t.consultation_id = tp.consultation_id
+             AND t.clinic_id = tp.clinic_id
            WHERE tp.record_id = $1
              AND tp.consultation_id = $2
-             AND tp.treatment_mode = $3
+             AND tp.clinic_id = $3
+             AND (tp.archived_at IS NOT NULL) = $4
            GROUP BY tp.id
            ORDER BY tp.created_at DESC`,
-          [lpRecordId, lpConsultId, lpMode]
+          [lpRecordId, lpConsultId, effectiveClinicId, includeArchived === 'true']
         );
         return res.status(200).json(pkgs.rows);
       }
 
       case 'deletePackage': {
-        const { id: delPkgId } = req.query;
+        if (req.method !== 'DELETE') return res.status(405).json({ error: 'Método no permitido' });
+        const delPkgId = Number(req.query.id);
+        if (!Number.isSafeInteger(delPkgId) || delPkgId <= 0) return res.status(400).json({ error: 'ID de paquete inválido' });
         try {
           await client.query('BEGIN');
-          const treatmentPackage = await client.query(
-            'SELECT id FROM treatment_packages WHERE id = $1 AND clinic_id = $2 FOR UPDATE',
-            [delPkgId, effectiveClinicId]
-          );
-          if (treatmentPackage.rowCount === 0) {
-            await client.query('ROLLBACK');
-            return res.status(403).json({ error: 'Sin permiso' });
-          }
-          const postedPackage = await client.query(
-            `SELECT 1 FROM financial_records
-             WHERE clinic_id = $1 AND source_module = 'treatments' AND source_package_id = $2`,
-            [effectiveClinicId, delPkgId]
-          );
-          if (postedPackage.rowCount) {
-            await client.query('ROLLBACK');
-            return res.status(409).json({ error: 'No se puede eliminar un paquete con cobros registrados en Finanzas.' });
-          }
-          await client.query('DELETE FROM treatment_packages WHERE id = $1', [delPkgId]);
+          const { treatmentPackage, archived } = await retireTreatmentPackage(client, {
+            packageId: delPkgId, clinicId: effectiveClinicId,
+          });
+          await logAudit(client, {
+            recordId: treatmentPackage.record_id, sessionUser: su, required: true,
+            actionType: archived ? 'update' : 'delete', module: 'treatment_package',
+            summary: `${archived ? 'Archivó' : 'Eliminó'} paquete vacío #${delPkgId}: ${treatmentPackage.name}${archived ? '; cobros conservados, sin devolución ni cancelación del saldo' : ''}`,
+          });
           await client.query('COMMIT');
-          return res.status(200).json({ success: true });
+          return res.status(200).json({
+            success: true, archived,
+            message: archived
+              ? 'Paquete archivado. Los pagos y el saldo se conservan; no se ha realizado una devolución.'
+              : 'Paquete vacío sin pagos eliminado.',
+          });
+        } catch (error) {
+          await client.query('ROLLBACK').catch(() => {});
+          if (error.code === 'PACKAGE_NOT_FOUND') return res.status(404).json({ error: error.message });
+          if (error.code === 'PACKAGE_HAS_SESSIONS') return res.status(409).json({ error: error.message });
+          throw error;
+        }
+      }
+
+      case 'restorePackage': {
+        if (req.method !== 'POST') return res.status(405).json({ error: 'Método no permitido' });
+        const pkgId = Number(body.id);
+        if (!Number.isSafeInteger(pkgId) || pkgId <= 0) return res.status(400).json({ error: 'ID de paquete inválido' });
+        try {
+          await client.query('BEGIN');
+          const restored = await client.query(
+            `UPDATE treatment_packages SET archived_at = NULL
+             WHERE id = $1 AND clinic_id = $2 AND archived_at IS NOT NULL RETURNING *`,
+            [pkgId, effectiveClinicId]
+          );
+          if (!restored.rowCount) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Paquete archivado no encontrado o sin permisos' });
+          }
+          await logAudit(client, {
+            recordId: restored.rows[0].record_id, sessionUser: su, actionType: 'update', required: true,
+            module: 'treatment_package', summary: `Restauró paquete #${pkgId}: ${restored.rows[0].name}`,
+          });
+          await client.query('COMMIT');
+          return res.status(200).json({ success: true, message: 'Paquete restaurado con sus pagos originales.' });
         } catch (error) {
           await client.query('ROLLBACK').catch(() => {});
           throw error;
@@ -3320,7 +3403,7 @@ export default async function handler(req, res) {
         } = body;
         const pkgId = Number(rawPkgId);
         const pkgSessions = Number(rawPkgSessions);
-        if (!Number.isSafeInteger(pkgId) || pkgId <= 0 || !pkgName?.trim()) {
+        if (!Number.isSafeInteger(pkgId) || pkgId <= 0 || typeof pkgName !== 'string' || !pkgName.trim() || pkgName.trim().length > 150) {
           return res.status(400).json({ error: 'ID y nombre del paquete son requeridos' });
         }
         if (!Number.isSafeInteger(pkgSessions) || pkgSessions < 1 || pkgSessions > 100) {
@@ -3336,16 +3419,8 @@ export default async function handler(req, res) {
         try {
           await client.query('BEGIN');
           const existingRes = await client.query(
-            `SELECT tp.*,
-               COALESCE(SUM(t.cost), 0)::float AS sessions_paid,
-               COUNT(t.id)::int AS sessions_count
-             FROM treatment_packages tp
-             LEFT JOIN treatments t ON t.package_id = tp.id
-               AND t.record_id = tp.record_id
-               AND t.consultation_id = tp.consultation_id
-             WHERE tp.id = $1 AND tp.clinic_id = $2
-             GROUP BY tp.id
-             FOR UPDATE`,
+            `SELECT * FROM treatment_packages
+             WHERE id = $1 AND clinic_id = $2 AND archived_at IS NULL FOR UPDATE`,
             [pkgId, effectiveClinicId]
           );
           if (existingRes.rowCount === 0) {
@@ -3353,6 +3428,12 @@ export default async function handler(req, res) {
             return res.status(404).json({ error: 'Paquete no encontrado o sin permisos' });
           }
           const currentPkg = existingRes.rows[0];
+          const totals = await client.query(
+            `SELECT COALESCE(SUM(cost), 0)::float AS sessions_paid, COUNT(*)::int AS sessions_count
+             FROM treatments WHERE package_id = $1 AND record_id = $2 AND consultation_id = $3 AND clinic_id = $4`,
+            [pkgId, currentPkg.record_id, currentPkg.consultation_id, effectiveClinicId]
+          );
+          Object.assign(currentPkg, totals.rows[0]);
           const sessionsCount = currentPkg.sessions_count || 0;
           if (pkgSessions < sessionsCount) {
             await client.query('ROLLBACK');
@@ -4797,6 +4878,11 @@ export default async function handler(req, res) {
       }
     }
   } catch (error) {
+    if (['createPackage', 'updatePackage', 'deletePackage', 'restorePackage', 'listPackagesByRecord'].includes(req.query.action || req.body?.action)
+      && (!error.status || error.status >= 500)) {
+      console.error('Treatment package API error:', error.code || error.name);
+      return res.status(500).json({ error: 'No se pudo completar la operación del paquete. Intenta nuevamente.' });
+    }
     console.error('Clinical Records API Error:', error);
     return res.status(error.status || 500).json({ error: error.message });
   }
