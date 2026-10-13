@@ -9,8 +9,8 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { X, ChevronRight, Sparkles } from 'lucide-react';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
+import { X, ChevronRight } from 'lucide-react';
 import {
   getActiveSeasonalEvent,
   type SeasonalEventConfig,
@@ -46,6 +46,14 @@ export default function SeasonalBrandDongle({
   const [isHovered, setIsHovered] = useState(false);
   const [particles, setParticles] = useState<Particle[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
+  const reduceMotion = useReducedMotion();
+  const timersRef = useRef<number[]>([]);
+
+  // Limpiar timers pendientes al desmontar (evita setState tras unmount)
+  useEffect(() => {
+    const timers = timersRef;
+    return () => timers.current.forEach(window.clearTimeout);
+  }, []);
 
   useEffect(() => {
     const active = eventOverride !== undefined ? eventOverride : getActiveSeasonalEvent();
@@ -75,7 +83,7 @@ export default function SeasonalBrandDongle({
 
   // Lanzar partículas festivas al hacer clic en el dongle
   const triggerParticles = () => {
-    if (!event?.dongle.clickParticles?.length) return;
+    if (reduceMotion || !event?.dongle.clickParticles?.length) return;
     const pool = event.dongle.clickParticles;
     const newParticles: Particle[] = Array.from({ length: 6 }).map((_, i) => ({
       id: Date.now() + i,
@@ -86,9 +94,11 @@ export default function SeasonalBrandDongle({
     }));
 
     setParticles(prev => [...prev, ...newParticles]);
-    setTimeout(() => {
-      setParticles(prev => prev.filter(p => !newParticles.includes(p)));
-    }, 1000);
+    timersRef.current.push(
+      window.setTimeout(() => {
+        setParticles(prev => prev.filter(p => !newParticles.includes(p)));
+      }, 1000),
+    );
   };
 
   const handleDongleClick = (e: React.MouseEvent) => {
@@ -118,6 +128,8 @@ export default function SeasonalBrandDongle({
   }
 
   // ─── Render estacional interactivo y minimalista ───────────────────────────
+  const accent = event.theme.accentColor;
+
   return (
     <div
       ref={containerRef}
@@ -127,41 +139,52 @@ export default function SeasonalBrandDongle({
     >
       {/* ── Contenedor de la barra vertical + dongle interactivo ──────── */}
       <div className="relative flex items-center justify-center">
-        {/* Barra vertical de la clínica con sutil gradiente del evento */}
+        {/* Barra vertical de la clínica: dorado champán con brillo del acento del evento */}
         <div
-          className={`w-2 h-9 rounded-full transition-all duration-500 shadow-sm ${
-            event.id === 'halloween'
-              ? 'bg-gradient-to-b from-[#deb887] via-[#f97316] to-[#deb887]'
-              : 'bg-gradient-to-b from-[#deb887] to-amber-600'
-          }`}
+          className="h-9 w-2 rounded-full shadow-sm transition-all duration-500"
+          style={{ background: `linear-gradient(to bottom, #deb887, ${accent}b3 50%, #deb887)` }}
         />
 
-        {/* Hilo sutil y dongle colgante animado tipo dije */}
-        <div className="absolute -top-3 left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-auto">
-          {/* Hilo conector fino */}
-          <div className="w-[1.5px] h-3 bg-gradient-to-b from-[#deb887] to-amber-500/80 shadow-xs" />
+        {/* Brazo dorado con argolla: el charm cuelga a un costado de la barra, sin atravesarla */}
+        <span
+          className="pointer-events-none absolute left-1/2 top-[3px] h-px w-3.5 bg-gradient-to-r from-[#deb887] to-[#c5a075]"
+          aria-hidden="true"
+        />
+        <span
+          className="pointer-events-none absolute top-[0.5px] h-[7px] w-[7px] rounded-full border border-[#c5a075] bg-white shadow-[0_0_0_1px_rgba(222,184,135,0.25)]"
+          style={{ left: 'calc(50% + 12px)' }}
+          aria-hidden="true"
+        />
 
-          {/* Charm colgante con física pendular */}
-          <motion.button
+        {/* Hilo de seda + charm con física pendular (pivote en la argolla) */}
+        <motion.div
+          className="absolute top-[7px] flex w-5 origin-top flex-col items-center"
+          style={{ left: 'calc(50% + 12px)', marginLeft: -7 }}
+          animate={
+            reduceMotion
+              ? { rotate: 0 }
+              : { rotate: isHovered ? [-9, 9] : [-4, 4] }
+          }
+          transition={{
+            repeat: Infinity,
+            repeatType: 'mirror',
+            duration: isHovered ? 1.3 : 3.2,
+            ease: 'easeInOut',
+          }}
+        >
+          <span className="h-3 w-px bg-gradient-to-b from-[#c5a075] to-[#deb887]/40" aria-hidden="true" />
+          <button
             type="button"
             onClick={handleDongleClick}
-            animate={{
-              rotate: isHovered ? [-14, 14, -14] : [-5, 5, -5],
-              scale: isHovered ? 1.15 : 1,
-            }}
-            transition={{
-              repeat: Infinity,
-              duration: isHovered ? 1.4 : 3,
-              ease: 'easeInOut',
-            }}
-            className="origin-top cursor-pointer text-base leading-none filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.18)] hover:scale-125 active:scale-90 transition-transform focus:outline-none"
+            className="admin-focus-ring -mt-px rounded-full text-[15px] leading-none drop-shadow-[0_2px_3px_rgba(0,0,0,0.2)] transition-transform duration-200 hover:scale-110 active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#deb887]"
             title={`Especial de ${event.name} — Clic para abrir sugerencia`}
             aria-label={`Especial de ${event.name}`}
             aria-expanded={showPopover}
+            aria-haspopup="dialog"
           >
             {event.dongle.emoji}
-          </motion.button>
-        </div>
+          </button>
+        </motion.div>
 
         {/* Emisión de micro-partículas al interactuar */}
         <div className="absolute inset-0 pointer-events-none overflow-visible">
@@ -186,7 +209,7 @@ export default function SeasonalBrandDongle({
       </div>
 
       {/* ── Textos de la clínica con decoraciones sutiles ─────────────── */}
-      <div className="relative">
+      <div className="relative ml-4">
         {/* Decoración temática sutil en la esquina (ej: telaraña en Halloween) */}
         {event.dongle.cornerEmoji && (
           <span
@@ -209,18 +232,36 @@ export default function SeasonalBrandDongle({
           <button
             type="button"
             onClick={() => setShowPopover(prev => !prev)}
-            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold border shadow-xs transition-all cursor-pointer active:scale-95 ${
-              event.dongle.badgeClass || 'bg-amber-50 text-amber-700 border-amber-200/80 hover:bg-amber-100'
-            }`}
+            className="group/badge relative inline-flex cursor-pointer items-center gap-1.5 overflow-hidden rounded-full border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_1px_2px_rgba(0,0,0,0.05)] backdrop-blur-md transition-all duration-300 hover:-translate-y-px hover:text-gray-900 hover:shadow-md active:translate-y-0 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#deb887]"
+            style={{
+              borderColor: `${accent}40`,
+              background: `linear-gradient(135deg, rgba(255,255,255,0.9), ${accent}1f)`,
+            }}
             title="Ver detalles de temporada"
+            aria-haspopup="dialog"
+            aria-expanded={showPopover}
           >
-            <span className="w-1.5 h-1.5 rounded-full bg-current animate-ping opacity-75" />
-            <span>{event.dongle.label}</span>
+            <span
+              className="h-1.5 w-1.5 rounded-full motion-safe:animate-pulse"
+              style={{ background: accent, boxShadow: `0 0 6px ${accent}99` }}
+              aria-hidden="true"
+            />
+            <span className="relative">{event.dongle.label}</span>
+            {/* Destello que cruza el badge al hover */}
+            <span
+              className="pointer-events-none absolute inset-y-0 -left-full w-1/2 -skew-x-12 bg-gradient-to-r from-transparent via-white/70 to-transparent transition-transform duration-700 group-hover/badge:translate-x-[300%] motion-reduce:hidden"
+              aria-hidden="true"
+            />
           </button>
         </div>
 
-        <p className="text-xs text-gray-600 leading-tight">
-          {subtitle}
+        <p className="mt-0.5 flex items-center gap-1.5 text-xs leading-tight text-gray-600">
+          <span
+            className="h-px w-3 shrink-0 rounded-full"
+            style={{ background: `linear-gradient(90deg, ${accent}, transparent)` }}
+            aria-hidden="true"
+          />
+          <span className="min-w-0 truncate">{subtitle}</span>
         </p>
       </div>
 
@@ -232,31 +273,46 @@ export default function SeasonalBrandDongle({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 4, scale: 0.96 }}
             transition={{ duration: 0.18 }}
-            className="absolute top-full left-0 mt-3 w-72 sm:w-80 bg-white/95 backdrop-blur-md rounded-2xl border border-gray-100/90 p-3.5 shadow-2xl z-50 text-left"
+            className="absolute top-full left-0 z-50 mt-3 w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-white/70 bg-white/90 p-4 text-left shadow-[0_20px_50px_-12px_rgba(0,0,0,0.25)] ring-1 ring-black/5 backdrop-blur-xl sm:w-80"
             role="dialog"
             aria-label={`Detalles de ${event.name}`}
           >
-            {/* Acento superior del evento */}
-            <div className={`h-1 w-full rounded-full mb-2.5 ${event.theme.badgeBg}`} />
+            {/* Filete luminoso superior con el acento del evento */}
+            <div
+              className="absolute inset-x-0 top-0 h-px"
+              style={{ background: `linear-gradient(90deg, transparent, ${accent}, transparent)` }}
+              aria-hidden="true"
+            />
 
             <div className="flex items-start justify-between gap-2">
-              <div className="flex items-center gap-1.5">
-                <span className="text-base leading-none">{event.dongle.emoji}</span>
-                <span className="text-xs font-bold uppercase tracking-wider text-gray-900">
-                  {event.name}
+              <div className="flex items-center gap-2.5">
+                <span
+                  className="flex h-8 w-8 items-center justify-center rounded-full text-base leading-none"
+                  style={{ background: `${accent}1a`, boxShadow: `inset 0 0 0 1px ${accent}33` }}
+                  aria-hidden="true"
+                >
+                  {event.dongle.emoji}
                 </span>
+                <div>
+                  <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-gray-400">
+                    {event.dongle.sublabel || 'Temporada'}
+                  </p>
+                  <p className="text-sm font-semibold leading-tight text-gray-900" style={{ fontFamily: 'Playfair Display, serif' }}>
+                    {event.name}
+                  </p>
+                </div>
               </div>
               <button
                 type="button"
                 onClick={() => setShowPopover(false)}
-                className="text-gray-400 hover:text-gray-600 p-0.5 rounded-md hover:bg-gray-100 transition-colors"
+                className="rounded-md p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#deb887]"
                 aria-label="Cerrar ventana"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
 
-            <p className="text-xs text-gray-600 mt-2 leading-relaxed">
+            <p className="mt-3 text-xs leading-relaxed text-gray-600">
               {event.dongle.tooltipTip || event.description}
             </p>
 

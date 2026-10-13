@@ -26,6 +26,7 @@ import { Fragment } from 'react';
 import AppFooter from '../components/layout/AppFooter';
 import { Dialog } from '../components/ui/Dialog';
 import SeasonalBrandDongle from '../components/admin/dashboard/SeasonalBrandDongle';
+import SeasonalHeroAtmosphere from '../components/admin/dashboard/SeasonalHeroAtmosphere';
 
 // Módulos y tipos de constants centralizados
 import { MODULE_LIST } from '../constants/features';
@@ -696,8 +697,9 @@ export default function AdminDashboard() {
         )}
 
         {/* Saludo */}
-        <section className="dashboard-hero mb-8 rounded-3xl border border-white/80 p-5 shadow-sm sm:p-7">
-          <div className="flex items-start gap-4">
+        <section className="dashboard-hero relative isolate mb-8 overflow-hidden rounded-3xl border border-white/80 p-5 shadow-sm sm:p-7">
+          <SeasonalHeroAtmosphere />
+          <div className="relative z-10 flex items-start gap-4">
             <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl bg-gold-ink text-white shadow-sm">
               <Sparkles className="h-5 w-5" />
             </div>

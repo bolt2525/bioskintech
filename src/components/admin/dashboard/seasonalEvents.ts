@@ -16,6 +16,15 @@ export interface SeasonalDecoration {
   style?: React.CSSProperties;
 }
 
+/** Variantes de ambientación del hero. Agregar una nueva = un caso en SeasonalHeroAtmosphere. */
+export type SeasonalAtmosphereVariant = 'cobweb-spider' | 'snow' | 'stardust';
+
+export interface SeasonalAtmosphereConfig {
+  variant: SeasonalAtmosphereVariant;
+  /** Color (hex) de trazos/partículas; se usa siempre con baja opacidad */
+  color: string;
+}
+
 export interface SeasonalEventConfig {
   /** Identificador único (ej: 'halloween', 'navidad', 'black-friday') */
   id: string;
@@ -77,6 +86,8 @@ export interface SeasonalEventConfig {
   };
   /** Elementos flotantes decorativos animados */
   decorations?: SeasonalDecoration[];
+  /** Ambientación sutil de fondo para el hero de bienvenida */
+  atmosphere?: SeasonalAtmosphereConfig;
 }
 
 /**
@@ -122,6 +133,7 @@ export const SEASONAL_EVENTS: SeasonalEventConfig[] = [
       { char: '👻', className: 'bottom-3 right-20 text-lg opacity-60' },
       { char: '🕷️', className: 'top-1 left-24 text-xs opacity-50' },
     ],
+    atmosphere: { variant: 'cobweb-spider', color: '#b8a07a' },
   },
   {
     id: 'black-friday',
@@ -157,6 +169,7 @@ export const SEASONAL_EVENTS: SeasonalEventConfig[] = [
       { char: '✨', className: 'top-2 right-8 text-sm opacity-80 animate-ping' },
       { char: '💎', className: 'bottom-2 right-16 text-lg opacity-70' },
     ],
+    atmosphere: { variant: 'stardust', color: '#deb887' },
   },
   {
     id: 'navidad',
@@ -193,6 +206,7 @@ export const SEASONAL_EVENTS: SeasonalEventConfig[] = [
       { char: '🎁', className: 'bottom-2 right-20 text-lg opacity-70' },
       { char: '⭐', className: 'top-4 right-32 text-sm opacity-90' },
     ],
+    atmosphere: { variant: 'snow', color: '#7fb6a0' },
   },
   {
     id: 'ano-nuevo',
@@ -228,6 +242,7 @@ export const SEASONAL_EVENTS: SeasonalEventConfig[] = [
       { char: '🎉', className: 'bottom-2 right-16 text-lg opacity-70' },
       { char: '⭐', className: 'top-3 right-28 text-sm opacity-90' },
     ],
+    atmosphere: { variant: 'stardust', color: '#e0b84a' },
   },
   {
     id: 'san-valentin',
@@ -263,6 +278,7 @@ export const SEASONAL_EVENTS: SeasonalEventConfig[] = [
       { char: '🌹', className: 'top-2 right-10 text-base opacity-80' },
       { char: '✨', className: 'bottom-2 right-16 text-sm opacity-70' },
     ],
+    atmosphere: { variant: 'stardust', color: '#e58fb0' },
   },
 ];
 
