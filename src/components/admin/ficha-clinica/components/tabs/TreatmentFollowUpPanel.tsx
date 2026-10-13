@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { Check, ChevronDown } from 'lucide-react';
+import ClinicalSelect from '../ClinicalSelect';
 import type { Treatment, TreatmentMode } from '../../types/treatment';
 import {
   type TreatmentFollowUp, getTreatmentFollowUp, getFollowUpLabel, getFollowUpSessions,
@@ -94,14 +95,13 @@ export default function TreatmentFollowUpPanel({ mode, current, history, onChang
           <>
             <label className="block text-xs font-medium text-gray-700">
               Sesión de referencia
-              <select value={referenceId} onChange={event => onChange({ ...followUp, referenceId: event.target.value || null })}
-                className="admin-focus-ring mt-1 min-h-11 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm">
-                <option value="">Usar la evaluación inicial más reciente</option>
-                {referenceId && !reference ? <option value={referenceId}>Referencia guardada no disponible</option> : null}
-                {candidates.map(session => <option key={session.id} value={String(session.id)}>
-                  {formatTreatmentDate(session.date)} · {getFollowUpLabel(session)}
-                </option>)}
-              </select>
+              <ClinicalSelect label="Sesión de referencia" value={referenceId}
+                onChange={value => onChange({ ...followUp, referenceId: value || null })} className="mt-1"
+                options={[
+                  { value: '', label: 'Usar la evaluación inicial más reciente' },
+                  ...(referenceId && !reference ? [{ value: referenceId, label: 'Referencia guardada no disponible' }] : []),
+                  ...candidates.map(session => ({ value: String(session.id), label: `${formatTreatmentDate(session.date)} · ${getFollowUpLabel(session)}` })),
+                ]} />
             </label>
             {!reference ? (
               <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800" role="alert">

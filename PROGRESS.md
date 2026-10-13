@@ -1,5 +1,8 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-13 Tratamientos: historial y menús dorados.
+- ✅ 2026-10-13 Recetas: guía e historial diferenciados.
+
 - ✅ 2026-10-12 Tratamientos: QA escritorio/móvil aprobado.
 - ✅ 2026-10-12 Paquetes: confirmación reversible aclarada.
 

@@ -19,6 +19,7 @@ import {
 import { Tooltip } from '../../../../ui/Tooltip';
 import { ConfirmationDialog } from '../../../../ui/ConfirmationDialog';
 import FieldHelp from '../FieldHelp';
+import ClinicalSelect from '../ClinicalSelect';
 import { HELP } from '../../data/fieldHelpTexts';
 import { Dialog } from '../../../../ui/Dialog';
 import { useTreatmentGrouping } from '../../hooks/useTreatmentGrouping';
@@ -911,12 +912,12 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
       whileHover={{ scale: 1.02 }}
       whileTap={{ scale: 0.98 }}
       onClick={() => handleSelect(t)}
-      className={`p-3 rounded-xl cursor-pointer border transition-all shadow-sm ${
+      className={`admin-focus-ring p-3 rounded-xl cursor-pointer border transition-colors shadow-sm ${
         highlightedId === t.id ? 'ring-2 ring-[#b8944d] ring-offset-2 ring-offset-white animate-pulse' : ''
       } ${
         currentTreatment.id === t.id
-          ? 'bg-[#deb887] text-white border-[#deb887] shadow-md'
-          : 'bg-white border-gray-100 hover:bg-gray-50 hover:border-[#deb887]/30'
+          ? 'bg-gold/10 text-gray-900 border-gold shadow-sm ring-1 ring-gold/20'
+          : 'bg-white border-gray-200 hover:bg-gold/5 hover:border-gold/50'
       }`}
     >
       <div className="flex justify-between items-center text-xs">
@@ -939,12 +940,12 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
           <FileText className="w-3.5 h-3.5 opacity-60" />
         </div>
       </div>
-      <div className="text-xs font-semibold truncate mt-0.5">{t.procedure_name || 'Sin procedimiento'}</div>
+      <div className="text-sm font-semibold break-words mt-1">{t.procedure_name || 'Sin procedimiento'}</div>
       <div className="text-xs opacity-75 truncate">{t.equipment_used || 'Sin equipo'}</div>
       <div className="mt-1 text-[10px]">{getFollowUpLabel(t)}</div>
       <div className="mt-1"><ModeBadge mode={t.treatment_mode || 'facial'} /></div>
       {getClinicalDataBadge(t, t.treatment_mode || 'facial') && (
-        <div className={`text-[10px] mt-1 truncate rounded px-1.5 py-0.5 inline-block ${currentTreatment.id === t.id ? 'bg-white/20' : 'bg-[#deb887]/10 text-[#b8944d]'}`}>
+        <div className="text-[10px] mt-1 break-words rounded px-1.5 py-0.5 inline-block bg-gold/10 text-gold-ink">
           {getClinicalDataBadge(t, t.treatment_mode || 'facial')}
         </div>
       )}
@@ -956,7 +957,7 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="grid grid-cols-1 gap-5 xl:grid-cols-[15rem_minmax(0,1fr)] 2xl:grid-cols-[15rem_minmax(0,1fr)_19rem]"
+      className="grid grid-cols-1 gap-5 xl:grid-cols-[18rem_minmax(0,1fr)] 2xl:grid-cols-[18rem_minmax(0,1fr)_19rem]"
     >
       {/* Sidebar List */}
       <div className="admin-surface order-2 flex max-h-[32rem] w-full flex-col gap-4 border-b border-gray-100 p-4 xl:order-1 xl:sticky xl:top-4 xl:max-h-[calc(100dvh-12rem)]">
@@ -969,6 +970,7 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
                 setEditingPackage(null);
                 setPackageModalOpen(true);
               }}
+              aria-label="Crear paquete"
               className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-[#deb887]/10 hover:text-[#b8944d] hover:border-[#deb887]/40 transition-colors"
             >
               <Package className="w-4 h-4" />
@@ -976,31 +978,34 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
           </Tooltip>
           <button
             onClick={() => setGroupByProcedure(g => !g)}
+            aria-label={groupByProcedure ? 'Mostrar sesiones sin agrupar' : 'Agrupar por procedimiento'}
+            aria-pressed={groupByProcedure}
             title={groupByProcedure ? 'Vista plana' : 'Agrupar por procedimiento'}
             className={`p-1.5 rounded-lg border transition-colors ${groupByProcedure ? 'bg-[#deb887]/20 border-[#deb887]/40 text-[#b8944d]' : 'border-gray-200 text-gray-400 hover:bg-gray-50'}`}
           >
             <Layers className="w-4 h-4" />
           </button>
           {otherTreatCount > 0 && (
-            <button onClick={() => setCrossHistOpen(true)} title={`Ver ${otherTreatCount} tratamiento(s) de otras consultas`} className="p-1 hover:bg-[#deb887]/10 rounded-lg relative">
+            <button onClick={() => setCrossHistOpen(true)} aria-label={`Ver ${otherTreatCount} tratamientos de otras consultas`} title={`Ver ${otherTreatCount} tratamiento(s) de otras consultas`} className="admin-focus-ring p-1 hover:bg-gold/10 rounded-lg relative">
               <History className="w-3.5 h-3.5 text-[#b8944d]" />
               <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-[#b8944d] text-white text-[8px] rounded-full flex items-center justify-center font-bold">{otherTreatCount > 9 ? '9+' : otherTreatCount}</span>
             </button>
           )}
           <span className="ml-auto text-xs bg-gray-100 text-gray-500 rounded-full px-2 py-0.5" title="Sesiones de la consulta activa">{consultationTreatments.length}</span>
         </div>
-        <div className="flex flex-wrap gap-1" role="group" aria-label="Filtrar historial por modo">
+        <div className="grid grid-cols-2 gap-2 rounded-xl bg-gray-50 p-2" role="group" aria-label="Filtrar historial por modo">
           {(['all', ...MODES] as const).map(filter => (
             <button key={filter} type="button" aria-pressed={historyFilter === filter}
               onClick={() => setHistoryFilter(filter)}
-              className={`admin-focus-ring min-h-9 rounded-lg border px-2 py-1 text-xs ${historyFilter === filter ? 'border-gold bg-gold/15 text-gold-ink' : 'border-gray-200 text-gray-600'}`}>
-              {filter === 'all' ? 'Todos' : TREATMENT_MODE_LABELS[filter]} ({filter === 'all' ? consultationTreatments.length
-                : consultationTreatments.filter(t => (t.treatment_mode || 'facial') === filter).length})
+              className={`admin-focus-ring flex min-h-11 items-center justify-between gap-2 rounded-lg border px-2.5 py-2 text-xs font-semibold transition-colors ${historyFilter === filter ? 'border-gold bg-white text-gold-ink shadow-sm' : 'border-transparent text-gray-600 hover:bg-white'}`}>
+              <span>{filter === 'all' ? 'Todos' : TREATMENT_MODE_LABELS[filter]}</span>
+              <span className={`rounded-md px-1.5 py-0.5 tabular-nums ${historyFilter === filter ? 'bg-gold/15' : 'bg-gray-200/60'}`}>{filter === 'all' ? consultationTreatments.length
+                : consultationTreatments.filter(t => (t.treatment_mode || 'facial') === filter).length}</span>
             </button>
           ))}
         </div>
         <button type="button" aria-pressed={showArchived} onClick={() => setShowArchived(value => !value)}
-          className="admin-focus-ring flex min-h-9 items-center gap-2 rounded-lg px-2 text-xs text-gray-600 hover:bg-gray-50">
+          className={`admin-focus-ring flex min-h-9 items-center gap-2 rounded-lg border px-2 text-xs ${showArchived ? 'border-gold/40 bg-gold/10 text-gold-ink' : 'border-transparent text-gray-600 hover:bg-gray-50'}`}>
           <Archive className="h-4 w-4" aria-hidden="true" />Archivados ({archivedPackages.length})
         </button>
         {packagesLoading ? <p className="text-xs text-gray-500" role="status">Actualizando paquetes…</p> : null}
@@ -1014,7 +1019,7 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
           </div>)}
           {!archivedPackages.length ? <p className="text-xs text-gray-400">Sin paquetes archivados</p> : null}
         </div> : null}
-        <div className="flex-1 overflow-y-auto space-y-3 max-h-[260px] md:max-h-none pr-2 custom-scrollbar">
+        <div className="flex-1 overflow-y-auto space-y-3 max-h-[260px] md:max-h-none pr-1 custom-scrollbar">
           {historyFilter !== 'all' && !sortedTreatments.length
             ? <p className="text-xs text-gray-500">Sin sesiones de este modo en la consulta activa.</p> : null}
           {isEmpty ? (
@@ -1039,11 +1044,12 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
                         <button
                           type="button"
                           onClick={() => togglePackageExpand(pkg.id!)}
+                          aria-expanded={!isCollapsed}
                           className="flex items-center gap-1.5 min-w-0 flex-1 text-left"
                         >
                           {isCollapsed ? <ChevronRight className="w-3.5 h-3.5 text-amber-700 shrink-0" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-700 shrink-0" />}
                           <Package className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-                          <span className="text-xs font-bold text-amber-800 truncate">{pkg.name}</span>
+                          <span className="text-xs font-bold text-amber-800 break-words">{pkg.name}</span>
                         </button>
                         <Tooltip content="Modificar paquete">
                           <button
@@ -1107,13 +1113,14 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
                       <button
                         type="button"
                         onClick={() => toggleGroup(key)}
+                        aria-expanded={!isCollapsed}
                         className="w-full flex items-center justify-between px-2 py-1.5 bg-[#deb887]/10 hover:bg-[#deb887]/20 rounded-lg transition-colors"
                       >
                         <div className="flex items-center gap-1.5 min-w-0">
                           {isCollapsed
                             ? <ChevronRight className="w-3.5 h-3.5 text-[#b8944d] shrink-0" />
                             : <ChevronDown className="w-3.5 h-3.5 text-[#b8944d] shrink-0" />}
-                          <span className="text-xs font-bold text-[#b8944d] truncate">{displayName}</span>
+                          <span className="text-xs font-bold text-gold-ink break-words text-left">{displayName}</span>
                         </div>
                         <span className="text-[10px] font-medium bg-[#deb887]/20 text-[#b8944d] px-1.5 py-0.5 rounded-full shrink-0 ml-1">
                           {treats.length} ses.
@@ -1665,17 +1672,16 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
               <label htmlFor="treatment-package" className="block text-sm font-medium text-gray-700">
                 Paquete <span className="text-gray-400 font-normal">(opcional)</span>
               </label>
-              <select
+              <ClinicalSelect
                 id="treatment-package"
-                className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
-                value={currentTreatment.package_id ?? ''}
-                onChange={e => setCurrentTreatment({ ...currentTreatment, package_id: e.target.value ? Number(e.target.value) : null })}
-              >
-                <option value="">— Sesión independiente —</option>
-                {packages.map(pkg => (
-                  <option key={pkg.id} value={pkg.id}>{pkg.name} (debe ${getPackageDebt(pkg).toFixed(2)})</option>
-                ))}
-              </select>
+                label="Paquete de la sesión"
+                value={String(currentTreatment.package_id ?? '')}
+                onChange={value => setCurrentTreatment({ ...currentTreatment, package_id: value ? Number(value) : null })}
+                options={[
+                  { value: '', label: 'Sesión independiente' },
+                  ...packages.map(pkg => ({ value: String(pkg.id), label: `${pkg.name} · Saldo $${getPackageDebt(pkg).toFixed(2)}` })),
+                ]}
+              />
               {selectedPackage && (
                 <div className="text-[11px] text-amber-700 flex items-center justify-between gap-1.5 bg-amber-50 px-2.5 py-2 rounded-lg border border-amber-200">
                   <p className="flex items-start gap-1.5 min-w-0">

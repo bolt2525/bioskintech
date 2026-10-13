@@ -5,6 +5,7 @@
  * El resultado se formatea como texto legible y se inserta en el campo "Notas" del tratamiento.
  */
 import { useEffect, useState } from 'react';
+import ClinicalSelect from '../ClinicalSelect';
 import { X, Sparkles, Plus, Trash2 } from 'lucide-react';
 import { Dialog } from '../../../../ui/Dialog';
 
@@ -265,15 +266,12 @@ export default function TreatmentParametersModal({
         <div className="overflow-y-auto flex-1 p-4 space-y-5">
           <div className="space-y-2">
             <label className="block text-sm font-medium text-gray-700">Tipo de tratamiento</label>
-            <select
-              className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none bg-gray-50/50 focus:bg-white"
+            <ClinicalSelect
+              label="Tipo de tratamiento"
               value={category}
-              onChange={e => setCategory(e.target.value)}
-            >
-              {Object.entries(TEMPLATES).map(([key, t]) => (
-                <option key={key} value={key}>{t.label}</option>
-              ))}
-            </select>
+              onChange={setCategory}
+              options={Object.entries(TEMPLATES).map(([key, t]) => ({ value: key, label: t.label }))}
+            />
             <p className="text-xs text-gray-400">
               Sugerido automáticamente desde el equipo/procedimiento. Si el tratamiento no usa aparatología, deja "Manual / sin aparatología".
             </p>

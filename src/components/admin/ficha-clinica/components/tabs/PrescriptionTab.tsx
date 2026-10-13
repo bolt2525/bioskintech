@@ -2,13 +2,14 @@
 import recordsFetch from "../../../../../utils/recordsFetch";
 import { escapeHtml, safeImageSrc } from '../../../../../utils/escapeHtml.js';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Trash2, Save, FileText, Copy, Printer, Calendar, Check, AlertCircle, Pill, Pencil, History, Stethoscope, Home, ShieldAlert, LockKeyhole } from 'lucide-react';
+import { Plus, Trash2, Save, FileText, Copy, Printer, Calendar, Check, AlertCircle, Pill, Pencil, History, Stethoscope, Home, ShieldAlert } from 'lucide-react';
 import CrossConsultHistoryModal, { type ConsultationRef } from '../CrossConsultHistoryModal';
 import prescriptionOptions from '../data/prescription_options.json';
 import { Tooltip } from '../../../../ui/Tooltip';
 import { useClinicSettings } from '../../../../../hooks/useClinicSettings';
 import { useAuth } from '../../../../../context/AuthContext';
 import FieldHelp from '../FieldHelp';
+import ClinicalSelect from '../ClinicalSelect';
 import { HELP } from '../../data/fieldHelpTexts';
 import { Dialog } from '../../../../ui/Dialog';
 
@@ -101,6 +102,14 @@ const normalizePrescription = (prescription: PrescriptionSeed): Prescription => 
   regulatory_snapshot: prescription.regulatory_snapshot || {},
 });
 
+function PrescriptionModeBadge({ mode }: { mode: Prescription['mode'] }) {
+  const isGuide = mode !== 'prescription';
+  return <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] font-semibold ${isGuide ? 'border-gold/40 bg-gold/10 text-gold-ink' : 'border-gray-200 bg-gray-50 text-gray-700'}`}>
+    {isGuide ? <Home className="h-3 w-3" aria-hidden="true" /> : <Stethoscope className="h-3 w-3" aria-hidden="true" />}
+    {isGuide ? 'Guía domiciliaria' : 'Receta médica'}
+  </span>;
+}
+
 export default function PrescriptionTab({ recordId, patientName, patientAge, patientIdentification, consultationId, consultations = [], diagnoses = [], allergies = '', initialPrescriptions = [] }: PrescriptionTabProps) {
   const { settings: clinic } = useClinicSettings();
   const { user } = useAuth();
@@ -130,10 +139,12 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
   const [highlightedId, setHighlightedId] = useState<number | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [crossHistOpen, setCrossHistOpen] = useState(false);
+  const [historyFilter, setHistoryFilter] = useState<'all' | 'routine' | 'prescription'>('all');
   const messageRef = useRef<HTMLDivElement>(null);
   // Filter prescriptions to current consultation for sidebar display
   const currentPrescriptions = prescriptions.filter(p => Number(p.consultation_id) === Number(consultationId));
   const otherPrescCount = prescriptions.filter(p => Number(p.consultation_id) !== Number(consultationId)).length;
+  const filteredPrescriptions = currentPrescriptions.filter(p => historyFilter === 'all' || p.mode === historyFilter);
 
   useEffect(() => {
     loadTemplates();
@@ -590,22 +601,31 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
       className="flex flex-col md:flex-row h-auto md:h-[calc(100vh-145px)] md:min-h-[680px] min-h-0 gap-4"
     >
       {/* Sidebar List */}
-      <div className="w-full md:w-64 border-r-0 md:border-r border-b md:border-b-0 border-gray-100 pr-0 md:pr-4 pb-4 md:pb-0 flex flex-col gap-3 shrink-0">
+      <div className="admin-surface order-2 md:order-1 w-full md:w-72 p-4 flex flex-col gap-3 shrink-0">
         <div className="font-bold text-gray-800 flex items-center gap-2">
           <div className="w-1 h-5 bg-[#deb887] rounded-full" />
-          Historial de Recetas
+          Historial
           <span className="ml-auto flex items-center gap-1">
             <span className="text-xs bg-gray-100 text-gray-500 rounded-full px-2 py-0.5">{currentPrescriptions.length}</span>
             {otherPrescCount > 0 && (
-              <button onClick={() => setCrossHistOpen(true)} title={`Ver ${otherPrescCount} receta(s) de otras consultas`} className="p-1 hover:bg-[#deb887]/10 rounded-lg relative">
+              <button onClick={() => setCrossHistOpen(true)} aria-label={`Ver ${otherPrescCount} documentos de otras consultas`} title={`Ver ${otherPrescCount} receta(s) de otras consultas`} className="admin-focus-ring p-1 hover:bg-gold/10 rounded-lg relative">
                 <History className="w-3.5 h-3.5 text-[#b8944d]" />
                 <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-[#b8944d] text-white text-[8px] rounded-full flex items-center justify-center font-bold">{otherPrescCount > 9 ? '9+' : otherPrescCount}</span>
               </button>
             )}
           </span>
         </div>
+        <div className="flex flex-wrap gap-1 rounded-xl bg-gray-50 p-1.5" role="group" aria-label="Filtrar historial por documento">
+          {(['all', 'routine', 'prescription'] as const).map(filter => (
+            <button key={filter} type="button" aria-pressed={historyFilter === filter} onClick={() => setHistoryFilter(filter)}
+              className={`admin-focus-ring min-h-11 flex-1 rounded-lg border px-2 py-2 text-xs font-semibold transition-colors ${historyFilter === filter ? 'border-gold bg-white text-gold-ink shadow-sm' : 'border-transparent text-gray-600 hover:bg-white'}`}>
+              {filter === 'all' ? 'Todos' : filter === 'routine' ? 'Guías' : 'Recetas'}
+              <span className="ml-1 tabular-nums text-gray-500">{filter === 'all' ? currentPrescriptions.length : currentPrescriptions.filter(p => p.mode === filter).length}</span>
+            </button>
+          ))}
+        </div>
         <div className="flex-1 overflow-y-auto space-y-2 max-h-[200px] md:max-h-none pr-2 custom-scrollbar">
-          {currentPrescriptions.map((p, index) => {
+          {filteredPrescriptions.map((p, index) => {
             const rawDate = p.fecha || '';
             const dateObj = rawDate ? new Date(toDateOnly(rawDate) + 'T12:00:00') : null;
             const dateFormatted = dateObj && !isNaN(dateObj.getTime())
@@ -613,68 +633,73 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
               : rawDate;
             const itemCount = Array.isArray(p.items) ? p.items.filter(i => i.medicamento || i.nombre_comercial).length : null;
             const isSelected = currentPrescription.id === p.id;
+            const isGuide = p.mode === 'routine';
             return (
-            <motion.div
+            <motion.button
+              type="button"
               key={p.id || index}
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               onClick={() => p.id && handleLoadPrescription(p.id)}
-              className={`p-3 rounded-xl cursor-pointer border transition-all shadow-sm ${
+              aria-pressed={isSelected}
+              className={`admin-focus-ring w-full text-left p-3 rounded-xl border transition-colors shadow-sm ${
                 highlightedId === p.id
                   ? 'ring-2 ring-[#b8944d] ring-offset-2 ring-offset-white animate-pulse'
                   : ''
               } ${
                 isSelected
-                  ? 'bg-[#deb887] text-white border-[#deb887] shadow-md'
-                  : 'bg-white border-gray-100 hover:bg-gray-50 hover:border-[#deb887]/30'
+                  ? 'bg-gold/10 text-gray-900 border-gold ring-1 ring-gold/20'
+                  : 'bg-white border-gray-200 hover:bg-gold/5 hover:border-gold/50'
               }`}
             >
               {/* Fecha */}
               <div className={`flex items-center gap-1.5 text-xs font-semibold mb-1.5 ${
-                isSelected ? 'text-white/80' : 'text-[#deb887]'
+                isSelected ? 'text-gold-ink' : 'text-gray-500'
               }`}>
                 <Calendar className="w-3.5 h-3.5" />
                 <span>{dateFormatted}</span>
               </div>
+              <div className="mb-2"><PrescriptionModeBadge mode={p.mode} /></div>
               {/* Diagnóstico */}
-              <div className={`font-semibold text-sm leading-tight truncate mb-2 ${
-                isSelected ? 'text-white' : 'text-gray-800'
+              <div className={`font-semibold text-sm leading-snug break-words mb-2 ${
+                isSelected ? 'text-gray-900' : 'text-gray-800'
               }`}>
-                {p.diagnostico || <span className={`italic font-normal ${ isSelected ? 'text-white/60' : 'text-gray-400'}`}>Sin diagnóstico</span>}
+                {p.diagnostico || <span className="italic font-normal text-gray-500">Sin diagnóstico</span>}
               </div>
               {/* Footer */}
               <div className={`flex items-center justify-between text-xs ${
-                isSelected ? 'text-white/70' : 'text-gray-400'
+                isSelected ? 'text-gray-600' : 'text-gray-500'
               }`}>
                 <div className="flex items-center gap-1">
-                  <Pill className="w-3 h-3" />
-                  <span>{itemCount !== null ? `${itemCount} medicamento${itemCount !== 1 ? 's' : ''}` : 'Ver detalle'}</span>
+                  {isGuide ? <Home className="w-3 h-3" aria-hidden="true" /> : <Pill className="w-3 h-3" aria-hidden="true" />}
+                  <span>{itemCount !== null ? `${itemCount} ${isGuide ? 'producto' : 'medicamento'}${itemCount !== 1 ? 's' : ''}` : 'Ver detalle'}</span>
                 </div>
                 <FileText className="w-3.5 h-3.5 opacity-60" />
               </div>
-            </motion.div>
+            </motion.button>
             );
           })}
-          {prescriptions.length === 0 && (
+          {filteredPrescriptions.length === 0 && (
             <div className="text-gray-400 text-sm text-center py-8 flex flex-col items-center gap-2">
               <AlertCircle className="w-8 h-8 opacity-20" />
-              No hay recetas registradas
+              {currentPrescriptions.length ? 'Sin documentos de este tipo' : 'Sin documentos en esta consulta'}
             </div>
           )}
         </div>
       </div>
 
       {/* Main Form */}
-      <div className="flex-1 min-h-0 flex flex-col gap-3 relative overflow-visible md:overflow-hidden">
+      <div className="order-1 md:order-2 flex-1 min-w-0 min-h-0 flex flex-col gap-3 relative overflow-visible md:overflow-hidden">
         {/* Toolbar */}
         <div className="flex flex-wrap gap-3 justify-between items-center bg-white p-3 rounded-xl border border-gray-100 shadow-sm sticky top-0 z-10">
-          <div className="flex gap-2 items-center">
+          <div className="flex flex-wrap gap-2 items-center">
             <Tooltip content="Nueva Receta">
               <motion.button 
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={handleNew} 
-                className="p-2 hover:bg-gray-100 rounded-lg text-gray-600 border border-gray-200"
+                onClick={handleNew}
+                aria-label="Nuevo documento"
+                className="admin-focus-ring min-h-11 min-w-11 p-2 hover:bg-gray-100 rounded-lg text-gray-600 border border-gray-200"
               >
                 <Plus className="w-5 h-5" />
               </motion.button>
@@ -684,9 +709,10 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
               <motion.button 
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={handleSave} 
+                onClick={handleSave}
+                aria-label="Guardar documento"
                 disabled={loading} 
-                className="p-2 bg-[#deb887] text-white rounded-lg hover:bg-[#c5a075] shadow-lg shadow-[#deb887]/20 disabled:opacity-70"
+                className="admin-focus-ring min-h-11 min-w-11 p-2 bg-gold-dark text-white rounded-lg hover:bg-gold-ink shadow-sm disabled:opacity-70"
               >
                 {loading ? <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full" /> : <Save className="w-5 h-5" />}
               </motion.button>
@@ -696,8 +722,9 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
               <motion.button 
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={handleDuplicate} 
-                className="p-2 hover:bg-gray-100 rounded-lg text-gray-600 border border-gray-200"
+                onClick={handleDuplicate}
+                aria-label="Duplicar documento"
+                className="admin-focus-ring min-h-11 min-w-11 p-2 hover:bg-gray-100 rounded-lg text-gray-600 border border-gray-200"
               >
                 <Copy className="w-5 h-5" />
               </motion.button>
@@ -708,8 +735,9 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={handleDelete}
+                aria-label="Eliminar documento"
                 disabled={deleting}
-                className="p-2 hover:bg-red-50 rounded-lg text-red-500 border border-red-100 disabled:opacity-50"
+                className="admin-focus-ring min-h-11 min-w-11 p-2 hover:bg-red-50 rounded-lg text-red-500 border border-red-100 disabled:opacity-50"
               >
                 {deleting ? <div className="animate-spin w-5 h-5 border-2 border-red-300 border-t-red-500 rounded-full" /> : <Trash2 className="w-5 h-5" />}
               </motion.button>
@@ -719,25 +747,23 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
               <motion.button 
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={handlePrint} 
-                className="p-2 hover:bg-gray-100 rounded-lg text-gray-600 border border-gray-200"
+                onClick={handlePrint}
+                aria-label="Imprimir documento"
+                className="admin-focus-ring min-h-11 min-w-11 p-2 hover:bg-gray-100 rounded-lg text-gray-600 border border-gray-200"
               >
                 <Printer className="w-5 h-5" />
               </motion.button>
             </Tooltip>
           </div>
           
-          <div className="flex gap-2 items-center">
-            <select 
-              className="p-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-[#deb887] outline-none bg-gray-50/50"
+          <div className="flex min-w-0 flex-wrap gap-2 items-center">
+            <ClinicalSelect
+              label="Plantilla de documento"
+              className="w-full sm:w-52"
               value={selectedTemplate}
-              onChange={(e) => setSelectedTemplate(e.target.value)}
-            >
-              <option value="">Seleccionar Plantilla...</option>
-              {templates.map(t => (
-                <option key={t.id} value={t.id}>{t.nombre}</option>
-              ))}
-            </select>
+              onChange={setSelectedTemplate}
+              options={[{ value: '', label: 'Seleccionar plantilla…' }, ...templates.map(t => ({ value: String(t.id), label: t.nombre }))]}
+            />
             
             <Tooltip content="Aplicar Plantilla">
               <motion.button 
@@ -799,18 +825,24 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
         </AnimatePresence>
 
         <div className="bg-white p-3 rounded-xl border border-gray-100 shadow-sm space-y-3">
-          <div className="grid grid-cols-1 xl:grid-cols-[180px_minmax(0,1fr)_230px] gap-3 items-end">
+          <div className={`grid grid-cols-1 gap-3 items-end ${mode === 'prescription' ? 'xl:grid-cols-[180px_minmax(0,1fr)_230px]' : 'xl:grid-cols-[180px_minmax(0,1fr)]'}`}>
             <div className="flex items-center gap-2 text-xs font-bold uppercase text-gray-500">
               <FileText className="w-4 h-4 text-[#b8944d]" /> Tipo de documento
             </div>
             <div className="admin-tabs min-w-0" role="group" aria-label="Tipo de documento">
-              <button type="button" aria-pressed={mode === 'routine'} onClick={() => { setMode('routine'); setCurrentPrescription(p => ({ ...p, mode: 'routine' })); }} className="admin-tab admin-focus-ring flex-1"><Home className="w-4 h-4" /> Rutina / Guía</button>
+              <button type="button" aria-pressed={mode === 'routine'} onClick={() => { setMode('routine'); setCurrentPrescription(p => ({ ...p, mode: 'routine' })); }} className="admin-tab admin-focus-ring flex-1"><Home className="w-4 h-4" aria-hidden="true" /> Guía domiciliaria</button>
               <button type="button" aria-pressed={mode === 'prescription'} onClick={() => { setMode('prescription'); setCurrentPrescription(p => ({ ...p, mode: 'prescription' })); }} className="admin-tab admin-focus-ring flex-1"><Stethoscope className="w-4 h-4" /> Receta médica</button>
             </div>
             {mode === 'prescription' && (
               <label className="text-xs font-semibold text-gray-600">
                 Vigencia
-                <select value={validityType} onChange={e => setValidityType(e.target.value as Prescription['validity_type'])} className="mt-1 w-full p-2 border border-gray-200 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-[#deb887]"><option value="outpatient">Consulta externa — 3 días</option><option value="emergency">Emergencia — 1 día</option><option value="hospitalization">Hospitalización — 1 día</option><option value="antimicrobial">Antimicrobiano — 3 días</option></select>
+                <ClinicalSelect label="Vigencia de receta médica" value={validityType || 'outpatient'} onChange={value => setValidityType(value as Prescription['validity_type'])}
+                  className="mt-1" options={[
+                    { value: 'outpatient', label: 'Consulta externa — 3 días' },
+                    { value: 'emergency', label: 'Emergencia — 1 día' },
+                    { value: 'hospitalization', label: 'Hospitalización — 1 día' },
+                    { value: 'antimicrobial', label: 'Antimicrobiano — 3 días' },
+                  ]} />
               </label>
             )}
           </div>
@@ -821,13 +853,13 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
               <span>Emisión, firma, sello, validez y uso de la receta son responsabilidad del profesional habilitado ante ACESS.</span>
             </div>
           ) : (
-            <div className="flex items-center gap-2 text-[11px] leading-snug text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
-              <LockKeyhole className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-              <span>Modo guía: los campos farmacológicos están bloqueados. Activa <strong>Receta médica</strong> para habilitarlos.</span>
+            <div className="flex items-center gap-2 text-xs leading-relaxed text-gold-ink bg-gold/10 border border-gold/30 rounded-xl px-3 py-2.5">
+              <Home className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+              <span>Completa <strong>producto, rutina e indicaciones</strong>. Estos tres campos se incluyen en la guía impresa.</span>
             </div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-[220px_minmax(0,1fr)] xl:grid-cols-[180px_minmax(0,1fr)_minmax(240px,0.8fr)] gap-3">
+          <div className={`grid grid-cols-1 md:grid-cols-[220px_minmax(0,1fr)] gap-3 ${mode === 'prescription' ? 'xl:grid-cols-[180px_minmax(0,1fr)_minmax(240px,0.8fr)]' : ''}`}>
             <div>
               <label className="block text-xs font-semibold text-gray-600 mb-1">Fecha</label>
               <div className="flex items-center gap-2">
@@ -886,12 +918,17 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
               animate={{ opacity: 1, scale: 1 }}
               className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm relative hover:shadow-md transition-all group"
             >
+              <div className="mb-4 flex items-center gap-2 border-b border-gray-100 pb-3 pr-10">
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gold/15 text-sm font-bold text-gold-ink tabular-nums">{idx + 1}</span>
+                <h3 className="text-sm font-semibold text-gray-800">{mode === 'routine' ? 'Producto de cuidado' : 'Medicamento'}</h3>
+              </div>
               <div className="absolute top-3 right-3 z-10">
-                <Tooltip content="Eliminar medicamento">
+                <Tooltip content={mode === 'routine' ? 'Eliminar producto' : 'Eliminar medicamento'}>
                   <motion.button 
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.9 }}
                     onClick={() => removeItem(idx)} 
+                    aria-label={`Eliminar ${mode === 'routine' ? 'producto' : 'medicamento'} ${idx + 1}`}
                     className="text-gray-400 hover:text-red-500 hover:bg-red-50 p-2 rounded-full transition-colors"
                   >
                     <Trash2 className="w-5 h-5" />
@@ -899,14 +936,13 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
                 </Tooltip>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3 pr-12">
-                <div className="space-y-1.5">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+                {mode === 'prescription' && <div className="space-y-1.5">
                   <label className="text-xs font-bold text-gray-500 uppercase tracking-wide flex items-center gap-1">
                     Principio Activo <span className="text-red-400">*</span><FieldHelp text={HELP.prescription.medicamento} />
                   </label>
                   <input
                     list={`meds-${idx}`}
-                    disabled={mode === 'routine'}
                     className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] focus:border-transparent outline-none transition-all bg-gray-50 focus:bg-white font-medium disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
                     value={item.medicamento}
                     onChange={e => updateItem(idx, 'medicamento', e.target.value)}
@@ -915,24 +951,34 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
                   <datalist id={`meds-${idx}`}>
                     {prescriptionOptions.medications.map((m, i) => <option key={i} value={m} />)}
                   </datalist>
-                </div>
+                </div>}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">Nombre Comercial<FieldHelp text={HELP.prescription.nombre_comercial} /></label>
+                  <label htmlFor={`product-name-${idx}`} className="text-xs font-bold text-gray-600 uppercase tracking-wide">{mode === 'routine' ? 'Producto / Nombre comercial *' : 'Nombre comercial'}<FieldHelp text={HELP.prescription.nombre_comercial} /></label>
                   <input
+                    id={`product-name-${idx}`}
                     className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] focus:border-transparent outline-none transition-all bg-gray-50 focus:bg-white"
                     value={item.nombre_comercial}
                     onChange={e => updateItem(idx, 'nombre_comercial', e.target.value)}
-                    placeholder="Opcional"
+                    placeholder={mode === 'routine' ? 'Ej. Limpiador facial…' : 'Opcional'}
                   />
                 </div>
+                {mode === 'routine' && <div className="space-y-1.5">
+                  <label htmlFor={`product-routine-${idx}`} className="text-xs font-bold text-gray-600 uppercase tracking-wide">Rutina *<FieldHelp text={HELP.prescription.rutina} /></label>
+                  <ClinicalSelect id={`product-routine-${idx}`} label={`Rutina del producto ${idx + 1}`} value={item.rutina}
+                    onChange={value => updateItem(idx, 'rutina', value)} options={[
+                      { value: '', label: 'Seleccionar rutina…' },
+                      { value: 'mañana', label: 'Mañana' },
+                      { value: 'noche', label: 'Noche' },
+                      { value: 'ambos', label: 'Mañana y noche' },
+                    ]} />
+                </div>}
               </div>
 
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
+              {mode === 'prescription' && <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-gray-500 uppercase">Presentación</label>
                   <input
                     list={`pres-${idx}`}
-                    disabled={mode === 'routine'}
                     className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all hover:bg-gray-50 focus:bg-white"
                     value={item.presentacion}
                     onChange={e => updateItem(idx, 'presentacion', e.target.value)}
@@ -946,7 +992,6 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
                   <label className="text-xs font-medium text-gray-500 uppercase">Dosis</label>
                   <input
                     list={`dose-${idx}`}
-                    disabled={mode === 'routine'}
                     className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all hover:bg-gray-50 focus:bg-white"
                     value={item.dosis}
                     onChange={e => updateItem(idx, 'dosis', e.target.value)}
@@ -960,7 +1005,6 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
                   <label className="text-xs font-medium text-gray-500 uppercase">Frecuencia</label>
                   <input
                     list={`freq-${idx}`}
-                    disabled={mode === 'routine'}
                     className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all hover:bg-gray-50 focus:bg-white"
                     value={item.frecuencia}
                     onChange={e => updateItem(idx, 'frecuencia', e.target.value)}
@@ -974,7 +1018,6 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
                   <label className="text-xs font-medium text-gray-500 uppercase">Vía</label>
                   <input
                     list={`route-${idx}`}
-                    disabled={mode === 'routine'}
                     className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all hover:bg-gray-50 focus:bg-white"
                     value={item.via}
                     onChange={e => updateItem(idx, 'via', e.target.value)}
@@ -984,14 +1027,13 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
                     {prescriptionOptions.routes.map((r, i) => <option key={i} value={r} />)}
                   </datalist>
                 </div>
-              </div>
+              </div>}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-                <div className="space-y-1.5">
+              <div className={`grid gap-3 ${mode === 'prescription' ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4' : 'grid-cols-1'}`}>
+                {mode === 'prescription' && <div className="space-y-1.5">
                   <label className="text-xs font-medium text-gray-500 uppercase">Duración</label>
                   <input
                     list={`dur-${idx}`}
-                    disabled={mode === 'routine'}
                     className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all hover:bg-gray-50 focus:bg-white"
                     value={item.duracion}
                     onChange={e => updateItem(idx, 'duracion', e.target.value)}
@@ -1000,28 +1042,15 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
                   <datalist id={`dur-${idx}`}>
                     {prescriptionOptions.durations.map((d, i) => <option key={i} value={d} />)}
                   </datalist>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-gray-500 uppercase">Rutina<FieldHelp text={HELP.prescription.rutina} /></label>
-                  <select
-                    disabled={mode === 'prescription'}
-                    className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all hover:bg-gray-50 focus:bg-white cursor-pointer"
-                    value={item.rutina}
-                    onChange={e => updateItem(idx, 'rutina', e.target.value as PrescriptionItem['rutina'])}
-                  >
-                    <option value="">Seleccionar...</option>
-                    <option value="mañana">☀️ Mañana</option>
-                    <option value="noche">🌙 Noche</option>
-                    <option value="ambos">🌗 Mañana y Noche</option>
-                  </select>
-                </div>
-                <div className="space-y-1.5">
+                </div>}
+                {mode === 'prescription' && <div className="space-y-1.5">
                   <label className="text-xs font-medium text-gray-500 uppercase">Cantidad</label>
-                  <input disabled={mode === 'routine'} className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all hover:bg-gray-50 focus:bg-white disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed" value={item.cantidad} onChange={e => updateItem(idx, 'cantidad', e.target.value)} placeholder="Ej. 20 tabletas" />
-                </div>
-                <div className="lg:col-span-2 space-y-1.5 flex flex-col">
-                  <label className="text-xs font-medium text-gray-500 uppercase">Indicaciones Adicionales<FieldHelp text={HELP.prescription.indicaciones} /></label>
+                  <input className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all hover:bg-gray-50 focus:bg-white" value={item.cantidad} onChange={e => updateItem(idx, 'cantidad', e.target.value)} placeholder="Ej. 20 tabletas" />
+                </div>}
+                <div className={`${mode === 'prescription' ? 'lg:col-span-2' : ''} space-y-1.5 flex flex-col`}>
+                  <label htmlFor={`product-instructions-${idx}`} className="text-xs font-medium text-gray-600 uppercase">{mode === 'routine' ? 'Indicaciones de uso *' : 'Indicaciones adicionales'}<FieldHelp text={HELP.prescription.indicaciones} /></label>
                   <textarea
+                    id={`product-instructions-${idx}`}
                     className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all hover:bg-gray-50 focus:bg-white min-h-[42px] overflow-hidden resize-none"
                     value={item.indicaciones}
                     onChange={e => {
@@ -1033,8 +1062,8 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
                       e.target.style.height = 'auto'; 
                       e.target.style.height = e.target.scrollHeight + 'px';
                     }}
-                    rows={1}
-                    placeholder="Instrucciones específicas para el paciente..."
+                    rows={mode === 'routine' ? 3 : 1}
+                    placeholder={mode === 'routine' ? 'Describe cómo aplicar el producto y los cuidados que debe seguir el paciente…' : 'Instrucciones específicas para el paciente…'}
                   />
                 </div>
               </div>
@@ -1046,8 +1075,8 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
               <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center">
                 <FileText className="w-6 h-6 opacity-40" />
               </div>
-              <p>No hay medicamentos en esta receta</p>
-              <p className="text-xs opacity-60">Haga clic en "Agregar Medicamento" para comenzar</p>
+              <p>{mode === 'routine' ? 'Aún no hay productos en esta guía' : 'No hay medicamentos en esta receta'}</p>
+              <p className="text-xs opacity-60">{mode === 'routine' ? 'Agrega el primer producto para comenzar' : 'Agrega el primer medicamento para comenzar'}</p>
             </div>
           )}
         </div>
@@ -1056,10 +1085,10 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
           onClick={addItem}
-          className="absolute bottom-4 right-4 bg-[#deb887] text-white px-4 py-2.5 rounded-full shadow-lg hover:bg-[#c5a075] transition-all z-20 flex items-center gap-2 font-medium shadow-[#deb887]/30"
+          className="admin-focus-ring self-end shrink-0 bg-gold-dark text-white px-4 py-2.5 rounded-xl shadow-sm hover:bg-gold-ink transition-colors flex items-center gap-2 font-medium"
         >
           <Plus className="w-5 h-5" />
-          Agregar Medicamento
+          {mode === 'routine' ? 'Agregar producto' : 'Agregar medicamento'}
         </motion.button>
       </div>
     </motion.div>
@@ -1081,23 +1110,25 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
     <CrossConsultHistoryModal
       isOpen={crossHistOpen}
       onClose={() => setCrossHistOpen(false)}
-      tabLabel="Recetas"
+      tabLabel="Recetas y guías"
       consultations={consultations}
       items={prescriptions}
       currentConsultationId={consultationId}
       renderItem={p => (
         <div>
-          <p className="font-medium text-gray-800">{p.diagnostico || 'Receta'}</p>
-          <p className="text-gray-400">{p.fecha ? new Date(toDateOnly(p.fecha)+'T12:00:00').toLocaleDateString('es-EC') : ''} — {p.items?.length || 0} med.</p>
+          <PrescriptionModeBadge mode={p.mode} />
+          <p className="mt-1 font-medium text-gray-800 break-words">{p.diagnostico || (p.mode === 'prescription' ? 'Receta médica' : 'Guía domiciliaria')}</p>
+          <p className="text-gray-500">{p.fecha ? new Date(toDateOnly(p.fecha)+'T12:00:00').toLocaleDateString('es-EC') : ''} — {p.items?.length || 0} {p.mode === 'prescription' ? 'medicamento(s)' : 'producto(s)'}</p>
         </div>
       )}
       renderDetail={p => (
         <>
+          <PrescriptionModeBadge mode={p.mode} />
           {p.diagnostico && <div><span className="text-gray-400">Diagnóstico:</span> <span className="font-medium">{p.diagnostico}</span></div>}
           {p.fecha && <div><span className="text-gray-400">Fecha:</span> {new Date(toDateOnly(p.fecha)+'T12:00:00').toLocaleDateString('es-EC')}</div>}
           {p.items?.map((item: PrescriptionItem, i: number) => (
             <div key={i} className="border rounded-lg p-2 mt-2 space-y-0.5">
-              <p className="font-medium">{item.medicamento || item.nombre_comercial}</p>
+              <p className="font-medium break-words">{p.mode === 'prescription' ? item.medicamento || item.nombre_comercial : item.nombre_comercial}</p>
               {item.indicaciones && <p className="text-gray-500">{item.indicaciones}</p>}
               {item.rutina && <p className="text-[#b8944d]">{item.rutina}</p>}
             </div>
