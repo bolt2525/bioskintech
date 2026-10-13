@@ -2131,10 +2131,11 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
     />
     <ConfirmationDialog
       open={retiringPackage !== null}
-      variant="danger"
       title="Retirar paquete vacío"
       description={<>Se retirará <strong>{retiringPackage?.name}</strong> de los paquetes activos.</>}
-      detail="Si no tiene pagos se eliminará. Si tiene abonos o cobros en Finanzas se archivará y podrá restaurarse: pagos y saldo se conservan. Esto no devuelve dinero, no cancela deuda ni transfiere pagos a otro paquete."
+      detail={Number(retiringPackage?.initial_payment) > 0
+        ? 'Tiene un abono inicial: se archivará y podrás restaurarlo desde Archivados. Pagos y saldo se conservan. Esto no devuelve dinero, no cancela deuda ni transfiere pagos.'
+        : 'Si no tiene pagos se eliminará definitivamente y no podrá recuperarse. Si tiene cobros en Finanzas se archivará y podrás restaurarlo: pagos y saldo se conservan. Esto no devuelve dinero, no cancela deuda ni transfiere pagos.'}
       confirmLabel="Retirar paquete"
       busy={packageBusy}
       onClose={() => setRetiringPackage(null)}

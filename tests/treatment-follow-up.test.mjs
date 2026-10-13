@@ -264,6 +264,14 @@ test('UI: siguiente sesión es borrador sin request; Guardar persiste control co
   assert.equal(body.finance_posting.enabled, false);
   assert.equal(h.saved(), 1);
 });
+
+test('UI: retiro no describe el archivado reversible como irreversible', () => {
+  const h = harness();
+  const dialog = h.all(h.render()).find(node => node.type === 'ConfirmationDialog' && node.props.title === 'Retirar paquete vacío');
+  assert.notEqual(dialog.props.variant, 'danger');
+  assert.match(dialog.props.detail, /eliminará definitivamente.*no podrá recuperarse/);
+  assert.match(dialog.props.detail, /archivará y podrás restaurarlo/);
+});
 test('UI: cambiar evaluación actualiza el groom Savin de Tratamientos Capilares', () => {
   const h = harness();
   let tree = h.render();
