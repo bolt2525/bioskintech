@@ -26,16 +26,20 @@ Halloween: `10-10` → `11-01`.
 ```ts
 heroInteraction: {
   mascot: 'spider',     // elemento clicable en la esquina del hero
-  summon: 'ghost',      // lo que sale al hacer clic: vuela a la izquierda y se posa sobre el nombre
+  summon: ['ghost', 'skull', 'pumpkin', 'bat'], // criatura fija ('ghost'), pool (azar en cada clic) o 'random' (todas)
   hint: '¡Aplástame!',  // pista al hover/foco
   ariaLabel: '…',       // etiqueta accesible del botón
-  perchMs: 4500,        // (opcional) tiempo posado
+  idleMs: 5000,         // (opcional) ms sin interacción antes de que la criatura desaparezca
 }
 ```
 
-Flujo: clic → la mascota se aplasta → "puf" de humo → la criatura vuela con curva orgánica y estela
-hacia el elemento `[data-hero-name]` (el `<span>` del nombre en el saludo) → se posa flotando → se desvanece.
-Un nuevo clic reinicia el vuelo. Con `prefers-reduced-motion` no hay vuelo: aparece posada directamente.
+Flujo: clic → la mascota se aplasta → "puf" de humo → la criatura (al azar del pool, sin repetir la anterior)
+vuela con curva orgánica y estela hacia el elemento `[data-hero-name]` → se posa flotando y se vuelve
+interactiva: al pasar el cursor (o tocarla) escapa con resorte a otro punto aleatorio del hero
+(x 15–85 %, y 10–75 %) dejando un "puf", y el temporizador de inactividad se reinicia. Si pasan `idleMs`
+(5 s) sin interacción se desvanece (`opacity 0, scale 0.8`). La mascota nunca se bloquea: un nuevo clic
+lanza otra criatura en cualquier momento. Con `prefers-reduced-motion` no hay vuelo ni aleteo: aparece posada
+y salta sin animación. Criaturas disponibles: `ghost`, `skull`, `pumpkin`, `bat`.
 
 ### Agregar una mascota o criatura nueva (ej. Navidad: Santa + regalo)
 

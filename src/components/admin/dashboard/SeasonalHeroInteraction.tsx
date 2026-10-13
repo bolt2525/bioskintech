@@ -1,8 +1,9 @@
 /**
  * @file src/components/admin/dashboard/SeasonalHeroInteraction.tsx
  * @description Interacción lúdica reutilizable del hero: una MASCOTA en la esquina que, al hacer clic
- * ("aplastarla"), invoca una CRIATURA/OBJETO (`summon`) que vuela con curva orgánica hacia el nombre
- * del usuario y se posa sobre él un momento.
+ * ("aplastarla"), invoca una CRIATURA/OBJETO (`summon`, elegida al azar de un pool) que vuela con curva
+ * orgánica hacia el nombre del usuario y se posa. Posada es interactiva: al pasar el cursor escapa a otro
+ * punto aleatorio del hero y, tras `idleMs` (5 s) sin interacción, se desvanece.
  *
  * Todo se declara en `seasonalEvents.ts` → `heroInteraction`. Para un evento nuevo basta con elegir
  * `mascot` y `summon` de los registros de abajo (MASCOTS / SUMMONS). Ver docs/SEASONAL_EVENTS.md.
@@ -158,27 +159,118 @@ function SkullSprite({ color }: { color: string }) {
   );
 }
 
+function PumpkinSprite({ color }: { color: string }) {
+  return (
+    <svg viewBox="0 0 32 36" width={SUMMON_SIZE} height={SUMMON_SIZE * 1.125} aria-hidden="true">
+      <ellipse cx="16" cy="33" rx="9" ry="1.6" fill="#000" opacity="0.12" />
+      <path d="M16 9c.4-2 1.400-3.400 3-4.200" fill="none" stroke="#6b8e5a" strokeWidth="1.800" strokeLinecap="round" />
+      <ellipse cx="8.500" cy="21" rx="6.500" ry="9.500" fill="#f2a65a" stroke={color} strokeWidth="0.8" />
+      <ellipse cx="23.500" cy="21" rx="6.500" ry="9.500" fill="#f2a65a" stroke={color} strokeWidth="0.8" />
+      <ellipse cx="16" cy="21" rx="6" ry="10" fill="#f7b877" stroke={color} strokeWidth="0.8" />
+      <path d="M13 17.500 11.500 15l-1.500 2.500ZM22 17.500 20.500 15 19 17.500Z" fill="#2b1b45" />
+      <path d="M11.500 24.500c1.500 2.500 7.500 2.500 9 0" fill="none" stroke="#2b1b45" strokeWidth="1.100" strokeLinecap="round" />
+      <ellipse cx="8" cy="22.500" rx="1.800" ry="1.100" fill="#f9a8d4" opacity="0.5" />
+      <ellipse cx="24" cy="22.500" rx="1.800" ry="1.100" fill="#f9a8d4" opacity="0.5" />
+    </svg>
+  );
+}
+
+/** Murciélago con aleteo sutil (las alas oscilan en X; sin aleteo con prefers-reduced-motion). */
+function BatSprite({ color }: { color: string }) {
+  const reduced = useReducedMotion() ?? false;
+  const flap = reduced
+    ? undefined
+    : { scaleX: [1, 0.6], scaleY: [1, 1.12] };
+  const flapTransition = { duration: 0.45, ease: 'easeInOut' as const, repeat: Infinity, repeatType: 'mirror' as const };
+  const wing = '#3b2a5c';
+  return (
+    <svg viewBox="0 0 32 36" width={SUMMON_SIZE} height={SUMMON_SIZE * 1.125} aria-hidden="true">
+      <ellipse cx="16" cy="34" rx="8" ry="1.6" fill="#000" opacity="0.1" />
+      <motion.path
+        d="M13 16C10 11 5 10 1.500 12c1.500 1.500 1.500 3.500 1.500 5 1.200-.8 2.600-.8 3.600.4 1-1.200 2.800-1.200 3.800 0 .8-1 2.200-1.200 3.100-.4Z"
+        fill={wing}
+        stroke={color}
+        strokeWidth="0.7"
+        style={{ originX: 1, originY: 0.5 }}
+        animate={flap}
+        transition={flapTransition}
+      />
+      <motion.path
+        d="M19 16c3-5 8-6 11.500-4-1.500 1.500-1.500 3.500-1.500 5-1.200-.8-2.600-.8-3.600.4-1-1.200-2.800-1.200-3.800 0-.8-1-2.200-1.200-3.100-.4Z"
+        fill={wing}
+        stroke={color}
+        strokeWidth="0.7"
+        style={{ originX: 0, originY: 0.5 }}
+        animate={flap}
+        transition={flapTransition}
+      />
+      <path d="M12.500 12.500 13 8.500l3 2.200 3-2.200.5 4Z" fill={wing} />
+      <ellipse cx="16" cy="17" rx="4" ry="5.500" fill="#4a3670" stroke={color} strokeWidth="0.7" />
+      <circle cx="14.200" cy="15.500" r="1" fill="#fde68a" />
+      <circle cx="17.800" cy="15.500" r="1" fill="#fde68a" />
+      <path d="M15 19l.5 1.300.5-1.300M16 19l.5 1.300.5-1.300" stroke="#fff" strokeWidth="0.5" fill="none" />
+    </svg>
+  );
+}
+
 /** Registro de criaturas invocadas. Agregar una nueva = sprite SVG + entrada aquí + tipo en seasonalEvents.ts */
 const SUMMONS: Record<HeroSummonKind, (props: { color: string }) => ReactElement> = {
   ghost: GhostSprite,
   skull: SkullSprite,
+  pumpkin: PumpkinSprite,
+  bat: BatSprite,
 };
+
+const ALL_SUMMONS = Object.keys(SUMMONS) as HeroSummonKind[];
+
+/** Elige una criatura del pool configurado, evitando repetir la anterior cuando hay alternativas. */
+function pickSummon(summon: HeroInteractionConfig['summon'], previous: HeroSummonKind | null): HeroSummonKind {
+  const pool = summon === 'random' ? ALL_SUMMONS : Array.isArray(summon) ? summon : [summon];
+  const options = pool.length > 1 ? pool.filter(k => k !== previous) : pool;
+  return options[Math.floor(Math.random() * options.length)] ?? 'ghost';
+}
 
 /* ───────────────────────── Orquestación ───────────────────────── */
 
 type Phase = 'flying' | 'perched' | 'leaving';
 
+interface Point {
+  x: number;
+  y: number;
+}
+
 interface Flight {
   id: number;
+  kind: HeroSummonKind;
   phase: Phase;
-  from: { x: number; y: number };
-  to: { x: number; y: number };
+  from: Point;
+  to: Point;
+  /** Posición previa y contador de esquives (para el "puf" al escapar) */
+  prev: Point | null;
+  dodges: number;
 }
 
 const FALLBACK_TARGET = { x: 80, y: 25 };
 const FLIGHT_SECONDS = 2.4;
 const SQUASH_MS = 380;
+const LEAVE_MS = 700;
+const DEFAULT_IDLE_MS = 5000;
+const MIN_DODGE_DISTANCE = 90;
 const TRAIL = [0.14, 0.28, 0.42];
+
+/** Punto aleatorio dentro del hero (x: 15–85 %, y: 10–75 %), lejos de la posición actual. */
+function randomPoint(width: number, height: number, current: Point): Point {
+  const half = SUMMON_SIZE / 2;
+  let candidate = current;
+  for (let i = 0; i < 8; i++) {
+    candidate = {
+      x: width * (0.15 + Math.random() * 0.7) - half,
+      y: height * (0.1 + Math.random() * 0.65),
+    };
+    if (Math.hypot(candidate.x - current.x, candidate.y - current.y) >= MIN_DODGE_DISTANCE) break;
+  }
+  return candidate;
+}
 
 interface SeasonalHeroInteractionProps {
   config: HeroInteractionConfig;
@@ -191,17 +283,35 @@ export default function SeasonalHeroInteraction({ config, color }: SeasonalHeroI
   const [flight, setFlight] = useState<Flight | null>(null);
   const [squashed, setSquashed] = useState(false);
   const idRef = useRef(0);
-  const timers = useRef<number[]>([]);
-  const perchMs = config.perchMs ?? 4500;
+  const lastKindRef = useRef<HeroSummonKind | null>(null);
+  const squashTimer = useRef<number | undefined>(undefined);
+  const idleTimers = useRef<number[]>([]);
+  const idleMs = config.idleMs ?? DEFAULT_IDLE_MS;
 
-  const schedule = useCallback((fn: () => void, ms: number) => {
-    timers.current.push(window.setTimeout(fn, ms));
+  const clearIdle = useCallback(() => {
+    idleTimers.current.forEach(window.clearTimeout);
+    idleTimers.current = [];
   }, []);
 
-  useEffect(() => {
-    const pending = timers.current;
-    return () => pending.forEach(window.clearTimeout);
-  }, []);
+  /** (Re)inicia el temporizador de inactividad: desvanece y retira la criatura si nadie interactúa. */
+  const armIdle = useCallback(
+    (id: number) => {
+      clearIdle();
+      idleTimers.current = [
+        window.setTimeout(() => setFlight(f => (f?.id === id ? { ...f, phase: 'leaving' } : f)), idleMs),
+        window.setTimeout(() => setFlight(f => (f?.id === id ? null : f)), idleMs + LEAVE_MS),
+      ];
+    },
+    [clearIdle, idleMs],
+  );
+
+  useEffect(
+    () => () => {
+      window.clearTimeout(squashTimer.current);
+      clearIdle();
+    },
+    [clearIdle],
+  );
 
   const handleActivate = useCallback(
     (mascotRect: DOMRect) => {
@@ -224,31 +334,44 @@ export default function SeasonalHeroInteraction({ config, color }: SeasonalHeroI
           }
         : FALLBACK_TARGET;
 
-      timers.current.forEach(window.clearTimeout);
-      timers.current = [];
+      clearIdle();
       const id = ++idRef.current;
+      const kind = pickSummon(config.summon, lastKindRef.current);
+      lastKindRef.current = kind;
       setSquashed(true);
-      schedule(() => setSquashed(false), SQUASH_MS);
-      setFlight({ id, phase: reduced ? 'perched' : 'flying', from, to });
-      if (reduced) {
-        schedule(() => setFlight(f => (f?.id === id ? { ...f, phase: 'leaving' } : f)), perchMs);
-        schedule(() => setFlight(f => (f?.id === id ? null : f)), perchMs + 700);
-      }
+      window.clearTimeout(squashTimer.current);
+      squashTimer.current = window.setTimeout(() => setSquashed(false), SQUASH_MS);
+      setFlight({ id, kind, phase: reduced ? 'perched' : 'flying', from, to, prev: null, dodges: 0 });
+      if (reduced) armIdle(id);
     },
-    [perchMs, reduced, schedule],
+    [armIdle, clearIdle, config.summon, reduced],
   );
 
   const handleLanded = useCallback(
     (id: number) => {
       setFlight(f => (f?.id === id ? { ...f, phase: 'perched' } : f));
-      schedule(() => setFlight(f => (f?.id === id ? { ...f, phase: 'leaving' } : f)), perchMs);
-      schedule(() => setFlight(f => (f?.id === id ? null : f)), perchMs + 700);
+      armIdle(id);
     },
-    [perchMs, schedule],
+    [armIdle],
+  );
+
+  /** Hover/toque sobre la criatura posada: escapa a otro punto del hero y reinicia la inactividad. */
+  const handleDodge = useCallback(
+    (id: number) => {
+      const layer = layerRef.current;
+      if (!layer) return;
+      const { width, height } = layer.getBoundingClientRect();
+      setFlight(f => {
+        if (!f || f.id !== id || f.phase !== 'perched') return f;
+        return { ...f, prev: f.to, to: randomPoint(width, height, f.to), dodges: f.dodges + 1 };
+      });
+      armIdle(id);
+    },
+    [armIdle],
   );
 
   const Mascot = MASCOTS[config.mascot];
-  const Summon = SUMMONS[config.summon];
+  const Summon = flight ? SUMMONS[flight.kind] : null;
 
   return (
     <div ref={layerRef} className="pointer-events-none absolute inset-0 z-20 overflow-hidden rounded-[inherit]">
@@ -261,21 +384,12 @@ export default function SeasonalHeroInteraction({ config, color }: SeasonalHeroI
         onActivate={handleActivate}
       />
 
-      {flight && (
+      {flight && Summon && (
         <>
           {/* "Puf" de humo en el punto de origen */}
-          {!reduced &&
-            [-1, 0, 1].map(n => (
-              <motion.span
-                key={`${flight.id}-puff-${n}`}
-                aria-hidden="true"
-                className="absolute rounded-full"
-                style={{ left: flight.from.x + SUMMON_SIZE / 2 - 5, top: flight.from.y + 10, width: 10, height: 10, background: `${color}90` }}
-                initial={{ opacity: 0.7, scale: 0.4, x: 0, y: 0 }}
-                animate={{ opacity: 0, scale: 2.2, x: n * 14, y: -10 - Math.abs(n) * 4 }}
-                transition={{ duration: 0.7, ease: 'easeOut' }}
-              />
-            ))}
+          {!reduced && <Puff key={`${flight.id}-puff-0`} at={flight.from} color={color} />}
+          {/* "Puf" de destellos en el punto que la criatura abandona al esquivar */}
+          {!reduced && flight.prev && <Puff key={`${flight.id}-dodge-${flight.dodges}`} at={flight.prev} color={color} />}
 
           {/* Estela de destellos (copias tenues con retraso) */}
           {!reduced &&
@@ -290,14 +404,20 @@ export default function SeasonalHeroInteraction({ config, color }: SeasonalHeroI
               </FlyingSprite>
             ))}
 
-          <FlyingSprite flight={flight} reduced={reduced} onLanded={() => handleLanded(flight.id)}>
+          <FlyingSprite
+            key={flight.id}
+            flight={flight}
+            reduced={reduced}
+            onLanded={() => handleLanded(flight.id)}
+            onDodge={() => handleDodge(flight.id)}
+          >
             <motion.div
               animate={
                 flight.phase === 'leaving'
-                  ? { opacity: 0, y: -8 }
+                  ? { opacity: 0, scale: 0.8, y: -8 }
                   : flight.phase === 'perched' && !reduced
-                    ? { opacity: 1, y: [0, -4] }
-                    : { opacity: 1, y: 0 }
+                    ? { opacity: 1, scale: 1, y: [0, -4] }
+                    : { opacity: 1, scale: 1, y: 0 }
               }
               transition={
                 flight.phase === 'perched' && !reduced
@@ -324,18 +444,50 @@ interface FlyingSpriteProps {
   trail?: boolean;
   delay?: number;
   onLanded?: () => void;
+  onDodge?: () => void;
 }
 
-/** Mueve a su hijo del origen al destino con una curva (arco con ondulación) usando solo transform. */
-function FlyingSprite({ flight, children, reduced = false, trail = false, delay = 0, onLanded }: FlyingSpriteProps) {
+/** Destellos/humo que se disipan en un punto (origen del vuelo o posición abandonada al esquivar). */
+function Puff({ at, color }: { at: Point; color: string }) {
+  return (
+    <>
+      {[-1, 0, 1].map(n => (
+        <motion.span
+          key={n}
+          aria-hidden="true"
+          className="absolute rounded-full"
+          style={{ left: at.x + SUMMON_SIZE / 2 - 5, top: at.y + 10, width: 10, height: 10, background: `${color}90` }}
+          initial={{ opacity: 0.7, scale: 0.4, x: 0, y: 0 }}
+          animate={{ opacity: 0, scale: 2.2, x: n * 14, y: -10 - Math.abs(n) * 4 }}
+          transition={{ duration: 0.7, ease: 'easeOut' }}
+        />
+      ))}
+    </>
+  );
+}
+
+/**
+ * Mueve a su hijo del origen al destino con una curva (arco con ondulación) usando solo transform.
+ * Una vez posada (`perched`) es interactiva: al pasar el cursor/tocar llama a `onDodge` y se desplaza con resorte.
+ */
+function FlyingSprite({ flight, children, reduced = false, trail = false, delay = 0, onLanded, onDodge }: FlyingSpriteProps) {
   const { from, to } = flight;
   const dy = Math.max(30, Math.abs(to.x - from.x) * 0.12);
   const xs = [from.x, from.x + (to.x - from.x) * 0.35, from.x + (to.x - from.x) * 0.7, to.x];
   const ys = [from.y, from.y + dy, to.y - dy * 0.6, to.y];
+  const interactive = flight.phase === 'perched';
+  const interactionProps = interactive
+    ? { onHoverStart: onDodge, onPointerDown: onDodge, style: { cursor: 'pointer' as const } }
+    : {};
+  const interactiveClass = interactive ? 'pointer-events-auto' : '';
 
   if (reduced) {
     return (
-      <div className="absolute left-0 top-0" style={{ transform: `translate(${to.x}px, ${to.y}px)` }}>
+      <div
+        className={`absolute left-0 top-0 ${interactiveClass}`}
+        style={{ transform: `translate(${to.x}px, ${to.y}px)`, cursor: interactive ? 'pointer' : undefined }}
+        onPointerEnter={interactive ? onDodge : undefined}
+      >
         {children}
       </div>
     );
@@ -344,21 +496,31 @@ function FlyingSprite({ flight, children, reduced = false, trail = false, delay 
   const landed = flight.phase !== 'flying';
   return (
     <motion.div
-      className="absolute left-0 top-0 will-change-transform"
+      className={`absolute left-0 top-0 will-change-transform ${interactiveClass}`}
       initial={{ x: from.x, y: from.y, opacity: 0, scale: 0.4 }}
       animate={
         trail
           ? { x: xs, y: ys, opacity: [0, 0.8, 0.8, 0], scale: 1 }
           : { x: landed ? to.x : xs, y: landed ? to.y : ys, opacity: 1, scale: 1 }
       }
-      transition={{
-        delay,
-        x: { duration: FLIGHT_SECONDS, ease: 'easeInOut', times: [0, 0.35, 0.7, 1] },
-        y: { duration: FLIGHT_SECONDS, ease: 'easeInOut', times: [0, 0.35, 0.7, 1] },
-        opacity: { duration: trail ? FLIGHT_SECONDS : 0.3 },
-        scale: { duration: 0.4, ease: 'backOut' },
-      }}
+      transition={
+        landed && !trail
+          ? {
+              x: { type: 'spring', stiffness: 120, damping: 16 },
+              y: { type: 'spring', stiffness: 120, damping: 16 },
+              opacity: { duration: 0.3 },
+              scale: { duration: 0.4, ease: 'backOut' },
+            }
+          : {
+              delay,
+              x: { duration: FLIGHT_SECONDS, ease: 'easeInOut', times: [0, 0.35, 0.7, 1] },
+              y: { duration: FLIGHT_SECONDS, ease: 'easeInOut', times: [0, 0.35, 0.7, 1] },
+              opacity: { duration: trail ? FLIGHT_SECONDS : 0.3 },
+              scale: { duration: 0.4, ease: 'backOut' },
+            }
+      }
       onAnimationComplete={trail || landed ? undefined : onLanded}
+      {...interactionProps}
     >
       {children}
     </motion.div>

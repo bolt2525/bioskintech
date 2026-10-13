@@ -28,21 +28,23 @@ export interface SeasonalAtmosphereConfig {
 /** Mascotas clicables disponibles (registro MASCOTS en SeasonalHeroInteraction.tsx). Ej. futuro: 'santa'. */
 export type HeroMascotKind = 'spider';
 /** Criaturas/objetos invocados (registro SUMMONS en SeasonalHeroInteraction.tsx). Ej. futuro: 'gift'. */
-export type HeroSummonKind = 'ghost' | 'skull';
+export type HeroSummonKind = 'ghost' | 'skull' | 'pumpkin' | 'bat';
 
 /**
  * Interacción lúdica del hero: clic en la mascota → aparece `summon`, vuela hacia el nombre del usuario
- * (`[data-hero-name]`) y se posa sobre él. Guía completa en docs/SEASONAL_EVENTS.md.
+ * (`[data-hero-name]`) y se posa sobre él. Al pasar el cursor, la criatura escapa a otro punto aleatorio
+ * del hero; tras `idleMs` sin interacción se desvanece. Guía completa en docs/SEASONAL_EVENTS.md.
  */
 export interface HeroInteractionConfig {
   mascot: HeroMascotKind;
-  summon: HeroSummonKind;
+  /** Una criatura fija, un pool (se elige al azar en cada clic) o 'random' (todas las disponibles) */
+  summon: HeroSummonKind | HeroSummonKind[] | 'random';
   /** Pista visible al hover/foco de la mascota (ej. '¡Aplástame!') */
   hint: string;
   /** Etiqueta accesible del botón de la mascota */
   ariaLabel: string;
-  /** Milisegundos que la criatura permanece posada (por defecto 4500) */
-  perchMs?: number;
+  /** Milisegundos sin interacción (hover) tras los cuales la criatura desaparece (por defecto 5000) */
+  idleMs?: number;
 }
 
 export interface SeasonalEventConfig {
@@ -162,9 +164,10 @@ export const SEASONAL_EVENTS: SeasonalEventConfig[] = [
     atmosphere: { variant: 'cobweb-spider', color: '#b8a07a' },
     heroInteraction: {
       mascot: 'spider',
-      summon: 'ghost',
+      summon: ['ghost', 'skull', 'pumpkin', 'bat'],
       hint: '¡Aplástame!',
-      ariaLabel: 'Aplastar la arañita: aparece un fantasmita que saluda junto a tu nombre',
+      ariaLabel: 'Aplastar la arañita: aparece una criatura de Halloween que saluda junto a tu nombre',
+      idleMs: 5000,
     },
   },
   {
