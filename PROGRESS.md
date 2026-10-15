@@ -2,6 +2,7 @@
 
 - ✅ 2026-10-14 Abonos: edición y sincronización financiera.
 - ✅ 2026-10-14 Finanzas: detalles por paciente/paquete.
+- ✅ 2026-10-14 QA: abonos y Finanzas verificados.
 
 - ✅ 2026-10-13 Tratamientos: historial y menús dorados.
 - ✅ 2026-10-13 Recetas: guía e historial diferenciados.

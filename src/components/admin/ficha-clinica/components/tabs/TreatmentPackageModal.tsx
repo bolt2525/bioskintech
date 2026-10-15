@@ -91,7 +91,7 @@ export default function TreatmentPackageModal({
       });
       const resBody = await response.json().catch(() => null);
       if (!response.ok) {
-        if (resBody?.code === 'INITIAL_PAYMENT_CONFIRMATION_REQUIRED') {
+        if (resBody?.code === 'INITIAL_PAYMENT_CONFIRMATION_REQUIRED' && !confirmRemoval) {
           setConfirmRemoveOpen(true);
           return;
         }
@@ -104,6 +104,7 @@ export default function TreatmentPackageModal({
         onCreated(resBody);
       }
     } catch (err) {
+      setConfirmRemoveOpen(false);
       setError(err instanceof Error ? err.message : 'Error al modificar el paquete');
     } finally {
       setSaving(false);
@@ -124,9 +125,9 @@ export default function TreatmentPackageModal({
       return;
     }
 
-    const parsedSessions = parseInt(estimatedSessions, 10);
-    if (!Number.isFinite(parsedSessions) || parsedSessions < 1) {
-      setError('Las sesiones estimadas deben ser al menos 1');
+    const parsedSessions = Number(estimatedSessions);
+    if (!Number.isSafeInteger(parsedSessions) || parsedSessions < 1 || parsedSessions > 100) {
+      setError('Las sesiones estimadas deben ser un entero entre 1 y 100');
       return;
     }
 
@@ -194,7 +195,12 @@ export default function TreatmentPackageModal({
       setError(err instanceof Error ? err.message : 'Monto inválido');
       return;
     }
-    const parsedSessions = parseInt(estimatedSessions, 10) || minSessions;
+    const parsedSessions = Number(estimatedSessions);
+    if (!Number.isSafeInteger(parsedSessions) || parsedSessions < minSessions || parsedSessions > 100) {
+      setConfirmRemoveOpen(false);
+      setError(`Las sesiones estimadas deben ser un entero entre ${minSessions} y 100`);
+      return;
+    }
     await submitUpdate(parsedCost, parsedSessions, parsedInitial, true);
   };
 
@@ -223,7 +229,7 @@ export default function TreatmentPackageModal({
               <span className="font-semibold">{packageToEdit?.sessions_count ?? 0}</span>
             </div>
             <div className="flex justify-between">
-              <span>Pagos por sesión (independientes, no se editan aquí):</span>
+              <span>Pagos por sesión (no se editan aquí):</span>
               <span className="font-semibold">${sessionsPaid.toFixed(2)}</span>
             </div>
             <div className="flex justify-between border-t border-amber-200/60 pt-1 mt-1">
@@ -237,7 +243,7 @@ export default function TreatmentPackageModal({
             ) : null}
             {previousInitialPayment > 0 ? (
               <p className="text-[11px] text-amber-700/80 pt-1 border-t border-amber-200/60 mt-1">
-                Este paquete tiene un abono registrado en Finanzas: cambiar el monto o renombrar el paquete requiere un administrador con acceso a Finanzas.
+                Este paquete tiene un abono inicial: cambiar el monto o renombrar un paquete con cobro en Finanzas requiere un administrador con acceso a Finanzas.
               </p>
             ) : null}
           </div>
@@ -245,10 +251,12 @@ export default function TreatmentPackageModal({
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
-            <label className="block text-sm font-medium text-gray-700">Nombre del Paquete</label>
+            <label htmlFor="package-name" className="block text-sm font-medium text-gray-700">Nombre del Paquete</label>
             <input
+              id="package-name"
               type="text"
               required
+              maxLength={150}
               autoFocus
               className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none bg-gray-50/50 focus:bg-white"
               value={name}
@@ -259,10 +267,11 @@ export default function TreatmentPackageModal({
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-gray-700">Costo Total</label>
+              <label htmlFor="package-cost" className="block text-sm font-medium text-gray-700">Costo Total</label>
               <div className="relative">
                 <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
+                  id="package-cost"
                   type="text"
                   inputMode="decimal"
                   className="w-full pl-9 p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none bg-gray-50/50 focus:bg-white"
@@ -274,12 +283,16 @@ export default function TreatmentPackageModal({
 
             </div>
             <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-gray-700">Sesiones estimadas</label>
+              <label htmlFor="package-sessions" className="block text-sm font-medium text-gray-700">Sesiones estimadas</label>
               <div className="relative">
                 <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
+                  id="package-sessions"
                   type="number"
                   min={minSessions}
+                  max={100}
+                  step={1}
+                  required
                   className="w-full pl-9 p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none bg-gray-50/50 focus:bg-white"
                   value={estimatedSessions}
                   onChange={e => setEstimatedSessions(e.target.value)}
@@ -289,10 +302,12 @@ export default function TreatmentPackageModal({
           </div>
 
           <div className="space-y-1.5">
-            <label className="block text-sm font-medium text-gray-700">Abono Inicial</label>
+            <label htmlFor="package-initial-payment" className="block text-sm font-medium text-gray-700">Abono Inicial</label>
             <div className="relative">
               <Wallet className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
+                id="package-initial-payment"
+                aria-describedby={isEditing ? 'package-initial-payment-help' : undefined}
                 type="text"
                 inputMode="decimal"
                 className="w-full pl-9 p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none bg-gray-50/50 focus:bg-white"
@@ -302,7 +317,7 @@ export default function TreatmentPackageModal({
               />
             </div>
             {isEditing ? (
-              <p className="text-[11px] text-gray-500">
+              <p id="package-initial-payment-help" className="text-[11px] text-gray-500">
                 Es independiente de los pagos por sesión. Reducirlo a $0 requerirá confirmación explícita porque elimina su registro en Finanzas.
               </p>
             ) : null}
@@ -328,13 +343,13 @@ export default function TreatmentPackageModal({
             <div className="flex justify-between border-t border-gray-200 pt-1"><span>Total pagado</span><span className="font-semibold text-gray-800">${previewTotalPaid.toFixed(2)}</span></div>
             <div className="flex justify-between">
               <span>Saldo pendiente</span>
-              <span className={`font-semibold ${previewBalance > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>
-                {previewBalance > 0 ? `$${previewBalance.toFixed(2)}` : 'Pagado'}
+              <span className={`font-semibold ${previewBalance < 0 ? 'text-red-600' : previewBalance > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>
+                {previewBalance < 0 ? `Excede el costo en $${Math.abs(previewBalance).toFixed(2)}` : previewBalance > 0 ? `$${previewBalance.toFixed(2)}` : 'Pagado'}
               </span>
             </div>
           </div>
 
-          {error && <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</p>}
+          {error && <p role="alert" className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</p>}
 
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose} className="flex-1 p-2.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 font-medium">

@@ -26,10 +26,13 @@ export function Dialog({ open, onClose, children, className = '', labelledBy, de
       aria-labelledby={labelledBy}
       aria-describedby={describedBy}
       onCancel={(event) => {
+        if (event.target !== event.currentTarget) return;
         event.preventDefault();
         onClose();
       }}
-      onClose={onClose}
+      onClose={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
