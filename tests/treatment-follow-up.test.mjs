@@ -23,6 +23,39 @@ const load = (path, dependencies = {}) => {
 const patterns = load('../src/data/scalpPatterns.ts');
 const boundary = load('../src/data/scalpBoundaryPreset.ts');
 const types = load('../src/components/admin/ficha-clinica/types/treatment.ts');
+const FinanceSummary = load('../src/components/admin/ficha-clinica/components/tabs/TreatmentFinanceSummary.tsx', {
+  '../../types/treatment': types,
+  'react/jsx-runtime': require('react/jsx-runtime'),
+}).default;
+const elementText = node => node == null ? '' : Array.isArray(node)
+  ? node.map(elementText).join('')
+  : typeof node === 'object' ? elementText(node.props?.children) : String(node);
+
+test('Resumen financiero conserva importes anteriores en histórico plegado', () => {
+  const tree = FinanceSummary({ pkg: {
+    initial_payment: 0, sessions_paid: 40,
+    finance_registered_total: 10, finance_record_count: 1,
+    initial_finance_registered_total: 0, initial_finance_record_count: 0,
+  } });
+  const [visible, historical] = tree.props.children;
+  assert.equal(elementText(visible), `En Finanzas ${types.formatTreatmentAmount(10)}`);
+  assert.equal(historical.type, 'details');
+  assert.equal(historical.props.open, undefined);
+  assert.match(elementText(historical), /Histórico de importes/);
+  assert.ok(elementText(historical).includes(types.formatTreatmentAmount(40)));
+  assert.ok(elementText(historical).includes(types.formatTreatmentAmount(30)));
+});
+
+test('Resumen simplificado mantiene acceso restringido y datos no disponibles', () => {
+  for (const [value, expected] of [[null, 'restringida'], [undefined, 'no disponible']]) {
+    const tree = FinanceSummary({ pkg: {
+      initial_payment: 0, sessions_paid: 40,
+      finance_registered_total: value, finance_record_count: value,
+    } });
+    assert.ok(elementText(tree.props.children[0]).includes(expected));
+    assert.ok(!elementText(tree).includes('Diferencia histórica'));
+  }
+});
 const clinicalDataModalSource = readFileSync(new URL('../src/components/admin/ficha-clinica/components/tabs/ClinicalDataModal.tsx', import.meta.url), 'utf8');
 const followUp = load('../src/components/admin/ficha-clinica/types/treatmentFollowUp.ts', {
   './treatment': types,

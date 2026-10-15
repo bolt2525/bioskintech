@@ -3,7 +3,6 @@ import {
   type TreatmentPackage,
 } from '../../types/treatment';
 
-/** Importes clínicos y asientos son fuentes distintas, no una conciliación. */
 export default function TreatmentFinanceSummary({ pkg }: { pkg: TreatmentPackage }) {
   const annotated = getPackagePaidTotal(pkg);
   const financeAvailable = hasTreatmentFinanceTotals(pkg);
@@ -14,14 +13,18 @@ export default function TreatmentFinanceSummary({ pkg }: { pkg: TreatmentPackage
   return (
     <div className="space-y-1 text-[11px] tabular-nums">
       <p className="font-semibold text-gray-800">
-        Anotado {formatTreatmentAmount(annotated)} / {financeAvailable
+        {financeAvailable
           ? `En Finanzas ${formatTreatmentAmount(pkg.finance_registered_total)}`
           : getTreatmentFinanceLabel(pkg, annotated)}
-        {financeAvailable ? <> / Diferencia {formatTreatmentAmount(annotated - pkg.finance_registered_total)}</> : null}
       </p>
-      <p className="text-gray-600">
-        Inicial anotado {formatTreatmentAmount(Number(pkg.initial_payment))} · {getTreatmentFinanceLabel(initialFinance, Number(pkg.initial_payment))}
-      </p>
+      <details className="text-gray-600">
+        <summary className="admin-focus-ring cursor-pointer rounded py-1">Histórico de importes</summary>
+        <div className="space-y-1 pt-1">
+          <p>Anotado {formatTreatmentAmount(annotated)}</p>
+          {financeAvailable ? <p>Diferencia histórica {formatTreatmentAmount(annotated - pkg.finance_registered_total)}</p> : null}
+          <p>Abono inicial {formatTreatmentAmount(Number(pkg.initial_payment))} · {getTreatmentFinanceLabel(initialFinance, Number(pkg.initial_payment))}</p>
+        </div>
+      </details>
     </div>
   );
 }

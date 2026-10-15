@@ -1015,9 +1015,6 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
           {!archivedPackages.length ? <p className="text-xs text-gray-400">Sin paquetes archivados</p> : null}
         </div> : null}
         <div className="flex-1 overflow-y-auto space-y-3 max-h-[260px] md:max-h-none pr-1 custom-scrollbar">
-          <p className="text-[11px] leading-4 text-gray-600">
-            Anotado es el importe clínico, no un cobro financiero. Finanzas muestra el histórico completo visible, sin filtro de período. Diferencia = anotado − Finanzas; puede ser negativa y no representa deuda. No crea cobros ni implica conciliación.
-          </p>
           {historyFilter !== 'all' && !sortedTreatments.length
             ? <p className="text-xs text-gray-500">Sin sesiones de este modo en la consulta activa.</p> : null}
           {isEmpty ? (

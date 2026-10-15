@@ -1,5 +1,7 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-14 Cobros: histórico desplegable, textos simplificados.
+
 - ✅ 2026-10-14 Cobros: anotaciones y asientos diferenciados.
 - ✅ 2026-10-14 Historial y Finanzas: grupos plegables.
 - ✅ 2026-10-14 QA: 93 regresiones aprobadas.

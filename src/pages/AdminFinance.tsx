@@ -1051,7 +1051,7 @@ const AdminFinance = () => {
                   Tratamientos en Finanzas
                 </h3>
                 <p className="mt-1 max-w-3xl text-xs leading-5 text-gray-600">
-                  Total neto (ingresos menos egresos) de asientos visibles según el período y los filtros actuales. No incluye importes clínicos sin registro en Finanzas ni garantiza coincidencia con lo anotado en Tratamientos.
+                  Ingresos y egresos del período seleccionado.
                 </p>
               </div>
               <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-gold-ink shadow-sm">
