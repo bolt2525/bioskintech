@@ -6,35 +6,50 @@ interface TreatmentFinanceOptionsProps {
   patientName?: string;
   value: FinancePostingOptions;
   onChange: (value: FinancePostingOptions) => void;
+  /** Cuando es true, el envío a Finanzas es obligatorio (p. ej. abono inicial de paquete) y no se puede desmarcar. */
+  mandatory?: boolean;
 }
 
-export default function TreatmentFinanceOptions({ amount, patientName, value, onChange }: TreatmentFinanceOptionsProps) {
+export default function TreatmentFinanceOptions({ amount, patientName, value, onChange, mandatory = false }: TreatmentFinanceOptionsProps) {
   if (amount <= 0) return null;
 
+  const isEnabled = mandatory || value.enabled;
   const subtotal = value.includes_iva ? amount / 1.15 : amount;
   const tax = value.includes_iva ? amount - subtotal : 0;
 
   return (
-    <section className={`rounded-xl border-2 p-4 transition-colors ${value.enabled ? 'border-gold bg-gold/10' : 'border-amber-200 bg-amber-50/60'}`}>
-      <label className="admin-focus-ring flex cursor-pointer items-start gap-3 rounded-lg">
-        <input
-          type="checkbox"
-          checked={value.enabled}
-          onChange={event => onChange({ ...value, enabled: event.target.checked })}
-          className="mt-1 h-5 w-5 rounded border-amber-400 text-gold-dark focus:ring-gold"
-        />
-        <span>
-          <span className="flex items-center gap-2 font-semibold text-gray-900">
-            <BadgeDollarSign className="h-5 w-5 text-gold-ink" aria-hidden="true" />
-            Registrar este cobro en Finanzas
+    <section className={`rounded-xl border-2 p-4 transition-colors ${isEnabled ? 'border-gold bg-gold/10' : 'border-amber-200 bg-amber-50/60'}`}>
+      {mandatory ? (
+        <div className="flex items-start gap-3">
+          <BadgeDollarSign className="mt-0.5 h-5 w-5 shrink-0 text-gold-ink" aria-hidden="true" />
+          <span>
+            <span className="block font-semibold text-gray-900">Este cobro se registrará en Finanzas</span>
+            <span className="mt-1 block text-xs leading-5 text-gray-600">
+              Se enviará ${amount.toFixed(2)}{patientName ? ` a nombre de ${patientName}` : ''} con la fecha, consulta y referencia de este paquete. El abono inicial de un paquete siempre se registra.
+            </span>
           </span>
-          <span className="mt-1 block text-xs leading-5 text-gray-600">
-            Se enviará ${amount.toFixed(2)}{patientName ? ` a nombre de ${patientName}` : ''} con la fecha, consulta y referencia de esta sesión o paquete.
+        </div>
+      ) : (
+        <label className="admin-focus-ring flex cursor-pointer items-start gap-3 rounded-lg">
+          <input
+            type="checkbox"
+            checked={value.enabled}
+            onChange={event => onChange({ ...value, enabled: event.target.checked })}
+            className="mt-1 h-5 w-5 rounded border-amber-400 text-gold-dark focus:ring-gold"
+          />
+          <span>
+            <span className="flex items-center gap-2 font-semibold text-gray-900">
+              <BadgeDollarSign className="h-5 w-5 text-gold-ink" aria-hidden="true" />
+              Registrar este cobro en Finanzas
+            </span>
+            <span className="mt-1 block text-xs leading-5 text-gray-600">
+              Se enviará ${amount.toFixed(2)}{patientName ? ` a nombre de ${patientName}` : ''} con la fecha, consulta y referencia de esta sesión.
+            </span>
           </span>
-        </span>
-      </label>
+        </label>
+      )}
 
-      {value.enabled ? (
+      {isEnabled ? (
         <div className="mt-4 space-y-4 border-t border-gold/30 pt-4">
           <label className={`admin-focus-ring flex cursor-pointer items-center justify-between gap-4 rounded-xl border-2 p-3 ${value.includes_iva ? 'border-emerald-500 bg-emerald-50' : 'border-gray-200 bg-white'}`}>
             <span>

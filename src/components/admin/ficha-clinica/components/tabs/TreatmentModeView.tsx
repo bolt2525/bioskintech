@@ -2102,7 +2102,7 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
           setMessage({
             type: 'success',
             text: Number(pkg.initial_payment) > 0
-              ? 'Paquete creado; el abono se procesó según la opción seleccionada'
+              ? 'Paquete creado y abono inicial registrado en Finanzas'
               : 'Paquete creado correctamente',
           });
           setPackageModalOpen(false);
@@ -2110,9 +2110,19 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
         }}
         onUpdated={(pkg) => {
           setPackages(prev => prev.map(p => (p.id === pkg.id ? { ...p, ...pkg } : p)));
+          const previousInitial = Number(editingPackage?.initial_payment || 0);
+          const nextInitial = Number(pkg.initial_payment || 0);
+          let financeNote = '';
+          if (previousInitial > 0 && nextInitial === 0) {
+            financeNote = ' Se quitó el abono inicial y su registro en Finanzas.';
+          } else if (previousInitial === 0 && nextInitial > 0) {
+            financeNote = ' Se registró el abono inicial en Finanzas.';
+          } else if (previousInitial !== nextInitial) {
+            financeNote = ' Se ajustó el abono inicial en Finanzas.';
+          }
           setMessage({
             type: 'success',
-            text: `Paquete "${pkg.name}" actualizado correctamente`,
+            text: `Paquete "${pkg.name}" actualizado correctamente.${financeNote}`,
           });
           setPackageModalOpen(false);
           setEditingPackage(null);

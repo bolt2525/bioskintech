@@ -55,6 +55,49 @@ interface FinanceItem {
 
 type FinancePeriod = 'all' | 'today' | 'week' | 'month' | 'custom';
 
+interface TreatmentFinanceEntry {
+  id: number;
+  date: string;
+  description: string;
+  total: number;
+  invoice_number?: string;
+}
+
+interface TreatmentFinanceGroup {
+  key: string;
+  patientName: string;
+  packageLabel: string;
+  total: number;
+  count: number;
+  packageId?: number;
+  entries: TreatmentFinanceEntry[];
+}
+
+/** El IVA/tarifa de un cobro no determina si "debe" tener factura: no inferimos obligación fiscal.
+ *  "Sin factura registrada" es un dato neutral (puede completarse después), no un pendiente ni una alerta. */
+const NO_INVOICE_EXPLANATION = 'No se ha registrado un número de factura para este cobro; no indica un pago pendiente.';
+const getInvoiceStatus = (record: { invoice_number?: string }): {
+  label: string; state: 'present' | 'none';
+} => {
+  if (record.invoice_number) return { label: record.invoice_number, state: 'present' };
+  return { label: 'Sin factura registrada', state: 'none' };
+};
+
+/** Etiqueta corta de origen para el badge de un registro de Tratamientos: usa el nombre real
+ *  del paquete (extraído de la descripción) en vez de mostrar solo el ID. */
+const getTreatmentOriginLabel = (record: { source_package_id?: number; description?: string }): string => {
+  if (!record.source_package_id) return 'Sesión individual';
+  const match = /^Paquete (.+?) ·/.exec(record.description || '');
+  return match?.[1] ? `Paquete: ${match[1]}` : `Paquete #${record.source_package_id}`;
+};
+
+/** El abono inicial de un paquete se gestiona desde Tratamientos (modal de paquete), que mantiene
+ *  sincronizado su registro en Finanzas. Montos, ítems y eliminación quedan bloqueados aquí;
+ *  número de factura y fecha siguen siendo editables, igual que para cualquier otro cobro. */
+const isPackageInitialRecord = (record: { source_type?: string }): boolean =>
+  record.source_type === 'treatment_package_initial';
+const PACKAGE_INITIAL_LOCK_MESSAGE = 'Modifica el abono desde Tratamientos: el monto, los ítems y la eliminación de este cobro están bloqueados aquí.';
+
 const toLocalDateInput = (date: Date) => {
   const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
   return localDate.toISOString().split('T')[0];
@@ -112,7 +155,7 @@ const AdminFinance = () => {
   const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
   const [financeUsers, setFinanceUsers] = useState<FinanceUser[]>([]);
   const [showNewForm, setShowNewForm] = useState(false);
-  const [newForm, setNewForm] = useState<typeof EMPTY_FORM>(EMPTY_FORM);
+  const [newForm, setNewForm] = useState<Omit<typeof EMPTY_FORM, 'type'> & { type: FinanceRecord['type'] }>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
   const [periodFilter, setPeriodFilter] = useState<FinancePeriod>('all');
@@ -187,6 +230,7 @@ const AdminFinance = () => {
   
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'ingreso' | 'egreso'>('all');
+  const [expandedTreatmentGroups, setExpandedTreatmentGroups] = useState<Set<string>>(new Set());
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
 
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -238,23 +282,46 @@ const AdminFinance = () => {
     return searchMatch && typeMatch;
   });
   const treatmentFinanceGroups = useMemo(() => {
-    const groups = new Map<string, { key: string; label: string; total: number; count: number; packageId?: number }>();
+    const groups = new Map<string, TreatmentFinanceGroup>();
     for (const record of filteredRecords) {
       if (record.source_module !== 'treatments') continue;
-      const key = record.source_package_id ? `package-${record.source_package_id}` : 'independent';
-      const current = groups.get(key) || {
+      // Clave única por paciente: nunca mezclar sesiones independientes de pacientes distintos.
+      const patientKey = record.source_record_id ?? `sin-expediente-${record.id}`;
+      const key = record.source_package_id ? `package-${record.source_package_id}` : `independent-${patientKey}`;
+      const packageNameMatch = /^Paquete (.+?) ·/.exec(record.description || '');
+      const current: TreatmentFinanceGroup = groups.get(key) || {
         key,
-        label: record.source_package_id ? `Paquete #${record.source_package_id}` : 'Sesiones independientes',
+        patientName: record.entity || 'Paciente sin nombre',
+        packageLabel: record.source_package_id
+          ? (packageNameMatch?.[1] ? packageNameMatch[1] : `Paquete #${record.source_package_id}`)
+          : 'Sesiones independientes',
         total: 0,
         count: 0,
         packageId: record.source_package_id,
+        entries: [],
       };
-      current.total += parseFloat(String(record.total || 0));
+      const total = parseFloat(String(record.total || 0));
+      current.total += total;
       current.count += 1;
+      current.entries.push({
+        id: record.id,
+        date: record.date,
+        description: record.description || (record.source_package_id ? 'Abono de paquete' : 'Sesión de tratamiento'),
+        total,
+        invoice_number: record.invoice_number,
+      });
       groups.set(key, current);
     }
-    return Array.from(groups.values()).sort((a, b) => b.total - a.total);
+    return Array.from(groups.values())
+      .map(group => ({ ...group, entries: group.entries.sort((a, b) => (a.date < b.date ? 1 : -1)) }))
+      .sort((a, b) => b.total - a.total);
   }, [filteredRecords]);
+
+  const toggleTreatmentGroupExpand = (key: string) => setExpandedTreatmentGroups(prev => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
 
   const toggleSelection = (id: number) => {
     setSelectedIds(prev => 
@@ -364,6 +431,7 @@ const AdminFinance = () => {
   // Normaliza campos NUMERIC de PostgreSQL que llegan como strings
   const normalizeItem = (it: Record<string, unknown>): FinanceItem => ({
     ...it,
+    description: String(it.description ?? ''),
     quantity:   parseFloat(String(it.quantity   ?? 1)),
     unit_price: parseFloat(String(it.unit_price ?? 0)),
     iva_rate:   parseFloat(String(it.iva_rate   ?? 0)),
@@ -413,6 +481,11 @@ const AdminFinance = () => {
   };
 
   const handleDelete = async (id: number) => {
+    const target = records.find(r => r.id === id);
+    if (target && isPackageInitialRecord(target)) {
+      alert(PACKAGE_INITIAL_LOCK_MESSAGE);
+      return;
+    }
     if (!confirm('¿Estás seguro de eliminar este registro?')) return;
     try {
       await recordsFetch('/api/records', {
@@ -480,15 +553,19 @@ const AdminFinance = () => {
 
   const saveEdit = async () => {
     if (!editingId) return;
+    const editingRecord = records.find(r => r.id === editingId);
+    const locked = editingRecord ? isPackageInitialRecord(editingRecord) : false;
     try {
       setLoading(true);
+      // Para el abono inicial de un paquete, solo factura y fecha viajan al backend:
+      // monto/entidad/descripción/tipo se preservan intactos (el backend igualmente los rechazaría).
+      const payload = locked
+        ? { action: 'financeUpdate', id: editingId, invoice_number: editFormData.invoice_number, date: editFormData.date }
+        : { action: 'financeUpdate', ...editFormData };
       const res = await recordsFetch('/api/records', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          action: 'financeUpdate', 
-          ...editFormData 
-        })
+        body: JSON.stringify(payload)
       });
       
       if (!res.ok) throw new Error(await res.text());
@@ -953,20 +1030,61 @@ const AdminFinance = () => {
                   <BadgeDollarSign className="h-5 w-5 text-gold-ink" aria-hidden="true" />
                   Cobros enviados desde Tratamientos
                 </h3>
-                <p className="mt-1 text-xs text-gray-500">Agrupados por paquete para controlar abonos iniciales y pagos por sesión.</p>
+                <p className="mt-1 text-xs text-gray-500">Agrupados por paciente y paquete; las sesiones independientes de distintos pacientes nunca se mezclan.</p>
               </div>
               <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-gold-ink shadow-sm">
                 {treatmentFinanceGroups.reduce((sum, group) => sum + group.count, 0)} movimientos
               </span>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              {treatmentFinanceGroups.map(group => (
-                <article key={group.key} className="rounded-xl border border-white bg-white/90 p-4 shadow-sm">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">{group.label}</p>
-                  <p className="mt-2 text-2xl font-bold tabular-nums text-gray-900">{currencySymbol}{group.total.toFixed(2)}</p>
-                  <p className="mt-1 text-xs text-gray-500">{group.count} cobro{group.count === 1 ? '' : 's'} registrado{group.count === 1 ? '' : 's'}</p>
-                </article>
-              ))}
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {treatmentFinanceGroups.map(group => {
+                const isExpanded = expandedTreatmentGroups.has(group.key);
+                const detailId = `treatment-group-${group.key}`;
+                return (
+                  <article key={group.key} className="rounded-xl border border-white bg-white/90 p-4 shadow-sm">
+                    <p className="truncate text-sm font-bold text-gray-900">{group.patientName}</p>
+                    <p className="mt-0.5 flex items-center gap-1 truncate text-xs font-semibold uppercase tracking-wide text-gold-ink">
+                      <Package className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                      {group.packageLabel}
+                    </p>
+                    <p className="mt-2 text-2xl font-bold tabular-nums text-gray-900">{currencySymbol}{group.total.toFixed(2)}</p>
+                    <p className="mt-1 text-xs text-gray-500">{group.count} cobro{group.count === 1 ? '' : 's'} registrado{group.count === 1 ? '' : 's'}</p>
+                    <button
+                      type="button"
+                      onClick={() => toggleTreatmentGroupExpand(group.key)}
+                      aria-expanded={isExpanded}
+                      aria-controls={detailId}
+                      className="admin-focus-ring mt-3 flex min-h-9 w-full items-center justify-between rounded-lg border border-gold/30 bg-gold/5 px-2.5 text-xs font-semibold text-gold-ink hover:bg-gold/10"
+                    >
+                      <span>{isExpanded ? 'Ocultar detalle de pagos' : 'Ver detalle de pagos'}</span>
+                      {isExpanded ? <ChevronUp size={14} aria-hidden="true" /> : <ChevronDown size={14} aria-hidden="true" />}
+                    </button>
+                    {isExpanded ? (
+                      <ul id={detailId} className="mt-2 space-y-1.5 border-t border-gold/20 pt-2">
+                        {group.entries.map(entry => {
+                          const invoiceStatus = getInvoiceStatus(entry);
+                          return (
+                            <li key={entry.id} className="rounded-lg bg-gray-50 p-2 text-xs">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-gray-500">{formatFinanceDate(entry.date)}</span>
+                                <span className="font-semibold tabular-nums text-gray-900">{currencySymbol}{entry.total.toFixed(2)}</span>
+                              </div>
+                              <p className="mt-0.5 truncate text-gray-700">{entry.description}</p>
+                              <span
+                                className={`mt-1 inline-flex items-center gap-1 text-[11px] font-medium ${invoiceStatus.state === 'present' ? 'text-gray-600' : 'text-gray-400'}`}
+                                title={invoiceStatus.state === 'none' ? NO_INVOICE_EXPLANATION : undefined}
+                              >
+                                <FileText size={11} aria-hidden="true" />
+                                {invoiceStatus.label}
+                              </span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    ) : null}
+                  </article>
+                );
+              })}
             </div>
           </section>
         ) : null}
@@ -1049,6 +1167,23 @@ const AdminFinance = () => {
             ) : filteredRecords.map(record => (
               <article key={record.id} className={`p-4 ${selectedIds.includes(record.id) ? 'bg-amber-50/60' : 'bg-white'}`}>
                 {editingId === record.id ? (
+                  isPackageInitialRecord(record) ? (
+                    <div className="space-y-3">
+                      <p className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs font-medium text-amber-800">{PACKAGE_INITIAL_LOCK_MESSAGE}</p>
+                      <div className="grid grid-cols-2 gap-3">
+                        <label className="text-xs text-gray-500">Fecha<input type="date" value={editFormData.date?.split('T')[0]} onChange={event => handleEditChange('date', event.target.value)} className="admin-focus-ring mt-1 w-full rounded-lg border p-2 text-sm" /></label>
+                        <label className="text-xs text-gray-500">N.º de factura<input type="text" value={editFormData.invoice_number} onChange={event => handleEditChange('invoice_number', event.target.value)} className="admin-focus-ring mt-1 w-full rounded-lg border p-2 text-sm" /></label>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3 opacity-60">
+                        <label className="text-xs text-gray-500">Entidad<input type="text" value={editFormData.entity} disabled className="mt-1 w-full cursor-not-allowed rounded-lg border bg-gray-100 p-2 text-sm text-gray-400" /></label>
+                        <label className="text-xs text-gray-500">Total<input type="text" value={editFormData.total} disabled className="mt-1 w-full cursor-not-allowed rounded-lg border bg-gray-100 p-2 text-sm text-gray-400" /></label>
+                      </div>
+                      <div className="flex justify-end gap-2">
+                        <button type="button" onClick={cancelEdit} className="admin-focus-ring rounded-lg border px-3 py-2 text-sm text-gray-600">Cancelar</button>
+                        <button type="button" onClick={saveEdit} className="admin-focus-ring rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white">Guardar</button>
+                      </div>
+                    </div>
+                  ) : (
                   <div className="grid grid-cols-2 gap-3">
                     <label className="text-xs text-gray-500">Fecha<input type="date" value={editFormData.date?.split('T')[0]} onChange={event => handleEditChange('date', event.target.value)} className="admin-focus-ring mt-1 w-full rounded-lg border p-2 text-sm" /></label>
                     <label className="text-xs text-gray-500">Tipo<select value={editFormData.type} onChange={event => handleEditChange('type', event.target.value)} className="admin-focus-ring mt-1 w-full rounded-lg border bg-white p-2 text-sm"><option value="ingreso">Ingreso</option><option value="egreso">Egreso</option></select></label>
@@ -1063,6 +1198,7 @@ const AdminFinance = () => {
                       <button type="button" onClick={saveEdit} className="admin-focus-ring rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white">Guardar</button>
                     </div>
                   </div>
+                  )
                 ) : (
                   <>
                     <div className="mb-3 flex items-start justify-between gap-3">
@@ -1071,7 +1207,7 @@ const AdminFinance = () => {
                         <p className="truncate text-xs text-gray-500">{record.description || 'Sin descripción'}</p>
                         {record.source_module === 'treatments' ? (
                           <span className="mt-1 inline-flex rounded-full bg-gold/15 px-2 py-0.5 text-[10px] font-semibold text-gold-ink">
-                            Tratamientos{record.source_package_id ? ` · Paquete #${record.source_package_id}` : ' · Sesión individual'}
+                            Tratamientos · {getTreatmentOriginLabel(record)}
                           </span>
                         ) : null}
                       </div>
@@ -1081,7 +1217,14 @@ const AdminFinance = () => {
                       <div><span className="block text-[10px] font-semibold uppercase text-gray-400">Fecha</span>{formatFinanceDate(record.date)}</div>
                       <div>
                         <span className="block text-[10px] font-semibold uppercase text-gray-400">Factura</span>
-                        {record.invoice_number || <span className="inline-flex items-center gap-1 font-semibold text-amber-700"><AlertTriangle className="h-3 w-3" /> Pendiente</span>}
+                        {(() => {
+                          const invoiceStatus = getInvoiceStatus(record);
+                          return invoiceStatus.state === 'present' ? (
+                            <span className="text-gray-700">{invoiceStatus.label}</span>
+                          ) : (
+                            <span className="text-gray-400" title={NO_INVOICE_EXPLANATION}>{invoiceStatus.label}</span>
+                          );
+                        })()}
                       </div>
                     </div>
                     <div className="grid grid-cols-3 rounded-xl bg-gray-50 p-3 text-right">
@@ -1092,9 +1235,9 @@ const AdminFinance = () => {
                     <div className="mt-3 flex items-center justify-between gap-3">
                       <label className="flex min-w-0 items-center gap-2 text-xs text-gray-500"><input type="checkbox" aria-label={`Seleccionar registro de ${record.entity}`} checked={selectedIds.includes(record.id)} onChange={() => toggleSelection(record.id)} className="h-4 w-4 rounded border-gray-300" /><span className="truncate">{record.registered_by || 'Seleccionar'}</span></label>
                       <div className="flex gap-1">
-                        <button type="button" aria-label={`Ver desglose de ${record.entity}`} onClick={() => openDesglose(record)} className="admin-focus-ring inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-amber-600 hover:bg-amber-50"><Package size={17} /></button>
+                        <button type="button" aria-label={isPackageInitialRecord(record) ? PACKAGE_INITIAL_LOCK_MESSAGE : `Ver desglose de ${record.entity}`} disabled={isPackageInitialRecord(record)} title={isPackageInitialRecord(record) ? PACKAGE_INITIAL_LOCK_MESSAGE : undefined} onClick={() => openDesglose(record)} className="admin-focus-ring inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-amber-600 hover:bg-amber-50 disabled:cursor-not-allowed disabled:text-gray-300 disabled:hover:bg-transparent"><Package size={17} /></button>
                         <button type="button" aria-label={`Editar ${record.entity}`} onClick={() => startEdit(record)} className="admin-focus-ring inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-blue-600 hover:bg-blue-50"><Edit2 size={17} /></button>
-                        <button type="button" aria-label={`Eliminar ${record.entity}`} onClick={() => handleDelete(record.id)} className="admin-focus-ring inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-rose-600 hover:bg-rose-50"><Trash2 size={17} /></button>
+                        <button type="button" aria-label={isPackageInitialRecord(record) ? PACKAGE_INITIAL_LOCK_MESSAGE : `Eliminar ${record.entity}`} disabled={isPackageInitialRecord(record)} title={isPackageInitialRecord(record) ? PACKAGE_INITIAL_LOCK_MESSAGE : undefined} onClick={() => handleDelete(record.id)} className="admin-focus-ring inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:text-gray-300 disabled:hover:bg-transparent"><Trash2 size={17} /></button>
                       </div>
                     </div>
                   </>
@@ -1158,7 +1301,8 @@ const AdminFinance = () => {
                           data={editFormData} 
                           onChange={handleEditChange} 
                           onSave={saveEdit} 
-                          onCancel={cancelEdit} 
+                          onCancel={cancelEdit}
+                          locked={isPackageInitialRecord(record)}
                         />
                       ) : (
                         <>
@@ -1166,18 +1310,29 @@ const AdminFinance = () => {
                             {formatFinanceDate(record.date)}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                            <div className={`flex items-center gap-2 ${record.invoice_number ? '' : 'text-amber-700'}`}>
-                              {record.invoice_number ? <FileText size={14} className="text-gray-400" /> : <AlertTriangle size={14} />}
-                              {record.invoice_number || 'Pendiente'}
-                            </div>
+                            {(() => {
+                              const invoiceStatus = getInvoiceStatus(record);
+                              const toneClass = invoiceStatus.state === 'none' ? 'text-gray-400' : 'text-gray-900';
+                              return (
+                                <div className={`flex items-center gap-2 ${toneClass}`} title={invoiceStatus.state === 'none' ? NO_INVOICE_EXPLANATION : undefined}>
+                                  <FileText size={14} className="text-gray-400" aria-hidden="true" />
+                                  {invoiceStatus.label}
+                                </div>
+                              );
+                            })()}
                           </td>
                           <td className="px-6 py-4 text-sm text-gray-600 max-w-xs group-hover:bg-white transition-colors relative">
                              <div className="font-semibold text-gray-800 truncate">{record.entity}</div>
                              <div className="text-xs text-gray-400 truncate">{record.description}</div>
                              {record.source_module === 'treatments' ? (
                                <span className="mt-1 inline-flex rounded-full bg-gold/15 px-2 py-0.5 text-[10px] font-semibold text-gold-ink">
-                                 Tratamientos{record.source_package_id ? ` · Paquete #${record.source_package_id}` : ' · Sesión individual'}
+                                 Tratamientos · {getTreatmentOriginLabel(record)}
                                </span>
+                             ) : null}
+                             {isPackageInitialRecord(record) ? (
+                               <p className="mt-1 flex items-center gap-1 text-[10px] font-medium text-amber-700" title={PACKAGE_INITIAL_LOCK_MESSAGE}>
+                                 <AlertTriangle size={10} aria-hidden="true" /> Abono de paquete: edita el monto desde Tratamientos
+                               </p>
                              ) : null}
                              
                              {/* Asesoría fiscal SRI — solo si hay descripción */}
@@ -1217,9 +1372,10 @@ const AdminFinance = () => {
                             <div className="flex justify-end gap-2">
                               <button 
                                 onClick={() => openDesglose(record)}
-                                aria-label={`Ver desglose de ${record.entity}`}
-                                className="p-1 text-yellow-500 hover:text-yellow-700 hover:bg-yellow-50 rounded"
-                                title="Ver / editar desglose de ítems"
+                                aria-label={isPackageInitialRecord(record) ? PACKAGE_INITIAL_LOCK_MESSAGE : `Ver desglose de ${record.entity}`}
+                                disabled={isPackageInitialRecord(record)}
+                                className="p-1 text-yellow-500 hover:text-yellow-700 hover:bg-yellow-50 rounded disabled:cursor-not-allowed disabled:text-gray-300 disabled:hover:bg-transparent"
+                                title={isPackageInitialRecord(record) ? PACKAGE_INITIAL_LOCK_MESSAGE : "Ver / editar desglose de ítems"}
                               >
                                 <Package size={16} />
                               </button>
@@ -1232,8 +1388,10 @@ const AdminFinance = () => {
                               </button>
                               <button 
                                 onClick={() => handleDelete(record.id)}
-                                aria-label={`Eliminar ${record.entity}`}
-                                className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
+                                aria-label={isPackageInitialRecord(record) ? PACKAGE_INITIAL_LOCK_MESSAGE : `Eliminar ${record.entity}`}
+                                disabled={isPackageInitialRecord(record)}
+                                title={isPackageInitialRecord(record) ? PACKAGE_INITIAL_LOCK_MESSAGE : undefined}
+                                className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded disabled:cursor-not-allowed disabled:text-gray-200 disabled:hover:bg-transparent"
                               >
                                 <Trash2 size={16} />
                               </button>
@@ -1377,26 +1535,30 @@ interface EditRowProps {
   onChange: (field: keyof FinanceRecord, value: string | number) => void;
   onSave: () => void;
   onCancel: () => void;
+  /** true cuando el registro es el abono inicial de un paquete: solo factura y fecha son editables aquí */
+  locked?: boolean;
 }
 
-const EditRow = ({ data, onChange, onSave, onCancel }: EditRowProps) => {
+const EditRow = ({ data, onChange, onSave, onCancel, locked = false }: EditRowProps) => {
+  const lockedFieldClass = 'w-full text-xs p-1 border rounded bg-gray-100 text-gray-400 cursor-not-allowed';
   return (
     <>
       <td className="px-4 py-2"><input type="date" value={data.date?.split('T')[0]} onChange={e => onChange('date', e.target.value)} className="w-full text-xs p-1 border rounded" /></td>
       <td className="px-4 py-2"><input type="text" value={data.invoice_number} onChange={e => onChange('invoice_number', e.target.value)} className="w-full text-xs p-1 border rounded" /></td>
       <td className="px-4 py-2">
-        <input type="text" value={data.entity} onChange={e => onChange('entity', e.target.value)} className="w-full text-xs p-1 border rounded mb-1" placeholder="Entidad" />
-        <input type="text" value={data.description} onChange={e => onChange('description', e.target.value)} className="w-full text-xs p-1 border rounded" placeholder="Desc" />
+        <input type="text" value={data.entity} disabled={locked} onChange={e => onChange('entity', e.target.value)} className={locked ? `${lockedFieldClass} mb-1` : 'w-full text-xs p-1 border rounded mb-1'} placeholder="Entidad" />
+        <input type="text" value={data.description} disabled={locked} onChange={e => onChange('description', e.target.value)} className={locked ? lockedFieldClass : 'w-full text-xs p-1 border rounded'} placeholder="Desc" />
+        {locked ? <p className="mt-1 text-[10px] font-medium text-amber-700">Modifica el abono desde Tratamientos</p> : null}
       </td>
       <td className="px-4 py-2">
-        <select value={data.type} onChange={e => onChange('type', e.target.value)} className="text-xs p-1 border rounded">
+        <select value={data.type} disabled={locked} onChange={e => onChange('type', e.target.value)} className={locked ? 'text-xs p-1 border rounded bg-gray-100 text-gray-400 cursor-not-allowed' : 'text-xs p-1 border rounded'}>
           <option value="ingreso">Ingreso</option>
           <option value="egreso">Egreso</option>
         </select>
       </td>
-      <td className="px-4 py-2"><input type="number" value={data.subtotal} onChange={e => onChange('subtotal', e.target.value)} className="w-20 text-xs p-1 border rounded text-right" step="0.01"/></td>
-      <td className="px-4 py-2"><input type="number" value={data.tax} onChange={e => onChange('tax', e.target.value)} className="w-20 text-xs p-1 border rounded text-right" step="0.01"/></td>
-      <td className="px-4 py-2"><input type="number" value={data.total} onChange={e => onChange('total', e.target.value)} className="w-20 text-xs p-1 border rounded text-right font-bold" step="0.01"/></td>
+      <td className="px-4 py-2"><input type="number" value={data.subtotal} disabled={locked} onChange={e => onChange('subtotal', e.target.value)} className={locked ? `${lockedFieldClass} w-20 text-right` : 'w-20 text-xs p-1 border rounded text-right'} step="0.01"/></td>
+      <td className="px-4 py-2"><input type="number" value={data.tax} disabled={locked} onChange={e => onChange('tax', e.target.value)} className={locked ? `${lockedFieldClass} w-20 text-right` : 'w-20 text-xs p-1 border rounded text-right'} step="0.01"/></td>
+      <td className="px-4 py-2"><input type="number" value={data.total} disabled={locked} onChange={e => onChange('total', e.target.value)} className={locked ? `${lockedFieldClass} w-20 text-right font-bold` : 'w-20 text-xs p-1 border rounded text-right font-bold'} step="0.01"/></td>
       <td className="px-4 py-2 text-right">
         <div className="flex justify-end gap-1">
           <button onClick={onSave} className="p-1 bg-green-100 text-green-700 rounded hover:bg-green-200"><Check size={14}/></button>

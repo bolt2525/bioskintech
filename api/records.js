@@ -27,6 +27,9 @@ const CONSENT_SAFE_COLUMNS = `id, record_id, patient_id, clinic_id, consultation
   annulled_at, annulled_by_user_id, annulled_by_name, annulment_reason, replaces_consent_id`;
 
 function normalizeMoney(value, field, { allowZero = true } = {}) {
+  if (!['number', 'string'].includes(typeof value) || String(value).trim() === '') {
+    throw new Error(`${field} inválido`);
+  }
   const amount = Number(value);
   if (!Number.isFinite(amount) || amount < 0 || amount > 10_000_000 || (!allowZero && amount === 0)) {
     throw new Error(`${field} inválido`);
@@ -291,6 +294,72 @@ async function createTreatmentFinancePosting(db, {
     [financeRecord.id, clinicId, description, subtotal, taxRate, subtotal, tax, total]
   );
   return financeRecord;
+}
+
+async function syncPackageInitialFinance(db, { treatmentPackage, clinicId, sessionUser, previousInitial, confirmRemoval }) {
+  const result = await db.query(
+    `SELECT id, total, tax_rate, description
+     FROM financial_records
+     WHERE clinic_id = $1 AND source_module = 'treatments'
+       AND source_type = 'treatment_package_initial' AND source_id = $2
+     FOR UPDATE`,
+    [clinicId, treatmentPackage.id]
+  );
+  const existing = result.rows[0];
+  const amount = Number(treatmentPackage.initial_payment);
+  const description = `Paquete ${treatmentPackage.name} · abono inicial`;
+  if ((previousInitial > 0 || existing) && amount === 0 && confirmRemoval !== true) {
+    const error = new Error('Confirma la eliminación del abono inicial y de su registro en Finanzas');
+    error.code = 'INITIAL_PAYMENT_CONFIRMATION_REQUIRED';
+    throw error;
+  }
+  const needsSync = existing
+    ? amount === 0 || Number(existing.total) !== amount || existing.description !== description
+    : amount > 0;
+  if (!needsSync) return;
+  assertTreatmentFinancePermission(sessionUser);
+  if (existing && !(await canAccessFinanceRecord(db, sessionUser, existing.id))) {
+    const error = new Error('Sin permiso para modificar el cobro de este paquete en Finanzas');
+    error.code = 'FINANCE_FORBIDDEN';
+    throw error;
+  }
+  if (!existing) {
+    await createTreatmentFinancePosting(db, {
+      posting: { total: amount, includesIva: false, invoiceNumber: null, idempotencyKey: crypto.randomUUID() },
+      clinicId, sessionUser, sourceType: 'treatment_package_initial',
+      sourceId: treatmentPackage.id, packageId: treatmentPackage.id,
+      recordId: treatmentPackage.record_id, consultationId: treatmentPackage.consultation_id,
+      date: treatmentPackage.created_at, description,
+    });
+    return;
+  }
+  if (amount === 0) {
+    await db.query('DELETE FROM financial_items WHERE record_id = $1 AND clinic_id = $2', [existing.id, clinicId]);
+    await db.query('DELETE FROM financial_records WHERE id = $1 AND clinic_id = $2', [existing.id, clinicId]);
+    return;
+  }
+  const { subtotal, tax, total, taxRate } = calculateTreatmentFinanceBreakdown(amount, Number(existing.tax_rate) === 15);
+  await db.query(
+    `UPDATE financial_records SET description = $1, subtotal = $2, tax = $3, total = $4, tax_rate = $5
+     WHERE id = $6 AND clinic_id = $7`,
+    [description, subtotal, tax, total, taxRate, existing.id, clinicId]
+  );
+  await db.query('DELETE FROM financial_items WHERE record_id = $1 AND clinic_id = $2', [existing.id, clinicId]);
+  await db.query(
+    `INSERT INTO financial_items (record_id, clinic_id, description, quantity, unit_price, iva_rate, subtotal, tax, total, sort_order)
+     VALUES ($1,$2,$3,1,$4,$5,$4,$6,$7,0)`,
+    [existing.id, clinicId, description, subtotal, taxRate, tax, total]
+  );
+}
+
+async function getPackageInitialPosting(db, recordId, sessionUser) {
+  const result = await db.query(
+    `SELECT id, entity, description, type, subtotal, tax, total FROM financial_records
+     WHERE id = $1 AND source_module = 'treatments' AND source_type = 'treatment_package_initial'
+       AND ($2::uuid IS NULL OR clinic_id = $2)`,
+    [recordId, sessionUser.effective_clinic_id ?? sessionUser.clinic_id ?? null]
+  );
+  return result.rows[0];
 }
 
 function getSigningSessionCookie(req) {
@@ -3229,10 +3298,12 @@ export default async function handler(req, res) {
         let pkgInitial;
         let financePosting;
         try {
-          pkgCost = normalizeMoney(rawPkgCost || 0, 'Costo total');
-          pkgInitial = normalizeMoney(rawPkgInitial || 0, 'Abono inicial');
+          pkgCost = normalizeMoney(rawPkgCost ?? 0, 'Costo total');
+          pkgInitial = normalizeMoney(rawPkgInitial ?? 0, 'Abono inicial');
           if (pkgInitial > pkgCost) throw new Error('El abono inicial no puede superar el costo total');
-          financePosting = normalizeFinancePosting(rawFinancePosting, pkgInitial);
+          financePosting = pkgInitial > 0
+            ? normalizeFinancePosting({ ...rawFinancePosting, enabled: true }, pkgInitial)
+            : normalizeFinancePosting(rawFinancePosting, pkgInitial);
         } catch (validationError) {
           return res.status(400).json({ error: validationError.message });
         }
@@ -3275,7 +3346,7 @@ export default async function handler(req, res) {
               description: `Paquete ${treatmentPackage.name} · abono inicial`,
             });
           }
-          await logAudit(client, { recordId: pkgRecordId, sessionUser: await getSessionUserOnce(), actionType: 'create', module: 'treatment_package', summary: `Creó paquete: ${pkgName.trim()}` });
+          await logAudit(client, { recordId: pkgRecordId, sessionUser: await getSessionUserOnce(), actionType: 'create', module: 'treatment_package', required: true, summary: `Creó paquete: ${pkgName.trim()} · abono inicial $${pkgInitial.toFixed(2)}` });
           await client.query('COMMIT');
           return res.status(201).json(treatmentPackage);
         } catch (error) {
@@ -3400,6 +3471,8 @@ export default async function handler(req, res) {
           name: pkgName,
           total_cost: rawPkgCost,
           estimated_sessions: rawPkgSessions,
+          initial_payment: rawPkgInitial,
+          confirm_remove_initial_payment: confirmRemoval,
         } = body;
         const pkgId = Number(rawPkgId);
         const pkgSessions = Number(rawPkgSessions);
@@ -3411,7 +3484,8 @@ export default async function handler(req, res) {
         }
         let pkgCost;
         try {
-          pkgCost = normalizeMoney(rawPkgCost || 0, 'Costo total');
+          pkgCost = normalizeMoney(rawPkgCost ?? 0, 'Costo total');
+          if (rawPkgInitial !== undefined) normalizeMoney(rawPkgInitial, 'Abono inicial');
         } catch (validationError) {
           return res.status(400).json({ error: validationError.message });
         }
@@ -3428,6 +3502,9 @@ export default async function handler(req, res) {
             return res.status(404).json({ error: 'Paquete no encontrado o sin permisos' });
           }
           const currentPkg = existingRes.rows[0];
+          const pkgInitial = rawPkgInitial === undefined
+            ? Number(currentPkg.initial_payment) : normalizeMoney(rawPkgInitial, 'Abono inicial');
+          if (pkgInitial !== Number(currentPkg.initial_payment)) assertTreatmentFinancePermission(su);
           const totals = await client.query(
             `SELECT COALESCE(SUM(cost), 0)::float AS sessions_paid, COUNT(*)::int AS sessions_count
              FROM treatments WHERE package_id = $1 AND record_id = $2 AND consultation_id = $3 AND clinic_id = $4`,
@@ -3441,28 +3518,43 @@ export default async function handler(req, res) {
               error: `No puedes reducir las sesiones estimadas (${pkgSessions}) a menos de las sesiones ya registradas (${sessionsCount})`
             });
           }
-          const totalPaid = Number(currentPkg.initial_payment || 0) + Number(currentPkg.sessions_paid || 0);
-          if (pkgCost < totalPaid) {
+          const totalPaid = Math.round(pkgInitial * 100) + Math.round(Number(currentPkg.sessions_paid || 0) * 100);
+          if (Math.round(pkgCost * 100) < totalPaid) {
             await client.query('ROLLBACK');
             return res.status(400).json({
-              error: `El costo total ($${pkgCost.toFixed(2)}) no puede ser menor al monto ya pagado ($${totalPaid.toFixed(2)})`
+              error: `El costo total ($${pkgCost.toFixed(2)}) no puede ser menor al abono inicial más los pagos por sesión ($${(totalPaid / 100).toFixed(2)})`
             });
           }
 
           const updated = await client.query(
             `UPDATE treatment_packages
-             SET name = $1, total_cost = $2, estimated_sessions = $3
+             SET name = $1, total_cost = $2, estimated_sessions = $3, initial_payment = $6
              WHERE id = $4 AND clinic_id = $5
              RETURNING *`,
-            [pkgName.trim(), pkgCost, pkgSessions, pkgId, effectiveClinicId]
+            [pkgName.trim(), pkgCost, pkgSessions, pkgId, effectiveClinicId, pkgInitial]
           );
+
+          if (canPostTreatmentFinance(su) || pkgInitial !== Number(currentPkg.initial_payment)) {
+            await syncPackageInitialFinance(client, {
+              treatmentPackage: updated.rows[0], clinicId: effectiveClinicId, sessionUser: su,
+              previousInitial: Number(currentPkg.initial_payment), confirmRemoval,
+            });
+          } else if (pkgName.trim() !== currentPkg.name) {
+            const linked = await client.query(
+              `SELECT id FROM financial_records WHERE clinic_id = $1 AND source_module = 'treatments'
+               AND source_type = 'treatment_package_initial' AND source_id = $2`,
+              [effectiveClinicId, pkgId]
+            );
+            if (linked.rowCount) assertTreatmentFinancePermission(su);
+          }
 
           await logAudit(client, {
             recordId: currentPkg.record_id,
             sessionUser: await getSessionUserOnce(),
             actionType: 'update',
             module: 'treatment_package',
-            summary: `Modificó paquete: ${pkgName.trim()}`,
+            required: true,
+            summary: `Modificó paquete: ${pkgName.trim()} · abono inicial $${Number(currentPkg.initial_payment).toFixed(2)} → $${pkgInitial.toFixed(2)}`,
           });
 
           await client.query('COMMIT');
@@ -3473,6 +3565,10 @@ export default async function handler(req, res) {
           });
         } catch (error) {
           await client.query('ROLLBACK').catch(() => {});
+          if (error.code === 'FINANCE_FORBIDDEN') return res.status(403).json({ error: error.message });
+          if (error.code === 'INITIAL_PAYMENT_CONFIRMATION_REQUIRED') {
+            return res.status(409).json({ error: error.message, code: error.code });
+          }
           throw error;
         }
       }
@@ -4491,6 +4587,9 @@ export default async function handler(req, res) {
 
         const clinicId = su.effective_clinic_id ?? su.clinic_id ?? null;
         if (!(await canAccessFinanceRecord(pool, su, record_id))) return res.status(403).json({ error: 'Sin acceso' });
+        if (await getPackageInitialPosting(pool, record_id, su)) {
+          return res.status(409).json({ error: 'Modifica el abono inicial desde Tratamientos; sus detalles financieros se sincronizan automáticamente' });
+        }
 
         const client = await pool.connect();
         try {
@@ -4614,6 +4713,9 @@ export default async function handler(req, res) {
         const { id } = body;
         if (!id) return res.status(400).json({ error: 'Missing ID' });
         if (!(await canAccessFinanceRecord(pool, su, id))) return res.status(403).json({ error: 'Sin acceso' });
+        if (await getPackageInitialPosting(pool, id, su)) {
+          return res.status(409).json({ error: 'Para eliminar este cobro, cambia el abono inicial a cero desde Tratamientos y confirma su eliminación' });
+        }
         try {
           const clinicId = su.effective_clinic_id ?? su.clinic_id ?? null;
           if (su.role === 'master_admin') {
@@ -4687,12 +4789,35 @@ export default async function handler(req, res) {
           return res.status(403).json({ error: 'Solo administradores pueden editar registros' });
         const { id, date, invoice_number, entity, description, type, subtotal, tax, total } = body;
         if (!id) return res.status(400).json({ error: 'Missing ID' });
-        if (!['ingreso', 'egreso'].includes(type))
-          return res.status(400).json({ error: 'Tipo inválido. Use ingreso o egreso' });
         if (!(await canAccessFinanceRecord(pool, su, id))) return res.status(403).json({ error: 'Sin acceso' });
 
         try {
           const clinicId = su.effective_clinic_id ?? su.clinic_id ?? null;
+          const initialPosting = await getPackageInitialPosting(pool, id, su);
+          if (initialPosting) {
+            if ((type !== undefined && type !== initialPosting.type)
+              || (entity !== undefined && entity !== initialPosting.entity)
+              || (description !== undefined && description !== initialPosting.description)
+              || !['subtotal', 'tax', 'total'].every(field => body[field] === undefined || (
+                ['number', 'string'].includes(typeof body[field]) && String(body[field]).trim() !== ''
+                && Number.isFinite(Number(body[field])) && Number(body[field]) === Number(initialPosting[field])))) {
+              return res.status(409).json({ error: 'Modifica el monto y el tratamiento desde Tratamientos; aquí solo puedes cambiar la fecha y el número de factura del abono inicial' });
+            }
+            const parsedDate = typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)
+              ? new Date(`${date}T12:00:00Z`) : null;
+            if (!parsedDate || !Number.isFinite(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== date
+              || (invoice_number != null && typeof invoice_number !== 'string') || (invoice_number?.length ?? 0) > 100) {
+              return res.status(400).json({ error: 'Fecha o número de factura inválidos' });
+            }
+            await pool.query(
+              `UPDATE financial_records SET date = $1, invoice_number = $2
+               WHERE id = $3 AND ($4::uuid IS NULL OR clinic_id = $4)`,
+              [date, invoice_number?.trim() || null, id, clinicId]
+            );
+            return res.status(200).json({ success: true, message: 'Factura del abono actualizada' });
+          }
+          if (!['ingreso', 'egreso'].includes(type))
+            return res.status(400).json({ error: 'Tipo inválido. Use ingreso o egreso' });
           if (su.role === 'master_admin') {
             await pool.query(
               `UPDATE financial_records SET date=$1, invoice_number=$2, entity=$3, description=$4, type=$5, subtotal=$6, tax=$7, total=$8 WHERE id=$9`,
