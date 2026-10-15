@@ -1,5 +1,10 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-14 Cobros: anotaciones y asientos diferenciados.
+- ✅ 2026-10-14 Historial y Finanzas: grupos plegables.
+- ✅ 2026-10-14 QA: 93 regresiones aprobadas.
+- ✅ 2026-10-14 QA visual: 68 verificaciones aprobadas.
+
 - ✅ 2026-10-14 Abonos: edición y sincronización financiera.
 - ✅ 2026-10-14 Finanzas: detalles por paciente/paquete.
 - ✅ 2026-10-14 QA: abonos y Finanzas verificados.

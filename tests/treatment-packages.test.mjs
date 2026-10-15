@@ -22,10 +22,33 @@ const db = {
       if (auditFails) throw new Error('Detalle interno de SQL');
       return rows([]);
     }
-    if (sql.includes('FROM clinical_records cr')) return rows(mayAccess ? [{ id: 4, patient_name: 'Paciente ficticio QA' }] : []);
+    if (sql.includes('FROM clinical_records cr')) return rows(mayAccess ? [{
+      id: 4, clinic_id: clinicId, patient_id: 8, created_by_user_id: 42,
+      patient_name: 'Paciente ficticio QA', patient: { id: 8, clinic_id: clinicId },
+    }] : []);
+    if (sql.includes('SELECT * FROM treatments WHERE record_id')) {
+      return rows(sessions.filter(t => t.record_id === Number(params[0])));
+    }
+    if (/FROM (medical_history|physical_exams|diagnoses|prescriptions|consent_forms|injectables|consultation_info)\b/.test(sql)) {
+      return rows([]);
+    }
     if (sql.includes('SELECT record_id FROM treatment_packages')) return rows(packages.filter(p => p.id == params[0] && p.clinic_id === actor.clinic_id));
     if (sql.includes('FROM consultations')) return rows(params[0] === 7 && params[1] === 4 && params[2] === clinicId ? [{ id: 7 }] : []);
     if (sql.includes('FROM financial_records') && !sql.startsWith('DELETE')) {
+      if (sql.includes('AS finance_visible')) {
+        assert.match(sql, /t\.clinic_id = fr\.clinic_id/);
+        assert.match(sql, /tp\.clinic_id = fr\.clinic_id/);
+        const found = postings.flatMap(p => {
+          const source = p.source_type === 'treatment_session'
+            ? sessions.find(t => t.id === p.source_id && t.clinic_id === p.clinic_id)
+            : packages.find(tp => tp.id === p.source_id && tp.clinic_id === p.clinic_id);
+          if (p.source_module !== 'treatments' || p.clinic_id !== params[0] || !source
+            || source.record_id !== params[1] || (params[2] != null && source.consultation_id !== params[2])) return [];
+          return [{ ...p, package_id: p.source_type === 'treatment_session' ? source.package_id : source.id,
+            finance_visible: !params[3] || p.created_by_user_id === params[4] }];
+        });
+        return rows(found);
+      }
       if (sql.includes('WHERE id = $1 AND source_module')) return rows(postings.filter(p => p.id === params[0]
         && p.clinic_id === actor.clinic_id && p.source_type === 'treatment_package_initial' && p.source_module === 'treatments'));
       if (sql.includes('fr.id = $1')) return rows(postings.filter(p => p.id === params[0]
@@ -504,4 +527,61 @@ test('Finanzas bloquea cambios directos del abono e ítems y permite solo fecha 
   for (const action of ['financeDelete', 'financeUpdate', 'financeItemsSave']) {
     assert.equal((await request(action, 'POST', {}, { ...body, record_id: 30, items: [] })).code, 403);
   }
+});
+
+test('listPackages diferencia abonos anotados de asientos reales sin multiplicar pagos por el join', async () => {
+  reset(); admin();
+  packages[0].initial_payment = 0;
+  packages[0].sessions_paid = 40;
+  sessions = [10, 10, 10, 10, 0].map((cost, index) => ({
+    id: index + 1, package_id: 9, clinic_id: clinicId, record_id: 4, consultation_id: 7, cost,
+  }));
+  postings = [initialPosting({ source_type: 'treatment_session', source_id: 4, total: 10 })];
+  const result = await request('listPackagesByRecord', 'GET', { record_id: 4, consultation_id: 7 });
+  assert.equal(result.code, 200);
+  assert.equal(result.body[0].sessions_paid, 40);
+  assert.equal(result.body[0].finance_registered_total, 10);
+  assert.equal(result.body[0].finance_record_count, 1);
+  assert.equal(result.body[0].initial_finance_registered_total, 0);
+  assert.equal(result.body[0].initial_finance_record_count, 0);
+  assert.ok(!queries.some(q => /^(INSERT|UPDATE|DELETE)/.test(q.sql)));
+});
+
+test('getRecordData entrega montos financieros reales por sesión y respeta permiso de lectura', async () => {
+  reset(); admin();
+  sessions = [1, 2].map(id => ({ id, record_id: 4, consultation_id: 7, clinic_id: clinicId, package_id: 9, cost: 10 }));
+  postings = [initialPosting({ source_type: 'treatment_session', source_id: 2, total: 7 })];
+  const result = await request('getRecordData', 'GET', { recordId: 4 });
+  assert.equal(result.code, 200);
+  assert.equal(result.body.treatments[0].finance_record_count, 0);
+  assert.equal(result.body.treatments[0].finance_registered_total, 0);
+  assert.equal(result.body.treatments[1].finance_registered_total, 7);
+  assert.equal(result.body.treatments[1].cost, 10);
+  actor.finance_enabled = false;
+  const restricted = await request('getRecordData', 'GET', { recordId: 4 });
+  assert.equal(restricted.code, 200);
+  assert.ok(restricted.body.treatments.every(t => t.finance_registered_total === null && t.finance_record_count === null));
+  assert.ok(!queries.some(q => /^(INSERT|UPDATE|DELETE)/.test(q.sql)));
+});
+
+test('resumen financiero usa la sesión real, excluye otra consulta/clínica y no concilia registros manuales', async () => {
+  reset(); admin();
+  sessions = [
+    { id: 1, record_id: 4, consultation_id: 7, clinic_id: clinicId, package_id: 9, cost: 10 },
+    { id: 2, record_id: 4, consultation_id: 8, clinic_id: clinicId, package_id: 10, cost: 99 },
+    { id: 3, record_id: 4, consultation_id: 7, clinic_id: 'foreign', package_id: 9, cost: 88 },
+    { id: 4, record_id: 5, consultation_id: 7, clinic_id: clinicId, package_id: 9, cost: 77 },
+  ];
+  postings = [
+    initialPosting({ source_type: 'treatment_session', source_id: 1, source_package_id: 555, source_record_id: null, total: 10 }),
+    initialPosting({ id: 31, source_type: 'treatment_session', source_id: 2, total: 99 }),
+    initialPosting({ id: 32, source_type: 'treatment_session', source_id: 3, clinic_id: 'foreign', total: 88 }),
+    initialPosting({ id: 33, source_type: 'treatment_session', source_id: 4, total: 77 }),
+    initialPosting({ id: 34, source_module: null, source_type: null, source_id: null, total: 10 }),
+  ];
+  const result = await request('listPackagesByRecord', 'GET', { record_id: 4, consultation_id: 7 });
+  assert.equal(result.code, 200);
+  assert.equal(result.body[0].finance_registered_total, 10);
+  assert.equal(result.body[0].finance_record_count, 1);
+  assert.ok(!queries.some(q => /^(INSERT|UPDATE|DELETE)/.test(q.sql)));
 });

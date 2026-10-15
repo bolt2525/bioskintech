@@ -4,7 +4,14 @@ import type { ScalpScale } from '../../../../data/scalpPatterns';
 /** Modo del tab de Tratamientos — el historial previo a esta migración pertenece a 'facial' */
 export type TreatmentMode = 'facial' | 'corporal' | 'capilar';
 
-export interface Treatment {
+/** Histórico completo del item; null si el actor no puede ver todos sus asientos.
+ * Opcional durante la transición del contrato: ausencia no equivale a cero. */
+export interface TreatmentFinanceMetadata {
+  finance_record_count?: number | null;
+  finance_registered_total?: number | null;
+}
+
+export interface Treatment extends TreatmentFinanceMetadata {
   id?: number;
   consultation_id?: number;
   /** Ausente en historial previo a la migración de modos — se interpreta como 'facial' */
@@ -79,7 +86,7 @@ export interface ScalpAssessmentData {
   notes?: string;
 }
 
-export interface TreatmentPackage {
+export interface TreatmentPackage extends TreatmentFinanceMetadata {
   id?: number;
   record_id: number;
   consultation_id?: number | null;
@@ -93,14 +100,36 @@ export interface TreatmentPackage {
   /** Calculados por el backend (join con treatments vinculados) */
   sessions_paid?: number;
   sessions_count?: number;
+  initial_finance_registered_total?: number | null;
+  initial_finance_record_count?: number | null;
 }
 
-/** Deuda pendiente = Costo Total - (Abono Inicial + sumatoria de abonos por sesión) */
+/** Saldo clínico; los importes anotados no implican asientos en Finanzas. */
 export const getPackageDebt = (pkg: TreatmentPackage): number =>
   Math.max(0, Number(pkg.total_cost) - (Number(pkg.initial_payment) + Number(pkg.sessions_paid || 0)));
 
 export const getPackagePaidTotal = (pkg: TreatmentPackage): number =>
   Number(pkg.initial_payment) + Number(pkg.sessions_paid || 0);
+
+export const formatTreatmentAmount = (amount: number): string =>
+  new Intl.NumberFormat('es-EC', { style: 'currency', currency: 'USD' }).format(amount);
+
+export const hasTreatmentFinanceTotals = (item: TreatmentFinanceMetadata): item is TreatmentFinanceMetadata & {
+  finance_record_count: number;
+  finance_registered_total: number;
+} =>
+  typeof item.finance_record_count === 'number' && typeof item.finance_registered_total === 'number';
+
+export const getTreatmentFinanceLabel = (item: TreatmentFinanceMetadata, annotated: number): string => {
+  if (item.finance_record_count === null || item.finance_registered_total === null) {
+    return 'Finanzas: información restringida';
+  }
+  if (!hasTreatmentFinanceTotals(item)) return 'Finanzas: información no disponible';
+  if (item.finance_record_count === 0) {
+    return annotated > 0 ? 'Sin registro en Finanzas' : 'Sin cobro';
+  }
+  return `En Finanzas ${formatTreatmentAmount(item.finance_registered_total)}`;
+};
 
 export const TREATMENT_MODE_LABELS: Record<TreatmentMode, string> = {
   facial: 'Facial',

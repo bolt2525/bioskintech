@@ -8,7 +8,7 @@ interface TreatmentTabProps {
   patientName?: string;
   consultationId?: number;
   consultations?: ConsultationRef[];
-  onSave: () => void;
+  onSave: () => void | Promise<void>;
 }
 
 export default function TreatmentTab(props: TreatmentTabProps) {

@@ -128,7 +128,7 @@ function harness(mode = 'capilar', history = null) {
       if (name === 'framer-motion') return { motion: new Proxy({}, { get: (_, property) => `motion.${String(property)}` }), AnimatePresence: 'AnimatePresence' };
       if (name.endsWith('/recordsFetch')) return { __esModule: true, default: async (url, options) => {
         requests.push({ url, options });
-        return { ok: true, json: async () => ({ id: 99 }) };
+        return { ok: true, json: async () => url.includes('listPackagesByRecord') ? [] : ({ id: 99 }) };
       } };
       if (name.endsWith('/AuthContext')) return { useAuth: () => ({ hasFeature: () => false }) };
       if (name.endsWith('/treatment_options.json')) return { procedures: {} };
@@ -163,8 +163,32 @@ function harness(mode = 'capilar', history = null) {
     if (Array.isArray(node)) return node.flatMap(all);
     return [node, ...all(node.props?.children)];
   };
-  return { render, all, requests, saved: () => saved };
+  const renderExpanded = () => {
+    let tree = render();
+    const toggle = all(tree).find(node => node.type === 'button' && node.props?.['aria-label'] === 'Sesiones independientes');
+    if (toggle?.props['aria-expanded'] === false) {
+      toggle.props.onClick();
+      tree = render();
+    }
+    return tree;
+  };
+  return { render: renderExpanded, renderCollapsed: render, all, requests, saved: () => saved };
 }
+
+test('UI: historial independiente empieza plegado y permite abrir sesiones bajo demanda', () => {
+  const h = harness();
+  let tree = h.renderCollapsed();
+  const toggle = h.all(tree).find(node => node.type === 'button' && node.props?.['aria-label'] === 'Sesiones independientes');
+  assert.equal(toggle.props['aria-expanded'], false);
+  assert.equal(h.all(tree).find(node => node.props?.id === 'independent-sessions').props.hidden, true);
+  toggle.props.onClick();
+  tree = h.renderCollapsed();
+  assert.equal(h.all(tree).find(node => node.props?.['aria-label'] === 'Sesiones independientes').props['aria-expanded'], true);
+  assert.equal(h.all(tree).find(node => node.props?.id === 'independent-sessions').props.hidden, false);
+  assert.equal(h.all(tree).filter(node => node.type === 'button' && node.props?.['data-treatment-id'] != null).length, 1);
+  assert.equal(h.requests.length, 0);
+});
+
     test('UI: historial unificado filtra sin cambiar ni perder el borrador y carga modo de cada sesión', () => {
       const h = harness('facial', [
         session({ id: 1, treatment_mode: 'facial', procedure_name: 'Facial ficticio' }),
@@ -172,7 +196,7 @@ function harness(mode = 'capilar', history = null) {
         session({ id: 3, treatment_mode: 'capilar', procedure_name: 'Capilar ficticio' }),
         session({ id: 4, consultation_id: 11, procedure_name: 'Consulta anterior' }),
       ]);
-      const cards = tree => h.all(tree).filter(node => node.type === 'motion.div' && node.props.onClick);
+      const cards = tree => h.all(tree).filter(node => node.type === 'button' && node.props?.['data-treatment-id'] != null);
       let tree = h.render();
       assert.equal(cards(tree).length, 3);
       cards(tree)[1].props.onClick();
@@ -192,7 +216,7 @@ function harness(mode = 'capilar', history = null) {
     test('UI: cambio anatómico requiere confirmación y conserva procedimiento, notas y abono', () => {
       const h = harness('facial');
       let tree = h.render();
-      h.all(tree).find(node => node.type === 'motion.div' && node.props.onClick).props.onClick();
+      h.all(tree).find(node => node.type === 'button' && node.props?.['data-treatment-id'] != null).props.onClick();
       tree = h.render();
       const modeButton = h.all(tree).find(node => node.type === 'button'
         && node.props['aria-pressed'] === false && String(node.props.className).includes('min-h-[4rem]'));
@@ -219,11 +243,12 @@ function harness(mode = 'capilar', history = null) {
       const h = harness('facial', [session({ treatment_mode: 'corporal', parameters: {} })]);
       const tree = h.render();
       const duplicate = h.all(tree).find(node => node.props?.['aria-label'] === 'Duplicar tratamiento'
-        && String(node.props.className).includes('opacity-70'));
+        && node.props?.['data-duplicate-treatment-id'] != null);
       await duplicate.props.onClick({ stopPropagation() {} });
       await new Promise(resolve => setImmediate(resolve));
-      assert.equal(h.requests.length, 1);
-      const body = JSON.parse(h.requests[0].options.body);
+      const writes = h.requests.filter(request => request.options?.method === 'POST');
+      assert.equal(writes.length, 1);
+      const body = JSON.parse(writes[0].options.body);
       assert.equal(body.treatment_mode, 'corporal');
       assert.equal(body.id, undefined);
       assert.equal(body.consultation_id, 10);
@@ -232,7 +257,7 @@ function harness(mode = 'capilar', history = null) {
 test('UI: siguiente sesión es borrador sin request; Guardar persiste control con JSONB existente', async () => {
   const h = harness();
   let tree = h.render();
-  const card = h.all(tree).find(node => node.type === 'motion.div' && node.props.onClick);
+  const card = h.all(tree).find(node => node.type === 'button' && node.props?.['data-treatment-id'] != null);
   assert.ok(card);
   card.props.onClick();
   tree = h.render();
@@ -253,9 +278,10 @@ test('UI: siguiente sesión es borrador sin request; Guardar persiste control co
   tree = h.render();
   const saveTooltip = h.all(tree).find(node => node.type === 'Tooltip' && node.props.content === 'Guardar');
   await saveTooltip.props.children.props.onClick();
-  assert.equal(h.requests.length, 1);
-  assert.match(h.requests[0].url, /action=addTreatment/);
-  const body = JSON.parse(h.requests[0].options.body);
+  const writes = h.requests.filter(request => request.options?.method === 'POST');
+  assert.equal(writes.length, 1);
+  assert.match(writes[0].url, /action=addTreatment/);
+  const body = JSON.parse(writes[0].options.body);
   assert.equal(body.record_id, 7);
   assert.equal(body.consultation_id, 10);
   assert.equal(body.parameters.__follow_up.purpose, 'control');
@@ -276,7 +302,7 @@ test('UI: cambiar evaluación actualiza el groom Savin de Tratamientos Capilares
   const h = harness();
   let tree = h.render();
   assert.equal(h.all(tree).some(node => node.type === '../Clinical3DViewer'), false);
-  h.all(tree).find(node => node.type === 'motion.div' && node.props.onClick).props.onClick();
+  h.all(tree).find(node => node.type === 'button' && node.props?.['data-treatment-id'] != null).props.onClick();
   tree = h.render();
   const modal = h.all(tree).find(node => node.type === './ClinicalDataModal');
   modal.props.onSave(assessment);
@@ -303,7 +329,7 @@ test('UI: mapas Facial y Corporal conservan su carga opcional bajo demanda', () 
   for (const mode of ['facial', 'corporal']) {
     const h = harness(mode);
     let tree = h.render();
-    h.all(tree).find(node => node.type === 'motion.div' && node.props.onClick).props.onClick();
+    h.all(tree).find(node => node.type === 'button' && node.props?.['data-treatment-id'] != null).props.onClick();
     tree = h.render();
     const stepButtons = h.all(tree).filter(node => node.type === 'button' && String(node.props.className).includes('min-h-16'));
     stepButtons[1].props.onClick();

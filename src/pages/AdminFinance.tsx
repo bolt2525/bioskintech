@@ -57,6 +57,7 @@ type FinancePeriod = 'all' | 'today' | 'week' | 'month' | 'custom';
 
 interface TreatmentFinanceEntry {
   id: number;
+  type: FinanceRecord['type'];
   date: string;
   description: string;
   total: number;
@@ -65,6 +66,7 @@ interface TreatmentFinanceEntry {
 
 interface TreatmentFinanceGroup {
   key: string;
+  patientKey: string;
   patientName: string;
   packageLabel: string;
   total: number;
@@ -83,12 +85,18 @@ const getInvoiceStatus = (record: { invoice_number?: string }): {
   return { label: 'Sin factura registrada', state: 'none' };
 };
 
-/** Etiqueta corta de origen para el badge de un registro de Tratamientos: usa el nombre real
- *  del paquete (extraído de la descripción) en vez de mostrar solo el ID. */
+/** El nombre puede contener « · »: solo retirar el sufijo estructural conocido,
+ * no cortar por el primer separador. Si el formato es desconocido, conservarlo. */
+const getTreatmentPackageLabel = (record: { source_package_id?: number; description?: string }): string => {
+  if (!record.source_package_id) return 'Sesiones independientes';
+  const description = record.description || '';
+  const match = /^Paquete (.+) · (?:abono inicial|sesión .+)$/s.exec(description);
+  return match?.[1] || description || `Paquete #${record.source_package_id}`;
+};
+
 const getTreatmentOriginLabel = (record: { source_package_id?: number; description?: string }): string => {
   if (!record.source_package_id) return 'Sesión individual';
-  const match = /^Paquete (.+?) ·/.exec(record.description || '');
-  return match?.[1] ? `Paquete: ${match[1]}` : `Paquete #${record.source_package_id}`;
+  return `Paquete: ${getTreatmentPackageLabel(record)}`;
 };
 
 /** El abono inicial de un paquete se gestiona desde Tratamientos (modal de paquete), que mantiene
@@ -286,25 +294,24 @@ const AdminFinance = () => {
     for (const record of filteredRecords) {
       if (record.source_module !== 'treatments') continue;
       // Clave única por paciente: nunca mezclar sesiones independientes de pacientes distintos.
-      const patientKey = record.source_record_id ?? `sin-expediente-${record.id}`;
-      const key = record.source_package_id ? `package-${record.source_package_id}` : `independent-${patientKey}`;
-      const packageNameMatch = /^Paquete (.+?) ·/.exec(record.description || '');
+      const patientKey = String(record.source_record_id ?? `sin-expediente-${record.id}`);
+      const key = `${patientKey}-${record.source_package_id ? `package-${record.source_package_id}` : 'independent'}`;
       const current: TreatmentFinanceGroup = groups.get(key) || {
         key,
+        patientKey,
         patientName: record.entity || 'Paciente sin nombre',
-        packageLabel: record.source_package_id
-          ? (packageNameMatch?.[1] ? packageNameMatch[1] : `Paquete #${record.source_package_id}`)
-          : 'Sesiones independientes',
+        packageLabel: getTreatmentPackageLabel(record),
         total: 0,
         count: 0,
         packageId: record.source_package_id,
         entries: [],
       };
-      const total = parseFloat(String(record.total || 0));
+      const total = parseFloat(String(record.total || 0)) * (record.type === 'egreso' ? -1 : 1);
       current.total += total;
       current.count += 1;
       current.entries.push({
         id: record.id,
+        type: record.type,
         date: record.date,
         description: record.description || (record.source_package_id ? 'Abono de paquete' : 'Sesión de tratamiento'),
         total,
@@ -316,6 +323,20 @@ const AdminFinance = () => {
       .map(group => ({ ...group, entries: group.entries.sort((a, b) => (a.date < b.date ? 1 : -1)) }))
       .sort((a, b) => b.total - a.total);
   }, [filteredRecords]);
+
+  const treatmentFinancePatients = useMemo(() => {
+    const patients = new Map<string, { key: string; name: string; total: number; count: number; groups: TreatmentFinanceGroup[] }>();
+    for (const group of treatmentFinanceGroups) {
+      const patient = patients.get(group.patientKey) || {
+        key: group.patientKey, name: group.patientName, total: 0, count: 0, groups: [],
+      };
+      patient.total += group.total;
+      patient.count += group.count;
+      patient.groups.push(group);
+      patients.set(patient.key, patient);
+    }
+    return Array.from(patients.values());
+  }, [treatmentFinanceGroups]);
 
   const toggleTreatmentGroupExpand = (key: string) => setExpandedTreatmentGroups(prev => {
     const next = new Set(prev);
@@ -1022,41 +1043,52 @@ const AdminFinance = () => {
           <MetricCard title="Balance IVA" amount={metrics.totalIVA} icon={PieChart} color={metrics.totalIVA >= 0 ? "orange" : "blue"} currencySymbol={currencySymbol} />
         </div>
 
-        {treatmentFinanceGroups.length > 0 ? (
-          <section className="mb-8 rounded-2xl border border-gold/40 bg-gradient-to-br from-gold/10 to-white p-5 shadow-sm">
+        <section className="mb-8 rounded-2xl border border-gold/40 bg-white p-3 shadow-sm sm:p-5">
             <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h3 className="flex items-center gap-2 font-bold text-gray-900">
                   <BadgeDollarSign className="h-5 w-5 text-gold-ink" aria-hidden="true" />
-                  Cobros enviados desde Tratamientos
+                  Tratamientos en Finanzas
                 </h3>
-                <p className="mt-1 text-xs text-gray-500">Agrupados por paciente y paquete; las sesiones independientes de distintos pacientes nunca se mezclan.</p>
+                <p className="mt-1 max-w-3xl text-xs leading-5 text-gray-600">
+                  Total neto (ingresos menos egresos) de asientos visibles según el período y los filtros actuales. No incluye importes clínicos sin registro en Finanzas ni garantiza coincidencia con lo anotado en Tratamientos.
+                </p>
               </div>
               <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-gold-ink shadow-sm">
-                {treatmentFinanceGroups.reduce((sum, group) => sum + group.count, 0)} movimientos
+                Total en Finanzas {currencySymbol}{treatmentFinancePatients.reduce((sum, patient) => sum + patient.total, 0).toFixed(2)}
+                {' · '}{treatmentFinanceGroups.reduce((sum, group) => sum + group.count, 0)} movimientos
               </span>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              {treatmentFinanceGroups.map(group => {
+            {loading ? <p className="py-3 text-sm text-gray-600" role="status">Actualizando registros…</p> : null}
+            {!loading && !treatmentFinancePatients.length ? <p className="py-3 text-sm text-gray-600">Sin registros de Tratamientos para el período y los filtros actuales.</p> : null}
+            <div className="divide-y divide-gold/20">
+              {treatmentFinancePatients.map(patient => (
+                <details key={patient.key} className="group/patient">
+                  <summary className="admin-focus-ring cursor-pointer rounded-lg px-2 py-3 text-sm hover:bg-gold/5">
+                    <span className="ml-1 inline-flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-x-4 gap-y-1 align-middle">
+                      <span className="min-w-0 break-words font-semibold text-gray-900">{patient.name}</span>
+                      <span className="text-xs text-gray-600">{patient.groups.length} grupo{patient.groups.length === 1 ? '' : 's'} · {patient.count} movimientos</span>
+                      <span className="font-semibold tabular-nums text-gold-ink">En Finanzas {currencySymbol}{patient.total.toFixed(2)}</span>
+                    </span>
+                  </summary>
+                  <div className="mb-2 ml-2 divide-y divide-gray-100 border-l border-gold/30 pl-2 sm:ml-5 sm:pl-3">
+              {patient.groups.map(group => {
                 const isExpanded = expandedTreatmentGroups.has(group.key);
                 const detailId = `treatment-group-${group.key}`;
                 return (
-                  <article key={group.key} className="rounded-xl border border-white bg-white/90 p-4 shadow-sm">
-                    <p className="truncate text-sm font-bold text-gray-900">{group.patientName}</p>
-                    <p className="mt-0.5 flex items-center gap-1 truncate text-xs font-semibold uppercase tracking-wide text-gold-ink">
-                      <Package className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                      {group.packageLabel}
-                    </p>
-                    <p className="mt-2 text-2xl font-bold tabular-nums text-gray-900">{currencySymbol}{group.total.toFixed(2)}</p>
-                    <p className="mt-1 text-xs text-gray-500">{group.count} cobro{group.count === 1 ? '' : 's'} registrado{group.count === 1 ? '' : 's'}</p>
+                  <article key={group.key} className="py-1">
                     <button
                       type="button"
                       onClick={() => toggleTreatmentGroupExpand(group.key)}
                       aria-expanded={isExpanded}
                       aria-controls={detailId}
-                      className="admin-focus-ring mt-3 flex min-h-9 w-full items-center justify-between rounded-lg border border-gold/30 bg-gold/5 px-2.5 text-xs font-semibold text-gold-ink hover:bg-gold/10"
+                      className="admin-focus-ring flex min-h-11 w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-lg px-2 py-2 text-left text-xs text-gray-700 hover:bg-gold/5"
                     >
-                      <span>{isExpanded ? 'Ocultar detalle de pagos' : 'Ver detalle de pagos'}</span>
+                      <Package className="h-3.5 w-3.5 shrink-0 text-gold-ink" aria-hidden="true" />
+                      <span className="min-w-0 flex-1 break-words font-semibold text-gray-900">{group.packageLabel}</span>
+                      <span>{group.count} asientos</span>
+                      <span className="font-semibold tabular-nums text-gold-ink">En Finanzas {currencySymbol}{group.total.toFixed(2)}</span>
+                      <span className="sr-only">{isExpanded ? 'Ocultar asientos' : 'Ver asientos'}</span>
                       {isExpanded ? <ChevronUp size={14} aria-hidden="true" /> : <ChevronDown size={14} aria-hidden="true" />}
                     </button>
                     {isExpanded ? (
@@ -1065,11 +1097,13 @@ const AdminFinance = () => {
                           const invoiceStatus = getInvoiceStatus(entry);
                           return (
                             <li key={entry.id} className="rounded-lg bg-gray-50 p-2 text-xs">
-                              <div className="flex items-center justify-between gap-2">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
                                 <span className="text-gray-500">{formatFinanceDate(entry.date)}</span>
-                                <span className="font-semibold tabular-nums text-gray-900">{currencySymbol}{entry.total.toFixed(2)}</span>
+                                <span className="font-semibold tabular-nums text-gray-900">
+                                  {entry.type === 'egreso' ? 'Egreso' : 'Ingreso'} · {entry.total < 0 ? '−' : '+'}{currencySymbol}{Math.abs(entry.total).toFixed(2)}
+                                </span>
                               </div>
-                              <p className="mt-0.5 truncate text-gray-700">{entry.description}</p>
+                              <p className="mt-0.5 break-words text-gray-700">{entry.description}</p>
                               <span
                                 className={`mt-1 inline-flex items-center gap-1 text-[11px] font-medium ${invoiceStatus.state === 'present' ? 'text-gray-600' : 'text-gray-400'}`}
                                 title={invoiceStatus.state === 'none' ? NO_INVOICE_EXPLANATION : undefined}
@@ -1085,9 +1119,11 @@ const AdminFinance = () => {
                   </article>
                 );
               })}
+                  </div>
+                </details>
+              ))}
             </div>
           </section>
-        ) : null}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
           <div className="bg-white p-6 rounded-2xl shadow-md border border-gray-100">

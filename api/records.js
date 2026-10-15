@@ -362,6 +362,65 @@ async function getPackageInitialPosting(db, recordId, sessionUser) {
   return result.rows[0];
 }
 
+export async function attachTreatmentFinanceSummary(db, { treatments = [], packages = [], recordId, consultationId = null, clinicId, sessionUser }) {
+  const summaries = new Map();
+  const readable = sessionUser?.role === 'master_admin' || sessionUser?.finance_enabled === true;
+  if (readable && (treatments.length || packages.length)) {
+    const result = await db.query(
+      `SELECT fr.source_type, fr.source_id, fr.total, fr.type,
+         CASE WHEN fr.source_type = 'treatment_session' THEN t.package_id ELSE tp.id END AS package_id,
+         ($4::boolean = false OR fr.created_by_user_id = $5 OR fr.created_by_user_id IN (
+           SELECT sgm2.clinic_user_id FROM sharing_group_members sgm1
+           JOIN sharing_group_members sgm2 ON sgm1.group_id = sgm2.group_id
+           WHERE sgm1.clinic_user_id = $5
+         )) AS finance_visible
+       FROM financial_records fr
+       LEFT JOIN treatments t ON fr.source_type = 'treatment_session'
+         AND t.id = fr.source_id AND t.clinic_id = fr.clinic_id
+       LEFT JOIN treatment_packages tp ON fr.source_type = 'treatment_package_initial'
+         AND tp.id = fr.source_id AND tp.clinic_id = fr.clinic_id
+       WHERE fr.clinic_id = $1 AND fr.source_module = 'treatments'
+         AND ((t.record_id = $2 AND ($3::int IS NULL OR t.consultation_id = $3))
+           OR (tp.record_id = $2 AND ($3::int IS NULL OR tp.consultation_id = $3)))`,
+      [clinicId, recordId, consultationId,
+        sessionUser.role !== 'master_admin' && sessionUser.finance_scope === 'own', sessionUser.user_id]
+    ).catch(error => {
+      console.error('Treatment finance summary read failed:', error.code || error.name);
+      throw new Error('No se pudieron consultar los cobros en Finanzas. Intenta nuevamente.');
+    });
+    const add = (key, row) => {
+      const value = summaries.get(key) || { count: 0, cents: 0, restricted: false };
+      value.restricted ||= row.finance_visible !== true;
+      value.count++;
+      value.cents += Math.round(Number(row.total) * 100) * (row.type === 'egreso' ? -1 : 1);
+      summaries.set(key, value);
+    };
+    for (const row of result.rows) {
+      add(`${row.source_type}:${row.source_id}`, row);
+      if (row.package_id != null) add(`package:${row.package_id}`, row);
+    }
+  }
+  const fields = key => {
+    const value = summaries.get(key);
+    const restricted = !readable || value?.restricted === true;
+    return {
+      finance_record_count: restricted ? null : value?.count || 0,
+      finance_registered_total: restricted ? null : (value?.cents || 0) / 100,
+    };
+  };
+  return {
+    treatments: treatments.map(row => ({ ...row, ...fields(`treatment_session:${row.id}`) })),
+    packages: packages.map(row => {
+      const initial = fields(`treatment_package_initial:${row.id}`);
+      return {
+        ...row, ...fields(`package:${row.id}`),
+        initial_finance_record_count: initial.finance_record_count,
+        initial_finance_registered_total: initial.finance_registered_total,
+      };
+    }),
+  };
+}
+
 function getSigningSessionCookie(req) {
   const prefix = `${SIGNING_SESSION_COOKIE}=`;
   const item = String(req.headers.cookie || '').split(';').map(value => value.trim()).find(value => value.startsWith(prefix));
@@ -2730,6 +2789,10 @@ export default async function handler(req, res) {
           safeQuery('SELECT * FROM consultations WHERE record_id = $1 ORDER BY created_at DESC', [targetRecordId])
         ]);
 
+        const treatmentFinance = await attachTreatmentFinanceSummary(pool, {
+          treatments: treatments.rows, recordId: targetRecordId,
+          clinicId: recordDetails.rows[0].clinic_id, sessionUser: su,
+        });
         return res.status(200).json({
           recordId: targetRecordId,
           patientId: patientIdFromRecord,
@@ -2737,7 +2800,7 @@ export default async function handler(req, res) {
           history: history.rows[0] || {},
           physicalExams: physical.rows,
           diagnoses: diagnoses.rows,
-          treatments: treatments.rows,
+          treatments: treatmentFinance.treatments,
           prescriptions: prescriptions.rows,
           consentForms: consents.rows,
           injectables: injectables.rows,
@@ -3406,7 +3469,11 @@ export default async function handler(req, res) {
            ORDER BY tp.created_at DESC`,
           [lpRecordId, lpConsultId, effectiveClinicId, includeArchived === 'true']
         );
-        return res.status(200).json(pkgs.rows);
+        const packageFinance = await attachTreatmentFinanceSummary(pool, {
+          packages: pkgs.rows, recordId: lpRecordId, consultationId: lpConsultId,
+          clinicId: effectiveClinicId, sessionUser: su,
+        });
+        return res.status(200).json(packageFinance.packages);
       }
 
       case 'deletePackage': {

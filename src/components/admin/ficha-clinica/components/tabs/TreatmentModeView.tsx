@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Calendar, DollarSign, Clock, Save, Trash2, Copy, Check, AlertCircle, FileText, Pencil, Layers, History, Eye, X, ChevronDown, ChevronLeft, ChevronRight, Sparkles, Wrench, Package, Wallet, ClipboardList, MapPin, CircleDashed, Undo2, CheckCircle2, ScanSearch, ScanFace, PersonStanding, Archive } from 'lucide-react';
+import { Plus, Calendar, DollarSign, Clock, Save, Trash2, Copy, Check, AlertCircle, Pencil, Layers, History, Eye, X, ChevronDown, ChevronLeft, ChevronRight, Sparkles, Wrench, Package, Wallet, ClipboardList, MapPin, CircleDashed, Undo2, CheckCircle2, ScanSearch, ScanFace, PersonStanding, Archive } from 'lucide-react';
 import CrossConsultHistoryModal, { type ConsultationRef } from '../CrossConsultHistoryModal';
 import TreatmentParametersModal, { type TreatmentParameters, formatParametersAsText, upsertNotesBlock, removeNotesBlock } from './TreatmentParametersModal';
 import TreatmentPackageModal from './TreatmentPackageModal';
 import TreatmentFinanceOptions from './TreatmentFinanceOptions';
+import TreatmentFinanceSummary from './TreatmentFinanceSummary';
 import ClinicalDataModal from './ClinicalDataModal';
 import TreatmentFollowUpPanel from './TreatmentFollowUpPanel';
 import Clinical3DViewer from '../Clinical3DViewer';
@@ -27,7 +28,8 @@ import {
   type Treatment, type TreatmentMode, type TreatmentPackage,
   createFinancePostingOptions, type FinancePostingOptions,
   type PostCareData, type AnthropometricsData, type ScalpAssessmentData,
-  getPackageDebt, getPackagePaidTotal, getAreaMarkers, RESERVED_PARAM_KEYS, TREATMENT_MODE_LABELS,
+  getPackageDebt, getAreaMarkers, RESERVED_PARAM_KEYS, TREATMENT_MODE_LABELS,
+  formatTreatmentAmount, getTreatmentFinanceLabel,
 } from '../../types/treatment';
 
 /** Zonas sugeridas por modo (chips clickeables para etiquetar cada marcación anatómica) */
@@ -92,30 +94,6 @@ function ModeBadge({ mode }: { mode: TreatmentMode }) {
   return <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${MODE_META[mode].badge}`}>
     <Icon className="h-3 w-3" aria-hidden="true" />{TREATMENT_MODE_LABELS[mode]}
   </span>;
-}
-
-/** Resumen corto (badge) de los datos clínicos del modo, para mostrar en las tarjetas del historial */
-function getClinicalDataBadge(t: Treatment, mode: TreatmentMode): string | null {
-  const data = t.parameters?.[RESERVED_PARAM_KEYS[mode]] as PostCareData | AnthropometricsData | ScalpAssessmentData | undefined;
-  if (!data) return null;
-  if (mode === 'facial') {
-    const d = data as PostCareData;
-    if (d.erythema == null && d.edema == null) return null;
-    return `Eritema ${d.erythema ?? '-'} · Edema ${d.edema ?? '-'}`;
-  }
-  if (mode === 'corporal') {
-    const d = data as AnthropometricsData;
-    const waistBefore = parseFloat(d.before?.waist || '');
-    const waistAfter = parseFloat(d.after?.waist || '');
-    if (!isNaN(waistBefore) && !isNaN(waistAfter)) {
-      const delta = waistAfter - waistBefore;
-      return `Cintura: ${delta > 0 ? '+' : ''}${delta.toFixed(1)}cm`;
-    }
-    return Object.values(d.before || {}).some(Boolean) ? 'Antropometría registrada' : null;
-  }
-  const d = data as ScalpAssessmentData;
-  if (!d.scale) return null;
-  return describeTreatmentAssessment(t, mode);
 }
 
 function ClinicalSummaryPanel({
@@ -385,7 +363,7 @@ interface TreatmentModeViewProps {
   patientName?: string;
   consultationId?: number;
   consultations?: ConsultationRef[];
-  onSave: () => void;
+  onSave: () => void | Promise<void>;
 }
 
 /**
@@ -440,6 +418,7 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
   const [packageModalOpen, setPackageModalOpen] = useState(false);
   const [editingPackage, setEditingPackage] = useState<TreatmentPackage | null>(null);
   const [expandedPackages, setExpandedPackages] = useState<Set<number>>(new Set());
+  const [independentOpen, setIndependentOpen] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
 
   const loadPackages = useCallback(async () => {
@@ -480,6 +459,8 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
     const requestCounter = packageRequestId;
     setPackages([]);
     setArchivedPackages([]);
+    setExpandedPackages(new Set());
+    setIndependentOpen(false);
     void loadPackages();
     return () => { requestCounter.current++; };
   }, [loadPackages]);
@@ -519,6 +500,12 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
   };
 
   const handleSelect = (treatment: Treatment) => {
+    if (treatment.package_id) {
+      setExpandedPackages(prev => new Set(prev).add(treatment.package_id!));
+    } else {
+      setIndependentOpen(true);
+      expandGroup((treatment.procedure_name || 'Sin procedimiento').trim().toLowerCase());
+    }
     setActiveStep(1);
     setCurrentTreatment({ ...treatment, date: toDateOnly(treatment.date) });
     setCostInput(treatment.cost > 0 ? String(treatment.cost) : '');
@@ -591,9 +578,12 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
     try {
       const action = currentTreatment.id ? 'updateTreatment' : 'addTreatment';
       const shouldPostToFinance = financePosting.enabled && Number(currentTreatment.cost) > 0;
+      const treatmentInput = { ...currentTreatment };
+      delete treatmentInput.finance_record_count;
+      delete treatmentInput.finance_registered_total;
       const body = {
         record_id: recordId,
-        ...currentTreatment,
+        ...treatmentInput,
         ...(consultationId ? { consultation_id: consultationId } : {}),
         finance_posting: {
           ...financePosting,
@@ -612,15 +602,24 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
         throw new Error(resBody?.error || `Error al guardar (HTTP ${response.status})`);
       }
 
-      onSave();
-      if (currentTreatment.package_id) loadPackages();
+      const [, packagesRefreshed] = await Promise.all([onSave(), loadPackages()]);
       const savedId = currentTreatment.id ?? resBody?.id ?? null;
+      if (currentTreatment.package_id) {
+        setExpandedPackages(prev => new Set(prev).add(currentTreatment.package_id!));
+      } else {
+        setIndependentOpen(true);
+        expandGroup((currentTreatment.procedure_name || 'Sin procedimiento').trim().toLowerCase());
+      }
       if (!currentTreatment.id) {
         handleNew();
       }
       if (savedId != null) {
         setHighlightedId(savedId);
         setTimeout(() => setHighlightedId(null), 2500);
+      }
+      if (!packagesRefreshed) {
+        setMessage({ type: 'error', text: 'La sesión se guardó, pero no se pudo actualizar el resumen. Vuelve a cargar el expediente.' });
+        return;
       }
       setMessage({
         type: 'success',
@@ -652,10 +651,11 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
       const resBody = await response.json().catch(() => null);
 
       if (response.ok) {
-        onSave();
-        if (currentTreatment.package_id) loadPackages();
+        const [, packagesRefreshed] = await Promise.all([onSave(), loadPackages()]);
         handleNew();
-        setMessage({ type: 'success', text: resBody?.message || 'Tratamiento eliminado correctamente' });
+        setMessage(packagesRefreshed
+          ? { type: 'success', text: resBody?.message || 'Tratamiento eliminado correctamente' }
+          : { type: 'error', text: 'La sesión se eliminó, pero no se pudo actualizar el resumen. Vuelve a cargar el expediente.' });
       } else {
         throw new Error(resBody?.error || `Error al eliminar (HTTP ${response.status})`);
       }
@@ -677,6 +677,8 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
     try {
       const rest = { ...target };
       delete rest.id;
+      delete rest.finance_record_count;
+      delete rest.finance_registered_total;
 
       // Si pertenece a un paquete, asegurar que el costo no supere el saldo pendiente del paquete
       let safeCost = Number(rest.cost) || 0;
@@ -706,9 +708,8 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
         throw new Error(resBody?.error || `Error al duplicar (HTTP ${response.status})`);
       }
 
-      onSave();
+      const [, packagesRefreshed] = await Promise.all([onSave(), loadPackages()]);
       if (rest.package_id) {
-        await loadPackages();
         setExpandedPackages(prev => new Set(prev).add(rest.package_id!));
       }
       const newTreatment: Treatment = { ...resBody, date: toDateOnly(resBody.date) };
@@ -720,6 +721,10 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
       }
       setHighlightedId(newTreatment.id ?? null);
       setTimeout(() => setHighlightedId(null), 2500);
+      if (!packagesRefreshed) {
+        setMessage({ type: 'error', text: 'La sesión se duplicó, pero no se pudo actualizar el resumen. Vuelve a cargar el expediente.' });
+        return;
+      }
       setMessage({
         type: 'success',
         text: rest.package_id
@@ -898,31 +903,30 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
   };
 
   const renderSessionCard = (t: Treatment, index: number) => (
-    <motion.div
+    <div
       key={t.id || index}
-      role="button"
-      tabIndex={0}
-      aria-label={`Abrir sesión ${t.procedure_name || 'Sin procedimiento'} (${TREATMENT_MODE_LABELS[t.treatment_mode || 'facial']})`}
-      onKeyDown={event => {
-        if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
-          event.preventDefault();
-          handleSelect(t);
-        }
-      }}
-      whileHover={{ scale: 1.02 }}
-      whileTap={{ scale: 0.98 }}
-      onClick={() => handleSelect(t)}
-      className={`admin-focus-ring p-3 rounded-xl cursor-pointer border transition-colors shadow-sm ${
-        highlightedId === t.id ? 'ring-2 ring-[#b8944d] ring-offset-2 ring-offset-white animate-pulse' : ''
+      className={`flex items-start gap-1 rounded-lg border transition-colors ${
+        highlightedId === t.id ? 'ring-2 ring-gold-dark ring-offset-2 ring-offset-white' : ''
       } ${
         currentTreatment.id === t.id
           ? 'bg-gold/10 text-gray-900 border-gold shadow-sm ring-1 ring-gold/20'
           : 'bg-white border-gray-200 hover:bg-gold/5 hover:border-gold/50'
       }`}
     >
-      <div className="flex justify-between items-center text-xs">
-        <span className="font-medium">{new Date(toDateOnly(t.date) + 'T12:00:00').toLocaleDateString('es-EC')}</span>
-        <div className="flex items-center gap-1">
+      <button type="button" onClick={() => handleSelect(t)}
+        data-treatment-id={t.id}
+        aria-label={`Cargar sesión ${t.procedure_name || 'Sin procedimiento'} del ${toDateOnly(t.date)}`}
+        aria-pressed={currentTreatment.id != null && currentTreatment.id === t.id}
+        className="admin-focus-ring min-w-0 flex-1 rounded-lg p-2 text-left hover:bg-gold/5">
+        <span className="flex flex-wrap items-center gap-1.5 text-[11px] text-gray-600">
+          {new Date(toDateOnly(t.date) + 'T12:00:00').toLocaleDateString('es-EC')}
+          <ModeBadge mode={t.treatment_mode || 'facial'} />
+        </span>
+        <span className="mt-1 block break-words text-xs font-semibold">{t.procedure_name || 'Sin procedimiento'}</span>
+        <span className="mt-1 block text-[11px] tabular-nums text-gray-700">Anotado {formatTreatmentAmount(Number(t.cost))}</span>
+        <span className="block text-[11px] font-medium tabular-nums text-gold-ink">{getTreatmentFinanceLabel(t, Number(t.cost))}</span>
+      </button>
+      <div className="pr-1 pt-1">
           <Tooltip content="Duplicar como nueva sesión">
             <button
               type="button"
@@ -931,25 +935,15 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
                 e.stopPropagation();
                 void handleDuplicate(t);
               }}
-              className="p-1 rounded hover:bg-black/10 text-inherit opacity-70 hover:opacity-100 transition-opacity"
+              className="admin-focus-ring flex min-h-9 min-w-9 items-center justify-center rounded-lg text-gray-600 hover:bg-gold/10"
               aria-label="Duplicar tratamiento"
+              data-duplicate-treatment-id={t.id}
             >
-              <Copy className="w-3.5 h-3.5" />
+              <Copy className="w-3.5 h-3.5" aria-hidden="true" />
             </button>
           </Tooltip>
-          <FileText className="w-3.5 h-3.5 opacity-60" />
-        </div>
       </div>
-      <div className="text-sm font-semibold break-words mt-1">{t.procedure_name || 'Sin procedimiento'}</div>
-      <div className="text-xs opacity-75 truncate">{t.equipment_used || 'Sin equipo'}</div>
-      <div className="mt-1 text-[10px]">{getFollowUpLabel(t)}</div>
-      <div className="mt-1"><ModeBadge mode={t.treatment_mode || 'facial'} /></div>
-      {getClinicalDataBadge(t, t.treatment_mode || 'facial') && (
-        <div className="text-[10px] mt-1 break-words rounded px-1.5 py-0.5 inline-block bg-gold/10 text-gold-ink">
-          {getClinicalDataBadge(t, t.treatment_mode || 'facial')}
-        </div>
-      )}
-    </motion.div>
+    </div>
   );
 
   return (
@@ -1010,16 +1004,20 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
         </button>
         {packagesLoading ? <p className="text-xs text-gray-500" role="status">Actualizando paquetes…</p> : null}
         {showArchived ? <div className="space-y-2">
-          <p className="text-xs text-gray-600">Conservan pagos y saldo. Archivar no realiza devoluciones.</p>
+          <p className="text-xs text-gray-600">Conservan importes anotados y saldo clínico. Archivar no realiza devoluciones.</p>
           {archivedPackages.map(pkg => <div key={pkg.id} className="rounded-lg border border-gray-200 bg-gray-50 p-2 text-xs">
             <p className="font-semibold">{pkg.name}</p>
-            <p>Pagado: ${getPackagePaidTotal(pkg).toFixed(2)} · Saldo: ${getPackageDebt(pkg).toFixed(2)}</p>
+            <TreatmentFinanceSummary pkg={pkg} />
+            <p>Saldo clínico: {formatTreatmentAmount(getPackageDebt(pkg))}</p>
             <button type="button" disabled={packageBusy} onClick={() => void handlePackageAction(pkg, true)}
               className="admin-focus-ring mt-1 min-h-9 rounded-lg border border-gold px-2 font-semibold text-gold-ink disabled:opacity-50">Restaurar paquete</button>
           </div>)}
           {!archivedPackages.length ? <p className="text-xs text-gray-400">Sin paquetes archivados</p> : null}
         </div> : null}
         <div className="flex-1 overflow-y-auto space-y-3 max-h-[260px] md:max-h-none pr-1 custom-scrollbar">
+          <p className="text-[11px] leading-4 text-gray-600">
+            Anotado es el importe clínico, no un cobro financiero. Finanzas muestra el histórico completo visible, sin filtro de período. Diferencia = anotado − Finanzas; puede ser negativa y no representa deuda. No crea cobros ni implica conciliación.
+          </p>
           {historyFilter !== 'all' && !sortedTreatments.length
             ? <p className="text-xs text-gray-500">Sin sesiones de este modo en la consulta activa.</p> : null}
           {isEmpty ? (
@@ -1033,23 +1031,23 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
               {packages.map(pkg => {
                 const isCollapsed = !expandedPackages.has(pkg.id!);
                 const debt = getPackageDebt(pkg);
-                const paid = getPackagePaidTotal(pkg);
                 const pkgSessions = sortedTreatments.filter(t => t.package_id === pkg.id);
                 const allPkgSessions = consultationTreatments.filter(t => t.package_id === pkg.id);
                 if (historyFilter !== 'all' && !pkgSessions.length) return null;
                 return (
                   <div key={pkg.id} className="space-y-1.5">
-                    <div className="w-full flex flex-col gap-1 px-2.5 py-2 bg-amber-50 hover:bg-amber-100/70 rounded-lg border border-amber-200 transition-colors text-left">
+                    <div className="w-full flex flex-col gap-1 px-2.5 py-2 bg-gold/5 rounded-lg border border-gold/30 text-left">
                       <div className="flex items-center justify-between gap-1.5 min-w-0">
                         <button
                           type="button"
                           onClick={() => togglePackageExpand(pkg.id!)}
                           aria-expanded={!isCollapsed}
-                          className="flex items-center gap-1.5 min-w-0 flex-1 text-left"
+                          aria-controls={`package-sessions-${pkg.id}`}
+                          className="admin-focus-ring flex min-h-9 items-center gap-1.5 min-w-0 flex-1 rounded text-left hover:bg-gold/10"
                         >
-                          {isCollapsed ? <ChevronRight className="w-3.5 h-3.5 text-amber-700 shrink-0" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-700 shrink-0" />}
-                          <Package className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-                          <span className="text-xs font-bold text-amber-800 break-words">{pkg.name}</span>
+                          {isCollapsed ? <ChevronRight className="w-3.5 h-3.5 text-gold-ink shrink-0" aria-hidden="true" /> : <ChevronDown className="w-3.5 h-3.5 text-gold-ink shrink-0" aria-hidden="true" />}
+                          <Package className="w-3.5 h-3.5 text-gold-ink shrink-0" aria-hidden="true" />
+                          <span className="text-xs font-bold text-gold-ink break-words">{pkg.name}</span>
                         </button>
                         <Tooltip content="Modificar paquete">
                           <button
@@ -1059,7 +1057,7 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
                               setEditingPackage(pkg);
                               setPackageModalOpen(true);
                             }}
-                            className="p-1 rounded text-amber-700 hover:text-amber-950 hover:bg-amber-200/70 transition-colors shrink-0"
+                            className="admin-focus-ring flex min-h-9 min-w-9 items-center justify-center rounded text-gold-ink hover:bg-gold/10 shrink-0"
                             aria-label="Modificar paquete"
                           >
                             <Pencil className="w-3.5 h-3.5" />
@@ -1071,23 +1069,21 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
                             className="admin-focus-ring rounded p-1 text-red-600 hover:bg-red-50 disabled:opacity-50"><Trash2 className="h-3.5 w-3.5" /></button>
                         </Tooltip> : null}
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => togglePackageExpand(pkg.id!)}
-                        className="text-left w-full space-y-0.5"
-                      >
-                        <div className="flex items-center justify-between text-[10px] text-amber-700 pl-5">
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center justify-between gap-1 text-[11px] text-gray-600">
                           <span>{pkg.sessions_count ?? allPkgSessions.length} de {pkg.estimated_sessions} sesiones</span>
                           <span className={`font-semibold ${debt > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                            {debt > 0 ? `Debe $${debt.toFixed(2)}` : 'Pagado'}
+                            Saldo clínico {formatTreatmentAmount(debt)}
                           </span>
                         </div>
-                        <div className="pl-5 text-[10px] text-amber-600">Pagado: ${paid.toFixed(2)} / ${Number(pkg.total_cost).toFixed(2)}</div>
-                      </button>
+                        <TreatmentFinanceSummary pkg={pkg} />
+                        {!isCollapsed ? <p className="text-[11px] text-gray-600">Costo clínico del paquete {formatTreatmentAmount(Number(pkg.total_cost))}</p> : null}
+                      </div>
                     </div>
                     <AnimatePresence initial={false}>
                       {!isCollapsed && (
                         <motion.div
+                          id={`package-sessions-${pkg.id}`}
                           initial={{ height: 0, opacity: 0 }}
                           animate={{ height: 'auto', opacity: 1 }}
                           exit={{ height: 0, opacity: 0 }}
@@ -1105,6 +1101,15 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
               })}
 
               {/* ── Sesiones independientes ──────────────────────────────── */}
+              {independentSessions.length > 0 ? <div>
+                <button type="button" aria-label="Sesiones independientes" aria-expanded={independentOpen} aria-controls="independent-sessions"
+                  onClick={() => setIndependentOpen(value => !value)}
+                  className="admin-focus-ring flex min-h-11 w-full items-center justify-between gap-2 rounded-lg border border-gold/30 bg-gold/5 px-2 text-left text-xs font-semibold text-gold-ink hover:bg-gold/10">
+                  <span>Sesiones independientes ({independentSessions.length})</span>
+                  <ChevronDown className={`h-4 w-4 shrink-0 ${independentOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
+                </button>
+              </div> : null}
+              <div id="independent-sessions" hidden={!independentOpen} className="space-y-1.5">
               {independentSessions.length === 0 ? null : groupByProcedure ? (
                 procedureGroups.map(({ key, displayName, items: treats }) => {
                   const isCollapsed = !expandedGroups.has(key);
@@ -1145,6 +1150,7 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
               ) : (
                 independentSessions.map((t, index) => renderSessionCard(t, index))
               )}
+              </div>
             </>
           )}
         </div>
@@ -1676,7 +1682,11 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
                 id="treatment-package"
                 label="Paquete de la sesión"
                 value={String(currentTreatment.package_id ?? '')}
-                onChange={value => setCurrentTreatment({ ...currentTreatment, package_id: value ? Number(value) : null })}
+                onChange={value => {
+                  const id = value ? Number(value) : null;
+                  setCurrentTreatment({ ...currentTreatment, package_id: id });
+                  if (id) setExpandedPackages(prev => new Set(prev).add(id));
+                }}
                 options={[
                   { value: '', label: 'Sesión independiente' },
                   ...packages.map(pkg => ({ value: String(pkg.id), label: `${pkg.name} · Saldo $${getPackageDebt(pkg).toFixed(2)}` })),
@@ -2096,36 +2106,28 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
           setPackageModalOpen(false);
           setEditingPackage(null);
         }}
-        onCreated={(pkg) => {
-          setPackages(prev => [pkg, ...prev]);
+        onCreated={async (pkg) => {
           setCurrentTreatment(prev => ({ ...prev, package_id: pkg.id ?? null }));
-          setMessage({
-            type: 'success',
-            text: Number(pkg.initial_payment) > 0
-              ? 'Paquete creado y abono inicial registrado en Finanzas'
-              : 'Paquete creado correctamente',
-          });
+          if (pkg.id) setExpandedPackages(prev => new Set(prev).add(pkg.id!));
           setPackageModalOpen(false);
           setEditingPackage(null);
+          const refreshed = await loadPackages();
+          if (!refreshed) return;
+          setMessage({
+            type: 'success',
+            text: 'Paquete creado correctamente. Resumen actualizado.',
+          });
         }}
-        onUpdated={(pkg) => {
-          setPackages(prev => prev.map(p => (p.id === pkg.id ? { ...p, ...pkg } : p)));
-          const previousInitial = Number(editingPackage?.initial_payment || 0);
-          const nextInitial = Number(pkg.initial_payment || 0);
-          let financeNote = '';
-          if (previousInitial > 0 && nextInitial === 0) {
-            financeNote = ' Se quitó el abono inicial y su registro en Finanzas.';
-          } else if (previousInitial === 0 && nextInitial > 0) {
-            financeNote = ' Se registró el abono inicial en Finanzas.';
-          } else if (previousInitial !== nextInitial) {
-            financeNote = ' Se ajustó el abono inicial en Finanzas.';
-          }
-          setMessage({
-            type: 'success',
-            text: `Paquete "${pkg.name}" actualizado correctamente.${financeNote}`,
-          });
+        onUpdated={async (pkg) => {
           setPackageModalOpen(false);
           setEditingPackage(null);
+          if (pkg.id) setExpandedPackages(prev => new Set(prev).add(pkg.id!));
+          const refreshed = await loadPackages();
+          if (!refreshed) return;
+          setMessage({
+            type: 'success',
+            text: `Paquete "${pkg.name}" actualizado correctamente. Resumen actualizado.`,
+          });
         }}
       />
     )}
