@@ -152,7 +152,7 @@ export const Select: React.FC<SelectProps> = ({
             )}
           </div>
         </div>,
-        document.body
+        triggerRef.current?.closest('dialog') || document.fullscreenElement || document.body
       )}
     </>
   );

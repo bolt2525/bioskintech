@@ -4,6 +4,7 @@ import { useParams } from 'react-router-dom';
 import { Save, AlertCircle, Users, X } from 'lucide-react';
 import AdminLayout from '../../../layout/AdminLayout';
 import { useAdminNav } from '../../../../hooks/useAdminNav';
+import { useUnsavedChangesGuard } from '../../../../hooks/useUnsavedChangesGuard';
 import { Dialog } from '../../../ui/Dialog';
 
 interface DuplicatePatient { id: number; first_name: string; last_name: string; identification_type: string; identification_number: string; sameUser?: boolean; }
@@ -33,7 +34,8 @@ export default function NewPatientForm() {
   const [duplicate, setDuplicate] = useState<DuplicatePatient | null>(null);
   const [importFields, setImportFields] = useState({ basic: true, history: true });
   const [importing, setImporting] = useState(false);
-
+  const [dirty, setDirty] = useState(false);
+  useUnsavedChangesGuard(dirty && !saving); // el menú flyout pide confirmación si hay datos sin guardar
   useEffect(() => {
     if (isEditing && patientId) {
       loadPatient();
@@ -75,6 +77,7 @@ export default function NewPatientForm() {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
+    setDirty(true);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

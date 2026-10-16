@@ -55,6 +55,20 @@ export interface ModuleConfig {
   hidden?: boolean;
 }
 
+/**
+ * Módulos visibles para el usuario: misma regla que los tiles del dashboard
+ * (feature habilitada, sin override de usuario; `backup` solo para administradores).
+ * `hidden` es opt-in: solo aparece cuando la feature está explícitamente habilitada.
+ */
+export function getVisibleModules(
+  hasFeature: (feat: string) => boolean,
+  canManage: boolean,
+  disabledByOverride: ReadonlySet<string> = new Set(),
+  modules: readonly ModuleConfig[] = MODULE_LIST,
+): ModuleConfig[] {
+  return modules.filter(m => (m.feat !== 'backup' || canManage) && hasFeature(m.feat) && !disabledByOverride.has(m.feat));
+}
+
 export const MODULE_LIST: ModuleConfig[] = [
   {
     feat: 'clinical_records',

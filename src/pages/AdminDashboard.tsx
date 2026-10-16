@@ -29,7 +29,7 @@ import SeasonalBrandDongle from '../components/admin/dashboard/SeasonalBrandDong
 import SeasonalHeroAtmosphere from '../components/admin/dashboard/SeasonalHeroAtmosphere';
 
 // Módulos y tipos de constants centralizados
-import { MODULE_LIST } from '../constants/features';
+import { getVisibleModules } from '../constants/features';
 import type { UpcomingAppointment, StaffResource } from '../types';
 import recordsFetch from '../utils/recordsFetch';
 
@@ -493,6 +493,14 @@ export default function AdminDashboard() {
     } finally { setClinicSaving(false); }
   };
 
+  // Ajustes solicitado desde el menú flyout de módulos (location.state.openSettings)
+  useEffect(() => {
+    const requested = (location.state as { openSettings?: string } | null)?.openSettings;
+    if (requested !== 'profile' || !user) return;
+    navigate(location.pathname, { replace: true, state: null }); // consumir el estado una sola vez
+    void openSettings('profile');
+  }, [location.state, user]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Close settings dropdown on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -513,7 +521,7 @@ export default function AdminDashboard() {
     userModuleOverrides.filter(o => !o.enabled).map(o => o.feature)
   );
   // hidden:true = opt-in; tile aparece solo cuando la feature está explícitamente habilitada
-  const tiles = MODULE_LIST.filter(m => (m.feat !== 'backup' || canManage) && effectiveHasFeature(m.feat) && !disabledByOverride.has(m.feat));
+  const tiles = getVisibleModules(effectiveHasFeature, canManage, disabledByOverride);
 
   return (
     <div className="min-h-screen bg-[#fafafa]">

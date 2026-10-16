@@ -148,6 +148,15 @@ El build de producción pasa. El lint global no está limpio: la ejecución del 
 
 La existencia de una variable en Vercel no demuestra por sí sola que su valor sea válido ni que el flujo de producción haya sido ejercitado.
 
+### Navegación flyout de módulos (frontend)
+
+`AdminLayout` monta `ModuleFlyoutNav` (borde izquierdo) por defecto solo en rutas de Fichas Clínicas (`isClinicalRoute`: lista, alta/edición, perfil y expediente); `moduleNav` fuerza o desactiva el menú en otras pantallas. Archivos: `src/components/layout/ModuleFlyoutNav.tsx` (`ModuleFlyout` presentacional con props + versión conectada), `moduleNav.ts` (lógica pura), `src/hooks/useUnsavedChangesGuard.ts` y `getVisibleModules` en `src/constants/features.ts`.
+
+- **Permisos:** la lista sale de `getVisibleModules(hasFeature, canManage, overrides)`, la misma regla que los tiles del dashboard (`MODULE_LIST`: Agenda agrupada, `backup` solo administradores, módulos `hidden` solo con feature habilitada, overrides de usuario, contexto de master-view). El flyout no concede acceso; el backend sigue autorizando.
+- **Rutas:** se construyen con `useAdminNav().to()` (prefijo clínica/usuario o master-view). «Ajustes» navega al dashboard con `location.state.openSettings = 'profile'`, que `AdminDashboard` consume una vez y limpia.
+- **Interacción:** hover solo con puntero fino (`(hover: hover) and (pointer: fine)`), clic/tap, teclado (Enter/Espacio/→, ↑↓ Home End, Escape devuelve foco), cierre por clic exterior o pérdida de foco, `motion-reduce`. No se abre ni permanece sobre diálogos (`dialog[open]`, `[aria-modal]`); z-40 bajo cabecera y modales.
+- **Cambios sin guardar:** no existía guarda global ni autoguardado. Un formulario declara datos pendientes con `useUnsavedChangesGuard(dirty)` (también activa `beforeunload`); hoy lo usa `NewPatientForm`. Si ningún formulario reporta (p. ej. pestañas del expediente), el flyout avisa de forma conservadora al salir de expediente/alta/edición. Limitación: el botón «Volver», los breadcrumbs y las pestañas no pasan por esta guarda.
+
 ### Herramientas de agente para desarrollo
 
 Las skills externas de GitHub Copilot se almacenan en `.agents/skills/` y sus fuentes/versiones se fijan en `skills-lock.json`. Están instaladas `web-design-guidelines`, `building-components`, `vercel-react-best-practices`, `vercel-composition-patterns`, `vercel-cli` y `agent-browser`. Son contexto y herramientas de desarrollo: no se incluyen en `dist`, no cambian las funciones serverless y no son dependencias de ejecución de la aplicación.

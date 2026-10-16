@@ -15,12 +15,14 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { ArrowLeft, LogOut, User, ChevronRight } from 'lucide-react';
 import { MotionConfig } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
 import type { Breadcrumb } from '../../types';
 import AppFooter from './AppFooter';
+import ModuleFlyoutNav from './ModuleFlyoutNav';
+import { isClinicalRoute } from './moduleNav';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Props
@@ -33,6 +35,8 @@ interface AdminLayoutProps {
   showBack?: boolean;
   backPath?: string;
   breadcrumbs?: Breadcrumb[];
+  /** Menú flyout de módulos. Por defecto solo en rutas de Fichas Clínicas. */
+  moduleNav?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -46,8 +50,11 @@ export default function AdminLayout({
   showBack = true,
   backPath,
   breadcrumbs,
+  moduleNav,
 }: AdminLayoutProps) {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const showModuleNav = moduleNav ?? isClinicalRoute(pathname);
   const { username, logout, user } = useAuth();
   const [demoTimeLeft, setDemoTimeLeft] = useState('');
 
@@ -154,6 +161,7 @@ export default function AdminLayout({
         </MotionConfig>
       </main>
       <AppFooter theme="light" />
+      {showModuleNav && <ModuleFlyoutNav />}
     </div>
   );
 }
