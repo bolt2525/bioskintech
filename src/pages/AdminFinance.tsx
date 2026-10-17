@@ -7,7 +7,8 @@ import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
 import { 
   Calendar, DollarSign, TrendingUp, TrendingDown, 
   Trash2, Edit2, Check, X, FileText, PieChart, BarChart2, Search, Filter, Info, Plus,
-  Download, ChevronDown, ChevronUp, ChevronRight, Package, Calculator, Mail, ArrowLeft,
+  Download, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
+  Package, Calculator, Mail, ArrowLeft,
   BadgeDollarSign, AlertTriangle, ReceiptText, SlidersHorizontal
 } from 'lucide-react';
 import { 
@@ -128,6 +129,19 @@ const calcFromTotal = (total: number, ivaRate: number): { subtotal: number; tax:
 // Normaliza separadores decimales: acepta tanto punto como coma
 const parseAmount = (v: string): number => parseFloat(String(v).replace(',', '.')) || 0;
 
+const normalizeSearchText = (value: unknown): string => String(value ?? '')
+  .normalize('NFD')
+  .replace(/\p{Diacritic}/gu, '')
+  .toLocaleLowerCase('es');
+
+/** Cada término puede coincidir en un campo distinto: "nancy laser 30" encuentra nombre + detalle + importe. */
+const matchesSmartSearch = (query: string, values: unknown[]): boolean => {
+  const terms = normalizeSearchText(query).trim().split(/\s+/).filter(Boolean);
+  if (!terms.length) return true;
+  const haystack = normalizeSearchText(values.join(' '));
+  return terms.every(term => haystack.includes(term));
+};
+
 const EMPTY_FORM = { date: new Date().toISOString().split('T')[0], invoice_number: '', entity: '', description: '', type: 'ingreso' as const, subtotal: '', tax: '', total: '' };
 const EMPTY_ITEM = (ivaRate = 15): FinanceItem => ({ description: '', quantity: 1, unit_price: 0, iva_rate: ivaRate, subtotal: 0, tax: 0, total: 0 });
 
@@ -237,7 +251,13 @@ const AdminFinance = () => {
     } finally { setCsvSendingNow(false); }
   };
   
-  const [searchTerm, setSearchTerm] = useState('');
+  const [treatmentSearch, setTreatmentSearch] = useState('');
+  const [ledgerSearch, setLedgerSearch] = useState('');
+  const [treatmentPage, setTreatmentPage] = useState(1);
+  const [ledgerPage, setLedgerPage] = useState(1);
+  // ponytail: paginación cliente sobre el período ya cargado → cursor + endpoint de agregados si el volumen lo exige
+  const [treatmentPageSize, setTreatmentPageSize] = useState(8);
+  const [ledgerPageSize, setLedgerPageSize] = useState(15);
   const [typeFilter, setTypeFilter] = useState<'all' | 'ingreso' | 'egreso'>('all');
   const [expandedTreatmentGroups, setExpandedTreatmentGroups] = useState<Set<string>>(new Set());
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -279,17 +299,10 @@ const AdminFinance = () => {
   }, [selectedUsers, dateRange]);
 
   // Derived State
-  const filteredRecords = records.filter(record => {
-    const searchLower = searchTerm.toLowerCase();
-    const searchMatch = 
-        record.entity.toLowerCase().includes(searchLower) ||
-        (record.description || '').toLowerCase().includes(searchLower) ||
-        (record.invoice_number || '').toLowerCase().includes(searchLower);
-        
+  const filteredRecords = useMemo(() => records.filter(record => {
     const typeMatch = typeFilter === 'all' || record.type === typeFilter;
-    
-    return searchMatch && typeMatch;
-  });
+    return typeMatch;
+  }), [records, typeFilter]);
   const treatmentFinanceGroups = useMemo(() => {
     const groups = new Map<string, TreatmentFinanceGroup>();
     for (const record of filteredRecords) {
@@ -339,6 +352,52 @@ const AdminFinance = () => {
     return Array.from(patients.values());
   }, [treatmentFinanceGroups]);
 
+  const searchedTreatmentPatients = useMemo(() => treatmentFinancePatients.filter(patient =>
+    matchesSmartSearch(treatmentSearch, [
+      patient.name,
+      patient.total,
+      ...patient.groups.flatMap(group => [
+        group.packageLabel,
+        group.total,
+        ...group.entries.flatMap(entry => [
+          entry.description, entry.invoice_number, entry.date, formatFinanceDate(entry.date), entry.total, entry.type,
+        ]),
+      ]),
+    ])
+  ), [treatmentFinancePatients, treatmentSearch]);
+
+  const searchedLedgerRecords = useMemo(() => filteredRecords.filter(record =>
+    matchesSmartSearch(ledgerSearch, [
+      record.entity,
+      record.description,
+      record.invoice_number,
+      record.type,
+      record.registered_by,
+      record.date,
+      formatFinanceDate(record.date),
+      record.subtotal,
+      record.tax,
+      record.total,
+      record.source_module === 'treatments' ? getTreatmentOriginLabel(record) : '',
+    ])
+  ), [filteredRecords, ledgerSearch]);
+
+  const treatmentPageCount = Math.max(1, Math.ceil(searchedTreatmentPatients.length / treatmentPageSize));
+  const ledgerPageCount = Math.max(1, Math.ceil(searchedLedgerRecords.length / ledgerPageSize));
+  const safeTreatmentPage = Math.min(treatmentPage, treatmentPageCount);
+  const safeLedgerPage = Math.min(ledgerPage, ledgerPageCount);
+  const visibleTreatmentPatients = searchedTreatmentPatients.slice(
+    (safeTreatmentPage - 1) * treatmentPageSize,
+    safeTreatmentPage * treatmentPageSize,
+  );
+  const visibleLedgerRecords = searchedLedgerRecords.slice(
+    (safeLedgerPage - 1) * ledgerPageSize,
+    safeLedgerPage * ledgerPageSize,
+  );
+
+  useEffect(() => { setTreatmentPage(1); }, [treatmentSearch, treatmentPageSize, typeFilter, dateRange.start, dateRange.end, selectedUsers]);
+  useEffect(() => { setLedgerPage(1); }, [ledgerSearch, ledgerPageSize, typeFilter, dateRange.start, dateRange.end, selectedUsers]);
+
   const toggleTreatmentGroupExpand = (key: string) => setExpandedTreatmentGroups(prev => {
     const next = new Set(prev);
     if (next.has(key)) next.delete(key); else next.add(key);
@@ -352,11 +411,11 @@ const AdminFinance = () => {
   };
 
   const selectAll = () => {
-    if (selectedIds.length === filteredRecords.length) {
-        setSelectedIds([]);
-    } else {
-        setSelectedIds(filteredRecords.map(r => r.id));
-    }
+    const visibleIds = visibleLedgerRecords.map(record => record.id);
+    const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selectedIds.includes(id));
+    setSelectedIds(previous => allVisibleSelected
+      ? previous.filter(id => !visibleIds.includes(id))
+      : Array.from(new Set([...previous, ...visibleIds])));
   };
 
   const getSelectionMetrics = () => {
@@ -1007,17 +1066,7 @@ const AdminFinance = () => {
             ))}
           </div>
 
-          <div className="relative flex-1 min-w-[200px]">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input 
-              type="text" 
-              aria-label="Buscar registros financieros"
-              placeholder="Buscar por cliente, descripción, factura..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="admin-focus-ring min-h-10 w-full rounded-xl border border-gray-200 bg-gray-50 py-1.5 pl-9 pr-4 text-sm"
-            />
-          </div>
+          <p className="ml-auto text-xs text-gray-500">Cada sección incluye búsqueda detallada y paginación propia.</p>
           </div>
         </section>
 
@@ -1086,10 +1135,36 @@ const AdminFinance = () => {
                 </p>
               </div>
             </div>
+            <div className="mb-4 flex flex-wrap items-center gap-3">
+              <div className="relative min-w-[240px] flex-1">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" aria-hidden="true" />
+                <input
+                  type="search"
+                  value={treatmentSearch}
+                  onChange={event => setTreatmentSearch(event.target.value)}
+                  placeholder="Buscar paciente, paquete, tratamiento, factura, fecha o importe…"
+                  aria-label="Buscar en tratamientos vinculados a Finanzas"
+                  className="admin-focus-ring min-h-10 w-full rounded-xl border border-gray-200 bg-gray-50 py-2 pl-9 pr-10 text-sm"
+                />
+                {treatmentSearch ? (
+                  <button type="button" onClick={() => setTreatmentSearch('')} aria-label="Limpiar búsqueda de tratamientos"
+                    className="admin-focus-ring absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-200 hover:text-gray-700">
+                    <X className="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
+                ) : null}
+              </div>
+              <span className="text-xs text-gray-500">
+                {searchedTreatmentPatients.length} paciente{searchedTreatmentPatients.length === 1 ? '' : 's'}
+              </span>
+            </div>
             {loading ? <p className="py-3 text-sm text-gray-600" role="status">Actualizando registros…</p> : null}
-            {!loading && !treatmentFinancePatients.length ? <p className="py-3 text-sm text-gray-600">Sin registros de Tratamientos para el período y los filtros actuales.</p> : null}
+            {!loading && !searchedTreatmentPatients.length ? (
+              <p className="rounded-xl border border-dashed border-gray-200 py-8 text-center text-sm text-gray-500">
+                {treatmentSearch ? 'No hay pacientes o movimientos que coincidan con la búsqueda.' : 'Sin registros de Tratamientos para el período y los filtros actuales.'}
+              </p>
+            ) : null}
             <div className="grid gap-2 lg:grid-cols-2">
-              {treatmentFinancePatients.map(patient => (
+              {visibleTreatmentPatients.map(patient => (
                 <details key={patient.key} className="group/patient rounded-xl border border-gray-200 bg-gray-50/50 open:border-gold/40 open:bg-white [&>summary::-webkit-details-marker]:hidden">
                   <summary className="admin-focus-ring flex cursor-pointer list-none items-center gap-3 rounded-xl p-3 text-sm hover:bg-gold/5">
                     <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white font-semibold text-gold-ink ring-1 ring-gray-200">
@@ -1157,6 +1232,15 @@ const AdminFinance = () => {
                 </details>
               ))}
             </div>
+            <PaginationControls
+              page={safeTreatmentPage}
+              pageSize={treatmentPageSize}
+              total={searchedTreatmentPatients.length}
+              pageSizeOptions={[8, 16, 24]}
+              onPageChange={setTreatmentPage}
+              onPageSizeChange={setTreatmentPageSize}
+              label="pacientes"
+            />
             </div>
           </section>
 
@@ -1255,15 +1339,35 @@ const AdminFinance = () => {
               <p className="mt-1 text-xs text-gray-500">Detalle contable de la selección y filtros actuales.</p>
             </div>
             <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold tabular-nums text-gray-600">
-              {filteredRecords.length} registro{filteredRecords.length === 1 ? '' : 's'}
+              {searchedLedgerRecords.length} registro{searchedLedgerRecords.length === 1 ? '' : 's'}
             </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 border-b border-gray-100 bg-gray-50/40 px-4 py-3 sm:px-5">
+            <div className="relative min-w-[240px] flex-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" aria-hidden="true" />
+              <input
+                type="search"
+                value={ledgerSearch}
+                onChange={event => setLedgerSearch(event.target.value)}
+                placeholder="Buscar cliente, factura, detalle, usuario, fecha, tipo o importe…"
+                aria-label="Buscar en el libro de movimientos"
+                className="admin-focus-ring min-h-10 w-full rounded-xl border border-gray-200 bg-white py-2 pl-9 pr-10 text-sm"
+              />
+              {ledgerSearch ? (
+                <button type="button" onClick={() => setLedgerSearch('')} aria-label="Limpiar búsqueda del libro de movimientos"
+                  className="admin-focus-ring absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-200 hover:text-gray-700">
+                  <X className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              ) : null}
+            </div>
+            <span className="text-xs text-gray-500">Busca con varios términos, incluso sin tildes.</span>
           </div>
           <div className="divide-y divide-gray-100 md:hidden">
             {loading ? (
               <div className="px-5 py-12 text-center text-sm text-gray-500">Cargando registros…</div>
-            ) : filteredRecords.length === 0 ? (
-              <div className="px-5 py-12 text-center text-sm text-gray-500">No hay registros para este filtro.</div>
-            ) : filteredRecords.map(record => (
+            ) : searchedLedgerRecords.length === 0 ? (
+              <div className="px-5 py-12 text-center text-sm text-gray-500">{ledgerSearch ? 'No hay movimientos que coincidan con la búsqueda.' : 'No hay registros para este filtro.'}</div>
+            ) : visibleLedgerRecords.map(record => (
               <article key={record.id} className={`p-4 ${selectedIds.includes(record.id) ? 'bg-amber-50/60' : 'bg-white'}`}>
                 {editingId === record.id ? (
                   isPackageInitialRecord(record) ? (
@@ -1353,7 +1457,7 @@ const AdminFinance = () => {
                       type="checkbox" 
                       aria-label="Seleccionar todos los registros visibles"
                       onChange={selectAll}
-                      checked={selectedIds.length === filteredRecords.length && filteredRecords.length > 0}
+                      checked={visibleLedgerRecords.length > 0 && visibleLedgerRecords.every(record => selectedIds.includes(record.id))}
                       className="rounded border-gray-300 text-yellow-500 focus:ring-yellow-500 w-4 h-4 cursor-pointer"
                     />
                   </th>
@@ -1379,14 +1483,14 @@ const AdminFinance = () => {
                       Cargando registros...
                     </td>
                   </tr>
-                ) : filteredRecords.length === 0 ? (
+                ) : searchedLedgerRecords.length === 0 ? (
                   <tr>
                     <td colSpan={10} className="px-6 py-12 text-center text-gray-500">
-                      No hay registros para este filtro.
+                      {ledgerSearch ? 'No hay movimientos que coincidan con la búsqueda.' : 'No hay registros para este filtro.'}
                     </td>
                   </tr>
                 ) : (
-                  filteredRecords.map((record) => (
+                  visibleLedgerRecords.map((record) => (
                     <tr key={record.id} className={`group transition-colors even:bg-gray-50/30 hover:bg-gold/5 ${selectedIds.includes(record.id) ? 'bg-yellow-50/70 even:bg-yellow-50/70' : ''}`}>
                       <td className="px-6 py-4 text-center">
                         <input 
@@ -1506,6 +1610,15 @@ const AdminFinance = () => {
               </tbody>
             </table>
           </div>
+          <PaginationControls
+            page={safeLedgerPage}
+            pageSize={ledgerPageSize}
+            total={searchedLedgerRecords.length}
+            pageSizeOptions={[15, 30, 50]}
+            onPageChange={setLedgerPage}
+            onPageSizeChange={setLedgerPageSize}
+            label="registros"
+          />
         </section>
       </div>
       {/* ── Modal: Desglose de ítems ── */}
@@ -1596,6 +1709,62 @@ const AdminFinance = () => {
       )}
     </main>
     </MotionConfig>
+  );
+};
+
+interface PaginationControlsProps {
+  page: number;
+  pageSize: number;
+  total: number;
+  pageSizeOptions: number[];
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (size: number) => void;
+  label: string;
+}
+
+const PaginationControls = ({
+  page, pageSize, total, pageSizeOptions, onPageChange, onPageSizeChange, label,
+}: PaginationControlsProps) => {
+  if (!total) return null;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const start = (page - 1) * pageSize + 1;
+  const end = Math.min(page * pageSize, total);
+  const buttonClass = 'admin-focus-ring inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 hover:border-gold/50 hover:bg-gold/5 disabled:cursor-not-allowed disabled:opacity-35';
+
+  return (
+    <nav className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-4" aria-label={`Paginación de ${label}`}>
+      <p className="text-xs text-gray-500" aria-live="polite">
+        Mostrando <span className="font-semibold text-gray-700">{start}–{end}</span> de <span className="font-semibold text-gray-700">{total}</span> {label}
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-2 text-xs text-gray-500">
+          Ver
+          <select
+            value={pageSize}
+            onChange={event => onPageSizeChange(Number(event.target.value))}
+            className="admin-focus-ring min-h-9 rounded-lg border border-gray-200 bg-white px-2 text-sm text-gray-700"
+            aria-label={`Cantidad de ${label} por página`}
+          >
+            {pageSizeOptions.map(option => <option key={option} value={option}>{option}</option>)}
+          </select>
+        </label>
+        <div className="flex items-center gap-1">
+          <button type="button" onClick={() => onPageChange(1)} disabled={page === 1} className={buttonClass} aria-label="Ir a la primera página">
+            <ChevronsLeft className="h-4 w-4" aria-hidden="true" />
+          </button>
+          <button type="button" onClick={() => onPageChange(page - 1)} disabled={page === 1} className={buttonClass} aria-label="Ir a la página anterior">
+            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+          </button>
+          <span className="min-w-[6rem] text-center text-xs font-medium text-gray-600">Página {page} de {pageCount}</span>
+          <button type="button" onClick={() => onPageChange(page + 1)} disabled={page === pageCount} className={buttonClass} aria-label="Ir a la página siguiente">
+            <ChevronRight className="h-4 w-4" aria-hidden="true" />
+          </button>
+          <button type="button" onClick={() => onPageChange(pageCount)} disabled={page === pageCount} className={buttonClass} aria-label="Ir a la última página">
+            <ChevronsRight className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+    </nav>
   );
 };
 
