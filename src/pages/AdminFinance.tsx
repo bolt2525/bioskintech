@@ -7,7 +7,8 @@ import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
 import { 
   Calendar, DollarSign, TrendingUp, TrendingDown, 
   Trash2, Edit2, Check, X, FileText, PieChart, BarChart2, Search, Filter, Info, Plus,
-  Download, ChevronDown, ChevronUp, Package, Calculator, Mail, ArrowLeft, BadgeDollarSign, AlertTriangle
+  Download, ChevronDown, ChevronUp, ChevronRight, Package, Calculator, Mail, ArrowLeft,
+  BadgeDollarSign, AlertTriangle, ReceiptText, SlidersHorizontal
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer 
@@ -609,23 +610,28 @@ const AdminFinance = () => {
   return (
     <MotionConfig reducedMotion="user">
     <main className="admin-page-enter min-h-screen bg-[#eef3f2] pb-20">
-      <div className="bg-[#172522] px-4 pb-20 pt-8 text-white shadow-xl sm:pb-24 sm:pt-10">
+      <div className="bg-[#172522] px-4 pb-16 pt-6 text-white shadow-xl sm:pb-20 sm:pt-8">
         <div className="container-custom mx-auto">
-          <div className="mb-6 flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+          <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
             <div>
-              <button
-                type="button"
-                onClick={() => navigate(-1)}
-                className="admin-focus-ring admin-interactive mb-4 inline-flex min-h-10 items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 text-sm font-medium text-gray-200 hover:bg-white/15 hover:text-white"
-                aria-label="Volver"
-              >
-                <ArrowLeft size={18} /> Volver
-              </button>
-              <span className="mb-3 inline-flex rounded-full border border-gold/40 bg-white/5 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-amber-100">
-                Administración financiera
-              </span>
-              <h1 className="mb-2 flex items-center gap-3 text-2xl font-bold sm:text-3xl">
-                <DollarSign className="text-gold" /> Finanzas y facturación
+              <div className="mb-4 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => navigate(-1)}
+                  className="admin-focus-ring admin-interactive inline-flex min-h-9 items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 text-sm font-medium text-gray-200 hover:bg-white/15 hover:text-white"
+                  aria-label="Volver"
+                >
+                  <ArrowLeft size={16} /> Volver
+                </button>
+                <span className="inline-flex rounded-full border border-gold/40 bg-white/5 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-100">
+                  Administración financiera
+                </span>
+              </div>
+              <h1 className="mb-2 flex items-center gap-3 text-2xl font-semibold sm:text-3xl">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gold/15 text-gold ring-1 ring-gold/25">
+                  <ReceiptText className="h-5 w-5" aria-hidden="true" />
+                </span>
+                Finanzas y facturación
               </h1>
               <p className="max-w-2xl text-sm text-gray-300">
                 {user?.role === 'clinic_user'
@@ -641,8 +647,8 @@ const AdminFinance = () => {
             
             {/* ── Filtro de usuario (solo admin/master) ── */}
             {(user?.role === 'clinic_admin' || user?.role === 'master_admin') && financeUsers.length > 0 && (
-              <div className="mt-4 md:mt-0 flex flex-col items-end gap-1.5">
-                <label className="block text-xs font-medium text-gray-300" htmlFor="finance-user-filter">Mostrar registros de</label>
+              <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-3 backdrop-blur-sm">
+                <label className="mb-1.5 block text-xs font-medium text-gray-300" htmlFor="finance-user-filter">Alcance de los registros</label>
                 <select
                   id="finance-user-filter"
                   value={selectedUsers.size === 0 ? '__global__' : (selectedUsers.size === 1 ? Array.from(selectedUsers)[0] : '__multi__')}
@@ -652,7 +658,7 @@ const AdminFinance = () => {
                     // Selección individual desde el dropdown → Set de 1
                     setSelectedUsers(new Set([val]));
                   }}
-                  className="admin-focus-ring min-h-10 min-w-[180px] cursor-pointer rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-sm text-white backdrop-blur"
+                  className="admin-focus-ring min-h-10 w-full min-w-[220px] cursor-pointer rounded-xl border border-white/20 bg-[#22312e] px-4 py-2 text-sm text-white"
                 >
                   <option value="__global__">🌐 Vista Global</option>
                   <optgroup label="── Usuarios ──">
@@ -671,7 +677,7 @@ const AdminFinance = () => {
 
                 {/* Multi-selección: checkboxes desplegables cuando hay >1 usuario */}
                 {financeUsers.filter(fu => fu.finance_visible).length > 1 && (
-                  <div className="flex flex-wrap gap-1 justify-end max-w-xs">
+                  <div className="mt-2 flex max-w-xs flex-wrap gap-1">
                     {financeUsers.filter(fu => fu.finance_visible).map(fu => {
                       const isOn = selectedUsers.has(fu.username);
                       return (
@@ -704,20 +710,23 @@ const AdminFinance = () => {
         </div>
       </div>
 
-      <div className="container-custom mx-auto -mt-14 px-4 sm:-mt-16">
+      <div className="container-custom mx-auto -mt-10 px-4 sm:-mt-12">
 
         {/* ── Barra superior: botones nuevo registro + export ── */}
-        <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-2xl border border-white/70 bg-white/95 p-2 shadow-lg shadow-slate-900/5 backdrop-blur">
           <button
             onClick={() => setShowNewForm(v => !v)}
-            className="admin-focus-ring admin-interactive flex min-h-10 items-center gap-2 rounded-xl bg-gold px-4 py-2 text-sm font-semibold text-gray-900 shadow-md hover:bg-gold-dark"
+            className="admin-focus-ring admin-interactive flex min-h-10 items-center gap-2 rounded-xl bg-gold-dark px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-gold-ink"
           >
             <Plus size={16} /> Nuevo Registro
           </button>
+          <span className="hidden text-xs text-gray-500 sm:inline">
+            {filteredRecords.length} movimiento{filteredRecords.length === 1 ? '' : 's'} en la vista actual
+          </span>
           <button
             onClick={() => exportCSV(filteredRecords, `finanzas${selectedUsers.size === 1 ? '_'+Array.from(selectedUsers)[0] : ''}`)}
             disabled={filteredRecords.length === 0}
-            className="admin-focus-ring admin-interactive ml-auto flex min-h-10 items-center gap-2 rounded-xl bg-gray-800 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700 disabled:opacity-40"
+            className="admin-focus-ring admin-interactive ml-auto flex min-h-10 items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:border-gold/50 hover:bg-gold/5 disabled:opacity-40"
           >
             <Download size={15} /> Exportar CSV ({filteredRecords.length})
           </button>
@@ -920,7 +929,19 @@ const AdminFinance = () => {
           )}
         </AnimatePresence>
 
-        <div className="admin-surface mb-6 p-4 sm:p-5">
+        <section className="admin-surface mb-6 p-4 sm:p-5" aria-labelledby="finance-filters-title">
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-2 border-b border-gray-100 pb-4">
+            <div>
+              <h2 id="finance-filters-title" className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+                <SlidersHorizontal className="h-4 w-4 text-gold-ink" aria-hidden="true" />
+                Explorar movimientos
+              </h2>
+              <p className="mt-1 text-xs text-gray-500">Ajusta el periodo, tipo o busca un registro específico.</p>
+            </div>
+            <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold tabular-nums text-gray-600">
+              {filteredRecords.length} resultado{filteredRecords.length === 1 ? '' : 's'}
+            </span>
+          </div>
           <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center">
             <div className="flex items-center gap-2 text-gray-600">
               <Calendar size={18} />
@@ -998,52 +1019,55 @@ const AdminFinance = () => {
             />
           </div>
           </div>
-        </div>
+        </section>
 
         {/* Floating Summary Bar */}
         {selectedIds.length > 0 && (
           <motion.div 
             initial={{ y: 50, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
-            className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-900 text-white px-6 py-4 rounded-full shadow-2xl z-50 flex items-center gap-8 border border-gray-700 backdrop-blur-md bg-opacity-95"
+            className="fixed inset-x-3 bottom-3 z-50 mx-auto flex max-w-3xl flex-wrap items-center justify-center gap-4 rounded-2xl border border-gray-700 bg-gray-900/95 px-4 py-3 text-white shadow-2xl backdrop-blur-md sm:bottom-6 sm:gap-8 sm:rounded-full sm:px-6"
           >
-            <div className="flex items-center gap-3 border-r border-gray-700 pr-6">
+            <div className="flex items-center gap-3 sm:border-r sm:border-gray-700 sm:pr-6">
               <span className="bg-yellow-500 text-black text-xs font-bold px-2 py-1 rounded-full">{selectedIds.length}</span>
               <span className="text-sm font-medium text-gray-300">Seleccionados</span>
             </div>
             
-            <div className="flex gap-6 text-sm">
-              <div>
+            <div className="grid w-full grid-cols-3 gap-2 text-center text-sm sm:w-auto sm:gap-6 sm:text-left">
+              <div className="min-w-0">
                 <p className="text-gray-400 text-xs uppercase tracking-wider mb-0.5">Subtotal</p>
-                <p className="font-mono font-bold">{currencySymbol}{getSelectionMetrics().subtotal.toFixed(2)}</p>
+                <p className="truncate font-mono font-bold" title={`${currencySymbol}${getSelectionMetrics().subtotal.toFixed(2)}`}>{currencySymbol}{getSelectionMetrics().subtotal.toFixed(2)}</p>
               </div>
-              <div>
+              <div className="min-w-0">
                 <p className="text-gray-400 text-xs uppercase tracking-wider mb-0.5">IVA</p>
-                <p className="font-mono font-bold text-yellow-400">{currencySymbol}{getSelectionMetrics().tax.toFixed(2)}</p>
+                <p className="truncate font-mono font-bold text-yellow-400" title={`${currencySymbol}${getSelectionMetrics().tax.toFixed(2)}`}>{currencySymbol}{getSelectionMetrics().tax.toFixed(2)}</p>
               </div>
-              <div>
+              <div className="min-w-0">
                 <p className="text-gray-400 text-xs uppercase tracking-wider mb-0.5">Total</p>
-                <p className="font-mono font-bold text-xl">{currencySymbol}{getSelectionMetrics().total.toFixed(2)}</p>
+                <p className="truncate font-mono text-base font-bold sm:text-xl" title={`${currencySymbol}${getSelectionMetrics().total.toFixed(2)}`}>{currencySymbol}{getSelectionMetrics().total.toFixed(2)}</p>
               </div>
             </div>
 
             <button 
               onClick={() => setSelectedIds([])}
-              className="ml-2 p-1.5 hover:bg-gray-800 rounded-full text-gray-400 hover:text-white transition-colors"
+              aria-label="Limpiar selección"
+              className="admin-focus-ring ml-2 flex min-h-9 min-w-9 items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-800 hover:text-white"
             >
               <X size={18} />
             </button>
           </motion.div>
         )}
 
-        <div className="mb-8 grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-gray-200 bg-gray-200 shadow-sm md:grid-cols-2 lg:grid-cols-4">
+        <section className="mb-8 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4" aria-label="Resumen financiero del periodo">
           <MetricCard title="Balance Total" amount={metrics.balanceTotal} icon={DollarSign} color={metrics.balanceTotal >= 0 ? "black" : "red"} currencySymbol={currencySymbol} />
           <MetricCard title="Ingresos" amount={metrics.totalIngresos} icon={TrendingUp} color="green" currencySymbol={currencySymbol} />
           <MetricCard title="Egresos" amount={metrics.totalEgresos} icon={TrendingDown} color="red" currencySymbol={currencySymbol} />
           <MetricCard title="Balance IVA" amount={metrics.totalIVA} icon={PieChart} color={metrics.totalIVA >= 0 ? "orange" : "blue"} currencySymbol={currencySymbol} />
-        </div>
+        </section>
 
-        <section className="mb-8 rounded-2xl border border-gold/40 bg-white p-3 shadow-sm sm:p-5">
+        <section className="mb-8 overflow-hidden rounded-2xl border border-gold/30 bg-white shadow-sm">
+            <div className="h-1 bg-gradient-to-r from-gold-dark via-gold to-transparent" aria-hidden="true" />
+            <div className="p-4 sm:p-5">
             <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h3 className="flex items-center gap-2 font-bold text-gray-900">
@@ -1054,24 +1078,34 @@ const AdminFinance = () => {
                   Ingresos y egresos del período seleccionado.
                 </p>
               </div>
-              <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-gold-ink shadow-sm">
-                Total en Finanzas {currencySymbol}{treatmentFinancePatients.reduce((sum, patient) => sum + patient.total, 0).toFixed(2)}
-                {' · '}{treatmentFinanceGroups.reduce((sum, group) => sum + group.count, 0)} movimientos
-              </span>
+              <div className="rounded-xl bg-gold/10 px-3 py-2 text-right ring-1 ring-gold/20">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-gold-ink">Total vinculado</p>
+                <p className="font-semibold tabular-nums text-gray-900">
+                  {currencySymbol}{treatmentFinancePatients.reduce((sum, patient) => sum + patient.total, 0).toFixed(2)}
+                  <span className="ml-2 text-xs font-medium text-gray-500">· {treatmentFinanceGroups.reduce((sum, group) => sum + group.count, 0)} movimientos</span>
+                </p>
+              </div>
             </div>
             {loading ? <p className="py-3 text-sm text-gray-600" role="status">Actualizando registros…</p> : null}
             {!loading && !treatmentFinancePatients.length ? <p className="py-3 text-sm text-gray-600">Sin registros de Tratamientos para el período y los filtros actuales.</p> : null}
-            <div className="divide-y divide-gold/20">
+            <div className="grid gap-2 lg:grid-cols-2">
               {treatmentFinancePatients.map(patient => (
-                <details key={patient.key} className="group/patient">
-                  <summary className="admin-focus-ring cursor-pointer rounded-lg px-2 py-3 text-sm hover:bg-gold/5">
-                    <span className="ml-1 inline-flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-x-4 gap-y-1 align-middle">
-                      <span className="min-w-0 break-words font-semibold text-gray-900">{patient.name}</span>
-                      <span className="text-xs text-gray-600">{patient.groups.length} grupo{patient.groups.length === 1 ? '' : 's'} · {patient.count} movimientos</span>
-                      <span className="font-semibold tabular-nums text-gold-ink">En Finanzas {currencySymbol}{patient.total.toFixed(2)}</span>
+                <details key={patient.key} className="group/patient rounded-xl border border-gray-200 bg-gray-50/50 open:border-gold/40 open:bg-white [&>summary::-webkit-details-marker]:hidden">
+                  <summary className="admin-focus-ring flex cursor-pointer list-none items-center gap-3 rounded-xl p-3 text-sm hover:bg-gold/5">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white font-semibold text-gold-ink ring-1 ring-gray-200">
+                      {patient.name.trim().charAt(0).toUpperCase()}
                     </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-semibold text-gray-900" title={patient.name}>{patient.name}</span>
+                      <span className="mt-0.5 block text-xs text-gray-500">{patient.groups.length} grupo{patient.groups.length === 1 ? '' : 's'} · {patient.count} movimiento{patient.count === 1 ? '' : 's'}</span>
+                    </span>
+                    <span className="shrink-0 text-right">
+                      <span className="block font-semibold tabular-nums text-gold-ink">{currencySymbol}{patient.total.toFixed(2)}</span>
+                      <span className="text-[10px] text-gray-400">En Finanzas</span>
+                    </span>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-gray-400 transition-transform group-open/patient:rotate-90" aria-hidden="true" />
                   </summary>
-                  <div className="mb-2 ml-2 divide-y divide-gray-100 border-l border-gold/30 pl-2 sm:ml-5 sm:pl-3">
+                  <div className="mx-3 mb-3 divide-y divide-gray-100 border-t border-gold/20 pt-2">
               {patient.groups.map(group => {
                 const isExpanded = expandedTreatmentGroups.has(group.key);
                 const detailId = `treatment-group-${group.key}`;
@@ -1123,31 +1157,47 @@ const AdminFinance = () => {
                 </details>
               ))}
             </div>
+            </div>
           </section>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          <div className="bg-white p-6 rounded-2xl shadow-md border border-gray-100">
-            <h3 className="text-lg font-bold text-gray-800 mb-6 flex items-center gap-2">
-              <BarChart2 size={20} className="text-gray-400" /> Flujo de Caja
-            </h3>
+        <section className="mb-8 grid grid-cols-1 gap-5 lg:grid-cols-2" aria-label="Análisis financiero">
+          <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
+            <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="flex items-center gap-2 text-base font-semibold text-gray-900">
+                  <BarChart2 size={18} className="text-gold-ink" aria-hidden="true" /> Flujo de caja
+                </h3>
+                <p className="mt-1 text-xs text-gray-500">Comparación de ingresos y egresos en la vista actual.</p>
+              </div>
+              <div className="flex gap-2 text-[11px] font-medium">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2 py-1 text-emerald-700"><span className="h-2 w-2 rounded-full bg-emerald-500" />Ingresos</span>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-50 px-2 py-1 text-rose-700"><span className="h-2 w-2 rounded-full bg-rose-500" />Egresos</span>
+              </div>
+            </div>
             <div className="h-64 cursor-default">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={graphData}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} />
-                  <YAxis axisLine={false} tickLine={false} />
-                  <RechartsTooltip cursor={{fill: 'transparent'}} />
-                  <Bar dataKey="value" radius={[10, 10, 0, 0]} barSize={60} />
+                  <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 12 }} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fill: '#9ca3af', fontSize: 11 }} width={48} />
+                  <RechartsTooltip
+                    cursor={{ fill: '#f9fafb' }}
+                    formatter={(value: number) => [`${currencySymbol}${Number(value).toFixed(2)}`, 'Total']}
+                    contentStyle={{ borderRadius: 12, borderColor: '#e5e7eb', boxShadow: '0 8px 24px rgb(15 23 42 / 0.08)' }}
+                  />
+                  <Bar dataKey="value" radius={[8, 8, 2, 2]} barSize={54} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           </div>
 
-          <div className="bg-white p-6 rounded-2xl shadow-md border border-gray-100 relative overflow-hidden">
-            
-            <h3 className="text-lg font-bold text-gray-800 mb-6 flex items-center gap-2">
-              <PieChart size={20} className="text-gray-400" /> Reporte Fiscal (SRI)
-            </h3>
+          <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
+            <div className="mb-5">
+              <h3 className="flex items-center gap-2 text-base font-semibold text-gray-900">
+                <PieChart size={18} className="text-gold-ink" aria-hidden="true" /> Reporte fiscal (SRI)
+              </h3>
+              <p className="mt-1 text-xs text-gray-500">Estimación tributaria según los movimientos filtrados.</p>
+            </div>
             
             <div className="space-y-6">
               <div className="flex justify-between items-center border-b border-gray-100 pb-3">
@@ -1186,15 +1236,28 @@ const AdminFinance = () => {
                 </p>
               </div>
 
-              <div className="text-[10px] text-gray-400 bg-gray-50 p-3 rounded-lg leading-relaxed">
-                ℹ️ <strong>Nota SRI (Ecuador):</strong> El crédito tributario aplica solo si las compras están vinculadas a ventas gravadas con tarifa 15%. 
-                Si tus ventas son 0% (servicios médicos puros), el IVA de compras debe registrarse como "Gasto Deducible" en lugar de crédito.
+              <div className="flex gap-2 rounded-xl bg-gray-50 p-3 text-[10px] leading-relaxed text-gray-500">
+                <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-500" aria-hidden="true" />
+                <p><strong>Nota SRI (Ecuador):</strong> El crédito tributario aplica solo si las compras están vinculadas a ventas gravadas con tarifa 15%.
+                Si tus ventas son 0% (servicios médicos puros), el IVA de compras debe registrarse como “Gasto Deducible” en lugar de crédito.</p>
               </div>
             </div>
           </div>
-        </div>
+        </section>
 
-        <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-md">
+        <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm" aria-labelledby="finance-ledger-title">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-4 py-4 sm:px-5">
+            <div>
+              <h2 id="finance-ledger-title" className="flex items-center gap-2 text-base font-semibold text-gray-900">
+                <ReceiptText className="h-4 w-4 text-gold-ink" aria-hidden="true" />
+                Libro de movimientos
+              </h2>
+              <p className="mt-1 text-xs text-gray-500">Detalle contable de la selección y filtros actuales.</p>
+            </div>
+            <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold tabular-nums text-gray-600">
+              {filteredRecords.length} registro{filteredRecords.length === 1 ? '' : 's'}
+            </span>
+          </div>
           <div className="divide-y divide-gray-100 md:hidden">
             {loading ? (
               <div className="px-5 py-12 text-center text-sm text-gray-500">Cargando registros…</div>
@@ -1283,11 +1346,12 @@ const AdminFinance = () => {
           </div>
           <div className="hidden overflow-x-auto md:block">
             <table className="w-full">
-              <thead className="bg-gray-50 border-b">
+              <thead className="border-b bg-gray-50/80">
                 <tr>
                   <th className="px-6 py-4 w-10">
                     <input 
                       type="checkbox" 
+                      aria-label="Seleccionar todos los registros visibles"
                       onChange={selectAll}
                       checked={selectedIds.length === filteredRecords.length && filteredRecords.length > 0}
                       className="rounded border-gray-300 text-yellow-500 focus:ring-yellow-500 w-4 h-4 cursor-pointer"
@@ -1323,10 +1387,11 @@ const AdminFinance = () => {
                   </tr>
                 ) : (
                   filteredRecords.map((record) => (
-                    <tr key={record.id} className={`hover:bg-gray-50 transition-colors group ${selectedIds.includes(record.id) ? 'bg-yellow-50/50' : ''}`}>
+                    <tr key={record.id} className={`group transition-colors even:bg-gray-50/30 hover:bg-gold/5 ${selectedIds.includes(record.id) ? 'bg-yellow-50/70 even:bg-yellow-50/70' : ''}`}>
                       <td className="px-6 py-4 text-center">
                         <input 
                           type="checkbox" 
+                          aria-label={`Seleccionar registro de ${record.entity}`}
                           checked={selectedIds.includes(record.id)}
                           onChange={() => toggleSelection(record.id)}
                           className="rounded border-gray-300 text-yellow-500 focus:ring-yellow-500 w-4 h-4 cursor-pointer"
@@ -1405,12 +1470,12 @@ const AdminFinance = () => {
                             {currencySymbol}{parseFloat(String(record.total || 0)).toFixed(2)}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                            <div className="flex justify-end gap-2">
+                            <div className="flex justify-end gap-1">
                               <button 
                                 onClick={() => openDesglose(record)}
                                 aria-label={isPackageInitialRecord(record) ? PACKAGE_INITIAL_LOCK_MESSAGE : `Ver desglose de ${record.entity}`}
                                 disabled={isPackageInitialRecord(record)}
-                                className="p-1 text-yellow-500 hover:text-yellow-700 hover:bg-yellow-50 rounded disabled:cursor-not-allowed disabled:text-gray-300 disabled:hover:bg-transparent"
+                                className="admin-focus-ring inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg text-yellow-600 hover:bg-yellow-50 hover:text-yellow-700 disabled:cursor-not-allowed disabled:text-gray-300 disabled:hover:bg-transparent"
                                 title={isPackageInitialRecord(record) ? PACKAGE_INITIAL_LOCK_MESSAGE : "Ver / editar desglose de ítems"}
                               >
                                 <Package size={16} />
@@ -1418,7 +1483,7 @@ const AdminFinance = () => {
                               <button 
                                 onClick={() => startEdit(record)}
                                 aria-label={`Editar ${record.entity}`}
-                                className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded"
+                                className="admin-focus-ring inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg text-gray-400 hover:bg-blue-50 hover:text-blue-600"
                               >
                                 <Edit2 size={16} />
                               </button>
@@ -1427,7 +1492,7 @@ const AdminFinance = () => {
                                 aria-label={isPackageInitialRecord(record) ? PACKAGE_INITIAL_LOCK_MESSAGE : `Eliminar ${record.entity}`}
                                 disabled={isPackageInitialRecord(record)}
                                 title={isPackageInitialRecord(record) ? PACKAGE_INITIAL_LOCK_MESSAGE : undefined}
-                                className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded disabled:cursor-not-allowed disabled:text-gray-200 disabled:hover:bg-transparent"
+                                className="admin-focus-ring inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:text-gray-200 disabled:hover:bg-transparent"
                               >
                                 <Trash2 size={16} />
                               </button>
@@ -1441,7 +1506,7 @@ const AdminFinance = () => {
               </tbody>
             </table>
           </div>
-        </div>
+        </section>
       </div>
       {/* ── Modal: Desglose de ítems ── */}
       {desgModal.open && desgModal.record && (
@@ -1544,25 +1609,28 @@ interface MetricCardProps {
 
 const MetricCard = ({ title, amount, icon: Icon, color, currencySymbol = '$' }: MetricCardProps) => {
   const colorStyles: Record<string, string> = {
-    blue: "text-blue-600 bg-blue-50 border-blue-100",
-    green: "text-emerald-600 bg-emerald-50 border-emerald-100",
-    red: "text-rose-600 bg-rose-50 border-rose-100",
-    orange: "text-orange-600 bg-orange-50 border-orange-100",
-    black: "text-gray-800 bg-gray-50 border-gray-200"
+    blue: "text-blue-600 bg-blue-50 ring-blue-100",
+    green: "text-emerald-600 bg-emerald-50 ring-emerald-100",
+    red: "text-rose-600 bg-rose-50 ring-rose-100",
+    orange: "text-orange-600 bg-orange-50 ring-orange-100",
+    black: "text-gray-800 bg-gray-100 ring-gray-200"
   };
 
   return (
-    <motion.div initial={{ y: 12, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="bg-white p-5">
-      <div className="flex items-start justify-between">
+    <motion.article initial={{ y: 12, opacity: 0 }} animate={{ y: 0, opacity: 1 }}
+      className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
+      <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-gold-dark via-gold to-transparent opacity-70" aria-hidden="true" />
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="mb-1 text-sm font-medium text-gray-500">{title}</p>
-          <p className="text-2xl font-bold tabular-nums text-gray-900">{currencySymbol}{amount.toFixed(2)}</p>
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">{title}</p>
+          <p className="text-2xl font-semibold tabular-nums text-gray-950">{currencySymbol}{amount.toFixed(2)}</p>
+          <p className="mt-1 text-[11px] text-gray-400">Según filtros actuales</p>
         </div>
-        <div className={`rounded-xl p-3 ${colorStyles[color]}`}>
-          <Icon size={20} />
+        <div className={`rounded-xl p-2.5 ring-1 ${colorStyles[color]}`}>
+          <Icon size={18} aria-hidden="true" />
         </div>
       </div>
-    </motion.div>
+    </motion.article>
   );
 };
 
