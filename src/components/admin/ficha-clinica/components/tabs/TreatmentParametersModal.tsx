@@ -181,21 +181,52 @@ export function formatParametersAsText(equipmentName: string, params: TreatmentP
   return [`${NOTES_MARKER} ${equipmentName}`, ...lines].join('\n');
 }
 
-function splitNotesBlocks(notes: string): string[] {
-  return notes.split(/\n\s*\n/).map(b => b.trim()).filter(Boolean);
+export interface NotesParameterBlock {
+  name: string;
+  raw: string;
+  items: Array<{ label: string; value: string }>;
+}
+
+// Un bloque de parámetros es una línea "🔧 equipo" seguida de líneas no vacías, hasta una línea en blanco
+const NOTES_BLOCK_RE = new RegExp(`(?:^|\\n)${NOTES_MARKER}[^\\n]*(?:\\n[^\\n]*\\S[^\\n]*)*`, 'g');
+
+/** Separa las notas en bloques de parámetros por equipo (🔧) y el texto libre (sin recortar, para no alterar lo que se escribe) */
+export function splitTreatmentNotes(notes: string): { blocks: NotesParameterBlock[]; free: string } {
+  const text = notes || '';
+  const blocks: NotesParameterBlock[] = Array.from(text.matchAll(NOTES_BLOCK_RE), match => {
+    const raw = match[0].replace(/^\n/, '').trim();
+    const [header, ...lines] = raw.split('\n');
+    return {
+      name: header.slice(NOTES_MARKER.length).trim(),
+      raw,
+      items: lines.map(line => {
+        const clean = line.replace(/^\s*•\s*/, '');
+        const sep = clean.indexOf(':');
+        return sep > 0
+          ? { label: clean.slice(0, sep).trim(), value: clean.slice(sep + 1).trim() }
+          : { label: '', value: clean.trim() };
+      }).filter(item => item.value),
+    };
+  });
+  return { blocks, free: text.replace(NOTES_BLOCK_RE, '').replace(/^(?:[ \t]*\n)+/, '') };
+}
+
+/** Recompone las notas: primero los bloques de parámetros (en orden de registro) y luego las observaciones libres */
+export function joinTreatmentNotes(blocks: string[], free: string): string {
+  return [...blocks, free].filter(part => part.trim()).join('\n\n');
 }
 
 /** Inserta o reemplaza (por nombre de equipo) el bloque de parámetros dentro del texto de notas. Pasa block='' para eliminarlo. */
 export function upsertNotesBlock(notes: string, equipmentName: string, block: string): string {
-  const blocks = splitNotesBlocks(notes || '');
-  const marker = `${NOTES_MARKER} ${equipmentName}`;
-  const idx = blocks.findIndex(b => b.startsWith(marker));
+  const { blocks, free } = splitTreatmentNotes(notes);
+  const raws = blocks.map(b => b.raw);
+  const idx = blocks.findIndex(b => b.name.toLowerCase() === equipmentName.toLowerCase());
   if (block) {
-    if (idx >= 0) blocks[idx] = block; else blocks.push(block);
+    if (idx >= 0) raws[idx] = block; else raws.push(block);
   } else if (idx >= 0) {
-    blocks.splice(idx, 1);
+    raws.splice(idx, 1);
   }
-  return blocks.join('\n\n');
+  return joinTreatmentNotes(raws, free);
 }
 
 export function removeNotesBlock(notes: string, equipmentName: string): string {

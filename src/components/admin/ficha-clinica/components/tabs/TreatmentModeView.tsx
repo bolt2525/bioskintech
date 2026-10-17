@@ -3,7 +3,7 @@ import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Calendar, DollarSign, Clock, Save, Trash2, Copy, Check, AlertCircle, Pencil, Layers, History, Eye, X, ChevronDown, ChevronLeft, ChevronRight, Sparkles, Wrench, Package, Wallet, ClipboardList, MapPin, CircleDashed, Undo2, CheckCircle2, ScanSearch, ScanFace, PersonStanding, Archive } from 'lucide-react';
 import CrossConsultHistoryModal, { type ConsultationRef } from '../CrossConsultHistoryModal';
-import TreatmentParametersModal, { type TreatmentParameters, formatParametersAsText, upsertNotesBlock, removeNotesBlock } from './TreatmentParametersModal';
+import TreatmentParametersModal, { type TreatmentParameters, type NotesParameterBlock, formatParametersAsText, upsertNotesBlock, removeNotesBlock, splitTreatmentNotes, joinTreatmentNotes } from './TreatmentParametersModal';
 import TreatmentPackageModal from './TreatmentPackageModal';
 import TreatmentFinanceOptions from './TreatmentFinanceOptions';
 import TreatmentFinanceSummary from './TreatmentFinanceSummary';
@@ -313,6 +313,64 @@ const parseEquipmentNames = (equipmentUsed: string): string[] => {
   return names;
 };
 
+/** Une equipos nuevos a la lista existente; si un nombre ya existe genera "nombre (2)" para registrarlo como nueva aplicación */
+const appendEquipmentNames = (equipmentUsed: string, newNames: string[]): { value: string; added: string[] } => {
+  const names = parseEquipmentNames(equipmentUsed);
+  const added: string[] = [];
+  for (const base of newNames) {
+    let name = base;
+    for (let n = 2; names.some(item => item.toLowerCase() === name.toLowerCase()); n += 1) name = `${base} (${n})`;
+    names.push(name);
+    added.push(name);
+  }
+  return { value: names.join(', '), added };
+};
+
+/** Tarjetas de parámetros por equipo, generadas desde los bloques 🔧 de las notas */
+function ParameterBlockCards({ blocks, onEdit, onRemove }: {
+  blocks: NotesParameterBlock[];
+  onEdit?: (name: string) => void;
+  onRemove?: (name: string) => void;
+}) {
+  return (
+    <ul className="grid gap-3 sm:grid-cols-2">
+      {blocks.map((block, index) => (
+        <li key={`${block.name}-${index}`} className="overflow-hidden rounded-xl border border-gold/30 bg-white shadow-sm">
+          <div className="flex items-center gap-2 border-b border-gold/20 bg-gradient-to-r from-gold/15 to-transparent px-3 py-2">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white text-gold-ink ring-1 ring-gold/30">
+              <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-gray-900" title={block.name}>{block.name}</p>
+              <p className="text-[11px] text-gray-500">{block.items.length} parámetro{block.items.length === 1 ? '' : 's'}</p>
+            </div>
+            {onEdit ? (
+              <button type="button" onClick={() => onEdit(block.name)} aria-label={`Editar parámetros de ${block.name}`}
+                className="admin-focus-ring flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 hover:bg-white hover:text-gold-ink">
+                <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            ) : null}
+            {onRemove ? (
+              <button type="button" onClick={() => onRemove(block.name)} aria-label={`Quitar ${block.name}`}
+                className="admin-focus-ring flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600">
+                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            ) : null}
+          </div>
+          <dl className="grid grid-cols-2 gap-x-3 gap-y-2 p-3 text-xs">
+            {block.items.map((item, i) => (
+              <div key={i} className={item.label ? 'min-w-0' : 'col-span-2 min-w-0'}>
+                {item.label ? <dt className="truncate text-gray-500" title={item.label}>{item.label}</dt> : null}
+                <dd className="break-words font-semibold tabular-nums text-gray-900">{item.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** Extrae solo YYYY-MM-DD de un ISO timestamp o string de PG para evitar desfase de zona horaria */
 const toDateOnly = (d: string | null | undefined): string => {
   if (!d) return '';
@@ -397,6 +455,8 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
   const [clinicalDataModalOpen, setClinicalDataModalOpen] = useState(false);
   const [viewerOpen, setViewerOpen] = useState(false);
   const [editingEquipmentName, setEditingEquipmentName] = useState('');
+  // Texto del equipo que se está por añadir; no se mezcla con los ya registrados para que "Añadir" siempre agregue uno nuevo
+  const [equipmentDraft, setEquipmentDraft] = useState('');
   // Zona activa seleccionada en los chips, aplicada a la próxima marcación que se coloque en el visor 3D
   const [activeZoneChip, setActiveZoneChip] = useState<string | null>(null);
   const [markerType, setMarkerType] = useState<MarkerType>('Puntual');
@@ -492,6 +552,7 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
     setActiveStep(1);
     setCurrentTreatment(makeEmptyTreatment(mode));
     setCostInput('');
+    setEquipmentDraft('');
     setDateLocked(false);
     setMessage(null);
     setActiveZoneChip(null);
@@ -509,6 +570,7 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
     setActiveStep(1);
     setCurrentTreatment({ ...treatment, date: toDateOnly(treatment.date) });
     setCostInput(treatment.cost > 0 ? String(treatment.cost) : '');
+    setEquipmentDraft('');
     setDateLocked(true);
     setMessage(null);
     setActiveZoneChip(null);
@@ -578,7 +640,13 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
     try {
       const action = currentTreatment.id ? 'updateTreatment' : 'addTreatment';
       const shouldPostToFinance = financePosting.enabled && Number(currentTreatment.cost) > 0;
-      const treatmentInput = { ...currentTreatment };
+      const treatmentInput = {
+        ...currentTreatment,
+        // Equipo escrito sin pulsar "Añadir": se guarda igual (sin parámetros)
+        equipment_used: equipmentDraft.trim()
+          ? appendEquipmentNames(currentTreatment.equipment_used, parseEquipmentNames(equipmentDraft)).value
+          : currentTreatment.equipment_used,
+      };
       delete treatmentInput.finance_record_count;
       delete treatmentInput.finance_registered_total;
       const body = {
@@ -612,6 +680,9 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
       }
       if (!currentTreatment.id) {
         handleNew();
+      } else if (equipmentDraft.trim()) {
+        setCurrentTreatment(prev => ({ ...prev, equipment_used: treatmentInput.equipment_used }));
+        setEquipmentDraft('');
       }
       if (savedId != null) {
         setHighlightedId(savedId);
@@ -747,6 +818,7 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
     const next = prepareNextTreatment(currentTreatment, getLocalDate());
     setCurrentTreatment(next);
     setCostInput(next.cost > 0 ? String(next.cost) : '');
+    setEquipmentDraft('');
     setDateLocked(false);
     setActiveZoneChip(null);
     setFinancePosting(createFinancePostingOptions());
@@ -754,6 +826,7 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
   };
 
   const equipmentNames = parseEquipmentNames(currentTreatment.equipment_used);
+  const notesParts = splitTreatmentNotes(currentTreatment.notes);
   const scalpAssessment = currentTreatment.parameters?.[RESERVED_PARAM_KEYS.capilar] as ScalpAssessmentData | undefined;
   const anthropometrics = currentTreatment.parameters?.[RESERVED_PARAM_KEYS.corporal] as AnthropometricsData | undefined;
   const anthropometryCount = anthropometrics
@@ -831,13 +904,26 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
     setCurrentTreatment(prev => ({ ...prev, area_treated: toggleTreatedZone(prev.area_treated, zone) }));
   };
 
-  /** Abre el modal de parámetros para el último equipo escrito en el campo (no bloquea el guardado normal del tratamiento) */
+  /** Registra el equipo escrito como nueva aplicación y abre el modal de parámetros (nunca sobrescribe uno existente) */
   const handleAddEquipment = () => {
-    const name = equipmentNames[equipmentNames.length - 1];
-    if (!name) return;
-    setEditingEquipmentName(name);
+    const draftNames = parseEquipmentNames(equipmentDraft);
+    if (draftNames.length === 0) return;
+    const { value, added } = appendEquipmentNames(currentTreatment.equipment_used, draftNames);
+    setCurrentTreatment(prev => ({ ...prev, equipment_used: value }));
+    setEquipmentDraft('');
+    setEditingEquipmentName(added[added.length - 1]);
     setParamsModalOpen(true);
   };
+
+  const commitEquipmentDraft = () => {
+    if (!equipmentDraft.trim()) return;
+    setCurrentTreatment(prev => ({ ...prev, equipment_used: appendEquipmentNames(prev.equipment_used, parseEquipmentNames(equipmentDraft)).value }));
+    setEquipmentDraft('');
+  };
+
+  const handleFreeNotesChange = (free: string) => setCurrentTreatment(prev => ({
+    ...prev, notes: joinTreatmentNotes(splitTreatmentNotes(prev.notes).blocks.map(b => b.raw), free),
+  }));
 
   /** Abre el modal para editar los parámetros de un equipo ya registrado */
   const handleEditEquipment = (name: string) => {
@@ -899,6 +985,7 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
       return;
     }
     setMessage(null);
+    commitEquipmentDraft();
     setActiveStep(step);
   };
 
@@ -1711,54 +1798,62 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
                 </div>
               )}
             </div>
-            <div className={activeStep === 3 ? 'space-y-2 md:col-span-2' : 'hidden'}>
-              <label className="block text-sm font-medium text-gray-700">Equipo Utilizado<FieldHelp text={HELP.treatment.equipment_used} /></label>
-              {equipmentNames.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
+            <div className={activeStep === 3 ? 'space-y-3 md:col-span-2' : 'hidden'}>
+              <div className="flex items-baseline justify-between gap-2">
+                <label htmlFor="treatment-equipment-draft" className="block text-sm font-medium text-gray-700">Equipo Utilizado<FieldHelp text={HELP.treatment.equipment_used} /></label>
+                {equipmentNames.length > 0 ? (
+                  <span className="text-xs text-gray-500">{equipmentNames.length} aplicación{equipmentNames.length === 1 ? '' : 'es'} registrada{equipmentNames.length === 1 ? '' : 's'}</span>
+                ) : null}
+              </div>
+              {equipmentNames.length > 0 ? (
+                <ul className="flex flex-wrap gap-2" aria-label="Equipos registrados en esta sesión">
                   {equipmentNames.map(name => {
-                    const hasParams = !!currentTreatment.parameters?.[name] && Object.keys(currentTreatment.parameters[name] as object).length > 0;
+                    const paramCount = Object.keys((currentTreatment.parameters?.[name] as object | undefined) || {}).length;
                     return (
-                      <span
-                        key={name}
-                        onClick={() => handleEditEquipment(name)}
-                        title="Editar parámetros"
-                        className={`group inline-flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-full text-xs font-medium border cursor-pointer transition-colors ${
-                          hasParams
-                            ? 'bg-[#deb887]/15 border-[#deb887]/40 text-[#b8944d] hover:bg-[#deb887]/25'
-                            : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
+                      <li key={name}
+                        className={`inline-flex items-center rounded-full border text-xs font-medium transition-colors ${
+                          paramCount
+                            ? 'border-gold/40 bg-gold/15 text-gold-ink hover:bg-gold/25'
+                            : 'border-dashed border-gray-300 bg-white text-gray-600 hover:bg-gray-50'
                         }`}
                       >
-                        {hasParams ? <Sparkles className="w-3 h-3" /> : <Wrench className="w-3 h-3 opacity-60" />}
-                        {name}
-                        <button
-                          type="button"
-                          onClick={e => { e.stopPropagation(); handleRemoveEquipment(name); }}
-                          className="p-0.5 rounded-full hover:bg-black/10 shrink-0"
-                        >
-                          <X className="w-3 h-3" />
+                        <button type="button" onClick={() => handleEditEquipment(name)}
+                          aria-label={`${paramCount ? 'Editar' : 'Registrar'} parámetros de ${name}`}
+                          className="admin-focus-ring inline-flex min-h-8 items-center gap-1.5 rounded-full py-1 pl-3 pr-1.5">
+                          {paramCount ? <Sparkles className="h-3.5 w-3.5" aria-hidden="true" /> : <Wrench className="h-3.5 w-3.5 opacity-60" aria-hidden="true" />}
+                          {name}
+                          <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${paramCount ? 'bg-white/80 text-gold-ink' : 'bg-gray-100 text-gray-500'}`}>
+                            {paramCount ? `${paramCount} parám.` : 'sin parámetros'}
+                          </span>
                         </button>
-                      </span>
+                        <button type="button" onClick={() => handleRemoveEquipment(name)} aria-label={`Quitar ${name}`}
+                          className="admin-focus-ring mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full hover:bg-black/10">
+                          <X className="h-3 w-3" aria-hidden="true" />
+                        </button>
+                      </li>
                     );
                   })}
-                </div>
-              )}
+                </ul>
+              ) : null}
               <div className="flex gap-2">
                 <input
+                  id="treatment-equipment-draft"
                   type="text"
                   list="equipment-list"
                   className="flex-1 p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all bg-gray-50/50 focus:bg-white"
-                  value={currentTreatment.equipment_used}
-                  onChange={e => setCurrentTreatment({ ...currentTreatment, equipment_used: e.target.value })}
-                  placeholder={FORM_COPY[mode].equipment}
+                  value={equipmentDraft}
+                  onChange={e => setEquipmentDraft(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddEquipment(); } }}
+                  placeholder={equipmentNames.length ? 'Añadir otro equipo o una nueva aplicación…' : FORM_COPY[mode].equipment}
                 />
-                <Tooltip content="Registrar parámetros del último equipo escrito (opcional)">
+                <Tooltip content="Agrega el equipo como nueva aplicación y registra sus parámetros">
                   <button
                     type="button"
                     onClick={handleAddEquipment}
-                    disabled={equipmentNames.length === 0}
-                    className="px-3 rounded-lg bg-[#deb887] text-white hover:bg-[#c5a075] disabled:opacity-40 disabled:cursor-not-allowed shrink-0 flex items-center gap-1 text-sm font-medium"
+                    disabled={!equipmentDraft.trim()}
+                    className="admin-focus-ring px-3 rounded-lg bg-gold-dark text-white hover:bg-gold-ink disabled:opacity-40 disabled:cursor-not-allowed shrink-0 flex items-center gap-1 text-sm font-medium"
                   >
-                    <Plus className="w-4 h-4" /> Añadir
+                    <Plus className="w-4 h-4" aria-hidden="true" /> Añadir
                   </button>
                 </Tooltip>
               </div>
@@ -1767,7 +1862,7 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
                   <option key={i} value={e} />
                 ))}
               </datalist>
-              <p className="text-[11px] text-gray-400">Puedes escribir varios equipos separados por coma. El botón "Añadir" es opcional y solo registra parámetros detallados en "Notas".</p>
+              <p className="text-[11px] text-gray-500">Cada "Añadir" crea una aplicación nueva con sus parámetros, aunque repitas el equipo (p. ej. un segundo pase). Toca un equipo para editar sus parámetros.</p>
             </div>
             <div className={activeStep === 2 ? 'space-y-2 md:col-span-2' : 'hidden'}>
               <label className="block text-sm font-medium text-gray-700">Zona Tratada<FieldHelp text={HELP.treatment.area_treated} /></label>
@@ -1843,32 +1938,60 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
                 </button>
               </div>
               <dl className="mt-4 grid grid-cols-2 gap-3 text-xs sm:grid-cols-3">
-                {[
-                  ['Fecha', currentTreatment.date],
-                  ['Registro', selectedPackage?.name || 'Sesión independiente'],
-                  ['Zonas', currentTreatment.area_treated || 'Sin zonas'],
-                  ['Equipo', currentTreatment.equipment_used || 'Sin equipo'],
-                  ['Duración', `${currentTreatment.duration_minutes || 0} min`],
-                  [selectedPackage ? 'Abono' : 'Costo', `$${(Number(currentTreatment.cost) || 0).toFixed(2)}`],
-                ].map(([label, value]) => (
-                  <div key={label} className="min-w-0 rounded-xl bg-white p-3 ring-1 ring-gray-100">
-                    <dt className="font-medium text-gray-400">{label}</dt>
-                    <dd className="mt-1 truncate font-semibold text-gray-800" title={value}>{value}</dd>
+                {([
+                  [Calendar, 'Fecha', currentTreatment.date ? new Date(`${toDateOnly(currentTreatment.date)}T12:00:00`).toLocaleDateString('es-EC') : 'Sin fecha'],
+                  [Package, 'Registro', selectedPackage?.name || 'Sesión independiente'],
+                  [MapPin, 'Zonas', currentTreatment.area_treated || 'Sin zonas'],
+                  [Wrench, 'Equipo', [...equipmentNames, ...parseEquipmentNames(equipmentDraft)].join(', ') || 'Sin equipo'],
+                  [Clock, 'Duración', `${currentTreatment.duration_minutes || 0} min`],
+                  [DollarSign, selectedPackage ? 'Abono' : 'Costo', `$${(Number(currentTreatment.cost) || 0).toFixed(2)}`],
+                ] as const).map(([Icon, label, value]) => (
+                  <div key={label} className="flex min-w-0 gap-2.5 rounded-xl bg-white p-3 ring-1 ring-gray-100">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gold/10 text-gold-ink">
+                      <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                    </span>
+                    <div className="min-w-0">
+                      <dt className="font-medium text-gray-500">{label}</dt>
+                      <dd className="mt-0.5 line-clamp-2 break-words font-semibold text-gray-800" title={value}>{value}</dd>
+                    </div>
                   </div>
                 ))}
               </dl>
             </section>
           ) : null}
 
-          <div className={activeStep === 4 ? 'space-y-2' : 'hidden'}>
-            <label className="block text-sm font-medium text-gray-700">Observaciones de la sesión<FieldHelp text={HELP.treatment.notes} /></label>
-            <textarea
-              rows={5}
-              className="w-full p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none resize-none transition-all bg-gray-50/50 focus:bg-white"
-              value={currentTreatment.notes}
-              onChange={e => setCurrentTreatment({ ...currentTreatment, notes: e.target.value })}
-              placeholder="Respuesta observada, tolerancia, incidencias e indicaciones entregadas…"
-            />
+          <div className={activeStep === 4 ? 'space-y-4' : 'hidden'}>
+            {notesParts.blocks.length > 0 ? (
+              <section aria-labelledby="treatment-applied-params-title" className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <h3 id="treatment-applied-params-title" className="flex items-center gap-2 text-sm font-semibold text-gray-800">
+                    <Wrench className="h-4 w-4 text-gold-ink" aria-hidden="true" />
+                    Parámetros aplicados
+                    <span className="rounded-full bg-gold/15 px-2 py-0.5 text-[11px] font-semibold text-gold-ink">{notesParts.blocks.length}</span>
+                  </h3>
+                  <button type="button" onClick={() => setActiveStep(3)}
+                    className="admin-focus-ring inline-flex min-h-8 items-center gap-1 rounded-lg px-2 text-xs font-semibold text-gold-ink hover:bg-gold/10">
+                    <Plus className="h-3.5 w-3.5" aria-hidden="true" /> Añadir otro
+                  </button>
+                </div>
+                <ParameterBlockCards blocks={notesParts.blocks} onEdit={handleEditEquipment} onRemove={handleRemoveEquipment} />
+              </section>
+            ) : null}
+            <div className="space-y-2">
+              <label htmlFor="treatment-session-notes" className="flex items-center text-sm font-semibold text-gray-800">
+                <ClipboardList className="mr-2 h-4 w-4 text-gold-ink" aria-hidden="true" />
+                Observaciones de la sesión<FieldHelp text={HELP.treatment.notes} />
+              </label>
+              <textarea
+                id="treatment-session-notes"
+                rows={4}
+                className="w-full resize-y rounded-xl border border-gray-200 bg-white p-3 text-sm leading-6 outline-none transition-all focus:border-gold focus:ring-2 focus:ring-gold/40"
+                value={notesParts.free}
+                onChange={e => handleFreeNotesChange(e.target.value)}
+                placeholder="Respuesta observada, tolerancia, incidencias e indicaciones entregadas…"
+              />
+              <p className="text-[11px] text-gray-500">Los parámetros de cada equipo se guardan junto a estas observaciones en el historial.</p>
+            </div>
           </div>
 
           <div className="flex flex-col-reverse gap-2 border-t border-gray-100 pt-5 sm:flex-row sm:items-center sm:justify-between">
@@ -1982,10 +2105,11 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
             <SavedClinicalDataSummary treatment={currentTreatment} mode={mode} />
           </section>
 
-          <section aria-labelledby="summary-notes-title">
-            <h3 id="summary-notes-title" className="text-sm font-semibold text-gray-900">Observaciones</h3>
-            <p className="mt-2 whitespace-pre-wrap rounded-xl border border-gray-100 bg-gray-50/70 p-4 text-sm leading-6 text-gray-700">
-              {currentTreatment.notes?.trim() || 'Sin observaciones registradas.'}
+          <section aria-labelledby="summary-notes-title" className="space-y-3">
+            <h3 id="summary-notes-title" className="text-sm font-semibold text-gray-900">Parámetros y observaciones</h3>
+            {notesParts.blocks.length ? <ParameterBlockCards blocks={notesParts.blocks} /> : null}
+            <p className="whitespace-pre-wrap rounded-xl border border-gray-100 bg-gray-50/70 p-4 text-sm leading-6 text-gray-700">
+              {notesParts.free.trim() || 'Sin observaciones registradas.'}
             </p>
           </section>
 
@@ -2039,7 +2163,7 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
           {t.area_treated && <div><span className="text-gray-400">Área:</span> {t.area_treated}</div>}
           {t.duration_minutes > 0 && <div><span className="text-gray-400">Duración:</span> {t.duration_minutes} min</div>}
           {t.cost > 0 && <div><span className="text-gray-400">Costo:</span> ${t.cost}</div>}
-          {t.notes && <div><span className="text-gray-400">Notas:</span> {t.notes}</div>}
+          {t.notes && <div className="whitespace-pre-wrap"><span className="text-gray-400">Notas:</span> {t.notes}</div>}
           <div><span className="text-gray-400">Seguimiento:</span> {getFollowUpLabel(t)}</div>
           <div>{describeTreatmentAssessment(t, t.treatment_mode || 'facial')}</div>
           {t.date && <div><span className="text-gray-400">Fecha:</span> {new Date(toDateOnly(t.date) + 'T12:00:00').toLocaleDateString('es-EC')}</div>}
@@ -2073,7 +2197,15 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
                       ) : ts.map((t, i) => (
                         <div key={t.id ?? i} className="px-4 py-3 border-t border-gray-50">
                           <p className="text-xs font-semibold text-gray-600 mb-1">{t.procedure_name}</p>
-                          <p className="text-sm text-gray-700 whitespace-pre-wrap">{t.notes}</p>
+                          {(() => {
+                            const parts = splitTreatmentNotes(t.notes);
+                            return (
+                              <div className="space-y-2">
+                                {parts.blocks.length ? <ParameterBlockCards blocks={parts.blocks} /> : null}
+                                {parts.free.trim() ? <p className="text-sm text-gray-700 whitespace-pre-wrap">{parts.free.trim()}</p> : null}
+                              </div>
+                            );
+                          })()}
                         </div>
                       ))}
                     </div>
