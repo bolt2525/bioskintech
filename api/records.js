@@ -8,6 +8,7 @@ import { generateUploadUrl, generateReadUrl, deleteR2Object, putR2Object } from 
 import { lockClinicWriters, unlockClinicWriters, requireClinicWritable } from '../lib/clinic-lifecycle.js';
 import { buildFinanceCsv } from '../lib/finance-csv.js';
 import { normalizeEcuadorIdentification, hashConsentEvidence, hashSigningCode, hashConsentSession, isValidSignatureDataUrl, maskEmail, buildConsentGmailRaw } from '../lib/consent-signing.js';
+import { hasProtectedTreatmentFinanceChanges, validateTreatmentFinanceInput } from '../lib/modules/fichas-clinicas/treatment-finance-lock.js';
 
 console.log('✅ [API] records.js loaded');
 
@@ -3173,6 +3174,8 @@ export default async function handler(req, res) {
         const safeUpTreat = Object.fromEntries(Object.entries(upTreatData).filter(([key]) => TREATMENT_WRITE_FIELDS.has(key)));
         if (safeUpTreat.treatment_mode && !TREATMENT_MODES.has(safeUpTreat.treatment_mode))
           return res.status(400).json({ error: 'treatment_mode inválido' });
+        const protectedFieldError = validateTreatmentFinanceInput(safeUpTreat);
+        if (protectedFieldError) return res.status(400).json({ error: protectedFieldError });
         let financePosting;
         if (Object.hasOwn(safeUpTreat, 'cost')) {
           try {
@@ -3206,12 +3209,7 @@ export default async function handler(req, res) {
             [effectiveClinicId, upTreatId]
           );
           if (postedResult.rowCount) {
-            const immutableChanged = Number(mergedTreatment.cost) !== Number(currentTreatment.cost)
-              || Number(mergedTreatment.consultation_id) !== Number(currentTreatment.consultation_id)
-              || Number(mergedTreatment.package_id || 0) !== Number(currentTreatment.package_id || 0)
-              || String(mergedTreatment.date || '').slice(0, 10) !== String(currentTreatment.date || '').slice(0, 10)
-              || String(mergedTreatment.procedure_name || '') !== String(currentTreatment.procedure_name || '');
-            if (immutableChanged) {
+            if (hasProtectedTreatmentFinanceChanges(currentTreatment, mergedTreatment)) {
               const error = new Error('El cobro ya fue registrado; costo, fecha, consulta, paquete y procedimiento no pueden modificarse sin un ajuste financiero');
               error.code = 'POSTED_SOURCE_LOCKED';
               throw error;

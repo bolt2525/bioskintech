@@ -403,3 +403,4 @@
 - ✅ Oct 11 Lab simulación facial: marcación con Clinical3DViewer o sobre fotos, trazos/flechas/patrones
 - ✅ Oct 17 Tratamientos: "Añadir" equipo vuelve a crear aplicaciones nuevas (sin sobrescribir); paso 4 con tarjetas de parámetros y observaciones libres
 - ✅ Oct 17 Iconos específicos para parámetros de tratamientos y bienvenida clínica
+- ✅ Oct 17 Edición clínica permitida en tratamientos con cobro enlazado, conservando campos financieros protegidos

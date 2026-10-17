@@ -652,7 +652,7 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
       const body = {
         record_id: recordId,
         ...treatmentInput,
-        ...(consultationId ? { consultation_id: consultationId } : {}),
+        ...(!currentTreatment.id && consultationId ? { consultation_id: consultationId } : {}),
         finance_posting: {
           ...financePosting,
           enabled: shouldPostToFinance,
