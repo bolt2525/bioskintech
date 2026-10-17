@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import recordsFetch from "../../../../../utils/recordsFetch";
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Calendar, DollarSign, Clock, Save, Trash2, Copy, Check, AlertCircle, Pencil, Layers, History, Eye, X, ChevronDown, ChevronLeft, ChevronRight, Sparkles, Wrench, Package, Wallet, ClipboardList, MapPin, CircleDashed, Undo2, CheckCircle2, ScanSearch, ScanFace, PersonStanding, Archive } from 'lucide-react';
+import { Plus, Calendar, DollarSign, Clock, Save, Trash2, Copy, Check, AlertCircle, Pencil, Layers, History, Eye, X, ChevronDown, ChevronLeft, ChevronRight, SlidersHorizontal, Wrench, Package, Wallet, ClipboardList, MapPin, CircleDashed, Undo2, CheckCircle2, ScanSearch, ScanFace, PersonStanding, Archive } from 'lucide-react';
 import CrossConsultHistoryModal, { type ConsultationRef } from '../CrossConsultHistoryModal';
 import TreatmentParametersModal, { type TreatmentParameters, type NotesParameterBlock, formatParametersAsText, upsertNotesBlock, removeNotesBlock, splitTreatmentNotes, joinTreatmentNotes } from './TreatmentParametersModal';
 import TreatmentPackageModal from './TreatmentPackageModal';
@@ -338,7 +338,7 @@ function ParameterBlockCards({ blocks, onEdit, onRemove }: {
         <li key={`${block.name}-${index}`} className="overflow-hidden rounded-xl border border-gold/30 bg-white shadow-sm">
           <div className="flex items-center gap-2 border-b border-gold/20 bg-gradient-to-r from-gold/15 to-transparent px-3 py-2">
             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white text-gold-ink ring-1 ring-gold/30">
-              <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+              <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
             </span>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold text-gray-900" title={block.name}>{block.name}</p>
@@ -1820,7 +1820,7 @@ export default function TreatmentModeView({ mode: initialMode = 'facial', modelU
                         <button type="button" onClick={() => handleEditEquipment(name)}
                           aria-label={`${paramCount ? 'Editar' : 'Registrar'} parámetros de ${name}`}
                           className="admin-focus-ring inline-flex min-h-8 items-center gap-1.5 rounded-full py-1 pl-3 pr-1.5">
-                          {paramCount ? <Sparkles className="h-3.5 w-3.5" aria-hidden="true" /> : <Wrench className="h-3.5 w-3.5 opacity-60" aria-hidden="true" />}
+                          {paramCount ? <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" /> : <Wrench className="h-3.5 w-3.5 opacity-60" aria-hidden="true" />}
                           {name}
                           <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${paramCount ? 'bg-white/80 text-gold-ink' : 'bg-gray-100 text-gray-500'}`}>
                             {paramCount ? `${paramCount} parám.` : 'sin parámetros'}

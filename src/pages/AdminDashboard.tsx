@@ -17,7 +17,7 @@ import { useAuth } from '../context/AuthContext';
 import { useMasterView } from '../context/MasterViewContext';
 import { useAdminNav } from '../hooks/useAdminNav';
 import {
-  LogOut, Calendar, Bell, X, AlertCircle, ChevronRight, Sparkles,
+  LogOut, Calendar, Bell, X, AlertCircle, ChevronRight, Stethoscope,
   Users, Shield, Settings, Lock, Eye, EyeOff, Pencil, Check,
   UserCircle, CalendarDays, Building2, KeyRound, Plus, UserCheck, MessageCircle,
 } from 'lucide-react';
@@ -709,7 +709,7 @@ export default function AdminDashboard() {
           <SeasonalHeroAtmosphere />
           <div className="relative z-10 flex items-start gap-4">
             <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl bg-gold-ink text-white shadow-sm">
-              <Sparkles className="h-5 w-5" />
+              <Stethoscope className="h-5 w-5" aria-hidden="true" />
             </div>
             <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-ink">Tu espacio de trabajo</p>

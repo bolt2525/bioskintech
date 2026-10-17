@@ -6,7 +6,7 @@
  */
 import { useEffect, useState } from 'react';
 import ClinicalSelect from '../ClinicalSelect';
-import { X, Sparkles, Plus, Trash2 } from 'lucide-react';
+import { X, SlidersHorizontal, Plus, Trash2 } from 'lucide-react';
 import { Dialog } from '../../../../ui/Dialog';
 
 type FieldType = 'text' | 'number';
@@ -289,7 +289,7 @@ export default function TreatmentParametersModal({
       <div className="flex max-h-[85dvh] w-[min(42rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-lg bg-white shadow-xl">
         <div className="flex items-center justify-between p-4 border-b border-gray-100 shrink-0">
           <h3 id="treatment-parameters-title" className="font-semibold text-gray-800 flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-[#b8944d]" /> Parámetros — <span className="text-[#b8944d]">{equipmentName}</span>
+            <SlidersHorizontal className="w-5 h-5 text-[#b8944d]" /> Parámetros — <span className="text-[#b8944d]">{equipmentName}</span>
           </h3>
           <button onClick={onClose} className="admin-focus-ring flex min-h-11 min-w-11 items-center justify-center rounded-lg hover:bg-gray-100" aria-label="Cerrar parámetros de tratamiento"><X className="w-5 h-5 text-gray-500" /></button>
         </div>
