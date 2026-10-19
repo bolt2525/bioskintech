@@ -132,6 +132,39 @@ const hasProfessionalSignature = (consent?: ConsentForm | null) =>
   Boolean(consent?.signatures?.professional_name?.trim() &&
     /^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(consent.signatures.professional_sig_data || ''));
 
+const normalizeConsent = (consent: ConsentForm): ConsentForm => ({
+  ...consent,
+  objectives: Array.isArray(consent.objectives) ? consent.objectives : [],
+  risks: Array.isArray(consent.risks) ? consent.risks : [],
+  benefits: Array.isArray(consent.benefits) ? consent.benefits : [],
+  alternatives: Array.isArray(consent.alternatives) ? consent.alternatives : [],
+  pre_care: Array.isArray(consent.pre_care) ? consent.pre_care : [],
+  post_care: Array.isArray(consent.post_care) ? consent.post_care : [],
+  contraindications: Array.isArray(consent.contraindications) ? consent.contraindications : [],
+  critical_antecedents: {
+    allergies: consent.critical_antecedents?.allergies || '',
+    medications: consent.critical_antecedents?.medications || '',
+    pregnancy: consent.critical_antecedents?.pregnancy === true,
+    herpes: consent.critical_antecedents?.herpes === true,
+    others: Array.isArray(consent.critical_antecedents?.others) ? consent.critical_antecedents.others : [],
+  },
+  authorizations: {
+    image_use: consent.authorizations?.image_use === true,
+    photo_video: consent.authorizations?.photo_video === true,
+    privacy_policy: consent.authorizations?.privacy_policy === true,
+  },
+  declarations: {
+    understanding: consent.declarations?.understanding === true,
+    questions: consent.declarations?.questions === true,
+    results: consent.declarations?.results === true,
+    authorization: consent.declarations?.authorization === true,
+    revocation: consent.declarations?.revocation === true,
+    alternatives: consent.declarations?.alternatives === true,
+  },
+  signatures: consent.signatures || { patient_name: '', professional_name: '' },
+  attachments: Array.isArray(consent.attachments) ? consent.attachments : [],
+});
+
 export default function ConsentimientosTab({ patientId, recordId, patient, consultationId, consultations = [], initialConsents = [] }: Props) {
   const { settings: clinic } = useClinicSettings();
   const { user } = useAuth();
@@ -140,7 +173,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
   const effectiveClinicId = user?.clinic_id || (masterViewClinicId ? String(masterViewClinicId) : null);
   const clinicDisplayName = clinic.general.name || user?.clinic_name || 'Clínica';
   const professionalName = [user?.gentilicio, user?.full_name].filter(Boolean).join(' ');
-  const [consents, setConsents] = useState<ConsentForm[]>(initialConsents);
+  const [consents, setConsents] = useState<ConsentForm[]>(() => initialConsents.map(normalizeConsent));
   const [dbTemplates, setDbTemplates] = useState<ConsentTemplate[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [view, setView] = useState<'list' | 'form' | 'preview'>('list');
@@ -164,6 +197,10 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
   const messageRef = useRef<HTMLDivElement>(null);
   const currentConsents = consents.filter(c => Number(c.consultation_id) === Number(consultationId));
   const otherConsentCount = consents.filter(c => Number(c.consultation_id) !== Number(consultationId)).length;
+  const buildConsentPayload = (consent: ConsentForm) => ({
+    ...consent,
+    ...(!consent.id && consent.consultation_id == null && consultationId ? { consultation_id: consultationId } : {}),
+  });
 
   // Combina plantillas de DB (por clínica) con fallback a locales
   const templates = dbTemplates.length > 0 ? dbTemplates : localTemplates;
@@ -311,10 +348,10 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
       const saved = await recordsFetch(`${API_URL}?action=saveConsent`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedConsent),
+        body: JSON.stringify(buildConsentPayload(updatedConsent)),
       });
       if (!saved.ok) throw new Error('No se pudo crear un nuevo consentimiento');
-      const newConsent = await saved.json();
+      const newConsent = normalizeConsent(await saved.json());
       setCurrentConsent(newConsent);
       if (!patient?.email?.trim()) {
         setView('form');
@@ -400,7 +437,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
       setLoading(true);
       const res = await recordsFetch(`${API_URL}?action=getConsent&id=${currentConsent.id}`);
       if (res.ok) {
-        const data = await res.json();
+        const data = normalizeConsent(await res.json());
         setCurrentConsent(data);
         if (data.signatures?.patient_sig_data) {
           setShowQr(false);
@@ -422,13 +459,13 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
     const res = await recordsFetch(`${API_URL}?action=saveConsent`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...consent, ...(consultationId ? { consultation_id: consultationId } : {}) }),
+      body: JSON.stringify(buildConsentPayload(consent)),
     });
     if (!res.ok) {
       const error = await res.json().catch(() => ({}));
       throw new Error(error.error || 'Guarde el consentimiento antes de firmar.');
     }
-    return await res.json() as ConsentForm;
+    return normalizeConsent(await res.json() as ConsentForm);
   };
 
   const preparePaperConsent = async () => {
@@ -447,17 +484,20 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
     }
   };
 
-  const loadConsents = async () => {
+  const loadConsents = async (): Promise<boolean> => {
     setLoading(true);
     try {
       const res = await recordsFetch(`${API_URL}?action=listConsents&patient_id=${patientId}&record_id=${recordId}`);
       if (!res.ok) throw new Error('Error al cargar consentimientos');
       const data = await res.json();
       if (Array.isArray(data)) {
-        setConsents(data);
+        setConsents(data.map(normalizeConsent));
+        return true;
       }
+      return false;
     } catch (error) {
       console.error('Error loading consents:', error);
+      return false;
     } finally {
       setLoading(false);
     }
@@ -474,8 +514,10 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
       objectives: template.objectives || [],
       risks: template.risks || [],
       benefits: template.benefits || [],
+      alternatives: template.alternatives || [],
       pre_care: template.pre_care || [],
-      post_care: template.post_care || []
+      post_care: template.post_care || [],
+      contraindications: template.contraindications || [],
     });
     setMessage({ type: 'success', text: 'Plantilla cargada' });
   };
@@ -497,6 +539,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
     setCurrentConsent({
       record_id: recordId,
       patient_id: patientId,
+      consultation_id: consultationId,
       status: 'draft',
       procedure_type: '',
       zone: '',
@@ -541,7 +584,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
   };
 
   const handleEdit = (consent: ConsentForm) => {
-    setCurrentConsent(consent);
+    setCurrentConsent(normalizeConsent(consent));
     setIsPaperConsent(false);
     // Finalized consents are immutable — open in preview only
     setView(isSignedConsent(consent) || isAnnulledConsent(consent) ? 'preview' : 'form');
@@ -575,12 +618,18 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
   const handleDelete = async (id: number) => {
     if (!confirm('¿Está seguro de eliminar este consentimiento?')) return;
     try {
-      await recordsFetch(`${API_URL}?action=deleteConsent&id=${id}`, { method: 'POST' });
-      loadConsents();
+      const response = await recordsFetch(`${API_URL}?action=deleteConsent&id=${id}`, { method: 'POST' });
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        throw new Error(result.error || 'No se pudo eliminar el consentimiento.');
+      }
+      if (!await loadConsents()) {
+        throw new Error('El consentimiento fue eliminado, pero no se pudo actualizar la lista.');
+      }
       setMessage({ type: 'success', text: 'Consentimiento eliminado' });
     } catch (error) {
       console.error('Error deleting consent:', error);
-      setMessage({ type: 'error', text: 'Error al eliminar' });
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Error al eliminar' });
     }
   };
 
@@ -604,7 +653,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
     sigSizeSaveTimer.current = setTimeout(() => {
       recordsFetch(`${API_URL}?action=saveConsent`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...updated, ...(consultationId ? { consultation_id: consultationId } : {}) })
+        body: JSON.stringify(buildConsentPayload(updated))
       }).catch(() => { /* el tamaño queda en pantalla aunque falle el guardado */ });
     }, 600);
   };
@@ -622,15 +671,15 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
       const res = await recordsFetch(`${API_URL}?action=saveConsent`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...currentConsent, ...(consultationId ? { consultation_id: consultationId } : {}) })
+        body: JSON.stringify(buildConsentPayload(currentConsent))
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || 'Error al guardar');
       }
-      const saved = await res.json();
+      const saved = normalizeConsent(await res.json());
       if (saved.id) {
-        setCurrentConsent(prev => prev ? { ...prev, id: saved.id } : prev);
+        setCurrentConsent(saved);
         await loadConsents();
         setView('list');
         setMessage({ type: 'success', text: 'Consentimiento guardado correctamente' });
@@ -659,18 +708,6 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
     } as ConsentForm);
   };
 
-  const migrateDB = async () => {
-    if (!confirm('¿Actualizar estructura de base de datos? Esto agregará las columnas necesarias para la firma remota.')) return;
-    try {
-      const res = await recordsFetch('/api/records?action=migrateConsents');
-      if (res.ok) setMessage({ type: 'success', text: 'Base de datos actualizada correctamente' });
-      else throw new Error('Error al actualizar');
-    } catch (e) {
-      console.error(e);
-      setMessage({ type: 'error', text: 'Error de conexión' });
-    }
-  };
-
   const renderList = () => (
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
@@ -689,18 +726,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
           )}
           <span className="text-xs bg-gray-100 text-gray-500 rounded-full px-2 py-0.5 ml-1">{currentConsents.length}</span>
         </div>
-        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
-          <Tooltip content="Actualizar estructura DB">
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={migrateDB}
-              className="flex items-center justify-center gap-2 px-3 py-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 text-sm font-medium transition-colors"
-            >
-              <RefreshCw size={16} />
-              Configurar DB
-            </motion.button>
-          </Tooltip>
+        <div className="grid w-full grid-cols-1 gap-2 sm:flex sm:w-auto">
           <Tooltip content="Crear nuevo consentimiento">
             <motion.button
               whileHover={{ scale: 1.05 }}
@@ -765,8 +791,8 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
             </div>
           </motion.article>
         ))}
-        {loading && consents.length === 0 && <p className="py-10 text-center text-sm text-gray-400">Cargando consentimientos...</p>}
-        {!loading && consents.length === 0 && <p className="py-10 text-center text-sm text-gray-400">No hay consentimientos registrados</p>}
+        {loading && currentConsents.length === 0 && <p className="py-10 text-center text-sm text-gray-400">Cargando consentimientos...</p>}
+        {!loading && currentConsents.length === 0 && <p className="py-10 text-center text-sm text-gray-400">No hay consentimientos registrados en esta consulta</p>}
       </div>
 
       <div className="hidden bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden md:block">
@@ -853,16 +879,16 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                 </td>
               </motion.tr>
             ))}
-            {loading && consents.length === 0 && (
+            {loading && currentConsents.length === 0 && (
               <tr>
                 <td colSpan={4} className="px-6 py-12 text-center text-gray-400">Cargando consentimientos...</td>
               </tr>
             )}
-            {!loading && consents.length === 0 && (
+            {!loading && currentConsents.length === 0 && (
               <tr>
                 <td colSpan={4} className="px-6 py-12 text-center text-gray-400 flex flex-col items-center gap-2">
                   <FileText className="w-8 h-8 opacity-20" />
-                  No hay consentimientos registrados
+                  No hay consentimientos registrados en esta consulta
                 </td>
               </tr>
             )}
@@ -1154,6 +1180,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                           id="consent-allergies"
                           name="consent-allergies"
                           type="text"
+                          value={currentConsent.critical_antecedents.allergies}
                           onChange={(e) => updateNestedField('critical_antecedents', 'allergies', e.target.value)}
                           className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all"
                         />
@@ -1164,6 +1191,7 @@ export default function ConsentimientosTab({ patientId, recordId, patient, consu
                           id="consent-medications"
                           name="consent-medications"
                           type="text"
+                          value={currentConsent.critical_antecedents.medications}
                           onChange={(e) => updateNestedField('critical_antecedents', 'medications', e.target.value)}
                           className="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all"
                         />

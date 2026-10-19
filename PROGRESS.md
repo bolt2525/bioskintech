@@ -1,5 +1,7 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-19 Consentimientos: borradores y antecedentes persistentes.
+
 - ✅ 2026-10-16 Navegación: menú flyout izquierdo (hover/clic/teclado) en Fichas Clínicas para saltar a todos los módulos permitidos y a Ajustes; reutiliza `getVisibleModules` (misma regla que el dashboard, sin ampliar permisos ni habilitar módulos ocultos). Confirmación al salir de una ficha con cambios pendientes (`useUnsavedChangesGuard`; no hay autoguardado). Pruebas: `tests/module-flyout-nav.test.mjs`. Corregido en QA: hover + clic cerraba el menú (ahora el clic lo fija) y el foco por teclado no entraba al panel. Verificado en Chromium escritorio/móvil.
 - ✅ 2026-10-16 Select: el menú se portaba a `document.body` fuera de `showModal()` (invisible/inert); ahora usa `closest('dialog') || fullscreenElement || body`, como `ClinicalSelect`. `tests/ui-select.test.mjs` 4/4 y `clinical-forms-ui` 4/4; QA Chromium verificado.
 
