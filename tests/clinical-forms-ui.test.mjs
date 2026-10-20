@@ -33,6 +33,7 @@ function loadComponent(file, mocks = {}, dialog = null) {
   let cursor = 0;
   let focused = false;
   let portalParent = null;
+  let openedBlob = null;
   const hooks = {
     ...React,
     useState(initial) {
@@ -46,8 +47,12 @@ function loadComponent(file, mocks = {}, dialog = null) {
   };
   const exports = {};
   const sandbox = {
-    exports, console, Date, setTimeout, clearTimeout, Response,
-    window: { innerHeight: 800 },
+    exports, console, Date, setTimeout: () => 0, clearTimeout() {}, Response, Blob,
+    URL: {
+      createObjectURL(blob) { openedBlob = blob; return 'blob:qa-print'; },
+      revokeObjectURL() {},
+    },
+    window: { innerHeight: 800, location: { origin: 'https://qa.local' }, open() {} },
     document: { body: {}, getElementById: () => ({ scrollIntoView() {} }) },
     require: name => {
       if (name in mocks) return mocks[name];
@@ -61,6 +66,7 @@ function loadComponent(file, mocks = {}, dialog = null) {
     render: props => { cursor = 0; return exports.default(props); },
     focused: () => focused,
     portalParent: () => portalParent,
+    openedBlob: () => openedBlob,
   };
 }
 
@@ -107,7 +113,7 @@ test('selector en modal: el portal permanece en la capa superior del dialog', ()
 function prescriptionForm(prescriptions = []) {
   const Select = () => null;
   const component = loadComponent('tabs/PrescriptionTab.tsx', {
-    '../../../../../utils/recordsFetch': { default: async () => new Response(JSON.stringify({ ...prescriptions[0], items: [item] })) },
+    '../../../../../utils/recordsFetch': { default: async () => new Response(JSON.stringify({ ...prescriptions[0], items: prescriptions[0]?.items || [item] })) },
     '../../../../../utils/escapeHtml.js': { escapeHtml: value => value, safeImageSrc: value => value },
     'framer-motion': { motion: { div: 'div', button: 'button' }, AnimatePresence: React.Fragment },
     '../CrossConsultHistoryModal': { default: () => null },
@@ -121,7 +127,7 @@ function prescriptionForm(prescriptions = []) {
     '../../../../ui/Dialog': { Dialog: () => null },
   });
   const props = { recordId: 1, consultationId: 1, patientName: 'Paciente ficticio', initialPrescriptions: prescriptions };
-  return { render: () => component.render(props), Select };
+  return { render: () => component.render(props), Select, openedBlob: component.openedBlob };
 }
 
 test('guía: exactamente tres campos por producto; receta recupera campos sin borrar datos', async () => {
@@ -143,6 +149,25 @@ test('guía: exactamente tres campos por producto; receta recupera campos sin bo
   guideMode.props.onClick();
   assert.equal(fields().find(node => node.props.id === 'product-name-0').props.value, 'Producto QA');
   assert.equal(fields().find(node => node.props.id === 'product-instructions-0').props.value, 'Indicaciones QA');
+});
+
+test('impresión: productos e indicaciones comparten referencia y repiten el nombre', async () => {
+  const items = [
+    { ...item, nombre_comercial: 'Producto Mañana', indicaciones: 'Uso matutino', rutina: 'mañana' },
+    { ...item, nombre_comercial: 'Producto Noche', indicaciones: 'Uso nocturno', rutina: 'noche' },
+    { ...item, nombre_comercial: 'Producto Ambos', indicaciones: 'Uso en ambos turnos', rutina: 'ambos' },
+  ];
+  const form = prescriptionForm([{ id: 1, consultation_id: 1, mode: 'routine', fecha: '2026-10-20', diagnostico: 'QA', items }]);
+  const history = findAll(form.render(), node => node.type === 'button' && node.props.className?.includes('w-full text-left'));
+  await history[0].props.onClick();
+  const printButton = findAll(form.render(), node => node.type === 'button' && node.props['aria-label'] === 'Imprimir documento')[0];
+  printButton.props.onClick();
+  const html = await form.openedBlob().text();
+
+  assert.match(html, /Uso matutino<\/span>\s*<span class="linked-product-name"> \(Producto Mañana\)<\/span>/);
+  assert.match(html, /Uso nocturno<\/span>\s*<span class="linked-product-name"> \(Producto Noche\)<\/span>/);
+  assert.equal((html.match(/item-reference">3<\/span>/g) || []).length, 3);
+  assert.match(html, /Busca el mismo número para relacionar cada indicación/);
 });
 
 test('historial: filtra guías/recetas y reconoce el modo legacy prescription_mode', () => {

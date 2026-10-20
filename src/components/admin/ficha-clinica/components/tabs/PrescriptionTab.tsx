@@ -417,8 +417,9 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
       : '';
     const prescriptionItems = currentPrescription.items
       .filter(i => i.medicamento || i.nombre_comercial || i.indicaciones)
-      .map(item => ({
+      .map((item, index) => ({
         ...item,
+        reference: index + 1,
         medicamento: escapeHtml(item.medicamento),
         nombre_comercial: escapeHtml(item.nombre_comercial),
         presentacion: escapeHtml(item.presentacion),
@@ -429,8 +430,17 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
         duracion: escapeHtml(item.duracion),
         indicaciones: escapeHtml(item.indicaciones),
       }));
-    const prescriptionLeftHtml = prescriptionItems.map((item, index) => `<div class="medicine"><strong>${index + 1}. ${item.medicamento || item.nombre_comercial || 'Medicamento'}</strong>${item.nombre_comercial ? ` <span>(${item.nombre_comercial})</span>` : ''}${item.presentacion || item.dosis ? `<br><small>${[item.presentacion, item.dosis].filter(Boolean).join(' · ')}</small>` : ''}</div>`).join('') || '<em>Sin medicamentos registrados</em>';
-    const prescriptionRightHtml = prescriptionItems.map((item, index) => `<div class="medicine"><strong>${index + 1}.</strong> ${[['Vía', item.via], ['Cantidad', item.cantidad], ['Dosis', item.dosis], ['Frecuencia', item.frecuencia], ['Duración', item.duracion]].filter(([, value]) => value).map(([label, value]) => `<span>${label}: ${value}</span>`).join(' · ') || item.indicaciones || 'Sin indicaciones registradas'}</div>`).join('') || '<em>Sin indicaciones registradas</em>';
+    const itemReference = (reference: number) => `<span class="item-reference">${reference}</span>`;
+    const routineItemHtml = (item: typeof prescriptionItems[number]) => `
+      <div class="linked-item">
+        ${itemReference(item.reference)}
+        <div>
+          <span>${item.indicaciones || `Aplicar según indicación profesional`}</span>
+          <span class="linked-product-name"> (${item.nombre_comercial || item.medicamento || 'Producto'})</span>
+        </div>
+      </div>`;
+    const prescriptionLeftHtml = prescriptionItems.map(item => `<div class="medicine linked-item">${itemReference(item.reference)}<div><strong>${item.medicamento || item.nombre_comercial || 'Medicamento'}</strong>${item.nombre_comercial ? ` <span>(${item.nombre_comercial})</span>` : ''}${item.presentacion || item.dosis ? `<br><small>${[item.presentacion, item.dosis].filter(Boolean).join(' · ')}</small>` : ''}</div></div>`).join('') || '<em>Sin medicamentos registrados</em>';
+    const prescriptionRightHtml = prescriptionItems.map(item => `<div class="medicine linked-item">${itemReference(item.reference)}<div>${[['Vía', item.via], ['Cantidad', item.cantidad], ['Dosis', item.dosis], ['Frecuencia', item.frecuencia], ['Duración', item.duracion]].filter(([, value]) => value).map(([label, value]) => `<span>${label}: ${value}</span>`).join(' · ') || item.indicaciones || 'Sin indicaciones registradas'}<span class="linked-product-name"> (${item.medicamento || item.nombre_comercial || 'Medicamento'})</span></div></div>`).join('') || '<em>Sin indicaciones registradas</em>';
 
     const html = `
       <html lang="es">
@@ -460,11 +470,14 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
             .medicine { font-size: 9px; line-height: 1.35; padding: 5px 0; border-bottom: 1px solid #eee; }
             .medicine span { color: #333; }
 
-            .product-list { list-style-type: decimal; padding-left: 20px; margin: 0; }
-            .product-list li { margin-bottom: 6px; font-size: 10px; line-height: 1.4; }
+            .linked-list { display: flex; flex-direction: column; gap: 7px; }
+            .linked-item { display: flex; align-items: flex-start; gap: 7px; font-size: 9px; line-height: 1.35; break-inside: avoid; }
+            .item-reference { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 18px; width: 18px; height: 18px; border: 1.5px solid #222; border-radius: 50%; color: #111 !important; font-size: 9px; font-weight: bold; line-height: 1; box-sizing: border-box; }
+            .linked-product-name { color: #111 !important; font-weight: bold; }
+            .link-note { margin: -5px 0 10px; color: #555; font-size: 8px; line-height: 1.35; }
 
             .routine-section { margin-bottom: 15px; }
-            .routine-title { font-size: 10px; color: #333; margin-bottom: 8px; text-transform: uppercase; }
+            .routine-title { font-size: 10px; color: #333; margin-bottom: 8px; text-transform: uppercase; font-weight: bold; }
 
             .footer { margin-top: auto; font-size: 8px; color: #666; padding-top: 10px; }
             .footer-item { display: flex; align-items: center; gap: 4px; margin-bottom: 4px; }
@@ -500,8 +513,9 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
                  ${mode === 'prescription' ? `<div style="font-size:9px;margin-top:4px;"><strong>Receta:</strong> REC-${new Date().getFullYear()}-${escapeHtml(String(currentPrescription.id || 'NUEVA').padStart(6, '0'))} &nbsp; <strong>Vigencia:</strong> ${escapeHtml(validityLabel)} hasta ${escapeHtml(validUntil)}</div><div style="font-size:9px;margin-top:3px;"><strong>Alergias:</strong> ${escapeHtml(manualAllergies || 'No registrado')}</div>` : ''}
                </div>
 
-               <div class="section-header">INDICACIONES:</div>
-                 ${mode === 'prescription' ? `<div>${prescriptionLeftHtml}</div>` : `<ol class="product-list">${prescriptionItems.filter(i => i.nombre_comercial || i.medicamento).map(item => `<li>${(item.nombre_comercial || item.medicamento || '')}${item.presentacion ? ' ' + item.presentacion : ''}${item.dosis ? ' — ' + item.dosis : ''}</li>`).join('') || '<li style="color:#aaa;list-style:none">Sin productos registrados</li>'}</ol>`}
+               <div class="section-header">${mode === 'prescription' ? 'MEDICAMENTOS' : 'PRODUCTOS'}:</div>
+               <div class="link-note">El número identifica el mismo ${mode === 'prescription' ? 'medicamento' : 'producto'} en ambas columnas.</div>
+                 ${mode === 'prescription' ? `<div>${prescriptionLeftHtml}</div>` : `<div class="linked-list">${prescriptionItems.filter(i => i.nombre_comercial || i.medicamento).map(item => `<div class="linked-item">${itemReference(item.reference)}<div><strong>${item.nombre_comercial || item.medicamento || 'Producto'}</strong>${item.presentacion ? `<br><span>${item.presentacion}</span>` : ''}${item.dosis ? ` <span>· ${item.dosis}</span>` : ''}</div></div>`).join('') || '<span style="color:#aaa">Sin productos registrados</span>'}</div>`}
                ${mode === 'prescription' ? '<div style="margin-top:18px;border-top:1px solid #999;padding-top:6px;text-align:center;font-size:8px;color:#666;">Firma y sello del profesional</div>' : ''}
 
                <div class="footer">
@@ -536,7 +550,8 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
                  ${mode === 'prescription' ? `<div style="font-size:9px;margin-top:4px;"><strong>Receta:</strong> REC-${new Date().getFullYear()}-${escapeHtml(String(currentPrescription.id || 'NUEVA').padStart(6, '0'))} &nbsp; <strong>Vigencia:</strong> ${escapeHtml(validityLabel)} hasta ${escapeHtml(validUntil)}</div><div style="font-size:9px;margin-top:3px;"><strong>Alergias:</strong> ${escapeHtml(manualAllergies || 'No registrado')}</div>` : ''}
                </div>
 
-               <div class="section-header">INDICACIONES:</div>
+               <div class="section-header">${mode === 'prescription' ? 'INDICACIONES' : 'INDICACIONES DE USO'}:</div>
+               <div class="link-note">Busca el mismo número para relacionar cada indicación.</div>
                
                ${mode === 'prescription' ? `<div>${prescriptionRightHtml}</div>` : (() => {
                  const mananaItems = prescriptionItems.filter(i => (i.rutina === 'mañana' || i.rutina === 'ambos') && (i.nombre_comercial || i.medicamento));
@@ -546,16 +561,16 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
                  if (mananaItems.length) sections.push(`
                    <div class="routine-section">
                      <div class="routine-title">RUTINA DE MAÑANA</div>
-                     <ol class="product-list">${mananaItems.map(item => `<li>${item.indicaciones || `Aplicar ${item.nombre_comercial || item.medicamento}`}</li>`).join('')}</ol>
+                     <div class="linked-list">${mananaItems.map(routineItemHtml).join('')}</div>
                    </div>`);
                  if (nocheItems.length) sections.push(`
                    <div class="routine-section">
                      <div class="routine-title">RUTINA DE NOCHE</div>
-                     <ol class="product-list">${nocheItems.map(item => `<li>${item.indicaciones || `Aplicar ${item.nombre_comercial || item.medicamento}`}</li>`).join('')}</ol>
+                     <div class="linked-list">${nocheItems.map(routineItemHtml).join('')}</div>
                    </div>`);
                  if (noRutina.length) sections.push(`
                    <div class="routine-section">
-                     <ol class="product-list" style="padding-left:0;list-style:none;">${noRutina.map(item => `<li style="margin-bottom:6px;">${item.indicaciones}</li>`).join('')}</ol>
+                     <div class="linked-list">${noRutina.map(routineItemHtml).join('')}</div>
                    </div>`);
                  return sections.join('') || '<p style="color:#aaa;font-size:9px;">Sin indicaciones de rutina</p>';
                })()}
@@ -853,9 +868,9 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
               <span>Emisión, firma, sello, validez y uso de la receta son responsabilidad del profesional habilitado ante ACESS.</span>
             </div>
           ) : (
-            <div className="flex items-center gap-2 text-xs leading-relaxed text-gold-ink bg-gold/10 border border-gold/30 rounded-xl px-3 py-2.5">
+            <div className="flex items-start gap-2 text-xs leading-relaxed text-gold-ink bg-gold/10 border border-gold/30 rounded-xl px-3 py-2.5">
               <Home className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
-              <span>Completa <strong>producto, rutina e indicaciones</strong>. Estos tres campos se incluyen en la guía impresa.</span>
+              <span>Completa <strong>producto, rutina e indicaciones</strong>. En la guía impresa, cada producto y su modo de uso comparten el mismo número para identificarlos fácilmente.</span>
             </div>
           )}
 
@@ -1048,7 +1063,7 @@ export default function PrescriptionTab({ recordId, patientName, patientAge, pat
                   <input className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all hover:bg-gray-50 focus:bg-white" value={item.cantidad} onChange={e => updateItem(idx, 'cantidad', e.target.value)} placeholder="Ej. 20 tabletas" />
                 </div>}
                 <div className={`${mode === 'prescription' ? 'lg:col-span-2' : ''} space-y-1.5 flex flex-col`}>
-                  <label htmlFor={`product-instructions-${idx}`} className="text-xs font-medium text-gray-600 uppercase">{mode === 'routine' ? 'Indicaciones de uso *' : 'Indicaciones adicionales'}<FieldHelp text={HELP.prescription.indicaciones} /></label>
+                  <label htmlFor={`product-instructions-${idx}`} className="text-xs font-medium text-gray-600 uppercase">{mode === 'routine' ? `Indicaciones del producto ${idx + 1} *` : 'Indicaciones adicionales'}<FieldHelp text={HELP.prescription.indicaciones} /></label>
                   <textarea
                     id={`product-instructions-${idx}`}
                     className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#deb887] outline-none transition-all hover:bg-gray-50 focus:bg-white min-h-[42px] overflow-hidden resize-none"
