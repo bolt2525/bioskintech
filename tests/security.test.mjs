@@ -411,6 +411,8 @@ test('WhatsApp template values cannot break message layout', async () => {
   const truncated = normalizeWhatsAppTemplateValue(boundaryValue);
   assert.equal(Array.from(truncated).length, 1024);
   assert.match(truncated, /😀$/u);
+  const link = 'https://bioskintechapp.com/r/f5a594d2-fd90-4a54-958b-7f611cb609ca.wDcelso4lnf_bDODclUZVQ';
+  assert.equal(normalizeWhatsAppTemplateValue(`_Ver_ ${link}`), `Ver ${link}`);
 });
 
 test('appointment contact routing separates clinic links from professional summaries', async () => {

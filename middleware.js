@@ -63,9 +63,13 @@ export default async function middleware(request) {
       const conn = process.env.POSTGRES_URL || process.env.NEON_DATABASE_URL;
       if (conn) {
         try {
+          // ponytail: rescata enlaces ya enviados a los que la plantilla quitó el `_`; replace() hace
+          // seq scan, aceptable porque la tabla se purga a 30 días → borrar el OR tras 2026-11-21.
           const rows = await neon(conn)`
             SELECT target_url FROM wa_short_links
-            WHERE code = ${code} AND created_at > NOW() - INTERVAL '30 days'
+            WHERE (code = ${code} OR replace(code, '_', '') = ${code}) AND created_at > NOW() - INTERVAL '30 days'
+            ORDER BY (code = ${code}) DESC
+            LIMIT 1
           `;
           const target = rows[0]?.target_url;
           if (target) {
