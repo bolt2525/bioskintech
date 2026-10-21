@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file src/pages/AdminMasterDashboard.tsx
  * @description Dashboard exclusivo del master_admin.
  *
@@ -37,6 +37,10 @@ import type { Clinic, ClinicUser, FeatureRow } from '../types';
 import { clinicSubscriptionStatus, subscriptionDate } from '../utils/subscriptionAccess';
 import { EMPTY_ENROLLMENT, policyEnrollment } from '../utils/subscriptionEnrollment';
 import SubscriptionEnrollmentFields from '../components/admin/SubscriptionEnrollmentFields';
+
+const RESERVED_CLINIC_GENERAL_KEYS = new Set(['_purge', '_subscription_policy', '_subscription_lifecycle']);
+const editableClinicGeneral = <T extends Record<string, unknown>>(general: T): T =>
+  Object.fromEntries(Object.entries(general).filter(([key]) => !RESERVED_CLINIC_GENERAL_KEYS.has(key))) as T;
 import { Dialog } from '../components/ui/Dialog';
 import { useAnnualPhotoProviderStatus } from '../hooks/useAnnualPhotoProviderStatus';
 
@@ -1236,6 +1240,7 @@ export default function AdminMasterDashboard() {
         const s = data.settings;
         setSettingsData({
           ...s,
+          general:        editableClinicGeneral(s.general || {}),
           agenda:         { start_hour:'08:00', end_hour:'19:00', slot_minutes:60, calendar_prefix:'', daily_reminder_whatsapp:false, finance_admin_phone:'', ...(s.agenda||{}) },
           finanzas:       { currency:'USD', currency_symbol:'$', tax_percent:15, invoice_prefix:'INV', payment_methods:['Efectivo','Transferencia','Tarjeta de crédito','Tarjeta de débito'], invoice_notes:'', ...(s.finanzas||{}) },
           inventario:     { expiry_alert_days:30, low_stock_alert:true, require_batch:true, categories:['Toxinas','Rellenos','Skincare','Equipos','Consumibles','Medicamentos','Otros'], ...(s.inventario||{}) },
@@ -1254,9 +1259,12 @@ export default function AdminMasterDashboard() {
     if (!settingsModal || !settingsData) return;
     setSettingsSaving(true);
     try {
+      const sectionData = section === 'general'
+        ? editableClinicGeneral(settingsData.general as unknown as Record<string, unknown>)
+        : settingsData[section];
       const res  = await fetch('/api/admin-auth?action=saveClinicSettings', {
         method: 'POST', headers: authHeader(),
-        body:   JSON.stringify({ clinicId: settingsModal.clinicId, section, data: settingsData[section] }),
+        body:   JSON.stringify({ clinicId: settingsModal.clinicId, section, data: sectionData }),
       });
       const data = await res.json();
       flash(data.error || `${section} guardado`, data.error ? 'err' : 'ok');

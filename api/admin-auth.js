@@ -122,6 +122,7 @@ const SUBSCRIPTION_PLANS = {
     description: 'Acceso completo por 30 días',
   },
 };
+const RESERVED_CLINIC_GENERAL_KEYS = new Set(['_purge', '_subscription_policy', '_subscription_lifecycle']);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Auto-migración ligera — columnas nuevas que pueden no existir en instancias viejas
@@ -3207,10 +3208,13 @@ async function handleAdminRequest(req, res) {
         return res.status(200).json({ success: true, settings: defaults });
       }
       const s = r.rows[0];
+      const editableGeneral = Object.fromEntries(
+        Object.entries(s.general || {}).filter(([key]) => !RESERVED_CLINIC_GENERAL_KEYS.has(key))
+      );
       // Obtener clinic_email para mostrarlo como read-only en ajustes del usuario
       const ceRow = await sql`SELECT email FROM clinics WHERE id = ${clinicId}`;
       return res.status(200).json({ success: true, clinic_email: ceRow.rows[0]?.email || null, settings: {
-        general:        s.general,
+        general:        editableGeneral,
         treatments:     s.treatments,
         email:          s.email,
         agenda:         s.agenda,
@@ -3229,7 +3233,7 @@ async function handleAdminRequest(req, res) {
         return res.status(403).json({ error: 'Sin permiso' });
       if (section === 'general' && (typeof data !== 'object' || Array.isArray(data)))
         return res.status(400).json({ error: 'general debe ser un objeto.' });
-      if (section === 'general' && ['_subscription_policy','_subscription_lifecycle'].some(key => Object.hasOwn(data, key)))
+      if (section === 'general' && ['_subscription_policy', '_subscription_lifecycle'].some(key => Object.hasOwn(data, key)))
         return res.status(409).json({ error: 'La política contractual es reservada; usa la acción de suscripción con aceptación explícita.' });
       const purgeState = await sql`SELECT general->'_purge' AS purge FROM clinic_settings WHERE clinic_id=${clinicId}`;
       if (purgeState.rows[0]?.purge || (section === 'general' && Object.hasOwn(data, '_purge')))

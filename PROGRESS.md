@@ -1,5 +1,6 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-20 Ajustes: carga de logos corregida.
 - ✅ 2026-10-20 Recetario: productos e indicaciones enlazados.
 - ✅ 2026-10-19 Consentimientos: borradores y antecedentes persistentes.
 

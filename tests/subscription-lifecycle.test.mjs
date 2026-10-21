@@ -54,6 +54,14 @@ const db = {
     if (statement.includes("jsonb_build_object('_subscription_lifecycle'")) {
       clinic.general._subscription_lifecycle = JSON.parse(params[1]); return { rows: [] };
     }
+    if (statement.startsWith('INSERT INTO clinic_settings (clinic_id, general, updated_at)')) {
+      const reserved = Object.fromEntries(
+        Object.entries(clinic.general || {}).filter(([key]) =>
+          ['_purge', '_subscription_policy', '_subscription_lifecycle'].includes(key))
+      );
+      clinic.general = { ...JSON.parse(params[1]), ...reserved };
+      return { rows: [] };
+    }
     if (statement.includes('FROM clinics c') && statement.includes('WHERE c.id=$1'))
       return { rows: [{ ...clinic, purging: Boolean(clinic.general._purge) }] };
     if (statement.startsWith('SELECT clinic_id FROM consent_forms')) return { rows: [{ clinic_id: ID }] };
@@ -61,6 +69,10 @@ const db = {
     if (statement.includes('FROM whatsapp_contacts WHERE phone=')) return { rows: [{ clinic_id: ID }] };
     if (statement.includes("information_schema.tables")) return { rows: [] };
     if (statement.includes('SELECT name FROM clinics')) return { rows: [{ name: 'Fictitious' }] };
+    if (statement.includes('SELECT *') && statement.includes('FROM clinic_settings')) return { rows: [{
+      general: structuredClone(clinic.general || {}),
+      treatments: [], email: {}, agenda: {}, finanzas: {}, inventario: {}, notificaciones: {},
+    }] };
     if (statement.includes('COUNT(*)')) return { rows: [{ n: 0 }] };
     return { rows: [] };
   },
@@ -82,6 +94,10 @@ const sql = async (strings, ...params) => {
   }
   if (statement.includes('FROM clinic_users cu') && statement.includes('password_hash')) return { rows: [session()] };
   if (statement.includes('SELECT feature, enabled FROM clinic_features')) return { rows: structuredClone(features) };
+  if (statement.includes('SELECT *') && statement.includes('FROM clinic_settings')) return { rows: [{
+    general: structuredClone(clinic.general || {}),
+    treatments: [], email: {}, agenda: {}, finanzas: {}, inventario: {}, notificaciones: {},
+  }] };
   if (statement.startsWith('SELECT clinic_id FROM invite_links')) return { rows: [{ clinic_id: ID }] };
   if (statement.includes('c.id,cs.general') && statement.includes('WHERE c.id=')) return { rows: [{ ...clinic, clinic_active: clinic.is_active }] };
   if (statement.includes('JOIN clinics c') && statement.includes('public_booking_enabled')) {
@@ -344,6 +360,52 @@ test('subscription kind or forged settings cannot assign paid cycle without paym
   clinic.paid_subscription = true; clinic.trial_subscription = true;
   await assert.rejects(policy.renewClinicSubscription(pool, ID, new Date(clock + DAY), 365, 'paid',
     enrollment, { role: 'master_admin', username: 'qa-provider' }), { status: 409 });
+});
+
+test('clinic settings omit reserved metadata so uploading a logo can be saved safely', async () => {
+  reset();
+  role = 'master_admin';
+  clinic.general = {
+    name: 'Clínica ficticia',
+    logo_url: '',
+    _subscription_policy: { opt_in: true },
+    _subscription_lifecycle: { state: 'ACTIVE' },
+    _purge: null,
+  };
+
+  const loaded = await invoke(admin, '/api/admin-auth', 'getClinicSettings', { query: { clinicId: ID } });
+  assert.equal(loaded.code, 200);
+  assert.equal(loaded.body.settings.general.name, 'Clínica ficticia');
+  assert.equal(Object.hasOwn(loaded.body.settings.general, '_subscription_policy'), false);
+  assert.equal(Object.hasOwn(loaded.body.settings.general, '_subscription_lifecycle'), false);
+  assert.equal(Object.hasOwn(loaded.body.settings.general, '_purge'), false);
+
+  const saved = await invoke(admin, '/api/admin-auth', 'saveClinicSettings', {
+    method: 'POST',
+    body: {
+      clinicId: ID,
+      section: 'general',
+      data: {
+        ...loaded.body.settings.general,
+        logo_url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      },
+    },
+  });
+  assert.equal(saved.code, 200);
+  assert.equal(clinic.general._subscription_policy.opt_in, true);
+  assert.equal(clinic.general._subscription_lifecycle.state, 'ACTIVE');
+
+  const reloaded = await invoke(admin, '/api/admin-auth', 'getClinicSettings', { query: { clinicId: ID } });
+  assert.match(reloaded.body.settings.general.logo_url, /^data:image\/png;base64,/);
+  assert.equal(Object.hasOwn(reloaded.body.settings.general, '_subscription_policy'), false);
+
+  for (const key of ['_subscription_policy', '_subscription_lifecycle', '_purge']) {
+    const forged = await invoke(admin, '/api/admin-auth', 'saveClinicSettings', {
+      method: 'POST',
+      body: { clinicId: ID, section: 'general', data: { name: 'Ataque ficticio', [key]: {} } },
+    });
+    assert.equal(forged.code, 409, `${key} must remain protected`);
+  }
 });
 
 test('paid annual hold excludes forged paid flags and requires persisted provider/payment metadata', () => {
