@@ -463,6 +463,9 @@ test('WhatsApp bot normalizes Ecuadorian phone numbers consistently', async () =
   assert.equal(normalizeEcuadorPhone('0987654321'), '593987654321');
   assert.equal(normalizeEcuadorPhone('593987654321'), '593987654321');
   assert.equal(normalizeEcuadorPhone('987654321'), '593987654321');
+  assert.equal(normalizeEcuadorPhone('+1 555 706 0441'), '15557060441');
+  assert.equal(normalizeEcuadorPhone('447974905007'), '447974905007');
+  assert.equal(normalizeEcuadorPhone('00447974905007'), '447974905007');
   assert.equal(normalizeEcuadorPhone(''), '');
 });
 
@@ -499,6 +502,7 @@ test('WhatsApp bot extracts auditable messages only when a sender exists', async
     providerMessageId: 'wamid.incoming',
     timestamp: new Date(1700000000000),
     name: 'Ana',
+    processable: true,
   }]);
 
   assert.deepEqual(extractMessageStatuses({
@@ -562,6 +566,7 @@ test('appointment replies classify only explicit confirmations as confirmed', as
   assert.equal(classifyAppointmentReply('Sí, asistiré'), 'confirmed');
   assert.equal(classifyAppointmentReply('No podré ir'), 'needs_contact');
   assert.equal(classifyAppointmentReply('Llegaré tarde'), 'needs_contact');
+  assert.equal(classifyAppointmentReply('Sí, voy con retraso'), 'needs_contact');
   assert.equal(classifyAppointmentReply('Deseo cambiar la cita'), 'needs_contact');
   // La negación debe primar sobre la palabra "confirmar" presente en la misma frase
   assert.equal(classifyAppointmentReply('No voy a poder confirmar'), 'needs_contact');
@@ -570,13 +575,18 @@ test('appointment replies classify only explicit confirmations as confirmed', as
   assert.equal(formatAppointmentReplyStatus('needs_contact'), '🔴 Requiere contacto');
   assert.equal(formatAppointmentReplyStatus(null), '⏳ Sin respuesta');
   assert.equal(formatAppointmentSummaryStatus(null, 'fallido'), '⚠️ Recordatorio no entregado');
+  assert.equal(formatAppointmentSummaryStatus(null, 'leido'), '👀 Leída · sin confirmar');
+  assert.equal(formatAppointmentSummaryStatus('confirmed', 'leido'), '✅ Confirmada');
+  assert.equal(formatAppointmentSummaryStatus('needs_contact', 'leido'), '🔴 Requiere contacto');
   assert.equal(isExplicitAppointmentChangeRequest('gracias'), false);
   assert.equal(isExplicitAppointmentChangeRequest('Necesito cambiar la fecha'), true);
   assert.equal(isExplicitAppointmentChangeRequest('Solicito cambio de fecha'), true);
   assert.equal(isExplicitAppointmentChangeRequest('Necesito la cancelación'), true);
+  assert.equal(isExplicitAppointmentChangeRequest('Voy con retraso'), true);
   assert.equal(shouldNotifyStaffOfAppointmentReply('confirmed'), false);
   assert.equal(shouldNotifyStaffOfAppointmentReply('needs_contact'), true);
   assert.deepEqual(paginateAppointmentSummaryLines(['1', '2', '3', '4', '5'], 4), [['1', '2', '3', '4'], ['5']]);
+  assert.deepEqual(paginateAppointmentSummaryLines(['a'.repeat(500), 'b'.repeat(500), 'c'.repeat(500)], 3, 1024).map(page => page.length), [2, 1]);
 });
 
 test('WhatsApp delivery status only alerts staff when delivery fails', async () => {

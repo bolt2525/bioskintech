@@ -4,6 +4,7 @@ import { AlertTriangle, Check, CheckCheck, Image, Loader2, MessageCircle, Music2
 import AdminLayout from '../components/layout/AdminLayout';
 import { useAuth } from '../context/AuthContext';
 import recordsFetch from '../utils/recordsFetch';
+import { parseWhatsAppTemplate, trustedWhatsAppHref, whatsAppMessagePreview } from '../utils/whatsappMessage';
 
 type Contact = {
   id: number;
@@ -44,6 +45,33 @@ function MediaIcon({ type }: { type: Message['media_type'] }) {
   if (type === 'imagen') return <Image className="h-4 w-4" aria-label="Imagen" />;
   if (type === 'audio') return <Music2 className="h-4 w-4" aria-label="Audio" />;
   return null;
+}
+
+function MessageContent({ message }: { message: Message }) {
+  const template = message.direction === 'saliente' ? parseWhatsAppTemplate(message.content) : null;
+  if (!template) return <p className="min-w-0 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{message.content || `[${message.media_type}]`}</p>;
+  return (
+    <div className="min-w-0 space-y-2 break-words [overflow-wrap:anywhere]">
+      <p className="font-semibold">{template.title}</p>
+      <p className="text-xs text-gray-500">Parámetros de la plantilla Meta; no es una transcripción de su diseño.</p>
+      <dl className="space-y-1">
+        {template.fields.map((field, index) => (
+          <div key={`${field.key}-${index}`}>
+            <dt className="text-xs font-medium text-gray-500">{field.label}</dt>
+            <dd className="whitespace-pre-wrap">
+              {trustedWhatsAppHref(field.value)
+                ? <a href={field.value} target="_blank" rel="noopener noreferrer" className="text-amber-800 underline">Abrir enlace</a>
+                : field.value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <details className="text-xs text-gray-500">
+        <summary className="cursor-pointer">Registro original</summary>
+        <p className="mt-1 whitespace-pre-wrap">{message.content}</p>
+      </details>
+    </div>
+  );
 }
 
 export default function AdminWhatsAppCRM() {
@@ -219,9 +247,9 @@ export default function AdminWhatsAppCRM() {
                   <div className={`grid h-10 w-10 shrink-0 place-items-center rounded-full font-semibold ${contact.category === 'staff_sistema' ? 'bg-slate-100 text-slate-700' : contact.category === 'usuario_clinico' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-700'}`}>{(contact.name || contact.phone).charAt(0).toUpperCase()}</div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2"><span className="truncate text-sm font-semibold text-gray-900">{contact.name || contact.phone}</span><time className="shrink-0 text-[10px] text-gray-400">{formatTime(contact.last_message_at)}</time></div>
-                    <p className="truncate text-xs text-gray-500">{contact.name ? contact.phone : contact.last_message || 'Sin contenido'}</p>
+                    <p className="truncate text-xs text-gray-500">{contact.name ? contact.phone : whatsAppMessagePreview(contact.last_message, contact.last_direction)}</p>
                     <p className="mt-1 flex items-center gap-1 truncate text-[11px] font-medium text-[#99652f]"><Users className="h-3 w-3 shrink-0" />{contact.category_label}</p>
-                    {contact.name && <p className="mt-1 truncate text-xs text-gray-400">{contact.last_message || 'Sin contenido'}</p>}
+                    {contact.name && <p className="mt-1 truncate text-xs text-gray-400">{whatsAppMessagePreview(contact.last_message, contact.last_direction)}</p>}
                   </div>
                 </button>
               ))}
@@ -253,7 +281,7 @@ export default function AdminWhatsAppCRM() {
                 <div ref={messagesPaneRef} className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto p-4 md:p-6 [scrollbar-gutter:stable]">
                   {loadingMessages ? <div className="grid flex-1 place-items-center text-gray-400"><Loader2 className="h-5 w-5 animate-spin" /></div> : messages.map(message => (
                     <article key={message.id} className={`w-fit min-w-0 max-w-[85%] rounded-lg px-3 py-2 shadow-sm ${message.direction === 'saliente' ? 'ml-auto bg-[#fff1dc]' : 'mr-auto bg-white'}`}>
-                      <div className="flex min-w-0 items-start gap-2 text-sm text-gray-800"><MediaIcon type={message.media_type} /><p className="min-w-0 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{message.content || `[${message.media_type}]`}</p></div>
+                      <div className="flex min-w-0 items-start gap-2 text-sm text-gray-800"><MediaIcon type={message.media_type} /><MessageContent message={message} /></div>
                       <div className="mt-1 flex items-center justify-end gap-1 text-[10px] text-gray-400">
                         <time>{formatTime(message.occurred_at)}</time>
                         {message.status === 'fallido' ? <AlertTriangle className="h-3 w-3 text-red-500" aria-label="Fallido" /> : message.status === 'leido' ? <CheckCheck className="h-3 w-3 text-sky-500" aria-label="Leído" /> : <Check className="h-3 w-3" aria-label="Enviado" />}

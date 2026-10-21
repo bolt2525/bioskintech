@@ -16,14 +16,11 @@
  */
 
 import { neon } from '@neondatabase/serverless';
+import { resolveOperationalWaLink } from './lib/wa-link-resolver.js';
 
 // Mapa en memoria: ip → { count, resetAt }
 // ponytail: mapa global por instancia, no compartido → suficiente para el volumen esperado
 const rateMap = new Map();
-
-// Código corto → URL de wa.me con caché breve; la expiración evita revivir enlaces purgados.
-const shortLinkCache = new Map();
-const SHORT_LINK_CACHE_TTL = 5 * 60_000;
 
 const RATE_LIMIT    = 60;   // requests por ventana
 const RATE_WINDOW   = 60_000; // 1 minuto en ms
@@ -56,27 +53,15 @@ export default async function middleware(request) {
   // y su arranque en frío hacía que el paciente esperara segundos antes de abrir el chat.
   if (path.startsWith('/r/')) {
     const code = path.slice(3);
-    if (/^[A-Za-z0-9_-]{4,64}$/.test(code)) {
-      const cached = shortLinkCache.get(code);
-      if (cached?.expiresAt > Date.now()) return Response.redirect(cached.target, 302);
-      if (cached) shortLinkCache.delete(code);
+    if (/^[A-Za-z0-9._-]{4,64}$/.test(code)) {
       const conn = process.env.POSTGRES_URL || process.env.NEON_DATABASE_URL;
       if (conn) {
         try {
-          // ponytail: rescata enlaces ya enviados a los que la plantilla quitó el `_`; replace() hace
-          // seq scan, aceptable porque la tabla se purga a 30 días → borrar el OR tras 2026-11-21.
-          const rows = await neon(conn)`
-            SELECT target_url FROM wa_short_links
-            WHERE (code = ${code} OR replace(code, '_', '') = ${code}) AND created_at > NOW() - INTERVAL '30 days'
-            ORDER BY (code = ${code}) DESC
-            LIMIT 1
-          `;
-          const target = rows[0]?.target_url;
-          if (target) {
-            if (shortLinkCache.size > 500) shortLinkCache.clear();
-            shortLinkCache.set(code, { target, expiresAt: Date.now() + SHORT_LINK_CACHE_TTL });
-            return Response.redirect(target, 302);
-          }
+          const query = neon(conn);
+          const target = await resolveOperationalWaLink(code, {
+            query: async (text, values) => ({ rows: await query.query(text, values) }),
+          });
+          if (target) return Response.redirect(target, 302);
           return new Response('Enlace no encontrado o expirado', { status: 404 });
         } catch (error) {
           console.error('[BIOSKIN Edge] Fallo resolviendo enlace corto, se delega a la función:', error.message);

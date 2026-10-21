@@ -26,6 +26,7 @@ import {
   clearAppointmentReplyStatus,
   getAppointmentReplyStatuses,
   getAppointmentDeliveryStatuses,
+  normalizeEcuadorPhone,
 } from '../lib/whatsapp-crm.js';
 import { getBotState, setBotState, clearBotState } from '../lib/whatsapp-bot-state.js';
 import { createShortWaLink, resolveShortWaLink } from '../lib/wa-short-link.js';
@@ -95,14 +96,7 @@ async function getUserOAuth2Client(userId) {
   return oAuth2;
 }
 
-/** Normaliza un número a formato Ecuador (593...) a partir de dígitos crudos. */
-export function normalizeEcuadorPhone(raw) {
-  const digits = String(raw || '').replace(/\D/g, '');
-  if (!digits) return '';
-  if (digits.startsWith('0')) return `593${digits.substring(1)}`;
-  if (digits.startsWith('593')) return digits;
-  return `593${digits}`;
-}
+export { normalizeEcuadorPhone };
 
 /** Extrae teléfono, correo y nombre de paciente del evento de Google Calendar, igual que CalendarManager.tsx. */
 export function parseAppointmentEvent(event) {
@@ -172,6 +166,7 @@ export function normalizeCommandText(value) {
 export function classifyAppointmentReply(text, buttonPayload = '') {
   // El botón de la plantilla es una señal explícita: no se reinterpreta con heurísticas de texto.
   if (String(buttonPayload || '').startsWith('appointment_confirm')) return 'confirmed';
+  if (isAppointmentDelayNotice(text)) return 'needs_contact';
   const value = normalizeCommandText(`${buttonPayload} ${text}`).replace(/[^a-z0-9_:\s]/g, ' ');
   // El rechazo se evalúa PRIMERO: “no voy a poder confirmar” contenía “confirmar” y se
   // registraba como asistencia confirmada.
@@ -181,6 +176,7 @@ export function classifyAppointmentReply(text, buttonPayload = '') {
 }
 
 export function isExplicitAppointmentChangeRequest(text, buttonPayload = '') {
+  if (isAppointmentDelayNotice(text)) return true;
   const value = normalizeCommandText(`${buttonPayload} ${text}`).replace(/[^a-z0-9_:\s]/g, ' ');
   return /\b(no|nel|cancelar|cancelacion|cancelo|cancela|cancelada|cancelado|anular|reprogramar|reprogramacion|cambiar|cambio|mover|posponer|otro dia|otra fecha|tarde|atrasar|imposible)\b/.test(value);
 }
@@ -194,18 +190,33 @@ export function formatAppointmentReplyStatus(status) {
 export function formatAppointmentSummaryStatus(replyStatus, deliveryStatus) {
   return deliveryStatus === 'fallido'
     ? '⚠️ Recordatorio no entregado'
-    : formatAppointmentReplyStatus(replyStatus);
+    : !replyStatus && deliveryStatus === 'leido'
+      ? '👀 Leída · sin confirmar'
+      : formatAppointmentReplyStatus(replyStatus);
 }
 
 export function shouldNotifyStaffOfAppointmentReply(intent) {
   return intent === 'needs_contact';
 }
 
-export function paginateAppointmentSummaryLines(lines, pageSize) {
+export function paginateAppointmentSummaryLines(lines, pageSize, maxCharacters = Number.POSITIVE_INFINITY) {
   const safeLines = Array.isArray(lines) ? lines : [];
   const safePageSize = Number.isInteger(pageSize) && pageSize > 0 ? pageSize : 4;
-  return Array.from({ length: Math.ceil(safeLines.length / safePageSize) }, (_, page) =>
-    safeLines.slice(page * safePageSize, page * safePageSize + safePageSize));
+  const pages = [];
+  let page = [];
+  let length = 0;
+  for (const line of safeLines) {
+    const size = Array.from(line.replace(/\s*\n+\s*/g, ' — ')).length;
+    if (page.length && (page.length >= safePageSize || length + 3 + size > maxCharacters)) {
+      pages.push(page);
+      page = [];
+      length = 0;
+    }
+    length += (page.length ? 3 : 0) + size;
+    page.push(line);
+  }
+  if (page.length) pages.push(page);
+  return pages;
 }
 
 function normalizeContactPhone(value) {
@@ -220,22 +231,25 @@ export function buildClinicContactMessage({ clinicName, contactLink, professiona
     : `Para cambiar o consultar tu cita, comunícate con *${professional}* por sus canales habituales.`;
 }
 
-async function notifyStaffOfPatientReply(appointment, patientText, intent) {
-  if (!shouldNotifyStaffOfAppointmentReply(intent)) return 'summary';
-  const patient = appointment.patient_name || 'El paciente';
+export function isAppointmentDelayNotice(text) {
+  const value = normalizeCommandText(text);
+  return /\b(retras[oa]|retrasad[oa]|atrasad[oa])\b/.test(value) ||
+    /\b(lleg\w*|voy|estoy)\b.{0,60}\b(tarde|atraso)\b/.test(value);
+}
+
+export function buildStaffAppointmentReplyMessage(appointment, patientText) {
+  const patient = formatWhatsAppLabel(appointment.patient_name, 'El paciente');
   const appointmentDate = appointment.appointment_start
     ? new Date(appointment.appointment_start).toLocaleString('es-EC', { timeZone: 'America/Guayaquil', dateStyle: 'short', timeStyle: 'short' })
     : 'la cita programada';
-  const header = `🔴 *${patient} necesita que lo contactes*`;
-  const footer = 'NO confirmó la cita. Comunícate con el paciente para reprogramar o aclarar.';
-  const message = `${header}
+  const title = isAppointmentDelayNotice(patientText) ? 'avisa un retraso' : 'requiere contacto';
+  return `🔴 *${patient}: ${title}*\n📅 ${appointmentDate}\n“${formatWhatsAppLabel(patientText, 'Solicita contacto')}”\nRevisa su mensaje y coordina directamente.`;
+}
 
-Cita: ${appointmentDate}
-Respondió: “${patientText || 'Confirmar asistencia (botón)'}”
-
-${footer}
-
-_Aviso automático del chatbot._`;
+async function notifyStaffOfPatientReply(appointment, patientText, intent) {
+  if (!shouldNotifyStaffOfAppointmentReply(intent)) return 'summary';
+  const patient = formatWhatsAppLabel(appointment.patient_name, 'El paciente');
+  const message = buildStaffAppointmentReplyMessage(appointment, patientText);
   const staffPhone = normalizeContactPhone(appointment.professional_phone);
   if (isSystemStaffPhone(staffPhone)) return 'none';
   if (staffPhone && await isWithinCustomerServiceWindow(staffPhone)) {
@@ -258,7 +272,7 @@ _Aviso automático del chatbot._`;
   return 'none';
 }
 
-async function handlePatientAppointmentReply({ from, text, buttonPayload }) {
+export async function handlePatientAppointmentReply({ from, text, buttonPayload }) {
   const eventId = String(buttonPayload || '').startsWith('appointment_confirm:')
     ? String(buttonPayload).substring('appointment_confirm:'.length)
     : null;
@@ -288,7 +302,10 @@ async function handlePatientAppointmentReply({ from, text, buttonPayload }) {
     const contactLink = contactPhone
       ? await createShortWaLink(contactPhone, `Hola, necesito comunicarme sobre mi cita del ${new Date(appointment.appointment_start).toLocaleString('es-EC', { timeZone: 'America/Guayaquil', dateStyle: 'short', timeStyle: 'short' })}.`, appointment.clinic_id)
       : '';
-    await sendWhatsAppText(from, buildClinicContactMessage({ ...appointment, contactLink }), { clinicId: appointment.clinic_id });
+    const response = isAppointmentDelayNotice(text) && contactLink
+      ? `Para coordinar tu llegada, escribe a la clínica:\n${contactLink}`
+      : buildClinicContactMessage({ clinicName: appointment.clinic_name, contactLink });
+    await sendWhatsAppText(from, response, { clinicId: appointment.clinic_id });
   }
   return true;
 }
@@ -477,7 +494,16 @@ export function extractIncomingMessages(body) {
         // Respuesta a botón de plantilla (quick reply) llega como msg.button, no msg.text
         const buttonText = msg.button?.text || msg.interactive?.button_reply?.title || '';
         const buttonPayload = msg.button?.payload || msg.interactive?.button_reply?.id || '';
-        const text = (msg.text?.body || buttonText || msg.image?.caption || (mediaType === 'imagen' ? '[Imagen]' : mediaType === 'audio' ? '[Audio]' : '')).trim();
+        const labels = {
+          reaction: msg.reaction?.emoji ? `[Reacción ${msg.reaction.emoji}]` : '[Reacción retirada]',
+          sticker: '[Sticker]',
+          video: '[Video]',
+          document: '[Documento]',
+          location: '[Ubicación]',
+          contacts: '[Contacto]',
+        };
+        const text = (msg.text?.body || buttonText || msg.image?.caption ||
+          (mediaType === 'imagen' ? '[Imagen]' : mediaType === 'audio' ? '[Audio]' : labels[msg.type] || '[Mensaje no compatible]')).trim();
         messages.push({
           from,
           text,
@@ -486,6 +512,8 @@ export function extractIncomingMessages(body) {
           providerMessageId: msg.id || null,
           timestamp: msg.timestamp ? new Date(Number(msg.timestamp) * 1000) : new Date(),
           name: contacts.get(from) || null,
+          processable: Boolean((msg.type === 'text' && msg.text?.body?.trim()) ||
+            (['button', 'interactive'].includes(msg.type) && buttonText)),
         });
       }
     }
@@ -1180,7 +1208,7 @@ async function handleIncomingMessages(body) {
     await processWhatsAppDeliveryStatus(event);
   }
 
-  for (const { from, text, buttonPayload, mediaType, providerMessageId, timestamp, name } of extractIncomingMessages(body)) {
+  for (const { from, text, buttonPayload, mediaType, providerMessageId, timestamp, name, processable } of extractIncomingMessages(body)) {
     if (!from) continue;
     if (!getSystemStaffPhones().has(from)) {
       const domestic = from.startsWith('593') ? `0${from.slice(3)}` : from;
@@ -1204,7 +1232,7 @@ async function handleIncomingMessages(body) {
       status: 'leido',
       providerMessageId,
     });
-    if (!audit.rows.length) continue;
+    if (!audit.rows.length || !processable) continue;
     const normalizedText = normalizeCommandText(text);
     if (!normalizedText) continue;
 
@@ -1556,7 +1584,7 @@ async function handleIncomingMessages(body) {
 }
 
 /** Envía a cada usuario autorizado un resumen de citas con enlaces para recordar manualmente. */
-async function sendAppointmentSummaries(dayOffset = 0, slot = 'morning', startIndex = 0, deadline = Number.POSITIVE_INFINITY) {
+export async function sendAppointmentSummaries(dayOffset = 0, slot = 'morning', startIndex = 0, deadline = Number.POSITIVE_INFINITY) {
   const baseDate = new Date();
   baseDate.setDate(baseDate.getDate() + dayOffset);
   const targetDate = baseDate.toLocaleDateString('en-CA', { timeZone: 'America/Guayaquil' });
@@ -1626,20 +1654,18 @@ async function sendAppointmentSummaries(dayOffset = 0, slot = 'morning', startIn
         const link = patientPhone && patientPhone !== staffPhone ? await createShortWaLink(patientPhone, patientMessage, row.clinic_id) : '';
         appointments.push({ ...appointment, patientName, eventId: event.id, hora, link });
       }
-      if (!appointments.length) continue;
-
       const replyStatuses = await getAppointmentReplyStatuses(appointments.map(appointment => appointment.eventId), row.user_id);
       const deliveryStatuses = await getAppointmentDeliveryStatuses(appointments.map(appointment => appointment.eventId), row.user_id);
       const label = dayOffset === 0 ? 'hoy' : 'mañana';
-      const lines = appointments.map((appointment, index) => {
+      const lines = appointments.length ? appointments.map((appointment, index) => {
         const contact = appointment.link
           ? `\n   💬 Chat del paciente: ${appointment.link}`
           : '\n   ⚠️ Paciente sin número registrado';
         return `${index + 1}. ${appointment.hora || 'Hora pendiente'} · ${appointment.patientName}\n   ${formatAppointmentSummaryStatus(replyStatuses[appointment.eventId], deliveryStatuses[appointment.eventId])}${contact}`;
-      });
+      }) : [`Sin citas ${label}.`];
       const pending = appointments.filter(a => replyStatuses[a.eventId] !== 'confirmed').length;
       const header = `📅 *Agenda de ${label}* (${targetDate}) — ${formatWhatsAppLabel(clinicName, 'la clínica')}\n` +
-        `${appointments.length} cita(s) · ${appointments.length - pending} confirmada(s) · ${pending} sin confirmar`;
+        (appointments.length ? `${appointments.length} cita(s) · ${appointments.length - pending} confirmada(s) · ${pending} sin confirmar` : '');
       try {
         // El staff no necesariamente escribió hoy: fuera de la ventana de 24h se requiere plantilla aprobada
         const withinWindow = await isWithinCustomerServiceWindow(staffPhone);
@@ -1658,7 +1684,7 @@ async function sendAppointmentSummaries(dayOffset = 0, slot = 'morning', startIn
             if (page + 1 < pages.length) await new Promise(resolve => setTimeout(resolve, SEND_THROTTLE_MS));
           }
         } else if (templateName) {
-          const pages = paginateAppointmentSummaryLines(lines, 3);
+          const pages = paginateAppointmentSummaryLines(lines, 3, 1024);
           for (let page = 0; page < pages.length; page++) {
             const visibleLines = pages[page].map(line => line.replace(/\s*\n+\s*/g, ' — '));
             await sendWhatsAppTemplate(staffPhone, templateName, templateLang, {

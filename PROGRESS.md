@@ -1,5 +1,6 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-20 WhatsApp: flujos breves, plantillas preservadas.
 - ✅ 2026-10-20 WhatsApp: enlaces cortos y clasificación corregidos.
 
 - ✅ 2026-10-20 Ajustes: carga de logos corregida.
