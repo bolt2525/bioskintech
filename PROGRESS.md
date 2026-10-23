@@ -1,5 +1,7 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-23 Purga autorizada: continuación diaria automática en el cron existente (03:00 Ecuador), sin iniciar nuevas legacy. Conserva esperas, locks, protección anual, identidad original y retención; botón manual opcional. Selección Neon verificada con transacciones de solo lectura, sin ejecutar borrados.
+
 - ✅ 2026-10-23 **Publicado y operativo:** commit `a5d166a`, push confirmado y Vercel Production Ready. Migración final Neon aplicada dos veces (idempotente); 131/131 tests, lint focal y build aprobados. Producción 200, preview sin sesión 401; preview Neon de solo lectura confirma que solo falta desactivar la clínica. No se inició ninguna purga ni se eliminaron filas clínicas u objetos R2.
 
 Las entradas siguientes conservan la evidencia previa al despliegue y la evolución de esta tarea.

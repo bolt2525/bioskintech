@@ -1197,6 +1197,94 @@ test('automatic cron reports a partial run when its execution budget expires', a
   assert.equal(state.job, null);
 });
 
+test('cron resumes authorized manual legacy purge after quiescence without initiating another purge', async () => {
+  const lifecycle = { policy: 'legacy', state: 'CLOSED',
+    expires_at: new Date(NOW - 60 * DAY).toISOString(), recovery_ends_at: new Date(NOW - 30 * DAY).toISOString() };
+  const { pool, state, lifecycleDeps } = database({ lifecycle, candidates: [{ id: ID }] });
+  await purge({ ...body, legacyAuthorizationConfirmed: true }, actor, { pool, now: () => NOW });
+  const release = state.job.identifiersReleasedAt;
+  const initialActor = state.job.actorId;
+  let lists = 0;
+  const options = { pool, budgetMs: 10000, ...lifecycleDeps,
+    list: async prefix => {
+      lists++;
+      return { objects: prefix.startsWith('backups/') && Date.parse(state.job.backupRetentionUntil) > NOW + 25 * 60000
+        ? [{ key: `backups/${ID}/auto/retained.json.gz.enc`, lastModified: new Date(NOW).toISOString() }]
+        : [], truncated: false };
+    },
+    remove: async () => assert.fail('Empty storage does not require delete') };
+  const waiting = await purgeExpiredClinics({ ...options, now: () => NOW + 25 * 60000 - 1 });
+  assert.equal(waiting.results[0].state, 'QUIESCING');
+  assert.equal(lists, 0);
+  for (let stage = 0; stage < 4; stage++)
+    await purgeExpiredClinics({ ...options, now: () => NOW + 25 * 60000 });
+  assert.equal(state.job.mode, 'MANUAL');
+  assert.equal(state.job.identifiersReleasedAt, release);
+  assert.equal(state.job.actorId, initialActor);
+  assert.equal(state.job.state, 'WAITING_STORAGE');
+  assert.equal(state.job.phase, 'BACKUPS');
+  assert.equal(state.lifecyclePersisted, false);
+  const finished = await purgeExpiredClinics({ ...options, now: () => NOW + 31 * DAY,
+    list: async () => ({ objects: [], truncated: false }) });
+  assert.equal(finished.completed, 1);
+  assert.equal(state.job.state, 'COMPLETE');
+});
+
+test('cron refuses manual continuation without durable authorization, legacy consent, inactive origin or retention', async () => {
+  const lifecycle = { policy: 'legacy', state: 'CLOSED',
+    expires_at: new Date(NOW - 60 * DAY).toISOString(), recovery_ends_at: new Date(NOW - 30 * DAY).toISOString() };
+  for (const invalid of ['authorizationConfirmed', 'retentionConfirmed', 'actorId', 'reason',
+    'waScope', 'retentionSnapshot', 'legacyAuthorizationConfirmed', 'active', 'recent']) {
+    const { pool, state, lifecycleDeps } = database({ lifecycle: { ...lifecycle }, candidates: [{ id: ID }] });
+    await purge({ ...body, legacyAuthorizationConfirmed: true }, actor, { pool, now: () => NOW });
+    if (invalid === 'active') state.clinic.is_active = true;
+    else if (invalid === 'recent') {
+      lifecycleDeps.loadSubscriptionLifecycle = async () => ({ ...lifecycle,
+        expires_at: new Date(NOW - DAY).toISOString(), recovery_ends_at: new Date(NOW + 29 * DAY).toISOString() });
+    }
+    else delete state.job[invalid];
+    const report = await purgeExpiredClinics({ pool, ...lifecycleDeps, now: () => NOW + 25 * 60000,
+      budgetMs: 10000, list: async () => assert.fail('Invalid authorization must not touch R2') });
+    assert.equal(report.started, 0, invalid);
+    assert.equal(state.job.state, 'QUIESCING', invalid);
+  }
+});
+
+test('candidate query includes only previously authorized manual jobs alongside paid automatic eligibility', async () => {
+  const { pool, state, lifecycleDeps } = database();
+  await purgeExpiredClinics({ pool, ...lifecycleDeps, now: () => NOW, budgetMs: 10000 });
+  const query = state.statements.find(s => s.sql.startsWith('SELECT c.id FROM clinics c')).sql;
+  assert.match(query, /mode\}'='MANUAL'/);
+  assert.match(query, /authorizationConfirmed\}'='true'/);
+  assert.match(query, /retentionConfirmed\}'='true'/);
+  assert.match(query, /identifiersReleasedAt\}' IS NOT NULL/);
+  assert.match(query, /policy_version\}'=\$4/);
+  assert.match(query, /acceptance_confirmed\}'='true'/);
+});
+
+test('manual continuation respects active leases and annual protection, then retries storage failure durably', async () => {
+  const protectedDb = database({ candidates: [{ id: ID }] });
+  await purge(body, actor, { pool: protectedDb.pool, now: () => NOW });
+  protectedDb.state.job.leaseUntil = new Date(NOW + DAY).toISOString();
+  const locked = await purgeExpiredClinics({ pool: protectedDb.pool, ...protectedDb.lifecycleDeps,
+    now: () => NOW + 25 * 60000, budgetMs: 10000, list: async () => assert.fail('Active lease') });
+  assert.equal(locked.results[0].reason, 'ACTIVE_LEASE');
+  protectedDb.state.job.leaseUntil = null;
+  const annual = await purgeExpiredClinics({ pool: protectedDb.pool, ...protectedDb.lifecycleDeps,
+    annualPurgeProtection: async () => ({ protected: true, until: new Date(NOW + DAY).toISOString() }),
+    now: () => NOW + 25 * 60000, budgetMs: 10000, list: async () => assert.fail('Annual protection') });
+  assert.equal(annual.results[0].state, 'WAITING_ANNUAL');
+  const failed = await purgeExpiredClinics({ pool: protectedDb.pool, ...protectedDb.lifecycleDeps,
+    now: () => NOW + 25 * 60000, budgetMs: 10000, list: async () => { throw new Error('Fictitious R2 failure'); } });
+  assert.equal(failed.failed, 1);
+  assert.equal(protectedDb.state.job.state, 'FAILED');
+  const retried = await purgeExpiredClinics({ pool: protectedDb.pool, ...protectedDb.lifecycleDeps,
+    now: () => NOW + DAY + 1, budgetMs: 10000, list: async () => ({ objects: [], truncated: false }) });
+  assert.equal(retried.started, 1);
+  assert.equal(protectedDb.state.job.phase, 'TEMP');
+  assert.equal(protectedDb.state.job.mode, 'MANUAL');
+});
+
 test('mature encrypted backups delete only after unlock, and SQL waits for a fresh empty listing', async () => {
   const lifecycle = { policy: 'paid', auto_purge_eligible: true, state: 'CLOSED',
     expires_at: new Date(NOW - 50 * DAY).toISOString(),

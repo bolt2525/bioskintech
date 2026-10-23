@@ -21,6 +21,8 @@ Desactivar el bot o una cuenta no libera su número. **El primer COMMIT irrevers
 
 Los contactos y estados anteriores se retiran de la resolución operativa sin reasignar ni copiar sus conversaciones. El nuevo registro utiliza IDs, estado, credenciales y conexiones nuevos. Los callbacks, enlaces y eventos anteriores al corte no se resuelven contra la identidad nueva; los lotes posteriores de purga seleccionan los IDs originales. Una purga fallida después del inicio no reactiva el origen ni recupera los identificadores ya liberados.
 
+Una vez autorizada e iniciada, la purga continúa por lotes en el cron diario de las 03:00 (Ecuador), aunque se cierre el panel. Esto no inicia nuevas purgas legacy: solo retoma órdenes existentes con su autorización guardada, respetando espera, protección anual y retención de copias. El avance manual queda como opción para adelantar lotes.
+
 La migración idempotente está integrada en `scripts/apply-migrations.mjs`: ejecutar `--clinic-identity-only --prepare` antes del despliegue añade columnas e índices sin retirar restricciones del runtime anterior; después de desplegar, ejecutar `--clinic-identity-only` habilita generaciones retirando las restricciones globales antiguas. La purga manual legacy exige autorización expresa de Master y 30 días completos desde el vencimiento. Esto no habilita purgas automáticas legacy.
 
 ## Correcciones a la guía inicial

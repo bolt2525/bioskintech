@@ -84,3 +84,9 @@ test('legacy manual requiere confirmación expresa sin habilitar purga automáti
   assert.match(dashboard, /!clinicPurgePreview\.manualLegacyAuthorizationRequired \|\| clinicPurgeLegacyAuthorized/);
   assert.match(dashboard, /Esto no habilita la purga automática de clínicas legacy/);
 });
+
+test('una purga autorizada explica la continuación diaria sin mantener abierta la ventana', () => {
+  assert.match(dashboard, /continúa automáticamente en el cron diario de las 03:00 \(Ecuador\)/);
+  assert.match(dashboard, /Puedes cerrar esta ventana/);
+  assert.match(dashboard, /procesar un lote manualmente es opcional/);
+});

@@ -3991,6 +3991,9 @@ export default function AdminMasterDashboard() {
                 {purgeJob && (
                   <section aria-labelledby="clinic-purge-progress" aria-live="polite" className="rounded-xl border border-gray-200 bg-gray-50 p-3">
                     <h4 id="clinic-purge-progress" className="font-semibold text-gray-900">Estado durable: {purgeStatusLabel}</h4>
+                    <p className="mt-2 text-xs text-gray-700">
+                      La purga autorizada continúa automáticamente en el cron diario de las 03:00 (Ecuador), mientras queden etapas pendientes y se cumplan sus plazos. Puedes cerrar esta ventana; procesar un lote manualmente es opcional para adelantar el avance.
+                    </p>
                     <dl className="mt-2 grid grid-cols-1 gap-1 text-xs text-gray-700 sm:grid-cols-2">
                       <div><dt className="inline font-medium">Fase: </dt><dd className="inline">{purgeJob.phase || '—'}</dd></div>
                       <div><dt className="inline font-medium">Objetos R2 eliminados: </dt><dd className="inline">{purgeJob.deletedObjects ?? 0}</dd></div>

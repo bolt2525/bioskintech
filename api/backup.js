@@ -935,8 +935,8 @@ const CRON_BUDGET_EXCEEDED = Symbol('cron-budget-exceeded');
 /**
  * Reintento operacional: ?action=cron&clinicId=<UUID>, con el mismo Bearer CRON_SECRET.
  * Procesa únicamente esa clínica existente y omite mantenimiento global.
- * Sin clinicId mantiene la ejecución general. No programa retries ni resuelve
- * automáticamente los pendientes de otras invocaciones.
+ * Sin clinicId mantiene la ejecución general. El cron diario retoma purgas
+ * autorizadas pendientes; no crea invocaciones adicionales fuera de ese horario.
  */
 export async function runCron(req, res, pool, {
   snapshot = createSnapshot, purgePhotos = purgeExpiredClinicPhotos,
