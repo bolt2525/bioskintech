@@ -53,10 +53,7 @@ async function request(action: string, body?: object) {
   return data;
 }
 
-export default function WhatsAppCoexistence({ mode, onConnectedChange }: {
-  mode: 'login' | 'settings';
-  onConnectedChange?: (connected: boolean) => void;
-}) {
+export default function WhatsAppCoexistence() {
   const [connection, setConnection] = useState<Connection | null>(null);
   const [signup, setSignup] = useState<Signup | null>(null);
   const [busy, setBusy] = useState(false);
@@ -69,8 +66,7 @@ export default function WhatsAppCoexistence({ mode, onConnectedChange }: {
   const refresh = useCallback(async () => {
     const data: Connection = await request('channelConfig');
     setConnection(data);
-    onConnectedChange?.(Boolean(data.channel && data.channel.status !== 'disconnected'));
-  }, [onConnectedChange]);
+  }, []);
 
   useEffect(() => {
     active.current = true;
@@ -187,10 +183,7 @@ export default function WhatsAppCoexistence({ mode, onConnectedChange }: {
     } finally { setBusy(false); }
   };
 
-  if (mode === 'login' && ((!connection && !message) || (connection && !connection.authorized))) return null;
-  if (connection && mode === 'settings' && (!connection.channel || connection.channel.status === 'disconnected')) {
-    return <p className="text-sm text-gray-600" role="status">{message || 'Sin conexión. Vincula tu WhatsApp Business desde Estado del sistema.'}</p>;
-  }
+  if ((!connection && !message) || (connection && !connection.authorized)) return null;
   const connected = connection?.channel && connection.channel.status !== 'disconnected';
   return (
     <section className="rounded-2xl border border-gray-200 bg-white p-5 space-y-3" aria-label="WhatsApp coexistencia" aria-busy={busy}>
@@ -203,15 +196,14 @@ export default function WhatsAppCoexistence({ mode, onConnectedChange }: {
           <p className="text-sm text-gray-600">{connection.channel?.status === 'setup_failed'
             ? 'Configuración incompleta. Revisa la conexión con el proveedor antes de volver a vincular.'
             : 'Autorización guardada. Pendiente validar sincronización, webhooks y plantillas.'}</p>
-          {mode === 'login' ? <p className="text-sm text-gray-600">Gestiona esta conexión en tu dashboard → Ajustes → WhatsApp coexistencia.</p> : (
-            confirmDisconnect ? <div className="space-y-2">
+          {confirmDisconnect ? <div className="space-y-2">
               <p className="text-sm text-gray-700">¿Eliminar la credencial de BIOSKIN? Esto no revoca por sí solo el acceso otorgado en Meta ni desconecta la app del teléfono.</p>
               <button type="button" disabled={busy} onClick={disconnect} className="rounded-lg border border-red-300 px-3 py-2 text-sm text-red-700 disabled:opacity-50">Confirmar desconexión</button>
               <button type="button" disabled={busy} onClick={() => setConfirmDisconnect(false)} className="ml-2 rounded-lg border px-3 py-2 text-sm">Cancelar</button>
             </div> : <button type="button" disabled={busy} onClick={() => setConfirmDisconnect(true)} className="rounded-lg border border-red-300 px-3 py-2 text-sm text-red-700">Desconectar de BIOSKIN</button>
-          )}
+          }
         </>
-      ) : connection?.enabled && mode === 'login' ? (
+      ) : connection?.enabled ? (
         <>
           <p className="text-sm text-gray-600">Requiere la app WhatsApp Business, no WhatsApp personal. No importamos conversaciones ni contactos al CRM durante este piloto.</p>
           <button type="button" disabled={busy} onClick={signup ? launch : prepare}

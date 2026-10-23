@@ -290,10 +290,13 @@ test('pilot cannot be activated from UI or auto-send reminders using the system 
   assert.match(bot, /whatsapp_confirm_enabled = true[\s\S]*?AND false/);
   assert.match(bot, /paused: true, reason:/);
   const ui = readFileSync(new URL('../src/pages/AdminSystemStatus.tsx', import.meta.url), 'utf8');
-  assert.match(ui, /WhatsAppCoexistence mode="login"/);
+  assert.match(ui, /<WhatsAppCoexistence \/>/);
   const dashboard = readFileSync(new URL('../src/pages/AdminDashboard.tsx', import.meta.url), 'utf8');
-  assert.match(dashboard, /hasWhatsAppChannel && <button/);
-  assert.match(dashboard, /WhatsAppCoexistence mode="settings"/);
+  assert.doesNotMatch(dashboard, /WhatsAppCoexistence|whatsapp_coexistence|action=channelConfig/);
+  const component = readFileSync(new URL('../src/components/admin/WhatsAppCoexistence.tsx', import.meta.url), 'utf8');
+  assert.match(component, /onClick=\{disconnect\}/);
+  assert.match(component, /Confirmar desconexión/);
+  assert.doesNotMatch(component, /mode ===|dashboard → Ajustes/);
   const api = readFileSync(new URL('../api/admin-auth.js', import.meta.url), 'utf8');
   const action = api.slice(api.indexOf("if (action === 'setWhatsAppCoexistenceEnabled')"));
   assert.match(action, /requireRole\(user, 'master_admin'\)/);

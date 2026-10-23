@@ -340,7 +340,7 @@ export default function AdminSystemStatus() {
             </div>
           </div>
           <UserStatusView user={user} />
-          <div className="mt-4"><WhatsAppCoexistence mode="login" /></div>
+          <div className="mt-4"><WhatsAppCoexistence /></div>
         </div>
       </AdminLayout>
     );

@@ -6,7 +6,7 @@ Implementación del login y autorización por usuario, **no activación de recor
 
 - El master habilita **Coexistencia ON/OFF** en la lista de usuarios. Es independiente de `whatsapp_bot_enabled`.
 - Solo el usuario habilitado ve la tarjeta y el login en **Estado del sistema**. El interruptor global del piloto debe estar habilitado y Meta configurado para iniciar el login.
-- Tras autorizar un canal, aparece **Dashboard → Ajustes → WhatsApp coexistencia**, con estado y eliminación de la credencial local.
+- Login, estado y eliminación de la credencial local se gestionan juntos en **Estado del sistema → WhatsApp coexistencia**, sin una opción adicional en Ajustes del dashboard.
 - El número del chatbot y los resúmenes al personal se conservan. El webhook solo entrega al bot y al CRM global los eventos `messages` cuyo `metadata.phone_number_id` corresponde exactamente al número del sistema.
 - **Los recordatorios automáticos del cron a pacientes quedan pausados para todos durante este piloto**, sin respaldo desde el número del sistema. No basta conectar el número para reactivarlos. Se mantienen los acuses y las respuestas a notificaciones históricas del chatbot.
 - El piloto no importa contactos, historial, mensajes ni ecos de los números propios al CRM global ni los interpreta como comandos. Solicita las sincronizaciones requeridas por Meta y conserva sus IDs; **no verifica su finalización ni constituye todavía un inbox de coexistencia**. Los eventos firmados se reconocen sin guardar su contenido clínico.

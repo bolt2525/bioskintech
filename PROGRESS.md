@@ -1,5 +1,7 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-23 Coexistencia centralizada en Estado.
+
 - ✅ 2026-10-23 Coexistencia: login piloto por usuario.
 - ✅ 2026-10-23 Master habilita; ajustes desconectan.
 - ✅ 2026-10-23 Recordatorios pausados; bot preservado.
