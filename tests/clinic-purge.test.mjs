@@ -22,6 +22,7 @@ function database(options = {}) {
     statements: [], sessionsRevoked: false, signingRevoked: false, lifecyclePersisted: false,
     annualChecks: 0, annualDeadlines: [],
     waLocks: 0,
+    setupTokens: structuredClone(options.setupTokens || []),
     schedule: null, wa: structuredClone(options.wa || null), receipts: structuredClone(options.receipts || []),
   };
   let snapshot;
@@ -29,7 +30,7 @@ function database(options = {}) {
     async query(sql, params = []) {
       state.statements.push({ sql, params });
       if (sql === 'BEGIN') { snapshot = structuredClone({ job: state.job, clinic: state.clinic, counts: state.counts,
-        schedule: state.schedule, wa: state.wa, receipts: state.receipts }); return { rows: [] }; }
+        schedule: state.schedule, wa: state.wa, receipts: state.receipts, setupTokens: state.setupTokens }); return { rows: [] }; }
       if (sql === 'ROLLBACK') { Object.assign(state, snapshot); return { rows: [] }; }
       if (sql.startsWith('LOCK TABLE') && sql.includes('"wa_short_links"')) {
         state.waLocks++;
@@ -101,7 +102,14 @@ function database(options = {}) {
         else state.job = JSON.parse(params[1]);
         return { rows: [] };
       }
-      if (sql.startsWith('UPDATE admin_sessions')) { state.sessionsRevoked = true; return { rows: [] }; }
+      if (sql.startsWith('DELETE FROM password_setup_tokens')) {
+        state.setupTokens = state.setupTokens.filter(t => t.clinic_id !== params[0]);
+        return { rows: [] };
+      }
+      if (sql.startsWith('UPDATE admin_sessions')) {
+        if (options.revokeFails) throw new Error('fictitious revoke failure');
+        state.sessionsRevoked = true; return { rows: [] };
+      }
       if (sql.startsWith('UPDATE clinic_users SET is_active=false')) {
         for (const user of state.wa?.users || []) {
           if (user.clinic_id !== params[0]) continue;
@@ -349,7 +357,7 @@ test('R2 failure records FAILED, retains reserve and never deletes SQL data or r
   assert.equal(state.job.state, 'FAILED');
   assert.equal(state.job.last_error, 'PURGE_BATCH_FAILED');
   assert.equal(Date.parse(state.job.leaseUntil), NOW + 300000);
-  assert.equal(state.statements.some(s => s.sql.startsWith('DELETE FROM')), false);
+  assert.equal(state.statements.some(s => s.sql.startsWith('DELETE FROM') && !s.sql.startsWith('DELETE FROM password_setup_tokens')), false);
   await assert.rejects(purge(body, actor, { pool, now: () => NOW }), { status: 409 });
 });
 
@@ -534,8 +542,9 @@ test('a batch never deletes more than 100 keys and cannot delete an unexpected k
   assert.deepEqual(removed, []);
 });
 
-test('deactivation conserves tenant content and revokes all sessions in the same SQL transaction', async () => {
-  const { pool, state } = database({ clinic: { is_active: true }, columns: [
+test('deactivation conserves tenant content and revokes sessions and setup tokens in the same SQL transaction', async () => {
+  const { pool, state } = database({ clinic: { is_active: true },
+    setupTokens: [{ clinic_id: ID, token: 'fictitious' }, { clinic_id: OTHER, token: 'other' }], columns: [
     'clinical_photos', 'patients', 'clinic_users', 'consent_forms', 'clinic_settings', 'subscriptions',
   ].map(table_name => ({ table_name, udt_name: 'uuid' })) });
   await updateClinicState({ id: ID, is_active: false }, pool);
@@ -544,7 +553,23 @@ test('deactivation conserves tenant content and revokes all sessions in the same
   assert.equal(state.signingRevoked, true);
   assert.equal(state.counts.patients, 1);
   assert.equal(state.job, null);
-  assert.equal(state.statements.some(s => s.sql.startsWith('DELETE')), false);
+  assert.deepEqual(state.setupTokens, [{ clinic_id: OTHER, token: 'other' }]);
+  assert.equal(state.statements.some(s => s.sql.startsWith('DELETE') && !s.sql.startsWith('DELETE FROM password_setup_tokens')), false);
+  const lock = state.statements.findIndex(s => s.sql.includes('pg_try_advisory_xact_lock'));
+  const revoke = state.statements.findIndex(s => s.sql.startsWith('DELETE FROM password_setup_tokens'));
+  assert.ok(lock >= 0 && revoke > lock);
+  assert.equal(state.statements.at(-1).sql, 'COMMIT');
+  await updateClinicState({ id: ID, is_active: true }, pool);
+  assert.deepEqual(state.setupTokens, [{ clinic_id: OTHER, token: 'other' }], 'reactivation must not restore old links');
+});
+
+test('failed deactivation rolls back setup token revocation and active state together', async () => {
+  const setupTokens = [{ clinic_id: ID, token: 'fictitious' }];
+  const { pool, state } = database({ clinic: { is_active: true }, setupTokens, revokeFails: true });
+  await assert.rejects(updateClinicState({ id: ID, is_active: false }, pool), /fictitious revoke failure/);
+  assert.equal(state.clinic.is_active, true);
+  assert.deepEqual(state.setupTokens, setupTokens);
+  assert.equal(state.statements.at(-1).sql, 'ROLLBACK');
 });
 
 test('automatic purge closes only paid subscriptions after T+45 and records a quiescence tombstone without master claims', async () => {

@@ -13,6 +13,12 @@ Implementación del login y autorización por usuario, **no activación de recor
 - Meta devuelve la cuenta seleccionada. Se valida el acceso con el token canjeado, la app emisora y los permisos, y se comprueba `is_on_biz_app=true` y `platform_type=CLOUD_API`. Si no llega el ID de teléfono, el piloto solo admite una cuenta con un único número elegible; nunca elige arbitrariamente la primera cuenta/número.
 - Los estados son `pending_validation`, `setup_failed` y `disconnected`: **no existe un estado activo de envío** en esta fase.
 
+### Teléfonos del bot y atribución retenida
+
+El alta/edición del teléfono de usuario, el perfil propio, la configuración del bot y su habilitación rechazan números presentes en `phone` o `whatsapp_staff_phone` de otro usuario, incluso inactivo o tombstone. También rechazan atribución de conversaciones a otra clínica o sin clínica; ante un error de comprobación no se guarda el número. Una conversación de la misma clínica requiere que esta siga operativa. El rechazo informa que el teléfono está asignado o retenido por atribución histórica.
+
+No se borran teléfonos de tombstones, no se reasignan conversaciones ni se habilita la reutilización de identificadores. Cualquier transferencia segura requiere diseño y confirmación separados; desactivar el bot o una cuenta no libera su número.
+
 ## Correcciones a la guía inicial
 
 1. Embedded Signup no es un formulario de PublicInput ni un login genérico de Facebook. Utiliza **Facebook Login for Business** con `config_id` y respuesta `code`; el backend canjea ese código. El SDK se carga desde `https://connect.facebook.net/es_LA/sdk.js`.

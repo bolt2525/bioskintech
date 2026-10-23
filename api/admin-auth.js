@@ -38,6 +38,23 @@ const sql = (strings, ...values) => {
 };
 sql.query = (...args) => writerContext.getStore()?.client?.query(...args) || postgresSql.query(...args);
 
+async function withAuthTransaction(operation) {
+  if (writerContext.getStore()?.client) return operation(writerContext.getStore().client);
+  const client = await postgresSql.connect();
+  let releaseError;
+  try {
+    await client.query('BEGIN');
+    await client.query("SET LOCAL statement_timeout = '15s'");
+    const result = await writerContext.run({ client }, () => operation(client));
+    await client.query(result?.error ? 'ROLLBACK' : 'COMMIT');
+    return result;
+  } catch (error) {
+    try { await client.query('ROLLBACK'); }
+    catch (rollbackError) { releaseError = rollbackError; }
+    throw error;
+  } finally { client.release(releaseError); }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuración de seguridad
 // ─────────────────────────────────────────────────────────────────────────────
@@ -274,22 +291,28 @@ export function getEffectiveWhatsAppStaffPhone(staffPhone, registeredPhone) {
   return normalizeUserPhone(staffPhone) || normalizeUserPhone(registeredPhone);
 }
 
-async function isPhoneAvailable(phone, excludedUserId = null) {
+async function isPhoneAvailable(phone, excludedUserId = null, clinicId = null) {
   if (!phone) return true;
-  const users = excludedUserId
-    ? await sql`SELECT id, phone FROM clinic_users WHERE phone IS NOT NULL AND id != ${excludedUserId}`
-    : await sql`SELECT id, phone FROM clinic_users WHERE phone IS NOT NULL`;
-  return !users.rows.some(row => normalizeUserPhone(row.phone) === phone);
+  const users = await sql`SELECT id, phone, whatsapp_staff_phone FROM clinic_users
+    WHERE (${excludedUserId}::integer IS NULL OR id != ${excludedUserId})`;
+  // Inactive users/tombstones retain BOTH numbers as attribution evidence.
+  if (users.rows.some(row => [row.phone, row.whatsapp_staff_phone].some(value => normalizeUserPhone(value) === phone)))
+    return false;
+  if (excludedUserId && !clinicId) {
+    const target = await sql`SELECT clinic_id FROM clinic_users WHERE id=${excludedUserId}`;
+    clinicId = target.rows[0]?.clinic_id;
+  }
+  const domestic = phone.startsWith('593') ? `0${phone.slice(3)}` : phone;
+  const contacts = await sql`SELECT clinic_id FROM whatsapp_contacts
+    WHERE regexp_replace(phone,'[^0-9]','','g') IN (${phone},${domestic})`;
+  // No safe transfer exists for legacy/global conversations. Never reassign them.
+  if (contacts.rows.some(row => !clinicId || row.clinic_id !== clinicId)) return false;
+  if (contacts.rows.length) await requireClinicWritable({ query: sql.query }, clinicId);
+  return true;
 }
 
 async function isWhatsAppStaffPhoneAvailable(phone, excludedUserId) {
-  if (!phone) return true;
-  const users = await sql`
-    SELECT id, phone, whatsapp_staff_phone
-    FROM clinic_users
-    WHERE is_active = true AND whatsapp_bot_enabled = true AND id != ${excludedUserId}
-  `;
-  return !users.rows.some(row => getEffectiveWhatsAppStaffPhone(row.whatsapp_staff_phone, row.phone) === phone);
+  return isPhoneAvailable(phone, excludedUserId);
 }
 
 export function generateTemporaryPassword() {
@@ -1205,11 +1228,20 @@ async function cleanupExpiredDemos() {
 async function generateSetupTokenFn(userId, email, adminUser) {
   const token = crypto.randomBytes(32).toString('hex');
   const exp   = new Date(Date.now() + 48 * 3600000); // 48h
-  await sql`
-    INSERT INTO password_setup_tokens (user_id, token, expires_at)
-    VALUES (${userId}, ${token}, ${exp})
-    ON CONFLICT DO NOTHING
-  `;
+  await withAuthTransaction(async db => {
+    const target = (await sql`SELECT clinic_id FROM clinic_users WHERE id=${userId}`).rows[0];
+    if (!target || (adminUser.role !== 'master_admin' && target.clinic_id !== adminUser.clinic_id))
+      throw Object.assign(new Error('Sin permiso'), { status: 403 });
+    if (target.clinic_id) {
+      await lockClinicWriters(db, [target.clinic_id]);
+      await requireClinicWritable(db, target.clinic_id, { subscriptionAccess: 'admin' });
+    }
+    const current = await sql`SELECT id FROM clinic_users WHERE id=${userId}
+      AND clinic_id IS NOT DISTINCT FROM ${target.clinic_id}::uuid AND is_active=true FOR UPDATE`;
+    if (!current.rows.length) throw Object.assign(new Error('Usuario no disponible'), { status: 409 });
+    await sql`INSERT INTO password_setup_tokens (user_id, token, expires_at)
+      VALUES (${userId}, ${token}, ${exp})`;
+  });
   const appUrl = (process.env.APP_URL || `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app'}`).trim();
   const setupLink = `${appUrl}/#/admin/setup-password?token=${token}`;
   await sendAuthEmail(email,
@@ -1232,17 +1264,28 @@ async function generateSetupTokenFn(userId, email, adminUser) {
 async function claimSetupTokenFn(token, newPassword) {
   if (!token || !newPassword) return { error: 'token y newPassword son requeridos' };
   if (newPassword.length < 8) return { error: 'La contraseña debe tener al menos 8 caracteres' };
-  const r = await sql`
-    SELECT t.*, cu.username, cu.email FROM password_setup_tokens t
-    JOIN clinic_users cu ON cu.id = t.user_id
-    WHERE t.token=${token} AND t.used=false AND t.expires_at > NOW()
-  `;
-  if (!r.rows.length) return { error: 'Enlace inválido o expirado' };
-  const row = r.rows[0];
-  const { hash, salt } = hashPassword(newPassword);
-  await sql`UPDATE clinic_users SET password_hash=${hash}, salt=${salt}, hash_algo='pbkdf2' WHERE id=${row.user_id}`;
-  await sql`UPDATE password_setup_tokens SET used=true WHERE id=${row.id}`;
-  return { success: true, username: row.username, email: row.email };
+  return withAuthTransaction(async db => {
+    const invalid = { error: 'Enlace inválido o expirado' };
+    const target = (await sql`SELECT cu.clinic_id FROM password_setup_tokens t
+      JOIN clinic_users cu ON cu.id=t.user_id WHERE t.token=${token}`).rows[0];
+    if (!target) return invalid;
+    if (target.clinic_id) {
+      await lockClinicWriters(db, [target.clinic_id]);
+      await requireClinicWritable(db, target.clinic_id, { subscriptionAccess: 'admin' });
+    }
+    // Re-read after the lifecycle lock; row locks also serialize concurrent claims.
+    const r = await sql`SELECT t.*, cu.username, cu.email FROM password_setup_tokens t
+      JOIN clinic_users cu ON cu.id=t.user_id
+      WHERE t.token=${token} AND t.used=false AND t.expires_at>NOW() AND cu.is_active=true
+        AND cu.clinic_id IS NOT DISTINCT FROM ${target.clinic_id}::uuid
+      FOR UPDATE OF t, cu`;
+    if (!r.rows.length) return invalid;
+    const row = r.rows[0];
+    const { hash, salt } = hashPassword(newPassword);
+    await sql`UPDATE clinic_users SET password_hash=${hash}, salt=${salt}, hash_algo='pbkdf2' WHERE id=${row.user_id}`;
+    await sql`UPDATE password_setup_tokens SET used=true WHERE id=${row.id}`;
+    return { success: true, username: row.username, email: row.email };
+  });
 }
 
 /** Extrae el usuario autenticado del header Authorization */
@@ -1381,7 +1424,7 @@ async function createUser(requestUser, body) {
   const effectiveInventoryScope = isDemo ? 'own' : (inventory_scope || 'all');
   const effectiveCalendarScope  = 'own';
   const normalizedPhone = normalizeUserPhone(phone);
-  if (!(await isPhoneAvailable(normalizedPhone))) return { error: 'Este WhatsApp ya está asignado a otro usuario' };
+  if (!(await isPhoneAvailable(normalizedPhone, null, targetClinicId))) return { error: 'Este WhatsApp está asignado o retenido por atribución histórica; no puede reutilizarse' };
 
   try {
     const r = await sql`
@@ -1421,7 +1464,7 @@ async function updateUser(requestUser, body) {
   if (![access_scope, finance_scope, inventory_scope].every(scope => scope == null || scope === '' || validScopes.has(scope)))
     return { error: 'Control de acceso inválido' };
   const normalizedPhone = normalizeUserPhone(phone);
-  if (!(await isPhoneAvailable(normalizedPhone, id))) return { error: 'Este WhatsApp ya está asignado a otro usuario' };
+  if (!(await isPhoneAvailable(normalizedPhone, id))) return { error: 'Este WhatsApp está asignado o retenido por atribución histórica; no puede reutilizarse' };
 
   if (requestUser.role === 'clinic_admin') {
     const t = await sql`SELECT clinic_id, role FROM clinic_users WHERE id = ${id}`;
@@ -1430,6 +1473,11 @@ async function updateUser(requestUser, body) {
   } else if (requestUser.role !== 'master_admin') {
     return { error: 'Sin permiso' };
   }
+
+  const bot = (await sql`SELECT whatsapp_bot_enabled, whatsapp_staff_phone FROM clinic_users WHERE id=${id}`).rows[0];
+  if (bot?.whatsapp_bot_enabled === true &&
+      !(await isWhatsAppStaffPhoneAvailable(getEffectiveWhatsAppStaffPhone(bot.whatsapp_staff_phone, normalizedPhone), id)))
+    return { error: 'Este WhatsApp está asignado o retenido por atribución histórica; no puede reutilizarse' };
 
   await sql`
     UPDATE clinic_users SET
@@ -1450,6 +1498,7 @@ async function updateUser(requestUser, body) {
       especialidad        = COALESCE(NULLIF(${especialidad        ?? ''}, ''), especialidad)
     WHERE id = ${id}
   `;
+  if (is_active === false) await sql`DELETE FROM password_setup_tokens WHERE user_id=${id}`;
   if (requestUser.role === 'master_admin' && role != null) {
     await sql`UPDATE clinic_users SET role = ${role} WHERE id = ${id}`;
   }
@@ -1784,6 +1833,32 @@ async function validateRegistrationCode(code) {
  * Requiere código de registro válido O subscription_id de pago confirmado.
  */
 async function registerClinic(body) {
+  let registration;
+  try {
+    registration = await withAuthTransaction(async db => {
+      // Serialize public availability checks too (legacy user email has no UNIQUE).
+      await db.query('SELECT pg_advisory_xact_lock(68422, 1)');
+      return registerClinicTransaction(body);
+    });
+  } catch (error) {
+    if (error.code === '23505' && error.constraint === 'clinic_users_username_key')
+      return { error: 'El nombre de usuario ya está en uso. Elige otro.', field: 'username' };
+    throw error;
+  }
+  if (registration.error) return registration;
+  const { planName, ...result } = registration;
+  // External effects only after COMMIT: failed registrations send no welcome email.
+  const mailResults = await Promise.allSettled([
+    sendWelcomeEmail(result.user.email, body.first_name.trim(), result.user.username, result.clinic.name, body.clinic_email?.trim().toLowerCase() || result.user.email),
+    sendMasterAdminAlert(result.clinic.name, result.user.email, result.user.username, result.user.full_name, planName),
+  ]);
+  for (const mail of mailResults) {
+    if (mail.status === 'rejected') console.error('[register] email error:', mail.reason?.message || mail.reason);
+  }
+  return result;
+}
+
+async function registerClinicTransaction(body) {
   const { code, subscription_id, email, password, username: rawUsername, clinic_email,
           first_name, last_name, gentilicio, profession,
           clinic_name, clinic_phone, clinic_address, clinic_city, clinic_country,
@@ -1855,7 +1930,7 @@ async function registerClinic(body) {
     planName     = codeRow.plan_name;
   } else if (subscription_id) {
     // Validar vía pago confirmado (status='paid' — no 'registered' ni otro estado)
-    const sub = await sql`SELECT * FROM subscriptions WHERE id=${subscription_id} AND status='paid'`;
+    const sub = await sql`SELECT * FROM subscriptions WHERE id=${subscription_id} AND status='paid' FOR UPDATE`;
     if (!sub.rows.length) return { error: 'Pago no confirmado, ya utilizado o expirado' };
     const plan = Object.values(SUBSCRIPTION_PLANS).find(p => p.name === sub.rows[0].plan_name) || SUBSCRIPTION_PLANS.plan_completo;
     planFeatures = plan.features;
@@ -1925,17 +2000,9 @@ async function registerClinic(body) {
     await sql`UPDATE subscriptions SET status='registered',clinic_id=${clinicId} WHERE id=${subscription_id} AND status='paid'`;
   }
 
-  // Esperar ambos envíos: Vercel puede finalizar una función serverless después de responder.
-  const mailResults = await Promise.allSettled([
-    sendWelcomeEmail(emailNorm, first_name.trim(), usernameNorm, clinic_name.trim(), clinicContactEmail),
-    sendMasterAdminAlert(clinic_name.trim(), emailNorm, usernameNorm, `${first_name.trim()} ${last_name.trim()}`, planName),
-  ]);
-  for (const result of mailResults) {
-    if (result.status === 'rejected') console.error('[register] email error:', result.reason?.message || result.reason);
-  }
-
   return {
     success: true,
+    planName,
     user: { id: userId, username: usernameNorm, email: emailNorm, full_name: fullName, role: 'clinic_admin', clinic_id: clinicId },
     clinic: { id: clinicId, name: clinic_name.trim(), slug },
     features: planFeatures.filter(f => !OPT_IN_FEATURES.includes(f)),
@@ -3733,12 +3800,12 @@ async function handleAdminRequest(req, res) {
         if (conflict.rows.length) return res.status(400).json({ error: 'Este email ya lo usa otro usuario' });
       }
       if (rawPhone && !(await isPhoneAvailable(rawPhone, user.id)))
-        return res.status(409).json({ error: 'Este teléfono ya lo usa otro usuario.' });
+        return res.status(409).json({ error: 'Este teléfono está asignado o retenido por atribución histórica; no puede reutilizarse.' });
       if (rawPhone) {
         const botConfig = await sql`SELECT whatsapp_bot_enabled, whatsapp_staff_phone FROM clinic_users WHERE id = ${user.id}`;
         const effectiveStaffPhone = getEffectiveWhatsAppStaffPhone(botConfig.rows[0]?.whatsapp_staff_phone, rawPhone);
         if (botConfig.rows[0]?.whatsapp_bot_enabled === true && !(await isWhatsAppStaffPhoneAvailable(effectiveStaffPhone, user.id)))
-          return res.status(409).json({ error: 'Este número de WhatsApp ya está asignado al chatbot de otro usuario.' });
+          return res.status(409).json({ error: 'Este WhatsApp está asignado o retenido por atribución histórica; no puede reutilizarse.' });
       }
       await sql`
         UPDATE clinic_users SET
@@ -3789,7 +3856,7 @@ async function handleAdminRequest(req, res) {
       const financePhone   = normalizeUserPhone(req.body?.finance_phone || '');
       const effectiveStaffPhone = getEffectiveWhatsAppStaffPhone(staffPhone, current.rows[0]?.phone);
       if (!(await isWhatsAppStaffPhoneAvailable(effectiveStaffPhone, user.id)))
-        return res.status(409).json({ error: 'Este número de WhatsApp ya está asignado al chatbot de otro usuario.' });
+        return res.status(409).json({ error: 'Este WhatsApp está asignado o retenido por atribución histórica; no puede reutilizarse.' });
       await sql`
         UPDATE clinic_users SET
           whatsapp_confirm_enabled = ${confirmEnabled},
@@ -3829,7 +3896,7 @@ async function handleAdminRequest(req, res) {
         if (!target.rows.length) return res.status(404).json({ error: 'Usuario no encontrado' });
         const effectiveStaffPhone = getEffectiveWhatsAppStaffPhone(target.rows[0].whatsapp_staff_phone, target.rows[0].phone);
         if (!(await isWhatsAppStaffPhoneAvailable(effectiveStaffPhone, targetId)))
-          return res.status(409).json({ error: 'Este número de WhatsApp ya está asignado al chatbot de otro usuario.' });
+          return res.status(409).json({ error: 'Este WhatsApp está asignado o retenido por atribución histórica; no puede reutilizarse.' });
       }
       await sql`UPDATE clinic_users SET whatsapp_bot_enabled = ${enabled} WHERE id = ${targetId}`;
       return res.status(200).json({ success: true, enabled });
