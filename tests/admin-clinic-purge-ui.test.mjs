@@ -90,3 +90,18 @@ test('una purga autorizada explica la continuación diaria sin mantener abierta 
   assert.match(dashboard, /Puedes cerrar esta ventana/);
   assert.match(dashboard, /procesar un lote manualmente es opcional/);
 });
+
+test('seguimiento prioriza etapas y conteos reales sobre una autorización manual opcional', () => {
+  assert.match(dashboard, /title=\{purgeJob \? 'Seguimiento de purga'/);
+  assert.ok(dashboard.indexOf('aria-labelledby="clinic-purge-progress"') <
+    dashboard.indexOf('aria-labelledby="clinic-purge-eligibility"'));
+  assert.equal((dashboard.match(/id="clinic-purge-progress"/g) || []).length, 1);
+  assert.match(dashboard, /aria-label="Etapas de eliminación"/);
+  assert.match(dashboard, /aria-current=\{stage\.key === purgeJob\.phase/);
+  assert.match(dashboard, /Filas pendientes de eliminación en Neon/);
+  assert.match(dashboard, /no un historial de lo ya eliminado/);
+  assert.match(dashboard, /No hay un total inicial de objetos registrado/);
+  assert.match(dashboard, /Espera inicial cumplida; pendiente de ejecución/);
+  assert.match(dashboard, /open=\{purgeJob \? undefined : true\}/);
+  assert.match(dashboard, /Opcional: adelantar un lote manualmente/);
+});

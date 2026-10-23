@@ -59,7 +59,17 @@ type ClinicPurgeJob = {
   completedAt?: string;
   deletedObjects?: number;
   last_error?: string | null;
+  backupRetentionUntil?: string | null;
 };
+
+const PURGE_STAGES = [
+  { key: 'PHOTOS', label: 'Fotos clínicas' },
+  { key: 'TEMP', label: 'Archivos temporales' },
+  { key: 'ANNUAL', label: 'Respaldos anuales' },
+  { key: 'BACKUPS', label: 'Copias de seguridad' },
+  { key: 'SQL', label: 'Datos clínicos en Neon' },
+  { key: 'COMPLETE', label: 'Finalización' },
+];
 
 type ClinicPurgePreview = {
   success: true;
@@ -1979,8 +1989,9 @@ export default function AdminMasterDashboard() {
     clinicPurgeReason.trim().length >= 10 && clinicPurgeReason.trim().length <= 1000
   );
   const purgeStatusLabel = purgeJob ? ({
-    QUIESCING: 'Espera de seguridad',
+    QUIESCING: purgeWaiting ? 'Espera de seguridad' : 'Espera inicial cumplida; pendiente de ejecución',
     RUNNING: 'En proceso por lotes',
+    WAITING_STORAGE: 'Esperando la retención de copias',
     FAILED: 'Lote fallido; reintento disponible',
     COMPLETE: 'Purga completada',
   }[purgeJob.state] || purgeJob.state) : '';
@@ -3864,7 +3875,7 @@ export default function AdminMasterDashboard() {
 
       {clinicPurgeTarget && (
         <Modal
-          title={`Purga de ${clinicPurgeTarget.name}`}
+          title={purgeJob ? 'Seguimiento de purga' : `Purga de ${clinicPurgeTarget.name}`}
           onClose={() => {
             if (!clinicPurgeBusy) {
               clinicPurgeRequestId.current += 1;
@@ -3874,7 +3885,9 @@ export default function AdminMasterDashboard() {
         >
           <div className="space-y-4">
             <p className="text-sm text-gray-700">
-              Esta revisión no borra información ni libera identificadores. Para iniciar la purga, la clínica debe estar desactivada y haber cumplido el plazo de recuperación confirmado por la API.
+              {purgeJob
+                ? 'La purga ya está autorizada. Aquí puedes consultar su avance sin volver a iniciarla ni confirmar formularios.'
+                : 'Esta revisión no borra información ni libera identificadores. Para iniciar la purga, la clínica debe estar desactivada y haber cumplido el plazo de recuperación confirmado por la API.'}
             </p>
 
             {clinicPurgeError && (
@@ -3896,6 +3909,40 @@ export default function AdminMasterDashboard() {
 
             {clinicPurgePreview && (
               <>
+                {purgeJob && (
+                  <section aria-labelledby="clinic-purge-progress" aria-live="polite" className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+                    <h4 id="clinic-purge-progress" className="font-semibold text-blue-950">Estado: {purgeStatusLabel}</h4>
+                    <p className="mt-1 break-words text-xs text-blue-900">Clínica original: {clinicPurgePreview.clinic.name}</p>
+                    <dl className="mt-3 grid grid-cols-1 gap-2 text-xs text-gray-800 sm:grid-cols-2">
+                      <div><dt className="font-medium">Etapa actual</dt><dd>{PURGE_STAGES.find(stage => stage.key === purgeJob.phase)?.label || purgeJob.phase || 'Sin etapa registrada'}</dd></div>
+                      <div><dt className="font-medium">Objetos R2 eliminados (acumulado)</dt><dd className="tabular-nums">{purgeJob.deletedObjects?.toLocaleString('es-EC') ?? 'Sin conteo registrado'}</dd></div>
+                      <div><dt className="font-medium">Solicitud registrada</dt><dd>{formatPurgeDate(purgeJob.requestedAt)}</dd></div>
+                      <div><dt className="font-medium">Identificadores liberados</dt><dd>{formatPurgeDate(clinicPurgePreview.identifiersReleasedAt)}</dd></div>
+                    </dl>
+                    <ol aria-label="Etapas de eliminación" className="mt-3 space-y-1 text-xs text-gray-800">
+                      {PURGE_STAGES.map((stage, index) => {
+                        const current = PURGE_STAGES.findIndex(item => item.key === purgeJob.phase);
+                        const done = clinicPurgePreview.complete || (current >= 0 && index < current);
+                        return (
+                          <li key={stage.key} aria-current={stage.key === purgeJob.phase && !clinicPurgePreview.complete ? 'step' : undefined} className="flex justify-between gap-3 rounded bg-white px-2 py-2">
+                            <span>{index + 1}. {stage.label}</span>
+                            <span className="shrink-0 font-semibold">{done ? 'Completada' : stage.key === purgeJob.phase ? 'Etapa actual' : 'Pendiente'}</span>
+                          </li>
+                        );
+                      })}
+                    </ol>
+                    {!clinicPurgePreview.complete && (
+                      <p className="mt-3 text-xs text-blue-900">
+                        La purga autorizada continúa automáticamente en el cron diario de las 03:00 (Ecuador), mientras queden etapas pendientes y se cumplan sus plazos. Puedes cerrar esta ventana; procesar un lote manualmente es opcional para adelantar el avance.
+                      </p>
+                    )}
+                    {purgeWaiting && <p className="mt-2 text-xs text-amber-900">No se procesará otro lote antes de {formatPurgeDate(new Date(purgeWaitUntil).toISOString())}. Después continuará según el horario del cron.</p>}
+                    {purgeJob.backupRetentionUntil && !clinicPurgePreview.complete && <p className="mt-2 text-xs text-gray-700">Referencia de retención de respaldos: {formatPurgeDate(purgeJob.backupRetentionUntil)}. Cada objeto también debe cumplir su bloqueo individual.</p>}
+                    {purgeJob.last_error && <p role="alert" className="mt-2 break-words text-xs text-red-800">El último lote falló ({purgeJob.last_error}). La purga no está completa; el cron reintentará tras la reserva, salvo que requiera revisión asistida.</p>}
+                    {clinicPurgePreview.complete && <p className="mt-2 text-sm font-semibold text-emerald-800">Purga completada: {formatPurgeDate(purgeJob.completedAt)}. Tiempo desde la purga: {formatElapsed(purgeJob.completedAt)}. Se conservan las constancias administrativas y los datos ambiguos indicados abajo.</p>}
+                    <p className="mt-2 text-xs text-gray-700">El conteo R2 no equivale a pacientes ni filas SQL. No hay un total inicial de objetos registrado: no se calcula un porcentaje ni se inventa un número de filas eliminadas.</p>
+                  </section>
+                )}
                 <section aria-labelledby="clinic-purge-eligibility" className={`rounded-xl border p-3 ${clinicPurgePreview.eligible ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <h4 id="clinic-purge-eligibility" className="font-semibold text-gray-900">
@@ -3937,7 +3984,8 @@ export default function AdminMasterDashboard() {
                 </section>
 
                 <section aria-labelledby="clinic-purge-scope" className="rounded-xl border border-gray-200 p-3">
-                  <h4 id="clinic-purge-scope" className="font-semibold text-gray-900">Alcance verificado en Neon</h4>
+                  <h4 id="clinic-purge-scope" className="font-semibold text-gray-900">{purgeJob ? 'Filas pendientes de eliminación en Neon' : 'Alcance verificado en Neon'}</h4>
+                  {purgeJob && <p className="mt-1 text-xs text-gray-600">Conteos actuales de filas seleccionables para borrado, no un historial de lo ya eliminado. Las constancias retenidas quedan fuera de este alcance.</p>}
                   <ul className="mt-2 grid grid-cols-1 gap-1.5 text-xs text-gray-700 sm:grid-cols-2">
                     {Object.entries(clinicPurgePreview.counts).map(([table, count]) => (
                       <li key={table} className="flex justify-between gap-3 rounded bg-gray-50 px-2 py-1.5">
@@ -3988,33 +4036,11 @@ export default function AdminMasterDashboard() {
                   <p className="mt-1 text-xs text-blue-800">{clinicPurgePreview.retainedBackups.note}</p>
                 </section>
 
-                {purgeJob && (
-                  <section aria-labelledby="clinic-purge-progress" aria-live="polite" className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-                    <h4 id="clinic-purge-progress" className="font-semibold text-gray-900">Estado durable: {purgeStatusLabel}</h4>
-                    <p className="mt-2 text-xs text-gray-700">
-                      La purga autorizada continúa automáticamente en el cron diario de las 03:00 (Ecuador), mientras queden etapas pendientes y se cumplan sus plazos. Puedes cerrar esta ventana; procesar un lote manualmente es opcional para adelantar el avance.
-                    </p>
-                    <dl className="mt-2 grid grid-cols-1 gap-1 text-xs text-gray-700 sm:grid-cols-2">
-                      <div><dt className="inline font-medium">Fase: </dt><dd className="inline">{purgeJob.phase || '—'}</dd></div>
-                      <div><dt className="inline font-medium">Objetos R2 eliminados: </dt><dd className="inline">{purgeJob.deletedObjects ?? 0}</dd></div>
-                      <div><dt className="inline font-medium">Solicitud registrada: </dt><dd className="inline">{formatPurgeDate(purgeJob.requestedAt)}</dd></div>
-                      {purgeJob.completedAt && <><div><dt className="inline font-medium">Completada: </dt><dd className="inline">{formatPurgeDate(purgeJob.completedAt)}</dd></div><div><dt className="inline font-medium">Tiempo desde la purga: </dt><dd className="inline">{formatElapsed(purgeJob.completedAt)}</dd></div></>}
-                    </dl>
-                    {purgeWaiting && (
-                      <p className="mt-2 text-xs text-amber-900">
-                        Lote reservado o período de cierre en curso. Se podrá continuar después de {formatPurgeDate(new Date(purgeWaitUntil).toISOString())}.
-                      </p>
-                    )}
-                    {purgeJob.last_error && (
-                      <p className="mt-2 text-xs text-red-800">El último lote falló ({purgeJob.last_error}). Actualiza el estado y reintenta cuando venza la reserva.</p>
-                    )}
-                    {clinicPurgePreview.complete && (
-                      <p className="mt-2 text-sm font-semibold text-emerald-800">La purga está registrada como completada.</p>
-                    )}
-                  </section>
-                )}
-
                 {!clinicPurgePreview.complete && (
+                  <details key={purgeJob ? 'tracking' : 'initial'} open={purgeJob ? undefined : true} className="rounded-xl border border-gray-200 p-2">
+                    <summary className="cursor-pointer rounded p-2 text-sm font-semibold text-gray-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600">
+                      {purgeJob ? 'Opcional: adelantar un lote manualmente' : 'Autorizar el inicio irreversible'}
+                    </summary>
                   <fieldset disabled={clinicPurgeBusy} className="space-y-3 rounded-xl border border-red-200 p-3">
                     <legend className="px-1 text-sm font-semibold text-red-800">Confirmación y autorización del proveedor del sistema</legend>
                     <div>
@@ -4068,6 +4094,7 @@ export default function AdminMasterDashboard() {
                       {clinicPurgeBusy ? 'Procesando lote…' : purgeJob?.state === 'FAILED' ? 'Reintentar lote fallido' : purgeJob ? 'Procesar siguiente lote' : 'Iniciar purga irreversible'}
                     </button>
                   </fieldset>
+                  </details>
                 )}
               </>
             )}
