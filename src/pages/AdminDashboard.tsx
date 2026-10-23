@@ -32,8 +32,9 @@ import SeasonalHeroAtmosphere from '../components/admin/dashboard/SeasonalHeroAt
 import { getVisibleModules } from '../constants/features';
 import type { UpcomingAppointment, StaffResource } from '../types';
 import recordsFetch from '../utils/recordsFetch';
+import WhatsAppCoexistence from '../components/admin/WhatsAppCoexistence';
 
-type SettingsTab = 'profile' | 'password' | 'agenda' | 'whatsapp_bot' | 'clinic';
+type SettingsTab = 'profile' | 'password' | 'agenda' | 'whatsapp_bot' | 'whatsapp_coexistence' | 'clinic';
 
 type ProfileForm = {
   full_name: string; first_name: string; last_name: string; email: string;
@@ -114,6 +115,20 @@ export default function AdminDashboard() {
 
   // Toast para mensajes transitorios (ej. retorno de OAuth)
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [hasWhatsAppChannel, setHasWhatsAppChannel] = useState(false);
+
+  useEffect(() => {
+    if (!isAuthenticated || !user?.clinic_id || masterView.isActive) return;
+    let active = true;
+    recordsFetch('/api/whatsapp-chatbot?action=channelConfig')
+      .then(async response => {
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || 'No se pudo consultar WhatsApp coexistencia.');
+        if (active) setHasWhatsAppChannel(Boolean(data.channel && data.channel.status !== 'disconnected'));
+      })
+      .catch(error => { if (active) setToastMsg(error.message); });
+    return () => { active = false; };
+  }, [isAuthenticated, user?.clinic_id, user?.id, masterView.isActive]);
 
   // ─── Settings modal ─────────────────────────────────────────────────────
   const [showSettings, setShowSettings]   = useState(false);
@@ -669,6 +684,9 @@ export default function AdminDashboard() {
                       <button onClick={() => openSettings('whatsapp_bot')} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-[#deb887]/8 transition-colors">
                         <MessageCircle className="w-4 h-4 text-[#deb887]" /> Bot de WhatsApp
                       </button>
+                      {hasWhatsAppChannel && <button onClick={() => openSettings('whatsapp_coexistence')} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-[#deb887]/8 transition-colors">
+                        <MessageCircle className="w-4 h-4 text-[#deb887]" /> WhatsApp coexistencia
+                      </button>}
                     </div>
                   </div>
                 )}
@@ -789,15 +807,16 @@ export default function AdminDashboard() {
 
             <div className="flex flex-1 overflow-hidden">
               {/* Sidebar */}
-              <nav className="w-44 flex-shrink-0 border-r bg-gray-50 p-2 flex flex-col gap-0.5">
+              <nav className={`${settingsTab === 'whatsapp_coexistence' ? 'w-14 sm:w-44' : 'w-44'} flex-shrink-0 border-r bg-gray-50 p-2 flex flex-col gap-0.5`}>
                 {([
                   ['profile',  <UserCircle  className="w-4 h-4" />, 'Mi Perfil'],
                   ['password', <KeyRound    className="w-4 h-4" />, 'Contraseña'],
                   ['agenda',   <CalendarDays className="w-4 h-4" />, 'Agenda'],
                   ['whatsapp_bot', <MessageCircle className="w-4 h-4" />, 'Bot de WhatsApp'],
+                  ...(hasWhatsAppChannel ? [['whatsapp_coexistence', <MessageCircle className="w-4 h-4" />, 'WhatsApp coexistencia']] : []),
                   ...(user?.role === 'clinic_admin' ? [['clinic', <Building2 className="w-4 h-4" />, 'Mi Clínica']] : []),
                 ] as [SettingsTab, React.ReactNode, string][]).map(([key, icon, label]) => (
-                  <button key={key} onClick={() => { setSettingsTab(key); setPwdMsg(null); setProfileMsg(null); setAgendaMsg(null); setClinicMsg(null); setWhatsappBotMsg(null); }}
+                  <button key={key} aria-label={label} title={label} onClick={() => { setSettingsTab(key); setPwdMsg(null); setProfileMsg(null); setAgendaMsg(null); setClinicMsg(null); setWhatsappBotMsg(null); }}
                     className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-left transition-colors ${
                       settingsTab === key
                         ? 'bg-gradient-to-r from-[#deb887]/20 to-[#c5a075]/10 text-[#99652f] font-semibold border border-[#deb887]/30'
@@ -805,7 +824,7 @@ export default function AdminDashboard() {
                     }`}
                   >
                     <span className="flex-shrink-0">{icon}</span>
-                    <span className="truncate">{label}</span>
+                    <span className={settingsTab === 'whatsapp_coexistence' ? 'hidden sm:inline truncate' : 'truncate'}>{label}</span>
                   </button>
                 ))}
               </nav>
@@ -1151,6 +1170,8 @@ export default function AdminDashboard() {
                     </>
                   )}
 
+                  {settingsTab === 'whatsapp_coexistence' && !masterView.isActive && <WhatsAppCoexistence mode="settings" onConnectedChange={setHasWhatsAppChannel} />}
+
                   {/* ── BOT DE WHATSAPP ── */}
                   {settingsTab === 'whatsapp_bot' && (
                     <>
@@ -1166,8 +1187,8 @@ export default function AdminDashboard() {
                         <div className="border-t border-gray-100 pt-3">
                           <div className="flex items-center justify-between p-3 border rounded-lg bg-gray-50">
                             <div>
-                              <label className="block text-xs font-semibold text-gray-700">Confirmación de cita al paciente</label>
-                              <p className="text-xs text-gray-400">Envía un mensaje de WhatsApp al paciente confirmando su cita apenas se agenda.</p>
+                              <label className="block text-xs font-semibold text-gray-700">Recordatorio al paciente (pendiente de coexistencia)</label>
+                              <p className="text-xs text-gray-500">Los envíos a pacientes están pausados hasta validar el canal propio y sus plantillas. El número del sistema no se utilizará como respaldo.</p>
                             </div>
                             <button type="button" disabled={!whatsappBot.bot_enabled}
                               onClick={() => setWhatsappBot(p => ({ ...p, confirm_enabled: !p.confirm_enabled }))}

@@ -31,6 +31,7 @@ import {
 import { getBotState, setBotState, clearBotState } from '../lib/whatsapp-bot-state.js';
 import { createShortWaLink, resolveShortWaLink } from '../lib/wa-short-link.js';
 import { ownerResourceId, eventResourceId, resourceExtendedProperties } from '../lib/agenda-resources.js';
+import { handleWhatsAppChannelAction, processChannelLifecycle, systemWhatsAppWebhook } from '../lib/whatsapp-channels.js';
 
 const getQueryValue = (value) => Array.isArray(value) ? value[0] : value;
 
@@ -373,6 +374,9 @@ async function sendPatientAppointmentReminders(dayOffset = 1, startIndex = 0, de
       AND cu.is_active = true
       AND cu.whatsapp_bot_enabled = true
       AND cu.whatsapp_confirm_enabled = true
+      -- Piloto: ningún recordatorio al paciente sale desde el número del sistema.
+      -- Habilitar canales propios requiere antes mensajería y CRM aislados por canal.
+      AND false
     JOIN clinic_settings cs ON cs.clinic_id = cu.clinic_id
     JOIN clinics cl ON cl.id = cu.clinic_id
     LEFT JOIN clinic_features cf ON cf.clinic_id = cu.clinic_id AND cf.feature = 'calendar'
@@ -464,7 +468,8 @@ async function sendPatientAppointmentReminders(dayOffset = 1, startIndex = 0, de
     }
   }
 
-  return { patientsChecked: users.rows.length, sent, errors, nextIndex: null };
+  return { patientsChecked: users.rows.length, sent, errors, nextIndex: null,
+    paused: true, reason: 'Recordatorios pausados hasta validar mensajería por canal propio; sin respaldo desde el número del sistema.' };
 }
 
 /** Ayudantes activos del usuario. Vacío si no tiene el multi-recurso activado. */
@@ -1714,6 +1719,10 @@ export async function sendAppointmentSummaries(dayOffset = 0, slot = 'morning', 
 export default async function handler(req, res) {
   const action = getQueryValue(req.query?.action);
 
+  if (['channelConfig', 'channelStart', 'channelComplete', 'channelDisconnect'].includes(action)) {
+    return handleWhatsAppChannelAction(req, res, readRawBody);
+  }
+
   // Redirección de links cortos wa.me generados por el bot (públicos: solo apuntan a un chat de WhatsApp ya conocido)
   if (req.method === 'GET' && action === 'r') {
     const code = (getQueryValue(req.query?.c) || '').trim();
@@ -1805,7 +1814,12 @@ export default async function handler(req, res) {
     }
 
     try {
-      await handleIncomingMessages(body);
+      // Nunca interpretar mensajes de los números de clientes como comandos del bot global.
+      const systemBody = systemWhatsAppWebhook(body);
+      const lifecycleEvents = (body.entry || []).some(entry =>
+        (entry.changes || []).some(change => change.field === 'account_update' && change.value?.event === 'PARTNER_REMOVED'));
+      if (lifecycleEvents) await processChannelLifecycle(body);
+      await handleIncomingMessages(systemBody);
     } catch (err) {
       console.error('❌ Error procesando mensaje WhatsApp:', err.message);
       return res.status(500).json({ success: false });

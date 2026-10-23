@@ -213,6 +213,7 @@ export interface ClinicUser {
   is_demo?: boolean;
   demo_expires_at?: string | null;
   whatsapp_bot_enabled?: boolean;
+  whatsapp_coexistence_enabled?: boolean;
 }
 
 /** Feature habilitada/deshabilitada para una clínica */

@@ -1695,6 +1695,21 @@ export default function AdminMasterDashboard() {
     loadAll();
   };
 
+  const toggleWhatsAppCoexistence = async (u: ClinicUser) => {
+    try {
+      const res = await fetch('/api/admin-auth?action=setWhatsAppCoexistenceEnabled', {
+        method: 'POST', headers: authHeader(),
+        body: JSON.stringify({ id: u.id, enabled: !u.whatsapp_coexistence_enabled }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'No se pudo cambiar el permiso');
+      flash(data.enabled ? 'Coexistencia habilitada en Estado del sistema' : 'Coexistencia deshabilitada; credencial local eliminada');
+      loadAll();
+    } catch (error) {
+      flash(error instanceof Error ? error.message : 'No se pudo cambiar el permiso', 'err');
+    }
+  };
+
   const deleteUser = async (u: ClinicUser) => {
     if (!confirm(`¿Eliminar permanentemente a "${u.username}"?\n\nEsta acción no se puede deshacer. El usuario podrá volver a registrarse con el mismo email.`)) return;
     const res = await fetch(`/api/admin-auth?action=deleteUser&id=${u.id}`, { method: 'DELETE', headers: authHeader() });
@@ -2458,6 +2473,14 @@ export default function AdminMasterDashboard() {
                                 <button onClick={() => openEditUser(u)} className="p-1.5 text-[#c5a075] hover:bg-[#deb887]/10 rounded" title="Editar">
                                   <Edit className="w-3.5 h-3.5" />
                                 </button>
+                                {u.role !== 'master_admin' && (
+                                  <button type="button" onClick={() => toggleWhatsAppCoexistence(u)}
+                                    aria-pressed={u.whatsapp_coexistence_enabled === true}
+                                    className={`px-2 py-1.5 rounded text-xs ${u.whatsapp_coexistence_enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-50 text-gray-600'}`}
+                                    title="Habilitar o deshabilitar el login de WhatsApp coexistencia en Estado del sistema">
+                                    Coexistencia {u.whatsapp_coexistence_enabled ? 'ON' : 'OFF'}
+                                  </button>
+                                )}
                                 {u.role !== 'master_admin' && (
                                   <button
                                     onClick={() => toggleWhatsAppBot(u)}

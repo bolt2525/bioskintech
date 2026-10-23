@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import AdminLayout from '../components/layout/AdminLayout';
 import { useAuth } from '../hooks/useAuth';
+import WhatsAppCoexistence from '../components/admin/WhatsAppCoexistence';
 
 interface CheckResult { success: boolean; logs?: string[]; latency_ms?: number; code?: string; }
 interface AllChecks   { db?: CheckResult; calendar?: CheckResult; email?: CheckResult; }
@@ -339,6 +340,7 @@ export default function AdminSystemStatus() {
             </div>
           </div>
           <UserStatusView user={user} />
+          <div className="mt-4"><WhatsAppCoexistence mode="login" /></div>
         </div>
       </AdminLayout>
     );

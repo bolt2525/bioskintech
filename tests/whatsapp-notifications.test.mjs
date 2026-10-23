@@ -148,7 +148,8 @@ test('thanks after confirmation do not generate more messages or overwrite atten
 test('signed reactions and stickers are recorded but never invoke a conversational flow', async () => {
   process.env.WHATSAPP_APP_SECRET = 'fictional-signing-secret';
   for (const type of ['reaction', 'sticker']) {
-    const body = Buffer.from(JSON.stringify({ object: 'whatsapp_business_account', entry: [{ changes: [{ value: {
+    const body = Buffer.from(JSON.stringify({ object: 'whatsapp_business_account', entry: [{ changes: [{ field: 'messages', value: {
+      metadata: { phone_number_id: 'test' },
       messages: [{ id: `wamid.${type}`, from: PATIENT, type, reaction: { emoji: '👍' } }],
     } }] }] }));
     const req = {

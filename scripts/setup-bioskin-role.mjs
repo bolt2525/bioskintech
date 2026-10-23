@@ -84,6 +84,7 @@ const FORBIDDEN_TABLES = [
   'subscriptions', 'clinics', 'clinic_features', 'clinic_notifications',
   'consent_templates', 'clinic_consent_templates', 'legal_acceptances',
   'whatsapp_messages', 'whatsapp_contacts', 'whatsapp_bot_state', 'wa_short_links',
+  'user_whatsapp_channels', 'whatsapp_signup_attempts',
 ];
 
 async function run() {

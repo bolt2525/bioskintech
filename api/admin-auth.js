@@ -26,6 +26,7 @@ import { lockClinicWriters, requireClinicWritable } from '../lib/clinic-lifecycl
 import { sessionPolicy } from '../lib/admin-auth.js';
 import { subscriptionLifecycle, subscriptionRequestAllowed, renewClinicSubscription, requireSubscriptionOperation } from '../lib/subscription-lifecycle.js';
 import { verifyTurnstileToken } from '../lib/turnstile.js';
+import { initWhatsAppChannels, withWhatsAppChannelLock } from '../lib/whatsapp-channels.js';
 
 const writerContext = new AsyncLocalStorage();
 const sql = (strings, ...values) => {
@@ -154,6 +155,7 @@ async function ensureNewColumns() {
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS phone VARCHAR(20)",
     // Bot de WhatsApp — control por usuario, deshabilitado por defecto hasta que master_admin lo autorice
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS whatsapp_bot_enabled BOOLEAN NOT NULL DEFAULT false",
+    "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS whatsapp_coexistence_enabled BOOLEAN NOT NULL DEFAULT false",
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS whatsapp_confirm_enabled BOOLEAN NOT NULL DEFAULT false",
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS whatsapp_summary_7am BOOLEAN NOT NULL DEFAULT false",
     "ALTER TABLE clinic_users ADD COLUMN IF NOT EXISTS whatsapp_summary_7pm BOOLEAN NOT NULL DEFAULT false",
@@ -403,6 +405,8 @@ export async function initMultiTenantSchema() {
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS clinic_oauth_tokens_user_unique ON clinic_oauth_tokens(clinic_user_id) WHERE clinic_user_id IS NOT NULL`;
 
   // Auditoría global del bot de WhatsApp — consulta exclusiva de master_admin
+  await initWhatsAppChannels((text, values) => sql.query(text, values));
+
   await sql`
     CREATE TABLE IF NOT EXISTS whatsapp_contacts (
       id              BIGSERIAL PRIMARY KEY,
@@ -1314,7 +1318,7 @@ async function listUsers(requestUser, clinicIdFilter) {
                cu.finance_scope, cu.inventory_scope, cu.calendar_scope,
                cu.is_active, cu.last_login, cu.clinic_id, c.name as clinic_name, c.slug as clinic_slug,
                cu.cedula_profesional, cu.matricula_senescyt, cu.especialidad, cu.is_demo, cu.demo_expires_at,
-               cu.first_name, cu.last_name, cu.gentilicio, cu.profession, cu.whatsapp_bot_enabled
+               cu.first_name, cu.last_name, cu.gentilicio, cu.profession, cu.whatsapp_bot_enabled, cu.whatsapp_coexistence_enabled
         FROM clinic_users cu LEFT JOIN clinics c ON cu.clinic_id = c.id
         WHERE cu.clinic_id = ${clinicIdFilter}
         ORDER BY cu.role, cu.username
@@ -1325,7 +1329,7 @@ async function listUsers(requestUser, clinicIdFilter) {
              cu.finance_scope, cu.inventory_scope, cu.calendar_scope,
              cu.is_active, cu.last_login, cu.clinic_id, cu.phone, c.name as clinic_name, c.slug as clinic_slug,
              cu.cedula_profesional, cu.matricula_senescyt, cu.especialidad, cu.is_demo, cu.demo_expires_at,
-             cu.first_name, cu.last_name, cu.gentilicio, cu.profession, cu.whatsapp_bot_enabled
+             cu.first_name, cu.last_name, cu.gentilicio, cu.profession, cu.whatsapp_bot_enabled, cu.whatsapp_coexistence_enabled
       FROM clinic_users cu LEFT JOIN clinics c ON cu.clinic_id = c.id
       ORDER BY c.name NULLS LAST, cu.role, cu.username
     `).rows;
@@ -1335,7 +1339,7 @@ async function listUsers(requestUser, clinicIdFilter) {
     SELECT id, username, full_name, email, role, access_scope, finance_scope, inventory_scope, calendar_scope,
            is_active, last_login, clinic_id, phone,
            is_demo, demo_expires_at, first_name, last_name, gentilicio, profession,
-           cedula_profesional, matricula_senescyt, especialidad, whatsapp_bot_enabled
+           cedula_profesional, matricula_senescyt, especialidad, whatsapp_bot_enabled, whatsapp_coexistence_enabled
     FROM clinic_users WHERE clinic_id = ${requestUser.clinic_id}
     ORDER BY role, username
   `).rows;
@@ -2812,6 +2816,13 @@ async function handleAdminRequest(req, res) {
     if (user.role !== 'master_admin' && user.clinic_id &&
         !subscriptionRequestAllowed(user.subscription_lifecycle, user.role, req))
       return res.status(403).json({ success: false, error: 'Solo recuperación de datos disponible.' });
+    let coexistenceTargetId;
+    if (action === 'setWhatsAppCoexistenceEnabled') {
+      if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master admin' });
+      if (req.method !== 'POST') return res.status(405).json({ error: 'Método no permitido' });
+      coexistenceTargetId = parsePostgresIntegerId(req.body?.id);
+      if (!coexistenceTargetId || typeof req.body?.enabled !== 'boolean') return res.status(400).json({ error: 'Usuario y estado válidos requeridos' });
+    }
     if (!['purgeClinic', 'clinicPurgePreview', 'updateClinic', 'deleteClinic', 'initFeatures', 'updateClinicSubscription'].includes(action)) {
       const suppliedClinics = [req.body?.clinicId, req.body?.clinic_id, req.query.clinicId]
         .filter(value => value !== undefined && value !== null && value !== '');
@@ -2833,7 +2844,7 @@ async function handleAdminRequest(req, res) {
         ? (tenantSource ? fromSource(tenantSource) : null) || user.clinic_id
         : user.clinic_id;
       if (['updateUser', 'deleteUser', 'resetPassword', 'sendResetCredentials',
-        'setWhatsAppBotEnabled', 'setUserModuleOverride', 'getUserModuleOverrides', 'updateDemoCredentials',
+        'setWhatsAppBotEnabled', 'setWhatsAppCoexistenceEnabled', 'setUserModuleOverride', 'getUserModuleOverrides', 'updateDemoCredentials',
         'oauthStart', 'oauthRevoke', 'getEmailConnectionStatus'].includes(action)) {
         const targetId = action === 'deleteUser' ? req.query.id || req.body?.id
           : ['getUserModuleOverrides', 'getEmailConnectionStatus'].includes(action) ? req.query.userId || user.id
@@ -3723,6 +3734,22 @@ async function handleAdminRequest(req, res) {
         WHERE id = ${user.id}
       `;
       return res.status(200).json({ success: true });
+    }
+
+    if (action === 'setWhatsAppCoexistenceEnabled') {
+      const targetId = coexistenceTargetId;
+      const enabled = req.body.enabled;
+      const result = await withWhatsAppChannelLock(targetId, async db => {
+        const updated = await db.query(`UPDATE clinic_users SET whatsapp_coexistence_enabled=$1
+          WHERE id=$2 AND clinic_id IS NOT NULL AND role!='master_admin' AND is_active=true RETURNING id`, [enabled, targetId]);
+        if (!updated.rows.length) throw Object.assign(new Error('Usuario de clínica activo no encontrado'), { status: 404 });
+        if (!enabled) {
+          await db.query(`UPDATE user_whatsapp_channels SET status='disconnected',token_encrypted=NULL,updated_at=NOW() WHERE user_id=$1`, [targetId]);
+          await db.query('DELETE FROM whatsapp_signup_attempts WHERE user_id=$1', [targetId]);
+        }
+        return { success: true, enabled };
+      });
+      return res.status(200).json(result);
     }
 
     // ── Bot de WhatsApp — habilitación por usuario (solo master_admin) ────────

@@ -1,5 +1,11 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-23 Coexistencia: login piloto por usuario.
+- ✅ 2026-10-23 Master habilita; ajustes desconectan.
+- ✅ 2026-10-23 Recordatorios pausados; bot preservado.
+- ✅ 2026-10-23 Neon: permisos y concurrencia verificados.
+- ✅ 2026-10-23 Coexistencia: regresión y navegador verificados.
+
 - ✅ 2026-10-20 WhatsApp: flujos breves, plantillas preservadas.
 - ✅ 2026-10-20 WhatsApp: enlaces cortos y clasificación corregidos.
 
