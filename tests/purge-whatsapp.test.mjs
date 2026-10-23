@@ -30,10 +30,10 @@ const fixture = () => ({
 test('WA attribution selects only exclusively owned contacts/state/links, leaving all foreign content intact', () => {
   const data = fixture();
   const before = structuredClone(data);
-  assert.deepEqual(planWhatsAppPurge(ID, data), { contactIds: [1], statePhones: ['593999000111'],
+  assert.deepEqual(planWhatsAppPurge(ID, data), { contactIds: [1], statePhones: ['593999000111'], stateIds: [],
     linkCodes: [`${ID}.${'a'.repeat(22)}`, 'legacy-target'], summary: summary(counts(1, 2, 1, 2)) });
   assert.deepEqual(data, before, 'planner is side-effect-free');
-  assert.deepEqual(planWhatsAppPurge(OTHER, data), { contactIds: [2], statePhones: ['593999000222'],
+  assert.deepEqual(planWhatsAppPurge(OTHER, data), { contactIds: [2], statePhones: ['593999000222'], stateIds: [],
     linkCodes: [`${OTHER}.${'b'.repeat(22)}`], summary: summary(counts(1, 1, 1, 1)) });
 });
 
@@ -182,6 +182,8 @@ test('100 held earliest clinics do not starve later eligible clinic; durable ret
       if (sql.includes('pg_try_advisory_xact_lock')) return { rows: [{ acquired: true }] };
       if (sql.includes('SELECT id,name,slug')) return { rows: [{ id: params[0], name: 'Fictitious', slug: 'fictitious',
         is_active: true, subscription_expires_at: new Date(NOW - 50 * DAY).toISOString() }] };
+      if (sql.startsWith('SELECT name,slug,email,phone,created_at'))
+        return { rows: [{ name: 'Fictitious', slug: 'fictitious' }] };
       if (sql.startsWith('SELECT general FROM')) return { rows: [{ general: jobs.has(params[0]) ? { _purge: jobs.get(params[0]) } : {} }] };
       if (sql.startsWith('INSERT INTO clinic_settings')) {
         const map = sql.includes("'purge_schedule'") ? schedules : jobs;
@@ -219,7 +221,7 @@ test('WA status callback fresh lock-gate runs before any update, claim or notifi
     let reads = 0, locks = 0, updates = 0, claims = 0, notices = 0;
     const db = {
       async query(sql) {
-        if (sql.includes('pg_advisory_lock_shared')) locks++;
+        if (sql.includes('pg_advisory_lock_shared') && sql.includes('hashtextextended')) locks++;
         if (sql.includes('m.provider_message_id=$1')) {
           reads++;
           return { rows: [{ contact_clinic_id: ID, booked_by_user_id: 7,

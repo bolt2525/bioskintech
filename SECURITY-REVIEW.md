@@ -3,7 +3,7 @@
 Fecha: 2026-10-23  
 Alcance: autenticación, baja/purga de clínicas, registro público y atribución de teléfonos WhatsApp.
 
-La revisión estática y las pruebas locales encontraron cinco hallazgos. Los tres primeros se corrigieron en los cambios locales pendientes de publicación. Los dos últimos siguen abiertos; no se implementaron porque se eligió documentar y comprometer el resumen, no aplicar esos endurecimientos adicionales.
+La revisión inicial encontró cinco hallazgos. Los tres primeros se publicaron previamente; los dos restantes se corrigen como prerrequisito de la reutilización de identificadores al iniciar una purga. La revisión final añadió un conflicto de atribución WhatsApp, también corregido.
 
 ## Hallazgos
 
@@ -40,7 +40,7 @@ La revisión estática y las pruebas locales encontraron cinco hallazgos. Los tr
 - **Confianza:** 9/10
 - **Evidencia:** `api/admin-auth.js` (`isPhoneAvailable` y sus consumidores); índice `uq_clinic_users_whatsapp_staff_phone`.
 - **Riesgo:** Dos altas o cambios de clínicas distintas pueden superar simultáneamente la consulta de disponibilidad y guardar el mismo número. El índice actual solo cubre usuarios activos con bot habilitado y no impone la reserva de todos los números históricos.
-- **Estado:** Abierto. La comprobación actual falla de forma segura ante conflictos observados, pero no serializa globalmente la reserva y el índice no cubre toda la política.
+- **Estado:** Corregido. Altas, ediciones y liberación irreversible comparten una reserva transaccional global y validación normalizada hasta COMMIT. Los valores históricos archivados no se usan como identidad operativa.
 - **Impacto:** Puede crear atribución ambigua y hacer que los mensajes se descarten o requieran revisión. No se observó una ruta de acceso automático a datos de otra clínica.
 
 ### 5. Correo de configuración enviado antes del commit externo
@@ -49,10 +49,16 @@ La revisión estática y las pruebas locales encontraron cinco hallazgos. Los tr
 - **Confianza:** 9/10
 - **Evidencia:** `api/admin-auth.js` (`withAuthTransaction`, `generateSetupTokenFn`, `createUser`).
 - **Riesgo:** Cuando la generación del token reutiliza la transacción externa de `createUser`, el mensaje puede enviarse antes de que esa transacción confirme. Un fallo del commit dejaría un enlace que no existe en la base de datos.
-- **Estado:** Abierto. La operación de credenciales puede revertirse correctamente, pero el envío de correo no está diferido hasta el commit externo en todos los callers.
+- **Estado:** Corregido. Los correos generados dentro de una transacción externa se difieren hasta su COMMIT y se descartan al revertir.
 - **Impacto:** Enlace de configuración inválido; no se encontró evidencia de que permita acceso sin una credencial válida.
 
 ## Validación y límites
+
+### Revisión final de reutilización
+
+- **Alta, confianza 9/10, corregida:** la coincidencia telefónica podía retirar contactos, estados o enlaces de otra clínica al liberar identificadores. Las altas/ediciones rechazan contactos activos extranjeros y la purga aborta con 409 y rollback ante contactos, estados anidados o enlaces scoped extranjeros. Las regresiones comprueban que ninguna retirada WA ocurre.
+- La reserva compartida del procesamiento WhatsApp utiliza locks transaccionales y mantiene la conexión hasta COMMIT/ROLLBACK; no usa locks de sesión incompatibles con pooler.
+- La UI distingue vista previa, inicio irreversible con alias liberados y borrado completo. Legacy manual exige autorización expresa y plazo cumplido; cron legacy sigue bloqueado.
 
 - Pruebas focales locales: **66/66 aprobadas** con `node --experimental-test-module-mocks --test tests/admin-auth-atomicity.test.mjs tests/clinic-purge.test.mjs tests/purge-whatsapp.test.mjs tests/admin-clinic-purge-ui.test.mjs`.
 - ESLint focal de los archivos backend y pruebas: aprobado.

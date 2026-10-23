@@ -45,7 +45,9 @@ test('la purga exige slug exacto, autorización, retención y motivo antes del P
 });
 
 test('la UI explica la espera, el avance durable, reintentos y retención de copias', () => {
-  assert.match(dashboard, /transcurrido 30 días desde el vencimiento registrado/);
+  assert.match(dashboard, /Esta revisión no borra información ni libera identificadores/);
+  assert.match(dashboard, /La API confirma el plazo aplicable/);
+  assert.match(dashboard, /suscripciones pagadas pueden requerir 45 días/);
   assert.match(dashboard, /endedAt \+ 30 \* 86400000/);
   assert.match(dashboard, /retryAfter/);
   assert.match(dashboard, /leaseUntil/);
@@ -62,4 +64,23 @@ test('el diálogo de purga tiene semántica accesible y los errores no se convie
   assert.match(dashboard, /role="alert"/);
   assert.match(dashboard, /!res\.ok \|\| !d\.success \|\| d\.error/);
   assert.match(dashboard, /payload\.complete && \(res\.status !== 200 \|\| payload\.purge\?\.state !== 'COMPLETE'\)/);
+});
+
+test('reutilización se anuncia al inicio durable, no al consultar o desactivar', () => {
+  assert.match(dashboard, /typeof value\.manualLegacyAuthorizationRequired !== 'boolean'/);
+  assert.match(dashboard, /value\.identifiersReleasedAt === null/);
+  assert.match(dashboard, /Number\.isFinite\(Date\.parse\(value\.identifiersReleasedAt\)\)/);
+  assert.match(dashboard, /value\.identifiersReleasedAt !== null && !isRecord\(value\.purge\)/);
+  assert.match(dashboard, /clinicPurgePreview\.identifiersReleasedAt/);
+  assert.match(dashboard, /Desactivar la clínica o consultar esta vista previa no los libera/);
+  assert.match(dashboard, /sin esperar a que termine el borrado/);
+  assert.match(dashboard, /El nuevo registro no hereda fichas, conversaciones ni credenciales/);
+  assert.match(dashboard, /payload\.identifiersReleasedAt && !clinicPurgePreview\.identifiersReleasedAt\) await loadAll\(\)/);
+});
+
+test('legacy manual requiere confirmación expresa sin habilitar purga automática', () => {
+  assert.match(dashboard, /setClinicPurgeLegacyAuthorized\(false\)/);
+  assert.match(dashboard, /legacyAuthorizationConfirmed: clinicPurgeLegacyAuthorized/);
+  assert.match(dashboard, /!clinicPurgePreview\.manualLegacyAuthorizationRequired \|\| clinicPurgeLegacyAuthorized/);
+  assert.match(dashboard, /Esto no habilita la purga automática de clínicas legacy/);
 });

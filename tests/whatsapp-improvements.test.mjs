@@ -18,8 +18,10 @@ function linkDb({ links = [{ code: CODE, target_url: TARGET }], origins = [{ cli
       calls.push({ sql, values });
       if (sql.includes('FROM wa_short_links')) {
         assert.match(sql, /INTERVAL '30 days'/);
-        return { rows: links };
+        assert.match(sql, /retired_at IS NULL/);
+        return { rows: links.map(link => ({ created_at: '2026-10-23T12:00:00Z', ...link })) };
       }
+      if (sql.includes('FROM clinic_identity_history')) return { rows: [{ released_at: null }] };
       if (sql.includes('SELECT DISTINCT COALESCE')) return { rows: origins };
       if (sql.includes('FROM clinics c')) return { rows: [{ is_active: active, general: {} }] };
       assert.fail(`Unexpected query: ${sql}`);

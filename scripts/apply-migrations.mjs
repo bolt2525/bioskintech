@@ -5,6 +5,7 @@
 import { readFileSync } from 'fs';
 import { parse } from 'dotenv';
 import pg from 'pg';
+import { clinicIdentityMigrations } from '../lib/clinic-identity-schema.js';
 
 // Cargar .env.local manualmente
 const envFile = readFileSync('.env.local', 'utf-8');
@@ -208,6 +209,27 @@ const whatsappIndexes = [
 ];
 
 async function run() {
+  if (process.argv.includes('--clinic-identity-only')) {
+    const prepare = process.argv.includes('--prepare');
+    await client.query('BEGIN');
+    try {
+      await client.query("SET LOCAL lock_timeout='10s'");
+      await client.query('SELECT pg_advisory_xact_lock(68422,1)');
+      for (const statement of clinicIdentityMigrations) {
+        if (!prepare || !statement.includes('DROP CONSTRAINT')) await client.query(statement);
+      }
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      await client.end();
+    }
+    console.log(prepare
+      ? 'Esquema de identidades preparado; restricciones anteriores conservadas hasta desplegar.'
+      : 'Migracion de identidades completada.');
+    return;
+  }
   console.log('🔧 Aplicando migraciones a Neon PostgreSQL...\n');
 
   for (const q of newTables) {
@@ -232,6 +254,16 @@ async function run() {
 
   for (const query of whatsappIndexes) await sql.query(query);
   console.log('✅ Índices: CRM WhatsApp');
+
+  await sql.query('BEGIN');
+  try {
+    for (const query of clinicIdentityMigrations) await sql.query(query);
+    await sql.query('COMMIT');
+    console.log('✅ Identidades históricas y generaciones WhatsApp');
+  } catch (error) {
+    await sql.query('ROLLBACK');
+    throw error;
+  }
 
   await sql.query('BEGIN');
   try {

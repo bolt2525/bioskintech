@@ -38,9 +38,12 @@ async function execute(statement, params = [], client) {
   }
   if (text.includes('pg_advisory_xact_lock(68422') || text.includes('FOR UPDATE OF t, cu')) {
     const key = text.includes('68422') ? 'registration' : 'token';
+    if (client.lockedKeys?.has(key)) return rows([]);
     const previous = mutexes.get(key) || Promise.resolve();
     const next = deferred(); mutexes.set(key, next.promise);
-    await previous; client.unlocks.push(next.resolve);
+    await previous;
+    client.lockedKeys ||= new Set(); client.lockedKeys.add(key);
+    client.unlocks.push(() => { client.lockedKeys.delete(key); next.resolve(); });
   }
   if (failure && text.includes(failure) && failure !== 'COMMIT')
     throw Object.assign(new Error('fictitious concurrent conflict'), {
@@ -68,11 +71,24 @@ async function execute(statement, params = [], client) {
   if (text.startsWith('UPDATE clinic_users SET password_hash=')) { state.password = params[0]; return rows([]); }
   if (text.startsWith('UPDATE password_setup_tokens SET used=true')) { state.used = true; return rows([]); }
   if (text.startsWith('SELECT clinic_id FROM clinic_users')) return rows([{ clinic_id: ID }]);
+  if (text.startsWith('SELECT clinic_id,phone,whatsapp_staff_phone FROM clinic_users')) return rows([{ clinic_id: ID }]);
   if (text.startsWith('SELECT id FROM clinic_users') && text.includes('FOR UPDATE'))
     return rows(state.userActive ? [{ id: 7 }] : []);
   if (text.startsWith('SELECT id, phone, whatsapp_staff_phone FROM clinic_users')) {
     assert.doesNotMatch(text, /is_active|whatsapp_bot_enabled/);
-    return rows(state.evidence);
+    return rows(state.evidence.filter(row => row.id !== params[0]));
+  }
+  if (text.startsWith('SELECT id FROM clinic_users WHERE lower(btrim(')) {
+    const column = text.includes('btrim(email)') ? 'email' : 'username';
+    return rows(state.users.filter(u => u.id !== params[1] && u[column]?.trim().toLowerCase() === params[0]));
+  }
+  if (text.startsWith('SELECT COUNT(*) as cnt FROM clinic_users')) return rows([{ cnt: Math.max(1, state.users.length) }]);
+  if (text.startsWith('SELECT cu.id, cu.username, cu.password_hash'))
+    return rows(state.users.filter(u => [u.username, u.email].includes(params[0]))
+      .map(u => ({ ...u, role: 'clinic_admin', clinic_active: true, is_active: true, clinic_id: ID })));
+  if (text.startsWith('UPDATE clinic_users SET full_name') && text.includes('phone =')) {
+    state.evidence.push({ id: params.at(-1), clinic_id: ID, phone: params[6] });
+    return rows([]);
   }
   if (text.startsWith('SELECT clinic_id FROM whatsapp_contacts')) return rows(state.contacts);
   if (text.startsWith('SELECT phone, whatsapp')) return rows([{ phone: PHONE, whatsapp_bot_enabled: true, whatsapp_staff_phone: '' }]);
@@ -87,7 +103,7 @@ async function execute(statement, params = [], client) {
   }
   if (text.startsWith('INSERT INTO clinics')) { state.clinics.push(ID); return rows([{ id: ID }]); }
   if (text.startsWith('INSERT INTO clinic_users')) {
-    state.users.push({ id: 7, username: params[1], email: params[6] });
+    state.users.push({ id: 7, username: params[1], email: params[6], password_hash: params[2], salt: params[3], hash_algo: params[4] });
     return rows([{ id: 7 }]);
   }
   if (text.startsWith('INSERT INTO clinic_features')) state.features.push(params[1]);
@@ -103,6 +119,9 @@ const sql = (parts, ...params) => execute(parts.reduce((s, part, i) => s + part 
 sql.query = (text, params) => execute(text, params);
 sql.connect = async () => connection();
 mock.module('@vercel/postgres', { namedExports: { sql } });
+mock.module(new URL('../lib/turnstile.js', import.meta.url).href, {
+  namedExports: { verifyTurnstileToken: async () => ({ ok: true }) },
+});
 mock.module(new URL('../lib/neon-clinical-db.js', import.meta.url).href, {
   namedExports: { getPool: () => ({ connect: async () => connection() }) },
 });
@@ -275,4 +294,51 @@ test('WA accepts an unclaimed number and same-clinic active conversation; blocks
   }
   reset(); state.contacts = [{ clinic_id: ID }]; state.active = false;
   assert.equal((await request('saveWhatsAppBotConfig', { staff_phone: PHONE }, true)).code, 409);
+});
+
+test('normalized phone reservations serialize two edits globally, including unformatted aliases', async () => {
+  const entered = deferred(), resume = deferred();
+  let once = true;
+  hook = async text => {
+    if (once && text.startsWith('UPDATE clinic_users SET full_name')) {
+      once = false; entered.resolve(); await resume.promise;
+    }
+  };
+  const first = request('updateUser', { id: 7, phone: '0999000111' }, true);
+  await entered.promise;
+  const second = request('updateUser', { id: 8, phone: '+593 999 000 111' }, true);
+  resume.resolve();
+  const responses = await Promise.all([first, second]);
+  assert.equal(responses[0].code, 200);
+  assert.equal(responses[1].code, 400);
+  assert.equal(state.evidence.length, 1);
+  assert.equal(state.evidence[0].phone, PHONE);
+});
+
+test('setup email waits for external createUser COMMIT and is never sent after external rollback', async () => {
+  const userBody = { clinic_id: ID, username: 'qa_created', password: 'Password123',
+    role: 'clinic_user', email: 'qa-created@example.test', send_setup_link: true };
+  failure = 'COMMIT';
+  const failed = await request('createUser', userBody, true);
+  assert.equal(failed.code, 500);
+  assert.equal(mails, 0);
+  assert.equal(state.users.length, 0);
+  reset();
+  const created = await request('createUser', userBody, true);
+  assert.equal(created.code, 201);
+  assert.equal(mails, 1);
+  assert.ok(calls.findIndex(c => c.text === 'COMMIT') > calls.findIndex(c => c.text.startsWith('INSERT INTO password_setup_tokens')));
+});
+
+test('fresh registration uses new password material; old password cannot log in after aliases are reused', async () => {
+  // The retired account lives only in historical evidence, not live login rows.
+  state.retired = [{ id: 2, username: 'qa_user', email: 'qa@example.test', password: 'OldPassword999' }];
+  const created = await registration();
+  assert.equal(created.code, 201);
+  assert.ok(state.users[0].salt);
+  assert.notEqual(state.users[0].password_hash, state.retired[0].password);
+  const login = await request('login', { username: 'qa_user', password: 'OldPassword999' });
+  assert.equal(login.code, 401);
+  assert.equal(login.body.success, false);
+  assert.equal(calls.some(c => c.text.startsWith('INSERT INTO admin_sessions')), false);
 });

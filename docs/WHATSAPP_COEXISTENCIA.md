@@ -17,7 +17,11 @@ Implementación del login y autorización por usuario, **no activación de recor
 
 El alta/edición del teléfono de usuario, el perfil propio, la configuración del bot y su habilitación rechazan números presentes en `phone` o `whatsapp_staff_phone` de otro usuario, incluso inactivo o tombstone. También rechazan atribución de conversaciones a otra clínica o sin clínica; ante un error de comprobación no se guarda el número. Una conversación de la misma clínica requiere que esta siga operativa. El rechazo informa que el teléfono está asignado o retenido por atribución histórica.
 
-No se borran teléfonos de tombstones, no se reasignan conversaciones ni se habilita la reutilización de identificadores. Cualquier transferencia segura requiere diseño y confirmación separados; desactivar el bot o una cuenta no libera su número.
+Desactivar el bot o una cuenta no libera su número. **El primer COMMIT irreversible de una purga válida sí libera los identificadores**, incluidos los teléfonos, para registrar una clínica y usuarios nuevos. Los valores originales quedan en `clinic_identity_history`, administrativa y sin acceso del rol clínico; la evidencia de atribución no se pierde.
+
+Los contactos y estados anteriores se retiran de la resolución operativa sin reasignar ni copiar sus conversaciones. El nuevo registro utiliza IDs, estado, credenciales y conexiones nuevos. Los callbacks, enlaces y eventos anteriores al corte no se resuelven contra la identidad nueva; los lotes posteriores de purga seleccionan los IDs originales. Una purga fallida después del inicio no reactiva el origen ni recupera los identificadores ya liberados.
+
+La migración idempotente está integrada en `scripts/apply-migrations.mjs`; debe aplicarse antes de desplegar el código que consulta las columnas de retiro. La purga manual legacy exige autorización expresa de Master y 30 días completos desde el vencimiento. Esto no habilita purgas automáticas legacy.
 
 ## Correcciones a la guía inicial
 

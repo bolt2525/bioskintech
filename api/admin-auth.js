@@ -28,6 +28,9 @@ import { subscriptionLifecycle, subscriptionRequestAllowed, renewClinicSubscript
 import { verifyTurnstileToken } from '../lib/turnstile.js';
 import { initWhatsAppChannels, withWhatsAppChannelLock } from '../lib/whatsapp-channels.js';
 import { validateMasterContractRecord } from '../lib/master-contract-records.js';
+import { reserveIdentities, assertClinicAliases, assertUserAliases } from '../lib/identity-reservations.js';
+import { normalizeWaIdentityPhone } from '../lib/wa-link-resolver.js';
+import { clinicIdentityMigrations } from '../lib/clinic-identity-schema.js';
 
 const writerContext = new AsyncLocalStorage();
 const sql = (strings, ...values) => {
@@ -45,14 +48,29 @@ async function withAuthTransaction(operation) {
   try {
     await client.query('BEGIN');
     await client.query("SET LOCAL statement_timeout = '15s'");
-    const result = await writerContext.run({ client }, () => operation(client));
+    const context = { client, afterCommit: [] };
+    const result = await writerContext.run(context, () => operation(client));
     await client.query(result?.error ? 'ROLLBACK' : 'COMMIT');
+    if (!result?.error) await flushAuthEffects(context);
     return result;
   } catch (error) {
     try { await client.query('ROLLBACK'); }
     catch (rollbackError) { releaseError = rollbackError; }
     throw error;
   } finally { client.release(releaseError); }
+}
+
+async function flushAuthEffects(context) {
+  for (const effect of context.afterCommit.splice(0)) {
+    try { await effect(); }
+    catch (error) { console.error('[auth:after-commit]', error.code || error.name); }
+  }
+}
+
+async function afterAuthCommit(effect) {
+  const context = writerContext.getStore();
+  if (context?.client) { context.afterCommit.push(effect); return; }
+  await effect();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -145,6 +163,10 @@ const SUBSCRIPTION_PLANS = {
   },
 };
 const RESERVED_CLINIC_GENERAL_KEYS = new Set(['_purge', '_subscription_policy', '_subscription_lifecycle']);
+const IDENTITY_WRITE_ACTIONS = new Set([
+  'createUser', 'updateUser', 'updateOwnProfile', 'setupClinic', 'updateClinicBasicInfo',
+  'updateDemoCredentials', 'saveWhatsAppBotConfig', 'setWhatsAppBotEnabled', 'saveClinicSettings',
+]);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Auto-migración ligera — columnas nuevas que pueden no existir en instancias viejas
@@ -280,11 +302,7 @@ function generateToken() {
 }
 
 export function normalizeUserPhone(value) {
-  const digits = String(value || '').replace(/\D/g, '');
-  if (!digits) return null;
-  if (digits.startsWith('593')) return `593${digits.slice(3).replace(/^0/, '')}`;
-  if (digits.startsWith('0')) return `593${digits.slice(1)}`;
-  return `593${digits}`;
+  return normalizeWaIdentityPhone(value) || null;
 }
 
 export function getEffectiveWhatsAppStaffPhone(staffPhone, registeredPhone) {
@@ -298,16 +316,23 @@ async function isPhoneAvailable(phone, excludedUserId = null, clinicId = null) {
   // Inactive users/tombstones retain BOTH numbers as attribution evidence.
   if (users.rows.some(row => [row.phone, row.whatsapp_staff_phone].some(value => normalizeUserPhone(value) === phone)))
     return false;
-  if (excludedUserId && !clinicId) {
-    const target = await sql`SELECT clinic_id FROM clinic_users WHERE id=${excludedUserId}`;
-    clinicId = target.rows[0]?.clinic_id;
+  let ownAliases = [];
+  if (excludedUserId) {
+    const target = await sql`SELECT clinic_id,phone,whatsapp_staff_phone FROM clinic_users WHERE id=${excludedUserId}`;
+    clinicId ||= target.rows[0]?.clinic_id;
+    ownAliases = [target.rows[0]?.phone, target.rows[0]?.whatsapp_staff_phone].filter(Boolean).map(normalizeUserPhone);
   }
   const domestic = phone.startsWith('593') ? `0${phone.slice(3)}` : phone;
   const contacts = await sql`SELECT clinic_id FROM whatsapp_contacts
-    WHERE regexp_replace(phone,'[^0-9]','','g') IN (${phone},${domestic})`;
+    WHERE retired_at IS NULL AND regexp_replace(phone,'[^0-9]','','g') IN (${phone},${domestic})`;
   // No safe transfer exists for legacy/global conversations. Never reassign them.
   if (contacts.rows.some(row => !clinicId || row.clinic_id !== clinicId)) return false;
   if (contacts.rows.length) await requireClinicWritable({ query: sql.query }, clinicId);
+  const clinics = await sql`SELECT id,phone FROM clinics WHERE (${clinicId}::uuid IS NULL OR id<>${clinicId})`;
+  if (clinics.rows.some(row => normalizeUserPhone(row.phone) === phone)) return false;
+  const states = await sql`SELECT phone FROM whatsapp_bot_state WHERE retired_at IS NULL LIMIT 50001`;
+  if (states.rows.length > 50000) throw Object.assign(new Error('No se pudo verificar la reserva telefónica.'), { status: 409 });
+  if (!ownAliases.includes(phone) && states.rows.some(row => normalizeUserPhone(row.phone) === phone)) return false;
   return true;
 }
 
@@ -748,6 +773,10 @@ export async function initMultiTenantSchema() {
   `;
   try { await sql`CREATE INDEX IF NOT EXISTS idx_patients_clinic ON patients(clinic_id)`; } catch { /* patients aún no existe */ }
   await sql`CREATE INDEX IF NOT EXISTS idx_session_token ON admin_sessions(session_token) WHERE is_active = true`;
+  await withAuthTransaction(async db => {
+    await reserveIdentities(db);
+    for (const statement of clinicIdentityMigrations) await db.query(statement);
+  });
 }
 
 /**
@@ -758,6 +787,17 @@ export async function initMultiTenantSchema() {
  *  - Features habilitadas para clínica bioskin
  */
 export async function seedData() {
+  return withAuthTransaction(async db => {
+    await reserveIdentities(db);
+    const retired = await db.query(`SELECT 1 FROM clinic_identity_history
+      WHERE clinic_aliases->>'slug'='bioskin' LIMIT 1`);
+    if (retired.rows.length)
+      throw Object.assign(new Error('El alta inicial no puede recrear una identidad purgada; registra una clínica con credenciales nuevas.'), { status: 409 });
+    return seedDataTransaction();
+  });
+}
+
+async function seedDataTransaction() {
   // Clínica bioskin
   const existing = await sql`SELECT id FROM clinics WHERE slug = 'bioskin'`;
   let bioskinId;
@@ -1244,7 +1284,7 @@ async function generateSetupTokenFn(userId, email, adminUser) {
   });
   const appUrl = (process.env.APP_URL || `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'bioskintech.vercel.app'}`).trim();
   const setupLink = `${appUrl}/#/admin/setup-password?token=${token}`;
-  await sendAuthEmail(email,
+  await afterAuthCommit(() => sendAuthEmail(email,
     'Configura tu contraseña — BioskinTech',
     `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px">
       <h2 style="color:#deb887;margin:0 0 8px">BioskinTech</h2>
@@ -1257,7 +1297,7 @@ async function generateSetupTokenFn(userId, email, adminUser) {
       </div>
       <p style="color:#999;font-size:12px">Este enlace expira en 48 horas. Si no esperabas este correo, ignóralo.</p>
     </div>`
-  );
+  ));
   return { token, setupLink };
 }
 
@@ -1393,6 +1433,14 @@ async function listUsers(requestUser, clinicIdFilter) {
 }
 
 async function createUser(requestUser, body) {
+  return withAuthTransaction(async db => {
+    await reserveIdentities(db);
+    await assertUserAliases(db, body);
+    return createUserTransaction(requestUser, body);
+  });
+}
+
+async function createUserTransaction(requestUser, body) {
   const { username, password, full_name, first_name, last_name, gentilicio, profession,
           email, phone, role, access_scope, finance_scope, inventory_scope, calendar_scope,
           clinic_id, cedula_profesional, matricula_senescyt, especialidad,
@@ -1460,6 +1508,7 @@ async function updateUser(requestUser, body) {
           email, role, access_scope, finance_scope, inventory_scope,
           is_active, cedula_profesional, matricula_senescyt, registro_acess, especialidad } = body;
   if (!id) return { error: 'id requerido' };
+  await assertUserAliases({ query: sql.query }, { id, email });
   const validScopes = new Set(['own', 'all']);
   if (![access_scope, finance_scope, inventory_scope].every(scope => scope == null || scope === '' || validScopes.has(scope)))
     return { error: 'Control de acceso inválido' };
@@ -1838,6 +1887,7 @@ async function registerClinic(body) {
     registration = await withAuthTransaction(async db => {
       // Serialize public availability checks too (legacy user email has no UNIQUE).
       await db.query('SELECT pg_advisory_xact_lock(68422, 1)');
+      await assertClinicAliases(db, { name: body.clinic_name, email: body.clinic_email || body.email, phone: body.clinic_phone });
       return registerClinicTransaction(body);
     });
   } catch (error) {
@@ -1853,7 +1903,7 @@ async function registerClinic(body) {
     sendMasterAdminAlert(result.clinic.name, result.user.email, result.user.username, result.user.full_name, planName),
   ]);
   for (const mail of mailResults) {
-    if (mail.status === 'rejected') console.error('[register] email error:', mail.reason?.message || mail.reason);
+    if (mail.status === 'rejected') console.error('[register] email error:', mail.reason?.code || mail.reason?.name);
   }
   return result;
 }
@@ -1880,6 +1930,7 @@ async function registerClinicTransaction(body) {
   const emailNorm    = email.trim().toLowerCase();
   const usernameNorm = rawUsername.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
   const clinicContactEmail = clinic_email?.trim().toLowerCase() || emailNorm;
+  await assertUserAliases({ query: sql.query }, { username: usernameNorm, email: emailNorm });
 
   // Validar email
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailNorm))
@@ -2173,10 +2224,11 @@ async function useInviteLink(token, body) {
   try {
     await client.query('BEGIN');
     await client.query("SET LOCAL statement_timeout = '15s'");
+    await reserveIdentities(client);
     await lockClinicWriters(client, [target.clinic_id]);
     await requireClinicWritable(client, target.clinic_id);
     const result = await writerContext.run({ client }, () => consumeInviteLink(token, body));
-    await client.query('COMMIT');
+    await client.query(result?.error ? 'ROLLBACK' : 'COMMIT');
     return result;
   } catch (error) {
     await client.query('ROLLBACK');
@@ -2226,6 +2278,7 @@ async function consumeInviteLink(token, body) {
   // Build username — use provided or derive from email prefix
   const usernameFinal = (username?.trim().toLowerCase().replace(/[^a-z0-9_]/g, '') || emailNorm.split('@')[0].replace(/[^a-z0-9_]/g, '')).substring(0, 30);
   if (usernameFinal.length < 3) { await undoClaim(); return { error: 'El nombre de usuario debe tener al menos 3 caracteres' }; }
+  await assertUserAliases({ query: sql.query }, { username: usernameFinal, email: emailNorm });
 
   const existingEmailInv = await sql`SELECT id FROM clinic_users WHERE email = ${emailNorm} AND clinic_id = ${invite.clinic_id}`;
   if (existingEmailInv.rows.length) { await undoClaim(); return { error: 'Ya existe un usuario con ese correo en esta clínica. Usa otro correo.', field: 'email' }; }
@@ -2382,6 +2435,7 @@ async function setupClinicDetails(requestUser, body) {
   if (!id && requestUser.role !== 'master_admin') return { error: 'Sin clínica asignada' };
   const targetId = requestUser.role === 'master_admin' ? (body.clinic_id || id) : id;
   if (!targetId) return { error: 'clinic_id requerido' };
+  await assertClinicAliases({ query: sql.query }, { id: targetId, name, email, phone });
 
   await sql`
     UPDATE clinics SET
@@ -2424,6 +2478,14 @@ async function listClinics() {
 }
 
 async function createClinic(body) {
+  return withAuthTransaction(async db => {
+    await reserveIdentities(db);
+    await assertClinicAliases(db, body);
+    return createClinicTransaction(body);
+  });
+}
+
+async function createClinicTransaction(body) {
   const { name, email, phone, address } = body;
   if (!name?.trim()) return { error: 'El nombre de la clínica es requerido' };
   // Auto-genera slug desde el nombre si no se proporciona
@@ -2434,6 +2496,7 @@ async function createClinic(body) {
     .replace(/[^\w\s-]/g, '')
     .trim()
     .replace(/\s+/g, '-');
+  await assertClinicAliases({ query: sql.query }, { ...body, slug });
   try {
     const r = await sql`
       INSERT INTO clinics (name, slug, email, phone, address)
@@ -2498,7 +2561,7 @@ async function ensureSessionsTable() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function handler(req, res) {
-  return writerContext.run({ client: null }, () => handleAdminRequest(req, res));
+  return writerContext.run({ client: null, afterCommit: [] }, () => handleAdminRequest(req, res));
 }
 
 async function handleAdminRequest(req, res) {
@@ -2994,6 +3057,7 @@ async function handleAdminRequest(req, res) {
         res.json = data => { writerResponse = data; return res; };
         await writerClient.query('BEGIN');
         await writerClient.query("SET LOCAL statement_timeout = '15s'");
+        if (IDENTITY_WRITE_ACTIONS.has(action)) await reserveIdentities(writerClient);
         await lockClinicWriters(writerClient, [String(writerClinic)]);
         await requireClinicWritable(writerClient, String(writerClinic), { subscriptionAccess: user.role === 'master_admin' ? 'admin' : 'operate' });
         writerContext.getStore().client = writerClient;
@@ -3382,6 +3446,8 @@ async function handleAdminRequest(req, res) {
       const purgeState = await sql`SELECT general->'_purge' AS purge FROM clinic_settings WHERE clinic_id=${clinicId}`;
       if (purgeState.rows[0]?.purge || (section === 'general' && Object.hasOwn(data, '_purge')))
         return res.status(409).json({ error: 'La constancia de purga es reservada y no puede modificarse desde ajustes.' });
+      if (section === 'general')
+        await assertClinicAliases({ query: sql.query }, { id: clinicId, name: data.name, phone: data.phone });
 
       const dataStr = JSON.stringify(data);
 
@@ -3701,6 +3767,7 @@ async function handleAdminRequest(req, res) {
       if (newUsername?.trim()) {
         const clean = newUsername.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
         if (!clean) return res.status(400).json({ error: 'Nombre de usuario inválido' });
+        await assertUserAliases({ query: sql.query }, { id: userId, username: clean });
         try {
           await sql`UPDATE clinic_users SET username = ${clean} WHERE id = ${userId}`;
         } catch (e) {
@@ -3790,6 +3857,7 @@ async function handleAdminRequest(req, res) {
       const rawProf   = (req.body?.profession         || '').trim();
       const rawPhone  = normalizeUserPhone(req.body?.phone || '') || '';
       if (rawEmail) {
+        await assertUserAliases({ query: sql.query }, { id: user.id, email: rawEmail });
         // Email format validation
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail))
           return res.status(400).json({ error: 'Formato de email inválido' });
@@ -3913,6 +3981,7 @@ async function handleAdminRequest(req, res) {
       const c = (req.body?.city        || '').trim();
       const w = (req.body?.website     || '').trim();
       const d = (req.body?.description || '').trim();
+      await assertClinicAliases({ query: sql.query }, { id: clinicId, name: n, phone: p });
       await sql`
         UPDATE clinics SET
           name        = CASE WHEN ${n} != '' THEN ${n} ELSE name        END,
@@ -4131,7 +4200,7 @@ async function handleAdminRequest(req, res) {
 
   } catch (error) {
     writerFailed = true;
-    console.error('❌ Error en admin-auth:', error);
+    console.error('❌ Error en admin-auth:', error.code || error.name);
     return res.status(error.status || 500).json({ success: false, error: error.status ? error.message : 'Error interno del servidor' });
   } finally {
     if (writerClient) {
@@ -4139,11 +4208,13 @@ async function handleAdminRequest(req, res) {
         writerContext.getStore().client = null;
         await writerClient.query(writerFailed || writerStatus >= 400 ? 'ROLLBACK' : 'COMMIT');
         writerClient.release();
+        if (!writerFailed && writerStatus < 400) await flushAuthEffects(writerContext.getStore());
         res.json = sendJson;
         res.status = sendStatus;
         if (writerResponse !== undefined) sendJson(writerResponse);
       } catch (error) {
         console.error('[admin:lifecycle] release failed', error.code || error.name);
+        try { await writerClient.query('ROLLBACK'); } catch { /* release(error) discards the connection */ }
         writerClient.release(error);
         res.json = sendJson;
         res.status = sendStatus;

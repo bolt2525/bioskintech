@@ -25,12 +25,22 @@ function database(options = {}) {
     setupTokens: structuredClone(options.setupTokens || []),
     schedule: null, wa: structuredClone(options.wa || null), receipts: structuredClone(options.receipts || []),
   };
+  state.identity = null;
+  if (state.wa) state.wa.states.forEach((s, i) => { s.id ||= i + 1; options.wa.states[i].id ||= s.id; });
+  if (state.job && !options.preMigration) {
+    state.job = structuredClone(state.job);
+    state.job.identifiersReleasedAt ||= new Date(NOW - DAY).toISOString();
+    const plan = planWhatsAppPurge(state.clinic.id, state.wa || {});
+    state.job.waScope ||= { contactIds: plan.contactIds, stateIds: plan.stateIds, linkCodes: plan.linkCodes };
+  }
   let snapshot;
   const db = {
     async query(sql, params = []) {
       state.statements.push({ sql, params });
+      if (options.failAt && sql.startsWith(options.failAt)) throw new Error('fictitious release failure');
       if (sql === 'BEGIN') { snapshot = structuredClone({ job: state.job, clinic: state.clinic, counts: state.counts,
-        schedule: state.schedule, wa: state.wa, receipts: state.receipts, setupTokens: state.setupTokens }); return { rows: [] }; }
+        schedule: state.schedule, wa: state.wa, receipts: state.receipts, setupTokens: state.setupTokens,
+        identity: state.identity, sessionsRevoked: state.sessionsRevoked, signingRevoked: state.signingRevoked }); return { rows: [] }; }
       if (sql === 'ROLLBACK') { Object.assign(state, snapshot); return { rows: [] }; }
       if (sql.startsWith('LOCK TABLE') && sql.includes('"wa_short_links"')) {
         state.waLocks++;
@@ -38,14 +48,54 @@ function database(options = {}) {
       }
       if (sql === 'COMMIT' || sql.startsWith('SET LOCAL') || sql.startsWith('LOCK TABLE')) return { rows: [] };
       if (sql.includes('pg_try_advisory_xact_lock')) return { rows: [{ acquired: !options.writerActive }] };
+      if (sql.includes('pg_advisory_xact_lock(68422')) return { rows: [] };
+      if (sql.startsWith('SELECT clinic_aliases,released_at') || sql.startsWith('SELECT released_at FROM clinic_identity_history'))
+        return { rows: state.identity ? [state.identity] : [] };
+      if (sql.startsWith('INSERT INTO clinic_identity_history')) {
+        state.identity = { released_at: params[1], clinic_aliases: JSON.parse(params[2]), user_aliases: JSON.parse(params[3]) };
+        return { rows: [] };
+      }
+      if (sql.startsWith('UPDATE clinic_identity_history SET clinic_aliases=')) {
+        state.identity.clinic_aliases.whatsapp_aliases = JSON.parse(params[1]);
+        return { rows: [] };
+      }
+      if (sql.startsWith('SELECT name,slug,email,phone,created_at'))
+        return { rows: [structuredClone(state.clinic)] };
+      if (sql.startsWith('SELECT id,clinic_id,username,email,phone,whatsapp_staff_phone'))
+        return { rows: structuredClone((state.wa?.users || []).filter(u => u.clinic_id === params[0])) };
+      if (sql.startsWith("UPDATE clinics SET name='")) {
+        Object.assign(state.clinic, { name: `Clínica eliminada ${state.clinic.id}`, slug: `!purged:${state.clinic.id}`, email: null, phone: null });
+        return { rows: [] };
+      }
+      if (sql.startsWith("UPDATE clinic_users SET username='!purged:'")) {
+        for (const user of state.wa?.users || []) if (user.clinic_id === params[0])
+          Object.assign(user, { username: `!purged:${user.id}`, email: null, phone: null, whatsapp_staff_phone: null,
+            is_active: false, password_hash: '', salt: null, hash_algo: null });
+        return { rows: [] };
+      }
+      if (sql.startsWith('SELECT id,phone,data FROM whatsapp_bot_state')) return { rows: state.wa.states };
+      if (sql.startsWith('UPDATE whatsapp_contacts SET retired_at')) {
+        state.wa.contacts.filter(c => params[0].includes(c.id)).forEach(c => { c.retired_at ||= params[1]; });
+        return { rows: [] };
+      }
+      if (sql.startsWith('UPDATE whatsapp_bot_state SET retired_at')) {
+        state.wa.states.filter(s => params[0].includes(s.id)).forEach(s => { s.retired_at = params[1]; });
+        return { rows: [] };
+      }
+      if (sql.startsWith('UPDATE wa_short_links SET retired_at')) {
+        state.wa.links.filter(l => params[0].includes(l.code)).forEach(l => { l.retired_at = params[1]; });
+        return { rows: [] };
+      }
       if (sql.startsWith('SELECT c.id FROM clinics c'))
         return { rows: options.candidates || [] };
       if (sql.includes('AS deferred')) return { rows: [{ deferred: 0 }] };
       if (sql.includes('table_name=ANY($1::text[])')) return { rows: state.wa ? params[0].map(table_name => ({ table_name })) : [] };
-      if (sql.startsWith('SELECT id,phone,clinic_id FROM whatsapp_contacts')) return { rows: state.wa.contacts };
-      if (sql.startsWith('SELECT id,clinic_id,phone,whatsapp_staff_phone')) return { rows: state.wa.users };
+      if (sql.startsWith('SELECT id,phone,clinic_id FROM whatsapp_contacts') ||
+          sql.startsWith('SELECT id,phone,clinic_id,retired_at FROM whatsapp_contacts')) return { rows: state.wa.contacts };
+      if (sql.startsWith('SELECT id,clinic_id,phone,whatsapp_staff_phone'))
+        return { rows: [...state.wa.users, ...(state.identity?.user_aliases || [])] };
       if (sql.includes('u.clinic_id AS owner_clinic_id')) return { rows: state.wa.messages };
-      if (sql.startsWith('SELECT phone,data FROM whatsapp_bot_state')) return { rows: state.wa.states };
+      if (sql.startsWith('SELECT phone,data,id FROM whatsapp_bot_state')) return { rows: state.wa.states };
       if (sql.startsWith('SELECT code,target_url FROM wa_short_links')) return { rows: state.wa.links };
       if (sql.startsWith('DELETE FROM whatsapp_messages')) {
         state.wa.messages = state.wa.messages.filter(m => !params[0].includes(m.contact_id)); return { rows: [] };
@@ -54,7 +104,7 @@ function database(options = {}) {
         state.wa.contacts = state.wa.contacts.filter(c => !(c.clinic_id === params[0] && params[1].includes(c.id))); return { rows: [] };
       }
       if (sql.startsWith('DELETE FROM whatsapp_bot_state')) {
-        state.wa.states = state.wa.states.filter(s => !params[0].includes(s.phone)); return { rows: [] };
+        state.wa.states = state.wa.states.filter(s => !params[0].includes(s.id)); return { rows: [] };
       }
       if (sql.startsWith('DELETE FROM wa_short_links')) {
         state.wa.links = state.wa.links.filter(s => !params[0].includes(s.code)); return { rows: [] };
@@ -210,6 +260,160 @@ test('purge boundaries preserve demo retention but never apply an unaccepted leg
     { retentionConfirmed: false }, { reason: 'corto' }]) {
     assert.throws(() => validatePurgeConfirmation({ ...body, ...change }, { slug: body.confirmation }), { status: 400 });
   }
+});
+
+test('preview does not release identities; first valid durable QUIESCING archives originals and frees operational aliases', async () => {
+  const wa = waExclusive();
+  wa.users[0] = { ...wa.users[0], username: 'doctor_test', email: 'doctor@example.test',
+    whatsapp_staff_phone: '0999000333', password_hash: 'old-hash', salt: 'old-salt', is_active: true };
+  const db = database({ wa, clinic: { email: 'clinic@example.test', phone: '0999000111' } });
+  const preview = await clinicPurgePreview(ID, db.pool, { ...db.lifecycleDeps, now: () => NOW });
+  assert.equal(preview.identifiersReleasedAt, null);
+  assert.equal(preview.manualLegacyAuthorizationRequired, false);
+  assert.equal(db.state.identity, null);
+  assert.equal(db.state.wa.users[0].phone, '0999000111');
+  const result = await purge(body, actor, { pool: db.pool, now: () => NOW,
+    list: async () => assert.fail('No storage call at initial commit') });
+  assert.equal(result.purge.state, 'QUIESCING');
+  assert.equal(result.identifiersReleasedAt, new Date(NOW).toISOString());
+  assert.equal(result.requiredConfirmation, body.confirmation);
+  assert.equal(db.state.identity.clinic_aliases.slug, body.confirmation);
+  assert.equal(db.state.identity.user_aliases[0].phone, '0999000111');
+  assert.equal(db.state.identity.user_aliases[0].whatsapp_staff_phone, '0999000333');
+  assert.equal(db.state.wa.users[0].phone, null);
+  assert.equal(db.state.wa.users[0].email, null);
+  assert.equal(db.state.wa.users[0].password_hash, '');
+  assert.equal(db.state.wa.contacts[0].retired_at, result.identifiersReleasedAt);
+  assert.equal(db.state.wa.contacts[0].phone, '593999000111');
+  assert.equal(db.state.wa.messages[0].contact_id, 1);
+  assert.equal(result.purge.waScope, undefined, 'no internal IDs/aliases leaked in job API');
+  assert.equal(JSON.stringify(result).includes('doctor@example.test'), false);
+  const next = await purgePreview(ID, db.pool);
+  assert.equal(next.requiredConfirmation, body.confirmation);
+  assert.equal(next.identifiersReleasedAt, result.identifiersReleasedAt);
+  assert.equal(next.retentionSnapshot.capturedAt, result.retentionSnapshot.capturedAt);
+});
+
+test('invalid start and every release/commit failure roll back history, aliases, phones and tombstone together', async () => {
+  for (const failAt of ['INSERT INTO clinic_identity_history', 'UPDATE whatsapp_contacts SET retired_at',
+    "UPDATE clinic_users SET username='!purged:'", "UPDATE clinics SET name='", 'COMMIT']) {
+    const db = database({ wa: waExclusive(), failAt });
+    const before = structuredClone({ clinic: db.state.clinic, wa: db.state.wa });
+    await assert.rejects(purge(body, actor, { pool: db.pool, now: () => NOW }));
+    assert.equal(db.state.identity, null, failAt);
+    assert.equal(db.state.job, null, failAt);
+    assert.deepEqual(db.state.clinic, before.clinic, failAt);
+    assert.deepEqual(db.state.wa, before.wa, failAt);
+  }
+  const invalid = database({ wa: waExclusive() });
+  await assert.rejects(purge({ ...body, authorizationConfirmed: false }, actor,
+    { pool: invalid.pool, now: () => NOW }), { status: 400 });
+  assert.equal(invalid.state.identity, null);
+  assert.equal(invalid.state.job, null);
+});
+
+test('release retries are idempotent and do not retire a newly created contact/state using the same phone', async () => {
+  const db = database({ wa: waExclusive() });
+  await purge(body, actor, { pool: db.pool, now: () => NOW });
+  db.state.wa.users.push({ id: 90, clinic_id: OTHER, phone: '0999000111', username: 'new_doctor' });
+  db.state.wa.contacts.push({ id: 90, clinic_id: OTHER, phone: '593999000111', retired_at: null });
+  db.state.wa.messages.push({ id: 90, contact_id: 90, booked_by_user_id: 90, owner_clinic_id: OTHER });
+  db.state.wa.states.push({ id: 90, phone: '593999000111', data: { clinic_id: OTHER }, retired_at: null });
+  const before = structuredClone(db.state.wa);
+  const retry = await purge(body, actor, { pool: db.pool, now: () => NOW + 1 });
+  assert.equal(retry.purge.state, 'QUIESCING');
+  assert.equal(retry.requiredConfirmation, body.confirmation);
+  assert.deepEqual(db.state.wa, before);
+  assert.equal(db.state.statements.filter(s => s.sql.startsWith('INSERT INTO clinic_identity_history')).length, 1);
+  const plan = planWhatsAppPurge(ID, { ...db.state.wa, users: [...db.state.wa.users, ...db.state.identity.user_aliases] });
+  assert.equal(plan.contactIds.includes(90), false);
+  assert.equal(plan.stateIds.includes(90), false);
+});
+
+test('release rejects foreign active contacts, declared states and scoped links before any WA retirement', async () => {
+  for (const conflict of ['contact', 'state', 'mixed-state', 'link', 'declared-state-contact', 'contact-only-link']) {
+    const wa = waExclusive();
+    if (conflict === 'contact') wa.contacts.push({ id: 90, clinic_id: OTHER, phone: '0999000111' });
+    if (conflict === 'state' || conflict === 'mixed-state')
+      wa.states.push({ id: 90, phone: '0999000111', data: { nested: {
+        clinic_id: OTHER, ...(conflict === 'mixed-state' ? { clinicId: ID } : {}),
+      } } });
+    if (conflict === 'link' || conflict === 'contact-only-link')
+      wa.links.push({ code: `${OTHER}.${'z'.repeat(22)}`, target_url: 'https://wa.me/593999000111' });
+    if (conflict === 'contact-only-link') wa.users = [];
+    if (conflict === 'declared-state-contact') {
+      wa.states.push({ id: 91, phone: '593999000555', data: { clinic_id: ID } });
+      wa.contacts.push({ id: 91, clinic_id: OTHER, phone: '0999000555' });
+    }
+    const db = database({ wa });
+    const before = structuredClone({ clinic: db.state.clinic, wa: db.state.wa });
+    await assert.rejects(purge(body, actor, { pool: db.pool, now: () => NOW,
+      list: async () => assert.fail('Conflict must not access storage'),
+    }), { status: 409 }, conflict);
+    assert.equal(db.state.identity, null, conflict);
+    assert.equal(db.state.job, null, conflict);
+    assert.deepEqual(db.state.clinic, before.clinic, conflict);
+    assert.deepEqual(db.state.wa, before.wa, conflict);
+    assert.equal(db.state.statements.some(s => /^UPDATE (whatsapp_contacts|whatsapp_bot_state|wa_short_links) SET retired_at/.test(s.sql)),
+      false, conflict);
+  }
+});
+
+test('release persists contact-only and declared-state-only phone barriers after SQL evidence can disappear', async () => {
+  const wa = waExclusive();
+  wa.users = [];
+  wa.states.push({ id: 55, phone: '593999000555', data: { nested: { clinic_id: ID } } });
+  const db = database({ wa });
+  await purge(body, actor, { pool: db.pool, now: () => NOW });
+  assert.ok(db.state.identity.clinic_aliases.whatsapp_aliases.some(a => a.phone === '593999000111'));
+  assert.ok(db.state.identity.clinic_aliases.whatsapp_aliases.some(a => a.phone === '593999000555'));
+  assert.equal(db.state.wa.states.find(s => s.id === 55).retired_at, new Date(NOW).toISOString());
+  db.state.wa.contacts = [];
+  db.state.wa.states = [];
+  assert.ok(db.state.identity.clinic_aliases.whatsapp_aliases.length >= 2);
+});
+
+test('manual legacy requires explicit flag and 30 complete days, snapshots dates, and revalidates every batch without auto optin', async () => {
+  for (const delta of [-1, 0]) {
+    const expires = new Date(NOW - 30 * DAY - delta).toISOString();
+    const lifecycle = { policy: 'legacy', state: 'CLOSED', auto_purge_eligible: false,
+      expires_at: expires, recovery_ends_at: expires };
+    const db = database({ lifecycle, clinic: { subscription_expires_at: expires } });
+    const preview = await clinicPurgePreview(ID, db.pool, { ...db.lifecycleDeps, now: () => NOW });
+    assert.equal(preview.manualLegacyAuthorizationRequired, true);
+    if (delta === -1) {
+      assert.equal(preview.eligible, false);
+      await assert.rejects(purge({ ...body, legacyAuthorizationConfirmed: true }, actor,
+        { pool: db.pool, now: () => NOW }), { status: 409 });
+      continue;
+    }
+    assert.equal(preview.eligible, true);
+    await assert.rejects(purge(body, actor, { pool: db.pool, now: () => NOW }), { status: 400 });
+    const started = await purge({ ...body, legacyAuthorizationConfirmed: true }, actor, { pool: db.pool, now: () => NOW });
+    assert.equal(started.retentionSnapshot.retentionDays, 30);
+    assert.equal(started.retentionSnapshot.eligibleAt, new Date(NOW).toISOString());
+    assert.equal(db.state.job.legacyAuthorizationConfirmed, true);
+    let lists = 0;
+    const resumed = await purge(body, actor, { pool: db.pool, now: () => NOW + 26 * 60000,
+      list: async () => { lists++; return { objects: [] }; }, remove: async () => assert.fail('No objects') });
+    assert.ok(lists > 0);
+    assert.ok(['RUNNING', 'COMPLETE'].includes(resumed.purge.state));
+  }
+});
+
+test('jobs started before identity migration are explicitly held in preview, manual POST and cron', async () => {
+  const db = database({ preMigration: true, candidates: [{ id: ID }], job: {
+    mode: 'AUTOMATIC', state: 'RUNNING', phase: 'PHOTOS', retryAfter: new Date(NOW - 1).toISOString(), deletedObjects: 0,
+  } });
+  const preview = await purgePreview(ID, db.pool);
+  assert.equal(preview.eligible, false);
+  assert.equal(preview.identifiersReleasedAt, null);
+  assert.ok(preview.reasons.some(reason => reason.includes('revisión asistida')));
+  await assert.rejects(purge(body, actor, { pool: db.pool, now: () => NOW }), { status: 409 });
+  const report = await purgeExpiredClinics({ pool: db.pool, ...db.lifecycleDeps, now: () => NOW,
+    list: async () => assert.fail('No storage for old jobs') });
+  assert.equal(report.results[0].reason, 'IDENTITY_MIGRATION_REVIEW_REQUIRED');
+  assert.equal(db.state.identity, null);
 });
 
 test('object ownership rejects other clinics, backups, traversal and non-photo clinical keys', () => {
@@ -643,16 +847,22 @@ test('automatic purge never treats demo, legacy or recovery states as paid-close
   }
 });
 
-    test('manual confirmed purge cannot retroactively apply 30 or 45 days to legacy or paid unaccepted contracts', async () => {
+    test('manual legacy requires explicit authorization; paid manual does not retroactively require auto optin', async () => {
       for (const policy of ['legacy','paid']) {
         const lifecycle = { policy, state: 'CLOSED', auto_purge_eligible: false,
           expires_at: new Date(NOW - 100 * DAY).toISOString(),
           recovery_ends_at: new Date(NOW - 55 * DAY).toISOString() };
         const { pool, state } = database({ lifecycle });
-        await assert.rejects(purge(body, actor, { pool, now: () => NOW,
-          list: async () => assert.fail('No R2 before contractual eligibility') }), { status: 409 });
-        assert.equal(state.job, null);
-        assert.equal(state.sessionsRevoked, false);
+        const run = () => purge(body, actor, { pool, now: () => NOW,
+          list: async () => assert.fail('No R2 before quiescence') });
+        if (policy === 'legacy') {
+          await assert.rejects(run(), { status: 400 });
+          assert.equal(state.job, null);
+          assert.equal(state.sessionsRevoked, false);
+        } else {
+          assert.equal((await run()).purge.state, 'QUIESCING');
+          assert.equal(state.sessionsRevoked, true);
+        }
       }
     });
 
@@ -717,7 +927,7 @@ const waExclusive = () => ({
   messages: [{ id: 1, contact_id: 1, booked_by_user_id: 7, owner_clinic_id: ID },
     { id: 2, contact_id: 1, booked_by_user_id: null, owner_clinic_id: null },
     { id: 3, contact_id: 2, booked_by_user_id: 8, owner_clinic_id: OTHER }],
-  states: [{ phone: '593999000111', data: { clinic_id: ID } }],
+  states: [{ id: 1, phone: '593999000111', data: { clinic_id: ID } }],
   links: [{ code: 'legacy-target', target_url: 'https://wa.me/593999000111?text=private-target' }],
 });
 

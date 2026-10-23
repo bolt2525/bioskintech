@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import './whatsapp-identity-lock.fixture.mjs';
 import test, { mock } from 'node:test';
 import { readFileSync } from 'node:fs';
 
@@ -35,12 +36,20 @@ sql.query = async (text, values) => {
   if (text.includes('SELECT waba_id,')) return { rows: channel ? [channel] : [] };
   if (text.includes('INSERT INTO user_whatsapp_channels')) {
     assert.match(text, /clinic_id=\$2 AND is_active=true AND whatsapp_coexistence_enabled=true/);
+    assert.match(text, /connected_at=NOW\(\)/);
     channel = { phone_number: values[4], token_encrypted: values[5], status: 'setup_failed' };
     return { rows: [{ user_id: 7 }] };
   }
   if (text.includes("SET status='pending_validation'")) {
     channel.status = 'pending_validation';
     return { rows: [{ user_id: 7 }] };
+  }
+  if (text.includes('connected_at<to_timestamp($2)')) {
+    assert.match(text, /status<>'disconnected'/);
+    if (channel && Date.parse(channel.connected_at) < values[1] * 1000 && channel.status !== 'disconnected') {
+      channel.token_encrypted = null; channel.status = 'disconnected';
+    }
+    return { rows: [] };
   }
   if (text.includes("token_encrypted=NULL") && channel) {
     channel.token_encrypted = null;
@@ -50,6 +59,7 @@ sql.query = async (text, values) => {
 };
 mock.module('@vercel/postgres', { namedExports: { sql } });
 mock.module(new URL('../lib/clinic-lifecycle.js', import.meta.url).href, { namedExports: {
+  reserveClinicLifecycle: async () => {},
   lockClinicWriters: async (_db, ids) => { assert.deepEqual(ids, [CLINIC]); },
   requireClinicWritable: async (_db, id) => {
     assert.equal(id, CLINIC);
@@ -190,13 +200,13 @@ test('complete exchanges code, verifies app, validates number and syncs without 
   assert.equal(channel.status, 'pending_validation');
   assert.equal(decryptChannelToken(channel.token_encrypted, `${CLINIC}:7:123456:987654321`), TOKEN);
   const urls = calls.filter(call => call.url).map(call => call.url);
-  assert.equal(urls.length, 6);
+  assert.equal(urls.length, 5);
   assert.ok(urls.every(url => !url.includes('/register') && !url.includes('/messages')));
-  assert.ok(calls.some(call => call.options?.body?.includes('"sync_type":"history"')));
+  assert.ok(!calls.some(call => call.options?.body?.includes('"sync_type":"history"')));
   assert.ok(calls.some(call => call.options?.body?.includes('"sync_type":"smb_app_state_sync"')));
   assert.ok(!JSON.stringify(res.body).includes(TOKEN));
   assert.equal((await complete()).code, 409);
-  assert.equal(calls.filter(call => call.url).length, 6);
+  assert.equal(calls.filter(call => call.url).length, 5);
 });
 
 test('expired/replayed state and malformed input cannot exchange credentials', async () => {
@@ -280,9 +290,24 @@ test('batched webhooks isolate every client change from global chatbot and CRM',
 });
 
 test('provider offboarding invalidates credentials only for the affected messaging account', async () => {
-  await processChannelLifecycle({ entry: [{ id: '123456', changes: [{ field: 'account_update', value: { event: 'PARTNER_REMOVED' } }] }] });
-  assert.deepEqual(calls[0].values, ['123456']);
+  const time = Math.floor(Date.now() / 1000);
+  await processChannelLifecycle({ entry: [{ id: '123456', time, changes: [{ field: 'account_update', value: { event: 'PARTNER_REMOVED' } }] }] });
+  assert.deepEqual(calls[0].values, ['123456', time]);
   assert.match(calls[0].text, /WHERE waba_id=\$1/);
+  assert.match(calls[0].text, /connected_at<to_timestamp\(\$2\)/);
+});
+
+test('old or undated offboarding cannot revoke a newly connected generation of the same WABA', async () => {
+  const time = Math.floor(Date.now() / 1000);
+  channel = { connected_at: new Date((time - 2) * 1000).toISOString(), status: 'pending_validation', token_encrypted: 'new-token' };
+  const event = timestamp => ({ entry: [{ id: '123456', ...(timestamp === undefined ? {} : { time: timestamp }),
+    changes: [{ field: 'account_update', value: { event: 'PARTNER_REMOVED' } }] }] });
+  for (const timestamp of [time - 10, time - 2, undefined, time + 100]) {
+    await processChannelLifecycle(event(timestamp));
+    assert.equal(channel.token_encrypted, 'new-token');
+  }
+  await processChannelLifecycle(event(time));
+  assert.equal(channel.token_encrypted, null);
 });
 
 test('pilot cannot be activated from UI or auto-send reminders using the system channel', () => {

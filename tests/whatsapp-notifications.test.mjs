@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import './whatsapp-identity-lock.fixture.mjs';
 import test, { mock } from 'node:test';
 import { createHmac } from 'node:crypto';
 
@@ -21,7 +22,8 @@ mock.module('googleapis', { namedExports: { google: {
   calendar: () => ({ events: { list: async () => ({ data: { items: events } }) } }),
 } } });
 mock.module(new URL('../lib/neon-clinical-db.js', import.meta.url).href, {
-  namedExports: { getPool: () => ({ query: async () => ({ rows: [{ is_active: true, general: {} }] }) }) },
+  namedExports: { getPool: () => ({ query: async text => text.includes('FROM clinic_identity_history')
+    ? { rows: [{ released_at: null }] } : { rows: [{ is_active: true, general: {} }] } }) },
 });
 const crm = await import('../lib/whatsapp-crm.js');
 mock.module(new URL('../lib/whatsapp-crm.js', import.meta.url).href, { namedExports: {
@@ -150,7 +152,7 @@ test('signed reactions and stickers are recorded but never invoke a conversation
   for (const type of ['reaction', 'sticker']) {
     const body = Buffer.from(JSON.stringify({ object: 'whatsapp_business_account', entry: [{ changes: [{ field: 'messages', value: {
       metadata: { phone_number_id: 'test' },
-      messages: [{ id: `wamid.${type}`, from: PATIENT, type, reaction: { emoji: '👍' } }],
+      messages: [{ id: `wamid.${type}`, from: PATIENT, timestamp: '1792756800', type, reaction: { emoji: '👍' } }],
     } }] }] }));
     const req = {
       method: 'POST', query: {},

@@ -74,6 +74,8 @@ type ClinicPurgePreview = {
     retainedScope: 'GLOBAL_AMBIGUOUS_NOT_TENANT_OWNERSHIP';
   };
   eligible: boolean;
+  manualLegacyAuthorizationRequired: boolean;
+  identifiersReleasedAt: string | null;
   reasons: string[];
   requiredConfirmation: string;
   complete: boolean;
@@ -95,6 +97,9 @@ function isClinicPurgeWhatsappSummary(value: unknown): value is ClinicPurgePrevi
 
 function isClinicPurgePreview(value: unknown): value is ClinicPurgePreview {
   if (!isRecord(value) || value.success !== true || typeof value.eligible !== 'boolean' ||
+      typeof value.manualLegacyAuthorizationRequired !== 'boolean' ||
+      !(value.identifiersReleasedAt === null || (typeof value.identifiersReleasedAt === 'string' &&
+        Number.isFinite(Date.parse(value.identifiersReleasedAt)))) ||
       typeof value.complete !== 'boolean' || typeof value.requiredConfirmation !== 'string' ||
       !Array.isArray(value.reasons) || !value.reasons.every(reason => typeof reason === 'string') ||
       !isRecord(value.clinic) || typeof value.clinic.id !== 'string' ||
@@ -107,6 +112,7 @@ function isClinicPurgePreview(value: unknown): value is ClinicPurgePreview {
       typeof value.retainedBackups.retentionDays !== 'number' || typeof value.retainedBackups.note !== 'string') return false;
   if (value.purge !== null && value.purge !== undefined &&
       (!isRecord(value.purge) || typeof value.purge.state !== 'string')) return false;
+  if (value.identifiersReleasedAt !== null && !isRecord(value.purge)) return false;
   return true;
 }
 
@@ -1142,6 +1148,7 @@ export default function AdminMasterDashboard() {
   const [clinicPurgeConfirmation, setClinicPurgeConfirmation] = useState('');
   const [clinicPurgeAuthorized, setClinicPurgeAuthorized] = useState(false);
   const [clinicPurgeRetentionConfirmed, setClinicPurgeRetentionConfirmed] = useState(false);
+  const [clinicPurgeLegacyAuthorized, setClinicPurgeLegacyAuthorized] = useState(false);
   const [clinicPurgeReason, setClinicPurgeReason] = useState('');
 
   // ── Estado modales ───────────────────────────────────────────────────────
@@ -1787,6 +1794,7 @@ export default function AdminMasterDashboard() {
     setClinicPurgeConfirmation('');
     setClinicPurgeAuthorized(false);
     setClinicPurgeRetentionConfirmed(false);
+    setClinicPurgeLegacyAuthorized(false);
     setClinicPurgeReason('');
     setClinicPurgeLoading(true);
     try {
@@ -1829,6 +1837,7 @@ export default function AdminMasterDashboard() {
           confirmation: clinicPurgeConfirmation,
           authorizationConfirmed: clinicPurgeAuthorized,
           retentionConfirmed: clinicPurgeRetentionConfirmed,
+          legacyAuthorizationConfirmed: clinicPurgeLegacyAuthorized,
           reason: clinicPurgeReason.trim(),
         }),
       });
@@ -1841,6 +1850,7 @@ export default function AdminMasterDashboard() {
         throw new Error('La API no confirmó una finalización válida. Actualiza el estado antes de continuar.');
       }
       setClinicPurgePreview(payload);
+      if (payload.identifiersReleasedAt && !clinicPurgePreview.identifiersReleasedAt) await loadAll();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'No se pudo procesar el lote de purga.';
       setClinicPurgeError(message);
@@ -1965,6 +1975,7 @@ export default function AdminMasterDashboard() {
     !clinicPurgeBusy && !clinicPurgeLoading &&
     clinicPurgeConfirmation === clinicPurgePreview.requiredConfirmation &&
     clinicPurgeAuthorized && clinicPurgeRetentionConfirmed &&
+    (!clinicPurgePreview.manualLegacyAuthorizationRequired || clinicPurgeLegacyAuthorized) &&
     clinicPurgeReason.trim().length >= 10 && clinicPurgeReason.trim().length <= 1000
   );
   const purgeStatusLabel = purgeJob ? ({
@@ -3863,7 +3874,7 @@ export default function AdminMasterDashboard() {
         >
           <div className="space-y-4">
             <p className="text-sm text-gray-700">
-              Esta revisión no borra información. La purga permanente solo puede iniciarse si la clínica está desactivada y han transcurrido 30 días desde el vencimiento registrado.
+              Esta revisión no borra información ni libera identificadores. Para iniciar la purga, la clínica debe estar desactivada y haber cumplido el plazo de recuperación confirmado por la API.
             </p>
 
             {clinicPurgeError && (
@@ -3904,13 +3915,25 @@ export default function AdminMasterDashboard() {
                     Clínica: <strong>{clinicPurgePreview.clinic.slug}</strong> · {clinicPurgePreview.clinic.is_active ? 'Activa' : 'Desactivada'}
                   </p>
                   <p className="mt-1 text-xs text-gray-700">
-                    Vencimiento: {formatPurgeDate(clinicPurgePreview.clinic.subscription_expires_at)} · Fecha mínima estimada tras 30 días: {formatPurgeEligibilityDate(clinicPurgePreview.clinic.subscription_expires_at)}. La API confirma la elegibilidad final.
+                    Vencimiento: {formatPurgeDate(clinicPurgePreview.clinic.subscription_expires_at)} · Referencia mínima de 30 días: {formatPurgeEligibilityDate(clinicPurgePreview.clinic.subscription_expires_at)}. La API confirma el plazo aplicable; las suscripciones pagadas pueden requerir 45 días.
                   </p>
                   {clinicPurgePreview.reasons.length > 0 && (
                     <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-amber-900">
                       {clinicPurgePreview.reasons.map(reason => <li key={reason}>{reason}</li>)}
                     </ul>
                   )}
+                </section>
+
+                <section aria-labelledby="clinic-purge-reuse" aria-live="polite" className="rounded-xl border border-blue-200 bg-blue-50 p-3">
+                  <h4 id="clinic-purge-reuse" className="font-semibold text-blue-950">Reutilización de identificadores</h4>
+                  <p className="mt-1 text-xs text-blue-900">
+                    {clinicPurgePreview.identifiersReleasedAt
+                      ? `Identificadores liberados desde ${formatPurgeDate(clinicPurgePreview.identifiersReleasedAt)}. Puedes crear una clínica y un usuario nuevos sin esperar a que termine el borrado.`
+                      : 'El inicio confirmado de la purga libera los identificadores para crear una clínica y un usuario nuevos. Desactivar la clínica o consultar esta vista previa no los libera.'}
+                  </p>
+                  <p className="mt-1 text-xs text-blue-900">
+                    Se podrán reutilizar el nombre, slug, correos, nombre de usuario y teléfonos, incluido WhatsApp. El nuevo registro no hereda fichas, conversaciones ni credenciales; la clínica anterior no podrá reactivarse.
+                  </p>
                 </section>
 
                 <section aria-labelledby="clinic-purge-scope" className="rounded-xl border border-gray-200 p-3">
@@ -3927,7 +3950,7 @@ export default function AdminMasterDashboard() {
                     <p className="mt-2 text-xs text-gray-600">No hay tablas clínicas con filas para este tenant.</p>
                   )}
                   <p className="mt-2 text-xs text-gray-600">
-                    En R2 se procesan fotos clínicas y objetos temporales/anuales bajo los prefijos de la clínica. La vista previa no informa un conteo exacto de objetos R2. Se conserva la identidad de la clínica y el registro mínimo de auditoría.
+                    En R2 se procesan fotos clínicas y objetos temporales/anuales bajo los prefijos de la clínica. La vista previa no informa un conteo exacto de objetos R2. Se conservan las constancias históricas y el registro mínimo de auditoría; no se transfieren al nuevo registro.
                   </p>
                   <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
                     <h5 className="text-xs font-semibold text-amber-950">WhatsApp: preservación de datos ambiguos</h5>
@@ -4012,6 +4035,12 @@ export default function AdminMasterDashboard() {
                       <input type="checkbox" checked={clinicPurgeRetentionConfirmed} onChange={event => setClinicPurgeRetentionConfirmed(event.target.checked)} className="mt-0.5 accent-red-700" />
                       <span>Confirmo la retención indicada: las copias existentes no se eliminan inmediatamente; el lifecycle de R2 debe cumplir los plazos mostrados.</span>
                     </label>
+                    {clinicPurgePreview.manualLegacyAuthorizationRequired && (
+                      <label className="flex items-start gap-2 text-xs text-gray-700">
+                        <input type="checkbox" checked={clinicPurgeLegacyAuthorized} onChange={event => setClinicPurgeLegacyAuthorized(event.target.checked)} className="mt-0.5 accent-red-700" />
+                        <span>Autorizo expresamente esta purga manual de una clínica con condiciones anteriores (legacy), tras revisar su plazo de recuperación. Esto no habilita la purga automática de clínicas legacy.</span>
+                      </label>
+                    )}
                     <div>
                       <label htmlFor="clinic-purge-reason" className="block text-xs font-medium text-gray-700">Motivo de autorización (10–1000 caracteres)</label>
                       <textarea
@@ -4024,7 +4053,7 @@ export default function AdminMasterDashboard() {
                       />
                     </div>
                     <p className="text-xs text-red-800">
-                      El primer envío registra una orden durable y cierra accesos. No borra datos de inmediato: aplica una espera de seguridad antes de procesar fases por lotes.
+                      El primer envío aceptado registra una orden irreversible, cierra accesos y libera los identificadores. No borra datos de inmediato: aplica una espera de seguridad antes de procesar fases por lotes.
                     </p>
                     <button
                       type="button"

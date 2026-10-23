@@ -8,6 +8,7 @@ import { requireAuth, requireRole } from '../lib/admin-auth.js';
 import { getPool } from '../lib/neon-clinical-db.js';
 import { loadSubscriptionLifecycle } from '../lib/subscription-lifecycle.js';
 import { lockClinicWriters, unlockClinicWriters } from '../lib/clinic-lifecycle.js';
+import { withIdentityReadLock } from '../lib/identity-reservations.js';
 import {
   listWhatsAppContacts,
   listWhatsAppMessages,
@@ -27,6 +28,7 @@ import {
   getAppointmentReplyStatuses,
   getAppointmentDeliveryStatuses,
   normalizeEcuadorPhone,
+  isCurrentWhatsAppInbound,
 } from '../lib/whatsapp-crm.js';
 import { getBotState, setBotState, clearBotState } from '../lib/whatsapp-bot-state.js';
 import { createShortWaLink, resolveShortWaLink } from '../lib/wa-short-link.js';
@@ -274,6 +276,10 @@ async function notifyStaffOfPatientReply(appointment, patientText, intent) {
 }
 
 export async function handlePatientAppointmentReply({ from, text, buttonPayload }) {
+  return withIdentityReadLock(() => handleCurrentPatientAppointmentReply({ from, text, buttonPayload }));
+}
+
+async function handleCurrentPatientAppointmentReply({ from, text, buttonPayload }) {
   const eventId = String(buttonPayload || '').startsWith('appointment_confirm:')
     ? String(buttonPayload).substring('appointment_confirm:'.length)
     : null;
@@ -515,7 +521,8 @@ export function extractIncomingMessages(body) {
           buttonPayload: String(buttonPayload || '').trim(),
           mediaType,
           providerMessageId: msg.id || null,
-          timestamp: msg.timestamp ? new Date(Number(msg.timestamp) * 1000) : new Date(),
+          // Missing/invalid provider time must never be promoted into a fresh post-release event.
+          timestamp: msg.timestamp ? new Date(Number(msg.timestamp) * 1000) : new Date(NaN),
           name: contacts.get(from) || null,
           processable: Boolean((msg.type === 'text' && msg.text?.body?.trim()) ||
             (['button', 'interactive'].includes(msg.type) && buttonText)),
@@ -1069,6 +1076,7 @@ async function getRecentFailedMessagesText() {
     SELECT c.phone, m.error_detail, m.occurred_at
     FROM whatsapp_messages m
     JOIN whatsapp_contacts c ON c.id = m.contact_id
+      AND c.retired_at IS NULL
     WHERE m.status = 'fallido' AND m.occurred_at > NOW() - INTERVAL '24 hours'
     ORDER BY m.occurred_at DESC
     LIMIT 10
@@ -1146,7 +1154,7 @@ async function notifyBookingUserOfDeliveryStatus({ bookedByUserId, contactId, st
       sql`SELECT clinic_id,phone, whatsapp_staff_phone FROM clinic_users WHERE id = ${bookedByUserId} AND is_active = true AND whatsapp_bot_enabled = true`,
       getContactById(contactId),
     ]);
-    if (!staffRes.rows[0]?.clinic_id || !(await loadSubscriptionLifecycle(getPool(), staffRes.rows[0].clinic_id)).canoperate) return;
+    if (!contact || !staffRes.rows[0]?.clinic_id || !(await loadSubscriptionLifecycle(getPool(), staffRes.rows[0].clinic_id)).canoperate) return;
     const staffPhone = normalizeEcuadorPhone(staffRes.rows[0]?.whatsapp_staff_phone || staffRes.rows[0]?.phone || '');
     if (!staffPhone || !(await isWithinCustomerServiceWindow(staffPhone))) return;
     const patientLabel = patientName || contact?.name || contact?.phone || 'el paciente';
@@ -1155,14 +1163,18 @@ async function notifyBookingUserOfDeliveryStatus({ bookedByUserId, contactId, st
       ? ` del ${new Date(appointmentStart).toLocaleString('es-EC', { timeZone: 'America/Guayaquil', dateStyle: 'short', timeStyle: 'short' })}`
       : '';
     const message = `⚠️ *Recordatorio NO entregado*\n\nNo se pudo enviar el recordatorio de WhatsApp a ${patientLabel}${phoneNote} para su cita${dateNote}. Verifica el número o avísale por otro medio.\n\nEscribe *menu* para ver las opciones.`;
-    await sendWhatsAppText(staffPhone, message);
+    await sendWhatsAppText(staffPhone, message, { clinicId: staffRes.rows[0].clinic_id });
   } catch (err) {
     console.error('❌ Error notificando estado de entrega al staff:', err.message);
   }
 }
 
 /** Procesa mensajes entrantes: solo responde a números registrados como staff activo (clinic_users.phone). */
-export async function processWhatsAppDeliveryStatus(event, {
+export async function processWhatsAppDeliveryStatus(event, options = {}) {
+  return withIdentityReadLock(() => processCurrentWhatsAppDeliveryStatus(event, options), options.pool || getPool());
+}
+
+async function processCurrentWhatsAppDeliveryStatus(event, {
   pool = getPool(), update = updateWhatsAppMessageStatus, claim = claimMessageStatusNotification,
   notify = notifyBookingUserOfDeliveryStatus, load = loadSubscriptionLifecycle,
 } = {}) {
@@ -1171,18 +1183,18 @@ export async function processWhatsAppDeliveryStatus(event, {
   try {
     await db.query('BEGIN');
     await db.query("SET LOCAL statement_timeout = '10s'");
-    const lookup = async (locked = false) => (await db.query(`SELECT c.clinic_id AS contact_clinic_id,u.clinic_id AS owner_clinic_id,
+    const lookup = async (locked = false) => (await db.query(`SELECT c.clinic_id AS contact_clinic_id,c.retired_at,u.clinic_id AS owner_clinic_id,
       m.booked_by_user_id FROM whatsapp_messages m JOIN whatsapp_contacts c ON c.id=m.contact_id
       LEFT JOIN clinic_users u ON u.id=m.booked_by_user_id WHERE m.provider_message_id=$1${locked ? ' FOR UPDATE OF m,c' : ''}`, [event.providerMessageId])).rows[0];
     const target = await lookup();
-    if (!target?.contact_clinic_id || (target.booked_by_user_id != null && target.owner_clinic_id !== target.contact_clinic_id)) {
+    if (!target?.contact_clinic_id || target.retired_at || (target.booked_by_user_id != null && target.owner_clinic_id !== target.contact_clinic_id)) {
       await db.query('ROLLBACK');
       return { blocked: true };
     }
     await lockClinicWriters(db, [target.contact_clinic_id], { session: true });
     lockedClinic = target.contact_clinic_id;
     const current = await lookup(true);
-    if (!current || current.contact_clinic_id !== target.contact_clinic_id ||
+    if (!current || current.retired_at || current.contact_clinic_id !== target.contact_clinic_id ||
         (current.booked_by_user_id != null && current.owner_clinic_id !== target.contact_clinic_id) ||
         !(await load(db, target.contact_clinic_id)).canoperate) {
       await db.query('ROLLBACK');
@@ -1208,19 +1220,34 @@ export async function processWhatsAppDeliveryStatus(event, {
   }
 }
 
-async function handleIncomingMessages(body) {
+export async function handleIncomingMessages(body) {
+  return withIdentityReadLock(() => handleCurrentIncomingMessages(body));
+}
+
+async function handleCurrentIncomingMessages(body) {
   for (const event of extractMessageStatuses(body)) {
     await processWhatsAppDeliveryStatus(event);
   }
 
   for (const { from, text, buttonPayload, mediaType, providerMessageId, timestamp, name, processable } of extractIncomingMessages(body)) {
     if (!from) continue;
+    // Check release history before any contact/state/user lookup by reusable phone.
+    if (!(await isCurrentWhatsAppInbound(from, timestamp))) continue;
+    let inboundClinicId = null;
     if (!getSystemStaffPhones().has(from)) {
-      const domestic = from.startsWith('593') ? `0${from.slice(3)}` : from;
-      const tenants = await sql`SELECT clinic_id FROM whatsapp_contacts WHERE phone=${from} AND clinic_id IS NOT NULL
-        UNION SELECT clinic_id FROM clinic_users WHERE clinic_id IS NOT NULL AND
-          (regexp_replace(coalesce(phone,''),'[^0-9]','','g') IN (${from},${domestic})
-           OR regexp_replace(coalesce(whatsapp_staff_phone,''),'[^0-9]','','g') IN (${from},${domestic}))`;
+      const tenants = await sql`SELECT clinic_id FROM whatsapp_contacts WHERE phone=${from} AND retired_at IS NULL AND clinic_id IS NOT NULL
+        UNION SELECT cu.clinic_id FROM clinic_users cu WHERE cu.clinic_id IS NOT NULL AND cu.is_active=true AND
+          ${from} IN (
+            SELECT CASE WHEN n.digits LIKE '0%' THEN '593' || substring(n.digits FROM 2)
+              WHEN length(n.digits)=9 THEN '593' || n.digits ELSE n.digits END
+            FROM (VALUES (cu.phone), (cu.whatsapp_staff_phone)) p(phone)
+            CROSS JOIN LATERAL (SELECT regexp_replace(COALESCE(p.phone,''),'[^0-9]','','g') AS digits) d
+            CROSS JOIN LATERAL (SELECT CASE WHEN d.digits LIKE '00%' THEN substring(d.digits FROM 3)
+              ELSE d.digits END AS digits) n
+          )`;
+      const clinicIds = [...new Set(tenants.rows.map(tenant => tenant.clinic_id))];
+      if (clinicIds.length > 1) continue; // An ambiguous phone must not merge tenant conversations.
+      inboundClinicId = clinicIds[0] || null;
       let blocked = false;
       for (const tenant of tenants.rows) {
         if (!(await loadSubscriptionLifecycle(getPool(), tenant.clinic_id)).canoperate) { blocked = true; break; }
@@ -1230,6 +1257,7 @@ async function handleIncomingMessages(body) {
     const audit = await recordWhatsAppMessage({
       phone: from,
       name,
+      clinicId: inboundClinicId,
       direction: 'entrante',
       content: text,
       mediaType,
@@ -1815,11 +1843,13 @@ export default async function handler(req, res) {
 
     try {
       // Nunca interpretar mensajes de los números de clientes como comandos del bot global.
-      const systemBody = systemWhatsAppWebhook(body);
-      const lifecycleEvents = (body.entry || []).some(entry =>
-        (entry.changes || []).some(change => change.field === 'account_update' && change.value?.event === 'PARTNER_REMOVED'));
-      if (lifecycleEvents) await processChannelLifecycle(body);
-      await handleIncomingMessages(systemBody);
+      await withIdentityReadLock(async () => {
+        const systemBody = systemWhatsAppWebhook(body);
+        const lifecycleEvents = (body.entry || []).some(entry =>
+          (entry.changes || []).some(change => change.field === 'account_update' && change.value?.event === 'PARTNER_REMOVED'));
+        if (lifecycleEvents) await processChannelLifecycle(body);
+        await handleIncomingMessages(systemBody);
+      });
     } catch (err) {
       console.error('❌ Error procesando mensaje WhatsApp:', err.message);
       return res.status(500).json({ success: false });
