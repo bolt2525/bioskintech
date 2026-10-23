@@ -1,5 +1,7 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-23 Usuarios: desbloqueo seguro de eliminación.
+
 - ✅ 2026-10-23 Contrato persistente; PDF optimizado.
 
 - ✅ 2026-10-23 Coexistencia centralizada en Estado.

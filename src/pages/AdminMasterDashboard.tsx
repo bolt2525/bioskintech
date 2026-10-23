@@ -1711,12 +1711,16 @@ export default function AdminMasterDashboard() {
   };
 
   const deleteUser = async (u: ClinicUser) => {
-    if (!confirm(`¿Eliminar permanentemente a "${u.username}"?\n\nEsta acción no se puede deshacer. El usuario podrá volver a registrarse con el mismo email.`)) return;
-    const res = await fetch(`/api/admin-auth?action=deleteUser&id=${u.id}`, { method: 'DELETE', headers: authHeader() });
-    const d = await res.json();
-    if (d.error) { flash(d.error, 'err'); return; }
-    flash(`Usuario "${u.username}" eliminado`);
-    loadAll();
+    if (!confirm(`¿Eliminar permanentemente a "${u.username}"?\n\nSe revocarán sus sesiones y su conexión de Google Calendar (si existe), se eliminarán los permisos, recursos de agenda y evidencia legal asociados a la cuenta, y se conservarán los códigos de registro quitando la referencia al usuario. Los datos clínicos de la clínica no se eliminan. Esta acción no se puede deshacer; el usuario podrá volver a registrarse con el mismo email.`)) return;
+    try {
+      const res = await fetch(`/api/admin-auth?action=deleteUser&id=${u.id}`, { method: 'DELETE', headers: authHeader() });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'No se pudo eliminar el usuario');
+      flash(`Usuario "${u.username}" eliminado`);
+      loadAll();
+    } catch (error) {
+      flash(error instanceof Error ? error.message : 'No se pudo eliminar el usuario', 'err');
+    }
   };
 
   const setClinicActive = async (clinic: Clinic) => {

@@ -50,7 +50,10 @@ const DEVELOPER_EMAIL   = 'bolt2525@gmail.com';
 async function revokeGoogleRefreshToken(refreshToken) {
   const token = String(refreshToken || '').trim();
   if (!token) return;
-  const response = await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(token)}`, { method: 'POST' });
+  const response = await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(token)}`, {
+    method: 'POST',
+    signal: AbortSignal.timeout(8000),
+  });
   if (!response.ok && response.status !== 400) {
     throw new Error(`Google no confirmó la revocación (HTTP ${response.status})`);
   }
@@ -1536,19 +1539,32 @@ async function sendResetCredentials(requestUser, body) {
 }
 
 async function deleteUser(requestUser, userId) {
-  if (!userId) return { error: 'id requerido' };
-  if (requestUser.role === 'clinic_admin') {
-    const t = await sql`SELECT clinic_id, role FROM clinic_users WHERE id = ${userId}`;
-    if (!t.rows.length || t.rows[0].clinic_id !== requestUser.clinic_id) return { error: 'Sin permiso' };
-    if (t.rows[0].role === 'master_admin') return { error: 'Sin permiso' };
-  } else if (requestUser.role !== 'master_admin') {
+  const id = parsePostgresIntegerId(userId);
+  if (!id) return { error: 'id inválido' };
+  if (!requireRole(requestUser, 'master_admin', 'clinic_admin')) return { error: 'Sin permiso' };
+
+  const target = await sql`SELECT id, clinic_id, role FROM clinic_users WHERE id = ${id}`;
+  if (!target.rows.length) return { error: 'Usuario no encontrado' };
+  if (target.rows[0].role === 'master_admin' || String(target.rows[0].id) === String(requestUser.id))
+    return { error: 'No se puede eliminar una cuenta master_admin ni la sesión actual.' };
+  if (requestUser.role === 'clinic_admin' && target.rows[0].clinic_id !== requestUser.clinic_id)
     return { error: 'Sin permiso' };
+
+  const oauth = await sql`SELECT refresh_token FROM clinic_oauth_tokens WHERE clinic_user_id = ${id}`;
+  try {
+    await revokeGoogleRefreshToken(oauth.rows[0]?.refresh_token);
+  } catch {
+    throw Object.assign(new Error('No se pudo revocar Google; el usuario no fue eliminado.'), { status: 502 });
   }
+
   // Limpiar FK sin CASCADE antes del DELETE
-  await sql`UPDATE invite_links SET used_by = NULL WHERE used_by = ${userId}`;
-  await sql`UPDATE invite_links SET created_by = NULL WHERE created_by = ${userId}`;
-  await sql`DELETE FROM admin_sessions WHERE clinic_user_id = ${userId}`;
-  await sql`DELETE FROM clinic_users WHERE id = ${userId}`;
+  await sql`UPDATE invite_links SET used_by = NULL WHERE used_by = ${id}`;
+  await sql`UPDATE invite_links SET created_by = NULL WHERE created_by = ${id}`;
+  await sql`UPDATE registration_codes SET used_by = NULL WHERE used_by = ${id}`;
+  await sql`UPDATE registration_codes SET created_by = NULL WHERE created_by = ${id}`;
+  await sql`DELETE FROM admin_sessions WHERE clinic_user_id = ${id}`;
+  const deleted = await sql`DELETE FROM clinic_users WHERE id = ${id} RETURNING id`;
+  if (!deleted.rows.length) return { error: 'Usuario no encontrado' };
   return { success: true };
 }
 
@@ -2817,6 +2833,12 @@ async function handleAdminRequest(req, res) {
     if (user.role !== 'master_admin' && user.clinic_id &&
         !subscriptionRequestAllowed(user.subscription_lifecycle, user.role, req))
       return res.status(403).json({ success: false, error: 'Solo recuperación de datos disponible.' });
+    if (action === 'deleteUser') {
+      if (!requireRole(user, 'master_admin', 'clinic_admin')) return res.status(403).json({ error: 'Sin permiso' });
+      if (req.method !== 'DELETE') return res.status(405).json({ error: 'Método no permitido' });
+      if (!parsePostgresIntegerId(req.query.id || req.body?.id))
+        return res.status(400).json({ error: 'id inválido' });
+    }
     if (action === 'saveMasterContractRecord') {
       if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master_admin' });
       if (req.method !== 'POST') return res.status(405).json({ error: 'Método no permitido' });
@@ -2969,9 +2991,12 @@ async function handleAdminRequest(req, res) {
     }
     if (action === 'deleteUser') {
       if (!requireRole(user, 'master_admin', 'clinic_admin')) return res.status(403).json({ error: 'Sin permiso' });
+      if (req.method !== 'DELETE') return res.status(405).json({ error: 'Método no permitido' });
       const userId = req.query.id || req.body?.id;
       const result = await deleteUser(user, userId);
-      return res.status(result.error ? 400 : 200).json(result);
+      return res.status(result.error
+        ? result.error === 'Sin permiso' ? 403 : result.error === 'Usuario no encontrado' ? 404 : 400
+        : 200).json(result);
     }
 
     // Gestión de clínicas (solo master_admin)
