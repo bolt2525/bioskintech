@@ -27,6 +27,7 @@ import { sessionPolicy } from '../lib/admin-auth.js';
 import { subscriptionLifecycle, subscriptionRequestAllowed, renewClinicSubscription, requireSubscriptionOperation } from '../lib/subscription-lifecycle.js';
 import { verifyTurnstileToken } from '../lib/turnstile.js';
 import { initWhatsAppChannels, withWhatsAppChannelLock } from '../lib/whatsapp-channels.js';
+import { validateMasterContractRecord } from '../lib/master-contract-records.js';
 
 const writerContext = new AsyncLocalStorage();
 const sql = (strings, ...values) => {
@@ -2816,6 +2817,46 @@ async function handleAdminRequest(req, res) {
     if (user.role !== 'master_admin' && user.clinic_id &&
         !subscriptionRequestAllowed(user.subscription_lifecycle, user.role, req))
       return res.status(403).json({ success: false, error: 'Solo recuperación de datos disponible.' });
+    if (action === 'saveMasterContractRecord') {
+      if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master_admin' });
+      if (req.method !== 'POST') return res.status(405).json({ error: 'Método no permitido' });
+      res.setHeader('Cache-Control', 'no-store, private');
+      const validation = validateMasterContractRecord(req.body?.contract);
+      if (validation.error) return res.status(400).json({ error: validation.error });
+      const { record } = validation;
+      const inserted = await sql`
+        INSERT INTO master_contract_records
+          (contract_reference, client_name, tax_id, clinic_name, contact_email, legal_version,
+           annual_total, contract_data, created_by_user_id)
+        VALUES
+          (${record.contractReference}, ${record.clientName}, ${record.taxId}, ${record.clinicName},
+           ${record.contactEmail}, ${record.legalVersion}, ${record.annualTotal},
+           ${JSON.stringify(record.contractData)}::jsonb, ${user.id})
+        ON CONFLICT (contract_reference) DO NOTHING
+        RETURNING id
+      `;
+      if (!inserted.rows.length) {
+        const existing = await sql`
+          SELECT id, contract_data = ${JSON.stringify(record.contractData)}::jsonb AS same_data
+          FROM master_contract_records
+          WHERE contract_reference = ${record.contractReference}
+        `;
+        if (!existing.rows[0]?.same_data) {
+          return res.status(409).json({ error: 'Ya existe un registro con esa referencia y datos diferentes.' });
+        }
+        return res.status(200).json({
+          success: true,
+          id: existing.rows[0].id,
+          contractReference: record.contractReference,
+          alreadySaved: true,
+        });
+      }
+      return res.status(201).json({
+        success: true,
+        id: inserted.rows[0].id,
+        contractReference: record.contractReference,
+      });
+    }
     let coexistenceTargetId;
     if (action === 'setWhatsAppCoexistenceEnabled') {
       if (!requireRole(user, 'master_admin')) return res.status(403).json({ error: 'Solo master admin' });

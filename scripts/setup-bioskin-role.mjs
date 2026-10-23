@@ -81,7 +81,7 @@ const CLINIC_USERS_READABLE = [
 const FORBIDDEN_TABLES = [
   'admin_sessions', 'clinic_oauth_tokens', 'login_otp', 'password_setup_tokens',
   'trusted_devices', 'registration_codes', 'invite_links', 'oauth_states',
-  'subscriptions', 'clinics', 'clinic_features', 'clinic_notifications',
+  'subscriptions', 'master_contract_records', 'clinics', 'clinic_features', 'clinic_notifications',
   'consent_templates', 'clinic_consent_templates', 'legal_acceptances',
   'whatsapp_messages', 'whatsapp_contacts', 'whatsapp_bot_state', 'wa_short_links',
   'user_whatsapp_channels', 'whatsapp_signup_attempts',
@@ -170,6 +170,9 @@ async function run() {
       await client.query(`GRANT SELECT (${cols.join(', ')}) ON clinic_users TO bioskin_app`);
     }
     await client.query(`GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO bioskin_app`);
+    if (existingTables.has('master_contract_records')) {
+      await client.query('REVOKE ALL ON SEQUENCE master_contract_records_id_seq FROM bioskin_app');
+    }
     await client.query('COMMIT');
     console.log(`✅ Grants mínimos aplicados: ${writable.length} tablas con DML, ${READONLY_TABLES.length} de solo lectura, clinic_users por columna`);
 

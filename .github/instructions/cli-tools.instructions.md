@@ -57,6 +57,7 @@ node --env-file=.env.local scripts/<nombre>.mjs
 | `migrate-consent-signing.mjs` | Migración transaccional de Cédula/RUC, OTP, sesiones, evidencia y backfill de firmas legacy. |
 | `migrate-inventory-archive.mjs` | Añade estado reversible de archivado y restauración a productos. |
 | `migrate-inventory-sales.mjs` | Añade importes históricos de ventas e índice por clínica/fecha. |
+| `migrate-master-contract-records.mjs` | Crea el registro privado de contratos de Master Admin en Neon. |
 
 **Ejemplo: secuencia completa de reset + reinit:**
 ```powershell

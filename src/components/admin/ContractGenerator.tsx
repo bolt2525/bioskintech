@@ -136,21 +136,27 @@ export default function ContractGenerator() {
   const [selectedModules, setSelectedModules] = useState<string[]>(MODULES.map(module => module.id));
   const [moduleError, setModuleError] = useState('');
   const [printError, setPrintError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [savedReference, setSavedReference] = useState('');
 
   const updateClient = (field: keyof ClientFormState, value: string) => {
+    setSavedReference('');
     setClient(current => ({ ...current, [field]: value }));
   };
 
   const updateOption = <K extends keyof ContractOptions>(field: K, value: ContractOptions[K]) => {
+    setSavedReference('');
     setOptions(current => ({ ...current, [field]: value }));
   };
 
   const updatePrice = (field: keyof ContractPrices, value: string) => {
+    setSavedReference('');
     setPrices(current => ({ ...current, [field]: value }));
   };
 
   const toggleModule = (id: string) => {
     setModuleError('');
+    setSavedReference('');
     setSelectedModules(current => current.includes(id)
       ? current.filter(module => module !== id)
       : [...current, id]);
@@ -185,10 +191,20 @@ export default function ContractGenerator() {
     };
   }, []);
 
-  const printContract = () => {
+  const openPrintDialog = () => {
+    document.body.classList.add('master-contract-printing');
+    try {
+      window.print();
+    } catch (error) {
+      document.body.classList.remove('master-contract-printing');
+      setPrintError(error instanceof Error ? `No se pudo abrir la impresión: ${error.message}` : 'No se pudo abrir la impresión.');
+    }
+  };
+
+  const printContract = async () => {
     setPrintError('');
     const form = formRef.current;
-    if (!form) return;
+    if (!form || isSaving) return;
     const requiredNames = ['contractReference', 'clientName', 'taxId', 'address', 'clinicName', 'email'];
     if (!naturalPerson) requiredNames.push('representative', 'representativeId', 'representativeRole');
     if (options.support) requiredNames.push('supportTerms');
@@ -220,12 +236,31 @@ export default function ContractGenerator() {
       return;
     }
     if (!startDate || !endDate) return;
-    document.body.classList.add('master-contract-printing');
+    if (savedReference && savedReference === client.contractReference) {
+      openPrintDialog();
+      return;
+    }
+
+    setIsSaving(true);
     try {
-      window.print();
+      const response = await fetch('/api/admin-auth?action=saveMasterContractRecord', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${sessionStorage.getItem('adminSessionToken') || ''}`,
+        },
+        body: JSON.stringify({
+          contract: { client, chatbot, options, prices, selectedModules, legalVersion: LEGAL_VERSION },
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'No se pudo guardar el registro del contrato.');
+
+      setSavedReference(client.contractReference);
     } catch (error) {
-      document.body.classList.remove('master-contract-printing');
-      setPrintError(error instanceof Error ? `No se pudo abrir la impresión: ${error.message}` : 'No se pudo abrir la impresión.');
+      setPrintError(error instanceof Error ? error.message : 'No se pudo guardar o imprimir el contrato.');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -248,8 +283,19 @@ export default function ContractGenerator() {
             margin: 0 !important;
             color: #111827 !important;
             background: white !important;
+            font-family: Arial, Helvetica, sans-serif !important;
+            print-color-adjust: economy;
+            -webkit-print-color-adjust: economy;
           }
-          body.master-contract-printing .master-contract-preview * { color: #111827 !important; }
+          body.master-contract-printing .master-contract-preview * {
+            color: #111827 !important;
+            font-family: Arial, Helvetica, sans-serif !important;
+            background-color: transparent !important;
+            box-shadow: none !important;
+            print-color-adjust: economy;
+            -webkit-print-color-adjust: economy;
+          }
+          body.master-contract-printing .master-contract-preview { background: white !important; }
           body.master-contract-printing .contract-print-only { display: block !important; }
           body.master-contract-printing .contract-annex { break-before: page; }
           body.master-contract-printing .legal-print-copy { break-before: page; }
@@ -270,7 +316,7 @@ export default function ContractGenerator() {
           body.master-contract-printing .contract-party-block,
           body.master-contract-printing .contract-signature-section { break-inside: avoid; }
           body.master-contract-printing .master-contract-preview table { font-size: 9pt !important; }
-          body.master-contract-printing .master-contract-preview { overflow-wrap: anywhere; print-color-adjust: exact; }
+          body.master-contract-printing .master-contract-preview { overflow-wrap: anywhere; }
         }
       `}</style>
 
@@ -281,17 +327,17 @@ export default function ContractGenerator() {
             Generador de contrato
           </h2>
           <p className="mt-1 max-w-3xl text-sm text-gray-600">
-            Complete los datos y revise las condiciones particulares antes de imprimir o guardar como PDF.
-            Esta pantalla no guarda contratos ni crea un historial.
+            Complete los datos y revise las condiciones particulares. Primero guarde el registro en Neon; después podrá abrir la impresión. El PDF se genera en su navegador.
           </p>
         </div>
         <button
           type="button"
           onClick={printContract}
+          disabled={isSaving}
           className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#a77d50] px-4 py-2 text-sm font-semibold text-white hover:bg-[#89633d] focus:outline-none focus:ring-2 focus:ring-[#a77d50] focus:ring-offset-2"
         >
-          <Printer aria-hidden="true" className="h-4 w-4" />
-          Imprimir / Guardar como PDF
+          <FileText aria-hidden="true" className="h-4 w-4" />
+          {isSaving ? 'Guardando registro…' : savedReference === client.contractReference && savedReference ? 'Imprimir / Guardar como PDF' : 'Guardar registro'}
         </button>
       </header>
 
@@ -419,7 +465,7 @@ export default function ContractGenerator() {
             </div>
             {moduleError && <p className="mt-3 text-sm text-red-600" role="alert">{moduleError}</p>}
             <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-[#c5a075]/50 bg-[#deb887]/10 p-4">
-              <input type="checkbox" checked={chatbot} onChange={event => setChatbot(event.target.checked)} className="mt-1 h-4 w-4 accent-[#a77d50] focus:ring-[#a77d50]" />
+              <input type="checkbox" checked={chatbot} onChange={event => { setSavedReference(''); setChatbot(event.target.checked); }} className="mt-1 h-4 w-4 accent-[#a77d50] focus:ring-[#a77d50]" />
               <span>
                 <span className="block text-sm font-semibold text-gray-800">Chatbot WhatsApp del sistema (opcional)</span>
                 <span className="mt-0.5 block text-xs text-gray-700">Solo se incluye si se selecciona. Precio anual configurable.</span>
@@ -494,8 +540,9 @@ export default function ContractGenerator() {
           </dl>
           <p className="mt-4 text-xs leading-relaxed text-gray-600">El precio de la plataforma y el recargo de PayPhone deben coincidir con la oferta y el importe confirmado por la pasarela.</p>
           {printError && <p className="mt-3 text-sm text-red-600" role="alert">{printError}</p>}
-          <button type="button" onClick={printContract} className="mt-5 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#a77d50] px-4 py-2 text-sm font-semibold text-white hover:bg-[#89633d] focus:outline-none focus:ring-2 focus:ring-[#a77d50] focus:ring-offset-2">
-            <Printer aria-hidden="true" className="h-4 w-4" /> Imprimir / Guardar como PDF
+          {savedReference && savedReference === client.contractReference && <p className="mt-3 text-sm text-green-700" role="status">Registro {savedReference} guardado en Neon. Pulse nuevamente para imprimir o guardar como PDF.</p>}
+          <button type="button" onClick={printContract} disabled={isSaving} className="mt-5 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#a77d50] px-4 py-2 text-sm font-semibold text-white hover:bg-[#89633d] focus:outline-none focus:ring-2 focus:ring-[#a77d50] focus:ring-offset-2 disabled:cursor-wait disabled:opacity-70">
+            <Printer aria-hidden="true" className="h-4 w-4" /> {isSaving ? 'Guardando registro…' : savedReference === client.contractReference && savedReference ? 'Imprimir / Guardar como PDF' : 'Guardar registro'}
           </button>
         </aside>
       </form>
