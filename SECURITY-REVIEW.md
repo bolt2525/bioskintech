@@ -59,6 +59,7 @@ La revisión inicial encontró cinco hallazgos. Los tres primeros se publicaron 
 - **Alta, confianza 9/10, corregida:** la coincidencia telefónica podía retirar contactos, estados o enlaces de otra clínica al liberar identificadores. Las altas/ediciones rechazan contactos activos extranjeros y la purga aborta con 409 y rollback ante contactos, estados anidados o enlaces scoped extranjeros. Las regresiones comprueban que ninguna retirada WA ocurre.
 - La reserva compartida del procesamiento WhatsApp utiliza locks transaccionales y mantiene la conexión hasta COMMIT/ROLLBACK; no usa locks de sesión incompatibles con pooler.
 - La UI distingue vista previa, inicio irreversible con alias liberados y borrado completo. Legacy manual exige autorización expresa y plazo cumplido; cron legacy sigue bloqueado.
+- Validación final: 131/131 pruebas focales y lint backend aprobados, build Vite aprobado. Dos conexiones Neon reales verificaron exclusión transaccional y liberación tras COMMIT, sin escribir filas clínicas. Preview real de solo lectura confirmó que la clínica objetivo solo sigue bloqueada por estar activa.
 
 - Pruebas focales locales: **66/66 aprobadas** con `node --experimental-test-module-mocks --test tests/admin-auth-atomicity.test.mjs tests/clinic-purge.test.mjs tests/purge-whatsapp.test.mjs tests/admin-clinic-purge-ui.test.mjs`.
 - ESLint focal de los archivos backend y pruebas: aprobado.

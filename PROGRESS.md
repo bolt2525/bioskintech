@@ -1,5 +1,9 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-23 **Publicado y operativo:** commit `a5d166a`, push confirmado y Vercel Production Ready. Migración final Neon aplicada dos veces (idempotente); 131/131 tests, lint focal y build aprobados. Producción 200, preview sin sesión 401; preview Neon de solo lectura confirma que solo falta desactivar la clínica. No se inició ninguna purga ni se eliminaron filas clínicas u objetos R2.
+
+Las entradas siguientes conservan la evidencia previa al despliegue y la evolución de esta tarea.
+
 - ✅ 2026-10-23 Reutilización al iniciar purga: UI Master y backend integrados; legacy manual explícita, sin automática legacy. Corregido conflicto WhatsApp entre clínicas y lock compatible con pooler. Build y regresiones focales aprobados; reserva transaccional y permisos del archivo comprobados en Neon real sin cambiar filas clínicas.
 - ✅ 2026-10-23 Migración online en dos pasos: `--clinic-identity-only --prepare` añade esquema conservando unicidad antigua; después de desplegar, `--clinic-identity-only` habilita las generaciones. Preparación Neon aplicada; no se inició ninguna purga.
 
