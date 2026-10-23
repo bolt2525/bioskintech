@@ -1,5 +1,13 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-23 Preflight de purga optimizado: counts y verificaciones FK agrupados por `UNION ALL`, `EXISTS` para referencias y una sola lectura de atributos por plan. Scopes, JOIN compuestos, fail-closed, límites y presupuestos intactos. 30 pruebas dirigidas aprobadas. Preview Neon real con `BEGIN READ ONLY` confirmado: 200 en 4.913 ms, 39 sentencias contabilizadas (antes 503 en 12.574 ms/111); un lote FK y una lectura de atributos. Clínica sigue no elegible por actividad/contrato/vencimiento sin cambiar estado/fechas; no se ejecutó `purgeClinic`, mutaciones Neon/R2 ni despliegue.
+
+- ✅ 2026-10-23 Preview de purga: FKs no-CASCADE de `clinic_users` fuera de tablas eliminables pasan al chequeo global por referencias existentes; `registration_codes` sin referencias ya no bloquea por su sola definición. Con referencias sigue 409; cascadas no cubiertas y `whatsapp_messages` siguen fail-closed. Pruebas locales para ausencia/presencia y reglas FK; sin cambios de contactos/constancias legales ni operaciones de producción.
+
+- ✅ 2026-10-23 Purga WhatsApp — edge HIGH contacto-only: `retain_whatsapp_cluster` detecta links con UUID scoped válido contradictorio antes de seleccionar contactos. Conserva contacto completo (nombre/teléfono), todo historial y estados/links implicados para no perder evidencia entre purgas A→B; filas exclusivas independientes siguen eliminables. Sin cambios adicionales de auth/cuentas ni UI. 26 pruebas dirigidas locales aprobadas; cubren contacto-only A→B→A, revalidación bajo lock, rollback y contrato UI. Sin operaciones Neon/R2 ni producción.
+
+- ✅ 2026-10-23 Purga WhatsApp: resueltos hallazgos HIGH/MED. `preserve_ambiguous` retiene cada contacto conflictivo con todo su historial y estados/links relacionados, sin bloquear filas exclusivas independientes; mensajes de autor objetivo con contacto huérfano/sin clínica permanecen intactos. Por autorización expresa, tombstones de `clinic_users` conservan `phone` y `whatsapp_staff_phone` como evidencia para futuras purgas A→B, manteniendo credenciales/tokenes limpios e identidad desactivada. Preview/estados separan eliminables y retenidos sin PHI; cambios de UI del usuario preservados e integrados por contrato. Revalidación SQL bajo locks, idempotencia y límites conservados; sin cambios de plazos/ciclo de vida ni suscripciones reales. 24 pruebas dirigidas locales aprobadas, incluidas A→B, clusters, huérfanos y rollback; sin operaciones Neon/R2, despliegue ni purga de producción.
+
 - ✅ 2026-10-23 Usuarios: desbloqueo seguro de eliminación.
 
 - ✅ 2026-10-23 Contrato persistente; PDF optimizado.

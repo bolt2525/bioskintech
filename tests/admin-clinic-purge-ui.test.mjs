@@ -24,6 +24,15 @@ test('la vista previa consulta el alcance sin caché y valida la respuesta', () 
   assert.match(dashboard, /Object\.entries\(clinicPurgePreview\.counts\)/);
 });
 
+test('la UI integrada conserva validación y conteos WhatsApp sin equiparar retenidos con propiedad', () => {
+  assert.match(dashboard, /!isClinicPurgeWhatsappSummary\(value\.whatsapp\)/);
+  assert.match(dashboard, /value\.policy === 'preserve_ambiguous'/);
+  assert.match(dashboard, /Object\.entries\(clinicPurgePreview\.whatsapp\.deletable\)/);
+  assert.match(dashboard, /Object\.entries\(clinicPurgePreview\.whatsapp\.retained\)/);
+  assert.match(dashboard, /sus conteos no significan que pertenezcan a esta clínica/);
+  assert.match(dashboard, /Solo se eliminan registros con atribución exclusiva verificable/);
+});
+
 test('la purga exige slug exacto, autorización, retención y motivo antes del POST', () => {
   assert.match(dashboard, /clinicPurgeConfirmation === clinicPurgePreview\.requiredConfirmation/);
   assert.match(dashboard, /clinicPurgeAuthorized && clinicPurgeRetentionConfirmed/);

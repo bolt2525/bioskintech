@@ -66,6 +66,13 @@ type ClinicPurgePreview = {
   clinic: { id: string; name: string; slug: string; is_active: boolean; subscription_expires_at?: string | null };
   purge: ClinicPurgeJob | null;
   counts: Record<string, number>;
+  whatsapp: {
+    policy: 'preserve_ambiguous';
+    blocked: boolean;
+    deletable: Record<'whatsapp_contacts' | 'whatsapp_messages' | 'whatsapp_bot_state' | 'wa_short_links', number>;
+    retained: Record<'whatsapp_contacts' | 'whatsapp_messages' | 'whatsapp_bot_state' | 'wa_short_links', number>;
+    retainedScope: 'GLOBAL_AMBIGUOUS_NOT_TENANT_OWNERSHIP';
+  };
   eligible: boolean;
   reasons: string[];
   requiredConfirmation: string;
@@ -77,6 +84,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function isClinicPurgeWhatsappSummary(value: unknown): value is ClinicPurgePreview['whatsapp'] {
+  const keys = ['whatsapp_contacts', 'whatsapp_messages', 'whatsapp_bot_state', 'wa_short_links'];
+  const validCounts = (counts: unknown) => isRecord(counts) &&
+    keys.every(key => Number.isSafeInteger(counts[key]) && Number(counts[key]) >= 0);
+  return isRecord(value) && value.policy === 'preserve_ambiguous' &&
+    typeof value.blocked === 'boolean' && value.retainedScope === 'GLOBAL_AMBIGUOUS_NOT_TENANT_OWNERSHIP' &&
+    validCounts(value.deletable) && validCounts(value.retained);
+}
+
 function isClinicPurgePreview(value: unknown): value is ClinicPurgePreview {
   if (!isRecord(value) || value.success !== true || typeof value.eligible !== 'boolean' ||
       typeof value.complete !== 'boolean' || typeof value.requiredConfirmation !== 'string' ||
@@ -85,6 +101,7 @@ function isClinicPurgePreview(value: unknown): value is ClinicPurgePreview {
       typeof value.clinic.name !== 'string' || typeof value.clinic.slug !== 'string' ||
       typeof value.clinic.is_active !== 'boolean' || !isRecord(value.counts) ||
       !Object.values(value.counts).every(count => typeof count === 'number' && Number.isFinite(count)) ||
+      !isClinicPurgeWhatsappSummary(value.whatsapp) ||
       !isRecord(value.retainedBackups) || typeof value.retainedBackups.prefix !== 'string' ||
       typeof value.retainedBackups.immutableDays !== 'number' ||
       typeof value.retainedBackups.retentionDays !== 'number' || typeof value.retainedBackups.note !== 'string') return false;
@@ -3912,6 +3929,31 @@ export default function AdminMasterDashboard() {
                   <p className="mt-2 text-xs text-gray-600">
                     En R2 se procesan fotos clínicas y objetos temporales/anuales bajo los prefijos de la clínica. La vista previa no informa un conteo exacto de objetos R2. Se conserva la identidad de la clínica y el registro mínimo de auditoría.
                   </p>
+                  <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                    <h5 className="text-xs font-semibold text-amber-950">WhatsApp: preservación de datos ambiguos</h5>
+                    <p className="mt-1 text-xs text-amber-900">
+                      Los datos ambiguos se conservan y sus conteos no significan que pertenezcan a esta clínica. Solo se eliminan registros con atribución exclusiva verificable.
+                    </p>
+                    {clinicPurgePreview.whatsapp.blocked && (
+                      <p role="alert" className="mt-1 text-xs font-semibold text-red-800">
+                        Hay registros atribuidos a esta clínica con referencias cruzadas; la eliminación de WhatsApp queda bloqueada para revisión asistida.
+                      </p>
+                    )}
+                    <ul className="mt-2 grid grid-cols-1 gap-1.5 text-xs text-gray-700 sm:grid-cols-2">
+                      {Object.entries(clinicPurgePreview.whatsapp.deletable).map(([table, count]) => (
+                        <li key={`deletable-${table}`} className="flex justify-between gap-3 rounded bg-white px-2 py-1.5">
+                          <span>Verificados · {table}</span>
+                          <span className="shrink-0 font-semibold">{count.toLocaleString('es-EC')}</span>
+                        </li>
+                      ))}
+                      {Object.entries(clinicPurgePreview.whatsapp.retained).map(([table, count]) => (
+                        <li key={`retained-${table}`} className="flex justify-between gap-3 rounded bg-white px-2 py-1.5">
+                          <span>Ambiguos conservados · {table}</span>
+                          <span className="shrink-0 font-semibold">{count.toLocaleString('es-EC')}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 </section>
 
                 <section aria-labelledby="clinic-purge-backups" className="rounded-xl border border-blue-200 bg-blue-50 p-3">

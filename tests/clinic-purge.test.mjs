@@ -21,6 +21,7 @@ function database(options = {}) {
       .map(table_name => ({ table_name, udt_name: 'uuid' })),
     statements: [], sessionsRevoked: false, signingRevoked: false, lifecyclePersisted: false,
     annualChecks: 0, annualDeadlines: [],
+    waLocks: 0,
     schedule: null, wa: structuredClone(options.wa || null), receipts: structuredClone(options.receipts || []),
   };
   let snapshot;
@@ -30,6 +31,10 @@ function database(options = {}) {
       if (sql === 'BEGIN') { snapshot = structuredClone({ job: state.job, clinic: state.clinic, counts: state.counts,
         schedule: state.schedule, wa: state.wa, receipts: state.receipts }); return { rows: [] }; }
       if (sql === 'ROLLBACK') { Object.assign(state, snapshot); return { rows: [] }; }
+      if (sql.startsWith('LOCK TABLE') && sql.includes('"wa_short_links"')) {
+        state.waLocks++;
+        options.onWhatsAppLock?.(state);
+      }
       if (sql === 'COMMIT' || sql.startsWith('SET LOCAL') || sql.startsWith('LOCK TABLE')) return { rows: [] };
       if (sql.includes('pg_try_advisory_xact_lock')) return { rows: [{ acquired: !options.writerActive }] };
       if (sql.startsWith('SELECT c.id FROM clinics c'))
@@ -68,11 +73,25 @@ function database(options = {}) {
       if (sql.includes('information_schema.columns') && sql.includes("table_name='clinic_settings'"))
         return { rows: ['general', 'treatments', 'email', 'agenda', 'finanzas', 'inventario', 'notificaciones']
           .map(column_name => ({ column_name, udt_name: 'jsonb' })) };
-      if (sql.includes('information_schema.columns') && sql.includes("table_name='clinic_users'")) return { rows: [] };
+      if (sql.includes('information_schema.columns') && sql.includes("table_name='clinic_users'"))
+        return { rows: state.wa ? ['phone', 'whatsapp_staff_phone', 'google_refresh_token', 'password_reset_token']
+          .map(column_name => ({ column_name, is_nullable: 'YES' })) : [] };
       if (sql.includes('information_schema.columns')) return { rows: state.columns };
       if (sql.includes('FROM pg_constraint')) return { rows: options.foreignKeys || [] };
       if (sql.includes('FROM pg_attribute')) return { rows: options.attrs || [] };
+      if (/^SELECT \d+ AS check_id WHERE EXISTS/.test(sql))
+        return { rows: sql.split('\nUNION ALL\n').flatMap(branch => {
+          const check_id = Number(branch.match(/^SELECT (\d+)/)[1]);
+          const child = branch.match(/FROM "([^"]+)"/)[1];
+          const referenced = branch.includes('clinic_id IS DISTINCT')
+            ? (options.crossedTables ? options.crossedTables.includes(child) : options.crossed)
+            : state.counts[child];
+          return referenced ? [{ check_id }] : [];
+        }) };
       if (sql.includes('JOIN') && sql.includes('clinic_id IS DISTINCT')) return { rows: options.crossed ? [{}] : [] };
+      if (sql.startsWith("SELECT '") && sql.includes('AS table_name,count(*) AS count'))
+        return { rows: [...sql.matchAll(/SELECT '([a-z_]+)' AS table_name,count\(\*\) AS count/g)]
+          .map(([, table_name]) => ({ table_name, count: String(state.counts[table_name] || 0) })) };
       if (sql.includes('count(*) AS count')) {
         const table = sql.match(/FROM "([^"]+)"/)[1];
         return { rows: [{ count: state.counts[table] || 0 }] };
@@ -83,7 +102,14 @@ function database(options = {}) {
         return { rows: [] };
       }
       if (sql.startsWith('UPDATE admin_sessions')) { state.sessionsRevoked = true; return { rows: [] }; }
-      if (sql.startsWith('UPDATE clinic_users SET is_active=false')) return { rows: [] };
+      if (sql.startsWith('UPDATE clinic_users SET is_active=false')) {
+        for (const user of state.wa?.users || []) {
+          if (user.clinic_id !== params[0]) continue;
+          Object.assign(user, { is_active: false, password_hash: '', salt: null, hash_algo: null });
+          for (const match of sql.matchAll(/"([a-z_]+)"=NULL/g)) user[match[1]] = null;
+        }
+        return { rows: [] };
+      }
       if (sql.startsWith('UPDATE consent_forms SET signing_token=NULL')) {
         assert.equal(params[0], ID);
         state.signingRevoked = true;
@@ -99,7 +125,7 @@ function database(options = {}) {
       }
       if (sql.startsWith('DELETE FROM')) {
         if (options.sqlFails) throw Object.assign(new Error('synthetic FK failure'), { code: '23503' });
-        assert.equal(params[0], ID);
+        assert.equal(params[0], state.clinic.id);
         const table = sql.match(/DELETE FROM "([^"]+)"/)[1];
         state.counts[table] = 0;
         return { rows: [], rowCount: 1 };
@@ -381,6 +407,116 @@ test('unclassified dependents of retained identities block storage deletion befo
   assert.equal(storageCalls, 0);
 });
 
+test('preview batches tenant and auth counts in one scoped UNION ALL without changing limits', async () => {
+  const { pool, state, lifecycleDeps } = database({
+    columns: ['patients', 'clinical_photos', 'admin_sessions', 'clinic_users', 'clinic_settings']
+      .map(table_name => ({ table_name, udt_name: 'uuid' })),
+    counts: { patients: 12, clinical_photos: 34, admin_sessions: 2, login_otp: 3 },
+    foreignKeys: [{ child: 'login_otp', parent: 'clinic_users', delete_type: 'c',
+      child_columns: [2], parent_columns: [1], child_oid: 100, parent_oid: 50 }],
+    attrs: [{ attrelid: 50, attnum: 1, attname: 'id' }, { attrelid: 100, attnum: 2, attname: 'user_id' }],
+  });
+  const result = await clinicPurgePreview(ID, pool, { ...lifecycleDeps, now: () => NOW });
+  assert.equal(result.counts.patients, 12);
+  assert.equal(result.counts.clinical_photos, 34);
+  assert.equal(result.counts.admin_sessions, 2);
+  assert.equal(result.counts.login_otp, 3);
+  const queries = state.statements.filter(s => s.sql.includes('count(*) AS count'));
+  assert.equal(queries.length, 1);
+  assert.equal(queries[0].sql.split('UNION ALL').length, 4);
+  assert.match(queries[0].sql, /FROM "login_otp" c WHERE EXISTS \(SELECT 1 FROM clinic_users p WHERE p.clinic_id=\$1 AND c\."user_id"=p\."id"\)/);
+  assert.match(queries[0].sql, /FROM "admin_sessions" WHERE clinic_id=\$1 OR clinic_user_id IN \(SELECT id FROM clinic_users WHERE clinic_id=\$1\)/);
+  assert.match(queries[0].sql, /FROM "patients" WHERE clinic_id=\$1/);
+  assert.deepEqual(queries[0].params, [ID]);
+  assert.equal(state.statements.some(s => /^(DELETE|UPDATE|INSERT)/.test(s.sql)), false);
+});
+
+test('preview batches multiple FK checks and attributes while detecting any real reference', async () => {
+  const children = ['clinical_records', 'consultations', 'registration_codes', 'global_attributions'];
+  const foreignKeys = children.map((child, i) => ({
+    child, parent: i < 2 ? 'patients' : 'clinic_users', delete_type: 'a',
+    child_oid: 100 + i, parent_oid: i < 2 ? 50 : 60,
+    child_columns: i === 0 ? [2, 3] : [2], parent_columns: i === 0 ? [1, 3] : [1],
+  }));
+  const attrs = [
+    { attrelid: 50, attnum: 1, attname: 'id' }, { attrelid: 50, attnum: 3, attname: 'clinic_id' },
+    { attrelid: 60, attnum: 1, attname: 'id' },
+    ...children.map((_, i) => ({ attrelid: 100 + i, attnum: 2, attname: i < 2 ? 'patient_id' : 'user_id' })),
+    { attrelid: 100, attnum: 3, attname: 'clinic_id' },
+  ];
+  for (const reference of [null, ...children]) {
+    const { pool, state, lifecycleDeps } = database({
+      columns: ['patients', 'clinical_records', 'consultations', 'clinic_users', 'clinic_settings']
+        .map(table_name => ({ table_name, udt_name: 'uuid' })),
+      foreignKeys, attrs, crossedTables: reference ? [reference] : [],
+      counts: { registration_codes: reference === 'registration_codes' ? 1 : 0,
+        global_attributions: reference === 'global_attributions' ? 1 : 0 },
+    });
+    const preview = () => clinicPurgePreview(ID, pool, { ...lifecycleDeps, now: () => NOW });
+    if (reference) await assert.rejects(preview(), error => error.status === 409 &&
+      (children.indexOf(reference) < 2 ? /Referencias entre clínicas/ : /atribuciones globales/).test(error.message));
+    else assert.equal((await preview()).eligible, true);
+    const checks = state.statements.filter(s => s.sql.includes('AS check_id WHERE EXISTS'));
+    assert.equal(checks.length, 1);
+    assert.equal(checks[0].sql.split('UNION ALL').length, 4);
+    assert.deepEqual(checks[0].params, [ID]);
+    assert.match(checks[0].sql, /c\."patient_id"=p\."id" AND c\."clinic_id"=p\."clinic_id"/);
+    assert.equal(state.statements.filter(s => s.sql.includes('FROM pg_attribute')).length, 1);
+    assert.equal(state.statements.some(s => /^(DELETE|UPDATE|INSERT)/.test(s.sql)), false);
+  }
+  for (const invalid of ['missing-column', 'invalid-identifier']) {
+    const { pool, lifecycleDeps } = database({
+      foreignKeys: invalid === 'invalid-identifier'
+        ? [{ ...foreignKeys[2], child: 'registration_codes";invalid' }] : [foreignKeys[2]],
+      attrs: invalid === 'missing-column' ? [] : attrs,
+    });
+    await assert.rejects(clinicPurgePreview(ID, pool, { ...lifecycleDeps, now: () => NOW }),
+      error => error.status === 409 && /no verificable/.test(error.message));
+  }
+});
+
+test('preview non-CASCADE registration references block only when scoped references exist', async () => {
+  for (const delete_type of ['a', 'r', 'n', 'd']) {
+    for (const referenced of [false, true]) {
+      const { pool, state, lifecycleDeps } = database({
+        foreignKeys: [{ child: 'registration_codes', parent: 'clinic_users', delete_type,
+          child_columns: [2], parent_columns: [1], child_oid: 100, parent_oid: 50 }],
+        attrs: [{ attrelid: 50, attnum: 1, attname: 'id' },
+          { attrelid: 100, attnum: 2, attname: 'used_by_user_id' }],
+        counts: { registration_codes: referenced ? 1 : 0 },
+      });
+      const preview = () => clinicPurgePreview(ID, pool, { ...lifecycleDeps, now: () => NOW });
+      if (referenced) {
+        await assert.rejects(preview(), error => error.status === 409 && /atribuciones globales/.test(error.message));
+      } else {
+        const result = await preview();
+        assert.equal(result.eligible, true);
+        assert.equal(Object.hasOwn(result.counts, 'registration_codes'), false);
+      }
+      const check = state.statements.find(s => s.sql.includes('AS check_id WHERE EXISTS') && s.sql.includes('FROM "registration_codes"'));
+      assert.ok(check.sql.includes('JOIN "clinic_users" p ON c."used_by_user_id"=p."id"'));
+      assert.ok(check.sql.includes('WHERE p.clinic_id=$1 LIMIT 1'));
+      assert.deepEqual(check.params, [ID]);
+      assert.equal(state.statements.some(s => /^(DELETE|UPDATE|INSERT)/.test(s.sql)), false);
+      assert.equal(state.counts.registration_codes, referenced ? 1 : 0);
+    }
+  }
+});
+
+test('preview still rejects uncovered identity cascades and WhatsApp message FKs regardless of delete rule', async () => {
+  for (const [child, delete_type] of [
+    ['registration_codes', 'c'], ['whatsapp_messages', 'a'], ['whatsapp_messages', 'c'],
+  ]) {
+    const { pool, state, lifecycleDeps } = database({
+      foreignKeys: [{ child, parent: 'clinic_users', delete_type,
+        child_columns: [2], parent_columns: [1], child_oid: 100, parent_oid: 50 }],
+    });
+    await assert.rejects(clinicPurgePreview(ID, pool, { ...lifecycleDeps, now: () => NOW }),
+      error => error.status === 409 && /Dependencia de identidad no cubierta/.test(error.message));
+    assert.equal(state.statements.some(s => /^(DELETE|UPDATE|INSERT)/.test(s.sql)), false);
+  }
+});
+
 test('a batch never deletes more than 100 keys and cannot delete an unexpected key', async () => {
   const ready = { state: 'RUNNING', phase: 'PHOTOS', retryAfter: new Date(NOW - 1).toISOString(), deletedObjects: 0 };
   const { pool } = database({ job: ready });
@@ -475,6 +611,12 @@ test('automatic purge never treats demo, legacy or recovery states as paid-close
     const { pool, state, lifecycleDeps } = database({
       candidates: [{ id: ID }], lifecycle, clinic: { is_active: true },
     });
+    const report = await purgeExpiredClinics({ pool, now: () => NOW, budgetMs: 10000, ...lifecycleDeps });
+    assert.equal(report.skipped, 1);
+    assert.equal(state.job, null);
+    assert.equal(state.clinic.is_active, true);
+  }
+});
 
     test('manual confirmed purge cannot retroactively apply 30 or 45 days to legacy or paid unaccepted contracts', async () => {
       for (const policy of ['legacy','paid']) {
@@ -513,11 +655,16 @@ test('automatic purge never treats demo, legacy or recovery states as paid-close
       assert.deepEqual(state.wa.links, [wa.links[1]]);
       assert.deepEqual(state.receipts[0].payphone_response, { transactionId: 123 });
       assert.ok(state.statements.some(s => s.sql.includes('LOCK TABLE') && s.sql.includes('"wa_short_links"')));
-      assert.deepEqual(planWhatsAppPurge(ID, state.wa), { contactIds: [], statePhones: [], linkCodes: [] });
+      const left = planWhatsAppPurge(ID, state.wa);
+      assert.deepEqual(left.contactIds, []);
+      assert.deepEqual(left.statePhones, []);
+      assert.deepEqual(left.linkCodes, []);
+      assert.equal(left.summary.blocked, false);
+      assert.deepEqual(report.results[0].whatsapp, left.summary);
       assert.deepEqual(minimalSubscriptionReceipt(state.receipts[0].payphone_response), { transactionId: 123 });
     });
 
-    test('ambiguous WhatsApp attribution is durably BLOCKED for assisted review before any storage deletion', async () => {
+    test('global ambiguous WhatsApp links allow quiescing and are reported as retained', async () => {
       const { pool, state, lifecycleDeps } = database({
         lifecycle: { policy: 'paid', auto_purge_eligible: true, state: 'CLOSED',
           expires_at: new Date(NOW - 50 * DAY).toISOString(), recovery_ends_at: new Date(NOW - 5 * DAY).toISOString() },
@@ -527,15 +674,244 @@ test('automatic purge never treats demo, legacy or recovery states as paid-close
       const report = await purgeExpiredClinics({ pool, now: () => NOW, budgetMs: 15000, ...lifecycleDeps,
         list: async () => assert.fail('Never delete before ownership proof') });
       assert.equal(report.complete, false);
-      assert.equal(report.results[0].state, 'BLOCKED');
-      assert.equal(state.schedule.state, 'BLOCKED');
-      assert.equal(state.schedule.reason, 'ASSISTED_REVIEW_REQUIRED');
-      assert.equal(state.job, null);
+      assert.equal(report.results[0].state, 'QUIESCING');
+      assert.equal(state.schedule.state, 'QUIESCING');
+      assert.equal(state.job.whatsapp.policy, 'preserve_ambiguous');
+      assert.equal(state.job.whatsapp.retained.wa_short_links, 1);
+      assert.equal(report.results[0].whatsapp.retained.wa_short_links, 1);
+      assert.equal(state.wa.links.length, 1);
     });
-    const report = await purgeExpiredClinics({ pool, now: () => NOW, budgetMs: 10000, ...lifecycleDeps });
-    assert.equal(report.skipped, 1);
+
+const waLifecycle = { policy: 'paid', auto_purge_eligible: true, state: 'CLOSED',
+  expires_at: new Date(NOW - 50 * DAY).toISOString(), recovery_ends_at: new Date(NOW - 5 * DAY).toISOString() };
+const waSqlJob = { mode: 'AUTOMATIC', state: 'RUNNING', phase: 'SQL',
+  retryAfter: new Date(NOW - 1).toISOString(), backupRetentionUntil: new Date(NOW - DAY).toISOString(), deletedObjects: 0 };
+const waExclusive = () => ({
+  contacts: [{ id: 1, clinic_id: ID, phone: '593999000111' }, { id: 2, clinic_id: OTHER, phone: '593999000222' }],
+  users: [{ id: 7, clinic_id: ID, phone: '0999000111' }, { id: 8, clinic_id: OTHER, phone: '0999000222' }],
+  messages: [{ id: 1, contact_id: 1, booked_by_user_id: 7, owner_clinic_id: ID },
+    { id: 2, contact_id: 1, booked_by_user_id: null, owner_clinic_id: null },
+    { id: 3, contact_id: 2, booked_by_user_id: 8, owner_clinic_id: OTHER }],
+  states: [{ phone: '593999000111', data: { clinic_id: ID } }],
+  links: [{ code: 'legacy-target', target_url: 'https://wa.me/593999000111?text=private-target' }],
+});
+
+test('SQL preserve_ambiguous preview, completion and retries distinguish retained global data from deletable rows', async () => {
+  const wa = waExclusive();
+  wa.contacts.push({ id: 3, clinic_id: null, phone: '593000000000' });
+  wa.messages.push({ id: 4, contact_id: 3, booked_by_user_id: 7, owner_clinic_id: ID },
+    { id: 5, contact_id: 999, booked_by_user_id: 7, owner_clinic_id: ID });
+  wa.states.push({ phone: '593000000000', data: { clinic_id: ID, medicalNote: 'private-state' } });
+  wa.links.push({ code: 'unattributed', target_url: 'https://wa.me/593000000000?text=private-link' },
+    { code: `${OTHER}.${'a'.repeat(22)}`, target_url: 'https://wa.me/593000000000' },
+    { code: 'invalid', target_url: 'private-invalid-url' });
+  const { pool, state, lifecycleDeps } = database({ wa, lifecycle: waLifecycle, candidates: [{ id: ID }], job: waSqlJob });
+  const originalClinic = structuredClone(state.clinic);
+  const preview = await clinicPurgePreview(ID, pool, { ...lifecycleDeps, now: () => NOW });
+  assert.equal(preview.eligible, true);
+  assert.equal(preview.counts.whatsapp_contacts, 1);
+  assert.equal(preview.counts.whatsapp_messages, 2);
+  assert.deepEqual(preview.whatsapp.retained, {
+    whatsapp_contacts: 1, whatsapp_messages: 2, whatsapp_bot_state: 1, wa_short_links: 3,
+  });
+  const deps = { pool, now: () => NOW, budgetMs: 15000, ...lifecycleDeps,
+    list: async () => assert.fail('SQL-only test must not access R2'),
+    remove: async () => assert.fail('SQL-only test must not delete R2') };
+  const result = await purgeExpiredClinics(deps);
+  assert.equal(result.completed, 1);
+  assert.equal(result.results[0].state, 'COMPLETE');
+  assert.deepEqual(result.results[0].whatsapp.retained, preview.whatsapp.retained);
+  assert.ok(Object.values(result.results[0].whatsapp.deletable).every(n => n === 0));
+  assert.deepEqual(state.wa.contacts, wa.contacts.slice(1));
+  assert.deepEqual(state.wa.messages, wa.messages.slice(2));
+  assert.deepEqual(state.wa.states, wa.states.slice(1));
+  assert.deepEqual(state.wa.links, wa.links.slice(1));
+  assert.deepEqual(state.clinic, originalClinic, 'subscription dates and inactive status are unchanged');
+  const remaining = structuredClone(state.wa);
+  const deletions = state.statements.filter(s => s.sql.startsWith('DELETE')).length;
+  const retry = await purgeExpiredClinics(deps);
+  assert.equal(retry.results[0].state, 'COMPLETE');
+  assert.deepEqual(retry.results[0].whatsapp, result.results[0].whatsapp);
+  assert.deepEqual(state.wa, remaining);
+  assert.equal(state.statements.filter(s => s.sql.startsWith('DELETE')).length, deletions);
+  for (const publicData of [preview.whatsapp, result, state.job.whatsapp]) {
+    const text = JSON.stringify(publicData);
+    for (const secret of ['593', 'private-', 'https:', 'medicalNote', 'legacy-target'])
+      assert.equal(text.includes(secret), false);
+  }
+});
+
+test('target ambiguous plus exclusive purges independent rows only, retaining the entire conflicting cluster', async () => {
+  for (const conflict of ['foreign-author', 'unknown-author', 'target-author-on-foreign-contact', 'shared-phone']) {
+    const wa = waExclusive();
+    if (conflict === 'foreign-author') wa.messages[0].owner_clinic_id = OTHER;
+    if (conflict === 'unknown-author') wa.messages[0].owner_clinic_id = null;
+    if (conflict === 'target-author-on-foreign-contact') wa.messages[2].owner_clinic_id = ID;
+    if (conflict === 'shared-phone') wa.users[1].phone = wa.contacts[0].phone;
+    wa.contacts.push({ id: 4, clinic_id: ID, phone: '593999000444' });
+    wa.messages.push({ id: 4, contact_id: 4, booked_by_user_id: 7, owner_clinic_id: ID });
+    wa.states.push({ phone: '593999000444', data: { clinic_id: ID } });
+    wa.links.push({ code: 'exclusive', target_url: 'https://wa.me/593999000444' });
+    const { pool, state, lifecycleDeps } = database({ wa, lifecycle: waLifecycle, candidates: [{ id: ID }], job: waSqlJob });
+    const preview = await clinicPurgePreview(ID, pool, { ...lifecycleDeps, now: () => NOW });
+    assert.equal(preview.eligible, true);
+    assert.equal(preview.whatsapp.blocked, false);
+    assert.equal(preview.whatsapp.retained.whatsapp_contacts, 1);
+    assert.equal(preview.whatsapp.retained.whatsapp_messages, conflict === 'target-author-on-foreign-contact' ? 1 : 2);
+    const result = await purgeExpiredClinics({ pool, now: () => NOW, budgetMs: 15000, ...lifecycleDeps,
+      list: async () => assert.fail('SQL-only test') });
+    assert.equal(result.results[0].state, 'COMPLETE');
+    assert.deepEqual(result.results[0].whatsapp.retained, preview.whatsapp.retained);
+    const retainedContact = conflict === 'target-author-on-foreign-contact' ? 2 : 1;
+    assert.deepEqual(state.wa.contacts, [wa.contacts.find(c => c.id === retainedContact),
+      ...wa.contacts.filter(c => c.clinic_id === OTHER && c.id !== retainedContact)]);
+    assert.deepEqual(state.wa.messages.filter(m => m.contact_id === retainedContact),
+      wa.messages.filter(m => m.contact_id === retainedContact));
+    assert.equal(state.wa.contacts.some(c => c.id === 4), false);
+    assert.equal(state.wa.messages.some(m => m.contact_id === 4), false);
+    if (retainedContact === 1) {
+      assert.deepEqual(state.wa.states, [wa.states[0]]);
+      assert.deepEqual(state.wa.links, [wa.links[0]]);
+    }
+  }
+});
+
+test('SQL revalidation under WhatsApp locks retains newly crossed target cluster and new global ambiguity', async () => {
+  for (const crossed of ['history', 'scoped-link', null]) {
+    const { pool, state, lifecycleDeps } = database({
+      wa: waExclusive(), lifecycle: waLifecycle, candidates: [{ id: ID }], job: waSqlJob,
+      onWhatsAppLock: current => {
+        if (crossed === 'history') current.wa.messages[0].owner_clinic_id = OTHER;
+        else if (crossed === 'scoped-link') current.wa.links.push({
+          code: `${OTHER}.${'c'.repeat(22)}`, target_url: current.wa.links[0].target_url,
+        });
+        else current.wa.links.push({ code: 'new-global', target_url: 'not-attributable' });
+      },
+    });
+    const result = await purgeExpiredClinics({ pool, now: () => NOW, budgetMs: 15000, ...lifecycleDeps,
+      list: async () => assert.fail('SQL-only test') });
+    assert.equal(state.waLocks, 1);
+    if (crossed) {
+      assert.equal(result.results[0].state, 'COMPLETE');
+      assert.equal(state.job.whatsapp.retained.whatsapp_messages, 2);
+      const expected = waExclusive();
+      if (crossed === 'history') expected.messages[0].owner_clinic_id = OTHER;
+      else expected.links.push({ code: `${OTHER}.${'c'.repeat(22)}`, target_url: expected.links[0].target_url });
+      for (const key of ['contacts', 'messages', 'states', 'links']) assert.deepEqual(state.wa[key], expected[key]);
+    } else {
+      assert.equal(result.results[0].state, 'COMPLETE');
+      assert.equal(state.job.whatsapp.retained.wa_short_links, 1);
+      assert.deepEqual(state.wa.links, [{ code: 'new-global', target_url: 'not-attributable' }]);
+    }
+  }
+});
+
+test('SQL consecutive A then B purges keep tombstone phone evidence and never claim shared states or links', async () => {
+  const wa = waExclusive();
+  // Neither shared phone has a contact: attribution depends entirely on users.
+  const shared = ['593999000777', '593999000888'];
+  wa.users[0] = { ...wa.users[0], phone: shared[0], whatsapp_staff_phone: shared[1],
+    is_active: true, password_hash: 'secret', salt: 'salt', hash_algo: 'hash',
+    google_refresh_token: 'oauth-secret', password_reset_token: 'reset-secret' };
+  wa.users[1] = { ...wa.users[1], phone: shared[0], whatsapp_staff_phone: shared[1] };
+  wa.states = shared.map(phone => ({ phone, data: { medicalNote: 'retained' } }));
+  wa.links = shared.flatMap((phone, i) => [
+    { code: `legacy-${i}`, target_url: `https://wa.me/${phone}?text=private` },
+    { code: `${OTHER}.${String(i).repeat(22)}`, target_url: `https://wa.me/${phone}` },
+  ]);
+  const run = async (id, data) => {
+    const db = database({ wa: data, lifecycle: waLifecycle, candidates: [{ id }],
+      clinic: { id }, job: structuredClone(waSqlJob) });
+    const result = await purgeExpiredClinics({ pool: db.pool, now: () => NOW, budgetMs: 15000, ...db.lifecycleDeps,
+      list: async () => assert.fail('SQL-only A→B test'), remove: async () => assert.fail('No R2') });
+    assert.equal(result.results[0].state, 'COMPLETE');
+    assert.deepEqual(db.state.wa.states, wa.states);
+    assert.deepEqual(db.state.wa.links, wa.links);
+    return db;
+  };
+  const a = await run(ID, wa);
+  const tombstone = a.state.wa.users.find(u => u.clinic_id === ID);
+  assert.deepEqual([tombstone.phone, tombstone.whatsapp_staff_phone], shared);
+  assert.equal(tombstone.is_active, false);
+  assert.equal(tombstone.password_hash, '');
+  for (const field of ['salt', 'hash_algo', 'google_refresh_token', 'password_reset_token'])
+    assert.equal(tombstone[field], null);
+  const b = await run(OTHER, a.state.wa);
+  assert.deepEqual(b.state.wa.users.find(u => u.clinic_id === ID), tombstone);
+  assert.equal(b.state.wa.contacts.length, 0);
+  assert.equal(b.state.wa.messages.length, 0);
+  assert.equal(b.state.job.whatsapp.retained.whatsapp_bot_state, 2);
+  assert.equal(b.state.job.whatsapp.retained.wa_short_links, 4);
+});
+
+test('SQL consecutive A then B retains contact-only evidence against contradictory scoped links', async () => {
+  const wa = waExclusive();
+  wa.users = []; // P is known only through A's contact, never through a tombstone.
+  wa.contacts[0].name = 'Fictitious retained contact';
+  wa.contacts.push({ id: 4, clinic_id: ID, phone: '593999000444' });
+  wa.messages.push({ id: 4, contact_id: 4, booked_by_user_id: null, owner_clinic_id: null });
+  wa.links.push({ code: `${OTHER}.${'c'.repeat(22)}`, target_url: wa.links[0].target_url });
+  const cluster = {
+    contacts: [structuredClone(wa.contacts[0])],
+    messages: structuredClone(wa.messages.slice(0, 2)),
+    states: structuredClone(wa.states),
+    links: structuredClone(wa.links),
+  };
+  let remaining = wa;
+  for (const id of [ID, OTHER, ID]) {
+    const db = database({ wa: remaining, lifecycle: waLifecycle, candidates: [{ id }],
+      clinic: { id }, job: structuredClone(waSqlJob) });
+    const preview = await clinicPurgePreview(id, db.pool, { ...db.lifecycleDeps, now: () => NOW });
+    assert.equal(preview.eligible, true);
+    assert.deepEqual(preview.whatsapp.retained, {
+      whatsapp_contacts: 1, whatsapp_messages: 2, whatsapp_bot_state: 1, wa_short_links: 2,
+    });
+    const result = await purgeExpiredClinics({ pool: db.pool, now: () => NOW, budgetMs: 15000, ...db.lifecycleDeps,
+      list: async () => assert.fail('SQL-only A→B test'), remove: async () => assert.fail('No R2') });
+    assert.equal(result.results[0].state, 'COMPLETE');
+    assert.deepEqual(result.results[0].whatsapp.retained, preview.whatsapp.retained);
+    assert.deepEqual(db.state.wa.contacts.filter(c => c.id === 1), cluster.contacts);
+    assert.deepEqual(db.state.wa.messages.filter(m => m.contact_id === 1), cluster.messages);
+    assert.deepEqual(db.state.wa.states, cluster.states);
+    assert.deepEqual(db.state.wa.links, cluster.links);
+    const deletion = db.state.statements.find(s => s.sql.startsWith('DELETE FROM whatsapp_messages'));
+    assert.equal(deletion.params[0].includes(1), false);
+    assert.equal(db.state.wa.contacts.some(c => c.id === 4), false);
+    remaining = db.state.wa;
+  }
+  assert.deepEqual(remaining.contacts, cluster.contacts);
+  assert.deepEqual(remaining.messages, cluster.messages);
+});
+
+test('SQL failure rolls back exclusive deletions and leaves conflicting clusters and target-authored orphans intact', async () => {
+  const wa = waExclusive();
+  wa.users = [];
+  wa.links.push({ code: `${OTHER}.${'c'.repeat(22)}`, target_url: wa.links[0].target_url });
+  wa.contacts.push({ id: 4, clinic_id: ID, phone: '593999000444' },
+    { id: 5, clinic_id: null, phone: '593999000555' });
+  wa.messages.push({ id: 4, contact_id: 4, booked_by_user_id: 7, owner_clinic_id: ID },
+    { id: 5, contact_id: 5, booked_by_user_id: 7, owner_clinic_id: ID },
+    { id: 6, contact_id: 999, booked_by_user_id: 7, owner_clinic_id: ID });
+  const db = database({ wa, sqlFails: true, lifecycle: waLifecycle, candidates: [{ id: ID }], job: waSqlJob });
+  const report = await purgeExpiredClinics({ pool: db.pool, now: () => NOW, budgetMs: 15000, ...db.lifecycleDeps,
+    list: async () => assert.fail('SQL-only test') });
+  assert.equal(report.results[0].state, 'FAILED');
+  assert.deepEqual(db.state.wa, wa, 'rollback restores exclusive rows too, preserving all original evidence');
+  assert.equal(db.state.job.state, 'FAILED');
+  assert.ok(db.state.statements.some(s => s.sql === 'ROLLBACK'));
+  const deleted = db.state.statements.find(s => s.sql.startsWith('DELETE FROM whatsapp_messages'));
+  assert.deepEqual(deleted.params[0], [4], 'no conflicting cluster or orphan is ever selected, even before rollback');
+});
+
+test('WA bounds still reject oversized global scans and tenant deletion counts without writes', async () => {
+  const largeGlobal = waExclusive();
+  largeGlobal.contacts = Array.from({ length: 50001 }, (_, id) => ({ id, phone: '', clinic_id: null }));
+  for (const options of [{ wa: largeGlobal }, { wa: waExclusive(), counts: { patients: 50001 } }]) {
+    const { pool, state, lifecycleDeps } = database({ ...options, lifecycle: waLifecycle });
+    await assert.rejects(clinicPurgePreview(ID, pool, { ...lifecycleDeps, now: () => NOW }),
+      error => error.status === 409 && /50.000/.test(error.message));
     assert.equal(state.job, null);
-    assert.equal(state.clinic.is_active, true);
+    assert.equal(state.statements.some(s => /^(DELETE|UPDATE|INSERT)/.test(s.sql)), false);
   }
 });
 
