@@ -8,10 +8,18 @@ Implementación del login y autorización por usuario, **no activación de recor
 - Solo el usuario habilitado ve la tarjeta y el login en **Estado del sistema**. El interruptor global del piloto debe estar habilitado y Meta configurado para iniciar el login.
 - Login, estado y eliminación de la credencial local se gestionan juntos en **Estado del sistema → WhatsApp coexistencia**, sin una opción adicional en Ajustes del dashboard.
 - El número del chatbot y los resúmenes al personal se conservan. El webhook solo entrega al bot y al CRM global los eventos `messages` cuyo `metadata.phone_number_id` corresponde exactamente al número del sistema.
-- **Los recordatorios automáticos del cron a pacientes quedan pausados para todos durante este piloto**, sin respaldo desde el número del sistema. No basta conectar el número para reactivarlos. Se mantienen los acuses y las respuestas a notificaciones históricas del chatbot.
+- **Restauración local 2026-10-23, pendiente de revisión y despliegue:** los recordatorios automáticos del día anterior vuelven a utilizar el número global del sistema, independientemente del piloto. Se conservan usuario activo, permisos de calendario por clínica/usuario, `whatsapp_bot_enabled`, opt-in `whatsapp_confirm_enabled`, ciclo operativo de la clínica y dedupe `bioskinReminderSent`. Conectar un número propio no activa envíos desde él.
 - El piloto no importa contactos, historial, mensajes ni ecos de los números propios al CRM global ni los interpreta como comandos. Solicita las sincronizaciones requeridas por Meta y conserva sus IDs; **no verifica su finalización ni constituye todavía un inbox de coexistencia**. Los eventos firmados se reconocen sin guardar su contenido clínico.
 - Meta devuelve la cuenta seleccionada. Se valida el acceso con el token canjeado, la app emisora y los permisos, y se comprueba `is_on_biz_app=true` y `platform_type=CLOUD_API`. Si no llega el ID de teléfono, el piloto solo admite una cuenta con un único número elegible; nunca elige arbitrariamente la primera cuenta/número.
 - Los estados son `pending_validation`, `setup_failed` y `disconnected`: **no existe un estado activo de envío** en esta fase.
+
+### Confirmaciones y recordatorios: comportamiento restaurado
+
+- El commit del piloto `408dc01` añadió `AND false` a la selección del cron de pacientes y `paused: true` a su resultado. Se retiran únicamente esos bloqueos; no se cambia el remitente, el horario ni la configuración.
+- Antes del piloto ya **no se enviaba una confirmación WhatsApp inmediata al agendar** (`1788efb`, conservado en `api/sendEmail.js`). La confirmación inmediata se mantiene por correo; el chatbot conserva también su flujo de correo desde el Gmail conectado del usuario, cuando hay correo del paciente. No se añade otro WhatsApp al reservar.
+- El slot `afternoon` procesa las citas del día siguiente con la ventana existente de 12–36 horas. Dentro de la ventana de servicio se usa texto; fuera, la plantilla existente `WHATSAPP_TEMPLATE_APPOINTMENT` y su idioma, seis parámetros y botón `appointment_confirm:<eventId>`. No se crean ni modifican plantillas.
+- El bot registra la asistencia y acusa la respuesta del paciente como antes. Los resúmenes de personal de mañana/noche no cambian.
+- El marcador de Calendar se guarda solo tras un envío exitoso y evita repetir el recordatorio para la fecha de la cita. No se introduce una garantía nueva de entrega exactamente una vez: si Meta acepta y luego falla el guardado del marcador, un reintento podría repetirlo.
 
 ### Teléfonos del bot y atribución retenida
 
@@ -86,7 +94,7 @@ No se crea ninguna función serverless nueva: continúan **11 archivos de funci�
 - Completar la baja en **WhatsApp Business → Ajustes → Cuenta → Plataforma empresarial → Desconectar cuenta**, según la interfaz de la app. Revisar también las integraciones empresariales de Meta cuando corresponda.
 - Deshabilitar la opción desde master elimina el token local e intentos del usuario. La baja remota sigue requiriendo la acción anterior. Un webhook firmado `PARTNER_REMOVED` elimina las credenciales de la cuenta afectada.
 - Ante `setup_failed`, revisar permisos, suscripciones y solicitudes en Meta; no repetir automáticamente una sincronización. Si hay que reiniciar el alta, completar primero el offboarding en la app Business.
-- No hay fallback automático al número del sistema. No se declara aprobado ni operativo un canal por el mero éxito de `FB.login`.
+- Los canales propios no tienen envío ni fallback automático. El flujo global restaurado es independiente del estado del canal propio; no se declara aprobado ni operativo un canal por el mero éxito de `FB.login`.
 
 ## MCP de Meta
 
@@ -101,7 +109,9 @@ Sirve para que un asistente autorizado inspeccione negocios, números, plantilla
 - 38 comprobaciones del componente en navegador con APIs/SDK ficticios, más integración master/Estado del sistema/dashboard en escritorio y móvil. Corregido y vuelto a probar en Chromium real el caso de excepción síncrona del SDK (1440×1000 y 390×844).
 - Lint de archivos nuevos aprobado. El lint de páginas existentes y TypeScript global siguen presentando errores previos fuera de esta tarea; no se afirma que estén limpios.
 - No se realizó onboarding real ni envío en Meta. No se configura el MCP ni se cambian credenciales/productos/activos de Meta automáticamente.
-- Cron real consultado contra Neon con los destinos HTTP ajenos a la base bloqueados: `sent=0`, `paused=true` y cero llamadas a Meta/Google.
+- Evidencia histórica del piloto, anterior a la restauración: cron real consultado contra Neon con los destinos HTTP ajenos a la base bloqueados: `sent=0`, `paused=true` y cero llamadas a Meta/Google. No describe el resultado tras restaurar.
+- Restauración local: pruebas del handler con SQL, Calendar y HTTP ficticios cubren remitente global, atribución clínica/usuario/cita, plantilla/botón, dedupe, autorización, clínica cerrada, OAuth ausente, destinos excluidos y errores sin marcar envío. Regresión de coexistencia comprueba que el piloto sigue sin despachar desde canales propios y el booking no incorpora un WhatsApp inmediato. No se ejecutó cron real ni se accedió a servicios, configuración, credenciales o base de datos.
+- Evidencia fresca: 55/55 pruebas (`node --experimental-test-module-mocks --test tests/whatsapp-notifications.test.mjs tests/whatsapp-channels.test.mjs tests/whatsapp-improvements.test.mjs tests/whatsapp-identity-reuse.test.mjs`), tras reproducir tres fallos con la pausa aún presente. Función restaurada idéntica a `408dc01^`. Build Vite aprobado; lint backend/tests y sintaxis aprobados; dashboard con los mismos 0 errores/2 warnings de HEAD. Seguridad y QA independiente quedan pendientes del coordinador antes de publicar.
 
 ## Fuentes oficiales consultadas
 

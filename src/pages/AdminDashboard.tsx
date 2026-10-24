@@ -1166,8 +1166,8 @@ export default function AdminDashboard() {
                         <div className="border-t border-gray-100 pt-3">
                           <div className="flex items-center justify-between p-3 border rounded-lg bg-gray-50">
                             <div>
-                              <label className="block text-xs font-semibold text-gray-700">Recordatorio al paciente (pendiente de coexistencia)</label>
-                              <p className="text-xs text-gray-500">Los envíos a pacientes están pausados hasta validar el canal propio y sus plantillas. El número del sistema no se utilizará como respaldo.</p>
+                              <label className="block text-xs font-semibold text-gray-700">Recordatorio al paciente</label>
+                              <p className="text-xs text-gray-500">Envía un WhatsApp desde el número del sistema el día anterior a la cita para solicitar la confirmación de asistencia.</p>
                             </div>
                             <button type="button" disabled={!whatsappBot.bot_enabled}
                               onClick={() => setWhatsappBot(p => ({ ...p, confirm_enabled: !p.confirm_enabled }))}

@@ -310,14 +310,20 @@ test('old or undated offboarding cannot revoke a newly connected generation of t
   assert.equal(channel.token_encrypted, null);
 });
 
-test('pilot cannot be activated from UI or auto-send reminders using the system channel', () => {
+test('coexistence remains connection-only, independent of restored global patient reminders', () => {
   const bot = readFileSync(new URL('../api/whatsapp-chatbot.js', import.meta.url), 'utf8');
-  assert.match(bot, /whatsapp_confirm_enabled = true[\s\S]*?AND false/);
-  assert.match(bot, /paused: true, reason:/);
+  const reminders = bot.slice(bot.indexOf('async function sendPatientAppointmentReminders('), bot.indexOf('/** Ayudantes activos'));
+  assert.match(reminders, /whatsapp_confirm_enabled = true/);
+  assert.doesNotMatch(reminders, /AND false|paused: true|user_whatsapp_channels|whatsapp_coexistence/);
+  const service = readFileSync(new URL('../lib/whatsapp-service.js', import.meta.url), 'utf8');
+  assert.match(service, /process\.env\.WHATSAPP_PHONE_NUMBER_ID/);
+  assert.doesNotMatch(service, /user_whatsapp_channels|decryptChannelToken/);
   const ui = readFileSync(new URL('../src/pages/AdminSystemStatus.tsx', import.meta.url), 'utf8');
   assert.match(ui, /<WhatsAppCoexistence \/>/);
   const dashboard = readFileSync(new URL('../src/pages/AdminDashboard.tsx', import.meta.url), 'utf8');
   assert.doesNotMatch(dashboard, /WhatsAppCoexistence|whatsapp_coexistence|action=channelConfig/);
+  assert.doesNotMatch(dashboard, /envíos a pacientes están pausados|pendiente de coexistencia/);
+  assert.match(dashboard, /número del sistema el día anterior/);
   const component = readFileSync(new URL('../src/components/admin/WhatsAppCoexistence.tsx', import.meta.url), 'utf8');
   assert.match(component, /onClick=\{disconnect\}/);
   assert.match(component, /Confirmar desconexión/);
@@ -327,4 +333,11 @@ test('pilot cannot be activated from UI or auto-send reminders using the system 
   assert.match(action, /requireRole\(user, 'master_admin'\)/);
   assert.match(action, /typeof req.body\?\.enabled !== 'boolean'/);
   assert.ok(api.indexOf("if (action === 'setWhatsAppCoexistenceEnabled')") < api.indexOf('const suppliedClinics'));
+});
+
+test('booking still confirms by email, not by a new immediate WhatsApp send', () => {
+  const email = readFileSync(new URL('../api/sendEmail.js', import.meta.url), 'utf8');
+  assert.match(email, /La confirmación por WhatsApp ya no se dispara al agendar/);
+  assert.match(email, /confirmación inmediata del booking queda en correo electrónico/);
+  assert.doesNotMatch(email, /await sendWhatsApp(?:Text|Template)\(/);
 });

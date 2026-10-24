@@ -1,5 +1,8 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-23 **Restauración local del chatbot global, sin desplegar.** Retirada la pausa `AND false`/`paused` añadida por `408dc01` al cron de pacientes. Vuelven los recordatorios del día anterior desde el número global con permisos tenant/usuario, opt-ins, ciclo operativo, plantilla/botón y dedupe existentes. La confirmación inmediata al reservar ya era por correo antes del piloto y se conserva, sin agregar un WhatsApp inmediato; acuses de asistencia y resúmenes al personal intactos. Coexistencia sigue solo conexión, sin envíos desde canales propios. Aviso obsoleto del dashboard sustituido por la conducta real. Pruebas focalizadas offline con DB/Calendar/HTTP ficticios; sin cron real, mensajes reales, configuración, credenciales, BD, commit, push ni deploy. Revisión de seguridad y QA independiente pendientes de coordinación por el padre.
+- Evidencia local de restauración: baseline 49/49; tres fallos nuevos reproducen la pausa antes del fix; después **55/55** en `whatsapp-notifications`, `whatsapp-channels`, `whatsapp-improvements` y `whatsapp-identity-reuse`. Función de recordatorios idéntica a `408dc01^`; `node --check`, lint backend/tests y `git diff --check` aprobados. Dashboard: 0 errores y 2 warnings, iguales a HEAD. `npx vite build` aprobado (20,28 s), con aviso de chunk >500 kB. No se valida entrega real de Meta ni se afirma despliegue.
+
 - ✅ 2026-10-23 Seguimiento de purga prioritario: etapas en español, objetos R2 eliminados acumulados, filas SQL pendientes, liberación de identificadores, esperas, retención y errores. Autorización manual opcional plegada para órdenes iniciadas; espera vencida distinguida de espera activa. 11 tests UI y Chromium desktop/móvil con cinco estados ficticios aprobados; build y lint sin incidencias nuevas.
 
 - ✅ 2026-10-23 Purga autorizada: continuación diaria automática en el cron existente (03:00 Ecuador), sin iniciar nuevas legacy. Conserva esperas, locks, protección anual, identidad original y retención; botón manual opcional. Selección Neon verificada con transacciones de solo lectura, sin ejecutar borrados.
@@ -35,7 +38,7 @@ Las entradas siguientes conservan la evidencia previa al despliegue y la evoluci
 
 - ✅ 2026-10-23 Coexistencia: login piloto por usuario.
 - ✅ 2026-10-23 Master habilita; ajustes desconectan.
-- ✅ 2026-10-23 Recordatorios pausados; bot preservado.
+- ✅ 2026-10-23 Estado inicial del piloto (histórico, sustituido por la restauración local de arriba): recordatorios pausados; bot preservado.
 - ✅ 2026-10-23 Neon: permisos y concurrencia verificados.
 - ✅ 2026-10-23 Coexistencia: regresión y navegador verificados.
 

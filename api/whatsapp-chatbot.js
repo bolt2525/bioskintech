@@ -380,9 +380,6 @@ async function sendPatientAppointmentReminders(dayOffset = 1, startIndex = 0, de
       AND cu.is_active = true
       AND cu.whatsapp_bot_enabled = true
       AND cu.whatsapp_confirm_enabled = true
-      -- Piloto: ningún recordatorio al paciente sale desde el número del sistema.
-      -- Habilitar canales propios requiere antes mensajería y CRM aislados por canal.
-      AND false
     JOIN clinic_settings cs ON cs.clinic_id = cu.clinic_id
     JOIN clinics cl ON cl.id = cu.clinic_id
     LEFT JOIN clinic_features cf ON cf.clinic_id = cu.clinic_id AND cf.feature = 'calendar'
@@ -474,8 +471,7 @@ async function sendPatientAppointmentReminders(dayOffset = 1, startIndex = 0, de
     }
   }
 
-  return { patientsChecked: users.rows.length, sent, errors, nextIndex: null,
-    paused: true, reason: 'Recordatorios pausados hasta validar mensajería por canal propio; sin respaldo desde el número del sistema.' };
+  return { patientsChecked: users.rows.length, sent, errors, nextIndex: null };
 }
 
 /** Ayudantes activos del usuario. Vacío si no tiene el multi-recurso activado. */
