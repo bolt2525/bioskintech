@@ -1,6 +1,7 @@
 # Progreso de BioSkinTech App
 
 - ✅ 2026-10-26 SKU de inventario: secuencia transaccional incluye archivados.
+- ✅ 2026-10-26 SKU propio: sugerencia no revela secuencia global.
 
 - ✅ 2026-10-26 Corrección de actualización de email: conserva `clinic_id` como identificador de clínica al guardar usuarios.
 

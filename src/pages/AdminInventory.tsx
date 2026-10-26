@@ -121,7 +121,8 @@ export default function AdminInventory() {
       .then(async response => {
         if (!response.ok) throw new Error('No se pudo sugerir el SKU');
         const data = await response.json();
-        if (typeof data?.sku === 'string' && data.sku) setSuggestedSku(data.sku);
+        if (data?.automatic) setSuggestedSku('Automático');
+        else if (typeof data?.sku === 'string' && data.sku) setSuggestedSku(data.sku);
       })
       .catch(error => console.error('Error loading suggested inventory SKU:', error));
   }, [masterView.clinicId, user?.clinic_id]);

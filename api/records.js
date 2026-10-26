@@ -1379,6 +1379,7 @@ export default async function handler(req, res) {
           const su = await getSessionUserOnce();
           if (!su) return res.status(401).json({ error: 'No autenticado' });
           const clinicId = su?.effective_clinic_id ?? su?.clinic_id ?? null;
+          if (su.inventory_scope === 'own') return res.status(200).json({ sku: null, automatic: true });
           return res.status(200).json({ sku: await getNextInventorySku(pool, clinicId) });
         } catch (err) {
           console.error('Error suggesting inventory SKU:', err);

@@ -5,7 +5,7 @@
 
 La edición administrativa de usuarios conserva el `clinic_id` recibido desde la lista de clínicas sin convertirlo a entero; así la validación tenant de `/api/admin-auth?action=updateUser` compara el identificador real y permite actualizar datos como el email sin alterar la asignación clínica.
 
-Inventario mantiene la unicidad de SKU por clínica con `uq_inventory_sku_clinic`, incluidos los productos archivados para preservar trazabilidad. Cuando el SKU se deja vacío, `/api/records?action=inventoryCreateItem` calcula la siguiente secuencia numérica sobre todo el historial dentro de la clínica bajo un lock transaccional; `inventoryNextSku` expone únicamente la sugerencia para el formulario. No se añade un sufijo de clínica: el identificador tenant y la restricción compuesta ya aíslan correctamente los códigos.
+Inventario mantiene la unicidad de SKU por clínica con `uq_inventory_sku_clinic`, incluidos los productos archivados para preservar trazabilidad. Cuando el SKU se deja vacío, `/api/records?action=inventoryCreateItem` calcula la siguiente secuencia numérica sobre todo el historial dentro de la clínica bajo un lock transaccional; `inventoryNextSku` expone la sugerencia para administradores y muestra modo automático al alcance `own`, sin revelar el siguiente número global. No se añade un sufijo de clínica: el identificador tenant y la restricción compuesta ya aíslan correctamente los códigos.
 
 ## 1. Estado ejecutivo
 
