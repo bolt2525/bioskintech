@@ -1,6 +1,6 @@
 # Progreso de BioSkinTech App
 
-- ✅ 2026-10-26 MCP Cloudflare migrados a `.mcp.json` (Copilot CLI); `.vscode/mcp.json` conservado.
+- ✅ 2026-10-26 MCP Cloudflare migrados a `.mcp.json` (Copilot) y validados; eliminados `.vscode/mcp.json` y servidores obsoletos (bindings/builds/observability).
 - ✅ 2026-10-26 SKU de inventario: secuencia transaccional incluye archivados.
 - ✅ 2026-10-26 SKU propio: sugerencia no revela secuencia global.
 - ✅ 2026-10-26 WhatsApp: credenciales se validan antes del lock de identidad.
