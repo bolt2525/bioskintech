@@ -7,6 +7,8 @@ La edición administrativa de usuarios conserva el `clinic_id` recibido desde la
 
 Inventario mantiene la unicidad de SKU por clínica con `uq_inventory_sku_clinic`, incluidos los productos archivados para preservar trazabilidad. Cuando el SKU se deja vacío, `/api/records?action=inventoryCreateItem` calcula la siguiente secuencia numérica sobre todo el historial dentro de la clínica bajo un lock transaccional; `inventoryNextSku` expone la sugerencia para administradores y muestra modo automático al alcance `own`, sin revelar el siguiente número global. No se añade un sufijo de clínica: el identificador tenant y la restricción compuesta ya aíslan correctamente los códigos.
 
+El servicio WhatsApp valida `WHATSAPP_TOKEN` y `WHATSAPP_PHONE_NUMBER_ID` antes de adquirir el lock de identidad o consultar suscripciones, por lo que falla de forma explícita aun cuando la base de datos no está configurada.
+
 ## 1. Estado ejecutivo
 
 **WhatsApp coexistencia — piloto 2026-10-23.** `lib/whatsapp-channels.js` implementa autorización por usuario en `api/whatsapp-chatbot.js`, sin añadir funciones (11 existentes). El master controla `clinic_users.whatsapp_coexistence_enabled`, separado del bot. Login, estado y desconexión se concentran en Estado del sistema; no hay opción de coexistencia en Ajustes del dashboard. `user_whatsapp_channels` guarda credenciales AES-256-GCM y `whatsapp_signup_attempts` challenges de un uso ligados a sesión; ambas son tablas administrativas sin acceso del rol clínico, incluidas en purga e init multi-tenant. Alta, desconexión y revocación comparten bloqueo transaccional por usuario. Migración: `scripts/migrate-whatsapp-channels.mjs`.
