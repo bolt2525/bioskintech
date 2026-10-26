@@ -561,17 +561,70 @@ export interface Store3D {
 export const lineKind = (l: { points: Vec3[]; segments?: Vec3[][]; technique_preset?: string }): ElemKind =>
   l.technique_preset === 'Flecha' ? 'arrow' : l.segments?.length ? 'pattern' : l.points.length === 2 ? 'line' : 'free';
 
+// ── Superficie 3D personal (landmarks MediaPipe + foto como textura) ───────
+/** Escala modelo→foto de la superficie personal: proyección ortográfica exacta de cada vértice a su landmark. */
+export interface PersonalProjection { cx: number; cy: number; k: number; aspect: number }
+export interface PersonalSurface {
+  positions: Float32Array; uvs: Float32Array; indices: Uint32Array; projection: PersonalProjection;
+}
+/** El visor normaliza la malla a 5 unidades de dimensión máxima; generarla ya normalizada deja su transformación en identidad. */
+const VIEWER_MAX_DIM = 5;
+
+/** Triángulos de la teselación MediaPipe: viene como tríos de aristas cerradas (a→b, b→c, c→a); se descartan tríos inválidos. */
+export function trianglesFromEdges(edges: { start: number; end: number }[]): number[] {
+  const out: number[] = [];
+  for (let i = 0; i + 2 < edges.length; i += 3) {
+    const [a, b, c] = [edges[i], edges[i + 1], edges[i + 2]];
+    if (a.end === b.start && b.end === c.start && c.end === a.start && new Set([a.start, b.start, c.start]).size === 3) {
+      out.push(a.start, b.start, c.start);
+    }
+  }
+  return out;
+}
+
+/**
+ * Malla personal desde landmarks normalizados (x,y en foto; z de MediaPipe en escala de ancho de imagen).
+ * UV = posición del landmark en la foto, así cada punto marcado en 3D cae exactamente sobre la piel fotografiada.
+ * `depth` exagera o suaviza el relieve estimado (idea de «intensidad de profundidad» del conversor 2D→3D).
+ */
+export function buildPersonalSurface(
+  lm: { x: number; y: number; z?: number }[], aspect: number, triangles: number[], depth = 1,
+): PersonalSurface | null {
+  if (lm.length < 468 || !(aspect > 0) || !Number.isFinite(depth) || depth <= 0 || triangles.length < 3) return null;
+  if (lm.some(p => !Number.isFinite(p.x) || !Number.isFinite(p.y) || (p.z !== undefined && !Number.isFinite(p.z)))) return null;
+  if (triangles.some(i => !Number.isInteger(i) || i < 0 || i >= lm.length)) return null;
+  const raw = lm.map(p => ({ x: p.x * aspect, y: -p.y, z: -(p.z ?? 0) * aspect * depth }));
+  const min = { x: Infinity, y: Infinity, z: Infinity }, max = { x: -Infinity, y: -Infinity, z: -Infinity };
+  raw.forEach(p => (['x', 'y', 'z'] as const).forEach(a => { min[a] = Math.min(min[a], p[a]); max[a] = Math.max(max[a], p[a]); }));
+  const span = Math.max(max.x - min.x, max.y - min.y, max.z - min.z);
+  if (!(span > 0)) return null;
+  const k = VIEWER_MAX_DIM / span;
+  const c = { x: (min.x + max.x) / 2, y: (min.y + max.y) / 2, z: (min.z + max.z) / 2 };
+  const positions = new Float32Array(lm.length * 3), uvs = new Float32Array(lm.length * 2);
+  raw.forEach((p, i) => {
+    positions.set([(p.x - c.x) * k, (p.y - c.y) * k, (p.z - c.z) * k], i * 3);
+    uvs.set([lm[i].x, lm[i].y], i * 2);
+  });
+  // X = (x·aspect − c.x)·k ; Y = (−y − c.y)·k  →  x = (X/k + c.x)/aspect ; y = −(Y/k + c.y)
+  return { positions, uvs, indices: Uint32Array.from(triangles), projection: { cx: c.x, cy: c.y, k, aspect } };
+}
+
+export const projectPersonal = (p: Vec3, m: PersonalProjection): P2 =>
+  ({ x: (p.x / m.k + m.cx) / m.aspect, y: -(p.y / m.k + m.cy) });
+
 /** Convierte los trazos del visor 3D en elementos 2D para la vista activa. */
 export function elemsFrom3D(
   st: Store3D, view: ViewKind, frame: FaceFrame, aspect: number, flip: boolean, registration?: AffineRegistration,
+  personal?: PersonalProjection,
 ): Elem[] {
   const out: Elem[] = [];
-  const proj = (pts: Vec3[]) => pts.map(p => projectModel(p, view, frame, flip, aspect, registration)).filter((q): q is P2 => q !== null);
+  const project = (p: Vec3) => personal ? projectPersonal(p, personal) : projectModel(p, view, frame, flip, aspect, registration);
+  const proj = (pts: Vec3[]) => pts.map(project).filter((q): q is P2 => q !== null);
   const projectPaths = (pts: Vec3[]) => {
     const paths: P2[][] = [];
     let current: P2[] = [];
     pts.forEach(point => {
-      const projected = projectModel(point, view, frame, flip, aspect, registration);
+      const projected = project(point);
       if (projected) current.push(projected);
       else {
         if (current.length >= 2) paths.push(current);
@@ -581,7 +634,7 @@ export function elemsFrom3D(
     if (current.length >= 2) paths.push(current);
     return paths;
   };
-  const sy = (frame.bottom - frame.top) / Y_SPAN; // alto de imagen por unidad de modelo
+  const sy = personal ? 1 / personal.k : (frame.bottom - frame.top) / Y_SPAN; // alto de imagen por unidad de modelo
   st.markers.forEach(m => {
     const meta = m.id ? st.meta[m.id] : undefined, q = proj([m.position])[0];
     if (meta && q) out.push({ ...meta, id: m.id!, kind: 'point', paths: [[q]] });

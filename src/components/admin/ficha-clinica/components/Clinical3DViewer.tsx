@@ -2553,7 +2553,7 @@ const ThreeEngine: React.FC<{
       const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
       materials.forEach(material => {
         if (!(material instanceof THREE.MeshPhysicalMaterial)) return;
-        material.color.set(settings.materialColor);
+        if (!material.map) material.color.set(settings.materialColor);
         material.roughness = settings.roughness;
         material.metalness = settings.metalness;
         material.wireframe = settings.wireframe;
@@ -2644,12 +2644,15 @@ const ThreeEngine: React.FC<{
           child.castShadow = true;
           child.receiveShadow = true;
           const previousMaterials = Array.isArray(child.material) ? child.material : [child.material];
+          // Superficies texturizadas (p. ej. rostro personal desde foto) conservan su textura; la tinta queda neutra.
+          const map = (previousMaterials.find((material: THREE.MeshStandardMaterial) => material?.map) as THREE.MeshStandardMaterial | undefined)?.map ?? null;
           previousMaterials.forEach((material: THREE.Material) => material.dispose());
           child.material = new THREE.MeshPhysicalMaterial({
-            color: settings.materialColor,
-            roughness: settings.roughness,
-            metalness: settings.metalness,
-            clearcoat: 0.15,
+            color: map ? '#ffffff' : settings.materialColor,
+            map,
+            roughness: map ? 0.75 : settings.roughness,
+            metalness: map ? 0 : settings.metalness,
+            clearcoat: map ? 0 : 0.15,
             clearcoatRoughness: 0.3,
             side: THREE.DoubleSide,
             wireframe: settings.wireframe,

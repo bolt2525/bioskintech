@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  MODEL_REGISTRATION_ANCHORS, applyRegistration, autoRegistration, fitAffineRegistration, frameFromLandmarks, isRegistrationAccepted,
-  isWithinFace, projectModel, registrationAnchorIndices, updateRegistrationAnchor,
+  MODEL_REGISTRATION_ANCHORS, applyRegistration, autoRegistration, buildPersonalSurface, elemsFrom3D, fitAffineRegistration, frameFromLandmarks, isRegistrationAccepted,
+  isWithinFace, projectModel, projectPersonal, registrationAnchorIndices, trianglesFromEdges, updateRegistrationAnchor,
 } from '../src/lab/faceSim/engine.ts';
+import { FaceLandmarker } from '@mediapipe/tasks-vision';
 
 const frame = {
   top: 0.1,
@@ -211,3 +212,40 @@ for (const view of ['frontal', 'izquierda', 'derecha']) {
     });
   }
 }
+
+test('superficie personal: triangulación MediaPipe y correspondencia exacta 3D→foto', () => {
+  const triangles = trianglesFromEdges(FaceLandmarker.FACE_LANDMARKS_TESSELATION);
+  assert.equal(triangles.length / 3, 852);
+  assert.deepEqual(trianglesFromEdges([{ start: 1, end: 2 }, { start: 2, end: 3 }, { start: 9, end: 1 }]), []);
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const lm = Array.from({ length: 478 }, () => {
+    const a = rnd() * Math.PI * 2, r = Math.sqrt(rnd());
+    return { x: 0.5 + 0.2 * r * Math.cos(a), y: 0.5 + 0.3 * r * Math.sin(a), z: -0.06 * (1 - r * r) };
+  });
+  const aspect = 0.75;
+  const surface = buildPersonalSurface(lm, aspect, triangles, 1);
+  assert.ok(surface);
+  const pos = i => ({ x: surface.positions[i * 3], y: surface.positions[i * 3 + 1], z: surface.positions[i * 3 + 2] });
+  // Normalizada como el visor (dimensión máxima 5, centrada) para que su transformación sea identidad.
+  const xs = lm.map((_, i) => pos(i).x), ys = lm.map((_, i) => pos(i).y);
+  assert.ok(Math.abs(Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) - 5) < 1e-4);
+  assert.ok(Math.abs(Math.max(...ys) + Math.min(...ys)) < 1e-4);
+  lm.forEach((p, i) => {
+    const q = projectPersonal(pos(i), surface.projection);
+    assert.ok(Math.abs(q.x - p.x) < 1e-5 && Math.abs(q.y - p.y) < 1e-5, `vértice ${i}`);
+    assert.ok(Math.abs(surface.uvs[i * 2] - p.x) < 1e-6 && Math.abs(surface.uvs[i * 2 + 1] - p.y) < 1e-6);
+  });
+  // Un clic dentro de un triángulo (raycast) cae en el mismo punto interpolado de la textura/foto.
+  const [a, b, c] = triangles.slice(0, 3), w = [0.2, 0.3, 0.5];
+  const hit = ['x', 'y', 'z'].reduce((o, k) => ({ ...o, [k]: w[0] * pos(a)[k] + w[1] * pos(b)[k] + w[2] * pos(c)[k] }), {});
+  const expected = { x: w[0] * lm[a].x + w[1] * lm[b].x + w[2] * lm[c].x, y: w[0] * lm[a].y + w[1] * lm[b].y + w[2] * lm[c].y };
+  const [elem] = elemsFrom3D({ markers: [{ id: 'm1', position: hit }], lines: [], shapes: [], meta: { m1: { mode: 'toxina', dose: 4, zone: 'Auto' } } },
+    'frontal', frame, aspect, false, undefined, surface.projection);
+  assert.ok(Math.abs(elem.paths[0][0].x - expected.x) < 1e-5 && Math.abs(elem.paths[0][0].y - expected.y) < 1e-5);
+  // El relieve no altera la correspondencia en foto.
+  const deeper = buildPersonalSurface(lm, aspect, triangles, 2);
+  assert.ok(Math.abs(projectPersonal({ x: deeper.positions[0], y: deeper.positions[1], z: 0 }, deeper.projection).x - lm[0].x) < 1e-5);
+  assert.equal(buildPersonalSurface(lm.slice(0, 100), aspect, triangles), null);
+  assert.equal(buildPersonalSurface(lm, aspect, [0, 1, 999]), null);
+});
