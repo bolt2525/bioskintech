@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   MODEL_REGISTRATION_ANCHORS, applyRegistration, autoRegistration, buildPersonalSurface, elemsFrom3D, fitAffineRegistration, frameFromLandmarks, isRegistrationAccepted,
-  isWithinFace, projectModel, projectPersonal, registrationAnchorIndices, trianglesFromEdges, updateRegistrationAnchor,
+  isWithinFace, projectModel, projectPersonal, rebasePersonalPoint, refineDepthFromProfiles, registrationAnchorIndices, trianglesFromEdges, updateRegistrationAnchor,
 } from '../src/lab/faceSim/engine.ts';
 import { FaceLandmarker } from '@mediapipe/tasks-vision';
 
@@ -71,6 +71,10 @@ test('convierte los landmarks del óvalo en un contorno normalizado', () => {
   assert.deepEqual(detected.axisTop, landmarks[9]);
   assert.deepEqual(detected.anchors[1], landmarks[9]);
   assert.notDeepEqual(detected.anchors[1], landmarks[168]);
+  assert.deepEqual(detected.anchors[11], landmarks[61]);
+  assert.deepEqual(detected.anchors[12], landmarks[291]);
+  assert.deepEqual(detected.anchors[13], landmarks[98]);
+  assert.deepEqual(detected.anchors[14], landmarks[327]);
   assert.throws(() => frameFromLandmarks(landmarks.slice(0, 200)), /incompletos/);
 });
 
@@ -149,13 +153,39 @@ test('la deformación thin-plate lleva cada anclaje a su landmark sin plegar el 
   const base = { ...frame, axisTop: { x: 0.5, y: 0.1 } };
   const projected = MODEL_REGISTRATION_ANCHORS.map(p => projectModel(p, 'frontal', base, false, 0.75));
   // Cejas más altas y nariz/labio más bajos que el modelo, como en pacientes reales.
-  const target = projected.map((p, i) => ({ x: p.x, y: p.y + (i >= 7 ? -0.05 : i === 4 || i === 5 ? 0.04 : 0) }));
+  const target = projected.map(p => ({ x: p.x, y: p.y - 0.025 * Math.sin(2 * Math.PI * (p.y - base.top) / (base.bottom - base.top)) }));
   const registration = autoRegistration('frontal', { ...base, anchors: target }, 0.75, false);
   assert.ok(registration?.warp);
   projected.forEach((p, i) => {
     const mapped = applyRegistration(p, registration);
     assert.ok(Math.hypot(mapped.x - target[i].x, mapped.y - target[i].y) < 1e-6, `anclaje ${i}`);
   });
+});
+
+test('comisuras y alas nasales coinciden con sus referencias con error inferior a un píxel', () => {
+  const base = { ...frame, axisTop: { x: 0.5, y: 0.1 } };
+  const anchors = MODEL_REGISTRATION_ANCHORS.map(p => projectModel(p, 'frontal', base, false, 0.75));
+  const target = anchors.map((p, i) => ({
+    x: p.x + (i === 11 ? -0.02 : i === 12 ? 0.02 : 0),
+    y: p.y + (i === 11 || i === 12 ? 0.025 : 0),
+  }));
+  const detected = { ...base, anchors: target };
+  const registration = autoRegistration('frontal', detected, 0.75, false);
+  assert.ok(isRegistrationAccepted(registration));
+  const markers = [11, 12, 13, 14].map(i => ({ id: `ref-${i}`, position: MODEL_REGISTRATION_ANCHORS[i] }));
+  const meta = Object.fromEntries(markers.map(m => [m.id, { mode: 'relleno_ha', dose: 0.2, zone: 'Auto' }]));
+  const elems = elemsFrom3D({ markers, lines: [], shapes: [], meta }, 'frontal', detected, 0.75, false, registration);
+  assert.equal(elems.length, markers.length);
+  elems.forEach((elem, i) => {
+    const q = elem.paths[0][0], expected = target[11 + i];
+    assert.ok(Math.hypot((q.x - expected.x) * 1050, (q.y - expected.y) * 1400) < 1);
+    assert.ok(isWithinFace(q, detected));
+  });
+  const adjusted = updateRegistrationAnchor('frontal', detected, 0.75, false, 11,
+    { ...target[11], y: target[11].y + 0.005 }, MODEL_REGISTRATION_ANCHORS);
+  assert.ok(adjusted);
+  const q = projectModel(MODEL_REGISTRATION_ANCHORS[11], 'frontal', adjusted.frame, false, 0.75, adjusted.registration);
+  assert.ok(Math.abs(q.y - target[11].y - 0.005) * 1400 < 1);
 });
 
 test('corrige una referencia en foto y reproyecta exactamente sin mutar el marco original', () => {
@@ -182,7 +212,7 @@ test('corrige una referencia en foto y reproyecta exactamente sin mutar el marco
 
 test('la corrección fotográfica conserva los anclajes personalizados de calibración manual', () => {
   const base = { ...frame, axisTop: { x: 0.5, y: 0.1 } };
-  const model = MODEL_REGISTRATION_ANCHORS.slice(0, 7).map(p => ({ ...p, y: p.y + 0.02 }));
+  const model = registrationAnchorIndices('frontal').map(i => ({ ...MODEL_REGISTRATION_ANCHORS[i], y: MODEL_REGISTRATION_ANCHORS[i].y + 0.02 }));
   const anchors = model.map(p => projectModel(p, 'frontal', base, false, 0.75));
   const detected = { ...base, anchors };
   const point = { ...anchors[4], y: anchors[4].y + 0.01 };
@@ -223,6 +253,7 @@ test('superficie personal: triangulación MediaPipe y correspondencia exacta 3D�
     const a = rnd() * Math.PI * 2, r = Math.sqrt(rnd());
     return { x: 0.5 + 0.2 * r * Math.cos(a), y: 0.5 + 0.3 * r * Math.sin(a), z: -0.06 * (1 - r * r) };
   });
+
   const aspect = 0.75;
   const surface = buildPersonalSurface(lm, aspect, triangles, 1);
   assert.ok(surface);
@@ -246,6 +277,73 @@ test('superficie personal: triangulación MediaPipe y correspondencia exacta 3D�
   // El relieve no altera la correspondencia en foto.
   const deeper = buildPersonalSurface(lm, aspect, triangles, 2);
   assert.ok(Math.abs(projectPersonal({ x: deeper.positions[0], y: deeper.positions[1], z: 0 }, deeper.projection).x - lm[0].x) < 1e-5);
+  for (const index of [61, 291, 98, 327]) {
+    const rebased = rebasePersonalPoint(pos(index), surface.projection, deeper.projection, 2);
+    ['x', 'y', 'z'].forEach((axis, offset) =>
+      assert.ok(Math.abs(rebased[axis] - deeper.positions[index * 3 + offset]) < 1e-5, `${index}:${axis}`));
+  }
   assert.equal(buildPersonalSurface(lm.slice(0, 100), aspect, triangles), null);
   assert.equal(buildPersonalSurface(lm, aspect, [0, 1, 999]), null);
+});
+
+const yawPose = angle => {
+  const c = Math.cos(angle), s = Math.sin(angle);
+  return [c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 0, 0, -40, 1];
+};
+function depthFixture() {
+  const aspect = 0.75;
+  const landmarks = Array.from({ length: 478 }, (_, i) => ({
+    x: 0.2 + (i % 22) / 21 * 0.6,
+    y: 0.15 + Math.floor(i / 22) / 21 * 0.7,
+    z: 0,
+  }));
+  landmarks[10].y = 0.15; landmarks[152].y = 0.85;
+  const truth = landmarks.map(p => 0.12 * Math.exp(-((p.x - 0.5) ** 2 + (p.y - 0.48) ** 2) / 0.02));
+  landmarks.forEach((p, i) => { p.z = -truth[i] * 2 / aspect; });
+  const profile = (angle, scale = 0.9, depthScale = 1) => ({
+    aspect: 0.8, pose: yawPose(angle),
+    landmarks: landmarks.map((p, i) => ({
+      x: (0.4 + scale * (Math.cos(angle) * (p.x - 0.5) * aspect + Math.sin(angle) * truth[i] * depthScale)) / 0.8,
+      y: 0.5 + scale * (p.y - 0.5), z: 0,
+    })),
+  });
+  return { front: { landmarks, aspect, pose: yawPose(0) }, truth, profile };
+}
+
+test('profundidad multivista: reduce >90% el error de relieve en geometría conocida sin alterar XY', () => {
+  const { front, truth, profile } = depthFixture();
+  const refined = refineDepthFromProfiles(front, [profile(Math.PI / 3), profile(-Math.PI / 2, 1.3)]);
+  assert.equal(refined.used, 2);
+  assert.deepEqual(refined.rejected, []);
+  const shapeError = depths => {
+    const errors = depths.map((z, i) => z - truth[i]), mean = errors.reduce((s, z) => s + z, 0) / errors.length;
+    return Math.sqrt(errors.reduce((s, z) => s + (z - mean) ** 2, 0) / errors.length);
+  };
+  const before = shapeError(front.landmarks.map(p => -p.z * front.aspect));
+  const after = shapeError(refined.landmarks.map(p => -p.z * front.aspect));
+  assert.ok(after < before * 0.1, `${before} → ${after}`);
+  refined.landmarks.forEach((p, i) => {
+    assert.equal(p.x, front.landmarks[i].x);
+    assert.equal(p.y, front.landmarks[i].y);
+  });
+  assert.equal(refineDepthFromProfiles(front, [profile(Math.PI / 3)]).used, 1);
+});
+
+test('profundidad multivista: rechaza vistas sin parallax, poses inválidas y laterales discordantes', () => {
+  const { front, profile } = depthFixture();
+  const frontal = refineDepthFromProfiles(front, [profile(0)]);
+  assert.equal(frontal.used, 0);
+  assert.match(frontal.rejected[0], /giro lateral/);
+  const invalid = refineDepthFromProfiles(front, [{ ...profile(1), pose: Array(16).fill(0) }]);
+  assert.equal(invalid.used, 0);
+  assert.match(invalid.rejected[0], /inválidos/);
+  const inconsistent = profile(1);
+  inconsistent.landmarks.forEach((p, i) => { p.y += i % 2 ? 0.15 : -0.15; });
+  assert.match(refineDepthFromProfiles(front, [inconsistent]).rejected[0], /no concuerdan/);
+  const disagree = refineDepthFromProfiles(front, [profile(Math.PI / 2, 1, 2), profile(-Math.PI / 2, 1, -2)]);
+  assert.equal(disagree.used, 0);
+  assert.match(disagree.rejected.join(' '), /discrepan/);
+  assert.deepEqual(disagree.landmarks, front.landmarks);
+  assert.equal(refineDepthFromProfiles({ ...front, pose: undefined }, [profile(1)]).used, 0);
+  assert.equal(refineDepthFromProfiles(front, []).used, 0);
 });

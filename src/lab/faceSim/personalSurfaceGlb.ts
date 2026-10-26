@@ -13,7 +13,7 @@ export async function personalSurfaceToGlb(surface: PersonalSurface, photo: HTML
   // UV con origen arriba-izquierda, igual que la convención glTF.
   texture.flipY = false;
   texture.colorSpace = THREE.SRGBColorSpace;
-  const material = new THREE.MeshStandardMaterial({ map: texture, side: THREE.DoubleSide });
+  const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.name = 'PERSONAL_FACE_SURFACE';
   try {

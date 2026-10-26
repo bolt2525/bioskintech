@@ -47,23 +47,38 @@ export const REGISTRATION_ANCHORS = [
   'Centro de la frente', 'Glabela', 'Ojo lado A', 'Ojo lado B',
   'Punta nasal', 'Centro del labio superior', 'Mentón',
   'Cola de ceja A', 'Cola de ceja B', 'Centro de ceja A', 'Centro de ceja B',
+  'Comisura labial A', 'Comisura labial B', 'Ala nasal A', 'Ala nasal B',
+  'Canto interno A', 'Canto interno B', 'Borde del labio superior', 'Borde del labio inferior',
+  'Raíz nasal', 'Puente nasal', 'Mejilla medial A', 'Mejilla medial B',
+  'Mejilla lateral A', 'Mejilla lateral B', 'Mandíbula A', 'Mandíbula B',
 ];
 /** Índices MediaPipe por anclaje; los grupos se promedian (cejas: borde superior + inferior). */
-const LANDMARK_ANCHORS = [[10], [9], [33], [263], [1], [13], [152], [70, 46], [300, 276], [105, 52], [334, 282]];
+const LANDMARK_ANCHORS = [
+  [10], [9], [33], [263], [1], [13], [152], [70, 46], [300, 276], [105, 52], [334, 282],
+  [61], [291], [98], [327], [133], [362], [0], [17], [168], [6], [205], [425], [50], [280], [172], [397],
+];
 /** Anclajes para calibración manual (clics en el modelo). */
 export const registrationAnchorIndices = (view: ViewKind) =>
-  view === 'frontal' ? [0, 1, 2, 3, 4, 5, 6] : [0, 1, 4, 5, 6];
-/** La alineación automática suma las cejas en frontal: su altura varía mucho entre pacientes. */
+  view === 'frontal' ? REGISTRATION_ANCHORS.map((_, i) => i) : [0, 1, 4, 5, 6];
+/** En frontal incluye cejas, comisuras y alas nasales para ajustar las proporciones locales. */
 const autoAnchorIndices = (view: ViewKind) =>
-  view === 'frontal' ? [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10] : registrationAnchorIndices(view);
+  view === 'frontal' ? REGISTRATION_ANCHORS.map((_, i) => i) : registrationAnchorIndices(view);
 /**
  * Mismos anclajes sobre male_head.glb normalizado (raycast de la malla; cejas según trazado-referencia-superior.json).
  * El lado A es el derecho del paciente (izquierda de la imagen).
  */
 export const MODEL_REGISTRATION_ANCHORS: Vec3[] = [
   { x: 0, y: 1.65, z: 1.44 }, { x: 0, y: 0.9, z: 1.58 }, { x: -0.71, y: 0.8, z: 1.17 }, { x: 0.72, y: 0.8, z: 1.17 },
-  { x: 0, y: 0.25, z: 1.9 }, { x: 0, y: -0.2, z: 1.66 }, { x: 0, y: -1, z: 1.42 },
+  { x: 0, y: 0.25, z: 1.9 }, { x: 0, y: -0.29, z: 1.613 }, { x: 0, y: -1, z: 1.42 },
   { x: -0.72, y: 0.97, z: 1.36 }, { x: 0.73, y: 0.96, z: 1.35 }, { x: -0.5, y: 1.15, z: 1.52 }, { x: 0.5, y: 1.15, z: 1.51 },
+  { x: -0.411, y: -0.298, z: 1.382 }, { x: 0.405, y: -0.299, z: 1.386 },
+  { x: -0.236, y: 0.096, z: 1.487 }, { x: 0.225, y: 0.097, z: 1.493 },
+  { x: -0.244, y: 0.77, z: 1.27 }, { x: 0.258, y: 0.779, z: 1.267 },
+  { x: -0.002, y: -0.225, z: 1.658 }, { x: -0.005, y: -0.395, z: 1.634 },
+  { x: -0.002, y: 0.815, z: 1.597 }, { x: -0.004, y: 0.712, z: 1.659 },
+  { x: -0.618, y: 0.124, z: 1.315 }, { x: 0.62, y: 0.121, z: 1.312 },
+  { x: -0.747, y: 0.254, z: 1.232 }, { x: 0.756, y: 0.252, z: 1.225 },
+  { x: -0.895, y: -0.547, z: 0.587 }, { x: 0.906, y: -0.55, z: 0.306 },
 ];
 
 /**
@@ -567,6 +582,95 @@ export interface PersonalProjection { cx: number; cy: number; k: number; aspect:
 export interface PersonalSurface {
   positions: Float32Array; uvs: Float32Array; indices: Uint32Array; projection: PersonalProjection;
 }
+export interface DepthView {
+  landmarks: { x: number; y: number; z: number }[];
+  aspect: number;
+  pose?: number[];
+}
+
+const DEPTH_REFERENCES = [...new Set([...FACE_OVAL, ...LANDMARK_ANCHORS.flat()])];
+
+function poseRotation(pose?: number[]): number[] | null {
+  if (!pose || pose.length !== 16 || pose.some(v => !Number.isFinite(v))) return null;
+  const columns = [0, 4, 8].map(i => {
+    const length = Math.hypot(pose[i], pose[i + 1], pose[i + 2]);
+    return [pose[i] / length, pose[i + 1] / length, pose[i + 2] / length];
+  });
+  if (columns.flat().some(v => !Number.isFinite(v))) return null;
+  if (columns.some((a, i) => columns.some((b, j) => i !== j && Math.abs(a.reduce((s, v, k) => s + v * b[k], 0)) > 0.02))) return null;
+  const r = [0, 1, 2].flatMap(row => columns.map(c => c[row]));
+  const det = r[0] * (r[4] * r[8] - r[5] * r[7]) - r[1] * (r[3] * r[8] - r[5] * r[6]) + r[2] * (r[3] * r[7] - r[4] * r[6]);
+  return det > 0.98 ? r : null;
+}
+
+/**
+ * Perspectiva débil multivista: la componente perpendicular al eje de profundidad determina
+ * la escala entre fotos sin depender de Z. La paralela recupera Z con regularización monocular.
+ * Las poses provienen de MediaPipe; el resultado sigue siendo relativo, no métrico.
+ */
+export function refineDepthFromProfiles(front: DepthView, profiles: DepthView[]): {
+  landmarks: DepthView['landmarks']; used: number; rejected: string[];
+} {
+  const rejected: string[] = [];
+  const valid = (v: DepthView) => v.landmarks.length >= 468 && Number.isFinite(v.aspect) && v.aspect > 0
+    && v.landmarks.every(p => [p.x, p.y, p.z].every(Number.isFinite));
+  const rf = poseRotation(front.pose);
+  if (!valid(front) || !rf) return { landmarks: front.landmarks, used: 0, rejected: profiles.length ? ['La foto de origen no tiene una pose facial válida.'] : [] };
+  const xy = (v: DepthView, i: number): P2 => ({ x: v.landmarks[i].x * v.aspect, y: -v.landmarks[i].y });
+  const mean = (v: DepthView): P2 => DEPTH_REFERENCES.reduce((s, i) => {
+    const p = xy(v, i);
+    return { x: s.x + p.x / DEPTH_REFERENCES.length, y: s.y + p.y / DEPTH_REFERENCES.length };
+  }, { x: 0, y: 0 });
+  const cf = mean(front);
+  const zMean = DEPTH_REFERENCES.reduce((s, i) => s - front.landmarks[i].z * front.aspect / DEPTH_REFERENCES.length, 0);
+  const faceHeight = Math.hypot(front.landmarks[152].x * front.aspect - front.landmarks[10].x * front.aspect,
+    front.landmarks[152].y - front.landmarks[10].y);
+  if (!(faceHeight > 0.1)) return { landmarks: front.landmarks, used: 0, rejected: ['La escala facial de origen es degenerada.'] };
+  const candidates: { depths: number[]; weight: number }[] = [];
+  profiles.forEach((profile, index) => {
+    const reject = (reason: string) => rejected.push(`Lateral ${index + 1}: ${reason}`);
+    const rp = poseRotation(profile.pose);
+    if (!valid(profile) || !rp || profile.landmarks.length !== front.landmarks.length) { reject('landmarks o pose inválidos.'); return; }
+    const r = [0, 1, 2].flatMap(row => [0, 1, 2].map(col =>
+      [0, 1, 2].reduce((s, k) => s + rp[row * 3 + k] * rf[col * 3 + k], 0)));
+    const dx = r[2], dy = r[5], weight = dx * dx + dy * dy;
+    if (Math.abs(dx) < 0.42 || Math.abs(dy) > 0.4 || r[0] < -0.2) { reject('se necesita un giro lateral de 25–100° y poco cabeceo.'); return; }
+    const cp = mean(profile), length = Math.sqrt(weight), nx = -dy / length, ny = dx / length;
+    const pair = (i: number) => {
+      const f = xy(front, i), p = xy(profile, i), x = f.x - cf.x, y = f.y - cf.y;
+      return { ax: r[0] * x + r[1] * y, ay: r[3] * x + r[4] * y, px: p.x - cp.x, py: p.y - cp.y };
+    };
+    const samples = DEPTH_REFERENCES.map(pair);
+    const variance = samples.reduce((s, p) => s + (nx * p.ax + ny * p.ay) ** 2, 0);
+    const covariance = samples.reduce((s, p) => s + (nx * p.ax + ny * p.ay) * (nx * p.px + ny * p.py), 0);
+    const scale = covariance / variance;
+    if (!Number.isFinite(scale) || scale < 0.05 || scale > 20) { reject('escala incompatible entre fotografías.'); return; }
+    const residual = Math.sqrt(samples.reduce((s, p) => s + (nx * (p.px / scale - p.ax) + ny * (p.py / scale - p.ay)) ** 2, 0) / samples.length);
+    if (residual / faceHeight > 0.04) { reject('las referencias no concuerdan (pose, expresión o perspectiva diferentes).'); return; }
+    const depths = front.landmarks.map((p, i) => {
+      const q = pair(i), prior = -p.z * front.aspect - zMean;
+      return zMean + (dx * (q.px / scale - q.ax) + dy * (q.py / scale - q.ay) + 0.05 * prior) / (weight + 0.05);
+    });
+    const span = Math.max(...depths) - Math.min(...depths);
+    if (!Number.isFinite(span) || span > faceHeight * 0.8) { reject('profundidad inconsistente con la escala facial.'); return; }
+    candidates.push({ depths, weight });
+  });
+  if (candidates.length > 1) {
+    const disagreement = Math.sqrt(DEPTH_REFERENCES.reduce((s, i) => s + (candidates[0].depths[i] - candidates[1].depths[i]) ** 2, 0) / DEPTH_REFERENCES.length);
+    if (disagreement > faceHeight * 0.06) {
+      return { landmarks: front.landmarks, used: 0, rejected: [...rejected, 'Los dos laterales discrepan en profundidad; no se fusionaron.'] };
+    }
+  }
+  if (!candidates.length) return { landmarks: front.landmarks, used: 0, rejected };
+  const total = candidates.reduce((s, c) => s + c.weight, 0);
+  return {
+    landmarks: front.landmarks.map((p, i) => ({
+      ...p, z: -candidates.reduce((s, c) => s + c.depths[i] * c.weight, 0) / total / front.aspect,
+    })),
+    used: candidates.length, rejected,
+  };
+}
+
 /** El visor normaliza la malla a 5 unidades de dimensión máxima; generarla ya normalizada deja su transformación en identidad. */
 const VIEWER_MAX_DIM = 5;
 
@@ -611,6 +715,16 @@ export function buildPersonalSurface(
 
 export const projectPersonal = (p: Vec3, m: PersonalProjection): P2 =>
   ({ x: (p.x / m.k + m.cx) / m.aspect, y: -(p.y / m.k + m.cy) });
+
+/** Al variar el relieve, conserva el píxel de origen y adapta la profundidad de la marca a la nueva malla. */
+export function rebasePersonalPoint(p: Vec3, from: PersonalProjection, to: PersonalProjection, depthRatio: number): Vec3 {
+  const q = projectPersonal(p, from);
+  return {
+    x: (q.x * to.aspect - to.cx) * to.k,
+    y: (-q.y - to.cy) * to.k,
+    z: p.z * depthRatio * to.k / from.k,
+  };
+}
 
 /** Convierte los trazos del visor 3D en elementos 2D para la vista activa. */
 export function elemsFrom3D(

@@ -22,6 +22,48 @@ function loadOcclusionFunction(name) {
   return sandbox.result;
 }
 
+test('carga 3D: ignora éxitos y errores tardíos de fuentes reemplazadas o desmontadas', () => {
+  let loadingEffect;
+  const visit = node => {
+    if (ts.isCallExpression(node) && node.expression.getText(viewerAst) === 'useEffect'
+      && node.arguments[1]?.getText(viewerAst) === '[modelSource, cameraPreset]') loadingEffect = node.arguments[0];
+    ts.forEachChild(node, visit);
+  };
+  visit(viewerAst);
+  assert.ok(loadingEffect);
+  const code = ts.transpileModule(`globalThis.effect = ${loadingEffect.getText(viewerAst)};`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS },
+  }).outputText;
+  for (const type of ['url', 'buffer']) {
+    let success, failure, loaded = 0, errors = 0;
+    const disposed = [];
+    const scene = new THREE.Scene();
+    const sandbox = vm.createContext({
+      THREE, ArrayBuffer,
+      GLTFLoader: class {
+        load(_data, done, _progress, error) { success = done; failure = error; }
+        parse(_data, _path, done, error) { success = done; failure = error; }
+      },
+      sceneRef: { current: scene }, faceMeshRef: { current: null }, scalpHairGroupRef: { current: null },
+      modelSource: { type, data: type === 'url' ? '/fake.glb' : new ArrayBuffer(8) },
+      disposeObject3D: o => disposed.push(o),
+      callbacks: { current: { onLoaded: () => loaded++, onError: () => errors++ } },
+    });
+    vm.runInContext(code, sandbox);
+    const cleanup = sandbox.effect();
+    assert.equal(typeof success, 'function');
+    assert.equal(typeof failure, 'function');
+    cleanup();
+    const obsolete = new THREE.Group();
+    success({ scene: obsolete });
+    failure(new Error('respuesta obsoleta'));
+    assert.deepEqual(disposed, [obsolete]);
+    assert.equal(scene.children.length, 0);
+    assert.equal(loaded, 0);
+    assert.equal(errors, 0);
+  }
+});
+
 test('oclusión real: el rostro bloquea puntos del lado opuesto y conserva los del lado visible', () => {
   const visible = loadOcclusionFunction('isSurfacePositionVisible');
   const surface = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 24), new THREE.MeshBasicMaterial());

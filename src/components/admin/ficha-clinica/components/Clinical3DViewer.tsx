@@ -2565,6 +2565,8 @@ const ThreeEngine: React.FC<{
   // 2. Load model when source changes
   useEffect(() => {
     if (!sceneRef.current || !modelSource) return;
+    let cancelled = false;
+    const preservePersonalCamera = !!faceMeshRef.current?.getObjectByName('PERSONAL_FACE_SURFACE');
 
     if (faceMeshRef.current) {
       sceneRef.current.remove(faceMeshRef.current);
@@ -2579,8 +2581,12 @@ const ThreeEngine: React.FC<{
 
     const loader = new GLTFLoader();
 
-    const handleLoadedModel = (gltf: any) => {
+    const handleLoadedModel = (gltf: { scene: THREE.Group }) => {
       const model = gltf.scene;
+      if (cancelled) {
+        if (model) disposeObject3D(model);
+        return;
+      }
       if (!model) {
         callbacks.current.onError("El archivo no contiene una malla 3D válida.");
         return;
@@ -2647,20 +2653,22 @@ const ThreeEngine: React.FC<{
           // Superficies texturizadas (p. ej. rostro personal desde foto) conservan su textura; la tinta queda neutra.
           const map = (previousMaterials.find((material: THREE.MeshStandardMaterial) => material?.map) as THREE.MeshStandardMaterial | undefined)?.map ?? null;
           previousMaterials.forEach((material: THREE.Material) => material.dispose());
-          child.material = new THREE.MeshPhysicalMaterial({
-            color: map ? '#ffffff' : settings.materialColor,
-            map,
-            roughness: map ? 0.75 : settings.roughness,
-            metalness: map ? 0 : settings.metalness,
-            clearcoat: map ? 0 : 0.15,
-            clearcoatRoughness: 0.3,
-            side: THREE.DoubleSide,
-            wireframe: settings.wireframe,
-          });
+          child.material = map && child.name === 'PERSONAL_FACE_SURFACE'
+            ? new THREE.MeshBasicMaterial({ map, side: THREE.DoubleSide, wireframe: settings.wireframe })
+            : new THREE.MeshPhysicalMaterial({
+              color: map ? '#ffffff' : settings.materialColor,
+              map,
+              roughness: map ? 0.75 : settings.roughness,
+              metalness: map ? 0 : settings.metalness,
+              clearcoat: map ? 0 : 0.15,
+              clearcoatRoughness: 0.3,
+              side: THREE.DoubleSide,
+              wireframe: settings.wireframe,
+            });
         }
       });
 
-      if (controlsRef.current) {
+      if (controlsRef.current && !(preservePersonalCamera && model.getObjectByName('PERSONAL_FACE_SURFACE'))) {
         const preset = CAMERA_PRESETS[cameraPreset];
         cameraRef.current?.position.set(...preset.position);
         controlsRef.current.target.set(...preset.target);
@@ -2672,6 +2680,7 @@ const ThreeEngine: React.FC<{
     };
 
     const handleLoadError = () => {
+      if (cancelled) return;
       if (modelSource.type === 'buffer' && !modelSource.data) return;
       callbacks.current.onError("No se pudo cargar el modelo 3D.");
     };
@@ -2688,6 +2697,7 @@ const ThreeEngine: React.FC<{
     } catch {
       handleLoadError();
     }
+    return () => { cancelled = true; };
   }, [modelSource, cameraPreset]);
 
   // 3. Render optional scalp visualization
@@ -3487,10 +3497,8 @@ export default function Clinical3DViewer({
   showMarkerLabels = true,
   scalpHair = null,
 }: Clinical3DViewerProps) {
-  const [modelSource, setModelSource] = useState<{ type: 'url' | 'buffer'; data: string | ArrayBuffer }>({
-    type: 'url',
-    data: modelUrl,
-  });
+  const [modelSource, setModelSource] = useState<{ type: 'url' | 'buffer'; data: string | ArrayBuffer }>(() =>
+    modelData ? { type: 'buffer', data: modelData } : { type: 'url', data: modelUrl });
   const [modelLoaded, setModelLoaded] = useState(false);
   const [modelError, setModelError] = useState(false);
   const [pendingMarker, setPendingMarker] = useState<any>(null);

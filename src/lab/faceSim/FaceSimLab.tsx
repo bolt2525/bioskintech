@@ -7,7 +7,7 @@ import Clinical3DViewer, {
 import {
   AUTO_ZONE, MAX_EFFECTS, REGISTRATION_ANCHORS, SIM_MODES, autoRegistration, buildEffects, correctPoints, defaultFrame,
   elemsFrom3D, elemsFromPhoto, expandElems, fitAffineRegistration, frameFromLandmarks, importInjectable, isRegistrationAccepted, isWithinFace, projectModel,
-  buildPersonalSurface, registrationAnchorIndices, trianglesFromEdges, updateRegistrationAnchor,
+  buildPersonalSurface, rebasePersonalPoint, refineDepthFromProfiles, registrationAnchorIndices, trianglesFromEdges, updateRegistrationAnchor,
   type AffineRegistration, type PersonalProjection, type CorrectedPoint, type Elem, type ElemKind, type FaceFrame, type Meta, type P2, type PhotoEl, type SimMode, type Vec3, type ViewKind,
 } from './engine';
 
@@ -82,7 +82,7 @@ function createRenderer(canvas: HTMLCanvasElement, img: HTMLCanvasElement): Rend
 }
 
 /** Detecta landmarks con MediaPipe si el modelo local existe (npm run lab:face-assets). */
-async function detectFrame(img: HTMLCanvasElement): Promise<{ frame: FaceFrame | null; landmarks?: Landmark[]; reason: string }> {
+async function detectFrame(img: HTMLCanvasElement): Promise<{ frame: FaceFrame | null; landmarks?: Landmark[]; pose?: number[]; reason: string }> {
   let landmarker: import('@mediapipe/tasks-vision').FaceLandmarker | null = null;
   try {
     const head = await fetch('/models/face/face_landmarker.task', { method: 'HEAD' });
@@ -95,11 +95,13 @@ async function detectFrame(img: HTMLCanvasElement): Promise<{ frame: FaceFrame |
     const fileset = await FilesetResolver.forVisionTasks('/mediapipe/wasm');
     landmarker = await FaceLandmarker.createFromOptions(fileset, {
       baseOptions: { modelAssetPath: '/models/face/face_landmarker.task' }, runningMode: 'IMAGE', numFaces: 1,
+      outputFacialTransformationMatrixes: true,
     });
     const result = landmarker.detect(img);
     const landmarks = result.faceLandmarks[0];
     return landmarks
-      ? { frame: frameFromLandmarks(landmarks), landmarks: landmarks.map(({ x, y, z }) => ({ x, y, z })), reason: '' }
+      ? { frame: frameFromLandmarks(landmarks), landmarks: landmarks.map(({ x, y, z }) => ({ x, y, z })),
+        pose: result.facialTransformationMatrixes[0]?.data, reason: '' }
       : { frame: null, reason: 'MediaPipe no encontró un rostro en esta imagen.' };
   } catch (error) {
     const detail = error instanceof Error ? ` ${error.message}` : '';
@@ -120,7 +122,7 @@ async function faceTriangles(): Promise<number[]> {
   return tessellationCache;
 }
 type ModelKind = 'generico' | 'personal';
-interface PersonalModel { view: ViewKind; canvas: HTMLCanvasElement; glb: ArrayBuffer; projection: PersonalProjection; depth: number }
+interface PersonalModel { view: ViewKind; canvas: HTMLCanvasElement; glb: ArrayBuffer; projection: PersonalProjection; depth: number; depthDetails: string }
 
 const uid = () => `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 const VIEWS: { id: ViewKind; label: string }[] = [{ id: 'frontal', label: 'Frontal' }, { id: 'izquierda', label: 'Lateral izq.' }, { id: 'derecha', label: 'Lateral der.' }];
@@ -143,6 +145,7 @@ interface Slot {
   aspect: number;
   frame: FaceFrame;
   landmarks?: Landmark[];
+  pose?: number[];
   modelAnchors?: Vec3[];
   registration?: AffineRegistration;
   registrationFlip?: boolean;
@@ -161,6 +164,7 @@ export default function FaceSimLab() {
   const rendererRef = useRef<Renderer | null>(null);
   const dragRef = useRef<string | null>(null);
   const uploadRequestRef = useRef(0);
+  const personalRequestRef = useRef(0);
   const [photos, setPhotos] = useState<Partial<Record<ViewKind, Slot>>>({});
   const [view, setView] = useState<ViewKind>('frontal');
   const [renderTick, setRenderTick] = useState(0);
@@ -263,6 +267,7 @@ export default function FaceSimLab() {
     setStatus(`Modelo genérico activo: la proyección a la foto vuelve a ser orientativa.${resetModelMarks()}`);
   };
   const activatePersonal = () => {
+    setWorkMode('3d');
     if (modelKind === 'personal' && personalProjection) return;
     if (personal && personal.view === view && personal.canvas === slot?.canvas) {
       setModelKind('personal');
@@ -277,27 +282,64 @@ export default function FaceSimLab() {
       setStatus('Para la superficie personal carga una foto con el rostro detectado (landmarks MediaPipe).');
       return;
     }
+    const requestId = ++personalRequestRef.current;
     setBuildingPersonal(true);
     setCalibrating(false);
     try {
-      const surface = buildPersonalSurface(source.landmarks, source.aspect, await faceTriangles(), nextDepth);
+      const profiles = view === 'frontal' ? VIEWS.filter(v => v.id !== 'frontal').flatMap(v => {
+        const photo = photos[v.id];
+        return photo?.landmarks ? [{ landmarks: photo.landmarks, aspect: photo.aspect, pose: photo.pose }] : [];
+      }) : [];
+      const refined = refineDepthFromProfiles({ landmarks: source.landmarks, aspect: source.aspect, pose: source.pose }, profiles);
+      const depthDetails = [
+        refined.used ? `Ajuste experimental de profundidad con ${refined.used} lateral(es).`
+          : 'Profundidad monocular sin contrastar. Para mejorarla, carga frontal y laterales de la misma persona con expresión neutra y genera desde Frontal.',
+        ...refined.rejected,
+      ].join(' ');
+      const surface = buildPersonalSurface(refined.landmarks, source.aspect, await faceTriangles(), nextDepth);
       if (!surface) throw new Error('Landmarks insuficientes para construir la malla.');
       const { personalSurfaceToGlb } = await import('./personalSurfaceGlb');
       const glb = await personalSurfaceToGlb(surface, source.canvas);
-      const replacing = modelKind !== 'personal' || !personal || personal.view !== view || personal.canvas !== source.canvas
-        || Math.abs(personal.projection.k - surface.projection.k) > 1e-9;
+      if (requestId !== personalRequestRef.current) return;
+      const replacing = modelKind !== 'personal' || !personal || personal.view !== view || personal.canvas !== source.canvas;
       const cleared = replacing ? resetModelMarks() : '';
-      setPersonal({ view, canvas: source.canvas, glb, projection: surface.projection, depth: nextDepth });
+      if (!replacing && personal) {
+        const ratio = nextDepth / personal.depth, scale = surface.projection.k / personal.projection.k;
+        const point = (p: Vec3) => rebasePersonalPoint(p, personal.projection, surface.projection, ratio);
+        const direction = (p: Vec3, zScale: number) => {
+          const length = Math.hypot(p.x, p.y, p.z * zScale) || 1;
+          return { x: p.x / length, y: p.y / length, z: p.z * zScale / length };
+        };
+        const rebase = (s: Snapshot): Snapshot => ({
+          ...s,
+          markers: s.markers.map(m => ({ ...m, position: point(m.position), normal: direction(m.normal, 1 / ratio),
+            ...(m.points ? { points: m.points.map(point) } : {}), ...(m.radius !== undefined ? { radius: m.radius * scale } : {}) })),
+          lines: s.lines.map(l => ({ ...l, points: l.points.map(point), segments: l.segments?.map(path => path.map(point)) })),
+          shapes: s.shapes.map(sh => ({ ...sh, center: point(sh.center), normal: direction(sh.normal, 1 / ratio),
+            ...(sh.tangent ? { tangent: direction(sh.tangent, ratio) } : {}),
+            ...(sh.radius !== undefined ? { radius: sh.radius * scale } : {}),
+            ...(sh.width !== undefined ? { width: sh.width * scale } : {}),
+            ...(sh.height !== undefined ? { height: sh.height * scale } : {}) })),
+        });
+        const rebased = rebase({ markers, lines, shapes, meta, photoEls });
+        setMarkers(rebased.markers); setLines(rebased.lines); setShapes(rebased.shapes);
+        setHistory(h => h.map(rebase));
+      }
+      setPersonal({ view, canvas: source.canvas, glb, projection: surface.projection, depth: nextDepth, depthDetails });
       setModelKind('personal');
-      setStatus(`Superficie 3D personal generada desde la foto ${VIEWS.find(v => v.id === view)?.label ?? view} (${surface.indices.length / 3} triángulos). Cada marca 3D cae sobre el mismo píxel de la foto; el relieve es estimado.${cleared}`);
+      setStatus(`Superficie 3D personal generada desde la foto ${VIEWS.find(v => v.id === view)?.label ?? view} (${surface.indices.length / 3} triángulos). ${depthDetails}${cleared}`);
     } catch (error) {
+      if (requestId !== personalRequestRef.current) return;
+      setDepth(personal?.depth ?? 1);
       setStatus(`No se pudo generar la superficie personal: ${error instanceof Error ? error.message : 'error desconocido'}. Se mantiene el modelo anterior.`);
     } finally {
-      setBuildingPersonal(false);
+      if (requestId === personalRequestRef.current) setBuildingPersonal(false);
     }
   };
 
   const loadFile = async (file: File, target: ViewKind) => {
+    personalRequestRef.current++;
+    setBuildingPersonal(false);
     const requestId = ++uploadRequestRef.current;
     if (!file.type.startsWith('image/')) { setStatus('El archivo debe ser una imagen.'); return; }
     if (file.size > MAX_IMAGE_BYTES) { setStatus('La imagen supera el límite de 20 MiB.'); return; }
@@ -318,9 +360,9 @@ export default function FaceSimLab() {
       bmp?.close();
     }
     if (requestId !== uploadRequestRef.current) return;
-    const replacedPersonal = personal?.view === target;
+    const replacedPersonal = !!personal;
     if (replacedPersonal) { setPersonal(null); setModelKind('generico'); }
-    const personalNote = replacedPersonal ? ` La superficie personal anterior se descartó; vuelve a generarla para esta foto.${resetModelMarks()}` : '';
+    const personalNote = replacedPersonal ? ` Se actualizaron las fotos; regenera la superficie personal para recalcular la profundidad.${resetModelMarks()}` : '';
     setPhotos(p => ({ ...p, [target]: { canvas: c, aspect: c.width / c.height, frame: defaultFrame(target) } }));
     setCalibrating(false);
     setPhotoAnchor(null);
@@ -339,7 +381,7 @@ export default function FaceSimLab() {
     setPhotos(p => (p[target]?.canvas === c ? {
       ...p,
       [target]: {
-        ...p[target]!, frame: detected.frame!, landmarks: detected.landmarks, modelAnchors: undefined,
+        ...p[target]!, frame: detected.frame!, landmarks: detected.landmarks, pose: detected.pose, modelAnchors: undefined,
         ...(accepted ? { registration: auto, registrationFlip: flipX, registrationSource: 'auto' as const } : { registration: undefined }),
       },
     } : p));
@@ -523,7 +565,7 @@ export default function FaceSimLab() {
             ))}
           </div>
           <div className="mt-1 grid grid-cols-3 gap-1">
-            {VIEWS.map(v => <button key={v.id} type="button" disabled={!photos[v.id]} aria-pressed={view === v.id} onClick={() => { setCalibrating(false); setPhotoAnchor(null); setView(v.id); }}
+            {VIEWS.map(v => <button key={v.id} type="button" disabled={!photos[v.id]} aria-pressed={view === v.id} onClick={() => { personalRequestRef.current++; setBuildingPersonal(false); setCalibrating(false); setPhotoAnchor(null); setView(v.id); }}
               className={`rounded px-1 py-1 text-[11px] ${view === v.id ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'} disabled:opacity-40`}>Ver</button>)}
           </div>
         </div>
@@ -532,7 +574,7 @@ export default function FaceSimLab() {
         <fieldset className="space-y-2 rounded-xl border border-slate-200 p-3 text-xs">
           <legend className="px-1 font-semibold uppercase text-slate-500">Modelo 3D</legend>
           <div className="grid grid-cols-2 gap-1">
-            <button type="button" aria-pressed={modelKind === 'generico'} onClick={useGenericModel}
+            <button type="button" disabled={buildingPersonal} aria-pressed={modelKind === 'generico'} onClick={useGenericModel}
               className={`rounded-lg px-2 py-1.5 font-semibold ${modelKind === 'generico' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'}`}>Genérico</button>
             <button type="button" aria-pressed={modelKind === 'personal'} disabled={buildingPersonal || !slot?.landmarks}
               onClick={activatePersonal}
@@ -542,14 +584,18 @@ export default function FaceSimLab() {
           </div>
           {modelKind === 'personal' && personal ? (
             <>
-              <label className="block text-slate-700">Relieve estimado: {Math.round(depth * 100)}%
-                <input type="range" min={0.5} max={2} step={0.1} value={depth} disabled={buildingPersonal}
+              <label className="block text-slate-700">Relieve visual: {Math.round(depth * 100)}%
+                <input type="range" min={0.75} max={1.25} step={0.05} value={depth} disabled={buildingPersonal || !personalProjection}
                   onChange={e => setDepth(Number(e.target.value))}
                   onPointerUp={e => buildPersonal(Number((e.target as HTMLInputElement).value))}
                   onKeyUp={e => { if (/^(Arrow|Home|End|Page)/.test(e.key)) buildPersonal(Number(e.currentTarget.value)); }}
                   className="w-full accent-[#b8944d]" />
               </label>
-              <p className="text-slate-500">Malla de 478 landmarks con la foto {VIEWS.find(v => v.id === personal.view)?.label.toLowerCase()} como textura: lo que marcas en 3D cae en el mismo punto de la piel fotografiada. Solo cubre el óvalo facial; la profundidad es una estimación monocular, no un escaneo.</p>
+              <button type="button" disabled={buildingPersonal || depth === 1 || !personalProjection}
+                onClick={() => { setDepth(1); void buildPersonal(1); }}
+                className="rounded border border-slate-300 px-2 py-1 disabled:opacity-40">Restablecer relieve calculado</button>
+              <p className="text-amber-800">{personal.depthDetails} El control es una variación visual (75–125%), no una calibración clínica.</p>
+              <p className="text-slate-500">La propia foto {VIEWS.find(v => v.id === personal.view)?.label.toLowerCase()} es la superficie 3D, sin cabeza genérica. Gírala para apreciar el relieve; de frente mantiene las proporciones de la foto. La miniatura permite comprobar las marcas. Solo cubre el óvalo facial y la profundidad es estimada, no un escaneo.</p>
               {personal.view !== view && <p className="font-semibold text-amber-700">Esta superficie pertenece a la vista {VIEWS.find(v => v.id === personal.view)?.label}; vuelve a esa vista para ver sus marcas en la foto.</p>}
             </>
           ) : (
@@ -726,10 +772,12 @@ export default function FaceSimLab() {
         <p className="text-[11px] text-slate-400">En foto: clic/arrastrar para marcar, arrastrar un punto para moverlo, clic derecho o Alt+clic para borrar. Simulación referencial, no garantiza resultado clínico. Las fotos no salen del navegador.</p>
       </aside>
 
-      <div className={`grid min-w-0 gap-4 ${workMode === '3d' ? 'xl:grid-cols-2' : ''}`}>
+      <div className={`grid min-w-0 content-start gap-4 ${workMode === '3d' && !personalActive ? 'xl:grid-cols-2' : ''}`}>
         {workMode === '3d' && (
-          <section className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-900">
+          <section aria-label={personalActive ? 'Foto personal en 3D' : 'Modelo genérico 3D'} className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-900">
+            {personalActive && <h2 className="px-3 pt-3 text-sm font-semibold text-white">Tu foto en 3D · arrastra con «Rotar» para ver el relieve</h2>}
             <Clinical3DViewer
+              key={personalActive ? 'personal' : 'generico'}
               markers={markers}
               freehandLines={lines}
               surfaceShapes={shapes}
@@ -758,9 +806,10 @@ export default function FaceSimLab() {
           </section>
         )}
         <section className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-900 p-3">
+          {personalActive && workMode === '3d' && <h2 className="mb-2 text-center text-xs font-semibold text-slate-200">Vista previa {VIEWS.find(v => v.id === view)?.label.toLowerCase()} · comprobación de marcas</h2>}
           {!hasImage && <div className="flex h-[360px] items-center justify-center text-center text-sm text-slate-400">Carga la foto de la vista «{VIEWS.find(v => v.id === view)?.label}» para ver la simulación</div>}
           <div className={`relative mx-auto max-h-[78vh] touch-none select-none ${hasImage ? '' : 'hidden'} ${workMode === 'foto' ? 'cursor-crosshair' : ''}`}
-            style={{ aspectRatio: String(aspect), maxWidth: `min(100%, calc(78vh * ${aspect}))` }}
+            style={{ aspectRatio: String(aspect), maxWidth: personalActive && workMode === '3d' ? '220px' : `min(100%, calc(78vh * ${aspect}))` }}
             onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onContextMenu={e => e.preventDefault()}>
             <canvas ref={glRef} className="h-full w-full" aria-label="Simulación del rostro" />
             {split > 0 && <div className="pointer-events-none absolute inset-y-0 w-0.5 bg-white/80" style={{ left: `${split * 100}%` }} />}
