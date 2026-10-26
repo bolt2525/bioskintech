@@ -13,6 +13,7 @@ test('treatment finance breakdown keeps the charged total and only extracts sele
     total: 115,
     taxRate: 15,
   });
+
   assert.deepEqual(calculateTreatmentFinanceBreakdown(115, false), {
     subtotal: 115,
     tax: 0,
@@ -56,6 +57,24 @@ test('treatment finance breakdown keeps the charged total and only extracts sele
   assert.equal(canPostTreatmentFinance({ role: 'clinic_admin', finance_enabled: true }), true);
   assert.equal(canPostTreatmentFinance({ role: 'clinic_admin', finance_enabled: false }), false);
   assert.equal(canPostTreatmentFinance({ role: 'clinic_user', finance_enabled: true }), false);
+});
+
+test('inventory SKU suggestion considers archived rows and remains scoped to the clinic', async () => {
+  const { getNextInventorySku } = await import('../api/records.js');
+  let queryText = '';
+  let queryParams = [];
+  const pool = {
+    query: async (query, params) => {
+      queryText = query;
+      queryParams = params;
+      return { rows: [{ sku: '008' }] };
+    },
+  };
+
+  assert.equal(await getNextInventorySku(pool, 'clinic-a'), '008');
+  assert.match(queryText, /FROM inventory_items/);
+  assert.match(queryText, /sku ~ '\^\[0-9\]\+\$'/);
+  assert.deepEqual(queryParams, ['clinic-a']);
 });
 
 test('treatment deletion removes its finance posting transactionally and respects finance permissions', async () => {

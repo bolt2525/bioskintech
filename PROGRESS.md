@@ -1,5 +1,7 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-26 SKU de inventario: secuencia transaccional incluye archivados.
+
 - ✅ 2026-10-26 Corrección de actualización de email: conserva `clinic_id` como identificador de clínica al guardar usuarios.
 
 - ✅ 2026-10-23 **Restauración local del chatbot global, sin desplegar.** Retirada la pausa `AND false`/`paused` añadida por `408dc01` al cron de pacientes. Vuelven los recordatorios del día anterior desde el número global con permisos tenant/usuario, opt-ins, ciclo operativo, plantilla/botón y dedupe existentes. La confirmación inmediata al reservar ya era por correo antes del piloto y se conserva, sin agregar un WhatsApp inmediato; acuses de asistencia y resúmenes al personal intactos. Coexistencia sigue solo conexión, sin envíos desde canales propios. Aviso obsoleto del dashboard sustituido por la conducta real. Pruebas focalizadas offline con DB/Calendar/HTTP ficticios; sin cron real, mensajes reales, configuración, credenciales, BD, commit, push ni deploy. Revisión de seguridad y QA independiente pendientes de coordinación por el padre.

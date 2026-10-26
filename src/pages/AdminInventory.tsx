@@ -87,6 +87,7 @@ export default function AdminInventory() {
   // Filtro por profesional (solo admins)
   const [filterUserId, setFilterUserId] = useState<number | ''>('');
   const [clinicUsers, setClinicUsers] = useState<{ id: number; username: string; full_name: string }[]>([]);
+  const [suggestedSku, setSuggestedSku] = useState('001');
 
   useEffect(() => { fetchInventory(); fetchStats(); fetchGroups(); }, [filterUserId, productView, user?.clinic_id, masterView.clinicId]);
 
@@ -114,6 +115,16 @@ export default function AdminInventory() {
   }, [isAdmin, masterView.clinicId, user?.clinic_id]);
 
   useEffect(() => { setFilterUserId(''); setCategoryFilter('all'); setProductView('active'); }, [masterView.clinicId, user?.clinic_id]);
+
+  useEffect(() => {
+    recordsFetch('/api/records?action=inventoryNextSku')
+      .then(async response => {
+        if (!response.ok) throw new Error('No se pudo sugerir el SKU');
+        const data = await response.json();
+        if (typeof data?.sku === 'string' && data.sku) setSuggestedSku(data.sku);
+      })
+      .catch(error => console.error('Error loading suggested inventory SKU:', error));
+  }, [masterView.clinicId, user?.clinic_id]);
 
   useEffect(() => {
     if (successMessage) {
@@ -316,16 +327,6 @@ export default function AdminInventory() {
       .sort(([a], [b]) => a.localeCompare(b, 'es'))
       .map(([category, subgroups]) => [category, Array.from(subgroups.values()).sort((a, b) => a.name.localeCompare(b.name, 'es'))] as const);
   }, [filteredItems]);
-
-  const suggestedSku = useMemo(() => {
-    const numericSkus = items
-      .map(i => String(i?.sku ?? '').trim())
-      .filter(s => /^\d+$/.test(s))
-      .map(s => parseInt(s, 10));
-
-    const next = (numericSkus.length > 0 ? Math.max(...numericSkus) : items.length) + 1;
-    return String(next).padStart(3, '0');
-  }, [items]);
 
   const TABS = [
     { id: 'inventory' as const, label: 'Inventario', hint: 'Stock actual', icon: Package },

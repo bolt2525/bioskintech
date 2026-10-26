@@ -27,6 +27,16 @@ const CONSENT_SAFE_COLUMNS = `id, record_id, patient_id, clinic_id, consultation
   attachments, signing_status, signing_signed_at, signing_hash, signing_copy_sent_at,
   annulled_at, annulled_by_user_id, annulled_by_name, annulment_reason, replaces_consent_id`;
 
+export async function getNextInventorySku(pool, clinicId) {
+  const result = await pool.query(`
+    SELECT LPAD((COALESCE(MAX(sku::numeric), 0) + 1)::text, 3, '0') AS sku
+    FROM inventory_items
+    WHERE clinic_id IS NOT DISTINCT FROM $1
+      AND sku ~ '^[0-9]+$'
+  `, [clinicId ?? null]);
+  return result.rows[0]?.sku || '001';
+}
+
 function normalizeMoney(value, field, { allowZero = true } = {}) {
   if (!['number', 'string'].includes(typeof value) || String(value).trim() === '') {
     throw new Error(`${field} inválido`);
@@ -1364,6 +1374,17 @@ export default async function handler(req, res) {
       // INVENTORY MODULE ACTIONS
       // ==========================================
 
+      case 'inventoryNextSku':
+        try {
+          const su = await getSessionUserOnce();
+          if (!su) return res.status(401).json({ error: 'No autenticado' });
+          const clinicId = su?.effective_clinic_id ?? su?.clinic_id ?? null;
+          return res.status(200).json({ sku: await getNextInventorySku(pool, clinicId) });
+        } catch (err) {
+          console.error('Error suggesting inventory SKU:', err);
+          return res.status(500).json({ error: 'No se pudo sugerir el siguiente SKU.' });
+        }
+
       case 'inventoryListMovements':
         try {
           const su = await getSessionUserOnce();
@@ -1776,12 +1797,14 @@ export default async function handler(req, res) {
           const cleanCategory = normalizeInventoryCategory(category);
           await pool.query('BEGIN');
           creatingItem = true;
+          await pool.query('SELECT pg_advisory_xact_lock(hashtext($1::text))', [String(invClinicId ?? 'global')]);
           const cleanGroupName = await resolveInventoryGroup(group_name, cleanCategory, invClinicId, suInv, pool);
+          const finalSku = cleanSku || await getNextInventorySku(pool, invClinicId);
           const newItem = await pool.query(`
             INSERT INTO inventory_items (clinic_id, sku, name, brand, description, category, group_name, unit_of_measure, min_stock_level, requires_cold_chain, sanitary_registration, cost_price, sale_price, created_by_user_id)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
             RETURNING *
-          `, [invClinicId, cleanSku, name, cleanBrand, cleanDescription, cleanCategory, cleanGroupName, unit_of_measure, min_stock_level, requires_cold_chain, cleanSanitaryRegistration,
+          `, [invClinicId, finalSku, name, cleanBrand, cleanDescription, cleanCategory, cleanGroupName, unit_of_measure, min_stock_level, requires_cold_chain, cleanSanitaryRegistration,
               normalizeInventoryPrice(cost_price),
               normalizeInventoryPrice(sale_price),
               suInv?.user_id ?? null]);

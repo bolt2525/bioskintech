@@ -67,10 +67,9 @@ export default function InventoryForm({ initialData, suggestedSku, categories, g
 
   const getPayloadFormData = () => {
     const typedSku = String(formData.sku || '').trim();
-    const fallbackSku = !isEditing && suggestedSku ? suggestedSku : '';
     return {
       ...formData,
-      sku: typedSku || fallbackSku,
+      sku: typedSku,
     };
   };
 
