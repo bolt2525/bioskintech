@@ -1698,7 +1698,7 @@ export default function AdminMasterDashboard() {
     const body   = {
       ...userForm,
       id: userModal.userId,
-      clinic_id: userForm.clinic_id ? parseInt(userForm.clinic_id) : null,
+      clinic_id: userForm.clinic_id || null,
       demo_expires_at: userForm.is_demo ? new Date(Date.now() + (userForm.demo_value || 1) * (userForm.demo_unit === 'hours' ? 3600000 : userForm.demo_unit === 'weeks' ? 7*86400000 : 86400000)).toISOString() : undefined,
     };
     const res    = await fetch(`/api/admin-auth?action=${action}`, { method: 'POST', headers: authHeader(), body: JSON.stringify(body) });

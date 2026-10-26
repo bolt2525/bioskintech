@@ -3,6 +3,8 @@
 **Fecha de auditoría:** 2026-10-08
 **Alcance:** BioSkinTech App únicamente. La división de Ingeniería Biomédica y servicio técnico queda fuera de este documento.
 
+La edición administrativa de usuarios conserva el `clinic_id` recibido desde la lista de clínicas sin convertirlo a entero; así la validación tenant de `/api/admin-auth?action=updateUser` compara el identificador real y permite actualizar datos como el email sin alterar la asignación clínica.
+
 ## 1. Estado ejecutivo
 
 **WhatsApp coexistencia — piloto 2026-10-23.** `lib/whatsapp-channels.js` implementa autorización por usuario en `api/whatsapp-chatbot.js`, sin añadir funciones (11 existentes). El master controla `clinic_users.whatsapp_coexistence_enabled`, separado del bot. Login, estado y desconexión se concentran en Estado del sistema; no hay opción de coexistencia en Ajustes del dashboard. `user_whatsapp_channels` guarda credenciales AES-256-GCM y `whatsapp_signup_attempts` challenges de un uso ligados a sesión; ambas son tablas administrativas sin acceso del rol clínico, incluidas en purga e init multi-tenant. Alta, desconexión y revocación comparten bloqueo transaccional por usuario. Migración: `scripts/migrate-whatsapp-channels.mjs`.
