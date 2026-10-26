@@ -7,7 +7,7 @@ import Clinical3DViewer, {
 import {
   AUTO_ZONE, MAX_EFFECTS, REGISTRATION_ANCHORS, SIM_MODES, autoRegistration, buildEffects, correctPoints, defaultFrame,
   elemsFrom3D, elemsFromPhoto, expandElems, fitAffineRegistration, frameFromLandmarks, importInjectable, isRegistrationAccepted, isWithinFace, projectModel,
-  registrationAnchorIndices,
+  registrationAnchorIndices, updateRegistrationAnchor,
   type AffineRegistration, type CorrectedPoint, type Elem, type ElemKind, type FaceFrame, type Meta, type P2, type PhotoEl, type SimMode, type Vec3, type ViewKind,
 } from './engine';
 
@@ -160,6 +160,7 @@ export default function FaceSimLab() {
   const [history, setHistory] = useState<Snapshot[]>([]);
   const [draft, setDraft] = useState<{ kind: ElemKind; pts: P2[] } | null>(null);
   const [calibrating, setCalibrating] = useState(false);
+  const [photoAnchor, setPhotoAnchor] = useState<number | null>(null);
   const [mode, setMode] = useState<SimMode>('toxina');
   const [zone, setZone] = useState(AUTO_ZONE);
   const [product, setProduct] = useState('');
@@ -249,6 +250,7 @@ export default function FaceSimLab() {
     if (requestId !== uploadRequestRef.current) return;
     setPhotos(p => ({ ...p, [target]: { canvas: c, aspect: c.width / c.height, frame: defaultFrame(target) } }));
     setCalibrating(false);
+    setPhotoAnchor(null);
     setView(target);
     setStatus(`Detectando rostro en la vista ${VIEWS.find(v => v.id === target)?.label ?? target}…`);
     const detected = await detectFrame(c);
@@ -259,6 +261,7 @@ export default function FaceSimLab() {
       return;
     }
     const auto = autoRegistration(target, detected.frame, c.width / c.height, flipX);
+    const errorSummary = auto ? ` (RMS ${(auto.rmse * 100).toFixed(1)}%)` : '';
     const accepted = isRegistrationAccepted(auto);
     setPhotos(p => (p[target]?.canvas === c ? {
       ...p,
@@ -269,7 +272,7 @@ export default function FaceSimLab() {
     } : p));
     setStatus(accepted
       ? `Rostro detectado en vista ${label}; modelo 3D alineado automáticamente (RMS ${(auto.rmse * 100).toFixed(1)}%). Las marcas del modelo ya se proyectan en la foto.`
-      : `Rostro detectado en vista ${label}, pero la pose no coincide con el modelo${auto ? ` (RMS ${(auto.rmse * 100).toFixed(1)}%)` : ''}. Usa una foto ${target === 'frontal' ? 'frontal sin giro' : 'de perfil'} o «Alinear manualmente».`);
+      : `Rostro detectado en vista ${label}, pero la pose no coincide con el modelo${errorSummary}. Usa una foto ${target === 'frontal' ? 'frontal sin giro' : 'de perfil'} o «Alinear manualmente».`);
   };
   const updateFrame = (k: 'top' | 'bottom' | 'left' | 'right', v: number) => setPhotos(p => {
     const s = p[view]; if (!s) return p;
@@ -329,6 +332,11 @@ export default function FaceSimLab() {
     return best;
   };
   const onDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (photoAnchor !== null && slot) {
+      if (e.button !== 0) return;
+      correctPhotoAnchor(toNorm(e));
+      return;
+    }
     if (!hasImage || workMode !== 'foto') return;
     const n = toNorm(e), id = hitPhoto(n);
     if (!isWithinFace(n, frame)) { setStatus('Marca dentro del contorno facial detectado o del marco manual.'); return; }
@@ -337,6 +345,20 @@ export default function FaceSimLab() {
     if (hitEl?.kind === 'point') { snap(); dragRef.current = id; e.currentTarget.setPointerCapture(e.pointerId); return; }
     setDraft({ kind: toolPhoto, pts: [n] });
     e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const correctPhotoAnchor = (point: P2) => {
+    if (photoAnchor === null || !slot) return;
+    const updated = updateRegistrationAnchor(view, frame, aspect, flipX, photoAnchor, point,
+      slot.registrationSource === 'manual' ? slot.modelAnchors : undefined);
+    if (!updated) {
+      setStatus('Referencia rechazada: marca dentro del rostro y conserva la correspondencia anatómica. La alineación anterior no se modificó.');
+      return;
+    }
+    setPhotos(p => p[view]?.canvas === slot.canvas ? {
+      ...p, [view]: { ...p[view]!, ...updated, registrationFlip: flipX, registrationSource: slot.registrationSource ?? 'auto' },
+    } : p);
+    setStatus(`Referencia «${REGISTRATION_ANCHORS[photoAnchor]}» corregida en foto. Proyección recalculada; sigue siendo orientativa, no una medición clínica.`);
+    setPhotoAnchor(null);
   };
   const onMove = (e: React.PointerEvent) => {
     const n = toNorm(e);
@@ -428,7 +450,7 @@ export default function FaceSimLab() {
             ))}
           </div>
           <div className="mt-1 grid grid-cols-3 gap-1">
-            {VIEWS.map(v => <button key={v.id} type="button" disabled={!photos[v.id]} aria-pressed={view === v.id} onClick={() => { setCalibrating(false); setView(v.id); }}
+            {VIEWS.map(v => <button key={v.id} type="button" disabled={!photos[v.id]} aria-pressed={view === v.id} onClick={() => { setCalibrating(false); setPhotoAnchor(null); setView(v.id); }}
               className={`rounded px-1 py-1 text-[11px] ${view === v.id ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'} disabled:opacity-40`}>Ver</button>)}
           </div>
         </div>
@@ -499,6 +521,40 @@ export default function FaceSimLab() {
           {slot?.frame.anchors && (
             <div className="mt-2 space-y-2">
               <p className="text-slate-600">Al detectar el rostro, el modelo se alinea automáticamente con los landmarks. Si la proyección no coincide, refínala marcando las referencias en el modelo.</p>
+              <label className="block text-slate-700">Corregir referencia en foto
+                <select aria-label="Corregir referencia en foto" value={photoAnchor ?? ''}
+                  disabled={calibrating}
+                  onChange={e => {
+                    setDraft(null); dragRef.current = null;
+                    const index = e.target.value === '' ? null : Number(e.target.value);
+                    setPhotoAnchor(index);
+                    if (index !== null) setStatus(`Haz clic en la foto sobre «${REGISTRATION_ANCHORS[index]}». Este clic corrige la referencia; no añade una marca de tratamiento.`);
+                  }}
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-1.5">
+                  <option value="">Seleccionar referencia…</option>
+                  {REGISTRATION_ANCHORS.map((name, index) => (
+                    <option key={name} value={index} disabled={slot.registrationSource === 'manual' && !anchorIndices.includes(index)}>{index + 1}. {name}</option>
+                  ))}
+                </select>
+              </label>
+              {photoAnchor !== null && <form key={photoAnchor} className="space-y-2" onSubmit={e => {
+                e.preventDefault();
+                const data = new FormData(e.currentTarget);
+                correctPhotoAnchor({ x: Number(data.get('x')) / 100, y: Number(data.get('y')) / 100 });
+              }}>
+                <p className="text-slate-600">Haz clic en la foto o ajusta las coordenadas (% de imagen) con el teclado.</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {(['x', 'y'] as const).map(axis => <label key={axis}>Coordenada {axis.toUpperCase()} (%)
+                    <input name={axis} type="number" required min="0" max="100" step="0.01"
+                      defaultValue={Number(((frame.anchors?.[photoAnchor][axis] ?? 0) * 100).toFixed(2))}
+                      className="mt-1 w-full rounded border border-slate-300 px-2 py-1" />
+                  </label>)}
+                </div>
+                <button type="submit" className="w-full rounded border border-slate-300 px-2 py-1 font-semibold">Aplicar coordenadas</button>
+              </form>}
+              {photoAnchor !== null && <button type="button" onClick={() => {
+                setPhotoAnchor(null); setStatus('Corrección de referencia cancelada; se conserva la alineación.');
+              }} className="w-full rounded border border-slate-300 px-2 py-1 text-slate-700">Cancelar corrección en foto</button>}
               <button
                 type="button"
                 disabled={calibrating}
@@ -507,6 +563,7 @@ export default function FaceSimLab() {
                     ? { ...p, [view]: { ...p[view]!, modelAnchors: [], registration: undefined } }
                     : p);
                   setCalibrating(true);
+                  setPhotoAnchor(null);
                   setTool3d('point');
                   setWorkMode('3d');
                   setStatus(`Calibración manual: marca en el modelo «${REGISTRATION_ANCHORS[0]}» (${anchorCount} referencias).`);
@@ -535,11 +592,12 @@ export default function FaceSimLab() {
           )}
           {(['top', 'bottom', 'left', 'right'] as const).map(k => (
             <label key={k} className="mt-2 block capitalize">{k}
-              <input type="range" min={0} max={1} step={0.005} value={frame[k]} disabled={!slot} onChange={e => updateFrame(k, Number(e.target.value))} className="w-full accent-[#b8944d]" />
+              <input type="range" min={0} max={1} step={0.005} value={frame[k]} disabled={!slot} onChange={e => { setPhotoAnchor(null); updateFrame(k, Number(e.target.value)); }} className="w-full accent-[#b8944d]" />
             </label>
           ))}
           <label className="mt-2 flex items-center gap-2"><input type="checkbox" checked={flipX} onChange={e => {
             setCalibrating(false);
+            setPhotoAnchor(null);
             const nextFlip = e.target.checked;
             setFlipX(nextFlip);
             const auto = slot ? autoRegistration(view, frame, aspect, nextFlip) : null;
@@ -608,7 +666,7 @@ export default function FaceSimLab() {
                 <line x1={frame.axisTop.x} y1={frame.axisTop.y} x2={frame.axisBottom.x} y2={frame.axisBottom.y} stroke="#38bdf8" strokeWidth="0.002" strokeDasharray="0.008 0.006" />
                 {frame.anchors?.map((point, index) => (
                   <g key={index}>
-                    <circle cx={point.x} cy={point.y} r="0.009" fill="#38bdf8" stroke="white" strokeWidth="0.002" />
+                    <circle cx={point.x} cy={point.y} r={photoAnchor === index ? '0.014' : '0.009'} fill={photoAnchor === index ? '#f59e0b' : '#38bdf8'} stroke="white" strokeWidth="0.002" />
                     <text x={point.x + 0.012} y={point.y - 0.01} fill="white" stroke="#0f172a" strokeWidth="0.004" paintOrder="stroke" fontSize="0.025" fontWeight="bold">{index + 1}</text>
                     <title>{REGISTRATION_ANCHORS[index]}</title>
                   </g>

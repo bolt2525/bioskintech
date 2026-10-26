@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   MODEL_REGISTRATION_ANCHORS, applyRegistration, autoRegistration, fitAffineRegistration, frameFromLandmarks, isRegistrationAccepted,
-  isWithinFace, projectModel,
+  isWithinFace, projectModel, registrationAnchorIndices, updateRegistrationAnchor,
 } from '../src/lab/faceSim/engine.ts';
 
 const frame = {
@@ -61,12 +61,15 @@ test('convierte los landmarks del óvalo en un contorno normalizado', () => {
   landmarks[10] = { x: 0.5, y: 0.1 };
   landmarks[152] = { x: 0.5, y: 0.9 };
   landmarks[168] = { x: 0.52, y: 0.45 };
+  landmarks[9] = { x: 0.51, y: 0.35 };
   landmarks[234] = { x: 0.2, y: 0.5 };
   landmarks[454] = { x: 0.8, y: 0.5 };
   const detected = frameFromLandmarks(landmarks);
   assert.equal(detected.source, 'landmarks');
   assert.equal(detected.outline?.length, 36);
-  assert.deepEqual(detected.axisTop, { x: 0.52, y: 0.45 });
+  assert.deepEqual(detected.axisTop, landmarks[9]);
+  assert.deepEqual(detected.anchors[1], landmarks[9]);
+  assert.notDeepEqual(detected.anchors[1], landmarks[168]);
   assert.throws(() => frameFromLandmarks(landmarks.slice(0, 200)), /incompletos/);
 });
 
@@ -153,3 +156,58 @@ test('la deformación thin-plate lleva cada anclaje a su landmark sin plegar el 
     assert.ok(Math.hypot(mapped.x - target[i].x, mapped.y - target[i].y) < 1e-6, `anclaje ${i}`);
   });
 });
+
+test('corrige una referencia en foto y reproyecta exactamente sin mutar el marco original', () => {
+  const base = { ...frame, axisTop: { x: 0.5, y: 0.1 } };
+  const anchors = MODEL_REGISTRATION_ANCHORS.map(p => projectModel(p, 'frontal', base, false, 0.75));
+  const detected = { ...base, anchors };
+  const point = { x: anchors[1].x + 0.005, y: anchors[1].y - 0.015 };
+  const updated = updateRegistrationAnchor('frontal', detected, 0.75, false, 1, point);
+  assert.ok(updated);
+  assert.deepEqual(updated.frame.axisTop, point);
+  assert.deepEqual(detected.anchors, anchors);
+  assert.notDeepEqual(detected.anchors[1], point);
+  anchors.forEach((anchor, i) => {
+    const mapped = projectModel(MODEL_REGISTRATION_ANCHORS[i], 'frontal', updated.frame, false, 0.75, updated.registration);
+    assert.ok(mapped);
+    const target = i === 1 ? point : anchor;
+    assert.ok(Math.hypot(mapped.x - target.x, mapped.y - target.y) < 1e-6, `referencia ${i}`);
+  });
+  assert.equal(updateRegistrationAnchor('frontal', detected, 0.75, false, -1, point), null);
+  assert.equal(updateRegistrationAnchor('frontal', detected, 0.75, false, 1, { x: NaN, y: 0.4 }), null);
+  assert.equal(updateRegistrationAnchor('frontal', detected, 0.75, false, 1, { x: 0, y: 0 }), null);
+  assert.equal(updateRegistrationAnchor('frontal', detected, 0.75, false, 4, { ...point, y: anchors[1].y - 0.1 }), null);
+});
+
+test('la corrección fotográfica conserva los anclajes personalizados de calibración manual', () => {
+  const base = { ...frame, axisTop: { x: 0.5, y: 0.1 } };
+  const model = MODEL_REGISTRATION_ANCHORS.slice(0, 7).map(p => ({ ...p, y: p.y + 0.02 }));
+  const anchors = model.map(p => projectModel(p, 'frontal', base, false, 0.75));
+  const detected = { ...base, anchors };
+  const point = { ...anchors[4], y: anchors[4].y + 0.01 };
+  const updated = updateRegistrationAnchor('frontal', detected, 0.75, false, 4, point, model);
+  assert.ok(updated);
+  const mapped = projectModel(model[4], 'frontal', updated.frame, false, 0.75, updated.registration);
+  assert.ok(Math.hypot(mapped.x - point.x, mapped.y - point.y) < 1e-6);
+  assert.equal(updateRegistrationAnchor('frontal', detected, 0.75, false, 4, point, model.slice(0, 4)), null);
+});
+
+for (const view of ['frontal', 'izquierda', 'derecha']) {
+  for (const flip of [false, true]) {
+    test(`corrige referencias en ${view}, inversión ${flip}, sin cambiar su correspondencia`, () => {
+      const base = { ...frame, axisTop: { x: 0.5, y: 0.1 } };
+      const anchors = MODEL_REGISTRATION_ANCHORS.map(p => projectModel(p, view, base, flip, 0.75))
+        .map(p => p ? { ...p, x: 0.5 + (p.x - 0.5) * 0.95 } : null);
+      const detected = { ...base, anchors };
+      const point = { ...anchors[4], y: anchors[4].y + 0.002 };
+      const updated = updateRegistrationAnchor(view, detected, 0.75, flip, 4, point);
+      assert.ok(updated);
+      const mapped = projectModel(MODEL_REGISTRATION_ANCHORS[4], view, updated.frame, flip, 0.75, updated.registration);
+      assert.ok(mapped);
+      assert.ok(Math.hypot(mapped.x - point.x, mapped.y - point.y) < 1e-6);
+      const model = registrationAnchorIndices(view).map(i => MODEL_REGISTRATION_ANCHORS[i]);
+      const manual = updateRegistrationAnchor(view, detected, 0.75, flip, 4, point, model);
+      assert.ok(manual);
+    });
+  }
+}

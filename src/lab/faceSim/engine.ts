@@ -49,7 +49,7 @@ export const REGISTRATION_ANCHORS = [
   'Cola de ceja A', 'Cola de ceja B', 'Centro de ceja A', 'Centro de ceja B',
 ];
 /** Índices MediaPipe por anclaje; los grupos se promedian (cejas: borde superior + inferior). */
-const LANDMARK_ANCHORS = [[10], [168], [33], [263], [1], [13], [152], [70, 46], [300, 276], [105, 52], [334, 282]];
+const LANDMARK_ANCHORS = [[10], [9], [33], [263], [1], [13], [152], [70, 46], [300, 276], [105, 52], [334, 282]];
 /** Anclajes para calibración manual (clics en el modelo). */
 export const registrationAnchorIndices = (view: ViewKind) =>
   view === 'frontal' ? [0, 1, 2, 3, 4, 5, 6] : [0, 1, 4, 5, 6];
@@ -100,7 +100,7 @@ export function frameFromLandmarks(lm: { x: number; y: number }[]): FaceFrame {
     }
     return { x: point.x, y: point.y };
   };
-  const top = g(10), chin = g(152), l = g(234), r = g(454), glab = g(168);
+  const top = g(10), chin = g(152), l = g(234), r = g(454), glab = g(9);
   const outline = FACE_OVAL.map(g);
   const anchors = LANDMARK_ANCHORS.map(group => {
     const points = group.map(g);
@@ -126,6 +126,28 @@ export interface AffineRegistration {
   rmse: number; maxError: number;
   /** Corrección thin-plate spline sobre la afín: centros en coordenadas modelo-proyectadas y pesos de desplazamiento. */
   warp?: { centers: P2[]; weights: P2[]; scale: number; aspect: number };
+}
+
+/** Corrige una referencia fotográfica sin aceptar proyecciones incompatibles ni perder la calibración del modelo. */
+export function updateRegistrationAnchor(
+  view: ViewKind, frame: FaceFrame, aspect: number, flip: boolean, index: number, point: P2, modelAnchors?: Vec3[],
+): { frame: FaceFrame; registration: AffineRegistration } | null {
+  if (!frame.anchors || !Number.isInteger(index) || index < 0 || index >= frame.anchors.length
+    || !Number.isFinite(point.x) || !Number.isFinite(point.y) || !isWithinFace(point, frame)) return null;
+  const next = {
+    ...frame, anchors: frame.anchors.map((anchor, i) => i === index ? point : anchor),
+    axisTop: index === 1 ? point : frame.axisTop,
+    axisBottom: index === 6 ? point : frame.axisBottom,
+  };
+  const indices = registrationAnchorIndices(view);
+  if (modelAnchors && modelAnchors.length !== indices.length) return null;
+  const registration = modelAnchors
+    ? fitAffineRegistration(
+      modelAnchors.map(p => projectModel(p, view, next, flip, aspect) ?? { x: Number.NaN, y: Number.NaN }),
+      indices.map(i => next.anchors[i]), aspect, next.bottom - next.top,
+    )
+    : autoRegistration(view, next, aspect, flip);
+  return isRegistrationAccepted(registration) ? { frame: next, registration } : null;
 }
 
 /** Ajusta modelo→foto por mínimos cuadrados; requiere referencias no colineales y mide residuos en alturas faciales. */

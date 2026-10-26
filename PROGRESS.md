@@ -1,5 +1,8 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-26 3DLab: entrecejo y referencias corregibles.
+- ✅ 2026-10-26 3DLab: 17 pruebas; QA sintético escritorio/móvil.
+
 - ✅ 2026-10-26 MCP Cloudflare migrados a `.mcp.json` (Copilot) y validados; eliminados `.vscode/mcp.json` y servidores obsoletos (bindings/builds/observability).
 - ✅ 2026-10-26 SKU de inventario: secuencia transaccional incluye archivados.
 - ✅ 2026-10-26 SKU propio: sugerencia no revela secuencia global.
