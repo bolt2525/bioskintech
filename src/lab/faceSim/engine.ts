@@ -588,7 +588,36 @@ export interface DepthView {
   pose?: number[];
 }
 
-const DEPTH_REFERENCES = [...new Set([...FACE_OVAL, ...LANDMARK_ANCHORS.flat()])];
+export interface DepthDiagnostic {
+  index: number;
+  status: 'used' | 'limited' | 'rejected';
+  weight: number;
+  /** Residuo perpendicular al parallax / alto facial; no representa precisión clínica. */
+  normalizedError: number | null;
+  reason: string;
+  referenceCount: number;
+  side: 'a' | 'b' | 'central';
+}
+
+// Solo mesh468: iris, labios y párpados no son referencias rígidas equivalentes a mejillas/frente.
+const DEPTH_REFERENCES = Array.from({ length: 468 }, (_, i) => i);
+const DEPTH_EXPRESSIVE = new Set([
+  0, 13, 14, 17, 37, 39, 40, 61, 78, 80, 81, 82, 84, 87, 88, 91, 95,
+  146, 178, 181, 185, 191, 267, 269, 270, 291, 308, 310, 311, 312, 314,
+  317, 318, 321, 324, 375, 402, 405, 409, 415,
+  7, 33, 133, 144, 145, 153, 154, 155, 159, 160, 161, 163, 173,
+  246, 249, 263, 362, 373, 374, 380, 381, 382, 385, 386, 387, 388, 390, 398, 466,
+]);
+const DEPTH_REFERENCE_WEIGHTS = DEPTH_REFERENCES.map(i =>
+  DEPTH_EXPRESSIVE.has(i) ? 0.4 : FACE_OVAL.includes(i) ? 0.6 : 1);
+const depthMedian = (values: number[]): number => {
+  const sorted = [...values].sort((a, b) => a - b), mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+};
+
+/** Tukey: un outlier local no debe determinar el encuadre ni inventar relieve. */
+const depthRobustWeight = (error: number, cutoff: number): number =>
+  Math.abs(error) >= cutoff ? 0 : (1 - (error / cutoff) ** 2) ** 2;
 
 function poseRotation(pose?: number[]): number[] | null {
   if (!pose || pose.length !== 16 || pose.some(v => !Number.isFinite(v))) return null;
@@ -604,70 +633,194 @@ function poseRotation(pose?: number[]): number[] | null {
 }
 
 /**
- * Perspectiva débil multivista: la componente perpendicular al eje de profundidad determina
- * la escala entre fotos sin depender de Z. La paralela recupera Z con regularización monocular.
- * Las poses provienen de MediaPipe; el resultado sigue siendo relativo, no métrico.
+ * Perspectiva débil con rotación relativa completa: la componente perpendicular al
+ * parallax ajusta escala/traslación sin depender de Z. La paralela recupera relieve.
+ * No se optimiza la pose MediaPipe ni se estima distancia métrica. La traslación en
+ * profundidad es inobservable y se fija al prior; XY (y por tanto UV) nunca cambian.
  */
 export function refineDepthFromProfiles(front: DepthView, profiles: DepthView[]): {
   landmarks: DepthView['landmarks']; used: number; rejected: string[];
+  diagnostics: DepthDiagnostic[]; coverage: 'monocular' | 'one-sided' | 'bilateral';
 } {
   const rejected: string[] = [];
+  const diagnostics: DepthDiagnostic[] = profiles.map((_, index) => ({
+    index, status: 'rejected', weight: 0, normalizedError: null,
+    reason: '', referenceCount: 0, side: 'central',
+  }));
+  const unchanged = () => ({ landmarks: front.landmarks, used: 0, rejected, diagnostics, coverage: 'monocular' as const });
+  const reject = (index: number, reason: string) => {
+    Object.assign(diagnostics[index], { status: 'rejected', weight: 0, reason });
+    rejected.push(`Vista ${index + 1}: ${reason}`);
+  };
+  if (!profiles.length) return unchanged();
   const valid = (v: DepthView) => v.landmarks.length >= 468 && Number.isFinite(v.aspect) && v.aspect > 0
-    && v.landmarks.every(p => [p.x, p.y, p.z].every(Number.isFinite));
+    && v.landmarks.every(p => [p.x, p.y, p.z, p.x * v.aspect, p.z * v.aspect].every(Number.isFinite));
   const rf = poseRotation(front.pose);
-  if (!valid(front) || !rf) return { landmarks: front.landmarks, used: 0, rejected: profiles.length ? ['La foto de origen no tiene una pose facial válida.'] : [] };
+  if (!valid(front) || !rf) {
+    profiles.forEach((_, i) => reject(i, 'La foto de origen tiene landmarks no finitos/incompletos o pose inválida.'));
+    return unchanged();
+  }
   const xy = (v: DepthView, i: number): P2 => ({ x: v.landmarks[i].x * v.aspect, y: -v.landmarks[i].y });
   const mean = (v: DepthView): P2 => DEPTH_REFERENCES.reduce((s, i) => {
     const p = xy(v, i);
     return { x: s.x + p.x / DEPTH_REFERENCES.length, y: s.y + p.y / DEPTH_REFERENCES.length };
   }, { x: 0, y: 0 });
   const cf = mean(front);
-  const zMean = DEPTH_REFERENCES.reduce((s, i) => s - front.landmarks[i].z * front.aspect / DEPTH_REFERENCES.length, 0);
   const faceHeight = Math.hypot(front.landmarks[152].x * front.aspect - front.landmarks[10].x * front.aspect,
     front.landmarks[152].y - front.landmarks[10].y);
-  if (!(faceHeight > 0.1)) return { landmarks: front.landmarks, used: 0, rejected: ['La escala facial de origen es degenerada.'] };
-  const candidates: { depths: number[]; weight: number }[] = [];
+  if (!Number.isFinite(faceHeight) || !(faceHeight > 1e-4)) {
+    profiles.forEach((_, i) => reject(i, 'La escala facial de origen es degenerada.'));
+    return unchanged();
+  }
+  const prior = DEPTH_REFERENCES.map(i => -front.landmarks[i].z * front.aspect);
+  // Vecinos en la foto de origen: detectan saltos locales sin imponer simetría anatómica.
+  const frontXY = DEPTH_REFERENCES.map(i => xy(front, i));
+  let neighbors: number[][] | undefined;
+  const candidates: { index: number; depths: number[]; weights: number[]; weight: number; priorError: number }[] = [];
   profiles.forEach((profile, index) => {
-    const reject = (reason: string) => rejected.push(`Lateral ${index + 1}: ${reason}`);
+    const discard = (reason: string) => reject(index, reason);
+    if (index >= 4) { discard('Se admiten hasta cuatro vistas adicionales.'); return; }
     const rp = poseRotation(profile.pose);
-    if (!valid(profile) || !rp || profile.landmarks.length !== front.landmarks.length) { reject('landmarks o pose inválidos.'); return; }
+    if (!valid(profile) || !rp) { discard('Landmarks no finitos/incompletos o pose inválidos.'); return; }
     const r = [0, 1, 2].flatMap(row => [0, 1, 2].map(col =>
       [0, 1, 2].reduce((s, k) => s + rp[row * 3 + k] * rf[col * 3 + k], 0)));
-    const dx = r[2], dy = r[5], weight = dx * dx + dy * dy;
-    if (Math.abs(dx) < 0.42 || Math.abs(dy) > 0.4 || r[0] < -0.2) { reject('se necesita un giro lateral de 25–100° y poco cabeceo.'); return; }
-    const cp = mean(profile), length = Math.sqrt(weight), nx = -dy / length, ny = dx / length;
+    const dx = r[2], dy = r[5], parallax = dx * dx + dy * dy;
+    const diagnostic = diagnostics[index];
+    // Azimut de la cámara en coordenadas de la cabeza: independiente del roll de ambas fotos.
+    const azimuth = Math.atan2(-rp[6], rp[8]) - Math.atan2(-rf[6], rf[8]);
+    const lateralTurn = Math.atan2(Math.sin(azimuth), Math.cos(azimuth));
+    diagnostic.side = Math.abs(lateralTurn) < 0.14 ? 'central' : lateralTurn > 0 ? 'a' : 'b';
+    if (parallax < Math.sin(8 * Math.PI / 180) ** 2) {
+      discard('Parallax insuficiente: el giro relativo no permite separar profundidad y ruido.'); return;
+    }
+    if (r[8] < -0.25) { discard('La pose muestra la cara opuesta sin suficientes referencias visibles.'); return; }
+    const cp = mean(profile), length = Math.sqrt(parallax), nx = -dy / length, ny = dx / length;
     const pair = (i: number) => {
       const f = xy(front, i), p = xy(profile, i), x = f.x - cf.x, y = f.y - cf.y;
       return { ax: r[0] * x + r[1] * y, ay: r[3] * x + r[4] * y, px: p.x - cp.x, py: p.y - cp.y };
     };
-    const samples = DEPTH_REFERENCES.map(pair);
-    const variance = samples.reduce((s, p) => s + (nx * p.ax + ny * p.ay) ** 2, 0);
-    const covariance = samples.reduce((s, p) => s + (nx * p.ax + ny * p.ay) * (nx * p.px + ny * p.py), 0);
-    const scale = covariance / variance;
-    if (!Number.isFinite(scale) || scale < 0.05 || scale > 20) { reject('escala incompatible entre fotografías.'); return; }
-    const residual = Math.sqrt(samples.reduce((s, p) => s + (nx * (p.px / scale - p.ax) + ny * (p.py / scale - p.ay)) ** 2, 0) / samples.length);
-    if (residual / faceHeight > 0.04) { reject('las referencias no concuerdan (pose, expresión o perspectiva diferentes).'); return; }
-    const depths = front.landmarks.map((p, i) => {
-      const q = pair(i), prior = -p.z * front.aspect - zMean;
-      return zMean + (dx * (q.px / scale - q.ax) + dy * (q.py / scale - q.ay) + 0.05 * prior) / (weight + 0.05);
+    const samples = DEPTH_REFERENCES.map(i => {
+      const p = pair(i);
+      return { ...p, a: nx * p.ax + ny * p.ay, b: nx * p.px + ny * p.py };
     });
-    const span = Math.max(...depths) - Math.min(...depths);
-    if (!Number.isFinite(span) || span > faceHeight * 0.8) { reject('profundidad inconsistente con la escala facial.'); return; }
-    candidates.push({ depths, weight });
+    let weights: number[] = [...DEPTH_REFERENCE_WEIGHTS];
+    let scale = 1, offset = 0;
+    let residuals: number[] = [];
+    for (let iteration = 0; iteration < 6; iteration++) {
+      const total = weights.reduce((s, w) => s + w, 0);
+      if (total < 30) { discard('No quedan suficientes referencias concordantes.'); return; }
+      const aMean = samples.reduce((s, p, i) => s + weights[i] * p.a, 0) / total;
+      const bMean = samples.reduce((s, p, i) => s + weights[i] * p.b, 0) / total;
+      const variance = samples.reduce((s, p, i) => s + weights[i] * (p.a - aMean) ** 2, 0);
+      if (variance / total < faceHeight ** 2 * 1e-4) { discard('Referencias degeneradas para estimar la escala.'); return; }
+      scale = samples.reduce((s, p, i) => s + weights[i] * (p.a - aMean) * (p.b - bMean), 0) / variance;
+      offset = bMean - scale * aMean;
+      if (!Number.isFinite(scale) || scale < 0.05 || scale > 20) { discard('Escala incompatible entre fotografías.'); return; }
+      residuals = samples.map(p => (p.b - offset) / scale - p.a);
+      const median = depthMedian(residuals);
+      offset += scale * median;
+      residuals = residuals.map(e => e - median);
+      const noise = 1.4826 * depthMedian(residuals.map(e => Math.abs(e - median)));
+      const cutoff = Math.min(faceHeight * 0.04, Math.max(faceHeight * 0.008, noise * 4.685));
+      weights = residuals.map((e, i) => DEPTH_REFERENCE_WEIGHTS[i] * depthRobustWeight(e, cutoff));
+    }
+    const referenceCount = weights.filter((w, i) => w > DEPTH_REFERENCE_WEIGHTS[i] * 0.25).length;
+    diagnostic.referenceCount = referenceCount;
+    const total = weights.reduce((s, w) => s + w, 0);
+    const normalizedError = total > 0
+      ? Math.sqrt(residuals.reduce((s, e, i) => s + weights[i] * e * e, 0) / total) / faceHeight : null;
+    diagnostic.normalizedError = normalizedError;
+    if (referenceCount < 468 * 0.6 || normalizedError === null || !Number.isFinite(normalizedError) || normalizedError > 0.04) {
+      if (normalizedError !== null && !Number.isFinite(normalizedError)) diagnostic.normalizedError = null;
+      discard('Las referencias no concuerdan con una misma pose/escala (expresión, oclusión o perspectiva).'); return;
+    }
+    const raw = samples.map(p => (dx * (p.px / scale - p.ax) + dy * (p.py / scale - p.ay)) / parallax);
+    if (raw.some(z => !Number.isFinite(z))) { discard('El ajuste produce profundidad no finita.'); return; }
+    // Gauge robusto: no inferimos traslación Z a partir del encuadre.
+    const shift = depthMedian(raw.map((z, i) => z - prior[i]).filter((_, i) => weights[i] > 0.25));
+    const depths = raw.map(z => z - shift);
+    if (depths.some(z => !Number.isFinite(z))) { discard('La profundidad relativa es degenerada/no finita.'); return; }
+    const sorted = [...depths].sort((a, b) => a - b);
+    if (sorted[444] - sorted[23] > faceHeight * 0.8) {
+      discard('Profundidad inconsistente con la escala facial en la mayoría del rostro.'); return;
+    }
+    const delta = depths.map((z, i) => z - prior[i]);
+    if (delta.some(z => !Number.isFinite(z))) { discard('El prior y la profundidad no tienen una escala finita compatible.'); return; }
+    const quality = (referenceCount / 468) / (1 + (normalizedError / 0.015) ** 2);
+    const localNeighbors = neighbors ?? frontXY.map((p, index) => DEPTH_REFERENCES.filter(i => i !== index).map(i => ({
+      i, distance: (p.x - frontXY[i].x) ** 2 + (p.y - frontXY[i].y) ** 2,
+    })).sort((a, b) => Math.abs(a.distance - b.distance) < faceHeight ** 2 * 1e-12
+      ? a.i - b.i : a.distance - b.distance).slice(0, 6).map(q => q.i));
+    neighbors = localNeighbors;
+    const pointWeights = weights.map((w, i) => {
+      const local = delta[i] - depthMedian(localNeighbors[i].map(j => delta[j]));
+      return parallax * quality * w * depthRobustWeight(local, faceHeight * 0.12)
+        * depthRobustWeight(delta[i], faceHeight * 0.6);
+    });
+    const limited = referenceCount < 445 || normalizedError > 0.01 || parallax < 0.18;
+    Object.assign(diagnostic, {
+      status: limited ? 'limited' : 'used',
+      weight: Math.min(1, parallax * quality),
+      reason: limited ? 'Aporte atenuado por parallax o referencias locales débiles.' : 'Referencias y pose concordantes.',
+    });
+    candidates.push({
+      index, depths, weights: pointWeights, weight: diagnostic.weight,
+      priorError: Math.sqrt(delta.reduce((s, z) => s + z * z, 0) / delta.length) / faceHeight,
+    });
   });
-  if (candidates.length > 1) {
-    const disagreement = Math.sqrt(DEPTH_REFERENCES.reduce((s, i) => s + (candidates[0].depths[i] - candidates[1].depths[i]) ** 2, 0) / DEPTH_REFERENCES.length);
-    if (disagreement > faceHeight * 0.06) {
-      return { landmarks: front.landmarks, used: 0, rejected: [...rejected, 'Los dos laterales discrepan en profundidad; no se fusionaron.'] };
+  if (!candidates.length) return unchanged();
+  // Hasta cuatro vistas: consenso exhaustivo pequeño, sin privilegiar las primeras dos.
+  const agreement = candidates.map(a => candidates.map(b => {
+    const differences = DEPTH_REFERENCES.filter(i => a.weights[i] > 0.001 && b.weights[i] > 0.001)
+      .map(i => a.depths[i] - b.depths[i]);
+    if (differences.length < 100) return false;
+    const center = depthMedian(differences);
+    const errors = differences.map(d => (d - center) ** 2).sort((x, y) => x - y);
+    const trimmed = errors.slice(0, Math.ceil(errors.length * 0.9));
+    return Math.sqrt(trimmed.reduce((s, e) => s + e, 0) / trimmed.length) < faceHeight * 0.045;
+  }));
+  let selected: number[] = [], bestScore = -Infinity, ambiguous = false;
+  for (let mask = 1; mask < 1 << candidates.length; mask++) {
+    const group = candidates.map((_, i) => i).filter(i => mask & (1 << i));
+    if (!group.every(i => group.every(j => agreement[i][j]))) continue;
+    const score = group.reduce((s, i) => s + candidates[i].weight / (1 + candidates[i].priorError), 0);
+    if (group.length > selected.length) { selected = group; bestScore = score; ambiguous = false; }
+    else if (group.length === selected.length) {
+      ambiguous = true;
+      if (score > bestScore) { selected = group; bestScore = score; }
     }
   }
-  if (!candidates.length) return { landmarks: front.landmarks, used: 0, rejected };
-  const total = candidates.reduce((s, c) => s + c.weight, 0);
+  candidates.forEach((c, i) => {
+    if (!selected.includes(i)) reject(c.index, 'La profundidad discrepa del consenso entre las demás vistas.');
+    else if (ambiguous) {
+      c.weights = c.weights.map(w => w * 0.25);
+      Object.assign(diagnostics[c.index], {
+        status: 'limited', weight: c.weight * 0.25,
+        reason: 'Concordancia ambigua entre vistas; se conserva mayor peso del prior monocular.',
+      });
+    }
+  });
+  const accepted = selected.map(i => candidates[i]);
+  // Un punto local discordante se atenúa aunque el conjunto de la vista sea útil.
+  const landmarks = front.landmarks.map((p, i) => {
+    if (i >= 468) return p;
+    const reliable = accepted.filter(c => c.weights[i] > 0.001);
+    if (!reliable.length) return p;
+    const center = depthMedian(reliable.map(c => c.depths[i]));
+    let evidence = 0, correction = 0;
+    accepted.forEach(c => {
+      const w = c.weights[i] * depthRobustWeight(c.depths[i] - center, faceHeight * 0.08);
+      evidence += w;
+      correction += w * (c.depths[i] - prior[i]);
+    });
+    return { ...p, z: -(prior[i] + correction / (0.025 + evidence)) / front.aspect };
+  });
+  const contributing = accepted.filter(c => c.weights.some(w => w > 0.001));
+  accepted.filter(c => !contributing.includes(c)).forEach(c => reject(c.index, 'Sin puntos fiables que aporten profundidad.'));
+  const sides = new Set(contributing.map(c => diagnostics[c.index].side));
   return {
-    landmarks: front.landmarks.map((p, i) => ({
-      ...p, z: -candidates.reduce((s, c) => s + c.depths[i] * c.weight, 0) / total / front.aspect,
-    })),
-    used: candidates.length, rejected,
+    landmarks, used: contributing.length, rejected, diagnostics,
+    coverage: !contributing.length ? 'monocular' : sides.has('a') && sides.has('b') ? 'bilateral' : 'one-sided',
   };
 }
 

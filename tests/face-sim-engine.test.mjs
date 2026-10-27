@@ -329,21 +329,308 @@ test('profundidad multivista: reduce >90% el error de relieve en geometría cono
   assert.equal(refineDepthFromProfiles(front, [profile(Math.PI / 3)]).used, 1);
 });
 
-test('profundidad multivista: rechaza vistas sin parallax, poses inválidas y laterales discordantes', () => {
+test('profundidad multivista: explica descartes y limita un desacuerdo sin anular todo el conjunto', () => {
   const { front, profile } = depthFixture();
   const frontal = refineDepthFromProfiles(front, [profile(0)]);
   assert.equal(frontal.used, 0);
-  assert.match(frontal.rejected[0], /giro lateral/);
+  assert.match(frontal.rejected[0], /Parallax insuficiente/);
   const invalid = refineDepthFromProfiles(front, [{ ...profile(1), pose: Array(16).fill(0) }]);
   assert.equal(invalid.used, 0);
   assert.match(invalid.rejected[0], /inválidos/);
   const inconsistent = profile(1);
   inconsistent.landmarks.forEach((p, i) => { p.y += i % 2 ? 0.15 : -0.15; });
-  assert.match(refineDepthFromProfiles(front, [inconsistent]).rejected[0], /no concuerdan/);
+  assert.match(refineDepthFromProfiles(front, [inconsistent]).rejected[0], /referencias concordantes|no concuerdan/);
   const disagree = refineDepthFromProfiles(front, [profile(Math.PI / 2, 1, 2), profile(-Math.PI / 2, 1, -2)]);
-  assert.equal(disagree.used, 0);
-  assert.match(disagree.rejected.join(' '), /discrepan/);
-  assert.deepEqual(disagree.landmarks, front.landmarks);
+  assert.equal(disagree.used, 1);
+  assert.match(disagree.rejected.join(' '), /discrepa/);
+  assert.equal(disagree.diagnostics.filter(d => d.status === 'limited').length, 1);
+  assert.ok(disagree.diagnostics.find(d => d.status === 'limited').weight <= 0.25);
+  assert.ok(disagree.landmarks.every(p => Number.isFinite(p.z)));
   assert.equal(refineDepthFromProfiles({ ...front, pose: undefined }, [profile(1)]).used, 0);
   assert.equal(refineDepthFromProfiles(front, []).used, 0);
+});
+
+const multiplyRotation = (a, b) => [0, 1, 2].flatMap(row => [0, 1, 2].map(col =>
+  [0, 1, 2].reduce((sum, k) => sum + a[row * 3 + k] * b[k * 3 + col], 0)));
+function rotation(yaw = 0, pitch = 0, roll = 0) {
+  const cy = Math.cos(yaw), sy = Math.sin(yaw);
+  const cp = Math.cos(pitch), sp = Math.sin(pitch);
+  const cr = Math.cos(roll), sr = Math.sin(roll);
+  return multiplyRotation([cr, -sr, 0, sr, cr, 0, 0, 0, 1],
+    multiplyRotation([cy, 0, sy, 0, 1, 0, -sy, 0, cy], [1, 0, 0, 0, cp, -sp, 0, sp, cp]));
+}
+const matrixPose = r => [
+  r[0], r[3], r[6], 0, r[1], r[4], r[7], 0, r[2], r[5], r[8], 0, 12, -8, -40, 1,
+];
+const rotatePoint = (r, p) => [0, 1, 2].map(row => r[row * 3] * p[0] + r[row * 3 + 1] * p[1] + r[row * 3 + 2] * p[2]);
+
+/** Fotos de una misma superficie conocida; pose, encuadre y escala independientes. */
+function rotatedDepthFixture(frontAngles = [0, 0, 0]) {
+  const world = Array.from({ length: 478 }, (_, i) => {
+    const x = ((i % 22) / 21 - 0.5) * 0.45, y = (0.5 - Math.floor(i / 22) / 21) * 0.7;
+    return [x, y, 0.12 * Math.exp(-(x * x + y * y) / 0.018)];
+  });
+  world[10] = [0, 0.35, 0]; world[152] = [0, -0.35, 0];
+  const frontR = rotation(...frontAngles), camera = world.map(p => rotatePoint(frontR, p));
+  const truth = camera.map(p => p[2]);
+  const front = {
+    aspect: 0.75, pose: matrixPose(frontR),
+    landmarks: camera.map((p, i) => ({
+      x: (0.375 + p[0]) / 0.75, y: 0.5 - p[1], z: -(p[2] + world[i][2]) / 0.75,
+    })),
+  };
+  const profile = (angles, { scale = 1, tx = 0.4, ty = 0.5, aspect = 0.8, depthScale = 1 } = {}) => {
+    const r = rotation(...angles);
+    return {
+      aspect, pose: matrixPose(r),
+      landmarks: world.map(p => {
+        const q = rotatePoint(r, [p[0], p[1], p[2] * depthScale]);
+        return { x: (tx + scale * q[0]) / aspect, y: ty - scale * q[1], z: 0 };
+      }),
+    };
+  };
+  return { front, truth, profile };
+}
+const relativeDepthError = (front, truth, landmarks, indices = Array.from({ length: 468 }, (_, i) => i)) => {
+  const errors = indices.map(i => -landmarks[i].z * front.aspect - truth[i]);
+  const mean = errors.reduce((s, z) => s + z, 0) / errors.length;
+  return Math.sqrt(errors.reduce((s, z) => s + (z - mean) ** 2, 0) / errors.length);
+};
+function assertDiagnostics(result, count) {
+  assert.equal(result.diagnostics.length, count);
+  for (const [i, d] of result.diagnostics.entries()) {
+    assert.equal(d.index, i);
+    assert.ok(['used', 'limited', 'rejected'].includes(d.status));
+    assert.ok(['a', 'b', 'central'].includes(d.side));
+    assert.ok(Number.isFinite(d.weight) && d.weight >= 0 && d.weight <= 1);
+    assert.ok(d.normalizedError === null || (Number.isFinite(d.normalizedError) && d.normalizedError >= 0));
+    assert.ok(Number.isInteger(d.referenceCount) && d.referenceCount >= 0 && d.referenceCount <= 468);
+    assert.ok(d.reason.length > 0);
+    if (d.status === 'rejected') assert.equal(d.weight, 0);
+  }
+  assert.equal(result.used, result.diagnostics.filter(d => d.status !== 'rejected' && d.weight > 0).length);
+}
+
+for (const photos of [1, 2, 3, 5]) {
+  test(`captura progresiva: ${photos} fotos, cobertura y precisión sin modificar XY/UV`, () => {
+    const { front, truth, profile } = rotatedDepthFixture();
+    const snapshot = structuredClone(front);
+    const angles = [[0.95, 0.2, 0.12], [-1.1, -0.18, -0.15], [0.65, -0.3, 0.25], [-0.75, 0.35, -0.25]];
+    const profiles = angles.slice(0, photos - 1).map((a, i) => profile(a, {
+      scale: [0.65, 1.4, 0.85, 1.6][i], tx: 0.25 + 0.1 * i, ty: 0.3 + 0.12 * i, aspect: 0.6 + i * 0.25,
+    }));
+    const result = refineDepthFromProfiles(front, profiles);
+    assert.equal(result.used, photos - 1);
+    assert.equal(result.coverage, photos === 1 ? 'monocular' : photos === 2 ? 'one-sided' : 'bilateral');
+    assertDiagnostics(result, photos - 1);
+    assert.deepEqual(front, snapshot, 'no muta la captura original');
+    if (photos === 1) assert.strictEqual(result.landmarks, front.landmarks);
+    else {
+      const before = relativeDepthError(front, truth, front.landmarks);
+      const after = relativeDepthError(front, truth, result.landmarks);
+      assert.ok(after < before * 0.1, `${before} → ${after}`);
+      assert.ok(result.diagnostics.every(d => d.referenceCount > 400));
+      assert.ok(result.diagnostics.every(d => d.normalizedError < 1e-10));
+    }
+    const triangles = [10, 152, 1];
+    const original = buildPersonalSurface(front.landmarks, front.aspect, triangles);
+    const refined = buildPersonalSurface(result.landmarks, front.aspect, triangles);
+    assert.deepEqual(refined.uvs, original.uvs);
+    result.landmarks.forEach((p, i) => {
+      assert.equal(p.x, front.landmarks[i].x);
+      assert.equal(p.y, front.landmarks[i].y);
+      if (i >= 468) assert.equal(p.z, front.landmarks[i].z, 'iris conserva prior');
+    });
+  });
+}
+
+test('rotación relativa completa: origen girado, pitch/roll y offsets no se convierten en relieve', () => {
+  const { front, truth, profile } = rotatedDepthFixture([0.24, -0.18, 0.2]);
+  const profiles = [
+    profile([1.0, 0.52, -0.35], { scale: 0.55, tx: 0.72, ty: 0.17, aspect: 1.3 }),
+    profile([-0.95, -0.48, 0.4], { scale: 1.65, tx: 0.2, ty: 0.8, aspect: 0.65 }),
+  ];
+  const result = refineDepthFromProfiles(front, profiles);
+  assertDiagnostics(result, 2);
+  assert.equal(result.used, 2);
+  assert.equal(result.coverage, 'bilateral');
+  const before = relativeDepthError(front, truth, front.landmarks);
+  const after = relativeDepthError(front, truth, result.landmarks);
+  assert.ok(after < before * 0.1, `${before} → ${after}`);
+});
+
+test('robustez local: ruido, expresión y oclusión no arrastran referencias sanas', () => {
+  const { front, truth, profile } = rotatedDepthFixture();
+  const noisy = profile([1.05, 0.22, -0.15]);
+  const corrupt = new Set([13, 14, 61, 78, 81, 82, 87, 88, 95, 291, 308, 311, 312, 317, 318, 324]);
+  noisy.landmarks.forEach((p, i) => {
+    p.x += 0.0008 * Math.sin(i * 3);
+    p.y += 0.0008 * Math.cos(i * 5);
+    if (corrupt.has(i) || i % 19 === 0) { p.x += 0.16; p.y -= 0.12; corrupt.add(i); }
+  });
+  const result = refineDepthFromProfiles(front, [noisy]);
+  assertDiagnostics(result, 1);
+  assert.equal(result.used, 1, JSON.stringify(result.diagnostics));
+  assert.equal(result.diagnostics[0].status, 'limited');
+  assert.ok(result.diagnostics[0].referenceCount > 350);
+  const healthy = Array.from({ length: 468 }, (_, i) => i).filter(i => !corrupt.has(i));
+  const before = relativeDepthError(front, truth, front.landmarks, healthy);
+  const after = relativeDepthError(front, truth, result.landmarks, healthy);
+  assert.ok(after < before * 0.12, `${before} → ${after}`);
+  for (const i of corrupt) assert.equal(result.landmarks[i].z, front.landmarks[i].z, `prior débil ${i}`);
+});
+
+test('concordancia de todas las vistas: una mala entre buenas no anula ni sesga las válidas', () => {
+  const { front, truth, profile } = rotatedDepthFixture();
+  const good = [[0.9, 0.15, 0.1], [-1.1, -0.2, 0.15], [0.7, -0.2, -0.2]].map(a => profile(a));
+  const bad = profile([-1.0, 0, 0], { depthScale: -2 });
+  for (const position of [0, 1, 2, 3]) {
+    const views = [...good]; views.splice(position, 0, bad);
+    const result = refineDepthFromProfiles(front, views);
+    assertDiagnostics(result, 4);
+    assert.equal(result.used, 3);
+    assert.equal(result.coverage, 'bilateral');
+    assert.equal(result.diagnostics[position].status, 'rejected');
+    assert.match(result.diagnostics[position].reason, /discrepa/);
+    assert.ok(relativeDepthError(front, truth, result.landmarks)
+      < relativeDepthError(front, truth, front.landmarks) * 0.1);
+  }
+});
+
+test('cobertura real: dos o cuatro fotos del mismo lado no equivalen a ambos lados', () => {
+  const { front, profile } = rotatedDepthFixture();
+  for (const sign of [-1, 1]) {
+    for (const count of [2, 4]) {
+      const views = [0.5, 0.7, 0.9, 1.1].slice(0, count).map(a => profile([a * sign, 0.15, -0.2]));
+      const result = refineDepthFromProfiles(front, views);
+      assert.equal(result.used, count);
+      assert.equal(result.coverage, 'one-sided');
+      assert.equal(new Set(result.diagnostics.map(d => d.side)).size, 1);
+    }
+  }
+});
+
+test('simetría: invertir el giro no cambia la profundidad de una superficie simétrica', () => {
+  const { front, profile } = rotatedDepthFixture();
+  const a = refineDepthFromProfiles(front, [profile([0.95, 0, 0])]);
+  const b = refineDepthFromProfiles(front, [profile([-0.95, 0, 0])]);
+  assert.equal(a.used, 1); assert.equal(b.used, 1);
+  assert.notEqual(a.diagnostics[0].side, b.diagnostics[0].side);
+  a.landmarks.forEach((p, i) => assert.ok(Math.abs(p.z - b.landmarks[i].z) < 1e-12, `simetría ${i}`));
+});
+
+test('parallax insuficiente, roll puro y pitch útil: no confunde encuadre ni cantidad con cobertura', () => {
+  const { front, truth, profile } = rotatedDepthFixture();
+  const near = refineDepthFromProfiles(front, [
+    profile([0.03, 0.02, 0.4], { scale: 1.5, tx: 0.7, ty: 0.2 }), profile([0, 0, 0.6]),
+  ]);
+  assertDiagnostics(near, 2);
+  assert.equal(near.used, 0);
+  assert.equal(near.coverage, 'monocular');
+  assert.strictEqual(near.landmarks, front.landmarks);
+  assert.ok(near.diagnostics.every(d => /Parallax insuficiente/.test(d.reason)));
+  const pitch = refineDepthFromProfiles(front, [profile([0, 0.55, 0.3])]);
+  assert.equal(pitch.used, 1);
+  assert.equal(pitch.diagnostics[0].side, 'central');
+  assert.notEqual(pitch.coverage, 'bilateral');
+  assert.ok(relativeDepthError(front, truth, pitch.landmarks)
+    < relativeDepthError(front, truth, front.landmarks) * 0.2);
+  const modest = refineDepthFromProfiles(front, [profile([0.22, 0.05, 0.1])]);
+  assert.equal(modest.used, 1);
+  assert.equal(modest.diagnostics[0].status, 'limited');
+  assert.ok(modest.diagnostics[0].weight < 0.1);
+  assert.ok(relativeDepthError(front, truth, modest.landmarks) < relativeDepthError(front, truth, front.landmarks));
+});
+
+test('diagnósticos finitos: datos inválidos, escala degenerada y vista468 junto a origen478', () => {
+  const { front, profile } = rotatedDepthFixture();
+  const nan = profile([0.9, 0, 0]); nan.landmarks[50].x = NaN;
+  const invalidPose = { ...profile([-0.9, 0, 0]), pose: Array(16).fill(0) };
+  const result = refineDepthFromProfiles(front, [nan, profile([1.0, 0, 0]), invalidPose]);
+  assertDiagnostics(result, 3);
+  assert.equal(result.used, 1);
+  assert.match(result.diagnostics[0].reason, /no finitos/);
+  assert.match(result.diagnostics[2].reason, /inválidos/);
+  const flat = structuredClone(front); flat.landmarks[152] = { ...flat.landmarks[10] };
+  const degenerate = refineDepthFromProfiles(flat, [profile([0.9, 0, 0])]);
+  assertDiagnostics(degenerate, 1);
+  assert.equal(degenerate.used, 0);
+  assert.match(degenerate.diagnostics[0].reason, /degenerada/);
+  const missingPose = refineDepthFromProfiles({ ...front, pose: undefined }, [profile([0.9, 0, 0])]);
+  assertDiagnostics(missingPose, 1);
+  assert.equal(missingPose.used, 0);
+  const mesh = profile([0.9, 0, 0]); mesh.landmarks = mesh.landmarks.slice(0, 468);
+  assert.equal(refineDepthFromProfiles(front, [mesh]).used, 1);
+});
+
+test('outlier paralelo al parallax: conserva el prior local y otra vista sana puede aportar', () => {
+  const { front, truth, profile } = rotatedDepthFixture();
+  const bad = profile([1, 0, 0]), index = 230;
+  // No deja residuo perpendicular: la continuidad local debe detectar este punto, no el fit global.
+  bad.landmarks[index].x += 0.3;
+  const one = refineDepthFromProfiles(front, [bad]);
+  assert.equal(one.used, 1);
+  assert.equal(one.landmarks[index].z, front.landmarks[index].z);
+  const two = refineDepthFromProfiles(front, [bad, profile([-1, 0, 0])]);
+  assert.equal(two.used, 2);
+  assert.ok(Math.abs(-two.landmarks[index].z * front.aspect - truth[index])
+    < Math.abs(-front.landmarks[index].z * front.aspect - truth[index]) * 0.15);
+});
+
+test('diagnóstico normalizado e información relativa invariantes a escala común de las fotos', () => {
+  const { front, profile } = rotatedDepthFixture();
+  const noisy = profile([0.9, 0.2, 0.1]);
+  noisy.landmarks.forEach((p, i) => { p.y += Math.sin(i * 5) * 0.002; });
+  const scaled = view => ({
+    ...view,
+    landmarks: view.landmarks.map(p => ({ x: p.x * 0.5 + 0.1, y: p.y * 0.5 - 0.2, z: p.z * 0.5 })),
+  });
+  const a = refineDepthFromProfiles(front, [noisy]);
+  const b = refineDepthFromProfiles(scaled(front), [scaled(noisy)]);
+  assert.equal(a.used, 1); assert.equal(b.used, 1);
+  assert.ok(a.diagnostics[0].normalizedError > 0);
+  assert.ok(Math.abs(a.diagnostics[0].normalizedError - b.diagnostics[0].normalizedError) < 1e-12);
+  assert.ok(Math.abs(a.diagnostics[0].weight - b.diagnostics[0].weight) < 1e-12);
+  a.landmarks.forEach((p, i) => assert.ok(Math.abs(p.z * 0.5 - b.landmarks[i].z) < 1e-12));
+});
+
+test('degeneración transversal y escala incompatible se explican sin perder las vistas útiles', () => {
+  const { front, profile } = rotatedDepthFixture();
+  const collapsed = profile([0.9, 0, 0]);
+  collapsed.landmarks.forEach(p => { p.y = 0.5; });
+  const incompatible = profile([-0.9, 0, 0]);
+  incompatible.landmarks.forEach((p, i) => { p.y += i % 2 ? 0.2 : -0.2; });
+  const result = refineDepthFromProfiles(front, [collapsed, profile([1, 0.2, 0.1]), incompatible]);
+  assertDiagnostics(result, 3);
+  assert.equal(result.used, 1);
+  assert.match(result.diagnostics[0].reason, /Escala incompatible/);
+  assert.match(result.diagnostics[2].reason, /referencias concordantes|no concuerdan/);
+  const flat = structuredClone(front);
+  flat.landmarks.forEach(p => { p.y = 0.5; });
+  flat.landmarks[10].x = 0.2; flat.landmarks[152].x = 0.8;
+  const degenerate = refineDepthFromProfiles(flat, [profile([0.9, 0, 0])]);
+  assertDiagnostics(degenerate, 1);
+  assert.equal(degenerate.used, 0);
+  assert.match(degenerate.diagnostics[0].reason, /degeneradas/);
+});
+
+test('superficie plana: las poses y los encuadres no inventan volumen', () => {
+  const { front, profile } = rotatedDepthFixture();
+  front.landmarks.forEach(p => { p.z = 0; });
+  const profiles = [[1, 0.5, 0.3], [-1, -0.3, -0.4]].map((a, i) =>
+    profile(a, { depthScale: 0, scale: i ? 1.4 : 0.6, tx: 0.2 + i * 0.3, ty: 0.3 + i * 0.2 }));
+  const result = refineDepthFromProfiles(front, profiles);
+  assert.equal(result.used, 2);
+  assert.equal(result.coverage, 'bilateral');
+  assert.ok(result.landmarks.every(p => Math.abs(p.z) < 1e-12));
+});
+
+test('cobertura central independiente del roll del origen: dos inclinaciones verticales no son dos lados', () => {
+  const { front, profile } = rotatedDepthFixture([0, 0, 0.45]);
+  const result = refineDepthFromProfiles(front, [
+    profile([0, 0.55, -0.3]), profile([0, -0.55, 0.2]),
+  ]);
+  assert.equal(result.used, 2);
+  assert.equal(result.coverage, 'one-sided');
+  assert.ok(result.diagnostics.every(d => d.side === 'central'));
 });

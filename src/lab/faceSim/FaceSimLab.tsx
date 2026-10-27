@@ -8,7 +8,7 @@ import {
   AUTO_ZONE, MAX_EFFECTS, REGISTRATION_ANCHORS, SIM_MODES, autoRegistration, buildEffects, correctPoints, defaultFrame,
   elemsFrom3D, elemsFromPhoto, expandElems, fitAffineRegistration, frameFromLandmarks, importInjectable, isRegistrationAccepted, isWithinFace, projectModel,
   buildPersonalSurface, rebasePersonalPoint, refineDepthFromProfiles, registrationAnchorIndices, trianglesFromEdges, updateRegistrationAnchor,
-  type AffineRegistration, type PersonalProjection, type CorrectedPoint, type Elem, type ElemKind, type FaceFrame, type Meta, type P2, type PhotoEl, type SimMode, type Vec3, type ViewKind,
+  type AffineRegistration, type DepthDiagnostic, type PersonalProjection, type CorrectedPoint, type Elem, type ElemKind, type FaceFrame, type Meta, type P2, type PhotoEl, type SimMode, type Vec3, type ViewKind,
 } from './engine';
 
 const catalog = (cat: string) => (injectablesCatalog as { categoria: string; elemento: string }[])
@@ -122,10 +122,15 @@ async function faceTriangles(): Promise<number[]> {
   return tessellationCache;
 }
 type ModelKind = 'generico' | 'personal';
-interface PersonalModel { view: ViewKind; canvas: HTMLCanvasElement; glb: ArrayBuffer; projection: PersonalProjection; depth: number; depthDetails: string }
+interface PersonalModel {
+  view: ViewKind; canvas: HTMLCanvasElement; glb: ArrayBuffer; projection: PersonalProjection; depth: number; depthDetails: string;
+  diagnostics: (DepthDiagnostic & { label: string })[];
+}
 
 const uid = () => `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-const VIEWS: { id: ViewKind; label: string }[] = [{ id: 'frontal', label: 'Frontal' }, { id: 'izquierda', label: 'Lateral izq.' }, { id: 'derecha', label: 'Lateral der.' }];
+const VIEWS: { id: ViewKind; label: string }[] = [{ id: 'frontal', label: 'Frontal' }, { id: 'izquierda', label: 'Ángulo A' }, { id: 'derecha', label: 'Ángulo B' }];
+type PhotoSlotId = ViewKind | 'extra_a' | 'extra_b';
+const PHOTO_SLOTS: { id: PhotoSlotId; label: string }[] = [...VIEWS, { id: 'extra_a', label: 'Foto 4' }, { id: 'extra_b', label: 'Foto 5' }];
 type WorkMode = '3d' | 'foto';
 type Tool3D = 'navigate' | 'point' | Exclude<DrawingTool, 'none'>;
 const TOOLS_3D: { id: Tool3D; label: string }[] = [
@@ -146,6 +151,7 @@ interface Slot {
   frame: FaceFrame;
   landmarks?: Landmark[];
   pose?: number[];
+  detectionError?: string;
   modelAnchors?: Vec3[];
   registration?: AffineRegistration;
   registrationFlip?: boolean;
@@ -163,9 +169,11 @@ export default function FaceSimLab() {
   const glRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<Renderer | null>(null);
   const dragRef = useRef<string | null>(null);
-  const uploadRequestRef = useRef(0);
+  const uploadRequestRef = useRef<Partial<Record<PhotoSlotId, number>>>({});
   const personalRequestRef = useRef(0);
-  const [photos, setPhotos] = useState<Partial<Record<ViewKind, Slot>>>({});
+  const detectionQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const [photos, setPhotos] = useState<Partial<Record<PhotoSlotId, Slot>>>({});
+  const [pendingPhotos, setPendingPhotos] = useState<Partial<Record<PhotoSlotId, boolean>>>({});
   const [view, setView] = useState<ViewKind>('frontal');
   const [renderTick, setRenderTick] = useState(0);
   const [workMode, setWorkMode] = useState<WorkMode>('3d');
@@ -205,6 +213,10 @@ export default function FaceSimLab() {
   const aspect = slot?.aspect ?? 0.75;
   const frame = slot?.frame ?? defaultFrame(view);
   const hasImage = !!slot;
+  const loadedPhotos = PHOTO_SLOTS.filter(v => photos[v.id]);
+  const readyPhotos = PHOTO_SLOTS.filter(v => photos[v.id]?.landmarks);
+  const hasPendingPhotos = Object.values(pendingPhotos).some(Boolean);
+  const captureSource = photos.frontal?.landmarks ? 'frontal' : photos[view]?.landmarks ? view : VIEWS.find(v => photos[v.id]?.landmarks)?.id;
   const curMeta = (): Meta => ({ mode, dose, zone, product: product || undefined });
 
   const elems = useMemo<Elem[]>(() => [
@@ -276,8 +288,12 @@ export default function FaceSimLab() {
     }
     void buildPersonal();
   };
-  const buildPersonal = async (nextDepth = depth) => {
-    const source = slot;
+  const buildPersonal = async (nextDepth = depth, sourceView = view) => {
+    if (hasPendingPhotos) {
+      setStatus('Espera a que termine la detección de las fotos antes de calcular la superficie.');
+      return;
+    }
+    const source = photos[sourceView];
     if (!source?.landmarks) {
       setStatus('Para la superficie personal carga una foto con el rostro detectado (landmarks MediaPipe).');
       return;
@@ -286,22 +302,24 @@ export default function FaceSimLab() {
     setBuildingPersonal(true);
     setCalibrating(false);
     try {
-      const profiles = view === 'frontal' ? VIEWS.filter(v => v.id !== 'frontal').flatMap(v => {
+      const profiles = PHOTO_SLOTS.filter(v => v.id !== sourceView).flatMap(v => {
         const photo = photos[v.id];
-        return photo?.landmarks ? [{ landmarks: photo.landmarks, aspect: photo.aspect, pose: photo.pose }] : [];
-      }) : [];
+        return photo?.landmarks ? [{ label: v.label, landmarks: photo.landmarks, aspect: photo.aspect, pose: photo.pose }] : [];
+      });
       const refined = refineDepthFromProfiles({ landmarks: source.landmarks, aspect: source.aspect, pose: source.pose }, profiles);
+      const diagnostics = refined.diagnostics.map(d => ({ ...d, label: profiles[d.index].label }));
       const depthDetails = [
-        refined.used ? `Ajuste experimental de profundidad con ${refined.used} lateral(es).`
-          : 'Profundidad monocular sin contrastar. Para mejorarla, carga frontal y laterales de la misma persona con expresión neutra y genera desde Frontal.',
-        ...refined.rejected,
+        refined.used ? `Cálculo con ${refined.used + 1} fotos útiles. ${refined.coverage === 'bilateral'
+          ? 'Ambos lados aportan profundidad.' : 'La profundidad está contrastada principalmente desde un lado; añade una vista del lado opuesto.'}`
+          : 'Cálculo rápido con una foto: profundidad monocular sin contrastar. Añade otra foto con un ángulo diferente para contrastar nariz y labios.',
+        diagnostics.some(d => d.status !== 'used') ? 'Hay referencias de aporte limitado o no utilizables; revisa el detalle por foto.' : '',
       ].join(' ');
       const surface = buildPersonalSurface(refined.landmarks, source.aspect, await faceTriangles(), nextDepth);
       if (!surface) throw new Error('Landmarks insuficientes para construir la malla.');
       const { personalSurfaceToGlb } = await import('./personalSurfaceGlb');
       const glb = await personalSurfaceToGlb(surface, source.canvas);
       if (requestId !== personalRequestRef.current) return;
-      const replacing = modelKind !== 'personal' || !personal || personal.view !== view || personal.canvas !== source.canvas;
+      const replacing = modelKind !== 'personal' || !personal || personal.view !== sourceView || personal.canvas !== source.canvas;
       const cleared = replacing ? resetModelMarks() : '';
       if (!replacing && personal) {
         const ratio = nextDepth / personal.depth, scale = surface.projection.k / personal.projection.k;
@@ -325,9 +343,9 @@ export default function FaceSimLab() {
         setMarkers(rebased.markers); setLines(rebased.lines); setShapes(rebased.shapes);
         setHistory(h => h.map(rebase));
       }
-      setPersonal({ view, canvas: source.canvas, glb, projection: surface.projection, depth: nextDepth, depthDetails });
+      setPersonal({ view: sourceView, canvas: source.canvas, glb, projection: surface.projection, depth: nextDepth, depthDetails, diagnostics });
       setModelKind('personal');
-      setStatus(`Superficie 3D personal generada desde la foto ${VIEWS.find(v => v.id === view)?.label ?? view} (${surface.indices.length / 3} triángulos). ${depthDetails}${cleared}`);
+      setStatus(`Superficie 3D personal generada desde la foto ${VIEWS.find(v => v.id === sourceView)?.label ?? sourceView} (${surface.indices.length / 3} triángulos). ${depthDetails}${cleared}`);
     } catch (error) {
       if (requestId !== personalRequestRef.current) return;
       setDepth(personal?.depth ?? 1);
@@ -337,57 +355,99 @@ export default function FaceSimLab() {
     }
   };
 
-  const loadFile = async (file: File, target: ViewKind) => {
-    personalRequestRef.current++;
-    setBuildingPersonal(false);
-    const requestId = ++uploadRequestRef.current;
+  const loadFile = async (file: File, target: PhotoSlotId) => {
     if (!file.type.startsWith('image/')) { setStatus('El archivo debe ser una imagen.'); return; }
     if (file.size > MAX_IMAGE_BYTES) { setStatus('La imagen supera el límite de 20 MiB.'); return; }
-    let bmp: ImageBitmap | null = null;
-    let c: HTMLCanvasElement;
+    personalRequestRef.current++;
+    setBuildingPersonal(false);
+    const requestId = (uploadRequestRef.current[target] ?? 0) + 1;
+    uploadRequestRef.current[target] = requestId;
+    const targetView = target === 'extra_a' || target === 'extra_b' ? 'frontal' : target;
+    setPendingPhotos(p => ({ ...p, [target]: true }));
     try {
-      bmp = await createImageBitmap(file);
-      if (bmp.width * bmp.height > MAX_IMAGE_PIXELS) { setStatus('La imagen supera el límite de 40 megapíxeles.'); return; }
-      const k = Math.min(1, MAX_SIDE / Math.max(bmp.width, bmp.height));
-      c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
-      const context = c.getContext('2d');
-      if (!context) { setStatus('No se pudo preparar la imagen en este navegador.'); return; }
-      context.drawImage(bmp, 0, 0, c.width, c.height);
-    } catch {
-      setStatus('No se pudo decodificar la imagen. Selecciona otra fotografía.');
-      return;
+      let bmp: ImageBitmap | null = null;
+      let c: HTMLCanvasElement;
+      try {
+        bmp = await createImageBitmap(file);
+        if (bmp.width * bmp.height > MAX_IMAGE_PIXELS) { setStatus('La imagen supera el límite de 40 megapíxeles.'); return; }
+        const k = Math.min(1, MAX_SIDE / Math.max(bmp.width, bmp.height));
+        c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+        const context = c.getContext('2d');
+        if (!context) { setStatus('No se pudo preparar la imagen en este navegador.'); return; }
+        context.drawImage(bmp, 0, 0, c.width, c.height);
+      } catch {
+        setStatus('No se pudo decodificar la imagen. Selecciona otra fotografía.');
+        return;
+      } finally {
+        bmp?.close();
+      }
+      if (requestId !== uploadRequestRef.current[target]) return;
+      const replacedPersonal = !!personal;
+      if (replacedPersonal) { setPersonal(null); setModelKind('generico'); }
+      const personalNote = replacedPersonal ? ` Se actualizaron las fotos; regenera la superficie personal para recalcular la profundidad.${resetModelMarks()}` : '';
+      setPhotos(p => ({ ...p, [target]: { canvas: c, aspect: c.width / c.height, frame: defaultFrame(targetView) } }));
+      setCalibrating(false);
+      setPhotoAnchor(null);
+      if (target !== 'extra_a' && target !== 'extra_b') setView(target);
+      const label = PHOTO_SLOTS.find(v => v.id === target)?.label ?? target;
+      let release!: () => void;
+      const previous = detectionQueueRef.current;
+      detectionQueueRef.current = new Promise<void>(resolve => { release = resolve; });
+      await previous;
+      let detected: Awaited<ReturnType<typeof detectFrame>>;
+      try {
+        if (requestId !== uploadRequestRef.current[target]) return;
+        setStatus(`Detectando rostro en ${label}…`);
+        detected = await detectFrame(c);
+      } finally {
+        release();
+      }
+      if (requestId !== uploadRequestRef.current[target]) return;
+      if (!detected.frame) {
+        setPhotos(p => p[target]?.canvas === c ? { ...p, [target]: { ...p[target]!, detectionError: detected.reason } } : p);
+        setStatus(`${detected.reason} Sin rostro detectado no se proyectan las marcas 3D; usa una foto nítida con el rostro descubierto o marca directamente sobre la foto.${personalNote}`);
+        return;
+      }
+      const auto = target === 'extra_a' || target === 'extra_b' ? null : autoRegistration(target, detected.frame, c.width / c.height, flipX);
+      const errorSummary = auto ? ` (RMS ${(auto.rmse * 100).toFixed(1)}%)` : '';
+      const accepted = isRegistrationAccepted(auto);
+      setPhotos(p => (p[target]?.canvas === c ? {
+        ...p,
+        [target]: {
+          ...p[target]!, frame: detected.frame!, landmarks: detected.landmarks, pose: detected.pose, modelAnchors: undefined,
+          ...(accepted ? { registration: auto, registrationFlip: flipX, registrationSource: 'auto' as const } : { registration: undefined }),
+        },
+      } : p));
+      setStatus((accepted
+        ? `Rostro detectado en vista ${label}; modelo 3D alineado automáticamente (RMS ${(auto.rmse * 100).toFixed(1)}%). Las marcas del modelo ya se proyectan en la foto. Para marcar sobre la anatomía real usa «Superficie 3D personal».`
+        : `Rostro detectado en ${label}; la foto está disponible para el cálculo multivista. La proyección del modelo genérico no está aprobada para este ángulo${errorSummary}; no se rechaza la foto por ello.`) + personalNote);
+    } catch (error) {
+      if (requestId !== uploadRequestRef.current[target]) return;
+      console.error('[FaceSimLab] No se pudo analizar la foto', error);
+      const reason = `No se pudo analizar la foto: ${error instanceof Error ? error.message : 'error desconocido'}. Puedes volver a cargarla.`;
+      setPhotos(p => p[target] ? { ...p, [target]: { ...p[target]!, detectionError: reason } } : p);
+      setStatus(reason);
     } finally {
-      bmp?.close();
+      if (requestId === uploadRequestRef.current[target]) {
+        setPendingPhotos(p => ({ ...p, [target]: false }));
+      }
     }
-    if (requestId !== uploadRequestRef.current) return;
-    const replacedPersonal = !!personal;
-    if (replacedPersonal) { setPersonal(null); setModelKind('generico'); }
-    const personalNote = replacedPersonal ? ` Se actualizaron las fotos; regenera la superficie personal para recalcular la profundidad.${resetModelMarks()}` : '';
-    setPhotos(p => ({ ...p, [target]: { canvas: c, aspect: c.width / c.height, frame: defaultFrame(target) } }));
-    setCalibrating(false);
-    setPhotoAnchor(null);
-    setView(target);
-    setStatus(`Detectando rostro en la vista ${VIEWS.find(v => v.id === target)?.label ?? target}…`);
-    const detected = await detectFrame(c);
-    if (requestId !== uploadRequestRef.current) return;
-    const label = VIEWS.find(v => v.id === target)?.label ?? target;
-    if (!detected.frame) {
-      setStatus(`${detected.reason} Sin rostro detectado no se proyectan las marcas 3D; usa una foto nítida con el rostro descubierto o marca directamente sobre la foto.${personalNote}`);
-      return;
-    }
-    const auto = autoRegistration(target, detected.frame, c.width / c.height, flipX);
-    const errorSummary = auto ? ` (RMS ${(auto.rmse * 100).toFixed(1)}%)` : '';
-    const accepted = isRegistrationAccepted(auto);
-    setPhotos(p => (p[target]?.canvas === c ? {
-      ...p,
-      [target]: {
-        ...p[target]!, frame: detected.frame!, landmarks: detected.landmarks, pose: detected.pose, modelAnchors: undefined,
-        ...(accepted ? { registration: auto, registrationFlip: flipX, registrationSource: 'auto' as const } : { registration: undefined }),
-      },
-    } : p));
-    setStatus((accepted
-      ? `Rostro detectado en vista ${label}; modelo 3D alineado automáticamente (RMS ${(auto.rmse * 100).toFixed(1)}%). Las marcas del modelo ya se proyectan en la foto. Para marcar sobre la anatomía real usa «Superficie 3D personal».`
-      : `Rostro detectado en vista ${label}, pero la pose no coincide con el modelo${errorSummary}. Usa una foto ${target === 'frontal' ? 'frontal sin giro' : 'de perfil'}, «Alinear manualmente» o genera la «Superficie 3D personal».`) + personalNote);
+  };
+
+  const removePhoto = (id: PhotoSlotId) => {
+    uploadRequestRef.current[id] = (uploadRequestRef.current[id] ?? 0) + 1;
+    personalRequestRef.current++;
+    setBuildingPersonal(false);
+    setPendingPhotos(p => ({ ...p, [id]: false }));
+    setPhotos(p => {
+      const next = { ...p };
+      delete next[id];
+      return next;
+    });
+    const cleared = personal ? resetModelMarks() : '';
+    setPersonal(null); setModelKind('generico');
+    setCalibrating(false); setPhotoAnchor(null);
+    setStatus(`Se retiró ${PHOTO_SLOTS.find(v => v.id === id)?.label}. Recalcula la superficie con las fotos restantes.${cleared}`);
   };
   const updateFrame = (k: 'top' | 'bottom' | 'left' | 'right', v: number) => setPhotos(p => {
     const s = p[view]; if (!s) return p;
@@ -551,23 +611,58 @@ export default function FaceSimLab() {
     );
   });
 
+  const photoInput = (v: (typeof PHOTO_SLOTS)[number]) => (
+    <div key={v.id} className="min-w-0">
+      <label className={`flex cursor-pointer flex-col items-center gap-1 rounded-lg border px-1 py-2 text-center text-[11px] font-semibold focus-within:ring-2 focus-within:ring-amber-400 ${view === v.id ? 'border-[#b8944d] bg-amber-50' : 'border-slate-200'} ${photos[v.id] ? 'text-slate-800' : 'text-slate-500'}`}>
+        <ImagePlus className="h-4 w-4" aria-hidden="true" />
+        {v.label}{pendingPhotos[v.id] ? ' …' : photos[v.id]?.landmarks ? ' ✓' : photos[v.id] ? ' !' : ''}
+        <input type="file" accept="image/*" aria-label={`Cargar ${v.label}`} className="sr-only"
+          onChange={e => { const f = e.target.files?.[0]; if (f) void loadFile(f, v.id); e.target.value = ''; }} />
+      </label>
+      {(photos[v.id] || pendingPhotos[v.id]) && (
+        <button type="button" onClick={() => removePhoto(v.id)} aria-label={`Retirar ${v.label}`}
+          className="mt-1 flex w-full items-center justify-center gap-1 rounded px-1 py-1 text-[10px] text-slate-500 hover:bg-slate-100">
+          <Trash2 className="h-3 w-3" aria-hidden="true" />Retirar
+        </button>
+      )}
+      {photos[v.id]?.detectionError && <p className="mt-1 break-words text-[10px] text-amber-800">{photos[v.id]?.detectionError}</p>}
+    </div>
+  );
+
   return (
     <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
       <aside className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div>
           <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Fotos del paciente</span>
           <div className="grid grid-cols-3 gap-1">
-            {VIEWS.map(v => (
-              <label key={v.id} className={`flex cursor-pointer flex-col items-center gap-1 rounded-lg border px-1 py-2 text-center text-[11px] font-semibold ${view === v.id ? 'border-[#b8944d] bg-amber-50' : 'border-slate-200'} ${photos[v.id] ? 'text-slate-800' : 'text-slate-500'}`}>
-                <ImagePlus className="h-4 w-4" aria-hidden="true" />{v.label}{photos[v.id] ? ' ✓' : ''}
-                <input type="file" accept="image/*" className="sr-only" onChange={e => { const f = e.target.files?.[0]; if (f) loadFile(f, v.id); e.target.value = ''; }} />
-              </label>
-            ))}
+            {VIEWS.map(photoInput)}
           </div>
           <div className="mt-1 grid grid-cols-3 gap-1">
             {VIEWS.map(v => <button key={v.id} type="button" disabled={!photos[v.id]} aria-pressed={view === v.id} onClick={() => { personalRequestRef.current++; setBuildingPersonal(false); setCalibrating(false); setPhotoAnchor(null); setView(v.id); }}
               className={`rounded px-1 py-1 text-[11px] ${view === v.id ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'} disabled:opacity-40`}>Ver</button>)}
           </div>
+          <details className="mt-2 text-xs text-slate-600">
+            <summary className="cursor-pointer font-semibold">Añadir fotos 4 y 5 (opcional)</summary>
+            <div className="mt-2 grid grid-cols-2 gap-1">{PHOTO_SLOTS.slice(3).map(photoInput)}</div>
+          </details>
+          <p className="mt-2 text-xs text-slate-600" aria-live="polite">
+            {loadedPhotos.length} de 5 fotos cargadas · {readyPhotos.length} con rostro detectado{hasPendingPhotos ? ' · Detectando…' : ''}
+          </p>
+          <p className="mt-1 text-[11px] text-slate-500">
+            1: cálculo rápido. 2: contrasta profundidad de nariz y labios. 3: recomendado para cubrir ambos lados.
+            Las fotos 4 y 5 añaden referencias. Usa la misma persona; se compensan diferencias de giro, altura y encuadre.
+            Ángulos A/B son orientativos: no necesitan ser perfiles exactos.
+          </p>
+          <button type="button" disabled={buildingPersonal || hasPendingPhotos || !captureSource}
+            onClick={() => {
+              if (!captureSource) { setStatus('Carga al menos una foto principal con el rostro detectado para calcular la superficie.'); return; }
+              const sourceView = captureSource;
+              setView(sourceView); setWorkMode('3d'); setPhotoAnchor(null);
+              void buildPersonal(depth, sourceView);
+            }}
+            className="mt-2 w-full rounded-lg bg-slate-800 px-2 py-2 text-xs font-semibold text-white disabled:opacity-40">
+            {buildingPersonal ? 'Calculando…' : `Calcular superficie con ${readyPhotos.length} foto(s)`}
+          </button>
         </div>
         <p className="text-xs text-slate-500" role="status">{status}</p>
 
@@ -576,7 +671,7 @@ export default function FaceSimLab() {
           <div className="grid grid-cols-2 gap-1">
             <button type="button" disabled={buildingPersonal} aria-pressed={modelKind === 'generico'} onClick={useGenericModel}
               className={`rounded-lg px-2 py-1.5 font-semibold ${modelKind === 'generico' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'}`}>Genérico</button>
-            <button type="button" aria-pressed={modelKind === 'personal'} disabled={buildingPersonal || !slot?.landmarks}
+            <button type="button" aria-pressed={modelKind === 'personal'} disabled={buildingPersonal || hasPendingPhotos || !slot?.landmarks}
               onClick={activatePersonal}
               className={`rounded-lg px-2 py-1.5 font-semibold ${modelKind === 'personal' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'} disabled:opacity-50`}>
               {buildingPersonal ? 'Generando…' : 'Personal (foto)'}
@@ -585,16 +680,32 @@ export default function FaceSimLab() {
           {modelKind === 'personal' && personal ? (
             <>
               <label className="block text-slate-700">Relieve visual: {Math.round(depth * 100)}%
-                <input type="range" min={0.75} max={1.25} step={0.05} value={depth} disabled={buildingPersonal || !personalProjection}
+                <input type="range" min={0.75} max={1.25} step={0.05} value={depth} disabled={buildingPersonal || hasPendingPhotos || !personalProjection}
                   onChange={e => setDepth(Number(e.target.value))}
                   onPointerUp={e => buildPersonal(Number((e.target as HTMLInputElement).value))}
                   onKeyUp={e => { if (/^(Arrow|Home|End|Page)/.test(e.key)) buildPersonal(Number(e.currentTarget.value)); }}
                   className="w-full accent-[#b8944d]" />
               </label>
-              <button type="button" disabled={buildingPersonal || depth === 1 || !personalProjection}
+              <button type="button" disabled={buildingPersonal || hasPendingPhotos || depth === 1 || !personalProjection}
                 onClick={() => { setDepth(1); void buildPersonal(1); }}
                 className="rounded border border-slate-300 px-2 py-1 disabled:opacity-40">Restablecer relieve calculado</button>
               <p className="text-amber-800">{personal.depthDetails} El control es una variación visual (75–125%), no una calibración clínica.</p>
+              {personal.diagnostics.length > 0 && (
+                <details className="rounded border border-slate-200 p-2">
+                  <summary className="cursor-pointer font-semibold text-slate-700">Concordancia por foto</summary>
+                  <ul className="mt-2 space-y-2">
+                    {personal.diagnostics.map(d => (
+                      <li key={d.index} className="text-slate-600">
+                        <strong>{d.label}: {d.status === 'used' ? 'aporta' : d.status === 'limited' ? 'aporte limitado' : 'sin aporte geométrico'}</strong>
+                        <p>{d.reason}</p>
+                        <p>{d.referenceCount} referencias útiles · peso {Math.round(d.weight * 100)}%
+                          {d.normalizedError !== null ? ` · desajuste ${(d.normalizedError * 100).toFixed(1)}% del alto facial` : ''}</p>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-2 text-[10px] text-slate-500">Compatibilidad geométrica, no verificación de identidad ni precisión clínica. Una foto con poco aporte puede permanecer cargada.</p>
+                </details>
+              )}
               <p className="text-slate-500">La propia foto {VIEWS.find(v => v.id === personal.view)?.label.toLowerCase()} es la superficie 3D, sin cabeza genérica. Gírala para apreciar el relieve; de frente mantiene las proporciones de la foto. La miniatura permite comprobar las marcas. Solo cubre el óvalo facial y la profundidad es estimada, no un escaneo.</p>
               {personal.view !== view && <p className="font-semibold text-amber-700">Esta superficie pertenece a la vista {VIEWS.find(v => v.id === personal.view)?.label}; vuelve a esa vista para ver sus marcas en la foto.</p>}
             </>

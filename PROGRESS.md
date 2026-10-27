@@ -467,3 +467,4 @@ Las entradas siguientes conservan la evidencia previa al despliegue y la evoluci
 - ✅ Oct 17 Finanzas: búsqueda inteligente y paginación independiente en tratamientos y libro de movimientos
 - ✅ Oct 26 Lab simulación facial: superficie 3D personal desde foto (malla MediaPipe texturizada, relieve ajustable)
 - ✅ Oct 26 Lab facial: 27 referencias, foto 3D sin superposición y profundidad multivista experimental.
+- ✅ Oct 26 Captura facial progresiva 1–5.
