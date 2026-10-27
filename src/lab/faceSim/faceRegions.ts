@@ -13,9 +13,11 @@ export const FACE_REGION_SEEDS: ReadonlyArray<{ zone: string; indices: number[] 
   { zone: 'Pómulos', indices: [50, 101, 100, 36, 280, 330, 329, 266] },
   { zone: 'Mejillas', indices: [205, 206, 207, 187, 123, 116, 425, 426, 427, 411, 352, 345] },
   { zone: 'Surco nasogeniano', indices: [48, 49, 102, 64, 203, 278, 279, 331, 294, 423] },
-  { zone: 'Labios', indices: [0, 13, 14, 17, 37, 39, 40, 78, 80, 81, 82, 84, 87, 88, 267, 269, 270, 308, 310, 311, 312, 314, 317, 318] },
-  { zone: 'Comisuras', indices: [61, 291] },
-  { zone: 'Surco marioneta', indices: [57, 186, 92, 165, 287, 410, 322, 391] },
+  { zone: 'Piel supralabial / filtrum', indices: [164] },
+  { zone: 'Labio superior', indices: [0, 11, 12, 13, 37, 39, 40, 80, 81, 82, 185, 191, 267, 269, 270, 310, 311, 312, 409, 415] },
+  { zone: 'Labio inferior', indices: [14, 15, 16, 17, 84, 87, 88, 91, 95, 146, 178, 181, 314, 317, 318, 321, 324, 375, 402, 405] },
+  { zone: 'Comisuras', indices: [61, 78, 291, 308] },
+  { zone: 'Surco marioneta', indices: [57, 186, 92, 287, 410, 322] },
   { zone: 'Mentón', indices: [152, 175, 199, 200, 201, 208, 421, 428, 18] },
   { zone: 'Línea mandibular', indices: [172, 136, 150, 149, 176, 148, 397, 365, 379, 378, 400, 377, 132, 361, 58, 288] },
 ];
@@ -26,18 +28,53 @@ export interface FaceRegionMap {
   labels: string[];
 }
 
+export function faceRegionColor(zone: string): string {
+  const palette = ['#38bdf8', '#fb923c', '#a78bfa', '#f472b6', '#34d399', '#facc15', '#2dd4bf', '#fb7185'];
+  const hash = [...zone].reduce((n, c) => (n * 31 + c.charCodeAt(0)) >>> 0, 0);
+  return palette[hash % palette.length];
+}
+
+export const FACE_REGION_EDUCATION: ReadonlyArray<{ zones: readonly string[]; structures: string }> = [
+  { zones: ['Frente', 'Glabela', 'Cola de ceja'], structures: 'Arterias supratroclear y supraorbitaria; variaciones y conexiones vasculares.' },
+  { zones: ['Dorso nasal'], structures: 'Arterias dorsal nasal, lateral nasal y angular; conexiones con otros territorios.' },
+  { zones: ['Contorno ocular (revisar)', 'Patas de gallo', 'Ojeras'], structures: 'Vascularización periorbitaria y conexiones con la circulación oftálmica.' },
+  { zones: ['Región temporal'], structures: 'Arteria temporal superficial y otras ramas; planos anatómicos variables.' },
+  { zones: ['Surco nasogeniano'], structures: 'Arterias facial y angular; trayectos y profundidad variables.' },
+  { zones: ['Labio superior', 'Labio inferior', 'Comisuras', 'Piel supralabial / filtrum'], structures: 'Arterias labiales superior e inferior; posición variable entre personas.' },
+];
+
+export function faceRegionEducation(zone: string): string | undefined {
+  return FACE_REGION_EDUCATION.find(entry => entry.zones.includes(zone))?.structures;
+}
+
+export function faceAttentionColor(zone: string): string {
+  return faceRegionEducation(zone) ? '#f59e0b' : '#94a3b8';
+}
+export function faceTriangleZone(indices: readonly number[], labels: readonly string[]): string {
+  const votes = new Map<string, number>();
+  indices.forEach(i => votes.set(labels[i], (votes.get(labels[i]) ?? 0) + 1));
+  return [...votes].sort((a, b) => b[1] - a[1])[0][0];
+}
+
 /** Voronoi geodésico sobre las conexiones reales de la malla, no franjas de una caja 2D. */
-export function buildFaceRegionMap(landmarks: P2[], triangles: readonly number[], aspect: number): FaceRegionMap {
+export function buildFaceRegionMap(
+  landmarks: P2[], triangles: readonly number[], aspect: number, referencePositions?: readonly number[],
+): FaceRegionMap {
   if (landmarks.length < 468 || !Number.isFinite(aspect) || aspect <= 0
     || landmarks.some(p => !Number.isFinite(p.x) || !Number.isFinite(p.y))
     || triangles.length % 3 || triangles.some(i => !Number.isInteger(i) || i < 0 || i >= 468)) {
     throw new Error('No se puede construir el mapa anatómico: malla facial inválida.');
   }
   const adjacency = Array.from({ length: 468 }, () => new Map<number, number>());
+  if (referencePositions && (referencePositions.length < 468 * 3 || referencePositions.some(p => !Number.isFinite(p)))) {
+    throw new Error('Las referencias anatómicas del modelo no son válidas.');
+  }
   for (let i = 0; i < triangles.length; i += 3) {
     for (let j = 0; j < 3; j++) {
       const a = triangles[i + j], b = triangles[i + (j + 1) % 3];
-      const distance = Math.max(1e-8, Math.hypot((landmarks[a].x - landmarks[b].x) * aspect, landmarks[a].y - landmarks[b].y));
+      const distance = Math.max(1e-8, referencePositions
+        ? Math.hypot(...[0, 1, 2].map(axis => referencePositions[a * 3 + axis] - referencePositions[b * 3 + axis]))
+        : Math.hypot((landmarks[a].x - landmarks[b].x) * aspect, landmarks[a].y - landmarks[b].y));
       adjacency[a].set(b, distance); adjacency[b].set(a, distance);
     }
   }

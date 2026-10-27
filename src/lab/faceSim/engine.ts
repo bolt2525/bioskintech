@@ -492,6 +492,8 @@ export interface Elem extends Meta {
   id: string; kind: ElemKind; paths: P2[][];
   /** Semiejes (coordenadas normalizadas) para circle/rect */
   rx?: number; ry?: number;
+  /** Contorno anatómico de un área transferida entre mallas (no una elipse escalada por caja). */
+  boundary?: P2[];
 }
 /** Elemento dibujado directamente sobre una foto. */
 export interface PhotoEl extends Meta { id: string; view: ViewKind; kind: ElemKind; pts: P2[] }
@@ -981,8 +983,10 @@ export function expandElems(
       const nx = Math.min(5, Math.max(1, Math.ceil((2 * rx * aspect) / cell)));
       for (let i = 0; i < nx; i++) for (let j = 0; j < n; j++) {
         const u = -1 + (2 * i + 1) / nx, v = -1 + (2 * j + 1) / n;
-        if (e.kind === 'circle' && u * u + v * v > 1.2) continue;
-        mine.push(base(e, { x: c.x + u * rx, y: c.y + v * ry }, { rad: Math.max(Math.min(rx * aspect / nx, ry / n) * 1.6, fh * 0.03) }));
+        if (!e.boundary && e.kind === 'circle' && u * u + v * v > 1.2) continue;
+        const p = { x: c.x + u * rx, y: c.y + v * ry };
+        if (e.boundary && !isWithinFace(p, { ...frame, outline: e.boundary })) continue;
+        mine.push(base(e, p, { rad: Math.max(Math.min(rx * aspect / nx, ry / n) * 1.6, fh * 0.03) }));
       }
     } else {
       const step = fh * 0.05;

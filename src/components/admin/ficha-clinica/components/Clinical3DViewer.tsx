@@ -69,6 +69,15 @@ export interface ProjectedPosition {
   visible?: boolean;
 }
 
+export interface SurfaceInteractionConstraint {
+  accepts: (point: { x: number; y: number; z: number }) => boolean;
+  onRejected: () => void;
+}
+export interface AnatomicalSurfaceOverlay {
+  positions: Float32Array;
+  colors: Float32Array;
+}
+
 function visibleSurfaceHits(raycaster: THREE.Raycaster, objects: THREE.Object3D[], surface: THREE.Object3D | null, occlude: boolean, recursive = false) {
   const hits = raycaster.intersectObjects(objects, recursive);
   if (!occlude) return hits;
@@ -540,6 +549,8 @@ interface Clinical3DViewerProps {
   /** Callback cuando el usuario hace clic en el fondo vacío (sin malla) */
   onBackgroundClick?: () => void;
   onEstimatedSurfaceInteraction?: () => void;
+  surfaceConstraint?: SurfaceInteractionConstraint;
+  anatomicalOverlay?: AnatomicalSurfaceOverlay;
   /** Escala multiplicadora del tamaño de marcaciones puntuales (1.0 = default) */
   pointMarkerScale?: number;
   /** Mostrar etiquetas flotantes junto a las marcaciones */
@@ -597,6 +608,8 @@ const ThreeEngine: React.FC<{
   onEditablePointHovered?: (id: string | null) => void;
   onBackgroundClick?: () => void;
   onEstimatedSurfaceInteraction?: () => void;
+  surfaceConstraint?: SurfaceInteractionConstraint;
+  anatomicalOverlay?: AnatomicalSurfaceOverlay;
   showMarkerLabels?: boolean;
   cameraPreset?: ClinicalCameraPreset;
   scalpHair?: ScalpHairVisualization | null;
@@ -618,6 +631,8 @@ const ThreeEngine: React.FC<{
   onEditablePointHovered,
   onBackgroundClick,
   onEstimatedSurfaceInteraction,
+  surfaceConstraint,
+  anatomicalOverlay,
   showMarkerLabels = true,
   pointMarkerScale = 1.0,
   cameraPreset = 'default',
@@ -651,6 +666,20 @@ const ThreeEngine: React.FC<{
   const annotationDepthApplied = useRef(false);
   // Increments each time the model finishes loading so the markers effect re-runs
   const [modelVersion, setModelVersion] = useState(0);
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene || !anatomicalOverlay) return;
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(anatomicalOverlay.positions, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(anatomicalOverlay.colors, 3));
+    const material = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.28,
+      side: THREE.FrontSide, depthTest: false, depthWrite: false });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.name = 'ANATOMICAL_REFERENCE_OVERLAY';
+    mesh.renderOrder = 12;
+    scene.add(mesh);
+    return () => { scene.remove(mesh); geometry.dispose(); material.dispose(); };
+  }, [anatomicalOverlay, modelVersion]);
   // Track two-point step inside engine for cursor feedback
   const twoPointStepRef = useRef<0 | 1>(0);
 
@@ -660,7 +689,7 @@ const ThreeEngine: React.FC<{
     activeTool, selectedElementId, pendingBrushColor, pendingBrushThickness,
     onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onSurfaceShapeUpdated, onGridStepChange, onSnapPointChange,
     haShapeConfig, freehandLines, surfaceShapes, incompletePointIds, highlightedPointIds, onEditablePointHovered, onBackgroundClick, onEstimatedSurfaceInteraction,
-    onModelMetrics, occludeAnnotations,
+    onModelMetrics, occludeAnnotations, surfaceConstraint,
   });
   useEffect(() => {
     callbacks.current = {
@@ -669,7 +698,7 @@ const ThreeEngine: React.FC<{
       activeTool, selectedElementId, pendingBrushColor, pendingBrushThickness,
       onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onSurfaceShapeUpdated, onGridStepChange, onSnapPointChange,
       haShapeConfig, freehandLines, surfaceShapes, incompletePointIds, highlightedPointIds, onEditablePointHovered, onBackgroundClick, onEstimatedSurfaceInteraction,
-      onModelMetrics, occludeAnnotations,
+      onModelMetrics, occludeAnnotations, surfaceConstraint,
     };
   });
 
@@ -1024,9 +1053,26 @@ const ThreeEngine: React.FC<{
       selectedEditableId = group.userData.editableId ?? null;
     };
 
+    const rejectSurfaceEvent = (e: MouseEvent) => {
+      const constraint = callbacks.current.surfaceConstraint;
+      if (!constraint || !faceMeshRef.current || !cameraRef.current) return false;
+      const rect = renderer.domElement.getBoundingClientRect();
+      mouse.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+      raycaster.setFromCamera(mouse, cameraRef.current);
+      const hit = raycaster.intersectObject(faceMeshRef.current, true)[0];
+      if (!hit) return false;
+      const normal = hit.face?.normal.clone().transformDirection(hit.object.matrixWorld);
+      if (hit.object.name === 'ESTIMATED_HEAD_SURFACE' || !normal || normal.dot(raycaster.ray.direction) >= -1e-5 || !constraint.accepts(hit.point)) {
+        constraint.onRejected();
+        return true;
+      }
+      return false;
+    };
+
     const onPointerDown = (e: MouseEvent) => {
       syncDrawingTool();
       startPos = { x: e.clientX, y: e.clientY };
+      if (rejectSurfaceEvent(e)) return;
       const tool = callbacks.current.activeTool;
       if (gridStep > 0 && tool !== 'ha-grid') resetGridDrawing();
       if (tool !== 'none' && faceMeshRef.current?.getObjectByName('ESTIMATED_HEAD_SURFACE') && cameraRef.current) {
@@ -1204,6 +1250,7 @@ const ThreeEngine: React.FC<{
     };
 
     const onPointerMove = (e: MouseEvent) => {
+      if ((e.buttons & 1) === 1 && rejectSurfaceEvent(e)) return;
       if (resizingZonalGroup && resizingZonalId) {
         if ((e as PointerEvent).pointerId !== resizingZonalPointerId) return;
         const center = resizingZonalGroup.userData.resizeCenterScreen as { x: number; y: number };
@@ -2046,6 +2093,7 @@ const ThreeEngine: React.FC<{
 
     const onClick = (event: MouseEvent) => {
       if (isDragging || !faceMeshRef.current || !cameraRef.current) return;
+      if (rejectSurfaceEvent(event)) return;
 
       const rect = renderer.domElement.getBoundingClientRect();
       mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -3514,6 +3562,8 @@ export default function Clinical3DViewer({
   onEditablePointHovered,
   onBackgroundClick,
   onEstimatedSurfaceInteraction,
+  surfaceConstraint,
+  anatomicalOverlay,
   pointMarkerScale = 1.0,
   showMarkerLabels = true,
   scalpHair = null,
@@ -3617,6 +3667,8 @@ export default function Clinical3DViewer({
             onEditablePointHovered={onEditablePointHovered}
             onBackgroundClick={onBackgroundClick}
             onEstimatedSurfaceInteraction={onEstimatedSurfaceInteraction}
+            surfaceConstraint={surfaceConstraint}
+            anatomicalOverlay={anatomicalOverlay}
             pointMarkerScale={pointMarkerScale}
             showMarkerLabels={showMarkerLabels}
             cameraPreset={cameraPreset}

@@ -1,5 +1,9 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-26 Atlas facial: marcaciones compartidas.
+- ✅ 2026-10-26 Atención anatómica educativa, sin detección vascular.
+- ✅ 2026-10-26 3DLab: 160 pruebas; QA sintético bidireccional y reverso bloqueado, escritorio/502 px; build y lint facial aprobados. Sin migración clínica.
+
 - ✅ 2026-10-26 3DLab: entrecejo y referencias corregibles.
 - ✅ 2026-10-26 3DLab: 17 pruebas; QA sintético escritorio/móvil.
 

@@ -10,8 +10,11 @@ import * as engine from '../src/lab/faceSim/engine.ts';
 import * as faceContour from '../src/lab/faceSim/faceContour.ts';
 import * as faceRegions from '../src/lab/faceSim/faceRegions.ts';
 import * as estimatedHead from '../src/lab/faceSim/estimatedHead.ts';
+import * as faceTransfer from '../src/lab/faceSim/faceTransfer.ts';
+import * as anatomicalAnnotations from '../src/lab/faceSim/anatomicalAnnotations.ts';
 
 const require = createRequire(import.meta.url);
+const genericFaceAtlas = JSON.parse(readFileSync(new URL('../src/lab/faceSim/genericFaceAtlas.json', import.meta.url), 'utf8'));
 const source = readFileSync(new URL('../src/lab/faceSim/FaceSimLab.tsx', import.meta.url), 'utf8');
 const code = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 },
@@ -58,6 +61,9 @@ function lab() {
       if (name === './faceContour') return faceContour;
       if (name === './faceRegions') return faceRegions;
       if (name === './estimatedHead') return estimatedHead;
+      if (name === './faceTransfer') return faceTransfer;
+      if (name === './anatomicalAnnotations') return anatomicalAnnotations;
+      if (name === './genericFaceAtlas.json') return { default: genericFaceAtlas };
       if (name === '@mediapipe/tasks-vision') return { FaceLandmarker };
       if (name === './personalSurfaceGlb') return { personalSurfaceToGlb: async () => new ArrayBuffer(8) };
       if (name.endsWith('Clinical3DViewer')) return { default: () => null };
@@ -86,6 +92,90 @@ function photo() {
 }
 const calculate = tree => findAll(tree, n => n.type === 'button' && text(n).startsWith('Calcular superficie'))[0];
 const slotIds = ['frontal', 'izquierda', 'derecha', 'extra_a', 'extra_b'];
+const viewers = tree => findAll(tree, n => typeof n.props?.onMarkerPlaced === 'function');
+const button = (tree, label) => findAll(tree, n => n.type === 'button' && text(n) === label)[0];
+
+test('capa educativa mantiene advertencia, fuente y geometría separada de marcaciones', () => {
+  const app = lab();
+  let tree = app.render();
+  const select = findAll(tree, n => n.props?.['aria-label'] === 'Capa de referencia')[0];
+  select.props.onChange({ target: { value: 'attention' } });
+  tree = app.render();
+  assert.match(text(tree), /no detección vascular/);
+  assert.match(text(tree), /NO zonas seguras/);
+  assert.match(text(tree), /no localizan arterias, venas, nervios ni su profundidad/);
+  assert.equal(findAll(tree, n => n.type === 'p' && text(n) === 'EDUCATIVO · No detecta vasos ni certifica zonas seguras.').length, 3);
+  assert.equal(findAll(tree, n => n.type === 'a' && n.props.href === 'https://pmc.ncbi.nlm.nih.gov/articles/PMC9067448/').length, 1);
+  assert.equal(viewers(tree)[0].props.anatomicalOverlay.positions.length, genericFaceAtlas.triangles.length * 3);
+  assert.equal(viewers(tree)[0].props.markers.length, 0);
+  select.props.onChange({ target: { value: 'none' } });
+  assert.equal(viewers(app.render())[0].props.anatomicalOverlay, undefined);
+});
+
+test('marcaciones compartidas sobreviven a modo, reconstrucción y retirada de foto; deshacer restaura bindings', async () => {
+  const app = lab();
+  let tree = app.render();
+  const seed = genericFaceAtlas.triangles.indexOf(11);
+  const address = { triangle: Math.floor(seed / 3), weights: [0.2, 0.3, 0.5] };
+  const position = faceTransfer.modelPoint(address, genericFaceAtlas);
+  assert.ok(position);
+  viewers(tree)[0].props.onMarkerPlaced({ id: 'shared', position, normal: { x: 0, y: 0, z: 1 }, pathology: 'filler' });
+  tree = app.render();
+  assert.equal(viewers(tree)[0].props.markers.length, 1);
+  const initial = viewers(tree)[0].props.markers[0].position;
+  const p = photo();
+  p.landmarks = Array.from({ length: 478 }, (_, i) => ({
+    x: 0.5 + genericFaceAtlas.positions[(i % 468) * 3] * 0.16,
+    y: 0.5 - genericFaceAtlas.positions[(i % 468) * 3 + 1] * 0.16,
+    z: -genericFaceAtlas.positions[(i % 468) * 3 + 2] * 0.16,
+  }));
+  app.photos({ frontal: p });
+  calculate(app.render()).props.onClick();
+  await new Promise(resolve => setImmediate(resolve));
+  tree = app.render();
+  assert.equal(viewers(tree).length, 2);
+  assert.equal(viewers(tree)[1].props.markers[0].id, 'shared');
+  assert.deepEqual(viewers(tree)[0].props.markers[0].position, initial);
+  const personal = viewers(tree)[1].props.markers[0];
+  assert.equal(viewers(tree)[1].props.surfaceConstraint.accepts(personal.position), true);
+  viewers(tree)[1].props.onMarkerPlaced({ ...personal, id: 'from-personal' });
+  tree = app.render();
+  assert.equal(viewers(tree)[0].props.markers.length, 2);
+  button(tree, 'Foto').props.onClick();
+  tree = app.render();
+  assert.ok(viewers(tree).every(v => v.props.readOnly && v.props.markers.length === 2));
+  const photoWrapper = root => findAll(root, n => n.props?.onPointerDown && n.props?.onPointerUp)[0];
+  photoWrapper(tree).props.onPointerDown({
+    clientX: p.landmarks[1].x, clientY: p.landmarks[1].y, pointerId: 1, button: 0,
+    currentTarget: { getBoundingClientRect: () => ({ left: 0, top: 0, width: 1, height: 1 }), setPointerCapture() {} },
+  });
+  photoWrapper(app.render()).props.onPointerUp();
+  tree = app.render();
+  assert.ok(viewers(tree).every(v => v.props.markers.length === 3));
+  button(tree, 'Modelo 3D').props.onClick();
+  calculate(app.render()).props.onClick();
+  await new Promise(resolve => setImmediate(resolve));
+  tree = app.render();
+  assert.ok(viewers(tree).every(v => v.props.markers.length === 3));
+  assert.equal(viewers(tree)[0].props.surfaceConstraint.accepts({ x: 3, y: 0, z: 0 }), false);
+  viewers(tree)[0].props.onMarkerPlaced({ ...personal, id: 'ear', position: { x: 3, y: 0, z: 0 } });
+  tree = app.render();
+  assert.match(text(tree), /Marcación rechazada/);
+  assert.equal(viewers(tree)[0].props.markers.length, 3);
+  button(tree, 'Deshacer').props.onClick();
+  tree = app.render();
+  assert.equal(viewers(tree)[0].props.markers.length, 2);
+  button(tree, 'Deshacer').props.onClick();
+  tree = app.render();
+  assert.equal(viewers(tree)[0].props.markers.length, 1);
+  button(tree, 'Limpiar').props.onClick();
+  assert.equal(viewers(app.render())[0].props.markers.length, 0);
+  button(app.render(), 'Deshacer').props.onClick();
+  tree = app.render();
+  assert.equal(viewers(tree)[0].props.markers.length, 1);
+  findAll(tree, n => n.props?.['aria-label'] === 'Retirar Frontal')[0].props.onClick();
+  assert.equal(viewers(app.render())[0].props.markers[0].id, 'shared');
+});
 
 test('captura progresiva: tres entradas principales y dos opcionales, sin exigir cinco fotos', () => {
   const app = lab(), tree = app.render();
@@ -173,7 +263,8 @@ test('cabeza estimada: tres archivos sin cobertura bilateral no habilitan un cie
   await new Promise(resolve => setImmediate(resolve));
   const tree = app.render();
   assert.match(text(tree), /requiere al menos tres fotos útiles que cubran ambos lados/);
-  assert.equal(findAll(tree, n => n.type === 'section' && n.props['aria-label'] === 'Foto personal en 3D').length, 0);
+  assert.equal(findAll(tree, n => n.type === 'section' && n.props['aria-label'] === 'Foto personal en 3D').length, 1);
+  assert.match(text(tree), /Carga una foto y calcula la superficie/);
 });
 
 test('editar contorno expone 36 referencias y pasa a foto sin crear un tratamiento', () => {

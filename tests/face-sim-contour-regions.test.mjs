@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { FACE_OVAL, buildPersonalSurface, expandElems, frameFromLandmarks, projectPersonal, DEFAULT_FRAME } from '../src/lab/faceSim/engine.ts';
 import { moveFaceLandmark, refinePhotoContour } from '../src/lab/faceSim/faceContour.ts';
-import { buildFaceRegionMap, facialZoneAt, isOnObservedFace } from '../src/lab/faceSim/faceRegions.ts';
+import { buildFaceRegionMap, facialZoneAt, isOnObservedFace, faceAttentionColor, faceRegionEducation } from '../src/lab/faceSim/faceRegions.ts';
 
 function ovalFixture() {
   const landmarks = Array.from({ length: 478 }, () => ({ x: 0.5, y: 0.5, z: 0 }));
@@ -13,6 +13,14 @@ function ovalFixture() {
   const triangles = FACE_OVAL.flatMap((index, i) => [1, index, FACE_OVAL[(i + 1) % FACE_OVAL.length]]);
   return { landmarks, triangles };
 }
+
+test('capa educativa distingue referencias de ausencia de información, nunca zonas seguras', () => {
+  assert.match(faceRegionEducation('Glabela'), /supratroclear/);
+  assert.match(faceRegionEducation('Labio superior'), /labiales/);
+  assert.equal(faceRegionEducation('Región desconocida'), undefined);
+  assert.equal(faceAttentionColor('Glabela'), '#f59e0b');
+  assert.equal(faceAttentionColor('Región desconocida'), '#94a3b8');
+});
 
 test('corregir mentón fuera del óvalo actual modifica marco, malla y UV sin cambiar Z', () => {
   const { landmarks, triangles } = ovalFixture();
@@ -81,7 +89,8 @@ function regionFixture(transform = p => p) {
   const landmarks = Array.from({ length: 478 }, () => ({ x: 0.5, y: 0.5, z: 0 }));
   const groups = [
     { ids: [9, 8, 55], label: 'Glabela', x: 0.5, y: 0.3 },
-    { ids: [0, 13, 14], label: 'Labios', x: 0.5, y: 0.72 },
+    { ids: [0, 11, 13], label: 'Labio superior', x: 0.5, y: 0.70 },
+    { ids: [14, 15, 17], label: 'Labio inferior', x: 0.5, y: 0.79 },
     { ids: [152, 175, 199], label: 'Mentón', x: 0.5, y: 0.87 },
     { ids: [127, 162, 21], label: 'Región temporal', x: 0.2, y: 0.25 },
     { ids: [1, 4, 6], label: 'Dorso nasal', x: 0.5, y: 0.5 },
@@ -119,7 +128,7 @@ test('auto se aplica a puntos y muestras de trazos; zona manual tiene prioridad'
   assert.equal(result.points[0].zone, 'Glabela');
   assert.equal(result.points[1].zone, 'Mi zona');
   assert.ok(result.derived.length > 0);
-  assert.ok(result.derived.every(p => p.zone === 'Labios'));
+  assert.ok(result.derived.every(p => p.zone === 'Labio superior'));
 });
 
 test('un punto posterior no se clasifica como facial por coincidir XY', () => {

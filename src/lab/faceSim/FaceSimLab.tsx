@@ -2,20 +2,30 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Download, ImagePlus, Trash2, Wand2, Undo2, FileJson, ScanFace, Box, Image as ImageIcon } from 'lucide-react';
 import injectablesCatalog from '../../components/admin/ficha-clinica/data/injectables.json';
 import Clinical3DViewer, {
-  type DrawingTool, type FreehandLine, type Marker3D, type SurfaceShape,
+  type AnatomicalSurfaceOverlay, type DrawingTool, type FreehandLine, type Marker3D, type SurfaceShape,
 } from '../../components/admin/ficha-clinica/components/Clinical3DViewer';
 import {
   AUTO_ZONE, FACE_OVAL, LANDMARK_ANCHORS, MAX_EFFECTS, REGISTRATION_ANCHORS, SIM_MODES, autoRegistration, buildEffects, correctPoints, defaultFrame,
-  elemsFrom3D, elemsFromPhoto, expandElems, fitAffineRegistration, frameFromLandmarks, importInjectable, isRegistrationAccepted, isWithinFace, projectModel,
-  buildPersonalSurface, rebasePersonalPoint, refineDepthFromProfiles, registrationAnchorIndices, trianglesFromEdges,
+  elemsFromPhoto, expandElems, fitAffineRegistration, frameFromLandmarks, importInjectable, isRegistrationAccepted, isWithinFace, projectModel,
+  buildPersonalSurface, projectPersonal, refineDepthFromProfiles, registrationAnchorIndices, trianglesFromEdges,
   type AffineRegistration, type DepthDiagnostic, type PersonalSurface, type PersonalProjection, type CorrectedPoint, type Elem, type ElemKind, type FaceFrame, type Meta, type P2, type PhotoEl, type SimMode, type Vec3, type ViewKind,
 } from './engine';
 import { moveFaceLandmark, refinePhotoContour } from './faceContour';
-import { buildFaceRegionMap, facialZoneAt, isOnObservedFace, type FaceRegionMap } from './faceRegions';
+import { buildFaceRegionMap, faceRegionColor, faceTriangleZone, facialZoneAt, isOnObservedFace, faceAttentionColor, FACE_REGION_EDUCATION, type FaceRegionMap } from './faceRegions';
+import genericFaceAtlas from './genericFaceAtlas.json' with { type: 'json' };
+import { locateModelPoint, locatePhotoPoint, modelPoint as tryModelPoint, photoPoint as tryPhotoPoint, surfacePoint as trySurfacePoint, type FaceAddress } from './faceTransfer';
+import {
+  addressHasPhotoCoverage, anatomicalPhotoElements, annotationViews, bindAnatomicalPaths, requireMappedPoint, shapeOutline, surfaceNormal,
+  type AnatomicalBindings,
+} from './anatomicalAnnotations';
 
+const modelPoint = (...args: Parameters<typeof tryModelPoint>): Vec3 => requireMappedPoint(tryModelPoint(...args));
+const photoPoint = (...args: Parameters<typeof tryPhotoPoint>): P2 => requireMappedPoint(tryPhotoPoint(...args));
+const surfacePoint = (...args: Parameters<typeof trySurfacePoint>): Vec3 => requireMappedPoint(trySurfacePoint(...args));
 const catalog = (cat: string) => (injectablesCatalog as { categoria: string; elemento: string }[])
   .filter(i => i.categoria === cat).map(i => i.elemento);
-const ZONES = ['tercio_superior', 'tercio_medio', 'tercio_inferior'].flatMap(catalog);
+const ZONES = [...new Set([...['tercio_superior', 'tercio_medio', 'tercio_inferior'].flatMap(catalog),
+  'Labio superior', 'Labio inferior', 'Piel supralabial / filtrum'])];
 const MAX_SIDE = 1400;
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_IMAGE_PIXELS = 40_000_000;
@@ -111,7 +121,7 @@ async function detectFrame(img: HTMLCanvasElement): Promise<{
     const contour = refinePhotoContour(detectedLandmarks, FACE_OVAL, triangles, context.getImageData(0, 0, img.width, img.height));
     return {
       frame: frameFromLandmarks(contour.landmarks), landmarks: contour.landmarks, detectedLandmarks,
-      contourAdjusted: contour.adjusted, regionMap: buildFaceRegionMap(contour.landmarks, triangles, img.width / img.height),
+      contourAdjusted: contour.adjusted, regionMap: buildFaceRegionMap(contour.landmarks, triangles, img.width / img.height, genericFaceAtlas.positions),
       pose: result.facialTransformationMatrixes[0]?.data, reason: '',
     };
   } catch (error) {
@@ -174,7 +184,7 @@ interface Slot {
   registrationFlip?: boolean;
   registrationSource?: 'auto' | 'manual';
 }
-interface Snapshot { markers: Marker3D[]; lines: FreehandLine[]; shapes: SurfaceShape[]; meta: Record<string, Meta>; photoEls: PhotoEl[] }
+interface Snapshot { markers: Marker3D[]; lines: FreehandLine[]; shapes: SurfaceShape[]; meta: Record<string, Meta>; photoEls: PhotoEl[]; bindings: AnatomicalBindings }
 
 const segDist = (p: P2, a: P2, b: P2, k: number) => {
   const ax = (b.x - a.x) * k, ay = b.y - a.y, px = (p.x - a.x) * k, py = p.y - a.y, l2 = ax * ax + ay * ay;
@@ -221,9 +231,12 @@ export default function FaceSimLab() {
   const [depth, setDepth] = useState(1);
   const [buildingPersonal, setBuildingPersonal] = useState(false);
   const [contourIndex, setContourIndex] = useState<number | null>(null);
+  const [bindings, setBindings] = useState<AnatomicalBindings>({});
+  const [overlayMode, setOverlayMode] = useState<'none' | 'regions' | 'attention'>('none');
+  const showRegions = overlayMode !== 'none';
 
   const slot = photos[view];
-  const personalActive = modelKind === 'personal' && !!personal;
+  const personalActive = !!personal;
   const personalProjection = personalActive && personal.view === view && personal.canvas === slot?.canvas ? personal.projection : undefined;
   const anchorIndices = registrationAnchorIndices(view);
   const anchorCount = anchorIndices.length;
@@ -231,6 +244,29 @@ export default function FaceSimLab() {
   const aspect = slot?.aspect ?? 0.75;
   const frame = slot?.frame ?? defaultFrame(view);
   const regionMap = personalProjection ? personal?.regionMap : slot?.regionMap;
+  const canonicalRegionMap = useMemo(() => buildFaceRegionMap(
+    Array.from({ length: 468 }, (_, i) => ({ x: genericFaceAtlas.positions[i * 3], y: -genericFaceAtlas.positions[i * 3 + 1] })),
+    genericFaceAtlas.triangles, 1, genericFaceAtlas.positions,
+  ), []);
+  const regionOverlays = useMemo(() => {
+    if (!showRegions) return null;
+    const positions: number[] = [], personalPositions: number[] = [], colors: number[] = [];
+    for (let i = 0; i < genericFaceAtlas.triangles.length; i += 3) {
+      const ids = genericFaceAtlas.triangles.slice(i, i + 3);
+      const label = faceTriangleZone(ids, canonicalRegionMap.labels);
+      const color = overlayMode === 'attention' ? faceAttentionColor(label) : faceRegionColor(label);
+      const rgb = [1, 3, 5].map(j => parseInt(color.slice(j, j + 2), 16) / 255);
+      ids.forEach(j => {
+        positions.push(...genericFaceAtlas.positions.slice(j * 3, j * 3 + 3));
+        if (personal) personalPositions.push(...personal.surface.positions.slice(j * 3, j * 3 + 3));
+        colors.push(...rgb);
+      });
+    }
+    return {
+      generic: { positions: Float32Array.from(positions), colors: Float32Array.from(colors) },
+      personal: personal ? { positions: Float32Array.from(personalPositions), colors: Float32Array.from(colors) } : undefined,
+    } satisfies { generic: AnatomicalSurfaceOverlay; personal?: AnatomicalSurfaceOverlay };
+  }, [showRegions, overlayMode, canonicalRegionMap, personal]);
   const hasImage = !!slot;
   const loadedPhotos = PHOTO_SLOTS.filter(v => photos[v.id]);
   const readyPhotos = PHOTO_SLOTS.filter(v => photos[v.id]?.landmarks);
@@ -238,14 +274,34 @@ export default function FaceSimLab() {
   const captureSource = photos.frontal?.landmarks ? 'frontal' : photos[view]?.landmarks ? view : VIEWS.find(v => photos[v.id]?.landmarks)?.id;
   const curMeta = (): Meta => ({ mode, dose, zone, product: product || undefined });
 
-  const elems = useMemo<Elem[]>(() => [
-    ...(personalActive
-      ? (personalProjection ? elemsFrom3D({ markers, lines, shapes, meta }, view, frame, aspect, false, undefined, personalProjection) : [])
-      : slot?.registration && slot.registrationFlip === flipX
-        ? elemsFrom3D({ markers, lines, shapes, meta }, view, frame, aspect, flipX, slot.registration)
-        : []),
-    ...elemsFromPhoto(photoEls.filter(e => e.view === view), aspect),
-  ], [markers, lines, shapes, meta, photoEls, view, frame, aspect, flipX, slot?.registration, slot?.registrationFlip, personalActive, personalProjection]);
+  const photoBindings = useMemo(() => slot?.landmarks ? Object.fromEntries(Object.entries(bindings).filter(([, binding]) =>
+    binding.paths.flat().every(a => addressHasPhotoCoverage(a, slot.landmarks!, genericFaceAtlas)))) : {},
+  [bindings, slot?.landmarks]);
+  const surfaceBindings = useMemo(() => personal ? Object.fromEntries(Object.entries(bindings).filter(([, binding]) =>
+    binding.paths.flat().every(a => addressHasPhotoCoverage(a, personal.regionMap.landmarks, genericFaceAtlas)))) : {},
+  [bindings, personal]);
+  const elems = useMemo<Elem[]>(() => slot?.landmarks
+    ? anatomicalPhotoElements(photoBindings, meta, slot.landmarks, genericFaceAtlas) : [],
+  [photoBindings, meta, slot?.landmarks]);
+  const genericAnnotations = useMemo(() => annotationViews(markers, lines, shapes, bindings, genericFaceAtlas,
+    a => modelPoint(a, genericFaceAtlas)), [markers, lines, shapes, bindings]);
+  const personalAnnotations = useMemo(() => personal
+    ? annotationViews(markers, lines, shapes, surfaceBindings, genericFaceAtlas, a => surfacePoint(a, personal.surface, genericFaceAtlas))
+    : { markers: [], lines: [] }, [markers, lines, shapes, surfaceBindings, personal]);
+  const transferStats = useMemo(() => {
+    if (!slot?.landmarks) return { count: 0, max: 0 };
+    const addresses = Object.values(photoBindings).flatMap(b => b.paths.flatMap(path => path.filter((_, i) => i % 4 === 0)));
+    const height = Math.abs(genericFaceAtlas.positions[10 * 3 + 1] - genericFaceAtlas.positions[152 * 3 + 1]);
+    let max = 0;
+    for (const address of addresses) {
+      const q = photoPoint(address, slot.landmarks, genericFaceAtlas), round = locatePhotoPoint(q, slot.landmarks, genericFaceAtlas);
+      if (!round) return { count: addresses.length, max: Infinity };
+      const a = tryModelPoint(address, genericFaceAtlas), b = tryModelPoint(round, genericFaceAtlas);
+      if (!a || !b) return { count: addresses.length, max: Infinity };
+      max = Math.max(max, Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) / height * 100);
+    }
+    return { count: addresses.length, max };
+  }, [photoBindings, slot?.landmarks]);
   const corrected = useMemo<CorrectedPoint[]>(() => {
     const { points, derived } = expandElems(elems, frame, aspect, regionMap ? p => facialZoneAt(p, regionMap) : undefined);
     const fixed = correctPoints(points, { ...correct, aspect, frame });
@@ -278,31 +334,23 @@ export default function FaceSimLab() {
     return () => cancelAnimationFrame(id);
   }, [corrected, frame, aspect, intensity, split, renderTick]);
 
-  const snap = useCallback(() => setHistory(h => [...h.slice(-30), { markers, lines, shapes, meta, photoEls }]), [markers, lines, shapes, meta, photoEls]);
+  const snap = useCallback(() => setHistory(h => [...h.slice(-30), { markers, lines, shapes, meta, photoEls, bindings }]), [markers, lines, shapes, meta, photoEls, bindings]);
   const undo = () => {
     const s = history.at(-1); if (!s) return;
-    setMarkers(s.markers); setLines(s.lines); setShapes(s.shapes); setMeta(s.meta); setPhotoEls(s.photoEls); setHistory(h => h.slice(0, -1));
+    setMarkers(s.markers); setLines(s.lines); setShapes(s.shapes); setMeta(s.meta); setPhotoEls(s.photoEls); setBindings(s.bindings); setHistory(h => h.slice(0, -1));
   };
-  const clearAll = () => { snap(); setMarkers([]); setLines([]); setShapes([]); setMeta({}); setPhotoEls([]); };
-  /** Las marcas 3D viven en coordenadas del modelo activo; al cambiar de malla dejan de tener sentido. */
-  const resetModelMarks = () => {
-    const had = markers.length + lines.length + shapes.length > 0;
-    const ids = new Set([...markers.map(m => m.id), ...lines.map(l => l.id), ...shapes.map(s => s.id)]);
-    setMarkers([]); setLines([]); setShapes([]); setHistory([]);
-    setMeta(m => Object.fromEntries(Object.entries(m).filter(([id]) => !ids.has(id))));
-    return had ? ' Se limpiaron las marcas 3D del modelo anterior (las marcas en foto se conservan).' : '';
-  };
+  const clearAll = () => { snap(); setMarkers([]); setLines([]); setShapes([]); setMeta({}); setPhotoEls([]); setBindings({}); };
   const useGenericModel = () => {
-    if (modelKind === 'generico') return;
+    setWorkMode('3d');
     setModelKind('generico');
-    setStatus(`Modelo genérico activo: la proyección a la foto vuelve a ser orientativa.${resetModelMarks()}`);
+    setStatus('Modelo original seleccionado. Las marcaciones anatómicas se conservan y se comparten con superficie y foto.');
   };
   const activatePersonal = () => {
     setWorkMode('3d');
     if (modelKind === 'personal' && personalProjection) return;
     if (personal && personal.view === view && personal.canvas === slot?.canvas) {
       setModelKind('personal');
-      setStatus(`Superficie 3D personal activa.${resetModelMarks()}`);
+      setStatus('Superficie 3D personal activa; se conservan todas las marcaciones anatómicas.');
       return;
     }
     void buildPersonal();
@@ -341,38 +389,14 @@ export default function FaceSimLab() {
       const observedSurface = buildPersonalSurface(refined.landmarks, source.aspect, triangles, nextDepth);
       if (!observedSurface) throw new Error('Landmarks insuficientes para construir la malla.');
       const surface = closeHead ? (await import('./estimatedHead')).buildEstimatedHead(observedSurface) : observedSurface;
-      const regions = buildFaceRegionMap(refined.landmarks, triangles, source.aspect);
+      const regions = buildFaceRegionMap(refined.landmarks, triangles, source.aspect, genericFaceAtlas.positions);
       const { personalSurfaceToGlb } = await import('./personalSurfaceGlb');
       const glb = await personalSurfaceToGlb(surface, source.canvas);
       if (requestId !== personalRequestRef.current) return;
-      const replacing = modelKind !== 'personal' || !personal || personal.view !== sourceView || personal.canvas !== source.canvas;
-      const cleared = replacing ? resetModelMarks() : '';
-      if (!replacing && personal) {
-        const ratio = nextDepth / personal.depth, scale = surface.projection.k / personal.projection.k;
-        const point = (p: Vec3) => rebasePersonalPoint(p, personal.projection, surface.projection, ratio);
-        const direction = (p: Vec3, zScale: number) => {
-          const length = Math.hypot(p.x, p.y, p.z * zScale) || 1;
-          return { x: p.x / length, y: p.y / length, z: p.z * zScale / length };
-        };
-        const rebase = (s: Snapshot): Snapshot => ({
-          ...s,
-          markers: s.markers.map(m => ({ ...m, position: point(m.position), normal: direction(m.normal, 1 / ratio),
-            ...(m.points ? { points: m.points.map(point) } : {}), ...(m.radius !== undefined ? { radius: m.radius * scale } : {}) })),
-          lines: s.lines.map(l => ({ ...l, points: l.points.map(point), segments: l.segments?.map(path => path.map(point)) })),
-          shapes: s.shapes.map(sh => ({ ...sh, center: point(sh.center), normal: direction(sh.normal, 1 / ratio),
-            ...(sh.tangent ? { tangent: direction(sh.tangent, ratio) } : {}),
-            ...(sh.radius !== undefined ? { radius: sh.radius * scale } : {}),
-            ...(sh.width !== undefined ? { width: sh.width * scale } : {}),
-            ...(sh.height !== undefined ? { height: sh.height * scale } : {}) })),
-        });
-        const rebased = rebase({ markers, lines, shapes, meta, photoEls });
-        setMarkers(rebased.markers); setLines(rebased.lines); setShapes(rebased.shapes);
-        setHistory(h => h.map(rebase));
-      }
       setPersonal({ view: sourceView, canvas: source.canvas, glb, projection: surface.projection, depth: nextDepth, depthDetails, diagnostics,
         surface: observedSurface, regionMap: regions, closedHead: closeHead });
       setModelKind('personal');
-      setStatus(`Superficie 3D personal generada desde la foto ${VIEWS.find(v => v.id === sourceView)?.label ?? sourceView} (${surface.indices.length / 3} triángulos). ${depthDetails}${cleared}`);
+      setStatus(`Superficie 3D personal generada desde la foto ${VIEWS.find(v => v.id === sourceView)?.label ?? sourceView} (${surface.indices.length / 3} triángulos). ${depthDetails} Las marcaciones anatómicas se conservan.`);
     } catch (error) {
       if (requestId !== personalRequestRef.current) return;
       setDepth(personal?.depth ?? 1);
@@ -411,7 +435,7 @@ export default function FaceSimLab() {
       if (requestId !== uploadRequestRef.current[target]) return;
       const replacedPersonal = !!personal;
       if (replacedPersonal) { setPersonal(null); setModelKind('generico'); }
-      const personalNote = replacedPersonal ? ` Se actualizaron las fotos; regenera la superficie personal para recalcular la profundidad.${resetModelMarks()}` : '';
+      const personalNote = replacedPersonal ? ' Se actualizaron las fotos; regenera la superficie. Las marcaciones anatómicas se conservan para revisar su transferencia al nuevo rostro.' : '';
       setPhotos(p => ({ ...p, [target]: { canvas: c, aspect: c.width / c.height, frame: defaultFrame(targetView) } }));
       setCalibrating(false);
       setPhotoAnchor(null);
@@ -433,11 +457,10 @@ export default function FaceSimLab() {
       if (requestId !== uploadRequestRef.current[target]) return;
       if (!detected.frame) {
         setPhotos(p => p[target]?.canvas === c ? { ...p, [target]: { ...p[target]!, detectionError: detected.reason } } : p);
-        setStatus(`${detected.reason} Sin rostro detectado no se proyectan las marcas 3D; usa una foto nítida con el rostro descubierto o marca directamente sobre la foto.${personalNote}`);
+        setStatus(`${detected.reason} Sin rostro detectado no se permite marcar ni proyectar sobre esta foto. Usa una foto nítida con el rostro descubierto.${personalNote}`);
         return;
       }
       const auto = target === 'extra_a' || target === 'extra_b' ? null : autoRegistration(target, detected.frame, c.width / c.height, flipX);
-      const errorSummary = auto ? ` (RMS ${(auto.rmse * 100).toFixed(1)}%)` : '';
       const accepted = isRegistrationAccepted(auto);
       setPhotos(p => (p[target]?.canvas === c ? {
         ...p,
@@ -447,9 +470,7 @@ export default function FaceSimLab() {
           ...(accepted ? { registration: auto, registrationFlip: flipX, registrationSource: 'auto' as const } : { registration: undefined }),
         },
       } : p));
-      setStatus((accepted
-        ? `Rostro detectado en vista ${label}; modelo 3D alineado automáticamente (RMS ${(auto.rmse * 100).toFixed(1)}%). Las marcas del modelo ya se proyectan en la foto. Para marcar sobre la anatomía real usa «Superficie 3D personal».`
-        : `Rostro detectado en ${label}; la foto está disponible para el cálculo multivista. La proyección del modelo genérico no está aprobada para este ángulo${errorSummary}; no se rechaza la foto por ello.`)
+      setStatus(`Rostro detectado en ${label}; se aplica el atlas anatómico del modelo original a los triángulos con cobertura válida. Las marcas se comparten con foto y superficie; revisa las referencias detectadas.`
         + ` Contorno: ${detected.contourAdjusted ?? 0} referencias ajustadas por borde visible; revisa mentón y sienes en «Editar contorno».` + personalNote);
     } catch (error) {
       if (requestId !== uploadRequestRef.current[target]) return;
@@ -474,10 +495,9 @@ export default function FaceSimLab() {
       delete next[id];
       return next;
     });
-    const cleared = personal ? resetModelMarks() : '';
     setPersonal(null); setModelKind('generico');
     setCalibrating(false); setPhotoAnchor(null); setContourIndex(null);
-    setStatus(`Se retiró ${PHOTO_SLOTS.find(v => v.id === id)?.label}. Recalcula la superficie con las fotos restantes.${cleared}`);
+    setStatus(`Se retiró ${PHOTO_SLOTS.find(v => v.id === id)?.label}. Recalcula la superficie con las fotos restantes. Las marcaciones anatómicas se conservan.`);
   };
   const updateFrame = (k: 'top' | 'bottom' | 'left' | 'right', v: number) => setPhotos(p => {
     const s = p[view]; if (!s) return p;
@@ -488,16 +508,24 @@ export default function FaceSimLab() {
   });
 
   // ── Marcación en modelo 3D ──
-  const validateObserved = (positions: Vec3[]) => {
-    if (!personalActive || !personal) return true;
-    if (positions.every(p => isOnObservedFace(p, personal.surface, personal.regionMap))) return true;
-    setStatus('No se puede marcar sobre el casquete estimado ni fuera de la superficie facial observada. Gira hacia el rostro fotografiado.');
-    return false;
+  const locateAnnotation = (source: 'generico' | 'personal' | 'foto', p: Vec3): FaceAddress | null => {
+    let address: FaceAddress | null;
+    if (source === 'generico') address = locateModelPoint(p, genericFaceAtlas);
+    else if (source === 'personal') {
+      if (!personal || !isOnObservedFace(p, personal.surface, personal.regionMap)) return null;
+      address = locatePhotoPoint(projectPersonal(p, personal.projection), personal.regionMap.landmarks, genericFaceAtlas);
+    } else address = slot?.landmarks ? locatePhotoPoint(p, slot.landmarks, genericFaceAtlas) : null;
+    const landmarks = source === 'personal' ? personal?.regionMap.landmarks : slot?.landmarks;
+    return address && tryModelPoint(address, genericFaceAtlas)
+      && (!landmarks || addressHasPhotoCoverage(address, landmarks, genericFaceAtlas)) ? address : null;
   };
+  const blockedMark = () => setStatus('Marcación rechazada: la zona no tiene correspondencia facial observada. No se marcan orejas, nuca, reverso ni superficies inferidas. Revisa las fotos y referencias; se conservan las marcas anteriores.');
+  const makeBinding = (paths: Vec3[][], source: 'generico' | 'personal' | 'foto', kind: ElemKind) =>
+    bindAnatomicalPaths(paths, p => locateAnnotation(source, p), kind, source === 'foto' ? 0.004 : 0.035);
   const addMeta = (id: string) => setMeta(m => ({ ...m, [id]: curMeta() }));
-  const onMarker = (m: Marker3D) => {
+  const onMarker = (m: Marker3D, source: 'generico' | 'personal') => {
     if (tool3d !== 'point' || !m.id) return;
-    if (calibrating) {
+    if (calibrating && source === 'generico') {
       const current = slot?.modelAnchors ?? [];
       if (!slot || current.length >= anchorCount) return;
       const next = [...current, m.position];
@@ -515,18 +543,51 @@ export default function FaceSimLab() {
         const auto = autoRegistration(view, frame, aspect, flipX);
         const fallback = isRegistrationAccepted(auto) ? { registration: auto, registrationFlip: flipX, registrationSource: 'auto' as const } : { registration: undefined };
         setPhotos(p => p[view]?.canvas === slot.canvas ? { ...p, [view]: { ...p[view]!, modelAnchors: undefined, ...fallback } } : p);
-        setStatus(`Alineación manual rechazada: los anclajes de foto y modelo no coinciden lo suficiente.${fallback.registration ? ' Se mantiene la alineación automática.' : ' No se proyectarán las marcas 3D.'}`);
+        setStatus('Prueba afín rechazada: los anclajes no coinciden lo suficiente. La transferencia anatómica sigue usando el atlas denso y no se modifica.');
         return;
       }
       setPhotos(p => p[view]?.canvas === slot.canvas ? { ...p, [view]: { ...p[view]!, modelAnchors: next, registration, registrationFlip: flipX, registrationSource: 'manual' } } : p);
-      setStatus(`Alineación manual aceptada; error de validación cruzada: RMS ${(registration.rmse * 100).toFixed(1)}%, máximo ${(registration.maxError * 100).toFixed(1)}% del alto facial. Proyección orientativa.`);
+      setStatus(`Prueba afín aceptada; RMS ${(registration.rmse * 100).toFixed(1)}%, máximo ${(registration.maxError * 100).toFixed(1)}%. Es un diagnóstico independiente: no modifica la transferencia por atlas denso.`);
       return;
     }
-    if (!validateObserved([m.position])) return;
-    snap(); setMarkers(p => [...p, m]); addMeta(m.id);
+    const binding = makeBinding([[m.position]], source, 'point');
+    if (!binding) { blockedMark(); return; }
+    const address = binding.paths[0][0];
+    snap();
+    setMarkers(p => [...p, { ...m, position: modelPoint(address, genericFaceAtlas),
+      normal: surfaceNormal(address, genericFaceAtlas, a => modelPoint(a, genericFaceAtlas)) }]);
+    setBindings(p => ({ ...p, [m.id!]: binding })); addMeta(m.id);
+    setStatus('Marcación anatómica compartida entre modelo original, superficie y foto. Cambiar de vista no la elimina.');
   };
-  const onLine = (l: FreehandLine) => { if (calibrating || !validateObserved(l.segments?.flat() ?? l.points)) return; snap(); setLines(p => [...p, l]); addMeta(l.id); };
-  const onShape = (s: SurfaceShape) => { if (calibrating || !validateObserved([s.center])) return; snap(); setShapes(p => [...p, s]); addMeta(s.id); };
+  const onLine = (l: FreehandLine, source: 'generico' | 'personal', updating = false) => {
+    if (calibrating) return;
+    const previous = updating ? bindings[l.id] : undefined;
+    const binding = makeBinding(l.segments?.length ? l.segments : [l.points], source,
+      previous?.kind ?? (l.technique_preset === 'Flecha' ? 'arrow' : l.segments?.length ? 'pattern' : 'free'));
+    if (!binding) { blockedMark(); return; }
+    if (previous?.center) {
+      const points = l.points;
+      const center = points.reduce((c, p) => ({ x: c.x + p.x / points.length, y: c.y + p.y / points.length, z: c.z + p.z / points.length }), { x: 0, y: 0, z: 0 });
+      const address = locateAnnotation(source, center);
+      if (!address) { blockedMark(); return; }
+      binding.center = address;
+    }
+    snap();
+    const paths = binding.paths.map(path => path.map(a => modelPoint(a, genericFaceAtlas)));
+    const line = { ...l, points: paths[0], segments: paths.length > 1 ? paths : undefined };
+    setLines(p => updating ? p.map(old => old.id === l.id ? line : old) : [...p, line]);
+    setBindings(p => ({ ...p, [l.id]: binding })); if (!updating) addMeta(l.id);
+    setStatus('Trazo anatómico compartido actualizado. Se conserva al cambiar modelo, superficie o foto.');
+  };
+  const onShape = (s: SurfaceShape, source: 'generico' | 'personal') => {
+    if (calibrating) return;
+    const binding = makeBinding([shapeOutline(s)], source, s.shapeType === 'circle' ? 'circle' : 'rect');
+    const center = locateAnnotation(source, s.center);
+    if (!binding || !center) { blockedMark(); return; }
+    snap(); setShapes(p => [...p, { ...s, center: modelPoint(center, genericFaceAtlas) }]);
+    setBindings(p => ({ ...p, [s.id]: { ...binding, center } })); addMeta(s.id);
+    setStatus('Contorno anatómico compartido entre modelo, superficie y foto; revisa su cobertura completa.');
+  };
 
   // ── Marcación sobre la foto ──
   const toNorm = (e: React.PointerEvent) => {
@@ -535,10 +596,10 @@ export default function FaceSimLab() {
   };
   const hitPhoto = (n: P2) => {
     let best: string | null = null, bd = 0.025;
-    photoEls.filter(e => e.view === view).forEach(e => {
-      const d = e.kind === 'point' ? Math.hypot((e.pts[0].x - n.x) * aspect, e.pts[0].y - n.y)
-        : e.kind === 'circle' || e.kind === 'rect' ? Math.hypot((e.pts[0].x - n.x) * aspect, e.pts[0].y - n.y)
-          : Math.min(...e.pts.slice(1).map((q, i) => segDist(n, e.pts[i], q, aspect)));
+    elems.forEach(e => {
+      const path = e.boundary ?? e.paths[0];
+      const d = e.kind === 'point' ? Math.hypot((path[0].x - n.x) * aspect, path[0].y - n.y)
+        : Math.min(...path.slice(1).map((q, i) => segDist(n, path[i], q, aspect)));
       if (d < bd) { bd = d; best = e.id; }
     });
     return best;
@@ -555,9 +616,9 @@ export default function FaceSimLab() {
     }
     if (!hasImage || workMode !== 'foto') return;
     const n = toNorm(e), id = hitPhoto(n);
-    if (!isWithinFace(n, frame)) { setStatus('Marca dentro del contorno facial detectado o del marco manual.'); return; }
+    if (!locateAnnotation('foto', { ...n, z: 0 })) { blockedMark(); return; }
     if (e.button === 2 || e.altKey) { if (id) { snap(); removeEl(id); } return; }
-    const hitEl = photoEls.find(p => p.id === id);
+    const hitEl = elems.find(p => p.id === id);
     if (hitEl?.kind === 'point') { snap(); dragRef.current = id; e.currentTarget.setPointerCapture(e.pointerId); return; }
     setDraft({ kind: toolPhoto, pts: [n] });
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -568,14 +629,13 @@ export default function FaceSimLab() {
     const registration = autoRegistration(view, nextFrame, aspect, flipX);
     personalRequestRef.current++;
     setBuildingPersonal(false);
-    const cleared = personal ? resetModelMarks() : '';
     setPersonal(null); setModelKind('generico');
     setPhotos(p => p[view]?.canvas === slot.canvas ? {
-      ...p, [view]: { ...p[view]!, landmarks, contourAdjusted, frame: nextFrame, regionMap: buildFaceRegionMap(landmarks, triangles, aspect),
+      ...p, [view]: { ...p[view]!, landmarks, contourAdjusted, frame: nextFrame, regionMap: buildFaceRegionMap(landmarks, triangles, aspect, genericFaceAtlas.positions),
         modelAnchors: undefined, registration: isRegistrationAccepted(registration) ? registration : undefined,
         registrationFlip: flipX, registrationSource: 'auto' },
     } : p);
-    setStatus(`Geometría, contorno y referencias actualizados juntos. Recalcula la superficie personal.${cleared}${isRegistrationAccepted(registration) ? '' : ' La alineación genérica no está aprobada para este ajuste.'}`);
+    setStatus('Geometría, contorno y referencias actualizados juntos. Recalcula la superficie personal. Las marcaciones anatómicas se conservan; revisa su nueva correspondencia.');
     setPhotoAnchor(null); setContourIndex(null);
   };
   const correctLandmark = async (index: number, point: P2, references?: readonly number[]) => {
@@ -602,11 +662,18 @@ export default function FaceSimLab() {
   };
   const onMove = (e: React.PointerEvent) => {
     const n = toNorm(e);
-    if (!isWithinFace(n, frame)) {
+    const address = locateAnnotation('foto', { ...n, z: 0 });
+    if (!address) {
       if (draft) setDraft(null);
       return;
     }
-    if (dragRef.current) { setPhotoEls(ps => ps.map(p => (p.id === dragRef.current ? { ...p, pts: [n] } : p))); return; }
+    if (dragRef.current) {
+      const id = dragRef.current;
+      setBindings(p => ({ ...p, [id]: { kind: 'point', paths: [[address]] } }));
+      setMarkers(p => p.map(m => m.id === id ? { ...m, position: modelPoint(address, genericFaceAtlas) } : m));
+      setStatus('Punto actualizado sobre la foto y transferido al modelo original y a la superficie personal.');
+      return;
+    }
     setDraft(d => {
       if (!d || d.kind === 'point') return d;
       if (d.kind === 'free') {
@@ -622,13 +689,40 @@ export default function FaceSimLab() {
     const d = draft; setDraft(null);
     const ok = d.kind === 'point' || (d.pts.length >= 2 && Math.hypot((d.pts[1].x - d.pts[0].x) * aspect, d.pts[1].y - d.pts[0].y) > 0.01);
     if (!ok) return;
+    const id = uid(), center = d.pts[0];
+    let path = d.pts;
+    if (d.kind === 'circle') {
+      const end = d.pts[1], radius = Math.hypot((end.x - center.x) * aspect, end.y - center.y);
+      path = Array.from({ length: 49 }, (_, i) => ({ x: center.x + Math.cos(i * Math.PI / 24) * radius / aspect, y: center.y + Math.sin(i * Math.PI / 24) * radius }));
+    } else if (d.kind === 'rect') {
+      const end = d.pts[1];
+      path = [center, { x: end.x, y: center.y }, end, { x: center.x, y: end.y }, center];
+    }
+    const binding = makeBinding([path.map(p => ({ ...p, z: 0 }))], 'foto', d.kind);
+    if (!binding) { blockedMark(); return; }
+    if (d.kind === 'circle' || d.kind === 'rect') {
+      const c = d.kind === 'rect' ? { x: (center.x + d.pts[1].x) / 2, y: (center.y + d.pts[1].y) / 2 } : center;
+      const address = locateAnnotation('foto', { ...c, z: 0 });
+      if (!address) { blockedMark(); return; }
+      binding.center = address;
+    }
     snap();
-    setPhotoEls(p => [...p, { ...curMeta(), id: uid(), view, kind: d.kind, pts: d.pts }]);
+    if (d.kind === 'point') {
+      const address = binding.paths[0][0];
+      setMarkers(p => [...p, { id, type: 'Puntual', pathologyId: 'filler', zone: '', rotation: [0, 0, 0],
+        position: modelPoint(address, genericFaceAtlas), normal: surfaceNormal(address, genericFaceAtlas, a => modelPoint(a, genericFaceAtlas)) }]);
+    } else {
+      const points = binding.paths[0].map(a => modelPoint(a, genericFaceAtlas));
+      setLines(p => [...p, { id, points, color, thickness: 1.5, ...(d.kind === 'arrow' ? { technique_preset: 'Flecha' } : {}) }]);
+    }
+    setBindings(p => ({ ...p, [id]: binding })); addMeta(id);
+    setStatus('Marcación creada desde la foto y compartida con modelo original y superficie personal.');
   };
 
   const removeEl = (id: string) => {
     setMarkers(p => p.filter(m => m.id !== id)); setLines(p => p.filter(l => l.id !== id)); setShapes(p => p.filter(s => s.id !== id));
     setPhotoEls(p => p.filter(e => e.id !== id)); setMeta(({ [id]: _x, ...rest }) => { void _x; return rest; });
+    setBindings(({ [id]: _x, ...rest }) => { void _x; return rest; });
   };
   const editDose = (id: string, v: number) => {
     if (meta[id]) setMeta(m => ({ ...m, [id]: { ...m[id], dose: v } }));
@@ -641,11 +735,35 @@ export default function FaceSimLab() {
       const r = importInjectable(importText, ZONES);
       const n = r.markers.length + r.lines.length + r.shapes.length;
       if (!n) { setStatus('No se encontraron puntos, trazos ni formas con coordenadas 3D en el JSON.'); return; }
+      const importedMarkers = r.markersFull as unknown as Marker3D[];
+      const importedLines = r.lines as unknown as FreehandLine[];
+      const importedShapes = r.shapes as unknown as SurfaceShape[];
+      const mapped: AnatomicalBindings = {};
+      const keepMarkers = importedMarkers.filter(m => {
+        if (!m.id) return false;
+        const binding = makeBinding([[m.position]], 'generico', 'point');
+        if (binding) mapped[m.id] = binding;
+        return !!binding;
+      });
+      const keepLines = importedLines.filter(l => {
+        const binding = makeBinding(l.segments?.length ? l.segments : [l.points], 'generico', l.technique_preset === 'Flecha' ? 'arrow' : l.segments?.length ? 'pattern' : 'free');
+        if (binding) mapped[l.id] = binding;
+        return !!binding;
+      });
+      const keepShapes = importedShapes.filter(s => {
+        const binding = makeBinding([shapeOutline(s)], 'generico', s.shapeType === 'circle' ? 'circle' : 'rect');
+        const center = locateAnnotation('generico', s.center);
+        if (binding && center) mapped[s.id] = { ...binding, center };
+        return !!binding && !!center;
+      });
+      const accepted = keepMarkers.length + keepLines.length + keepShapes.length;
+      if (!accepted) { setStatus(`No se trasladaron los ${n} elementos: no corresponden a la superficie facial observada del modelo original. No se modificaron las marcas existentes.`); return; }
       snap();
-      setMarkers(p => [...p, ...(r.markersFull as unknown as Marker3D[])]); setLines(p => [...p, ...(r.lines as unknown as FreehandLine[])]);
-      setShapes(p => [...p, ...(r.shapes as unknown as SurfaceShape[])]); setMeta(m => ({ ...m, ...r.meta }));
-      setStatus(`${n} elementos importados al modelo 3D.${slot?.registration ? ' La vista cuenta con alineación fotográfica revisada.' : ' La foto no mostrará esas marcas hasta completar y aprobar la alineación.'}`);
-    } catch { setStatus('JSON inválido.'); }
+      setMarkers(p => [...p, ...keepMarkers]); setLines(p => [...p, ...keepLines]);
+      setShapes(p => [...p, ...keepShapes]); setBindings(p => ({ ...p, ...mapped }));
+      setMeta(m => ({ ...m, ...Object.fromEntries(Object.entries(r.meta).filter(([id]) => mapped[id])) }));
+      setStatus(`${accepted}/${n} elementos trasladados por correspondencia anatómica. ${n - accepted} sin correspondencia o fuera de cobertura, no importados. No se modificó la BD.`);
+    } catch (error) { setStatus(`No se pudo importar: ${error instanceof Error ? error.message : 'JSON o geometría inválidos'}. Las marcas anteriores se conservan.`); }
   };
   const exportPng = () => {
     const c = glRef.current; if (!c) return;
@@ -664,8 +782,45 @@ export default function FaceSimLab() {
   const poly = (pts: P2[]) => pts.map(p => `${p.x},${p.y}`).join(' ');
   const draftEl: Elem | null = draft ? elemsFromPhoto([{ ...curMeta(), id: 'draft', view, kind: draft.kind, pts: draft.pts }], aspect)[0] : null;
 
+  const renderViewer = (source: 'generico' | 'personal') => {
+    const original = source === 'generico';
+    const annotations = original ? genericAnnotations : personalAnnotations;
+    const ready = original || !!personal;
+    return <section key={source} aria-label={original ? 'Modelo genérico 3D' : 'Foto personal en 3D'} className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-900">
+      <h2 className="px-3 py-3 text-sm font-semibold text-white">{original ? 'Modelo facial original · referencia anatómica' : personal?.closedHead ? 'Superficie personal · gris = inferido, no marcable' : 'Superficie facial personal · misma marcación'}</h2>
+      {overlayMode === 'attention' && <p className="bg-amber-100 px-3 py-2 text-xs font-semibold text-amber-950">EDUCATIVO · No detecta vasos ni certifica zonas seguras.</p>}
+      {ready ? <Clinical3DViewer
+        markers={annotations.markers} freehandLines={annotations.lines} surfaceShapes={[]}
+        selectedPathology="filler" skipConfirmation readOnly={workMode !== '3d'}
+        occludeAnnotations={!original} showMarkerLabels={false}
+        anatomicalOverlay={original ? regionOverlays?.generic : regionOverlays?.personal}
+        surfaceConstraint={workMode === '3d' && tool3d !== 'navigate' ? {
+          accepts: p => !!locateAnnotation(source, p),
+          onRejected: blockedMark,
+        } : undefined}
+        onEstimatedSurfaceInteraction={blockedMark}
+        onMarkerPlaced={(m: Marker3D) => onMarker(m, source)}
+        activeTool={workMode !== '3d' || tool3d === 'navigate' || tool3d === 'point' ? 'none' : tool3d}
+        pendingBrushColor={color} pendingBrushThickness={1.5}
+        onFreehandLineComplete={l => onLine(l, source)}
+        onShapeComplete={s => onShape(s, source)}
+        onFreehandLineUpdated={(id, points, segments) => {
+          const current = annotations.lines.find(l => l.id === id);
+          if (current) onLine({ ...current, points, segments }, source, true);
+        }}
+        haShapeConfig={HA_CONFIG} cameraPreset="face"
+        modelData={!original && personal ? personal.glb : null}
+        pointMarkerScale={0.55} height="clamp(340px, 60vh, 590px)"
+        interactionHint={tool3d === 'navigate' || workMode === 'foto' ? 'Arrastra para rotar · las marcas se conservan'
+          : calibrating && original ? `Referencia ${anchorName(slot?.modelAnchors?.length ?? 0)}`
+            : 'Solo rostro observado · correspondencia anatómica compartida'}
+      /> : <div className="flex min-h-[340px] items-center justify-center px-6 text-center text-sm text-slate-300">Carga una foto y calcula la superficie. Las marcaciones del modelo original se conservarán para transferirlas.</div>}
+    </section>;
+  };
+
   const renderShapes = (list: Elem[], dashed = false) => list.filter(e => e.kind !== 'point').map(e => {
     const col = SIM_MODES[e.mode].color, common = { stroke: col, strokeWidth: 2, fill: 'none', vectorEffect: 'non-scaling-stroke' as const, strokeDasharray: dashed ? '5 4' : undefined };
+    if (e.boundary) return <polygon key={e.id} points={poly(e.boundary)} {...common} fill={col} fillOpacity={0.15} />;
     if (e.kind === 'circle') return <ellipse key={e.id} cx={e.paths[0][0].x} cy={e.paths[0][0].y} rx={e.rx} ry={e.ry} {...common} fill={col} fillOpacity={0.15} />;
     if (e.kind === 'rect') return <rect key={e.id} x={e.paths[0][0].x - (e.rx ?? 0)} y={e.paths[0][0].y - (e.ry ?? 0)} width={(e.rx ?? 0) * 2} height={(e.ry ?? 0) * 2} {...common} fill={col} fillOpacity={0.15} />;
     return (
@@ -730,6 +885,36 @@ export default function FaceSimLab() {
           </button>
         </div>
         <p className="text-xs text-slate-500" role="status">{status}</p>
+        <fieldset className="space-y-2 rounded-xl border border-slate-200 p-3 text-xs">
+          <legend className="px-1 font-semibold text-slate-600">Correspondencia anatómica</legend>
+          <p>Un registro común · {Object.keys(bindings).length} elementos. Cambiar foto/modelo, superficie o relieve no borra las marcas.</p>
+          <label className="block">Capa de referencia
+            <select aria-label="Capa de referencia" value={overlayMode} onChange={e => {
+              const value = e.target.value;
+              if (value === 'none' || value === 'regions' || value === 'attention') setOverlayMode(value);
+            }} className="mt-1 w-full rounded border border-slate-300 px-2 py-1">
+              <option value="none">Sin capa</option>
+              <option value="regions">Malla y zonas anatómicas</option>
+              <option value="attention">Atención anatómica · educativo</option>
+            </select>
+          </label>
+          <p>Ida y vuelta modelo → foto → modelo: {transferStats.count} muestras · error máximo {Number.isFinite(transferStats.max) ? `${transferStats.max.toExponential(2)}% del alto del modelo` : 'no verificable; revisar referencias'}.</p>
+          <p className="text-slate-500">Mide consistencia matemática, no precisión anatómica ni clínica. La detección del labio y los contornos debe revisarse visualmente.</p>
+          {Object.keys(bindings).length > Object.keys(photoBindings).length && <p className="font-semibold text-amber-800">{Object.keys(bindings).length - Object.keys(photoBindings).length} elementos sin cobertura válida en esta foto: se conservan en el modelo, pero no se proyectan.</p>}
+        </fieldset>
+        {overlayMode === 'attention' && <section aria-label="Referencia anatómica educativa" className="space-y-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950">
+          <h3 className="font-semibold">Referencia educativa, no detección vascular</h3>
+          <p>Ámbar: regiones seleccionadas para estudio. Gris: resto del rostro, NO zonas seguras. Estos colores no representan un nivel de riesgo ni la posición de un vaso.</p>
+          <p>La foto y el relieve no localizan arterias, venas, nervios ni su profundidad. La anatomía cambia entre personas; el atlas no sustituye evaluación profesional ni estudios de imagen cuando estén indicados.</p>
+          <details>
+            <summary className="cursor-pointer font-semibold">Estructuras de referencia por región</summary>
+            <ul className="mt-2 space-y-2">
+              {FACE_REGION_EDUCATION.map(entry => <li key={entry.zones[0]}><strong>{entry.zones.join(' / ')}:</strong> {entry.structures}</li>)}
+            </ul>
+          </details>
+          <p>No se calculan distancias a vasos, «zonas de confort», puntos ideales, planos de inyección ni dosis recomendadas.</p>
+          <a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC9067448/" target="_blank" rel="noopener noreferrer" className="underline">Fuente: anatomía arterial individual mediante angiografía y validación ecográfica (2022)</a>
+        </section>}
 
         {slot?.landmarks && <details className="rounded-xl border border-slate-200 p-3 text-xs">
           <summary className="cursor-pointer font-semibold text-slate-700">Editar contorno · mentón y sienes</summary>
@@ -768,7 +953,7 @@ export default function FaceSimLab() {
                 if (requestId === personalRequestRef.current && slot.detectedLandmarks) applyLandmarks(slot.detectedLandmarks, triangles, 0);
               } catch (error) { setStatus(`No se pudo restaurar el contorno: ${error instanceof Error ? error.message : 'error desconocido'}.`); }
             }} className="mt-2 rounded border border-slate-300 px-2 py-1 disabled:opacity-40">Restablecer detección original</button>
-          <p className="mt-2 text-slate-500">Sin un borde claro se conserva la detección; no se presupone que una sombra sea la mandíbula. Recalcular elimina las marcas 3D del modelo sustituido.</p>
+          <p className="mt-2 text-slate-500">Sin un borde claro se conserva la detección. Al recalcular se conservan las marcas por su triángulo anatómico; revisa su nueva ubicación.</p>
         </details>}
 
         <fieldset className="space-y-2 rounded-xl border border-slate-200 p-3 text-xs">
@@ -822,8 +1007,8 @@ export default function FaceSimLab() {
                   <p className="mt-2 text-[10px] text-slate-500">Compatibilidad geométrica, no verificación de identidad ni precisión clínica. Una foto con poco aporte puede permanecer cargada.</p>
                 </details>
               )}
-              <p className="text-slate-500">La propia foto {VIEWS.find(v => v.id === personal.view)?.label.toLowerCase()} es la superficie facial 3D. Gírala para apreciar el relieve; la miniatura comprueba las marcas. {personal.closedHead ? 'El casquete gris completa una cabeza aproximada, no observada.' : 'La superficie abierta solo cubre el óvalo facial.'} La profundidad es estimada, no un escaneo.</p>
-              {personal.view !== view && <p className="font-semibold text-amber-700">Esta superficie pertenece a la vista {VIEWS.find(v => v.id === personal.view)?.label}; vuelve a esa vista para ver sus marcas en la foto.</p>}
+              <p className="text-slate-500">La foto {VIEWS.find(v => v.id === personal.view)?.label.toLowerCase()} define la superficie personal de la derecha; las marcas se trasladan por anatomía también a la foto de abajo. {personal.closedHead ? 'El casquete gris es estimado, no observado.' : 'La superficie abierta solo cubre el óvalo facial.'} La profundidad no es un escaneo.</p>
+              {personal.view !== view && <p className="font-semibold text-amber-700">La superficie procede de {VIEWS.find(v => v.id === personal.view)?.label}; abajo se muestra otra foto mediante sus referencias anatómicas. Revisa diferencias de pose y expresión.</p>}
             </>
           ) : (
             <p className="text-slate-500">{slot?.landmarks ? 'Genera una superficie 3D a partir de esta foto para marcar sobre la anatomía real del paciente.' : 'La superficie personal requiere una foto con rostro detectado.'}</p>
@@ -858,7 +1043,7 @@ export default function FaceSimLab() {
             <option value={AUTO_ZONE}>Auto (mapa anatómico facial)</option>
             {ZONES.map(z => <option key={z}>{z}</option>)}
           </select>
-          <span className="mt-1 block text-[10px] font-normal normal-case">{regionMap ? 'Zonas de la malla cargada; las líneas pueden atravesar varias. Clasificación orientativa, no recomendación de aplicación.' : 'Sin malla detectada: zonas aproximadas por marco 2D.'}</span>
+          <span className="mt-1 block text-[10px] font-normal normal-case">{regionMap ? 'Zonas definidas sobre el atlas 3D del modelo y transferidas al rostro por sus referencias. Las líneas pueden atravesar varias. No es recomendación de aplicación.' : 'Carga un rostro para comprobar la correspondencia; el modelo conserva sus referencias anatómicas.'}</span>
         </label>
         <label className="block text-xs font-semibold uppercase text-slate-500">Producto
           <select value={product} onChange={e => setProduct(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm normal-case">
@@ -895,7 +1080,7 @@ export default function FaceSimLab() {
           <summary className="flex cursor-pointer items-center gap-1 font-semibold uppercase text-slate-500"><ScanFace className="h-3.5 w-3.5" aria-hidden="true" /> Marco / alineación ({VIEWS.find(v => v.id === view)?.label})</summary>
           {slot?.frame.anchors && (
             <div className="mt-2 space-y-2">
-              <p className="text-slate-600">Al detectar el rostro, el modelo se alinea automáticamente con los landmarks. Si la proyección no coincide, refínala marcando las referencias en el modelo.</p>
+              <p className="text-slate-600">La transferencia usa el atlas denso del modelo original. Corregir referencias en la foto sí actualiza su malla. La prueba afín de abajo es solo diagnóstica: no desplaza las marcas compartidas.</p>
               <label className="block text-slate-700">Corregir referencia en foto
                 <select aria-label="Corregir referencia en foto" value={photoAnchor ?? ''}
                   disabled={calibrating}
@@ -946,7 +1131,7 @@ export default function FaceSimLab() {
                 }}
                 className="w-full rounded-lg bg-slate-800 px-2 py-1.5 font-semibold text-white disabled:opacity-50"
               >
-                {slot.registration && slot.registrationFlip === flipX ? 'Refinar alineación manualmente' : 'Alinear manualmente'}
+                Prueba afín manual (diagnóstico)
               </button>
               {calibrating && (
                 <>
@@ -956,14 +1141,14 @@ export default function FaceSimLab() {
                     const auto = autoRegistration(view, frame, aspect, flipX);
                     const ok = isRegistrationAccepted(auto);
                     setPhotos(p => p[view] ? { ...p, [view]: { ...p[view]!, modelAnchors: undefined, ...(ok ? { registration: auto, registrationFlip: flipX, registrationSource: 'auto' as const } : { registration: undefined }) } } : p);
-                    setStatus(ok ? 'Calibración cancelada; se mantiene la alineación automática.' : 'Calibración cancelada; no se proyectarán marcas 3D.');
+                    setStatus('Prueba afín cancelada. El atlas anatómico y las marcas compartidas no cambian.');
                   }} className="w-full rounded border border-slate-300 px-2 py-1 text-slate-700">Cancelar alineación</button>
                 </>
               )}
               {slot.registration && slot.registrationFlip === flipX && (
-                <p className="text-emerald-700">Alineación {slot.registrationSource === 'manual' ? 'manual' : 'automática'} aceptada · validación cruzada RMS {(slot.registration.rmse * 100).toFixed(1)}% · máximo {(slot.registration.maxError * 100).toFixed(1)}% del alto facial.</p>
+                <p className="text-slate-600">Diagnóstico afín {slot.registrationSource === 'manual' ? 'manual' : 'automático'} · RMS {(slot.registration.rmse * 100).toFixed(1)}% · máximo {(slot.registration.maxError * 100).toFixed(1)}%. No mide el error de la transferencia anatómica.</p>
               )}
-              <p className="text-slate-500">Las marcas del modelo 3D se proyectan solo con una alineación aceptada. Una marca hecha en foto permanece solo en la imagen.</p>
+              <p className="text-slate-500">Modelo, superficie y foto comparten las marcas mediante triángulos y coordenadas baricéntricas; las zonas sin correspondencia se bloquean.</p>
             </div>
           )}
           {(['top', 'bottom', 'left', 'right'] as const).map(k => (
@@ -979,12 +1164,12 @@ export default function FaceSimLab() {
             const auto = slot ? autoRegistration(view, frame, aspect, nextFlip) : null;
             const ok = isRegistrationAccepted(auto);
             setPhotos(p => p[view] ? { ...p, [view]: { ...p[view]!, modelAnchors: undefined, ...(ok ? { registration: auto, registrationFlip: nextFlip, registrationSource: 'auto' as const } : { registration: undefined }) } } : p);
-          }} />Invertir lado del modelo 3D</label>
+          }} />Invertir lado en diagnóstico afín</label>
         </details>
 
         <details className="rounded-xl bg-slate-50 p-3 text-xs">
           <summary className="flex cursor-pointer items-center gap-1 font-semibold uppercase text-slate-500"><FileJson className="h-3.5 w-3.5" aria-hidden="true" /> Importar de Inyectables</summary>
-          <p className="mt-2 text-slate-500">Pega el registro de inyectable (o su <code>mapping_data</code>): puntos, líneas, flechas, patrones y formas pasan al modelo; la foto requiere alineación revisada.</p>
+          <p className="mt-2 text-slate-500">Pega el registro de inyectable (o su <code>mapping_data</code>): se trasladan los elementos completos compatibles con el atlas. Revisa la correspondencia; no modifica registros en la BD.</p>
           <textarea value={importText} onChange={e => setImportText(e.target.value)} rows={4} className="mt-2 w-full rounded border border-slate-300 p-1 font-mono text-[10px]" />
           <button type="button" onClick={doImport} className="mt-2 w-full rounded-lg bg-slate-800 px-2 py-1.5 font-semibold text-white">Importar</button>
         </details>
@@ -1001,53 +1186,27 @@ export default function FaceSimLab() {
         <p className="text-[11px] text-slate-400">En foto: clic/arrastrar para marcar, arrastrar un punto para moverlo, clic derecho o Alt+clic para borrar. Simulación referencial, no garantiza resultado clínico. Las fotos no salen del navegador.</p>
       </aside>
 
-      <div className={`grid min-w-0 content-start gap-4 ${workMode === '3d' && !personalActive ? 'xl:grid-cols-2' : ''}`}>
-        {workMode === '3d' && (
-          <section aria-label={personalActive ? 'Foto personal en 3D' : 'Modelo genérico 3D'} className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-900">
-            {personalActive && <h2 className="px-3 pt-3 text-sm font-semibold text-white">{personal?.closedHead ? 'Cabeza aproximada · gris = superficie estimada, no marcable' : 'Tu foto en 3D · arrastra con «Rotar» para ver el relieve'}</h2>}
-            <Clinical3DViewer
-              key={personalActive ? 'personal' : 'generico'}
-              markers={markers}
-              freehandLines={lines}
-              surfaceShapes={shapes}
-              selectedPathology="filler"
-              skipConfirmation
-              readOnly={false}
-              occludeAnnotations={personalActive}
-              onEstimatedSurfaceInteraction={() => setStatus('El casquete gris es estimado: no admite marcaciones ni clasificación anatómica. Gira hacia el rostro fotografiado.')}
-              onMarkerPlaced={onMarker}
-              activeTool={tool3d === 'navigate' || tool3d === 'point' ? 'none' : tool3d}
-              pendingBrushColor={color}
-              pendingBrushThickness={1.5}
-              onFreehandLineComplete={onLine}
-              onShapeComplete={onShape}
-              onFreehandLineUpdated={(id, points, segments) => {
-                if (validateObserved(segments?.flat() ?? points)) setLines(p => p.map(l => (l.id === id ? { ...l, points, ...(segments !== undefined ? { segments } : {}) } : l)));
-              }}
-              onSurfaceShapeUpdated={(id, u) => {
-                const center = u.center ?? shapes.find(s => s.id === id)?.center;
-                if (center && validateObserved([center])) setShapes(p => p.map(s => (s.id === id ? { ...s, ...u } : s)));
-              }}
-              haShapeConfig={HA_CONFIG}
-              cameraPreset="face"
-              modelData={personalActive && personal ? personal.glb : null}
-              pointMarkerScale={0.7}
-              height="clamp(380px, 78vh, 720px)"
-              interactionHint={calibrating
-                ? `Anclaje ${Math.min((slot?.modelAnchors?.length ?? 0) + 1, anchorCount)}/${anchorCount}: ${anchorName(slot?.modelAnchors?.length ?? 0)}`
-                : tool3d === 'navigate' ? 'Arrastra para rotar'
-                  : personalActive ? (personalProjection ? 'Superficie personal: correspondencia directa con la foto' : 'Superficie de otra vista: sus marcas no se proyectan aquí')
-                    : slot?.registration ? 'Alineado con la foto; proyección orientativa' : 'Sin alineación: carga una foto con el rostro visible'}
-            />
-          </section>
-        )}
-        <section className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-900 p-3">
-          {personalActive && workMode === '3d' && <h2 className="mb-2 text-center text-xs font-semibold text-slate-200">Vista previa {VIEWS.find(v => v.id === view)?.label.toLowerCase()} · comprobación de marcas</h2>}
+      <div className="grid min-w-0 content-start gap-4 xl:grid-cols-2">
+        {renderViewer('generico')}
+        {renderViewer('personal')}
+        <section className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-900 p-3 xl:col-span-2">
+          <h2 className="mb-2 text-center text-sm font-semibold text-slate-200">Foto referencial {VIEWS.find(v => v.id === view)?.label.toLowerCase()} · registro compartido</h2>
+          {overlayMode === 'attention' && <p className="mb-2 rounded bg-amber-100 px-3 py-2 text-xs font-semibold text-amber-950">EDUCATIVO · No detecta vasos ni certifica zonas seguras.</p>}
           {!hasImage && <div className="flex h-[360px] items-center justify-center text-center text-sm text-slate-400">Carga la foto de la vista «{VIEWS.find(v => v.id === view)?.label}» para ver la simulación</div>}
           <div className={`relative mx-auto max-h-[78vh] touch-none select-none ${hasImage ? '' : 'hidden'} ${workMode === 'foto' ? 'cursor-crosshair' : ''}`}
-            style={{ aspectRatio: String(aspect), maxWidth: personalActive && workMode === '3d' ? '220px' : `min(100%, calc(78vh * ${aspect}))` }}
+            style={{ aspectRatio: String(aspect), maxWidth: `min(100%, calc(70vh * ${aspect}))` }}
             onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onContextMenu={e => e.preventDefault()}>
             <canvas ref={glRef} className="h-full w-full" aria-label="Simulación del rostro" />
+            {showRegions && regionMap && <svg role="img" className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 1 1" preserveAspectRatio="none" aria-label="Malla anatómica orientativa; no representa vasos individuales">
+              {Array.from({ length: regionMap.triangles.length / 3 }, (_, triangle) => {
+                const ids = regionMap.triangles.slice(triangle * 3, triangle * 3 + 3);
+                const zone = faceTriangleZone(ids, canonicalRegionMap.labels);
+                const address: FaceAddress = { triangle, weights: [1 / 3, 1 / 3, 1 / 3] };
+                return slot?.landmarks && addressHasPhotoCoverage(address, slot.landmarks, genericFaceAtlas)
+                  ? <polygon aria-hidden="true" key={triangle} points={poly(ids.map(i => regionMap.landmarks[i]))} fill={overlayMode === 'attention' ? faceAttentionColor(zone) : faceRegionColor(zone)} fillOpacity="0.16"
+                    stroke={overlayMode === 'attention' ? faceAttentionColor(zone) : faceRegionColor(zone)} strokeOpacity="0.55" strokeWidth="0.0007"><title>{zone}{overlayMode === 'attention' ? ' · Referencia educativa, no anatomía vascular individual' : ''}</title></polygon> : null;
+              })}
+            </svg>}
             {split > 0 && <div className="pointer-events-none absolute inset-y-0 w-0.5 bg-white/80" style={{ left: `${split * 100}%` }} />}
             {hasImage && frame.outline && (
               <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
@@ -1077,12 +1236,12 @@ export default function FaceSimLab() {
             )}
             {showMarks && corrected.filter(p => !p.id.includes(':')).map(p => (
               <span key={p.id} className="pointer-events-none absolute block h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow"
-                style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%`, background: SIM_MODES[p.mode].color, outline: p.corrected ? '2px solid #fff' : undefined }}
+                style={{ left: `${p.rawX * 100}%`, top: `${p.rawY * 100}%`, background: SIM_MODES[p.mode].color }}
                 title={`${p.zone} · ${p.dose} ${SIM_MODES[p.mode].unit}`} />
             ))}
             {showMarks && corrected.filter(p => p.corrected).map(p => (
               <div key={`raw-${p.id}`} className="pointer-events-none absolute h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/50"
-                style={{ left: `${p.rawX * 100}%`, top: `${p.rawY * 100}%` }} title="Marca original" />
+                style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%` }} title="Simulación de corrección; no modifica la marcación anatómica" />
             ))}
           </div>
           {elems.length > 0 && (
