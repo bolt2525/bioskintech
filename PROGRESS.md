@@ -469,3 +469,5 @@ Las entradas siguientes conservan la evidencia previa al despliegue y la evoluci
 - ✅ Oct 26 Lab facial: 27 referencias, foto 3D sin superposición y profundidad multivista experimental.
 - ✅ Oct 26 Captura facial progresiva 1–5.
 - ✅ Oct 26 QA multivista: 5 fotos fusionadas (MediaPipe real, sintético); prueba de progresión con ruido.
+- ✅ Oct 26 Contorno coherente, zonas anatómicas y cabeza estimada opcional.
+- ✅ Oct 26 QA facial: 135 pruebas, build y navegador sintético.

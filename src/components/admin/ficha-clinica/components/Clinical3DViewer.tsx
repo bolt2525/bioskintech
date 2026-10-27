@@ -539,6 +539,7 @@ interface Clinical3DViewerProps {
   onEditablePointHovered?: (id: string | null) => void;
   /** Callback cuando el usuario hace clic en el fondo vacío (sin malla) */
   onBackgroundClick?: () => void;
+  onEstimatedSurfaceInteraction?: () => void;
   /** Escala multiplicadora del tamaño de marcaciones puntuales (1.0 = default) */
   pointMarkerScale?: number;
   /** Mostrar etiquetas flotantes junto a las marcaciones */
@@ -595,6 +596,7 @@ const ThreeEngine: React.FC<{
   highlightedPointIds?: string[];
   onEditablePointHovered?: (id: string | null) => void;
   onBackgroundClick?: () => void;
+  onEstimatedSurfaceInteraction?: () => void;
   showMarkerLabels?: boolean;
   cameraPreset?: ClinicalCameraPreset;
   scalpHair?: ScalpHairVisualization | null;
@@ -615,6 +617,7 @@ const ThreeEngine: React.FC<{
   highlightedPointIds = [],
   onEditablePointHovered,
   onBackgroundClick,
+  onEstimatedSurfaceInteraction,
   showMarkerLabels = true,
   pointMarkerScale = 1.0,
   cameraPreset = 'default',
@@ -656,7 +659,7 @@ const ThreeEngine: React.FC<{
     pointMode, onEditablePointMoved, onEditablePointDeleted, onEditablePointClicked, onProjectedPositions,
     activeTool, selectedElementId, pendingBrushColor, pendingBrushThickness,
     onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onSurfaceShapeUpdated, onGridStepChange, onSnapPointChange,
-    haShapeConfig, freehandLines, surfaceShapes, incompletePointIds, highlightedPointIds, onEditablePointHovered, onBackgroundClick,
+    haShapeConfig, freehandLines, surfaceShapes, incompletePointIds, highlightedPointIds, onEditablePointHovered, onBackgroundClick, onEstimatedSurfaceInteraction,
     onModelMetrics, occludeAnnotations,
   });
   useEffect(() => {
@@ -665,7 +668,7 @@ const ThreeEngine: React.FC<{
       pointMode, onEditablePointMoved, onEditablePointDeleted, onEditablePointClicked, onProjectedPositions,
       activeTool, selectedElementId, pendingBrushColor, pendingBrushThickness,
       onFreehandLineComplete, onShapeComplete, onElementSelected, onFreehandLineUpdated, onSurfaceShapeUpdated, onGridStepChange, onSnapPointChange,
-      haShapeConfig, freehandLines, surfaceShapes, incompletePointIds, highlightedPointIds, onEditablePointHovered, onBackgroundClick,
+      haShapeConfig, freehandLines, surfaceShapes, incompletePointIds, highlightedPointIds, onEditablePointHovered, onBackgroundClick, onEstimatedSurfaceInteraction,
       onModelMetrics, occludeAnnotations,
     };
   });
@@ -1026,6 +1029,15 @@ const ThreeEngine: React.FC<{
       startPos = { x: e.clientX, y: e.clientY };
       const tool = callbacks.current.activeTool;
       if (gridStep > 0 && tool !== 'ha-grid') resetGridDrawing();
+      if (tool !== 'none' && faceMeshRef.current?.getObjectByName('ESTIMATED_HEAD_SURFACE') && cameraRef.current) {
+        const rect = renderer.domElement.getBoundingClientRect();
+        mouse.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+        raycaster.setFromCamera(mouse, cameraRef.current);
+        if (raycaster.intersectObject(faceMeshRef.current, true)[0]?.object.name === 'ESTIMATED_HEAD_SURFACE') {
+          callbacks.current.onEstimatedSurfaceInteraction?.();
+          return;
+        }
+      }
 
       // ── Prioridad 0: handle drag (resize/move de línea seleccionada) ───────
       if (handlesGroupRef.current && handlesGroupRef.current.children.length > 0 && cameraRef.current) {
@@ -2039,6 +2051,11 @@ const ThreeEngine: React.FC<{
       mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
       raycaster.setFromCamera(mouse, cameraRef.current);
+      if (faceMeshRef.current.getObjectByName('ESTIMATED_HEAD_SURFACE')
+        && raycaster.intersectObject(faceMeshRef.current, true)[0]?.object.name === 'ESTIMATED_HEAD_SURFACE') {
+        callbacks.current.onEstimatedSurfaceInteraction?.();
+        return;
+      }
 
       const tool = callbacks.current.activeTool;
 
@@ -2634,9 +2651,12 @@ const ThreeEngine: React.FC<{
 
       // ponytail: scale first, then offset — wrong order breaks body model (center at y=90)
       const maxDim = Math.max(size.x, size.y, size.z);
-      const scaleFactor = 5 / (maxDim || 1);
+      // La proyección y las marcas personales ya están en estas coordenadas; el casquete no debe desplazarlas.
+      const personalSurface = !!model.getObjectByName('PERSONAL_FACE_SURFACE');
+      const scaleFactor = personalSurface ? 1 : 5 / (maxDim || 1);
       model.scale.setScalar(scaleFactor);
-      model.position.set(-center.x * scaleFactor, -center.y * scaleFactor, -center.z * scaleFactor);
+      model.position.set(personalSurface ? 0 : -center.x * scaleFactor,
+        personalSurface ? 0 : -center.y * scaleFactor, personalSurface ? 0 : -center.z * scaleFactor);
 
       const pivotGroup = new THREE.Group();
       pivotGroup.add(model);
@@ -2656,7 +2676,7 @@ const ThreeEngine: React.FC<{
           child.material = map && child.name === 'PERSONAL_FACE_SURFACE'
             ? new THREE.MeshBasicMaterial({ map, side: THREE.DoubleSide, wireframe: settings.wireframe })
             : new THREE.MeshPhysicalMaterial({
-              color: map ? '#ffffff' : settings.materialColor,
+              color: child.name === 'ESTIMATED_HEAD_SURFACE' ? '#94a3b8' : map ? '#ffffff' : settings.materialColor,
               map,
               roughness: map ? 0.75 : settings.roughness,
               metalness: map ? 0 : settings.metalness,
@@ -3493,6 +3513,7 @@ export default function Clinical3DViewer({
   highlightedPointIds = [],
   onEditablePointHovered,
   onBackgroundClick,
+  onEstimatedSurfaceInteraction,
   pointMarkerScale = 1.0,
   showMarkerLabels = true,
   scalpHair = null,
@@ -3595,6 +3616,7 @@ export default function Clinical3DViewer({
             highlightedPointIds={highlightedPointIds}
             onEditablePointHovered={onEditablePointHovered}
             onBackgroundClick={onBackgroundClick}
+            onEstimatedSurfaceInteraction={onEstimatedSurfaceInteraction}
             pointMarkerScale={pointMarkerScale}
             showMarkerLabels={showMarkerLabels}
             cameraPreset={cameraPreset}

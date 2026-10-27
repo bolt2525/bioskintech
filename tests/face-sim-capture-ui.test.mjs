@@ -7,6 +7,9 @@ import ts from 'typescript';
 import React from 'react';
 import { FaceLandmarker } from '@mediapipe/tasks-vision';
 import * as engine from '../src/lab/faceSim/engine.ts';
+import * as faceContour from '../src/lab/faceSim/faceContour.ts';
+import * as faceRegions from '../src/lab/faceSim/faceRegions.ts';
+import * as estimatedHead from '../src/lab/faceSim/estimatedHead.ts';
 
 const require = createRequire(import.meta.url);
 const source = readFileSync(new URL('../src/lab/faceSim/FaceSimLab.tsx', import.meta.url), 'utf8');
@@ -52,6 +55,9 @@ function lab() {
     require: name => {
       if (name === 'react') return hooks;
       if (name === './engine') return engine;
+      if (name === './faceContour') return faceContour;
+      if (name === './faceRegions') return faceRegions;
+      if (name === './estimatedHead') return estimatedHead;
       if (name === '@mediapipe/tasks-vision') return { FaceLandmarker };
       if (name === './personalSurfaceGlb') return { personalSurfaceToGlb: async () => new ArrayBuffer(8) };
       if (name.endsWith('Clinical3DViewer')) return { default: () => null };
@@ -152,4 +158,33 @@ test('una foto puede generar la superficie personal sin esperar referencias comp
   assert.match(text(tree), /Superficie 3D personal generada desde la foto Frontal/);
   assert.match(text(tree), /Cálculo rápido con una foto/);
   assert.equal(findAll(tree, n => n.type === 'section' && n.props['aria-label'] === 'Foto personal en 3D').length, 1);
+});
+
+test('cabeza estimada: tres archivos sin cobertura bilateral no habilitan un cierre engañoso', async () => {
+  const app = lab();
+  app.render();
+  app.photos({ frontal: photo() });
+  let head = findAll(app.render(), n => n.type === 'button' && text(n).startsWith('Cabeza estimada'))[0];
+  assert.equal(head.props.disabled, true);
+  app.photos({ frontal: photo(), izquierda: photo(), derecha: photo() });
+  head = findAll(app.render(), n => n.type === 'button' && text(n).startsWith('Cabeza estimada'))[0];
+  assert.equal(head.props.disabled, false);
+  head.props.onClick();
+  await new Promise(resolve => setImmediate(resolve));
+  const tree = app.render();
+  assert.match(text(tree), /requiere al menos tres fotos útiles que cubran ambos lados/);
+  assert.equal(findAll(tree, n => n.type === 'section' && n.props['aria-label'] === 'Foto personal en 3D').length, 0);
+});
+
+test('editar contorno expone 36 referencias y pasa a foto sin crear un tratamiento', () => {
+  const app = lab();
+  app.render();
+  app.photos({ frontal: photo() });
+  const select = findAll(app.render(), n => n.type === 'select' && n.props['aria-label'] === 'Punto del contorno')[0];
+  assert.equal(findAll(select, n => n.type === 'option').length, 37);
+  select.props.onChange({ target: { value: '152' } });
+  const tree = app.render();
+  assert.match(text(tree), /Aplicar contorno/);
+  assert.equal(findAll(tree, n => n.type === 'button' && text(n) === 'Foto')[0].props['aria-pressed'], true);
+  assert.equal(findAll(tree, n => n.type === 'ul' && n.props['aria-label'] === 'Elementos marcados').length, 0);
 });

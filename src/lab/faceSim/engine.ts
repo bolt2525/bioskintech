@@ -39,7 +39,7 @@ export const DEFAULT_FRAME: FaceFrame = {
   axisTop: { x: 0.5, y: 0.15 }, axisBottom: { x: 0.5, y: 0.85 }, source: 'manual',
 };
 
-const FACE_OVAL = [
+export const FACE_OVAL = [
   10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377,
   152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109,
 ];
@@ -53,7 +53,7 @@ export const REGISTRATION_ANCHORS = [
   'Mejilla lateral A', 'Mejilla lateral B', 'Mandíbula A', 'Mandíbula B',
 ];
 /** Índices MediaPipe por anclaje; los grupos se promedian (cejas: borde superior + inferior). */
-const LANDMARK_ANCHORS = [
+export const LANDMARK_ANCHORS = [
   [10], [9], [33], [263], [1], [13], [152], [70, 46], [300, 276], [105, 52], [334, 282],
   [61], [291], [98], [327], [133], [362], [0], [17], [168], [6], [205], [425], [50], [280], [172], [397],
 ];
@@ -957,9 +957,12 @@ function along(path: P2[], count: number, aspect: number): { x: number; y: numbe
 }
 const pathLen = (p: P2[], aspect: number) => p.slice(1).reduce((s, q, i) => s + Math.hypot((q.x - p[i].x) * aspect, q.y - p[i].y), 0);
 
-export function expandElems(elems: Elem[], frame: FaceFrame, aspect: number): { points: SimPoint[]; derived: SimPoint[] } {
+export function expandElems(
+  elems: Elem[], frame: FaceFrame, aspect: number, detectZone?: (p: P2) => string | null,
+): { points: SimPoint[]; derived: SimPoint[] } {
   const fh = Math.max(frame.bottom - frame.top, 0.05);
-  const zoneAt = (e: Elem, p: P2) => (e.zone === AUTO_ZONE || !e.zone ? inferZone(p, frame) : e.zone);
+  const zoneAt = (e: Elem, p: P2) => (e.zone === AUTO_ZONE || !e.zone
+    ? detectZone ? detectZone(p) ?? 'Sin zona facial' : inferZone(p, frame) : e.zone);
   const points: SimPoint[] = [], derived: SimPoint[] = [];
   const base = (e: Elem, p: P2, extra: Partial<SimPoint>): SimPoint =>
     ({ id: `${e.id}:${derived.length}`, mode: e.mode, x: p.x, y: p.y, dose: e.dose, zone: zoneAt(e, p), product: e.product, ...extra });
