@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { FACE_OVAL, buildPersonalSurface, expandElems, frameFromLandmarks, projectPersonal, DEFAULT_FRAME } from '../src/lab/faceSim/engine.ts';
 import { moveFaceLandmark, refinePhotoContour } from '../src/lab/faceSim/faceContour.ts';
-import { buildFaceRegionMap, facialZoneAt, isOnObservedFace, faceAttentionColor, faceRegionEducation } from '../src/lab/faceSim/faceRegions.ts';
+import { buildFaceRegionMap, facialZoneAt, isOnObservedFace, faceAttentionColor, faceRegionEducation, rasterizeFaceRegions, FACE_REGION_SEEDS, faceRegionColor } from '../src/lab/faceSim/faceRegions.ts';
 
 function ovalFixture() {
   const landmarks = Array.from({ length: 478 }, () => ({ x: 0.5, y: 0.5, z: 0 }));
@@ -20,6 +20,30 @@ test('capa educativa distingue referencias de ausencia de información, nunca zo
   assert.equal(faceRegionEducation('Región desconocida'), undefined);
   assert.equal(faceAttentionColor('Glabela'), '#f59e0b');
   assert.equal(faceAttentionColor('Región desconocida'), '#94a3b8');
+});
+
+test('zonas distintas tienen colores propios y la capa interpola sin pintar fuera del rostro', () => {
+  assert.equal(new Set(FACE_REGION_SEEDS.map(z => faceRegionColor(z.zone))).size, FACE_REGION_SEEDS.length);
+  const map = { landmarks: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }], triangles: [0, 1, 2], labels: ['A', 'B', 'C'] };
+  const pixels = rasterizeFaceRegions(map, 100, 100, z => ({ A: '#ff0000', B: '#00ff00', C: '#0000ff' })[z]);
+  const at = (x, y) => [...pixels.slice((y * 100 + x) * 4, (y * 100 + x) * 4 + 4)];
+  assert.deepEqual(at(25, 25), [125, 65, 65, 255]);
+  assert.deepEqual(at(90, 90), [0, 0, 0, 0]);
+  assert.ok(rasterizeFaceRegions(map, 20, 20, undefined, () => false).every(v => v === 0));
+  assert.match(facialZoneAt({ x: 0.4, y: 0.3 }, map), /límite aproximado/);
+  assert.equal(facialZoneAt({ x: 0.01, y: 0.01 }, map), 'A');
+  assert.throws(() => rasterizeFaceRegions(map, 0, 20), /inválidas/);
+});
+
+test('métrica canónica conserva etiquetas entre rostros y la caché no expone arrays mutables', () => {
+  const { landmarks, triangles } = regionFixture();
+  const reference = landmarks.slice(0, 468).flatMap(p => [p.x, p.y, p.z]);
+  const a = buildFaceRegionMap(landmarks, triangles, 0.75, reference);
+  const warped = landmarks.map(p => ({ ...p, x: p.x * p.x, y: p.y * 1.4 }));
+  const b = buildFaceRegionMap(warped, triangles, 0.75, reference);
+  assert.deepEqual(a.labels, b.labels);
+  a.labels[9] = 'Mutación externa';
+  assert.equal(buildFaceRegionMap(warped, triangles, 0.75, reference).labels[9], 'Glabela');
 });
 
 test('corregir mentón fuera del óvalo actual modifica marco, malla y UV sin cambiar Z', () => {

@@ -27,11 +27,13 @@ export interface FaceRegionMap {
   triangles: readonly number[];
   labels: string[];
 }
+const canonicalLabels = new WeakMap<readonly number[], Map<string, string[]>>();
 
 export function faceRegionColor(zone: string): string {
-  const palette = ['#38bdf8', '#fb923c', '#a78bfa', '#f472b6', '#34d399', '#facc15', '#2dd4bf', '#fb7185'];
-  const hash = [...zone].reduce((n, c) => (n * 31 + c.charCodeAt(0)) >>> 0, 0);
-  return palette[hash % palette.length];
+  const palette = ['#38bdf8', '#fb923c', '#a78bfa', '#f472b6', '#34d399', '#facc15', '#2dd4bf', '#fb7185', '#818cf8',
+    '#4ade80', '#fbbf24', '#c084fc', '#22d3ee', '#e879f9', '#a3e635', '#60a5fa', '#f87171', '#fcd34d'];
+  const index = FACE_REGION_SEEDS.findIndex(entry => entry.zone === zone);
+  return index < 0 ? '#94a3b8' : palette[index];
 }
 
 export const FACE_REGION_EDUCATION: ReadonlyArray<{ zones: readonly string[]; structures: string }> = [
@@ -69,6 +71,9 @@ export function buildFaceRegionMap(
   if (referencePositions && (referencePositions.length < 468 * 3 || referencePositions.some(p => !Number.isFinite(p)))) {
     throw new Error('Las referencias anatómicas del modelo no son válidas.');
   }
+  const topology = referencePositions ? triangles.join(',') : '';
+  const cached = referencePositions && canonicalLabels.get(referencePositions)?.get(topology);
+  if (cached) return { landmarks, triangles, labels: [...cached] };
   for (let i = 0; i < triangles.length; i += 3) {
     for (let j = 0; j < 3; j++) {
       const a = triangles[i + j], b = triangles[i + (j + 1) % 3];
@@ -92,7 +97,49 @@ export function buildFaceRegionMap(
       }
     });
   }
+  if (referencePositions) {
+    let cache = canonicalLabels.get(referencePositions);
+    if (!cache) { cache = new Map(); canonicalLabels.set(referencePositions, cache); }
+    cache.set(topology, [...labels]);
+  }
   return { landmarks, triangles, labels };
+}
+
+/** Color interpolado por vértice, sin asignar arbitrariamente un triángulo mixto a una sola zona. */
+export function rasterizeFaceRegions(
+  map: FaceRegionMap, width: number, height: number, color = faceRegionColor, include?: (triangle: number) => boolean,
+): Uint8ClampedArray {
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width * height > 1024 * 1024) {
+    throw new Error('Dimensiones inválidas para la capa anatómica.');
+  }
+  const pixels = new Uint8ClampedArray(width * height * 4);
+  const colors = map.labels.map(zone => {
+    const hex = color(zone);
+    if (!/^#[0-9a-f]{6}$/i.test(hex)) throw new Error('Color anatómico inválido.');
+    return [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+  });
+  for (let offset = 0; offset < map.triangles.length; offset += 3) {
+    if (include && !include(offset / 3)) continue;
+    const ids = map.triangles.slice(offset, offset + 3);
+    const [a, b, c] = ids.map(i => map.landmarks[i]);
+    const den = (b.y - c.y) * (a.x - c.x) + (c.x - b.x) * (a.y - c.y);
+    if (Math.abs(den) < 1e-12) continue;
+    const x0 = Math.max(0, Math.floor(Math.min(a.x, b.x, c.x) * width)), x1 = Math.min(width - 1, Math.ceil(Math.max(a.x, b.x, c.x) * width));
+    const y0 = Math.max(0, Math.floor(Math.min(a.y, b.y, c.y) * height)), y1 = Math.min(height - 1, Math.ceil(Math.max(a.y, b.y, c.y) * height));
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      const px = (x + 0.5) / width, py = (y + 0.5) / height;
+      const u = ((b.y - c.y) * (px - c.x) + (c.x - b.x) * (py - c.y)) / den;
+      const v = ((c.y - a.y) * (px - c.x) + (a.x - c.x) * (py - c.y)) / den;
+      const w = 1 - u - v;
+      if (u < -1e-7 || v < -1e-7 || w < -1e-7) continue;
+      const index = (y * width + x) * 4;
+      for (let channel = 0; channel < 3; channel++) {
+        pixels[index + channel] = colors[ids[0]][channel] * u + colors[ids[1]][channel] * v + colors[ids[2]][channel] * w;
+      }
+      pixels[index + 3] = 255;
+    }
+  }
+  return pixels;
 }
 
 function locateFaceTriangle(p: P2, map: FaceRegionMap): { indices: number[]; weights: number[] } | null {
@@ -114,7 +161,9 @@ export function facialZoneAt(p: P2, map: FaceRegionMap): string | null {
   if (!hit) return null;
   const votes = new Map<string, number>();
   hit.indices.forEach((i, j) => votes.set(map.labels[i], (votes.get(map.labels[i]) ?? 0) + hit.weights[j]));
-  return [...votes].sort((a, b) => b[1] - a[1])[0][0];
+  const ranked = [...votes].sort((a, b) => b[1] - a[1]);
+  return ranked.length > 1 && ranked[0][1] < 0.6
+    ? `${ranked[0][0]} / ${ranked[1][0]} (límite aproximado)` : ranked[0][0];
 }
 
 /** Rechaza casquete/zonas estimadas aunque su proyección XY coincida con el rostro. */

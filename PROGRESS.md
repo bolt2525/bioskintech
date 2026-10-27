@@ -1,5 +1,10 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-26 Frente visible revisada; marcas conservadas.
+- ✅ 2026-10-26 Capturas revisadas; incompatibilidades bloqueadas.
+- ✅ 2026-10-26 Zonas interpoladas; apariencia RGB local.
+- ✅ 2026-10-26 3DLab: 190 pruebas, build y lint facial aprobados; QA Chromium sintético 1440/390 px. Giro compatible, morfología incompatible bloqueada tras confirmación y azul/cian rechazado. Sin verificación de identidad ni detección vascular.
+
 - ✅ 2026-10-26 Atlas facial: marcaciones compartidas.
 - ✅ 2026-10-26 Atención anatómica educativa, sin detección vascular.
 - ✅ 2026-10-26 3DLab: 160 pruebas; QA sintético bidireccional y reverso bloqueado, escritorio/502 px; build y lint facial aprobados. Sin migración clínica.

@@ -2,6 +2,18 @@ import type { P2 } from './engine';
 
 type Landmark = P2 & { z: number };
 
+function preservesTriangles(before: Landmark[], after: Landmark[], triangles: readonly number[]): boolean {
+  const area = (points: Landmark[], a: number, b: number, c: number) =>
+    (points[b].x - points[a].x) * (points[c].y - points[a].y) - (points[b].y - points[a].y) * (points[c].x - points[a].x);
+  for (let i = 0; i < triangles.length; i += 3) {
+    const [a, b, c] = triangles.slice(i, i + 3);
+    if (![a, b, c].every(j => Number.isInteger(j) && j >= 0 && j < before.length)) return false;
+    const original = area(before, a, b, c), moved = area(after, a, b, c);
+    if (Math.abs(original) > 1e-10 && moved / original < 0.15) return false;
+  }
+  return true;
+}
+
 /** Desplaza un parche local, no solo el borde: conserva UV, relieve e índices anatómicos. */
 export function moveFaceLandmark(
   landmarks: Landmark[], index: number, target: P2, aspect: number, triangles: readonly number[], references: readonly number[] = [index],
@@ -25,18 +37,73 @@ export function moveFaceLandmark(
     return { ...p, x: p.x + dx * w, y: p.y + dy * w };
   });
   if (next.some(p => ![p.x, p.y, p.z].every(Number.isFinite))) return null;
-  const area = (points: Landmark[], a: number, b: number, c: number) =>
-    (points[b].x - points[a].x) * (points[c].y - points[a].y)
-      - (points[b].y - points[a].y) * (points[c].x - points[a].x);
-  for (let i = 0; i < triangles.length; i += 3) {
-    const [a, b, c] = triangles.slice(i, i + 3);
-    if (![a, b, c].every(j => Number.isInteger(j) && j >= 0 && j < landmarks.length)) return null;
-    const before = area(landmarks, a, b, c), after = area(next, a, b, c);
-    if (Math.abs(before) > 1e-10 && after / before < 0.15) return null;
-  }
-  return next;
+  return preservesTriangles(landmarks, next, triangles) ? next : null;
 }
 
+/** Amplía la banda superior completa; no estira ojos/cejas ni añade piel oculta como observada. */
+export function extendVisibleForehead(landmarks: Landmark[], target: P2, aspect: number, triangles: readonly number[]): Landmark[] | null {
+  if (landmarks.length < 468 || !Number.isFinite(aspect) || aspect <= 0
+    || landmarks.some(p => ![p.x, p.y, p.z].every(Number.isFinite))
+    || ![target.x, target.y].every(Number.isFinite) || target.x < 0 || target.x > 1 || target.y < 0 || target.y > 1) return null;
+  const top = landmarks[10], brow = landmarks[9], chin = landmarks[152];
+  const height = Math.hypot((top.x - chin.x) * aspect, top.y - chin.y);
+  const direction = { x: (top.x - brow.x) * aspect, y: top.y - brow.y };
+  const length = Math.hypot(direction.x, direction.y);
+  if (length < 1e-5 || height < 1e-4) return null;
+  const axis = { x: direction.x / length, y: direction.y / length };
+  const projection = (p: P2) => (p.x - brow.x) * aspect * axis.x + (p.y - brow.y) * axis.y;
+  const browLimit = Math.max(...[70, 63, 105, 66, 107, 336, 296, 334, 293, 300].map(i => projection(landmarks[i])));
+  const band = projection(top) - browLimit;
+  const dx = (target.x - top.x) * aspect, dy = target.y - top.y;
+  if (band < height * 0.025 || Math.hypot(dx, dy) > height * 0.35 || dx * axis.x + dy * axis.y < 0
+    || Math.abs(dx * axis.y - dy * axis.x) > height * 0.07) return null;
+  const next = landmarks.map(p => {
+    const t = Math.max(0, Math.min(1, (projection(p) - browLimit) / band));
+    const weight = t * t * (3 - 2 * t);
+    return { ...p, x: p.x + dx / aspect * weight, y: p.y + dy * weight };
+  });
+  if (next.some(p => p.x < 0 || p.x > 1 || p.y < 0 || p.y > 1)) return null;
+  return preservesTriangles(landmarks, next, triangles) ? next : null;
+}
+
+/** Propone un borde oscuro compatible con cabello. Requiere revisión; no es segmentación capilar. */
+export function proposeForeheadBoundary(
+  landmarks: Landmark[], image: { width: number; height: number; data: Uint8ClampedArray },
+): { point: P2 | null; reason: string } {
+  const { width, height, data } = image;
+  if (landmarks.length < 468 || data.length !== width * height * 4 || width < 32 || height < 32) {
+    throw new Error('No se puede proponer el límite frontal: imagen o referencias inválidas.');
+  }
+  const top = landmarks[10], brow = landmarks[9], chin = landmarks[152];
+  const axis = { x: (top.x - brow.x) * width, y: (top.y - brow.y) * height };
+  const length = Math.hypot(axis.x, axis.y), faceHeight = Math.hypot((top.x - chin.x) * width, (top.y - chin.y) * height);
+  if (!(length > 1) || !(faceHeight > 30)) return { point: null, reason: 'No hay referencias suficientes para proponer el límite de la frente.' };
+  axis.x /= length; axis.y /= length;
+  const luma = (x: number, y: number) => {
+    if (x < 1 || y < 1 || x >= width - 1 || y >= height - 1) return null;
+    const i = (Math.round(y) * width + Math.round(x)) * 4;
+    return 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+  };
+  const distances = [-0.08, 0, 0.08].map(offset => {
+    const x = top.x * width + axis.y * offset * faceHeight, y = top.y * height - axis.x * offset * faceHeight;
+    let best = 30, distance: number | null = null;
+    const gap = Math.max(2, faceHeight * 0.012);
+    for (let d = 3; d < faceHeight * 0.3; d++) {
+      const inside = luma(x + axis.x * (d - gap), y + axis.y * (d - gap));
+      const outside = luma(x + axis.x * (d + gap), y + axis.y * (d + gap));
+      if (inside === null || outside === null) break;
+      const contrast = inside - outside;
+      if (contrast > best && outside < inside * 0.75) { best = contrast; distance = d; }
+    }
+    return distance;
+  }).filter((d): d is number => d !== null).sort((a, b) => a - b);
+  if (distances.length < 2 || distances.at(-1)! - distances[0] > faceHeight * 0.06) {
+    return { point: null, reason: 'Sin borde capilar claro y coherente. Marca manualmente el límite de piel visible; no se inventará la frente oculta.' };
+  }
+  const d = distances[Math.floor(distances.length / 2)];
+  return { point: { x: top.x + axis.x * d / width, y: top.y + axis.y * d / height },
+    reason: 'Borde oscuro candidato, no cabello identificado. Revisa que el punto quede sobre piel visible antes del cabello.' };
+}
 /**
  * Busca un borde cromático solo en una banda exterior estrecha del mentón/sienes.
  * Un borde ambiguo conserva MediaPipe: no se expande un óvalo por defecto.

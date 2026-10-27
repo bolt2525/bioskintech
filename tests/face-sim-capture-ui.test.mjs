@@ -12,6 +12,7 @@ import * as faceRegions from '../src/lab/faceSim/faceRegions.ts';
 import * as estimatedHead from '../src/lab/faceSim/estimatedHead.ts';
 import * as faceTransfer from '../src/lab/faceSim/faceTransfer.ts';
 import * as anatomicalAnnotations from '../src/lab/faceSim/anatomicalAnnotations.ts';
+import * as photoValidation from '../src/lab/faceSim/photoValidation.ts';
 
 const require = createRequire(import.meta.url);
 const genericFaceAtlas = JSON.parse(readFileSync(new URL('../src/lab/faceSim/genericFaceAtlas.json', import.meta.url), 'utf8'));
@@ -63,6 +64,7 @@ function lab() {
       if (name === './estimatedHead') return estimatedHead;
       if (name === './faceTransfer') return faceTransfer;
       if (name === './anatomicalAnnotations') return anatomicalAnnotations;
+      if (name === './photoValidation') return photoValidation;
       if (name === './genericFaceAtlas.json') return { default: genericFaceAtlas };
       if (name === '@mediapipe/tasks-vision') return { FaceLandmarker };
       if (name === './personalSurfaceGlb') return { personalSurfaceToGlb: async () => new ArrayBuffer(8) };
@@ -81,7 +83,7 @@ function lab() {
 
 function photo() {
   return {
-    canvas: { width: 600, height: 800 }, aspect: 0.75, frame: engine.DEFAULT_FRAME,
+    canvas: { width: 600, height: 800 }, aspect: 0.75, frame: engine.DEFAULT_FRAME, captureConfirmed: true,
     pose: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, -40, 1],
     landmarks: Array.from({ length: 478 }, (_, i) => ({
       x: 0.2 + (i % 22) / 21 * 0.6,
@@ -94,6 +96,57 @@ const calculate = tree => findAll(tree, n => n.type === 'button' && text(n).star
 const slotIds = ['frontal', 'izquierda', 'derecha', 'extra_a', 'extra_b'];
 const viewers = tree => findAll(tree, n => typeof n.props?.onMarkerPlaced === 'function');
 const button = (tree, label) => findAll(tree, n => n.type === 'button' && text(n) === label)[0];
+
+test('no calcula capturas sin revisar; la confirmación no permite fusionar proporciones incompatibles', async () => {
+  const app = lab(); app.render();
+  app.photos({ frontal: { ...photo(), captureConfirmed: false } });
+  let tree = app.render();
+  assert.equal(calculate(tree).props.disabled, true);
+  calculate(tree).props.onClick();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.match(text(app.render()), /Revisa y confirma/);
+  findAll(app.render(), n => n.props?.['aria-label'] === 'Confirmar captura Frontal')[0].props.onChange({ target: { checked: true } });
+  assert.equal(calculate(app.render()).props.disabled, false);
+  const a = photo(), b = photo();
+  for (const [left, right] of [[98, 327], [172, 397], [50, 280], [234, 454]]) {
+    const center = (b.landmarks[left].x + b.landmarks[right].x) / 2;
+    for (const i of [left, right]) b.landmarks[i].x = center + (b.landmarks[i].x - center) * 1.8;
+  }
+  app.photos({ frontal: a, izquierda: b });
+  tree = app.render();
+  assert.equal(calculate(tree).props.disabled, true);
+  assert.match(text(tree), /No se fusionarán/);
+  calculate(tree).props.onClick();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(viewers(app.render()).length, 1);
+});
+
+test('ampliar frente exige revisar piel visible y no convierte el clic en tratamiento', async () => {
+  const app = lab(); app.render();
+  const fixture = JSON.parse(readFileSync(new URL('./fixtures/face-sim-mediapipe-synthetic.json', import.meta.url), 'utf8'));
+  const landmarks = fixture.landmarks.map(([x, y, z]) => ({ x, y, z }));
+  const source = { ...photo(), landmarks, aspect: fixture.aspect, frame: engine.frameFromLandmarks(landmarks) };
+  app.photos({ frontal: source });
+  button(app.render(), 'Elegir límite en foto').props.onClick();
+  const top = landmarks[10], brow = landmarks[9], chin = landmarks[152];
+  const dx = (top.x - brow.x) * fixture.aspect, dy = top.y - brow.y, length = Math.hypot(dx, dy);
+  const h = Math.hypot((top.x - chin.x) * fixture.aspect, top.y - chin.y);
+  const target = { x: top.x + dx / length * h * 0.1 / fixture.aspect, y: top.y + dy / length * h * 0.1 };
+  const wrapper = findAll(app.render(), n => n.props?.onPointerDown && n.props?.onPointerUp)[0];
+  wrapper.props.onPointerDown({ button: 0, clientX: target.x, clientY: target.y,
+    currentTarget: { getBoundingClientRect: () => ({ left: 0, top: 0, width: 1, height: 1 }) } });
+  let tree = app.render();
+  assert.equal(button(tree, 'Aplicar frente revisada').props.disabled, true);
+  assert.equal(viewers(tree)[0].props.markers.length, 0);
+  findAll(tree, n => n.props?.['aria-label'] === 'Confirmar piel visible en frente')[0].props.onChange({ target: { checked: true } });
+  button(app.render(), 'Aplicar frente revisada').props.onClick();
+  await new Promise(resolve => setImmediate(resolve));
+  tree = app.render();
+  assert.equal(app.states[0].frontal.foreheadReviewed, true);
+  assert.ok(Math.abs(app.states[0].frontal.landmarks[10].y - target.y) < 1e-12);
+  assert.equal(viewers(tree)[0].props.markers.length, 0);
+  assert.match(text(tree), /Banda frontal ampliada/);
+});
 
 test('capa educativa mantiene advertencia, fuente y geometría separada de marcaciones', () => {
   const app = lab();
