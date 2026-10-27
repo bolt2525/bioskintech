@@ -497,6 +497,27 @@ test('concordancia de todas las vistas: una mala entre buenas no anula ni sesga 
   }
 });
 
+test('captura progresiva: 1→2→3→5 fotos con ruido reduce el error y amplía la cobertura', () => {
+  const { front, truth, profile } = rotatedDepthFixture();
+  let seed = 7;
+  const noise = () => { seed = (seed * 16807) % 2147483647; return (seed / 2147483647 - 0.5) * 0.008; };
+  const noisy = (angles, opts) => {
+    const v = profile(angles, opts);
+    return { ...v, landmarks: v.landmarks.map(p => ({ x: p.x + noise(), y: p.y + noise(), z: 0 })) };
+  };
+  // Orden de captura: lateral izq., lateral der., oblicuas izq./der. (altura y encuadre distintos).
+  const extra = [
+    noisy([0.95, 0.1, 0], { ty: 0.55 }), noisy([-0.95, -0.12, 0.05], { scale: 1.2 }),
+    noisy([0.55, -0.15, 0], { tx: 0.45 }), noisy([-0.55, 0.12, -0.05], { scale: 0.85 }),
+  ];
+  const runs = [0, 1, 2, 4].map(n => refineDepthFromProfiles(front, extra.slice(0, n)));
+  assert.deepEqual(runs.map(r => r.used), [0, 1, 2, 4]);
+  assert.deepEqual(runs.map(r => r.coverage), ['monocular', 'one-sided', 'bilateral', 'bilateral']);
+  const errors = runs.map(r => relativeDepthError(front, truth, r.landmarks));
+  for (let i = 1; i < errors.length; i++) assert.ok(errors[i] < errors[i - 1], errors.join(' → '));
+  assert.ok(errors[3] < errors[0] * 0.25, errors.join(' → '));
+});
+
 test('cobertura real: dos o cuatro fotos del mismo lado no equivalen a ambos lados', () => {
   const { front, profile } = rotatedDepthFixture();
   for (const sign of [-1, 1]) {
