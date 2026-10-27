@@ -172,6 +172,47 @@ test('concavidad suave en óvalo: cierra sin abanico externo ni cruce radial', (
   assert.ok(convexSigns.includes(1) && convexSigns.includes(-1), 'fixture realmente cóncava');
 });
 
+test('el casquete posterior se centra por área, no por densidad de puntos del contorno', () => {
+  const surface = fixture();
+  const positions = surface.positions.slice();
+  for (let id = 0; id < 468; id++) {
+    const x = positions[id * 3] / 0.31, y = positions[id * 3 + 1] / 0.4;
+    const radius = Math.hypot(x, y), angle = Math.atan2(x, y);
+    const sampledAngle = angle + 0.2 * Math.sin(angle);
+    positions[id * 3] = Math.sin(sampledAngle) * radius * 0.31;
+    positions[id * 3 + 1] = Math.cos(sampledAngle) * radius * 0.4;
+  }
+  const skewed = { ...surface, positions };
+  const head = buildEstimatedHead(skewed);
+  const oval = new Set(FACE_OVAL);
+  const outerEdges = [...edges(skewed.indices).values()].filter(e =>
+    e.count === 1 && oval.has(e.a) && oval.has(e.b));
+  const next = new Map(outerEdges.map(e => [e.a, e.b]));
+  const loop = [outerEdges[0].a];
+  while (next.has(loop.at(-1)) && next.get(loop.at(-1)) !== loop[0]) loop.push(next.get(loop.at(-1)));
+  const origin = point(skewed, loop[0]);
+  let twiceArea = 0, cx = 0, cy = 0, vertexX = 0, vertexY = 0;
+  for (let i = 0; i < loop.length; i++) {
+    const a = point(skewed, loop[i]), b = point(skewed, loop[(i + 1) % loop.length]);
+    const ax = a[0] - origin[0], ay = a[1] - origin[1];
+    const bx = b[0] - origin[0], by = b[1] - origin[1];
+    const wedge = ax * by - ay * bx;
+    twiceArea += wedge;
+    cx += (ax + bx) * wedge; cy += (ay + by) * wedge;
+    vertexX += a[0] / loop.length; vertexY += a[1] / loop.length;
+  }
+  const expected = [origin[0] + cx / (3 * twiceArea), origin[1] + cy / (3 * twiceArea)];
+  const radius = Math.cos(Math.PI / 24);
+  const firstRing = point(head, positions.length / 3 + FACE_OVAL.length);
+  const firstBoundary = point(skewed, loop[0]);
+  const recoveredCenter = firstRing.slice(0, 2).map((value, axis) =>
+    (value - radius * firstBoundary[axis]) / (1 - radius));
+  assert.ok(Math.hypot(recoveredCenter[0] - expected[0], recoveredCenter[1] - expected[1]) < 2e-5,
+    `${recoveredCenter} vs ${expected}`);
+  assert.ok(Math.hypot(expected[0] - vertexX, expected[1] - vertexY) > 0.015,
+    'el fixture distingue centroide geométrico y media de vértices');
+});
+
 // Intersección segmento/triángulo; las parejas coplanares se prueban en 2D.
 const subtract = (a, b) => a.map((v, i) => v - b[i]);
 const dot = (a, b) => a.reduce((sum, v, i) => sum + v * b[i], 0);

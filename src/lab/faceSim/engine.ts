@@ -849,21 +849,30 @@ export function trianglesFromEdges(edges: { start: number; end: number }[]): num
 export function buildPersonalSurface(
   lm: { x: number; y: number; z?: number }[], aspect: number, triangles: number[], depth = 1,
 ): PersonalSurface | null {
-  if (lm.length < 468 || !(aspect > 0) || !Number.isFinite(depth) || depth <= 0 || triangles.length < 3) return null;
+  if (lm.length < 468 || !Number.isFinite(aspect) || !(aspect > 0) ||
+    !Number.isFinite(depth) || depth <= 0 || triangles.length < 3 || triangles.length % 3 !== 0) return null;
   if (lm.some(p => !Number.isFinite(p.x) || !Number.isFinite(p.y) || (p.z !== undefined && !Number.isFinite(p.z)))) return null;
   if (triangles.some(i => !Number.isInteger(i) || i < 0 || i >= lm.length)) return null;
   const raw = lm.map(p => ({ x: p.x * aspect, y: -p.y, z: -(p.z ?? 0) * aspect * depth }));
+  if (raw.some(p => !Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.z))) return null;
   const min = { x: Infinity, y: Infinity, z: Infinity }, max = { x: -Infinity, y: -Infinity, z: -Infinity };
-  raw.forEach(p => (['x', 'y', 'z'] as const).forEach(a => { min[a] = Math.min(min[a], p[a]); max[a] = Math.max(max[a], p[a]); }));
+  // El iris no forma parte del cuerpo facial 468 y no debe cambiar la escala
+  // ni el centro de la superficie por una detección periférica atípica.
+  raw.slice(0, 468).forEach(p => (['x', 'y', 'z'] as const).forEach(a => { min[a] = Math.min(min[a], p[a]); max[a] = Math.max(max[a], p[a]); }));
   const span = Math.max(max.x - min.x, max.y - min.y, max.z - min.z);
-  if (!(span > 0)) return null;
+  if (!(span > 0) || !Number.isFinite(span)) return null;
   const k = VIEWER_MAX_DIM / span;
-  const c = { x: (min.x + max.x) / 2, y: (min.y + max.y) / 2, z: (min.z + max.z) / 2 };
+  const c = {
+    x: min.x + (max.x - min.x) / 2,
+    y: min.y + (max.y - min.y) / 2,
+    z: min.z + (max.z - min.z) / 2,
+  };
   const positions = new Float32Array(lm.length * 3), uvs = new Float32Array(lm.length * 2);
   raw.forEach((p, i) => {
     positions.set([(p.x - c.x) * k, (p.y - c.y) * k, (p.z - c.z) * k], i * 3);
     uvs.set([lm[i].x, lm[i].y], i * 2);
   });
+  if (!positions.every(Number.isFinite)) return null;
   // X = (x·aspect − c.x)·k ; Y = (−y − c.y)·k  →  x = (X/k + c.x)/aspect ; y = −(Y/k + c.y)
   return { positions, uvs, indices: Uint32Array.from(triangles), projection: { cx: c.x, cy: c.y, k, aspect } };
 }

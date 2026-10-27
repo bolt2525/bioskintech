@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Download, ImagePlus, Trash2, Wand2, Undo2, FileJson, ScanFace, Box, Image as ImageIcon } from 'lucide-react';
 import injectablesCatalog from '../../components/admin/ficha-clinica/data/injectables.json';
 import Clinical3DViewer, {
@@ -11,9 +11,11 @@ import {
   type AffineRegistration, type DepthDiagnostic, type PersonalSurface, type PersonalProjection, type CorrectedPoint, type Elem, type ElemKind, type FaceFrame, type Meta, type P2, type PhotoEl, type SimMode, type Vec3, type ViewKind,
 } from './engine';
 import { moveFaceLandmark, refinePhotoContour, extendVisibleForehead, proposeForeheadBoundary } from './faceContour';
-import { buildFaceRegionMap, faceRegionColor, rasterizeFaceRegions, facialZoneAt, isOnObservedFace, faceAttentionColor, FACE_REGION_EDUCATION, FACE_REGION_SEEDS, type FaceRegionMap } from './faceRegions';
+import { buildFaceRegionMap, faceRegionColor, faceTriangleZone, rasterizeFaceRegions, facialZoneAt, isOnObservedFace, faceAttentionColor, FACE_REGION_EDUCATION, FACE_REGION_SEEDS, type FaceRegionMap } from './faceRegions';
 import { assessFaceCapture, compareFaceGeometry } from './photoValidation';
-import type { SkinAppearanceChannel, SkinAppearanceResult } from './skinAppearance';
+import { DETECTION_RETRIES, detectionImage, restoreDetectionPoint } from './detection';
+import { Tooltip } from '../../components/ui/Tooltip';
+import type { SkinAppearanceVisualChannel, SkinAppearanceResult } from './skinAppearance';
 import genericFaceAtlas from './genericFaceAtlas.json' with { type: 'json' };
 import { locateModelPoint, locatePhotoPoint, modelPoint as tryModelPoint, photoPoint as tryPhotoPoint, surfacePoint as trySurfacePoint, type FaceAddress } from './faceTransfer';
 import {
@@ -31,6 +33,8 @@ const ZONES = [...new Set([...['tercio_superior', 'tercio_medio', 'tercio_inferi
 const MAX_SIDE = 1400;
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_IMAGE_PIXELS = 40_000_000;
+const FacialSimulationViewer = lazy(() => import('./FacialSimulationViewer'));
+const FaceBoundaryReview = lazy(() => import('./FaceBoundaryReview'));
 
 const VERT = `attribute vec2 p;varying vec2 uv;void main(){uv=p*0.5+0.5;uv.y=1.0-uv.y;gl_Position=vec4(p,0.0,1.0);}`;
 const FRAG = `precision highp float;
@@ -114,9 +118,25 @@ async function detectFrame(img: HTMLCanvasElement): Promise<{
       baseOptions: { modelAssetPath: '/models/face/face_landmarker.task' }, runningMode: 'IMAGE', numFaces: 2,
       outputFacialTransformationMatrixes: true,
     });
-    const result = landmarker.detect(img);
-    const detectedLandmarks = result.faceLandmarks[0]?.map(({ x, y, z }) => ({ x, y, z }));
-    if (!detectedLandmarks) return { frame: null, reason: 'MediaPipe no encontró un rostro en esta imagen.' };
+    let result = landmarker.detect(img);
+    let detectedLandmarks = result.faceLandmarks[0]?.map(({ x, y, z }) => ({ x, y, z }));
+    let retried = false;
+    let rotated = false;
+    if (!detectedLandmarks) {
+      await landmarker.setOptions({ minFaceDetectionConfidence: 0.25, minFacePresenceConfidence: 0.35 });
+      for (const transform of [{ angle: 0, scale: 1, enhanced: false }, ...DETECTION_RETRIES]) {
+        const input = detectionImage(img, transform);
+        result = landmarker.detect(input);
+        const candidate = result.faceLandmarks[0];
+        if (candidate) {
+          detectedLandmarks = candidate.map(point => restoreDetectionPoint(point, img.width, img.height, transform));
+          retried = true; rotated = transform.angle !== 0;
+          break;
+        }
+        await new Promise<void>(resolve => setTimeout(resolve, 0));
+      }
+    }
+    if (!detectedLandmarks) return { frame: null, reason: 'No se obtuvo una malla fiable tras reintentar encuadre, contraste y giro. La foto queda como referencia; para generar 3D añade una toma a tres cuartos (30–60°), con nariz y mentón completos.' };
     const context = img.getContext('2d');
     if (!context) throw new Error('No se pudieron leer los píxeles para revisar el contorno.');
     const pixels = context.getImageData(0, 0, img.width, img.height);
@@ -127,7 +147,8 @@ async function detectFrame(img: HTMLCanvasElement): Promise<{
     return {
       frame: frameFromLandmarks(contour.landmarks), landmarks: contour.landmarks, detectedLandmarks,
       contourAdjusted: contour.adjusted, regionMap: buildFaceRegionMap(contour.landmarks, triangles, img.width / img.height, genericFaceAtlas.positions),
-      pose: result.facialTransformationMatrixes[0]?.data, reason: '', captureWarnings: quality.warnings,
+      pose: rotated ? undefined : result.facialTransformationMatrixes[0]?.data, reason: '',
+      captureWarnings: [...quality.warnings, ...(retried ? ['Detección recuperada: revisa contorno y referencias antes de fusionar. Los puntos ocultos de un perfil son estimaciones.'] : [])],
     };
   } catch (error) {
     const detail = error instanceof Error ? ` ${error.message}` : '';
@@ -196,9 +217,11 @@ interface Slot {
 interface Snapshot { markers: Marker3D[]; lines: FreehandLine[]; shapes: SurfaceShape[]; meta: Record<string, Meta>; photoEls: PhotoEl[]; bindings: AnatomicalBindings }
 interface SkinReview {
   canvas: HTMLCanvasElement;
+  width: number;
+  height: number;
   landmarks: Landmark[];
   result: SkinAppearanceResult;
-  urls: Record<SkinAppearanceChannel, string>;
+  urls: Record<SkinAppearanceVisualChannel, string>;
 }
 
 function pixelsUrl(pixels: Uint8ClampedArray, width: number, height: number): string {
@@ -228,7 +251,7 @@ export default function FaceSimLab() {
   const [view, setView] = useState<ViewKind>('frontal');
   const [renderTick, setRenderTick] = useState(0);
   const [workMode, setWorkMode] = useState<WorkMode>('3d');
-  const [tool3d, setTool3d] = useState<Tool3D>('point');
+  const [tool3d, setTool3d] = useState<Tool3D>('navigate');
   const [toolPhoto, setToolPhoto] = useState<ElemKind>('point');
   const [markers, setMarkers] = useState<Marker3D[]>([]);
   const [lines, setLines] = useState<FreehandLine[]>([]);
@@ -256,12 +279,18 @@ export default function FaceSimLab() {
   const [buildingPersonal, setBuildingPersonal] = useState(false);
   const [contourIndex, setContourIndex] = useState<number | null>(null);
   const [bindings, setBindings] = useState<AnatomicalBindings>({});
-  const [overlayMode, setOverlayMode] = useState<'none' | 'regions' | 'attention'>('none');
+  const [overlayMode, setOverlayMode] = useState<'none' | 'regions' | 'attention'>('regions');
   const [foreheadPreview, setForeheadPreview] = useState<{ canvas: HTMLCanvasElement; point: P2; confirmed: boolean; reason: string } | null>(null);
   const [pickingForehead, setPickingForehead] = useState(false);
   const [skinReview, setSkinReview] = useState<SkinReview | null>(null);
-  const [skinChannel, setSkinChannel] = useState<SkinAppearanceChannel>('contrast');
+  const [skinChannel, setSkinChannel] = useState<SkinAppearanceVisualChannel>('contrast');
   const [analyzingSkin, setAnalyzingSkin] = useState(false);
+  const [boundaryReview, setBoundaryReview] = useState(false);
+  const [hoveredZone, setHoveredZone] = useState<string | null>(null);
+  const [workspace, setWorkspace] = useState<'capture' | 'simulate' | 'mapping'>('capture');
+  const [skinOpacity, setSkinOpacity] = useState(0.65);
+  const [skinRegion, setSkinRegion] = useState<'all' | 'tzone' | 'cheeks'>('all');
+  const [appearanceGlb, setAppearanceGlb] = useState<{ personal: PersonalModel; buffer: ArrayBuffer } | null>(null);
   const activePhotoRef = useRef<HTMLCanvasElement>();
   const showRegions = overlayMode !== 'none';
 
@@ -277,15 +306,45 @@ export default function FaceSimLab() {
   const aspect = slot?.aspect ?? 0.75;
   const frame = slot?.frame ?? defaultFrame(view);
   const regionMap = personalProjection ? personal?.regionMap : slot?.regionMap;
+  useEffect(() => {
+    let active = true;
+    setAppearanceGlb(null);
+    if (!personal || !currentSkinReview?.result.usable || currentSkinReview.canvas !== personal.canvas) return;
+    const source = personal, review = currentSkinReview;
+    void (async () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = source.canvas.width; canvas.height = source.canvas.height;
+        const context = canvas.getContext('2d');
+        if (!context) throw new Error('No se pudo preparar la textura RGB.');
+        context.drawImage(source.canvas, 0, 0);
+        const overlay = document.createElement('canvas');
+        overlay.width = review.width; overlay.height = review.height;
+        const overlayContext = overlay.getContext('2d');
+        if (!overlayContext) throw new Error('No se pudo preparar el canal RGB.');
+        const pixels = overlayContext.createImageData(overlay.width, overlay.height);
+        pixels.data.set(review.result.channels[skinChannel].rgba); overlayContext.putImageData(pixels, 0, 0);
+        context.globalAlpha = skinOpacity; context.drawImage(overlay, 0, 0, canvas.width, canvas.height);
+        const surface = source.closedHead ? (await import('./estimatedHead')).buildEstimatedHead(source.surface) : source.surface;
+        const { personalSurfaceToGlb } = await import('./personalSurfaceGlb');
+        const buffer = await personalSurfaceToGlb(surface, canvas);
+        if (active) setAppearanceGlb({ personal: source, buffer });
+      } catch (error) {
+        if (active) setStatus(`No se pudo mostrar RGB en 3D: ${error instanceof Error ? error.message : 'error desconocido'}. Se conserva la textura original.`);
+      }
+    })();
+    return () => { active = false; };
+  }, [personal, currentSkinReview, skinChannel, skinOpacity]);
   const canonicalRegionMap = useMemo(() => buildFaceRegionMap(
     Array.from({ length: 468 }, (_, i) => ({ x: genericFaceAtlas.positions[i * 3], y: -genericFaceAtlas.positions[i * 3 + 1] })),
     genericFaceAtlas.triangles, 1, genericFaceAtlas.positions,
   ), []);
   const regionOverlays = useMemo(() => {
     if (!showRegions) return null;
-    const positions: number[] = [], personalPositions: number[] = [], colors: number[] = [];
+    const positions: number[] = [], personalPositions: number[] = [], colors: number[] = [], labels: string[] = [];
     for (let i = 0; i < genericFaceAtlas.triangles.length; i += 3) {
       const ids = genericFaceAtlas.triangles.slice(i, i + 3);
+      labels.push(faceTriangleZone(ids, canonicalRegionMap.labels));
       ids.forEach(j => {
         const label = canonicalRegionMap.labels[j];
         const color = overlayMode === 'attention' ? faceAttentionColor(label) : faceRegionColor(label);
@@ -296,18 +355,26 @@ export default function FaceSimLab() {
       });
     }
     return {
-      generic: { positions: Float32Array.from(positions), colors: Float32Array.from(colors) },
-      personal: personal ? { positions: Float32Array.from(personalPositions), colors: Float32Array.from(colors) } : undefined,
+      generic: { positions: Float32Array.from(positions), colors: Float32Array.from(colors), labels, wireframe: true, onHover: setHoveredZone, selectedZone: hoveredZone,
+        depthTest: false, zoneAt: (point: Vec3) => {
+          const address = locateModelPoint(point, genericFaceAtlas);
+          return address ? labels[address.triangle] : null;
+        } },
+      personal: personal ? { positions: Float32Array.from(personalPositions), colors: Float32Array.from(colors), labels, wireframe: true, onHover: setHoveredZone, selectedZone: hoveredZone } : undefined,
     } satisfies { generic: AnatomicalSurfaceOverlay; personal?: AnatomicalSurfaceOverlay };
-  }, [showRegions, overlayMode, canonicalRegionMap, personal]);
+  }, [showRegions, overlayMode, canonicalRegionMap, personal, hoveredZone]);
   const photoRegionOverlay = useMemo(() => {
     if (!showRegions || !regionMap || !slot?.landmarks) return null;
-    const width = Math.max(1, Math.round(384 * Math.min(1, aspect)));
-    const height = Math.max(1, Math.round(width / aspect));
-    const rgba = rasterizeFaceRegions(regionMap, width, height, overlayMode === 'attention' ? faceAttentionColor : faceRegionColor,
-      triangle => addressHasPhotoCoverage({ triangle, weights: [1 / 3, 1 / 3, 1 / 3] }, slot.landmarks!, genericFaceAtlas));
-    return pixelsUrl(rgba, width, height);
-  }, [showRegions, overlayMode, regionMap, slot?.landmarks, aspect]);
+    const groups = new Map<string, string[]>();
+    for (let i = 0; i < genericFaceAtlas.triangles.length; i += 3) {
+      if (!addressHasPhotoCoverage({ triangle: i / 3, weights: [1 / 3, 1 / 3, 1 / 3] }, slot.landmarks, genericFaceAtlas)) continue;
+      const ids = genericFaceAtlas.triangles.slice(i, i + 3);
+      const label = faceTriangleZone(ids, canonicalRegionMap.labels);
+      const path = `M${ids.map(j => `${slot.landmarks![j].x},${slot.landmarks![j].y}`).join('L')}Z`;
+      groups.set(label, [...(groups.get(label) ?? []), path]);
+    }
+    return [...groups].map(([label, paths]) => ({ label, path: paths.join('') }));
+  }, [showRegions, regionMap, canonicalRegionMap, slot?.landmarks]);
   const hasImage = !!slot;
   const loadedPhotos = PHOTO_SLOTS.filter(v => photos[v.id]);
   const readyPhotos = PHOTO_SLOTS.filter(v => photos[v.id]?.landmarks);
@@ -495,7 +562,7 @@ export default function FaceSimLab() {
       const replacedPersonal = !!personal;
       if (replacedPersonal) { setPersonal(null); setModelKind('generico'); }
       const personalNote = replacedPersonal ? ' Se actualizaron las fotos; regenera la superficie. Las marcaciones anatómicas se conservan para revisar su transferencia al nuevo rostro.' : '';
-      setPhotos(p => ({ ...p, [target]: { canvas: c, aspect: c.width / c.height, frame: defaultFrame(targetView) } }));
+      setPhotos(p => ({ ...p, [target]: { canvas: c, aspect: c.width / c.height, frame: defaultFrame(targetView), previewUrl: c.toDataURL('image/jpeg', 0.6) } }));
       setCalibrating(false);
       setPhotoAnchor(null);
       setContourIndex(null);
@@ -533,7 +600,8 @@ export default function FaceSimLab() {
           ...(accepted ? { registration: auto, registrationFlip: flipX, registrationSource: 'auto' as const } : { registration: undefined }),
         },
       } : p));
-      setStatus(`Rostro detectado en ${label}; se aplica el atlas anatómico del modelo original a los triángulos con cobertura válida. Las marcas se comparten con foto y superficie; revisa las referencias detectadas.`
+      if (target === 'frontal' && activePhotoRef.current === c) setBoundaryReview(true);
+      setStatus(`Rostro detectado en ${label}. Revisa la miniatura y confirma la captura.`
         + ` Contorno: ${detected.contourAdjusted ?? 0} referencias ajustadas por borde visible; revisa mentón y sienes en «Editar contorno».` + personalNote);
     } catch (error) {
       if (requestId !== uploadRequestRef.current[target]) return;
@@ -748,16 +816,20 @@ export default function FaceSimLab() {
       if (!context) throw new Error('No se pudieron leer los píxeles de la captura.');
       context.drawImage(source.canvas, 0, 0, canvas.width, canvas.height);
       const regions = source.regionMap!;
-      const rgba = rasterizeFaceRegions(regions, canvas.width, canvas.height, () => '#ffffff', triangle =>
-        !regions.triangles.slice(triangle * 3, triangle * 3 + 3).some(i => /ocular|labio|comisura|ceja|patas|ojeras|filtrum|sin zona/i.test(regions.labels[i])));
+      const rgba = rasterizeFaceRegions(regions, canvas.width, canvas.height, () => '#ffffff', triangle => {
+        const labels = regions.triangles.slice(triangle * 3, triangle * 3 + 3).map(i => regions.labels[i]);
+        return !labels.some(label => /ocular|labio|comisura|ceja|patas|ojeras|filtrum|sin zona/i.test(label))
+          && (skinRegion === 'all' || labels.every(label => skinRegion === 'tzone' ? /frente|glabela|nasal|mentón/i.test(label) : /mejillas|pómulos/i.test(label)));
+      });
       const mask = Uint8Array.from({ length: canvas.width * canvas.height }, (_, i) => rgba[i * 4 + 3] ? 1 : 0);
       const result = analyzeSkinAppearance(context.getImageData(0, 0, canvas.width, canvas.height), mask);
       const urls = {
         contrast: pixelsUrl(result.channels.contrast.rgba, canvas.width, canvas.height),
         redness: pixelsUrl(result.channels.redness.rgba, canvas.width, canvas.height),
         texture: pixelsUrl(result.channels.texture.rgba, canvas.width, canvas.height),
+        shine: pixelsUrl(result.channels.shine.rgba, canvas.width, canvas.height),
       };
-      setSkinReview({ canvas: source.canvas, landmarks: source.landmarks!, result, urls });
+      setSkinReview({ canvas: source.canvas, width: canvas.width, height: canvas.height, landmarks: source.landmarks!, result, urls });
       setStatus(result.usable ? 'Apariencia RGB calculada localmente: variaciones visuales, no lesiones ni vasos identificados.' : `Análisis RGB no disponible: ${result.warnings.join(' ')}`);
     } catch (error) {
       console.error('[FaceSimLab] No se pudo analizar la apariencia', error);
@@ -914,7 +986,7 @@ export default function FaceSimLab() {
     const ready = original || !!personal;
     return <section key={source} aria-label={original ? 'Modelo genérico 3D' : 'Foto personal en 3D'} className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-900">
       <h2 className="px-3 py-3 text-sm font-semibold text-white">{original ? 'Modelo facial original · referencia anatómica' : personal?.closedHead ? 'Superficie personal · gris = inferido, no marcable' : 'Superficie facial personal · misma marcación'}</h2>
-      {overlayMode === 'attention' && <p className="bg-amber-100 px-3 py-2 text-xs font-semibold text-amber-950">EDUCATIVO · No detecta vasos ni certifica zonas seguras.</p>}
+      {overlayMode === 'attention' && <p className="bg-amber-100 px-3 py-2 text-xs font-semibold text-amber-950">SIMULACIÓN · No detecta vasos ni certifica zonas seguras.</p>}
       {ready ? <Clinical3DViewer
         markers={annotations.markers} freehandLines={annotations.lines} surfaceShapes={[]}
         selectedPathology="filler" skipConfirmation readOnly={workMode !== '3d'}
@@ -935,7 +1007,7 @@ export default function FaceSimLab() {
           if (current) onLine({ ...current, points, segments }, source, true);
         }}
         haShapeConfig={HA_CONFIG} cameraPreset="face"
-        modelData={!original && personal ? personal.glb : null}
+        modelData={!original && personal ? appearanceGlb?.personal === personal ? appearanceGlb.buffer : personal.glb : null}
         pointMarkerScale={0.55} height="clamp(340px, 60vh, 590px)"
         interactionHint={tool3d === 'navigate' || workMode === 'foto' ? 'Arrastra para rotar · las marcas se conservan'
           : calibrating && original ? `Referencia ${anchorName(slot?.modelAnchors?.length ?? 0)}`
@@ -980,15 +1052,25 @@ export default function FaceSimLab() {
           setPhotos(p => p[v.id] ? { ...p, [v.id]: { ...p[v.id]!, captureConfirmed: checked } } : p);
           setStatus('Revisión de captura actualizada. Recalcula la superficie; las marcaciones se conservan. Esta confirmación no verifica identidad automáticamente.');
         }} />
-        Captura directa, sin documento/meme; misma persona en todas las fotos.
+        Captura y persona confirmadas.
       </label>}
       {photos[v.id]?.captureWarnings?.map(w => <p key={w} className="mt-1 text-[10px] text-amber-800">{w}</p>)}
     </div>
   );
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
-      <aside className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
+      {boundaryReview && slot?.landmarks && <Suspense fallback={<p role="status">Abriendo revisión de límites…</p>}>
+        <FaceBoundaryReview key={`${view}-${slot.previewUrl?.length}`} canvas={slot.canvas} landmarks={slot.landmarks}
+          triangles={genericFaceAtlas.triangles} onClose={() => setBoundaryReview(false)}
+          onApply={(landmarks, reviewed) => applyLandmarks(landmarks, [...genericFaceAtlas.triangles], slot.contourAdjusted, reviewed)} />
+      </Suspense>}
+      <aside className={`space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:sticky lg:top-4 lg:max-h-[94vh] lg:self-start lg:overflow-y-auto ${workspace === 'simulate' ? 'max-lg:[&>*:not(nav)]:hidden' : ''}`}>
+        <nav aria-label="Herramientas del laboratorio" className="grid grid-cols-3 gap-1">
+          {([['capture', 'Capturas'], ['simulate', 'Simular'], ['mapping', 'Marcar']] as const).map(([id, label]) =>
+            <button type="button" key={id} aria-pressed={workspace === id} onClick={() => setWorkspace(id)}
+              className={`admin-focus-ring min-h-10 rounded-lg text-xs font-semibold ${workspace === id ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}>{label}</button>)}
+        </nav>
         <div>
           <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Fotos del paciente</span>
           <div className="grid grid-cols-3 gap-1">
@@ -1005,12 +1087,12 @@ export default function FaceSimLab() {
           <p className="mt-2 text-xs text-slate-600" aria-live="polite">
             {loadedPhotos.length} de 5 fotos cargadas · {readyPhotos.length} con rostro detectado{hasPendingPhotos ? ' · Detectando…' : ''}
           </p>
-          <p className="mt-1 text-[11px] text-slate-500">
+          <details className="mt-2 text-xs text-slate-500"><summary className="cursor-pointer">Guía de captura y privacidad</summary><p className="mt-1">
             1: cálculo rápido. 2: contrasta profundidad de nariz y labios. 3: recomendado para cubrir ambos lados.
             Las fotos 4 y 5 añaden referencias. Usa la misma persona; se compensan diferencias de giro, altura y encuadre.
             Ángulos A/B son orientativos: no necesitan ser perfiles exactos.
           </p>
-          <p className="mt-2 text-[11px] text-slate-600">Una detección facial no prueba que sea una captura directa ni la misma persona. Excluye documentos, memes, otras personas y filtros deformantes. Revisa las miniaturas: los controles geométricos no detectan todos esos casos ni verifican identidad.</p>
+          <p className="mt-2">Una detección facial no prueba que sea una captura directa ni la misma persona. Excluye documentos, memes, otras personas y filtros deformantes. Revisa las miniaturas: los controles geométricos no detectan todos esos casos ni verifican identidad.</p></details>
           {unreviewedPhotos.length > 0 && <p className="mt-2 text-xs font-semibold text-amber-800">Confirma {unreviewedPhotos.length} captura(s) pendiente(s) antes del cálculo.</p>}
           {incompatiblePhotos.map(message => <p key={message} role="alert" className="mt-2 text-xs font-semibold text-red-800">{message}</p>)}
           <button type="button" disabled={buildingPersonal || hasPendingPhotos || captureBlocked || !captureSource}
@@ -1025,6 +1107,8 @@ export default function FaceSimLab() {
           </button>
         </div>
         <p className="text-xs text-slate-500" role="status">{status}</p>
+        {slot?.landmarks && <button type="button" onClick={() => setBoundaryReview(true)}
+          className="admin-focus-ring w-full rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold">Revisar frente, sienes y mentón</button>}
         {slot?.landmarks && <details className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs">
           <summary className="cursor-pointer font-semibold">Frente y línea del cabello · revisar cobertura</summary>
           <p>{slot.foreheadReviewed ? 'Límite superior revisado manualmente.' : 'MediaPipe no segmenta el cabello y puede recortar la frente. No presupongas que toda la frente está reconstruida.'}</p>
@@ -1045,20 +1129,33 @@ export default function FaceSimLab() {
         </details>}
         <details className="space-y-2 rounded-xl border border-slate-200 p-3 text-xs">
           <summary className="cursor-pointer font-semibold">Apariencia de piel RGB · experimental</summary>
-          <p>Resalta contraste oscuro/cromático, rojez relativa y microcontraste en piel visible. No identifica pecas, lunares, comedones, granos, poros ni vasos; no sustituye un escáner UV, polarizado o infrarrojo.</p>
-          <p>Usa luz blanca uniforme, sin filtros. La iluminación azul de un escáner puede servir como foto geométrica, pero no para este análisis de color.</p>
+          <Tooltip content="Contraste, rojez y microtextura visibles; no confirma lesiones, poros individuales ni vasos internos. Usa luz blanca uniforme, sin filtros; RGB no sustituye UV o polarización."><button type="button" className="admin-focus-ring rounded border px-2 py-1">Alcance de los filtros</button></Tooltip>
+          <label className="block">Área de análisis
+            <select value={skinRegion} disabled={analyzingSkin} onChange={e => {
+              const next = e.target.value;
+              if (next === 'all' || next === 'tzone' || next === 'cheeks') { setSkinRegion(next); setSkinReview(null); }
+            }} className="admin-focus-ring mt-1 w-full rounded border px-2 py-1">
+              <option value="all">Piel visible</option><option value="tzone">Zona T · región geométrica</option><option value="cheeks">Mejillas y pómulos</option>
+            </select>
+          </label>
           <button type="button" disabled={!slot?.landmarks || !slot.captureConfirmed || analyzingSkin} onClick={() => void analyzeAppearance()} className="rounded bg-slate-800 px-2 py-1 text-white disabled:opacity-40">{analyzingSkin ? 'Analizando…' : 'Analizar apariencia localmente'}</button>
           <label className="block">Capa de apariencia
             <select aria-label="Capa de apariencia" value={skinChannel} onChange={e => {
               const v = e.target.value;
-              if (v === 'contrast' || v === 'redness' || v === 'texture') setSkinChannel(v);
+              if (v === 'contrast' || v === 'redness' || v === 'texture' || v === 'shine') setSkinChannel(v);
             }} className="mt-1 w-full rounded border border-slate-300 px-2 py-1">
-              <option value="contrast">Contraste oscuro / cromático</option><option value="redness">Rojez relativa, no vasos</option><option value="texture">Microcontraste, no poros identificados</option>
+              <option value="contrast">Manchas · contraste cromático</option><option value="redness">Rojez relativa</option><option value="texture">Textura · detalle superficial</option><option value="shine">Brillo aparente</option>
             </select>
           </label>
+          <label className="block">Intensidad de capa: {Math.round(skinOpacity * 100)}%
+            <input type="range" min={0} max={1} step={0.05} value={skinOpacity} onChange={e => setSkinOpacity(Number(e.target.value))} className="w-full accent-sky-600" />
+          </label>
           {currentSkinReview && <>
-            {currentSkinReview.result.warnings.map(w => <p key={w} className="text-amber-800">{w}</p>)}
-            {currentSkinReview.result.usable && <p>{(currentSkinReview.result.channels[skinChannel].coverage * 100).toFixed(2)}% de píxeles de la piel analizada resaltados; no es severidad ni diagnóstico.</p>}
+            <details><summary className="cursor-pointer">Condiciones y límites</summary>{currentSkinReview.result.warnings.map(w => <p key={w} className="mt-1 text-amber-800">{w}</p>)}</details>
+            {currentSkinReview.result.usable && <p role="status">{currentSkinReview.result.channels[skinChannel].status === 'no-signal'
+              ? 'Sin señal destacada en este canal; no implica ausencia de alteraciones.'
+              : currentSkinReview.result.channels[skinChannel].status === 'unavailable' ? 'Canal no disponible: revisa iluminación y cobertura.'
+                : `${currentSkinReview.result.channels[skinChannel].coverage * 100 < 0.01 ? '<0,01' : (currentSkinReview.result.channels[skinChannel].coverage * 100).toFixed(2)}% del área analizada resaltada; no es severidad.`}</p>}
             <button type="button" onClick={() => setSkinReview(null)} className="rounded border border-slate-300 px-2 py-1">Quitar análisis de apariencia</button>
           </>}
         </details>
@@ -1072,22 +1169,24 @@ export default function FaceSimLab() {
             }} className="mt-1 w-full rounded border border-slate-300 px-2 py-1">
               <option value="none">Sin capa</option>
               <option value="regions">Malla y zonas anatómicas</option>
-              <option value="attention">Atención anatómica · educativo</option>
+              <option value="attention">Referencias anatómicas · simulación</option>
             </select>
           </label>
           {overlayMode === 'regions' && <details>
             <summary className="cursor-pointer font-semibold">Leyenda de zonas · límites aproximados</summary>
             <ul className="mt-2 grid grid-cols-2 gap-1">
-              {FACE_REGION_SEEDS.map(entry => <li key={entry.zone} className="flex items-center gap-1"><span className="h-2 w-2 shrink-0 rounded-full" style={{ background: faceRegionColor(entry.zone) }} />{entry.zone}</li>)}
+              {FACE_REGION_SEEDS.map(entry => <li key={entry.zone}><button type="button" onPointerEnter={() => setHoveredZone(entry.zone)} onPointerLeave={() => setHoveredZone(null)}
+                onFocus={() => setHoveredZone(entry.zone)} onBlur={() => setHoveredZone(null)} onClick={() => setHoveredZone(entry.zone)}
+                className="admin-focus-ring flex items-center gap-1 rounded px-1 text-left"><span className="h-2 w-2 shrink-0 rounded-full" style={{ background: faceRegionColor(entry.zone) }} />{entry.zone}</button></li>)}
             </ul>
-            <p className="mt-1">Las transiciones mezclan colores. Cerca de un límite se indican ambas zonas, no una precisión inexistente.</p>
+            <p className="mt-1">Pasa el cursor por la malla para resaltar una zona. Límites aproximados.</p>
           </details>}
           <p>Ida y vuelta modelo → foto → modelo: {transferStats.count} muestras · error máximo {Number.isFinite(transferStats.max) ? `${transferStats.max.toExponential(2)}% del alto del modelo` : 'no verificable; revisar referencias'}.</p>
           <p className="text-slate-500">Mide consistencia matemática, no precisión anatómica ni clínica. La detección del labio y los contornos debe revisarse visualmente.</p>
           {Object.keys(bindings).length > Object.keys(photoBindings).length && <p className="font-semibold text-amber-800">{Object.keys(bindings).length - Object.keys(photoBindings).length} elementos sin cobertura válida en esta foto: se conservan en el modelo, pero no se proyectan.</p>}
         </fieldset>
-        {overlayMode === 'attention' && <section aria-label="Referencia anatómica educativa" className="space-y-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950">
-          <h3 className="font-semibold">Referencia educativa, no detección vascular</h3>
+        {overlayMode === 'attention' && <section aria-label="Referencia anatómica de simulación" className="space-y-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950">
+          <h3 className="font-semibold">Referencia de simulación, no detección vascular</h3>
           <p>Ámbar: regiones seleccionadas para estudio. Gris: resto del rostro, NO zonas seguras. Estos colores no representan un nivel de riesgo ni la posición de un vaso.</p>
           <p>La foto y el relieve no localizan arterias, venas, nervios ni su profundidad. La anatomía cambia entre personas; el atlas no sustituye evaluación profesional ni estudios de imagen cuando estén indicados.</p>
           <details>
@@ -1199,6 +1298,8 @@ export default function FaceSimLab() {
           )}
         </fieldset>
 
+        <details open={workspace === 'mapping'} className="space-y-3 rounded-xl border border-slate-200 p-3">
+          <summary className="cursor-pointer text-xs font-semibold uppercase text-slate-600">Marcaciones e Inyectables</summary>
         <div>
           <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Marcar sobre</span>
           <div className="grid grid-cols-2 gap-1">
@@ -1354,7 +1455,7 @@ export default function FaceSimLab() {
         <details className="rounded-xl bg-slate-50 p-3 text-xs">
           <summary className="flex cursor-pointer items-center gap-1 font-semibold uppercase text-slate-500"><FileJson className="h-3.5 w-3.5" aria-hidden="true" /> Importar de Inyectables</summary>
           <p className="mt-2 text-slate-500">Pega el registro de inyectable (o su <code>mapping_data</code>): se trasladan los elementos completos compatibles con el atlas. Revisa la correspondencia; no modifica registros en la BD.</p>
-          <textarea value={importText} onChange={e => setImportText(e.target.value)} rows={4} className="mt-2 w-full rounded border border-slate-300 p-1 font-mono text-[10px]" />
+          <textarea aria-label="JSON de Inyectables" value={importText} onChange={e => setImportText(e.target.value)} rows={4} className="mt-2 w-full rounded border border-slate-300 p-1 font-mono text-[10px]" />
           <button type="button" onClick={doImport} className="mt-2 w-full rounded-lg bg-slate-800 px-2 py-1.5 font-semibold text-white">Importar</button>
         </details>
 
@@ -1368,21 +1469,37 @@ export default function FaceSimLab() {
         </div>
         <label className="flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={showMarks} onChange={e => setShowMarks(e.target.checked)} />Mostrar marcas sobre la foto</label>
         <p className="text-[11px] text-slate-400">En foto: clic/arrastrar para marcar, arrastrar un punto para moverlo, clic derecho o Alt+clic para borrar. Simulación referencial, no garantiza resultado clínico. Las fotos no salen del navegador.</p>
+        </details>
       </aside>
 
-      <div className="grid min-w-0 content-start gap-4 xl:grid-cols-2">
+      <div className="min-w-0 space-y-4">
+        {workspace === 'simulate' && <Suspense fallback={<p role="status">Preparando simulación 3D…</p>}>
+          <FacialSimulationViewer surface={personal?.surface} photo={personal?.canvas} />
+        </Suspense>}
+        {showRegions && workspace !== 'simulate' && <p role="status" className="min-h-10 rounded-lg bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-900">{hoveredZone ? `${hoveredZone} · límite aproximado` : 'Malla anatómica · pasa el cursor o selecciona una zona'}</p>}
+      <div className={`grid min-w-0 content-start gap-4 xl:grid-cols-2 ${workspace === 'simulate' ? 'hidden' : ''}`}>
         {renderViewer('generico')}
         {renderViewer('personal')}
         <section className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-900 p-3 xl:col-span-2">
           <h2 className="mb-2 text-center text-sm font-semibold text-slate-200">Foto referencial {VIEWS.find(v => v.id === view)?.label.toLowerCase()} · registro compartido</h2>
-          {overlayMode === 'attention' && <p className="mb-2 rounded bg-amber-100 px-3 py-2 text-xs font-semibold text-amber-950">EDUCATIVO · No detecta vasos ni certifica zonas seguras.</p>}
+          {overlayMode === 'attention' && <p className="mb-2 rounded bg-amber-100 px-3 py-2 text-xs font-semibold text-amber-950">SIMULACIÓN · No detecta vasos ni certifica zonas seguras.</p>}
           {!hasImage && <div className="flex h-[360px] items-center justify-center text-center text-sm text-slate-400">Carga la foto de la vista «{VIEWS.find(v => v.id === view)?.label}» para ver la simulación</div>}
           <div className={`relative mx-auto max-h-[78vh] touch-none select-none ${hasImage ? '' : 'hidden'} ${workMode === 'foto' ? 'cursor-crosshair' : ''}`}
             style={{ aspectRatio: String(aspect), maxWidth: `min(100%, calc(70vh * ${aspect}))` }}
-            onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onContextMenu={e => e.preventDefault()}>
+            onPointerDown={onDown} onPointerMove={e => {
+              onMove(e);
+              if (!e.buttons && showRegions && slot?.landmarks) {
+                const address = locatePhotoPoint(toNorm(e), slot.landmarks, genericFaceAtlas);
+                setHoveredZone(address ? faceTriangleZone(genericFaceAtlas.triangles.slice(address.triangle * 3, address.triangle * 3 + 3), canonicalRegionMap.labels) : null);
+              }
+            }} onPointerLeave={() => setHoveredZone(null)} onPointerUp={onUp} onContextMenu={e => e.preventDefault()}>
             <canvas ref={glRef} className="h-full w-full" aria-label="Simulación del rostro" />
-            {photoRegionOverlay && <img src={photoRegionOverlay} alt="" aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full opacity-25" />}
-            {currentSkinReview?.result.usable && <img src={currentSkinReview.urls[skinChannel]} alt="" aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full" />}
+            {photoRegionOverlay && <svg viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full">
+              {photoRegionOverlay.map(({ label, path }) => <path key={label} d={path}
+                fill={hoveredZone === label ? faceRegionColor(label) : 'none'} fillOpacity={0.3}
+                stroke={overlayMode === 'attention' ? faceAttentionColor(label) : '#7dd3fc'} strokeOpacity={hoveredZone === label ? 0.9 : 0.35} strokeWidth="0.0008" />)}
+            </svg>}
+            {currentSkinReview?.result.usable && <img src={currentSkinReview.urls[skinChannel]} alt="" aria-hidden="true" style={{ opacity: skinOpacity }} className="pointer-events-none absolute inset-0 h-full w-full" />}
             {currentForeheadPreview && <svg aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 1 1" preserveAspectRatio="none">
               <line x1={Math.max(0, currentForeheadPreview.point.x - 0.12)} x2={Math.min(1, currentForeheadPreview.point.x + 0.12)} y1={currentForeheadPreview.point.y} y2={currentForeheadPreview.point.y} stroke="#f59e0b" strokeWidth="0.003" strokeDasharray="0.008 0.005" />
               <circle cx={currentForeheadPreview.point.x} cy={currentForeheadPreview.point.y} r="0.008" fill="#f59e0b" stroke="white" strokeWidth="0.002" />
@@ -1399,7 +1516,7 @@ export default function FaceSimLab() {
                     <text x={point.x + 0.008} y={point.y} fill="white" stroke="#0f172a" strokeWidth="0.002" paintOrder="stroke" fontSize="0.018">{i + 1}</text>
                   </g>;
                 })}
-                {frame.anchors?.map((point, index) => (
+                {(workspace === 'mapping' || photoAnchor !== null) && frame.anchors?.map((point, index) => (
                   <g key={index}>
                     <circle cx={point.x} cy={point.y} r={photoAnchor === index ? '0.014' : '0.009'} fill={photoAnchor === index ? '#f59e0b' : '#38bdf8'} stroke="white" strokeWidth="0.002" />
                     <text x={point.x + 0.012} y={point.y - 0.01} fill="white" stroke="#0f172a" strokeWidth="0.004" paintOrder="stroke" fontSize="0.025" fontWeight="bold">{index + 1}</text>
@@ -1443,6 +1560,7 @@ export default function FaceSimLab() {
             </ul>
           )}
         </section>
+      </div>
       </div>
     </div>
   );

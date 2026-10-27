@@ -13,6 +13,7 @@ import * as estimatedHead from '../src/lab/faceSim/estimatedHead.ts';
 import * as faceTransfer from '../src/lab/faceSim/faceTransfer.ts';
 import * as anatomicalAnnotations from '../src/lab/faceSim/anatomicalAnnotations.ts';
 import * as photoValidation from '../src/lab/faceSim/photoValidation.ts';
+import * as detection from '../src/lab/faceSim/detection.ts';
 
 const require = createRequire(import.meta.url);
 const genericFaceAtlas = JSON.parse(readFileSync(new URL('../src/lab/faceSim/genericFaceAtlas.json', import.meta.url), 'utf8'));
@@ -65,6 +66,8 @@ function lab() {
       if (name === './faceTransfer') return faceTransfer;
       if (name === './anatomicalAnnotations') return anatomicalAnnotations;
       if (name === './photoValidation') return photoValidation;
+      if (name === './detection') return detection;
+      if (name.endsWith('/Tooltip')) return { Tooltip: ({ children }) => children };
       if (name === './genericFaceAtlas.json') return { default: genericFaceAtlas };
       if (name === '@mediapipe/tasks-vision') return { FaceLandmarker };
       if (name === './personalSurfaceGlb') return { personalSurfaceToGlb: async () => new ArrayBuffer(8) };
@@ -96,6 +99,26 @@ const calculate = tree => findAll(tree, n => n.type === 'button' && text(n).star
 const slotIds = ['frontal', 'izquierda', 'derecha', 'extra_a', 'extra_b'];
 const viewers = tree => findAll(tree, n => typeof n.props?.onMarkerPlaced === 'function');
 const button = (tree, label) => findAll(tree, n => n.type === 'button' && text(n) === label)[0];
+
+test('malla predeterminada permite hover sin añadir marcas y revisión abre modal independiente', () => {
+  const app = lab();
+  let tree = app.render();
+  const viewer = viewers(tree)[0];
+  assert.equal(viewer.props.activeTool, 'none');
+  assert.equal(viewer.props.anatomicalOverlay.wireframe, true);
+  assert.equal(viewer.props.anatomicalOverlay.labels.length, genericFaceAtlas.triangles.length / 3);
+  viewer.props.anatomicalOverlay.onHover('Mentón');
+  assert.match(text(app.render()), /Mentón · límite aproximado/);
+  app.photos({ frontal: photo() });
+  tree = app.render();
+  button(tree, 'Revisar frente, sienes y mentón').props.onClick();
+  const modal = findAll(app.render(), n => n.props?.onApply && n.props?.onClose && n.props?.triangles)[0];
+  assert.ok(modal);
+  modal.props.onClose();
+  assert.equal(findAll(app.render(), n => n.props?.onApply && n.props?.onClose && n.props?.triangles).length, 0);
+  button(app.render(), 'Simular').props.onClick();
+  assert.ok(findAll(app.render(), n => n.props && Object.hasOwn(n.props, 'surface') && Object.hasOwn(n.props, 'photo')).length);
+});
 
 test('no calcula capturas sin revisar; la confirmación no permite fusionar proporciones incompatibles', async () => {
   const app = lab(); app.render();
@@ -148,7 +171,7 @@ test('ampliar frente exige revisar piel visible y no convierte el clic en tratam
   assert.match(text(tree), /Banda frontal ampliada/);
 });
 
-test('capa educativa mantiene advertencia, fuente y geometría separada de marcaciones', () => {
+test('capa de simulación mantiene advertencia, fuente y geometría separada de marcaciones', () => {
   const app = lab();
   let tree = app.render();
   const select = findAll(tree, n => n.props?.['aria-label'] === 'Capa de referencia')[0];
@@ -157,7 +180,7 @@ test('capa educativa mantiene advertencia, fuente y geometría separada de marca
   assert.match(text(tree), /no detección vascular/);
   assert.match(text(tree), /NO zonas seguras/);
   assert.match(text(tree), /no localizan arterias, venas, nervios ni su profundidad/);
-  assert.equal(findAll(tree, n => n.type === 'p' && text(n) === 'EDUCATIVO · No detecta vasos ni certifica zonas seguras.').length, 3);
+  assert.equal(findAll(tree, n => n.type === 'p' && text(n) === 'SIMULACIÓN · No detecta vasos ni certifica zonas seguras.').length, 3);
   assert.equal(findAll(tree, n => n.type === 'a' && n.props.href === 'https://pmc.ncbi.nlm.nih.gov/articles/PMC9067448/').length, 1);
   assert.equal(viewers(tree)[0].props.anatomicalOverlay.positions.length, genericFaceAtlas.triangles.length * 3);
   assert.equal(viewers(tree)[0].props.markers.length, 0);
@@ -168,6 +191,8 @@ test('capa educativa mantiene advertencia, fuente y geometría separada de marca
 test('marcaciones compartidas sobreviven a modo, reconstrucción y retirada de foto; deshacer restaura bindings', async () => {
   const app = lab();
   let tree = app.render();
+  button(tree, 'Punto').props.onClick();
+  tree = app.render();
   const seed = genericFaceAtlas.triangles.indexOf(11);
   const address = { triangle: Math.floor(seed / 3), weights: [0.2, 0.3, 0.5] };
   const position = faceTransfer.modelPoint(address, genericFaceAtlas);

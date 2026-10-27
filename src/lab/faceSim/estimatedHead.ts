@@ -70,6 +70,21 @@ function area(loop: number[], points: Point[]): number {
     sum + cross(points[loop[0]], points[id], points[loop[i + 2]]), 0);
 }
 
+function polygonCentroid(loop: number[], points: Point[]): Point {
+  const origin = points[loop[0]];
+  let twiceArea = 0, x = 0, y = 0;
+  for (let i = 0; i < loop.length; i++) {
+    const a = points[loop[i]], b = points[loop[(i + 1) % loop.length]];
+    const ax = a.x - origin.x, ay = a.y - origin.y;
+    const bx = b.x - origin.x, by = b.y - origin.y;
+    const wedge = ax * by - ay * bx;
+    twiceArea += wedge;
+    x += (ax + bx) * wedge;
+    y += (ay + by) * wedge;
+  }
+  return { x: origin.x + x / (3 * twiceArea), y: origin.y + y / (3 * twiceArea), z: 0 };
+}
+
 function intersects(a: Point, b: Point, c: Point, d: Point, epsilon: number, distanceEpsilon: number): boolean {
   const abC = cross(a, b, c), abD = cross(a, b, d), cdA = cross(c, d, a), cdB = cross(c, d, b);
   const on = (p: Point, q: Point, r: Point) =>
@@ -121,7 +136,7 @@ function triangulate(loop: number[], points: Point[], epsilon: number): number[]
  * Rechaza geometría incompatible en vez de devolver un cierre engañoso.
  * Ojos y boca se sellan con discos triangulados, NO con anatomía ocular/oral.
  * La orientación se hereda de la entrada, incluso si toda la entrada está invertida.
- * El exportador debe usar dos grupos/materiales; el exportador GLB actual no lo hace.
+ * El exportador GLB separa los índices observados y los cierres estimados en dos mallas/materiales.
  */
 export function buildEstimatedHead(surface: PersonalSurface): EstimatedHeadSurface {
   const { positions, uvs, indices } = surface;
@@ -197,13 +212,20 @@ export function buildEstimatedHead(surface: PersonalSurface): EstimatedHeadSurfa
       fail('aberturas interiores incompatibles.');
     }
   }
-  const center: Point = {
+  // El centroide de área evita que una zona con más landmarks del contorno
+  // desplace el casquete posterior por la densidad de muestreo.
+  const isVisibleFromBorder = (candidate: Point) => outer.every((id, i) =>
+    sign * cross(points[id], points[outer[(i + 1) % outer.length]], candidate) > epsilon);
+  // En polígonos cóncavos el centroide de área puede quedar fuera del kernel.
+  // Conserva entonces el centro previo solo si sigue siendo visible desde todo el borde.
+  const vertexCenter: Point = {
     x: xs.reduce((sum, x) => sum + (x - xs[0]), 0) / outer.length + xs[0],
     y: ys.reduce((sum, y) => sum + (y - ys[0]), 0) / outer.length + ys[0],
     z: 0,
   };
-  if (outer.some((id, i) =>
-    sign * cross(points[id], points[outer[(i + 1) % outer.length]], center) <= epsilon)) {
+  const center = polygonCentroid(outer, points);
+  const radialCenter = isVisibleFromBorder(center) ? center : vertexCenter;
+  if (!isVisibleFromBorder(radialCenter)) {
     fail('óvalo demasiado cóncavo para el prior paramétrico sin autointersecciones.');
   }
   const addedIndices: number[] = [];
@@ -228,8 +250,8 @@ export function buildEstimatedHead(surface: PersonalSurface): EstimatedHeadSurfa
     const next = outer.map(id => {
       const p = points[id], index = points.length;
       points.push({
-        x: center.x + (p.x - center.x) * radius,
-        y: center.y + (p.y - center.y) * radius,
+        x: radialCenter.x + (p.x - radialCenter.x) * radius,
+        y: radialCenter.y + (p.y - radialCenter.y) * radius,
         z: collarZ - depth * Math.sin(angle),
       });
       return index;

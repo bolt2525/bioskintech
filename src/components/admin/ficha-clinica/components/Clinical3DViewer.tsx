@@ -76,6 +76,12 @@ export interface SurfaceInteractionConstraint {
 export interface AnatomicalSurfaceOverlay {
   positions: Float32Array;
   colors: Float32Array;
+  wireframe?: boolean;
+  labels?: string[];
+  onHover?: (zone: string | null) => void;
+  depthTest?: boolean;
+  zoneAt?: (point: { x: number; y: number; z: number }) => string | null;
+  selectedZone?: string | null;
 }
 
 function visibleSurfaceHits(raycaster: THREE.Raycaster, objects: THREE.Object3D[], surface: THREE.Object3D | null, occlude: boolean, recursive = false) {
@@ -672,13 +678,56 @@ const ThreeEngine: React.FC<{
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(anatomicalOverlay.positions, 3));
     geometry.setAttribute('color', new THREE.BufferAttribute(anatomicalOverlay.colors, 3));
-    const material = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.28,
-      side: THREE.FrontSide, depthTest: false, depthWrite: false });
+    const material = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: anatomicalOverlay.wireframe ? 0.55 : 0.28,
+      wireframe: anatomicalOverlay.wireframe, polygonOffset: true, polygonOffsetFactor: -2,
+      side: THREE.FrontSide, depthTest: anatomicalOverlay.depthTest ?? true, depthWrite: false });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.name = 'ANATOMICAL_REFERENCE_OVERLAY';
     mesh.renderOrder = 12;
     scene.add(mesh);
-    return () => { scene.remove(mesh); geometry.dispose(); material.dispose(); };
+    const highlightGeometry = new THREE.BufferGeometry();
+    const highlightMaterial = new THREE.MeshBasicMaterial({ color: '#38bdf8', transparent: true, opacity: 0.3,
+      side: THREE.FrontSide, depthTest: anatomicalOverlay.depthTest ?? true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 });
+    const highlight = new THREE.Mesh(highlightGeometry, highlightMaterial);
+    highlight.renderOrder = 13;
+    scene.add(highlight);
+    const raycaster = new THREE.Raycaster(), cursor = new THREE.Vector2();
+    let active: string | null = null;
+    const select = (zone: string | null) => {
+      if (zone === active) return;
+      active = zone;
+      const positions: number[] = [];
+      anatomicalOverlay.labels?.forEach((label, triangle) => {
+        if (label === zone) positions.push(...anatomicalOverlay.positions.slice(triangle * 9, triangle * 9 + 9));
+      });
+      highlightGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      highlightGeometry.computeBoundingSphere();
+      anatomicalOverlay.onHover?.(zone);
+    };
+    const hover = (event: PointerEvent) => {
+      if (!cameraRef.current || event.buttons) return;
+      const bounds = rendererRef.current?.domElement.getBoundingClientRect();
+      if (!bounds || !bounds.width || !bounds.height) return;
+      cursor.set((event.clientX - bounds.left) / bounds.width * 2 - 1, -(event.clientY - bounds.top) / bounds.height * 2 + 1);
+      raycaster.setFromCamera(cursor, cameraRef.current);
+      const hit = raycaster.intersectObject(mesh)[0];
+      const surface = faceMeshRef.current && raycaster.intersectObject(faceMeshRef.current, true)[0];
+      if (anatomicalOverlay.zoneAt) {
+        select(surface ? anatomicalOverlay.zoneAt(surface.point) : null);
+        return;
+      }
+      select(hit && (!surface || hit.distance <= surface.distance + 0.03)
+        ? anatomicalOverlay.labels?.[hit.faceIndex ?? -1] ?? null : null);
+    };
+    const leave = () => select(null);
+    select(anatomicalOverlay.selectedZone ?? null);
+    const element = rendererRef.current?.domElement;
+    element?.addEventListener('pointermove', hover);
+    element?.addEventListener('pointerleave', leave);
+    return () => {
+      element?.removeEventListener('pointermove', hover); element?.removeEventListener('pointerleave', leave);
+      scene.remove(mesh, highlight); geometry.dispose(); material.dispose(); highlightGeometry.dispose(); highlightMaterial.dispose();
+    };
   }, [anatomicalOverlay, modelVersion]);
   // Track two-point step inside engine for cursor feedback
   const twoPointStepRef = useRef<0 | 1>(0);

@@ -19,6 +19,8 @@ function assertEmpty(result, usable) {
   assert.equal(result.usable, usable, result.warnings.join('\n'));
   for (const channel of Object.values(result.channels)) {
     assert.equal(channel.coverage, 0);
+    assert.equal(channel.status, usable ? 'no-signal' : 'unavailable');
+    assert.equal(channel.highlightedPixels, 0);
     assert.ok(channel.rgba.every(value => value === 0));
   }
 }
@@ -110,6 +112,143 @@ test('cuantización y microvariación de un nivel no se amplifican con normaliza
     const delta = (x + y) % 2 ? 1 : -1;
     return [180 + delta, 130 + delta, 110 + delta];
   })), true);
+});
+
+test('regresión: textura extendida no se normaliza contra sí misma hasta dar 0%', t => {
+  const result = run(fixture((x, y) => {
+    const delta = (x + y) % 2 ? 8 : -8;
+    return [180 + delta, 130 + delta, 110 + delta];
+  }));
+  assert.equal(result.usable, true);
+  assert.ok(result.channels.texture.coverage > 0.6, `cobertura ${result.channels.texture.coverage}`);
+  assert.equal(result.channels.texture.status, 'highlighted');
+  assert.ok(result.channels.texture.threshold >= 0.025 && result.channels.texture.threshold <= 0.025 * 1.5);
+  t.diagnostic(`textura extendida: coverage=${result.channels.texture.coverage}, threshold=${result.channels.texture.threshold}`);
+});
+
+test('regresión: variación cromática amplia no desaparece por usar solo un vecindario pequeño', t => {
+  const result = run(fixture((x, y) => {
+    const strength = Math.exp(-((x - 64) ** 2 + (y - 64) ** 2) / (2 * 18 ** 2));
+    return [180 + 45 * strength, 130 - 30 * strength, 110 - 10 * strength];
+  }));
+  assert.equal(result.usable, true);
+  assert.ok(result.channels.redness.coverage > 0.005, `cobertura ${result.channels.redness.coverage}`);
+  t.diagnostic(`rojez amplia: coverage=${result.channels.redness.coverage}`);
+});
+
+test('regresión: ROI pequeño con señal válida no falla por erosión de todo el filtro', () => {
+  const f = fixture();
+  f.mask.fill(0);
+  for (let y = 52; y < 76; y++) for (let x = 60; x < 67; x++) f.mask[y * 128 + x] = 1;
+  assertEmpty(run(f), true);
+});
+
+test('brillo aparente: aclaramiento desaturado localizado, sin inferir grasa ni zona T', t => {
+  const f = fixture((x, y) => {
+    const strength = Math.exp(-((x - 64) ** 2 + (y - 64) ** 2) / (2 * 6 ** 2));
+    return [180 + 50 * strength, 130 + 85 * strength, 110 + 100 * strength];
+  });
+  const result = run(f);
+  assert.equal(result.usable, true);
+  const channel = result.channels.shine;
+  assert.equal(channel.status, 'highlighted');
+  assert.ok(channel.coverage > 0.001 && channel.coverage < 0.04, `cobertura ${channel.coverage}`);
+  assert.equal(fractionIn(channel, f.image, (x, y) => Math.hypot(x - 64, y - 64) > 16), 0);
+  assert.match(result.warnings.join(' '), /no mide grasa, hidratación ni identifica zona T/);
+  assert.match(result.warnings.join(' '), /no detecta arterias, venas, lesiones reales ni profundidad/);
+  t.diagnostic(`brillo: coverage=${channel.coverage}`);
+});
+
+test('aclaramiento multiplicativo conserva cromaticidad y no se interpreta como brillo', () => {
+  const result = run(fixture((x, y) => {
+    const gain = 1 + 0.25 * Math.exp(-((x - 64) ** 2 + (y - 64) ** 2) / 72);
+    return [180 * gain, 130 * gain, 110 * gain];
+  }));
+  assert.equal(result.usable, true);
+  assert.equal(result.channels.shine.coverage, 0);
+  assert.equal(result.channels.redness.coverage, 0);
+});
+
+test('normalización cromática mantiene señal localizada a distintas exposiciones no recortadas', () => {
+  for (const gain of [0.55, 0.8, 1]) {
+    const f = fixture((x, y) => {
+      const strength = Math.exp(-((x - 64) ** 2 + (y - 64) ** 2) / 32);
+      return [gain * (180 + 45 * strength), gain * (130 - 30 * strength), gain * (110 - 10 * strength)];
+    });
+    const result = run(f);
+    assert.equal(result.usable, true);
+    assert.ok(result.channels.redness.coverage > 0.003);
+    assert.equal(fractionIn(result.channels.redness, f.image, (x, y) => Math.hypot(x - 64, y - 64) > 14), 0);
+  }
+});
+
+test('ruido impulsivo disperso no se pinta como textura ni contamina vecindarios uniformes', () => {
+  assertEmpty(run(fixture((x, y) => {
+    const delta = x % 19 === 0 && y % 17 === 0 ? 30 : 0;
+    return [180 + delta, 130 + delta, 110 + delta];
+  })), true);
+});
+
+test('ruido cromático extremo con luminancia parecida se rechaza explícitamente', () => {
+  const result = run(fixture((x, y) => (x + y) % 2 ? [215, 115, 100] : [145, 145, 120]));
+  assertEmpty(result, false);
+  assert.match(result.warnings[0], /ruido/);
+  assert.ok(result.diagnostics.noisyFraction > 0.35);
+});
+
+test('píxeles transparentes o recortados aislados no producen halos ni capas en su posición', () => {
+  for (const rgba of [[0, 0, 255, 0], [255, 255, 255, 255], [0, 0, 0, 255]]) {
+    const f = fixture();
+    for (let y = 16; y < 112; y += 16) for (let x = 16; x < 112; x += 16) {
+      f.image.data.set(rgba, (y * 128 + x) * 4);
+    }
+    const result = run(f);
+    assertEmpty(result, true);
+    assert.ok(result.diagnostics.analyzedPixels > 0);
+    assert.ok(result.diagnostics.analyzedFraction < 1);
+  }
+});
+
+test('tonos cálidos uniformes oscuros y claros válidos no fuerzan actividad', () => {
+  for (const rgb of [[75, 48, 36], [120, 83, 65], [225, 190, 170]]) {
+    assertEmpty(run(fixture(() => rgb)), true);
+  }
+});
+
+test('ruido pequeño determinista y degradado curvo suave no se estiran a mapas artificiales', () => {
+  let seed = 20261027;
+  assertEmpty(run(fixture(() => {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    const delta = seed % 5 - 2;
+    return [180 + delta, 130 + delta, 110 + delta];
+  })), true);
+  assertEmpty(run(fixture((x, y) => {
+    const gain = 0.75 + 0.2 * Math.cos((x - 64) / 80) * Math.cos((y - 64) / 80);
+    return [180 * gain, 130 * gain, 110 * gain];
+  })), true);
+});
+
+test('soporte parcial cuantificado: cobertura sigue referida al ROI y no implica confianza clínica', () => {
+  const f = fixture();
+  f.mask.fill(0);
+  for (let y = 52; y < 76; y++) for (let x = 60; x < 67; x++) f.mask[y * 128 + x] = 255;
+  const result = run(f);
+  assertEmpty(result, true);
+  assert.equal(result.diagnostics.roiPixels, 168);
+  assert.ok(result.diagnostics.analyzedFraction > 0 && result.diagnostics.analyzedFraction < 0.5);
+  assert.match(result.warnings[0], /Soporte parcial/);
+});
+
+test('dimensiones rectangulares: salida alineada al RGBA y sin intercambio de ejes', () => {
+  const f = fixture((x, y) => {
+    const strength = Math.exp(-((x - 110) ** 2 + (y - 36) ** 2) / 32);
+    return [180 + 45 * strength, 130 - 30 * strength, 110 - 10 * strength];
+  }, 160, 80);
+  const result = run(f);
+  assert.equal(result.usable, true);
+  assert.ok(result.channels.redness.coverage > 0);
+  assert.equal(fractionIn(result.channels.redness, f.image, (x, y) => Math.hypot(x - 110, y - 36) > 14), 0);
+  for (const channel of Object.values(result.channels)) assert.equal(channel.rgba.length, 160 * 80 * 4);
 });
 
 test('azul, cian y monocromía se rechazan con capas transparentes y motivo', () => {
@@ -240,7 +379,7 @@ test('contrato RGBA, cobertura exacta sobre ROI, determinismo y entradas inmutab
   assert.equal(result.usable, true);
   assert.deepEqual(f, before);
   assert.deepEqual(run(f), result);
-  assert.deepEqual(Object.keys(result.channels).sort(), ['contrast', 'redness', 'texture']);
+  assert.deepEqual(Object.keys(result.channels).sort(), ['contrast', 'redness', 'shine', 'texture']);
   const roiCount = f.mask.reduce((sum, value) => sum + value, 0);
   for (const channel of Object.values(result.channels)) {
     assert.ok(channel.rgba instanceof Uint8ClampedArray);
@@ -251,7 +390,14 @@ test('contrato RGBA, cobertura exacta sobre ROI, determinismo y entradas inmutab
       if (!f.mask[i]) assert.deepEqual(channel.rgba.slice(i * 4, i * 4 + 4), new Uint8ClampedArray(4));
     }
     assert.equal(channel.coverage, count / roiCount);
+    assert.equal(channel.highlightedPixels, count);
+    assert.equal(channel.status, count ? 'highlighted' : 'no-signal');
+    assert.ok(Number.isFinite(channel.threshold) && channel.threshold > 0);
     assert.ok(channel.coverage >= 0 && channel.coverage <= 1);
   }
+  assert.equal(result.diagnostics.roiPixels, roiCount);
+  assert.ok(result.diagnostics.analyzedPixels > 0 && result.diagnostics.analyzedPixels <= roiCount);
+  assert.equal(result.diagnostics.analyzedFraction, result.diagnostics.analyzedPixels / roiCount);
+  assert.ok(result.diagnostics.referenceRadius > result.diagnostics.localRadius);
   t.diagnostic(`384 px: ${elapsed.toFixed(2)} ms (observación, no umbral dependiente del equipo)`);
 });

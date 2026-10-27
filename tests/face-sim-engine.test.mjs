@@ -284,6 +284,37 @@ test('superficie personal: triangulaciÃ³n MediaPipe y correspondencia exacta 3Dâ
   }
   assert.equal(buildPersonalSurface(lm.slice(0, 100), aspect, triangles), null);
   assert.equal(buildPersonalSurface(lm, aspect, [0, 1, 999]), null);
+  assert.equal(buildPersonalSurface(lm, Infinity, triangles), null);
+  assert.equal(buildPersonalSurface(lm, aspect, [...triangles, 10]), null);
+  const overflow = lm.map(p => ({ ...p }));
+  overflow[0].x = 1e308;
+  assert.equal(buildPersonalSurface(overflow, 2, triangles), null);
+});
+
+test('landmarks de iris fuera del rostro no alteran escala ni encuadre de la malla facial', () => {
+  const face = Array.from({ length: 468 }, (_, i) => ({
+    x: 0.3 + (i % 22) * 0.018,
+    y: 0.12 + Math.floor(i / 22) * 0.03,
+    z: -0.04 * Math.exp(-((i % 22 - 11) ** 2 + (Math.floor(i / 22) - 10) ** 2) / 30),
+  }));
+  const aspect = 0.72, triangles = [10, 152, 1];
+  const base = buildPersonalSurface(face, aspect, triangles);
+  const withIris = [...face, { x: 20, y: -30, z: 40 }, { x: -50, y: 60, z: -70 }];
+  const extended = buildPersonalSurface(withIris, aspect, triangles);
+  assert.ok(base && extended);
+  assert.deepEqual(extended.projection, base.projection);
+  assert.deepEqual(extended.positions.subarray(0, base.positions.length), base.positions);
+  assert.deepEqual(extended.uvs.subarray(0, base.uvs.length), base.uvs);
+  for (const id of [468, 469]) {
+    const p = {
+      x: extended.positions[id * 3],
+      y: extended.positions[id * 3 + 1],
+      z: extended.positions[id * 3 + 2],
+    };
+    const projected = projectPersonal(p, extended.projection);
+    assert.ok(Math.abs(projected.x - withIris[id].x) < 1e-5);
+    assert.ok(Math.abs(projected.y - withIris[id].y) < 1e-5);
+  }
 });
 
 const yawPose = angle => {

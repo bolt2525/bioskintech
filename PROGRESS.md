@@ -1,5 +1,12 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-27 Perfiles recuperados; contorno modal.
+- ✅ 2026-10-27 Morfología, capas y cortes interactivos.
+- ✅ 2026-10-27 Malla hover; RGB multiescala.
+- ✅ 2026-10-27 Casquete centrado; normalización facial estable.
+- ✅ 2026-10-27 QA facial: 165 pruebas.
+- ✅ 2026-10-27 Chromium 1440/390; perfiles recuperados.
+
 - ✅ 2026-10-26 Frente visible revisada; marcas conservadas.
 - ✅ 2026-10-26 Capturas revisadas; incompatibilidades bloqueadas.
 - ✅ 2026-10-26 Zonas interpoladas; apariencia RGB local.
