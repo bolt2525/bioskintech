@@ -1,5 +1,11 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-27 Cabeza: siluetas y texturas multivista.
+- ✅ 2026-10-27 Simular: máscara fotografiada y órbita.
+- ✅ 2026-10-27 RGB: candidatos visuales ajustables.
+- ✅ 2026-10-27 Capas: imágenes alineables bajo piel.
+- ✅ 2026-10-27 QA: 210 pruebas; WebGL desktop/móvil.
+
 - ✅ 2026-10-27 Simular: render y selección corregidos.
 - ✅ 2026-10-27 Zonas refinadas; planos y ocultación.
 - ✅ 2026-10-27 Cabeza: aberturas colapsadas conservadas.

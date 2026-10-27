@@ -15,6 +15,7 @@ import { buildFaceRegionMap, buildFaceTriangleRegions, faceRegionColor, rasteriz
 import { buildRegionCells, regionCellAt, regionCellPositions, regionPlanePositions, REGION_PLANES, type RegionPlane } from './regionMesh';
 import { DEFAULT_HAIR, buildPhotoHairPatches, type EstimatedHairSettings, type PhotoHairPatch } from './estimatedHair';
 import type { EstimatedHeadSurface } from './estimatedHead';
+import type { PhotoSurfacePatch } from './multiViewHead';
 import { assessFaceCapture, compareFaceGeometry } from './photoValidation';
 import { DETECTION_RETRIES, detectionImage, restoreDetectionPoint } from './detection';
 import { Tooltip } from '../../components/ui/Tooltip';
@@ -179,6 +180,7 @@ interface PersonalModel {
   renderSurface: PersonalSurface | EstimatedHeadSurface;
   regionMap: FaceRegionMap;
   closedHead: boolean;
+  photoPatches?: PhotoSurfacePatch[];
 }
 
 const uid = () => `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
@@ -301,6 +303,7 @@ export default function FaceSimLab() {
   const [hairAnalysis, setHairAnalysis] = useState<{ personal: PersonalModel; patches: PhotoHairPatch[] } | null>(null);
   const [hairBusy, setHairBusy] = useState(false);
   const hairRequest = useRef(0);
+  const genericSelected = useRef(false);
   const hairPatches = hairAnalysis?.personal === personal ? hairAnalysis?.patches : undefined;
   useEffect(() => { setHairAnalysis(null); }, [personal]);
   const activePhotoRef = useRef<HTMLCanvasElement>();
@@ -346,7 +349,7 @@ export default function FaceSimLab() {
         }
         const surface = source.renderSurface;
         const { personalSurfaceToGlb } = await import('./personalSurfaceGlb');
-        const buffer = await personalSurfaceToGlb(surface, canvas, hair, hairPatches);
+        const buffer = await personalSurfaceToGlb(surface, canvas, hair, hairPatches, review ? [] : source.photoPatches);
         if (active) setAppearanceGlb({ personal: source, buffer });
       } catch (error) {
         if (active) setStatus(`No se pudo actualizar la apariencia 3D: ${error instanceof Error ? error.message : 'error desconocido'}. Se conserva la textura original.`);
@@ -493,6 +496,7 @@ export default function FaceSimLab() {
   };
   const clearAll = () => { snap(); setMarkers([]); setLines([]); setShapes([]); setMeta({}); setPhotoEls([]); setBindings({}); };
   const useGenericModel = () => {
+    genericSelected.current = true;
     personalRequestRef.current++;
     setBuildingPersonal(false);
     setWorkMode('3d');
@@ -504,12 +508,14 @@ export default function FaceSimLab() {
     if (modelKind === 'personal' && personalProjection) return;
     if (personal && personal.view === view && personal.canvas === slot?.canvas) {
       setModelKind('personal');
+      genericSelected.current = false;
       setStatus('Superficie 3D personal activa; se conservan todas las marcaciones anatómicas.');
       return;
     }
     void buildPersonal();
   };
   const buildPersonal = async (nextDepth = depth, sourceView = view, closeHead = personal?.closedHead ?? false) => {
+    if (closeHead) sourceView = 'frontal';
     if (hasPendingPhotos) {
       setStatus('Espera a que termine la detección de las fotos antes de calcular la superficie.');
       return;
@@ -542,20 +548,40 @@ export default function FaceSimLab() {
           ? 'Ambos lados aportan profundidad.' : 'La profundidad está contrastada principalmente desde un lado; añade una vista del lado opuesto.'}`
           : 'Cálculo rápido con una foto: profundidad monocular sin contrastar. Añade otra foto con un ángulo diferente para contrastar nariz y labios.',
         diagnostics.some(d => d.status !== 'used') ? 'Hay referencias de aporte limitado o no utilizables; revisa el detalle por foto.' : '',
-        closeHead ? 'Cabeza estimada: el casquete gris y las tapas disponibles son aproximados, no anatomía reconstruida ni zonas marcables.' : '',
+        closeHead ? 'Envolvente ajustada a las siluetas; cuello excluido y posterior sin cobertura acotado por un prior conservador, no medido. Las regiones no observadas siguen grises. No es un escaneo.' : '',
       ].join(' ');
       const triangles = await faceTriangles();
       const observedSurface = buildPersonalSurface(refined.landmarks, source.aspect, triangles, nextDepth);
       if (!observedSurface) throw new Error('Landmarks insuficientes para construir la malla.');
-      const surface = closeHead ? (await import('./estimatedHead')).buildEstimatedHead(observedSurface) : observedSurface;
+      let surface: PersonalSurface | EstimatedHeadSurface = observedSurface;
+      let photoPatches: PhotoSurfacePatch[] | undefined;
+      if (closeHead) {
+        const inputs = PHOTO_SLOTS.flatMap(entry => {
+          const photo = photos[entry.id];
+          if (!photo?.landmarks || (entry.id !== sourceView && !diagnostics.some(d => d.label === entry.label && d.status !== 'rejected' && d.weight > 0))) return [];
+          const fit = fitHairPhotoProjection(observedSurface.positions, photo.landmarks);
+          if (!fit || fit.error > 0.08) throw new Error(`La cámara de ${entry.label} no concuerda con la superficie facial.`);
+          return [{ label: entry.label, canvas: photo.canvas, projection: fit.projection }];
+        });
+        setStatus('Ajustando siluetas, piel, orejas y cabello de las tres vistas…');
+        const [{ segmentPhotoHeads }, { constrainHeadToPhotos, buildPhotoSurfacePatches }, { buildEstimatedHead }] = await Promise.all([
+          import('./photoHead'), import('./multiViewHead'), import('./estimatedHead'),
+        ]);
+        const sources = await segmentPhotoHeads(inputs);
+        if (requestId !== personalRequestRef.current) return;
+        surface = constrainHeadToPhotos(buildEstimatedHead(observedSurface), sources);
+        photoPatches = buildPhotoSurfacePatches(surface, sources);
+        if (!photoPatches.length) throw new Error('Las vistas no ofrecen textura proyectable sobre la superficie.');
+      }
       const openingDetails = 'preservedOpenings' in surface && Number(surface.preservedOpenings) > 0
         ? ` ${surface.preservedOpenings} abertura(s) de labios/párpados cerrados conservadas sin tapa artificial; el contorno craneal sí se completa.` : '';
       const regions = buildFaceRegionMap(refined.landmarks, triangles, source.aspect, genericFaceAtlas.positions);
       const { personalSurfaceToGlb } = await import('./personalSurfaceGlb');
-      const glb = await personalSurfaceToGlb(surface, source.canvas);
+      const glb = await personalSurfaceToGlb(surface, source.canvas, undefined, [], photoPatches);
       if (requestId !== personalRequestRef.current) return;
       setPersonal({ view: sourceView, canvas: source.canvas, glb, projection: surface.projection, depth: nextDepth, depthDetails: depthDetails + openingDetails, diagnostics,
-        surface: observedSurface, renderSurface: surface, regionMap: regions, closedHead: closeHead });
+        surface: observedSurface, renderSurface: surface, regionMap: regions, closedHead: closeHead, photoPatches });
+      genericSelected.current = false;
       setModelKind('personal');
       setStatus(`Superficie 3D personal generada desde la foto ${VIEWS.find(v => v.id === sourceView)?.label ?? sourceView} (${surface.indices.length / 3} triángulos). ${depthDetails}${openingDetails} Las marcaciones anatómicas se conservan.`);
     } catch (error) {
@@ -1136,7 +1162,13 @@ export default function FaceSimLab() {
       <aside className={`space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:sticky lg:top-4 lg:max-h-[94vh] lg:self-start lg:overflow-y-auto ${workspace === 'simulate' ? 'max-lg:[&>*:not(nav)]:hidden' : ''}`}>
         <nav aria-label="Herramientas del laboratorio" className="grid grid-cols-3 gap-1">
           {([['capture', 'Capturas'], ['simulate', 'Simular'], ['mapping', 'Marcar']] as const).map(([id, label]) =>
-            <button type="button" key={id} aria-pressed={workspace === id} onClick={() => setWorkspace(id)}
+            <button type="button" key={id} aria-pressed={workspace === id} onClick={() => {
+              setWorkspace(id);
+              if (id === 'simulate' && captureSource && !personal && !genericSelected.current) {
+                setModelKind('personal');
+                void buildPersonal(depth, captureSource, false);
+              }
+            }}
               className={`admin-focus-ring min-h-10 rounded-lg text-xs font-semibold ${workspace === id ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}>{label}</button>)}
         </nav>
         <div>
@@ -1330,20 +1362,20 @@ export default function FaceSimLab() {
               aria-pressed={personalActive && !personal?.closedHead}
               onClick={() => { if (captureSource) { setView(captureSource); setWorkMode('3d'); void buildPersonal(depth, captureSource, false); } }}
               className="rounded-lg border border-slate-300 px-2 py-1.5 aria-pressed:border-sky-600 aria-pressed:bg-sky-100 aria-pressed:font-semibold disabled:opacity-40">Superficie facial</button>
-            <button type="button" disabled={buildingPersonal || hasPendingPhotos || captureBlocked || readyPhotos.length < 3 || !captureSource}
+            <button type="button" disabled={buildingPersonal || hasPendingPhotos || captureBlocked || readyPhotos.length < 3 || !photos.frontal?.landmarks}
               aria-pressed={personalActive && !!personal?.closedHead}
-              onClick={() => { if (captureSource) { setView(captureSource); setWorkMode('3d'); void buildPersonal(depth, captureSource, true); } }}
+              onClick={() => { setView('frontal'); setWorkMode('3d'); void buildPersonal(depth, 'frontal', true); }}
               className="rounded-lg border border-slate-300 px-2 py-1.5 aria-pressed:border-sky-600 aria-pressed:bg-sky-100 aria-pressed:font-semibold disabled:opacity-40">Cabeza estimada · 3+ fotos</button>
           </div>
           <p role="status" className="font-semibold text-sky-800">{modelKind === 'generico' ? 'Vista activa: cabeza genérica' : personal ? personal.closedHead ? 'Vista activa: cabeza estimada' : 'Vista activa: superficie facial abierta' : 'Sin superficie personal calculada'}</p>
-          <p className="text-slate-500">Cabeza estimada con tres fotos útiles y cobertura bilateral. El casquete gris no reconstruye anatomía oculta; no admite marcaciones.</p>
-          <label className="flex items-center gap-2"><input type="checkbox" checked={hair.enabled} onChange={e => setHair(current => ({ ...current, enabled: e.target.checked }))} />Cabello de las fotos · misma superficie</label>
+          <p className="text-slate-500">Frontal + ambos laterales: contorno y textura multivista de piel, orejas y cabello. Gris = sin cobertura; profundidad aproximada.</p>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={hair.enabled} onChange={e => setHair(current => ({ ...current, enabled: e.target.checked }))} />Relieve adicional del cabello · misma superficie</label>
           {hair.enabled && <div className="space-y-2">
-            <button type="button" disabled={hairBusy || buildingPersonal || !personal?.closedHead} onClick={() => void analyzeHair()} className="w-full rounded-lg border border-slate-300 px-2 py-2 font-semibold disabled:opacity-40">{hairBusy ? 'Segmentando cabello…' : 'Proyectar cabello de las fotos'}</button>
+            <button type="button" disabled={hairBusy || buildingPersonal || !personal?.closedHead} onClick={() => void analyzeHair()} className="w-full rounded-lg border border-slate-300 px-2 py-2 font-semibold disabled:opacity-40">{hairBusy ? 'Segmentando cabello…' : 'Analizar relieve del cabello'}</button>
             <label className="block">Relieve visual del cabello
               <input aria-label="Relieve visual del cabello" type="range" min="0" max="1" step="0.05" value={hair.relief} onChange={e => setHair(current => ({ ...current, relief: Number(e.target.value) }))} className="w-full" />
             </label>
-            <p className="text-slate-500">{hairPatches?.length ? `${hairPatches.length} vista(s) con cobertura.` : 'Calcula la cabeza estimada y proyecta el cabello.'} Color original, sin casquete sobresaliente; relieve de iluminación, no geometría medida.</p>
+            <p className="text-slate-500">{hairPatches?.length ? `${hairPatches.length} vista(s) con cobertura.` : 'La cabeza multivista ya conserva el cabello visible; este análisis añade detalle de iluminación.'} Sin casquete sobresaliente; relieve visual, no geometría medida.</p>
           </div>}
           {modelKind === 'personal' && personal ? (
             <>
@@ -1558,9 +1590,12 @@ export default function FaceSimLab() {
 
       <div className="min-w-0 space-y-4">
         {workspace === 'simulate' && <Suspense fallback={<p role="status">Preparando simulación 3D…</p>}>
-          <FacialSimulationViewer surface={modelKind === 'personal' ? personal?.renderSurface : undefined} photo={modelKind === 'personal' ? personal?.canvas : undefined}
+          {modelKind === 'personal' && !personal ? <p role="status" className="rounded-xl border p-4">
+            {buildingPersonal ? 'Calculando superficie fotografiada…' : 'No hay una superficie personal válida. Revisa las capturas y vuelve a calcular.'}
+          </p> : <FacialSimulationViewer surface={modelKind === 'personal' ? personal?.renderSurface : undefined} photo={modelKind === 'personal' ? personal?.canvas : undefined}
             showMesh={showRegions} plane={regionPlane} onPlaneChange={setRegionPlane} onMeshChange={toggleMesh} hair={hair}
-            hairPatches={modelKind === 'personal' ? hairPatches : undefined} />
+            hairPatches={modelKind === 'personal' ? hairPatches : undefined}
+            photoPatches={modelKind === 'personal' ? personal?.photoPatches : undefined} />}
         </Suspense>}
         {showRegions && workspace !== 'simulate' && <p role="status" className="min-h-10 rounded-lg bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-900">{hoveredZone ? `${hoveredZone} · límite aproximado` : 'Malla anatómica · pasa el cursor o selecciona una zona'}</p>}
       <div className={`grid min-w-0 content-start gap-4 xl:grid-cols-2 ${workspace === 'simulate' ? 'hidden' : ''}`}>

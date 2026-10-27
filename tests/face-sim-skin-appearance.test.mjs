@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { analyzeSkinAppearance } from '../src/lab/faceSim/skinAppearance.ts';
+import { analyzeSkinAppearance, skinSignalLayer } from '../src/lab/faceSim/skinAppearance.ts';
 
 function fixture(pixel = () => [180, 130, 110], width = 128, height = width) {
   const image = { width, height, data: new Uint8ClampedArray(width * height * 4) };
@@ -17,13 +17,89 @@ function run(f) {
 
 function assertEmpty(result, usable) {
   assert.equal(result.usable, usable, result.warnings.join('\n'));
-  for (const channel of Object.values(result.channels)) {
+  for (const channel of Object.values({ ...result.channels, ...result.candidates })) {
     assert.equal(channel.coverage, 0);
     assert.equal(channel.status, usable ? 'no-signal' : 'unavailable');
     assert.equal(channel.highlightedPixels, 0);
     assert.ok(channel.rgba.every(value => value === 0));
   }
 }
+
+test('sensibilidad acotada: valor por defecto compatible y umbrales decrecientes, sin mutar entradas', () => {
+  const f = fixture((x, y) => {
+    const s = Math.exp(-((x - 64) ** 2 + (y - 64) ** 2) / 18);
+    return [180 + 45 * s, 130 - 30 * s, 110 - 10 * s];
+  });
+  const before = f.image.data.slice(), mask = f.mask.slice();
+  const low = analyzeSkinAppearance(f.image, f.mask, { sensitivity: 0 });
+  const middle = analyzeSkinAppearance(f.image, f.mask, { sensitivity: 0.5 });
+  const high = analyzeSkinAppearance(f.image, f.mask, { sensitivity: 1 });
+  assert.deepEqual(run(f), middle);
+  for (const key of Object.keys(middle.channels)) {
+    assert.ok(low.channels[key].threshold > middle.channels[key].threshold);
+    assert.ok(middle.channels[key].threshold > high.channels[key].threshold);
+    assert.ok(low.channels[key].coverage <= high.channels[key].coverage);
+  }
+  assert.deepEqual(f.image.data, before);
+  assert.deepEqual(f.mask, mask);
+  for (const sensitivity of [-0.01, 1.01, NaN, Infinity, '0.5']) {
+    assert.throws(() => analyzeSkinAppearance(f.image, f.mask, { sensitivity }), RangeError);
+  }
+});
+
+test('candidatos compactos: pequeñas depresiones oscuras y puntos rojos sintéticos, sin equivalencia anatómica', () => {
+  for (const kind of ['poreCandidates', 'redDots']) {
+    const f = fixture((x, y) => {
+      const s = Math.exp(-((x - 64) ** 2 + (y - 64) ** 2) / 8);
+      return kind === 'poreCandidates' ? [180 - 30 * s, 130 - 22 * s, 110 - 18 * s]
+        : [180 + 45 * s, 130 - 30 * s, 110 - 10 * s];
+    });
+    const before = f.image.data.slice();
+    const result = run(f), layer = skinSignalLayer(result, kind);
+    assert.equal(result.usable, true);
+    assert.equal(layer.status, 'highlighted');
+    assert.ok(layer.highlightedPixels >= 3 && layer.highlightedPixels < 80);
+    assert.equal(layer.coverage, layer.highlightedPixels / f.mask.length);
+    assert.equal(fractionIn(layer, f.image, (x, y) => Math.hypot(x - 64, y - 64) > 8), 0);
+    assert.deepEqual(result, run(f));
+    assert.deepEqual(f.image.data, before);
+    assert.match(result.warnings.join(' '), /no confirman poros, acné ni vasos reales/);
+    assert.equal(skinSignalLayer(result, 'redness'), result.channels.redness);
+  }
+});
+
+test('candidatos no convierten una línea roja ni una región amplia en puntos; tampoco color sin oscuridad en poros', () => {
+  for (const shape of ['line', 'broad', 'chroma']) {
+    const f = fixture((x, y) => {
+      const s = Math.exp(-((x - 64) ** 2 + (shape === 'line' ? 0 : (y - 64) ** 2)) / (shape === 'broad' ? 200 : 8));
+      return shape === 'chroma' ? [180 - 20 * s, 130 + 3 * s, 110 + 25 * s]
+        : [180 + 45 * s, 130 - 30 * s, 110 - 10 * s];
+    });
+    const result = run(f);
+    assert.equal(result.usable, true);
+    assert.equal(result.candidates.redDots.highlightedPixels, 0);
+    assert.equal(result.candidates.poreCandidates.highlightedPixels, 0);
+    if (shape !== 'chroma') assert.ok(result.channels.redness.highlightedPixels > 0);
+  }
+});
+
+test('candidatos respetan máscara y calidad incluso a sensibilidad máxima', () => {
+  const f = fixture((x, y) => {
+    const s = Math.exp(-((x - 64) ** 2 + (y - 64) ** 2) / 8);
+    return [180 + 45 * s, 130 - 30 * s, 110 - 10 * s];
+  });
+  for (let y = 55; y <= 73; y++) for (let x = 55; x <= 73; x++) f.mask[y * 128 + x] = 0;
+  const result = analyzeSkinAppearance(f.image, f.mask, { sensitivity: 1 });
+  for (const layer of Object.values(result.candidates)) {
+    layer.rgba.forEach((value, i) => { if (!f.mask[Math.floor(i / 4)]) assert.equal(value, 0); });
+    assert.equal(layer.highlightedPixels, 0);
+  }
+  const dark = fixture(() => [10, 7, 5]);
+  assertEmpty(analyzeSkinAppearance(dark.image, dark.mask, { sensitivity: 1 }), false);
+  for (const sensitivity of [0, 0.5, 1]) {
+    assertEmpty(analyzeSkinAppearance(fixture().image, fixture().mask, { sensitivity }), true);
+  }
+});
 
 function fractionIn(channel, image, predicate) {
   let count = 0, highlighted = 0;

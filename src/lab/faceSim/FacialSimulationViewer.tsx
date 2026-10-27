@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { PersonalSurface } from './engine';
@@ -7,11 +7,15 @@ import atlas from './genericFaceAtlas.json';
 import { buildFaceRegionMap, buildFaceTriangleRegions, faceRegionColor } from './faceRegions';
 import { buildRegionCells, regionCellPositions, regionPlanePositions, REGION_PLANES, type RegionPlane } from './regionMesh';
 import { DEFAULT_HAIR, type EstimatedHairSettings, type PhotoHairPatch } from './estimatedHair';
+import type { PhotoSurfacePatch } from './multiViewHead';
+import type { AnatomicalReference } from './anatomicalReference';
 import {
   buildCutPlane, buildSimulationLayers, createSimulationMesh, deformPositions, meshBounds,
   NEUTRAL_SIMULATION, SIMULATION_CONTROLS, SIMULATION_LAYERS,
   type LayerId, type SimulationCut, type SimulationMesh, type SimulationParameters,
 } from './simulation';
+const SkinSignalPanel = lazy(() => import('./SkinSignalPanel'));
+const AnatomicalReferencePanel = lazy(() => import('./AnatomicalReferencePanel'));
 
 export interface FacialSimulationViewerProps {
   surface?: PersonalSurface;
@@ -22,11 +26,13 @@ export interface FacialSimulationViewerProps {
   onPlaneChange?: (plane: RegionPlane) => void;
   hair?: EstimatedHairSettings;
   hairPatches?: readonly PhotoHairPatch[];
+  photoPatches?: readonly PhotoSurfacePatch[];
 }
 
 type View = 'front' | 'left' | 'right' | 'orbit';
 type Comparison = 'after' | 'before' | 'split';
 type LayerSettings = Record<LayerId, { visible: boolean; opacity: number }>;
+type SurfaceMaterial = THREE.MeshBasicMaterial | THREE.MeshStandardMaterial;
 interface ViewerState {
   parameters: SimulationParameters;
   layers: LayerSettings;
@@ -37,6 +43,9 @@ interface ViewerState {
   plane: RegionPlane;
   hair: EstimatedHairSettings;
   hairPatches?: readonly PhotoHairPatch[];
+  photoPatches?: readonly PhotoSurfacePatch[];
+  skinTexture?: HTMLCanvasElement;
+  reference?: AnatomicalReference;
 }
 interface ViewerRuntime { update: (state: ViewerState) => void; dispose: () => void }
 
@@ -118,6 +127,8 @@ function mountFacialSimulation(
   const rim = new THREE.DirectionalLight('#67e8f9', 1.1);
   rim.position.set(4, 1, -3); scene.add(rim);
   let texture: THREE.CanvasTexture | undefined;
+  let signalTexture: THREE.CanvasTexture | undefined, previousSignal: HTMLCanvasElement | undefined;
+  let referenceTexture: THREE.CanvasTexture | undefined, previousReference: AnatomicalReference | undefined;
   let observer: ResizeObserver | undefined;
   let disposed = false, failed = false, frame = 0;
   let state: ViewerState | undefined, previousView: View | undefined;
@@ -125,8 +136,13 @@ function mountFacialSimulation(
   let viewportWidth = 1, viewportHeight = 1;
   const after = new THREE.Group(), before = new THREE.Group();
   scene.add(after, before);
-  const afterMeshes = new Map<LayerId, THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial[]>>();
-  let beforeMesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial[]> | undefined;
+  const referenceGroup = new THREE.Group(); after.add(referenceGroup);
+  const photoGroup = new THREE.Group(), beforePhotoGroup = new THREE.Group();
+  after.add(photoGroup); before.add(beforePhotoGroup);
+  const photoTextures: THREE.Texture[] = [];
+  let previousPhotoPatches: readonly PhotoSurfacePatch[] | undefined;
+  const afterMeshes = new Map<LayerId, THREE.Mesh<THREE.BufferGeometry, SurfaceMaterial[]>>();
+  let beforeMesh: THREE.Mesh<THREE.BufferGeometry, SurfaceMaterial[]> | undefined;
   const regionGeometry = new THREE.BufferGeometry();
   const regionMaterial = new THREE.MeshBasicMaterial({ vertexColors: true, wireframe: true, transparent: true, opacity: 0.32,
     side: THREE.FrontSide, depthTest: false, depthWrite: false });
@@ -237,7 +253,10 @@ function mountFacialSimulation(
       }
     });
     texture?.dispose();
+    signalTexture?.dispose();
+    referenceTexture?.dispose();
     hairTextures.forEach(texture => texture.dispose());
+    photoTextures.forEach(texture => texture.dispose());
     renderer.dispose();
     renderer.forceContextLoss();
     canvas.remove();
@@ -250,7 +269,9 @@ function mountFacialSimulation(
     const neutral = buildSimulationLayers(mesh, NEUTRAL_SIMULATION);
     for (const layer of SIMULATION_LAYERS) {
       const data = neutral.find(item => item.id === layer.id)!;
-      const material = new THREE.MeshStandardMaterial({
+      const material: SurfaceMaterial = layer.id === 'skin' && texture ? new THREE.MeshBasicMaterial({
+        map: texture, side: THREE.DoubleSide, transparent: true, depthWrite: false,
+      }) : new THREE.MeshStandardMaterial({
         color: layer.id === 'muscle' || (layer.id === 'skin' && texture) ? '#ffffff' : layer.color,
         map: layer.id === 'skin' ? texture : undefined,
         vertexColors: Boolean(data.colors),
@@ -265,7 +286,7 @@ function mountFacialSimulation(
       after.add(object); afterMeshes.set(layer.id, object);
     }
     const skin = neutral.find(item => item.id === 'skin')!;
-    const beforeMaterials = [new THREE.MeshStandardMaterial({
+    const beforeMaterials: SurfaceMaterial[] = [texture ? new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide }) : new THREE.MeshStandardMaterial({
       color: texture ? '#ffffff' : SIMULATION_LAYERS[0].color, map: texture,
       roughness: 0.8, side: THREE.DoubleSide,
     })];
@@ -295,6 +316,81 @@ function mountFacialSimulation(
     update(next) {
       if (disposed || failed) return;
       state = next;
+      if (previousReference !== next.reference || next.parameters !== lastParameters) {
+        for (const object of [...referenceGroup.children]) {
+          if (object instanceof THREE.Mesh) { object.geometry.dispose(); object.material.dispose(); }
+          referenceGroup.remove(object);
+        }
+        referenceTexture?.dispose(); referenceTexture = undefined;
+        if (next.reference) {
+          const reference = next.reference, padded = document.createElement('canvas');
+          padded.width = reference.canvas.width + 4; padded.height = reference.canvas.height + 4;
+          const context = padded.getContext('2d');
+          if (!context) throw new Error('No se pudo preparar la referencia anatómica.');
+          context.drawImage(reference.canvas, 2, 2);
+          referenceTexture = new THREE.CanvasTexture(padded);
+          referenceTexture.flipY = false; referenceTexture.colorSpace = THREE.SRGBColorSpace;
+          const geometry = new THREE.BufferGeometry(), positions = deformPositions(mesh.positions, mesh.anchors, next.parameters);
+          geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+          geometry.setIndex(new THREE.BufferAttribute(mesh.indices.slice(0, mesh.observedIndexCount ?? mesh.indices.length), 1));
+          geometry.computeVertexNormals();
+          const normals = geometry.getAttribute('normal');
+          const width = Math.abs(mesh.anchors[454 * 3] - mesh.anchors[234 * 3]);
+          for (let id = 0; id < positions.length / 3; id++) {
+            positions[id * 3] -= normals.getX(id) * width * reference.depth;
+            positions[id * 3 + 1] -= normals.getY(id) * width * reference.depth;
+            positions[id * 3 + 2] -= normals.getZ(id) * width * reference.depth;
+          }
+          const uvs = Float32Array.from(reference.uvs, (value, i) => i % 2
+            ? (value * reference.canvas.height + 2) / padded.height : (value * reference.canvas.width + 2) / padded.width);
+          geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+          geometry.computeBoundingSphere();
+          const material = new THREE.MeshBasicMaterial({ map: referenceTexture, side: THREE.DoubleSide,
+            transparent: true, opacity: reference.opacity, alphaTest: 0.01, depthWrite: false });
+          material.onBeforeCompile = shader => {
+            shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>',
+              '#ifdef USE_MAP\nif (any(lessThan(vMapUv, vec2(0.0))) || any(greaterThan(vMapUv, vec2(1.0)))) discard;\n#endif\n#include <map_fragment>');
+          };
+          const object = new THREE.Mesh(geometry, material);
+          object.name = 'ALIGNED_ANATOMICAL_REFERENCE'; object.renderOrder = 3; referenceGroup.add(object);
+        }
+        previousReference = next.reference;
+      }
+      if (previousSignal !== next.skinTexture) {
+        signalTexture?.dispose(); signalTexture = undefined;
+        if (next.skinTexture) {
+          signalTexture = new THREE.CanvasTexture(next.skinTexture);
+          signalTexture.flipY = false; signalTexture.colorSpace = THREE.SRGBColorSpace;
+        }
+        const material = afterMeshes.get('skin')?.material[0];
+        if (material) { material.map = signalTexture ?? texture ?? null; material.needsUpdate = true; }
+        previousSignal = next.skinTexture;
+      }
+      if (previousPhotoPatches !== next.photoPatches) {
+        for (const group of [photoGroup, beforePhotoGroup]) {
+          for (const object of [...group.children]) {
+            if (object instanceof THREE.Mesh) { object.geometry.dispose(); object.material.dispose(); }
+            group.remove(object);
+          }
+        }
+        photoTextures.forEach(texture => texture.dispose()); photoTextures.length = 0;
+        for (const patch of next.photoPatches ?? []) {
+          const map = new THREE.CanvasTexture(patch.source.texture);
+          map.colorSpace = THREE.SRGBColorSpace; map.flipY = false; photoTextures.push(map);
+          for (const group of [photoGroup, beforePhotoGroup]) {
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.BufferAttribute(mesh.positions.slice(), 3));
+            geometry.setAttribute('uv', new THREE.BufferAttribute(patch.uvs, 2));
+            geometry.setIndex(new THREE.BufferAttribute(patch.indices, 1));
+            const object = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
+              map, side: THREE.FrontSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -1,
+            }));
+            object.name = 'MULTIVIEW_PHOTO_SURFACE'; object.renderOrder = 6; group.add(object);
+          }
+        }
+        previousPhotoPatches = next.photoPatches;
+        lastParameters = undefined;
+      }
       if (next.parameters !== lastParameters) {
         const geometries = buildSimulationLayers(mesh, next.parameters);
         for (const data of geometries) {
@@ -302,6 +398,11 @@ function mountFacialSimulation(
           const old = object.geometry;
           object.geometry = geometryFrom(data, mesh);
           old.dispose();
+        }
+        const deformed = deformPositions(mesh.positions, mesh.anchors, next.parameters);
+        for (const object of photoGroup.children) if (object instanceof THREE.Mesh) {
+          object.geometry.setAttribute('position', new THREE.BufferAttribute(deformed, 3));
+          object.geometry.computeBoundingSphere();
         }
       }
       if (next.parameters !== lastParameters || next.plane !== previousPlane) {
@@ -346,11 +447,22 @@ function mountFacialSimulation(
       }
       const cut = buildCutPlane(bounds, next.cut);
       const plane = cut ? new THREE.Plane(new THREE.Vector3(cut.normal.x, cut.normal.y, cut.normal.z), cut.constant) : null;
+      for (const object of referenceGroup.children) if (object instanceof THREE.Mesh) {
+        object.material.clippingPlanes = plane && next.cut.scope === 'all' ? [plane] : [];
+      }
+      photoGroup.visible = !next.skinTexture && next.layers.skin.visible && next.layers.skin.opacity > 0;
+      for (const group of [photoGroup, beforePhotoGroup]) for (const object of group.children) if (object instanceof THREE.Mesh) {
+        object.material.clippingPlanes = plane ? [plane] : [];
+        object.material.opacity = group === photoGroup ? next.layers.skin.opacity : 1;
+        object.material.transparent = object.material.opacity < 1;
+        object.material.depthWrite = !object.material.transparent;
+      }
       regionMaterial.clippingPlanes = plane ? [plane] : [];
       highlightMaterial.clippingPlanes = plane ? [plane] : [];
       for (const object of hairGroup.children) if (object instanceof THREE.Mesh) object.material.clippingPlanes = plane ? [plane] : [];
       for (const [id, object] of afterMeshes) {
-        object.visible = next.layers[id].visible && next.layers[id].opacity > 0;
+        object.visible = next.layers[id].visible && next.layers[id].opacity > 0
+          && !(next.reference && (id === next.reference.kind || (next.reference.kind === 'bone' && id !== 'skin')));
         for (const material of object.material) {
           material.opacity = next.layers[id].opacity;
           const transparent = next.layers[id].opacity < 1;
@@ -365,7 +477,7 @@ function mountFacialSimulation(
       }
       // Antes conserva originales; recibe el mismo corte para comparar sin ocultaciones engañosas.
       if (beforeMesh) for (const material of beforeMesh.material) material.clippingPlanes = plane ? [plane] : [];
-      controls.enableRotate = next.view === 'orbit';
+      controls.enableRotate = true;
       if (previousView !== next.view) {
         const direction = next.view === 'left' ? new THREE.Vector3(-1, 0, 0)
           : next.view === 'right' ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 0, 1);
@@ -379,25 +491,37 @@ function mountFacialSimulation(
 }
 
 /** API de integración: <FacialSimulationViewer surface={surface} photo={photo} /> */
-export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMeshChange, onPlaneChange, hair = DEFAULT_HAIR, hairPatches }: FacialSimulationViewerProps) {
+export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMeshChange, onPlaneChange, hair = DEFAULT_HAIR, hairPatches, photoPatches }: FacialSimulationViewerProps) {
   const id = useId(), host = useRef<HTMLDivElement>(null), runtime = useRef<ViewerRuntime | null>(null);
   const [parameters, setParameters] = useState<SimulationParameters>({ ...NEUTRAL_SIMULATION });
   const [layers, setLayers] = useState<LayerSettings>(surfaceLayers);
   const [cut, setCut] = useState<SimulationCut>({ ...INITIAL_CUT });
-  const [view, setView] = useState<View>('front');
+  const [view, setView] = useState<View>('orbit');
   const [comparison, setComparison] = useState<Comparison>('after');
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false), [attempt, setAttempt] = useState(0);
   const [localMesh, setLocalMesh] = useState(false);
   const [localPlane, setLocalPlane] = useState<RegionPlane>('superficial');
   const [hoveredZone, setHoveredZone] = useState<string | null>(null);
+  const [signal, setSignal] = useState<{ source: HTMLCanvasElement; canvas: HTMLCanvasElement }>();
+  const [reference, setReference] = useState<AnatomicalReference>();
+  const onReference = useCallback((value: AnatomicalReference | undefined) => {
+    setReference(value);
+    if (value) setLayers(current => ({ ...current, skin: { visible: true, opacity: 0.22 } }));
+  }, []);
+  const onSignalTexture = useCallback((canvas: HTMLCanvasElement | undefined) => {
+    setSignal(photo && canvas ? { source: photo, canvas } : undefined);
+  }, [photo]);
+  const skinTexture = signal?.source === photo ? signal?.canvas : undefined;
+  const signalLandmarks = useMemo(() => surface
+    ? Array.from({ length: 468 }, (_, i) => ({ x: surface.uvs[i * 2], y: surface.uvs[i * 2 + 1] })) : undefined, [surface]);
   const activePlane = plane ?? localPlane, meshVisible = showMesh ?? localMesh;
   const prepared = useMemo(() => {
     try { return { mesh: createSimulationMesh(surface), error: null }; }
     catch (cause) { return { mesh: null, error: cause instanceof Error ? cause.message : 'Superficie no válida.' }; }
   }, [surface]);
-  const state = useMemo<ViewerState>(() => ({ parameters, layers, cut, view, comparison, showMesh: meshVisible, plane: activePlane, hair, hairPatches }),
-    [parameters, layers, cut, view, comparison, meshVisible, activePlane, hair, hairPatches]);
+  const state = useMemo<ViewerState>(() => ({ parameters, layers, cut, view, comparison, showMesh: meshVisible, plane: activePlane, hair, hairPatches, photoPatches, skinTexture, reference }),
+    [parameters, layers, cut, view, comparison, meshVisible, activePlane, hair, hairPatches, photoPatches, skinTexture, reference]);
   useEffect(() => { setLayers(planeLayers(activePlane)); }, [activePlane]);
 
   useEffect(() => {
@@ -437,6 +561,18 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
         </div>
         <button type="button" className={buttonClass} onClick={reset}>Restablecer todo</button>
       </header>
+      {photo && surface && <details className="rounded-lg border border-slate-600 p-2 text-sm">
+        <summary className="cursor-pointer">Señales visuales de piel · RGB</summary>
+        <Suspense fallback={<p role="status">Preparando filtros…</p>}>
+          <SkinSignalPanel canvas={photo} landmarks={signalLandmarks} onTexture={onSignalTexture} />
+        </Suspense>
+      </details>}
+      {surface && <details className="rounded-lg border border-slate-600 p-2 text-sm">
+        <summary className="cursor-pointer">Capas desde imagen · alinear referencia</summary>
+        <Suspense fallback={<p role="status">Preparando alineación…</p>}>
+          <AnatomicalReferencePanel surfaceUVs={surface.uvs} onChange={onReference} />
+        </Suspense>
+      </details>}
       <div className="flex flex-wrap items-center gap-3 text-xs">
         <label className="flex items-center gap-2"><input type="checkbox" checked={meshVisible} onChange={event => {
           if (onMeshChange) onMeshChange(event.target.checked); else setLocalMesh(event.target.checked);
@@ -492,7 +628,7 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
           <details className="text-xs text-slate-400"><summary className="cursor-pointer">Alcance de la simulación</summary>
             <p>Esquemas originales genéricos, no detección real. Sin planos de inyección ni planificación de tratamientos.</p>
           </details>
-          <p id={`${id}-help`} className="text-xs text-slate-300">En «Orbitar»: arrastra o enfoca el visor y usa las flechas. Rueda, gesto de pinza o teclas +/− para zoom. «Antes» muestra sólo la superficie original.</p>
+          <p id={`${id}-help`} className="text-xs text-slate-300">Arrastra o enfoca el visor y usa las flechas para girar, también desde una vista frontal o lateral. Rueda, pinza o +/− para zoom. «Antes» conserva la superficie original.</p>
         </div>
         <div className="space-y-3" aria-describedby={`${id}-help`}>
           {(['Nariz', 'Mentón y mandíbula'] as const).map(group => (
@@ -531,7 +667,7 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
             </div>
           ))}
         </div>
-        {SIMULATION_LAYERS.every(layer => !layers[layer.id].visible || layers[layer.id].opacity === 0) && comparison !== 'before'
+        {!reference && SIMULATION_LAYERS.every(layer => !layers[layer.id].visible || layers[layer.id].opacity === 0) && comparison !== 'before'
           ? <p role="status" className="mt-2 text-xs text-amber-200">No hay capas visibles. Activa una capa o restablece el visor.</p> : null}
       </fieldset>
       <fieldset className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-700 p-2">

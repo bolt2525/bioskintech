@@ -16,7 +16,7 @@ export async function verifySimulationRender() {
   const mesh = check('Mostrar mallado de zonas');
   const plane = root.querySelector('select[aria-label="Plano visual de simulación"]');
   const initial = { mesh: mesh.checked, plane: plane.value, checks: names.map(name => check(name).checked) };
-  let draws = [];
+  let draws = [], capturePending = false;
   for (const Constructor of [WebGLRenderingContext, WebGL2RenderingContext]) {
     for (const method of ['drawElements', 'drawArrays']) {
       const original = Constructor.prototype[method];
@@ -24,14 +24,21 @@ export async function verifySimulationRender() {
       Constructor.prototype[method] = function (...args) {
         const result = original.apply(this, args);
         if (this.canvas === canvas) {
-          const w = this.drawingBufferWidth, h = this.drawingBufferHeight, pixels = new Uint8Array(w * h * 4);
-          this.readPixels(0, 0, w, h, this.RGBA, this.UNSIGNED_BYTE, pixels);
-          let visible = 0;
-          for (let i = 0; i < pixels.length; i += 4) {
-            if (Math.abs(pixels[i] - 15) + Math.abs(pixels[i + 1] - 23) + Math.abs(pixels[i + 2] - 42) > 30) visible++;
+          const draw = { mode: args[0], visible: 0, width: this.drawingBufferWidth, height: this.drawingBufferHeight };
+          draws.push(draw);
+          if (!capturePending) {
+            capturePending = true;
+            queueMicrotask(() => {
+              capturePending = false;
+              const { width: w, height: h } = draw, pixels = new Uint8Array(w * h * 4);
+              this.readPixels(0, 0, w, h, this.RGBA, this.UNSIGNED_BYTE, pixels);
+              let visible = 0;
+              for (let i = 0; i < pixels.length; i += 4) {
+                if (Math.abs(pixels[i] - 15) + Math.abs(pixels[i + 1] - 23) + Math.abs(pixels[i + 2] - 42) > 30) visible++;
+              }
+              for (const item of draws) item.visible = visible;
+            });
           }
-
-          draws.push({ mode: args[0], visible, width: w, height: h });
         }
         return result;
       };
@@ -110,6 +117,7 @@ export async function prepareSyntheticHead({ withHair = false } = {}) {
       if (y > edge) color.multiplyScalar(0.9 + 0.18 * Math.sin(x * 95 + z * 30));
       colors.push(color.r, color.g, color.b);
     }
+
     geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
   }
   const material = new THREE.MeshStandardMaterial({ color: withHair ? '#ffffff' : '#c6a08b', vertexColors: withHair, roughness: 0.85, side: THREE.DoubleSide });

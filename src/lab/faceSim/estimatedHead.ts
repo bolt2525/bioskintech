@@ -12,6 +12,7 @@ export interface EstimatedHeadSurface extends PersonalSurface {
    * Incluye las tapas de ojos/boca, aunque reutilicen vértices con UV fotográficas.
    */
   observedIndexCount: number;
+  observedVertexCount?: number;
   preservedOpenings: number;
 }
 
@@ -332,5 +333,5 @@ export function buildEstimatedHead(surface: PersonalSurface): EstimatedHeadSurfa
     fail('no se logró cerrar el borde craneal.');
   }
   return { positions: resultPositions, uvs: resultUvs, indices: resultIndices,
-    projection: surface.projection, observedIndexCount: indices.length, preservedOpenings: preserved.length };
+    projection: surface.projection, observedIndexCount: indices.length, observedVertexCount: count, preservedOpenings: preserved.length };
 }

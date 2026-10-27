@@ -1,6 +1,8 @@
 export type SkinAppearanceChannel = 'contrast' | 'redness' | 'texture';
 /** Selección ampliada; el tipo anterior se conserva para mapas de la UI de tres canales. */
 export type SkinAppearanceVisualChannel = SkinAppearanceChannel | 'shine';
+/** Candidatos puramente visuales; no añade opciones a la UI anterior. */
+export type SkinSignalChannel = SkinAppearanceVisualChannel | 'poreCandidates' | 'redDots';
 
 export interface SkinAppearanceLayer {
   rgba: Uint8ClampedArray;
@@ -17,6 +19,7 @@ export interface SkinAppearanceResult {
   usable: boolean;
   warnings: string[];
   channels: Record<SkinAppearanceVisualChannel, SkinAppearanceLayer>;
+  candidates: Record<'poreCandidates' | 'redDots', SkinAppearanceLayer>;
   diagnostics: {
     roiPixels: number;
     analyzedPixels: number;
@@ -27,6 +30,10 @@ export interface SkinAppearanceResult {
   };
 }
 
+export function skinSignalLayer(result: SkinAppearanceResult, channel: SkinSignalChannel): SkinAppearanceLayer {
+  return channel === 'poreCandidates' || channel === 'redDots' ? result.candidates[channel] : result.channels[channel];
+}
+
 const LIMITATIONS = [
   'Simulación visual local de RGB; no es un diagnóstico ni una recomendación.',
   'Los canales muestran diferencias cromáticas/oscuras locales, rojez relativa y microcontraste; no identifican lesiones, lunares, pecas, granos, comedones, vasos superficiales o profundos ni poros reales.',
@@ -34,6 +41,7 @@ const LIMITATIONS = [
   'El padre debe excluir ojos, labios, pelo y fondo del ROI. Se omiten bordes y cambios abruptos; no se puede certificar enfoque, color real ni anatomía con RGB.',
   'El brillo aparente combina aclaramiento y pérdida relativa de saturación; no mide grasa, hidratación ni identifica zona T. RGB no detecta arterias, venas, lesiones reales ni profundidad.',
   'Textura significa microcontraste aparente: no permite separar con certeza detalle superficial, ruido, enfoque o compresión.',
+  'Los candidatos son agrupaciones RGB pequeñas y compactas: no confirman poros, acné ni vasos reales. El contraste aparente no mide melanina ni identifica pigmentación real.',
 ];
 
 function median(values: number[]): number {
@@ -77,6 +85,33 @@ function boxSum(table: Float64Array, stride: number, x: number, y: number, radiu
     - table[bottom * stride + left] + table[top * stride + left];
 }
 
+/** Retiene agrupaciones pequeñas y compactas, no líneas ni regiones extensas. */
+function retainCompactCandidates(active: Uint8Array, width: number, height: number): void {
+  const visited = new Uint8Array(active.length);
+  const maxSide = Math.max(5, Math.round(Math.min(width, height) / 16));
+  for (let start = 0; start < active.length; start++) {
+    if (!active[start] || visited[start]) continue;
+    const group = [start];
+    visited[start] = 1;
+    let left = width, right = 0, top = height, bottom = 0;
+    for (let cursor = 0; cursor < group.length; cursor++) {
+      const i = group[cursor], x = i % width, y = Math.floor(i / width);
+      left = Math.min(left, x); right = Math.max(right, x);
+      top = Math.min(top, y); bottom = Math.max(bottom, y);
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx, ny = y + dy, j = ny * width + nx;
+        if (nx < 0 || nx >= width || ny < 0 || ny >= height || visited[j] || !active[j]) continue;
+        visited[j] = 1; group.push(j);
+      }
+    }
+    const w = right - left + 1, h = bottom - top + 1;
+    if (group.length < 3 || Math.max(w, h) > maxSide
+      || Math.max(w / h, h / w) > 2.5 || group.length / (w * h) < 0.25) {
+      for (const i of group) active[i] = 0;
+    }
+  }
+}
+
 /**
  * Análisis síncrono, determinista y sin E/S. No muta image ni mask.
  * RGBA de 8 bits, sin premultiplicar, y máscara construida por el padre (no cero = ROI).
@@ -86,11 +121,18 @@ function boxSum(table: Float64Array, stride: number, x: number, y: number, radiu
  * diagnostics.analyzedFraction expresa soporte efectivo, no confianza diagnóstica.
  * No aplica corrección de balance de blancos ni reconstruye color perdido por recorte.
  * Soporta hasta 4 194 304 píxeles, lados <=4096; diseñado para imágenes de unos 384 px.
+ * sensitivity: 0..1, por defecto 0.5; ajusta umbrales visuales, no la calidad ni el ROI.
+ * candidates añade filtros compactos sin cambiar las claves históricas de channels.
  */
 export function analyzeSkinAppearance(
   image: { width: number; height: number; data: Uint8ClampedArray },
   mask: Uint8Array,
+  options: { sensitivity?: number } = {},
 ): SkinAppearanceResult {
+  const sensitivity = options.sensitivity ?? 0.5;
+  if (!Number.isFinite(sensitivity) || sensitivity < 0 || sensitivity > 1) {
+    throw new RangeError('Sensibilidad inválida: se requiere un número entre 0 y 1.');
+  }
   if (!image || !Number.isSafeInteger(image.width) || !Number.isSafeInteger(image.height)
     || image.width <= 0 || image.height <= 0
     || image.width > 4096 || image.height > 4096 || image.width * image.height > 4_194_304) {
@@ -114,6 +156,7 @@ export function analyzeSkinAppearance(
     channels: {
       contrast: layer(), redness: layer(), texture: layer(), shine: layer(),
     },
+    candidates: { poreCandidates: layer(), redDots: layer() },
     diagnostics: {
       roiPixels: 0, analyzedPixels: 0, analyzedFraction: 0, noisyFraction: 0,
       localRadius: 0, referenceRadius: 0,
@@ -215,6 +258,7 @@ export function analyzeSkinAppearance(
   const area = (2 * radius + 1) ** 2;
   const candidates: number[] = [];
   const contrast: number[] = [], redness: number[] = [], texture: number[] = [], shine: number[] = [];
+  const smallDark: number[] = [];
   let noisy = 0;
   let supported = 0;
   for (let y = radius; y < height - radius; y++) for (let x = radius; x < width - radius; x++) {
@@ -260,6 +304,9 @@ export function analyzeSkinAppearance(
     redness.push(rednessValue);
     texture.push(blocked || residual < 3 ? 0 : residual / Math.max(40, smallLight));
     shine.push(shineValue);
+    smallDark.push(blocked ? 0 : Math.max(0,
+      boxSum(lights, stride, x, y, radius) / localCount - smallLight,
+    ) / Math.max(40, smallLight));
   }
   if (candidates.length < Math.max(32, roiCount * 0.1)) {
     return reject('ROI demasiado estrecho o resolución insuficiente tras excluir bordes.');
@@ -273,17 +320,19 @@ export function analyzeSkinAppearance(
   result.diagnostics.analyzedPixels = supported;
   result.diagnostics.analyzedFraction = supported / roiCount;
   if (supported / roiCount < 0.5) result.warnings.unshift('Soporte parcial: menos de la mitad del ROI tiene señal local analizable.');
-  const paint = (channel: SkinAppearanceVisualChannel, values: number[], floor: number, color: number[]) => {
-    const threshold = robustThreshold([...values], floor);
-    const output = result.channels[channel];
+  const paint = (channel: SkinSignalChannel, values: number[], floor: number, color: number[], compact = false) => {
+    const threshold = robustThreshold([...values], floor) * (1.5 - sensitivity);
+    const output = skinSignalLayer(result, channel);
     const active = new Uint8Array(size);
     values.forEach((value, index) => {
       if (value > threshold) active[candidates[index]] = 1;
     });
+    if (compact) retainCompactCandidates(active, width, height);
     let highlighted = 0;
     values.forEach((value, index) => {
       if (value <= threshold) return;
       const i = candidates[index];
+      if (!active[i]) return;
       // No representar motas aisladas de cuantización como detalle resuelto.
       // Se consulta el mapa original, sin propagar ni rellenar huecos del ROI.
       let neighbors = 0;
@@ -306,6 +355,8 @@ export function analyzeSkinAppearance(
   paint('redness', redness, 0.025, [239, 68, 68]);
   paint('texture', texture, 0.025, [139, 92, 246]);
   paint('shine', shine, 0.06, [14, 165, 233]);
+  paint('poreCandidates', smallDark, 0.045, [6, 182, 212], true);
+  paint('redDots', redness, 0.025, [244, 63, 94], true);
   result.usable = true;
   return result;
 }

@@ -16,6 +16,7 @@ import * as photoValidation from '../src/lab/faceSim/photoValidation.ts';
 import * as detection from '../src/lab/faceSim/detection.ts';
 import * as regionMesh from '../src/lab/faceSim/regionMesh.ts';
 import * as estimatedHair from '../src/lab/faceSim/estimatedHair.ts';
+import * as multiViewHead from '../src/lab/faceSim/multiViewHead.ts';
 
 const require = createRequire(import.meta.url);
 const genericFaceAtlas = JSON.parse(readFileSync(new URL('../src/lab/faceSim/genericFaceAtlas.json', import.meta.url), 'utf8'));
@@ -71,6 +72,10 @@ function lab() {
       if (name === './detection') return detection;
       if (name === './regionMesh') return regionMesh;
       if (name === './estimatedHair') return estimatedHair;
+      if (name === './multiViewHead') return multiViewHead;
+      if (name === './photoHead') return { segmentPhotoHeads: async inputs => inputs.map(input => ({
+        ...input, width: 64, height: 64, mask: new Float32Array(64 * 64).fill(1), texture: input.canvas,
+      })) };
       if (name.endsWith('/Tooltip')) return { Tooltip: ({ children }) => children };
       if (name === './genericFaceAtlas.json') return { default: genericFaceAtlas };
       if (name === '@mediapipe/tasks-vision') return { FaceLandmarker };
@@ -126,7 +131,7 @@ test('malla predeterminada permite hover sin añadir marcas y revisión abre mod
   modal.props.onClose();
   assert.equal(findAll(app.render(), n => n.props?.onApply && n.props?.onClose && n.props?.triangles).length, 0);
   button(app.render(), 'Simular').props.onClick();
-  assert.ok(findAll(app.render(), n => n.props && Object.hasOwn(n.props, 'surface') && Object.hasOwn(n.props, 'photo')).length);
+  assert.match(text(app.render()), /Calculando superficie fotografiada/);
 });
 
 test('no calcula capturas sin revisar; la confirmación no permite fusionar proporciones incompatibles', async () => {
@@ -373,7 +378,7 @@ test('cabeza estimada se transmite completa a Simular sin reemplazar la superfic
   head.props.onClick();
   await new Promise(resolve => setImmediate(resolve));
   const tree = app.render();
-  assert.match(text(tree), /Cabeza estimada: el casquete/);
+  assert.match(text(tree), /Envolvente ajustada a las siluetas/);
   button(tree, 'Simular').props.onClick();
   const simulator = findAll(app.render(), n => n.props && Object.hasOwn(n.props, 'surface') && Object.hasOwn(n.props, 'photo'))[0];
   assert.equal(simulator.props.surface.observedIndexCount, 852 * 3);
@@ -417,6 +422,19 @@ test('elegir Genérico cancela el cálculo pendiente y no permite una selección
   button(app.render(), 'Simular').props.onClick();
   const simulator = findAll(app.render(), n => n.props && Object.hasOwn(n.props, 'surface') && Object.hasOwn(n.props, 'photo'))[0];
   assert.equal(simulator.props.surface, undefined);
+});
+
+test('Simular calcula automáticamente la máscara de la foto, sin sustituirla por el atlas genérico', async () => {
+  const fixture = JSON.parse(readFileSync(new URL('./fixtures/face-sim-mediapipe-synthetic.json', import.meta.url), 'utf8'));
+  const app = lab(); app.render();
+  app.photos({ frontal: { ...photo(), aspect: fixture.aspect, landmarks: fixture.landmarks.map(([x, y, z]) => ({ x, y, z })) } });
+  button(app.render(), 'Simular').props.onClick();
+  assert.match(text(app.render()), /Calculando superficie fotografiada/);
+  await new Promise(resolve => setImmediate(resolve));
+  const simulator = findAll(app.render(), n => n.props && Object.hasOwn(n.props, 'surface') && Object.hasOwn(n.props, 'photo'))[0];
+  assert.ok(simulator.props.surface);
+  assert.equal(simulator.props.surface.indices.length, 852 * 3);
+  assert.ok(simulator.props.photo);
 });
 
 test('editar contorno expone 36 referencias y pasa a foto sin crear un tratamiento', () => {

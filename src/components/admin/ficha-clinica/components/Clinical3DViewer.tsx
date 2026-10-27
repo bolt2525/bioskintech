@@ -1120,7 +1120,7 @@ const ThreeEngine: React.FC<{
       const hit = raycaster.intersectObject(faceMeshRef.current, true)[0];
       if (!hit) return false;
       const normal = hit.face?.normal.clone().transformDirection(hit.object.matrixWorld);
-      if (hit.object.name === 'ESTIMATED_HEAD_SURFACE' || hit.object.name.startsWith('PHOTO_HAIR_SURFACE') || !normal || normal.dot(raycaster.ray.direction) >= -1e-5 || !constraint.accepts(hit.point)) {
+      if (hit.object.name.startsWith('ESTIMATED_HEAD_SURFACE') || hit.object.name.startsWith('PHOTO_HAIR_SURFACE') || !normal || normal.dot(raycaster.ray.direction) >= -1e-5 || !constraint.accepts(hit.point)) {
         constraint.onRejected();
         return true;
       }
@@ -1138,7 +1138,7 @@ const ThreeEngine: React.FC<{
         mouse.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
         raycaster.setFromCamera(mouse, cameraRef.current);
         const hit = raycaster.intersectObject(faceMeshRef.current, true)[0];
-        if (hit?.object.name === 'ESTIMATED_HEAD_SURFACE' || hit?.object.name.startsWith('PHOTO_HAIR_SURFACE')) {
+        if (hit?.object.name.startsWith('ESTIMATED_HEAD_SURFACE') || hit?.object.name.startsWith('PHOTO_HAIR_SURFACE')) {
           callbacks.current.onEstimatedSurfaceInteraction?.();
           return;
         }
@@ -2155,7 +2155,7 @@ const ThreeEngine: React.FC<{
       raycaster.setFromCamera(mouse, cameraRef.current);
       const nearest = faceMeshRef.current.getObjectByName('ESTIMATED_HEAD_SURFACE') ? raycaster.intersectObject(faceMeshRef.current, true)[0] : undefined;
       if (faceMeshRef.current.getObjectByName('ESTIMATED_HEAD_SURFACE')
-        && (nearest?.object.name === 'ESTIMATED_HEAD_SURFACE' || nearest?.object.name.startsWith('PHOTO_HAIR_SURFACE'))) {
+        && (nearest?.object.name.startsWith('ESTIMATED_HEAD_SURFACE') || nearest?.object.name.startsWith('PHOTO_HAIR_SURFACE'))) {
         callbacks.current.onEstimatedSurfaceInteraction?.();
         return;
       }
@@ -2779,7 +2779,7 @@ const ThreeEngine: React.FC<{
           const previousMaterials = Array.isArray(child.material) ? child.material : [child.material];
           // Superficies texturizadas (p. ej. rostro personal desde foto) conservan su textura; la tinta queda neutra.
           const map = (previousMaterials.find((material: THREE.MeshStandardMaterial) => material?.map) as THREE.MeshStandardMaterial | undefined)?.map ?? null;
-          child.material = child.name.startsWith('PHOTO_HAIR_SURFACE') ? previousMaterials[0].clone() : map && child.name === 'PERSONAL_FACE_SURFACE'
+          child.material = child.name.startsWith('PHOTO_HAIR_SURFACE') || child.name.startsWith('ESTIMATED_HEAD_SURFACE_PHOTO') || child.name.startsWith('PERSONAL_FACE_SURFACE_') ? previousMaterials[0].clone() : map && child.name === 'PERSONAL_FACE_SURFACE'
             ? new THREE.MeshBasicMaterial({ map, side: THREE.DoubleSide, wireframe: settings.wireframe })
             : new THREE.MeshPhysicalMaterial({
               color: child.name === 'ESTIMATED_HEAD_SURFACE' ? '#94a3b8' : map ? '#ffffff' : settings.materialColor,
@@ -2791,7 +2791,7 @@ const ThreeEngine: React.FC<{
               side: THREE.DoubleSide,
               wireframe: settings.wireframe,
             });
-          if (child.name.startsWith('PHOTO_HAIR_SURFACE')) {
+          if (child.name.startsWith('PHOTO_HAIR_SURFACE') || child.name.startsWith('ESTIMATED_HEAD_SURFACE_PHOTO') || child.name.startsWith('PERSONAL_FACE_SURFACE_')) {
             child.material.polygonOffset = true; child.material.polygonOffsetFactor = -3; child.material.polygonOffsetUnits = -1;
           }
           previousMaterials.forEach((material: THREE.Material) => material.dispose());

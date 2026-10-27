@@ -3,10 +3,11 @@ import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import type { PersonalSurface } from './engine';
 import type { EstimatedHeadSurface } from './estimatedHead';
 import type { EstimatedHairSettings, PhotoHairPatch } from './estimatedHair';
+import type { PhotoSurfacePatch } from './multiViewHead';
 
 /** GLB local con foto y cabello observado; no cambia los buffers originales. */
 export async function personalSurfaceToGlb(surface: PersonalSurface | EstimatedHeadSurface, photo: HTMLCanvasElement,
-  hair?: EstimatedHairSettings, hairPatches: readonly PhotoHairPatch[] = []): Promise<ArrayBuffer> {
+  hair?: EstimatedHairSettings, hairPatches: readonly PhotoHairPatch[] = [], photoPatches: readonly PhotoSurfacePatch[] = []): Promise<ArrayBuffer> {
   const geometries: THREE.BufferGeometry[] = [], materials: THREE.Material[] = [], textures: THREE.Texture[] = [];
   const group = new THREE.Group();
   const textureFrom = (canvas: HTMLCanvasElement, color = true) => {
@@ -28,6 +29,22 @@ export async function personalSurfaceToGlb(surface: PersonalSurface | EstimatedH
   try {
     const observed = 'observedIndexCount' in surface ? surface.indices.slice(0, surface.observedIndexCount) : surface.indices;
     add('PERSONAL_FACE_SURFACE', geometryFrom(observed), new THREE.MeshBasicMaterial({ map: textureFrom(photo), side: THREE.DoubleSide }));
+    const observedTriangles = new Set(Array.from({ length: observed.length / 3 }, (_, i) =>
+      Array.from(observed.subarray(i * 3, i * 3 + 3)).join(':')));
+    photoPatches.forEach((patch, i) => {
+      const face: number[] = [], head: number[] = [];
+      for (let j = 0; j < patch.indices.length; j += 3) {
+        const ids = Array.from(patch.indices.subarray(j, j + 3));
+        (observedTriangles.has(ids.join(':')) ? face : head).push(...ids);
+      }
+      for (const [prefix, indices] of [['PERSONAL_FACE_SURFACE', face], ['ESTIMATED_HEAD_SURFACE_PHOTO', head]] as const) {
+        if (!indices.length) continue;
+        add(`${prefix}_${i}`, geometryFrom(Uint32Array.from(indices), patch.uvs), new THREE.MeshBasicMaterial({
+          map: textureFrom(patch.source.texture), side: THREE.FrontSide,
+          polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -1,
+        }));
+      }
+    });
     if ('observedIndexCount' in surface) {
       add('ESTIMATED_HEAD_SURFACE', geometryFrom(surface.indices.slice(surface.observedIndexCount)),
         new THREE.MeshStandardMaterial({ color: '#94a3b8', roughness: 0.9, side: THREE.DoubleSide }));
