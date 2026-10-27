@@ -14,6 +14,8 @@ import * as faceTransfer from '../src/lab/faceSim/faceTransfer.ts';
 import * as anatomicalAnnotations from '../src/lab/faceSim/anatomicalAnnotations.ts';
 import * as photoValidation from '../src/lab/faceSim/photoValidation.ts';
 import * as detection from '../src/lab/faceSim/detection.ts';
+import * as regionMesh from '../src/lab/faceSim/regionMesh.ts';
+import * as estimatedHair from '../src/lab/faceSim/estimatedHair.ts';
 
 const require = createRequire(import.meta.url);
 const genericFaceAtlas = JSON.parse(readFileSync(new URL('../src/lab/faceSim/genericFaceAtlas.json', import.meta.url), 'utf8'));
@@ -67,6 +69,8 @@ function lab() {
       if (name === './anatomicalAnnotations') return anatomicalAnnotations;
       if (name === './photoValidation') return photoValidation;
       if (name === './detection') return detection;
+      if (name === './regionMesh') return regionMesh;
+      if (name === './estimatedHair') return estimatedHair;
       if (name.endsWith('/Tooltip')) return { Tooltip: ({ children }) => children };
       if (name === './genericFaceAtlas.json') return { default: genericFaceAtlas };
       if (name === '@mediapipe/tasks-vision') return { FaceLandmarker };
@@ -106,7 +110,7 @@ test('malla predeterminada permite hover sin añadir marcas y revisión abre mod
   const viewer = viewers(tree)[0];
   assert.equal(viewer.props.activeTool, 'none');
   assert.equal(viewer.props.anatomicalOverlay.wireframe, true);
-  assert.equal(viewer.props.anatomicalOverlay.labels.length, genericFaceAtlas.triangles.length / 3);
+  assert.ok(viewer.props.anatomicalOverlay.labels.length > genericFaceAtlas.triangles.length / 3, 'refinamiento selectivo de límites');
   const colors = viewer.props.anatomicalOverlay.colors;
   for (let i = 0; i < colors.length; i += 9) {
     assert.deepEqual(colors.slice(i, i + 3), colors.slice(i + 3, i + 6));
@@ -187,7 +191,7 @@ test('capa de simulación mantiene advertencia, fuente y geometría separada de 
   assert.match(text(tree), /no localizan arterias, venas, nervios ni su profundidad/);
   assert.equal(findAll(tree, n => n.type === 'p' && text(n) === 'SIMULACIÓN · No detecta vasos ni certifica zonas seguras.').length, 3);
   assert.equal(findAll(tree, n => n.type === 'a' && n.props.href === 'https://pmc.ncbi.nlm.nih.gov/articles/PMC9067448/').length, 1);
-  assert.equal(viewers(tree)[0].props.anatomicalOverlay.positions.length, genericFaceAtlas.triangles.length * 3);
+  assert.equal(viewers(tree)[0].props.anatomicalOverlay.positions.length, viewers(tree)[0].props.anatomicalOverlay.labels.length * 9);
   assert.equal(viewers(tree)[0].props.markers.length, 0);
   select.props.onChange({ target: { value: 'none' } });
   assert.equal(viewers(app.render())[0].props.anatomicalOverlay, undefined);
@@ -369,11 +373,50 @@ test('cabeza estimada se transmite completa a Simular sin reemplazar la superfic
   head.props.onClick();
   await new Promise(resolve => setImmediate(resolve));
   const tree = app.render();
-  assert.match(text(tree), /Cabeza cerrada aproximada/);
+  assert.match(text(tree), /Cabeza estimada: el casquete/);
   button(tree, 'Simular').props.onClick();
   const simulator = findAll(app.render(), n => n.props && Object.hasOwn(n.props, 'surface') && Object.hasOwn(n.props, 'photo'))[0];
   assert.equal(simulator.props.surface.observedIndexCount, 852 * 3);
   assert.ok(simulator.props.surface.indices.length > 852 * 3 * 2);
+  button(app.render(), 'Genérico').props.onClick();
+  const genericSimulator = findAll(app.render(), n => n.props && Object.hasOwn(n.props, 'surface') && Object.hasOwn(n.props, 'photo'))[0];
+  assert.equal(genericSimulator.props.surface, undefined, 'la selección genérica también gobierna Simular');
+  assert.equal(genericSimulator.props.photo, undefined, 'no aplica fotos sin registro a la cabeza genérica');
+});
+
+test('ocultar malla y seleccionar planos se sincroniza entre modelo, foto y Simular', () => {
+  const app = lab(); let tree = app.render();
+  const original = viewers(tree)[0].props.anatomicalOverlay.positions.slice();
+  const plane = findAll(tree, n => n.props?.['aria-label'] === 'Plano visual')[0];
+  plane.props.onChange({ target: { value: 'deep' } });
+  tree = app.render();
+  assert.notDeepEqual(viewers(tree)[0].props.anatomicalOverlay.positions, original);
+  const label = findAll(tree, n => n.type === 'label' && text(n) === 'Mostrar mallado de zonas')[0];
+  findAll(label, n => n.type === 'input')[0].props.onChange({ target: { checked: false } });
+  assert.equal(viewers(app.render())[0].props.anatomicalOverlay, undefined);
+  button(app.render(), 'Simular').props.onClick();
+  const simulator = () => findAll(app.render(), n => n.props && Object.hasOwn(n.props, 'surface') && Object.hasOwn(n.props, 'photo'))[0];
+  assert.equal(simulator().props.showMesh, false);
+  assert.equal(simulator().props.plane, 'deep');
+  simulator().props.onMeshChange(true);
+  assert.equal(simulator().props.showMesh, true);
+  findAll(app.render(), n => n.props?.['aria-label'] === 'Capa de referencia')[0].props.onChange({ target: { value: 'none' } });
+  assert.equal(simulator().props.showMesh, false);
+  simulator().props.onMeshChange(true);
+  assert.equal(simulator().props.showMesh, true, 'Mostrar mallado restaura la referencia si estaba en Sin capa');
+});
+
+test('elegir Genérico cancela el cálculo pendiente y no permite una selección personal tardía', async () => {
+  const fixture = JSON.parse(readFileSync(new URL('./fixtures/face-sim-mediapipe-synthetic.json', import.meta.url), 'utf8'));
+  const app = lab(); app.render();
+  app.photos({ frontal: { ...photo(), aspect: fixture.aspect, landmarks: fixture.landmarks.map(([x, y, z]) => ({ x, y, z })) } });
+  calculate(app.render()).props.onClick();
+  button(app.render(), 'Genérico').props.onClick();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.match(text(app.render()), /Modelo original seleccionado/);
+  button(app.render(), 'Simular').props.onClick();
+  const simulator = findAll(app.render(), n => n.props && Object.hasOwn(n.props, 'surface') && Object.hasOwn(n.props, 'photo'))[0];
+  assert.equal(simulator.props.surface, undefined);
 });
 
 test('editar contorno expone 36 referencias y pasa a foto sin crear un tratamiento', () => {

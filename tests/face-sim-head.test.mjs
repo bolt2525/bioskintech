@@ -92,6 +92,28 @@ test('cierra óvalo, ambos ojos y boca de la teselación real, con orientación 
   assert.equal(head.positions.length / 3, 468 + 36 * 12);
 });
 
+test('labios/párpados colapsados en XY no bloquean el cráneo ni se tapan con triángulos ficticios', () => {
+  const positions = original.positions.slice();
+  const outer = new Set(FACE_OVAL);
+  const holeEdges = [...edges(original.indices).values()].filter(e => e.count === 1 && !outer.has(e.a));
+  const remaining = new Set(holeEdges.flatMap(e => [e.a, e.b]));
+  while (remaining.size) {
+    const ids = [remaining.values().next().value], visited = new Set(ids);
+    for (let i = 0; i < ids.length; i++) for (const e of holeEdges) {
+      const next = e.a === ids[i] ? e.b : e.b === ids[i] ? e.a : -1;
+      if (next >= 0 && !visited.has(next)) { visited.add(next); ids.push(next); }
+    }
+    const y = ids.reduce((sum, id) => sum + positions[id * 3 + 1], 0) / ids.length;
+    for (const id of ids) { positions[id * 3 + 1] = y; remaining.delete(id); }
+  }
+  const input = { ...original, positions }, head = buildEstimatedHead(input);
+  assert.equal(head.preservedOpenings, 3);
+  assert.deepEqual(head.positions.subarray(0, positions.length), positions);
+  const remainingBoundary = [...edges(head.indices).values()].filter(e => e.count === 1);
+  assert.equal(remainingBoundary.length, holeEdges.length);
+  assert.ok(remainingBoundary.every(e => !outer.has(e.a) && !outer.has(e.b)), 'cráneo completo, solo aberturas originales conservadas');
+});
+
 test('preserva exactamente originales, UV y proyección, sin mutar ni compartir buffers', () => {
   const before = {
     positions: original.positions.slice(), uvs: original.uvs.slice(), indices: original.indices.slice(),

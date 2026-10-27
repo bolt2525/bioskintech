@@ -16,6 +16,8 @@ test('atlas real: labios y nariz siguen contornos cerrados sin invadir piel veci
     [FACE_REGION_BOUNDARIES.upperLip, ['Labio superior', 'Comisuras']],
     [FACE_REGION_BOUNDARIES.lowerLip, ['Labio inferior', 'Comisuras']],
     [FACE_REGION_BOUNDARIES.nose, ['Dorso nasal']],
+    [FACE_REGION_BOUNDARIES.leftEye, ['Contorno ocular (revisar)']],
+    [FACE_REGION_BOUNDARIES.rightEye, ['Contorno ocular (revisar)']],
   ]) {
     const borders = boundary.map((id, i) => key(id, boundary[(i + 1) % boundary.length]));
     for (const edge of borders) {

@@ -1,4 +1,4 @@
-// Copia el WASM de MediaPipe y descarga el modelo Face Landmarker para el Laboratorio 3D.
+// Copia WASM y verifica los modelos Face Landmarker/Hair Segmenter del laboratorio.
 // Se sirven desde el mismo origen (la CSP bloquea CDNs). Uso: npm run lab:face-assets
 import { createHash } from 'node:crypto';
 import { cpSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
@@ -20,3 +20,10 @@ const actualHash = createHash('sha256').update(model).digest('hex');
 if (actualHash !== expectedHash) throw new Error(`Checksum inválido para Face Landmarker: ${actualHash}`);
 writeFileSync(target, model);
 console.log(`Assets de MediaPipe verificados en public/ (modelo: ${model.length} bytes).`);
+const hairResponse = await fetch('https://storage.googleapis.com/mediapipe-models/image_segmenter/hair_segmenter/float32/1/hair_segmenter.tflite');
+if (!hairResponse.ok) throw new Error(`Descarga de Hair Segmenter fallida: HTTP ${hairResponse.status}`);
+const hairModel = Buffer.from(await hairResponse.arrayBuffer());
+const hairHash = createHash('sha256').update(hairModel).digest('hex');
+if (hairHash !== '2628cf3ce5f695f604cbea2841e00befcaa3624bf80caf3664bef2656d59bf84') throw new Error(`Checksum inválido para Hair Segmenter: ${hairHash}`);
+writeFileSync('public/models/face/hair_segmenter.tflite', hairModel);
+console.log(`Hair Segmenter verificado: ${hairModel.length} bytes.`);

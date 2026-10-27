@@ -63,6 +63,8 @@ export const FACE_REGION_BOUNDARIES = {
   upperLip: [61, 185, 40, 39, 37, 0, 267, 269, 270, 409, 291, 306, 292, 308, 415, 310, 311, 312, 13, 82, 81, 80, 191, 78, 62, 76],
   lowerLip: [61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 306, 292, 308, 324, 318, 402, 317, 14, 87, 178, 88, 95, 78, 62, 76],
   nose: [168, 193, 122, 196, 3, 51, 45, 220, 115, 48, 64, 98, 97, 2, 326, 327, 294, 278, 344, 440, 275, 281, 248, 419, 351, 417],
+  leftEye: [247, 30, 29, 27, 28, 56, 190, 243, 112, 26, 22, 23, 24, 110, 25, 130],
+  rightEye: [467, 260, 259, 257, 258, 286, 414, 463, 341, 256, 252, 253, 254, 339, 255, 359],
 } as const;
 
 /** Una etiqueta por cara, compartida por color y hover en foto/atlas/superficie. */
@@ -96,13 +98,16 @@ export function buildFaceTriangleRegions(map: FaceRegionMap, positions: readonly
   const upper = enclosed(FACE_REGION_BOUNDARIES.upperLip, [0, 11, 37]);
   const lower = enclosed(FACE_REGION_BOUNDARIES.lowerLip, [17, 84, 85]);
   const nose = enclosed(FACE_REGION_BOUNDARIES.nose, [6, 122, 168]);
-  const protectedZones = new Set(['Labio superior', 'Labio inferior', 'Comisuras', 'Dorso nasal']);
+  const leftEye = enclosed(FACE_REGION_BOUNDARIES.leftEye, [33, 246, 247]);
+  const rightEye = enclosed(FACE_REGION_BOUNDARIES.rightEye, [263, 467, 466]);
+  const protectedZones = new Set(['Labio superior', 'Labio inferior', 'Comisuras', 'Dorso nasal', 'Contorno ocular (revisar)']);
   const surroundingSeeds = FACE_REGION_SEEDS.filter(entry => !protectedZones.has(entry.zone));
   return faces.map((face, i) => {
     if ((upper.has(i) || lower.has(i)) && face.some(id => [61, 78, 291, 308].includes(id))) return 'Comisuras';
     if (upper.has(i)) return 'Labio superior';
     if (lower.has(i)) return 'Labio inferior';
     if (nose.has(i)) return 'Dorso nasal';
+    if (leftEye.has(i) || rightEye.has(i)) return 'Contorno ocular (revisar)';
     const surrounding = face.filter(id => !protectedZones.has(map.labels[id]));
     if (surrounding.length) return faceTriangleZone(surrounding, map.labels);
     // Los vértices del borde pueden pertenecer todos al labio/nariz, pero no la cara exterior.

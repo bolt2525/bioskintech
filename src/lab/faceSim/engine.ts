@@ -269,6 +269,36 @@ function solveLinear(matrix: number[][], rhs: P2[]): P2[] | null {
   return out.every(p => Number.isFinite(p.x) && Number.isFinite(p.y)) ? out : null;
 }
 
+/** Cámara afín de apoyo para texturizar cabello; no calibra profundidad métrica. */
+export function fitHairPhotoProjection(positions: ArrayLike<number>, landmarks: readonly P2[]) {
+  if (positions.length < 468 * 3 || landmarks.length < 468) return null;
+  const matrix = Array.from({ length: 4 }, () => new Array<number>(4).fill(0));
+  const rhs = Array.from({ length: 4 }, () => ({ x: 0, y: 0 }));
+  for (let id = 0; id < 468; id++) {
+    const row = [positions[id * 3], positions[id * 3 + 1], positions[id * 3 + 2], 1], p = landmarks[id];
+    if (!row.every(Number.isFinite) || !p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return null;
+    for (let i = 0; i < 4; i++) {
+      rhs[i].x += row[i] * p.x; rhs[i].y += row[i] * p.y;
+      for (let j = 0; j < 4; j++) matrix[i][j] += row[i] * row[j];
+    }
+  }
+  const solution = solveLinear(matrix, rhs);
+  if (!solution) return null;
+  const u = solution.map(p => p.x), v = solution.map(p => p.y);
+  const normal = [u[2] * v[1] - u[1] * v[2], u[0] * v[2] - u[2] * v[0], u[1] * v[0] - u[0] * v[1]];
+  const length = Math.hypot(...normal);
+  if (length < 1e-10) return null;
+  let squaredError = 0;
+  for (let id = 0; id < 468; id++) {
+    const row = [positions[id * 3], positions[id * 3 + 1], positions[id * 3 + 2], 1];
+    squaredError += (row.reduce((sum, p, j) => sum + p * u[j], 0) - landmarks[id].x) ** 2
+      + (row.reduce((sum, p, j) => sum + p * v[j], 0) - landmarks[id].y) ** 2;
+  }
+  const height = Math.hypot(landmarks[10].x - landmarks[152].x, landmarks[10].y - landmarks[152].y);
+  const error = Math.sqrt(squaredError / 468) / height;
+  return Number.isFinite(error) ? { projection: { u, v, towardCamera: normal.map(value => value / length) }, error } : null;
+}
+
 export function applyRegistration(point: P2, registration: AffineRegistration): P2 {
   const out = {
     x: registration.a * point.x + registration.b * point.y + registration.c,

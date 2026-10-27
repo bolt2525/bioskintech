@@ -12,6 +12,7 @@ export interface EstimatedHeadSurface extends PersonalSurface {
    * Incluye las tapas de ojos/boca, aunque reutilicen vértices con UV fotográficas.
    */
   observedIndexCount: number;
+  preservedOpenings: number;
 }
 
 type Point = { x: number; y: number; z: number };
@@ -146,7 +147,8 @@ function triangulate(loop: number[], points: Point[], epsilon: number): number[]
  * producirlos aun con una frontera válida. Conserva sus defectos originales;
  * el cierre no certifica que la superficie observada sea un escaneo sin pliegues.
  * Rechaza geometría incompatible en vez de devolver un cierre engañoso.
- * Ojos y boca se sellan con discos triangulados, NO con anatomía ocular/oral.
+ * Solo aberturas simples y no colapsadas se tapan con discos, NO con anatomía ocular/oral.
+ * Las demás se conservan abiertas y se notifican mediante preservedOpenings.
  * La orientación se hereda de la entrada, incluso si toda la entrada está invertida.
  * El exportador GLB separa los índices observados y los cierres estimados en dos mallas/materiales.
  */
@@ -173,8 +175,9 @@ export function buildEstimatedHead(surface: PersonalSurface): EstimatedHeadSurfa
   if (!(width > scale * 1e-5 && height > scale * 1e-5)) fail('óvalo degenerado.');
   const sign = Math.sign(area(outer, points));
   if (!sign) fail('óvalo degenerado.');
-  // Una frontera simple y discos interiores disjuntos son necesarios para no cruzar tapas.
-  const segments = loops.flatMap((loop, li) => loop.map((a, i) =>
+  // El cráneo exige un óvalo simple. Párpados o labios cerrados pueden cruzarse
+  // en la proyección sin invalidar el óvalo: esas aberturas se conservan, no se tapan a ciegas.
+  const segments = [outer].flatMap((loop, li) => loop.map((a, i) =>
     ({ a, b: loop[(i + 1) % loop.length], li, i, length: loop.length })));
   for (let i = 0; i < segments.length; i++) {
     const a = segments[i];
@@ -224,12 +227,14 @@ export function buildEstimatedHead(surface: PersonalSurface): EstimatedHeadSurfa
     }
   }
   const holes = loops.filter(loop => loop !== outer);
-  for (const hole of holes) {
-    if (sign * area(hole, points) >= -epsilon || !inside(points[hole[0]], outer) ||
-      holes.some(other => other !== hole && inside(points[hole[0]], other))) {
-      fail('aberturas interiores incompatibles.');
-    }
-  }
+  const sealable = holes.filter(hole => {
+    const localSegments = hole.map((a, i) => ({ a, b: hole[(i + 1) % hole.length] }));
+    return sign * area(hole, points) < -scale * scale * 1e-5
+      && hole.every(id => inside(points[id], outer))
+      && !holes.some(other => other !== hole && inside(points[hole[0]], other))
+      && !localSegments.some((a, i) => localSegments.slice(i + 1).some(b =>
+        a.b !== b.a && a.a !== b.b && intersects(points[a.a], points[a.b], points[b.a], points[b.b], epsilon, scale * 1e-10)));
+  });
   // El centroide de área evita que una zona con más landmarks del contorno
   // desplace el casquete posterior por la densidad de muestreo.
   const isVisibleFromBorder = (candidate: Point) => outer.every((id, i) =>
@@ -247,7 +252,7 @@ export function buildEstimatedHead(surface: PersonalSurface): EstimatedHeadSurfa
     fail('óvalo demasiado cóncavo para el prior paramétrico sin autointersecciones.');
   }
   const addedIndices: number[] = [];
-  for (const hole of holes) addedIndices.push(...triangulate([...hole].reverse(), points, epsilon));
+  for (const hole of sealable) addedIndices.push(...triangulate([...hole].reverse(), points, epsilon));
 
   // Collar fuera de la proyección frontal. Todo el casquete interior queda detrás
   // del mínimo Z OBSERVADO: nunca atraviesa el relieve frontal o sus tapas.
@@ -320,7 +325,12 @@ export function buildEstimatedHead(surface: PersonalSurface): EstimatedHeadSurfa
       }
     }
   }
-  if (boundaryLoops(resultIndices, points.length).length) fail('no se logró cerrar todas las fronteras.');
+  const preserved = holes.filter(hole => !sealable.includes(hole));
+  const remaining = boundaryLoops(resultIndices, points.length);
+  if (remaining.length !== preserved.length || remaining.some(loop =>
+    !preserved.some(hole => loop.length === hole.length && loop.every(id => hole.includes(id))))) {
+    fail('no se logró cerrar el borde craneal.');
+  }
   return { positions: resultPositions, uvs: resultUvs, indices: resultIndices,
-    projection: surface.projection, observedIndexCount: indices.length };
+    projection: surface.projection, observedIndexCount: indices.length, preservedOpenings: preserved.length };
 }
