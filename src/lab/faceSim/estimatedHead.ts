@@ -95,6 +95,17 @@ function intersects(a: Point, b: Point, c: Point, d: Point, epsilon: number, dis
     (Math.abs(cdA) <= epsilon && on(c, d, a)) || (Math.abs(cdB) <= epsilon && on(c, d, b));
 }
 
+function segmentHitsTriangle(p: Point, q: Point, a: Point, b: Point, c: Point, epsilon: number): boolean {
+  const sub = (u: Point, v: Point): Point => ({ x: u.x - v.x, y: u.y - v.y, z: u.z - v.z });
+  const cross3 = (u: Point, v: Point): Point => ({ x: u.y * v.z - u.z * v.y, y: u.z * v.x - u.x * v.z, z: u.x * v.y - u.y * v.x });
+  const dot = (u: Point, v: Point) => u.x * v.x + u.y * v.y + u.z * v.z;
+  const d = sub(q, p), ab = sub(b, a), ac = sub(c, a), h = cross3(d, ac), det = dot(ab, h);
+  if (Math.abs(det) <= epsilon) return false;
+  const s = sub(p, a), u = dot(s, h) / det, r = cross3(s, ab);
+  const v = dot(d, r) / det, t = dot(ac, r) / det;
+  return u >= 0 && v >= 0 && u + v <= 1 && t >= 0 && t <= 1;
+}
+
 /** Ear clipping: no abanico desde un centro que podría quedar fuera de un contorno cóncavo. */
 function triangulate(loop: number[], points: Point[], epsilon: number): number[] {
   const remaining = [...loop], output: number[] = [], sign = Math.sign(area(loop, points));
@@ -128,7 +139,8 @@ function triangulate(loop: number[], points: Point[], epsilon: number): number[]
  * Puro: conserva prefijos de positions/uvs/indices y la MISMA projection; no renormaliza.
  * El llamador debe autorizar >=3 fotos y cobertura bilateral: PersonalSurface no las contiene.
  *
- * Exige una superficie orientada, contenida en XY por el FACE_OVAL como frontera
+ * Exige una superficie orientada, contenida en XY por el FACE_OVAL (tolerancia
+ * periférica del 1% para landmarks de la sien) como frontera
  * externa y centro visible desde todo su borde (admite concavidades suaves).
  * Tolera triángulos interiores invertidos/degenerados en XY: MediaPipe puede
  * producirlos aun con una frontera válida. Conserva sus defectos originales;
@@ -183,12 +195,17 @@ export function buildEstimatedHead(surface: PersonalSurface): EstimatedHeadSurfa
     }
     return result;
   };
-  // El winding en XY de triángulos INTERIORES no determina la seguridad del
-  // collar. Sí la determina que la cara no salga ni cruce su frontera externa.
-  // Comprobar vértices Y aristas evita aceptar a ciegas cruces en un óvalo cóncavo.
+  const nearOuter = (p: Point) => outer.some((id, i) => {
+    const a = points[id], b = points[outer[(i + 1) % outer.length]];
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy)));
+    return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy) <= scale * 0.01;
+  });
+  // MediaPipe puede situar la sien apenas fuera del óvalo en XY, pero delante
+  // del collar en Z. La tolerancia periférica se verifica después en 3D.
   const referenced = new Set(indices);
   for (const id of referenced) {
-    if (!ovalSet.has(id) && !inside(points[id], outer)) fail('vértice observado fuera del óvalo exterior.');
+    if (!ovalSet.has(id) && !inside(points[id], outer) && !nearOuter(points[id])) fail('vértice observado fuera del óvalo exterior.');
   }
   const checkedEdges = new Set<string>();
   for (let i = 0; i < indices.length; i += 3) {
@@ -199,7 +216,8 @@ export function buildEstimatedHead(surface: PersonalSurface): EstimatedHeadSurfa
       for (let k = 0; k < outer.length; k++) {
         const c = outer[k], d = outer[(k + 1) % outer.length];
         if (a === c || a === d || b === c || b === d) continue;
-        if (intersects(points[a], points[b], points[c], points[d], epsilon, scale * 1e-10)) {
+        if (intersects(points[a], points[b], points[c], points[d], epsilon, scale * 1e-10)
+          && ![points[a], points[b]].some(p => !inside(p, outer) && nearOuter(p))) {
           fail('arista observada cruza el óvalo exterior.');
         }
       }
@@ -250,8 +268,9 @@ export function buildEstimatedHead(surface: PersonalSurface): EstimatedHeadSurfa
     const next = outer.map(id => {
       const p = points[id], index = points.length;
       points.push({
-        x: radialCenter.x + (p.x - radialCenter.x) * radius,
-        y: radialCenter.y + (p.y - radialCenter.y) * radius,
+        x: radialCenter.x + (p.x - radialCenter.x) * radius * 1.04,
+        // Envolvente craneal: la bóveda se eleva sobre la frente; no se extruye solo la máscara facial.
+        y: radialCenter.y + (p.y - radialCenter.y) * radius * 1.25 + height * (0.125 + 0.20 * Math.sin(angle)),
         z: collarZ - depth * Math.sin(angle),
       });
       return index;
@@ -279,6 +298,26 @@ export function buildEstimatedHead(surface: PersonalSurface): EstimatedHeadSurfa
     const u = b.map((v, j) => v - a[j]), v = c.map((value, j) => value - a[j]);
     if (Math.hypot(u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]) <= epsilon) {
       fail('precisión Float32 insuficiente para cerrar sin degeneraciones.');
+    }
+  }
+  const observedFaces = Array.from({ length: indices.length / 3 }, (_, i) => {
+    const ids = Array.from(indices.subarray(i * 3, i * 3 + 3));
+    const p = ids.map(id => points[id]);
+    return { ids, p, min: { x: Math.min(...p.map(v => v.x)), y: Math.min(...p.map(v => v.y)), z: Math.min(...p.map(v => v.z)) },
+      max: { x: Math.max(...p.map(v => v.x)), y: Math.max(...p.map(v => v.y)), z: Math.max(...p.map(v => v.z)) } };
+  });
+  for (let i = indices.length; i < resultIndices.length; i += 3) {
+    const ids = Array.from(resultIndices.subarray(i, i + 3)), p = ids.map(id => points[id]);
+    const min = { x: Math.min(...p.map(v => v.x)), y: Math.min(...p.map(v => v.y)), z: Math.min(...p.map(v => v.z)) };
+    const max = { x: Math.max(...p.map(v => v.x)), y: Math.max(...p.map(v => v.y)), z: Math.max(...p.map(v => v.z)) };
+    if (max.z < minZ) continue;
+    for (const face of observedFaces) {
+      if (max.x < face.min.x || min.x > face.max.x || max.y < face.min.y || min.y > face.max.y
+        || max.z < face.min.z || min.z > face.max.z || ids.some(id => face.ids.includes(id))) continue;
+      if (p.some((a, j) => segmentHitsTriangle(a, p[(j + 1) % 3], face.p[0], face.p[1], face.p[2], scale ** 3 * 1e-10))
+        || face.p.some((a, j) => segmentHitsTriangle(a, face.p[(j + 1) % 3], p[0], p[1], p[2], scale ** 3 * 1e-10))) {
+        fail('el cierre estimado intersecta la superficie observada. Revisa el contorno.');
+      }
     }
   }
   if (boundaryLoops(resultIndices, points.length).length) fail('no se logró cerrar todas las fronteras.');

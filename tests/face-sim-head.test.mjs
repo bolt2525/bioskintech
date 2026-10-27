@@ -205,12 +205,34 @@ test('el casquete posterior se centra por área, no por densidad de puntos del c
   const radius = Math.cos(Math.PI / 24);
   const firstRing = point(head, positions.length / 3 + FACE_OVAL.length);
   const firstBoundary = point(skewed, loop[0]);
+  const height = Math.max(...FACE_OVAL.map(id => point(skewed, id)[1])) - Math.min(...FACE_OVAL.map(id => point(skewed, id)[1]));
   const recoveredCenter = firstRing.slice(0, 2).map((value, axis) =>
-    (value - radius * firstBoundary[axis]) / (1 - radius));
+    (value - (axis === 1 ? height * (0.125 + 0.20 * Math.sin(Math.PI / 24)) : 0)
+      - radius * (axis === 1 ? 1.25 : 1.04) * firstBoundary[axis]) / (1 - radius * (axis === 1 ? 1.25 : 1.04)));
   assert.ok(Math.hypot(recoveredCenter[0] - expected[0], recoveredCenter[1] - expected[1]) < 2e-5,
     `${recoveredCenter} vs ${expected}`);
   assert.ok(Math.hypot(expected[0] - vertexX, expected[1] - vertexY) > 0.015,
     'el fixture distingue centroide geométrico y media de vértices');
+});
+
+test('bóveda posterior elevada, no una copia del óvalo facial extruida hacia atrás', () => {
+  const head = buildEstimatedHead(detectedSurface);
+  const observedTop = Math.max(...detectedSurface.positions.filter((_, i) => i % 3 === 1));
+  const inferredTop = Math.max(...head.positions.subarray(detectedSurface.positions.length).filter((_, i) => i % 3 === 1));
+  assert.ok(inferredTop > observedTop + 0.5);
+});
+
+test('pequeña salida periférica de una sien conserva landmarks y permite cerrar sin cruces nuevos', () => {
+  const positions = detectedSurface.positions.slice();
+  const a = point(detectedSurface, 234), b = point(detectedSurface, 127);
+  const center = [0, 1, 2].map(axis => (a[axis] + b[axis]) / 2);
+  const dx = b[0] - a[0], dy = b[1] - a[1], length = Math.hypot(dx, dy);
+  positions.set([center[0] - Math.abs(dy) / length * 0.005, center[1] - Math.sign(dy) * dx / length * 0.005,
+    Math.max(a[2], b[2]) + 0.2], 227 * 3);
+  const source = { ...detectedSurface, positions };
+  const head = buildEstimatedHead(source);
+  assertClosed(head);
+  assert.deepEqual(head.positions.subarray(0, positions.length), positions);
 });
 
 // Intersección segmento/triángulo; las parejas coplanares se prueban en 2D.

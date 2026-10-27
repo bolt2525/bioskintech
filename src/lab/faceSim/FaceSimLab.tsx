@@ -11,7 +11,7 @@ import {
   type AffineRegistration, type DepthDiagnostic, type PersonalSurface, type PersonalProjection, type CorrectedPoint, type Elem, type ElemKind, type FaceFrame, type Meta, type P2, type PhotoEl, type SimMode, type Vec3, type ViewKind,
 } from './engine';
 import { moveFaceLandmark, refinePhotoContour, extendVisibleForehead, proposeForeheadBoundary } from './faceContour';
-import { buildFaceRegionMap, faceRegionColor, faceTriangleZone, rasterizeFaceRegions, facialZoneAt, isOnObservedFace, faceAttentionColor, FACE_REGION_EDUCATION, FACE_REGION_SEEDS, type FaceRegionMap } from './faceRegions';
+import { buildFaceRegionMap, buildFaceTriangleRegions, faceRegionColor, rasterizeFaceRegions, facialZoneAt, isOnObservedFace, faceAttentionColor, FACE_REGION_EDUCATION, FACE_REGION_SEEDS, type FaceRegionMap } from './faceRegions';
 import { assessFaceCapture, compareFaceGeometry } from './photoValidation';
 import { DETECTION_RETRIES, detectionImage, restoreDetectionPoint } from './detection';
 import { Tooltip } from '../../components/ui/Tooltip';
@@ -173,6 +173,7 @@ interface PersonalModel {
   view: ViewKind; canvas: HTMLCanvasElement; glb: ArrayBuffer; projection: PersonalProjection; depth: number; depthDetails: string;
   diagnostics: (DepthDiagnostic & { label: string })[];
   surface: PersonalSurface;
+  renderSurface: PersonalSurface;
   regionMap: FaceRegionMap;
   closedHead: boolean;
 }
@@ -325,7 +326,7 @@ export default function FaceSimLab() {
         const pixels = overlayContext.createImageData(overlay.width, overlay.height);
         pixels.data.set(review.result.channels[skinChannel].rgba); overlayContext.putImageData(pixels, 0, 0);
         context.globalAlpha = skinOpacity; context.drawImage(overlay, 0, 0, canvas.width, canvas.height);
-        const surface = source.closedHead ? (await import('./estimatedHead')).buildEstimatedHead(source.surface) : source.surface;
+        const surface = source.renderSurface;
         const { personalSurfaceToGlb } = await import('./personalSurfaceGlb');
         const buffer = await personalSurfaceToGlb(surface, canvas);
         if (active) setAppearanceGlb({ personal: source, buffer });
@@ -339,14 +340,15 @@ export default function FaceSimLab() {
     Array.from({ length: 468 }, (_, i) => ({ x: genericFaceAtlas.positions[i * 3], y: -genericFaceAtlas.positions[i * 3 + 1] })),
     genericFaceAtlas.triangles, 1, genericFaceAtlas.positions,
   ), []);
+  const triangleRegions = useMemo(() => buildFaceTriangleRegions(canonicalRegionMap, genericFaceAtlas.positions), [canonicalRegionMap]);
   const regionOverlays = useMemo(() => {
     if (!showRegions) return null;
     const positions: number[] = [], personalPositions: number[] = [], colors: number[] = [], labels: string[] = [];
     for (let i = 0; i < genericFaceAtlas.triangles.length; i += 3) {
       const ids = genericFaceAtlas.triangles.slice(i, i + 3);
-      labels.push(faceTriangleZone(ids, canonicalRegionMap.labels));
+      const label = triangleRegions[i / 3];
+      labels.push(label);
       ids.forEach(j => {
-        const label = canonicalRegionMap.labels[j];
         const color = overlayMode === 'attention' ? faceAttentionColor(label) : faceRegionColor(label);
         const rgb = [1, 3, 5].map(k => parseInt(color.slice(k, k + 2), 16) / 255);
         positions.push(...genericFaceAtlas.positions.slice(j * 3, j * 3 + 3));
@@ -362,19 +364,19 @@ export default function FaceSimLab() {
         } },
       personal: personal ? { positions: Float32Array.from(personalPositions), colors: Float32Array.from(colors), labels, wireframe: true, onHover: setHoveredZone, selectedZone: hoveredZone } : undefined,
     } satisfies { generic: AnatomicalSurfaceOverlay; personal?: AnatomicalSurfaceOverlay };
-  }, [showRegions, overlayMode, canonicalRegionMap, personal, hoveredZone]);
+  }, [showRegions, overlayMode, triangleRegions, personal, hoveredZone]);
   const photoRegionOverlay = useMemo(() => {
     if (!showRegions || !regionMap || !slot?.landmarks) return null;
     const groups = new Map<string, string[]>();
     for (let i = 0; i < genericFaceAtlas.triangles.length; i += 3) {
       if (!addressHasPhotoCoverage({ triangle: i / 3, weights: [1 / 3, 1 / 3, 1 / 3] }, slot.landmarks, genericFaceAtlas)) continue;
       const ids = genericFaceAtlas.triangles.slice(i, i + 3);
-      const label = faceTriangleZone(ids, canonicalRegionMap.labels);
+      const label = triangleRegions[i / 3];
       const path = `M${ids.map(j => `${slot.landmarks![j].x},${slot.landmarks![j].y}`).join('L')}Z`;
       groups.set(label, [...(groups.get(label) ?? []), path]);
     }
     return [...groups].map(([label, paths]) => ({ label, path: paths.join('') }));
-  }, [showRegions, regionMap, canonicalRegionMap, slot?.landmarks]);
+  }, [showRegions, regionMap, triangleRegions, slot?.landmarks]);
   const hasImage = !!slot;
   const loadedPhotos = PHOTO_SLOTS.filter(v => photos[v.id]);
   const readyPhotos = PHOTO_SLOTS.filter(v => photos[v.id]?.landmarks);
@@ -520,7 +522,7 @@ export default function FaceSimLab() {
       const glb = await personalSurfaceToGlb(surface, source.canvas);
       if (requestId !== personalRequestRef.current) return;
       setPersonal({ view: sourceView, canvas: source.canvas, glb, projection: surface.projection, depth: nextDepth, depthDetails, diagnostics,
-        surface: observedSurface, regionMap: regions, closedHead: closeHead });
+        surface: observedSurface, renderSurface: surface, regionMap: regions, closedHead: closeHead });
       setModelKind('personal');
       setStatus(`Superficie 3D personal generada desde la foto ${VIEWS.find(v => v.id === sourceView)?.label ?? sourceView} (${surface.indices.length / 3} triángulos). ${depthDetails} Las marcaciones anatómicas se conservan.`);
     } catch (error) {
@@ -1006,7 +1008,7 @@ export default function FaceSimLab() {
           const current = annotations.lines.find(l => l.id === id);
           if (current) onLine({ ...current, points, segments }, source, true);
         }}
-        haShapeConfig={HA_CONFIG} cameraPreset="face"
+        haShapeConfig={HA_CONFIG} cameraPreset={original ? 'face' : 'face-surface'}
         modelData={!original && personal ? appearanceGlb?.personal === personal ? appearanceGlb.buffer : personal.glb : null}
         pointMarkerScale={0.55} height="clamp(340px, 60vh, 590px)"
         interactionHint={tool3d === 'navigate' || workMode === 'foto' ? 'Arrastra para rotar · las marcas se conservan'
@@ -1474,7 +1476,7 @@ export default function FaceSimLab() {
 
       <div className="min-w-0 space-y-4">
         {workspace === 'simulate' && <Suspense fallback={<p role="status">Preparando simulación 3D…</p>}>
-          <FacialSimulationViewer surface={personal?.surface} photo={personal?.canvas} />
+          <FacialSimulationViewer surface={personal?.renderSurface} photo={personal?.canvas} />
         </Suspense>}
         {showRegions && workspace !== 'simulate' && <p role="status" className="min-h-10 rounded-lg bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-900">{hoveredZone ? `${hoveredZone} · límite aproximado` : 'Malla anatómica · pasa el cursor o selecciona una zona'}</p>}
       <div className={`grid min-w-0 content-start gap-4 xl:grid-cols-2 ${workspace === 'simulate' ? 'hidden' : ''}`}>
@@ -1490,7 +1492,7 @@ export default function FaceSimLab() {
               onMove(e);
               if (!e.buttons && showRegions && slot?.landmarks) {
                 const address = locatePhotoPoint(toNorm(e), slot.landmarks, genericFaceAtlas);
-                setHoveredZone(address ? faceTriangleZone(genericFaceAtlas.triangles.slice(address.triangle * 3, address.triangle * 3 + 3), canonicalRegionMap.labels) : null);
+                setHoveredZone(address ? triangleRegions[address.triangle] : null);
               }
             }} onPointerLeave={() => setHoveredZone(null)} onPointerUp={onUp} onContextMenu={e => e.preventDefault()}>
             <canvas ref={glRef} className="h-full w-full" aria-label="Simulación del rostro" />

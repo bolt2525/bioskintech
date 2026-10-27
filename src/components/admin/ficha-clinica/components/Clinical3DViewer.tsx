@@ -9,6 +9,7 @@ import type { ReferenceLine, LineType } from './ReferenceLinePanel';
 import { createScalpGroomGroup } from './scalpGroom';
 import type { ScalpScale } from '../../../../data/scalpPatterns';
 import { COLORS } from '../../../../constants/theme';
+import { indexedGeometryBounds, updatePhotoFrustum, worldUnitsPerPixel, type ClinicalCamera } from './clinicalCamera';
 export type { ReferenceLine, LineType };
 
 // ==========================================
@@ -123,7 +124,7 @@ function applyAnnotationDepth(group: THREE.Object3D | null, occlude: boolean, de
   });
 }
 
-export type ClinicalCameraPreset = 'default' | 'face' | 'body' | 'scalp';
+export type ClinicalCameraPreset = 'default' | 'face' | 'face-surface' | 'body' | 'scalp';
 
 export interface ScalpHairVisualization {
   scale: ScalpScale;
@@ -173,6 +174,7 @@ const EMPTY_SCENE_SETTINGS: Partial<ClinicalSceneSettings> = {};
 const CAMERA_PRESETS: Record<ClinicalCameraPreset, { position: [number, number, number]; target: [number, number, number] }> = {
   default: { position: [0, 0, 12], target: [0, 0, 0] },
   face: { position: [0, 0.15, 8], target: [0, 0.15, 0] },
+  'face-surface': { position: [0, 0, 12], target: [0, 0, 0] },
   body: { position: [0, 0, 8.5], target: [0, 0, 0] },
   scalp: { position: [0, 3.7, 5.8], target: [0, 0.75, 0] },
 };
@@ -648,7 +650,8 @@ const ThreeEngine: React.FC<{
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
-  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const cameraRef = useRef<ClinicalCamera | null>(null);
+  const photoBoundsRef = useRef<THREE.Box3 | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
   const ambientLightRef = useRef<THREE.AmbientLight | null>(null);
@@ -800,7 +803,9 @@ const ThreeEngine: React.FC<{
     snapIndicatorRef.current = snapMesh;
     scene.add(snapMesh);
 
-    const camera = new THREE.PerspectiveCamera(35, mountRef.current.clientWidth / mountRef.current.clientHeight, 0.1, 1000);
+    const camera = cameraPreset === 'face-surface'
+      ? new THREE.OrthographicCamera(-3, 3, 3, -3, 0.1, 1000)
+      : new THREE.PerspectiveCamera(35, mountRef.current.clientWidth / mountRef.current.clientHeight, 0.1, 1000);
     const initialCamera = CAMERA_PRESETS[cameraPreset];
     camera.position.set(...initialCamera.position);
     cameraRef.current = camera;
@@ -821,6 +826,8 @@ const ThreeEngine: React.FC<{
     controls.dampingFactor = 0.05;
     controls.minDistance = 1;
     controls.maxDistance = 100;
+    controls.minZoom = 0.25;
+    controls.maxZoom = 8;
     controls.minPolarAngle = 0;
     controls.maxPolarAngle = Math.PI;
     controls.target.set(...initialCamera.target);
@@ -1243,14 +1250,12 @@ const ThreeEngine: React.FC<{
             const centerNdc = markerGroup.position.clone().project(cameraRef.current);
             const centerX = rect.left + (centerNdc.x * 0.5 + 0.5) * rect.width;
             const centerY = rect.top + (-centerNdc.y * 0.5 + 0.5) * rect.height;
-            const cameraDistance = cameraRef.current.position.distanceTo(markerGroup.position);
-            const fovRadians = (cameraRef.current.fov * Math.PI) / 180;
             resizingZonalId = markerGroup.userData.markerId;
             resizingZonalGroup = markerGroup;
             resizingZonalStartRadius = markerGroup.userData.markerRadius;
             resizingZonalRadius = resizingZonalStartRadius;
             resizingZonalStartDistancePx = Math.hypot(e.clientX - centerX, e.clientY - centerY);
-            resizingZonalUnitsPerPx = (2 * cameraDistance * Math.tan(fovRadians / 2)) / rect.height;
+            resizingZonalUnitsPerPx = worldUnitsPerPixel(cameraRef.current, markerGroup.position, rect.height);
             resizingZonalPointerId = (e as PointerEvent).pointerId;
             markerGroup.userData.resizeCenterScreen = { x: centerX, y: centerY };
             if (controlsRef.current) controlsRef.current.enabled = false;
@@ -1665,10 +1670,7 @@ const ThreeEngine: React.FC<{
       // ── Modo shape: preview de círculo o rectángulo ────────────────────────
       if (shapeAnchor && faceMeshRef.current && cameraRef.current) {
         const rect = renderer.domElement.getBoundingClientRect();
-        // Conversión aproximada: la cámara está a ~12 unidades, FOV=35°
-        const camDist = cameraRef.current.position.distanceTo(shapeAnchor.point);
-        const fovRad = (cameraRef.current.fov * Math.PI) / 180;
-        const unitsPerPx = (2 * camDist * Math.tan(fovRad / 2)) / rect.height;
+        const unitsPerPx = worldUnitsPerPixel(cameraRef.current, shapeAnchor.point, rect.height);
         const rawDist = Math.sqrt(
           (e.clientX - startPos.x) ** 2 + (e.clientY - startPos.y) ** 2
         ) * unitsPerPx;
@@ -2609,7 +2611,9 @@ const ThreeEngine: React.FC<{
       const w = mountRef.current.clientWidth;
       const h = mountRef.current.clientHeight;
       if (w === 0 || h === 0) return;
-      cameraRef.current.aspect = w / h;
+      if (cameraRef.current instanceof THREE.OrthographicCamera) {
+        if (photoBoundsRef.current) updatePhotoFrustum(cameraRef.current, photoBoundsRef.current, w / h);
+      } else cameraRef.current.aspect = w / h;
       cameraRef.current.updateProjectionMatrix();
       rendererRef.current.setSize(w, h);
     };
@@ -2681,6 +2685,7 @@ const ThreeEngine: React.FC<{
     if (!sceneRef.current || !modelSource) return;
     let cancelled = false;
     const preservePersonalCamera = !!faceMeshRef.current?.getObjectByName('PERSONAL_FACE_SURFACE');
+    const previousHead = !!faceMeshRef.current?.getObjectByName('ESTIMATED_HEAD_SURFACE');
 
     if (faceMeshRef.current) {
       sceneRef.current.remove(faceMeshRef.current);
@@ -2723,8 +2728,9 @@ const ThreeEngine: React.FC<{
         }
         const geometry = mesh.geometry;
         if (!geometry.boundingBox) geometry.computeBoundingBox();
-        if (geometry.boundingBox) {
-          box.union(geometry.boundingBox.clone().applyMatrix4(mesh.matrixWorld));
+        const geometryBox = cameraPreset === 'face-surface' ? indexedGeometryBounds(geometry) : geometry.boundingBox;
+        if (geometryBox) {
+          box.union(geometryBox.clone().applyMatrix4(mesh.matrixWorld));
         }
         const positionAttribute = geometry.getAttribute('position');
         meshes += 1;
@@ -2785,7 +2791,19 @@ const ThreeEngine: React.FC<{
         }
       });
 
-      if (controlsRef.current && !(preservePersonalCamera && model.getObjectByName('PERSONAL_FACE_SURFACE'))) {
+      const headChanged = previousHead !== !!model.getObjectByName('ESTIMATED_HEAD_SURFACE');
+      if (cameraRef.current instanceof THREE.OrthographicCamera) {
+        photoBoundsRef.current = box.clone();
+        if (!preservePersonalCamera || headChanged) {
+          const aspect = (mountRef.current?.clientWidth || 1) / (mountRef.current?.clientHeight || 1);
+          updatePhotoFrustum(cameraRef.current, box, aspect);
+          cameraRef.current.position.copy(center).add(new THREE.Vector3(0, 0, 12));
+          cameraRef.current.zoom = 1;
+          cameraRef.current.updateProjectionMatrix();
+          controlsRef.current?.target.copy(center);
+          controlsRef.current?.update();
+        }
+      } else if (controlsRef.current && !(preservePersonalCamera && model.getObjectByName('PERSONAL_FACE_SURFACE'))) {
         const preset = CAMERA_PRESETS[cameraPreset];
         cameraRef.current?.position.set(...preset.position);
         controlsRef.current.target.set(...preset.target);

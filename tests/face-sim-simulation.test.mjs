@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import ts from 'typescript';
+import { buildEstimatedHead } from '../src/lab/faceSim/estimatedHead.ts';
+import { buildPersonalSurface, trianglesFromEdges } from '../src/lab/faceSim/engine.ts';
+import { FaceLandmarker } from '@mediapipe/tasks-vision';
 
 const atlas = JSON.parse(readFileSync(new URL('../src/lab/faceSim/genericFaceAtlas.json', import.meta.url), 'utf8'));
 const source = readFileSync(new URL('../src/lab/faceSim/simulation.ts', import.meta.url), 'utf8')
@@ -21,6 +24,21 @@ const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 const personal = () => ({
   positions: Float32Array.from(atlas.positions), indices: Uint32Array.from(atlas.triangles),
   uvs: new Float32Array(468 * 2), projection: { cx: 0, cy: 0, k: 1, aspect: 1 },
+});
+
+test('cabeza cerrada conserva grupos observados/estimados en simulación y no encuadra iris sin usar', () => {
+  const fixture = JSON.parse(readFileSync(new URL('./fixtures/face-sim-mediapipe-synthetic.json', import.meta.url), 'utf8'));
+  const surface = buildPersonalSurface(fixture.landmarks.map(([x, y, z]) => ({ x, y, z })), fixture.aspect,
+    trianglesFromEdges(FaceLandmarker.FACE_LANDMARKS_TESSELATION));
+  const head = buildEstimatedHead(surface);
+  const simulated = createSimulationMesh(head);
+  assert.equal(simulated.observedIndexCount, surface.indices.length);
+  assert.equal(simulated.indices.length, head.indices.length);
+  assert.ok(simulated.indices.length > surface.indices.length * 2);
+  assert.deepEqual(buildSimulationLayers(simulated, {}).find(layer => layer.id === 'skin').indices, head.indices);
+  assert.throws(() => createSimulationMesh({ ...head, observedIndexCount: 2 }), /separación/);
+  const extra = Float32Array.from([...simulated.positions, 900, 900, 900]);
+  assert.deepEqual(meshBounds(extra, simulated.indices), meshBounds(simulated.positions, simulated.indices));
 });
 
 test('neutralidad exacta, copias independientes y evaluación sin acumulación', () => {

@@ -107,6 +107,11 @@ test('malla predeterminada permite hover sin añadir marcas y revisión abre mod
   assert.equal(viewer.props.activeTool, 'none');
   assert.equal(viewer.props.anatomicalOverlay.wireframe, true);
   assert.equal(viewer.props.anatomicalOverlay.labels.length, genericFaceAtlas.triangles.length / 3);
+  const colors = viewer.props.anatomicalOverlay.colors;
+  for (let i = 0; i < colors.length; i += 9) {
+    assert.deepEqual(colors.slice(i, i + 3), colors.slice(i + 3, i + 6));
+    assert.deepEqual(colors.slice(i, i + 3), colors.slice(i + 6, i + 9), 'sin degradado hacia otra zona');
+  }
   viewer.props.anatomicalOverlay.onHover('Mentón');
   assert.match(text(app.render()), /Mentón · límite aproximado/);
   app.photos({ frontal: photo() });
@@ -326,6 +331,8 @@ test('una foto puede generar la superficie personal sin esperar referencias comp
   assert.match(text(tree), /Superficie 3D personal generada desde la foto Frontal/);
   assert.match(text(tree), /Cálculo rápido con una foto/);
   assert.equal(findAll(tree, n => n.type === 'section' && n.props['aria-label'] === 'Foto personal en 3D').length, 1);
+  const personalViewer = viewers(tree)[1];
+  assert.equal(personalViewer.props.cameraPreset, 'face-surface');
 });
 
 test('cabeza estimada: tres archivos sin cobertura bilateral no habilitan un cierre engañoso', async () => {
@@ -343,6 +350,30 @@ test('cabeza estimada: tres archivos sin cobertura bilateral no habilitan un cie
   assert.match(text(tree), /requiere al menos tres fotos útiles que cubran ambos lados/);
   assert.equal(findAll(tree, n => n.type === 'section' && n.props['aria-label'] === 'Foto personal en 3D').length, 1);
   assert.match(text(tree), /Carga una foto y calcula la superficie/);
+});
+
+test('cabeza estimada se transmite completa a Simular sin reemplazar la superficie de registro', async () => {
+  const fixture = JSON.parse(readFileSync(new URL('./fixtures/face-sim-mediapipe-synthetic.json', import.meta.url), 'utf8'));
+  const base = { ...photo(), aspect: fixture.aspect, landmarks: fixture.landmarks.map(([x, y, z]) => ({ x, y, z })) };
+  const profile = angle => {
+    const c = Math.cos(angle), s = Math.sin(angle), aspect = 0.8;
+    return { ...base, aspect, pose: [c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 0, 0, -40, 1],
+      landmarks: base.landmarks.map(p => ({
+        x: (0.4 + c * (p.x - 0.5) * base.aspect - s * p.z * base.aspect) / aspect, y: p.y, z: 0,
+      })) };
+  };
+  const app = lab(); app.render();
+  app.photos({ frontal: base, izquierda: profile(0.7), derecha: profile(-0.7) });
+  const head = button(app.render(), 'Cabeza estimada · 3+ fotos');
+  assert.equal(head.props.disabled, false);
+  head.props.onClick();
+  await new Promise(resolve => setImmediate(resolve));
+  const tree = app.render();
+  assert.match(text(tree), /Cabeza cerrada aproximada/);
+  button(tree, 'Simular').props.onClick();
+  const simulator = findAll(app.render(), n => n.props && Object.hasOwn(n.props, 'surface') && Object.hasOwn(n.props, 'photo'))[0];
+  assert.equal(simulator.props.surface.observedIndexCount, 852 * 3);
+  assert.ok(simulator.props.surface.indices.length > 852 * 3 * 2);
 });
 
 test('editar contorno expone 36 referencias y pasa a foto sin crear un tratamiento', () => {

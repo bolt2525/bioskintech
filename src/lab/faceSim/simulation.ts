@@ -49,6 +49,7 @@ export interface SimulationMesh {
   anchors: Float32Array;
   uvs?: Float32Array;
   source: 'personal' | 'generic';
+  observedIndexCount?: number;
 }
 export interface MeshBounds { min: Vec3; max: Vec3; center: Vec3; height: number }
 export interface LayerGeometry {
@@ -137,10 +138,11 @@ export function fromCanonicalPosition(p: Vec3, frame: FacialCoordinateFrame): Ve
   };
 }
 
-export function meshBounds(positions: ArrayLike<number>): MeshBounds {
+export function meshBounds(positions: ArrayLike<number>, indices?: ArrayLike<number>): MeshBounds {
   if (positions.length < 3 || positions.length % 3) throw new Error('Superficie facial incompleta.');
   const min = { x: Infinity, y: Infinity, z: Infinity }, max = { x: -Infinity, y: -Infinity, z: -Infinity };
-  for (let i = 0; i < positions.length; i += 3) {
+  for (let j = 0; j < (indices?.length ?? positions.length / 3); j++) {
+    const i = (indices ? indices[j] : j) * 3;
     for (const [offset, axis] of ['x', 'y', 'z'].entries()) {
       const key = axis as keyof Vec3, value = positions[i + offset];
       if (!Number.isFinite(value)) throw new Error('La superficie contiene coordenadas no finitas.');
@@ -153,7 +155,7 @@ export function meshBounds(positions: ArrayLike<number>): MeshBounds {
 }
 
 /** Copias propias: jamás se mutan buffers del llamador ni el atlas compartido. */
-export function createSimulationMesh(surface?: PersonalSurface): SimulationMesh {
+export function createSimulationMesh(surface?: PersonalSurface & { observedIndexCount?: number }): SimulationMesh {
   if (surface) {
     if (surface.positions.length < 468 * 3 || surface.indices.length < 3 || surface.indices.length % 3
       || surface.uvs.length !== surface.positions.length / 3 * 2
@@ -168,6 +170,10 @@ export function createSimulationMesh(surface?: PersonalSurface): SimulationMesh 
       throw new Error('La proyección de la superficie personal no es válida.');
     }
     const frame = personalFaceFrame(surface), positions = surface.positions.slice();
+    if (surface.observedIndexCount !== undefined && (!Number.isInteger(surface.observedIndexCount)
+      || surface.observedIndexCount < 3 || surface.observedIndexCount % 3 || surface.observedIndexCount >= surface.indices.length)) {
+      throw new Error('La separación de superficie observada y estimada no es válida.');
+    }
     for (let i = 0; i < positions.length / 3; i++) {
       const p = toCanonicalPosition(point(surface.positions, i), frame);
       positions.set([p.x, p.y, p.z], i * 3);
@@ -175,6 +181,7 @@ export function createSimulationMesh(surface?: PersonalSurface): SimulationMesh 
     return {
       positions, indices: surface.indices.slice(), anchors: positions.slice(0, 468 * 3),
       uvs: surface.uvs.slice(), source: 'personal',
+      observedIndexCount: surface.observedIndexCount,
     };
   }
   const full = atlasData.surface;

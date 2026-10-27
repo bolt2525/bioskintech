@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { PersonalSurface } from './engine';
+import { updatePhotoFrustum } from '../../components/admin/ficha-clinica/components/clinicalCamera';
 import {
   buildCutPlane, buildSimulationLayers, createSimulationMesh, meshBounds,
   NEUTRAL_SIMULATION, SIMULATION_CONTROLS, SIMULATION_LAYERS,
@@ -39,6 +40,10 @@ function geometryFrom(data: ReturnType<typeof buildSimulationLayers>[number], me
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(data.positions, 3));
   geometry.setIndex(new THREE.BufferAttribute(data.indices, 1));
+  if (data.id === 'skin' && mesh.observedIndexCount !== undefined) {
+    geometry.addGroup(0, mesh.observedIndexCount, 0);
+    geometry.addGroup(mesh.observedIndexCount, data.indices.length - mesh.observedIndexCount, 1);
+  }
   if (data.id === 'skin' && mesh.uvs) geometry.setAttribute('uv', new THREE.BufferAttribute(mesh.uvs, 2));
   if (data.colors) geometry.setAttribute('color', new THREE.BufferAttribute(data.colors, 3));
   geometry.computeVertexNormals();
@@ -65,8 +70,12 @@ function mountViewer(
   canvas.style.touchAction = 'none';
   host.appendChild(canvas);
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(33, 1, 0.01, 1000);
-  const bounds = meshBounds(mesh.positions);
+  const camera = new THREE.OrthographicCamera(-3, 3, 3, -3, 0.01, 1000);
+  const bounds = meshBounds(mesh.positions, mesh.indices);
+  const cameraBounds = new THREE.Box3(
+    new THREE.Vector3(bounds.min.x, bounds.min.y, bounds.min.z),
+    new THREE.Vector3(bounds.max.x, bounds.max.y, bounds.max.z),
+  );
   const size = Math.max(bounds.max.x - bounds.min.x, bounds.height, bounds.max.z - bounds.min.z);
   const center = new THREE.Vector3(bounds.center.x, bounds.center.y, bounds.center.z);
   const distance = size * 2.4;
@@ -75,6 +84,8 @@ function mountViewer(
   controls.enablePan = false;
   controls.minDistance = size * 0.7;
   controls.maxDistance = size * 6;
+  controls.minZoom = 0.25;
+  controls.maxZoom = 8;
   controls.enableDamping = false;
   scene.add(new THREE.HemisphereLight('#ffffff', '#64748b', 2.7));
   const keyLight = new THREE.DirectionalLight('#ffffff', 2.1);
@@ -89,14 +100,12 @@ function mountViewer(
   let viewportWidth = 1, viewportHeight = 1;
   const after = new THREE.Group(), before = new THREE.Group();
   scene.add(after, before);
-  const afterMeshes = new Map<LayerId, THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>>();
-  let beforeMesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial> | undefined;
+  const afterMeshes = new Map<LayerId, THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial[]>>();
+  let beforeMesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial[]> | undefined;
 
   const drawView = (left: number, width: number, group: THREE.Group) => {
     after.visible = group === after; before.visible = group === before;
-    camera.aspect = width / viewportHeight;
-    camera.zoom = Math.min(1, camera.aspect * 1.3);
-    camera.updateProjectionMatrix();
+    updatePhotoFrustum(camera, cameraBounds, width / viewportHeight);
     renderer.setViewport(left, 0, width, viewportHeight);
     renderer.setScissor(left, 0, width, viewportHeight);
     renderer.render(scene, camera);
@@ -124,8 +133,8 @@ function mountViewer(
   const keyboard = (event: KeyboardEvent) => {
     const angle = 0.10, offset = camera.position.clone().sub(controls.target);
     const spherical = new THREE.Spherical().setFromVector3(offset);
-    if (event.key === '+' || event.key === '=') spherical.radius *= 0.90;
-    else if (event.key === '-') spherical.radius *= 1.10;
+    if (event.key === '+' || event.key === '=') camera.zoom = Math.min(controls.maxZoom, camera.zoom / 0.9);
+    else if (event.key === '-') camera.zoom = Math.max(controls.minZoom, camera.zoom / 1.1);
     else if (controls.enableRotate && event.key === 'ArrowLeft') spherical.theta -= angle;
     else if (controls.enableRotate && event.key === 'ArrowRight') spherical.theta += angle;
     else if (controls.enableRotate && event.key === 'ArrowUp') spherical.phi -= angle;
@@ -171,15 +180,23 @@ function mountViewer(
         vertexColors: Boolean(data.colors),
         side: THREE.DoubleSide, roughness: 0.8, transparent: true, depthWrite: false,
       });
-      const object = new THREE.Mesh(geometryFrom(data, mesh), material);
+      const materials = [material];
+      if (layer.id === 'skin' && mesh.observedIndexCount !== undefined) materials.push(new THREE.MeshStandardMaterial({
+        color: '#94a3b8', side: THREE.DoubleSide, roughness: 0.9, transparent: true, depthWrite: false,
+      }));
+      const object = new THREE.Mesh(geometryFrom(data, mesh), materials);
       object.renderOrder = layer.id === 'skin' ? 5 : layer.id === 'fat' ? 4 : 2;
       after.add(object); afterMeshes.set(layer.id, object);
     }
     const skin = neutral.find(item => item.id === 'skin')!;
-    beforeMesh = new THREE.Mesh(geometryFrom(skin, mesh), new THREE.MeshStandardMaterial({
+    const beforeMaterials = [new THREE.MeshStandardMaterial({
       color: texture ? '#ffffff' : SIMULATION_LAYERS[0].color, map: texture,
       roughness: 0.8, side: THREE.DoubleSide,
+    })];
+    if (mesh.observedIndexCount !== undefined) beforeMaterials.push(new THREE.MeshStandardMaterial({
+      color: '#94a3b8', side: THREE.DoubleSide, roughness: 0.9,
     }));
+    beforeMesh = new THREE.Mesh(geometryFrom(skin, mesh), beforeMaterials);
     before.add(beforeMesh);
     controls.addEventListener('change', requestRender);
     canvas.addEventListener('webglcontextlost', contextLost);
@@ -214,18 +231,20 @@ function mountViewer(
       const plane = cut ? new THREE.Plane(new THREE.Vector3(cut.normal.x, cut.normal.y, cut.normal.z), cut.constant) : null;
       for (const [id, object] of afterMeshes) {
         object.visible = next.layers[id].visible && next.layers[id].opacity > 0;
-        object.material.opacity = next.layers[id].opacity;
-        const transparent = next.layers[id].opacity < 1;
-        if (object.material.transparent !== transparent) {
-          object.material.transparent = transparent;
-          object.material.depthWrite = !transparent;
-          object.material.needsUpdate = true;
+        for (const material of object.material) {
+          material.opacity = next.layers[id].opacity;
+          const transparent = next.layers[id].opacity < 1;
+          if (material.transparent !== transparent) {
+            material.transparent = transparent;
+            material.depthWrite = !transparent;
+            material.needsUpdate = true;
+          }
+          const clipped = plane && (next.cut.scope === 'all' || id === 'skin');
+          material.clippingPlanes = clipped ? [plane] : [];
         }
-        const clipped = plane && (next.cut.scope === 'all' || id === 'skin');
-        object.material.clippingPlanes = clipped ? [plane] : [];
       }
       // Antes conserva originales; recibe el mismo corte para comparar sin ocultaciones engañosas.
-      if (beforeMesh) beforeMesh.material.clippingPlanes = plane ? [plane] : [];
+      if (beforeMesh) for (const material of beforeMesh.material) material.clippingPlanes = plane ? [plane] : [];
       controls.enableRotate = next.view === 'orbit';
       if (previousView !== next.view) {
         const direction = next.view === 'left' ? new THREE.Vector3(-1, 0, 0)

@@ -1,5 +1,10 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-27 Frontal sin doble perspectiva.
+- ✅ 2026-10-27 Cabeza completa conectada al simulador.
+- ✅ 2026-10-27 Labios/nariz: límites topológicos coherentes.
+- ✅ 2026-10-27 QA facial/capilar: 172 pruebas.
+
 - ✅ 2026-10-27 Perfiles recuperados; contorno modal.
 - ✅ 2026-10-27 Morfología, capas y cortes interactivos.
 - ✅ 2026-10-27 Malla hover; RGB multiescala.

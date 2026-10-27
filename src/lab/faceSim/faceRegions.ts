@@ -58,6 +58,64 @@ export function faceTriangleZone(indices: readonly number[], labels: readonly st
   return [...votes].sort((a, b) => b[1] - a[1])[0][0];
 }
 
+/** Límites cerrados por aristas reales: el bermellón no se propaga hacia la piel. */
+export const FACE_REGION_BOUNDARIES = {
+  upperLip: [61, 185, 40, 39, 37, 0, 267, 269, 270, 409, 291, 306, 292, 308, 415, 310, 311, 312, 13, 82, 81, 80, 191, 78, 62, 76],
+  lowerLip: [61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 306, 292, 308, 324, 318, 402, 317, 14, 87, 178, 88, 95, 78, 62, 76],
+  nose: [168, 193, 122, 196, 3, 51, 45, 220, 115, 48, 64, 98, 97, 2, 326, 327, 294, 278, 344, 440, 275, 281, 248, 419, 351, 417],
+} as const;
+
+/** Una etiqueta por cara, compartida por color y hover en foto/atlas/superficie. */
+export function buildFaceTriangleRegions(map: FaceRegionMap, positions: readonly number[]): string[] {
+  const faces = Array.from({ length: map.triangles.length / 3 }, (_, i) => map.triangles.slice(i * 3, i * 3 + 3));
+  const key = (a: number, b: number) => a < b ? `${a}:${b}` : `${b}:${a}`;
+  const edges = new Map<string, number[]>();
+  faces.forEach((face, i) => face.forEach((a, j) => {
+    const edge = key(a, face[(j + 1) % 3]);
+    edges.set(edge, [...(edges.get(edge) ?? []), i]);
+  }));
+  const enclosed = (boundary: readonly number[], seed: readonly number[]) => {
+    const barriers = new Set(boundary.map((a, j) => key(a, boundary[(j + 1) % boundary.length])));
+    if ([...barriers].some(edge => !edges.has(edge))) throw new Error('El atlas no contiene los límites anatómicos esperados.');
+    const start = faces.findIndex(face => seed.every(id => face.includes(id)));
+    if (start < 0) throw new Error('El atlas no contiene la referencia anatómica esperada.');
+    const selected = new Set([start]), queue = [start];
+    for (let j = 0; j < queue.length; j++) {
+      const face = faces[queue[j]];
+      face.forEach((a, k) => {
+        const edge = key(a, face[(k + 1) % 3]);
+        if (barriers.has(edge)) return;
+        for (const neighbor of edges.get(edge)!) if (!selected.has(neighbor)) {
+          selected.add(neighbor); queue.push(neighbor);
+        }
+      });
+    }
+    if (selected.size > faces.length / 3) throw new Error('El límite anatómico no encierra una región local.');
+    return selected;
+  };
+  const upper = enclosed(FACE_REGION_BOUNDARIES.upperLip, [0, 11, 37]);
+  const lower = enclosed(FACE_REGION_BOUNDARIES.lowerLip, [17, 84, 85]);
+  const nose = enclosed(FACE_REGION_BOUNDARIES.nose, [6, 122, 168]);
+  const protectedZones = new Set(['Labio superior', 'Labio inferior', 'Comisuras', 'Dorso nasal']);
+  const surroundingSeeds = FACE_REGION_SEEDS.filter(entry => !protectedZones.has(entry.zone));
+  return faces.map((face, i) => {
+    if ((upper.has(i) || lower.has(i)) && face.some(id => [61, 78, 291, 308].includes(id))) return 'Comisuras';
+    if (upper.has(i)) return 'Labio superior';
+    if (lower.has(i)) return 'Labio inferior';
+    if (nose.has(i)) return 'Dorso nasal';
+    const surrounding = face.filter(id => !protectedZones.has(map.labels[id]));
+    if (surrounding.length) return faceTriangleZone(surrounding, map.labels);
+    // Los vértices del borde pueden pertenecer todos al labio/nariz, pero no la cara exterior.
+    const center = [0, 1, 2].map(axis => face.reduce((sum, id) => sum + positions[id * 3 + axis] / 3, 0));
+    let best = Infinity, label = 'Sin zona facial';
+    for (const entry of surroundingSeeds) for (const id of entry.indices) {
+      const distance = Math.hypot(...center.map((value, axis) => value - positions[id * 3 + axis]));
+      if (distance < best) { best = distance; label = entry.zone; }
+    }
+    return label;
+  });
+}
+
 /** Voronoi geodésico sobre las conexiones reales de la malla, no franjas de una caja 2D. */
 export function buildFaceRegionMap(
   landmarks: P2[], triangles: readonly number[], aspect: number, referencePositions?: readonly number[],

@@ -1,8 +1,42 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import { FACE_OVAL, buildPersonalSurface, expandElems, frameFromLandmarks, projectPersonal, DEFAULT_FRAME } from '../src/lab/faceSim/engine.ts';
 import { moveFaceLandmark, refinePhotoContour } from '../src/lab/faceSim/faceContour.ts';
-import { buildFaceRegionMap, facialZoneAt, isOnObservedFace, faceAttentionColor, faceRegionEducation, rasterizeFaceRegions, FACE_REGION_SEEDS, faceRegionColor } from '../src/lab/faceSim/faceRegions.ts';
+import { buildFaceRegionMap, buildFaceTriangleRegions, FACE_REGION_BOUNDARIES, facialZoneAt, isOnObservedFace, faceAttentionColor, faceRegionEducation, rasterizeFaceRegions, FACE_REGION_SEEDS, faceRegionColor } from '../src/lab/faceSim/faceRegions.ts';
+
+test('atlas real: labios y nariz siguen contornos cerrados sin invadir piel vecina', () => {
+  const atlas = JSON.parse(readFileSync(new URL('../src/lab/faceSim/genericFaceAtlas.json', import.meta.url), 'utf8'));
+  const landmarks = Array.from({ length: 468 }, (_, i) => ({ x: atlas.positions[i * 3], y: -atlas.positions[i * 3 + 1] }));
+  const map = buildFaceRegionMap(landmarks, atlas.triangles, 1, atlas.positions);
+  const labels = buildFaceTriangleRegions(map, atlas.positions);
+  const faces = Array.from({ length: labels.length }, (_, i) => atlas.triangles.slice(i * 3, i * 3 + 3));
+  const key = (a, b) => [a, b].sort((a, b) => a - b).join(':');
+  for (const [boundary, zones] of [
+    [FACE_REGION_BOUNDARIES.upperLip, ['Labio superior', 'Comisuras']],
+    [FACE_REGION_BOUNDARIES.lowerLip, ['Labio inferior', 'Comisuras']],
+    [FACE_REGION_BOUNDARIES.nose, ['Dorso nasal']],
+  ]) {
+    const borders = boundary.map((id, i) => key(id, boundary[(i + 1) % boundary.length]));
+    for (const edge of borders) {
+      const adjacent = faces.map((face, i) => ({ face, i })).filter(({ face }) =>
+        face.some((id, j) => key(id, face[(j + 1) % 3]) === edge));
+      assert.ok(adjacent.length >= 1 && adjacent.length <= 2);
+      assert.ok(adjacent.some(({ i }) => zones.includes(labels[i])), `${edge}: interior`);
+      // El puente de comisura es compartido por ambos labios, no por piel exterior.
+      if (adjacent.length === 2 && !edge.includes('76') && !edge.includes('62') && !edge.includes('306') && !edge.includes('292')) {
+        assert.ok(adjacent.some(({ i }) => !zones.includes(labels[i])), `${edge}: exterior`);
+      }
+    }
+  }
+  const zone = ids => labels[faces.findIndex(face => ids.every(id => face.includes(id)))];
+  assert.equal(zone([0, 11, 37]), 'Labio superior');
+  assert.equal(zone([17, 84, 85]), 'Labio inferior');
+  assert.equal(zone([164, 0, 267]), 'Piel supralabial / filtrum');
+  assert.notEqual(zone([83, 18, 17]), 'Labio inferior');
+  assert.equal(zone([6, 122, 168]), 'Dorso nasal');
+  assert.throws(() => buildFaceTriangleRegions({ ...map, triangles: [0, 11, 37] }, atlas.positions), /límites/);
+});
 
 function ovalFixture() {
   const landmarks = Array.from({ length: 478 }, () => ({ x: 0.5, y: 0.5, z: 0 }));
