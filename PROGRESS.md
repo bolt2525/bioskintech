@@ -1,5 +1,6 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-28 Simular: panel compacto tipo editor.
 - ✅ 2026-10-28 Editor facial: inspector desplazable.
 - ✅ 2026-10-28 Retoque conserva textura craneal.
 - ✅ 2026-10-28 Siluetas protegen ancho/costura facial.

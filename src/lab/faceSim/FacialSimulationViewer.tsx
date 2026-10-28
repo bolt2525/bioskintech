@@ -573,6 +573,11 @@ function mountFacialSimulation(
 export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMeshChange, onPlaneChange, hair = DEFAULT_HAIR, hairPatches, photoPatches }: FacialSimulationViewerProps) {
   const id = useId(), host = useRef<HTMLDivElement>(null), runtime = useRef<ViewerRuntime | null>(null);
   const inspector = useRef<HTMLDivElement>(null);
+  const editor = useRef<HTMLElement>(null);
+  // Escritorio: el editor ocupa la pantalla al abrirse (visor + inspector visibles sin desplazar la página).
+  useEffect(() => {
+    if (window.matchMedia?.('(min-width: 1024px)').matches) editor.current?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
+  }, []);
   const [tool, setTool] = useState<InspectorTool>('morphology');
   const [parameters, setParameters] = useState<SimulationParameters>({ ...NEUTRAL_SIMULATION });
   const [layers, setLayers] = useState<LayerSettings>(surfaceLayers);
@@ -667,7 +672,7 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
     setLayers(current => ({ ...current, [key]: { ...current[key], ...update } }));
 
   return (
-    <section aria-labelledby={`${id}-title`} data-face-editor className="flex min-w-0 flex-col gap-3 rounded-xl border border-slate-700 bg-slate-900 p-3 text-slate-100 lg:sticky lg:top-2 lg:h-[calc(100dvh-5rem)] lg:min-h-[560px]">
+    <section ref={editor} aria-labelledby={`${id}-title`} data-face-editor className="flex min-w-0 scroll-mt-2 flex-col gap-3 rounded-xl border border-slate-700 bg-slate-900 p-3 text-slate-100 lg:sticky lg:top-2 lg:h-[calc(100dvh-5rem)] lg:min-h-[560px]">
       <header className="flex shrink-0 flex-wrap items-start justify-between gap-2">
         <div>
           <h2 id={`${id}-title`} className="text-sm font-semibold">Simulación morfológica 3D</h2>

@@ -1201,11 +1201,13 @@ export default function FaceSimLab() {
           triangles={genericFaceAtlas.triangles} onClose={() => setBoundaryReview(false)}
           onApply={(landmarks, reviewed) => applyLandmarks(landmarks, [...genericFaceAtlas.triangles], slot.contourAdjusted, reviewed)} />
       </Suspense>}
-      <aside className={`space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:sticky lg:top-4 lg:max-h-[94vh] lg:self-start lg:overflow-y-auto ${workspace === 'simulate' ? 'max-lg:[&>*:not(nav)]:hidden' : ''}`}>
+      <aside className={`space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:sticky lg:top-4 lg:max-h-[94vh] lg:self-start lg:overflow-y-auto ${workspace === 'simulate' ? 'max-lg:[&>*:not(nav)]:hidden lg:[&>*:not(nav):not([data-sim-keep])]:hidden' : ''}`}>
         <nav aria-label="Herramientas del laboratorio" className="grid grid-cols-3 gap-1">
           {([['capture', 'Capturas'], ['simulate', 'Simular'], ['mapping', 'Marcar']] as const).map(([id, label]) =>
             <button type="button" key={id} aria-pressed={workspace === id} onClick={() => {
               setWorkspace(id);
+              // La malla de zonas es para marcar; en el editor se reactiva desde «Capas».
+              if (id === 'simulate' && workspace !== 'simulate') setMeshVisible(false);
               if (id === 'simulate' && captureSource && !personal && !genericSelected.current) {
                 setModelKind('personal');
                 void buildPersonal(depth, captureSource, false);
@@ -1389,7 +1391,7 @@ export default function FaceSimLab() {
           <p className="mt-2 text-slate-500">Sin un borde claro se conserva la detección. Al recalcular se conservan las marcas por su triángulo anatómico; revisa su nueva ubicación.</p>
         </details>}
 
-        <fieldset className="space-y-2 rounded-xl border border-slate-200 p-3 text-xs">
+        <fieldset data-sim-keep className="space-y-2 rounded-xl border border-slate-200 p-3 text-xs">
           <legend className="px-1 font-semibold uppercase text-slate-500">Modelo 3D</legend>
           <div className="grid grid-cols-2 gap-1">
             <button type="button" disabled={buildingPersonal} aria-pressed={modelKind === 'generico'} onClick={useGenericModel}
