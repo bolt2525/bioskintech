@@ -69,5 +69,37 @@ test('las siluetas ajustan el cráneo hacia la máscara observada', () => {
   const fitted = buildTemplateHead(face, template, [source]);
   const occiput = h => { let z = Infinity; for (let i = count; i < h.positions.length / 3; i++) if (h.positions[i * 3 + 1] > (fy[0] + fy[1]) / 2) z = Math.min(z, h.positions[i * 3 + 2]); return z; };
   assert.ok(occiput(fitted) < occiput(base) - 0.02, 'el occipucio se desplaza hacia la silueta más profunda');
+  assert.ok(Math.abs(occiput(fitted) - back) < Math.abs(occiput(base) - back) * 0.5, 'el ajuste por vértice alcanza la silueta, no solo una escala global');
+  assert.ok(fitted.positions.every(Number.isFinite));
   assert.ok(fx[1] > fx[0]);
+});
+
+test('la silueta de perfil corrige la profundidad de la línea media (nariz, labios, mentón)', async () => {
+  const { refineProfileDepth, PROFILE_MIDLINE } = await import(compile('../src/lab/faceSim/multiViewHead.ts'));
+  const P = i => [face.positions[i * 3], face.positions[i * 3 + 1], face.positions[i * 3 + 2]];
+  const faceH = Math.hypot(...P(10).map((v, k) => v - P(152)[k])), delta = faceH * 0.04;
+  const mid = PROFILE_MIDLINE.map(P).sort((a, b) => a[1] - b[1]);
+  const frontAt = y => {
+    const j = mid.findIndex(p => p[1] >= y);
+    if (j <= 0) return mid[j === 0 ? 0 : mid.length - 1][2];
+    const t = (y - mid[j - 1][1]) / (mid[j][1] - mid[j - 1][1]);
+    return mid[j - 1][2] + (mid[j][2] - mid[j - 1][2]) * t;
+  };
+  const width = 400, height = 400, scale = 0.08, cu = 0.5, cv = 0.5;
+  // Perfil ortográfico: u = cu - z·scale (la cara apunta a -u); la silueta queda «delta» por delante.
+  const mask = Float32Array.from({ length: width * height }, (_, i) => {
+    const u = (i % width + 0.5) / width, v = (Math.floor(i / width) + 0.5) / height;
+    const z = (cu - u) / scale, y = (cv - v) / scale;
+    return z < frontAt(y) + delta && z > frontAt(y) - faceH ? 1 : 0;
+  });
+  const source = { label: 'perfil', width, height, mask, texture: {},
+    projection: { u: [0, 0, -scale, cu], v: [0, -scale, 0, cv], towardCamera: [1, 0, 0] } };
+  const result = refineProfileDepth(face.positions, [source]);
+  assert.ok(result && result.points >= 10, 'usa la mayoría de puntos de la línea media');
+  for (const id of [1, 0, 17, 199]) {
+    const moved = result.positions[id * 3 + 2] - face.positions[id * 3 + 2];
+    assert.ok(moved > delta * 0.5 && moved < delta * 1.3, `${id} avanza hacia la silueta (${moved / delta})`);
+  }
+  assert.ok(Math.abs(result.positions[234 * 3 + 2] - face.positions[234 * 3 + 2]) < delta * 0.1, 'el borde lateral no se arrastra');
+  assert.equal(refineProfileDepth(face.positions, [{ ...source, projection: { u: [scale, 0, 0, cu], v: [0, -scale, 0, cv], towardCamera: [0, 0, 1] } }]), null, 'una vista frontal no aporta');
 });

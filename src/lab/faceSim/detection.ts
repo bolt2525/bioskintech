@@ -40,6 +40,37 @@ export function detectionImage(source: HTMLCanvasElement, transform: DetectionTr
   return canvas;
 }
 
+/**
+ * Segunda pasada sobre un recorte ampliado del rostro: con caras pequeñas o lejanas MediaPipe
+ * trabaja a 256 px de entrada y pierde precisión. Solo se acepta si concuerda con la primera pasada.
+ */
+export function refineLandmarksByCrop(
+  landmarker: { detect(image: HTMLCanvasElement): { faceLandmarks: { x: number; y: number; z: number }[][] } },
+  image: HTMLCanvasElement, landmarks: { x: number; y: number; z: number }[],
+): { x: number; y: number; z: number }[] | null {
+  const xs = landmarks.slice(0, 468).map(p => p.x * image.width), ys = landmarks.slice(0, 468).map(p => p.y * image.height);
+  const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+  const faceHeight = y1 - y0, side = Math.max(x1 - x0, faceHeight) * 1.7;
+  if (!(faceHeight > 8) || faceHeight > image.height * 0.6) return null;
+  const left = Math.max(0, (x0 + x1 - side) / 2), top = Math.max(0, (y0 + y1 - side) / 2);
+  const width = Math.min(image.width - left, side), height = Math.min(image.height - top, side);
+  const scale = Math.min(2, 1024 / Math.max(width, height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(width * scale); canvas.height = Math.round(height * scale);
+  const context = canvas.getContext('2d');
+  if (!context) return null;
+  context.imageSmoothingQuality = 'high';
+  context.drawImage(image, left, top, width, height, 0, 0, canvas.width, canvas.height);
+  const found = landmarker.detect(canvas).faceLandmarks[0];
+  if (!found || found.length < 468) return null;
+  const refined = found.map(p => ({
+    x: (p.x * width + left) / image.width, y: (p.y * height + top) / image.height, z: p.z * width / image.width,
+  }));
+  const shift = refined.slice(0, 468).reduce((s, p, i) =>
+    s + Math.hypot((p.x - landmarks[i].x) * image.width, (p.y - landmarks[i].y) * image.height), 0) / 468;
+  return shift < faceHeight * 0.05 && refined.every(p => [p.x, p.y, p.z].every(Number.isFinite)) ? refined : null;
+}
+
 /** Landmarks 2D (normalizados) de una imagen cualquiera, p. ej. una ilustración frontal; null si no hay rostro. */
 export async function detectImageLandmarks(image: HTMLCanvasElement): Promise<{ x: number; y: number }[] | null> {
   const { FaceLandmarker, FilesetResolver } = await import('@mediapipe/tasks-vision');

@@ -23,7 +23,7 @@ export function assessFaceCapture(image: Pixels, landmarks: DepthView['landmarks
   const left = Math.max(0, Math.min(...xs)), right = Math.min(1, Math.max(...xs));
   const top = Math.max(0, Math.min(...ys)), bottom = Math.min(1, Math.max(...ys));
   const faceFraction = Math.max(0, right - left) * Math.max(0, bottom - top);
-  if (faceFraction < 0.12 || (bottom - top) * height < 160 || (right - left) * width < 100) {
+  if (faceFraction < 0.08 || (bottom - top) * height < 140 || (right - left) * width < 90) {
     reasons.push('El rostro es demasiado pequeño. Usa una foto cercana del rostro, no una cédula, documento, collage o captura con un retrato pequeño.');
   }
   if ([33, 263, 1, 13, 152].some(i => landmarks[i].x <= 0.005 || landmarks[i].x >= 0.995 || landmarks[i].y <= 0.005 || landmarks[i].y >= 0.995)) {
@@ -82,7 +82,7 @@ function viewYaw(v: DepthView) {
 }
 
 /** Compara proporciones 3D invariantes a giro/escala. Compatibilidad NO significa misma identidad. */
-export function compareFaceGeometry(a: DepthView, b: DepthView): { compatible: boolean; medianDifference: number; reason: string } {
+export function compareFaceGeometry(a: DepthView, b: DepthView): { compatible: boolean; blocking: boolean; medianDifference: number; reason: string } {
   const bilateral = (v: DepthView) => {
     const distance = viewDistance(v), scale = distance(33, 263);
     if (scale < 1e-4) return null;
@@ -98,25 +98,31 @@ export function compareFaceGeometry(a: DepthView, b: DepthView): { compatible: b
       .map(([i, j]) => distance(i, j) / scale);
     return ratios.every(x => Number.isFinite(x) && x > 1e-4) ? ratios : null;
   };
-  let x: number[] | null = null, y: number[] | null = null;
+  let x: number[] | null = null, y: number[] | null = null, profile = false;
   if (validView(a) && validView(b)) {
     const yawA = viewYaw(a), yawB = viewYaw(b);
     if (Math.abs(yawA) < PROFILE_YAW && Math.abs(yawB) < PROFILE_YAW) { x = bilateral(a); y = bilateral(b); }
     else {
       // Lado visible de la vista más girada; si ambas lo están, cada una usa el suyo (simetría aproximada).
+      profile = true;
       const dominant = Math.abs(yawA) >= Math.abs(yawB) ? yawA : yawB;
       const sideOf = (yaw: number) => Math.abs(yaw) < PROFILE_YAW ? dominant > 0 : yaw > 0;
       x = hemiface(a, sideOf(yawA)); y = hemiface(b, sideOf(yawB));
     }
   }
-  if (!x || !y) return { compatible: false, medianDifference: Infinity, reason: 'No hay referencias estables suficientes para comparar las fotografías.' };
+  if (!x || !y) return { compatible: false, blocking: false, medianDifference: Infinity, reason: 'No hay referencias estables suficientes para comparar las fotografías.' };
   const differences = x.map((v, i) => Math.abs(Math.log(v / y[i]))).sort((a, b) => a - b);
   const half = differences.length / 2;
   const medianDifference = (differences[half - 1] + differences[half]) / 2;
   const compatible = medianDifference <= 0.13
     && differences.filter(d => d > 0.22).length < 3
     && differences.filter(d => d > 0.35).length < 2;
-  return { compatible, medianDifference, reason: compatible
+  // Entre vistas frontales la geometría es observada: criterio estricto. En perfil la hemicara oculta es
+  // inferida por MediaPipe, así que solo bloquean discrepancias groseras; el resto es advertencia.
+  const blocking = !compatible && (!profile || medianDifference > 0.3 || differences.filter(d => d > 0.5).length >= 4);
+  return { compatible, blocking, medianDifference, reason: compatible
     ? 'Proporciones compatibles; esto NO verifica identidad. Confirma que las fotos son de la misma persona.'
-    : 'Las proporciones faciales son incompatibles. Pueden ser personas distintas, filtros, oclusión o capturas no comparables. No se fusionarán.' };
+    : blocking
+      ? 'Las proporciones faciales son incompatibles. Pueden ser personas distintas, filtros, oclusión o capturas no comparables. No se fusionarán.'
+      : 'Proporciones algo distintas en el perfil (giro, expresión o lente). Se permite el cálculo; confirma que es la misma persona y revisa el resultado.' };
 }

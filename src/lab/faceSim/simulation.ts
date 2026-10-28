@@ -11,20 +11,42 @@ export interface SimulationParameters {
   chinHeight: number;
   chinWidth: number;
   jawWidth: number;
+  noseHump: number;
+  noseTipWidth: number;
+  lipUpper: number;
+  lipLower: number;
+  lipProjection: number;
+  lipCorners: number;
+  cheekbone: number;
+  cheekVolume: number;
+  buccal: number;
 }
 
 export const NEUTRAL_SIMULATION: Readonly<SimulationParameters> = Object.freeze({
   noseBridge: 0, noseTip: 0, noseRotation: 0, noseWidth: 0,
   chinProjection: 0, chinHeight: 0, chinWidth: 0, jawWidth: 0,
+  noseHump: 0, noseTipWidth: 0, lipUpper: 0, lipLower: 0, lipProjection: 0, lipCorners: 0,
+  cheekbone: 0, cheekVolume: 0, buccal: 0,
 });
 
+export type SimulationGroup = 'Nariz' | 'Labios' | 'Pómulos y mejillas' | 'Mentón y mandíbula';
+export const SIMULATION_GROUPS: ReadonlyArray<SimulationGroup> = ['Nariz', 'Labios', 'Pómulos y mejillas', 'Mentón y mandíbula'];
 export const SIMULATION_CONTROLS: ReadonlyArray<{
-  key: keyof SimulationParameters; label: string; group: 'Nariz' | 'Mentón y mandíbula';
+  key: keyof SimulationParameters; label: string; group: SimulationGroup;
 }> = [
   { key: 'noseBridge', label: 'Dorso · proyección', group: 'Nariz' },
+  { key: 'noseHump', label: 'Dorso · giba (− rebaja)', group: 'Nariz' },
   { key: 'noseTip', label: 'Punta · proyección', group: 'Nariz' },
   { key: 'noseRotation', label: 'Punta · rotación', group: 'Nariz' },
+  { key: 'noseTipWidth', label: 'Punta · anchura', group: 'Nariz' },
   { key: 'noseWidth', label: 'Alas · anchura', group: 'Nariz' },
+  { key: 'lipUpper', label: 'Labio superior · volumen', group: 'Labios' },
+  { key: 'lipLower', label: 'Labio inferior · volumen', group: 'Labios' },
+  { key: 'lipProjection', label: 'Labios · proyección', group: 'Labios' },
+  { key: 'lipCorners', label: 'Comisuras · elevación', group: 'Labios' },
+  { key: 'cheekbone', label: 'Pómulo · proyección malar', group: 'Pómulos y mejillas' },
+  { key: 'cheekVolume', label: 'Mejilla media · volumen', group: 'Pómulos y mejillas' },
+  { key: 'buccal', label: 'Mejilla inferior · volumen bucal', group: 'Pómulos y mejillas' },
   { key: 'chinProjection', label: 'Mentón · proyección', group: 'Mentón y mandíbula' },
   { key: 'chinHeight', label: 'Mentón · altura', group: 'Mentón y mandíbula' },
   { key: 'chinWidth', label: 'Mentón · anchura', group: 'Mentón y mandíbula' },
@@ -222,38 +244,66 @@ export function deformPositions(
   if (anchors.length < 468 * 3) throw new Error('Faltan anclas mesh468.');
   meshBounds(original);
   const params = sanitizeSimulation(input), { height: h, axis, average } = facialFrame(anchors);
-  type Field = { center: Vec3; radius: Vec3; delta: (p: Vec3) => Vec3 };
+  type Field = { center: Vec3; radius: Vec3; delta: (p: Vec3) => Vec3; protectedCenters: Vec3[] };
   const fields: Field[] = [];
-  const add = (ids: number[], radius: [number, number, number], delta: Field['delta']) => {
-    fields.push({ center: average(ids), radius: { x: radius[0] * h, y: radius[1] * h, z: radius[2] * h }, delta });
+  const jawAnchors = [152, 175, 199, 172, 136, 150, 149, 176, 148, 397, 365, 379, 378, 400, 377];
+  const softAnchors = [0, 13, 14, 17, 61, 291, 117, 50, 346, 280, 205, 187, 425, 411, 214, 192, 434, 416];
+  const add = (ids: number[], radius: [number, number, number], delta: Field['delta'], protect: number[] = []) => {
+    fields.push({ center: average(ids), radius: { x: radius[0] * h, y: radius[1] * h, z: radius[2] * h }, delta,
+      protectedCenters: protect.map(id => point(anchors, id)) });
   };
-  add([6, 197, 195], [0.12, 0.24, 0.20], () => ({ x: 0, y: 0, z: params.noseBridge * h * 0.045 }));
+  // Recorrido visual ampliado; no son milímetros ni rangos quirúrgicos.
+  add([6, 197, 195], [0.12, 0.24, 0.20], () => ({ x: 0, y: 0, z: params.noseBridge * h * 0.09 }));
+  add([197, 195], [0.075, 0.10, 0.12], () => ({ x: 0, y: 0, z: params.noseHump * h * 0.055 }));
   const tip = average([1, 4]);
   add([1, 4], [0.13, 0.16, 0.20], p => {
-    const angle = params.noseRotation * 0.30;
+    const angle = params.noseRotation * 0.60;
     // Pivot posterior a la punta, no giro global de la nariz.
     const y = p.y - tip.y, z = p.z - (tip.z - h * 0.10);
     return {
       x: 0, y: y * (Math.cos(angle) - 1) + z * Math.sin(angle),
-      z: params.noseTip * h * 0.055 - y * Math.sin(angle) + z * (Math.cos(angle) - 1),
+      z: params.noseTip * h * 0.11 - y * Math.sin(angle) + z * (Math.cos(angle) - 1),
     };
   });
+  add([1, 4], [0.09, 0.08, 0.12], p => ({ x: params.noseTipWidth * (p.x - tip.x) * 0.65, y: 0, z: 0 }));
   for (const id of [98, 327]) add([id], [0.10, 0.11, 0.15], p => ({
-    x: params.noseWidth * (p.x - axis) * 0.40, y: 0, z: 0,
+    x: params.noseWidth * (p.x - axis) * 0.80, y: 0, z: 0,
   }));
+  const mouth = average([13, 14]);
+  add([0, 13], [0.17, 0.055, 0.10], p => ({
+    x: 0, y: params.lipUpper * h * 0.012 * Math.tanh((p.y - mouth.y) / (h * 0.012)), z: params.lipUpper * h * 0.03,
+  }), jawAnchors);
+  add([14, 17], [0.16, 0.06, 0.10], p => ({
+    x: 0, y: params.lipLower * h * 0.012 * Math.tanh((p.y - mouth.y) / (h * 0.012)), z: params.lipLower * h * 0.032,
+  }), jawAnchors);
+  add([13, 14], [0.20, 0.10, 0.12], () => ({ x: 0, y: 0, z: params.lipProjection * h * 0.035 }), jawAnchors);
+  for (const id of [61, 291]) add([id], [0.05, 0.05, 0.08], () => ({ x: 0, y: params.lipCorners * h * 0.025, z: 0 }), jawAnchors);
+  for (const ids of [[117, 50], [346, 280]]) add(ids, [0.14, 0.12, 0.16], p => ({
+    x: params.cheekbone * (p.x - axis) * 0.07, y: params.cheekbone * h * 0.008, z: params.cheekbone * h * 0.045,
+  }), jawAnchors);
+  for (const ids of [[205, 187], [425, 411]]) add(ids, [0.15, 0.14, 0.18], p => ({
+    x: params.cheekVolume * (p.x - axis) * 0.06, y: 0, z: params.cheekVolume * h * 0.04,
+  }), jawAnchors);
+  for (const ids of [[214, 192], [434, 416]]) add(ids, [0.13, 0.12, 0.18], p => ({
+    x: params.buccal * (p.x - axis) * 0.09, y: 0, z: params.buccal * h * 0.012,
+  }), jawAnchors);
   add([152, 175, 199], [0.25, 0.21, 0.24], p => ({
-    x: params.chinWidth * (p.x - axis) * 0.32,
-    y: -params.chinHeight * h * 0.055, z: params.chinProjection * h * 0.065,
-  }));
+    x: params.chinWidth * (p.x - axis) * 0.48,
+    y: -params.chinHeight * h * 0.085, z: params.chinProjection * h * 0.10,
+  }), softAnchors);
   for (const ids of [[172, 136], [397, 365]]) add(ids, [0.23, 0.20, 0.24], p => ({
-    x: params.jawWidth * (p.x - axis) * 0.22, y: 0, z: 0,
-  }));
+    x: params.jawWidth * (p.x - axis) * 0.32, y: 0, z: 0,
+  }), softAnchors);
   const result = Float32Array.from(original);
   for (let i = 0; i < original.length / 3; i++) {
     const p = point(original, i);
     for (const field of fields) {
-      const w = localInfluence(p, field.center, field.radius);
+      let w = localInfluence(p, field.center, field.radius);
       if (!w) continue;
+      // Máscara espacial suave: sirve también para vértices densos y capas, no sólo mesh468.
+      for (const center of field.protectedCenters) {
+        w *= 1 - localInfluence(p, center, { x: h * 0.055, y: h * 0.055, z: h * 0.09 });
+      }
       const d = field.delta(p);
       result[i * 3] += d.x * w; result[i * 3 + 1] += d.y * w; result[i * 3 + 2] += d.z * w;
     }
@@ -289,6 +339,12 @@ const MUSCLE_PATHS = [
   [123, 147, 187, 172], [352, 376, 411, 397],
   [61, 40, 37, 0, 267, 270, 291, 321, 314, 17, 84, 91, 61],
   [61, 57, 150], [291, 287, 379], [18, 200, 175, 152],
+];
+// Almohadillas volumétricas ilustrativas, no compartimentos grasos identificados.
+const FAT_PATHS = [
+  [116, 117, 50, 205, 187], [345, 346, 280, 425, 411],
+  [123, 147, 192, 214], [352, 376, 416, 434],
+  [109, 108, 67], [338, 337, 297],
 ];
 const NERVE_PATHS = [
   [127, 123, 50, 101, 98], [123, 117, 111, 133], [127, 70, 105, 107, 108, 109],
@@ -350,9 +406,15 @@ function pathGeometry(
   sample: ReturnType<typeof surfaceSampler>,
 ): LayerGeometry {
   const positions: number[] = [], indices: number[] = [], colors: number[] = [];
-  const muscle = id === 'muscle', ringSize = muscle ? 7 : 6;
+  const muscle = id === 'muscle', pad = id === 'fat';
+  const ringSize = muscle || pad ? 10 : 8;
   for (const path of paths) {
     let previous: number | null = null;
+    const cap = (base: number, reverse: boolean) => {
+      for (let ring = 1; ring < ringSize - 1; ring++) {
+        indices.push(base, base + (reverse ? ring + 1 : ring), base + (reverse ? ring : ring + 1));
+      }
+    };
     for (let segment = 0; segment < path.length - 1; segment++) {
       const a = point(anchors, path[segment]), b = point(anchors, path[segment + 1]);
       const tangent = unit(sub(b, a));
@@ -360,23 +422,26 @@ function pathGeometry(
       for (let step = segment === 0 ? 0 : 1; step <= steps; step++) {
         const t = step / steps, x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t;
         const hit = sample(x, y);
-        if (!hit) { previous = null; continue; }
+        if (!hit) { if (previous !== null) cap(previous, false); previous = null; continue; }
         const side = unit(cross(tangent, hit.n)), base = positions.length / 3;
         const progress = (segment + t) / (path.length - 1);
-        const width = h * 0.019 * (0.25 + 0.75 * Math.sin(Math.PI * progress));
+        const belly = Math.sin(Math.PI * progress);
+        const width = h * (pad ? 0.045 : 0.023) * (0.18 + 0.82 * belly);
         for (let ring = 0; ring < ringSize; ring++) {
-          if (muscle) {
-            const s = ring / (ringSize - 1) * 2 - 1;
+          const angle = ring / ringSize * Math.PI * 2;
+          if (muscle || pad) {
+            const s = Math.cos(angle);
             const edge = sample(x + side.x * width * s, y + side.y * width * s) ?? hit;
+            const thickness = h * (pad ? 0.010 : 0.005) * (0.3 + 0.7 * belly);
+            const inset = depth * h + thickness * Math.sin(angle);
             push(positions, {
-              x: edge.p.x - edge.n.x * depth * h,
-              y: edge.p.y - edge.n.y * depth * h,
-              z: edge.p.z - edge.n.z * depth * h,
+              x: edge.p.x - edge.n.x * inset,
+              y: edge.p.y - edge.n.y * inset,
+              z: edge.p.z - edge.n.z * inset,
             });
-            // Bandas longitudinales, semejantes a fibras, no volúmenes elipsoidales.
-            colors.push(ring % 2 ? 0.92 : 0.60, ring % 2 ? 0.32 : 0.12, ring % 2 ? 0.39 : 0.20);
+            if (muscle) colors.push(ring % 2 ? 0.92 : 0.60, ring % 2 ? 0.32 : 0.12, ring % 2 ? 0.39 : 0.20);
           } else {
-            const angle = ring / ringSize * Math.PI * 2, r = h * (id === 'nerves' ? 0.0019 : 0.0025);
+            const r = h * (id === 'nerves' ? 0.0030 : 0.0040) * (1 - 0.45 * progress);
             push(positions, {
               x: hit.p.x - hit.n.x * depth * h + r * (side.x * Math.cos(angle) + hit.n.x * Math.sin(angle)),
               y: hit.p.y - hit.n.y * depth * h + r * (side.y * Math.cos(angle) + hit.n.y * Math.sin(angle)),
@@ -385,14 +450,15 @@ function pathGeometry(
           }
         }
         if (previous !== null) {
-          for (let ring = 0; ring < (muscle ? ringSize - 1 : ringSize); ring++) {
+          for (let ring = 0; ring < ringSize; ring++) {
             const next = (ring + 1) % ringSize;
             indices.push(previous + ring, base + ring, base + next, previous + ring, base + next, previous + next);
           }
-        }
+        } else cap(base, true);
         previous = base;
       }
     }
+    if (previous !== null) cap(previous, false);
   }
   return { id, positions: Float32Array.from(positions), indices: Uint32Array.from(indices), ...(muscle ? { colors: Float32Array.from(colors) } : {}) };
 }
@@ -403,12 +469,12 @@ function buildNeutralLayers(mesh: SimulationMesh): LayerGeometry[] {
   const { height: h } = facialFrame(mesh.anchors), normals = vertexNormals(positions, mesh.indices);
   const sample = surfaceSampler(anchors);
   return SIMULATION_LAYERS.map(layer => {
-    if (layer.id === 'skin' || layer.id === 'fat') {
+    if (layer.id === 'skin') {
       const p = positions.slice();
       for (let i = 0; i < p.length; i++) p[i] -= normals[i] * layer.depth * h;
       return { id: layer.id, positions: p, indices: mesh.indices.slice() };
     }
-    const paths = layer.id === 'muscle' ? MUSCLE_PATHS : layer.id === 'nerves' ? NERVE_PATHS : VESSEL_PATHS;
+    const paths = layer.id === 'fat' ? FAT_PATHS : layer.id === 'muscle' ? MUSCLE_PATHS : layer.id === 'nerves' ? NERVE_PATHS : VESSEL_PATHS;
     return pathGeometry(layer.id, paths, anchors, layer.depth, h, sample);
   });
 }

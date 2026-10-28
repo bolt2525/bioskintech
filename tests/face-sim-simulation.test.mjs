@@ -66,6 +66,15 @@ test('localización: punta cambia, frente y mentón no; mandíbula no modifica n
   assert.deepEqual(at(chin, 10), at(mesh.anchors, 10));
 });
 
+test('labios y pómulos son campos propios: no tocan mandíbula ni frente', () => {
+  const lips = deformPositions(mesh.anchors, mesh.anchors, { lipUpper: 1, lipLower: 1 });
+  assert.ok(at(lips, 0).z > at(mesh.anchors, 0).z && at(lips, 17).z > at(mesh.anchors, 17).z);
+  for (const id of [10, 172, 397, 1]) assert.deepEqual(at(lips, id), at(mesh.anchors, id));
+  const cheek = deformPositions(mesh.anchors, mesh.anchors, { cheekbone: 1 });
+  assert.ok(at(cheek, 117).z > at(mesh.anchors, 117).z && at(cheek, 346).z > at(mesh.anchors, 346).z);
+  for (const id of [10, 152, 1]) assert.deepEqual(at(cheek, id), at(mesh.anchors, id));
+});
+
 test('cada control produce un cambio visible y direcciones coherentes', () => {
   for (const { key } of SIMULATION_CONTROLS) {
     const result = deformPositions(mesh.anchors, mesh.anchors, { [key]: 1 });
@@ -184,14 +193,11 @@ test('cinco capas simultáneas: mallas válidas, bandas y tubos no elipsoides', 
   }
   assert.equal(layers[0].positions.length, mesh.positions.length);
   assert.notDeepEqual(layers[0].positions, layers[1].positions);
+  const h = distance(at(mesh.anchors, 10), at(mesh.anchors, 152));
+  assert.ok(distance(at(layers[1].positions, 0), at(layers[1].positions, 5)) > h * 0.01,
+    'las almohadillas de grasa deben tener volumen, no ser una copia plana de la piel');
   assert.equal(layers[2].colors.length, layers[2].positions.length);
   assert.deepEqual(mesh.positions, source);
-  const h = distance(at(mesh.anchors, 10), at(mesh.anchors, 152));
-  const normals = vertexNormals(mesh.positions, mesh.indices);
-  for (let i = 0; i < mesh.positions.length / 3; i += 31) {
-    const n = at(normals, i), normalLength = Math.hypot(n.x, n.y, n.z);
-    if (normalLength > 0.5) assert.ok(Math.abs(distance(at(layers[0].positions, i), at(layers[1].positions, i)) - h * 0.012) < 1e-6);
-  }
 });
 
 test('capas se adaptan al modelo personal, escala y morfología modificada', () => {

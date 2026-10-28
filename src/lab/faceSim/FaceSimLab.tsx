@@ -17,7 +17,7 @@ import { DEFAULT_HAIR, buildPhotoHairPatches, type EstimatedHairSettings, type P
 import type { EstimatedHeadSurface } from './estimatedHead';
 import type { PhotoSurfacePatch } from './multiViewHead';
 import { assessFaceCapture, compareFaceGeometry } from './photoValidation';
-import { DETECTION_RETRIES, detectionImage, restoreDetectionPoint } from './detection';
+import { DETECTION_RETRIES, detectionImage, refineLandmarksByCrop, restoreDetectionPoint } from './detection';
 import { Tooltip } from '../../components/ui/Tooltip';
 import type { SkinAppearanceVisualChannel, SkinAppearanceResult } from './skinAppearance';
 import genericFaceAtlas from './genericFaceAtlas.json' with { type: 'json' };
@@ -109,25 +109,18 @@ async function detectFrame(img: HTMLCanvasElement): Promise<{
   regionMap?: FaceRegionMap; pose?: number[]; reason: string; captureWarnings?: string[];
 }> {
   let landmarker: import('@mediapipe/tasks-vision').FaceLandmarker | null = null;
+  let relaxed = false;
   try {
-    const head = await fetch('/models/face/face_landmarker.task', { method: 'HEAD' });
-    const contentType = head.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase();
-    // Content-Length puede faltar con compresión (br); el tipo HTML delata el fallback de la SPA.
-    if (!head.ok || contentType === 'text/html') {
-      return { frame: null, reason: `El modelo facial no está disponible o es inválido (HTTP ${head.status}).` };
-    }
-    const { FaceLandmarker, FilesetResolver } = await import('@mediapipe/tasks-vision');
-    const fileset = await FilesetResolver.forVisionTasks('/mediapipe/wasm');
-    landmarker = await FaceLandmarker.createFromOptions(fileset, {
-      baseOptions: { modelAssetPath: '/models/face/face_landmarker.task' }, runningMode: 'IMAGE', numFaces: 2,
-      outputFacialTransformationMatrixes: true,
-    });
+    const shared = await sharedLandmarker();
+    if (typeof shared === 'string') return { frame: null, reason: shared };
+    landmarker = shared;
     let result = landmarker.detect(img);
     let detectedLandmarks = result.faceLandmarks[0]?.map(({ x, y, z }) => ({ x, y, z }));
     let retried = false;
     let rotated = false;
     if (!detectedLandmarks) {
       await landmarker.setOptions({ minFaceDetectionConfidence: 0.25, minFacePresenceConfidence: 0.35 });
+      relaxed = true;
       for (const transform of [{ angle: 0, scale: 1, enhanced: false }, ...DETECTION_RETRIES]) {
         const input = detectionImage(img, transform);
         result = landmarker.detect(input);
@@ -141,6 +134,7 @@ async function detectFrame(img: HTMLCanvasElement): Promise<{
       }
     }
     if (!detectedLandmarks) return { frame: null, reason: 'No se obtuvo una malla fiable tras reintentar encuadre, contraste y giro. La foto queda como referencia; para generar 3D añade una toma a tres cuartos (30–60°), con nariz y mentón completos.' };
+    if (!rotated) detectedLandmarks = refineLandmarksByCrop(landmarker, img, detectedLandmarks) ?? detectedLandmarks;
     const context = img.getContext('2d');
     if (!context) throw new Error('No se pudieron leer los píxeles para revisar el contorno.');
     const pixels = context.getImageData(0, 0, img.width, img.height);
@@ -158,8 +152,31 @@ async function detectFrame(img: HTMLCanvasElement): Promise<{
     const detail = error instanceof Error ? ` ${error.message}` : '';
     return { frame: null, reason: `Falló la inicialización o validación del detector facial.${detail}` };
   } finally {
-    landmarker?.close();
+    // El detector se reutiliza entre fotos; solo se restauran los umbrales.
+    if (landmarker && relaxed) await landmarker.setOptions({ minFaceDetectionConfidence: 0.5, minFacePresenceConfidence: 0.5 }).catch(() => undefined);
   }
+}
+
+let landmarkerPromise: Promise<import('@mediapipe/tasks-vision').FaceLandmarker | string> | null = null;
+/** Un solo FaceLandmarker por pestaña: evita recargar WASM + modelo en cada foto. */
+function sharedLandmarker() {
+  landmarkerPromise ??= (async () => {
+    const head = await fetch('/models/face/face_landmarker.task', { method: 'HEAD' });
+    const contentType = head.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase();
+    // Content-Length puede faltar con compresión (br); el tipo HTML delata el fallback de la SPA.
+    if (!head.ok || contentType === 'text/html') return `El modelo facial no está disponible o es inválido (HTTP ${head.status}).`;
+    const { FaceLandmarker, FilesetResolver } = await import('@mediapipe/tasks-vision');
+    const fileset = await FilesetResolver.forVisionTasks('/mediapipe/wasm');
+    return FaceLandmarker.createFromOptions(fileset, {
+      baseOptions: { modelAssetPath: '/models/face/face_landmarker.task' }, runningMode: 'IMAGE', numFaces: 2,
+      outputFacialTransformationMatrixes: true,
+    });
+  })();
+  const pending = landmarkerPromise;
+  // Un fallo (red o modelo ausente) no queda cacheado: el siguiente intento reintenta.
+  pending.then(value => { if (typeof value === 'string' && landmarkerPromise === pending) landmarkerPromise = null; },
+    () => { if (landmarkerPromise === pending) landmarkerPromise = null; });
+  return pending;
 }
 
 type Landmark = { x: number; y: number; z: number };
@@ -412,18 +429,23 @@ export default function FaceSimLab() {
   const loadedPhotos = PHOTO_SLOTS.filter(v => photos[v.id]);
   const readyPhotos = PHOTO_SLOTS.filter(v => photos[v.id]?.landmarks);
   const unreviewedPhotos = readyPhotos.filter(v => !photos[v.id]?.captureConfirmed);
-  const incompatiblePhotos = useMemo(() => {
-    const problems: string[] = [];
-    for (let i = 0; i < PHOTO_SLOTS.length; i++) for (let j = i + 1; j < PHOTO_SLOTS.length; j++) {
-      const a = PHOTO_SLOTS[i], b = PHOTO_SLOTS[j], x = photos[a.id], y = photos[b.id];
-      if (!x?.landmarks || !y?.landmarks) continue;
+  // Solo contra la frontal: comparar dos perfiles opuestos entre sí mide sobre todo la malla oculta inferida.
+  const photoChecks = useMemo(() => {
+    const blocking: string[] = [], warnings: string[] = [];
+    const reference = PHOTO_SLOTS.find(v => photos[v.id]?.landmarks && v.id === 'frontal') ?? PHOTO_SLOTS.find(v => photos[v.id]?.landmarks);
+    const x = reference && photos[reference.id];
+    if (!reference || !x?.landmarks) return { blocking, warnings };
+    for (const b of PHOTO_SLOTS) {
+      const y = photos[b.id];
+      if (b.id === reference.id || !y?.landmarks) continue;
       const check = compareFaceGeometry(
         { landmarks: x.detectedLandmarks ?? x.landmarks, aspect: x.aspect },
         { landmarks: y.detectedLandmarks ?? y.landmarks, aspect: y.aspect });
-      if (!check.compatible) problems.push(`${a.label} / ${b.label}: ${check.reason}`);
+      if (!check.compatible) (check.blocking ? blocking : warnings).push(`${reference.label} / ${b.label}: ${check.reason}`);
     }
-    return problems;
+    return { blocking, warnings };
   }, [photos]);
+  const incompatiblePhotos = photoChecks.blocking;
   const captureBlocked = unreviewedPhotos.length > 0 || incompatiblePhotos.length > 0;
   const hasPendingPhotos = Object.values(pendingPhotos).some(Boolean);
   const captureSource = photos.frontal?.landmarks ? 'frontal' : photos[view]?.landmarks ? view : VIEWS.find(v => photos[v.id]?.landmarks)?.id;
@@ -551,24 +573,38 @@ export default function FaceSimLab() {
         closeHead ? 'Cabeza de plantilla anatómica (cráneo y orejas) deformada a los puntos faciales y ajustada a las siluetas de las tres vistas; cuello acotado. Aproximación, no escaneo.' : '',
       ].join(' ');
       const triangles = await faceTriangles();
-      const observedSurface = buildPersonalSurface(refined.landmarks, source.aspect, triangles, nextDepth);
-      if (!observedSurface) throw new Error('Landmarks insuficientes para construir la malla.');
-      let surface: PersonalSurface | EstimatedHeadSurface = observedSurface;
+      const baseSurface = buildPersonalSurface(refined.landmarks, source.aspect, triangles, nextDepth);
+      if (!baseSurface) throw new Error('Landmarks insuficientes para construir la malla.');
+      let observedSurface = baseSurface, profileDetails = '';
       let photoPatches: PhotoSurfacePatch[] | undefined;
-      if (closeHead) {
-        const inputs = PHOTO_SLOTS.flatMap(entry => {
-          const photo = photos[entry.id];
-          if (!photo?.landmarks || (entry.id !== sourceView && !diagnostics.some(d => d.label === entry.label && d.status !== 'rejected' && d.weight > 0))) return [];
-          const fit = fitHairPhotoProjection(observedSurface.positions, photo.landmarks);
-          if (!fit || fit.error > 0.08) throw new Error(`La cámara de ${entry.label} no concuerda con la superficie facial.`);
-          return [{ label: entry.label, canvas: photo.canvas, projection: fit.projection }];
-        });
-        setStatus('Ajustando siluetas, piel, orejas y cabello de las tres vistas…');
-        const [{ segmentPhotoHeads }, { buildPhotoSurfacePatches, sampleScalpColor, sampleColorAt }, { buildTemplateHead }] = await Promise.all([
-          import('./photoHead'), import('./multiViewHead'), import('./templateHead'),
-        ]);
-        const sources = await segmentPhotoHeads(inputs);
+      const inputs = PHOTO_SLOTS.flatMap(entry => {
+        const photo = photos[entry.id];
+        if (!photo?.landmarks || (entry.id !== sourceView && !diagnostics.some(d => d.label === entry.label && d.status !== 'rejected' && d.weight > 0))) return [];
+        const fit = fitHairPhotoProjection(baseSurface.positions, photo.landmarks);
+        if (!fit || fit.error > 0.08) {
+          if (closeHead) throw new Error(`La cámara de ${entry.label} no concuerda con la superficie facial.`);
+          return [];
+        }
+        return [{ label: entry.label, canvas: photo.canvas, projection: fit.projection }];
+      });
+      let sources: Awaited<ReturnType<typeof import('./photoHead')['segmentPhotoHeads']>> = [];
+      if (inputs.length > 1) {
+        setStatus(closeHead ? 'Ajustando siluetas, piel, orejas y cabello de las tres vistas…' : 'Contrastando la silueta de los perfiles…');
+        const [{ segmentPhotoHeads }, { refineProfileDepth }] = await Promise.all([import('./photoHead'), import('./multiViewHead')]);
+        try { sources = await segmentPhotoHeads(inputs); } catch (error) { if (closeHead) throw error; }
         if (requestId !== personalRequestRef.current) return;
+        // La silueta lateral mide frente, dorso, punta, labios y mentón; MediaPipe solo los infiere.
+        const profile = refineProfileDepth(baseSurface.positions, sources);
+        if (profile) {
+          observedSurface = { ...baseSurface, positions: profile.positions };
+          profileDetails = ` Perfil: ${profile.points} puntos de la línea media ajustados a la silueta lateral.`;
+        }
+      }
+      let surface: PersonalSurface | EstimatedHeadSurface = observedSurface;
+      if (closeHead) {
+        const [{ buildPhotoSurfacePatches, sampleScalpColor, sampleColorAt }, { buildTemplateHead }] = await Promise.all([
+          import('./multiViewHead'), import('./templateHead'),
+        ]);
         surface = {
           ...buildTemplateHead(observedSurface, {
             landmarks: genericFaceAtlas.positions, positions: genericFaceAtlas.surface.positions, triangles: genericFaceAtlas.surface.triangles,
@@ -585,11 +621,11 @@ export default function FaceSimLab() {
       const { personalSurfaceToGlb } = await import('./personalSurfaceGlb');
       const glb = await personalSurfaceToGlb(surface, source.canvas, undefined, [], photoPatches);
       if (requestId !== personalRequestRef.current) return;
-      setPersonal({ view: sourceView, canvas: source.canvas, glb, projection: surface.projection, depth: nextDepth, depthDetails: depthDetails + openingDetails, diagnostics,
+      setPersonal({ view: sourceView, canvas: source.canvas, glb, projection: surface.projection, depth: nextDepth, depthDetails: depthDetails + profileDetails + openingDetails, diagnostics,
         surface: observedSurface, renderSurface: surface, regionMap: regions, closedHead: closeHead, photoPatches });
       genericSelected.current = false;
       setModelKind('personal');
-      setStatus(`Superficie 3D personal generada desde la foto ${VIEWS.find(v => v.id === sourceView)?.label ?? sourceView} (${surface.indices.length / 3} triángulos). ${depthDetails}${openingDetails} Las marcaciones anatómicas se conservan.`);
+      setStatus(`Superficie 3D personal generada desde la foto ${VIEWS.find(v => v.id === sourceView)?.label ?? sourceView} (${surface.indices.length / 3} triángulos). ${depthDetails}${profileDetails}${openingDetails} Las marcaciones anatómicas se conservan.`);
     } catch (error) {
       if (requestId !== personalRequestRef.current) return;
       setDepth(personal?.depth ?? 1);
@@ -1201,6 +1237,7 @@ export default function FaceSimLab() {
           <p className="mt-2">Una detección facial no prueba que sea una captura directa ni la misma persona. Excluye documentos, memes, otras personas y filtros deformantes. Revisa las miniaturas: los controles geométricos no detectan todos esos casos ni verifican identidad.</p></details>
           {unreviewedPhotos.length > 0 && <p className="mt-2 text-xs font-semibold text-amber-800">Confirma {unreviewedPhotos.length} captura(s) pendiente(s) antes del cálculo.</p>}
           {incompatiblePhotos.map(message => <p key={message} role="alert" className="mt-2 text-xs font-semibold text-red-800">{message}</p>)}
+          {photoChecks.warnings.map(message => <p key={message} role="status" className="mt-2 text-xs font-semibold text-amber-800">{message}</p>)}
           <button type="button" disabled={buildingPersonal || hasPendingPhotos || captureBlocked || !captureSource}
             onClick={() => {
               if (!captureSource) { setStatus('Carga al menos una foto principal con el rostro detectado para calcular la superficie.'); return; }

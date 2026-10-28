@@ -4,6 +4,93 @@ export type SkinAppearanceVisualChannel = SkinAppearanceChannel | 'shine';
 /** Candidatos puramente visuales; no añade opciones a la UI anterior. */
 export type SkinSignalChannel = SkinAppearanceVisualChannel | 'poreCandidates' | 'redDots';
 
+/** Retoque RGB ilustrativo, independiente del análisis/resaltado de señales. */
+export interface SkinCosmeticParameters {
+  tone: number;
+  spots: number;
+  texture: number;
+  shine: number;
+  fineWrinkles: number;
+  coarseWrinkles: number;
+}
+export const NEUTRAL_SKIN_COSMETICS: Readonly<SkinCosmeticParameters> = Object.freeze({
+  tone: 0, spots: 0, texture: 0, shine: 0, fineWrinkles: 0, coarseWrinkles: 0,
+});
+export const SKIN_COSMETIC_CONTROLS: ReadonlyArray<{
+  key: keyof SkinCosmeticParameters; label: string; min: number;
+}> = [
+  { key: 'tone', label: 'Tono aparente · oscurecer / aclarar', min: -1 },
+  { key: 'spots', label: 'Atenuar manchas aparentes', min: 0 },
+  { key: 'texture', label: 'Suavizar microtextura', min: 0 },
+  { key: 'shine', label: 'Atenuar brillo de la foto', min: 0 },
+  { key: 'fineWrinkles', label: 'Atenuar surcos finos aparentes', min: 0 },
+  { key: 'coarseWrinkles', label: 'Atenuar surcos gruesos aparentes', min: 0 },
+];
+
+export function sanitizeSkinCosmetics(input: Partial<SkinCosmeticParameters>): SkinCosmeticParameters {
+  const result = { ...NEUTRAL_SKIN_COSMETICS };
+  for (const { key, min } of SKIN_COSMETIC_CONTROLS) {
+    const value = input[key] ?? 0;
+    result[key] = Number.isFinite(value) ? Math.min(1, Math.max(min, value)) : 0;
+  }
+  return result;
+}
+
+/**
+ * Retoque multiescala acotado: sólo RGB dentro del ROI, nunca geometría ni alfa.
+ * Las bandas espaciales NO separan arrugas/manchas/poros reales ni eliminan pliegues 3D.
+ * La luz, el maquillaje y la resolución cambian su efecto. No predice tratamientos.
+ */
+export function applySkinCosmetics(
+  image: { width: number; height: number; data: Uint8ClampedArray }, mask: Uint8Array,
+  input: Partial<SkinCosmeticParameters>,
+): Uint8ClampedArray {
+  const { width, height, data } = image, size = width * height;
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1
+    || width > 1400 || height > 1400) throw new RangeError('El retoque admite imágenes de hasta 1400 px por lado.');
+  if (!(data instanceof Uint8ClampedArray) || data.length !== size * 4
+    || !(mask instanceof Uint8Array) || mask.length !== size) throw new TypeError('RGBA o máscara de retoque inválidos.');
+  const params = sanitizeSkinCosmetics(input), output = data.slice();
+  if (Object.values(params).every(value => value === 0)) return output;
+  const valid = Uint8Array.from(mask, (value, i) => value && data[i * 4 + 3] === 255 ? 1 : 0);
+  const counts = integral(valid, width, height), stride = width + 1;
+  const tables = [0, 1, 2].map(channel => integral(
+    Float32Array.from(valid, (value, i) => value * data[i * 4 + channel]), width, height,
+  ));
+  const scale = Math.min(width, height) / 384;
+  const radii = [1, 3, 10].map(radius => Math.max(1, Math.round(radius * scale)));
+  const luminance = (rgb: number[]) => rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722;
+  const bound = (value: number, limit: number) => Math.max(-limit, Math.min(limit, value));
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    const i = y * width + x;
+    if (!valid[i]) continue;
+    const means = radii.map(radius => {
+      const r = Math.min(radius, x, y, width - x - 1, height - y - 1);
+      const count = boxSum(counts, stride, x, y, r);
+      return tables.map(table => boxSum(table, stride, x, y, r) / count);
+    });
+    const rgb = [data[i * 4], data[i * 4 + 1], data[i * 4 + 2]];
+    const light = luminance(rgb), small = luminance(means[0]), medium = luminance(means[1]), broad = luminance(means[2]);
+    // Oscilaciones oscuras de dos escalas; no clasificación de arrugas.
+    const fine = Math.max(0, small - light - 1);
+    const coarse = Math.max(0, broad - medium - 2);
+    const shine = Math.max(0, light - broad - 3);
+    const r = Math.min(radii[1], x, y, width - x - 1, height - y - 1);
+    const feather = (boxSum(counts, stride, x, y, r) / ((2 * r + 1) ** 2)) ** 4;
+    for (let channel = 0; channel < 3; channel++) {
+      const spot = means[2][channel] - rgb[channel];
+      const delta = params.tone * 12
+        + params.spots * bound(spot, 18) * 0.55
+        + params.texture * bound(means[0][channel] - rgb[channel], 12) * 0.65
+        - params.shine * Math.min(shine, 18) * 0.7
+        + params.fineWrinkles * Math.min(fine, 12) * 0.65
+        + params.coarseWrinkles * Math.min(coarse, 16) * 0.65;
+      output[i * 4 + channel] = rgb[channel] + bound(delta, 32) * feather;
+    }
+  }
+  return output;
+}
+
 export interface SkinAppearanceLayer {
   rgba: Uint8ClampedArray;
   /** Fracción del ROI original; no porcentaje de severidad. */

@@ -119,6 +119,143 @@ function maskProfile(source: HeadPhotoSource, top: number, bottom: number) {
   return { bins, maskTop };
 }
 
+type SilhouetteView = { proj: (p: V) => number[]; top: number; bottom: number; browV: number };
+const FIT_BINS = 64;
+const FIT_ROUNDS = 3;
+
+/** Media móvil que ignora huecos (NaN) y conserva NaN donde no hay datos cerca. */
+function smoothBins(values: number[], radius: number) {
+  return values.map((_, i) => {
+    let s = 0, n = 0;
+    for (let j = Math.max(0, i - radius); j <= Math.min(values.length - 1, i + radius); j++) if (Number.isFinite(values[j])) { s += values[j]; n++; }
+    return n ? s / n : NaN;
+  });
+}
+/** Interpolación lineal entre bins finitos (para que el desplazamiento no salte de fila en fila). */
+function sampleBins(values: number[], f: number) {
+  const a = Math.max(0, Math.min(values.length - 1, Math.floor(f))), b = Math.min(values.length - 1, a + 1), t = Math.min(1, Math.max(0, f - a));
+  const va = values[a], vb = values[b];
+  if (Number.isFinite(va) && Number.isFinite(vb)) return va + (vb - va) * t;
+  return Number.isFinite(va) ? va : Number.isFinite(vb) ? vb : 0;
+}
+
+/**
+ * Ajuste no rígido a siluetas («shape from silhouettes» por vértice): en cada vista, el extremo
+ * de cada fila del cráneo se lleva al borde de la máscara (cabello incluido) y, sobre la frente,
+ * el techo de cada columna al techo de la máscara. El desplazamiento vive en el plano de la imagen
+ * (frontal → anchura, lateral → occipucio y volumen posterior), crece hacia la silueta, se pondera
+ * con `weight` (cero en el borde facial) y se suaviza sobre la malla para evitar escalones.
+ */
+function fitSilhouettes(points: V[], shell: number[], used: number[], weight: number[],
+  sources: readonly HeadPhotoSource[], views: SilhouetteView[]): V[] {
+  const out = points.map(p => [...p] as V);
+  const neighbors = new Map<number, Set<number>>();
+  for (let i = 0; i < shell.length; i += 3) for (let a = 0; a < 3; a++) {
+    const set = neighbors.get(shell[i + a]) ?? new Set<number>();
+    set.add(shell[i + (a + 1) % 3]); set.add(shell[i + (a + 2) % 3]);
+    neighbors.set(shell[i + a], set);
+  }
+  // Dirección 3D que cambia solo una coordenada de imagen (a·d = 1, b·d = 0).
+  const planar = (a: V, b: V): V => {
+    const k = dot(a, b) / Math.max(1e-12, dot(b, b)), d = sub(a, [b[0] * k, b[1] * k, b[2] * k]), n = dot(a, d);
+    return n > 1e-12 ? [d[0] / n, d[1] / n, d[2] / n] : [0, 0, 0];
+  };
+  const prepared = sources.map((source, s) => {
+    const view = views[s], span = view.bottom - view.top;
+    const rows = Array.from({ length: FIT_BINS }, () => [Infinity, -Infinity]);
+    const colTop = new Float32Array(source.width).fill(Infinity);
+    for (let y = 0; y < source.height; y++) {
+      let l = -1, r = -1;
+      for (let x = 0; x < source.width; x++) if (source.mask[y * source.width + x] > 0.5) {
+        if (l < 0) l = x; r = x;
+        if (colTop[x] === Infinity) colTop[x] = y / source.height;
+      }
+      const b = Math.floor((y / source.height - view.top) / span * FIT_BINS);
+      if (r - l < 3 || b < 0 || b >= FIT_BINS) continue;
+      rows[b][0] = Math.min(rows[b][0], l / source.width);
+      rows[b][1] = Math.max(rows[b][1], (r + 1) / source.width);
+    }
+    const U: V = [source.projection.u[0], source.projection.u[1], source.projection.u[2]];
+    const W: V = [source.projection.v[0], source.projection.v[1], source.projection.v[2]];
+    const limitV = 0.3 * (view.bottom - view.browV), limitU = limitV * source.height / source.width;
+    return { source, view, span, rows, colTop, du: planar(U, W), dv: planar(W, U), limitU, limitV };
+  });
+  const clamp = (x: number, l: number) => Math.max(-l, Math.min(l, x));
+  for (let round = 0; round < FIT_ROUNDS; round++) for (const { source, view, span, rows, colTop, du, dv, limitU, limitV } of prepared) {
+    const uv = used.map(id => view.proj(out[id]));
+    const rowMin = new Array(FIT_BINS).fill(Infinity), rowMax = new Array(FIT_BINS).fill(-Infinity);
+    const minId = new Array(FIT_BINS).fill(-1), maxId = new Array(FIT_BINS).fill(-1);
+    let uMin = Infinity, uMax = -Infinity;
+    uv.forEach(([u, v], k) => {
+      uMin = Math.min(uMin, u); uMax = Math.max(uMax, u);
+      const b = Math.floor((v - view.top) / span * FIT_BINS);
+      if (b < 0 || b >= FIT_BINS) return;
+      if (u < rowMin[b]) { rowMin[b] = u; minId[b] = used[k]; }
+      if (u > rowMax[b]) { rowMax[b] = u; maxId[b] = used[k]; }
+    });
+    // Un extremo facial (peso bajo) no se mueve: la cara observada manda.
+    const left = smoothBins(rows.map((m, b) => Number.isFinite(m[0]) && minId[b] >= 0 && weight[minId[b]] > 0.3
+      ? clamp(m[0] - rowMin[b], limitU) : NaN), 2);
+    const right = smoothBins(rows.map((m, b) => Number.isFinite(m[1]) && maxId[b] >= 0 && weight[maxId[b]] > 0.3
+      ? clamp(m[1] - rowMax[b], limitU) : NaN), 2);
+    const center = smoothBins(rowMin.map((l, b) => Number.isFinite(l) ? (l + rowMax[b]) / 2 : NaN), 1);
+    const halfLeft = smoothBins(rowMin.map((l, b) => Number.isFinite(l) ? Math.max(1e-6, center[b] - l) : NaN), 1);
+    const halfRight = smoothBins(rowMax.map((r, b) => Number.isFinite(r) ? Math.max(1e-6, r - center[b]) : NaN), 1);
+    // Techo por columnas sobre la frente: aquí el cabello define la forma.
+    const colMesh = new Array(FIT_BINS).fill(Infinity), colId = new Array(FIT_BINS).fill(-1);
+    const colOf = (u: number) => (u - uMin) / Math.max(1e-9, uMax - uMin) * FIT_BINS;
+    uv.forEach(([u, v], k) => {
+      const c = Math.min(FIT_BINS - 1, Math.max(0, Math.floor(colOf(u))));
+      if (v < view.browV && v < colMesh[c]) { colMesh[c] = v; colId[c] = used[k]; }
+    });
+    const tops = smoothBins(colMesh.map((v, c) => {
+      if (!Number.isFinite(v) || colId[c] < 0 || weight[colId[c]] <= 0.3) return NaN;
+      const x0 = Math.max(0, Math.floor((uMin + c / FIT_BINS * (uMax - uMin)) * source.width));
+      const x1 = Math.min(source.width, Math.ceil((uMin + (c + 1) / FIT_BINS * (uMax - uMin)) * source.width));
+      let m = Infinity;
+      for (let x = x0; x < x1; x++) m = Math.min(m, colTop[x]);
+      return Number.isFinite(m) && m < view.browV ? clamp(m - v, limitV) : NaN;
+    }), 2);
+    const delta = new Map<number, V>();
+    uv.forEach(([u, v], k) => {
+      const id = used[k], w = weight[id];
+      if (w <= 0) return;
+      const f = (v - view.top) / span * FIT_BINS - 0.5, c = sampleBins(center, f);
+      let shiftU = 0;
+      if (Number.isFinite(c) && f >= -1 && f <= FIT_BINS) {
+        const t = u < c ? (c - u) / sampleBins(halfLeft, f) : (u - c) / sampleBins(halfRight, f);
+        shiftU = sampleBins(u < c ? left : right, f) * Math.min(1, Math.max(0, t)) ** 2;
+      }
+      let shiftV = 0;
+      if (v < view.browV) {
+        const fc = colOf(u) - 0.5, topMesh = sampleBins(colMesh.map(x => Number.isFinite(x) ? x : NaN), fc);
+        const t = (view.browV - v) / Math.max(1e-6, view.browV - topMesh);
+        shiftV = sampleBins(tops, fc) * Math.min(1, Math.max(0, t)) ** 2;
+      }
+      if (shiftU || shiftV) delta.set(id, [0, 1, 2].map(a => (du[a] * shiftU + dv[a] * shiftV) * w) as V);
+    });
+    // Suavizado laplaciano del campo de desplazamiento: continuidad entre filas/columnas (sin «legos»).
+    let field = delta;
+    for (let it = 0; it < 8; it++) {
+      const next = new Map<number, V>();
+      for (const id of used) {
+        const own = field.get(id) ?? [0, 0, 0], ns = neighbors.get(id);
+        if (!ns?.size) { next.set(id, own); continue; }
+        const avg: V = [0, 0, 0];
+        for (const n of ns) { const d = field.get(n); if (d) { avg[0] += d[0]; avg[1] += d[1]; avg[2] += d[2]; } }
+        next.set(id, [0, 1, 2].map(a => (own[a] + avg[a] / ns.size) / 2) as V);
+      }
+      field = next;
+    }
+    for (const id of used) {
+      const d = field.get(id);
+      // Peso de nuevo tras suavizar: el borde facial queda fijo exactamente.
+      if (d) out[id] = [0, 1, 2].map(a => out[id][a] + d[a] * 0.8 * Math.min(1, weight[id] * 1.5)) as V;
+    }
+  }
+  return out;
+}
+
 export function buildTemplateHead(face: PersonalSurface, template: HeadTemplate, sources: readonly HeadPhotoSource[] = []): EstimatedHeadSurface {
   const count = face.positions.length / 3;
   if (!Number.isInteger(count) || count < 468 || template.landmarks.length < 468 * 3) fail('datos incompletos.');
@@ -138,7 +275,8 @@ export function buildTemplateHead(face: PersonalSurface, template: HeadTemplate,
       const x = dot(sub(sim.apply(generic[i]), cd), ax), y = dot(sub(personal[i], cd), ax);
       num += x * y; den += x * x;
     }
-    return Math.min(1.2, Math.max(0.85, den > 0 ? num / den : 1));
+    // Rango amplio: rostros anchos o largos deben poder alcanzarse antes del ajuste local.
+    return Math.min(1.35, Math.max(0.75, den > 0 ? num / den : 1));
   });
   const affine = (p: V): V => {
     const q = sub(sim.apply(p), cd), x = dot(q, right) * axisScale[0], y = dot(q, up) * axisScale[1], z = dot(q, fwd) * axisScale[2];
@@ -193,6 +331,14 @@ export function buildTemplateHead(face: PersonalSurface, template: HeadTemplate,
   const main = [...size.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
   const shell = keep.filter((_, i) => find(keep[i - i % 3]) === main);
   if (shell.length < 300) fail('la plantilla no conserva suficiente cráneo.');
+  // Borde del cuello recto: los vértices bajo el plano de corte se proyectan sobre él (sin dientes de sierra).
+  {
+    const cut = chinUp - faceH * 0.3;
+    for (const id of new Set(shell)) {
+      const h = dot(points[id], up);
+      if (h < cut) points[id] = [0, 1, 2].map(k => points[id][k] + up[k] * (cut - h)) as V;
+    }
+  }
 
   // Frontera facial de la plantilla: el bucle más cercano al óvalo personal.
   const ovalCenter = oval.reduce((s, p) => [s[0] + p[0] / 36, s[1] + p[1] / 36, s[2] + p[2] / 36] as V, [0, 0, 0] as V);
@@ -227,7 +373,7 @@ export function buildTemplateHead(face: PersonalSurface, template: HeadTemplate,
         p[0] * source.projection.v[0] + p[1] * source.projection.v[1] + p[2] * source.projection.v[2] + source.projection.v[3]];
       const chinV = proj(personal[152])[1], browV = proj(personal[10])[1];
       const top = browV - (chinV - browV) * 0.9;
-      return { proj, top, bottom: chinV, ...maskProfile(source, top, chinV) };
+      return { proj, top, bottom: chinV, browV, ...maskProfile(source, top, chinV) };
     });
     const cost = (sx: number, sy: number, sz: number) => {
       let total = 0;
@@ -252,11 +398,12 @@ export function buildTemplateHead(face: PersonalSurface, template: HeadTemplate,
       return total;
     };
     let best = { c: cost(1, 1, 1), s: [1, 1, 1] };
-    for (let sx = 0.9; sx <= 1.1501; sx += 0.05) for (let sy = 0.9; sy <= 1.1501; sy += 0.05) for (let sz = 0.85; sz <= 1.2001; sz += 0.05) {
+    for (let sx = 0.8; sx <= 1.2501; sx += 0.05) for (let sy = 0.85; sy <= 1.2001; sy += 0.05) for (let sz = 0.8; sz <= 1.2501; sz += 0.05) {
       const c = cost(sx, sy, sz);
       if (c < best.c) best = { c, s: [sx, sy, sz] };
     }
     points = points.map((p, i) => scaled(p, weight[i], best.s[0], best.s[1], best.s[2]));
+    points = fitSilhouettes(points, shell, used, weight, sources, views);
   }
 
   // Empaquetar: cara observada intacta + cráneo de plantilla + costura.

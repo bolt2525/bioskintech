@@ -10,9 +10,11 @@ import { DEFAULT_HAIR, type EstimatedHairSettings, type PhotoHairPatch } from '.
 import type { PhotoSurfacePatch } from './multiViewHead';
 import type { AnatomicalReference } from './anatomicalReference';
 import { ANATOMY_PLANES, anatomyBlend, loadDefaultLayers, registerLayers, type AnatomyPlane } from './defaultLayers';
+import { NEUTRAL_SKIN_COSMETICS, SKIN_COSMETIC_CONTROLS, type SkinCosmeticParameters } from './skinAppearance';
+import { composeSkinCosmeticTexture } from './skinSignalTexture';
 import {
   buildCutPlane, buildSimulationLayers, createSimulationMesh, deformPositions, meshBounds,
-  NEUTRAL_SIMULATION, SIMULATION_CONTROLS, SIMULATION_LAYERS,
+  NEUTRAL_SIMULATION, SIMULATION_CONTROLS, SIMULATION_GROUPS, SIMULATION_LAYERS,
   type LayerId, type SimulationCut, type SimulationMesh, type SimulationParameters,
 } from './simulation';
 const SkinSignalPanel = lazy(() => import('./SkinSignalPanel'));
@@ -561,6 +563,10 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
   const [localPlane, setLocalPlane] = useState<RegionPlane>('superficial');
   const [hoveredZone, setHoveredZone] = useState<string | null>(null);
   const [signal, setSignal] = useState<{ source: HTMLCanvasElement; canvas: HTMLCanvasElement }>();
+  const [cosmetics, setCosmetics] = useState<SkinCosmeticParameters>({ ...NEUTRAL_SKIN_COSMETICS });
+  const [cosmeticTexture, setCosmeticTexture] = useState<{ source: HTMLCanvasElement; canvas: HTMLCanvasElement }>();
+  const [cosmeticError, setCosmeticError] = useState<string | null>(null);
+  const [cosmeticPending, setCosmeticPending] = useState(false);
   const [customReference, setCustomReference] = useState<AnatomicalReference>();
   const [defaultReferences, setDefaultReferences] = useState<AnatomicalReference[]>([]);
   const [anatomy, setAnatomy] = useState<AnatomyPlane>('skin');
@@ -581,9 +587,25 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
   const onSignalTexture = useCallback((canvas: HTMLCanvasElement | undefined) => {
     setSignal(photo && canvas ? { source: photo, canvas } : undefined);
   }, [photo]);
-  const skinTexture = signal?.source === photo ? signal?.canvas : undefined;
+  const signalTexture = signal?.source === photo ? signal?.canvas : undefined;
+  const skinTexture = signalTexture ?? (cosmeticTexture?.source === photo ? cosmeticTexture?.canvas : undefined);
   const signalLandmarks = useMemo(() => surface
     ? Array.from({ length: 468 }, (_, i) => ({ x: surface.uvs[i * 2], y: surface.uvs[i * 2 + 1] })) : undefined, [surface]);
+  useEffect(() => {
+    setCosmeticTexture(undefined); setCosmeticError(null);
+    if (!photo || !signalLandmarks || Object.values(cosmetics).every(value => value === 0)) {
+      setCosmeticPending(false);
+      return;
+    }
+    setCosmeticPending(true);
+    // Agrupa el arrastre: no lee píxeles ni recompone mapas por cada evento del slider.
+    const timer = window.setTimeout(() => {
+      try { setCosmeticTexture({ source: photo, canvas: composeSkinCosmeticTexture(photo, signalLandmarks, cosmetics) }); }
+      catch { setCosmeticError('No se pudo retocar la foto. Comprueba la imagen y las referencias faciales; el original se conserva.'); }
+      finally { setCosmeticPending(false); }
+    }, 160);
+    return () => window.clearTimeout(timer);
+  }, [photo, signalLandmarks, cosmetics]);
   const activePlane = plane ?? localPlane, meshVisible = showMesh ?? localMesh;
   const prepared = useMemo(() => {
     try { return { mesh: createSimulationMesh(surface), error: null }; }
@@ -612,6 +634,7 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
 
   const reset = () => {
     setParameters({ ...NEUTRAL_SIMULATION }); setLayers(surfaceLayers());
+    setCosmetics({ ...NEUTRAL_SKIN_COSMETICS }); setCosmeticTexture(undefined); setSignal(undefined);
     setCut({ ...INITIAL_CUT }); setView('front'); setComparison('after'); setAnatomy('skin');
     if (onPlaneChange) onPlaneChange('superficial'); else setLocalPlane('superficial');
     setHoveredZone(null);
@@ -656,7 +679,7 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
         <span role="status" className="block min-h-5 w-full truncate font-semibold text-sky-200">{hoveredZone ?? (meshVisible ? 'Pasa el cursor por una zona de la malla' : 'Mallado oculto')}</span>
       </div>
       <div className="flex flex-wrap gap-3">
-        <div role="group" aria-label="Plano anatómico" className="flex gap-1 rounded-lg border border-cyan-800 p-1">
+        <div role="group" aria-label="Referencias ilustradas alineables" className="flex flex-wrap gap-1 rounded-lg border border-cyan-800 p-1">
           {ANATOMY_PLANES.map(entry => {
             const available = entry.id === 'skin' || references.some(item => item.kind === entry.id);
             return <button type="button" key={entry.id} title={available ? entry.hint : `${entry.hint} · cargando…`} disabled={!available}
@@ -664,8 +687,8 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
           })}
         </div>
         <div role="group" aria-label="Modo de simulación" className="flex gap-1">
-          <button type="button" className={buttonClass} onClick={() => setLayers(surfaceLayers())}>Morfología</button>
-          <button type="button" className={buttonClass} onClick={() => setLayers(initialLayers())}>Ver capas internas</button>
+          <button type="button" className={buttonClass} onClick={() => { setLayers(surfaceLayers()); setAnatomy('skin'); }}>Morfología</button>
+          <button type="button" className={buttonClass} onClick={() => { setLayers(initialLayers()); setAnatomy('skin'); }}>Ver volúmenes genéricos</button>
         </div>
         <div role="group" aria-label="Orientación del modelo" className="flex flex-wrap gap-1">
           {([['front', 'Frontal'], ['left', 'Perfil lado A'], ['right', 'Perfil lado B'], ['orbit', 'Orbitar']] as const).map(([key, label]) => (
@@ -695,6 +718,7 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
             ) : !ready ? <p role="status" className="absolute inset-x-0 top-6 text-center text-sm">Preparando visor 3D…</p> : null}
           </div>
           <p className="text-xs font-medium text-amber-200">Capas genéricas · no anatomía interna del paciente</p>
+          <p className="text-xs text-slate-300">Grasa: almohadillas ilustrativas; músculos: bandas con grosor; vasos y nervios: tubos ramificados. Forma, calibre y profundidad arbitrarios para exploración, no localización anatómica real.</p>
           <p className="text-xs text-slate-300">
             {prepared.mesh?.source === 'personal'
               ? 'Superficie personal estimada. La textura, si existe, sigue la deformación 3D; no es una predicción fotográfica.'
@@ -707,7 +731,7 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
           <p id={`${id}-help`} className="text-xs text-slate-300">Arrastra o enfoca el visor y usa las flechas para girar, también desde una vista frontal o lateral. Rueda, pinza o +/− para zoom. «Antes» conserva la superficie original.</p>
         </div>
         <div className="space-y-3" aria-describedby={`${id}-help`}>
-          {(['Nariz', 'Mentón y mandíbula'] as const).map(group => (
+          {SIMULATION_GROUPS.map(group => (
             <fieldset key={group} className="space-y-2 rounded-lg border border-slate-700 p-2">
               <legend className="px-1 text-xs font-semibold">{group}</legend>
               {SIMULATION_CONTROLS.filter(control => control.group === group).map(control => (
@@ -719,6 +743,29 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
                     className="mt-1 block w-full accent-cyan-400 focus-visible:outline-cyan-300" />
                 </label>
               ))}
+              <fieldset disabled={!photo || !surface} aria-describedby={`${id}-cosmetic-help`} className="space-y-2 rounded-lg border border-slate-700 p-2 disabled:opacity-50">
+                <legend className="px-1 text-xs font-semibold">Retoque cosmético visual · piel</legend>
+                <p id={`${id}-cosmetic-help`} className="text-[11px] text-slate-300">
+                  Sólo RGB dentro de una máscara aproximada de piel. Tono: ±12 niveles; resto: 0–100 de mezcla visual, no eficacia. Cambio combinado limitado a 32/255 por canal.
+                  No detecta manchas ni arrugas reales: suaviza diferencias a dos escalas; no elimina pliegues 3D ni predice tratamientos.
+                </p>
+                {!photo || !surface ? <p className="text-xs text-amber-200">Necesita una foto con referencias faciales válidas.</p> : null}
+                {SKIN_COSMETIC_CONTROLS.map(control => (
+                  <label key={control.key} htmlFor={`${id}-cosmetic-${control.key}`} className="block text-xs">
+                    <span className="flex justify-between gap-2"><span>{control.label}</span><output>{Math.round(cosmetics[control.key] * 100)}</output></span>
+                    <input id={`${id}-cosmetic-${control.key}`} type="range" min={control.min} max="1" step="0.01" value={cosmetics[control.key]}
+                      aria-valuetext={`${Math.round(cosmetics[control.key] * 100)} de intensidad visual, no eficacia clínica`}
+                      onChange={event => setCosmetics(current => ({ ...current, [control.key]: Number(event.target.value) }))}
+                      className="mt-1 block w-full accent-cyan-400 focus-visible:outline-cyan-300" />
+                  </label>
+                ))}
+                <button type="button" className={buttonClass} onClick={() => setCosmetics({ ...NEUTRAL_SKIN_COSMETICS })}>Restablecer piel</button>
+                <p role="status" className="text-[11px] text-slate-300">
+                  {signalTexture ? 'El resaltado RGB tiene prioridad; vuelve a «Original» en los filtros para ver el retoque.'
+                    : cosmeticPending ? 'Preparando retoque local…' : '«Antes» conserva la foto original. Retoque local hasta 768 px; no recupera detalle ausente.'}
+                </p>
+                {cosmeticError ? <p role="alert" className="text-xs text-amber-200">{cosmeticError}</p> : null}
+              </fieldset>
               {group === 'Nariz' ? <p className="text-[11px] text-slate-400">− reduce / + aumenta · rotación + eleva la punta</p> : null}
             </fieldset>
           ))}

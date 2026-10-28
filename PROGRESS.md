@@ -1,5 +1,6 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-28 Simulación facial multivista y morfología ampliadas.
 - ✅ 2026-10-27 Cabeza: siluetas y texturas multivista.
 - ✅ 2026-10-27 Simular: máscara fotografiada y órbita.
 - ✅ 2026-10-27 RGB: candidatos visuales ajustables.

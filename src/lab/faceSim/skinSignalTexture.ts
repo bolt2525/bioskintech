@@ -1,6 +1,6 @@
 import { FACE_OVAL, type P2 } from './engine.ts';
 import { FACE_REGION_BOUNDARIES, FACE_REGION_SEEDS } from './faceRegions.ts';
-import { analyzeSkinAppearance, skinSignalLayer, type SkinAppearanceResult, type SkinSignalChannel } from './skinAppearance.ts';
+import { analyzeSkinAppearance, applySkinCosmetics, skinSignalLayer, type SkinAppearanceResult, type SkinCosmeticParameters, type SkinSignalChannel } from './skinAppearance.ts';
 
 export const SKIN_SIGNAL_RESOLUTIONS = [
   { value: 384, label: 'Rápido · 384 px' },
@@ -91,6 +91,20 @@ export function analyzeSkinSignalCanvas(base: HTMLCanvasElement, landmarks: read
     createSkinSignalMask(base.width, base.height, landmarks),
     { sensitivity },
   );
+}
+
+/** Sólo se retoca una foto con referencias: no hay fallback de máscara sobre toda la imagen. */
+export function composeSkinCosmeticTexture(
+  source: HTMLCanvasElement, landmarks: readonly P2[], parameters: Partial<SkinCosmeticParameters>,
+): HTMLCanvasElement {
+  const output = skinSignalPreview(source, 768);
+  const context = output.getContext('2d', { willReadFrequently: true });
+  if (!context) throw new Error('No se pudo preparar el retoque cosmético local.');
+  const image = context.getImageData(0, 0, output.width, output.height);
+  const mask = createSkinSignalMask(output.width, output.height, landmarks);
+  image.data.set(applySkinCosmetics(image, mask, parameters));
+  context.putImageData(image, 0, 0);
+  return output;
 }
 
 /** Textura compuesta nueva a resolución original; no modifica el canvas recibido. */
