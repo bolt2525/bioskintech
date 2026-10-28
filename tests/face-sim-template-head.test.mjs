@@ -176,3 +176,31 @@ test('perfil menos profundo: reduce error occipital sin ensanchar frontal ni mov
   assert.ok(seam.size > 20);
   for (const id of seam) assert.deepEqual(fitted.positions.subarray(id * 3, id * 3 + 3), base.positions.subarray(id * 3, id * 3 + 3), 'el ajuste craneal no desplaza la costura facial');
 });
+test('frontal: máscara estrecha casi no adelgaza el cráneo, una ancha sí lo ensancha; cuello recto', () => {
+  const base = buildTemplateHead(face, template), count = face.positions.length / 3;
+  const [fx, fy] = bounds(face.positions, 0, count), faceH = fy[1] - fy[0];
+  const scale = 0.6 / faceH, cu = 0.5 - scale * (fx[0] + fx[1]) / 2, cv = 0.5 + scale * (fy[0] + fy[1]) / 2;
+  const frontal = { u: [scale, 0, 0, cu], v: [0, -scale, 0, cv], towardCamera: [0, 0, 1] };
+  const scaled = k => {
+    const h = { ...base, positions: Float32Array.from(base.positions) }, mid = (fx[0] + fx[1]) / 2;
+    for (let id = count; id < h.positions.length / 3; id++) h.positions[id * 3] = mid + (h.positions[id * 3] - mid) * k;
+    return h;
+  };
+  const width = h => { let lo = Infinity, hi = -Infinity; for (let id = count; id < h.positions.length / 3; id++) if (h.positions[id * 3 + 1] > fy[1]) { lo = Math.min(lo, h.positions[id * 3]); hi = Math.max(hi, h.positions[id * 3]); } return hi - lo; };
+  const narrow = buildTemplateHead(face, template, [syntheticPhoto(scaled(0.8), frontal)]);
+  const wide = buildTemplateHead(face, template, [syntheticPhoto(scaled(1.15), frontal)]);
+  const lost = (width(base) - width(narrow)) / width(base), gained = (width(wide) - width(base)) / width(base);
+  assert.ok(lost < 0.06, `estrechamiento limitado: ${lost}`);
+  assert.ok(gained > lost * 2 && gained > 0.03, `ensanchamiento permitido: ${gained}`);
+  // Borde libre inferior (cuello): todas sus aristas a la misma altura, sin dientes de sierra.
+  const use = edgeUse(base.indices), [, y] = bounds(base.positions, count, base.positions.length / 3);
+  const low = [];
+  for (const [key, n] of use) if (n === 1) key.split(':').map(Number).forEach(id => {
+    const h = (base.positions[id * 3 + 1] - y[0]) / faceH;
+    if (h < 0.25) low.push(h);
+  });
+  assert.ok(low.length > 10, 'hay borde de cuello');
+  // Plano de corte (≈0–0.02 por la inclinación del rostro sintético); el corte por centroide dejaba dientes en 0.026–0.055.
+  const teeth = low.filter(h => h > 0.022 && h < 0.045);
+  assert.equal(teeth.length, 0, `cuello sin dientes de sierra: ${teeth}`);
+});

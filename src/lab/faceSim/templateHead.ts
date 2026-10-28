@@ -164,10 +164,18 @@ function fitSilhouettes(points: V[], shell: number[], used: number[], weight: nu
     // Un perfil oblicuo corrige profundidad, nunca anchura/altura de la frontal.
     const du: V = profile ? forward.map(v => v / horizontal) as V : planar(U, W);
     const limitV = 0.3 * (view.bottom - view.browV), limitU = limitV * source.height / source.width;
-    return { source, view, span, rows, colTop, du, dv: profile ? [0, 0, 0] as V : planar(W, U), limitU, limitV };
+    return { source, view, span, rows, colTop, du, dv: profile ? [0, 0, 0] as V : planar(W, U), limitU, limitV, inward: profile ? Infinity : 0.1,
+      spent: [new Float64Array(FIT_BINS), new Float64Array(FIT_BINS), new Float64Array(FIT_BINS)] };
   });
-  const clamp = (x: number, l: number) => Math.max(-l, Math.min(l, x));
-  for (let round = 0; round < FIT_ROUNDS; round++) for (const { source, view, span, rows, colTop, du, dv, limitU, limitV } of prepared) {
+  // Estrechar/bajar tiene presupuesto acumulado en la frontal: su máscara pierde mechones y una cámara baja oculta la coronilla.
+  const clamp = (x: number, l: number, outward: number, inward: number, spent: Float64Array, b: number) => {
+    const y = Math.max(-l, Math.min(l, x));
+    if (y * outward >= 0 || !Number.isFinite(inward)) return y;
+    const step = Math.min(Math.abs(y), Math.max(0, l * inward - spent[b]));
+    spent[b] += step;
+    return -outward * step;
+  };
+  for (let round = 0; round < FIT_ROUNDS; round++) for (const { source, view, span, rows, colTop, du, dv, limitU, limitV, inward, spent } of prepared) {
     const uv = used.map(id => view.proj(out[id]));
     const rowMin = new Array(FIT_BINS).fill(Infinity), rowMax = new Array(FIT_BINS).fill(-Infinity);
     const minId = new Array(FIT_BINS).fill(-1), maxId = new Array(FIT_BINS).fill(-1);
@@ -195,9 +203,9 @@ function fitSilhouettes(points: V[], shell: number[], used: number[], weight: nu
     }
     // Un extremo facial (peso bajo) no se mueve: la cara observada manda.
     const left = smoothBins(rows.map((m, b) => Number.isFinite(m[0]) && minId[b] >= 0 && weight[minId[b]] > 0.3
-      ? clamp(m[0] - rowMin[b], limitU) : NaN), 2);
+      ? clamp(m[0] - rowMin[b], limitU, -1, inward, spent[0], b) : NaN), 2);
     const right = smoothBins(rows.map((m, b) => Number.isFinite(m[1]) && maxId[b] >= 0 && weight[maxId[b]] > 0.3
-      ? clamp(m[1] - rowMax[b], limitU) : NaN), 2);
+      ? clamp(m[1] - rowMax[b], limitU, 1, inward, spent[1], b) : NaN), 2);
     const center = smoothBins(rowMin.map((l, b) => Number.isFinite(l) ? (l + rowMax[b]) / 2 : NaN), 1);
     const halfLeft = smoothBins(rowMin.map((l, b) => Number.isFinite(l) ? Math.max(1e-6, center[b] - l) : NaN), 1);
     const halfRight = smoothBins(rowMax.map((r, b) => Number.isFinite(r) ? Math.max(1e-6, r - center[b]) : NaN), 1);
@@ -214,7 +222,7 @@ function fitSilhouettes(points: V[], shell: number[], used: number[], weight: nu
       const x1 = Math.min(source.width, Math.ceil((uMin + (c + 1) / FIT_BINS * (uMax - uMin)) * source.width));
       let m = Infinity;
       for (let x = x0; x < x1; x++) m = Math.min(m, colTop[x]);
-      return Number.isFinite(m) && m < view.browV ? clamp(m - v, limitV) : NaN;
+      return Number.isFinite(m) && m < view.browV ? clamp(m - v, limitV, -1, inward, spent[2], c) : NaN;
     }), 2);
     const delta = new Map<number, V>();
     uv.forEach(([u, v], k) => {
@@ -318,7 +326,8 @@ export function buildTemplateHead(face: PersonalSurface, template: HeadTemplate,
   for (let i = 0; i < rawTris.length; i += 3) {
     const t = [rawTris[i], rawTris[i + 1], rawTris[i + 2]];
     const c = [0, 1, 2].map(k => (points[t[0]][k] + points[t[1]][k] + points[t[2]][k]) / 3) as V;
-    if (dot(c, up) < chinUp - faceH * 0.3) continue;
+    // Solo triángulos enteros bajo el corte: tras proyectar, el borde libre queda en el plano.
+    if (t.every(id => dot(points[id], up) < chinUp - faceH * 0.3)) continue;
     if (dot(c, fwd) > minFwd - faceH * 0.04 && t.some(id => inOval(points[id]))) continue;
     keep.push(...t);
   }
