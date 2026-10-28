@@ -1,5 +1,9 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-28 Editor facial: inspector desplazable.
+- ✅ 2026-10-28 Retoque conserva textura craneal.
+- ✅ 2026-10-28 Siluetas protegen ancho/costura facial.
+- ✅ 2026-10-28 QA facial: 192 pruebas, lint y build aprobados. Prueba sintética de silueta posterior: error 0,12056 → 0,00133, conservando cara, UV, costura y ancho frontal. QA visual desktop/móvil no completado por bloqueos de automatización; TypeScript global falla en archivos ajenos al laboratorio.
 - ✅ 2026-10-28 Simulación facial multivista y morfología ampliadas.
 - ✅ 2026-10-27 Cabeza: siluetas y texturas multivista.
 - ✅ 2026-10-27 Simular: máscara fotografiada y órbita.

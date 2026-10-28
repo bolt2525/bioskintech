@@ -34,6 +34,7 @@ export interface FacialSimulationViewerProps {
 
 type View = 'front' | 'left' | 'right' | 'orbit';
 type Comparison = 'after' | 'before' | 'split';
+type InspectorTool = 'morphology' | 'skin' | 'layers' | 'cut';
 type LayerSettings = Record<LayerId, { visible: boolean; opacity: number }>;
 type SurfaceMaterial = THREE.MeshBasicMaterial | THREE.MeshStandardMaterial;
 interface ViewerState {
@@ -164,6 +165,11 @@ function mountFacialSimulation(
   after.add(photoGroup); before.add(beforePhotoGroup);
   const photoTextures: THREE.Texture[] = [];
   let previousPhotoPatches: readonly PhotoSurfacePatch[] | undefined;
+  const triangleKey = (a: number, b: number, c: number) => [a, b, c].sort((x, y) => x - y).join(':');
+  const observedTriangles = new Set<string>();
+  for (let i = 0; i < (mesh.observedIndexCount ?? mesh.indices.length); i += 3) {
+    observedTriangles.add(triangleKey(mesh.indices[i], mesh.indices[i + 1], mesh.indices[i + 2]));
+  }
   const afterMeshes = new Map<LayerId, THREE.Mesh<THREE.BufferGeometry, SurfaceMaterial[]>>();
   let beforeMesh: THREE.Mesh<THREE.BufferGeometry, SurfaceMaterial[]> | undefined;
   const regionGeometry = new THREE.BufferGeometry();
@@ -428,11 +434,21 @@ function mountFacialSimulation(
           const map = new THREE.CanvasTexture(patch.source.texture);
           map.colorSpace = THREE.SRGBColorSpace; map.flipY = false; photoTextures.push(map);
           const blended = Boolean(patch.alpha && patch.blendIndices?.length);
+          const indices = blended ? patch.blendIndices! : patch.indices;
+          const observed: number[] = [], inferred: number[] = [];
+          for (let i = 0; i < indices.length; i += 3) {
+            const target = observedTriangles.has(triangleKey(indices[i], indices[i + 1], indices[i + 2])) ? observed : inferred;
+            target.push(indices[i], indices[i + 1], indices[i + 2]);
+          }
           for (const group of [photoGroup, beforePhotoGroup]) {
+            const parts = group === beforePhotoGroup ? [{ indices, observed: false }]
+              : [{ indices: Uint32Array.from(observed), observed: true }, { indices: Uint32Array.from(inferred), observed: false }];
+            for (const part of parts) {
+            if (!part.indices.length) continue;
             const geometry = new THREE.BufferGeometry();
             geometry.setAttribute('position', new THREE.BufferAttribute(mesh.positions.slice(), 3));
             geometry.setAttribute('uv', new THREE.BufferAttribute(patch.uvs, 2));
-            geometry.setIndex(new THREE.BufferAttribute(blended ? patch.blendIndices! : patch.indices, 1));
+            geometry.setIndex(new THREE.BufferAttribute(part.indices, 1));
             if (blended) geometry.setAttribute('color', new THREE.BufferAttribute(Float32Array.from({ length: patch.alpha!.length * 4 },
               (_, i) => i % 4 === 3 ? patch.alpha![i >> 2] : 1), 4));
             const object = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
@@ -440,8 +456,10 @@ function mountFacialSimulation(
               vertexColors: blended, transparent: blended, depthWrite: !blended,
             }));
             object.userData.blended = blended;
+            object.userData.observed = part.observed;
             // La mezcla «over» exige dibujar las vistas en el mismo orden en que se calcularon los alfas.
             object.name = 'MULTIVIEW_PHOTO_SURFACE'; object.renderOrder = 6 + order * 0.01; group.add(object);
+            }
           }
         });
         previousPhotoPatches = next.photoPatches;
@@ -506,8 +524,10 @@ function mountFacialSimulation(
       for (const object of referenceGroup.children) if (object instanceof THREE.Mesh) {
         object.material.clippingPlanes = plane && next.cut.scope === 'all' ? [plane] : [];
       }
-      photoGroup.visible = !next.skinTexture && next.layers.skin.visible && next.layers.skin.opacity > 0;
+      photoGroup.visible = next.layers.skin.visible && next.layers.skin.opacity > 0;
       for (const group of [photoGroup, beforePhotoGroup]) for (const object of group.children) if (object instanceof THREE.Mesh) {
+        // El retoque reemplaza sólo la cara observada, nunca las fotos del cabello, orejas o cuello.
+        object.visible = group === beforePhotoGroup || !next.skinTexture || !object.userData.observed;
         object.material.clippingPlanes = plane ? [plane] : [];
         object.material.opacity = group === photoGroup ? next.layers.skin.opacity : 1;
         const transparent = object.userData.blended || object.material.opacity < 1;
@@ -552,6 +572,8 @@ function mountFacialSimulation(
 /** API de integración: <FacialSimulationViewer surface={surface} photo={photo} /> */
 export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMeshChange, onPlaneChange, hair = DEFAULT_HAIR, hairPatches, photoPatches }: FacialSimulationViewerProps) {
   const id = useId(), host = useRef<HTMLDivElement>(null), runtime = useRef<ViewerRuntime | null>(null);
+  const inspector = useRef<HTMLDivElement>(null);
+  const [tool, setTool] = useState<InspectorTool>('morphology');
   const [parameters, setParameters] = useState<SimulationParameters>({ ...NEUTRAL_SIMULATION });
   const [layers, setLayers] = useState<LayerSettings>(surfaceLayers);
   const [cut, setCut] = useState<SimulationCut>({ ...INITIAL_CUT });
@@ -645,51 +667,15 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
     setLayers(current => ({ ...current, [key]: { ...current[key], ...update } }));
 
   return (
-    <section aria-labelledby={`${id}-title`} className="space-y-3 rounded-xl border border-slate-700 bg-slate-900 p-3 text-slate-100">
-      <header className="flex flex-wrap items-start justify-between gap-2">
+    <section aria-labelledby={`${id}-title`} data-face-editor className="flex min-w-0 flex-col gap-3 rounded-xl border border-slate-700 bg-slate-900 p-3 text-slate-100 lg:sticky lg:top-2 lg:h-[calc(100dvh-5rem)] lg:min-h-[560px]">
+      <header className="flex shrink-0 flex-wrap items-start justify-between gap-2">
         <div>
           <h2 id={`${id}-title`} className="text-sm font-semibold">Simulación morfológica 3D</h2>
           <p className="text-xs text-slate-300">Exploración visual · intensidades relativas, sin unidades clínicas.</p>
         </div>
         <button type="button" className={buttonClass} onClick={reset}>Restablecer todo</button>
       </header>
-      {photo && surface && <details className="rounded-lg border border-slate-600 p-2 text-sm">
-        <summary className="cursor-pointer">Señales visuales de piel · RGB</summary>
-        <Suspense fallback={<p role="status">Preparando filtros…</p>}>
-          <SkinSignalPanel canvas={photo} landmarks={signalLandmarks} onTexture={onSignalTexture} />
-        </Suspense>
-      </details>}
-      {surface && <details className="rounded-lg border border-slate-600 p-2 text-sm">
-        <summary className="cursor-pointer" title="Sustituye una capa por defecto con otra ilustración frontal">Reemplazar capa · imagen propia</summary>
-        <Suspense fallback={<p role="status">Preparando alineación…</p>}>
-          <AnatomicalReferencePanel surfaceUVs={surface.uvs} onChange={onReference} />
-        </Suspense>
-      </details>}
-      <div className="flex flex-wrap items-center gap-3 text-xs">
-        <label className="flex items-center gap-2"><input type="checkbox" checked={meshVisible} onChange={event => {
-          if (onMeshChange) onMeshChange(event.target.checked); else setLocalMesh(event.target.checked);
-        }} />Mostrar mallado de zonas</label>
-        <label className="flex items-center gap-2">Plano visual
-          <select aria-label="Plano visual de simulación" value={activePlane} className={selectClass} onChange={event => {
-            const value = event.target.value as RegionPlane;
-            if (onPlaneChange) onPlaneChange(value); else setLocalPlane(value);
-          }}>{REGION_PLANES.map(entry => <option key={entry.id} value={entry.id}>{entry.label}</option>)}</select>
-        </label>
-        <span className="text-amber-200">Planos genéricos, no profundidades del paciente.</span>
-        <span role="status" className="block min-h-5 w-full truncate font-semibold text-sky-200">{hoveredZone ?? (meshVisible ? 'Pasa el cursor por una zona de la malla' : 'Mallado oculto')}</span>
-      </div>
-      <div className="flex flex-wrap gap-3">
-        <div role="group" aria-label="Referencias ilustradas alineables" className="flex flex-wrap gap-1 rounded-lg border border-cyan-800 p-1">
-          {ANATOMY_PLANES.map(entry => {
-            const available = entry.id === 'skin' || references.some(item => item.kind === entry.id);
-            return <button type="button" key={entry.id} title={available ? entry.hint : `${entry.hint} · cargando…`} disabled={!available}
-              aria-pressed={anatomy === entry.id} className={`${buttonClass} disabled:opacity-40`} onClick={() => setAnatomy(entry.id)}>{entry.label}</button>;
-          })}
-        </div>
-        <div role="group" aria-label="Modo de simulación" className="flex gap-1">
-          <button type="button" className={buttonClass} onClick={() => { setLayers(surfaceLayers()); setAnatomy('skin'); }}>Morfología</button>
-          <button type="button" className={buttonClass} onClick={() => { setLayers(initialLayers()); setAnatomy('skin'); }}>Ver volúmenes genéricos</button>
-        </div>
+      <div className="flex shrink-0 flex-wrap justify-between gap-2 rounded-lg bg-slate-950/60 p-2">
         <div role="group" aria-label="Orientación del modelo" className="flex flex-wrap gap-1">
           {([['front', 'Frontal'], ['left', 'Perfil lado A'], ['right', 'Perfil lado B'], ['orbit', 'Orbitar']] as const).map(([key, label]) => (
             <button type="button" key={key} className={buttonClass} aria-pressed={view === key} onClick={() => setView(key)}>{label}</button>
@@ -701,10 +687,10 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
           ))}
         </div>
       </div>
-      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_19rem]">
-        <div className="min-w-0 space-y-2">
-          <div className="relative overflow-hidden rounded-lg border border-slate-700 bg-slate-950">
-            <div ref={host} className="h-[380px] w-full sm:h-[480px]" />
+      <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_18rem]">
+        <div className="flex min-h-0 min-w-0 flex-col gap-2">
+          <div className="relative min-h-64 flex-1 overflow-hidden rounded-lg border border-slate-700 bg-slate-950">
+            <div ref={host} data-simulation-viewport className="h-[46dvh] min-h-64 w-full lg:h-full" />
             {comparison === 'split' && !failure ? (
               <div aria-hidden="true" className="pointer-events-none absolute inset-0 grid grid-cols-2 text-center text-xs">
                 <span className="border-r border-slate-400/50 pt-2">Antes · original</span><span className="pt-2">Después · capas</span>
@@ -717,20 +703,21 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
               </div>
             ) : !ready ? <p role="status" className="absolute inset-x-0 top-6 text-center text-sm">Preparando visor 3D…</p> : null}
           </div>
-          <p className="text-xs font-medium text-amber-200">Capas genéricas · no anatomía interna del paciente</p>
-          <p className="text-xs text-slate-300">Grasa: almohadillas ilustrativas; músculos: bandas con grosor; vasos y nervios: tubos ramificados. Forma, calibre y profundidad arbitrarios para exploración, no localización anatómica real.</p>
-          <p className="text-xs text-slate-300">
-            {prepared.mesh?.source === 'personal'
-              ? 'Superficie personal estimada. La textura, si existe, sigue la deformación 3D; no es una predicción fotográfica.'
-              : 'Cabeza de referencia genérica del atlas. No se aplica una foto sin correspondencia personal.'}
-            {' '}Los perfiles muestran sólo la geometría disponible, no reconstruyen información ausente.
-          </p>
-          <details className="text-xs text-slate-400"><summary className="cursor-pointer">Alcance de la simulación</summary>
-            <p>Esquemas originales genéricos, no detección real. Sin planos de inyección ni planificación de tratamientos.</p>
+          <p role="status" className="min-h-5 truncate text-xs font-semibold text-sky-200">{hoveredZone ?? (meshVisible ? 'Pasa el cursor por una zona de la malla' : prepared.mesh?.source === 'personal' ? 'Superficie personal aproximada · zonas sin cobertura inferidas' : 'Cabeza genérica de referencia')}</p>
+          <p id={`${id}-help`} className="text-[11px] text-slate-400">Arrastra o usa las flechas para girar · rueda, pinza o +/− para zoom. «Antes» conserva el original.</p>
+          <details className="shrink-0 text-xs text-slate-400"><summary className="cursor-pointer rounded focus-visible:outline focus-visible:outline-cyan-300">Límites · no es un escaneo ni una predicción clínica</summary>
+            <p className="max-h-24 overflow-y-auto py-2">La cabeza y el cabello son aproximaciones; las zonas ocultas proceden de una plantilla genérica. Las capas internas son ilustraciones, no anatomía detectada ni planos de inyección. Grasa: almohadillas; músculos: bandas; vasos y nervios: tubos de profundidad arbitraria. La textura sigue la deformación; no predice tratamientos.</p>
           </details>
-          <p id={`${id}-help`} className="text-xs text-slate-300">Arrastra o enfoca el visor y usa las flechas para girar, también desde una vista frontal o lateral. Rueda, pinza o +/− para zoom. «Antes» conserva la superficie original.</p>
         </div>
-        <div className="space-y-3" aria-describedby={`${id}-help`}>
+        <aside aria-label="Inspector de simulación" className="flex min-h-0 min-w-0 flex-col rounded-lg border border-slate-700 bg-slate-950/40">
+          <nav aria-label="Herramientas de simulación" className="grid shrink-0 grid-cols-2 gap-1 border-b border-slate-700 p-2">
+            {([['morphology', 'Morfología'], ['skin', 'Piel'], ['layers', 'Capas'], ['cut', 'Corte']] as const).map(([key, label]) =>
+              <button type="button" key={key} aria-pressed={tool === key} aria-controls={`${id}-tool-${key}`}
+                className={`${buttonClass} min-h-10`} onClick={() => { setTool(key); inspector.current?.scrollTo({ top: 0 }); }}>{label}</button>)}
+          </nav>
+          <div ref={inspector} data-simulation-inspector className="max-h-[48dvh] min-h-0 space-y-3 overflow-y-auto overscroll-contain p-3 lg:max-h-none lg:flex-1" aria-describedby={`${id}-help`}>
+          <div id={`${id}-tool-morphology`} hidden={tool !== 'morphology'} className="space-y-3">
+          <button type="button" className={buttonClass} onClick={() => { setLayers(surfaceLayers()); setAnatomy('skin'); }}>Mostrar superficie</button>
           {SIMULATION_GROUPS.map(group => (
             <fieldset key={group} className="space-y-2 rounded-lg border border-slate-700 p-2">
               <legend className="px-1 text-xs font-semibold">{group}</legend>
@@ -743,11 +730,15 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
                     className="mt-1 block w-full accent-cyan-400 focus-visible:outline-cyan-300" />
                 </label>
               ))}
-              <fieldset disabled={!photo || !surface} aria-describedby={`${id}-cosmetic-help`} className="space-y-2 rounded-lg border border-slate-700 p-2 disabled:opacity-50">
+              {group === 'Nariz' ? <p className="text-[11px] text-slate-400">− reduce / + aumenta · rotación + eleva la punta</p> : null}
+            </fieldset>
+          ))}
+          </div>
+          <div id={`${id}-tool-skin`} hidden={tool !== 'skin'} className="space-y-3">
+              <fieldset disabled={!photo || !surface} aria-describedby={`${id}-cosmetic-help`} className="space-y-3 rounded-lg border border-slate-700 p-2 disabled:opacity-50">
                 <legend className="px-1 text-xs font-semibold">Retoque cosmético visual · piel</legend>
                 <p id={`${id}-cosmetic-help`} className="text-[11px] text-slate-300">
-                  Sólo RGB dentro de una máscara aproximada de piel. Tono: ±12 niveles; resto: 0–100 de mezcla visual, no eficacia. Cambio combinado limitado a 32/255 por canal.
-                  No detecta manchas ni arrugas reales: suaviza diferencias a dos escalas; no elimina pliegues 3D ni predice tratamientos.
+                  Retoque local de la cara, no del cabello ni del cuello. Intensidad visual, no eficacia clínica; no detecta manchas o arrugas ni elimina pliegues 3D.
                 </p>
                 {!photo || !surface ? <p className="text-xs text-amber-200">Necesita una foto con referencias faciales válidas.</p> : null}
                 {SKIN_COSMETIC_CONTROLS.map(control => (
@@ -766,14 +757,35 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
                 </p>
                 {cosmeticError ? <p role="alert" className="text-xs text-amber-200">{cosmeticError}</p> : null}
               </fieldset>
-              {group === 'Nariz' ? <p className="text-[11px] text-slate-400">− reduce / + aumenta · rotación + eleva la punta</p> : null}
-            </fieldset>
-          ))}
-        </div>
-      </div>
+              {photo && surface && <details className="rounded-lg border border-slate-600 p-2 text-sm">
+                <summary className="cursor-pointer">Señales visuales de piel · RGB</summary>
+                <Suspense fallback={<p role="status">Preparando filtros…</p>}>
+                  <SkinSignalPanel canvas={photo} landmarks={signalLandmarks} onTexture={onSignalTexture} />
+                </Suspense>
+              </details>}
+          </div>
+          <div id={`${id}-tool-layers`} hidden={tool !== 'layers'} className="space-y-3">
+            <div role="group" aria-label="Referencias ilustradas alineables" className="grid grid-cols-2 gap-1">
+              {ANATOMY_PLANES.map(entry => {
+                const available = entry.id === 'skin' || references.some(item => item.kind === entry.id);
+                return <button type="button" key={entry.id} title={available ? entry.hint : `${entry.hint} · cargando…`} disabled={!available}
+                  aria-pressed={anatomy === entry.id} className={`${buttonClass} min-h-10 disabled:opacity-40`} onClick={() => setAnatomy(entry.id)}>{entry.label}</button>;
+              })}
+            </div>
+            <button type="button" className={buttonClass} onClick={() => { setLayers(initialLayers()); setAnatomy('skin'); }}>Ver volúmenes genéricos</button>
+            <p className="text-xs text-amber-200">Capas genéricas · no anatomía interna del paciente</p>
+            <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={meshVisible} onChange={event => {
+              if (onMeshChange) onMeshChange(event.target.checked); else setLocalMesh(event.target.checked);
+            }} />Mostrar mallado de zonas</label>
+            <label className="block text-xs">Plano visual
+              <select aria-label="Plano visual de simulación" value={activePlane} className={`${selectClass} mt-1 w-full`} onChange={event => {
+                const value = event.target.value as RegionPlane;
+                if (onPlaneChange) onPlaneChange(value); else setLocalPlane(value);
+              }}>{REGION_PLANES.map(entry => <option key={entry.id} value={entry.id}>{entry.label}</option>)}</select>
+            </label>
       <fieldset className="rounded-lg border border-slate-700 p-2">
         <legend className="px-1 text-xs font-semibold">Capas simultáneas · visibilidad y opacidad</legend>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="space-y-4">
           {SIMULATION_LAYERS.map(layer => (
             <div key={layer.id} className="min-w-0 space-y-1">
               <label className="flex items-center gap-2 text-xs">
@@ -793,6 +805,14 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
         {anatomy === 'skin' && SIMULATION_LAYERS.every(layer => !layers[layer.id].visible || layers[layer.id].opacity === 0) && comparison !== 'before'
           ? <p role="status" className="mt-2 text-xs text-amber-200">No hay capas visibles. Activa una capa o restablece el visor.</p> : null}
       </fieldset>
+            {surface && <details className="rounded-lg border border-slate-600 p-2 text-sm">
+              <summary className="cursor-pointer">Reemplazar capa · imagen propia</summary>
+              <Suspense fallback={<p role="status">Preparando alineación…</p>}>
+                <AnatomicalReferencePanel surfaceUVs={surface.uvs} onChange={onReference} />
+              </Suspense>
+            </details>}
+          </div>
+          <div id={`${id}-tool-cut`} hidden={tool !== 'cut'}>
       <fieldset className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-700 p-2">
         <legend className="px-1 text-xs font-semibold">Corte visual · recorte sin relleno interior</legend>
         <label className="flex items-center gap-2 text-xs">Aplicar a
@@ -812,6 +832,10 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
           <input type="checkbox" disabled={cut.scope === 'none'} checked={cut.reverse} onChange={event => setCut(current => ({ ...current, reverse: event.target.checked }))} className="accent-cyan-400" />Invertir corte
         </label>
       </fieldset>
+          </div>
+          </div>
+        </aside>
+      </div>
     </section>
   );
 }
