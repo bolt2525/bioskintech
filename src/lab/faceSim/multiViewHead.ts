@@ -1,5 +1,4 @@
 import type { PersonalSurface } from './engine';
-import type { EstimatedHeadSurface } from './estimatedHead';
 import type { HairPhotoProjection } from './estimatedHair';
 
 export interface HeadPhotoSource {
@@ -7,6 +6,8 @@ export interface HeadPhotoSource {
   width: number;
   height: number;
   mask: Float32Array;
+  /** Confianza de cabello (subconjunto de mask), si el segmentador la ofrece. */
+  hair?: Float32Array;
   texture: HTMLCanvasElement;
   projection: HairPhotoProjection;
 }
@@ -32,78 +33,42 @@ function rowBounds(source: HeadPhotoSource): Float32Array {
   return rows;
 }
 
-/**
- * Intersección de siluetas (visual hull), NO profundidad obtenida de sombras.
- * Conserva la máscara facial y su chart; solo ajusta el cierre no observado.
- * El contorno por filas no reconstruye concavidades de orejas ni hebras.
- */
-export function constrainHeadToPhotos(head: EstimatedHeadSurface, sources: readonly HeadPhotoSource[]): EstimatedHeadSurface {
-  if (sources.length < 3) throw new Error('El ajuste de siluetas requiere frontal y dos laterales.');
-  const bounds = sources.map(source => ({ source, rows: rowBounds(source) }));
-  const inside = (p: number[]) => bounds.every(({ source, rows }) => {
-    const u = project(p, source.projection.u), v = project(p, source.projection.v);
-    if (v < 0 || v >= 1) return false;
-    const row = Math.floor(v * source.height) * 2;
-    return rows[row] >= 0 && u >= rows[row] && u <= rows[row + 1];
-  });
-  const positions = head.positions.slice(), count = head.observedVertexCount ?? 468;
-  if (!Number.isInteger(count) || count < 468 || positions.length % 3 || count > positions.length / 3
-    || !positions.every(Number.isFinite)) throw new Error('Superficie observada inválida.');
-  let minZ = Infinity, maxZ = -Infinity, minY = Infinity, maxY = -Infinity, minX = Infinity, maxX = -Infinity;
-  for (let i = 0; i < 468; i++) {
-    minZ = Math.min(minZ, positions[i * 3 + 2]);
-    maxZ = Math.max(maxZ, positions[i * 3 + 2]);
-    minY = Math.min(minY, positions[i * 3 + 1]); maxY = Math.max(maxY, positions[i * 3 + 1]);
-    minX = Math.min(minX, positions[i * 3]); maxX = Math.max(maxX, positions[i * 3]);
-  }
-  const height = maxY - minY, cx = (minX + maxX) / 2, cy = minY + height * 0.62;
-  // Tres vistas oblicuas dejan una cuña posterior indeterminada. No añadir
-  // otra profundidad craneal completa a la profundidad facial ya existente.
-  const posteriorLimit = Math.min(minZ - height * 0.04, maxZ - Math.max((maxX - minX) * 1.35, height * 1.15));
-  const inEnvelope = (p: number[]) => p[1] >= minY - height * 0.035 && p[1] <= maxY + height * 0.45
-    && p[2] >= posteriorLimit && p[2] <= minZ - height * 0.015 && inside(p);
-  // Buscar un punto interior compartido: evita proyectar desde la cara anterior
-  // o aceptar una silueta que no concuerda con las cámaras faciales.
-  const interior: number[][] = [];
-  for (let step = 1; step <= 40; step++) {
-    const p = [cx, cy, minZ + (posteriorLimit - minZ) * step / 41];
-    if (inEnvelope(p)) interior.push(p);
-  }
-  if (interior.length < 3) throw new Error('Las siluetas no concuerdan con la alineación facial. Revisa encuadre y laterales.');
-  const origin = interior[Math.floor(interior.length / 2)];
-  for (let id = count; id < positions.length / 3; id++) {
-    const direction = [0, 1, 2].map(axis => positions[id * 3 + axis] - origin[axis]);
-    const point = (t: number) => origin.map((value, axis) => value + direction[axis] * t);
-    const valid = (t: number) => {
-      const p = point(t);
-      return inEnvelope(p);
-    };
-    // Primer cruce continuo desde el interior: no saltar huecos de segmentación.
-    let lo = 0, hi = 1.8;
-    for (let step = 1; step <= 72; step++) {
-      const t = step * 1.8 / 72;
-      if (!valid(t)) { hi = t; break; }
-      lo = t;
-    }
-    for (let iteration = 0; iteration < 16; iteration++) {
-      const mid = (lo + hi) / 2;
-      if (valid(mid)) lo = mid; else hi = mid;
-    }
-    // Acotar el rayo, no desplazar Z después: así el vértice sigue dentro
-    // de todas las siluetas y detrás de la superficie fotografiada.
-    const p = point(lo);
-    if (!inside(p)) throw new Error('El contorno de cabeza no permite un cierre coherente con las tres vistas.');
-    positions.set(p, id * 3);
-  }
-  if (!positions.every(Number.isFinite)) throw new Error('El ajuste multivista produjo coordenadas inválidas.');
-  for (let offset = head.observedIndexCount; offset < head.indices.length; offset += 3) {
-    const [a, b, c] = Array.from(head.indices.subarray(offset, offset + 3)).map(id => positions.subarray(id * 3, id * 3 + 3));
-    const ab = Array.from(b, (v, i) => v - a[i]), ac = Array.from(c, (v, i) => v - a[i]);
-    if (Math.hypot(ab[1] * ac[2] - ab[2] * ac[1], ab[2] * ac[0] - ab[0] * ac[2], ab[0] * ac[1] - ab[1] * ac[0]) < height * height * 1e-10) {
-      throw new Error('La silueta produce triángulos colapsados. Usa laterales con el contorno completo.');
+/** Mediana del color de cabello visible en todas las vistas (o, sin canal de cabello, la cabeza sobre la frente). */
+export function sampleScalpColor(sources: readonly HeadPhotoSource[], forehead: ArrayLike<number>): string | undefined {
+  const channels: number[][] = [[], [], []];
+  for (const source of sources) {
+    const browV = project(forehead, source.projection.v);
+    const ctx = source.texture.getContext?.('2d', { willReadFrequently: true });
+    if (!ctx || !Number.isFinite(browV)) continue;
+    const { width: tw, height: th } = source.texture, pixels = ctx.getImageData(0, 0, tw, th).data;
+    const rows = source.hair ? source.height : Math.min(source.height, Math.floor((browV - 0.03) * source.height));
+    for (let y = 0; y < rows; y += 2) {
+      for (let x = 0; x < source.width; x += 2) {
+        if ((source.hair ?? source.mask)[y * source.width + x] < 0.7) continue;
+        const o = (Math.floor(y / source.height * th) * tw + Math.floor(x / source.width * tw)) * 4;
+        for (let c = 0; c < 3; c++) channels[c].push(pixels[o + c]);
+      }
     }
   }
-  return { ...head, positions };
+  if (channels[0].length < 50) return undefined;
+  const median = (values: number[]) => values.sort((a, b) => a - b)[values.length >> 1];
+  return `#${channels.map(values => median(values).toString(16).padStart(2, '0')).join('')}`;
+}
+
+/** Mediana RGB en ventanas 9×9 alrededor de puntos 3D proyectados en una vista (p. ej. piel de frente y pómulos). */
+export function sampleColorAt(source: HeadPhotoSource | undefined, points: readonly ArrayLike<number>[]): string | undefined {
+  const ctx = source?.texture.getContext?.('2d', { willReadFrequently: true });
+  if (!source || !ctx) return undefined;
+  const { width: tw, height: th } = source.texture, channels: number[][] = [[], [], []];
+  for (const p of points) {
+    const cx = Math.round(project(p, source.projection.u) * tw), cy = Math.round(project(p, source.projection.v) * th);
+    if (!Number.isFinite(cx) || !Number.isFinite(cy) || cx < 4 || cy < 4 || cx > tw - 5 || cy > th - 5) continue;
+    const pixels = ctx.getImageData(cx - 4, cy - 4, 9, 9).data;
+    for (let o = 0; o < pixels.length; o += 4) for (let c = 0; c < 3; c++) channels[c].push(pixels[o + c]);
+  }
+  if (!channels[0].length) return undefined;
+  const median = (values: number[]) => values.sort((a, b) => a - b)[values.length >> 1];
+  return `#${channels.map(values => median(values).toString(16).padStart(2, '0')).join('')}`;
 }
 
 /** Un triángulo, una vista: sin mezclar el ojo opuesto ni estirar la frontal al perfil. */

@@ -47,7 +47,7 @@ export async function personalSurfaceToGlb(surface: PersonalSurface | EstimatedH
     });
     if ('observedIndexCount' in surface) {
       add('ESTIMATED_HEAD_SURFACE', geometryFrom(surface.indices.slice(surface.observedIndexCount)),
-        new THREE.MeshStandardMaterial({ color: '#94a3b8', roughness: 0.9, side: THREE.DoubleSide }));
+        new THREE.MeshStandardMaterial({ color: surface.inferredColor ?? '#94a3b8', roughness: 0.9, side: THREE.DoubleSide }));
       if (hair?.enabled) hairPatches.forEach((patch, i) => {
         add(`PHOTO_HAIR_SURFACE_${i}`, geometryFrom(patch.indices, patch.uvs), new THREE.MeshStandardMaterial({
           color: '#ffffff', map: textureFrom(patch.source.texture), normalMap: textureFrom(patch.source.normal, false),

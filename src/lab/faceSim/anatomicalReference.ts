@@ -59,6 +59,40 @@ export function applyAffineTransform(t: AffineTransform, p: ReferencePoint): Ref
   return { x: t[0] * p.x + t[1] * p.y + t[2], y: t[3] * p.x + t[4] * p.y + t[5] };
 }
 
+/** Afín por mínimos cuadrados (ecuaciones normales 3×3) de n ≥ 3 pares de puntos. */
+export function fitLeastSquaresAffine(source: readonly ReferencePoint[], target: readonly ReferencePoint[]): AffineTransform {
+  const m = [[0, 0, 0], [0, 0, 0], [0, 0, 0]], bx = [0, 0, 0], by = [0, 0, 0];
+  source.forEach((p, i) => {
+    const row = [p.x, p.y, 1];
+    for (let r = 0; r < 3; r++) {
+      for (let c = 0; c < 3; c++) m[r][c] += row[r] * row[c];
+      bx[r] += row[r] * target[i].x; by[r] += row[r] * target[i].y;
+    }
+  });
+  const det3 = (a: number[][]) => a[0][0] * (a[1][1] * a[2][2] - a[1][2] * a[2][1]) - a[0][1] * (a[1][0] * a[2][2] - a[1][2] * a[2][0]) + a[0][2] * (a[1][0] * a[2][1] - a[1][1] * a[2][0]);
+  const d = det3(m);
+  if (!Number.isFinite(d) || Math.abs(d) < 1e-12) throw new Error('Puntos degenerados para el ajuste afín.');
+  const solve = (b: number[]) => [0, 1, 2].map(k => det3(m.map((row, r) => row.map((v, c) => c === k ? b[r] : v))) / d);
+  return [...solve(bx), ...solve(by)] as unknown as AffineTransform;
+}
+
+/**
+ * Registro denso: los 468 vértices faciales toman el landmark detectado en la ilustración;
+ * el resto (cráneo, cuello) sigue un afín por mínimos cuadrados de esos mismos pares.
+ */
+export function fitLandmarkUVs(surfaceUVs: Float32Array, landmarks: readonly ReferencePoint[]): Float32Array {
+  if (landmarks.length < 468 || surfaceUVs.length < 468 * 2) throw new Error('Se necesitan 468 puntos faciales en ambas imágenes.');
+  const source = Array.from({ length: 468 }, (_, i) => ({ x: surfaceUVs[i * 2], y: surfaceUVs[i * 2 + 1] }));
+  const transform = fitLeastSquaresAffine(source, landmarks.slice(0, 468));
+  const uvs = new Float32Array(surfaceUVs.length);
+  for (let i = 0; i < uvs.length / 2; i++) {
+    const p = i < 468 ? landmarks[i] : applyAffineTransform(transform, { x: surfaceUVs[i * 2], y: surfaceUVs[i * 2 + 1] });
+    uvs[i * 2] = p.x; uvs[i * 2 + 1] = p.y;
+  }
+  if (!uvs.every(Number.isFinite)) throw new Error('El registro automático produjo UV no finitos.');
+  return uvs;
+}
+
 /** Los UV fuera de [0,1] se conservan: el consumidor debe mostrarlos transparentes, no repetir bordes. */
 export function fitAnatomicalUVs(surfaceUVs: Float32Array, anchors: ReferenceAnchors): Float32Array {
   if (surfaceUVs.length < (263 + 1) * 2 || surfaceUVs.length % 2 !== 0 ||

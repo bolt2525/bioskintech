@@ -37,6 +37,7 @@ function component(hooks, loader) {
     exports, AbortController, Error,
     require: name => name === 'react' ? hooks
       : name === './anatomicalReference' ? { ...anatomy, loadAnatomicalImage: loader }
+        : name === './detection' ? { detectImageLandmarks: async () => globalThis.__detected ?? null }
         : require(name),
   });
   return exports.default;
@@ -127,8 +128,8 @@ function register(app) {
 test('render React real: aviso clínico, licencia, privacidad, labels y estado vacío', () => {
   const Component = component(React, anatomy.loadAnatomicalImage);
   const html = renderToStaticMarkup(React.createElement(Component, { surfaceUVs: surface(), onChange() {} }));
-  assert.match(html, /NO representa la anatomía individual/);
-  assert.match(html, /no se recortan ni eliminan/);
+  assert.match(html, /no anatomía del paciente/);
+  assert.match(html, /Conserva las marcas de agua/);
   assert.match(html, /no se envían ni guardan/);
   assert.match(html, /Sin referencia/);
   assert.match(html, /image\/jpeg,image\/png,image\/webp/);
@@ -165,7 +166,7 @@ test('registro solo tras 3 clics: UV reales, metadatos y ajustes sin reconstruir
   assert.equal(updated.kind, 'vessels');
   assert.equal(updated.canvas, canvas);
   assert.equal(updated.uvs, ref.uvs, 'solo los anclajes o UV fuente recalculan registro');
-  assert.match(text(tree), /Referencia genérica registrada/);
+  assert.match(text(tree), /Alineada con 3 anclajes manuales/);
   app.unmount();
 });
 
@@ -341,4 +342,23 @@ test('error tardío de una carga sustituida no sobrescribe la referencia actual'
   assert.ok(app.emitted.at(-1));
   assert.equal(find(tree, n => n.props.role === 'alert').length, 0);
   app.unmount();
+});
+
+test('ilustración con rostro: alineación automática densa; mover un punto vuelve al modo manual', async () => {
+  const lm = Array.from({ length: 478 }, (_, i) => ({ x: 0.3 + 0.4 * (i % 23) / 22, y: 0.2 + 0.6 * (i % 29) / 28 }));
+  lm[33] = { x: 0.3, y: 0.35 }; lm[263] = { x: 0.7, y: 0.35 }; lm[152] = { x: 0.5, y: 0.85 };
+  globalThis.__detected = lm;
+  try {
+    const app = panel();
+    const uvs = new Float32Array(478 * 2);
+    for (let i = 0; i < 478; i++) uvs.set([0.2 + 0.6 * (i % 19) / 18, 0.1 + 0.8 * (i % 31) / 30], i * 2);
+    app.render({ surfaceUVs: uvs });
+    const { tree } = await loaded(app);
+    assert.match(text(tree), /Alineada automáticamente con 468 puntos/);
+    const ref = app.emitted.at(-1);
+    assert.ok(ref?.uvs);
+    assert.ok(Math.abs(ref.uvs[33 * 2] - 0.3) < 1e-6 && Math.abs(ref.uvs[152 * 2 + 1] - 0.85) < 1e-6);
+    place(app, 0.5, 0.9);
+    assert.match(text(app.render()), /Alineada con 3 anclajes manuales/);
+  } finally { delete globalThis.__detected; }
 });

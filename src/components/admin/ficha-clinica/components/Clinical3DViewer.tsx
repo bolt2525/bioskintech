@@ -2782,7 +2782,7 @@ const ThreeEngine: React.FC<{
           child.material = child.name.startsWith('PHOTO_HAIR_SURFACE') || child.name.startsWith('ESTIMATED_HEAD_SURFACE_PHOTO') || child.name.startsWith('PERSONAL_FACE_SURFACE_') ? previousMaterials[0].clone() : map && child.name === 'PERSONAL_FACE_SURFACE'
             ? new THREE.MeshBasicMaterial({ map, side: THREE.DoubleSide, wireframe: settings.wireframe })
             : new THREE.MeshPhysicalMaterial({
-              color: child.name === 'ESTIMATED_HEAD_SURFACE' ? '#94a3b8' : map ? '#ffffff' : settings.materialColor,
+              color: child.name === 'ESTIMATED_HEAD_SURFACE' ? (previousMaterials[0]?.color?.clone?.() ?? '#94a3b8') : map ? '#ffffff' : settings.materialColor,
               map,
               roughness: map ? 0.75 : settings.roughness,
               metalness: map ? 0 : settings.metalness,

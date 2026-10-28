@@ -1,8 +1,9 @@
 import { useEffect, useId, useMemo, useRef, useState, type PointerEvent } from 'react';
 import {
-  fitAnatomicalUVs, loadAnatomicalImage, type AnatomicalReference,
+  fitAnatomicalUVs, fitLandmarkUVs, loadAnatomicalImage, type AnatomicalReference,
   type ReferenceAnchors, type ReferencePoint,
 } from './anatomicalReference';
+import { detectImageLandmarks } from './detection';
 
 export interface AnatomicalReferencePanelProps {
   /** UV de la foto frontal, normalizados, origen arriba-izquierda y orden de landmarks original. */
@@ -26,20 +27,24 @@ export default function AnatomicalReferencePanel({ surfaceUVs, onChange }: Anato
   const [points, setPoints] = useState<ReferencePoint[]>([]);
   const [selected, setSelected] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [detecting, setDetecting] = useState(false);
   const [error, setError] = useState('');
   const [kind, setKind] = useState<AnatomicalReference['kind']>('muscle');
   const [depth, setDepth] = useState(0.02);
   const [opacity, setOpacity] = useState(0.5);
+  // Landmarks detectados en la ilustración; se descartan al mover un anclaje a mano.
+  const [detected, setDetected] = useState<ReferencePoint[]>();
 
   const registration = useMemo(() => {
     if (!canvas || points.length !== 3) return { uvs: undefined, error: '' };
     try {
+      if (detected) return { uvs: fitLandmarkUVs(surfaceUVs, detected), error: '' };
       const anchors: ReferenceAnchors = [points[0], points[1], points[2]];
       return { uvs: fitAnatomicalUVs(surfaceUVs, anchors), error: '' };
     } catch (cause) {
       return { uvs: undefined, error: cause instanceof Error ? cause.message : 'No se pudo registrar la referencia.' };
     }
-  }, [canvas, points, surfaceUVs]);
+  }, [canvas, points, surfaceUVs, detected]);
   const reference = useMemo<AnatomicalReference | undefined>(() => canvas && registration.uvs
     ? { canvas, uvs: registration.uvs, depth, opacity, kind } : undefined,
   [canvas, registration.uvs, depth, opacity, kind]);
@@ -76,6 +81,7 @@ export default function AnatomicalReferencePanel({ surfaceUVs, onChange }: Anato
     image.current = undefined;
     setCanvas(undefined);
     setPoints([]);
+    setDetected(undefined);
     setSelected(0);
     setLoading(false);
     setError('');
@@ -93,15 +99,24 @@ export default function AnatomicalReferencePanel({ surfaceUVs, onChange }: Anato
       }
       image.current = next;
       setCanvas(next);
+      setDetecting(true);
+      const found = await detectImageLandmarks(next).catch(() => null);
+      if (controller.signal.aborted || request.current !== controller) return;
+      if (found && found.length >= 468) {
+        setDetected(found);
+        setPoints([found[33], found[263], found[152]].map(p => ({ x: clamp(p.x), y: clamp(p.y) })));
+        setSelected(2);
+      }
     } catch (cause) {
       if (!controller.signal.aborted && request.current === controller) {
         setError(cause instanceof Error ? cause.message : 'No se pudo abrir la imagen. Selecciona otro archivo.');
       }
     } finally {
-      if (request.current === controller) { request.current = undefined; setLoading(false); }
+      if (request.current === controller) { request.current = undefined; setLoading(false); setDetecting(false); }
     }
   };
   const update = (index: number, point: ReferencePoint) => {
+    setDetected(undefined);
     setPoints(previous => {
       const next = [...previous];
       next[index] = { x: clamp(point.x), y: clamp(point.y) };
@@ -117,13 +132,11 @@ export default function AnatomicalReferencePanel({ surfaceUVs, onChange }: Anato
 
   return <section aria-labelledby={`${id}-title`} aria-describedby={`${id}-warning`} className="min-w-0 space-y-3 rounded-xl border border-slate-300 bg-white p-3 text-sm text-slate-900">
     <h3 id={`${id}-title`} className="font-semibold">Capa anatómica de referencia</h3>
-    <p id={`${id}-warning`} className="rounded bg-amber-50 p-2 text-xs text-amber-950">
-      Referencia genérica: NO representa la anatomía individual ni sirve para planificar inyecciones o diagnosticar.
-      El registro manual solo alinea una ilustración.
+    <p id={`${id}-warning`} className="rounded bg-amber-50 p-2 text-xs text-amber-950"
+      title="Imagen y puntos solo en memoria, procesamiento local; no se envían ni guardan. Conserva las marcas de agua y usa imágenes con licencia.">
+      Capa genérica, no anatomía del paciente. Se alinea sola si la ilustración muestra un rostro frontal.
     </p>
-    <p className="text-xs text-slate-700">Carga una vista frontal con licencia o permiso. Conserva todas las marcas de agua; no se recortan ni eliminan.
-      Imagen y puntos solo en memoria, con procesamiento local; no se envían ni guardan.</p>
-    <label className="block font-medium">Imagen de referencia (JPEG, PNG o WebP; hasta 10 MB)
+    <label className="block font-medium">Ilustración frontal (músculos, vasos…)
       <input type="file" name="anatomical-reference" accept="image/jpeg,image/png,image/webp"
         className="admin-focus-ring mt-1 block w-full min-w-0 rounded text-xs"
         onChange={event => {
@@ -133,14 +146,15 @@ export default function AnatomicalReferencePanel({ surfaceUVs, onChange }: Anato
         }} />
     </label>
     <div role="status" aria-live="polite" className="text-xs text-slate-700">
-      {loading ? 'Cargando imagen local…' : !canvas ? 'Sin referencia. Sube una imagen frontal para comenzar.'
-        : reference ? 'Referencia genérica registrada mediante 3 anclajes manuales.'
+      {loading ? (detecting ? 'Buscando puntos faciales en la ilustración…' : 'Cargando imagen local…') : !canvas ? 'Sin referencia. JPEG, PNG o WebP hasta 10 MB.'
+        : reference && detected ? 'Alineada automáticamente con 468 puntos faciales. Mueve un punto para corregir a mano.'
+        : reference ? 'Alineada con 3 anclajes manuales.'
           : registration.error ? 'Registro inválido: ajusta los anclajes.'
-          : `Marca ${points.length} de 3 puntos. Siguiente: ${LABELS[Math.min(points.length, 2)]}.`}
+          : `Sin rostro detectable: marca ${points.length} de 3 puntos. Siguiente: ${LABELS[Math.min(points.length, 2)]}.`}
     </div>
     {canvas && <>
-      <p className="text-xs text-slate-700">Marca, en orden, las comisuras externas de los ojos correspondientes a los landmarks 33 y 263 de la foto del paciente y el centro del mentón (152).
-        Respeta los lados aunque la referencia esté espejada. Después arrastra los puntos o ajusta sus coordenadas con teclado.</p>
+      <p className="text-xs text-slate-700" title="Comisuras externas de los ojos (landmarks 33 y 263) y centro del mentón (152). Respeta los lados aunque la referencia esté espejada; también puedes usar flechas del teclado.">
+        Puntos: ojo 33, ojo 263 y mentón.</p>
       <div className="relative mx-auto w-full select-none" style={{ maxWidth: `${320 * canvas.width / canvas.height}px` }}>
         <canvas ref={preview} aria-label="Referencia completa con sus marcas originales" className="block h-auto w-full rounded border border-slate-300" />
         <button type="button" aria-label={`Colocar ${LABELS[selected]} sobre la imagen`}
@@ -204,7 +218,7 @@ export default function AnatomicalReferencePanel({ surfaceUVs, onChange }: Anato
             }} className={`${control} mt-1 w-full`} />
         </label>)}
       </div>
-      <button type="button" onClick={() => { setPoints([]); setSelected(0); drag.current = undefined; }}
+      <button type="button" onClick={() => { setPoints([]); setDetected(undefined); setSelected(0); drag.current = undefined; }}
         className={`${control} hover:bg-slate-100`}>Rehacer anclajes</button>
     </>}
     <div className="grid gap-3 sm:grid-cols-3">

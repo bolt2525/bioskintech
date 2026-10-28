@@ -17,6 +17,10 @@ import * as detection from '../src/lab/faceSim/detection.ts';
 import * as regionMesh from '../src/lab/faceSim/regionMesh.ts';
 import * as estimatedHair from '../src/lab/faceSim/estimatedHair.ts';
 import * as multiViewHead from '../src/lab/faceSim/multiViewHead.ts';
+const templateHead = await import(`data:text/javascript;base64,${Buffer.from(ts.transpileModule(
+  readFileSync(new URL('../src/lab/faceSim/templateHead.ts', import.meta.url), 'utf8'),
+  { compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 } },
+).outputText.replaceAll("'./estimatedHead'", `'${new URL('../src/lab/faceSim/estimatedHead.ts', import.meta.url)}'`)).toString('base64')}`);
 
 const require = createRequire(import.meta.url);
 const genericFaceAtlas = JSON.parse(readFileSync(new URL('../src/lab/faceSim/genericFaceAtlas.json', import.meta.url), 'utf8'));
@@ -73,8 +77,9 @@ function lab() {
       if (name === './regionMesh') return regionMesh;
       if (name === './estimatedHair') return estimatedHair;
       if (name === './multiViewHead') return multiViewHead;
+      if (name === './templateHead') return templateHead;
       if (name === './photoHead') return { segmentPhotoHeads: async inputs => inputs.map(input => ({
-        ...input, width: 64, height: 64, mask: new Float32Array(64 * 64).fill(1), texture: input.canvas,
+        ...input, width: 64, height: 64, mask: new Float32Array(64 * 64).fill(1), hair: new Float32Array(64 * 64), texture: input.canvas,
       })) };
       if (name.endsWith('/Tooltip')) return { Tooltip: ({ children }) => children };
       if (name === './genericFaceAtlas.json') return { default: genericFaceAtlas };
@@ -378,7 +383,7 @@ test('cabeza estimada se transmite completa a Simular sin reemplazar la superfic
   head.props.onClick();
   await new Promise(resolve => setImmediate(resolve));
   const tree = app.render();
-  assert.match(text(tree), /Envolvente ajustada a las siluetas/);
+  assert.match(text(tree), /Cabeza de plantilla anatómica/);
   button(tree, 'Simular').props.onClick();
   const simulator = findAll(app.render(), n => n.props && Object.hasOwn(n.props, 'surface') && Object.hasOwn(n.props, 'photo'))[0];
   assert.equal(simulator.props.surface.observedIndexCount, 852 * 3);

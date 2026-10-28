@@ -504,3 +504,6 @@ Las entradas siguientes conservan la evidencia previa al despliegue y la evoluci
 - ✅ Oct 26 QA multivista: 5 fotos fusionadas (MediaPipe real, sintético); prueba de progresión con ruido.
 - ✅ Oct 26 Contorno coherente, zonas anatómicas y cabeza estimada opcional.
 - ✅ Oct 26 QA facial: 135 pruebas, build y navegador sintético.
+- ✅ Oct 27 Cabeza 3 fotos por plantilla anatómica (orejas, cabello real, cuello acotado).
+- ✅ Oct 27 Capas: ilustración alineada automáticamente con 468 puntos; capa visible bajo piel.
+- ✅ Oct 27 QA facial: 212 pruebas, build, lint y navegador con fotos reales locales.

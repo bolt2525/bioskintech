@@ -39,3 +39,21 @@ export function detectionImage(source: HTMLCanvasElement, transform: DetectionTr
   context.drawImage(source, -source.width / 2, -source.height / 2);
   return canvas;
 }
+
+/** Landmarks 2D (normalizados) de una imagen cualquiera, p. ej. una ilustración frontal; null si no hay rostro. */
+export async function detectImageLandmarks(image: HTMLCanvasElement): Promise<{ x: number; y: number }[] | null> {
+  const { FaceLandmarker, FilesetResolver } = await import('@mediapipe/tasks-vision');
+  const fileset = await FilesetResolver.forVisionTasks('/mediapipe/wasm');
+  const landmarker = await FaceLandmarker.createFromOptions(fileset, {
+    baseOptions: { modelAssetPath: '/models/face/face_landmarker.task' }, runningMode: 'IMAGE', numFaces: 1,
+    minFaceDetectionConfidence: 0.25, minFacePresenceConfidence: 0.35,
+  });
+  try {
+    for (const transform of [{ angle: 0, scale: 1, enhanced: false }, ...DETECTION_RETRIES]) {
+      const found = landmarker.detect(transform.angle || transform.scale !== 1 || transform.enhanced ? detectionImage(image, transform) : image).faceLandmarks[0];
+      if (found) return found.map(point => restoreDetectionPoint(point, image.width, image.height, transform));
+      await new Promise<void>(resolve => setTimeout(resolve, 0));
+    }
+    return null;
+  } finally { landmarker.close(); }
+}

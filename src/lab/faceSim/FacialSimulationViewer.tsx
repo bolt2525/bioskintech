@@ -83,6 +83,22 @@ function geometryFrom(data: ReturnType<typeof buildSimulationLayers>[number], me
   return geometry;
 }
 
+/** Zona inferida: tono de cabello arriba y de piel bajo la línea de la nuca (≈ mitad trago–mentón). */
+function inferredMaterial(mesh: SimulationMesh, extra: THREE.MeshStandardMaterialParameters = {}) {
+  const material = new THREE.MeshStandardMaterial({ color: mesh.inferredColor ?? '#94a3b8', side: THREE.DoubleSide, roughness: 0.9, ...extra });
+  if (!mesh.inferredSkinColor || !mesh.inferredColor) return material;
+  const tragus = (mesh.anchors[234 * 3 + 1] + mesh.anchors[454 * 3 + 1]) / 2, chin = mesh.anchors[152 * 3 + 1];
+  const uniforms = { uSkin: { value: new THREE.Color(mesh.inferredSkinColor) }, uNeck: { value: (tragus + chin) / 2 }, uBlend: { value: Math.abs(tragus - chin) * 0.12 } };
+  material.onBeforeCompile = shader => {
+    Object.assign(shader.uniforms, uniforms);
+    shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying float vInfY;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvInfY = position.y;');
+    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec3 uSkin;\nuniform float uNeck;\nuniform float uBlend;\nvarying float vInfY;')
+      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb = mix(uSkin, diffuseColor.rgb, smoothstep(uNeck - uBlend, uNeck + uBlend, vInfY));');
+  };
+  return material;
+}
+
 /** Render bajo demanda, sin bucle RAF permanente ni recursos globales. */
 function mountFacialSimulation(
   host: HTMLDivElement, mesh: SimulationMesh, photo: HTMLCanvasElement | undefined,
@@ -278,9 +294,7 @@ function mountFacialSimulation(
         side: THREE.DoubleSide, roughness: 0.8, transparent: true, depthWrite: false,
       });
       const materials = [material];
-      if (layer.id === 'skin' && mesh.observedIndexCount !== undefined) materials.push(new THREE.MeshStandardMaterial({
-        color: '#94a3b8', side: THREE.DoubleSide, roughness: 0.9, transparent: true, depthWrite: false,
-      }));
+      if (layer.id === 'skin' && mesh.observedIndexCount !== undefined) materials.push(inferredMaterial(mesh, { transparent: true, depthWrite: false }));
       const object = new THREE.Mesh(geometryFrom(data, mesh), materials);
       object.renderOrder = layer.id === 'skin' ? 5 : layer.id === 'fat' ? 4 : 2;
       after.add(object); afterMeshes.set(layer.id, object);
@@ -290,9 +304,7 @@ function mountFacialSimulation(
       color: texture ? '#ffffff' : SIMULATION_LAYERS[0].color, map: texture,
       roughness: 0.8, side: THREE.DoubleSide,
     })];
-    if (mesh.observedIndexCount !== undefined) beforeMaterials.push(new THREE.MeshStandardMaterial({
-      color: '#94a3b8', side: THREE.DoubleSide, roughness: 0.9,
-    }));
+    if (mesh.observedIndexCount !== undefined) beforeMaterials.push(inferredMaterial(mesh));
     beforeMesh = new THREE.Mesh(geometryFrom(skin, mesh), beforeMaterials);
     before.add(beforeMesh);
     controls.addEventListener('change', requestRender);
@@ -454,7 +466,10 @@ function mountFacialSimulation(
       for (const group of [photoGroup, beforePhotoGroup]) for (const object of group.children) if (object instanceof THREE.Mesh) {
         object.material.clippingPlanes = plane ? [plane] : [];
         object.material.opacity = group === photoGroup ? next.layers.skin.opacity : 1;
-        object.material.transparent = object.material.opacity < 1;
+        const transparent = object.material.opacity < 1;
+        // three.js compila OPAQUE (alfa = 1) en el shader: cambiar transparencia exige recompilar.
+        if (object.material.transparent !== transparent) object.material.needsUpdate = true;
+        object.material.transparent = transparent;
         object.material.depthWrite = !object.material.transparent;
       }
       regionMaterial.clippingPlanes = plane ? [plane] : [];

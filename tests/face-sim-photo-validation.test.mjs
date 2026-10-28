@@ -52,6 +52,19 @@ test('comparación conserva escala, giro 3D, traslación y aspecto sin afirmar i
   assert.ok(check.medianDifference < 1e-12);
   assert.match(check.reason, /NO verifica identidad/);
 });
+test('perfil girado usa línea media y hemicara visible: tolera giro, rechaza nariz y mentón alterados', () => {
+  const a = { landmarks: fixture.landmarks, aspect: fixture.aspect }, angle = 1.05;
+  const rotate = lm => lm.map(p => {
+    const x = p.x * a.aspect, z = p.z * a.aspect;
+    return { x: (x * Math.cos(angle) + z * Math.sin(angle)) / a.aspect, y: p.y,
+      z: (-x * Math.sin(angle) + z * Math.cos(angle)) / a.aspect };
+  });
+  assert.equal(compareFaceGeometry(a, { aspect: a.aspect, landmarks: rotate(a.landmarks) }).compatible, true);
+  const altered = structuredClone(a.landmarks), chin = altered[152], nose = altered[1];
+  for (const i of [1, 2, 98, 327]) altered[i].y += (chin.y - nose.y) * 0.35;
+  for (const i of [152, 172, 397]) altered[i].y += (chin.y - nose.y) * 0.5;
+  assert.equal(compareFaceGeometry(a, { aspect: a.aspect, landmarks: rotate(altered) }).compatible, false);
+});
 test('no fusiona diferencias anatómicas grandes en nariz, mandíbula y pómulos aunque estén confirmadas', () => {
   const a = { landmarks: landmarks(), aspect: 0.8 }, b = structuredClone(a);
   for (const [left, right] of [[98, 327], [172, 397], [50, 280], [234, 454]]) {

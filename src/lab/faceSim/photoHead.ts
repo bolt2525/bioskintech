@@ -25,7 +25,7 @@ export async function segmentPhotoHeads(photos: readonly {
         const ctx = texture.getContext('2d');
         if (!ctx) throw new Error('No se pudo preparar la textura multivista.');
         ctx.drawImage(photo.canvas, 0, 0);
-        sources.push({ label: photo.label, width, height, mask, texture, projection: photo.projection });
+        sources.push({ label: photo.label, width, height, mask, hair: channels[0], texture, projection: photo.projection });
       } finally { result.close(); }
     }
     return sources;

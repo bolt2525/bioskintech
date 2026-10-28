@@ -14,6 +14,9 @@ export interface EstimatedHeadSurface extends PersonalSurface {
   observedIndexCount: number;
   observedVertexCount?: number;
   preservedOpenings: number;
+  /** Tono de la zona inferida (p. ej. cabello muestreado de las fotos). */
+  inferredColor?: string;
+  inferredSkinColor?: string;
 }
 
 type Point = { x: number; y: number; z: number };

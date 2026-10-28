@@ -50,6 +50,10 @@ export interface SimulationMesh {
   uvs?: Float32Array;
   source: 'personal' | 'generic';
   observedIndexCount?: number;
+  /** Tono de la zona inferida (p. ej. cabello muestreado); gris por defecto. */
+  inferredColor?: string;
+  /** Tono de piel para la zona inferida bajo la línea de la nuca. */
+  inferredSkinColor?: string;
 }
 export interface MeshBounds { min: Vec3; max: Vec3; center: Vec3; height: number }
 export interface LayerGeometry {
@@ -155,7 +159,7 @@ export function meshBounds(positions: ArrayLike<number>, indices?: ArrayLike<num
 }
 
 /** Copias propias: jamás se mutan buffers del llamador ni el atlas compartido. */
-export function createSimulationMesh(surface?: PersonalSurface & { observedIndexCount?: number }): SimulationMesh {
+export function createSimulationMesh(surface?: PersonalSurface & { observedIndexCount?: number; inferredColor?: string; inferredSkinColor?: string }): SimulationMesh {
   if (surface) {
     if (surface.positions.length < 468 * 3 || surface.indices.length < 3 || surface.indices.length % 3
       || surface.uvs.length !== surface.positions.length / 3 * 2
@@ -181,7 +185,7 @@ export function createSimulationMesh(surface?: PersonalSurface & { observedIndex
     return {
       positions, indices: surface.indices.slice(), anchors: positions.slice(0, 468 * 3),
       uvs: surface.uvs.slice(), source: 'personal',
-      observedIndexCount: surface.observedIndexCount,
+      observedIndexCount: surface.observedIndexCount, inferredColor: surface.inferredColor, inferredSkinColor: surface.inferredSkinColor,
     };
   }
   const full = atlasData.surface;

@@ -548,7 +548,7 @@ export default function FaceSimLab() {
           ? 'Ambos lados aportan profundidad.' : 'La profundidad está contrastada principalmente desde un lado; añade una vista del lado opuesto.'}`
           : 'Cálculo rápido con una foto: profundidad monocular sin contrastar. Añade otra foto con un ángulo diferente para contrastar nariz y labios.',
         diagnostics.some(d => d.status !== 'used') ? 'Hay referencias de aporte limitado o no utilizables; revisa el detalle por foto.' : '',
-        closeHead ? 'Envolvente ajustada a las siluetas; cuello excluido y posterior sin cobertura acotado por un prior conservador, no medido. Las regiones no observadas siguen grises. No es un escaneo.' : '',
+        closeHead ? 'Cabeza de plantilla anatómica (cráneo y orejas) deformada a los puntos faciales y ajustada a las siluetas de las tres vistas; cuello acotado. Aproximación, no escaneo.' : '',
       ].join(' ');
       const triangles = await faceTriangles();
       const observedSurface = buildPersonalSurface(refined.landmarks, source.aspect, triangles, nextDepth);
@@ -564,12 +564,18 @@ export default function FaceSimLab() {
           return [{ label: entry.label, canvas: photo.canvas, projection: fit.projection }];
         });
         setStatus('Ajustando siluetas, piel, orejas y cabello de las tres vistas…');
-        const [{ segmentPhotoHeads }, { constrainHeadToPhotos, buildPhotoSurfacePatches }, { buildEstimatedHead }] = await Promise.all([
-          import('./photoHead'), import('./multiViewHead'), import('./estimatedHead'),
+        const [{ segmentPhotoHeads }, { buildPhotoSurfacePatches, sampleScalpColor, sampleColorAt }, { buildTemplateHead }] = await Promise.all([
+          import('./photoHead'), import('./multiViewHead'), import('./templateHead'),
         ]);
         const sources = await segmentPhotoHeads(inputs);
         if (requestId !== personalRequestRef.current) return;
-        surface = constrainHeadToPhotos(buildEstimatedHead(observedSurface), sources);
+        surface = {
+          ...buildTemplateHead(observedSurface, {
+            landmarks: genericFaceAtlas.positions, positions: genericFaceAtlas.surface.positions, triangles: genericFaceAtlas.surface.triangles,
+          }, sources),
+          inferredColor: sampleScalpColor(sources, observedSurface.positions.subarray(30, 33)),
+          inferredSkinColor: sampleColorAt(sources[0], [151, 50, 280].map(i => observedSurface.positions.subarray(i * 3, i * 3 + 3))),
+        };
         photoPatches = buildPhotoSurfacePatches(surface, sources);
         if (!photoPatches.length) throw new Error('Las vistas no ofrecen textura proyectable sobre la superficie.');
       }
@@ -1079,7 +1085,7 @@ export default function FaceSimLab() {
     const annotations = original ? genericAnnotations : personalAnnotations;
     const ready = original || !!personal;
     return <section key={source} aria-label={original ? 'Modelo genérico 3D' : 'Foto personal en 3D'} className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-900">
-      <h2 className="px-3 py-3 text-sm font-semibold text-white">{original ? 'Modelo facial original · referencia anatómica' : personal?.closedHead ? 'Superficie personal · gris = inferido, no marcable' : 'Superficie facial personal · misma marcación'}</h2>
+      <h2 className="px-3 py-3 text-sm font-semibold text-white">{original ? 'Modelo facial original · referencia anatómica' : personal?.closedHead ? 'Superficie personal · tono liso = inferido, no marcable' : 'Superficie facial personal · misma marcación'}</h2>
       {overlayMode === 'attention' && <p className="bg-amber-100 px-3 py-2 text-xs font-semibold text-amber-950">SIMULACIÓN · No detecta vasos ni certifica zonas seguras.</p>}
       {ready ? <Clinical3DViewer
         markers={annotations.markers} freehandLines={annotations.lines} surfaceShapes={[]}

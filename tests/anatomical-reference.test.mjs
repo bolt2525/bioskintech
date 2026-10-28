@@ -194,3 +194,19 @@ test('fallo de contexto libera el canvas y URL', async t => {
   assert.equal(b.canvases[0].height, 0);
   assert.equal(b.revoked.length, 1);
 });
+
+test('registro denso: 468 landmarks exactos y afín por mínimos cuadrados para el resto', async () => {
+  const { fitLandmarkUVs, fitLeastSquaresAffine } = await import('../src/lab/faceSim/anatomicalReference.ts');
+  const known = [0.9, 0.05, 0.02, -0.04, 1.1, -0.03];
+  const uvs = new Float32Array(500 * 2);
+  for (let i = 0; i < 500; i++) uvs.set([0.2 + 0.6 * ((i * 37) % 101) / 100, 0.1 + 0.8 * ((i * 53) % 97) / 96], i * 2);
+  const pts = Array.from({ length: 468 }, (_, i) => ({ x: uvs[i * 2], y: uvs[i * 2 + 1] }));
+  const landmarks = pts.map(p => applyAffineTransform(known, p));
+  fitLeastSquaresAffine(pts, landmarks).forEach((v, i) => near(v, known[i], 1e-9));
+  landmarks[10] = { x: 0.33, y: 0.44 };
+  const out = fitLandmarkUVs(uvs, landmarks);
+  near(out[20], 0.33); near(out[21], 0.44);
+  const extra = applyAffineTransform(known, { x: uvs[490 * 2], y: uvs[490 * 2 + 1] });
+  near(out[980], extra.x, 1e-3); near(out[981], extra.y, 1e-3);
+  assert.throws(() => fitLandmarkUVs(uvs, landmarks.slice(0, 100)));
+});

@@ -60,24 +60,59 @@ const STABLE_DISTANCES: readonly [number, number][] = [
   [133, 362], [98, 327], [234, 454], [172, 397], [168, 2], [6, 152], [50, 280], [127, 356],
 ];
 
+const MIDLINE_DISTANCES: readonly [number, number][] = [[168, 2], [6, 152], [1, 152], [10, 152]];
+// Hemicara A (33, 61, 50, 172, 98, 234); la B usa los índices simétricos.
+const HEMIFACE_DISTANCES: readonly [number, number][] = [[33, 1], [33, 152], [61, 152], [33, 61], [50, 1], [172, 152], [98, 1], [234, 1]];
+const MIRROR: Record<number, number> = { 33: 263, 61: 291, 50: 280, 172: 397, 98: 327, 234: 454 };
+/** Por encima de este giro la profundidad del lado oculto es una inferencia de MediaPipe, no una medida. */
+const PROFILE_YAW = 25 * Math.PI / 180;
+
+function validView(v: DepthView) {
+  return v.landmarks.length >= 468 && Number.isFinite(v.aspect) && v.aspect > 0
+    && v.landmarks.every(p => [p.x, p.y, p.z].every(Number.isFinite));
+}
+const viewDistance = (v: DepthView) => (i: number, j: number) => {
+  const p = v.landmarks[i], q = v.landmarks[j];
+  return Math.hypot((p.x - q.x) * v.aspect, p.y - q.y, (p.z - q.z) * v.aspect);
+};
+/** Giro con signo: positivo si la hemicara de 234 queda más cerca de la cámara (z menor). */
+function viewYaw(v: DepthView) {
+  const p = v.landmarks[234], q = v.landmarks[454];
+  return Math.atan2((q.z - p.z) * v.aspect, Math.abs(q.x - p.x) * v.aspect);
+}
+
 /** Compara proporciones 3D invariantes a giro/escala. Compatibilidad NO significa misma identidad. */
 export function compareFaceGeometry(a: DepthView, b: DepthView): { compatible: boolean; medianDifference: number; reason: string } {
-  const signature = (v: DepthView) => {
-    if (v.landmarks.length < 468 || !Number.isFinite(v.aspect) || v.aspect <= 0
-      || v.landmarks.some(p => ![p.x, p.y, p.z].every(Number.isFinite))) return null;
-    const distance = (i: number, j: number) => {
-      const p = v.landmarks[i], q = v.landmarks[j];
-      return Math.hypot((p.x - q.x) * v.aspect, p.y - q.y, (p.z - q.z) * v.aspect);
-    };
-    const scale = distance(33, 263);
+  const bilateral = (v: DepthView) => {
+    const distance = viewDistance(v), scale = distance(33, 263);
     if (scale < 1e-4) return null;
     const ratios = STABLE_DISTANCES.map(([i, j]) => distance(i, j) / scale);
     return ratios.every(x => Number.isFinite(x) && x > 1e-4) ? ratios : null;
   };
-  const x = signature(a), y = signature(b);
+  // Con un perfil, solo línea media y hemicara visible: el lado oculto deformaría la firma.
+  const hemiface = (v: DepthView, sideA: boolean) => {
+    const distance = viewDistance(v), scale = distance(168, 152);
+    if (scale < 1e-4) return null;
+    const side = (i: number) => sideA ? i : MIRROR[i] ?? i;
+    const ratios = [...MIDLINE_DISTANCES, ...HEMIFACE_DISTANCES.map(([i, j]) => [side(i), side(j)] as const)]
+      .map(([i, j]) => distance(i, j) / scale);
+    return ratios.every(x => Number.isFinite(x) && x > 1e-4) ? ratios : null;
+  };
+  let x: number[] | null = null, y: number[] | null = null;
+  if (validView(a) && validView(b)) {
+    const yawA = viewYaw(a), yawB = viewYaw(b);
+    if (Math.abs(yawA) < PROFILE_YAW && Math.abs(yawB) < PROFILE_YAW) { x = bilateral(a); y = bilateral(b); }
+    else {
+      // Lado visible de la vista más girada; si ambas lo están, cada una usa el suyo (simetría aproximada).
+      const dominant = Math.abs(yawA) >= Math.abs(yawB) ? yawA : yawB;
+      const sideOf = (yaw: number) => Math.abs(yaw) < PROFILE_YAW ? dominant > 0 : yaw > 0;
+      x = hemiface(a, sideOf(yawA)); y = hemiface(b, sideOf(yawB));
+    }
+  }
   if (!x || !y) return { compatible: false, medianDifference: Infinity, reason: 'No hay referencias estables suficientes para comparar las fotografías.' };
   const differences = x.map((v, i) => Math.abs(Math.log(v / y[i]))).sort((a, b) => a - b);
-  const medianDifference = (differences[3] + differences[4]) / 2;
+  const half = differences.length / 2;
+  const medianDifference = (differences[half - 1] + differences[half]) / 2;
   const compatible = medianDifference <= 0.13
     && differences.filter(d => d > 0.22).length < 3
     && differences.filter(d => d > 0.35).length < 2;
