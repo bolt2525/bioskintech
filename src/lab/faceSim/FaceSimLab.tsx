@@ -576,7 +576,7 @@ export default function FaceSimLab() {
           inferredColor: sampleScalpColor(sources, observedSurface.positions.subarray(30, 33)),
           inferredSkinColor: sampleColorAt(sources[0], [151, 50, 280].map(i => observedSurface.positions.subarray(i * 3, i * 3 + 3))),
         };
-        photoPatches = buildPhotoSurfacePatches(surface, sources);
+        photoPatches = buildPhotoSurfacePatches(surface, sources, observedSurface.indices.length);
         if (!photoPatches.length) throw new Error('Las vistas no ofrecen textura proyectable sobre la superficie.');
       }
       const openingDetails = 'preservedOpenings' in surface && Number(surface.preservedOpenings) > 0

@@ -27,3 +27,14 @@ test('textura multivista asigna una sola foto frontal a cada triángulo visible 
   assert.deepEqual(Array.from(patches[0].indices), [0, 1, 2]);
   assert.deepEqual(Array.from(surface.positions), [-0.3, -0.3, 0, 0.3, -0.3, 0, 0, 0.3, 0].map(Math.fround));
 });
+
+test('mezcla multivista: la frontal domina en zonas oblicuas y la cara observada queda solo con la frontal', () => {
+  const surface = { positions: Float32Array.from([-0.1, -0.3, -0.1, 0.1, -0.3, 0.1, 0, 0.3, 0]),
+    indices: Uint32Array.from([0, 1, 2]), uvs: new Float32Array(6) };
+  const patches = buildPhotoSurfacePatches(surface, sources);
+  const front = patches.find(p => p.source.label === 'frontal'), side = patches.find(p => p.source.label === 'A');
+  assert.ok(front && side, 'ambas vistas aportan textura');
+  assert.ok(Array.from(front.alpha).slice(0, 3).every(a => a === 1));
+  assert.ok(Array.from(side.alpha).slice(0, 3).every(a => a > 0 && a < 0.5), 'la lateral solo matiza');
+  assert.equal(buildPhotoSurfacePatches(surface, sources, 3).length, 0);
+});

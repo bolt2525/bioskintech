@@ -9,6 +9,7 @@ import { buildRegionCells, regionCellPositions, regionPlanePositions, REGION_PLA
 import { DEFAULT_HAIR, type EstimatedHairSettings, type PhotoHairPatch } from './estimatedHair';
 import type { PhotoSurfacePatch } from './multiViewHead';
 import type { AnatomicalReference } from './anatomicalReference';
+import { ANATOMY_PLANES, anatomyBlend, loadDefaultLayers, registerLayers, type AnatomyPlane } from './defaultLayers';
 import {
   buildCutPlane, buildSimulationLayers, createSimulationMesh, deformPositions, meshBounds,
   NEUTRAL_SIMULATION, SIMULATION_CONTROLS, SIMULATION_LAYERS,
@@ -45,7 +46,8 @@ interface ViewerState {
   hairPatches?: readonly PhotoHairPatch[];
   photoPatches?: readonly PhotoSurfacePatch[];
   skinTexture?: HTMLCanvasElement;
-  reference?: AnatomicalReference;
+  references: readonly AnatomicalReference[];
+  anatomy: AnatomyPlane;
 }
 interface ViewerRuntime { update: (state: ViewerState) => void; dispose: () => void }
 
@@ -56,6 +58,7 @@ const surfaceLayers = (): LayerSettings => Object.fromEntries(
   SIMULATION_LAYERS.map(layer => [layer.id, { visible: layer.id === 'skin', opacity: layer.id === 'skin' ? 1 : layer.opacity }]),
 ) as LayerSettings;
 const INITIAL_CUT: SimulationCut = { scope: 'none', axis: 'x', position: 0.5, reverse: false };
+const ANATOMY_TRANSITION_MS = 750;
 const buttonClass = 'rounded-md border border-slate-600 px-2 py-1 text-xs text-slate-100 hover:bg-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300 aria-pressed:border-cyan-300 aria-pressed:bg-cyan-950';
 const selectClass = 'rounded border border-slate-600 bg-slate-900 p-1 text-xs text-slate-100 focus-visible:outline-cyan-300';
 const planeLayers = (plane: RegionPlane): LayerSettings => Object.fromEntries(SIMULATION_LAYERS.map(layer => [
@@ -144,7 +147,9 @@ function mountFacialSimulation(
   rim.position.set(4, 1, -3); scene.add(rim);
   let texture: THREE.CanvasTexture | undefined;
   let signalTexture: THREE.CanvasTexture | undefined, previousSignal: HTMLCanvasElement | undefined;
-  let referenceTexture: THREE.CanvasTexture | undefined, previousReference: AnatomicalReference | undefined;
+  const referenceTextures: THREE.Texture[] = [];
+  let previousReferences: readonly AnatomicalReference[] | undefined;
+  let anatomy: { from: AnatomyPlane; to: AnatomyPlane; start: number } = { from: 'skin', to: 'skin', start: 0 };
   let observer: ResizeObserver | undefined;
   let disposed = false, failed = false, frame = 0;
   let state: ViewerState | undefined, previousView: View | undefined;
@@ -208,16 +213,41 @@ function mountFacialSimulation(
 
   const drawView = (left: number, width: number, group: THREE.Group) => {
     after.visible = group === after; before.visible = group === before;
-    if (state) hairGroup.visible = state.hair.enabled && state.plane === 'superficial' && (group === before || state.layers.skin.visible && state.layers.skin.opacity > 0);
+    if (state) hairGroup.visible = state.hair.enabled && state.plane === 'superficial' && (group === before || state.anatomy === 'skin' && state.layers.skin.visible && state.layers.skin.opacity > 0);
     updatePhotoFrustum(camera, cameraBounds, width / viewportHeight);
     renderer.setViewport(left, 0, width, viewportHeight);
     renderer.setScissor(left, 0, width, viewportHeight);
     renderer.render(scene, camera);
     canvas.dataset.renderedTriangles = String(renderer.info.render.triangles);
   };
+  const setOpacity = (material: THREE.Material, opacity: number, forceTransparent = false) => {
+    material.opacity = opacity;
+    const transparent = forceTransparent || opacity < 1;
+    // three.js compila OPAQUE (alfa = 1) en el shader: cambiar transparencia exige recompilar.
+    if (material.transparent !== transparent) { material.transparent = transparent; material.needsUpdate = true; }
+    material.depthWrite = !transparent;
+  };
+  /** Fundido entre planos: piel → fantasma, capa entrante emerge desde la profundidad de la saliente. */
+  const applyAnatomy = (current: ViewerState) => {
+    const depths: Partial<Record<AnatomyPlane, number>> = { skin: 0 };
+    for (const object of referenceGroup.children) depths[object.userData.kind as AnatomyPlane] = object.userData.baseDepth;
+    const blend = anatomyBlend(anatomy.from, anatomy.to, (performance.now() - anatomy.start) / ANATOMY_TRANSITION_MS, depths);
+    for (const object of referenceGroup.children) if (object instanceof THREE.Mesh) {
+      const layer = blend.layer(object.userData.kind);
+      object.material.opacity = layer.opacity * object.userData.opacity;
+      object.userData.uDepth.value = layer.depth;
+      object.visible = object.material.opacity > 0.005;
+    }
+    const skinOpacity = current.layers.skin.opacity * blend.skin;
+    const skin = afterMeshes.get('skin');
+    if (skin) for (const material of skin.material) setOpacity(material, skinOpacity);
+    for (const object of photoGroup.children) if (object instanceof THREE.Mesh) setOpacity(object.material, skinOpacity, object.userData.blended);
+    return blend.done;
+  };
   const render = () => {
     frame = 0;
     if (disposed || failed || !state) return;
+    if (!applyAnatomy(state)) frame = requestAnimationFrame(render);
     try {
       renderer.setScissorTest(true);
       if (state.comparison === 'split') {
@@ -270,7 +300,7 @@ function mountFacialSimulation(
     });
     texture?.dispose();
     signalTexture?.dispose();
-    referenceTexture?.dispose();
+    referenceTextures.forEach(texture => texture.dispose());
     hairTextures.forEach(texture => texture.dispose());
     photoTextures.forEach(texture => texture.dispose());
     renderer.dispose();
@@ -328,46 +358,52 @@ function mountFacialSimulation(
     update(next) {
       if (disposed || failed) return;
       state = next;
-      if (previousReference !== next.reference || next.parameters !== lastParameters) {
+      if (previousReferences !== next.references || next.parameters !== lastParameters) {
         for (const object of [...referenceGroup.children]) {
           if (object instanceof THREE.Mesh) { object.geometry.dispose(); object.material.dispose(); }
           referenceGroup.remove(object);
         }
-        referenceTexture?.dispose(); referenceTexture = undefined;
-        if (next.reference) {
-          const reference = next.reference, padded = document.createElement('canvas');
-          padded.width = reference.canvas.width + 4; padded.height = reference.canvas.height + 4;
-          const context = padded.getContext('2d');
-          if (!context) throw new Error('No se pudo preparar la referencia anatómica.');
-          context.drawImage(reference.canvas, 2, 2);
-          referenceTexture = new THREE.CanvasTexture(padded);
-          referenceTexture.flipY = false; referenceTexture.colorSpace = THREE.SRGBColorSpace;
-          const geometry = new THREE.BufferGeometry(), positions = deformPositions(mesh.positions, mesh.anchors, next.parameters);
-          geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-          geometry.setIndex(new THREE.BufferAttribute(mesh.indices.slice(0, mesh.observedIndexCount ?? mesh.indices.length), 1));
-          geometry.computeVertexNormals();
-          const normals = geometry.getAttribute('normal');
+        referenceTextures.forEach(texture => texture.dispose()); referenceTextures.length = 0;
+        if (next.references.length) {
+          const positions = deformPositions(mesh.positions, mesh.anchors, next.parameters);
+          const base = new THREE.BufferGeometry();
+          base.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+          base.setIndex(new THREE.BufferAttribute(mesh.indices.slice(0, mesh.observedIndexCount ?? mesh.indices.length), 1));
+          base.computeVertexNormals();
           const width = Math.abs(mesh.anchors[454 * 3] - mesh.anchors[234 * 3]);
-          for (let id = 0; id < positions.length / 3; id++) {
-            positions[id * 3] -= normals.getX(id) * width * reference.depth;
-            positions[id * 3 + 1] -= normals.getY(id) * width * reference.depth;
-            positions[id * 3 + 2] -= normals.getZ(id) * width * reference.depth;
-          }
-          const uvs = Float32Array.from(reference.uvs, (value, i) => i % 2
-            ? (value * reference.canvas.height + 2) / padded.height : (value * reference.canvas.width + 2) / padded.width);
-          geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
-          geometry.computeBoundingSphere();
-          const material = new THREE.MeshBasicMaterial({ map: referenceTexture, side: THREE.DoubleSide,
-            transparent: true, opacity: reference.opacity, alphaTest: 0.01, depthWrite: false });
-          material.onBeforeCompile = shader => {
-            shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>',
-              '#ifdef USE_MAP\nif (any(lessThan(vMapUv, vec2(0.0))) || any(greaterThan(vMapUv, vec2(1.0)))) discard;\n#endif\n#include <map_fragment>');
-          };
-          const object = new THREE.Mesh(geometry, material);
-          object.name = 'ALIGNED_ANATOMICAL_REFERENCE'; object.renderOrder = 3; referenceGroup.add(object);
+          next.references.forEach(reference => {
+            const padded = document.createElement('canvas');
+            padded.width = reference.canvas.width + 4; padded.height = reference.canvas.height + 4;
+            const context = padded.getContext('2d');
+            if (!context) throw new Error('No se pudo preparar la referencia anatómica.');
+            context.drawImage(reference.canvas, 2, 2);
+            const map = new THREE.CanvasTexture(padded);
+            map.flipY = false; map.colorSpace = THREE.SRGBColorSpace; referenceTextures.push(map);
+            const geometry = base.clone();
+            const uvs = Float32Array.from(reference.uvs, (value, i) => i % 2
+              ? (value * reference.canvas.height + 2) / padded.height : (value * reference.canvas.width + 2) / padded.width);
+            geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+            geometry.computeBoundingSphere();
+            const material = new THREE.MeshBasicMaterial({ map, side: THREE.DoubleSide, transparent: true, opacity: 0, alphaTest: 0.01, depthWrite: false });
+            const uDepth = { value: width * reference.depth };
+            // Profundidad como uniform: la transición entre planos hunde la capa sin recalcular geometría.
+            material.onBeforeCompile = shader => {
+              shader.uniforms.uDepth = uDepth;
+              shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nuniform float uDepth;')
+                .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed -= normal * uDepth;');
+              shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>',
+                '#ifdef USE_MAP\nif (any(lessThan(vMapUv, vec2(0.0))) || any(greaterThan(vMapUv, vec2(1.0)))) discard;\n#endif\n#include <map_fragment>');
+            };
+            const object = new THREE.Mesh(geometry, material);
+            object.name = 'ALIGNED_ANATOMICAL_REFERENCE'; object.renderOrder = 3;
+            object.userData = { kind: reference.kind, opacity: reference.opacity, baseDepth: uDepth.value, uDepth };
+            referenceGroup.add(object);
+          });
+          base.dispose();
         }
-        previousReference = next.reference;
+        previousReferences = next.references;
       }
+      if (next.anatomy !== anatomy.to) anatomy = { from: anatomy.to, to: next.anatomy, start: performance.now() };
       if (previousSignal !== next.skinTexture) {
         signalTexture?.dispose(); signalTexture = undefined;
         if (next.skinTexture) {
@@ -386,20 +422,26 @@ function mountFacialSimulation(
           }
         }
         photoTextures.forEach(texture => texture.dispose()); photoTextures.length = 0;
-        for (const patch of next.photoPatches ?? []) {
+        next.photoPatches?.forEach((patch, order) => {
           const map = new THREE.CanvasTexture(patch.source.texture);
           map.colorSpace = THREE.SRGBColorSpace; map.flipY = false; photoTextures.push(map);
+          const blended = Boolean(patch.alpha && patch.blendIndices?.length);
           for (const group of [photoGroup, beforePhotoGroup]) {
             const geometry = new THREE.BufferGeometry();
             geometry.setAttribute('position', new THREE.BufferAttribute(mesh.positions.slice(), 3));
             geometry.setAttribute('uv', new THREE.BufferAttribute(patch.uvs, 2));
-            geometry.setIndex(new THREE.BufferAttribute(patch.indices, 1));
+            geometry.setIndex(new THREE.BufferAttribute(blended ? patch.blendIndices! : patch.indices, 1));
+            if (blended) geometry.setAttribute('color', new THREE.BufferAttribute(Float32Array.from({ length: patch.alpha!.length * 4 },
+              (_, i) => i % 4 === 3 ? patch.alpha![i >> 2] : 1), 4));
             const object = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
               map, side: THREE.FrontSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -1,
+              vertexColors: blended, transparent: blended, depthWrite: !blended,
             }));
-            object.name = 'MULTIVIEW_PHOTO_SURFACE'; object.renderOrder = 6; group.add(object);
+            object.userData.blended = blended;
+            // La mezcla «over» exige dibujar las vistas en el mismo orden en que se calcularon los alfas.
+            object.name = 'MULTIVIEW_PHOTO_SURFACE'; object.renderOrder = 6 + order * 0.01; group.add(object);
           }
-        }
+        });
         previousPhotoPatches = next.photoPatches;
         lastParameters = undefined;
       }
@@ -466,7 +508,7 @@ function mountFacialSimulation(
       for (const group of [photoGroup, beforePhotoGroup]) for (const object of group.children) if (object instanceof THREE.Mesh) {
         object.material.clippingPlanes = plane ? [plane] : [];
         object.material.opacity = group === photoGroup ? next.layers.skin.opacity : 1;
-        const transparent = object.material.opacity < 1;
+        const transparent = object.userData.blended || object.material.opacity < 1;
         // three.js compila OPAQUE (alfa = 1) en el shader: cambiar transparencia exige recompilar.
         if (object.material.transparent !== transparent) object.material.needsUpdate = true;
         object.material.transparent = transparent;
@@ -477,7 +519,7 @@ function mountFacialSimulation(
       for (const object of hairGroup.children) if (object instanceof THREE.Mesh) object.material.clippingPlanes = plane ? [plane] : [];
       for (const [id, object] of afterMeshes) {
         object.visible = next.layers[id].visible && next.layers[id].opacity > 0
-          && !(next.reference && (id === next.reference.kind || (next.reference.kind === 'bone' && id !== 'skin')));
+          && !(next.anatomy !== 'skin' && id !== 'skin');
         for (const material of object.material) {
           material.opacity = next.layers[id].opacity;
           const transparent = next.layers[id].opacity < 1;
@@ -519,10 +561,22 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
   const [localPlane, setLocalPlane] = useState<RegionPlane>('superficial');
   const [hoveredZone, setHoveredZone] = useState<string | null>(null);
   const [signal, setSignal] = useState<{ source: HTMLCanvasElement; canvas: HTMLCanvasElement }>();
-  const [reference, setReference] = useState<AnatomicalReference>();
+  const [customReference, setCustomReference] = useState<AnatomicalReference>();
+  const [defaultReferences, setDefaultReferences] = useState<AnatomicalReference[]>([]);
+  const [anatomy, setAnatomy] = useState<AnatomyPlane>('skin');
+  useEffect(() => {
+    setDefaultReferences([]);
+    if (!surface) return;
+    let live = true;
+    loadDefaultLayers().then(layers => { if (live) setDefaultReferences(registerLayers(layers, surface.uvs)); }).catch(() => undefined);
+    return () => { live = false; };
+  }, [surface]);
+  const references = useMemo(() => customReference
+    ? [...defaultReferences.filter(item => item.kind !== customReference.kind), customReference] : defaultReferences,
+  [defaultReferences, customReference]);
   const onReference = useCallback((value: AnatomicalReference | undefined) => {
-    setReference(value);
-    if (value) setLayers(current => ({ ...current, skin: { visible: true, opacity: 0.22 } }));
+    setCustomReference(value);
+    if (value) setAnatomy(value.kind);
   }, []);
   const onSignalTexture = useCallback((canvas: HTMLCanvasElement | undefined) => {
     setSignal(photo && canvas ? { source: photo, canvas } : undefined);
@@ -535,8 +589,8 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
     try { return { mesh: createSimulationMesh(surface), error: null }; }
     catch (cause) { return { mesh: null, error: cause instanceof Error ? cause.message : 'Superficie no válida.' }; }
   }, [surface]);
-  const state = useMemo<ViewerState>(() => ({ parameters, layers, cut, view, comparison, showMesh: meshVisible, plane: activePlane, hair, hairPatches, photoPatches, skinTexture, reference }),
-    [parameters, layers, cut, view, comparison, meshVisible, activePlane, hair, hairPatches, photoPatches, skinTexture, reference]);
+  const state = useMemo<ViewerState>(() => ({ parameters, layers, cut, view, comparison, showMesh: meshVisible, plane: activePlane, hair, hairPatches, photoPatches, skinTexture, references, anatomy }),
+    [parameters, layers, cut, view, comparison, meshVisible, activePlane, hair, hairPatches, photoPatches, skinTexture, references, anatomy]);
   useEffect(() => { setLayers(planeLayers(activePlane)); }, [activePlane]);
 
   useEffect(() => {
@@ -558,7 +612,7 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
 
   const reset = () => {
     setParameters({ ...NEUTRAL_SIMULATION }); setLayers(surfaceLayers());
-    setCut({ ...INITIAL_CUT }); setView('front'); setComparison('after');
+    setCut({ ...INITIAL_CUT }); setView('front'); setComparison('after'); setAnatomy('skin');
     if (onPlaneChange) onPlaneChange('superficial'); else setLocalPlane('superficial');
     setHoveredZone(null);
     setAttempt(value => value + 1);
@@ -583,7 +637,7 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
         </Suspense>
       </details>}
       {surface && <details className="rounded-lg border border-slate-600 p-2 text-sm">
-        <summary className="cursor-pointer">Capas desde imagen · alinear referencia</summary>
+        <summary className="cursor-pointer" title="Sustituye una capa por defecto con otra ilustración frontal">Reemplazar capa · imagen propia</summary>
         <Suspense fallback={<p role="status">Preparando alineación…</p>}>
           <AnatomicalReferencePanel surfaceUVs={surface.uvs} onChange={onReference} />
         </Suspense>
@@ -602,6 +656,13 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
         <span role="status" className="block min-h-5 w-full truncate font-semibold text-sky-200">{hoveredZone ?? (meshVisible ? 'Pasa el cursor por una zona de la malla' : 'Mallado oculto')}</span>
       </div>
       <div className="flex flex-wrap gap-3">
+        <div role="group" aria-label="Plano anatómico" className="flex gap-1 rounded-lg border border-cyan-800 p-1">
+          {ANATOMY_PLANES.map(entry => {
+            const available = entry.id === 'skin' || references.some(item => item.kind === entry.id);
+            return <button type="button" key={entry.id} title={available ? entry.hint : `${entry.hint} · cargando…`} disabled={!available}
+              aria-pressed={anatomy === entry.id} className={`${buttonClass} disabled:opacity-40`} onClick={() => setAnatomy(entry.id)}>{entry.label}</button>;
+          })}
+        </div>
         <div role="group" aria-label="Modo de simulación" className="flex gap-1">
           <button type="button" className={buttonClass} onClick={() => setLayers(surfaceLayers())}>Morfología</button>
           <button type="button" className={buttonClass} onClick={() => setLayers(initialLayers())}>Ver capas internas</button>
@@ -682,7 +743,7 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
             </div>
           ))}
         </div>
-        {!reference && SIMULATION_LAYERS.every(layer => !layers[layer.id].visible || layers[layer.id].opacity === 0) && comparison !== 'before'
+        {anatomy === 'skin' && SIMULATION_LAYERS.every(layer => !layers[layer.id].visible || layers[layer.id].opacity === 0) && comparison !== 'before'
           ? <p role="status" className="mt-2 text-xs text-amber-200">No hay capas visibles. Activa una capa o restablece el visor.</p> : null}
       </fieldset>
       <fieldset className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-700 p-2">

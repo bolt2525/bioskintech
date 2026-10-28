@@ -19,21 +19,6 @@ const norm = (a: V) => Math.hypot(a[0], a[1], a[2]);
 const at = (p: ArrayLike<number>, i: number): V => [p[i * 3], p[i * 3 + 1], p[i * 3 + 2]];
 const fail = (reason: string): never => { throw new Error(`Cabeza ajustada: ${reason}`); };
 
-function solve(a: number[][], b: number[][]): number[][] {
-  const n = a.length, m = a.map((row, i) => [...row, ...b[i]]);
-  for (let c = 0; c < n; c++) {
-    let p = c;
-    for (let r = c + 1; r < n; r++) if (Math.abs(m[r][c]) > Math.abs(m[p][c])) p = r;
-    if (Math.abs(m[p][c]) < 1e-12) fail('sistema de deformación singular.');
-    [m[c], m[p]] = [m[p], m[c]];
-    for (let r = 0; r < n; r++) if (r !== c) {
-      const f = m[r][c] / m[c][c];
-      if (f) for (let k = c; k < m[r].length; k++) m[r][k] -= f * m[c][k];
-    }
-  }
-  return m.map((row, i) => row.slice(n).map(v => v / m[i][i]));
-}
-
 /** Similaridad de Umeyama (sin reflexión) por iteración de potencia sobre la matriz cuaternión de Horn. */
 function similarity(src: V[], dst: V[]) {
   const n = src.length, cs: V = [0, 0, 0], cd: V = [0, 0, 0];
@@ -69,31 +54,6 @@ function similarity(src: V[], dst: V[]) {
     return [0, 1, 2].map(r => cd[r] + s * (R[r][0] * a[0] + R[r][1] * a[1] + R[r][2] * a[2])) as V;
   };
   return { apply, R, s };
-}
-
-/** Interpolación RBF biarmónica (φ=r) con término afín: exacta en los controles, suave fuera. */
-function rbf(src: V[], dst: V[]) {
-  const n = src.length, A: number[][] = [], B: number[][] = [];
-  for (let i = 0; i < n + 4; i++) {
-    A.push(new Array(n + 4).fill(0));
-    B.push(i < n ? sub(dst[i], src[i]) : [0, 0, 0]);
-  }
-  const reg = 1e-6 * src.reduce((s, p) => Math.max(s, norm(p)), 0);
-  for (let i = 0; i < n; i++) {
-    for (let j = 0; j < n; j++) A[i][j] = i === j ? reg : norm(sub(src[i], src[j]));
-    const row = [1, ...src[i]];
-    row.forEach((v, k) => { A[i][n + k] = v; A[n + k][i] = v; });
-  }
-  const W = solve(A, B);
-  return (p: V): V => {
-    const d: V = [W[n][0], W[n][1], W[n][2]];
-    for (let k = 0; k < 3; k++) for (let a = 0; a < 3; a++) d[a] += W[n + 1 + k][a] * p[k];
-    for (let i = 0; i < n; i++) {
-      const r = norm(sub(p, src[i]));
-      for (let a = 0; a < 3; a++) d[a] += W[i][a] * r;
-    }
-    return [p[0] + d[0], p[1] + d[1], p[2] + d[2]];
-  };
 }
 
 function weld(positions: ArrayLike<number>, triangles: ArrayLike<number>) {
@@ -166,11 +126,41 @@ export function buildTemplateHead(face: PersonalSurface, template: HeadTemplate,
   const generic = Array.from({ length: 468 }, (_, i) => at(template.landmarks, i));
   if (![...personal, ...generic].every(p => p.every(Number.isFinite))) fail('landmarks no finitos.');
   const sim = similarity(CONTROL.map(i => generic[i]), CONTROL.map(i => personal[i]));
-  const warp = rbf(CONTROL.map(i => sim.apply(generic[i])), CONTROL.map(i => personal[i]));
   const axis = (c: number): V => [sim.R[0][c], sim.R[1][c], sim.R[2][c]];
   const right = axis(0), up = axis(1), fwd = axis(2);
   const { points: raw, tris: rawTris } = weld(template.positions, template.triangles);
-  let points = raw.map(p => warp(sim.apply(p)));
+  // Escala global por ejes (ancho, alto, profundidad) por mínimos cuadrados: deforma el cráneo como un todo,
+  // sin interpolar cada vértice hacia el óvalo (eso estiraba las orejas en punta).
+  const cd = CONTROL.reduce((s, i) => [s[0] + personal[i][0] / CONTROL.length, s[1] + personal[i][1] / CONTROL.length, s[2] + personal[i][2] / CONTROL.length] as V, [0, 0, 0] as V);
+  const axisScale = [right, up, fwd].map(ax => {
+    let num = 0, den = 0;
+    for (const i of CONTROL) {
+      const x = dot(sub(sim.apply(generic[i]), cd), ax), y = dot(sub(personal[i], cd), ax);
+      num += x * y; den += x * x;
+    }
+    return Math.min(1.2, Math.max(0.85, den > 0 ? num / den : 1));
+  });
+  const affine = (p: V): V => {
+    const q = sub(sim.apply(p), cd), x = dot(q, right) * axisScale[0], y = dot(q, up) * axisScale[1], z = dot(q, fwd) * axisScale[2];
+    return [0, 1, 2].map(k => cd[k] + right[k] * x + up[k] * y + fwd[k] * z) as V;
+  };
+  let points = raw.map(affine);
+  // Corrección local acotada: residuos del óvalo repartidos con Shepard gaussiano solo cerca de la cara.
+  {
+    const fh = norm(sub(personal[10], personal[152])), sigma2 = (fh * 0.12) ** 2;
+    const ctl = FACE_OVAL.map(i => ({ p: personal[i], r: sub(personal[i], affine(generic[i])) }));
+    points = points.map(p => {
+      let ws = 1e-3, dmin = Infinity;
+      const acc: V = [0, 0, 0];
+      for (const c of ctl) {
+        const d2 = dot(sub(p, c.p), sub(p, c.p)), w = Math.exp(-d2 / (2 * sigma2));
+        dmin = Math.min(dmin, Math.sqrt(d2)); ws += w;
+        acc[0] += c.r[0] * w; acc[1] += c.r[1] * w; acc[2] += c.r[2] * w;
+      }
+      const t = Math.min(1, dmin / (fh * 0.35)), fall = 1 - t * t * (3 - 2 * t);
+      return [p[0] + acc[0] / ws * fall, p[1] + acc[1] / ws * fall, p[2] + acc[2] / ws * fall] as V;
+    });
+  }
 
   const oval = FACE_OVAL.map(i => personal[i]);
   const faceH = norm(sub(personal[10], personal[152]));
@@ -262,7 +252,7 @@ export function buildTemplateHead(face: PersonalSurface, template: HeadTemplate,
       return total;
     };
     let best = { c: cost(1, 1, 1), s: [1, 1, 1] };
-    for (let sx = 0.8; sx <= 1.3001; sx += 0.05) for (let sy = 0.8; sy <= 1.3501; sy += 0.05) for (let sz = 0.8; sz <= 1.3501; sz += 0.05) {
+    for (let sx = 0.9; sx <= 1.1501; sx += 0.05) for (let sy = 0.9; sy <= 1.1501; sy += 0.05) for (let sz = 0.85; sz <= 1.2001; sz += 0.05) {
       const c = cost(sx, sy, sz);
       if (c < best.c) best = { c, s: [sx, sy, sz] };
     }

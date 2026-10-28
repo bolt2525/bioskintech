@@ -11,7 +11,11 @@ export interface HeadPhotoSource {
   texture: HTMLCanvasElement;
   projection: HairPhotoProjection;
 }
-export interface PhotoSurfacePatch { source: HeadPhotoSource; indices: Uint32Array; uvs: Float32Array }
+export interface PhotoSurfacePatch {
+  source: HeadPhotoSource; indices: Uint32Array; uvs: Float32Array;
+  /** Triángulos con aporte de esta vista y alfa por vértice para la mezcla ordenada. */
+  blendIndices?: Uint32Array; alpha?: Float32Array;
+}
 
 const project = (p: ArrayLike<number>, row: number[]) => p[0] * row[0] + p[1] * row[1] + p[2] * row[2] + row[3];
 function rowBounds(source: HeadPhotoSource): Float32Array {
@@ -71,18 +75,52 @@ export function sampleColorAt(source: HeadPhotoSource | undefined, points: reado
   return `#${channels.map(values => median(values).toString(16).padStart(2, '0')).join('')}`;
 }
 
-/** Un triángulo, una vista: sin mezclar el ojo opuesto ni estirar la frontal al perfil. */
-export function buildPhotoSurfacePatches(surface: PersonalSurface, sources: readonly HeadPhotoSource[]): PhotoSurfacePatch[] {
+/**
+ * `indices`: un triángulo, una vista (exportación GLB). `blendIndices` + `alpha`: mezcla suave por vértice
+ * para el visor; dibujar los parches en orden con alfa «over» da la media ponderada Σwᵢcᵢ/Σwᵢ.
+ * Los triángulos anteriores a `firstIndex` (cara observada) conservan la textura frontal propia.
+ */
+export function buildPhotoSurfacePatches(surface: PersonalSurface, sources: readonly HeadPhotoSource[], firstIndex = 0): PhotoSurfacePatch[] {
+  const vertexCount = surface.positions.length / 3;
   const candidates = sources.map(source => {
     rowBounds(source);
-    const uvs = new Float32Array(surface.positions.length / 3 * 2);
-    for (let id = 0; id < surface.positions.length / 3; id++) {
+    const uvs = new Float32Array(vertexCount * 2);
+    for (let id = 0; id < vertexCount; id++) {
       const p = surface.positions.subarray(id * 3, id * 3 + 3);
       uvs[id * 2] = project(p, source.projection.u); uvs[id * 2 + 1] = project(p, source.projection.v);
     }
-    return { source, uvs, indices: [] as number[] };
+    return { source, uvs, indices: [] as number[], blend: [] as number[], alpha: new Float32Array(vertexCount) };
   });
+  const normals = new Float32Array(vertexCount * 3);
   for (let i = 0; i < surface.indices.length; i += 3) {
+    const ids = Array.from(surface.indices.subarray(i, i + 3));
+    const [a, b, c] = ids.map(id => Array.from(surface.positions.subarray(id * 3, id * 3 + 3)));
+    const ab = b.map((v, j) => v - a[j]), ac = c.map((v, j) => v - a[j]);
+    const n = [ab[1] * ac[2] - ab[2] * ac[1], ab[2] * ac[0] - ab[0] * ac[2], ab[0] * ac[1] - ab[1] * ac[0]];
+    for (const id of ids) for (let k = 0; k < 3; k++) normals[id * 3 + k] += n[k];
+  }
+  // La frontal domina donde también es útil: la cara y la frente no se fragmentan con recortes laterales.
+  const weights = candidates.map((candidate, s) => Float32Array.from({ length: vertexCount }, (_, id) => {
+    const n = normals.subarray(id * 3, id * 3 + 3), length = Math.hypot(n[0], n[1], n[2]);
+    const [u, v] = [candidate.uvs[id * 2], candidate.uvs[id * 2 + 1]];
+    if (length < 1e-12 || !(u >= 0 && v >= 0 && u < 1 && v < 1)) return 0;
+    if (candidate.source.mask[Math.floor(v * candidate.source.height) * candidate.source.width + Math.floor(u * candidate.source.width)] <= 0.6) return 0;
+    const facing = (n[0] * candidate.source.projection.towardCamera[0] + n[1] * candidate.source.projection.towardCamera[1]
+      + n[2] * candidate.source.projection.towardCamera[2]) / length;
+    return facing > 0.15 ? (facing - 0.15) ** 2 * (s === 0 ? 2.5 : 1) : 0;
+  }));
+  for (let id = 0; id < vertexCount; id++) {
+    let total = 0;
+    candidates.forEach((candidate, s) => {
+      total += weights[s][id];
+      candidate.alpha[id] = total > 0 ? weights[s][id] / total : 0;
+    });
+  }
+  for (let i = firstIndex; i < surface.indices.length; i += 3) {
+    const ids = Array.from(surface.indices.subarray(i, i + 3));
+    candidates.forEach((candidate, s) => { if (ids.some(id => weights[s][id] > 0)) candidate.blend.push(...ids); });
+  }
+  for (let i = firstIndex; i < surface.indices.length; i += 3) {
     const ids = Array.from(surface.indices.subarray(i, i + 3));
     const [a, b, c] = ids.map(id => Array.from(surface.positions.subarray(id * 3, id * 3 + 3)));
     const ab = b.map((v, j) => v - a[j]), ac = c.map((v, j) => v - a[j]);
@@ -101,7 +139,8 @@ export function buildPhotoSurfacePatches(surface: PersonalSurface, sources: read
     }
     best?.indices.push(...ids);
   }
-  return candidates.filter(candidate => candidate.indices.length).map(candidate => ({
+  return candidates.filter(candidate => candidate.indices.length || candidate.blend.length).map(candidate => ({
     source: candidate.source, uvs: candidate.uvs, indices: Uint32Array.from(candidate.indices),
+    blendIndices: Uint32Array.from(candidate.blend), alpha: candidate.alpha,
   }));
 }
