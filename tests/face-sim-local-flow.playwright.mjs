@@ -163,6 +163,13 @@ try {
     window.__splitRendered = {};
     const previous = THREE.Mesh.prototype.onAfterRender;
     THREE.Mesh.prototype.onAfterRender = function (renderer, scene) {
+      if (this.name === 'MORPHOLOGY_SKIN_AFTER') {
+        window.__personalMorphology = {
+          vertices: this.geometry.attributes.position.count,
+          uvs: this.geometry.attributes.uv?.count,
+          triangles: this.geometry.index.count / 3,
+        };
+      }
       const label = renderer.domElement.closest('section[aria-label="Modelo genérico 3D"], section[aria-label="Foto personal en 3D"]')?.getAttribute('aria-label');
       if (label) {
         const ids = new Set();
@@ -217,6 +224,18 @@ try {
   await divided.uncheck();
   assert.equal(await page.locator('canvas:visible').count(), 1);
   assert.equal(await count(), initialCount);
+  await page.getByRole('button', { name: 'Morfología, piel y capas', exact: true }).click();
+  const morphology = page.locator('[data-face-appearance-group]');
+  await morphology.getByRole('img', { name: /^Simulación facial 3D/ }).waitFor();
+  await morphology.getByRole('button', { name: 'Morfología', exact: true }).click();
+  await morphology.getByLabel('Punta · proyección', { exact: false }).fill('1');
+  await morphology.getByRole('button', { name: 'Perfil lado A', exact: true }).press('Enter');
+  await page.waitForFunction(() => window.__personalMorphology?.vertices > 468
+    && window.__personalMorphology.vertices === window.__personalMorphology.uvs);
+  assert.equal(await morphology.getByRole('alert').count(), 0, 'la máscara personal refinada conserva atributos y referencias');
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
+  await page.getByRole('button', { name: 'Marcaciones e inyectables', exact: true }).click();
+  assert.equal(await count(), initialCount, 'el refinado visual no modifica el registro');
   assert.deepEqual(errors, []);
   assert.deepEqual(remote, []);
   console.log(JSON.stringify({ passed: true, marks: initialCount, desktop: '1440×1000', mobile: '390×844',
@@ -225,7 +244,7 @@ try {
       'antes/después', 'export/import', 'quitar/undo', 'registro persistente entre espacios',
       'grupos internos', 'morfología/piel/capas/corte', 'estado avanzado conservado', 'un viewport visible',
       'visor dividido', 'transferencia visible genérico/máscara', 'registro único desde máscara', 'apilado móvil',
-      'sin red externa', 'sin overflow móvil'] }, null, 2));
+      'morfología personal refinada sin alterar marcas', 'sin red externa', 'sin overflow móvil'] }, null, 2));
 } finally {
   await browser.close();
 }

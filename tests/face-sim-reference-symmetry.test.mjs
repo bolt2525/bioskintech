@@ -325,7 +325,9 @@ test('transición genérico→personal descarta referencias/UV previos antes de 
   app.render({ surface });
   assert.equal(app.state.references.length, 3);
   assert.notEqual(app.state.references, genericReferences);
-  const personal = sim.buildSimulationReferenceSurface(sim.createSimulationMesh(surface), {});
+  const base = sim.createSimulationMesh(surface);
+  const refined = load('displaySurface.ts').refineDisplaySurface(base.positions, base.indices);
+  const personal = sim.buildSimulationReferenceSurface({ ...base, positions: refined.positions, indices: refined.indices }, {});
   for (const reference of app.state.references) assert.ok(buildReferenceGeometry(personal.positions, personal.indices, reference).indices.length);
 });
 

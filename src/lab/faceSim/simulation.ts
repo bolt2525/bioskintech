@@ -321,7 +321,9 @@ export function deformPositions(
 ): Float32Array {
   if (anchors.length < 468 * 3) throw new Error('Faltan anclas mesh468.');
   meshBounds(original);
-  const params = sanitizeSimulation(input), { height: h, axis, average } = facialFrame(anchors);
+  const params = sanitizeSimulation(input);
+  if (Object.values(params).every(value => value === 0)) return Float32Array.from(original);
+  const { height: h, axis, average } = facialFrame(anchors);
   type Field = { center: Vec3; radius: Vec3; delta: (p: Vec3) => Vec3; protectedCenters: Vec3[] };
   const fields: Field[] = [];
   const jawAnchors = [152, 175, 199, 172, 136, 150, 149, 176, 148, 397, 365, 379, 378, 400, 377];
@@ -331,45 +333,45 @@ export function deformPositions(
       protectedCenters: protect.map(id => point(anchors, id)) });
   };
   // Recorrido visual ampliado; no son milímetros ni rangos quirúrgicos.
-  add([6, 197, 195], [0.12, 0.24, 0.20], () => ({ x: 0, y: 0, z: params.noseBridge * h * 0.09 }));
-  add([197, 195], [0.075, 0.10, 0.12], () => ({ x: 0, y: 0, z: params.noseHump * h * 0.055 }));
+  if (params.noseBridge) add([6, 197, 195], [0.12, 0.24, 0.20], () => ({ x: 0, y: 0, z: params.noseBridge * h * 0.09 }));
+  if (params.noseHump) add([197, 195], [0.075, 0.10, 0.12], () => ({ x: 0, y: 0, z: params.noseHump * h * 0.055 }));
   const tip = average([1, 4]);
-  add([1, 4], [0.13, 0.16, 0.20], p => {
-    const angle = params.noseRotation * 0.60;
+  if (params.noseTip || params.noseRotation) add([1, 4], [0.18, 0.22, 0.28], p => {
+    const angle = params.noseRotation * 0.45;
     // Pivot posterior a la punta, no giro global de la nariz.
     const y = p.y - tip.y, z = p.z - (tip.z - h * 0.10);
     return {
       x: 0, y: y * (Math.cos(angle) - 1) + z * Math.sin(angle),
-      z: params.noseTip * h * 0.11 - y * Math.sin(angle) + z * (Math.cos(angle) - 1),
+      z: params.noseTip * h * 0.085 - y * Math.sin(angle) + z * (Math.cos(angle) - 1),
     };
   });
-  add([1, 4], [0.09, 0.08, 0.12], p => ({ x: params.noseTipWidth * (p.x - tip.x) * 0.65, y: 0, z: 0 }));
-  for (const id of [98, 327]) add([id], [0.10, 0.11, 0.15], p => ({
-    x: params.noseWidth * (p.x - axis) * 0.80, y: 0, z: 0,
+  if (params.noseTipWidth) add([1, 4], [0.09, 0.08, 0.12], p => ({ x: params.noseTipWidth * (p.x - tip.x) * 0.65, y: 0, z: 0 }));
+  if (params.noseWidth) for (const id of [98, 327]) add([id], [0.13, 0.14, 0.18], p => ({
+    x: params.noseWidth * (p.x - axis) * 0.45, y: 0, z: 0,
   }));
   const mouth = average([13, 14]);
-  add([0, 13], [0.17, 0.055, 0.10], p => ({
+  if (params.lipUpper) add([0, 13], [0.17, 0.055, 0.10], p => ({
     x: 0, y: params.lipUpper * h * 0.012 * Math.tanh((p.y - mouth.y) / (h * 0.012)), z: params.lipUpper * h * 0.03,
   }), jawAnchors);
-  add([14, 17], [0.16, 0.06, 0.10], p => ({
+  if (params.lipLower) add([14, 17], [0.16, 0.06, 0.10], p => ({
     x: 0, y: params.lipLower * h * 0.012 * Math.tanh((p.y - mouth.y) / (h * 0.012)), z: params.lipLower * h * 0.032,
   }), jawAnchors);
-  add([13, 14], [0.20, 0.10, 0.12], () => ({ x: 0, y: 0, z: params.lipProjection * h * 0.035 }), jawAnchors);
-  for (const id of [61, 291]) add([id], [0.05, 0.05, 0.08], () => ({ x: 0, y: params.lipCorners * h * 0.025, z: 0 }), jawAnchors);
-  for (const ids of [[117, 50], [346, 280]]) add(ids, [0.14, 0.12, 0.16], p => ({
+  if (params.lipProjection) add([13, 14], [0.20, 0.10, 0.12], () => ({ x: 0, y: 0, z: params.lipProjection * h * 0.035 }), jawAnchors);
+  if (params.lipCorners) for (const id of [61, 291]) add([id], [0.05, 0.05, 0.08], () => ({ x: 0, y: params.lipCorners * h * 0.025, z: 0 }), jawAnchors);
+  if (params.cheekbone) for (const ids of [[117, 50], [346, 280]]) add(ids, [0.14, 0.12, 0.16], p => ({
     x: params.cheekbone * (p.x - axis) * 0.07, y: params.cheekbone * h * 0.008, z: params.cheekbone * h * 0.045,
   }), jawAnchors);
-  for (const ids of [[205, 187], [425, 411]]) add(ids, [0.15, 0.14, 0.18], p => ({
+  if (params.cheekVolume) for (const ids of [[205, 187], [425, 411]]) add(ids, [0.15, 0.14, 0.18], p => ({
     x: params.cheekVolume * (p.x - axis) * 0.06, y: 0, z: params.cheekVolume * h * 0.04,
   }), jawAnchors);
-  for (const ids of [[214, 192], [434, 416]]) add(ids, [0.13, 0.12, 0.18], p => ({
+  if (params.buccal) for (const ids of [[214, 192], [434, 416]]) add(ids, [0.13, 0.12, 0.18], p => ({
     x: params.buccal * (p.x - axis) * 0.09, y: 0, z: params.buccal * h * 0.012,
   }), jawAnchors);
-  add([152, 175, 199], [0.25, 0.21, 0.24], p => ({
+  if (params.chinWidth || params.chinHeight || params.chinProjection) add([152, 175, 199], [0.32, 0.27, 0.32], p => ({
     x: params.chinWidth * (p.x - axis) * 0.48,
-    y: -params.chinHeight * h * 0.085, z: params.chinProjection * h * 0.10,
+    y: -params.chinHeight * h * 0.07, z: params.chinProjection * h * 0.085,
   }), softAnchors);
-  for (const ids of [[172, 136], [397, 365]]) add(ids, [0.23, 0.20, 0.24], p => ({
+  if (params.jawWidth) for (const ids of [[172, 136], [397, 365]]) add(ids, [0.23, 0.20, 0.24], p => ({
     x: params.jawWidth * (p.x - axis) * 0.32, y: 0, z: 0,
   }), softAnchors);
   const result = Float32Array.from(original);

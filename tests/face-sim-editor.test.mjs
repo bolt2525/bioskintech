@@ -18,6 +18,7 @@ vm.runInNewContext(compile(readFileSync(new URL('../src/lab/faceSim/simulation.t
 const source = readFileSync(new URL('../src/lab/faceSim/FacialSimulationViewer.tsx', import.meta.url), 'utf8');
 const skin = await import('../src/lab/faceSim/skinAppearance.ts');
 const reveal = await import('../src/lab/faceSim/maskAnatomy.ts');
+const displaySurface = await import('../src/lab/faceSim/displaySurface.ts');
 const text = tree => Array.isArray(tree) ? tree.map(text).join('') : tree && typeof tree === 'object'
   ? text(tree.props?.children) : String(tree ?? '');
 const find = (tree, predicate) => !tree || typeof tree !== 'object' ? [] : Array.isArray(tree)
@@ -54,6 +55,7 @@ function editor() {
         } };
       if (name === './genericFaceAtlas.json') return { default: atlas };
       if (name === './simulation') return simulation;
+      if (name === './displaySurface') return displaySurface;
       if (name === './skinAppearance') return skin;
       if (name === './maskAnatomy') return reveal;
       if (name === './anatomicalZones') return {};

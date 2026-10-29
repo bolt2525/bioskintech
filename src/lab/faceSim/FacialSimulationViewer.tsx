@@ -13,6 +13,7 @@ import { ANATOMY_PLANES, buildCanonicalReferenceUVs, loadDefaultLayers, register
 import { anatomicalZoneAt } from './anatomicalZones';
 import { AnatomyLayerControls, chooseAnatomyDisplay, initialAnatomyDisplay, type AnatomyDisplayState } from './anatomyDisplay';
 import { buildReferenceGeometry } from './referenceGeometry';
+import { refineDisplaySurface } from './displaySurface';
 import { buildMaskBacking, INITIAL_REVEAL, revealPlane, revealStage, type MaskReveal, type ReferenceKind } from './maskAnatomy';
 import { NEUTRAL_SKIN_COSMETICS, SKIN_COSMETIC_CONTROLS, type SkinCosmeticParameters } from './skinAppearance';
 import { composeSkinCosmeticTexture } from './skinSignalTexture';
@@ -109,7 +110,7 @@ function inferredMaterial(mesh: SimulationMesh, extra: THREE.MeshStandardMateria
 
 /** Render bajo demanda, sin bucle RAF permanente ni recursos globales. */
 function mountFacialSimulation(
-  host: HTMLDivElement, mesh: SimulationMesh, photo: HTMLCanvasElement | undefined,
+  host: HTMLDivElement, mesh: SimulationMesh, sourceMesh: SimulationMesh, photo: HTMLCanvasElement | undefined,
   onError: (message: string) => void,
   onHover: (zone: string | null) => void,
   onSelect: (zone: string | null) => void,
@@ -398,6 +399,7 @@ function mountFacialSimulation(
       const materials = [material];
       if (layer.id === 'skin' && mesh.observedIndexCount !== undefined) materials.push(inferredMaterial(mesh, { transparent: true, depthWrite: false }));
       const object = new THREE.Mesh(geometryFrom(data, mesh), materials);
+      object.name = 'MORPHOLOGY_SKIN_AFTER';
       object.renderOrder = 5;
       after.add(object); afterMeshes.set(layer.id, object);
     }
@@ -409,6 +411,7 @@ function mountFacialSimulation(
     })];
     if (mesh.observedIndexCount !== undefined) beforeMaterials.push(inferredMaterial(mesh));
     beforeMesh = new THREE.Mesh(geometryFrom(skin, mesh), beforeMaterials);
+    beforeMesh.name = 'MORPHOLOGY_SKIN_BEFORE';
     before.add(beforeMesh);
     if (mesh.source === 'personal' && mesh.observedIndexCount === undefined) {
       const material = new THREE.MeshStandardMaterial({ color: '#475569', roughness: 1, side: THREE.DoubleSide });
@@ -449,6 +452,7 @@ function mountFacialSimulation(
         referenceTextures.forEach(texture => texture.dispose()); referenceTextures.length = 0;
         if (next.references.length) {
           const { positions, indices: observedIndices } = buildSimulationReferenceSurface(mesh, next.parameters);
+          const sourceReference = mesh.source === 'personal' ? buildSimulationReferenceSurface(sourceMesh, next.parameters) : null;
           next.references.forEach(reference => {
             const padded = document.createElement('canvas');
             padded.width = reference.canvas.width + 4; padded.height = reference.canvas.height + 4;
@@ -472,7 +476,9 @@ function mountFacialSimulation(
             };
             const object = new THREE.Mesh(geometry, material);
             object.name = 'ALIGNED_ANATOMICAL_REFERENCE'; object.renderOrder = 3;
-            object.userData = { kind: reference.kind };
+            const semanticIndices = sourceReference ? buildReferenceGeometry(sourceReference.positions, sourceReference.indices,
+              { ...reference, uvs: reference.uvs.slice(0, sourceReference.positions.length / 3 * 2) }).indices : data.indices;
+            object.userData = { kind: reference.kind, semanticIndices };
             referenceGroup.add(object);
           });
         }
@@ -552,7 +558,7 @@ function mountFacialSimulation(
       }
       {
         const referenceObject = referenceGroup.children.find(object => object.userData.kind === next.anatomy);
-        const retained = referenceObject instanceof THREE.Mesh ? referenceObject.geometry.getIndex()?.array : undefined;
+        const retained: Uint32Array | undefined = referenceObject?.userData.semanticIndices;
         const triangles = retained ? new Set(Array.from({ length: retained.length / 3 }, (_, i) =>
           triangleKey(retained[i * 3], retained[i * 3 + 1], retained[i * 3 + 2]))) : null;
         activeCells = next.anatomy === 'skin' ? regionCells : anatomyCells.filter(cell => {
@@ -762,18 +768,35 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
   }, [photo, signalLandmarks, cosmetics]);
   const activePlane = plane ?? localPlane, meshVisible = showMesh ?? localMesh;
   const prepared = useMemo(() => {
-    try { return { mesh: createSimulationMesh(surface), error: null }; }
-    catch (cause) { return { mesh: null, error: cause instanceof Error ? cause.message : 'Superficie no válida.' }; }
+    try {
+      const base = createSimulationMesh(surface), refinement = refineDisplaySurface(base.positions, base.indices);
+      const mesh: SimulationMesh = { ...base, positions: refinement.positions, indices: refinement.indices,
+        uvs: base.uvs && refinement.attribute(base.uvs, 2),
+        observedIndexCount: base.observedIndexCount === undefined ? undefined : base.observedIndexCount * refinement.indexMultiplier };
+      return { mesh, sourceMesh: base, refinement, error: null };
+    } catch (cause) { return { mesh: null, sourceMesh: null, refinement: null, error: cause instanceof Error ? cause.message : 'Superficie no válida.' }; }
   }, [surface]);
-  const state = useMemo<ViewerState>(() => ({ parameters, layers, cut, view, comparison, showMesh: meshVisible, plane: activePlane, hair, hairPatches, photoPatches, skinTexture, references, anatomy,
+  const displayReferences = useMemo(() => prepared.mesh?.source === 'personal' && prepared.refinement
+    ? references.map(reference => ({ ...reference, uvs: prepared.refinement!.attribute(reference.uvs, 2) }))
+    : references, [prepared, references]);
+  const displayHair = useMemo(() => prepared.refinement && hairPatches?.map(patch => ({ ...patch,
+    indices: prepared.refinement!.indicesFor(patch.indices), uvs: prepared.refinement!.attribute(patch.uvs, 2),
+  })), [prepared, hairPatches]);
+  const displayPhotos = useMemo(() => prepared.refinement && photoPatches?.map(patch => ({ ...patch,
+    indices: prepared.refinement!.indicesFor(patch.indices), uvs: prepared.refinement!.attribute(patch.uvs, 2),
+    blendIndices: patch.blendIndices && prepared.refinement!.indicesFor(patch.blendIndices),
+    alpha: patch.alpha && prepared.refinement!.attribute(patch.alpha, 1),
+  })), [prepared, photoPatches]);
+  const state = useMemo<ViewerState>(() => ({ parameters, layers, cut, view, comparison, showMesh: meshVisible, plane: activePlane, hair,
+    hairPatches: displayHair ?? undefined, photoPatches: displayPhotos ?? undefined, skinTexture, references: displayReferences, anatomy,
     referenceLayers, overlay, reveal, selection, marks }),
-    [parameters, layers, cut, view, comparison, meshVisible, activePlane, hair, hairPatches, photoPatches, skinTexture, references, anatomy, referenceLayers, overlay, reveal, selection, marks]);
+    [parameters, layers, cut, view, comparison, meshVisible, activePlane, hair, displayHair, displayPhotos, skinTexture, displayReferences, anatomy, referenceLayers, overlay, reveal, selection, marks]);
 
   useEffect(() => {
     setError(null); setReady(false);
-    if (!host.current || !prepared.mesh) return;
+    if (!host.current || !prepared.mesh || !prepared.sourceMesh) return;
     try {
-      runtime.current = mountFacialSimulation(host.current, prepared.mesh, photo, message => { setError(message); setReady(false); }, setHoveredZone, setSelection);
+      runtime.current = mountFacialSimulation(host.current, prepared.mesh, prepared.sourceMesh, photo, message => { setError(message); setReady(false); }, setHoveredZone, setSelection);
       setReady(true);
     } catch {
       setError('No se pudo iniciar WebGL. Comprueba la aceleración gráfica del navegador.');

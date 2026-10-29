@@ -536,3 +536,6 @@ Las entradas siguientes conservan la evidencia previa al despliegue y la evoluci
 - ✅ Oct 29 Profundidad: la barba ya no adelanta el mentón ni hunde los labios.
 - ✅ Oct 29 Simetría nasal por copia del hemimallado («Replicar mitad») con transición suave en la línea media.
 - ✅ Oct 29 QA facial: 278 pruebas, build y 2 flujos Playwright (escritorio/móvil).
+- ✅ Oct 29 Contornos morfológicos suavizados; anclas intactas.
+- ✅ Oct 29 Nariz/mentón: deformación distribuida y acotada.
+- ✅ Oct 29 Mallado: 283 pruebas, build, Chromium.

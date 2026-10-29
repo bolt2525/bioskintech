@@ -79,15 +79,20 @@ try {
   await annotationLayers.getByRole('button', { name: 'Músculo', exact: true }).click();
   await page.getByRole('button', { name: 'Morfología, piel y capas', exact: true }).click();
   const appearance = page.locator('[data-face-appearance-group]');
-  await appearance.locator('canvas').waitFor({ state: 'visible' });
+  await appearance.locator('canvas').waitFor({ state: 'visible' }).catch(async error => {
+    throw new Error(`${error.message}\n${await page.locator('body').innerText({ timeout: 5000 })}\n${errors.join('\n')}`);
+  });
   await page.evaluate(async () => {
     const source = await (await fetch('/src/lab/faceSim/FacialSimulationViewer.tsx')).text();
     const moduleUrl = source.match(/import \* as THREE from "([^"]+)"/)?.[1];
     if (!moduleUrl) throw new Error('No se pudo instrumentar el renderer local.');
     const THREE = await import(moduleUrl);
     const previous = THREE.Mesh.prototype.onAfterRender;
-    window.__faceQuickRender = { references: [] };
+    window.__faceQuickRender = { references: [], skin: null };
     THREE.Mesh.prototype.onAfterRender = function (renderer, scene, camera, geometry, material) {
+      if (this.name === 'MORPHOLOGY_SKIN_AFTER') {
+        window.__faceQuickRender.skin = geometry;
+      }
       if (this.name === 'ALIGNED_ANATOMICAL_REFERENCE' && renderer.domElement.closest('[data-face-appearance-group]')) {
         window.__faceQuickRender.references.push({ triangles: geometry.index.count / 3,
           width: material.map?.image?.width ?? 0, opacity: material.opacity });
@@ -109,6 +114,33 @@ try {
   assert.equal(await symmetry.inputValue(), '0.75');
   await appearance.getByRole('button', { name: 'Restaurar simetría', exact: true }).click();
   assert.equal(await symmetry.inputValue(), '0');
+  await appearance.getByRole('button', { name: 'Capas', exact: true }).click();
+  await appearance.getByRole('group', { name: 'Capa rápida' }).getByRole('button', { name: 'Piel', exact: true }).click();
+  await appearance.getByRole('button', { name: 'Morfología', exact: true }).click();
+  await page.waitForFunction(() => window.__faceQuickRender.skin !== null);
+  assert.equal(await page.evaluate(() => window.__faceQuickRender.skin.index.count), atlas.surface.triangles.length * 4);
+  const neutralGeometry = await page.evaluate(() => Array.from(window.__faceQuickRender.skin.attributes.position.array));
+  await appearance.getByRole('button', { name: 'Perfil lado A', exact: true }).click();
+  for (const sign of ['-1', '1']) {
+    await appearance.getByLabel('Punta · proyección', { exact: false }).fill(sign);
+    await appearance.getByLabel('Mentón · altura', { exact: false }).fill(sign);
+    await appearance.getByLabel('Mentón · proyección', { exact: false }).fill(sign);
+    await page.waitForFunction(neutral => {
+      const positions = window.__faceQuickRender.skin?.attributes.position.array;
+      return positions?.some((v, i) => Math.abs(v - neutral[i]) > 0.01);
+    }, neutralGeometry);
+    assert.equal(await page.evaluate(() => window.__faceQuickRender.skin.attributes.position.array.every(Number.isFinite)), true);
+    if (process.env.FACE_QA_OUTPUT_DIRECTORY) await appearance.locator('canvas').screenshot({
+      path: path.join(process.env.FACE_QA_OUTPUT_DIRECTORY, `facial-mallado-perfil-${sign}.png`),
+    });
+  }
+  await appearance.getByRole('button', { name: 'Restablecer todo', exact: true }).press('Enter');
+  await page.waitForFunction(neutral => {
+    const positions = window.__faceQuickRender.skin?.attributes.position.array;
+    return positions?.length === neutral.length && positions.every((v, i) => v === neutral[i]);
+  }, neutralGeometry);
+  await appearance.getByRole('button', { name: 'Capas', exact: true }).press('Enter');
+  await mesh.uncheck();
   await page.getByRole('button', { name: 'Marcaciones e inyectables', exact: true }).click();
   assert.equal(await page.getByLabel('Mostrar mallado de zonas', { exact: true }).filter({ visible: true }).isChecked(), false);
   assert.equal(await count(), 3);
@@ -129,7 +161,7 @@ try {
   assert.deepEqual(errors, []); assert.deepEqual(apiRequests, []);
   console.log(JSON.stringify({ passed: true, marks: await count(), desktop: '1440x1000', mobile: '390x844',
     checks: ['dosis por punto', 'volumen acumulado en tiempo real', 'filtro por tercio', 'JSON ida/vuelta', 'espejo', 'bilateral y undo atomico',
-      'capas y mallado sincronizados', 'simetria nasal reversible', 'render muscular real', 'sin API ni desbordamiento'] }));
+      'capas y mallado sincronizados', 'simetria nasal reversible', 'render muscular real', 'mallado refinado y extremos nariz/menton reversibles', 'sin API ni desbordamiento'] }));
 } finally {
   await browser.close();
 }
