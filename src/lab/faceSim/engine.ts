@@ -633,10 +633,22 @@ export interface DepthDiagnostic {
 
 // Solo mesh468: iris, labios y párpados no son referencias rígidas equivalentes a mejillas/frente.
 const DEPTH_REFERENCES = Array.from({ length: 468 }, (_, i) => i);
-const DEPTH_EXPRESSIVE = new Set([
+const DEPTH_LIP_CONTOURS = [
   0, 13, 14, 17, 37, 39, 40, 61, 78, 80, 81, 82, 84, 87, 88, 91, 95,
   146, 178, 181, 185, 191, 267, 269, 270, 291, 308, 310, 311, 312, 314,
   317, 318, 321, 324, 375, 402, 405, 409, 415,
+] as const;
+/** Preservar el bermellón completo, no solo sus dos contornos: las bandas libres formaban láminas en Z. */
+const DEPTH_LIPS = new Set<number>([
+  ...DEPTH_LIP_CONTOURS,
+  76, 184, 74, 73, 72, 11, 302, 303, 304, 408, 306,
+  77, 90, 180, 85, 16, 315, 404, 320, 307,
+  62, 183, 42, 41, 38, 12, 268, 271, 272, 407, 292,
+  96, 89, 179, 86, 15, 316, 403, 319, 325,
+]);
+const DEPTH_EXPRESSIVE = new Set([
+  // Mantener las referencias/pesos del ajuste: esta protección no debe cambiar la solución nasal.
+  ...DEPTH_LIP_CONTOURS,
   7, 33, 133, 144, 145, 153, 154, 155, 159, 160, 161, 163, 173,
   246, 249, 263, 362, 373, 374, 380, 381, 382, 385, 386, 387, 388, 390, 398, 466,
 ]);
@@ -669,8 +681,13 @@ function poseRotation(pose?: number[]): number[] | null {
  * parallax ajusta escala/traslación sin depender de Z. La paralela recupera relieve.
  * No se optimiza la pose MediaPipe ni se estima distancia métrica. La traslación en
  * profundidad es inobservable y se fija al prior; XY (y por tanto UV) nunca cambian.
+ * Máscara con labios frontales aprobados: { preserveLips: true } fija Z en las cuatro bandas labiales,
+ * incluidas las intermedias. No aplana el prior, no suelda vértices ni interpreta si la boca está abierta.
+ * Por compatibilidad, la reconstrucción general mantiene el comportamiento previo si se omite.
  */
-export function refineDepthFromProfiles(front: DepthView, profiles: DepthView[]): {
+export function refineDepthFromProfiles(
+  front: DepthView, profiles: DepthView[], options: { preserveLips?: boolean } = {},
+): {
   landmarks: DepthView['landmarks']; used: number; rejected: string[];
   diagnostics: DepthDiagnostic[]; coverage: 'monocular' | 'one-sided' | 'bilateral';
 } {
@@ -835,7 +852,7 @@ export function refineDepthFromProfiles(front: DepthView, profiles: DepthView[])
   const accepted = selected.map(i => candidates[i]);
   // Un punto local discordante se atenúa aunque el conjunto de la vista sea útil.
   const landmarks = front.landmarks.map((p, i) => {
-    if (i >= 468) return p;
+    if (i >= 468 || (options.preserveLips && DEPTH_LIPS.has(i))) return p;
     const reliable = accepted.filter(c => c.weights[i] > 0.001);
     if (!reliable.length) return p;
     const center = depthMedian(reliable.map(c => c.depths[i]));

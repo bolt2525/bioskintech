@@ -12,78 +12,170 @@ export async function verifySimulationRender() {
   const button = text => [...root.querySelectorAll('button')].find(e => e.textContent.trim() === text);
   const check = text => [...root.querySelectorAll('label')].find(e => e.textContent.trim() === text)?.querySelector('input[type="checkbox"]');
   const expect = (condition, text) => { if (!condition) throw new Error(text); };
-  const names = ['Piel', 'Grasa genérica', 'Músculos esquemáticos', 'Nervios · trayectos genéricos', 'Vasos · trayectos genéricos'];
-  const mesh = check('Mostrar mallado de zonas');
-  const plane = root.querySelector('select[aria-label="Plano visual de simulación"]');
-  const initial = { mesh: mesh.checked, plane: plane.value, checks: names.map(name => check(name).checked) };
+  const control = (prefix, selector) => [...root.querySelectorAll('label')]
+    .find(label => label.textContent.trim().startsWith(prefix))?.querySelector(selector);
+  const skin = check('Piel'), mesh = check('Mostrar mallado de zonas');
+  const overlay = check('Superponer anatomía sobre piel opaca');
+  const skinOpacity = root.querySelector('input[aria-label="Opacidad: Piel"]');
+  const mode = control('Modo de corte', 'select');
+  const progress = control('Avance desde punta nasal', 'input');
+  const scope = control('Aplicar a', 'select');
+  const inspect = control('Inspeccionar', 'select');
+  const selection = control('Seleccionar zona ilustrativa', 'select');
+  const references = ['Músculo', 'Vascular', 'Óseo'].map(name => ({
+    name, visible: check(`Mostrar imagen ${name}`), opacity: control(`Opacidad imagen ${name}`, 'input'),
+  }));
+  expect(skin && mesh && overlay && skinOpacity && mode && progress && scope && inspect && selection
+    && references.every(item => item.visible && item.opacity), 'Faltan controles del contrato actual del visor.');
+  const pressed = selector => root.querySelector(`${selector} button[aria-pressed="true"]`)?.textContent.trim();
+  const initial = {
+    view: pressed('[aria-label="Orientación del modelo"]'),
+    comparison: pressed('[aria-label="Comparación morfológica"]'),
+    tool: pressed('[aria-label="Herramientas de simulación"]'),
+    mode: mode.value, scope: scope.value, progress: progress.value,
+    inspect: inspect.value, selection: selection.value,
+    controls: [...root.querySelectorAll('[id$="-tool-layers"] input, [id$="-tool-cut"] input, [id$="-tool-cut"] select')]
+      .filter(input => ![mode, progress, scope].includes(input))
+      .map(input => ({ input, value: input.type === 'checkbox' ? input.checked : input.value })),
+  };
+  expect(initial.view && initial.comparison && initial.tool, 'No se pudo guardar orientación, comparación o herramienta.');
   let draws = [], capturePending = false;
-  for (const Constructor of [WebGLRenderingContext, WebGL2RenderingContext]) {
-    for (const method of ['drawElements', 'drawArrays']) {
-      const original = Constructor.prototype[method];
-      saved.push(() => { Constructor.prototype[method] = original; });
-      Constructor.prototype[method] = function (...args) {
-        const result = original.apply(this, args);
-        if (this.canvas === canvas) {
-          const draw = { mode: args[0], visible: 0, width: this.drawingBufferWidth, height: this.drawingBufferHeight };
-          draws.push(draw);
-          if (!capturePending) {
-            capturePending = true;
-            queueMicrotask(() => {
-              capturePending = false;
-              const { width: w, height: h } = draw, pixels = new Uint8Array(w * h * 4);
-              this.readPixels(0, 0, w, h, this.RGBA, this.UNSIGNED_BYTE, pixels);
-              let visible = 0;
-              for (let i = 0; i < pixels.length; i += 4) {
-                if (Math.abs(pixels[i] - 15) + Math.abs(pixels[i + 1] - 23) + Math.abs(pixels[i + 2] - 42) > 30) visible++;
-              }
-              for (const item of draws) item.visible = visible;
-            });
-          }
-        }
-        return result;
-      };
-    }
-  }
-  const setChecked = (input, value) => { if (input.checked !== value) input.click(); };
+  const setChecked = (input, value) => {
+    if (input.checked === value) return;
+    expect(!input.disabled, 'No se puede cambiar un checkbox deshabilitado.');
+    input.click();
+    expect(input.checked === value, 'El checkbox no reflejó el cambio.');
+  };
+  const setValue = async (input, value) => {
+    if (input.value === String(value)) return;
+    expect(!input.disabled, 'No se puede cambiar un control deshabilitado.');
+    const prototype = input.tagName === 'SELECT' ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
+    Object.getOwnPropertyDescriptor(prototype, 'value').set.call(input, value);
+    input.dispatchEvent(new Event(input.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true }));
+    await wait();
+    expect(input.value === String(value), 'El control no reflejó el cambio.');
+  };
   const forceRender = async () => {
     button('Perfil lado A').click(); await wait();
     draws = []; button('Frontal').click(); await wait();
+    expect(!canvas.parentElement.parentElement.querySelector('[role="alert"]'), 'El visor informó un error WebGL.');
   };
   const verifyPixels = name => {
     const count = Math.max(0, ...draws.filter(draw => draw.mode === 4).map(draw => draw.visible));
     expect(count > 50, `${name}: superficie vacía (${count} píxeles).`);
     results.push({ name, pixels: count });
-  };
-  const setPlane = async value => {
-    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set;
-    setter.call(plane, value); plane.dispatchEvent(new Event('change', { bubbles: true })); await wait();
+    return draws.at(-1)?.fingerprint;
   };
   try {
-    button('Después').click(); setChecked(mesh, false); await wait();
-    for (const name of names) {
-      for (const candidate of names) setChecked(check(candidate), candidate === name);
-      await wait(); await forceRender(); verifyPixels(name);
-      expect(!draws.some(draw => draw.mode === 1), 'Ocultar mallado debe retirar todos los alambres.');
+    for (const Constructor of [globalThis.WebGLRenderingContext, globalThis.WebGL2RenderingContext].filter(Boolean)) {
+      for (const method of ['drawElements', 'drawArrays']) {
+        const descriptor = Object.getOwnPropertyDescriptor(Constructor.prototype, method);
+        const original = Constructor.prototype[method];
+        saved.push(() => {
+          if (descriptor) Object.defineProperty(Constructor.prototype, method, descriptor);
+          else delete Constructor.prototype[method];
+        });
+        Constructor.prototype[method] = function (...args) {
+          const result = original.apply(this, args);
+          if (this.canvas === canvas) {
+            const draw = { mode: args[0], visible: 0 };
+            draws.push(draw);
+            if (!capturePending) {
+              capturePending = true;
+              queueMicrotask(() => {
+                capturePending = false;
+                const frameDraws = draws.slice();
+                const pixels = new Uint8Array(this.drawingBufferWidth * this.drawingBufferHeight * 4);
+                this.readPixels(0, 0, this.drawingBufferWidth, this.drawingBufferHeight, this.RGBA, this.UNSIGNED_BYTE, pixels);
+                let visible = 0, fingerprint = 2166136261;
+                for (let i = 0; i < pixels.length; i += 4) {
+                  if (Math.abs(pixels[i] - 15) + Math.abs(pixels[i + 1] - 23) + Math.abs(pixels[i + 2] - 42) > 30) visible++;
+                  fingerprint = Math.imul(fingerprint ^ pixels[i], 16777619);
+                  fingerprint = Math.imul(fingerprint ^ pixels[i + 1], 16777619);
+                  fingerprint = Math.imul(fingerprint ^ pixels[i + 2], 16777619);
+                }
+                for (const item of frameDraws) Object.assign(item, { visible, fingerprint });
+              });
+            }
+          }
+          return result;
+        };
+      }
     }
+    button('Capas').click(); await wait();
+    button('Después').click(); await wait();
+    await setValue(mode, 'none'); await setValue(scope, 'none');
+    await setValue(inspect, 'skin'); await setValue(selection, '');
+    setChecked(overlay, false);
+    for (const reference of references) if (!reference.visible.disabled) setChecked(reference.visible, false);
+    setChecked(skin, true); await setValue(skinOpacity, '1');
+    setChecked(mesh, false); await wait();
+    await forceRender(); const surface = verifyPixels('Piel sin mallado');
+    expect(!draws.some(draw => [1, 2, 3].includes(draw.mode)), 'Ocultar mallado debe retirar todos los alambres.');
+    setChecked(skin, false); await wait(); await forceRender();
+    expect(draws.at(-1)?.fingerprint !== surface, 'Ocultar piel no cambia los píxeles.');
+    setChecked(skin, true); await wait();
+    setChecked(mesh, true); await wait(); await forceRender();
+    verifyPixels('Piel con mallado');
+    expect(draws.some(draw => [1, 2, 3].includes(draw.mode) && draw.visible > 50), 'Mostrar mallado debe volver a dibujar aristas.');
+    setChecked(mesh, false); await wait();
     button('Morfología').click(); await wait();
     for (const comparison of ['Antes', 'Después', 'Comparar 3D']) {
       button(comparison).click(); await wait(); await forceRender(); verifyPixels(comparison);
     }
     button('Después').click(); await wait();
-    for (const value of ['middle', 'deep', 'superficial']) {
-      await setPlane(value);
-      expect(check(value === 'middle' ? 'Grasa genérica' : value === 'deep' ? 'Músculos esquemáticos' : 'Piel').checked, 'El plano debe mostrar su capa.');
-      if (value !== 'superficial') expect(!check('Piel').checked, 'La piel opaca no debe ocultar planos interiores.');
-      await forceRender(); verifyPixels(`Plano ${value}`);
+    button('Capas').click(); await wait();
+    for (const reference of references) {
+      if (reference.visible.disabled) {
+        results.push({ name: `Imagen ${reference.name}`, skipped: 'Referencia no cargada; no se valida su renderizado.' });
+        continue;
+      }
+      setChecked(skin, false); setChecked(reference.visible, true);
+      await setValue(reference.opacity, '0'); await wait(); await forceRender();
+      const hidden = draws.at(-1)?.fingerprint;
+      await setValue(reference.opacity, '1'); await forceRender();
+      const opaque = verifyPixels(`Imagen ${reference.name} sin piel`);
+      expect(hidden !== opaque, `${reference.name}: la opacidad no cambia los píxeles.`);
+      await setValue(reference.opacity, '0.5'); await forceRender();
+      expect(verifyPixels(`Imagen ${reference.name} al 50 %`) !== opaque, `${reference.name}: la opacidad intermedia no se renderiza.`);
+      await setValue(reference.opacity, '1'); setChecked(skin, true); await wait(); await forceRender();
+      const covered = verifyPixels(`Imagen ${reference.name} bajo piel opaca`);
+      setChecked(overlay, true); await wait(); await forceRender();
+      expect(verifyPixels(`Overlay ${reference.name}`) !== covered, `${reference.name}: superponer no cambia los píxeles.`);
+      setChecked(overlay, false); setChecked(reference.visible, false); await wait();
     }
-    setChecked(mesh, true); await wait(); await forceRender();
-    expect(draws.some(draw => draw.mode === 1 && draw.visible > 50), 'Mostrar mallado debe volver a dibujar aristas.');
+    button('Corte').click(); await wait();
+    if (!mode.disabled) {
+      for (const value of ['progressive', 'compare']) {
+        await setValue(mode, value);
+        const frames = new Set();
+        for (const fraction of ['0', '0.3', '0.7', '1']) {
+          await setValue(progress, fraction); await forceRender();
+          frames.add(verifyPixels(`Corte ${value} · ${fraction}`));
+        }
+        expect(frames.size > 1, `Corte ${value}: avanzar no cambia los píxeles.`);
+      }
+    } else {
+      results.push({ name: 'Corte desde punta nasal', skipped: 'Requiere imágenes muscular y ósea cargadas.' });
+    }
     return results;
   } finally {
-    saved.forEach(restore => restore());
-    await setPlane(initial.plane);
-    names.forEach((name, i) => setChecked(check(name), initial.checks[i]));
-    setChecked(mesh, initial.mesh); button('Después').click();
+    // Restaurar primero los prototipos, incluso si falla después la restauración de React.
+    saved.reverse().forEach(restore => restore());
+    await setValue(mode, initial.mode);
+    await setValue(scope, initial.scope);
+    await setValue(progress, initial.progress);
+    await setValue(inspect, initial.inspect);
+    await setValue(selection, initial.selection);
+    for (const { input, value } of initial.controls) {
+      if (!input.isConnected) continue; // Selects condicionales de «Comparar dos capas».
+      if (input.type === 'checkbox') { setChecked(input, value); await wait(); }
+      else await setValue(input, value);
+    }
+    button(initial.comparison).click();
+    button(initial.view).click();
+    button(initial.tool).click();
+    await wait();
   }
 }
 

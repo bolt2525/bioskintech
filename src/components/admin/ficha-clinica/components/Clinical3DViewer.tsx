@@ -1120,7 +1120,7 @@ const ThreeEngine: React.FC<{
       const hit = raycaster.intersectObject(faceMeshRef.current, true)[0];
       if (!hit) return false;
       const normal = hit.face?.normal.clone().transformDirection(hit.object.matrixWorld);
-      if (hit.object.name.startsWith('ESTIMATED_HEAD_SURFACE') || hit.object.name.startsWith('PHOTO_HAIR_SURFACE') || !normal || normal.dot(raycaster.ray.direction) >= -1e-5 || !constraint.accepts(hit.point)) {
+      if (hit.object.name === 'MASK_NEUTRAL_BACKING' || hit.object.name.startsWith('ESTIMATED_HEAD_SURFACE') || hit.object.name.startsWith('PHOTO_HAIR_SURFACE') || !normal || normal.dot(raycaster.ray.direction) >= -1e-5 || !constraint.accepts(hit.point)) {
         constraint.onRejected();
         return true;
       }
@@ -2779,8 +2779,8 @@ const ThreeEngine: React.FC<{
           const previousMaterials = Array.isArray(child.material) ? child.material : [child.material];
           // Superficies texturizadas (p. ej. rostro personal desde foto) conservan su textura; la tinta queda neutra.
           const map = (previousMaterials.find((material: THREE.MeshStandardMaterial) => material?.map) as THREE.MeshStandardMaterial | undefined)?.map ?? null;
-          child.material = child.name.startsWith('PHOTO_HAIR_SURFACE') || child.name.startsWith('ESTIMATED_HEAD_SURFACE_PHOTO') || child.name.startsWith('PERSONAL_FACE_SURFACE_') ? previousMaterials[0].clone() : map && child.name === 'PERSONAL_FACE_SURFACE'
-            ? new THREE.MeshBasicMaterial({ map, side: THREE.DoubleSide, wireframe: settings.wireframe })
+          child.material = child.name === 'MASK_NEUTRAL_BACKING' || child.name.startsWith('PHOTO_HAIR_SURFACE') || child.name.startsWith('ESTIMATED_HEAD_SURFACE_PHOTO') || child.name.startsWith('PERSONAL_FACE_SURFACE_') ? previousMaterials[0].clone() : map && child.name === 'PERSONAL_FACE_SURFACE'
+            ? new THREE.MeshBasicMaterial({ map, side: previousMaterials[0].side, wireframe: settings.wireframe })
             : new THREE.MeshPhysicalMaterial({
               color: child.name === 'ESTIMATED_HEAD_SURFACE' ? (previousMaterials[0]?.color?.clone?.() ?? '#94a3b8') : map ? '#ffffff' : settings.materialColor,
               map,

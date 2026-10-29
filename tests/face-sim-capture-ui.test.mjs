@@ -28,6 +28,17 @@ const source = readFileSync(new URL('../src/lab/faceSim/FaceSimLab.tsx', import.
 const code = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 },
 }).outputText;
+const stateNames = [...source.matchAll(/const \[(\w+),[^\]]+\] = useState/g)].map(match => match[1]);
+const helper = name => {
+  const exports = {};
+  vm.runInNewContext(ts.transpileModule(
+    readFileSync(new URL(`../src/lab/faceSim/${name}.ts`, import.meta.url), 'utf8'),
+    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } },
+  ).outputText, { exports, Float32Array, Uint8Array, Uint8ClampedArray, require: () => engine });
+  return exports;
+};
+const injectablePreview = helper('injectablePreview');
+const injectableLocalRecord = helper('injectableLocalRecord');
 
 function findAll(tree, predicate) {
   if (!tree || typeof tree !== 'object') return [];
@@ -67,6 +78,8 @@ function lab() {
     require: name => {
       if (name === 'react') return hooks;
       if (name === './engine') return engine;
+      if (name === './injectablePreview') return injectablePreview;
+      if (name === './injectableLocalRecord') return injectableLocalRecord;
       if (name === './faceContour') return faceContour;
       if (name === './faceRegions') return faceRegions;
       if (name === './estimatedHead') return estimatedHead;
@@ -90,9 +103,15 @@ function lab() {
       return require(name);
     },
   });
+  states[stateNames.indexOf('genericPreviewGlb')] = new ArrayBuffer(8);
   return {
     states,
-    render() { stateCursor = 0; refCursor = 0; return exports.default(); },
+    state(name) { return states[stateNames.indexOf(name)]; },
+    set(name, value) { states[stateNames.indexOf(name)] = value; },
+    render() {
+      states[stateNames.indexOf('genericPreviewAfter')] = states[stateNames.indexOf('preview')]?.after ?? true;
+      stateCursor = 0; refCursor = 0; return exports.default();
+    },
     photos(photos) { states[0] = photos; },
     pending(pending) { states[1] = pending; },
   };
@@ -113,10 +132,17 @@ const calculate = tree => findAll(tree, n => n.type === 'button' && text(n).star
 const slotIds = ['frontal', 'izquierda', 'derecha', 'extra_a', 'extra_b'];
 const viewers = tree => findAll(tree, n => typeof n.props?.onMarkerPlaced === 'function');
 const button = (tree, label) => findAll(tree, n => n.type === 'button' && text(n) === label)[0];
+const openEditor = app => { button(app.render(), 'Simular y marcar').props.onClick(); return app.render(); };
+const openAppearance = app => {
+  openEditor(app); button(app.render(), 'Morfología, piel y capas').props.onClick(); return app.render();
+};
+const openCapture = app => { button(app.render(), 'Capturas').props.onClick(); return app.render(); };
 
 test('malla predeterminada permite hover sin añadir marcas y revisión abre modal independiente', () => {
   const app = lab();
   let tree = app.render();
+  assert.equal(viewers(tree).length, 0, 'Capturas no monta un editor de tratamientos');
+  openEditor(app); app.set('meshVisible', true); tree = app.render();
   const viewer = viewers(tree)[0];
   assert.equal(viewer.props.activeTool, 'none');
   assert.equal(viewer.props.anatomicalOverlay.wireframe, true);
@@ -128,6 +154,7 @@ test('malla predeterminada permite hover sin añadir marcas y revisión abre mod
   }
   viewer.props.anatomicalOverlay.onHover('Mentón');
   assert.match(text(app.render()), /Mentón · límite aproximado/);
+  openCapture(app);
   app.photos({ frontal: photo() });
   tree = app.render();
   button(tree, 'Revisar frente, sienes y mentón').props.onClick();
@@ -135,8 +162,8 @@ test('malla predeterminada permite hover sin añadir marcas y revisión abre mod
   assert.ok(modal);
   modal.props.onClose();
   assert.equal(findAll(app.render(), n => n.props?.onApply && n.props?.onClose && n.props?.triangles).length, 0);
-  button(app.render(), 'Simular').props.onClick();
-  assert.match(text(app.render()), /Calculando superficie fotografiada/);
+  openEditor(app);
+  assert.equal(viewers(app.render()).length, 1, 'solo un viewport de marcación activo');
 });
 
 test('no calcula capturas sin revisar; la confirmación no permite fusionar proporciones incompatibles', async () => {
@@ -160,7 +187,7 @@ test('no calcula capturas sin revisar; la confirmación no permite fusionar prop
   assert.match(text(tree), /No se fusionarán/);
   calculate(tree).props.onClick();
   await new Promise(resolve => setImmediate(resolve));
-  assert.equal(viewers(app.render()).length, 1);
+  assert.equal(viewers(app.render()).length, 0);
 });
 
 test('ampliar frente exige revisar piel visible y no convierte el clic en tratamiento', async () => {
@@ -179,14 +206,14 @@ test('ampliar frente exige revisar piel visible y no convierte el clic en tratam
     currentTarget: { getBoundingClientRect: () => ({ left: 0, top: 0, width: 1, height: 1 }) } });
   let tree = app.render();
   assert.equal(button(tree, 'Aplicar frente revisada').props.disabled, true);
-  assert.equal(viewers(tree)[0].props.markers.length, 0);
+  assert.equal(app.state('markers').length, 0);
   findAll(tree, n => n.props?.['aria-label'] === 'Confirmar piel visible en frente')[0].props.onChange({ target: { checked: true } });
   button(app.render(), 'Aplicar frente revisada').props.onClick();
   await new Promise(resolve => setImmediate(resolve));
   tree = app.render();
   assert.equal(app.states[0].frontal.foreheadReviewed, true);
   assert.ok(Math.abs(app.states[0].frontal.landmarks[10].y - target.y) < 1e-12);
-  assert.equal(viewers(tree)[0].props.markers.length, 0);
+  assert.equal(app.state('markers').length, 0);
   assert.match(text(tree), /Banda frontal ampliada/);
 });
 
@@ -199,17 +226,19 @@ test('capa de simulación mantiene advertencia, fuente y geometría separada de 
   assert.match(text(tree), /no detección vascular/);
   assert.match(text(tree), /NO zonas seguras/);
   assert.match(text(tree), /no localizan arterias, venas, nervios ni su profundidad/);
-  assert.equal(findAll(tree, n => n.type === 'p' && text(n) === 'SIMULACIÓN · No detecta vasos ni certifica zonas seguras.').length, 3);
+  assert.equal(findAll(tree, n => n.type === 'p' && text(n) === 'SIMULACIÓN · No detecta vasos ni certifica zonas seguras.').length, 1);
   assert.equal(findAll(tree, n => n.type === 'a' && n.props.href === 'https://pmc.ncbi.nlm.nih.gov/articles/PMC9067448/').length, 1);
+  openEditor(app); app.set('meshVisible', true);
+  tree = app.render();
   assert.equal(viewers(tree)[0].props.anatomicalOverlay.positions.length, viewers(tree)[0].props.anatomicalOverlay.labels.length * 9);
-  assert.equal(viewers(tree)[0].props.markers.length, 0);
+  assert.equal(app.state('markers').length, 0);
   select.props.onChange({ target: { value: 'none' } });
   assert.equal(viewers(app.render())[0].props.anatomicalOverlay, undefined);
 });
 
 test('marcaciones compartidas sobreviven a modo, reconstrucción y retirada de foto; deshacer restaura bindings', async () => {
   const app = lab();
-  let tree = app.render();
+  let tree = openEditor(app);
   button(tree, 'Punto').props.onClick();
   tree = app.render();
   const seed = genericFaceAtlas.triangles.indexOf(11);
@@ -227,20 +256,21 @@ test('marcaciones compartidas sobreviven a modo, reconstrucción y retirada de f
     z: -genericFaceAtlas.positions[(i % 468) * 3 + 2] * 0.16,
   }));
   app.photos({ frontal: p });
-  calculate(app.render()).props.onClick();
+  calculate(openCapture(app)).props.onClick();
   await new Promise(resolve => setImmediate(resolve));
-  tree = app.render();
-  assert.equal(viewers(tree).length, 2);
-  assert.equal(viewers(tree)[1].props.markers[0].id, 'shared');
-  assert.deepEqual(viewers(tree)[0].props.markers[0].position, initial);
-  const personal = viewers(tree)[1].props.markers[0];
-  assert.equal(viewers(tree)[1].props.surfaceConstraint.accepts(personal.position), true);
-  viewers(tree)[1].props.onMarkerPlaced({ ...personal, id: 'from-personal' });
+  tree = openEditor(app);
+  assert.equal(viewers(tree).length, 1);
+  assert.equal(viewers(tree)[0].props.markers[0].id, 'shared');
+  assert.deepEqual(app.state('markers')[0].position, initial);
+  const personal = viewers(tree)[0].props.markers[0];
+  assert.equal(viewers(tree)[0].props.surfaceConstraint.accepts(personal.position), true);
+  viewers(tree)[0].props.onMarkerPlaced({ ...personal, id: 'from-personal' });
   tree = app.render();
   assert.equal(viewers(tree)[0].props.markers.length, 2);
   button(tree, 'Foto').props.onClick();
   tree = app.render();
-  assert.ok(viewers(tree).every(v => v.props.readOnly && v.props.markers.length === 2));
+  assert.equal(viewers(tree).length, 0, 'la foto sustituye, no duplica, el visor 3D');
+  assert.equal(app.state('markers').length, 2);
   const photoWrapper = root => findAll(root, n => n.props?.onPointerDown && n.props?.onPointerUp)[0];
   photoWrapper(tree).props.onPointerDown({
     clientX: p.landmarks[1].x, clientY: p.landmarks[1].y, pointerId: 1, button: 0,
@@ -248,11 +278,11 @@ test('marcaciones compartidas sobreviven a modo, reconstrucción y retirada de f
   });
   photoWrapper(app.render()).props.onPointerUp();
   tree = app.render();
-  assert.ok(viewers(tree).every(v => v.props.markers.length === 3));
+  assert.equal(app.state('markers').length, 3);
   button(tree, 'Modelo 3D').props.onClick();
-  calculate(app.render()).props.onClick();
+  calculate(openCapture(app)).props.onClick();
   await new Promise(resolve => setImmediate(resolve));
-  tree = app.render();
+  tree = openEditor(app);
   assert.ok(viewers(tree).every(v => v.props.markers.length === 3));
   assert.equal(viewers(tree)[0].props.surfaceConstraint.accepts({ x: 3, y: 0, z: 0 }), false);
   viewers(tree)[0].props.onMarkerPlaced({ ...personal, id: 'ear', position: { x: 3, y: 0, z: 0 } });
@@ -270,8 +300,8 @@ test('marcaciones compartidas sobreviven a modo, reconstrucción y retirada de f
   button(app.render(), 'Deshacer').props.onClick();
   tree = app.render();
   assert.equal(viewers(tree)[0].props.markers.length, 1);
-  findAll(tree, n => n.props?.['aria-label'] === 'Retirar Frontal')[0].props.onClick();
-  assert.equal(viewers(app.render())[0].props.markers[0].id, 'shared');
+  findAll(openCapture(app), n => n.props?.['aria-label'] === 'Retirar Frontal')[0].props.onClick();
+  assert.equal(viewers(openEditor(app))[0].props.markers[0].id, 'shared');
 });
 
 test('captura progresiva: tres entradas principales y dos opcionales, sin exigir cinco fotos', () => {
@@ -344,8 +374,8 @@ test('una foto puede generar la superficie personal sin esperar referencias comp
   const tree = app.render();
   assert.match(text(tree), /Superficie 3D personal generada desde la foto Frontal/);
   assert.match(text(tree), /Cálculo rápido con una foto/);
-  assert.equal(findAll(tree, n => n.type === 'section' && n.props['aria-label'] === 'Foto personal en 3D').length, 1);
-  const personalViewer = viewers(tree)[1];
+  assert.equal(viewers(tree).length, 0, 'el cálculo no convierte Capturas en editor');
+  const personalViewer = viewers(openEditor(app))[0];
   assert.equal(personalViewer.props.cameraPreset, 'face-surface');
 });
 
@@ -362,8 +392,8 @@ test('cabeza estimada: tres archivos sin cobertura bilateral no habilitan un cie
   await new Promise(resolve => setImmediate(resolve));
   const tree = app.render();
   assert.match(text(tree), /requiere al menos tres fotos útiles que cubran ambos lados/);
-  assert.equal(findAll(tree, n => n.type === 'section' && n.props['aria-label'] === 'Foto personal en 3D').length, 1);
-  assert.match(text(tree), /Carga una foto y calcula la superficie/);
+  assert.equal(app.state('personal'), null);
+  assert.equal(viewers(tree).length, 0);
 });
 
 test('cabeza estimada se transmite completa a Simular sin reemplazar la superficie de registro', async () => {
@@ -384,33 +414,38 @@ test('cabeza estimada se transmite completa a Simular sin reemplazar la superfic
   await new Promise(resolve => setImmediate(resolve));
   const tree = app.render();
   assert.match(text(tree), /Cabeza de plantilla anatómica/);
-  button(tree, 'Simular').props.onClick();
-  const simulator = findAll(app.render(), n => n.props && Object.hasOwn(n.props, 'surface') && Object.hasOwn(n.props, 'photo'))[0];
+  const simulator = findAll(openAppearance(app), n => n.props && Object.hasOwn(n.props, 'surface') && Object.hasOwn(n.props, 'photo'))[0];
   assert.equal(simulator.props.surface.observedIndexCount, 852 * 3);
   assert.ok(simulator.props.surface.indices.length > 852 * 3 * 2);
-  button(app.render(), 'Genérico').props.onClick();
+  button(openCapture(app), 'Genérico').props.onClick();
+  openAppearance(app);
   const genericSimulator = findAll(app.render(), n => n.props && Object.hasOwn(n.props, 'surface') && Object.hasOwn(n.props, 'photo'))[0];
   assert.equal(genericSimulator.props.surface, undefined, 'la selección genérica también gobierna Simular');
   assert.equal(genericSimulator.props.photo, undefined, 'no aplica fotos sin registro a la cabeza genérica');
 });
 
 test('ocultar malla y seleccionar planos se sincroniza entre modelo, foto y Simular', () => {
-  const app = lab(); let tree = app.render();
+  const app = lab(); openEditor(app); app.set('meshVisible', true); let tree = app.render();
   const original = viewers(tree)[0].props.anatomicalOverlay.positions.slice();
+  tree = openCapture(app);
   const plane = findAll(tree, n => n.props?.['aria-label'] === 'Plano visual')[0];
   plane.props.onChange({ target: { value: 'deep' } });
   tree = app.render();
-  assert.notDeepEqual(viewers(tree)[0].props.anatomicalOverlay.positions, original);
+  openEditor(app); app.set('meshVisible', true);
+  assert.notDeepEqual(viewers(app.render())[0].props.anatomicalOverlay.positions, original);
+  tree = openCapture(app);
   const label = findAll(tree, n => n.type === 'label' && text(n) === 'Mostrar mallado de zonas')[0];
   findAll(label, n => n.type === 'input')[0].props.onChange({ target: { checked: false } });
+  openEditor(app);
   assert.equal(viewers(app.render())[0].props.anatomicalOverlay, undefined);
-  button(app.render(), 'Simular').props.onClick();
+  openAppearance(app);
   const simulator = () => findAll(app.render(), n => n.props && Object.hasOwn(n.props, 'surface') && Object.hasOwn(n.props, 'photo'))[0];
   assert.equal(simulator().props.showMesh, false);
   assert.equal(simulator().props.plane, 'deep');
   simulator().props.onMeshChange(true);
   assert.equal(simulator().props.showMesh, true);
-  findAll(app.render(), n => n.props?.['aria-label'] === 'Capa de referencia')[0].props.onChange({ target: { value: 'none' } });
+  findAll(openCapture(app), n => n.props?.['aria-label'] === 'Capa de referencia')[0].props.onChange({ target: { value: 'none' } });
+  openAppearance(app);
   assert.equal(simulator().props.showMesh, false);
   simulator().props.onMeshChange(true);
   assert.equal(simulator().props.showMesh, true, 'Mostrar mallado restaura la referencia si estaba en Sin capa');
@@ -424,19 +459,17 @@ test('elegir Genérico cancela el cálculo pendiente y no permite una selección
   button(app.render(), 'Genérico').props.onClick();
   await new Promise(resolve => setImmediate(resolve));
   assert.match(text(app.render()), /Modelo original seleccionado/);
-  button(app.render(), 'Simular').props.onClick();
-  const simulator = findAll(app.render(), n => n.props && Object.hasOwn(n.props, 'surface') && Object.hasOwn(n.props, 'photo'))[0];
+  const simulator = findAll(openAppearance(app), n => n.props && Object.hasOwn(n.props, 'surface') && Object.hasOwn(n.props, 'photo'))[0];
   assert.equal(simulator.props.surface, undefined);
 });
 
-test('Simular calcula automáticamente la máscara de la foto, sin sustituirla por el atlas genérico', async () => {
+test('la máscara calculada en Capturas llega al grupo avanzado sin sustituirse por el atlas genérico', async () => {
   const fixture = JSON.parse(readFileSync(new URL('./fixtures/face-sim-mediapipe-synthetic.json', import.meta.url), 'utf8'));
   const app = lab(); app.render();
   app.photos({ frontal: { ...photo(), aspect: fixture.aspect, landmarks: fixture.landmarks.map(([x, y, z]) => ({ x, y, z })) } });
-  button(app.render(), 'Simular').props.onClick();
-  assert.match(text(app.render()), /Calculando superficie fotografiada/);
+  calculate(app.render()).props.onClick();
   await new Promise(resolve => setImmediate(resolve));
-  const simulator = findAll(app.render(), n => n.props && Object.hasOwn(n.props, 'surface') && Object.hasOwn(n.props, 'photo'))[0];
+  const simulator = findAll(openAppearance(app), n => n.props && Object.hasOwn(n.props, 'surface') && Object.hasOwn(n.props, 'photo'))[0];
   assert.ok(simulator.props.surface);
   assert.equal(simulator.props.surface.indices.length, 852 * 3);
   assert.ok(simulator.props.photo);
@@ -451,6 +484,6 @@ test('editar contorno expone 36 referencias y pasa a foto sin crear un tratamien
   select.props.onChange({ target: { value: '152' } });
   const tree = app.render();
   assert.match(text(tree), /Aplicar contorno/);
-  assert.equal(findAll(tree, n => n.type === 'button' && text(n) === 'Foto')[0].props['aria-pressed'], true);
+  assert.equal(app.state('workMode'), 'foto');
   assert.equal(findAll(tree, n => n.type === 'ul' && n.props['aria-label'] === 'Elementos marcados').length, 0);
 });

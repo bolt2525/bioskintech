@@ -181,39 +181,63 @@ test('perfiles y roll: base canónica estable, deformación anatómica y UV sin 
   }
 });
 
-test('cinco capas simultáneas: mallas válidas, bandas y tubos no elipsoides', () => {
-  const source = mesh.positions.slice();
+test('sólo piel: malla facial completa, sin geometrías internas procedurales', () => {
+  const source = mesh.positions.slice(), indices = mesh.indices.slice();
   const layers = buildSimulationLayers(mesh, {});
-  assert.deepEqual(layers.map(l => l.id), SIMULATION_LAYERS.map(l => l.id));
-  for (const layer of layers) {
-    assert.ok(layer.positions.length > 100 && layer.indices.length > 100, layer.id);
-    assert.ok(layer.positions.every(Number.isFinite), layer.id);
-    assert.equal(layer.indices.length % 3, 0);
-    assert.ok(layer.indices.every(i => i < layer.positions.length / 3), layer.id);
-  }
-  assert.equal(layers[0].positions.length, mesh.positions.length);
-  assert.notDeepEqual(layers[0].positions, layers[1].positions);
-  const h = distance(at(mesh.anchors, 10), at(mesh.anchors, 152));
-  assert.ok(distance(at(layers[1].positions, 0), at(layers[1].positions, 5)) > h * 0.01,
-    'las almohadillas de grasa deben tener volumen, no ser una copia plana de la piel');
-  assert.equal(layers[2].colors.length, layers[2].positions.length);
+  assert.deepEqual(SIMULATION_LAYERS.map(l => l.id), ['skin']);
+  assert.equal(SIMULATION_LAYERS[0].depth, 0);
+  assert.deepEqual(layers.map(l => l.id), ['skin']);
+  const [skin] = layers;
+  assert.ok(skin.positions.length > 100 && skin.indices.length > 100);
+  assert.ok(skin.positions.every(Number.isFinite));
+  assert.equal(skin.indices.length % 3, 0);
+  assert.ok(skin.indices.every(i => i < skin.positions.length / 3));
+  assert.deepEqual(skin.positions, source);
+  assert.deepEqual(skin.indices, indices);
+  assert.equal(skin.colors, undefined);
+  assert.notEqual(skin.positions.buffer, mesh.positions.buffer);
+  assert.notEqual(skin.indices.buffer, mesh.indices.buffer);
+  skin.positions[0] += 1;
+  skin.indices[0] = (skin.indices[0] + 1) % (skin.positions.length / 3);
+  const [fresh] = buildSimulationLayers(mesh, {});
+  assert.deepEqual(fresh.positions, source);
+  assert.deepEqual(fresh.indices, indices);
+  assert.notEqual(fresh.positions.buffer, skin.positions.buffer);
+  assert.notEqual(fresh.indices.buffer, skin.indices.buffer);
   assert.deepEqual(mesh.positions, source);
+  assert.deepEqual(mesh.indices, indices);
 });
 
-test('capas se adaptan al modelo personal, escala y morfología modificada', () => {
+test('piel personal conserva topología, escala y el mismo campo morfológico sin acumulación', () => {
   const input = personal(), own = createSimulationMesh(input);
-  const neutral = buildSimulationLayers(own, {}), changed = buildSimulationLayers(own, { jawWidth: 1, chinProjection: 1, noseWidth: 1 });
-  for (let i = 0; i < neutral.length; i++) assert.notDeepEqual(changed[i].positions, neutral[i].positions, neutral[i].id);
+  const settings = { jawWidth: 1, chinProjection: 1, noseWidth: 1 };
+  const [neutral] = buildSimulationLayers(own, {}), [changed] = buildSimulationLayers(own, settings);
+  assert.notDeepEqual(changed.positions, neutral.positions);
+  assert.deepEqual(changed.positions, deformPositions(own.positions, own.anchors, settings));
+  assert.deepEqual(changed.indices, own.indices);
+  assert.deepEqual(buildSimulationLayers(own, {})[0].positions, neutral.positions);
+  assert.deepEqual(buildSimulationLayers(own, settings)[0].positions, changed.positions);
+  assert.deepEqual(own.positions, neutral.positions);
   const scaled = personal(); scaled.positions = Float32Array.from(scaled.positions, v => v * 1.5);
-  const larger = buildSimulationLayers(createSimulationMesh(scaled), {});
-  for (let i = 0; i < neutral.length; i++) {
-    // El remuestreo puede variar un paso por redondeo, pero la envolvente debe escalar.
-    const a = meshBounds(neutral[i].positions), b = meshBounds(larger[i].positions);
-    assert.ok(Math.abs(b.height / a.height - 1.5) < 0.03, neutral[i].id);
+  const [larger] = buildSimulationLayers(createSimulationMesh(scaled), settings);
+  assert.deepEqual(larger.indices, changed.indices);
+  for (let i = 0; i < changed.positions.length; i++) {
+    assert.ok(Math.abs(larger.positions[i] - changed.positions[i] * 1.5) < 2e-6);
   }
+});
+
+test('normales genéricas: orientación, normalización y triángulos degenerados finitos', () => {
+  const positions = Float32Array.from([0, 0, 0, 2, 0, 0, 0, 3, 0, 1, 1, 1]);
+  const source = positions.slice();
+  assert.deepEqual(vertexNormals(positions, [0, 1, 2, 3, 3, 3]),
+    Float32Array.from([0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0]));
+  assert.deepEqual(vertexNormals(positions, [0, 2, 1]),
+    Float32Array.from([0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0, 0]));
+  assert.deepEqual(positions, source);
 });
 
 test('corte en tres ejes, inversión y extremos; no altera geometría original', () => {
+  const original = mesh.positions.slice(), indices = mesh.indices.slice();
   const bounds = meshBounds(mesh.positions);
   assert.equal(buildCutPlane(bounds, { scope: 'none', axis: 'x', position: 0.5, reverse: false }), null);
   assert.equal(isPointRetained(bounds.center, null), true);
@@ -227,4 +251,6 @@ test('corte en tres ejes, inversión y extremos; no altera geometría original',
     assert.equal(isPointRetained(high, buildCutPlane(bounds, { ...cut, position: 1 })), false);
     assert.deepEqual(buildCutPlane(bounds, { ...cut, scope: 'skin' }), plane);
   }
+  assert.deepEqual(mesh.positions, original);
+  assert.deepEqual(mesh.indices, indices);
 });

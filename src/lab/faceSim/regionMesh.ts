@@ -18,7 +18,7 @@ const fixedRegions = new Set(['Labio superior', 'Labio inferior', 'Comisuras', '
 const midpoint = (a: number[], b: number[]) => a.map((v, i) => (v + b[i]) / 2);
 
 /** Subdivide solo bordes semánticos; mantiene las direcciones originales de registro. */
-export function buildRegionCells(map: FaceRegionMap, faceLabels: readonly string[]): RegionCell[] {
+export function buildRegionCells(map: FaceRegionMap, faceLabels: readonly string[], minimumDepth = 0): RegionCell[] {
   const result: RegionCell[] = [];
   const edges = new Map<string, number[]>(), borders = new Set<number>();
   faceLabels.forEach((_, triangle) => {
@@ -53,7 +53,7 @@ export function buildRegionCells(map: FaceRegionMap, faceLabels: readonly string
       for (const child of [[a, ab, ca], [ab, b, bc], [ca, bc, c], [ab, bc, ca]] as RegionCell['corners'][]) divide(child, depth - 1);
     };
     const depth = fixedRegions.has(label) ? borders.has(triangle) ? 1 : 0 : new Set(candidates).size > 1 ? 2 : 0;
-    divide([[1, 0, 0], [0, 1, 0], [0, 0, 1]], depth);
+    divide([[1, 0, 0], [0, 1, 0], [0, 0, 1]], Math.max(depth, minimumDepth));
   }
   return result;
 }

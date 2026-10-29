@@ -4,6 +4,7 @@ import type { PersonalSurface } from './engine';
 import type { EstimatedHeadSurface } from './estimatedHead';
 import type { EstimatedHairSettings, PhotoHairPatch } from './estimatedHair';
 import type { PhotoSurfacePatch } from './multiViewHead';
+import { buildMaskBacking } from './maskAnatomy';
 
 /** GLB local con foto y cabello observado; no cambia los buffers originales. */
 export async function personalSurfaceToGlb(surface: PersonalSurface | EstimatedHeadSurface, photo: HTMLCanvasElement,
@@ -28,19 +29,34 @@ export async function personalSurfaceToGlb(surface: PersonalSurface | EstimatedH
   };
   try {
     const observed = 'observedIndexCount' in surface ? surface.indices.slice(0, surface.observedIndexCount) : surface.indices;
-    add('PERSONAL_FACE_SURFACE', geometryFrom(observed), new THREE.MeshBasicMaterial({ map: textureFrom(photo), side: THREE.DoubleSide }));
+    add('PERSONAL_FACE_SURFACE', geometryFrom(observed), new THREE.MeshBasicMaterial({
+      map: textureFrom(photo), side: 'observedIndexCount' in surface ? THREE.DoubleSide : THREE.FrontSide,
+    }));
+    if (!('observedIndexCount' in surface)) {
+      const backing = buildMaskBacking(surface.positions, surface.indices), geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.BufferAttribute(backing.positions, 3));
+      geometry.setIndex(new THREE.BufferAttribute(backing.indices, 1));
+      geometry.computeVertexNormals(); geometries.push(geometry);
+      add('MASK_NEUTRAL_BACKING', geometry, new THREE.MeshStandardMaterial({ color: '#475569', roughness: 1, side: THREE.DoubleSide }));
+    }
     const observedTriangles = new Set(Array.from({ length: observed.length / 3 }, (_, i) =>
       Array.from(observed.subarray(i * 3, i * 3 + 3)).join(':')));
     photoPatches.forEach((patch, i) => {
+      const blended = Boolean(patch.alpha && patch.blendIndices?.length);
+      const patchIndices = blended ? patch.blendIndices! : patch.indices;
       const face: number[] = [], head: number[] = [];
-      for (let j = 0; j < patch.indices.length; j += 3) {
-        const ids = Array.from(patch.indices.subarray(j, j + 3));
+      for (let j = 0; j < patchIndices.length; j += 3) {
+        const ids = Array.from(patchIndices.subarray(j, j + 3));
         (observedTriangles.has(ids.join(':')) ? face : head).push(...ids);
       }
       for (const [prefix, indices] of [['PERSONAL_FACE_SURFACE', face], ['ESTIMATED_HEAD_SURFACE_PHOTO', head]] as const) {
         if (!indices.length) continue;
-        add(`${prefix}_${i}`, geometryFrom(Uint32Array.from(indices), patch.uvs), new THREE.MeshBasicMaterial({
+        const geometry = geometryFrom(Uint32Array.from(indices), patch.uvs);
+        if (blended) geometry.setAttribute('color', new THREE.BufferAttribute(Float32Array.from({ length: patch.alpha!.length * 4 },
+          (_, index) => index % 4 === 3 ? patch.alpha![index >> 2] : 1), 4));
+        add(`${prefix}_${i}`, geometry, new THREE.MeshBasicMaterial({
           map: textureFrom(patch.source.texture), side: THREE.FrontSide,
+          vertexColors: blended, transparent: blended, depthWrite: !blended,
           polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -1,
         }));
       }

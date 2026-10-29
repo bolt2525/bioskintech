@@ -1,3 +1,5 @@
+import type { AnatomicalZone } from './anatomicalZones';
+
 /** Referencia genérica, NO anatomía individual. No infiere estructuras del paciente. */
 export interface AnatomicalReference {
   /** Imagen completa, sin recortes ni eliminación de marcas. Propiedad del panel. */
@@ -8,6 +10,8 @@ export interface AnatomicalReference {
   depth: number;
   opacity: number;
   kind: 'muscle' | 'vessels' | 'bone';
+  /** Solo las ilustraciones conocidas tienen regiones autoradas; no se reutilizan en imágenes propias. */
+  zones?: readonly AnatomicalZone[];
 }
 
 export interface ReferencePoint { x: number; y: number }

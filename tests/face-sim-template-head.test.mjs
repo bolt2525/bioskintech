@@ -74,7 +74,7 @@ test('las siluetas ajustan el cráneo hacia la máscara observada', () => {
   assert.ok(fx[1] > fx[0]);
 });
 
-test('la silueta de perfil corrige la profundidad de la línea media (nariz, labios, mentón)', async () => {
+test('la silueta de perfil corrige la nariz sin arrastrar labios, mentón ni XY frontal', async () => {
   const { refineProfileDepth, PROFILE_MIDLINE } = await import(compile('../src/lab/faceSim/multiViewHead.ts'));
   const P = i => [face.positions[i * 3], face.positions[i * 3 + 1], face.positions[i * 3 + 2]];
   const faceH = Math.hypot(...P(10).map((v, k) => v - P(152)[k])), delta = faceH * 0.04;
@@ -96,10 +96,12 @@ test('la silueta de perfil corrige la profundidad de la línea media (nariz, lab
     projection: { u: [0, 0, -scale, cu], v: [0, -scale, 0, cv], towardCamera: [1, 0, 0] } };
   const result = refineProfileDepth(face.positions, [source]);
   assert.ok(result && result.points >= 10, 'usa la mayoría de puntos de la línea media');
-  for (const id of [1, 0, 17, 199]) {
+  for (const id of [1, 4, 5]) {
     const moved = result.positions[id * 3 + 2] - face.positions[id * 3 + 2];
     assert.ok(moved > delta * 0.5 && moved < delta * 1.3, `${id} avanza hacia la silueta (${moved / delta})`);
   }
+  for (const id of [0, 17, 199]) assert.equal(result.positions[id * 3 + 2], face.positions[id * 3 + 2], `se preserva la profundidad de ${id}`);
+  for (let i = 0; i < face.positions.length; i++) if (i % 3 !== 2) assert.equal(result.positions[i], face.positions[i], `XY ${i} inmutable`);
   assert.ok(Math.abs(result.positions[234 * 3 + 2] - face.positions[234 * 3 + 2]) < delta * 0.1, 'el borde lateral no se arrastra');
   assert.equal(refineProfileDepth(face.positions, [{ ...source, projection: { u: [scale, 0, 0, cu], v: [0, -scale, 0, cv], towardCamera: [0, 0, 1] } }]), null, 'una vista frontal no aporta');
 });

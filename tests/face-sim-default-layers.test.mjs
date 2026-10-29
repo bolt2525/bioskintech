@@ -4,14 +4,15 @@ import test from 'node:test';
 import ts from 'typescript';
 
 const source = readFileSync(new URL('../src/lab/faceSim/defaultLayers.ts', import.meta.url), 'utf8')
-  .replace(/^import \{[^}]+\} from '\.\/anatomicalReference';$/m, 'const fitAnatomicalUVs = () => { throw new Error(); }, fitLandmarkUVs = fitAnatomicalUVs;');
+  .replace(/^import \{[^}]+\} from '\.\/anatomicalReference';$/m, 'const fitAnatomicalUVs = () => { throw new Error(); }, fitLandmarkUVs = fitAnatomicalUVs;')
+  .replace(/^import .* from '\.\/anatomicalZones';$/m, 'const ANATOMICAL_ZONES = {};');
 const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 } }).outputText;
-const { keyOutBackground, anatomyBlend, DEFAULT_LAYER_SOURCES } = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
+const { keyOutBackground, keyVascularLines, DEFAULT_LAYER_SOURCES } = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
 
 test('capas por defecto: tres planos ordenados de superficial a profundo con imágenes locales', () => {
   assert.deepEqual(DEFAULT_LAYER_SOURCES.map(s => s.kind), ['muscle', 'vessels', 'bone']);
   const depths = DEFAULT_LAYER_SOURCES.map(s => s.depth);
-  assert.ok(depths[0] < depths[1] && depths[1] < depths[2]);
+  assert.ok(depths[1] < depths[0] && depths[0] < depths[2], 'las arterias acompañan al músculo por delante, el hueso queda detrás');
   assert.ok(DEFAULT_LAYER_SOURCES.every(s => s.url.startsWith('/face-layers/')));
 });
 
@@ -26,14 +27,11 @@ test('el fondo blanco conectado al borde se vuelve transparente y el blanco inte
   assert.ok(data[(1 * w + 1) * 4 + 3] > 0);
 });
 
-test('transición de planos: fundido de piel y la capa entrante emerge desde la profundidad saliente', () => {
-  const depths = { skin: 0, muscle: 1, bone: 3 };
-  const start = anatomyBlend('muscle', 'bone', 0, depths), mid = anatomyBlend('muscle', 'bone', 0.5, depths), end = anatomyBlend('muscle', 'bone', 1, depths);
-  assert.equal(start.layer('muscle').opacity, 1); assert.equal(start.layer('bone').opacity, 0);
-  assert.equal(start.layer('bone').depth, 1);
-  assert.ok(mid.layer('bone').depth > 1 && mid.layer('bone').depth < 3);
-  assert.equal(end.layer('bone').opacity, 1); assert.equal(end.layer('muscle').opacity, 0); assert.equal(end.layer('bone').depth, 3);
-  assert.equal(end.done, true); assert.equal(mid.done, false);
-  assert.equal(anatomyBlend('skin', 'muscle', 1, depths).skin, 0.12);
-  assert.equal(anatomyBlend('muscle', 'skin', 1, depths).skin, 1);
+test('el aislamiento arterial conserva líneas rojas, no la musculatura de fondo ni el blanco', () => {
+  const data = Uint8ClampedArray.from([145, 30, 20, 255, 200, 150, 145, 255, 255, 255, 255, 255, 145, 30, 20, 0]);
+  keyVascularLines(data);
+  assert.equal(data[3], 255);
+  assert.equal(data[7], 0);
+  assert.equal(data[11], 0);
+  assert.equal(data[15], 0);
 });

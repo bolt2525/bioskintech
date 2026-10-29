@@ -25,7 +25,24 @@ class MemoryCanvas {
   }
   getContext() {
     if (this.unreadable) return null;
-    return {
+    const context = {
+      fillRect: (x, y, w, h) => {
+        const style = context.fillStyle;
+        const rgb = style === 'white' ? [255, 255, 255, 255] : /^#[0-9a-f]{6}$/i.test(style)
+          ? [1, 3, 5].map(i => parseInt(style.slice(i, i + 2), 16)).concat(255) : [0, 0, 0, 255];
+        for (let py = Math.max(0, Math.floor(y)); py < Math.min(this.height, Math.ceil(y + h)); py++) {
+          for (let px = Math.max(0, Math.floor(x)); px < Math.min(this.width, Math.ceil(x + w)); px++) {
+            this.data.set(rgb, (py * this.width + px) * 4);
+          }
+        }
+      },
+      strokeRect: (x, y, w, h) => {
+        context.fillStyle = context.strokeStyle;
+        const line = context.lineWidth;
+        context.fillRect(x, y, w, line); context.fillRect(x, y + h - line, w, line);
+        context.fillRect(x, y, line, h); context.fillRect(x + w - line, y, line, h);
+      },
+      fillText: (...args) => { (this.labels ??= []).push(args); },
       createImageData: (w, h) => ({ width: w, height: h, data: new Uint8ClampedArray(w * h * 4) }),
       getImageData: () => {
         if (this.tainted) throw Object.assign(new Error('origen restringido'), { name: 'SecurityError' });
@@ -34,6 +51,7 @@ class MemoryCanvas {
       putImageData: image => this.data.set(image.data),
       drawImage: (input, _x, _y, width = input.width, height = input.height) => {
         this.tainted = input.tainted;
+        this.labels = input.labels?.map(label => [...label]);
         for (let y = 0; y < Math.min(this.height, height); y++) for (let x = 0; x < Math.min(this.width, width); x++) {
           const i = (y * this.width + x) * 4;
           const j = (Math.floor(y / height * input.height) * input.width + Math.floor(x / width * input.width)) * 4;
@@ -45,6 +63,7 @@ class MemoryCanvas {
         }
       },
     };
+    return context;
   }
 }
 
@@ -170,10 +189,10 @@ test('ROI conserva piel interior y excluye fondo, margen, ojos, labios y cejas s
   assert.throws(() => texture.createSkinSignalMask(-1, 128), RangeError);
 });
 
-test('panel original: seis vistas, controles etiquetados, límites en tooltip y procesamiento solo local', () => {
+test('panel original: vistas históricas y candidatos opt-in, controles etiquetados y límites', () => {
   const app = panel(), tree = app.render();
   assert.deepEqual(find(app.control('skin-signal-mode'), n => n.type === 'option').map(text), [
-    'Original', 'Rojeces', 'Pigmentación · contraste aparente', 'Textura', 'Poros-candidatos', 'Puntos-rojizos',
+    'Original', 'Rojeces', 'Pigmentación · contraste aparente', 'Textura', 'Poros-candidatos', 'Puntos-rojizos', 'Candidatos visuales · cuadros',
   ]);
   assert.equal(app.control('skin-signal-sensitivity').props.disabled, true);
   assert.equal(app.control('skin-signal-resolution').props.value, 384);
@@ -213,7 +232,7 @@ test('sin referencias no analiza hasta confirmar solo piel; produce textura dist
 
 test('referencias válidas evitan confirmación; alternar filtros reutiliza análisis y original restaura', () => {
   const app = panel(image(), landmarks());
-  assert.equal(find(app.render(), n => n.props?.type === 'checkbox').length, 0);
+  assert.equal(find(app.render(), n => n.props?.type === 'checkbox' && !n.props.name).length, 0);
   for (const channel of ['redness', 'contrast', 'texture', 'poreCandidates', 'redDots']) {
     app.select(channel); app.flush();
     assert.ok(app.calls.at(-1) instanceof MemoryCanvas);
@@ -222,6 +241,128 @@ test('referencias válidas evitan confirmación; alternar filtros reutiliza aná
   app.select('original');
   assert.equal(app.calls.at(-1), undefined);
   assert.equal(app.timers.size, 0);
+  app.unmount();
+});
+
+const discardButtons = app => find(app.render(), node => node.type === 'button'
+  && node.props['aria-label']?.startsWith('Descartar candidato'));
+function checkbox(app, name, checked) {
+  app.control(name).props.onChange({ target: { checked } });
+  return app.render();
+}
+
+test('cuadros opt-in en foto, etiquetas neutrales, descarte/restauración y copia opcional al visor sin quemar original', () => {
+  const source = image(), original = source.data.slice(), app = panel(source, landmarks());
+  assert.equal(app.control('skin-candidates-enabled').props.checked, false);
+  checkbox(app, 'skin-candidates-enabled', true); app.flush();
+  const initialCount = discardButtons(app).length;
+  assert.ok(initialCount > 0);
+  assert.equal(app.calls.at(-1), undefined, 'por defecto no cambia la textura del visor');
+  assert.equal(app.control('skin-candidates-viewer').props.checked, false);
+  assert.match(text(app.render()), /Enrojecimiento aparente/);
+  assert.match(text(app.render()), /Sombras, barba y reflejos/);
+  const preview = find(app.render(), node => node.type === 'canvas')[0].ref.current;
+  assert.notDeepEqual(preview.data, original, 'cuadros visibles sobre foto');
+  assert.ok(preview.labels.length > 0, 'cuadros numerados, no solo color');
+  checkbox(app, 'skin-candidates-viewer', true); app.flush();
+  assert.notEqual(app.calls.at(-1), source);
+  assert.notDeepEqual(app.calls.at(-1).data, original);
+  const outputBeforeDiscard = app.calls.at(-1).data.slice();
+  discardButtons(app)[0].props.onClick(); app.render(); app.flush();
+  assert.equal(discardButtons(app).length, initialCount - 1);
+  if (app.calls.at(-1)) assert.notDeepEqual(app.calls.at(-1).data, outputBeforeDiscard);
+  assert.match(text(app.render()), /1 descartados/);
+  assert.equal(app.analyses, 1, 'descartar y alternar visor reutiliza el análisis RGB');
+  find(app.render(), node => node.type === 'button' && text(node) === 'Restablecer descartados')[0].props.onClick();
+  app.render(); app.flush();
+  assert.equal(discardButtons(app).length, initialCount);
+  checkbox(app, 'skin-candidates-viewer', false); app.flush();
+  assert.equal(app.calls.at(-1), undefined);
+  checkbox(app, 'skin-candidates-enabled', false);
+  assert.equal(app.calls.at(-1), undefined);
+  assert.equal(app.control('skin-signal-mode').props.value, 'original');
+  assert.deepEqual(find(app.render(), node => node.type === 'canvas')[0].ref.current.data, original);
+  assert.deepEqual(source.data, original);
+  app.unmount();
+});
+
+test('descartar todos deja foto sin cuadros y restaura visor; cambiar sensibilidad, foto o referencias inicia revisión nueva', () => {
+  const source = image(), points = landmarks(), app = panel(source, points);
+  app.select('visualCandidates'); app.flush();
+  const count = discardButtons(app).length;
+  assert.ok(count > 0);
+  checkbox(app, 'skin-candidates-viewer', true); app.flush();
+  for (let i = 0; i < count; i++) {
+    discardButtons(app)[0].props.onClick(); app.render(); app.flush();
+  }
+  assert.equal(discardButtons(app).length, 0);
+  assert.equal(app.calls.at(-1), undefined);
+  assert.match(text(app.render()), /0 candidatos visuales visibles/);
+  assert.deepEqual(find(app.render(), node => node.type === 'canvas')[0].ref.current.data, source.data);
+  app.control('skin-signal-sensitivity').props.onChange({ target: { value: '55' } });
+  app.render(); app.flush();
+  assert.ok(discardButtons(app).length > 0);
+  assert.match(text(app.render()), /0 descartados/);
+  discardButtons(app)[0].props.onClick(); app.render(); app.flush();
+  app.update({ landmarks: landmarks() }); app.flush();
+  assert.match(text(app.render()), /0 descartados/);
+  discardButtons(app)[0].props.onClick(); app.render(); app.flush();
+  app.update({ canvas: image() }); app.flush();
+  assert.match(text(app.render()), /0 descartados/);
+  // Volver a una sensibilidad anterior no recupera descartes de otra revisión.
+  app.control('skin-signal-sensitivity').props.onChange({ target: { value: '50' } });
+  app.render(); app.flush();
+  assert.match(text(app.render()), /0 descartados/);
+  app.unmount();
+});
+
+test('cuadros limitan cálculo a 384 aunque se eligieran 768; sin referencias exige confirmación y limpia timers', () => {
+  const app = panel(image('uniform', 600, 300));
+  app.resolution(768);
+  checkbox(app, 'skin-candidates-enabled', true);
+  assert.equal(app.timers.size, 0);
+  assert.match(text(app.render()), /confirma que el recorte/);
+  app.confirm(); app.flush();
+  assert.deepEqual(app.analyzedSizes.at(-1), [384, 192]);
+  assert.equal(app.control('skin-signal-resolution').props.disabled, true);
+  assert.equal(app.control('skin-signal-resolution').props.value, 384);
+  assert.match(text(app.render()), /0 candidatos visuales visibles/);
+  assert.equal(app.calls.at(-1), undefined);
+  checkbox(app, 'skin-candidates-enabled', false);
+  assert.equal(app.control('skin-signal-resolution').props.value, 768);
+  assert.equal(app.timers.size, 0);
+  checkbox(app, 'skin-candidates-enabled', true);
+  app.unmount();
+  assert.equal(app.timers.size, 0);
+  assert.equal(app.calls.at(-1), undefined);
+});
+
+test('errores de lectura o dibujo de cuadros son visibles y no envían textura ni candidatos obsoletos', () => {
+  const source = image(), app = panel(source, landmarks());
+  source.tainted = true;
+  app.select('visualCandidates'); app.flush();
+  assert.match(text(app.render()), /captura local sin restricciones de origen/);
+  assert.equal(discardButtons(app).length, 0);
+  assert.equal(app.calls.at(-1), undefined);
+  source.tainted = false;
+  app.control('skin-signal-sensitivity').props.onChange({ target: { value: '55' } });
+  app.render(); app.flush();
+  assert.ok(discardButtons(app).length > 0);
+  const create = globalThis.document.createElement;
+  globalThis.document.createElement = () => {
+    const canvas = new MemoryCanvas(), getContext = canvas.getContext.bind(canvas);
+    canvas.getContext = () => {
+      const context = getContext();
+      context.strokeRect = () => { throw new Error('No se pudieron dibujar los cuadros.'); };
+      return context;
+    };
+    return canvas;
+  };
+  checkbox(app, 'skin-candidates-viewer', true); app.flush();
+  assert.match(text(app.render()), /No se pudieron dibujar los cuadros/);
+  assert.equal(discardButtons(app).length, 0);
+  assert.equal(app.calls.at(-1), undefined);
+  globalThis.document.createElement = create;
   app.unmount();
 });
 
@@ -308,6 +449,20 @@ test('preview reduce sin ampliar y mantiene orientación; composición conserva 
   assert.equal(output.width, 600);
   assert.equal(output.height, 300);
   assert.deepEqual(output.data, before, 'capa vacía no altera el RGB original');
+  assert.deepEqual(source.data, before);
+});
+
+test('copia de cuadros normalizados conserva tamaño y orientación de foto rectangular; vacío mantiene RGB exacto', () => {
+  panel(); // Adaptador local, sin navegador/red.
+  const source = image('uniform', 600, 300), before = source.data.slice();
+  const candidate = { id: 'synthetic', channel: 'texture', x: 0.25, y: 0.3, width: 0.1, height: 0.2 };
+  const output = texture.composeSkinCandidateTexture(source, [candidate]);
+  assert.notEqual(output, source);
+  assert.deepEqual([output.width, output.height], [600, 300]);
+  assert.deepEqual([...output.data.slice((90 * 600 + 150) * 4, (90 * 600 + 150) * 4 + 3)], [34, 211, 238], 'borde con el color de su categoría');
+  assert.deepEqual([...output.data.slice((150 * 600 + 300) * 4, (150 * 600 + 300) * 4 + 4)], [180, 130, 110, 255]);
+  assert.deepEqual(output.labels.map(label => label[0]), ['1']);
+  assert.deepEqual(texture.composeSkinCandidateTexture(source, []).data, before);
   assert.deepEqual(source.data, before);
 });
 

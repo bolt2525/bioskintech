@@ -1,6 +1,6 @@
 import { FACE_OVAL, type P2 } from './engine.ts';
 import { FACE_REGION_BOUNDARIES, FACE_REGION_SEEDS } from './faceRegions.ts';
-import { analyzeSkinAppearance, applySkinCosmetics, skinSignalLayer, type SkinAppearanceResult, type SkinCosmeticParameters, type SkinSignalChannel } from './skinAppearance.ts';
+import { analyzeSkinAppearance, applySkinCosmetics, SKIN_CANDIDATE_COLORS, skinSignalLayer, type SkinAppearanceResult, type SkinCosmeticParameters, type SkinSignalChannel, type SkinVisualCandidate } from './skinAppearance.ts';
 
 export const SKIN_SIGNAL_RESOLUTIONS = [
   { value: 384, label: 'Rápido · 384 px' },
@@ -121,5 +121,36 @@ export function composeSkinSignalTexture(source: HTMLCanvasElement, base: HTMLCa
   overlayContext.putImageData(image, 0, 0);
   context.drawImage(source, 0, 0);
   context.drawImage(overlay, 0, 0, output.width, output.height);
+  return output;
+}
+
+/** Cuadros numerados sobre una copia: nunca quema ni modifica la fotografía original. */
+export function composeSkinCandidateTexture(source: HTMLCanvasElement, candidates: readonly SkinVisualCandidate[]): HTMLCanvasElement {
+  const output = document.createElement('canvas');
+  output.width = source.width; output.height = source.height;
+  const context = output.getContext('2d');
+  if (!context) throw new Error('No se pudieron dibujar los cuadros. Vuelve a activar los candidatos.');
+  context.drawImage(source, 0, 0);
+  const scale = Math.max(1, Math.max(source.width, source.height) / 384);
+  context.font = `bold ${Math.round(11 * scale)}px sans-serif`;
+  candidates.forEach((candidate, index) => {
+    const x = candidate.x * output.width, y = candidate.y * output.height;
+    const w = candidate.width * output.width, h = candidate.height * output.height;
+    // Doble trazo y número: no depende exclusivamente del color de la categoría.
+    context.strokeStyle = 'black'; context.lineWidth = 3 * scale;
+    context.strokeRect(x, y, w, h);
+    context.strokeStyle = SKIN_CANDIDATE_COLORS[candidate.channel] ?? 'white'; context.lineWidth = 2 * scale;
+    context.strokeRect(x, y, w, h);
+    const label = String(index + 1);
+    const labelWidth = (label.length * 7 + 4) * scale, labelHeight = 14 * scale;
+    const labelX = Math.min(x, Math.max(0, output.width - labelWidth));
+    const labelY = Math.max(labelHeight, y);
+    context.fillStyle = 'black';
+    context.fillRect(labelX, labelY - labelHeight, labelWidth, labelHeight);
+    context.fillStyle = SKIN_CANDIDATE_COLORS[candidate.channel] ?? 'white';
+    context.fillRect(labelX, labelY - 2 * scale, labelWidth, 2 * scale);
+    context.fillStyle = 'white';
+    context.fillText(label, labelX + 2 * scale, labelY - 3 * scale);
+  });
   return output;
 }

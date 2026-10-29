@@ -1,5 +1,11 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-28 Reverso liso; cuadros por color.
+- ✅ 2026-10-28 Máscara: perfil nasal localizado.
+- ✅ 2026-10-28 Labios: protección multivista completa.
+- ✅ 2026-10-28 Reverso mate; capas ilustradas.
+- ✅ 2026-10-28 Corte progresivo; opacidades independientes.
+- ✅ 2026-10-28 RGB: cuadros revisables locales.
 - ✅ 2026-10-28 Simular: panel compacto tipo editor.
 - ✅ 2026-10-28 Cabeza: ajuste frontal conservador.
 - ✅ 2026-10-28 Editor facial: inspector desplazable.

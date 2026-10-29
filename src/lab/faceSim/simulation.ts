@@ -53,15 +53,11 @@ export const SIMULATION_CONTROLS: ReadonlyArray<{
   { key: 'jawWidth', label: 'Mandíbula · anchura', group: 'Mentón y mandíbula' },
 ];
 
-export type LayerId = 'skin' | 'fat' | 'muscle' | 'nerves' | 'vessels';
+export type LayerId = 'skin';
 export const SIMULATION_LAYERS: ReadonlyArray<{
   id: LayerId; label: string; color: string; depth: number; opacity: number;
 }> = [
   { id: 'skin', label: 'Piel', color: '#d9ac91', depth: 0, opacity: 0.38 },
-  { id: 'fat', label: 'Grasa genérica', color: '#e5c355', depth: 0.012, opacity: 0.18 },
-  { id: 'muscle', label: 'Músculos esquemáticos', color: '#d95168', depth: 0.027, opacity: 0.85 },
-  { id: 'nerves', label: 'Nervios · trayectos genéricos', color: '#fde047', depth: 0.019, opacity: 1 },
-  { id: 'vessels', label: 'Vasos · trayectos genéricos', color: '#fb7185', depth: 0.021, opacity: 1 },
 ];
 
 export interface SimulationMesh {
@@ -110,7 +106,6 @@ const unit = (p: Vec3): Vec3 => {
   const d = Math.hypot(p.x, p.y, p.z) || 1;
   return { x: p.x / d, y: p.y / d, z: p.z / d };
 };
-const push = (out: number[], p: Vec3) => out.push(p.x, p.y, p.z);
 
 export function sanitizeSimulation(input: Partial<SimulationParameters>): SimulationParameters {
   const out = { ...NEUTRAL_SIMULATION };
@@ -300,7 +295,7 @@ export function deformPositions(
     for (const field of fields) {
       let w = localInfluence(p, field.center, field.radius);
       if (!w) continue;
-      // Máscara espacial suave: sirve también para vértices densos y capas, no sólo mesh468.
+      // Máscara espacial suave: sirve también para vértices densos, no sólo mesh468.
       for (const center of field.protectedCenters) {
         w *= 1 - localInfluence(p, center, { x: h * 0.055, y: h * 0.055, z: h * 0.09 });
       }
@@ -328,180 +323,21 @@ export function vertexNormals(positions: ArrayLike<number>, indices: ArrayLike<n
   return normals;
 }
 
-// Diseños originales de bandas y ramificaciones. Los índices sólo sitúan el esquema
-// en el chart del atlas: NO representan trayectos internos medidos ni planos clínicos.
-const MUSCLE_PATHS = [
-  [109, 108, 107, 66], [338, 337, 336, 296],
-  [70, 63, 105, 66, 107], [300, 293, 334, 296, 336],
-  [33, 160, 159, 158, 133, 153, 145, 144, 33],
-  [263, 387, 386, 385, 362, 380, 374, 373, 263],
-  [50, 101, 205, 61], [280, 330, 425, 291],
-  [123, 147, 187, 172], [352, 376, 411, 397],
-  [61, 40, 37, 0, 267, 270, 291, 321, 314, 17, 84, 91, 61],
-  [61, 57, 150], [291, 287, 379], [18, 200, 175, 152],
-];
-// Almohadillas volumétricas ilustrativas, no compartimentos grasos identificados.
-const FAT_PATHS = [
-  [116, 117, 50, 205, 187], [345, 346, 280, 425, 411],
-  [123, 147, 192, 214], [352, 376, 416, 434],
-  [109, 108, 67], [338, 337, 297],
-];
-const NERVE_PATHS = [
-  [127, 123, 50, 101, 98], [123, 117, 111, 133], [127, 70, 105, 107, 108, 109],
-  [123, 205, 61, 17], [205, 187, 172, 150, 152],
-  [356, 352, 280, 330, 327], [352, 346, 340, 362], [356, 300, 334, 336, 337, 338],
-  [352, 425, 291, 17], [425, 411, 397, 379, 152],
-];
-const VESSEL_PATHS = [
-  [136, 58, 205, 203, 98, 64, 133, 55, 108],
-  [365, 288, 425, 423, 327, 294, 362, 285, 337],
-  [205, 61, 40, 37, 0], [425, 291, 270, 267, 0],
-  [61, 91, 84, 17], [291, 321, 314, 17],
-  [127, 54, 103, 67, 109], [356, 284, 332, 297, 338],
-];
-
-/** Interpolación baricéntrica XY sobre mesh468, profundidad según la normal local. */
-function surfaceSampler(anchors: Float32Array) {
-  const normals = vertexNormals(anchors, atlasData.triangles);
-  const triangles: Array<{
-    a: Vec3; b: Vec3; c: Vec3; area: number; ns: Vec3[];
-    minX: number; maxX: number; minY: number; maxY: number;
-  }> = [];
-  for (let i = 0; i < atlasData.triangles.length; i += 3) {
-    const ids = atlasData.triangles.slice(i, i + 3);
-    const [a, b, c] = ids.map(id => point(anchors, id));
-    const area = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
-    if (Math.abs(area) < 1e-10) continue;
-    triangles.push({
-      a, b, c, area, ns: ids.map(id => point(normals, id)),
-      minX: Math.min(a.x, b.x, c.x) - 1e-7, maxX: Math.max(a.x, b.x, c.x) + 1e-7,
-      minY: Math.min(a.y, b.y, c.y) - 1e-7, maxY: Math.max(a.y, b.y, c.y) + 1e-7,
-    });
-  }
-  return (x: number, y: number): { p: Vec3; n: Vec3 } | null => {
-    let best: { p: Vec3; n: Vec3 } | null = null;
-    for (const triangle of triangles) {
-      if (x < triangle.minX || x > triangle.maxX || y < triangle.minY || y > triangle.maxY) continue;
-      const { a, b, c, area, ns } = triangle;
-      const v = ((x - a.x) * (c.y - a.y) - (y - a.y) * (c.x - a.x)) / area;
-      const w = ((b.x - a.x) * (y - a.y) - (b.y - a.y) * (x - a.x)) / area;
-      const u = 1 - v - w;
-      if (Math.min(u, v, w) < -1e-6) continue;
-      const z = a.z * u + b.z * v + c.z * w;
-      if (best && z <= best.p.z) continue;
-      let n = unit({
-        x: ns[0].x * u + ns[1].x * v + ns[2].x * w,
-        y: ns[0].y * u + ns[1].y * v + ns[2].y * w,
-        z: ns[0].z * u + ns[1].z * v + ns[2].z * w,
-      });
-      if (n.z < 0) n = { x: -n.x, y: -n.y, z: -n.z };
-      best = { p: { x, y, z }, n };
-    }
-    return best;
-  };
-}
-
-function pathGeometry(
-  id: LayerId, paths: number[][], anchors: Float32Array, depth: number, h: number,
-  sample: ReturnType<typeof surfaceSampler>,
-): LayerGeometry {
-  const positions: number[] = [], indices: number[] = [], colors: number[] = [];
-  const muscle = id === 'muscle', pad = id === 'fat';
-  const ringSize = muscle || pad ? 10 : 8;
-  for (const path of paths) {
-    let previous: number | null = null;
-    const cap = (base: number, reverse: boolean) => {
-      for (let ring = 1; ring < ringSize - 1; ring++) {
-        indices.push(base, base + (reverse ? ring + 1 : ring), base + (reverse ? ring : ring + 1));
-      }
-    };
-    for (let segment = 0; segment < path.length - 1; segment++) {
-      const a = point(anchors, path[segment]), b = point(anchors, path[segment + 1]);
-      const tangent = unit(sub(b, a));
-      const steps = Math.max(3, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / (h * 0.012)));
-      for (let step = segment === 0 ? 0 : 1; step <= steps; step++) {
-        const t = step / steps, x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t;
-        const hit = sample(x, y);
-        if (!hit) { if (previous !== null) cap(previous, false); previous = null; continue; }
-        const side = unit(cross(tangent, hit.n)), base = positions.length / 3;
-        const progress = (segment + t) / (path.length - 1);
-        const belly = Math.sin(Math.PI * progress);
-        const width = h * (pad ? 0.045 : 0.023) * (0.18 + 0.82 * belly);
-        for (let ring = 0; ring < ringSize; ring++) {
-          const angle = ring / ringSize * Math.PI * 2;
-          if (muscle || pad) {
-            const s = Math.cos(angle);
-            const edge = sample(x + side.x * width * s, y + side.y * width * s) ?? hit;
-            const thickness = h * (pad ? 0.010 : 0.005) * (0.3 + 0.7 * belly);
-            const inset = depth * h + thickness * Math.sin(angle);
-            push(positions, {
-              x: edge.p.x - edge.n.x * inset,
-              y: edge.p.y - edge.n.y * inset,
-              z: edge.p.z - edge.n.z * inset,
-            });
-            if (muscle) colors.push(ring % 2 ? 0.92 : 0.60, ring % 2 ? 0.32 : 0.12, ring % 2 ? 0.39 : 0.20);
-          } else {
-            const r = h * (id === 'nerves' ? 0.0030 : 0.0040) * (1 - 0.45 * progress);
-            push(positions, {
-              x: hit.p.x - hit.n.x * depth * h + r * (side.x * Math.cos(angle) + hit.n.x * Math.sin(angle)),
-              y: hit.p.y - hit.n.y * depth * h + r * (side.y * Math.cos(angle) + hit.n.y * Math.sin(angle)),
-              z: hit.p.z - hit.n.z * depth * h + r * (side.z * Math.cos(angle) + hit.n.z * Math.sin(angle)),
-            });
-          }
-        }
-        if (previous !== null) {
-          for (let ring = 0; ring < ringSize; ring++) {
-            const next = (ring + 1) % ringSize;
-            indices.push(previous + ring, base + ring, base + next, previous + ring, base + next, previous + next);
-          }
-        } else cap(base, true);
-        previous = base;
-      }
-    }
-    if (previous !== null) cap(previous, false);
-  }
-  return { id, positions: Float32Array.from(positions), indices: Uint32Array.from(indices), ...(muscle ? { colors: Float32Array.from(colors) } : {}) };
-}
-
-function buildNeutralLayers(mesh: SimulationMesh): LayerGeometry[] {
-  const positions = mesh.positions;
-  const anchors = mesh.anchors;
-  const { height: h } = facialFrame(mesh.anchors), normals = vertexNormals(positions, mesh.indices);
-  const sample = surfaceSampler(anchors);
-  return SIMULATION_LAYERS.map(layer => {
-    if (layer.id === 'skin') {
-      const p = positions.slice();
-      for (let i = 0; i < p.length; i++) p[i] -= normals[i] * layer.depth * h;
-      return { id: layer.id, positions: p, indices: mesh.indices.slice() };
-    }
-    const paths = layer.id === 'fat' ? FAT_PATHS : layer.id === 'muscle' ? MUSCLE_PATHS : layer.id === 'nerves' ? NERVE_PATHS : VESSEL_PATHS;
-    return pathGeometry(layer.id, paths, anchors, layer.depth, h, sample);
-  });
-}
-
-// Buffers propios del visor, inmutables durante su vida. WeakMap no retiene modelos descartados.
-const neutralLayerCache = new WeakMap<SimulationMesh, LayerGeometry[]>();
-
-/** Capas co-deformadas por el mismo campo suave desde sus originales, sin remuestreo por frame. */
+/** Sólo piel, evaluada desde el original y con buffers propios en cada llamada. */
 export function buildSimulationLayers(mesh: SimulationMesh, input: Partial<SimulationParameters>): LayerGeometry[] {
-  let neutral = neutralLayerCache.get(mesh);
-  if (!neutral) {
-    neutral = buildNeutralLayers(mesh);
-    neutralLayerCache.set(mesh, neutral);
-  }
-  return neutral.map(layer => ({
-    id: layer.id,
-    positions: deformPositions(layer.positions, mesh.anchors, input),
-    indices: layer.indices.slice(),
-    ...(layer.colors ? { colors: layer.colors.slice() } : {}),
-  }));
+  // ponytail: piel sin generador ni caché multicapa → imágenes anatómicas en su módulo.
+  return [{
+    id: 'skin',
+    positions: deformPositions(mesh.positions, mesh.anchors, input),
+    indices: mesh.indices.slice(),
+  }];
 }
 
 /** Convención de Three.Plane: se conserva normal·p + constant >= 0. */
 export function buildCutPlane(bounds: MeshBounds, cut: SimulationCut): CutPlane | null {
   if (cut.scope === 'none') return null;
   const axis = cut.axis, sign = cut.reverse ? -1 : 1;
-  // Margen para poder revelar/ocultar completamente incluso tubos desplazados.
+  // Margen para poder revelar/ocultar completamente la superficie.
   const margin = bounds.height * 0.04;
   const value = bounds.min[axis] - margin
     + clamp(cut.position, 0, 1) * (bounds.max[axis] - bounds.min[axis] + margin * 2);

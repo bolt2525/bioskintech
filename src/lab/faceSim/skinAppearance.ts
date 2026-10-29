@@ -121,6 +121,109 @@ export function skinSignalLayer(result: SkinAppearanceResult, channel: SkinSigna
   return channel === 'poreCandidates' || channel === 'redDots' ? result.candidates[channel] : result.channels[channel];
 }
 
+export interface SkinVisualCandidate {
+  id: string;
+  channel: SkinAppearanceChannel;
+  /** Caja normalizada respecto de la foto, con ancho/alto positivos. No es una lesión. */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export const MAX_SKIN_VISUAL_CANDIDATES = 24;
+export const SKIN_CANDIDATE_LABELS: Record<SkinAppearanceChannel, string> = {
+  contrast: 'Pigmentación · contraste aparente',
+  redness: 'Enrojecimiento aparente',
+  texture: 'Textura aparente',
+};
+
+/** Color por categoría; el número y el doble trazo evitan depender sólo del color. */
+export const SKIN_CANDIDATE_COLORS: Record<SkinAppearanceChannel, string> = {
+  contrast: '#f59e0b',
+  redness: '#ef4444',
+  texture: '#22d3ee',
+};
+
+/**
+ * Agrupa mapas RGB existentes, sin otro detector ni clasificación anatómica.
+ * Trabajo acotado a 384², 8 regiones por canal, 24 en total. No muta mapas ni ROI.
+ * Una señal extendida/ruido no se trocea para llenar la foto de cajas.
+ */
+export function skinVisualCandidates(
+  result: SkinAppearanceResult, mask: Uint8Array, width: number, height: number,
+): SkinVisualCandidate[] {
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height)
+    || width < 1 || height < 1 || width > 384 || height > 384) {
+    throw new RangeError('Los candidatos admiten hasta 384 px por lado.');
+  }
+  const size = width * height;
+  if (!(mask instanceof Uint8Array) || mask.length !== size) throw new TypeError('Máscara de candidatos inválida.');
+  if (!result.usable) return [];
+  const counts = integral(Uint8Array.from(mask, value => value ? 1 : 0), width, height), stride = width + 1;
+  const roiSize = mask.reduce((sum, value) => sum + (value ? 1 : 0), 0);
+  const regions: SkinVisualCandidate[] = [];
+  for (const channel of ['contrast', 'redness', 'texture'] as const) {
+    const layer = result.channels[channel];
+    if (layer.rgba.length !== size * 4) throw new TypeError('Mapa de candidatos inválido.');
+    // Microcontraste extendido puede ser ruido, barba, enfoque o compresión.
+    if (layer.status !== 'highlighted' || layer.coverage > 0.22) continue;
+    const visited = new Uint8Array(size);
+    const queue = new Int32Array(size);
+    const groups: { left: number; top: number; w: number; h: number; count: number }[] = [];
+    for (let start = 0; start < size; start++) {
+      if (visited[start] || !mask[start] || !layer.rgba[start * 4 + 3]) continue;
+      let head = 0, tail = 1, left = width, right = 0, top = height, bottom = 0;
+      queue[0] = start; visited[start] = 1;
+      while (head < tail) {
+        const i = queue[head++], x = i % width, y = Math.floor(i / width);
+        left = Math.min(left, x); right = Math.max(right, x);
+        top = Math.min(top, y); bottom = Math.max(bottom, y);
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx, ny = y + dy, j = ny * width + nx;
+          if (nx < 0 || nx >= width || ny < 0 || ny >= height || visited[j]
+            || !mask[j] || !layer.rgba[j * 4 + 3]) continue;
+          visited[j] = 1; queue[tail++] = j;
+        }
+      }
+      const w = right - left + 1, h = bottom - top + 1;
+      if (tail < 6 || w < 2 || h < 2 || w > width * 0.35 || h > height * 0.35
+        || w * h > roiSize * 0.15 || tail / (w * h) < 0.18 || Math.max(w / h, h / w) > 4) continue;
+      // Toda la caja + margen debe estar dentro de la máscara, no solo su centro.
+      // Así una agrupación alrededor de un ojo/labio nunca crea una caja que lo atraviese.
+      const l = left - 2, t = top - 2, r = right + 3, b = bottom + 3;
+      if (l < 0 || t < 0 || r > width || b > height) continue;
+      const support = counts[b * stride + r] - counts[t * stride + r]
+        - counts[b * stride + l] + counts[t * stride + l];
+      if (support !== (r - l) * (b - t)) continue;
+      groups.push({ left, top, w, h, count: tail });
+    }
+    // Área de soporte, no confianza o gravedad. Orden y IDs deterministas.
+    groups.sort((a, b) => b.count - a.count || a.top - b.top || a.left - b.left);
+    for (const { left, top, w, h } of groups.slice(0, MAX_SKIN_VISUAL_CANDIDATES / 3)) {
+      regions.push({
+        id: `${channel}:${left}:${top}:${w}:${h}`,
+        channel, x: left / width, y: top / height, width: w / width, height: h / height,
+      });
+    }
+  }
+  // Un mismo cambio rojo también activa contraste: evitar cuadros/números superpuestos.
+  // La prioridad solo decide la etiqueta visual, nunca confianza ni gravedad.
+  const priority: Record<SkinAppearanceChannel, number> = { redness: 0, contrast: 1, texture: 2 };
+  regions.sort((a, b) => priority[a.channel] - priority[b.channel]);
+  const distinct: SkinVisualCandidate[] = [];
+  for (const candidate of regions) {
+    const overlaps = distinct.some(other => {
+      const intersection = Math.max(0, Math.min(candidate.x + candidate.width, other.x + other.width) - Math.max(candidate.x, other.x))
+        * Math.max(0, Math.min(candidate.y + candidate.height, other.y + other.height) - Math.max(candidate.y, other.y));
+      const union = candidate.width * candidate.height + other.width * other.height - intersection;
+      return intersection / union > 0.6;
+    });
+    if (!overlaps) distinct.push(candidate);
+  }
+  return distinct;
+}
+
 const LIMITATIONS = [
   'Simulación visual local de RGB; no es un diagnóstico ni una recomendación.',
   'Los canales muestran diferencias cromáticas/oscuras locales, rojez relativa y microcontraste; no identifican lesiones, lunares, pecas, granos, comedones, vasos superficiales o profundos ni poros reales.',
