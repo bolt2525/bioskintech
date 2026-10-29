@@ -69,7 +69,7 @@ test('zonas autoradas: regiones, trayectos, lados y fuera de imagen', () => {
   assert.match(anatomicalZoneAt(ANATOMICAL_ZONES.muscle, 0.5, 0.50), /Prócer/);
   assert.match(anatomicalZoneAt(ANATOMICAL_ZONES.muscle, 0.31, 0.25), /derecho/);
   assert.match(anatomicalZoneAt(ANATOMICAL_ZONES.muscle, 0.69, 0.25), /izquierdo/);
-  assert.match(anatomicalZoneAt(ANATOMICAL_ZONES.vessels, 0.25, 0.755), /facial/);
+  assert.match(anatomicalZoneAt(ANATOMICAL_ZONES.vessels, 0.29, 0.735), /facial/);
   assert.match(anatomicalZoneAt(ANATOMICAL_ZONES.bone, 0.5, 0.46), /nasales/);
   for (const [u, v] of [[-0.01, 0.5], [NaN, 0.5], [0.1, 2], [0.01, 0.01]]) assert.equal(anatomicalZoneAt(ANATOMICAL_ZONES.muscle, u, v), null);
   for (const zones of Object.values(ANATOMICAL_ZONES)) {

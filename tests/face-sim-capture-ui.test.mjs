@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import vm from 'node:vm';
 import test from 'node:test';
@@ -29,14 +31,28 @@ const code = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 },
 }).outputText;
 const stateNames = [...source.matchAll(/const \[(\w+),[^\]]+\] = useState/g)].map(match => match[1]);
-const helper = name => {
+const localCache = new Map();
+function loadLocal(file) {
+  if (localCache.has(file)) return localCache.get(file);
+  if (file.endsWith('.json')) return JSON.parse(readFileSync(file, 'utf8'));
   const exports = {};
+  localCache.set(file, exports);
   vm.runInNewContext(ts.transpileModule(
-    readFileSync(new URL(`../src/lab/faceSim/${name}.ts`, import.meta.url), 'utf8'),
-    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } },
-  ).outputText, { exports, Float32Array, Uint8Array, Uint8ClampedArray, require: () => engine });
+    readFileSync(file, 'utf8'),
+    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true } },
+  ).outputText, { exports, console, Float32Array, Uint32Array, Uint8Array, Uint8ClampedArray, ArrayBuffer,
+    require(name) {
+      if (name === './engine' || name === './engine.ts') return engine;
+      if (!name.startsWith('.')) return require(name);
+      const base = path.resolve(path.dirname(file), name);
+      const target = [base, `${base}.ts`, `${base}.tsx`, `${base}.json`].find(p => existsSync(p));
+      if (!target) throw new Error(`Missing local module ${base}`);
+      return loadLocal(target);
+    },
+  }, { filename: file });
   return exports;
-};
+}
+const helper = name => loadLocal(fileURLToPath(new URL(`../src/lab/faceSim/${name}.ts`, import.meta.url)));
 const injectablePreview = helper('injectablePreview');
 const injectableLocalRecord = helper('injectableLocalRecord');
 
@@ -100,6 +116,11 @@ function lab() {
       if (name === './personalSurfaceGlb') return { personalSurfaceToGlb: async () => new ArrayBuffer(8) };
       if (name.endsWith('Clinical3DViewer')) return { default: () => null };
       if (name.endsWith('injectables.json')) return { default: [] };
+      if (name.startsWith('./')) {
+        const base = fileURLToPath(new URL(`../src/lab/faceSim/${name.slice(2)}`, import.meta.url));
+        const file = [base, `${base}.ts`, `${base}.tsx`].find(p => existsSync(p));
+        if (file) return loadLocal(file);
+      }
       return require(name);
     },
   });
@@ -131,6 +152,7 @@ function photo() {
 const calculate = tree => findAll(tree, n => n.type === 'button' && text(n).startsWith('Calcular superficie'))[0];
 const slotIds = ['frontal', 'izquierda', 'derecha', 'extra_a', 'extra_b'];
 const viewers = tree => findAll(tree, n => typeof n.props?.onMarkerPlaced === 'function');
+const renderedMarks = viewer => viewer.props.editablePoints.map(({ id, x, y, z }) => ({ id, position: { x, y, z } }));
 const button = (tree, label) => findAll(tree, n => n.type === 'button' && text(n) === label)[0];
 const openEditor = app => { button(app.render(), 'Simular y marcar').props.onClick(); return app.render(); };
 const openAppearance = app => {
@@ -233,7 +255,11 @@ test('capa de simulación mantiene advertencia, fuente y geometría separada de 
   assert.equal(viewers(tree)[0].props.anatomicalOverlay.positions.length, viewers(tree)[0].props.anatomicalOverlay.labels.length * 9);
   assert.equal(app.state('markers').length, 0);
   select.props.onChange({ target: { value: 'none' } });
-  assert.equal(viewers(app.render())[0].props.anatomicalOverlay, undefined);
+  const hiddenMesh = viewers(app.render())[0].props.anatomicalOverlay;
+  assert.ok(hiddenMesh.positions.length > 0, 'ocultar aristas conserva geometría semántica para hover');
+  assert.equal(hiddenMesh.opacity, 0, 'sin aristas ni triángulos coloreados visibles');
+  assert.equal(typeof hiddenMesh.zoneAt, 'function');
+  assert.equal(hiddenMesh.skin.visible, true);
 });
 
 test('marcaciones compartidas sobreviven a modo, reconstrucción y retirada de foto; deshacer restaura bindings', async () => {
@@ -247,8 +273,8 @@ test('marcaciones compartidas sobreviven a modo, reconstrucción y retirada de f
   assert.ok(position);
   viewers(tree)[0].props.onMarkerPlaced({ id: 'shared', position, normal: { x: 0, y: 0, z: 1 }, pathology: 'filler' });
   tree = app.render();
-  assert.equal(viewers(tree)[0].props.markers.length, 1);
-  const initial = viewers(tree)[0].props.markers[0].position;
+  assert.equal(renderedMarks(viewers(tree)[0]).length, 1);
+  const initial = renderedMarks(viewers(tree)[0])[0].position;
   const p = photo();
   p.landmarks = Array.from({ length: 478 }, (_, i) => ({
     x: 0.5 + genericFaceAtlas.positions[(i % 468) * 3] * 0.16,
@@ -260,13 +286,13 @@ test('marcaciones compartidas sobreviven a modo, reconstrucción y retirada de f
   await new Promise(resolve => setImmediate(resolve));
   tree = openEditor(app);
   assert.equal(viewers(tree).length, 1);
-  assert.equal(viewers(tree)[0].props.markers[0].id, 'shared');
+  assert.equal(renderedMarks(viewers(tree)[0])[0].id, 'shared');
   assert.deepEqual(app.state('markers')[0].position, initial);
-  const personal = viewers(tree)[0].props.markers[0];
+  const personal = renderedMarks(viewers(tree)[0])[0];
   assert.equal(viewers(tree)[0].props.surfaceConstraint.accepts(personal.position), true);
   viewers(tree)[0].props.onMarkerPlaced({ ...personal, id: 'from-personal' });
   tree = app.render();
-  assert.equal(viewers(tree)[0].props.markers.length, 2);
+  assert.equal(renderedMarks(viewers(tree)[0]).length, 2);
   button(tree, 'Foto').props.onClick();
   tree = app.render();
   assert.equal(viewers(tree).length, 0, 'la foto sustituye, no duplica, el visor 3D');
@@ -283,25 +309,25 @@ test('marcaciones compartidas sobreviven a modo, reconstrucción y retirada de f
   calculate(openCapture(app)).props.onClick();
   await new Promise(resolve => setImmediate(resolve));
   tree = openEditor(app);
-  assert.ok(viewers(tree).every(v => v.props.markers.length === 3));
+  assert.ok(viewers(tree).every(v => renderedMarks(v).length === 3));
   assert.equal(viewers(tree)[0].props.surfaceConstraint.accepts({ x: 3, y: 0, z: 0 }), false);
   viewers(tree)[0].props.onMarkerPlaced({ ...personal, id: 'ear', position: { x: 3, y: 0, z: 0 } });
   tree = app.render();
   assert.match(text(tree), /Marcación rechazada/);
-  assert.equal(viewers(tree)[0].props.markers.length, 3);
+  assert.equal(renderedMarks(viewers(tree)[0]).length, 3);
   button(tree, 'Deshacer').props.onClick();
   tree = app.render();
-  assert.equal(viewers(tree)[0].props.markers.length, 2);
+  assert.equal(renderedMarks(viewers(tree)[0]).length, 2);
   button(tree, 'Deshacer').props.onClick();
   tree = app.render();
-  assert.equal(viewers(tree)[0].props.markers.length, 1);
+  assert.equal(renderedMarks(viewers(tree)[0]).length, 1);
   button(tree, 'Limpiar').props.onClick();
-  assert.equal(viewers(app.render())[0].props.markers.length, 0);
+  assert.equal(renderedMarks(viewers(app.render())[0]).length, 0);
   button(app.render(), 'Deshacer').props.onClick();
   tree = app.render();
-  assert.equal(viewers(tree)[0].props.markers.length, 1);
+  assert.equal(renderedMarks(viewers(tree)[0]).length, 1);
   findAll(openCapture(app), n => n.props?.['aria-label'] === 'Retirar Frontal')[0].props.onClick();
-  assert.equal(viewers(openEditor(app))[0].props.markers[0].id, 'shared');
+  assert.equal(renderedMarks(viewers(openEditor(app))[0])[0].id, 'shared');
 });
 
 test('captura progresiva: tres entradas principales y dos opcionales, sin exigir cinco fotos', () => {
@@ -437,7 +463,11 @@ test('ocultar malla y seleccionar planos se sincroniza entre modelo, foto y Simu
   const label = findAll(tree, n => n.type === 'label' && text(n) === 'Mostrar mallado de zonas')[0];
   findAll(label, n => n.type === 'input')[0].props.onChange({ target: { checked: false } });
   openEditor(app);
-  assert.equal(viewers(app.render())[0].props.anatomicalOverlay, undefined);
+  const semanticOverlay = viewers(app.render())[0].props.anatomicalOverlay;
+  assert.ok(semanticOverlay.positions.length > 0, 'el hover permanece disponible sin aristas');
+  assert.equal(semanticOverlay.opacity, 0);
+  semanticOverlay.onHover('Mentón · Derecha del paciente');
+  assert.match(text(app.render()), /Mentón · Derecha del paciente/);
   openAppearance(app);
   const simulator = () => findAll(app.render(), n => n.props && Object.hasOwn(n.props, 'surface') && Object.hasOwn(n.props, 'photo'))[0];
   assert.equal(simulator().props.showMesh, false);

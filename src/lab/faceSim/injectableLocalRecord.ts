@@ -1,10 +1,13 @@
 import { importInjectable, type ElemKind, type Meta, type SimMode, type Vec3 } from './engine';
+import { validateQuickRecord, type QuickRecordSettings } from './quickRecord';
+import type { AnatomyPlane } from './defaultLayers';
 
 type JsonRecord = Record<string, unknown>;
 const object = (value: unknown): JsonRecord | null =>
   value !== null && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : null;
 const modes: SimMode[] = ['toxina', 'relleno_ha', 'hidratacion', 'bioestimulador'];
 const kinds: ElemKind[] = ['point', 'line', 'arrow', 'free', 'pattern', 'circle', 'rect'];
+const planes: AnatomyPlane[] = ['skin', 'muscle', 'vessels', 'bone'];
 
 /** Extensión local opcional. Inyectables sigue recibiendo su mapping_data habitual. */
 export function importLocalRecord(text: string, zones: string[]) {
@@ -17,8 +20,11 @@ export function importLocalRecord(text: string, zones: string[]) {
   const stored = extension?.version === 1 ? object(extension.meta) : null;
   const storedKinds = extension?.version === 1 ? object(extension.kinds) : null;
   const storedCenters = extension?.version === 1 ? object(extension.centers) : null;
+  const storedPlanes = extension?.version === 1 ? object(extension.illustrativePlanes) : null;
+  const quickRecord = extension?.quickRecord === undefined ? undefined : validateQuickRecord(extension.quickRecord);
   const restoredKinds: Record<string, ElemKind> = {};
   const restoredCenters: Record<string, Vec3> = {};
+  const illustrativePlanes: Record<string, AnatomyPlane> = {};
   const groups = { p: mapping?.injectionPoints, l: mapping?.freehandLines, s: mapping?.surfaceShapes };
   for (const id of Object.keys(result.meta)) {
     const match = /-([pls])(\d+)$/.exec(id);
@@ -28,6 +34,11 @@ export function importLocalRecord(text: string, zones: string[]) {
     const value = typeof original?.id === 'string' ? object(stored?.[original.id]) : null;
     const kind = typeof original?.id === 'string' ? storedKinds?.[original.id] : undefined;
     if (kinds.includes(kind as ElemKind)) restoredKinds[id] = kind as ElemKind;
+    const plane = typeof original?.id === 'string' ? storedPlanes?.[original.id] : undefined;
+    if (plane !== undefined) {
+      if (!planes.includes(plane as AnatomyPlane)) throw new Error('La capa ilustrativa registrada es inválida.');
+      illustrativePlanes[id] = plane as AnatomyPlane;
+    }
     const center = typeof original?.id === 'string' ? storedCenters?.[original.id] : undefined;
     if (center !== undefined) {
       const point = object(center);
@@ -44,17 +55,20 @@ export function importLocalRecord(text: string, zones: string[]) {
     }
     result.meta[id] = { mode: value.mode, dose: value.dose, zone: value.zone, product: value.product } as Meta;
   }
-  return { ...result, kinds: restoredKinds, centers: restoredCenters };
+  return { ...result, kinds: restoredKinds, centers: restoredCenters, quickRecord, illustrativePlanes };
 }
 
 export function localRecord(
   markers: readonly { id?: string }[], lines: readonly { id: string }[], shapes: readonly { id: string }[],
   meta: Record<string, Meta>, annotationKinds: Record<string, ElemKind> = {}, centers: Record<string, Vec3> = {},
+  quickRecord?: QuickRecordSettings,
+  illustrativePlanes: Record<string, AnatomyPlane> = {},
 ) {
   const withDose = <T extends { id?: string }>(item: T) => ({ ...item,
     units: meta[item.id ?? '']?.dose, label: meta[item.id ?? '']?.zone });
   return { mapping_data: {
     injectionPoints: markers.map(withDose), freehandLines: lines.map(withDose), surfaceShapes: shapes.map(withDose),
-    lab: { version: 1, meta, kinds: annotationKinds, centers },
+    lab: { version: 1, meta, kinds: annotationKinds, centers, illustrativePlanes,
+      ...(quickRecord ? { quickRecord: validateQuickRecord(quickRecord) } : {}) },
   } };
 }

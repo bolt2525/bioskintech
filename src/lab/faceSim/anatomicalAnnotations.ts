@@ -12,8 +12,24 @@ export interface AnatomicalBinding {
   paths: FaceAddress[][];
   center?: FaceAddress;
   kind: ElemKind;
+  /** Contexto ilustrativo al marcar; no es un plano ni una profundidad de inyección. */
+  illustrativePlane?: 'skin' | 'muscle' | 'vessels' | 'bone';
 }
 export type AnatomicalBindings = Record<string, AnatomicalBinding>;
+
+/** Patrones geométricos ilustrativos en el chart de la foto, sin parámetros clínicos. */
+export function photoPatternPaths(start: P2, end: P2, aspect: number, pattern: 'fan' | 'grid' | 'fern'): P2[][] {
+  const dx = (end.x - start.x) * aspect, dy = end.y - start.y;
+  const offset = (point: P2, n: number): P2 => ({ x: point.x - dy * n / aspect, y: point.y + dx * n });
+  if (pattern === 'fan') return Array.from({ length: 5 }, (_, i) => [start, offset(end, (i - 2) * 0.18)]);
+  const lerp = (t: number): P2 => ({ x: start.x + (end.x - start.x) * t, y: start.y + (end.y - start.y) * t });
+  if (pattern === 'grid') return [
+    ...Array.from({ length: 5 }, (_, i) => [offset(start, (i - 2) * 0.16), offset(end, (i - 2) * 0.16)]),
+    ...Array.from({ length: 5 }, (_, i) => [offset(lerp(i / 4), -0.32), offset(lerp(i / 4), 0.32)]),
+  ];
+  return [[start, end], ...Array.from({ length: 5 }, (_, i) => (i + 1) / 6)
+    .flatMap(t => [-1, 1].map(side => [lerp(t), offset(lerp(Math.min(1, t + 0.15)), side * 0.22)]))];
+}
 
 export function addressHasPhotoCoverage(address: FaceAddress, landmarks: readonly P2[], atlas: GenericFaceAtlas): boolean {
   const ids = atlas.triangles.slice(address.triangle * 3, address.triangle * 3 + 3);

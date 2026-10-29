@@ -23,15 +23,23 @@ import type { SkinAppearanceVisualChannel, SkinAppearanceResult } from './skinAp
 import genericFaceAtlas from './genericFaceAtlas.json' with { type: 'json' };
 import { locateModelPoint, locatePhotoPoint, modelPoint as tryModelPoint, photoPoint as tryPhotoPoint, surfacePoint as trySurfacePoint, type FaceAddress } from './faceTransfer';
 import {
-  addressHasPhotoCoverage, anatomicalPhotoElements, annotationViews, bindAnatomicalPaths, requireMappedPoint, shapeOutline, surfaceNormal,
-  type AnatomicalBindings,
+  addressHasPhotoCoverage, anatomicalPhotoElements, annotationViews, bindAnatomicalPaths, photoPatternPaths, requireMappedPoint, shapeOutline, surfaceNormal,
+  type AnatomicalBinding, type AnatomicalBindings,
 } from './anatomicalAnnotations';
+import { annotationHistory, annotationLaterality, canonicalAnnotationPoint, mirrorAnnotation, translateAnnotation } from './annotationSymmetry';
+import { annotationPhotoLayer, annotationUVs, bindingsOnLayer, buildAnnotationLayerView, type AnnotationLayerView } from './annotationLayerView';
+import { loadDefaultLayers, registerLayers, ANATOMY_PLANES } from './defaultLayers';
+import { AnatomyLayerControls, chooseAnatomyDisplay, initialAnatomyDisplay } from './anatomyDisplay';
+import QuickInjectableRecord from './QuickInjectableRecord';
+import { initialQuickRecordSettings, type QuickRecordSettings } from './quickRecord';
 import { DEFAULT_PREVIEW, PREVIEW_DESCRIPTIONS, buildIllustrativeEffects, previewPixels, previewSurface } from './injectablePreview';
 import { importLocalRecord, localRecord } from './injectableLocalRecord';
 
 const modelPoint = (...args: Parameters<typeof tryModelPoint>): Vec3 => requireMappedPoint(tryModelPoint(...args));
 const photoPoint = (...args: Parameters<typeof tryPhotoPoint>): P2 => requireMappedPoint(tryPhotoPoint(...args));
 const surfacePoint = (...args: Parameters<typeof trySurfacePoint>): Vec3 => requireMappedPoint(trySurfacePoint(...args));
+const patientZone = (label: string | null, address: FaceAddress): string | null => label
+  ? `${label} · ${annotationLaterality({ paths: [[address]], kind: 'point' }, genericFaceAtlas)}` : null;
 const catalog = (cat: string) => (injectablesCatalog as { categoria: string; elemento: string }[])
   .filter(i => i.categoria === cat).map(i => i.elemento);
 const ZONES = [...new Set([...['tercio_superior', 'tercio_medio', 'tercio_inferior'].flatMap(catalog),
@@ -218,6 +226,7 @@ const TOOLS_3D: { id: Tool3D; label: string }[] = [
 const TOOLS_PHOTO: { id: ElemKind; label: string }[] = [
   { id: 'point', label: 'Punto' }, { id: 'line', label: 'Línea' }, { id: 'arrow', label: 'Flecha' },
   { id: 'free', label: 'Libre' }, { id: 'circle', label: 'Círculo' }, { id: 'rect', label: 'Rectángulo' },
+  { id: 'pattern', label: 'Patrón' },
 ];
 const HA_CONFIG = { fanLines: 5, fanAngle: 25, gridCells: 4, fernBranches: 5 };
 
@@ -240,7 +249,7 @@ interface Slot {
   registrationFlip?: boolean;
   registrationSource?: 'auto' | 'manual';
 }
-interface Snapshot { markers: Marker3D[]; lines: FreehandLine[]; shapes: SurfaceShape[]; meta: Record<string, Meta>; photoEls: PhotoEl[]; bindings: AnatomicalBindings }
+interface Snapshot { markers: Marker3D[]; lines: FreehandLine[]; shapes: SurfaceShape[]; meta: Record<string, Meta>; photoEls: PhotoEl[]; bindings: AnatomicalBindings; quickRecord: QuickRecordSettings }
 interface SkinReview {
   canvas: HTMLCanvasElement;
   width: number;
@@ -279,6 +288,7 @@ export default function FaceSimLab() {
   const [workMode, setWorkMode] = useState<WorkMode>('3d');
   const [tool3d, setTool3d] = useState<Tool3D>('navigate');
   const [toolPhoto, setToolPhoto] = useState<ElemKind>('point');
+  const [photoPattern, setPhotoPattern] = useState<'fan' | 'grid' | 'fern'>('fan');
   const [markers, setMarkers] = useState<Marker3D[]>([]);
   const [lines, setLines] = useState<FreehandLine[]>([]);
   const [shapes, setShapes] = useState<SurfaceShape[]>([]);
@@ -317,6 +327,23 @@ export default function FaceSimLab() {
   const [editorGroup, setEditorGroup] = useState<'annotations' | 'appearance'>('annotations');
   const [appearanceOpened, setAppearanceOpened] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [bilateral, setBilateral] = useState(false);
+  const [anatomyDisplay, setAnatomyDisplay] = useState(initialAnatomyDisplay);
+  const [quickRecord, setQuickRecord] = useState(initialQuickRecordSettings);
+  const hasQuickEntries = Object.keys(quickRecord.entries).length > 0;
+  const hasLocalRecord = Object.keys(bindings).length > 0 || hasQuickEntries;
+  useEffect(() => {
+    if (!hasLocalRecord) return;
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warnBeforeLeaving);
+    return () => window.removeEventListener('beforeunload', warnBeforeLeaving);
+  }, [hasLocalRecord]);
+  const [defaultLayers, setDefaultLayers] = useState<Awaited<ReturnType<typeof loadDefaultLayers>>>([]);
+  const [layerError, setLayerError] = useState<string | null>(null);
+  const [layerAttempt, setLayerAttempt] = useState(0);
   const [photoInteraction, setPhotoInteraction] = useState<'draw' | 'select'>('draw');
   const [skinOpacity, setSkinOpacity] = useState(0.65);
   const [skinRegion, setSkinRegion] = useState<'all' | 'tzone' | 'cheeks'>('all');
@@ -351,6 +378,17 @@ export default function FaceSimLab() {
   const aspect = slot?.aspect ?? 0.75;
   const frame = slot?.frame ?? defaultFrame(view);
   const regionMap = personalProjection ? personal?.regionMap : slot?.regionMap;
+  const locateSkinAnnotation = useCallback((source: 'generico' | 'personal' | 'foto', p: Vec3): FaceAddress | null => {
+    let address: FaceAddress | null;
+    if (source === 'generico') address = locateModelPoint(p, genericFaceAtlas);
+    else if (source === 'personal') {
+      if (!personal || !isOnObservedFace(p, personal.surface, personal.regionMap)) return null;
+      address = locatePhotoPoint(projectPersonal(p, personal.projection), personal.regionMap.landmarks, genericFaceAtlas);
+    } else address = slot?.landmarks ? locatePhotoPoint(p, slot.landmarks, genericFaceAtlas) : null;
+    const landmarks = source === 'personal' ? personal?.regionMap.landmarks : source === 'foto' ? slot?.landmarks : undefined;
+    return address && tryModelPoint(address, genericFaceAtlas)
+      && (!landmarks || addressHasPhotoCoverage(address, landmarks, genericFaceAtlas)) ? address : null;
+  }, [personal, slot?.landmarks]);
   const previewModeKey = JSON.stringify(Object.fromEntries(Object.entries(meta).map(([id, entry]) => [id, entry.mode])));
   const previewModes = useMemo<Record<string, SimMode>>(() => JSON.parse(previewModeKey), [previewModeKey]);
   useEffect(() => {
@@ -438,6 +476,42 @@ export default function FaceSimLab() {
     Array.from({ length: 468 }, (_, i) => ({ x: genericFaceAtlas.positions[i * 3], y: -genericFaceAtlas.positions[i * 3 + 1] })),
     genericFaceAtlas.triangles, 1, genericFaceAtlas.positions,
   ), []);
+  useEffect(() => {
+    let active = true;
+    setLayerError(null);
+    loadDefaultLayers().then(layers => { if (active) setDefaultLayers(layers); })
+      .catch(error => { if (active) setLayerError(error instanceof Error ? error.message : 'No se pudieron cargar las capas.'); });
+    return () => { active = false; };
+  }, [layerAttempt]);
+  const annotationLayers = useMemo(() => {
+    try {
+      const build = (uvs: Float32Array, surface?: PersonalSurface) => registerLayers(defaultLayers, uvs)
+        .map(reference => buildAnnotationLayerView(reference, genericFaceAtlas, surface));
+      return {
+        generic: build(annotationUVs(genericFaceAtlas)),
+        personal: personal ? build(personal.surface.uvs, personal.surface) : [],
+        photo: slot?.landmarks ? build(Float32Array.from(slot.landmarks.flatMap(p => [p.x, p.y]))) : [],
+        error: null,
+      };
+    } catch (error) {
+      return { generic: [], personal: [], photo: [], error: error instanceof Error ? error.message : 'Referencia no disponible.' };
+    }
+  }, [defaultLayers, personal, slot?.landmarks]);
+  const activeLayer = (source: 'generico' | 'personal' | 'foto'): AnnotationLayerView | undefined =>
+    (source === 'generico' ? annotationLayers.generic : source === 'personal' ? annotationLayers.personal : annotationLayers.photo)
+      .find(layer => layer.reference.kind === anatomyDisplay.anatomy);
+  const layerIsVisible = anatomyDisplay.anatomy === 'skin'
+    ? anatomyDisplay.skin.visible && anatomyDisplay.skin.opacity > 0
+    : anatomyDisplay.references[anatomyDisplay.anatomy].visible && anatomyDisplay.references[anatomyDisplay.anatomy].opacity > 0
+      && (anatomyDisplay.overlay || !anatomyDisplay.skin.visible || anatomyDisplay.skin.opacity < 0.99);
+  const genericLayer = annotationLayers.generic.find(layer => layer.reference.kind === anatomyDisplay.anatomy);
+  const personalLayer = annotationLayers.personal.find(layer => layer.reference.kind === anatomyDisplay.anatomy);
+  const photoLayer = annotationLayers.photo.find(layer => layer.reference.kind === anatomyDisplay.anatomy);
+  const photoLayerImages = useMemo(() => {
+    if (!slot?.landmarks) return [];
+    return annotationLayers.photo.map(layer => ({ kind: layer.reference.kind,
+      url: annotationPhotoLayer(layer, slot.landmarks!, genericFaceAtlas) }));
+  }, [annotationLayers.photo, slot?.landmarks]);
   const triangleRegions = useMemo(() => buildFaceTriangleRegions(canonicalRegionMap, genericFaceAtlas.positions), [canonicalRegionMap]);
   const regionCells = useMemo(() => buildRegionCells(canonicalRegionMap, triangleRegions), [canonicalRegionMap, triangleRegions]);
   const planePositions = useMemo(() => ({
@@ -445,11 +519,11 @@ export default function FaceSimLab() {
     personal: personal && regionPlanePositions(personal.surface.positions, genericFaceAtlas.triangles, regionPlane),
   }), [regionPlane, personal]);
   const regionOverlays = useMemo(() => {
-    if (!showRegions) return null;
     const positions: number[] = [], personalPositions: number[] = [], colors: number[] = [], labels: string[] = [];
     for (const cell of regionCells) {
       const label = cell.label;
-      labels.push(label);
+      const weights = [0, 1, 2].map(axis => cell.corners.reduce((sum, corner) => sum + corner[axis] / 3, 0)) as [number, number, number];
+      labels.push(patientZone(label, { triangle: cell.triangle, weights })!);
       positions.push(...regionCellPositions(cell, genericFaceAtlas.triangles, planePositions.generic));
       if (planePositions.personal) personalPositions.push(...regionCellPositions(cell, genericFaceAtlas.triangles, planePositions.personal));
       for (let j = 0; j < 3; j++) {
@@ -459,32 +533,75 @@ export default function FaceSimLab() {
       }
     }
     return {
-      generic: { positions: Float32Array.from(positions), colors: Float32Array.from(colors), labels, wireframe: true, onHover: setHoveredZone, selectedZone: hoveredZone,
+      generic: { positions: Float32Array.from(positions), colors: Float32Array.from(colors), labels, wireframe: true, opacity: showRegions ? 0.32 : 0, onHover: setHoveredZone, selectedZone: hoveredZone,
         depthTest: false, zoneAt: (point: Vec3) => {
           const address = locateModelPoint(point, genericFaceAtlas);
-          return address ? regionCellAt(address, regionCells) : null;
+          return address ? patientZone(regionCellAt(address, regionCells), address) : null;
         } },
-      personal: personal ? { positions: Float32Array.from(personalPositions), colors: Float32Array.from(colors), labels, wireframe: true, onHover: setHoveredZone, selectedZone: hoveredZone,
+      personal: personal ? { positions: Float32Array.from(personalPositions), colors: Float32Array.from(colors), labels, wireframe: true, opacity: showRegions ? 0.32 : 0, onHover: setHoveredZone, selectedZone: hoveredZone,
         depthTest: regionPlane === 'superficial', zoneAt: (point: Vec3) => {
           if (!isOnObservedFace(point, personal.surface, personal.regionMap)) return null;
           const address = locatePhotoPoint(projectPersonal(point, personal.projection), personal.regionMap.landmarks, genericFaceAtlas);
-          return address ? regionCellAt(address, regionCells) : null;
+          return address ? patientZone(regionCellAt(address, regionCells), address) : null;
         } } : undefined,
     } satisfies { generic: AnatomicalSurfaceOverlay; personal?: AnatomicalSurfaceOverlay };
   }, [showRegions, overlayMode, regionCells, planePositions, regionPlane, personal, hoveredZone]);
+  const renderLayerSettings = useMemo(() => {
+    const build = (available: AnnotationLayerView[]) => ({
+      references: available.filter(layer => anatomyDisplay.references[layer.reference.kind].visible)
+        .map(layer => ({ positions: layer.positions, indices: layer.indices, uvs: layer.reference.uvs, canvas: layer.reference.canvas,
+          opacity: anatomyDisplay.references[layer.reference.kind].opacity })),
+      skin: anatomyDisplay.skin, referenceOverlay: anatomyDisplay.overlay,
+    });
+    return { generic: build(annotationLayers.generic), personal: build(annotationLayers.personal) };
+  }, [annotationLayers, anatomyDisplay]);
+  const annotationOverlays = useMemo(() => {
+    const build = (source: 'generico' | 'personal'): AnatomicalSurfaceOverlay => {
+      const available = source === 'generico' ? annotationLayers.generic : annotationLayers.personal;
+      const active = available.find(layer => layer.reference.kind === anatomyDisplay.anatomy);
+      const base = source === 'generico' ? regionOverlays?.generic : regionOverlays?.personal;
+      const positions: number[] = [], colors: number[] = [], labels: string[] = [];
+      if (active) for (const cell of regionCells) {
+        const weights = [0, 1, 2].map(axis => cell.corners.reduce((sum, corner) => sum + corner[axis] / 3, 0)) as [number, number, number];
+        const label = active.zone({ triangle: cell.triangle, weights });
+        if (!label) continue;
+        labels.push(label);
+        for (const corner of cell.corners) {
+          const point = active.point({ triangle: cell.triangle, weights: [corner[0], corner[1], corner[2]] });
+          positions.push(point.x, point.y, point.z); colors.push(0.35, 0.8, 1);
+        }
+      }
+      return {
+        ...(active ? { positions: Float32Array.from(positions), colors: Float32Array.from(colors), labels,
+          wireframe: true, opacity: showRegions && layerIsVisible ? 0.32 : 0, selectedZone: hoveredZone, onHover: setHoveredZone,
+          zoneAt: (point: Vec3) => {
+            const address = locateSkinAnnotation(source, point);
+            return address && layerIsVisible ? active.zone(address) : null;
+          },
+        } : base ?? { positions: new Float32Array(), colors: new Float32Array() }),
+        ...(source === 'generico' ? renderLayerSettings.generic : renderLayerSettings.personal),
+        depthTest: !anatomyDisplay.overlay,
+      };
+    };
+    return { generic: build('generico'), personal: build('personal') };
+  }, [annotationLayers, anatomyDisplay, regionOverlays, regionCells, showRegions, hoveredZone, layerIsVisible, locateSkinAnnotation, renderLayerSettings]);
   const photoRegionOverlay = useMemo(() => {
-    if (!showRegions || !regionMap || !slot?.landmarks) return null;
+    if (!regionMap || !slot?.landmarks) return null;
+    if (photoLayer && !layerIsVisible) return null;
     const groups = new Map<string, string[]>();
     for (const cell of regionCells) {
       if (!addressHasPhotoCoverage({ triangle: cell.triangle, weights: [1 / 3, 1 / 3, 1 / 3] }, slot.landmarks, genericFaceAtlas)) continue;
       const ids = genericFaceAtlas.triangles.slice(cell.triangle * 3, cell.triangle * 3 + 3);
-      const label = cell.label;
+      const weights = [0, 1, 2].map(axis => cell.corners.reduce((sum, corner) => sum + corner[axis] / 3, 0)) as [number, number, number];
+      const label = photoLayer ? photoLayer.zone({ triangle: cell.triangle, weights })
+        : patientZone(cell.label, { triangle: cell.triangle, weights });
+      if (!label) continue;
       const path = `M${cell.corners.map(weights => `${ids.reduce((sum, id, j) => sum + slot.landmarks![id].x * weights[j], 0)},${ids.reduce((sum, id, j) => sum + slot.landmarks![id].y * weights[j], 0)}`).join('L')}Z`;
       const paths = groups.get(label) ?? [];
       paths.push(path); groups.set(label, paths);
     }
     return [...groups].map(([label, paths]) => ({ label, path: paths.join('') }));
-  }, [showRegions, regionMap, regionCells, slot?.landmarks]);
+  }, [regionMap, regionCells, slot?.landmarks, photoLayer, layerIsVisible]);
   const hasImage = !!slot;
   const loadedPhotos = PHOTO_SLOTS.filter(v => photos[v.id]);
   const readyPhotos = PHOTO_SLOTS.filter(v => photos[v.id]?.landmarks);
@@ -518,13 +635,14 @@ export default function FaceSimLab() {
     binding.paths.flat().every(a => addressHasPhotoCoverage(a, personal.regionMap.landmarks, genericFaceAtlas)))) : {},
   [bindings, personal]);
   const elems = useMemo<Elem[]>(() => slot?.landmarks
-    ? anatomicalPhotoElements(photoBindings, meta, slot.landmarks, genericFaceAtlas) : [],
-  [photoBindings, meta, slot?.landmarks]);
-  const genericAnnotations = useMemo(() => annotationViews(markers, lines, shapes, bindings, genericFaceAtlas,
-    a => modelPoint(a, genericFaceAtlas)), [markers, lines, shapes, bindings]);
+    ? anatomicalPhotoElements(bindingsOnLayer(photoBindings, photoLayer), meta, slot.landmarks, genericFaceAtlas) : [],
+  [photoBindings, meta, slot?.landmarks, photoLayer]);
+  const genericAnnotations = useMemo(() => annotationViews(markers, lines, shapes, bindingsOnLayer(bindings, genericLayer), genericFaceAtlas,
+    genericLayer ? genericLayer.point : a => modelPoint(a, genericFaceAtlas)), [markers, lines, shapes, bindings, genericLayer]);
   const personalAnnotations = useMemo(() => personal
-    ? annotationViews(markers, lines, shapes, surfaceBindings, genericFaceAtlas, a => surfacePoint(a, personal.surface, genericFaceAtlas))
-    : { markers: [], lines: [] }, [markers, lines, shapes, surfaceBindings, personal]);
+    ? annotationViews(markers, lines, shapes, bindingsOnLayer(surfaceBindings, personalLayer), genericFaceAtlas,
+      personalLayer ? personalLayer.point : a => surfacePoint(a, personal.surface, genericFaceAtlas))
+    : { markers: [], lines: [] }, [markers, lines, shapes, surfaceBindings, personal, personalLayer]);
   const transferStats = useMemo(() => {
     if (!slot?.landmarks) return { count: 0, max: 0 };
     const addresses = Object.values(photoBindings).flatMap(b => b.paths.flatMap(path => path.filter((_, i) => i % 4 === 0)));
@@ -619,12 +737,13 @@ export default function FaceSimLab() {
     return () => cancelAnimationFrame(id);
   }, [previewSamples, preview, workspace, aspect, split, renderTick]);
 
-  const snap = useCallback(() => setHistory(h => [...h.slice(-30), { markers, lines, shapes, meta, photoEls, bindings }]), [markers, lines, shapes, meta, photoEls, bindings]);
+  const snap = useCallback(() => setHistory(h => annotationHistory(h, { markers, lines, shapes, meta, photoEls, bindings, quickRecord })), [markers, lines, shapes, meta, photoEls, bindings, quickRecord]);
   const undo = () => {
     const s = history.at(-1); if (!s) return;
-    setMarkers(s.markers); setLines(s.lines); setShapes(s.shapes); setMeta(s.meta); setPhotoEls(s.photoEls); setBindings(s.bindings); setHistory(h => h.slice(0, -1));
+    setMarkers(s.markers); setLines(s.lines); setShapes(s.shapes); setMeta(s.meta); setPhotoEls(s.photoEls); setBindings(s.bindings);
+    setQuickRecord(s.quickRecord); setSelectedId(id => id && s.bindings[id] ? id : null); setHistory(h => h.slice(0, -1));
   };
-  const clearAll = () => { snap(); setMarkers([]); setLines([]); setShapes([]); setMeta({}); setPhotoEls([]); setBindings({}); };
+  const clearAll = () => { snap(); setMarkers([]); setLines([]); setShapes([]); setMeta({}); setPhotoEls([]); setBindings({}); setQuickRecord(initialQuickRecordSettings()); };
   const activateGenericModel = () => {
     genericSelected.current = true;
     personalRequestRef.current++;
@@ -892,21 +1011,65 @@ export default function FaceSimLab() {
   });
 
   // ── Marcación en modelo 3D ──
-  const locateAnnotation = (source: 'generico' | 'personal' | 'foto', p: Vec3): FaceAddress | null => {
-    let address: FaceAddress | null;
-    if (source === 'generico') address = locateModelPoint(p, genericFaceAtlas);
-    else if (source === 'personal') {
-      if (!personal || !isOnObservedFace(p, personal.surface, personal.regionMap)) return null;
-      address = locatePhotoPoint(projectPersonal(p, personal.projection), personal.regionMap.landmarks, genericFaceAtlas);
-    } else address = slot?.landmarks ? locatePhotoPoint(p, slot.landmarks, genericFaceAtlas) : null;
+  const acceptsAddress = (source: 'generico' | 'personal' | 'foto', address: FaceAddress): boolean => {
     const landmarks = source === 'personal' ? personal?.regionMap.landmarks : source === 'foto' ? slot?.landmarks : undefined;
-    return address && tryModelPoint(address, genericFaceAtlas)
-      && (!landmarks || addressHasPhotoCoverage(address, landmarks, genericFaceAtlas)) ? address : null;
+    if (source !== 'generico' && (!landmarks || !addressHasPhotoCoverage(address, landmarks, genericFaceAtlas))) return false;
+    return layerIsVisible && (anatomyDisplay.anatomy === 'skin' || !!activeLayer(source)?.accepts(address));
   };
-  const blockedMark = () => setStatus('Marcación rechazada: la zona no tiene correspondencia facial observada. No se marcan orejas, nuca, reverso ni superficies inferidas. Revisa las fotos y referencias; se conservan las marcas anteriores.');
-  const makeBinding = (paths: Vec3[][], source: 'generico' | 'personal' | 'foto', kind: ElemKind) =>
-    bindAnatomicalPaths(paths, p => locateAnnotation(source, p), kind, source === 'foto' ? 0.004 : 0.035);
-  const addMeta = (id: string) => setMeta(m => ({ ...m, [id]: curMeta() }));
+  const locateAnnotation = (source: 'generico' | 'personal' | 'foto', p: Vec3): FaceAddress | null => {
+    const address = locateSkinAnnotation(source, p);
+    return address && acceptsAddress(source, address) ? address : null;
+  };
+  const blockedMark = () => setStatus('Marcación rechazada: falta cobertura facial observada o anatomía visible en la capa activa (puede haber un hueco). No se marcan orejas, nuca, reverso ni superficies inferidas. Se conservan las marcas anteriores.');
+  const makeBinding = (paths: Vec3[][], source: 'generico' | 'personal' | 'foto', kind: ElemKind, skinOnly = false) =>
+    bindAnatomicalPaths(paths, p => skinOnly ? locateSkinAnnotation(source, p) : locateAnnotation(source, p), kind, source === 'foto' ? 0.004 : 0.035);
+  const commitBinding = (
+    id: string, value: AnatomicalBinding, source: 'generico' | 'personal' | 'foto',
+    updating = false, properties = meta[id] ?? curMeta(),
+  ): boolean => {
+    const binding = { ...value, illustrativePlane: value.illustrativePlane ?? anatomyDisplay.anatomy };
+    const entries: [string, AnatomicalBinding][] = [[id, binding]];
+    if (!updating && bilateral) {
+      const mirrored = mirrorAnnotation(binding, genericFaceAtlas, address => acceptsAddress(source, address));
+      if (!mirrored) { blockedMark(); return false; }
+      entries.push([uid(), mirrored]);
+    }
+    // Validación completa ANTES de tomar un único snapshot, también para ambos lados.
+    snap();
+    const ids = new Set(entries.map(([key]) => key));
+    setMarkers(current => [
+      ...current.filter(marker => !marker.id || !ids.has(marker.id)),
+      ...entries.filter(([, entry]) => entry.kind === 'point').map(([key, entry]): Marker3D => {
+        const address = entry.paths[0][0];
+        return { id: key, type: 'Puntual', pathologyId: 'filler', zone: '', rotation: [0, 0, 0],
+          position: modelPoint(address, genericFaceAtlas), normal: surfaceNormal(address, genericFaceAtlas, a => modelPoint(a, genericFaceAtlas)) };
+      }),
+    ]);
+    setLines(current => [
+      ...current.filter(line => !ids.has(line.id)),
+      ...entries.filter(([, entry]) => entry.kind !== 'point').map(([key, entry]): FreehandLine => {
+        const paths = entry.paths.map(path => path.map(address => modelPoint(address, genericFaceAtlas)));
+        const previous = current.find(line => line.id === key);
+        return { ...previous, id: key, points: paths[0], segments: paths.length > 1 ? paths : undefined,
+          color: SIM_MODES[properties.mode].color, thickness: previous?.thickness ?? 1.5,
+          ...(entry.kind === 'arrow' ? { technique_preset: 'Flecha' } : {}) };
+      }),
+    ]);
+    // Los contornos se editan como su polígono real, no como una segunda copia.
+    setShapes(current => current.filter(shape => !ids.has(shape.id)));
+    setBindings(current => ({ ...current, ...Object.fromEntries(entries) }));
+    setMeta(current => ({ ...current, ...Object.fromEntries(entries.map(([key]) => [key, { ...properties }])) }));
+    setSelectedId(id);
+    return true;
+  };
+  const mirrorSelected = () => {
+    if (!selectedId || !bindings[selectedId] || !meta[selectedId]) return;
+    const source = workMode === 'foto' ? 'foto' : modelKind;
+    const mirrored = mirrorAnnotation(bindings[selectedId], genericFaceAtlas, address => acceptsAddress(source, address));
+    if (!mirrored) { blockedMark(); return; }
+    // updating=true impide que el modo bilateral cree un tercer elemento.
+    if (commitBinding(uid(), mirrored, source, true, meta[selectedId])) setStatus('Espejo creado; original y registro conservados. Deshacer revierte toda la acción.');
+  };
   const onMarker = (m: Marker3D, source: 'generico' | 'personal') => {
     if (workspace !== 'simulate' && !calibrating) return;
     if (preview.after && !calibrating) return;
@@ -938,18 +1101,27 @@ export default function FaceSimLab() {
     }
     const binding = makeBinding([[m.position]], source, 'point');
     if (!binding) { blockedMark(); return; }
-    const address = binding.paths[0][0];
-    snap();
-    setMarkers(p => [...p, { ...m, position: modelPoint(address, genericFaceAtlas),
-      normal: surfaceNormal(address, genericFaceAtlas, a => modelPoint(a, genericFaceAtlas)) }]);
-    setBindings(p => ({ ...p, [m.id!]: binding })); addMeta(m.id);
+    if (!commitBinding(m.id, binding, source)) return;
     setStatus('Marcación anatómica compartida entre modelo original, superficie y foto. Cambiar de vista no la elimina.');
   };
   const onLine = (l: FreehandLine, source: 'generico' | 'personal', updating = false) => {
     if (workspace !== 'simulate' || preview.after || tool3d === 'navigate' || calibrating) return;
     const previous = updating ? bindings[l.id] : undefined;
+    if (previous?.center && (previous.kind === 'circle' || previous.kind === 'rect')) {
+      // El visor edita líneas abiertas: un contorno cerrado NO se debe convertir
+      // en la cuerda entre extremos coincidentes. Trasladar el polígono completo.
+      const address = l.points[0] && locateAnnotation(source, l.points[0]);
+      if (!address) { blockedMark(); return; }
+      const from = canonicalAnnotationPoint(previous.paths[0][0], genericFaceAtlas);
+      const to = canonicalAnnotationPoint(address, genericFaceAtlas);
+      const moved = translateAnnotation(previous, { x: to.x - from.x, y: to.y - from.y }, genericFaceAtlas,
+        point => acceptsAddress(source, point));
+      if (!moved) { blockedMark(); return; }
+      if (commitBinding(l.id, moved, source, true)) setStatus('Contorno completo trasladado. Centro, registro y cantidad conservados; no se convierte en una línea.');
+      return;
+    }
     const binding = makeBinding(l.segments?.length ? l.segments : [l.points], source,
-      previous?.kind ?? (l.technique_preset === 'Flecha' ? 'arrow' : l.segments?.length ? 'pattern' : 'free'));
+      previous?.kind ?? (l.technique_preset === 'Flecha' ? 'arrow' : l.segments?.length ? 'pattern' : tool3d === 'straight-line' ? 'line' : 'free'));
     if (!binding) { blockedMark(); return; }
     if (previous?.center) {
       const points = l.points;
@@ -958,11 +1130,8 @@ export default function FaceSimLab() {
       if (!address) { blockedMark(); return; }
       binding.center = address;
     }
-    snap();
-    const paths = binding.paths.map(path => path.map(a => modelPoint(a, genericFaceAtlas)));
-    const line = { ...l, points: paths[0], segments: paths.length > 1 ? paths : undefined };
-    setLines(p => updating ? p.map(old => old.id === l.id ? line : old) : [...p, line]);
-    setBindings(p => ({ ...p, [l.id]: binding })); if (!updating) addMeta(l.id);
+    if (previous?.illustrativePlane) binding.illustrativePlane = previous.illustrativePlane;
+    if (!commitBinding(l.id, binding, source, updating)) return;
     setStatus('Trazo anatómico compartido actualizado. Se conserva al cambiar modelo, superficie o foto.');
   };
   const onShape = (s: SurfaceShape, source: 'generico' | 'personal') => {
@@ -970,8 +1139,7 @@ export default function FaceSimLab() {
     const binding = makeBinding([shapeOutline(s)], source, s.shapeType === 'circle' ? 'circle' : 'rect');
     const center = locateAnnotation(source, s.center);
     if (!binding || !center) { blockedMark(); return; }
-    snap(); setShapes(p => [...p, { ...s, center: modelPoint(center, genericFaceAtlas) }]);
-    setBindings(p => ({ ...p, [s.id]: { ...binding, center } })); addMeta(s.id);
+    if (!commitBinding(s.id, { ...binding, center }, source)) return;
     setStatus('Contorno anatómico compartido entre modelo, superficie y foto; revisa su cobertura completa.');
   };
 
@@ -1127,7 +1295,7 @@ export default function FaceSimLab() {
     }
     if (dragRef.current) {
       const id = dragRef.current;
-      setBindings(p => ({ ...p, [id]: { kind: 'point', paths: [[address]] } }));
+      setBindings(p => ({ ...p, [id]: { ...p[id], kind: 'point', paths: [[address]] } }));
       setMarkers(p => p.map(m => m.id === id ? { ...m, position: modelPoint(address, genericFaceAtlas),
         normal: surfaceNormal(address, genericFaceAtlas, a => modelPoint(a, genericFaceAtlas)) } : m));
       setStatus('Punto actualizado sobre la foto y transferido al modelo original y a la superficie personal.');
@@ -1158,7 +1326,8 @@ export default function FaceSimLab() {
       const end = d.pts[1];
       path = [center, { x: end.x, y: center.y }, end, { x: center.x, y: end.y }, center];
     }
-    const binding = makeBinding([path.map(p => ({ ...p, z: 0 }))], 'foto', d.kind);
+    const paths = d.kind === 'pattern' ? photoPatternPaths(center, d.pts[1], aspect, photoPattern) : [path];
+    const binding = makeBinding(paths.map(points => points.map(p => ({ ...p, z: 0 }))), 'foto', d.kind);
     if (!binding) { blockedMark(); return; }
     if (d.kind === 'circle' || d.kind === 'rect') {
       const c = d.kind === 'rect' ? { x: (center.x + d.pts[1].x) / 2, y: (center.y + d.pts[1].y) / 2 } : center;
@@ -1166,16 +1335,7 @@ export default function FaceSimLab() {
       if (!address) { blockedMark(); return; }
       binding.center = address;
     }
-    snap();
-    if (d.kind === 'point') {
-      const address = binding.paths[0][0];
-      setMarkers(p => [...p, { id, type: 'Puntual', pathologyId: 'filler', zone: '', rotation: [0, 0, 0],
-        position: modelPoint(address, genericFaceAtlas), normal: surfaceNormal(address, genericFaceAtlas, a => modelPoint(a, genericFaceAtlas)) }]);
-    } else {
-      const points = binding.paths[0].map(a => modelPoint(a, genericFaceAtlas));
-      setLines(p => [...p, { id, points, color, thickness: 1.5, ...(d.kind === 'arrow' ? { technique_preset: 'Flecha' } : {}) }]);
-    }
-    setBindings(p => ({ ...p, [id]: binding })); addMeta(id);
+    if (!commitBinding(id, binding, 'foto')) return;
     setStatus('Marcación creada desde la foto y compartida con modelo original y superficie personal.');
   };
 
@@ -1195,23 +1355,29 @@ export default function FaceSimLab() {
   const doImport = () => {
     try {
       const r = importLocalRecord(importText, ZONES);
+      const incomingQuick = r.quickRecord?.entries ?? {};
+      if (Object.keys(incomingQuick).some(key => Object.prototype.hasOwnProperty.call(quickRecord.entries, key))) {
+        setStatus('Importación rechazada completa: ya existen cantidades para ese producto/vial. Exporta el registro actual y limpia o renombra el vial antes de importar. No se sobrescribieron cantidades ni marcas.');
+        return;
+      }
+      const incomingHasAmounts = Object.keys(incomingQuick).length > 0;
       const n = r.markers.length + r.lines.length + r.shapes.length;
-      if (!n) { setStatus('No se encontraron puntos, trazos ni formas con coordenadas 3D en el JSON.'); return; }
+      if (!n && !incomingHasAmounts) { setStatus('No se encontraron puntos, trazos, formas ni totales por zona en el JSON.'); return; }
       const importedMarkers = r.markersFull as unknown as Marker3D[];
       const importedLines = r.lines as unknown as FreehandLine[];
       const importedShapes = r.shapes as unknown as SurfaceShape[];
       const mapped: AnatomicalBindings = {};
       const keepMarkers = importedMarkers.filter(m => {
         if (!m.id) return false;
-        const binding = makeBinding([[m.position]], 'generico', 'point');
+        const binding = makeBinding([[m.position]], 'generico', 'point', true);
         if (binding) mapped[m.id] = binding;
         return !!binding;
       });
       const keepLines = importedLines.filter(l => {
         const binding = makeBinding(l.segments?.length ? l.segments : [l.points], 'generico',
-          r.kinds[l.id] ?? (l.technique_preset === 'Flecha' ? 'arrow' : l.segments?.length ? 'pattern' : 'free'));
+          r.kinds[l.id] ?? (l.technique_preset === 'Flecha' ? 'arrow' : l.segments?.length ? 'pattern' : 'free'), true);
         if (binding && r.centers[l.id]) {
-          const center = locateAnnotation('generico', r.centers[l.id]);
+          const center = locateSkinAnnotation('generico', r.centers[l.id]);
           if (!center) return false;
           binding.center = center;
         }
@@ -1219,18 +1385,20 @@ export default function FaceSimLab() {
         return !!binding;
       });
       const keepShapes = importedShapes.filter(s => {
-        const binding = makeBinding([shapeOutline(s)], 'generico', s.shapeType === 'circle' ? 'circle' : 'rect');
-        const center = locateAnnotation('generico', s.center);
+        const binding = makeBinding([shapeOutline(s)], 'generico', s.shapeType === 'circle' ? 'circle' : 'rect', true);
+        const center = locateSkinAnnotation('generico', s.center);
         if (binding && center) mapped[s.id] = { ...binding, center };
         return !!binding && !!center;
       });
       const accepted = keepMarkers.length + keepLines.length + keepShapes.length;
-      if (!accepted) { setStatus(`No se trasladaron los ${n} elementos: no corresponden a la superficie facial observada del modelo original. No se modificaron las marcas existentes.`); return; }
+      if (!accepted && !incomingHasAmounts) { setStatus(`No se trasladaron los ${n} elementos: no corresponden a la superficie facial observada del modelo original. No se modificaron las marcas existentes.`); return; }
+      for (const [id, binding] of Object.entries(mapped)) binding.illustrativePlane = r.illustrativePlanes[id] ?? 'skin';
       snap();
       setMarkers(p => [...p, ...keepMarkers]); setLines(p => [...p, ...keepLines]);
       setShapes(p => [...p, ...keepShapes]); setBindings(p => ({ ...p, ...mapped }));
       setMeta(m => ({ ...m, ...Object.fromEntries(Object.entries(r.meta).filter(([id]) => mapped[id])) }));
-      setStatus(`${accepted}/${n} elementos trasladados por correspondencia anatómica. ${n - accepted} sin correspondencia o fuera de cobertura, no importados. No se modificó la BD.`);
+      if (incomingHasAmounts) setQuickRecord(current => ({ ...current, entries: { ...current.entries, ...incomingQuick } }));
+      setStatus(`${accepted}/${n} elementos trasladados por correspondencia anatómica. ${n - accepted} sin correspondencia o fuera de cobertura, no importados. ${incomingHasAmounts ? 'Totales por zona conservados sin repartirlos entre marcas. ' : ''}No se modificó la BD.`);
     } catch (error) { setStatus(`No se pudo importar: ${error instanceof Error ? error.message : 'JSON o geometría inválidos'}. Las marcas anteriores se conservan.`); }
   };
   const exportPng = () => {
@@ -1241,7 +1409,8 @@ export default function FaceSimLab() {
     const kinds = Object.fromEntries(Object.entries(bindings).map(([id, binding]) => [id, binding.kind]));
     const centers = Object.fromEntries(Object.entries(bindings).flatMap(([id, binding]) =>
       binding.center ? [[id, modelPoint(binding.center, genericFaceAtlas)]] : []));
-    const url = URL.createObjectURL(new Blob([JSON.stringify(localRecord(markers, lines, shapes, meta, kinds, centers), null, 2)], { type: 'application/json' }));
+    const illustrativePlanes = Object.fromEntries(Object.entries(bindings).map(([id, binding]) => [id, binding.illustrativePlane ?? 'skin']));
+    const url = URL.createObjectURL(new Blob([JSON.stringify(localRecord(markers, lines, shapes, meta, kinds, centers, quickRecord, illustrativePlanes), null, 2)], { type: 'application/json' }));
     const link = document.createElement('a'); link.href = url; link.download = 'marcaciones-inyectables-local.json'; link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
@@ -1268,7 +1437,9 @@ export default function FaceSimLab() {
     return [pt(0.5), pt(-0.5)];
   };
   const poly = (pts: P2[]) => pts.map(p => `${p.x},${p.y}`).join(' ');
-  const draftEl: Elem | null = draft ? elemsFromPhoto([{ ...curMeta(), id: 'draft', view, kind: draft.kind, pts: draft.pts }], aspect)[0] : null;
+  const draftEl: Elem | null = draft ? draft.kind === 'pattern' && draft.pts.length > 1
+    ? { ...curMeta(), id: 'draft', kind: 'pattern', paths: photoPatternPaths(draft.pts[0], draft.pts[1], aspect, photoPattern) }
+    : elemsFromPhoto([{ ...curMeta(), id: 'draft', view, kind: draft.kind, pts: draft.pts }], aspect)[0] : null;
 
   const renderViewer = (source: 'generico' | 'personal') => {
     const original = source === 'generico';
@@ -1279,10 +1450,22 @@ export default function FaceSimLab() {
       {overlayMode === 'attention' && <p className="bg-amber-100 px-3 py-2 text-xs font-semibold text-amber-950">SIMULACIÓN · No detecta vasos ni certifica zonas seguras.</p>}
       {ready ? <Clinical3DViewer
         key={`${source}-${preview.after && !calibrating ? 'after' : 'before'}`}
-        markers={annotations.markers} freehandLines={annotations.lines} surfaceShapes={[]}
+        markers={[]} freehandLines={annotations.lines} surfaceShapes={[]}
+        editablePoints={annotations.markers.flatMap(marker => marker.id ? [{ id: marker.id, type: 'free' as const,
+          ...marker.position, lineIds: [], name: meta[marker.id]?.zone }] : [])}
+        pointMode="none" selectedPointId={selectedId ?? undefined}
+        onEditablePointClicked={id => { setSelectedId(id); beginEditing(); }}
+        onEditablePointHovered={id => { if (id) setSelectedId(id); }}
+        onEditablePointMoved={(id, point) => {
+          const binding = makeBinding([[point]], source, 'point');
+          if (!binding) { blockedMark(); return; }
+          binding.illustrativePlane = bindings[id]?.illustrativePlane;
+          if (commitBinding(id, binding, source, true)) setStatus('Punto movido. Mismo registro, sin duplicados.');
+        }}
         selectedPathology="filler" skipConfirmation readOnly={workMode !== '3d' || tool3d === 'navigate' || preview.after && !calibrating || workspace !== 'simulate' && !calibrating}
-        occludeAnnotations={!original} showMarkerLabels={false}
-        anatomicalOverlay={original ? regionOverlays?.generic : regionOverlays?.personal}
+        occludeAnnotations={!anatomyDisplay.overlay && anatomyDisplay.skin.visible && anatomyDisplay.skin.opacity >= 0.99
+          && (!original || anatomyDisplay.anatomy !== 'skin')} showMarkerLabels={false}
+        anatomicalOverlay={original ? annotationOverlays.generic : annotationOverlays.personal}
         surfaceConstraint={workMode === '3d' && tool3d !== 'navigate' ? {
           accepts: p => !!locateAnnotation(source, p),
           onRejected: blockedMark,
@@ -1312,7 +1495,7 @@ export default function FaceSimLab() {
   };
 
   const renderShapes = (list: Elem[], dashed = false) => list.filter(e => e.kind !== 'point').map(e => {
-    const col = SIM_MODES[e.mode].color, common = { stroke: col, strokeWidth: 2, fill: 'none', vectorEffect: 'non-scaling-stroke' as const, strokeDasharray: dashed ? '5 4' : undefined };
+    const col = selectedId === e.id ? '#fbbf24' : SIM_MODES[e.mode].color, common = { stroke: col, strokeWidth: selectedId === e.id ? 3 : 2, fill: 'none', vectorEffect: 'non-scaling-stroke' as const, strokeDasharray: dashed ? '5 4' : undefined };
     if (e.boundary) return <polygon key={e.id} points={poly(e.boundary)} {...common} fill={col} fillOpacity={0.15} />;
     if (e.kind === 'circle') return <ellipse key={e.id} cx={e.paths[0][0].x} cy={e.paths[0][0].y} rx={e.rx} ry={e.ry} {...common} fill={col} fillOpacity={0.15} />;
     if (e.kind === 'rect') return <rect key={e.id} x={e.paths[0][0].x - (e.rx ?? 0)} y={e.paths[0][0].y - (e.ry ?? 0)} width={(e.rx ?? 0) * 2} height={(e.ry ?? 0) * 2} {...common} fill={col} fillOpacity={0.15} />;
@@ -1323,6 +1506,11 @@ export default function FaceSimLab() {
       </g>
     );
   });
+  const photoUsesPreview = (!preview.after || workspace === 'capture') && !!slot?.previewUrl;
+  const photoSkinOpacity = workspace === 'simulate' ? anatomyDisplay.skin.visible ? anatomyDisplay.skin.opacity : 0 : 1;
+  const photoLayerOverlay = workspace === 'simulate' ? photoLayerImages.map(({ kind, url }) => anatomyDisplay.references[kind].visible && <img
+    key={kind} src={url} alt="" aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full"
+    style={{ opacity: anatomyDisplay.references[kind].opacity }} />) : null;
 
   const photoInput = (v: (typeof PHOTO_SLOTS)[number]) => (
     <div key={v.id} className="min-w-0">
@@ -1382,6 +1570,31 @@ export default function FaceSimLab() {
           onApply={(landmarks, reviewed) => applyLandmarks(landmarks, [...genericFaceAtlas.triangles], slot.contourAdjusted, reviewed)} />
       </Suspense>}
       {(workspace === 'capture' || editorGroup === 'annotations') && <aside aria-label={workspace === 'capture' ? 'Revisión de capturas' : 'Herramientas de marcación'} className="min-w-0 space-y-4 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm lg:self-start">
+        {workspace === 'simulate' && <div className="space-y-3">
+          <h2 className="text-sm font-semibold">1. Superficie y capa → 2. Herramienta → 3. Revisar y exportar</h2>
+          <div className="grid grid-cols-2 gap-2" role="group" aria-label="Superficie de marcación">
+            <button type="button" onClick={activateGenericModel} aria-pressed={modelKind === 'generico'}
+              className="admin-focus-ring min-h-10 rounded border border-slate-300 text-xs aria-pressed:bg-sky-100">Genérico</button>
+            <button type="button" onClick={activatePersonal} disabled={!slot?.landmarks || captureBlocked || buildingPersonal}
+              aria-pressed={modelKind === 'personal'} className="admin-focus-ring min-h-10 rounded border border-slate-300 text-xs aria-pressed:bg-sky-100 disabled:opacity-40">Personal (foto)</button>
+          </div>
+          <div className="rounded-xl bg-slate-900 p-2 text-white">
+            <AnatomyLayerControls value={anatomyDisplay} onChange={value => {
+              setAnatomyDisplay(value); setHoveredZone(null); setDraft(null);
+            }} showMesh={showRegions} onMeshChange={toggleMesh} />
+          </div>
+          {(layerError || annotationLayers.error) ? <div role="alert" className="text-xs text-red-800">
+            <p>{layerError ?? annotationLayers.error} La piel y el registro se conservan.</p>
+            <button type="button" onClick={() => setLayerAttempt(n => n + 1)} className="admin-focus-ring min-h-10 underline">Reintentar capas</button>
+          </div> : !defaultLayers.length && <p role="status" className="text-xs">Cargando referencias anatómicas…</p>}
+          <p className="text-xs text-slate-600">Capa activa: {ANATOMY_PLANES.find(plane => plane.id === anatomyDisplay.anatomy)?.label}. Plano anatómico ilustrativo, no plano de inyección medido. Laterales siempre del paciente.</p>
+          {!layerIsVisible && <p role="status" className="text-xs font-semibold text-amber-800">La capa activa está oculta: muéstrala o cambia a otra capa para marcar.</p>}
+          <label className="flex min-h-10 items-center gap-2 text-xs"><input type="checkbox" checked={bilateral}
+            onChange={e => setBilateral(e.target.checked)} />Modo bilateral · crear ambos lados en una acción</label>
+          <button type="button" disabled={!selectedId || preview.after} onClick={mirrorSelected}
+            className="admin-focus-ring min-h-10 w-full rounded border border-slate-300 text-xs font-semibold disabled:opacity-40">Espejar selección</button>
+          <p className="text-xs text-slate-600">Espejo para puntos, trazos, contornos y patrones en foto y 3D. Si falta cobertura en un lado, se rechaza el par completo.</p>
+        </div>}
         {workspace === 'capture' && <>
         <div>
           <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Fotos del paciente</span>
@@ -1666,6 +1879,12 @@ export default function FaceSimLab() {
               ? TOOLS_3D.map(t => <button key={t.id} type="button" disabled={calibrating && t.id !== 'point'} aria-pressed={tool3d === t.id} onClick={() => { setTool3d(t.id); if (t.id !== 'navigate') beginEditing(); }} className={`admin-focus-ring min-h-10 rounded-md px-2 py-1 text-[11px] font-semibold ${tool3d === t.id ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'} disabled:opacity-50`}>{t.label}</button>)
               : TOOLS_PHOTO.map(t => <button key={t.id} type="button" aria-pressed={toolPhoto === t.id && photoInteraction === 'draw'} onClick={() => { setToolPhoto(t.id); setPhotoInteraction('draw'); beginEditing(); }} className={`min-h-10 rounded-md px-2 py-1 text-[11px] font-semibold ${toolPhoto === t.id && photoInteraction === 'draw' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'}`}>{t.label}</button>)}
           </div>
+          {workMode === 'foto' && toolPhoto === 'pattern' && <label className="mt-2 block text-xs">Patrón ilustrativo
+            <select value={photoPattern} onChange={e => setPhotoPattern(e.target.value as typeof photoPattern)}
+              className="admin-focus-ring mt-1 min-h-10 w-full rounded border border-slate-300 p-2">
+              <option value="fan">Abanico</option><option value="grid">Malla</option><option value="fern">Helecho</option>
+            </select>
+          </label>}
         </div>
 
         <div>
@@ -1685,18 +1904,21 @@ export default function FaceSimLab() {
           </select>
           <span className="mt-1 block text-[10px] font-normal normal-case">{regionMap ? 'Zonas definidas sobre el atlas 3D del modelo y transferidas al rostro por sus referencias. Las líneas pueden atravesar varias. No es recomendación de aplicación.' : 'Carga un rostro para comprobar la correspondencia; el modelo conserva sus referencias anatómicas.'}</span>
         </label>
-        <label className="block text-xs font-semibold uppercase text-slate-500">Producto
-          <select value={product} onChange={e => setProduct(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm normal-case">
-            <option value="">—</option>
-            {catalog(SIM_MODES[mode].catalog).map(p => <option key={p}>{p}</option>)}
-          </select>
+        <label className="block text-xs font-semibold uppercase text-slate-500">Producto / nombre del vial
+          <input list="face-annotation-products" value={product} onChange={e => setProduct(e.target.value)}
+            className="admin-focus-ring mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm normal-case" />
+          <datalist id="face-annotation-products">{catalog(SIM_MODES[mode].catalog).map(p => <option key={p} value={p} />)}</datalist>
+          <span className="block text-[11px] font-normal normal-case">Nombre libre. Solo se asigna a nuevas marcas; no cambia las anteriores.</span>
         </label>
+        <details className="rounded border border-slate-200 p-2 text-xs">
+          <summary className="cursor-pointer font-semibold">Compatibilidad: dosis por marca (opcional)</summary>
         <label className="block text-xs font-semibold uppercase text-slate-500">
           Dosis registrada ({SIM_MODES[mode].unit})
           <input aria-label="Dosis para nuevas marcas" type="number" min={0} step="any" value={dose}
             onChange={e => { const n = Number(e.target.value); if (Number.isFinite(n) && n >= 0) setDose(n); }} className="mt-1 w-full rounded border border-slate-300 p-2" />
           <span className="block text-[10px] font-normal normal-case text-slate-600">0 = sin dosis indicada. Dato manual, no sugerencia. En trazos corresponde al total; no modifica el preview.</span>
         </label>
+        </details>
         <fieldset className="space-y-2 rounded-lg bg-slate-50 p-3">
           <legend className="text-xs font-semibold">Preview cosmético ilustrativo</legend>
           <div className="flex gap-2">{([false, true] as const).map(after => <button key={String(after)} type="button" aria-pressed={preview.after === after}
@@ -1835,14 +2057,15 @@ export default function FaceSimLab() {
         <div className="flex gap-2">
           <button type="button" disabled={!history.length} onClick={undo}
             className="flex flex-1 items-center justify-center gap-1 rounded-lg border border-slate-300 px-2 py-1.5 text-xs font-semibold disabled:opacity-40"><Undo2 className="h-3.5 w-3.5" aria-hidden="true" />Deshacer</button>
-          <button type="button" disabled={!elems.length && !markers.length && !lines.length && !shapes.length} onClick={clearAll}
+          <button type="button" disabled={!hasQuickEntries && !elems.length && !markers.length && !lines.length && !shapes.length} onClick={clearAll}
             className="flex flex-1 items-center justify-center gap-1 rounded-lg border border-slate-300 px-2 py-1.5 text-xs font-semibold disabled:opacity-40"><Trash2 className="h-3.5 w-3.5" aria-hidden="true" />Limpiar</button>
           <button type="button" disabled={!hasImage} onClick={exportPng}
             className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-[#b8944d] px-2 py-1.5 text-xs font-semibold text-white disabled:opacity-40"><Download className="h-3.5 w-3.5" aria-hidden="true" />PNG</button>
         </div>
-        <button type="button" disabled={!Object.keys(bindings).length} onClick={exportJson}
+        <button type="button" disabled={!hasLocalRecord} onClick={exportJson}
           className="admin-focus-ring min-h-10 w-full rounded-lg border border-slate-300 px-2 text-xs font-semibold disabled:opacity-40">Exportar JSON de Inyectables</button>
         <label className="flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={showMarks} onChange={e => setShowMarks(e.target.checked)} />Mostrar marcas sobre la foto</label>
+        <p className="text-xs text-slate-600">Exporta el JSON antes de salir: las marcas y los totales por zona solo están en memoria. Los totales rápidos no son dosis por punto.</p>
         <p className="text-[11px] text-slate-400">En foto: clic/arrastrar para marcar, arrastrar un punto para moverlo, clic derecho o Alt+clic para borrar. Simulación referencial, no garantiza resultado clínico. Las fotos no salen del navegador.</p>
         </div>}
       </aside>}
@@ -1857,12 +2080,13 @@ export default function FaceSimLab() {
               photo={modelKind === 'personal' ? personal?.canvas : undefined}
               photoPatches={modelKind === 'personal' ? personal?.photoPatches : undefined}
               showMesh={showRegions} plane={regionPlane} onPlaneChange={setRegionPlane} onMeshChange={toggleMesh}
+              anatomyDisplay={anatomyDisplay} onAnatomyDisplayChange={setAnatomyDisplay}
               hair={hair} hairPatches={modelKind === 'personal' ? hairPatches : undefined}
             />}
           </Suspense>
         </div>}
         <div hidden={workspace === 'simulate' && editorGroup !== 'annotations'} className="space-y-4" data-face-annotations-group>
-        {showRegions && <p role="status" className="min-h-10 rounded-lg bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-900">{hoveredZone ? `${hoveredZone} · límite aproximado` : 'Malla anatómica · pasa el cursor o selecciona una zona'}</p>}
+        <p role="status" className="min-h-10 rounded-lg bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-900">{hoveredZone ? `${hoveredZone} · límite aproximado (ilustrativo)` : 'Pasa el cursor por la capa activa · lateralidad del paciente'}</p>
       <div className="grid min-w-0 content-start gap-4">
         {workspace === 'simulate' && workMode === '3d' && renderViewer(modelKind)}
         {workspace === 'capture' && calibrating && renderViewer('generico')}
@@ -1874,19 +2098,26 @@ export default function FaceSimLab() {
             style={{ aspectRatio: String(aspect), maxWidth: `min(100%, calc(70vh * ${aspect}))` }}
             onPointerDown={onDown} onPointerMove={e => {
               onMove(e);
-              if (!e.buttons && showRegions && slot?.landmarks) {
+              if (!e.buttons && slot?.landmarks) {
                 const address = locatePhotoPoint(toNorm(e), slot.landmarks, genericFaceAtlas);
-                setHoveredZone(address ? regionCellAt(address, regionCells) : null);
+                setHoveredZone(address && layerIsVisible ? photoLayer ? photoLayer.zone(address)
+                  : patientZone(regionCellAt(address, regionCells), address) : null);
+                const hoveredId = hitPhoto(toNorm(e));
+                if (hoveredId) setSelectedId(hoveredId);
               }
             }} onPointerLeave={() => setHoveredZone(null)} onPointerUp={onUp}
             onPointerCancel={() => { setDraft(null); dragRef.current = null; }} onContextMenu={e => e.preventDefault()}>
-            <canvas ref={glRef} className="h-full w-full" aria-label="Simulación del rostro" />
+            {!anatomyDisplay.overlay && photoLayerOverlay}
+            <canvas ref={glRef} className="relative h-full w-full" aria-label="Simulación del rostro"
+              style={{ opacity: photoUsesPreview ? 0 : photoSkinOpacity }} />
             {(!preview.after || workspace === 'capture') && slot?.previewUrl && <img src={slot.previewUrl} alt="" aria-hidden="true"
+              style={{ opacity: photoSkinOpacity }}
               className="pointer-events-none absolute inset-0 h-full w-full" />}
+            {anatomyDisplay.overlay && photoLayerOverlay}
             {photoRegionOverlay && <svg viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full">
               {photoRegionOverlay.map(({ label, path }) => <path key={label} d={path}
-                fill={hoveredZone === label ? faceRegionColor(label) : 'none'} fillOpacity={0.3}
-                stroke={overlayMode === 'attention' ? faceAttentionColor(label) : '#7dd3fc'} strokeOpacity={hoveredZone === label ? 0.9 : 0.35} strokeWidth="0.0008" />)}
+                fill={hoveredZone === label ? photoLayer ? '#38bdf8' : faceRegionColor(label) : 'none'} fillOpacity={0.3}
+                stroke={overlayMode === 'attention' ? faceAttentionColor(label) : '#7dd3fc'} strokeOpacity={hoveredZone === label ? 0.9 : showRegions ? 0.35 : 0} strokeWidth="0.0008" />)}
             </svg>}
             {currentSkinReview?.result.usable && <img src={currentSkinReview.urls[skinChannel]} alt="" aria-hidden="true" style={{ opacity: skinOpacity }} className="pointer-events-none absolute inset-0 h-full w-full" />}
             {currentForeheadPreview && <svg aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 1 1" preserveAspectRatio="none">
@@ -1921,7 +2152,7 @@ export default function FaceSimLab() {
               </svg>
             )}
             {workspace === 'simulate' && showMarks && corrected.filter(p => !p.id.includes(':')).map(p => (
-              <span key={p.id} className="pointer-events-none absolute block h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow"
+              <span key={p.id} className={`pointer-events-none absolute block h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow ${selectedId === p.id ? 'ring-4 ring-amber-400' : ''}`}
                 style={{ left: `${p.rawX * 100}%`, top: `${p.rawY * 100}%`, background: SIM_MODES[p.mode].color }}
                 title={`${p.zone} · ${p.dose} ${SIM_MODES[p.mode].unit}`} />
             ))}
@@ -1933,17 +2164,31 @@ export default function FaceSimLab() {
         </section>
         {workspace === 'simulate' && <section aria-label="Registro común de marcaciones" className="min-w-0 rounded-xl border border-slate-200 bg-white p-3">
           <h2 className="text-sm font-semibold">Registro común · {Object.keys(bindings).length} elemento(s)</h2>
+          <QuickInjectableRecord meta={meta} bindings={bindings} value={quickRecord}
+            onChange={value => { snap(); setQuickRecord(value); }}
+            onApply={(value, settings) => { snap(); setMeta(value); if (settings) setQuickRecord(settings);
+              setStatus('Nombre de producto/vial actualizado localmente. Los totales por zona y las dosis detalladas no se reparten ni se modifican.'); }} />
           {!Object.keys(bindings).length && <p className="mt-2 text-sm text-slate-600">Elige Punto o una herramienta de trazo y marca sobre el rostro. Mover cámara no añade marcas.</p>}
+          <details open className="mt-3 rounded-lg border border-slate-200 p-2">
+          <summary className="cursor-pointer text-xs font-semibold">Registro detallado por marca · compatibilidad, independiente de totales por zona</summary>
           <ul className="mt-2 max-h-72 space-y-2 overflow-auto text-xs" aria-label="Elementos marcados">
             {Object.entries(bindings).map(([id, binding], index) => {
               const entry = meta[id];
               if (!entry) return null;
               return <li key={id} className={`flex flex-wrap items-center gap-2 rounded-lg border p-2 ${selectedId === id ? 'border-sky-600 bg-sky-50' : 'border-slate-200'}`}>
                 <button type="button" aria-pressed={selectedId === id} aria-label={`Seleccionar marca ${index + 1}`}
-                  onClick={() => { setSelectedId(id); beginEditing(); }} className="admin-focus-ring min-h-10 flex-1 text-left font-semibold">
+                  onFocus={() => setSelectedId(id)} onPointerEnter={() => setSelectedId(id)}
+                  onClick={() => {
+                    setSelectedId(id); beginEditing();
+                    const layer = activeLayer(workMode === 'foto' ? 'foto' : modelKind);
+                    if (!layerIsVisible || layer && !binding.paths.flat().every(layer.accepts)) {
+                      setAnatomyDisplay(current => chooseAnatomyDisplay(current, binding.illustrativePlane ?? 'skin'));
+                    }
+                  }} className="admin-focus-ring min-h-10 flex-1 text-left font-semibold">
                   {index + 1}. {binding.kind} · {SIM_MODES[entry.mode].label} · {entry.zone}
+                  <span className="block font-normal">{annotationLaterality(binding, genericFaceAtlas)} · {ANATOMY_PLANES.find(plane => plane.id === (binding.illustrativePlane ?? 'skin'))?.label} (ilustrativo)</span>
                 </button>
-                <label className="flex items-center gap-1">Dosis
+                <label className="flex items-center gap-1">Dosis por marca (detalle)
                   <input type="number" min={0} step="any" value={entry.dose} aria-label={`Dosis marca ${index + 1}`}
                     onChange={e => editDose(id, Number(e.target.value))} className="min-h-10 w-20 rounded border border-slate-300 p-1" />
                   {SIM_MODES[entry.mode].unit}
@@ -1973,6 +2218,7 @@ export default function FaceSimLab() {
             <button type="submit" className="admin-focus-ring rounded bg-slate-800 px-3 py-2 text-xs text-white">Guardar cambios de marca</button>
             <p className="text-xs text-slate-600 sm:col-span-2">Posición: arrastra un punto en la foto. Trazos: selecciona y ajusta sus extremos en el modelo. Las marcas sin cobertura se conservan en este registro.</p>
           </form>}
+          </details>
         </section>}
       </div>
       </div>

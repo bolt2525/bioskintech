@@ -21,8 +21,10 @@ try {
   });
   page.on('pageerror', e => errors.push(e.message));
   page.on('request', request => {
-    if (['fetch', 'xhr'].includes(request.resourceType()) && (!request.url().startsWith('http://127.0.0.1:5173/')
-      || request.url().includes('/api/'))) remote.push(request.url());
+    if (request.url().includes('/api/')) remote.push(request.url());
+  });
+  page.on('response', response => {
+    if (!response.url().startsWith('http://127.0.0.1:5173/') && !/^(data:|blob:)/.test(response.url())) remote.push(response.url());
   });
   await page.goto('http://127.0.0.1:5173/dev/hair-lab', { waitUntil: 'networkidle', timeout: 90000 });
   await page.getByRole('button', { name: 'Simulación facial', exact: true }).click();
@@ -35,7 +37,7 @@ try {
   assert.equal(await page.locator('canvas:visible').count(), 1);
   const canvas = page.locator('canvas:visible');
   const count = () => page.getByRole('list', { name: 'Elementos marcados' }).locator('li').count();
-  const bounds = await canvas.boundingBox();
+  let bounds = await canvas.boundingBox();
   assert.ok(bounds && bounds.width > 100 && bounds.height > 100);
   const at = (x, y) => ({ x: bounds.x + bounds.width * x, y: bounds.y + bounds.height * y });
   // Cámara no registra ni al hacer clic ni al arrastrar.
@@ -44,6 +46,8 @@ try {
   await page.getByRole('button', { name: 'Punto', exact: true }).click();
   assert.equal(await page.getByRole('button', { name: 'Antes', exact: true }).getAttribute('aria-pressed'), 'true');
   await canvas.waitFor({ state: 'visible' }); await page.waitForTimeout(700);
+  await canvas.scrollIntoViewIfNeeded();
+  bounds = await canvas.boundingBox();
   // Varias posiciones interiores, sin asumir la proyección exacta del visor compartido.
   for (const [x, y] of [[0.5, 0.5], [0.45, 0.6], [0.55, 0.6]]) {
     const p = at(x, y); await page.mouse.click(p.x, p.y); await page.waitForTimeout(600);

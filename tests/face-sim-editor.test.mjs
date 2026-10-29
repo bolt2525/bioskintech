@@ -23,6 +23,20 @@ const text = tree => Array.isArray(tree) ? tree.map(text).join('') : tree && typ
 const find = (tree, predicate) => !tree || typeof tree !== 'object' ? [] : Array.isArray(tree)
   ? tree.flatMap(child => find(child, predicate))
   : [...(predicate(tree) ? [tree] : []), ...find(tree.props?.children, predicate)];
+const displayAPI = {};
+const defaultLayers = {};
+vm.runInNewContext(compile(readFileSync(new URL('../src/lab/faceSim/defaultLayers.ts', import.meta.url), 'utf8')), {
+  exports: defaultLayers, require: () => ({}),
+});
+vm.runInNewContext(compile(readFileSync(new URL('../src/lab/faceSim/anatomyDisplay.tsx', import.meta.url), 'utf8')), {
+  exports: displayAPI, require: name => name === './defaultLayers' ? { ANATOMY_PLANES: [
+    { id: 'skin', label: 'Piel' }, { id: 'muscle', label: 'Músculo' },
+    { id: 'vessels', label: 'Vascular' }, { id: 'bone', label: 'Óseo' },
+  ] } : require(name),
+});
+const expandShared = tree => !tree || typeof tree !== 'object' ? tree : Array.isArray(tree) ? tree.map(expandShared)
+  : tree.type === displayAPI.AnatomyLayerControls ? expandShared(tree.type(tree.props))
+    : { ...tree, props: { ...tree.props, children: expandShared(tree.props?.children) } };
 
 function editor() {
   const states = [];
@@ -32,7 +46,7 @@ function editor() {
     exports, console,
     require: name => {
       if (name === 'react') return { ...React, useId: () => 'editor',
-        useRef: () => ({ current: null }), useEffect() {}, useMemo: fn => fn(), useCallback: fn => fn(),
+        useRef: () => ({ current: null }), useEffect() {}, useMemo: fn => fn(), useCallback: fn => fn,
         useState(initial) {
           const i = cursor++;
           if (!(i in states)) states[i] = typeof initial === 'function' ? initial() : initial;
@@ -43,10 +57,12 @@ function editor() {
       if (name === './skinAppearance') return skin;
       if (name === './maskAnatomy') return reveal;
       if (name === './anatomicalZones') return {};
+      if (name === './anatomyDisplay') return displayAPI;
+      if (name === './referenceGeometry') return {};
       if (name === './faceRegions') return { buildFaceRegionMap: () => ({}), buildFaceTriangleRegions: () => [] };
       if (name === './regionMesh') return { buildRegionCells: () => [], REGION_PLANES: [] };
       if (name === './estimatedHair') return { DEFAULT_HAIR: { enabled: false } };
-      if (name === './defaultLayers') return { ANATOMY_PLANES: [
+      if (name === './defaultLayers') return { ...defaultLayers, ANATOMY_PLANES: [
         { id: 'skin', label: 'Piel' }, { id: 'muscle', label: 'Músculo' }, { id: 'vessels', label: 'Vascular' }, { id: 'bone', label: 'Óseo' },
       ] };
       if (name === './skinSignalTexture' || name.endsWith('/clinicalCamera')) return {};
@@ -54,7 +70,7 @@ function editor() {
       return require(name);
     },
   });
-  return { render() { cursor = 0; return exports.FacialSimulationViewer({}); } };
+  return { render() { cursor = 0; return expandShared(exports.FacialSimulationViewer({})); } };
 }
 
 test('editor: un solo retoque de piel; herramientas independientes conservan morfología', () => {
@@ -92,6 +108,7 @@ test('editor: imágenes independientes, opacidad no forzada y dos modos de corte
   assert.equal(find(tree, node => node.type === 'button' && text(node) === 'Ver volúmenes genéricos').length, 0);
   assert.doesNotMatch(text(tree), /Grasa genérica|Músculos esquemáticos|Nervios · trayectos/);
   control('Opacidad Piel', 'input').props.onChange({ target: { value: '0.25' } });
+  tree = app.render();
   control('Superponer anatomía', 'input').props.onChange({ target: { checked: true } });
   tree = app.render();
   assert.equal(control('Opacidad Piel', 'input').props.value, 0.25);

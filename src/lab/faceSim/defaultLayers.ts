@@ -10,12 +10,36 @@ export const ANATOMY_PLANES: readonly { id: AnatomyPlane; label: string; hint: s
 ];
 
 interface LayerSource { kind: AnatomicalReference['kind']; url: string; depth: number; opacity: number; anchors: ReferenceAnchors }
+const smooth = (value: number) => { const t = Math.max(0, Math.min(1, value)); return t * t * (3 - 2 * t); };
 /** Anclajes 33/263/152 medidos sobre cada ilustración: respaldo si MediaPipe no detecta el rostro. */
 export const DEFAULT_LAYER_SOURCES: readonly LayerSource[] = [
-  { kind: 'muscle', url: '/face-layers/muscular.webp', depth: 0.035, opacity: 1, anchors: [{ x: 0.253, y: 0.528 }, { x: 0.761, y: 0.528 }, { x: 0.504, y: 0.975 }] },
-  { kind: 'vessels', url: '/face-layers/vascular.webp', depth: 0.033, opacity: 1, anchors: [{ x: 0.217, y: 0.442 }, { x: 0.778, y: 0.442 }, { x: 0.5, y: 0.804 }] },
-  { kind: 'bone', url: '/face-layers/oseo.webp', depth: 0.085, opacity: 1, anchors: [{ x: 0.202, y: 0.479 }, { x: 0.813, y: 0.479 }, { x: 0.503, y: 0.956 }] },
+  { kind: 'muscle', url: '/face-layers/muscular.webp', depth: 0.018, opacity: 1, anchors: [{ x: 0.253, y: 0.528 }, { x: 0.761, y: 0.528 }, { x: 0.504, y: 0.975 }] },
+  { kind: 'vessels', url: '/face-layers/vascular.webp', depth: 0.016, opacity: 1, anchors: [{ x: 0.217, y: 0.442 }, { x: 0.778, y: 0.442 }, { x: 0.5, y: 0.804 }] },
+  { kind: 'bone', url: '/face-layers/oseo.webp', depth: 0.028, opacity: 1, anchors: [{ x: 0.202, y: 0.479 }, { x: 0.813, y: 0.479 }, { x: 0.503, y: 0.956 }] },
 ];
+
+/**
+ * Chart canónico compartido con marcaciones: XY del atlas facial, origen arriba-izquierda.
+ * Conserva el orden de vértices, incluidos 33/263/152. No son UV de fotografía.
+ * Pasar atlas.positions (cara468), no la superficie completa de la cabeza.
+ */
+export function buildCanonicalReferenceUVs(positions: ArrayLike<number>): Float32Array {
+  if (positions.length < 3 || positions.length % 3) throw new Error('Atlas facial incompleto para registrar referencias.');
+  let left = Infinity, right = -Infinity, top = -Infinity, bottom = Infinity;
+  for (let i = 0; i < positions.length; i += 3) {
+    const x = positions[i], y = positions[i + 1], z = positions[i + 2];
+    if (![x, y, z].every(Number.isFinite)) throw new Error('El atlas contiene coordenadas no finitas.');
+    left = Math.min(left, x); right = Math.max(right, x);
+    top = Math.max(top, y); bottom = Math.min(bottom, y);
+  }
+  if (right <= left || top <= bottom) throw new Error('El atlas no tiene extensión XY para registrar referencias.');
+  const uvs = new Float32Array(positions.length / 3 * 2);
+  for (let i = 0; i < positions.length / 3; i++) {
+    uvs[i * 2] = (positions[i * 3] - left) / (right - left);
+    uvs[i * 2 + 1] = (top - positions[i * 3 + 1]) / (top - bottom);
+  }
+  return uvs;
+}
 
 /** Fondo blanco → transparente solo si conecta con el borde (conserva dientes y escleras). */
 export function keyOutBackground(data: Uint8ClampedArray, width: number, height: number, threshold = 236): void {
@@ -91,6 +115,17 @@ export function loadDefaultLayers(): Promise<LoadedLayer[]> {
 export function registerLayers(layers: readonly LoadedLayer[], surfaceUVs: Float32Array): AnatomicalReference[] {
   return layers.map(({ source, canvas, landmarks }) => {
     const uvs = landmarks ? fitLandmarkUVs(surfaceUVs, landmarks) : fitAnatomicalUVs(surfaceUVs, source.anchors);
+    if (source.kind === 'bone') {
+      // El cráneo ilustrado no tiene la misma altura nasal que una cara cutánea:
+      // el afín ocular/mentón situaba el puente alto dentro de la abertura.
+      // Corrección suave del registro de ESTA imagen, no anatomía medida del paciente.
+      for (let i = 0; i < uvs.length; i += 2) {
+        const u = uvs[i], v = uvs[i + 1];
+        const lateral = 1 - smooth((Math.abs(u - 0.515) - 0.035) / 0.10);
+        const vertical = smooth((v - 0.37) / 0.075) * (1 - smooth((v - 0.58) / 0.11));
+        uvs[i + 1] -= 0.075 * lateral * vertical;
+      }
+    }
     return { canvas, uvs, depth: source.depth, opacity: source.opacity, kind: source.kind, zones: ANATOMICAL_ZONES[source.kind] };
   });
 }

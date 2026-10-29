@@ -1,5 +1,12 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-29 Anatomía alineada; hueso superficial.
+- ✅ 2026-10-29 Marcaciones: capas, espejo y bilateral.
+- ✅ 2026-10-29 Nariz: simetría direccional reversible.
+- ✅ 2026-10-29 Registro rápido local por zonas.
+- ✅ 2026-10-29 QA facial: 273 pruebas; build.
+- QA Chromium sintético 1440/390 px: espejo, creación bilateral/deshacer atómico, simetría nasal/restauración, render muscular real, capas/mallado sincronizados y JSON con cantidades por zona. Sin llamadas API ni integración clínica; lint facial limpio. TypeScript conserva 12 errores previos, sin errores nuevos.
+
 - ✅ 2026-10-28 Reverso liso; cuadros por color.
 - ✅ 2026-10-28 Máscara: perfil nasal localizado.
 - ✅ 2026-10-28 Labios: protección multivista completa.

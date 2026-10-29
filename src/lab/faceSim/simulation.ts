@@ -7,6 +7,8 @@ export interface SimulationParameters {
   noseTip: number;
   noseRotation: number;
   noseWidth: number;
+  /** 0 neutro; + derecha→izquierda del paciente; − izquierda→derecha. Solo geometría. */
+  noseSymmetry: number;
   chinProjection: number;
   chinHeight: number;
   chinWidth: number;
@@ -23,7 +25,7 @@ export interface SimulationParameters {
 }
 
 export const NEUTRAL_SIMULATION: Readonly<SimulationParameters> = Object.freeze({
-  noseBridge: 0, noseTip: 0, noseRotation: 0, noseWidth: 0,
+  noseBridge: 0, noseTip: 0, noseRotation: 0, noseWidth: 0, noseSymmetry: 0,
   chinProjection: 0, chinHeight: 0, chinWidth: 0, jawWidth: 0,
   noseHump: 0, noseTipWidth: 0, lipUpper: 0, lipLower: 0, lipProjection: 0, lipCorners: 0,
   cheekbone: 0, cheekVolume: 0, buccal: 0,
@@ -110,6 +112,8 @@ const unit = (p: Vec3): Vec3 => {
 export function sanitizeSimulation(input: Partial<SimulationParameters>): SimulationParameters {
   const out = { ...NEUTRAL_SIMULATION };
   for (const { key } of SIMULATION_CONTROLS) out[key] = clamp(input[key] ?? 0, -1, 1);
+  // Control direccional aparte: no es un campo de aumento/reducción como los anteriores.
+  out.noseSymmetry = clamp(input.noseSymmetry ?? 0, -1, 1);
   return out;
 }
 
@@ -118,7 +122,7 @@ export function sanitizeSimulation(input: Partial<SimulationParameters>): Simula
  * Un perfil viene en coordenadas de cámara: se obtiene una base rígida de las
  * anclas, sin deducir orientación a partir del ancho de la foto ni girar sus UV.
  */
-export function personalFaceFrame(surface: PersonalSurface): FacialCoordinateFrame {
+export function personalFaceFrame(surface: Pick<PersonalSurface, 'positions'>): FacialCoordinateFrame {
   const p = surface.positions, left = point(p, 33), rightEye = point(p, 263);
   const origin = { x: (left.x + rightEye.x) / 2, y: (left.y + rightEye.y) / 2, z: (left.z + rightEye.z) / 2 };
   const vertical = sub(point(p, 10), point(p, 152)), height = Math.hypot(vertical.x, vertical.y, vertical.z);
@@ -232,6 +236,42 @@ export function localInfluence(p: Vec3, center: Vec3, radius: Vec3): number {
   return r < 1 ? (1 - r) ** 4 * (4 * r + 1) : 0;
 }
 
+/** Correspondencias topológicas del atlas, no búsqueda de vecinos en una nariz ya asimétrica. */
+const atlasMirrors = (() => {
+  const pairs: { a: number; b: number; distance: number }[] = [];
+  for (let a = 0; a < 468; a++) for (let b = 0; b < 468; b++) {
+    const p = point(atlasData.positions, a), q = point(atlasData.positions, b);
+    if (p.x < -0.025 && q.x > 0.025) pairs.push({ a, b,
+      distance: (p.x + q.x) ** 2 + (p.y - q.y) ** 2 + (p.z - q.z) ** 2 });
+  }
+  const result = Array.from({ length: 468 }, (_, i) => i), used = new Set<number>();
+  for (const { a, b } of pairs.sort((a, b) => a.distance - b.distance)) {
+    if (used.has(a) || used.has(b)) continue;
+    result[a] = b; result[b] = a; used.add(a); used.add(b);
+  }
+  return result;
+})();
+const smooth = (t: number) => { const x = clamp(t, 0, 1); return x * x * (3 - 2 * x); };
+
+function nasalSymmetryDeltas(anchors: ArrayLike<number>, signed: number): Float32Array {
+  const frame = personalFaceFrame({ positions: Float32Array.from(anchors) });
+  const deltas = new Float32Array(468 * 3);
+  for (let i = 0; i < 468; i++) {
+    const atlas = point(atlasData.positions, i), source = atlasMirrors[i];
+    // Soporte limitado a nariz, con transición C1 hacia mejillas, glabela y labio.
+    const mask = smooth((0.42 - Math.abs(atlas.x)) / 0.14)
+      * smooth((atlas.y - 0.015) / 0.055) * smooth((0.89 - atlas.y) / 0.15)
+      * smooth((atlas.z - 1.36) / 0.10);
+    const side = source === i ? 0.5 : smooth(0.5 + Math.sign(signed) * atlas.x / 0.10);
+    if (!mask || !side) continue;
+    const p = point(anchors, i), q = toCanonicalPosition(point(anchors, source), frame);
+    const mirrored = fromCanonicalPosition({ ...q, x: -q.x }, frame);
+    const w = Math.abs(signed) * mask * side;
+    deltas.set([(mirrored.x - p.x) * w, (mirrored.y - p.y) * w, (mirrored.z - p.z) * w], i * 3);
+  }
+  return deltas;
+}
+
 /** Evalúa siempre contra el original. +Z es anterior, +Y superior en PersonalSurface/atlas. */
 export function deformPositions(
   original: ArrayLike<number>, anchors: ArrayLike<number>, input: Partial<SimulationParameters>,
@@ -290,6 +330,7 @@ export function deformPositions(
     x: params.jawWidth * (p.x - axis) * 0.32, y: 0, z: 0,
   }), softAnchors);
   const result = Float32Array.from(original);
+  const symmetry = params.noseSymmetry ? nasalSymmetryDeltas(anchors, params.noseSymmetry) : null;
   for (let i = 0; i < original.length / 3; i++) {
     const p = point(original, i);
     for (const field of fields) {
@@ -301,6 +342,23 @@ export function deformPositions(
       }
       const d = field.delta(p);
       result[i * 3] += d.x * w; result[i * 3 + 1] += d.y * w; result[i * 3 + 2] += d.z * w;
+    }
+    if (symmetry) {
+      if (i < 468 && p.x === anchors[i * 3] && p.y === anchors[i * 3 + 1] && p.z === anchors[i * 3 + 2]) {
+        for (let axis = 0; axis < 3; axis++) result[i * 3 + axis] += symmetry[i * 3 + axis];
+      } else {
+        // Extensión continua a superficies densas. Los vecinos con delta cero fijan el borde.
+        let weight = 0;
+        const delta = [0, 0, 0], radius = h * 0.075;
+        for (let j = 0; j < 468; j++) {
+          const q = point(anchors, j), distance = Math.hypot(p.x - q.x, p.y - q.y, p.z - q.z);
+          if (distance >= radius) continue;
+          const w = (1 - distance / radius) ** 4 / Math.max(distance ** 2, h * h * 1e-12);
+          weight += w;
+          for (let axis = 0; axis < 3; axis++) delta[axis] += symmetry[j * 3 + axis] * w;
+        }
+        if (weight) for (let axis = 0; axis < 3; axis++) result[i * 3 + axis] += delta[axis] / weight;
+      }
     }
   }
   return result;
@@ -331,6 +389,18 @@ export function buildSimulationLayers(mesh: SimulationMesh, input: Partial<Simul
     positions: deformPositions(mesh.positions, mesh.anchors, input),
     indices: mesh.indices.slice(),
   }];
+}
+
+/** Preparación facial para referencias: la cabeza genérica completa NO es una malla mesh468. */
+export function buildSimulationReferenceSurface(
+  mesh: SimulationMesh, input: Partial<SimulationParameters>,
+): { positions: Float32Array; indices: Uint32Array } {
+  return mesh.source === 'generic'
+    ? { positions: deformPositions(mesh.anchors, mesh.anchors, input), indices: Uint32Array.from(atlasData.triangles) }
+    : {
+      positions: deformPositions(mesh.positions, mesh.anchors, input),
+      indices: mesh.indices.slice(0, mesh.observedIndexCount ?? mesh.indices.length),
+    };
 }
 
 /** Convención de Three.Plane: se conserva normal·p + constant >= 0. */

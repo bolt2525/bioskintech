@@ -78,11 +78,22 @@ export interface AnatomicalSurfaceOverlay {
   positions: Float32Array;
   colors: Float32Array;
   wireframe?: boolean;
+  opacity?: number;
   labels?: string[];
   onHover?: (zone: string | null) => void;
   depthTest?: boolean;
   zoneAt?: (point: { x: number; y: number; z: number }) => string | null;
   selectedZone?: string | null;
+  /** Capas visuales auxiliares; no participan en el raycast ni cambian la superficie canónica. */
+  references?: readonly {
+    positions: Float32Array;
+    indices: Uint32Array;
+    uvs: Float32Array;
+    canvas: HTMLCanvasElement;
+    opacity: number;
+  }[];
+  skin?: { visible: boolean; opacity: number };
+  referenceOverlay?: boolean;
 }
 
 function visibleSurfaceHits(raycaster: THREE.Raycaster, objects: THREE.Object3D[], surface: THREE.Object3D | null, occlude: boolean, recursive = false) {
@@ -677,13 +688,61 @@ const ThreeEngine: React.FC<{
   const annotationDepthApplied = useRef(false);
   // Increments each time the model finishes loading so the markers effect re-runs
   const [modelVersion, setModelVersion] = useState(0);
+  const referenceLayers = anatomicalOverlay?.references;
+  const skinDisplay = anatomicalOverlay?.skin;
+  const referenceOverlay = anatomicalOverlay?.referenceOverlay;
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    const references = new THREE.Group();
+    const skinMaterials: { material: THREE.Material; opacity: number; transparent: boolean; depthWrite: boolean }[] = [];
+    if (skinDisplay) faceMeshRef.current?.traverse(object => {
+      if (!(object instanceof THREE.Mesh)) return;
+      const materials = Array.isArray(object.material) ? object.material : [object.material];
+      for (const material of materials) {
+        skinMaterials.push({ material, opacity: material.opacity, transparent: material.transparent, depthWrite: material.depthWrite });
+        const opacity = skinDisplay.visible ? skinDisplay.opacity : 0;
+        // Mantener la malla raycastable aunque la piel esté oculta.
+        material.opacity *= opacity;
+        material.transparent = material.transparent || opacity < 1;
+        material.depthWrite = opacity >= 0.99 && material.depthWrite;
+        material.needsUpdate = true;
+      }
+    });
+    for (const reference of referenceLayers ?? []) {
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.BufferAttribute(reference.positions, 3));
+      geometry.setAttribute('uv', new THREE.BufferAttribute(reference.uvs, 2));
+      geometry.setIndex(new THREE.BufferAttribute(reference.indices, 1));
+      const texture = new THREE.CanvasTexture(reference.canvas);
+      texture.flipY = false; texture.colorSpace = THREE.SRGBColorSpace;
+      const material = new THREE.MeshBasicMaterial({
+        map: texture, transparent: true, opacity: reference.opacity, alphaTest: 0.01,
+        side: THREE.FrontSide, depthWrite: false, depthTest: !referenceOverlay,
+      });
+      material.onBeforeCompile = shader => {
+        shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>',
+          '#ifdef USE_MAP\nif (any(lessThan(vMapUv, vec2(0.0))) || any(greaterThan(vMapUv, vec2(1.0)))) discard;\n#endif\n#include <map_fragment>');
+      };
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.name = 'ANATOMICAL_REFERENCE_VISUAL_ONLY'; mesh.renderOrder = referenceOverlay ? 10 : -1;
+      references.add(mesh);
+    }
+    scene.add(references);
+    return () => {
+      scene.remove(references); disposeObject3D(references);
+      skinMaterials.forEach(({ material, opacity, transparent, depthWrite }) => {
+        material.opacity = opacity; material.transparent = transparent; material.depthWrite = depthWrite; material.needsUpdate = true;
+      });
+    };
+  }, [referenceLayers, skinDisplay, referenceOverlay, modelVersion]);
   useEffect(() => {
     const scene = sceneRef.current;
     if (!scene || !anatomicalOverlay) return;
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(anatomicalOverlay.positions, 3));
     geometry.setAttribute('color', new THREE.BufferAttribute(anatomicalOverlay.colors, 3));
-    const material = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: anatomicalOverlay.wireframe ? 0.32 : 0.28,
+    const material = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: anatomicalOverlay.opacity ?? (anatomicalOverlay.wireframe ? 0.32 : 0.28),
       wireframe: anatomicalOverlay.wireframe, polygonOffset: true, polygonOffsetFactor: -2,
       side: THREE.FrontSide, depthTest: anatomicalOverlay.depthTest ?? true, depthWrite: false });
     const mesh = new THREE.Mesh(geometry, material);
@@ -703,7 +762,7 @@ const ThreeEngine: React.FC<{
       active = zone;
       const positions: number[] = [];
       anatomicalOverlay.labels?.forEach((label, triangle) => {
-        if (label === zone) positions.push(...anatomicalOverlay.positions.slice(triangle * 9, triangle * 9 + 9));
+        if (label === zone || zone && label.startsWith(`${zone} ·`)) positions.push(...anatomicalOverlay.positions.slice(triangle * 9, triangle * 9 + 9));
       });
       highlightGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
       highlightGeometry.computeBoundingSphere();
