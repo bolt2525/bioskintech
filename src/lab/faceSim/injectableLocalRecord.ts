@@ -50,10 +50,12 @@ export function importLocalRecord(text: string, zones: string[]) {
     if (!value) continue;
     if (!modes.includes(value.mode as SimMode) || typeof value.dose !== 'number'
       || !Number.isFinite(value.dose) || value.dose < 0 || typeof value.zone !== 'string'
-      || value.product !== undefined && typeof value.product !== 'string') {
+      || value.product !== undefined && typeof value.product !== 'string'
+      || value.plane !== undefined && typeof value.plane !== 'string') {
       throw new Error('Los metadatos locales son inválidos; no se ha importado el registro.');
     }
-    result.meta[id] = { mode: value.mode, dose: value.dose, zone: value.zone, product: value.product } as Meta;
+    result.meta[id] = { mode: value.mode, dose: value.dose, zone: value.zone, product: value.product,
+      ...(value.plane ? { plane: value.plane } : {}) } as Meta;
   }
   return { ...result, kinds: restoredKinds, centers: restoredCenters, quickRecord, illustrativePlanes };
 }
@@ -65,7 +67,8 @@ export function localRecord(
   illustrativePlanes: Record<string, AnatomyPlane> = {},
 ) {
   const withDose = <T extends { id?: string }>(item: T) => ({ ...item,
-    units: meta[item.id ?? '']?.dose, label: meta[item.id ?? '']?.zone });
+    units: meta[item.id ?? '']?.dose, label: meta[item.id ?? '']?.zone,
+    ...(meta[item.id ?? '']?.plane ? { plane: meta[item.id ?? '']!.plane } : {}) });
   return { mapping_data: {
     injectionPoints: markers.map(withDose), freehandLines: lines.map(withDose), surfaceShapes: shapes.map(withDose),
     lab: { version: 1, meta, kinds: annotationKinds, centers, illustrativePlanes,

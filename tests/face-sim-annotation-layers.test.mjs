@@ -53,6 +53,14 @@ test('capas: geometría y puntos visuales no modifican buffers ni bindings canó
   assert.equal(bindingsOnLayer(bindings), bindings);
 });
 
+test('capas: foto MediaPipe con 478 puntos (iris) no invalida la capa', () => {
+  const withIris = Float32Array.from([...uv, ...Array.from({ length: 20 }, () => 0.5)]);
+  const layer = buildAnnotationLayerView({ ...reference(), uvs: withIris }, atlas);
+  assert.equal(layer.reference.uvs.length, uv.length);
+  assert.equal(layer.positions.length, atlas.positions.length);
+  assert.equal(layer.accepts(address), true);
+});
+
 test('capas: transparencia y hueco óseo rechazan marca aunque haya piel debajo', () => {
   const transparent = buildAnnotationLayerView(reference('vessels', 0), atlas);
   assert.equal(transparent.accepts(address), false);

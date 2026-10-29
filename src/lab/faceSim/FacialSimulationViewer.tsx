@@ -892,12 +892,13 @@ export function FacialSimulationViewer({ surface, photo, showMesh, plane, onMesh
                     className="block w-full accent-cyan-400 focus-visible:outline-cyan-300" />
                 </label>
                 <div className="flex flex-wrap gap-1">
+                  <button type="button" className={buttonClass} onClick={() => setParameters(current => ({ ...current, noseSymmetry: symmetryDirection }))}>Replicar mitad (100 %)</button>
                   <button type="button" className={buttonClass} onClick={() => setParameters(current => ({ ...current, noseSymmetry: 0 }))}>Restaurar simetría</button>
                   <button type="button" className={buttonClass} onClick={() => setParameters(current => ({
                     ...current, ...Object.fromEntries(SIMULATION_CONTROLS.filter(control => control.group === 'Nariz').map(control => [control.key, 0])), noseSymmetry: 0,
                   }))}>Restaurar nariz</button>
                 </div>
-                <p className="text-[11px] text-slate-400">Copia la geometría del lado elegido: alas, altura y relieve. No espeja la foto ni estima un resultado clínico.</p>
+                <p className="text-[11px] text-slate-400">Replica el hemimallado del lado elegido (alas, altura y relieve denso) sobre el otro, con transición suave en la línea media para evitar costuras. No espeja la foto ni estima un resultado clínico.</p>
               </div> : null}
             </fieldset>
           ))}

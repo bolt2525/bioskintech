@@ -531,3 +531,8 @@ Las entradas siguientes conservan la evidencia previa al despliegue y la evoluci
 - ✅ Oct 28 Cabeza afín+Shepard, mezcla multivista, capas por defecto con transición.
 - ✅ Oct 27 Capas: ilustración alineada automáticamente con 468 puntos; capa visible bajo piel.
 - ✅ Oct 27 QA facial: 212 pruebas, build, lint y navegador con fotos reales locales.
+- ✅ Oct 29 Marcación en 3 pasos: modal de volumen, listado único con filtros, plano en lote, HUD de volumen y colores contrastantes.
+- ✅ Oct 29 Visor dividido: cabeza completa genérica + máscara; zona extendida (cuello/orejas) solo en genérico.
+- ✅ Oct 29 Profundidad: la barba ya no adelanta el mentón ni hunde los labios.
+- ✅ Oct 29 Simetría nasal por copia del hemimallado («Replicar mitad») con transición suave en la línea media.
+- ✅ Oct 29 QA facial: 278 pruebas, build y 2 flujos Playwright (escritorio/móvil).

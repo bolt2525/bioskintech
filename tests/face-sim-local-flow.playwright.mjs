@@ -54,9 +54,15 @@ try {
     if (await count()) break;
   }
   assert.ok(await count() > 0, `El raycast no creó una marca. Estado: ${await page.getByRole('status').allTextContents()}`);
+  // Cada marca abre el modal de volumen: dosis y plano opcional en un solo paso.
+  const volumeDialog = page.getByRole('dialog');
+  await volumeDialog.getByLabel('Volumen por punto (U)', { exact: true }).fill('7.5');
+  await volumeDialog.getByLabel('Plano de aplicación', { exact: true }).selectOption({ index: 1 });
+  await volumeDialog.getByRole('button', { name: 'Guardar', exact: true }).click();
+  await volumeDialog.waitFor({ state: 'hidden' });
+  await page.waitForFunction(() => /7\.5\s*U/.test(document.querySelector('[aria-label="Volumen acumulado"]')?.textContent ?? ''));
   const initialCount = await count();
   const dose = page.getByLabel('Dosis marca 1', { exact: true });
-  await dose.fill('7.5');
   assert.equal(await dose.inputValue(), '7.5');
   await page.getByLabel('Intensidad visual independiente', { exact: true }).fill('0.9');
   assert.equal(await dose.inputValue(), '7.5');
@@ -198,6 +204,10 @@ try {
     const a = window.__splitRendered['Modelo genérico 3D'], b = window.__splitRendered['Foto personal en 3D'];
     return a?.length === count && JSON.stringify(a) === JSON.stringify(b);
   }, initialCount + 1);
+  if (await volumeDialog.isVisible()) {
+    await volumeDialog.getByLabel('Volumen por punto (U)', { exact: true }).fill('2');
+    await volumeDialog.getByRole('button', { name: 'Guardar', exact: true }).click();
+  }
   await page.getByRole('button', { name: 'Deshacer', exact: true }).click();
   assert.equal(await count(), initialCount);
   await page.setViewportSize({ width: 390, height: 844 });

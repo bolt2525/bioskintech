@@ -117,22 +117,27 @@ function app() {
   const names = [...source.matchAll(/const \[(\w+),[^\]]+\] = useState/g)].map(m => m[1]);
   let cursor = 0, refCursor = 0, tree;
   const states = [], refs = [];
-  const loadUI = loader({ ...React, useEffect() {}, useMemo: fn => fn(), useCallback: fn => fn,
+  const loadUI = loader({ ...React, useEffect() {}, useMemo: fn => fn(), useCallback: fn => fn, useId: () => 'test-id',
     useRef(initial) { const i = refCursor++; return refs[i] ??= { current: initial }; }, useState(initial) {
       const i = cursor++;
       if (!(i in states)) states[i] = typeof initial === 'function' ? initial() : initial;
       return [states[i], next => { states[i] = typeof next === 'function' ? next(states[i]) : next; }];
     } });
   const Component = loadUI(path.join(root, 'FaceSimLab.tsx')).default;
+  // Los paneles del flujo de marcación se expanden; el resto (visor, capas) sigue siendo superficial.
+  const panels = new Set(Object.values(loadUI(path.join(root, 'MarkingPanels.tsx'))).filter(v => typeof v === 'function'));
+  const expand = n => Array.isArray(n) ? n.map(expand) : !n || typeof n !== 'object' ? n
+    : panels.has(n.type) ? expand(n.type(n.props)) : n.props?.children === undefined ? n
+      : { ...n, props: { ...n.props, children: expand(n.props.children) } };
   const api = {
     render() {
       // El exportador GLB es asíncrono en navegador; aquí se simula su confirmación.
       if (states[names.indexOf('genericPreviewGlb')]) states[names.indexOf('genericPreviewAfter')] = states[names.indexOf('preview')].after;
-      cursor = 0; refCursor = 0; tree = Component(); return tree;
+      cursor = 0; refCursor = 0; tree = expand(Component()); return tree;
     },
     set(name, value) { assert.ok(names.includes(name), name); states[names.indexOf(name)] = value; },
     get(name) { return states[names.indexOf(name)]; },
-    button(label) { return find(tree, n => n.type === 'button' && text(n) === label)[0]; },
+    button(label) { return find(tree, n => n.type === 'button' && (text(n) === label || n.props?.['aria-label'] === label))[0]; },
     viewer() { return find(tree, n => n.type === clinical)[0]; },
     query(fn) { return find(tree, fn); },
   };
@@ -249,8 +254,7 @@ test('visor dividido: registro único bidireccional, selección y undo entre gen
     surface, renderSurface: surface, regionMap: regions.buildFaceRegionMap(landmarks, atlas.triangles, 1, atlas.positions) });
   ui.button('Simular y marcar').props.onClick();
   ui.set('genericPreviewGlb', new ArrayBuffer(8)); ui.render();
-  const splitControl = () => find(ui.query(n => n.type === 'label' && text(n).includes('Visor dividido'))[0],
-    n => n.type === 'input')[0];
+  const splitControl = () => ui.query(n => n.type === 'input' && n.props?.['aria-label']?.startsWith('Visor dividido'))[0];
   splitControl().props.onChange({ target: { checked: true } }); ui.render();
   ui.button('Punto').props.onClick(); ui.render();
   const viewers = () => ui.query(n => n.type === clinical);

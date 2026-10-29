@@ -4,11 +4,12 @@
  */
 export type SimMode = 'toxina' | 'relleno_ha' | 'hidratacion' | 'bioestimulador';
 
+// Colores de alto contraste sobre piel (sin amarillos/naranjas que se pierden en tonos cálidos).
 export const SIM_MODES: Record<SimMode, { label: string; unit: string; defaultDose: number; ref: number; color: string; catalog: string }> = {
-  toxina: { label: 'Toxina', unit: 'U', defaultDose: 4, ref: 4, color: '#f59e0b', catalog: 'marca_toxina' },
-  relleno_ha: { label: 'Relleno HA', unit: 'ml', defaultDose: 0.2, ref: 0.5, color: '#a855f7', catalog: 'marca_relleno_ha' },
-  hidratacion: { label: 'Hidratación', unit: 'ml', defaultDose: 0.1, ref: 0.4, color: '#0ea5e9', catalog: 'marca_hidratacion' },
-  bioestimulador: { label: 'Bioestimulador', unit: 'ml', defaultDose: 0.3, ref: 0.7, color: '#10b981', catalog: 'marca_bioestimulador' },
+  toxina: { label: 'Toxina', unit: 'U', defaultDose: 4, ref: 4, color: '#22d3ee', catalog: 'marca_toxina' },
+  relleno_ha: { label: 'Relleno HA', unit: 'ml', defaultDose: 0.2, ref: 0.5, color: '#e879f9', catalog: 'marca_relleno_ha' },
+  hidratacion: { label: 'Hidratación', unit: 'ml', defaultDose: 0.1, ref: 0.4, color: '#818cf8', catalog: 'marca_hidratacion' },
+  bioestimulador: { label: 'Bioestimulador', unit: 'ml', defaultDose: 0.3, ref: 0.7, color: '#a3e635', catalog: 'marca_bioestimulador' },
 };
 
 export interface SimPoint {
@@ -517,7 +518,7 @@ export type ViewKind = 'frontal' | 'izquierda' | 'derecha';
 export type ElemKind = 'point' | 'line' | 'arrow' | 'free' | 'pattern' | 'circle' | 'rect';
 export interface P2 { x: number; y: number }
 export interface Vec3 { x: number; y: number; z: number }
-export interface Meta { mode: SimMode; dose: number; zone: string; product?: string }
+export interface Meta { mode: SimMode; dose: number; zone: string; product?: string; plane?: string }
 export interface Elem extends Meta {
   id: string; kind: ElemKind; paths: P2[][];
   /** Semiejes (coordenadas normalizadas) para circle/rect */
@@ -851,10 +852,10 @@ export function refineDepthFromProfiles(
   });
   const accepted = selected.map(i => candidates[i]);
   // Un punto local discordante se atenúa aunque el conjunto de la vista sea útil.
-  const landmarks = front.landmarks.map((p, i) => {
-    if (i >= 468 || (options.preserveLips && DEPTH_LIPS.has(i))) return p;
+  const corrections = front.landmarks.map((_, i) => {
+    if (i >= 468 || (options.preserveLips && DEPTH_LIPS.has(i))) return 0;
     const reliable = accepted.filter(c => c.weights[i] > 0.001);
-    if (!reliable.length) return p;
+    if (!reliable.length) return 0;
     const center = depthMedian(reliable.map(c => c.depths[i]));
     let evidence = 0, correction = 0;
     accepted.forEach(c => {
@@ -862,7 +863,17 @@ export function refineDepthFromProfiles(
       evidence += w;
       correction += w * (c.depths[i] - prior[i]);
     });
-    return { ...p, z: -(prior[i] + correction / (0.025 + evidence)) / front.aspect };
+    return correction / (0.025 + evidence);
+  });
+  // Barba: en perfil MediaPipe sigue el contorno del vello y adelanta mentón/perioral dejando la boca hundida.
+  // Bajo el subnasal, nada que no sea labio avanza más que los labios (+1.5 % de la altura facial).
+  const lipShift = depthMedian([...DEPTH_LIPS].map(i => corrections[i]));
+  const beardCap = Math.max(0, lipShift) + faceHeight * 0.015;
+  const subnasal = front.landmarks[2].y;
+  const landmarks = front.landmarks.map((p, i) => {
+    if (i >= 468) return p;
+    const correction = !DEPTH_LIPS.has(i) && p.y > subnasal ? Math.min(corrections[i], beardCap) : corrections[i];
+    return correction ? { ...p, z: -(prior[i] + correction) / front.aspect } : p;
   });
   const contributing = accepted.filter(c => c.weights.some(w => w > 0.001));
   accepted.filter(c => !contributing.includes(c)).forEach(c => reject(c.index, 'Sin puntos fiables que aporten profundidad.'));

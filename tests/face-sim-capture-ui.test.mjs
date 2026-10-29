@@ -55,6 +55,18 @@ function loadLocal(file) {
 const helper = name => loadLocal(fileURLToPath(new URL(`../src/lab/faceSim/${name}.ts`, import.meta.url)));
 const injectablePreview = helper('injectablePreview');
 const injectableLocalRecord = helper('injectableLocalRecord');
+const panelsModule = {};
+vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../src/lab/faceSim/MarkingPanels.tsx', import.meta.url), 'utf8'),
+  { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true } }).outputText, {
+  exports: panelsModule, console,
+  require: name => name === 'react'
+    ? { ...React, useId: () => 'test-id', useState: v => [typeof v === 'function' ? v() : v, () => {}], useRef: v => ({ current: v }), useEffect() {}, useMemo: fn => fn(), useCallback: fn => fn }
+    : name.startsWith('.') ? loadLocal([path.resolve(fileURLToPath(new URL('../src/lab/faceSim/', import.meta.url)), name)].flatMap(b => [b, `${b}.ts`, `${b}.tsx`]).find(f => existsSync(f))) : require(name),
+});
+const panels = new Set(Object.values(panelsModule).filter(v => typeof v === 'function'));
+const expand = n => Array.isArray(n) ? n.map(expand) : !n || typeof n !== 'object' ? n
+  : panels.has(n.type) ? expand(n.type(n.props)) : n.props?.children === undefined ? n
+    : { ...n, props: { ...n.props, children: expand(n.props.children) } };
 
 function findAll(tree, predicate) {
   if (!tree || typeof tree !== 'object') return [];
@@ -94,6 +106,7 @@ function lab() {
     require: name => {
       if (name === 'react') return hooks;
       if (name === './engine') return engine;
+      if (name === './MarkingPanels') return panelsModule;
       if (name === './injectablePreview') return injectablePreview;
       if (name === './injectableLocalRecord') return injectableLocalRecord;
       if (name === './faceContour') return faceContour;
@@ -131,7 +144,7 @@ function lab() {
     set(name, value) { states[stateNames.indexOf(name)] = value; },
     render() {
       states[stateNames.indexOf('genericPreviewAfter')] = states[stateNames.indexOf('preview')]?.after ?? true;
-      stateCursor = 0; refCursor = 0; return exports.default();
+      stateCursor = 0; refCursor = 0; return expand(exports.default());
     },
     photos(photos) { states[0] = photos; },
     pending(pending) { states[1] = pending; },
@@ -153,7 +166,7 @@ const calculate = tree => findAll(tree, n => n.type === 'button' && text(n).star
 const slotIds = ['frontal', 'izquierda', 'derecha', 'extra_a', 'extra_b'];
 const viewers = tree => findAll(tree, n => typeof n.props?.onMarkerPlaced === 'function');
 const renderedMarks = viewer => viewer.props.editablePoints.map(({ id, x, y, z }) => ({ id, position: { x, y, z } }));
-const button = (tree, label) => findAll(tree, n => n.type === 'button' && text(n) === label)[0];
+const button = (tree, label) => findAll(tree, n => n.type === 'button' && (text(n) === label || n.props?.['aria-label'] === label))[0];
 const openEditor = app => { button(app.render(), 'Simular y marcar').props.onClick(); return app.render(); };
 const openAppearance = app => {
   openEditor(app); button(app.render(), 'Morfología, piel y capas').props.onClick(); return app.render();
@@ -175,7 +188,7 @@ test('malla predeterminada permite hover sin añadir marcas y revisión abre mod
     assert.deepEqual(colors.slice(i, i + 3), colors.slice(i + 6, i + 9), 'sin degradado hacia otra zona');
   }
   viewer.props.anatomicalOverlay.onHover('Mentón');
-  assert.match(text(app.render()), /Mentón · límite aproximado/);
+  assert.match(text(app.render()), /MentónPiel0 U/);
   openCapture(app);
   app.photos({ frontal: photo() });
   tree = app.render();
@@ -305,7 +318,7 @@ test('marcaciones compartidas sobreviven a modo, reconstrucción y retirada de f
   photoWrapper(app.render()).props.onPointerUp();
   tree = app.render();
   assert.equal(app.state('markers').length, 3);
-  button(tree, 'Modelo 3D').props.onClick();
+  button(tree, 'Genérico').props.onClick();
   calculate(openCapture(app)).props.onClick();
   await new Promise(resolve => setImmediate(resolve));
   tree = openEditor(app);

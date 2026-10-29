@@ -28,10 +28,13 @@ export function annotationUVs(atlas: GenericFaceAtlas): Float32Array {
 
 /** La profundidad solo modifica buffers VISUALES; el localizador sigue en piel. */
 export function buildAnnotationLayerView(
-  reference: AnatomicalReference, atlas: GenericFaceAtlas, surface?: PersonalSurface,
+  input: AnatomicalReference, atlas: GenericFaceAtlas, surface?: PersonalSurface,
 ): AnnotationLayerView {
   const frame = surface ? personalFaceFrame(surface) : undefined;
   const source = surface?.positions ?? Float32Array.from(atlas.positions);
+  // Fotos MediaPipe traen 478 puntos (iris); el atlas y la capa solo usan los 468 faciales.
+  const reference = input.uvs.length > (source.length / 3) * 2
+    ? { ...input, uvs: input.uvs.slice(0, (source.length / 3) * 2) } : input;
   const canonical = source.slice();
   if (frame) for (let i = 0; i < canonical.length; i += 3) {
     const p = toCanonicalPosition({ x: source[i], y: source[i + 1], z: source[i + 2] }, frame);

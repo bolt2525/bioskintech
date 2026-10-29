@@ -107,7 +107,7 @@ function app() {
     } }).outputText;
     vm.runInNewContext(code, { exports, console, Float32Array, Uint8Array, Uint8ClampedArray, ArrayBuffer,
       require(name) {
-        if (name === 'react') return { ...React, useEffect() {}, useCallback: fn => fn,
+        if (name === 'react') return { ...React, useEffect() {}, useCallback: fn => fn, useId: () => 'test-id',
           useMemo(fn, dependencies) {
             const i = memoCursor++, old = memos[i];
             if (!old || !dependencies || dependencies.some((d, j) => !Object.is(d, old.dependencies[j]))) memos[i] = { value: fn(), dependencies };
@@ -129,13 +129,16 @@ function app() {
     return exports;
   }
   const Component = load(path.join(root, 'FaceSimLab.tsx')).default;
+  const panels = new Set(Object.values(load(path.join(root, 'MarkingPanels.tsx'))).filter(v => typeof v === 'function'));
+  const expand = n => Array.isArray(n) ? n.map(expand) : !n || typeof n !== 'object' ? n
+    : panels.has(n.type) ? expand(n.type(n.props)) : n.props?.children === undefined ? n
+      : { ...n, props: { ...n.props, children: expand(n.props.children) } };
   const api = {
-    render() { cursor = 0; refCursor = 0; memoCursor = 0; tree = Component(); },
+    render() { cursor = 0; refCursor = 0; memoCursor = 0; tree = expand(Component()); },
     set(name, value) { assert.ok(names.includes(name), name); states[names.indexOf(name)] = value; },
     get(name) { return states[names.indexOf(name)]; },
-    button(label) { const result = find(tree, node => node.type === 'button' && text(node) === label)[0]; assert.ok(result, label); return result; },
+    button(label) { const result = find(tree, node => node.type === 'button' && (text(node) === label || node.props?.['aria-label'] === label))[0]; assert.ok(result, label); return result; },
     viewer() { return find(tree, node => node.type === Clinical)[0]; },
-    quick() { return find(tree, node => node.props?.onApply && node.props?.bindings && node.props?.meta)[0]; },
   };
   api.render(); api.set('workspace', 'simulate'); api.set('genericPreviewGlb', new ArrayBuffer(8));
   api.set('genericPreviewAfter', false); api.set('preview', { ...api.get('preview'), after: false });
@@ -182,22 +185,6 @@ test('handlers 3D: bilateral nuevo, mover/editar conserva identidad y metadatos 
   assert.equal(Object.keys(ui.get('bindings')).length, 2);
   ui.button('Deshacer').props.onClick(); ui.render();
   assert.equal(Object.keys(ui.get('bindings')).length, 0);
-});
-
-test('handlers: quickRecord y renombre del vial con settings se deshacen en una acción', () => {
-  const ui = app(), before = ui.get('quickRecord');
-  ui.quick().props.onChange({ ...before, qa: 'total explícito' }); ui.render();
-  assert.equal(ui.get('history').length, 1);
-  ui.button('Deshacer').props.onClick(); ui.render();
-  assert.equal(ui.get('quickRecord'), before);
-  const meta = { original: { mode: 'toxina', zone: 'Auto', dose: 0, product: 'Vial corregido' } };
-  const next = { ...before, qa: 'total conservado al migrar grupo' };
-  ui.quick().props.onApply(meta, next); ui.render();
-  assert.equal(ui.get('history').length, 1);
-  assert.equal(ui.get('meta'), meta); assert.equal(ui.get('quickRecord'), next);
-  ui.button('Deshacer').props.onClick(); ui.render();
-  assert.equal(ui.get('quickRecord'), before);
-  assert.equal(Object.keys(ui.get('meta')).length, 0);
 });
 
 test('handlers: cantidades sin marcas se exportan; conflictos rechazan todo y limpiar tiene undo', () => {

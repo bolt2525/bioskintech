@@ -90,3 +90,30 @@ test('buildPersonalSurface no aplana un gap de Z que ya exista en el prior front
   assert.ok(Math.abs(surface.positions[13 * 3 + 2] - surface.positions[14 * 3 + 2]) > 0.1,
     'no interpretar una coincidencia XY como permiso para borrar profundidad sin evidencia adicional');
 });
+
+test('barba: el perfil no adelanta mentón/perioral por delante de los labios', t => {
+  const { front } = fixture(false);
+  front.landmarks[2] = { ...front.landmarks[2], x: 0.5, y: 0.6 }; // subnasal sintético sobre la boca
+  const truth = front.landmarks.map(p => ({ x: p.x - 0.5, y: 0.5 - p.y, z: -p.z / 0.7 }));
+  const lips = new Set(lipIds);
+  // Vello: el contorno de perfil sobresale 0.05 bajo la boca, no así en la frontal.
+  const beard = truth.map((p, i) => !lips.has(i) && p.y < -0.17 ? { ...p, z: p.z + 0.05 } : p);
+  const profiles = [-1.1, 1.1].map(yaw => {
+    const c = Math.cos(yaw), s = Math.sin(yaw);
+    return { aspect: 1, pose: [c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 0, 0, 0, 1],
+      landmarks: beard.map(p => ({ x: 0.5 + c * p.x + s * p.z, y: 0.5 - p.y, z: -(c * p.z - s * p.x) })) };
+  });
+  for (const preserveLips of [true, false]) {
+    const result = refineDepthFromProfiles(front, profiles, { preserveLips });
+    assert.ok(result.used > 0, 'las vistas siguen aportando');
+    const forward = i => front.landmarks[i].z - result.landmarks[i].z;
+    const lipShift = [...lipIds].map(forward).sort((a, b) => a - b)[lipIds.length >> 1];
+    const height = Math.hypot(front.landmarks[152].x - front.landmarks[10].x, front.landmarks[152].y - front.landmarks[10].y);
+    const cap = Math.max(0, lipShift) + height * 0.015 + 1e-9;
+    const chin = truth.map((p, i) => i).filter(i => !lips.has(i) && front.landmarks[i].y > front.landmarks[2].y);
+    assert.ok(chin.length > 40);
+    const worst = Math.max(...chin.map(forward));
+    assert.ok(worst <= cap, `mentón avanza ${worst} > ${cap}`);
+    t.diagnostic(`preserveLips=${preserveLips}: avance máx. mentón ${worst.toFixed(4)} ≤ ${cap.toFixed(4)}`);
+  }
+});

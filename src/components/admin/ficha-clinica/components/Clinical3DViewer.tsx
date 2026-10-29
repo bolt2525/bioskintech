@@ -60,6 +60,16 @@ export interface EditablePoint {
   z: number;
   lineIds: string[];
   name?: string;
+  /** Color CSS del núcleo; activa estilo de alto contraste con aro oscuro. */
+  color?: string;
+}
+
+/** Plano de corte ilustrativo: posición 0..1 sobre el eje del modelo. */
+export interface ClinicalClipping {
+  scope: 'skin' | 'all';
+  axis: 'x' | 'y' | 'z';
+  position: number;
+  reverse: boolean;
 }
 
 /** Posición 2D proyectada de un punto (para overlay de números) */
@@ -572,6 +582,8 @@ interface Clinical3DViewerProps {
   onEstimatedSurfaceInteraction?: () => void;
   surfaceConstraint?: SurfaceInteractionConstraint;
   anatomicalOverlay?: AnatomicalSurfaceOverlay;
+  /** Corte visual del modelo (y opcionalmente capas anatómicas). No afecta la interacción. */
+  clipping?: ClinicalClipping | null;
   /** Escala multiplicadora del tamaño de marcaciones puntuales (1.0 = default) */
   pointMarkerScale?: number;
   /** Mostrar etiquetas flotantes junto a las marcaciones */
@@ -631,6 +643,7 @@ const ThreeEngine: React.FC<{
   onEstimatedSurfaceInteraction?: () => void;
   surfaceConstraint?: SurfaceInteractionConstraint;
   anatomicalOverlay?: AnatomicalSurfaceOverlay;
+  clipping?: ClinicalClipping | null;
   showMarkerLabels?: boolean;
   cameraPreset?: ClinicalCameraPreset;
   scalpHair?: ScalpHairVisualization | null;
@@ -654,6 +667,7 @@ const ThreeEngine: React.FC<{
   onEstimatedSurfaceInteraction,
   surfaceConstraint,
   anatomicalOverlay,
+  clipping = null,
   showMarkerLabels = true,
   pointMarkerScale = 1.0,
   cameraPreset = 'default',
@@ -736,6 +750,27 @@ const ThreeEngine: React.FC<{
       });
     };
   }, [referenceLayers, skinDisplay, referenceOverlay, modelVersion]);
+  const clipScope = clipping?.scope, clipAxis = clipping?.axis, clipPosition = clipping?.position, clipReverse = clipping?.reverse;
+  useEffect(() => {
+    const scene = sceneRef.current, model = faceMeshRef.current;
+    if (!scene || !model || !clipScope || !clipAxis || clipPosition === undefined) return;
+    const bounds = new THREE.Box3().setFromObject(model);
+    const sign = clipReverse ? -1 : 1, margin = (bounds.max.y - bounds.min.y) * 0.04;
+    const value = bounds.min[clipAxis] - margin + Math.min(1, Math.max(0, clipPosition)) * (bounds.max[clipAxis] - bounds.min[clipAxis] + margin * 2);
+    const normal = new THREE.Vector3(); normal[clipAxis] = sign;
+    const planes = [new THREE.Plane(normal, -value * sign)];
+    const touched: THREE.Material[] = [];
+    const clip = (object: THREE.Object3D) => object.traverse(child => {
+      if (!(child instanceof THREE.Mesh)) return;
+      for (const material of Array.isArray(child.material) ? child.material : [child.material]) {
+        material.clippingPlanes = planes; material.clipShadows = true; material.needsUpdate = true; touched.push(material);
+      }
+    });
+    clip(model);
+    // ponytail: el corte es visual; el raycast sigue tocando la malla recortada → filtrar intersecciones si se requiere.
+    if (clipScope === 'all') scene.traverse(child => { if (child.name === 'ANATOMICAL_REFERENCE_VISUAL_ONLY') clip(child); });
+    return () => touched.forEach(material => { material.clippingPlanes = null; material.needsUpdate = true; });
+  }, [clipScope, clipAxis, clipPosition, clipReverse, referenceLayers, skinDisplay, referenceOverlay, modelVersion]);
   useEffect(() => {
     const scene = sceneRef.current;
     if (!scene || !anatomicalOverlay) return;
@@ -875,6 +910,7 @@ const ThreeEngine: React.FC<{
     renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.localClippingEnabled = true;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -3145,6 +3181,19 @@ const ThreeEngine: React.FC<{
 
       const isIntersection = pt.type === 'intersection';
       const isIncomplete = incompletePointIds.includes(pt.id);
+      if (pt.color && !isIncomplete) {
+        const tint = new THREE.Color(pt.color);
+        const ring = new THREE.Mesh(new THREE.SphereGeometry(0.036, 16, 16),
+          new THREE.MeshBasicMaterial({ color: 0x0f172a, transparent: true, opacity: 0.6, depthTest: false }));
+        ring.renderOrder = 1000;
+        const core = new THREE.Mesh(new THREE.SphereGeometry(0.026, 16, 16),
+          new THREE.MeshStandardMaterial({ color: tint, emissive: tint, emissiveIntensity: 0.55, transparent: true, depthTest: false }));
+        core.renderOrder = 1002;
+        core.userData.baseEmissive = tint.clone();
+        ptGroup.add(ring, core);
+        group.add(ptGroup);
+        return;
+      }
       // Incompleto (solo volumen, sin zona) → celeste; normal → cyan/amarillo según tipo
       const sphereColor = isIncomplete
         ? new THREE.Color(0x56cffc)
@@ -3697,6 +3746,7 @@ export default function Clinical3DViewer({
   onEstimatedSurfaceInteraction,
   surfaceConstraint,
   anatomicalOverlay,
+  clipping = null,
   pointMarkerScale = 1.0,
   showMarkerLabels = true,
   scalpHair = null,
@@ -3802,6 +3852,7 @@ export default function Clinical3DViewer({
             onEstimatedSurfaceInteraction={onEstimatedSurfaceInteraction}
             surfaceConstraint={surfaceConstraint}
             anatomicalOverlay={anatomicalOverlay}
+            clipping={clipping}
             pointMarkerScale={pointMarkerScale}
             showMarkerLabels={showMarkerLabels}
             cameraPreset={cameraPreset}

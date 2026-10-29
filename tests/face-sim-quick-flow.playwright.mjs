@@ -32,17 +32,17 @@ try {
   await page.getByRole('button', { name: 'Importar', exact: true }).click();
   const count = () => page.getByRole('list', { name: 'Elementos marcados' }).locator('li').count();
   await page.waitForFunction(() => document.querySelectorAll('[aria-label="Elementos marcados"] > li').length === 3);
-  const quick = page.getByRole('region', { name: 'Registro rápido por zonas', exact: true });
-  await quick.waitFor();
-  const toxin = quick.locator('fieldset').filter({ has: page.locator('legend', { hasText: 'Toxina · Vial QA ficticio' }) });
-  const inputs = await toxin.locator('input[type="number"]').all();
-  const amounts = [];
-  for (const input of inputs) if (!(await input.getAttribute('aria-label')).startsWith('Total declarado')) amounts.push(input);
-  assert.equal(amounts.length, 2, 'Cada punto lateral genera su zona y lado, no una dosis.');
-  await amounts[0].fill('6'); await amounts[1].fill('4');
-  await toxin.getByLabel('Total declarado Toxina Vial QA ficticio', { exact: true }).fill('10');
-  await toxin.getByText('Total declarado y zonas coinciden.', { exact: true }).waitFor();
-  assert.equal(await toxin.getByText('Total por zonas: 10 U · 0 pendiente(s)', { exact: true }).count(), 1);
+  // Listado único: la dosis vive en cada punto y el HUD suma en tiempo real por tipo de inyectable.
+  const ledger = page.getByRole('region', { name: 'Listado de puntos', exact: true });
+  await ledger.waitFor();
+  await page.getByLabel('Dosis marca 1', { exact: true }).fill('6');
+  await page.getByLabel('Dosis marca 2', { exact: true }).fill('4');
+  const hud = page.getByRole('list', { name: 'Volumen acumulado', exact: true });
+  await page.waitForFunction(() => /10\s*U/.test(document.querySelector('[aria-label="Volumen acumulado"]')?.textContent ?? ''));
+  await ledger.getByLabel('Filtrar por tercio', { exact: true }).selectOption('superior');
+  assert.ok(await count() < 3, 'el filtro por tercio reduce el listado');
+  await ledger.getByLabel('Filtrar por tercio', { exact: true }).selectOption('all');
+  assert.equal(await count(), 3);
   const save = async () => {
     const pending = page.waitForEvent('download');
     await page.getByRole('button', { name: 'Exportar JSON de Inyectables', exact: true }).click();
@@ -50,15 +50,15 @@ try {
     let text = ''; for await (const chunk of stream) text += chunk.toString();
     return JSON.parse(text);
   };
-  const exported = await save(), groupKey = JSON.stringify(['toxina', 'Vial QA ficticio']);
-  assert.equal(exported.mapping_data.lab.quickRecord.entries[groupKey].total, 10);
-  assert.deepEqual(Object.values(exported.mapping_data.lab.quickRecord.entries[groupKey].zones).sort((a, b) => a - b), [4, 6]);
-  assert.ok(Object.values(exported.mapping_data.lab.meta).every(meta => meta.dose === 0));
+  const exported = await save();
+  assert.deepEqual(Object.values(exported.mapping_data.lab.meta).map(meta => meta.dose).sort((a, b) => a - b), [0, 4, 6]);
   await page.getByRole('button', { name: 'Seleccionar marca 1', exact: true }).click();
   await page.getByRole('button', { name: 'Espejar selección', exact: true }).click();
   assert.equal(await count(), 4);
   await page.getByRole('button', { name: 'Deshacer', exact: true }).click();
   assert.equal(await count(), 3);
+  // El modal de volumen se valida en face-sim-local-flow; aquí se mide la acción bilateral pura.
+  await page.getByLabel('Pedir volumen al marcar', { exact: true }).uncheck();
   const bilateral = page.getByLabel('Modo bilateral · crear ambos lados en una acción', { exact: true });
   await bilateral.check();
   await page.getByRole('button', { name: 'Punto', exact: true }).click();
@@ -120,14 +120,15 @@ try {
   await page.getByRole('button', { name: 'Importar', exact: true }).click();
   await page.waitForFunction(() => document.querySelectorAll('[aria-label="Elementos marcados"] > li').length === 3);
   const round = await save();
-  assert.deepEqual(round.mapping_data.lab.quickRecord, exported.mapping_data.lab.quickRecord);
+  assert.deepEqual(round.mapping_data.lab.meta && Object.values(round.mapping_data.lab.meta).map(meta => meta.dose).sort((a, b) => a - b), [0, 4, 6]);
   await page.setViewportSize({ width: 390, height: 844 });
-  assert.equal(await quick.isVisible(), true);
+  assert.equal(await ledger.isVisible(), true);
+  assert.equal(await hud.isVisible(), true);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
-  if (process.env.FACE_QA_OUTPUT_DIRECTORY) await quick.screenshot({ path: path.join(process.env.FACE_QA_OUTPUT_DIRECTORY, 'facial-registro-movil.png') });
+  if (process.env.FACE_QA_OUTPUT_DIRECTORY) await ledger.screenshot({ path: path.join(process.env.FACE_QA_OUTPUT_DIRECTORY, 'facial-registro-movil.png') });
   assert.deepEqual(errors, []); assert.deepEqual(apiRequests, []);
   console.log(JSON.stringify({ passed: true, marks: await count(), desktop: '1440x1000', mobile: '390x844',
-    checks: ['zonas y lados', 'totales sin dosis por punto', 'conciliacion', 'JSON ida/vuelta', 'espejo', 'bilateral y undo atomico',
+    checks: ['dosis por punto', 'volumen acumulado en tiempo real', 'filtro por tercio', 'JSON ida/vuelta', 'espejo', 'bilateral y undo atomico',
       'capas y mallado sincronizados', 'simetria nasal reversible', 'render muscular real', 'sin API ni desbordamiento'] }));
 } finally {
   await browser.close();

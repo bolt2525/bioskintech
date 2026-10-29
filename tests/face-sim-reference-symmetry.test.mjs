@@ -391,3 +391,19 @@ test('visor standalone: simetría reversible sin tocar otros controles ni UV; di
   assert.equal(control('Intensidad de simetría', 'input').props.value, 0);
   assert.equal(find(tree, n => n.props?.id === 'editor-lipUpper')[0].props.value, 0.3);
 });
+
+test('simetría nasal densa: copia el relieve del hemimallado origen XY estable y lado origen intacto', () => {
+  const anchors = Float32Array.from(atlas.positions), frame = sim.personalFaceFrame({ positions: anchors });
+  const canon = p => sim.toCanonicalPosition({ x: p[0], y: p[1], z: p[2] }, frame);
+  const world = c => { const p = sim.fromCanonicalPosition(c, frame); return [p.x, p.y, p.z]; };
+  const s = canon(at(anchors, 98).map((v, k) => v * 0.8 + at(anchors, 4)[k] * 0.2));
+  const source = world(s), target = world({ x: -s.x, y: s.y, z: s.z + 0.03 });
+  const dense = Float32Array.from([...anchors, ...source, ...target]);
+  const result = sim.deformPositions(dense, anchors, { noseSymmetry: 1 });
+  near(at(result, 468), source, 1e-4);
+  const fixed = canon(at(result, 469));
+  // El espejo de landmarks puede corregir levemente XY; la copia densa solo actúa en profundidad.
+  assert.ok(Math.abs(fixed.x + s.x) < 0.01 && Math.abs(fixed.y - s.y) < 0.01, `XY ${fixed.x},${fixed.y} vs ${-s.x},${s.y}`);
+  assert.ok(Math.abs(fixed.z - s.z) < 0.006, `profundidad copiada ${fixed.z} vs ${s.z} (defecto 0.03)`);
+  assert.ok(result.every(Number.isFinite));
+});

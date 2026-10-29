@@ -44,7 +44,7 @@ for (const cell of cells) {
 const modes: readonly SimMode[] = ['toxina', 'relleno_ha', 'hidratacion', 'bioestimulador'];
 export const quickGroupKey = (mode: SimMode, product: string) => JSON.stringify([mode, product.trim()]);
 
-function zoneFor(address: FaceAddress, manual: string): Omit<QuickZone, 'elements'> {
+export function addressPlacement(address: FaceAddress, manual: string): Omit<QuickZone, 'elements'> {
   const ids = atlas.triangles.slice(address.triangle * 3, address.triangle * 3 + 3);
   if (ids.length !== 3 || address.weights.length !== 3
     || !address.weights.every(n => Number.isFinite(n) && n >= -1e-7 && n <= 1 + 1e-7)
@@ -79,7 +79,7 @@ export function quickRecordGroups(meta: Record<string, Meta>, bindings: Anatomic
     const addresses = [...binding.paths.flat(), ...(binding.center ? [binding.center] : [])];
     if (!addresses.length) throw new Error('Hay una marcación sin recorrido facial.');
     for (const address of addresses) {
-      const zone = zoneFor(address, item.zone);
+      const zone = addressPlacement(address, item.zone);
       const existing = zones.get(zone.key);
       if (existing) {
         if (!existing.elements.includes(id)) existing.elements.push(id);

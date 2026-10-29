@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Download, ImagePlus, Trash2, Wand2, Undo2, FileJson, ScanFace, Box, Image as ImageIcon } from 'lucide-react';
+import { Download, ImagePlus, Trash2, Wand2, Undo2, FileJson, ScanFace, Box, Image as ImageIcon, Move3d, MousePointer2, Crosshair, Brush, Spline, Slash, ArrowUpRight, Circle, Square, Fan, Grid3x3, Leaf, Layers, Scissors, FlipHorizontal2, Columns2, Syringe, ListChecks, Eye, Sparkles, UserRound, Gauge, type LucideIcon } from 'lucide-react';
 import injectablesCatalog from '../../components/admin/ficha-clinica/data/injectables.json';
 import Clinical3DViewer, {
   type AnatomicalSurfaceOverlay, type DrawingTool, type FreehandLine, type Marker3D, type SurfaceShape,
@@ -30,8 +30,9 @@ import { annotationHistory, annotationLaterality, canonicalAnnotationPoint, mirr
 import { annotationPhotoLayer, annotationUVs, bindingsOnLayer, buildAnnotationLayerView, type AnnotationLayerView } from './annotationLayerView';
 import { loadDefaultLayers, registerLayers, ANATOMY_PLANES } from './defaultLayers';
 import { AnatomyLayerControls, chooseAnatomyDisplay, initialAnatomyDisplay } from './anatomyDisplay';
-import QuickInjectableRecord from './QuickInjectableRecord';
 import { initialQuickRecordSettings, type QuickRecordSettings } from './quickRecord';
+import { EXTENDED_ZONE, ledgerRows, volumeTotals } from './markingModel';
+import { CheckChip, CutControls, IconToggle, ModeCards, NO_CUT, PointLedger, StepCard, ToolDock, VolumeDialog, VolumeHud, hudChip, type MarkingCut } from './MarkingPanels';
 import { DEFAULT_PREVIEW, PREVIEW_DESCRIPTIONS, buildIllustrativeEffects, previewPixels, previewSurface } from './injectablePreview';
 import { importLocalRecord, localRecord } from './injectableLocalRecord';
 
@@ -216,17 +217,17 @@ type PhotoSlotId = ViewKind | 'extra_a' | 'extra_b';
 const PHOTO_SLOTS: { id: PhotoSlotId; label: string }[] = [...VIEWS, { id: 'extra_a', label: 'Foto 4' }, { id: 'extra_b', label: 'Foto 5' }];
 type WorkMode = '3d' | 'foto';
 type Tool3D = 'navigate' | 'select' | 'point' | Exclude<DrawingTool, 'none'>;
-const TOOLS_3D: { id: Tool3D; label: string }[] = [
-  { id: 'navigate', label: 'Mover cámara' }, { id: 'select', label: 'Seleccionar / editar' },
-  { id: 'point', label: 'Punto' }, { id: 'freehand-brush', label: 'Pincel' },
-  { id: 'freehand-poly', label: 'Polilínea' }, { id: 'straight-line', label: 'Línea' }, { id: 'shape-arrow', label: 'Flecha' },
-  { id: 'shape-circle', label: 'Círculo' }, { id: 'shape-rect', label: 'Rectángulo' }, { id: 'ha-fan', label: 'Abanico' },
-  { id: 'ha-grid', label: 'Malla' }, { id: 'ha-fern', label: 'Helecho' },
+const TOOLS_3D: { id: Tool3D; label: string; icon: LucideIcon }[] = [
+  { id: 'navigate', label: 'Mover cámara', icon: Move3d }, { id: 'select', label: 'Seleccionar / editar', icon: MousePointer2 },
+  { id: 'point', label: 'Punto', icon: Crosshair }, { id: 'freehand-brush', label: 'Pincel', icon: Brush },
+  { id: 'freehand-poly', label: 'Polilínea', icon: Spline }, { id: 'straight-line', label: 'Línea', icon: Slash }, { id: 'shape-arrow', label: 'Flecha', icon: ArrowUpRight },
+  { id: 'shape-circle', label: 'Círculo', icon: Circle }, { id: 'shape-rect', label: 'Rectángulo', icon: Square }, { id: 'ha-fan', label: 'Abanico', icon: Fan },
+  { id: 'ha-grid', label: 'Malla', icon: Grid3x3 }, { id: 'ha-fern', label: 'Helecho', icon: Leaf },
 ];
-const TOOLS_PHOTO: { id: ElemKind; label: string }[] = [
-  { id: 'point', label: 'Punto' }, { id: 'line', label: 'Línea' }, { id: 'arrow', label: 'Flecha' },
-  { id: 'free', label: 'Libre' }, { id: 'circle', label: 'Círculo' }, { id: 'rect', label: 'Rectángulo' },
-  { id: 'pattern', label: 'Patrón' },
+const TOOLS_PHOTO: { id: ElemKind; label: string; icon: LucideIcon }[] = [
+  { id: 'point', label: 'Punto', icon: Crosshair }, { id: 'line', label: 'Línea', icon: Slash }, { id: 'arrow', label: 'Flecha', icon: ArrowUpRight },
+  { id: 'free', label: 'Libre', icon: Brush }, { id: 'circle', label: 'Círculo', icon: Circle }, { id: 'rect', label: 'Rectángulo', icon: Square },
+  { id: 'pattern', label: 'Patrón', icon: Fan },
 ];
 const HA_CONFIG = { fanLines: 5, fanAngle: 25, gridCells: 4, fernBranches: 5 };
 
@@ -331,8 +332,13 @@ export default function FaceSimLab() {
   const [bilateral, setBilateral] = useState(false);
   const [anatomyDisplay, setAnatomyDisplay] = useState(initialAnatomyDisplay);
   const [quickRecord, setQuickRecord] = useState(initialQuickRecordSettings);
+  const [askVolume, setAskVolume] = useState(true);
+  const [pendingVolume, setPendingVolume] = useState<string[] | null>(null);
+  const [cut, setCut] = useState<MarkingCut>(NO_CUT);
+  const [extendedZone, setExtendedZone] = useState(false);
+  const [outsideHint, setOutsideHint] = useState(false);
   const hasQuickEntries = Object.keys(quickRecord.entries).length > 0;
-  const hasLocalRecord = Object.keys(bindings).length > 0 || hasQuickEntries;
+  const hasLocalRecord = Object.keys(bindings).length > 0 || markers.length > 0 || hasQuickEntries;
   useEffect(() => {
     if (!hasLocalRecord) return;
     const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
@@ -485,18 +491,20 @@ export default function FaceSimLab() {
     return () => { active = false; };
   }, [layerAttempt]);
   const annotationLayers = useMemo(() => {
-    try {
-      const build = (uvs: Float32Array, surface?: PersonalSurface) => registerLayers(defaultLayers, uvs)
-        .map(reference => buildAnnotationLayerView(reference, genericFaceAtlas, surface));
-      return {
-        generic: build(annotationUVs(genericFaceAtlas)),
-        personal: personal ? build(personal.surface.uvs, personal.surface) : [],
-        photo: slot?.landmarks ? build(Float32Array.from(slot.landmarks.flatMap(p => [p.x, p.y]))) : [],
-        error: null,
-      };
-    } catch (error) {
-      return { generic: [], personal: [], photo: [], error: error instanceof Error ? error.message : 'Referencia no disponible.' };
-    }
+    let error: string | null = null;
+    // Cada fuente falla por separado: un error en la foto no apaga las capas del modelo.
+    const build = (uvs: Float32Array, surface?: PersonalSurface) => {
+      try {
+        return registerLayers(defaultLayers, uvs).map(reference => buildAnnotationLayerView(reference, genericFaceAtlas, surface));
+      } catch (cause) {
+        error ??= cause instanceof Error ? cause.message : 'Referencia no disponible.';
+        return [];
+      }
+    };
+    const generic = build(annotationUVs(genericFaceAtlas));
+    const personalLayers = personal ? build(personal.surface.uvs, personal.surface) : [];
+    const photo = slot?.landmarks ? build(Float32Array.from(slot.landmarks.flatMap(p => [p.x, p.y]))) : [];
+    return { generic, personal: personalLayers, photo, error };
   }, [defaultLayers, personal, slot?.landmarks]);
   const activeLayer = (source: 'generico' | 'personal' | 'foto'): AnnotationLayerView | undefined =>
     (source === 'generico' ? annotationLayers.generic : source === 'personal' ? annotationLayers.personal : annotationLayers.photo)
@@ -1061,8 +1069,20 @@ export default function FaceSimLab() {
     setBindings(current => ({ ...current, ...Object.fromEntries(entries) }));
     setMeta(current => ({ ...current, ...Object.fromEntries(entries.map(([key]) => [key, { ...properties }])) }));
     setSelectedId(id);
+    if (!updating && askVolume) setPendingVolume(entries.map(([key]) => key));
     return true;
   };
+  /** Marca solo en la cabeza completa (cuello, cuero cabelludo): sin binding, no se transfiere. */
+  const commitExtendedPoint = (m: Marker3D) => {
+    snap();
+    const id = m.id ?? uid();
+    setMarkers(current => [...current, { ...m, id }]);
+    setMeta(current => ({ ...current, [id]: { ...curMeta(), zone: EXTENDED_ZONE } }));
+    setSelectedId(id);
+    if (askVolume) setPendingVolume([id]);
+    setStatus('Punto en zona extendida: solo existe en el modelo 3D completo y se exporta igual.');
+  };
+  const isOutsideMask = (p: Vec3) => !locateSkinAnnotation('generico', p);
   const mirrorSelected = () => {
     if (!selectedId || !bindings[selectedId] || !meta[selectedId]) return;
     const source = workMode === 'foto' ? 'foto' : modelKind;
@@ -1101,7 +1121,10 @@ export default function FaceSimLab() {
       return;
     }
     const binding = makeBinding([[m.position]], source, 'point');
-    if (!binding) { blockedMark(); return; }
+    if (!binding) {
+      if (source === 'generico' && extendedZone && isOutsideMask(m.position)) { commitExtendedPoint(m); return; }
+      blockedMark(); return;
+    }
     if (!commitBinding(m.id, binding, source)) return;
     setStatus('Marcación anatómica compartida entre modelo original, superficie y foto. Cambiar de vista no la elimina.');
   };
@@ -1368,11 +1391,13 @@ export default function FaceSimLab() {
       const importedLines = r.lines as unknown as FreehandLine[];
       const importedShapes = r.shapes as unknown as SurfaceShape[];
       const mapped: AnatomicalBindings = {};
+      const freeImported = new Set<string>();
       const keepMarkers = importedMarkers.filter(m => {
         if (!m.id) return false;
         const binding = makeBinding([[m.position]], 'generico', 'point', true);
         if (binding) mapped[m.id] = binding;
-        return !!binding;
+        else if (r.meta[m.id] && isOutsideMask(m.position)) freeImported.add(m.id);
+        return !!binding || freeImported.has(m.id);
       });
       const keepLines = importedLines.filter(l => {
         const binding = makeBinding(l.segments?.length ? l.segments : [l.points], 'generico',
@@ -1397,7 +1422,8 @@ export default function FaceSimLab() {
       snap();
       setMarkers(p => [...p, ...keepMarkers]); setLines(p => [...p, ...keepLines]);
       setShapes(p => [...p, ...keepShapes]); setBindings(p => ({ ...p, ...mapped }));
-      setMeta(m => ({ ...m, ...Object.fromEntries(Object.entries(r.meta).filter(([id]) => mapped[id])) }));
+      setMeta(m => ({ ...m, ...Object.fromEntries(Object.entries(r.meta).filter(([id]) => mapped[id] || freeImported.has(id))
+        .map(([id, item]) => [id, freeImported.has(id) ? { ...item, zone: EXTENDED_ZONE } : item])) }));
       if (incomingHasAmounts) setQuickRecord(current => ({ ...current, entries: { ...current.entries, ...incomingQuick } }));
       setStatus(`${accepted}/${n} elementos trasladados por correspondencia anatómica. ${n - accepted} sin correspondencia o fuera de cobertura, no importados. ${incomingHasAmounts ? 'Totales por zona conservados sin repartirlos entre marcas. ' : ''}No se modificó la BD.`);
     } catch (error) { setStatus(`No se pudo importar: ${error instanceof Error ? error.message : 'JSON o geometría inválidos'}. Las marcas anteriores se conservan.`); }
@@ -1442,25 +1468,44 @@ export default function FaceSimLab() {
     ? { ...curMeta(), id: 'draft', kind: 'pattern', paths: photoPatternPaths(draft.pts[0], draft.pts[1], aspect, photoPattern) }
     : elemsFromPhoto([{ ...curMeta(), id: 'draft', view, kind: draft.kind, pts: draft.pts }], aspect)[0] : null;
 
+  const freeMarkerIds = useMemo(() => markers.flatMap(m => m.id && !bindings[m.id] ? [m.id] : []), [markers, bindings]);
+  const rows = useMemo(() => ledgerRows(meta, bindings, freeMarkerIds), [meta, bindings, freeMarkerIds]);
+  const totals = useMemo(() => volumeTotals(rows), [rows]);
+  const clipping = cut.scope === 'none' ? null : { ...cut, scope: cut.scope };
+  const pointColor = (id: string) => meta[id] ? SIM_MODES[meta[id].mode].color : undefined;
+
   const renderViewer = (source: 'generico' | 'personal') => {
     const original = source === 'generico';
     const annotations = original ? genericAnnotations : personalAnnotations;
-    const ready = original ? !!genericPreviewGlb && (calibrating || genericPreviewAfter === preview.after) : !!personal;
+    // Antes: cabeza completa (cuello/cuero cabelludo visibles). Después/calibración: cara del atlas deformable.
+    const fullHead = original && workspace === 'simulate' && !calibrating && !preview.after;
+    const ready = fullHead || (original ? !!genericPreviewGlb && (calibrating || genericPreviewAfter === preview.after) : !!personal);
+    const freePoints = original ? markers.filter(m => m.id && !bindings[m.id]) : [];
     return <section key={source} aria-label={original ? 'Modelo genérico 3D' : 'Foto personal en 3D'}
       onPointerDownCapture={() => { if (splitAnnotations) setModelKind(source); }}
       onFocusCapture={() => { if (splitAnnotations) setModelKind(source); }}
-      className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-900">
-      <h2 className="px-3 py-3 text-sm font-semibold text-white">{original ? 'Modelo facial original · referencia anatómica' : personal?.closedHead ? 'Superficie personal · tono liso = inferido, no marcable' : 'Superficie facial personal · misma marcación'}</h2>
+      className="relative min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-slate-950 shadow-[0_0_40px_-20px_rgba(34,211,238,0.6)]">
+      <h2 className="flex items-center gap-2 px-3 py-2.5 text-xs font-bold uppercase tracking-[0.16em] text-slate-200">
+        {original ? <Box className="h-4 w-4 text-cyan-300" aria-hidden="true" /> : <UserRound className="h-4 w-4 text-fuchsia-300" aria-hidden="true" />}
+        <span className="flex-1">{original ? fullHead ? 'Cabeza completa · genérico' : 'Atlas facial · genérico' : 'Máscara del paciente'}</span>
+        {!original && freeMarkerIds.length > 0 && <span className="rounded-full bg-amber-400/15 px-2 py-0.5 text-[10px] text-amber-300"
+          title="Marcas de zona extendida: solo en el modelo completo">{freeMarkerIds.length} fuera de máscara</span>}
+      </h2>
       {overlayMode === 'attention' && <p className="bg-amber-100 px-3 py-2 text-xs font-semibold text-amber-950">SIMULACIÓN · No detecta vasos ni certifica zonas seguras.</p>}
       {ready ? <Clinical3DViewer
-        key={`${source}-${preview.after && !calibrating ? 'after' : 'before'}`}
+        key={`${source}-${preview.after && !calibrating ? 'after' : 'before'}-${fullHead ? 'head' : 'atlas'}`}
         markers={[]} freehandLines={annotations.lines} surfaceShapes={[]}
-        editablePoints={annotations.markers.flatMap(marker => marker.id ? [{ id: marker.id, type: 'free' as const,
-          ...marker.position, lineIds: [], name: meta[marker.id]?.zone }] : [])}
+        editablePoints={[...annotations.markers, ...freePoints].flatMap(marker => marker.id ? [{ id: marker.id, type: 'free' as const,
+          ...marker.position, lineIds: [], name: meta[marker.id]?.zone, color: pointColor(marker.id) }] : [])}
         pointMode="none" selectedPointId={selectedId ?? undefined}
         onEditablePointClicked={id => { setSelectedId(id); beginEditing(); }}
         onEditablePointHovered={id => { if (id) setSelectedId(id); }}
         onEditablePointMoved={(id, point) => {
+          if (original && !bindings[id] && markers.some(m => m.id === id)) {
+            if (!isOutsideMask(point)) { blockedMark(); return; }
+            snap(); setMarkers(current => current.map(m => m.id === id ? { ...m, position: point } : m));
+            return;
+          }
           const binding = makeBinding([[point]], source, 'point');
           if (!binding) { blockedMark(); return; }
           binding.illustrativePlane = bindings[id]?.illustrativePlane;
@@ -1470,9 +1515,10 @@ export default function FaceSimLab() {
         occludeAnnotations={!anatomyDisplay.overlay && anatomyDisplay.skin.visible && anatomyDisplay.skin.opacity >= 0.99
           && (!original || anatomyDisplay.anatomy !== 'skin')} showMarkerLabels={false}
         anatomicalOverlay={original ? annotationOverlays.generic : annotationOverlays.personal}
+        clipping={workspace === 'simulate' ? clipping : null}
         surfaceConstraint={workMode === '3d' && tool3d !== 'navigate' ? {
-          accepts: p => !!locateAnnotation(source, p),
-          onRejected: blockedMark,
+          accepts: p => !!locateAnnotation(source, p) || original && extendedZone && tool3d === 'point' && isOutsideMask(p),
+          onRejected: () => { blockedMark(); if (original && !extendedZone && tool3d === 'point') setOutsideHint(true); },
         } : undefined}
         onEstimatedSurfaceInteraction={blockedMark}
         selectedElementId={selectedId}
@@ -1487,14 +1533,20 @@ export default function FaceSimLab() {
           const current = annotations.lines.find(l => l.id === id);
           if (current) onLine({ ...current, points, segments }, source, true);
         }}
-        haShapeConfig={HA_CONFIG} cameraPreset="face-surface"
-        modelData={original ? genericPreviewGlb : personal ? preview.after && appearanceGlb?.personal === personal ? appearanceGlb.buffer : personal.glb : null}
+        haShapeConfig={HA_CONFIG} cameraPreset={fullHead ? 'face' : 'face-surface'}
+        modelData={original ? fullHead ? null : genericPreviewGlb : personal ? preview.after && appearanceGlb?.personal === personal ? appearanceGlb.buffer : personal.glb : null}
         pointMarkerScale={0.55} height="clamp(340px, 60vh, 590px)"
-        interactionHint={tool3d === 'navigate' || workMode === 'foto' ? 'Arrastra para rotar · las marcas se conservan'
+        interactionHint={tool3d === 'navigate' || workMode === 'foto' ? 'Arrastra para rotar'
           : calibrating && original ? `Referencia ${anchorName(slot?.modelAnchors?.length ?? 0)}`
-            : 'Solo rostro observado · correspondencia anatómica compartida'}
+            : extendedZone && original ? 'Rostro + zona extendida' : 'Solo rostro observado'}
       /> : <div role="status" className="flex min-h-[340px] items-center justify-center px-6 text-center text-sm text-slate-300">{original
-        ? 'Preparando geometría del atlas antes de permitir la marcación…' : buildingPersonal ? 'Calculando superficie personal…' : 'Carga una foto en Capturas y calcula la superficie. Las marcaciones se conservarán.'}</div>}
+        ? 'Preparando geometría del atlas…' : buildingPersonal ? 'Calculando máscara personal…' : 'Prepara la máscara desde una foto en Capturas.'}</div>}
+      {original && outsideHint && !extendedZone && <div role="alert" className="absolute inset-x-3 bottom-3 flex flex-wrap items-center gap-2 rounded-xl border border-amber-400/40       bg-slate-950/95 p-2 text-xs text-amber-100 backdrop-blur">
+        <span className="flex-1">Fuera de la máscara facial (cuello, cuero cabelludo, orejas).</span>
+        <button type="button" onClick={() => { setExtendedZone(true); setOutsideHint(false); }}
+          className="admin-focus-ring min-h-9 rounded-lg bg-amber-400 px-3 font-bold text-slate-950">Activar zona extendida</button>
+        <button type="button" aria-label="Cerrar aviso" onClick={() => setOutsideHint(false)} className="admin-focus-ring min-h-9 rounded-lg px-2 text-amber-200">✕</button>
+      </div>}
     </section>;
   };
 
@@ -1573,31 +1625,132 @@ export default function FaceSimLab() {
           triangles={genericFaceAtlas.triangles} onClose={() => setBoundaryReview(false)}
           onApply={(landmarks, reviewed) => applyLandmarks(landmarks, [...genericFaceAtlas.triangles], slot.contourAdjusted, reviewed)} />
       </Suspense>}
-      {(workspace === 'capture' || editorGroup === 'annotations') && <aside aria-label={workspace === 'capture' ? 'Revisión de capturas' : 'Herramientas de marcación'} className="min-w-0 space-y-4 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm lg:self-start">
+      {(workspace === 'capture' || editorGroup === 'annotations') && <aside aria-label={workspace === 'capture' ? 'Revisión de capturas' : 'Herramientas de marcación'} className={`min-w-0 space-y-4 rounded-2xl border p-3 shadow-sm lg:self-start ${workspace === 'simulate' ? 'border-white/10 bg-slate-950 text-slate-100' : 'border-slate-200 bg-white'}`}>
         {workspace === 'simulate' && <div className="space-y-3">
-          <h2 className="text-sm font-semibold">1. Superficie y capa → 2. Herramienta → 3. Revisar y exportar</h2>
-          <div className="grid grid-cols-2 gap-2" role="group" aria-label="Superficie de marcación">
-            <button type="button" onClick={activateGenericModel} aria-pressed={modelKind === 'generico'}
-              className="admin-focus-ring min-h-10 rounded border border-slate-300 text-xs aria-pressed:bg-sky-100">Genérico</button>
-            <button type="button" onClick={activatePersonal} disabled={!slot?.landmarks || captureBlocked || buildingPersonal}
-              aria-pressed={modelKind === 'personal'} className="admin-focus-ring min-h-10 rounded border border-slate-300 text-xs aria-pressed:bg-sky-100 disabled:opacity-40">Personal (foto)</button>
-          </div>
-          <div className="rounded-xl bg-slate-900 p-2 text-white">
-            <AnatomyLayerControls value={anatomyDisplay} onChange={value => {
-              setAnatomyDisplay(value); setHoveredZone(null); setDraft(null);
-            }} showMesh={showRegions} onMeshChange={toggleMesh} />
-          </div>
-          {(layerError || annotationLayers.error) ? <div role="alert" className="text-xs text-red-800">
-            <p>{layerError ?? annotationLayers.error} La piel y el registro se conservan.</p>
-            <button type="button" onClick={() => setLayerAttempt(n => n + 1)} className="admin-focus-ring min-h-10 underline">Reintentar capas</button>
-          </div> : !defaultLayers.length && <p role="status" className="text-xs">Cargando referencias anatómicas…</p>}
-          <p className="text-xs text-slate-600">Capa activa: {ANATOMY_PLANES.find(plane => plane.id === anatomyDisplay.anatomy)?.label}. Plano anatómico ilustrativo, no plano de inyección medido. Laterales siempre del paciente.</p>
-          {!layerIsVisible && <p role="status" className="text-xs font-semibold text-amber-800">La capa activa está oculta: muéstrala o cambia a otra capa para marcar.</p>}
-          <label className="flex min-h-10 items-center gap-2 text-xs"><input type="checkbox" checked={bilateral}
-            onChange={e => setBilateral(e.target.checked)} />Modo bilateral · crear ambos lados en una acción</label>
-          <button type="button" disabled={!selectedId || preview.after} onClick={mirrorSelected}
-            className="admin-focus-ring min-h-10 w-full rounded border border-slate-300 text-xs font-semibold disabled:opacity-40">Espejar selección</button>
-          <p className="text-xs text-slate-600">Espejo para puntos, trazos, contornos y patrones en foto y 3D. Si falta cobertura en un lado, se rechaza el par completo.</p>
+          <StepCard step={1} title="Inyectable" icon={Syringe} state={product.trim() ? 'done' : 'active'}>
+            <ModeCards value={mode} onChange={changeMode} />
+            <label className="mt-3 block text-[11px] font-semibold uppercase tracking-wider text-slate-400">Producto / vial
+              <input list="face-annotation-products" value={product} onChange={e => setProduct(e.target.value)} placeholder="Ej. nombre comercial"
+                className="admin-focus-ring mt-1 min-h-10 w-full rounded-lg border border-white/10 bg-slate-900 px-2 text-sm normal-case tracking-normal text-slate-100 placeholder:text-slate-500" />
+            </label>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <CheckChip label="Pedir volumen al marcar" icon={Gauge} checked={askVolume} onChange={setAskVolume}>Volumen al marcar</CheckChip>
+              {!askVolume && <label className="flex items-center gap-1 text-[11px] text-slate-400">
+                <input aria-label="Dosis para nuevas marcas" type="number" min={0} step="any" value={dose}
+                  onChange={e => { const n = Number(e.target.value); if (Number.isFinite(n) && n >= 0) setDose(n); }}
+                  className="admin-focus-ring min-h-10 w-20 rounded-lg border border-white/10 bg-slate-900 px-2 text-sm text-slate-100" />{SIM_MODES[mode].unit}
+              </label>}
+            </div>
+          </StepCard>
+
+          <StepCard step={2} title="Marcar" icon={Crosshair} state={!product.trim() ? 'idle' : rows.length ? 'done' : 'active'}
+            aside={<IconToggle label="Deshacer" icon={Undo2} disabled={!history.length} onClick={undo} />}>
+            <div role="group" aria-label="Superficie de marcación" className="grid grid-cols-3 gap-1 rounded-xl bg-slate-950/70 p-1">
+              {([['generico', 'Genérico', Box], ['personal', 'Personal', UserRound], ['foto', 'Foto', ImageIcon]] as const).map(([id, label, Icon]) => {
+                const active = id === 'foto' ? workMode === 'foto' : workMode === '3d' && modelKind === id;
+                return <button key={id} type="button" aria-pressed={active}
+                  disabled={id === 'foto' ? calibrating : id === 'personal' && !personal && (!captureSource || captureBlocked || buildingPersonal)}
+                  onClick={() => {
+                    setDraft(null);
+                    if (id === 'foto') { setWorkMode('foto'); setPhotoInteraction('draw'); beginEditing(); return; }
+                    setWorkMode('3d'); if (id === 'generico') activateGenericModel(); else activatePersonal();
+                  }}
+                  className="admin-focus-ring flex min-h-10 items-center justify-center gap-1 rounded-lg text-[11px] font-bold text-slate-400 transition aria-pressed:bg-slate-800 aria-pressed:text-cyan-200 aria-pressed:shadow-[inset_0_0_0_1px_rgba(34,211,238,.5)] disabled:opacity-30">
+                  <Icon className="h-3.5 w-3.5" aria-hidden="true" />{label}</button>;
+              })}
+            </div>
+            {workMode === '3d' && <div className="mt-2 flex flex-wrap gap-1.5">
+              <CheckChip label="Visor dividido · genérico y máscara" icon={Columns2} checked={splitAnnotations}
+                onChange={checked => { setSplitAnnotations(checked); setDraft(null); }}>Dividido</CheckChip>
+              {(splitAnnotations || modelKind === 'personal') && !personal && <button type="button" disabled={buildingPersonal || hasPendingPhotos || captureBlocked || !captureSource}
+                onClick={activatePersonal} title={!captureSource ? 'Carga y revisa una foto en Capturas' : undefined}
+                className="admin-focus-ring min-h-10 rounded-lg border border-fuchsia-400/40 bg-fuchsia-500/10 px-2.5 text-[11px] font-bold text-fuchsia-100 disabled:opacity-40">
+                {buildingPersonal ? 'Calculando máscara personal…' : 'Preparar máscara personal'}</button>}
+            </div>}
+            {workMode === 'foto' && <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <select aria-label="Foto activa" value={view} onChange={e => { setView(e.target.value as ViewKind); setDraft(null); }}
+                className="admin-focus-ring min-h-10 flex-1 rounded-lg border border-white/10 bg-slate-900 px-2 text-xs text-slate-100">
+                {VIEWS.map(v => <option key={v.id} value={v.id} disabled={!photos[v.id]}>{v.label}</option>)}
+              </select>
+              <IconToggle label="Seleccionar sin dibujar" icon={MousePointer2} pressed={photoInteraction === 'select'} onClick={() => {
+                setPhotoInteraction(p => p === 'select' ? 'draw' : 'select'); setDraft(null); dragRef.current = null;
+              }} />
+            </div>}
+            <div className="mt-3">
+              {workMode === '3d'
+                ? <ToolDock label="Herramientas de marcación" items={TOOLS_3D} value={tool3d} accent={SIM_MODES[mode].color}
+                  disabled={id => calibrating && id !== 'point'} onSelect={id => { setTool3d(id); if (id !== 'navigate') beginEditing(); }} />
+                : <ToolDock label="Herramientas de marcación" items={TOOLS_PHOTO} value={photoInteraction === 'draw' ? toolPhoto : null} accent={SIM_MODES[mode].color}
+                  onSelect={id => { setToolPhoto(id); setPhotoInteraction('draw'); beginEditing(); }} />}
+            </div>
+            {workMode === 'foto' && toolPhoto === 'pattern' && <select aria-label="Patrón ilustrativo" value={photoPattern} onChange={e => setPhotoPattern(e.target.value as typeof photoPattern)}
+              className="admin-focus-ring mt-2 min-h-10 w-full rounded-lg border border-white/10 bg-slate-900 px-2 text-xs text-slate-100">
+              <option value="fan">Abanico</option><option value="grid">Malla</option><option value="fern">Helecho</option>
+            </select>}
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              <CheckChip label="Modo bilateral · crear ambos lados en una acción" icon={Sparkles} checked={bilateral} onChange={setBilateral}>Bilateral</CheckChip>
+              <IconToggle label="Espejar selección" icon={FlipHorizontal2} disabled={!selectedId || preview.after} onClick={mirrorSelected}>Espejo</IconToggle>
+              {workMode === '3d' && <CheckChip label="Zona extendida (cuello/cuero cabelludo)" icon={Move3d} checked={extendedZone}
+                onChange={checked => { setExtendedZone(checked); setOutsideHint(false); }}>Extendida</CheckChip>}
+            </div>
+            <div className="mt-3 rounded-xl border border-white/10 bg-slate-900 p-2 text-white">
+              <AnatomyLayerControls value={anatomyDisplay} onChange={value => {
+                setAnatomyDisplay(value); setHoveredZone(null); setDraft(null);
+              }} showMesh={showRegions} onMeshChange={toggleMesh} />
+            </div>
+            {(layerError || annotationLayers.error) ? <div role="alert" className="mt-2 flex items-center gap-2 text-xs text-rose-300">
+              <span className="flex-1">{layerError ?? annotationLayers.error}</span>
+              <button type="button" onClick={() => setLayerAttempt(n => n + 1)} className="admin-focus-ring min-h-10 rounded-lg border border-rose-400/40 px-2 font-semibold">Reintentar capas</button>
+            </div> : !defaultLayers.length && <p role="status" className="mt-2 text-xs text-slate-400">Cargando capas anatómicas…</p>}
+            {!layerIsVisible && <p role="status" className="mt-2 text-xs font-semibold text-amber-300">Capa activa oculta: muéstrala para marcar.</p>}
+            {workMode === '3d' && <details className="group mt-2 rounded-xl border border-white/10 bg-slate-900/60 p-2" open={cut.scope !== 'none' || undefined}>
+              <summary className="flex min-h-9 cursor-pointer list-none items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-slate-300">
+                <Scissors className="h-4 w-4 text-amber-300" aria-hidden="true" />Corte{cut.scope !== 'none' && <span className="ml-auto rounded-full bg-amber-400/20 px-2 text-amber-200">activo</span>}</summary>
+              <div className="mt-2"><CutControls value={cut} onChange={setCut} /></div>
+            </details>}
+            <details className="mt-2 rounded-xl border border-white/10 bg-slate-900/60 p-2">
+              <summary className="flex min-h-9 cursor-pointer list-none items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-slate-300">
+                <Layers className="h-4 w-4 text-cyan-300" aria-hidden="true" />Zona {zone === AUTO_ZONE ? 'automática' : 'manual'}</summary>
+              <select aria-label="Zona" value={zone} onChange={e => setZone(e.target.value)}
+                className="admin-focus-ring mt-2 min-h-10 w-full rounded-lg border border-white/10 bg-slate-900 px-2 text-xs text-slate-100">
+                <option value={AUTO_ZONE}>Auto (mapa anatómico facial)</option>
+                {ZONES.map(z => <option key={z}>{z}</option>)}
+              </select>
+            </details>
+          </StepCard>
+
+          <StepCard step={3} title="Revisar" icon={ListChecks} state={rows.length ? 'active' : 'idle'}>
+            <div role="group" aria-label="Preview cosmético ilustrativo" className="space-y-2">
+              <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-950/70 p-1">{([false, true] as const).map(after => <button key={String(after)} type="button" aria-pressed={preview.after === after}
+                onClick={() => comparePreview(after)} className="admin-focus-ring min-h-9 rounded-lg text-xs font-bold text-slate-400 aria-pressed:bg-slate-800 aria-pressed:text-cyan-200">{after ? 'Después' : 'Antes'}</button>)}</div>
+              <div className="flex flex-wrap gap-1.5">{(Object.keys(SIM_MODES) as SimMode[]).map(m => <label key={m} title={PREVIEW_DESCRIPTIONS[m]}
+                className="inline-flex min-h-8 cursor-pointer items-center gap-1.5 rounded-full border border-white/10 px-2 text-[11px] text-slate-300 has-[:checked]:text-white" style={preview.enabled[m] ? { borderColor: SIM_MODES[m].color } : undefined}>
+                <input type="checkbox" aria-label={`Efecto ${SIM_MODES[m].label}`} checked={preview.enabled[m]} className="h-3 w-3" style={{ accentColor: SIM_MODES[m].color }}
+                  onChange={e => setPreview(p => ({ ...p, enabled: { ...p.enabled, [m]: e.target.checked } }))} />{SIM_MODES[m].label}
+              </label>)}</div>
+              <label className="flex items-center gap-2 text-[11px] text-slate-400"><Eye className="h-3.5 w-3.5" aria-hidden="true" />
+                <input aria-label="Intensidad visual independiente" type="range" min={0} max={1} step={0.05} value={preview.intensity}
+                  onChange={e => setPreview(p => ({ ...p, intensity: Number(e.target.value) }))} className="flex-1 accent-cyan-400" />
+                <span className="w-9 text-right tabular-nums">{Math.round(preview.intensity * 100)}%</span>
+              </label>
+              {workMode === 'foto' && <label className="flex items-center gap-2 text-[11px] text-slate-400"><Columns2 className="h-3.5 w-3.5" aria-hidden="true" />
+                <input aria-label="Comparación dividida · solo foto" type="range" min={0} max={1} step={0.01} value={split} onChange={e => setSplit(Number(e.target.value))} className="flex-1 accent-cyan-400" />
+              </label>}
+            </div>
+            <div className="mt-3 grid grid-cols-3 gap-1.5">
+              <IconToggle label="Exportar JSON de Inyectables" icon={FileJson} disabled={!hasLocalRecord} onClick={exportJson}>JSON</IconToggle>
+              <IconToggle label="PNG" icon={Download} disabled={!hasImage} onClick={exportPng}>PNG</IconToggle>
+              <IconToggle label="Limpiar" icon={Trash2} disabled={!hasQuickEntries && !elems.length && !markers.length && !lines.length && !shapes.length} onClick={clearAll}>Limpiar</IconToggle>
+            </div>
+            <details className="mt-2 rounded-xl border border-white/10 bg-slate-900/60 p-2 text-xs">
+              <summary className="flex min-h-9 cursor-pointer list-none items-center gap-2 font-bold uppercase tracking-wider text-slate-300"><FileJson className="h-4 w-4 text-cyan-300" aria-hidden="true" />Importar de Inyectables</summary>
+              <textarea aria-label="JSON de Inyectables" value={importText} onChange={e => setImportText(e.target.value)} rows={4}
+                className="admin-focus-ring mt-2 w-full rounded-lg border border-white/10 bg-slate-900 p-2 font-mono text-[10px] text-slate-100" />
+              <button type="button" onClick={doImport} className="admin-focus-ring mt-2 min-h-10 w-full rounded-lg bg-cyan-400 font-bold text-slate-950">Importar</button>
+            </details>
+            {workMode === 'foto' && <CheckChip label="Mostrar marcas sobre la foto" icon={Eye} checked={showMarks} onChange={setShowMarks}>Marcas en foto</CheckChip>}
+          </StepCard>
+          <p className="text-[10px] leading-relaxed text-slate-500" title={PREVIEW_DESCRIPTIONS[mode]}>Simulación ilustrativa · no recomienda puntos ni dosis · exporta antes de salir.</p>
         </div>}
         {workspace === 'capture' && <>
         <div>
@@ -1852,111 +2005,6 @@ export default function FaceSimLab() {
         </details>
 
         </>}
-        {workspace === 'simulate' && <div className="space-y-3">
-        <div>
-          <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Marcar sobre</span>
-          <div className="grid grid-cols-2 gap-1">
-            <button type="button" aria-pressed={workMode === '3d'} onClick={() => setWorkMode('3d')} className={`flex items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold ${workMode === '3d' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'}`}><Box className="h-3.5 w-3.5" aria-hidden="true" />Modelo 3D</button>
-            <button type="button" disabled={calibrating} aria-pressed={workMode === 'foto'} onClick={() => { setWorkMode('foto'); setPhotoInteraction('draw'); beginEditing(); }} className={`flex items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold ${workMode === 'foto' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'} disabled:opacity-50`}><ImageIcon className="h-3.5 w-3.5" aria-hidden="true" />Foto</button>
-          </div>
-          {workMode === '3d' && <label className="mt-2 flex min-h-10 items-center gap-2 text-xs">
-            <input type="checkbox" checked={splitAnnotations} onChange={event => {
-              setSplitAnnotations(event.target.checked); setDraft(null);
-            }} />Visor dividido · genérico y máscara
-          </label>}
-          {workMode === '3d' && splitAnnotations && <div className="mt-2 space-y-2 text-xs">
-            <p>Compara la misma marcación en ambos modelos. Puedes marcar y editar en cualquiera; selección, cantidades y deshacer son compartidos.</p>
-            <button type="button" disabled={buildingPersonal || hasPendingPhotos || captureBlocked || !captureSource}
-              onClick={activatePersonal}
-              className="admin-focus-ring min-h-10 rounded border border-slate-300 px-2 disabled:opacity-50">
-              {buildingPersonal ? 'Calculando máscara personal…' : personal ? 'Usar máscara personal' : 'Preparar máscara personal'}
-            </button>
-            {!captureSource && <p>Carga y revisa una foto en Capturas para preparar la máscara. El modelo genérico sigue disponible.</p>}
-            {captureSource && captureBlocked && <p>Revisa y confirma las capturas antes de preparar la máscara personal.</p>}
-          </div>}
-          {workMode === '3d' && !splitAnnotations && <label className="mt-2 block text-xs">Superficie activa
-            <select aria-label="Superficie activa" value={modelKind} onChange={e => {
-              setDraft(null); if (e.target.value === 'generico') activateGenericModel(); else activatePersonal();
-            }} className="mt-1 w-full rounded border border-slate-300 p-2">
-              <option value="generico">Modelo genérico</option>
-              <option value="personal" disabled={!personal && (!captureSource || captureBlocked)}>Superficie personal</option>
-            </select>
-          </label>}
-          {workMode === 'foto' && <div className="mt-2 space-y-2">
-            <label className="block text-xs">Foto activa
-              <select aria-label="Foto activa" value={view} onChange={e => { setView(e.target.value as ViewKind); setDraft(null); }}
-                className="mt-1 w-full rounded border border-slate-300 p-2">
-                {VIEWS.map(v => <option key={v.id} value={v.id} disabled={!photos[v.id]}>{v.label}</option>)}
-              </select>
-            </label>
-            <button type="button" aria-pressed={photoInteraction === 'select'} onClick={() => {
-              setPhotoInteraction(p => p === 'select' ? 'draw' : 'select'); setDraft(null); dragRef.current = null;
-            }} className="admin-focus-ring min-h-10 rounded border border-slate-300 px-2 text-xs">Seleccionar sin dibujar</button>
-          </div>}
-          <div className="mt-2 flex flex-wrap gap-1">
-            {workMode === '3d'
-              ? TOOLS_3D.map(t => <button key={t.id} type="button" disabled={calibrating && t.id !== 'point'} aria-pressed={tool3d === t.id} onClick={() => { setTool3d(t.id); if (t.id !== 'navigate') beginEditing(); }} className={`admin-focus-ring min-h-10 rounded-md px-2 py-1 text-[11px] font-semibold ${tool3d === t.id ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'} disabled:opacity-50`}>{t.label}</button>)
-              : TOOLS_PHOTO.map(t => <button key={t.id} type="button" aria-pressed={toolPhoto === t.id && photoInteraction === 'draw'} onClick={() => { setToolPhoto(t.id); setPhotoInteraction('draw'); beginEditing(); }} className={`min-h-10 rounded-md px-2 py-1 text-[11px] font-semibold ${toolPhoto === t.id && photoInteraction === 'draw' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'}`}>{t.label}</button>)}
-          </div>
-          {workMode === 'foto' && toolPhoto === 'pattern' && <label className="mt-2 block text-xs">Patrón ilustrativo
-            <select value={photoPattern} onChange={e => setPhotoPattern(e.target.value as typeof photoPattern)}
-              className="admin-focus-ring mt-1 min-h-10 w-full rounded border border-slate-300 p-2">
-              <option value="fan">Abanico</option><option value="grid">Malla</option><option value="fern">Helecho</option>
-            </select>
-          </label>}
-        </div>
-
-        <div>
-          <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Inyectable (aplica a lo que marques)</span>
-          <div className="grid grid-cols-2 gap-1">
-            {(Object.keys(SIM_MODES) as SimMode[]).map(m => (
-              <button key={m} type="button" onClick={() => changeMode(m)} aria-pressed={mode === m}
-                className={`rounded-lg px-2 py-1.5 text-xs font-semibold ${mode === m ? 'text-white' : 'bg-slate-100 text-slate-600'}`}
-                style={mode === m ? { background: SIM_MODES[m].color } : undefined}>{SIM_MODES[m].label}</button>
-            ))}
-          </div>
-        </div>
-        <label className="block text-xs font-semibold uppercase text-slate-500">Zona
-          <select value={zone} onChange={e => setZone(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm normal-case">
-            <option value={AUTO_ZONE}>Auto (mapa anatómico facial)</option>
-            {ZONES.map(z => <option key={z}>{z}</option>)}
-          </select>
-          <span className="mt-1 block text-[10px] font-normal normal-case">{regionMap ? 'Zonas definidas sobre el atlas 3D del modelo y transferidas al rostro por sus referencias. Las líneas pueden atravesar varias. No es recomendación de aplicación.' : 'Carga un rostro para comprobar la correspondencia; el modelo conserva sus referencias anatómicas.'}</span>
-        </label>
-        <label className="block text-xs font-semibold uppercase text-slate-500">Producto / nombre del vial
-          <input list="face-annotation-products" value={product} onChange={e => setProduct(e.target.value)}
-            className="admin-focus-ring mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm normal-case" />
-          <datalist id="face-annotation-products">{catalog(SIM_MODES[mode].catalog).map(p => <option key={p} value={p} />)}</datalist>
-          <span className="block text-[11px] font-normal normal-case">Nombre libre. Solo se asigna a nuevas marcas; no cambia las anteriores.</span>
-        </label>
-        <details className="rounded border border-slate-200 p-2 text-xs">
-          <summary className="cursor-pointer font-semibold">Compatibilidad: dosis por marca (opcional)</summary>
-        <label className="block text-xs font-semibold uppercase text-slate-500">
-          Dosis registrada ({SIM_MODES[mode].unit})
-          <input aria-label="Dosis para nuevas marcas" type="number" min={0} step="any" value={dose}
-            onChange={e => { const n = Number(e.target.value); if (Number.isFinite(n) && n >= 0) setDose(n); }} className="mt-1 w-full rounded border border-slate-300 p-2" />
-          <span className="block text-[10px] font-normal normal-case text-slate-600">0 = sin dosis indicada. Dato manual, no sugerencia. En trazos corresponde al total; no modifica el preview.</span>
-        </label>
-        </details>
-        <fieldset className="space-y-2 rounded-lg bg-slate-50 p-3">
-          <legend className="text-xs font-semibold">Preview cosmético ilustrativo</legend>
-          <div className="flex gap-2">{([false, true] as const).map(after => <button key={String(after)} type="button" aria-pressed={preview.after === after}
-            onClick={() => comparePreview(after)} className="admin-focus-ring min-h-10 rounded border border-slate-300 px-3 text-xs aria-pressed:bg-slate-800 aria-pressed:text-white">{after ? 'Después' : 'Antes'}</button>)}</div>
-          {(Object.keys(SIM_MODES) as SimMode[]).map(m => <label key={m} className="flex gap-2 text-xs" title={PREVIEW_DESCRIPTIONS[m]}>
-            <input type="checkbox" checked={preview.enabled[m]} onChange={e => setPreview(p => ({ ...p, enabled: { ...p.enabled, [m]: e.target.checked } }))} />
-            Efecto {SIM_MODES[m].label}
-          </label>)}
-        <label className="block text-xs font-semibold text-slate-700">Intensidad visual independiente: {Math.round(preview.intensity * 100)}%
-          <input aria-label="Intensidad visual independiente" type="range" min={0} max={1} step={0.05} value={preview.intensity} onChange={e => setPreview(p => ({ ...p, intensity: Number(e.target.value) }))} className="w-full" />
-        </label>
-        <label className="block text-xs text-slate-600">Comparación dividida · solo foto
-          <input type="range" min={0} max={1} step={0.01} value={split} onChange={e => setSplit(Number(e.target.value))} className="w-full accent-[#b8944d]" />
-        </label>
-          <p className="text-xs text-slate-600">{PREVIEW_DESCRIPTIONS[mode]} Sin predicción ni garantía clínica. No recomienda puntos ni dosis.</p>
-          <p className="text-xs font-semibold text-slate-700">Se dibuja y edita en Antes. Después solo permite inspección; elegir una herramienta vuelve al original.</p>
-        </fieldset>
-        </div>}
-
         {workspace === 'capture' && <>
         <details className="rounded-xl border border-slate-200 p-2 text-xs">
           <summary className="cursor-pointer font-semibold">Diagnóstico estadístico opcional</summary>
@@ -2065,28 +2113,6 @@ export default function FaceSimLab() {
         </details>
 
         </>}
-        {workspace === 'simulate' && <div className="space-y-3">
-        <details className="rounded-xl bg-slate-50 p-3 text-xs">
-          <summary className="flex cursor-pointer items-center gap-1 font-semibold uppercase text-slate-500"><FileJson className="h-3.5 w-3.5" aria-hidden="true" /> Importar de Inyectables</summary>
-          <p className="mt-2 text-slate-500">Pega el registro de inyectable (o su <code>mapping_data</code>): se trasladan los elementos completos compatibles con el atlas. Revisa la correspondencia; no modifica registros en la BD.</p>
-          <textarea aria-label="JSON de Inyectables" value={importText} onChange={e => setImportText(e.target.value)} rows={4} className="mt-2 w-full rounded border border-slate-300 p-1 font-mono text-[10px]" />
-          <button type="button" onClick={doImport} className="mt-2 w-full rounded-lg bg-slate-800 px-2 py-1.5 font-semibold text-white">Importar</button>
-        </details>
-
-        <div className="flex gap-2">
-          <button type="button" disabled={!history.length} onClick={undo}
-            className="flex flex-1 items-center justify-center gap-1 rounded-lg border border-slate-300 px-2 py-1.5 text-xs font-semibold disabled:opacity-40"><Undo2 className="h-3.5 w-3.5" aria-hidden="true" />Deshacer</button>
-          <button type="button" disabled={!hasQuickEntries && !elems.length && !markers.length && !lines.length && !shapes.length} onClick={clearAll}
-            className="flex flex-1 items-center justify-center gap-1 rounded-lg border border-slate-300 px-2 py-1.5 text-xs font-semibold disabled:opacity-40"><Trash2 className="h-3.5 w-3.5" aria-hidden="true" />Limpiar</button>
-          <button type="button" disabled={!hasImage} onClick={exportPng}
-            className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-[#b8944d] px-2 py-1.5 text-xs font-semibold text-white disabled:opacity-40"><Download className="h-3.5 w-3.5" aria-hidden="true" />PNG</button>
-        </div>
-        <button type="button" disabled={!hasLocalRecord} onClick={exportJson}
-          className="admin-focus-ring min-h-10 w-full rounded-lg border border-slate-300 px-2 text-xs font-semibold disabled:opacity-40">Exportar JSON de Inyectables</button>
-        <label className="flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={showMarks} onChange={e => setShowMarks(e.target.checked)} />Mostrar marcas sobre la foto</label>
-        <p className="text-xs text-slate-600">Exporta el JSON antes de salir: las marcas y los totales por zona solo están en memoria. Los totales rápidos no son dosis por punto.</p>
-        <p className="text-[11px] text-slate-400">En foto: clic/arrastrar para marcar, arrastrar un punto para moverlo, clic derecho o Alt+clic para borrar. Simulación referencial, no garantiza resultado clínico. Las fotos no salen del navegador.</p>
-        </div>}
       </aside>}
 
       <div className={`min-w-0 space-y-4 ${workspace === 'simulate' && editorGroup === 'appearance' ? 'lg:col-span-2' : ''}`}>
@@ -2105,7 +2131,16 @@ export default function FaceSimLab() {
           </Suspense>
         </div>}
         <div hidden={workspace === 'simulate' && editorGroup !== 'annotations'} className="space-y-4" data-face-annotations-group>
-        <p role="status" className="min-h-10 rounded-lg bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-900">{hoveredZone ? `${hoveredZone} · límite aproximado (ilustrativo)` : 'Pasa el cursor por la capa activa · lateralidad del paciente'}</p>
+        {workspace === 'simulate' && <div className="flex flex-wrap items-center gap-1.5 rounded-2xl border border-white/10 bg-slate-950 p-2">
+          <span role="status" className={hudChip} style={{ borderColor: hoveredZone ? SIM_MODES[mode].color : undefined }}>
+            <Crosshair className="h-3.5 w-3.5" aria-hidden="true" style={{ color: SIM_MODES[mode].color }} />
+            {hoveredZone ?? 'Pasa el cursor sobre la capa'}
+          </span>
+          <span className={hudChip} title="Capa activa (lateralidad del paciente)"><Layers className="h-3.5 w-3.5 text-cyan-300" aria-hidden="true" />
+            {ANATOMY_PLANES.find(plane => plane.id === anatomyDisplay.anatomy)?.label}</span>
+          <span className="ml-auto" />
+          {totals.length ? <VolumeHud totals={totals} /> : <span className={`${hudChip} text-slate-400`}><Gauge className="h-3.5 w-3.5" aria-hidden="true" />0 {SIM_MODES[mode].unit}</span>}
+        </div>}
       <div className={`grid min-w-0 content-start gap-4 ${workspace === 'simulate' && workMode === '3d' && splitAnnotations ? 'lg:grid-cols-2' : ''}`}>
         {workspace === 'simulate' && workMode === '3d' && (splitAnnotations
           ? <>{renderViewer('generico')}{renderViewer('personal')}</>
@@ -2183,64 +2218,49 @@ export default function FaceSimLab() {
             ))}
           </div>
         </section>
-        {workspace === 'simulate' && <section aria-label="Registro común de marcaciones" className="min-w-0 rounded-xl border border-slate-200 bg-white p-3">
-          <h2 className="text-sm font-semibold">Registro común · {Object.keys(bindings).length} elemento(s)</h2>
-          <QuickInjectableRecord meta={meta} bindings={bindings} value={quickRecord}
-            onChange={value => { snap(); setQuickRecord(value); }}
-            onApply={(value, settings) => { snap(); setMeta(value); if (settings) setQuickRecord(settings);
-              setStatus('Nombre de producto/vial actualizado localmente. Los totales por zona y las dosis detalladas no se reparten ni se modifican.'); }} />
-          {!Object.keys(bindings).length && <p className="mt-2 text-sm text-slate-600">Elige Punto o una herramienta de trazo y marca sobre el rostro. Mover cámara no añade marcas.</p>}
-          <details open className="mt-3 rounded-lg border border-slate-200 p-2">
-          <summary className="cursor-pointer text-xs font-semibold">Registro detallado por marca · compatibilidad, independiente de totales por zona</summary>
-          <ul className="mt-2 max-h-72 space-y-2 overflow-auto text-xs" aria-label="Elementos marcados">
-            {Object.entries(bindings).map(([id, binding], index) => {
-              const entry = meta[id];
-              if (!entry) return null;
-              return <li key={id} className={`flex flex-wrap items-center gap-2 rounded-lg border p-2 ${selectedId === id ? 'border-sky-600 bg-sky-50' : 'border-slate-200'}`}>
-                <button type="button" aria-pressed={selectedId === id} aria-label={`Seleccionar marca ${index + 1}`}
-                  onFocus={() => setSelectedId(id)} onPointerEnter={() => setSelectedId(id)}
-                  onClick={() => {
-                    setSelectedId(id); beginEditing();
-                    const layer = activeLayer(workMode === 'foto' ? 'foto' : modelKind);
-                    if (!layerIsVisible || layer && !binding.paths.flat().every(layer.accepts)) {
-                      setAnatomyDisplay(current => chooseAnatomyDisplay(current, binding.illustrativePlane ?? 'skin'));
-                    }
-                  }} className="admin-focus-ring min-h-10 flex-1 text-left font-semibold">
-                  {index + 1}. {binding.kind} · {SIM_MODES[entry.mode].label} · {entry.zone}
-                  <span className="block font-normal">{annotationLaterality(binding, genericFaceAtlas)} · {ANATOMY_PLANES.find(plane => plane.id === (binding.illustrativePlane ?? 'skin'))?.label} (ilustrativo)</span>
-                </button>
-                <label className="flex items-center gap-1">Dosis por marca (detalle)
-                  <input type="number" min={0} step="any" value={entry.dose} aria-label={`Dosis marca ${index + 1}`}
-                    onChange={e => editDose(id, Number(e.target.value))} className="min-h-10 w-20 rounded border border-slate-300 p-1" />
-                  {SIM_MODES[entry.mode].unit}
-                </label>
-                <button type="button" onClick={() => { snap(); removeEl(id); }} aria-label={`Eliminar marca ${index + 1}`} className="admin-focus-ring min-h-10 rounded border border-slate-300 px-3"><Trash2 className="h-4 w-4" /></button>
-              </li>;
-            })}
-          </ul>
-          {selectedId && meta[selectedId] && <form key={selectedId} aria-label="Editar marca seleccionada" className="mt-3 grid gap-2 rounded-lg bg-slate-50 p-3 sm:grid-cols-2" onSubmit={e => {
+        {workspace === 'simulate' && <PointLedger rows={rows} selectedId={selectedId}
+          onSelect={row => {
+            setSelectedId(row.id); beginEditing();
+            const binding = bindings[row.id];
+            const layer = activeLayer(workMode === 'foto' ? 'foto' : modelKind);
+            if (binding && (!layerIsVisible || layer && !binding.paths.flat().every(layer.accepts))) {
+              setAnatomyDisplay(current => chooseAnatomyDisplay(current, binding.illustrativePlane ?? 'skin'));
+            }
+          }}
+          onHover={row => { if (row) setSelectedId(row.id); setHoveredZone(row ? `${row.zone} · ${row.side}` : null); }}
+          onDose={editDose} onDelete={id => { snap(); removeEl(id); }}
+          onPlane={(ids, plane) => { snap(); setMeta(m => ({ ...m, ...Object.fromEntries(ids.filter(id => m[id]).map(id => [id, { ...m[id], plane: plane || undefined }])) })); }}>
+          {selectedId && meta[selectedId] && <form key={selectedId} aria-label="Editar marca seleccionada" className="grid gap-2 rounded-xl border border-white/10 bg-slate-900 p-3 sm:grid-cols-4" onSubmit={e => {
             e.preventDefault();
             const data = new FormData(e.currentTarget), nextMode = data.get('mode') as SimMode;
             snap(); setMeta(m => ({ ...m, [selectedId]: { ...m[selectedId], mode: nextMode,
               zone: String(data.get('zone')), product: String(data.get('product')) || undefined } }));
-            setStatus('Metadatos de la marca actualizados. La dosis registrada no controla la intensidad visual.');
+            setStatus('Marca actualizada.');
           }}>
-            <label className="text-xs">Categoría
-              <select name="mode" defaultValue={meta[selectedId].mode} className="mt-1 w-full rounded border border-slate-300 p-2">
+            <label className="text-[11px] text-slate-400">Categoría
+              <select name="mode" defaultValue={meta[selectedId].mode} className="admin-focus-ring mt-1 min-h-10 w-full rounded-lg border border-white/10 bg-slate-950 px-2 text-xs text-slate-100">
                 {(Object.keys(SIM_MODES) as SimMode[]).map(m => <option key={m} value={m}>{SIM_MODES[m].label}</option>)}
               </select>
             </label>
-            <label className="text-xs">Zona registrada
-              <input name="zone" defaultValue={meta[selectedId].zone} className="mt-1 w-full rounded border border-slate-300 p-2" />
+            <label className="text-[11px] text-slate-400">Zona registrada
+              <input name="zone" defaultValue={meta[selectedId].zone} className="admin-focus-ring mt-1 min-h-10 w-full rounded-lg border border-white/10 bg-slate-950 px-2 text-xs text-slate-100" />
             </label>
-            <label className="text-xs">Producto registrado
-              <input name="product" defaultValue={meta[selectedId].product ?? ''} className="mt-1 w-full rounded border border-slate-300 p-2" />
+            <label className="text-[11px] text-slate-400">Producto registrado
+              <input name="product" list="face-annotation-products" defaultValue={meta[selectedId].product ?? ''} className="admin-focus-ring mt-1 min-h-10 w-full rounded-lg border border-white/10 bg-slate-950 px-2 text-xs text-slate-100" />
             </label>
-            <button type="submit" className="admin-focus-ring rounded bg-slate-800 px-3 py-2 text-xs text-white">Guardar cambios de marca</button>
-            <p className="text-xs text-slate-600 sm:col-span-2">Posición: arrastra un punto en la foto. Trazos: selecciona y ajusta sus extremos en el modelo. Las marcas sin cobertura se conservan en este registro.</p>
+            <button type="submit" className="admin-focus-ring min-h-10 self-end rounded-lg bg-cyan-400 px-3 text-xs font-bold text-slate-950">Guardar cambios de marca</button>
           </form>}
-          </details>
-        </section>}
+        </PointLedger>}
+        {workspace === 'simulate' && pendingVolume && meta[pendingVolume[0]] && <VolumeDialog open mode={meta[pendingVolume[0]].mode} count={pendingVolume.length}
+          place={rows.find(r => r.id === pendingVolume[0]) ? `${meta[pendingVolume[0]].zone} · ${rows.find(r => r.id === pendingVolume[0])!.side}` : meta[pendingVolume[0]].zone}
+          initialDose={dose}
+          onSave={(value, plane) => {
+            const ids = pendingVolume;
+            setMeta(m => ({ ...m, ...Object.fromEntries(ids.filter(id => m[id]).map(id => [id, { ...m[id], dose: value, plane: plane || undefined }])) }));
+            setDose(value); setPendingVolume(null);
+            setStatus(`${ids.length} punto(s) · ${value} ${SIM_MODES[meta[ids[0]].mode].unit} registrados.`);
+          }}
+          onDiscard={() => { setPendingVolume(null); undo(); setStatus('Punto descartado.'); }} />}
       </div>
       </div>
       </div>
