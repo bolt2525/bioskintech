@@ -1,5 +1,8 @@
 # Progreso de BioSkinTech App
 
+- ✅ 2026-10-29 Marcaciones: visor comparativo recuperado.
+- QA comparativa: 42 pruebas, build y lint aprobados; Chromium desktop/móvil verifica transferencia genérico/máscara, registro único, deshacer y apilado. Sin migración clínica.
+
 - ✅ 2026-10-29 Anatomía alineada; hueso superficial.
 - ✅ 2026-10-29 Marcaciones: capas, espejo y bilateral.
 - ✅ 2026-10-29 Nariz: simetría direccional reversible.

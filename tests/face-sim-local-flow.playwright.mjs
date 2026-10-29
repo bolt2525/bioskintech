@@ -118,6 +118,95 @@ try {
   assert.equal(await page.getByRole('button', { name: 'Punto', exact: true }).isVisible(), true);
   assert.equal(await page.getByLabel('Intensidad visual independiente', { exact: true }).isVisible(), true);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1), false);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const divided = page.getByLabel('Visor dividido · genérico y máscara', { exact: true });
+  await divided.check();
+  const generic = page.getByRole('region', { name: 'Modelo genérico 3D', exact: true });
+  const personal = page.getByRole('region', { name: 'Foto personal en 3D', exact: true });
+  assert.equal(await generic.locator('canvas').count(), 1);
+  assert.equal(await personal.getByRole('status').isVisible(), true);
+  assert.equal(await page.getByRole('button', { name: 'Preparar máscara personal', exact: true }).isDisabled(), true);
+  // Foto ficticia: render del mismo GLB público empleado por el atlas, sin datos de pacientes.
+  const synthetic = await page.evaluate(async () => {
+    const source = await (await fetch('/src/components/admin/ficha-clinica/components/Clinical3DViewer.tsx')).text();
+    const THREE = await import(source.match(/import \* as THREE from "([^"]+)"/)[1]);
+    const { GLTFLoader } = await import(source.match(/import \{ GLTFLoader \} from "([^"]+)"/)[1]);
+    const model = (await new GLTFLoader().loadAsync('/models/clinical/male_head.glb')).scene;
+    model.updateMatrixWorld(true);
+    const box = new THREE.Box3();
+    model.traverse(mesh => {
+      if (!mesh.isMesh || mesh.name === 'SCALP_HAIR_SOURCE') return;
+      mesh.geometry.computeBoundingBox();
+      box.union(mesh.geometry.boundingBox.clone().applyMatrix4(mesh.matrixWorld));
+    });
+    const scale = 5 / Math.max(...box.getSize(new THREE.Vector3()).toArray());
+    model.scale.setScalar(scale); model.position.copy(box.getCenter(new THREE.Vector3())).multiplyScalar(-scale);
+    const scene = new THREE.Scene(); scene.background = new THREE.Color('#d9dce1');
+    scene.add(model, new THREE.HemisphereLight(0xffffff, 0x645344, 2));
+    for (const [intensity, x, y, z] of [[3, -3, 5, 8], [1, 3, 1, 5]]) {
+      const light = new THREE.DirectionalLight(0xffffff, intensity); light.position.set(x, y, z); scene.add(light);
+    }
+    const material = new THREE.MeshStandardMaterial({ color: '#cda48c', roughness: 0.8 });
+    model.traverse(mesh => { if (mesh.isMesh) mesh.material = material; });
+    const camera = new THREE.OrthographicCamera(-2.65, 2.65, 2.65, -2.65, 0.1, 30);
+    camera.position.set(0, 0, 10); camera.lookAt(0, 0, 0);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+    renderer.setSize(1400, 1400); renderer.render(scene, camera);
+    const image = renderer.domElement.toDataURL('image/png');
+    renderer.dispose(); model.traverse(mesh => { if (mesh.isMesh) mesh.geometry.dispose(); }); material.dispose();
+    window.__splitRendered = {};
+    const previous = THREE.Mesh.prototype.onAfterRender;
+    THREE.Mesh.prototype.onAfterRender = function (renderer, scene) {
+      const label = renderer.domElement.closest('section[aria-label="Modelo genérico 3D"], section[aria-label="Foto personal en 3D"]')?.getAttribute('aria-label');
+      if (label) {
+        const ids = new Set();
+        scene.traverse(object => { if (object.userData.editableId) ids.add(object.userData.editableId); });
+        window.__splitRendered[label] = [...ids].sort();
+      }
+      return previous?.apply(this, arguments);
+    };
+    return image;
+  });
+  await space.getByRole('button', { name: 'Capturas', exact: true }).click();
+  await page.getByLabel('Cargar Frontal', { exact: true }).setInputFiles({
+    name: 'rostro-sintetico.png', mimeType: 'image/png', buffer: Buffer.from(synthetic.split(',')[1], 'base64'),
+  });
+  const review = page.getByRole('dialog');
+  await review.waitFor({ timeout: 90000 });
+  await review.getByRole('button', { name: 'Conservar detección original', exact: true }).click();
+  await review.getByRole('checkbox').check();
+  await review.getByRole('button', { name: 'Confirmar límites', exact: true }).click();
+  await page.getByLabel('Confirmar captura Frontal', { exact: true }).check();
+  await space.getByRole('button', { name: 'Simular y marcar', exact: true }).click();
+  await page.getByRole('button', { name: 'Preparar máscara personal', exact: true }).click();
+  await personal.locator('canvas').waitFor({ timeout: 90000 });
+  assert.equal(await page.locator('canvas:visible').count(), 2);
+  await page.waitForFunction(count => {
+    const a = window.__splitRendered['Modelo genérico 3D'], b = window.__splitRendered['Foto personal en 3D'];
+    return a?.length === count && JSON.stringify(a) === JSON.stringify(b);
+  }, initialCount);
+  await page.getByRole('button', { name: 'Punto', exact: true }).click();
+  await personal.locator('canvas').scrollIntoViewIfNeeded();
+  const personalBox = await personal.locator('canvas').boundingBox();
+  for (const [x, y] of [[0.45, 0.55], [0.55, 0.6], [0.5, 0.4]]) {
+    await page.mouse.click(personalBox.x + personalBox.width * x, personalBox.y + personalBox.height * y);
+    await page.waitForTimeout(500);
+    if (await count() > initialCount) break;
+  }
+  assert.equal(await count(), initialCount + 1, 'Marcar en la máscara añade un único registro compartido.');
+  await page.waitForFunction(count => {
+    const a = window.__splitRendered['Modelo genérico 3D'], b = window.__splitRendered['Foto personal en 3D'];
+    return a?.length === count && JSON.stringify(a) === JSON.stringify(b);
+  }, initialCount + 1);
+  await page.getByRole('button', { name: 'Deshacer', exact: true }).click();
+  assert.equal(await count(), initialCount);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const genericBox = await generic.boundingBox(), stackedBox = await personal.boundingBox();
+  assert.ok(stackedBox.y >= genericBox.y + genericBox.height, 'En móvil los visores se apilan.');
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
+  await divided.uncheck();
+  assert.equal(await page.locator('canvas:visible').count(), 1);
+  assert.equal(await count(), initialCount);
   assert.deepEqual(errors, []);
   assert.deepEqual(remote, []);
   console.log(JSON.stringify({ passed: true, marks: initialCount, desktop: '1440×1000', mobile: '390×844',
@@ -125,6 +214,7 @@ try {
     checks: ['dos espacios', 'cámara sin marcas', 'raycast punto', 'edición', 'dosis independiente', '4 efectos',
       'antes/después', 'export/import', 'quitar/undo', 'registro persistente entre espacios',
       'grupos internos', 'morfología/piel/capas/corte', 'estado avanzado conservado', 'un viewport visible',
+      'visor dividido', 'transferencia visible genérico/máscara', 'registro único desde máscara', 'apilado móvil',
       'sin red externa', 'sin overflow móvil'] }, null, 2));
 } finally {
   await browser.close();

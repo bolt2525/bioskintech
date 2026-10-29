@@ -286,6 +286,7 @@ export default function FaceSimLab() {
   const [view, setView] = useState<ViewKind>('frontal');
   const [renderTick, setRenderTick] = useState(0);
   const [workMode, setWorkMode] = useState<WorkMode>('3d');
+  const [splitAnnotations, setSplitAnnotations] = useState(false);
   const [tool3d, setTool3d] = useState<Tool3D>('navigate');
   const [toolPhoto, setToolPhoto] = useState<ElemKind>('point');
   const [photoPattern, setPhotoPattern] = useState<'fan' | 'grid' | 'fern'>('fan');
@@ -673,10 +674,10 @@ export default function FaceSimLab() {
   const previewSamples = useMemo(() => elems.flatMap(element => element.paths.flatMap(path =>
     path.filter((_, i) => i % Math.max(1, Math.ceil(path.length / 8)) === 0).map(p => ({ ...p, mode: element.mode })))),
   [elems]);
-  // El atlas genérico es la misma referencia usada por los bindings; una sola malla activa.
+  // El atlas genérico es la misma referencia usada por los bindings.
   useEffect(() => {
     let active = true;
-    if (workspace !== 'simulate' && !calibrating || workMode !== '3d' || modelKind !== 'generico') return;
+    if (workspace !== 'simulate' && !calibrating || workMode !== '3d' || modelKind !== 'generico' && !splitAnnotations) return;
     void (async () => {
       try {
         const THREE = await import('three');
@@ -716,7 +717,7 @@ export default function FaceSimLab() {
       }
     })();
     return () => { active = false; };
-  }, [workspace, workMode, modelKind, bindings, previewModes, preview, calibrating]);
+  }, [workspace, workMode, modelKind, splitAnnotations, bindings, previewModes, preview, calibrating]);
 
   // Renderer por foto activa
   useEffect(() => {
@@ -1445,7 +1446,10 @@ export default function FaceSimLab() {
     const original = source === 'generico';
     const annotations = original ? genericAnnotations : personalAnnotations;
     const ready = original ? !!genericPreviewGlb && (calibrating || genericPreviewAfter === preview.after) : !!personal;
-    return <section key={source} aria-label={original ? 'Modelo genérico 3D' : 'Foto personal en 3D'} className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-900">
+    return <section key={source} aria-label={original ? 'Modelo genérico 3D' : 'Foto personal en 3D'}
+      onPointerDownCapture={() => { if (splitAnnotations) setModelKind(source); }}
+      onFocusCapture={() => { if (splitAnnotations) setModelKind(source); }}
+      className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-900">
       <h2 className="px-3 py-3 text-sm font-semibold text-white">{original ? 'Modelo facial original · referencia anatómica' : personal?.closedHead ? 'Superficie personal · tono liso = inferido, no marcable' : 'Superficie facial personal · misma marcación'}</h2>
       {overlayMode === 'attention' && <p className="bg-amber-100 px-3 py-2 text-xs font-semibold text-amber-950">SIMULACIÓN · No detecta vasos ni certifica zonas seguras.</p>}
       {ready ? <Clinical3DViewer
@@ -1855,7 +1859,22 @@ export default function FaceSimLab() {
             <button type="button" aria-pressed={workMode === '3d'} onClick={() => setWorkMode('3d')} className={`flex items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold ${workMode === '3d' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'}`}><Box className="h-3.5 w-3.5" aria-hidden="true" />Modelo 3D</button>
             <button type="button" disabled={calibrating} aria-pressed={workMode === 'foto'} onClick={() => { setWorkMode('foto'); setPhotoInteraction('draw'); beginEditing(); }} className={`flex items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold ${workMode === 'foto' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'} disabled:opacity-50`}><ImageIcon className="h-3.5 w-3.5" aria-hidden="true" />Foto</button>
           </div>
-          {workMode === '3d' && <label className="mt-2 block text-xs">Superficie activa
+          {workMode === '3d' && <label className="mt-2 flex min-h-10 items-center gap-2 text-xs">
+            <input type="checkbox" checked={splitAnnotations} onChange={event => {
+              setSplitAnnotations(event.target.checked); setDraft(null);
+            }} />Visor dividido · genérico y máscara
+          </label>}
+          {workMode === '3d' && splitAnnotations && <div className="mt-2 space-y-2 text-xs">
+            <p>Compara la misma marcación en ambos modelos. Puedes marcar y editar en cualquiera; selección, cantidades y deshacer son compartidos.</p>
+            <button type="button" disabled={buildingPersonal || hasPendingPhotos || captureBlocked || !captureSource}
+              onClick={activatePersonal}
+              className="admin-focus-ring min-h-10 rounded border border-slate-300 px-2 disabled:opacity-50">
+              {buildingPersonal ? 'Calculando máscara personal…' : personal ? 'Usar máscara personal' : 'Preparar máscara personal'}
+            </button>
+            {!captureSource && <p>Carga y revisa una foto en Capturas para preparar la máscara. El modelo genérico sigue disponible.</p>}
+            {captureSource && captureBlocked && <p>Revisa y confirma las capturas antes de preparar la máscara personal.</p>}
+          </div>}
+          {workMode === '3d' && !splitAnnotations && <label className="mt-2 block text-xs">Superficie activa
             <select aria-label="Superficie activa" value={modelKind} onChange={e => {
               setDraft(null); if (e.target.value === 'generico') activateGenericModel(); else activatePersonal();
             }} className="mt-1 w-full rounded border border-slate-300 p-2">
@@ -2087,8 +2106,10 @@ export default function FaceSimLab() {
         </div>}
         <div hidden={workspace === 'simulate' && editorGroup !== 'annotations'} className="space-y-4" data-face-annotations-group>
         <p role="status" className="min-h-10 rounded-lg bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-900">{hoveredZone ? `${hoveredZone} · límite aproximado (ilustrativo)` : 'Pasa el cursor por la capa activa · lateralidad del paciente'}</p>
-      <div className="grid min-w-0 content-start gap-4">
-        {workspace === 'simulate' && workMode === '3d' && renderViewer(modelKind)}
+      <div className={`grid min-w-0 content-start gap-4 ${workspace === 'simulate' && workMode === '3d' && splitAnnotations ? 'lg:grid-cols-2' : ''}`}>
+        {workspace === 'simulate' && workMode === '3d' && (splitAnnotations
+          ? <>{renderViewer('generico')}{renderViewer('personal')}</>
+          : renderViewer(modelKind))}
         {workspace === 'capture' && calibrating && renderViewer('generico')}
         <section className={`min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-900 p-3 ${workspace === 'simulate' && workMode !== 'foto' ? 'hidden' : ''}`}>
           <h2 className="mb-2 text-center text-sm font-semibold text-slate-200">Foto referencial {VIEWS.find(v => v.id === view)?.label.toLowerCase()} · registro compartido</h2>

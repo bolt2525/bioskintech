@@ -232,3 +232,49 @@ test('foto: Capturas no marca; punto, arrastre, trazo, cancelación y undo usan 
   photo().props.onPointerUp(); ui.render();
   assert.equal(Object.keys(ui.get('bindings')).length, 2);
 });
+
+test('visor dividido: registro único bidireccional, selección y undo entre genérico y máscara', () => {
+  const ui = app();
+  const engine = load(path.join(root, 'engine.ts'));
+  const regions = load(path.join(root, 'faceRegions.ts'));
+  const transfer = load(path.join(root, 'faceTransfer.ts'));
+  const landmarks = Array.from({ length: 468 }, (_, i) => ({
+    x: 0.5 + pos(i).x / 5.3, y: 0.5 - pos(i).y / 5.3, z: -pos(i).z / 5.3,
+  }));
+  const surface = engine.buildPersonalSurface(landmarks, 1, atlas.triangles, 1);
+  const canvas = { width: 1400, height: 1400 };
+  ui.set('photos', { frontal: { canvas, aspect: 1, landmarks,
+    frame: engine.frameFromLandmarks(landmarks), captureConfirmed: true } });
+  ui.set('personal', { view: 'frontal', canvas, glb: new ArrayBuffer(8), projection: surface.projection,
+    surface, renderSurface: surface, regionMap: regions.buildFaceRegionMap(landmarks, atlas.triangles, 1, atlas.positions) });
+  ui.button('Simular y marcar').props.onClick();
+  ui.set('genericPreviewGlb', new ArrayBuffer(8)); ui.render();
+  const splitControl = () => find(ui.query(n => n.type === 'label' && text(n).includes('Visor dividido'))[0],
+    n => n.type === 'input')[0];
+  splitControl().props.onChange({ target: { checked: true } }); ui.render();
+  ui.button('Punto').props.onClick(); ui.render();
+  const viewers = () => ui.query(n => n.type === clinical);
+  assert.equal(viewers().length, 2);
+  viewers()[0].props.onMarkerPlaced({ id: 'shared', position: pos(50) }); ui.render();
+  assert.ok(viewers().every(viewer => viewer.props.editablePoints.length === 1 && viewer.props.editablePoints[0].id === 'shared'));
+  const address = ui.get('bindings').shared.paths[0][0];
+  const expected = transfer.surfacePoint(address, surface, atlas);
+  const displayed = viewers()[1].props.editablePoints[0];
+  assert.ok(Math.hypot(displayed.x - expected.x, displayed.y - expected.y, displayed.z - expected.z) < 1e-8);
+  const section = ui.query(n => n.props?.['aria-label'] === 'Foto personal en 3D')[0];
+  section.props.onPointerDownCapture(); ui.render();
+  assert.equal(ui.get('modelKind'), 'personal');
+  const next = transfer.surfacePoint(transfer.locateModelPoint(pos(205), atlas), surface, atlas);
+  viewers()[1].props.onEditablePointMoved('shared', next); ui.render();
+  assert.equal(Object.keys(ui.get('bindings')).length, 1);
+  const genericPoint = viewers()[0].props.editablePoints[0];
+  assert.ok(Math.hypot(genericPoint.x - pos(205).x, genericPoint.y - pos(205).y, genericPoint.z - pos(205).z) < 1e-6);
+  viewers()[1].props.onEditablePointClicked('shared'); ui.render();
+  assert.ok(viewers().every(viewer => viewer.props.selectedPointId === 'shared'));
+  ui.button('Deshacer').props.onClick(); ui.render();
+  assert.ok(Math.hypot(viewers()[0].props.editablePoints[0].x - pos(50).x,
+    viewers()[0].props.editablePoints[0].y - pos(50).y, viewers()[0].props.editablePoints[0].z - pos(50).z) < 1e-6);
+  splitControl().props.onChange({ target: { checked: false } }); ui.render();
+  assert.equal(viewers().length, 1);
+  assert.equal(Object.keys(ui.get('bindings')).length, 1);
+});
